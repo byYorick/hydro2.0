@@ -1,0 +1,7 @@
+host: db-staging
+port: 5432
+database: hydro_staging
+user: hydro
+password: change-me
+
+

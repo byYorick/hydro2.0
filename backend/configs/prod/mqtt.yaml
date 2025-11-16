@@ -1,0 +1,5 @@
+broker: mqtts://mqtt.example.com:8883
+clientId: hydro-prod
+qos: 1
+
+

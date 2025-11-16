@@ -1,0 +1,8 @@
+{
+  "nodeId": "pump-001",
+  "type": "pump_node",
+  "channels": [],
+  "limits": { "currentMin": 0.1, "currentMax": 2.5 }
+}
+
+

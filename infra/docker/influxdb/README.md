@@ -1,0 +1,3 @@
+InfluxDB/TSDB конфигурация (placeholder).
+
+

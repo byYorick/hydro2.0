@@ -1,0 +1,6 @@
+rules:
+  - name: "basic_irrigation_example"
+    when: { metric: "zone.soil_moisture", lt: 30 }
+    then: { command: "pump.start", duration_s: 10 }
+
+

@@ -1,0 +1,3 @@
+Grafana (dashboards) конфигурация (placeholder).
+
+

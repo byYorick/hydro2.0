@@ -1,0 +1,5 @@
+broker: mqtt://mqtt-staging:1883
+clientId: hydro-staging
+qos: 1
+
+

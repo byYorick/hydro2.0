@@ -1,0 +1,33 @@
+# General
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.swp
+*.swo
+*.bak
+
+# Node/JS
+node_modules/
+dist/
+build/
+
+# Python
+__pycache__/
+.venv/
+.pytest_cache/
+
+# IDE
+.idea/
+.vscode/
+
+# CMake / ESP-IDF
+build/
+sdkconfig
+sdkconfig.old
+CMakeBuilds.json
+
+# Docker
+.docker/
+
+

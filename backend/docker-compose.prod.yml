@@ -1,0 +1,27 @@
+version: "3.9"
+services:
+  mqtt:
+    image: eclipse-mosquitto:2
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: change-me
+      POSTGRES_USER: hydro
+      POSTGRES_DB: hydro
+  api-gateway:
+    build: ./services/api-gateway
+    depends_on: [db]
+  mqtt-bridge:
+    build: ./services/mqtt-bridge
+    depends_on: [mqtt, db]
+  device-registry:
+    build: ./services/device-registry
+    depends_on: [db]
+  automation-engine:
+    build: ./services/automation-engine
+    depends_on: [db, mqtt]
+  history-logger:
+    build: ./services/history-logger
+    depends_on: [db, mqtt]
+
+

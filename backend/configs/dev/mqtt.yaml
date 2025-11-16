@@ -1,0 +1,5 @@
+broker: mqtt://localhost:1883
+clientId: hydro-dev
+qos: 1
+
+
