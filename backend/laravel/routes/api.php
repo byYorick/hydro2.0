@@ -66,13 +66,20 @@ Route::middleware([
     Route::post('zones/{zone}/pause', [ZoneController::class, 'pause']);
     Route::post('zones/{zone}/resume', [ZoneController::class, 'resume']);
     Route::get('zones/{zone}/health', [ZoneController::class, 'health']);
+    Route::get('zones/{zone}/cycles', [ZoneController::class, 'cycles']);
     Route::post('zones/{zone}/fill', [ZoneController::class, 'fill']);
     Route::post('zones/{zone}/drain', [ZoneController::class, 'drain']);
     Route::post('zones/{zone}/calibrate-flow', [ZoneController::class, 'calibrateFlow']);
+    
+    // Digital Twin simulation
+    Route::post('zones/{zone}/simulate', [SimulationController::class, 'simulateZone']);
 
     // Commands
     Route::post('zones/{zone}/commands', [ZoneCommandController::class, 'store']);
     Route::post('nodes/{node}/commands', [NodeCommandController::class, 'store']);
+    Route::get('nodes/{node}/config', [NodeController::class, 'getConfig']);
+    Route::post('nodes/{node}/config/publish', [NodeController::class, 'publishConfig']);
+    Route::post('nodes/{node}/swap', [NodeController::class, 'swap']);
     Route::get('commands/{cmdId}/status', [\App\Http\Controllers\CommandStatusController::class, 'show']);
 
     // Alerts
@@ -106,6 +113,9 @@ Route::prefix('python')->group(function () {
     Route::post('ingest/telemetry', [PythonIngestController::class, 'telemetry']);
     Route::post('commands/ack', [PythonIngestController::class, 'commandAck']);
 });
+
+// Node registration (token-based or public)
+Route::post('nodes/register', [NodeController::class, 'register']);
 
 // Alertmanager webhook (публичный, но можно добавить токен)
 Route::post('alerts/webhook', [\App\Http\Controllers\Api\AlertWebhookController::class, 'webhook']);

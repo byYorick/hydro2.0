@@ -186,6 +186,67 @@
 - **Аутентификация:** Требуется `auth:sanctum`, роль `admin`
 - Удаление узла.
 
+### 3.9.4. GET /api/nodes/{id}/config
+
+- **Аутентификация:** Требуется `auth:sanctum`
+- Получение конфигурации узла (NodeConfig) для отправки на ESP32.
+
+Ответ:
+```json
+{
+ "status": "ok",
+ "data": {
+   "node_uid": "nd-001",
+   "zone_id": 1,
+   "channels": [...],
+   "settings": {...}
+ }
+}
+```
+
+### 3.9.5. POST /api/nodes/{id}/config/publish
+
+- **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
+- Публикация конфигурации узла через MQTT для отправки на ESP32.
+
+Ответ:
+```json
+{
+ "status": "ok",
+ "data": {
+   "published_at": "2025-11-17T10:00:00Z",
+   "topic": "hydro/nodes/nd-001/config"
+ }
+}
+```
+
+### 3.9.6. POST /api/nodes/{id}/swap
+
+- **Аутентификация:** Требуется `auth:sanctum`, роль `admin`
+- Замена узла новым узлом с миграцией данных.
+
+Тело запроса:
+```json
+{
+ "new_hardware_id": "ESP32-ABC123",
+ "migrate_telemetry": true,
+ "migrate_channels": true
+}
+```
+
+Ответ:
+```json
+{
+ "status": "ok",
+ "data": {
+   "old_node_id": 1,
+   "new_node_id": 2,
+   "migrated_telemetry_count": 1000,
+   "migrated_channels_count": 4
+ }
+}
+```
+
 ---
 
 ## 4. Recipes API
@@ -260,6 +321,55 @@
 - **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
 - Возобновление работы зоны после паузы.
 
+### 4.11. GET /api/zones/{id}/cycles
+
+- **Аутентификация:** Требуется `auth:sanctum`
+- Получение информации о циклах зоны (PH_CONTROL, EC_CONTROL, IRRIGATION, LIGHTING, CLIMATE).
+
+Ответ:
+```json
+{
+ "status": "ok",
+ "data": {
+   "PH_CONTROL": {
+     "type": "PH_CONTROL",
+     "strategy": "periodic",
+     "interval": 300,
+     "last_run": "2025-11-17T10:00:00Z",
+     "next_run": "2025-11-17T10:05:00Z"
+   },
+   "EC_CONTROL": {
+     "type": "EC_CONTROL",
+     "strategy": "periodic",
+     "interval": 300,
+     "last_run": null,
+     "next_run": null
+   },
+   "IRRIGATION": {
+     "type": "IRRIGATION",
+     "strategy": "periodic",
+     "interval": 3600,
+     "last_run": "2025-11-17T09:00:00Z",
+     "next_run": "2025-11-17T10:00:00Z"
+   },
+   "LIGHTING": {
+     "type": "LIGHTING",
+     "strategy": "periodic",
+     "interval": 43200,
+     "last_run": null,
+     "next_run": null
+   },
+   "CLIMATE": {
+     "type": "CLIMATE",
+     "strategy": "periodic",
+     "interval": 300,
+     "last_run": "2025-11-17T09:55:00Z",
+     "next_run": "2025-11-17T10:00:00Z"
+   }
+ }
+}
+```
+
 ---
 
 ## 5. Telemetry & History API
@@ -295,10 +405,14 @@
 - **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
 - Отправка команд на зону (через Python-сервис).
 - Примеры команд:
- - `FORCE_IRRIGATION`;
- - `FORCE_DRAIN`;
- - `FORCE_LIGHT_ON/OFF`;
- - `ZONE_PAUSE/RESUME`.
+ - `FORCE_IRRIGATION` - принудительный полив (требует `params.duration_sec`);
+ - `FORCE_DRAIN` - принудительный дренаж;
+ - `FORCE_PH_CONTROL` - принудительный контроль pH;
+ - `FORCE_EC_CONTROL` - принудительный контроль EC;
+ - `FORCE_LIGHTING` - принудительное управление освещением;
+ - `FORCE_CLIMATE` - принудительное управление климатом;
+ - `FORCE_LIGHT_ON/OFF` - включение/выключение света (устаревшая, используйте `FORCE_LIGHTING`);
+ - `ZONE_PAUSE/RESUME` - приостановка/возобновление зоны (лучше использовать `/api/zones/{id}/pause` и `/api/zones/{id}/resume`).
 
 Тело запроса:
 

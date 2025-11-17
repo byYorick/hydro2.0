@@ -231,3 +231,57 @@ Backend:
 3. При добавлении новых типов нод нужно описать:
  - их роли в `DeviceNode`,
  - особенности привязки к зонам.
+
+---
+
+# 6. Статус реализации
+
+**Дата:** 2025-11-17
+
+## ✅ Реализовано
+
+### 6.1. Состояния жизненного цикла
+- ✅ Поле `lifecycle_state` в таблице `nodes` (enum, default: 'UNPROVISIONED')
+- ✅ Enum `NodeLifecycleState` в Laravel со всеми состояниями
+- ✅ Сервис `NodeLifecycleService` для управления переходами с валидацией
+- ✅ Методы в модели `DeviceNode` для работы с состояниями
+
+**Файлы:**
+- `backend/laravel/database/migrations/2025_11_17_174432_add_lifecycle_to_nodes_table.php`
+- `backend/laravel/app/Enums/NodeLifecycleState.php`
+- `backend/laravel/app/Services/NodeLifecycleService.php`
+- `backend/laravel/app/Models/DeviceNode.php`
+
+### 6.2. Идентификаторы узла
+- ✅ Поле `hardware_id` в таблице `nodes` (string, nullable, unique)
+- ✅ Поиск узла по `hardware_id` при регистрации
+- ✅ Генерация `uid` на основе `hardware_id` и типа узла
+
+**Файлы:**
+- `backend/laravel/app/Services/NodeRegistryService.php` (метод `registerNodeFromHello`)
+
+### 6.3. Регистрация узла (node_hello)
+- ✅ Обработчик `handle_node_hello` в `history-logger`
+- ✅ Подписка на топики `hydro/node_hello` и `hydro/+/+/+/node_hello`
+- ✅ Интеграция с Laravel API `/api/nodes/register`
+- ✅ Поддержка `greenhouse_token` для привязки к теплице
+
+**Файлы:**
+- `backend/services/history-logger/main.py`
+- `backend/laravel/app/Services/NodeRegistryService.php`
+- `backend/laravel/app/Http/Controllers/NodeController.php`
+
+### 6.4. Замена узла (node swap)
+- ✅ Сервис `NodeSwapService` для замены узлов
+- ✅ API endpoint `POST /api/nodes/{node}/swap`
+- ✅ Поддержка миграции истории телеметрии (опционально)
+- ✅ Перепривязка каналов к новому узлу (опционально)
+
+**Файлы:**
+- `backend/laravel/app/Services/NodeSwapService.php`
+- `backend/laravel/app/Http/Controllers/NodeController.php`
+- `backend/laravel/routes/api.php`
+
+---
+
+**Подробности:** См. `01_SYSTEM_IMPROVEMENTS_COMPLETED.md` для полного описания выполненных доработок.

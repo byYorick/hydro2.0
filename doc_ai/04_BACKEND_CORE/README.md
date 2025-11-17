@@ -1,0 +1,110 @@
+# 04_BACKEND_CORE — Backend (Laravel)
+
+Этот раздел содержит документацию по backend-архитектуре, API, Python-сервисам и интеграциям.
+
+---
+
+## 📋 Документы раздела
+
+### Основные документы
+
+#### [BACKEND_ARCH_FULL.md](BACKEND_ARCH_FULL.md)
+**Полная архитектура backend**
+- Назначение backend
+- Архитектурные слои
+- Основные модули
+- Взаимодействие с Python-сервисом
+- Интеграция с фронтендом
+
+#### [PYTHON_SERVICES_ARCH.md](PYTHON_SERVICES_ARCH.md)
+**Архитектура Python-сервисов**
+- Общая архитектура
+- Общая библиотека (`common/`)
+- Сервисы: mqtt-bridge, history-logger, automation-engine, scheduler
+- Взаимодействие между сервисами
+
+#### [API_SPEC_FRONTEND_BACKEND_FULL.md](API_SPEC_FRONTEND_BACKEND_FULL.md)
+**API спецификация Frontend ↔ Backend**
+- REST API эндпоинты
+- WebSocket события
+- Форматы запросов/ответов
+- Аутентификация
+
+#### [REST_API_REFERENCE.md](REST_API_REFERENCE.md)
+**Справочник REST API**
+- Полный список эндпоинтов
+- Параметры запросов
+- Примеры ответов
+
+#### [TECH_STACK_LARAVEL_INERTIA_VUE3_PG.md](TECH_STACK_LARAVEL_INERTIA_VUE3_PG.md)
+**Технологический стек**
+- Laravel
+- Inertia.js
+- Vue 3
+- PostgreSQL
+
+### Специализированные документы
+
+#### [REALTIME_UPDATES_ARCH.md](REALTIME_UPDATES_ARCH.md)
+Архитектура real-time обновлений
+
+#### [FULL_STACK_DEPLOY_DOCKER.md](FULL_STACK_DEPLOY_DOCKER.md)
+Деплой полного стека через Docker
+
+### Рефакторинг и улучшения
+
+#### [REFACTORING_PLAN.md](REFACTORING_PLAN.md)
+План рефакторинга
+
+#### [REFACTORING_PHASE1_COMPLETED.md](REFACTORING_PHASE1_COMPLETED.md)
+Завершенные этапы рефакторинга (Phase 1-4)
+
+### Тестирование и баги
+
+#### [PHASE2_BUGS_AND_TESTS.md](PHASE2_BUGS_AND_TESTS.md)
+Баги и тесты Phase 2
+
+#### [PHASE2_BUGS_FIXED.md](PHASE2_BUGS_FIXED.md)
+Исправленные баги Phase 2
+
+#### [PHASE2_TESTS_COMPLETED.md](PHASE2_TESTS_COMPLETED.md)
+Завершенные тесты Phase 2
+
+#### [PHASE3_TESTS_COMPLETED.md](PHASE3_TESTS_COMPLETED.md)
+Завершенные тесты Phase 3
+
+#### [PHASE3_TESTS_FIXED.md](PHASE3_TESTS_FIXED.md)
+Исправления тестов Phase 3
+
+#### [PHASE3_FRONTEND_UI_COMPLETED.md](PHASE3_FRONTEND_UI_COMPLETED.md)
+Завершенный UI Phase 3
+
+---
+
+## 🔗 Связанные разделы
+
+- **[01_SYSTEM](../01_SYSTEM/)** — системная архитектура
+- **[03_TRANSPORT_MQTT](../03_TRANSPORT_MQTT/)** — MQTT протокол
+- **[05_DATA_AND_STORAGE](../05_DATA_AND_STORAGE/)** — модель данных
+- **[07_FRONTEND](../07_FRONTEND/)** — фронтенд интеграция
+
+---
+
+## 🎯 С чего начать
+
+1. **Архитектура backend?** → Изучите [BACKEND_ARCH_FULL.md](BACKEND_ARCH_FULL.md)
+2. **Python-сервисы?** → См. [PYTHON_SERVICES_ARCH.md](PYTHON_SERVICES_ARCH.md)
+3. **API разработка?** → Прочитайте [API_SPEC_FRONTEND_BACKEND_FULL.md](API_SPEC_FRONTEND_BACKEND_FULL.md)
+4. **REST API?** → См. [REST_API_REFERENCE.md](REST_API_REFERENCE.md)
+
+---
+
+## 📊 Статус документов
+
+- **SPEC_READY:** Все основные спецификации готовы
+- **MVP_DONE:** Backend и Python-сервисы реализованы (см. [IMPLEMENTATION_STATUS.md](../IMPLEMENTATION_STATUS.md))
+
+---
+
+**См. также:** [Главный индекс документации](../INDEX.md)
+

@@ -40,8 +40,8 @@ src/
  │ ├─ wifi_manager.cpp
  │ └─ wifi_manager.h
  ├─ mqtt/
- │ ├─ mqtt_client.cpp
- │ ├─ mqtt_client.h
+ │ ├─ mqtt_manager.cpp
+ │ ├─ mqtt_manager.h
  │ ├─ mqtt_topics.cpp
  │ └─ mqtt_topics.h
  ├─ config/

@@ -34,8 +34,8 @@ static SemaphoreHandle_t s_mutex = NULL;
 // Константы
 #define I2C_BUS_DEFAULT_TIMEOUT_MS 1000
 #define I2C_BUS_MAX_RETRY_COUNT 3
-#define I2C_BUS_DEFAULT_SDA_PIN 21
-#define I2C_BUS_DEFAULT_SCL_PIN 22
+#define I2C_BUS_DEFAULT_SDA_PIN 8
+#define I2C_BUS_DEFAULT_SCL_PIN 9
 #define I2C_BUS_DEFAULT_CLOCK_SPEED 100000
 
 /**
@@ -69,10 +69,16 @@ static esp_err_t i2c_bus_operation_with_retry(esp_err_t (*operation)(void), cons
 }
 
 esp_err_t i2c_bus_init(const i2c_bus_config_t *config) {
+    ESP_LOGI(TAG, "=== I²C Bus Init Start ===");
+    
     if (config == NULL) {
         ESP_LOGE(TAG, "Invalid config: NULL");
         return ESP_ERR_INVALID_ARG;
     }
+    
+    ESP_LOGI(TAG, "I²C config: SDA=%d, SCL=%d, speed=%d Hz, pullup=%s", 
+             config->sda_pin, config->scl_pin, config->clock_speed,
+             config->pullup_enable ? "enabled" : "disabled");
     
     if (s_initialized) {
         ESP_LOGW(TAG, "I²C bus already initialized");
@@ -81,17 +87,20 @@ esp_err_t i2c_bus_init(const i2c_bus_config_t *config) {
     
     // Создание mutex для thread-safe доступа
     if (s_mutex == NULL) {
+        ESP_LOGI(TAG, "Creating I²C mutex...");
         s_mutex = xSemaphoreCreateMutex();
         if (s_mutex == NULL) {
             ESP_LOGE(TAG, "Failed to create mutex");
             return ESP_ERR_NO_MEM;
         }
+        ESP_LOGI(TAG, "I²C mutex created");
     }
     
     // Сохранение конфигурации
     memcpy(&s_config, config, sizeof(i2c_bus_config_t));
     
     // Настройка I²C master bus
+    ESP_LOGI(TAG, "Configuring I²C master bus...");
     i2c_master_bus_config_t bus_cfg = {
         .i2c_port = I2C_NUM_0,
         .sda_io_num = config->sda_pin,
@@ -103,17 +112,21 @@ esp_err_t i2c_bus_init(const i2c_bus_config_t *config) {
         }
     };
     
+    ESP_LOGI(TAG, "Creating I²C master bus (port=%d, SDA=%d, SCL=%d)...", 
+             bus_cfg.i2c_port, bus_cfg.sda_io_num, bus_cfg.scl_io_num);
     esp_err_t err = i2c_new_master_bus(&bus_cfg, &s_i2c_bus_handle);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to create I²C master bus: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "Failed to create I²C master bus: %s (error code: %d)", 
+                 esp_err_to_name(err), err);
         vSemaphoreDelete(s_mutex);
         s_mutex = NULL;
         return err;
     }
     
     s_initialized = true;
-    ESP_LOGI(TAG, "I²C bus initialized: SDA=%d, SCL=%d, speed=%lu Hz", 
+    ESP_LOGI(TAG, "I²C bus initialized successfully: SDA=%d, SCL=%d, speed=%lu Hz", 
             config->sda_pin, config->scl_pin, config->clock_speed);
+    ESP_LOGI(TAG, "=== I²C Bus Init Complete ===");
     
     return ESP_OK;
 }
@@ -214,6 +227,9 @@ esp_err_t i2c_bus_write(uint8_t device_addr, const uint8_t *reg_addr, size_t reg
         ESP_LOGE(TAG, "Invalid arguments: data is NULL or data_len is 0");
         return ESP_ERR_INVALID_ARG;
     }
+    
+    ESP_LOGD(TAG, "I²C write: addr=0x%02X, reg_len=%zu, data_len=%zu", 
+             device_addr, reg_addr_len, data_len);
     
     // Захват mutex
     if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {

@@ -3,11 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Models\Command;
-use App\Models\TelemetryLast;
-use App\Models\TelemetrySample;
+use App\Models\Zone;
+use App\Models\DeviceNode;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Response;
+use Illuminate\Support\Facades\Log;
 
 class PythonIngestController extends Controller
 {
@@ -29,27 +31,50 @@ class PythonIngestController extends Controller
             'ts' => ['nullable','date'],
             'channel' => ['nullable','string','max:64'],
         ]);
-        TelemetrySample::create([
-            'zone_id' => $data['zone_id'],
-            'node_id' => $data['node_id'] ?? null,
+        
+        // Получаем node_uid из БД
+        $nodeUid = null;
+        if ($data['node_id']) {
+            $node = DeviceNode::find($data['node_id']);
+            if ($node) {
+                $nodeUid = $node->uid;
+            }
+        }
+        
+        // Формируем запрос для history-logger
+        // Передаём zone_id напрямую (в таблице zones нет uid)
+        $sample = [
+            'node_uid' => $nodeUid ?? '',
+            'zone_id' => $data['zone_id'],  // Передаём zone_id напрямую
             'metric_type' => $data['metric_type'],
             'value' => $data['value'],
-            'ts' => $data['ts'] ?? now(),
+            'ts' => $data['ts'] ? $data['ts']->toIso8601String() : now()->toIso8601String(),
             'channel' => $data['channel'] ?? null,
-        ]);
-        TelemetryLast::updateOrCreate(
-            [
-                'zone_id' => $data['zone_id'],
-                'node_id' => $data['node_id'] ?? null,
-                'metric_type' => $data['metric_type'],
-                'channel' => $data['channel'] ?? null,
-            ],
-            [
-                'value' => $data['value'],
-                'ts' => $data['ts'] ?? now(),
-            ]
-        );
-        return Response::json(['status' => 'ok']);
+        ];
+        
+        // Проксируем в history-logger
+        try {
+            $historyLoggerUrl = Config::get('services.history_logger.url', 'http://history-logger:9300');
+            $response = Http::timeout(5)->post(
+                $historyLoggerUrl . '/ingest/telemetry',
+                ['samples' => [$sample]]
+            );
+            
+            if (!$response->successful()) {
+                Log::warning('History logger request failed', [
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]);
+                return Response::json(['status' => 'error', 'message' => 'Failed to ingest telemetry'], 500);
+            }
+            
+            return Response::json(['status' => 'ok']);
+        } catch (\Exception $e) {
+            Log::error('History logger request exception', [
+                'message' => $e->getMessage(),
+            ]);
+            return Response::json(['status' => 'error', 'message' => 'Failed to ingest telemetry'], 500);
+        }
     }
 
     public function commandAck(Request $request)
@@ -60,12 +85,11 @@ class PythonIngestController extends Controller
             'status' => ['required','string','in:accepted,completed,failed'],
             'details' => ['nullable','array'],
         ]);
-        $cmd = Command::query()->where('cmd_id', $data['cmd_id'])->first();
-        if ($cmd) {
-            $cmd->status = $data['status'];
-            $cmd->details = $data['details'] ?? null;
-            $cmd->save();
-        }
+        
+        // Laravel больше не обновляет статусы команд напрямую
+        // Это делает только Python-часть (history-logger через MQTT command_response)
+        // Просто возвращаем подтверждение получения
+        
         return Response::json(['status' => 'ok']);
     }
 }

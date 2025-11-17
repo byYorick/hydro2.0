@@ -17,4 +17,19 @@ class Publisher:
         topic = f"hydro/{gh_uid}/{zone_segment}/{node_uid}/{channel}/command"
         self._mqtt.publish_json(topic, payload, qos=1, retain=False)
 
+    def publish_config(self, gh_uid: str, zone_id: int, node_uid: str, config: Dict[str, Any]):
+        """
+        Публиковать NodeConfig в MQTT.
+        
+        Топик: hydro/{gh_uid}/{zone_segment}/{node_uid}/config
+        QoS: 1
+        Retain: false
+        """
+        s = get_settings()
+        zone_segment = f"zn-{zone_id}"  # id by default
+        if s.mqtt_zone_format == "uid" and config.get("zone_uid"):
+            zone_segment = config["zone_uid"]
+        topic = f"hydro/{gh_uid}/{zone_segment}/{node_uid}/config"
+        self._mqtt.publish_json(topic, config, qos=1, retain=False)
+
 

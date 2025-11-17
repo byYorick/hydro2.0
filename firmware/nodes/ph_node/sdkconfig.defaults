@@ -25,8 +25,16 @@ CONFIG_PH_NODE_PUMP_BASE_GPIO=13
 
 # I2C Configuration
 # I2C pins for sensors and OLED (can be overridden in code via NodeConfig)
-# Default values: SDA = GPIO 21, SCL = GPIO 22
+# Default values: SDA = GPIO 8, SCL = GPIO 9
 # These can be configured via hardware.i2c in NodeConfig JSON
-CONFIG_PH_NODE_I2C_SDA_GPIO=21
-CONFIG_PH_NODE_I2C_SCL_GPIO=22
+CONFIG_PH_NODE_I2C_SDA_GPIO=8
+CONFIG_PH_NODE_I2C_SCL_GPIO=9
+
+# Flash size
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+
+# Partition Table
+CONFIG_PARTITION_TABLE_SINGLE_APP=n
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 

@@ -183,11 +183,16 @@ hydro/{gh}/{zone}/{node}/config
 
 # 6. STATUS FLOW (узлы → backend)
 
-### Online
+## 6.1. Online
+
+**ОБЯЗАТЕЛЬНО:** При успешном подключении к MQTT брокеру (событие `MQTT_EVENT_CONNECTED`) узел **ОБЯЗАН** немедленно опубликовать status топик.
+
+**Топик:**
 ```
 hydro/{gh}/{zone}/{node}/status
 ```
 
+**Payload:**
 ```json
 {
  "status": "ONLINE",
@@ -195,12 +200,39 @@ hydro/{gh}/{zone}/{node}/status
 }
 ```
 
-### Offline (LWT)
+**Последовательность при подключении:**
+1. Установка LWT при инициализации MQTT клиента
+2. Подключение к брокеру
+3. **Публикация status с "ONLINE"** ← ОБЯЗАТЕЛЬНО (выполняется сразу после `MQTT_EVENT_CONNECTED`)
+4. Подписка на config и command топики
+5. Вызов connection callback (если зарегистрирован)
+
+**Требования:**
+- QoS = 1
+- Retain = true
+- Публикация выполняется **до** подписки на config/command топики
+- Backend обновляет `nodes.status = 'ONLINE'` и `nodes.last_seen_at = NOW()`
+
+**Статус реализации:** ✅ **РЕАЛИЗОВАНО** (mqtt_manager.c, строки 370-374)
+
+## 6.2. Offline (LWT)
+
+**Топик:**
 ```
-payload: "offline"
+hydro/{gh}/{zone}/{node}/lwt
 ```
 
-Backend автоматически фиксирует:
+**Payload:**
+```
+"offline"
+```
+
+**Требования:**
+- LWT настраивается при инициализации MQTT клиента
+- Брокер автоматически публикует LWT при неожиданном отключении узла
+- QoS = 1, Retain = true
+
+**Backend автоматически фиксирует:**
 - узел OFFLINE,
 - Alert,
 - возможный ALARM зоны.

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from datetime import datetime, time
 from typing import Optional, Dict, Any, List
 from common.env import get_settings
@@ -14,6 +15,17 @@ from common.water_flow import (
     ensure_no_flow_alert,
     check_dry_run_protection,
 )
+from common.water_cycle import (
+    check_water_change_required,
+    execute_water_change,
+    get_zone_water_state,
+    WATER_STATE_NORMAL_RECIRC,
+    WATER_STATE_WATER_CHANGE_DRAIN,
+    WATER_STATE_WATER_CHANGE_FILL,
+    WATER_STATE_WATER_CHANGE_STABILIZE,
+)
+
+logger = logging.getLogger(__name__)
 
 SCHEDULE_EXECUTIONS = Counter("schedule_executions_total", "Scheduled tasks executed", ["zone_id", "task_type"])
 ACTIVE_SCHEDULES = Gauge("active_schedules", "Number of active schedules")
@@ -301,6 +313,47 @@ async def execute_lighting_schedule(
         await create_scheduler_log(task_name, "failed", {"zone_id": zone_id, "error": str(e)})
 
 
+async def check_water_changes(mqtt: MqttClient):
+    """Проверить и выполнить смены воды для всех активных зон."""
+    # Получаем все активные зоны
+    rows = await fetch(
+        """
+        SELECT id
+        FROM zones
+        WHERE status IN ('online', 'warning')
+        """
+    )
+    
+    for row in rows:
+        zone_id = row["id"]
+        
+        try:
+            # Проверяем, требуется ли смена воды
+            required, reason = await check_water_change_required(zone_id)
+            
+            if required:
+                gh_uid = await get_gh_uid_for_zone(zone_id)
+                if not gh_uid:
+                    continue
+                
+                # Получаем текущее состояние
+                current_state = await get_zone_water_state(zone_id)
+                
+                if current_state == WATER_STATE_NORMAL_RECIRC:
+                    # Начинаем смену воды
+                    logger.info(f"Zone {zone_id}: Starting water change - {reason}")
+                    await execute_water_change(zone_id, mqtt, gh_uid)
+                elif current_state in [
+                    WATER_STATE_WATER_CHANGE_DRAIN,
+                    WATER_STATE_WATER_CHANGE_FILL,
+                    WATER_STATE_WATER_CHANGE_STABILIZE
+                ]:
+                    # Продолжаем смену воды
+                    await execute_water_change(zone_id, mqtt, gh_uid)
+        except Exception as e:
+            logger.error(f"Zone {zone_id}: Error checking water change: {e}")
+
+
 async def check_and_execute_schedules(mqtt: MqttClient):
     """Check schedules and execute tasks if time matches."""
     schedules = await get_active_schedules()
@@ -330,6 +383,9 @@ async def check_and_execute_schedules(mqtt: MqttClient):
             # Lighting is checked every cycle, execute if needed
             await execute_lighting_schedule(zone_id, mqtt, gh_uid, schedule)
             executed.add(key)
+    
+    # Проверяем смены воды
+    await check_water_changes(mqtt)
 
 
 async def main():

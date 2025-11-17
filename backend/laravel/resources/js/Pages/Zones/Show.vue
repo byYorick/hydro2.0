@@ -37,12 +37,21 @@
           </div>
         </div>
         <div class="flex items-center gap-2">
-          <Badge :variant="variant">{{ zone.status }}</Badge>
+          <Badge :variant="variant">{{ translateStatus(zone.status) }}</Badge>
           <template v-if="page.props.auth?.user?.role === 'admin' || page.props.auth?.user?.role === 'operator'">
-            <Button size="sm" variant="secondary" @click="onToggle">{{ zone.status === 'PAUSED' ? 'Resume' : 'Pause' }}</Button>
-            <Button size="sm" variant="outline" @click="onIrrigate">Irrigate Now</Button>
-            <Button size="sm" @click="onNextPhase">Next Phase</Button>
+            <Button size="sm" variant="secondary" @click="onToggle" :disabled="loading.toggle">
+              {{ zone.status === 'PAUSED' ? 'Возобновить' : 'Приостановить' }}
+            </Button>
+            <Button size="sm" variant="outline" @click="showIrrigationModal = true" :disabled="loading.irrigate">
+              Полить сейчас
+            </Button>
+            <Button size="sm" @click="onNextPhase" :disabled="loading.nextPhase">
+              Следующая фаза
+            </Button>
           </template>
+          <Button size="sm" variant="outline" @click="showSimulationModal = true">
+            Симуляция
+          </Button>
         </div>
       </div>
 
@@ -67,11 +76,11 @@
           />
         </div>
         <Card>
-          <div class="text-sm font-semibold mb-2">Devices</div>
+          <div class="text-sm font-semibold mb-2">Устройства</div>
           <ul v-if="devices.length > 0" class="text-sm text-neutral-300 space-y-1">
             <li v-for="d in devices" :key="d.id">
               <Link :href="`/devices/${d.id}`" class="text-sky-400 hover:underline">{{ d.uid || d.name }}</Link>
-              — {{ d.status }}
+              — {{ translateStatus(d.status) }}
             </li>
           </ul>
           <div v-else class="text-sm text-neutral-400">Нет устройств</div>
@@ -80,56 +89,22 @@
 
       <!-- Cycles (расписание подсистем) -->
       <Card>
-        <div class="text-sm font-semibold mb-3">Cycles</div>
+        <div class="text-sm font-semibold mb-3">Циклы</div>
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
-          <div class="text-xs text-neutral-400 p-2 rounded border border-neutral-800">
-            <div class="font-semibold text-sm mb-1">PH_CONTROL</div>
-            <div class="text-xs">Strategy: periodic</div>
-            <div class="text-xs mt-1">Interval: 5 min</div>
-            <div class="text-xs mt-1">Last: {{ formatTime(null) }}</div>
-            <div class="text-xs mt-1">Next: {{ formatTime(null) }}</div>
-            <Button size="sm" variant="secondary" class="mt-2 w-full text-xs" @click="onRunCycle('PH_CONTROL')">
-              Запустить сейчас
-            </Button>
-          </div>
-          <div class="text-xs text-neutral-400 p-2 rounded border border-neutral-800">
-            <div class="font-semibold text-sm mb-1">EC_CONTROL</div>
-            <div class="text-xs">Strategy: periodic</div>
-            <div class="text-xs mt-1">Interval: 5 min</div>
-            <div class="text-xs mt-1">Last: {{ formatTime(null) }}</div>
-            <div class="text-xs mt-1">Next: {{ formatTime(null) }}</div>
-            <Button size="sm" variant="secondary" class="mt-2 w-full text-xs" @click="onRunCycle('EC_CONTROL')">
-              Запустить сейчас
-            </Button>
-          </div>
-          <div class="text-xs text-neutral-400 p-2 rounded border border-neutral-800">
-            <div class="font-semibold text-sm mb-1">IRRIGATION</div>
-            <div class="text-xs">Strategy: periodic</div>
-            <div class="text-xs mt-1">Interval: {{ targets.irrigation_interval_sec ? `${Math.floor(targets.irrigation_interval_sec / 60)} min` : '-' }}</div>
-            <div class="text-xs mt-1">Last: {{ formatTime(null) }}</div>
-            <div class="text-xs mt-1">Next: {{ formatTime(null) }}</div>
-            <Button size="sm" variant="secondary" class="mt-2 w-full text-xs" @click="onRunCycle('IRRIGATION')">
-              Запустить сейчас
-            </Button>
-          </div>
-          <div class="text-xs text-neutral-400 p-2 rounded border border-neutral-800">
-            <div class="font-semibold text-sm mb-1">LIGHTING</div>
-            <div class="text-xs">Strategy: periodic</div>
-            <div class="text-xs mt-1">Interval: {{ targets.light_hours ? `${targets.light_hours} hours` : '-' }}</div>
-            <div class="text-xs mt-1">Last: {{ formatTime(null) }}</div>
-            <div class="text-xs mt-1">Next: {{ formatTime(null) }}</div>
-            <Button size="sm" variant="secondary" class="mt-2 w-full text-xs" @click="onRunCycle('LIGHTING')">
-              Запустить сейчас
-            </Button>
-          </div>
-          <div class="text-xs text-neutral-400 p-2 rounded border border-neutral-800">
-            <div class="font-semibold text-sm mb-1">CLIMATE</div>
-            <div class="text-xs">Strategy: periodic</div>
-            <div class="text-xs mt-1">Interval: 5 min</div>
-            <div class="text-xs mt-1">Last: {{ formatTime(null) }}</div>
-            <div class="text-xs mt-1">Next: {{ formatTime(null) }}</div>
-            <Button size="sm" variant="secondary" class="mt-2 w-full text-xs" @click="onRunCycle('CLIMATE')">
-              Запустить сейчас
+          <div v-for="cycle in cyclesList" :key="cycle.type" class="text-xs text-neutral-400 p-2 rounded border border-neutral-800">
+            <div class="font-semibold text-sm mb-1">{{ translateCycleType(cycle.type) }}</div>
+            <div class="text-xs">Стратегия: {{ translateStrategy(cycle.strategy || 'periodic') }}</div>
+            <div class="text-xs mt-1">Интервал: {{ cycle.interval ? formatInterval(cycle.interval) : 'Не настроено' }}</div>
+            <div class="text-xs mt-1">Последний запуск: {{ formatTimeShort(cycle.last_run) }}</div>
+            <div class="text-xs mt-1">Следующий запуск: {{ formatTimeShort(cycle.next_run) }}</div>
+            <Button 
+              size="sm" 
+              variant="secondary" 
+              class="mt-2 w-full text-xs" 
+              @click="onRunCycle(cycle.type)"
+              :disabled="loading.cycles[cycle.type]"
+            >
+              {{ loading.cycles[cycle.type] ? 'Запуск...' : 'Запустить сейчас' }}
             </Button>
           </div>
         </div>
@@ -137,7 +112,7 @@
 
       <!-- Events (история событий) -->
       <Card>
-        <div class="text-sm font-semibold mb-2">Events</div>
+        <div class="text-sm font-semibold mb-2">События</div>
         <div v-if="events.length > 0" class="space-y-1 max-h-[400px] overflow-y-auto">
           <div
             v-for="e in events"
@@ -152,7 +127,7 @@
               "
               class="text-xs shrink-0"
             >
-              {{ e.kind }}
+              {{ translateEventKind(e.kind) }}
             </Badge>
             <div class="flex-1 min-w-0">
               <div class="text-xs text-neutral-400">
@@ -165,19 +140,55 @@
         <div v-else class="text-sm text-neutral-400">Нет событий</div>
       </Card>
     </div>
+    
+    <!-- Digital Twin Simulation Modal -->
+    <ZoneSimulationModal
+      :show="showSimulationModal"
+      :zone-id="zoneId"
+      :default-recipe-id="zone.recipeInstance?.recipe_id"
+      @close="showSimulationModal = false"
+    />
+    
+    <!-- Irrigation Modal -->
+    <Modal :open="showIrrigationModal" title="Полив зоны" @close="showIrrigationModal = false">
+      <div class="space-y-3">
+        <div>
+          <label class="text-sm text-neutral-300">Длительность полива (секунды)</label>
+          <input
+            v-model.number="irrigationDuration"
+            type="number"
+            min="1"
+            max="3600"
+            class="mt-1 w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
+            placeholder="10"
+          />
+        </div>
+      </div>
+      <template #footer>
+        <Button size="sm" variant="secondary" @click="showIrrigationModal = false">Отмена</Button>
+        <Button size="sm" @click="onIrrigate(irrigationDuration)" :disabled="loading.irrigate">
+          {{ loading.irrigate ? 'Запуск...' : 'Полить' }}
+        </Button>
+      </template>
+    </Modal>
   </AppLayout>
 </template>
 
 <script setup>
 import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
-import { Link, usePage } from '@inertiajs/vue3'
+import { Link, usePage, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
 import ZoneTargets from '@/Components/ZoneTargets.vue'
 import Toast from '@/Components/Toast.vue'
-import axios from 'axios'
+import ZoneSimulationModal from '@/Components/ZoneSimulationModal.vue'
+import Modal from '@/Components/Modal.vue'
+import { translateStatus, translateEventKind, translateCycleType, translateStrategy } from '@/utils/i18n'
+import { formatTimeShort, formatInterval } from '@/utils/formatTime'
+import { logger } from '@/utils/logger'
+import { useApi } from '@/composables/useApi'
 
 const ZoneTelemetryChart = defineAsyncComponent(() => import('@/Pages/Zones/ZoneTelemetryChart.vue'))
 
@@ -187,16 +198,33 @@ const page = usePage()
 const toasts = ref([])
 let toastIdCounter = 0
 
+// Simulation modal
+const showSimulationModal = ref(false)
+const showIrrigationModal = ref(false)
+const irrigationDuration = ref(10)
+
+// Loading states
+const loading = ref({
+  toggle: false,
+  irrigate: false,
+  nextPhase: false,
+  cycles: {
+    PH_CONTROL: false,
+    EC_CONTROL: false,
+    IRRIGATION: false,
+    LIGHTING: false,
+    CLIMATE: false,
+  },
+})
+
 function showToast(message, variant = 'info', duration = 3000) {
-  console.log('=== showToast ВЫЗВАНА ===', { message, variant, duration, timestamp: new Date().toISOString() })
   const id = ++toastIdCounter
   toasts.value.push({ id, message, variant, duration })
-  console.log(`[showToast] Уведомление добавлено, ID: ${id}`)
-  console.log(`[showToast] Всего уведомлений: ${toasts.value.length}`)
-  console.log(`[showToast] Массив toasts:`, JSON.stringify(toasts.value, null, 2))
-  console.log('=== showToast ЗАВЕРШЕНА ===')
   return id
 }
+
+// Инициализация API с Toast (после определения showToast)
+const { api } = useApi(showToast)
 
 function removeToast(id) {
   const index = toasts.value.findIndex(t => t.id === id)
@@ -215,6 +243,25 @@ const telemetry = computed(() => page.props.telemetry || { ph: null, ec: null, t
 const targets = computed(() => page.props.targets || {})
 const devices = computed(() => page.props.devices || [])
 const events = computed(() => page.props.events || [])
+const cycles = computed(() => page.props.cycles || {})
+
+// Список циклов для отображения
+const cyclesList = computed(() => {
+  const defaultCycles = [
+    { type: 'PH_CONTROL', strategy: 'periodic', interval: 300 },
+    { type: 'EC_CONTROL', strategy: 'periodic', interval: 300 },
+    { type: 'IRRIGATION', strategy: 'periodic', interval: targets.value.irrigation_interval_sec || null },
+    { type: 'LIGHTING', strategy: 'periodic', interval: targets.value.light_hours ? targets.value.light_hours * 3600 : null },
+    { type: 'CLIMATE', strategy: 'periodic', interval: 300 },
+  ]
+  
+  return defaultCycles.map(cycle => ({
+    ...cycle,
+    ...(cycles.value[cycle.type] || {}),
+    last_run: cycles.value[cycle.type]?.last_run || null,
+    next_run: cycles.value[cycle.type]?.next_run || null,
+  }))
+})
 
 // Графики: загрузка данных истории
 const chartTimeRange = ref('24H') // 1H, 24H, 7D, 30D, ALL
@@ -250,10 +297,7 @@ async function loadChartData(metric, timeRange) {
     if (from) params.from = from.toISOString()
     params.to = now.toISOString()
     
-    const res = await axios.get(`/api/zones/${zoneId.value}/telemetry/history`, {
-      params,
-      headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-    })
+    const res = await api.get(`/api/zones/${zoneId.value}/telemetry/history`, { params })
     
     const data = res.data?.data || []
     return data.map(item => ({
@@ -261,7 +305,7 @@ async function loadChartData(metric, timeRange) {
       value: item.value,
     }))
   } catch (err) {
-    console.error(`Failed to load ${metric} history:`, err)
+    logger.error(`Failed to load ${metric} history:`, err)
     return []
   }
 }
@@ -273,53 +317,24 @@ async function onChartTimeRangeChange(newRange) {
 }
 
 onMounted(async () => {
-  console.log('========================================')
-  console.log('[Show.vue] ===== КОМПОНЕНТ СМОНТИРОВАН =====')
-  console.log('[Show.vue] zoneId:', zoneId.value)
-  console.log('[Show.vue] zone:', zone.value)
-  console.log('[Show.vue] Функция onRunCycle доступна:', typeof onRunCycle)
-  console.log('[Show.vue] Функция showToast доступна:', typeof showToast)
-  console.log('[Show.vue] Массив toasts:', toasts.value)
-  console.log('[Show.vue] window.console:', typeof window.console)
-  console.log('========================================')
+  logger.log('[Show.vue] Компонент смонтирован', { zoneId: zoneId.value })
   
   // Загрузить данные для графиков
   chartDataPh.value = await loadChartData('PH', chartTimeRange.value)
   chartDataEc.value = await loadChartData('EC', chartTimeRange.value)
 })
 
-function formatTime(timestamp) {
-  if (!timestamp) return '-'
-  return new Date(timestamp).toLocaleString('ru-RU', { 
-    hour: '2-digit', 
-    minute: '2-digit',
-    day: '2-digit',
-    month: '2-digit',
-  })
-}
-
 async function onRunCycle(cycleType) {
-  // Принудительный лог в начале функции
-  console.log('=== onRunCycle ВЫЗВАНА ===', { cycleType, zoneId: zoneId.value, timestamp: new Date().toISOString() })
-  
   if (!zoneId.value) {
-    console.warn('[onRunCycle] zoneId is missing')
+    logger.warn('[onRunCycle] zoneId is missing')
     showToast('Ошибка: зона не найдена', 'error', 3000)
     return
   }
   
-  // Show loading state (optional - can add button disabled state)
-  const cycleNames = {
-    'PH_CONTROL': 'Контроль pH',
-    'EC_CONTROL': 'Контроль EC',
-    'IRRIGATION': 'Полив',
-    'LIGHTING': 'Освещение',
-    'CLIMATE': 'Климат',
-  }
-  const cycleName = cycleNames[cycleType] || cycleType
+  loading.value.cycles[cycleType] = true
+  const cycleName = translateCycleType(cycleType)
   
-  console.log(`[onRunCycle] Отправка команды ${cycleType} для зоны ${zoneId.value}`)
-  console.log(`[onRunCycle] Имя цикла: ${cycleName}`)
+  logger.log(`[onRunCycle] Отправка команды ${cycleType} для зоны ${zoneId.value}`)
   
   try {
     const url = `/api/zones/${zoneId.value}/commands`
@@ -327,37 +342,23 @@ async function onRunCycle(cycleType) {
       type: `FORCE_${cycleType}`,
       params: {},
     }
-    console.log(`[onRunCycle] POST запрос:`, { url, payload })
     
-    const response = await axios.post(url, payload, {
-      headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-    })
+    const response = await api.post(url, payload)
     
-    console.log(`[onRunCycle] Ответ сервера получен:`, response.data)
-    console.log(`[onRunCycle] Статус ответа:`, response.data?.status)
-    
-    // Show success message
     if (response.data?.status === 'ok') {
-      console.log(`✓ [onRunCycle] Команда "${cycleName}" отправлена успешно`, response.data)
+      logger.log(`✓ [onRunCycle] Команда "${cycleName}" отправлена успешно`)
       showToast(`Команда "${cycleName}" отправлена успешно`, 'success', 3000)
     } else {
-      console.warn(`[onRunCycle] Неожиданный ответ:`, response.data)
-      showToast(`Неизвестный ответ сервера: ${JSON.stringify(response.data)}`, 'error', 5000)
+      logger.warn(`[onRunCycle] Неожиданный ответ:`, response.data)
+      showToast('Неожиданный ответ сервера', 'error', 5000)
     }
   } catch (err) {
-    console.error(`✗ [onRunCycle] Ошибка при отправке команды ${cycleType}:`, err)
-    console.error(`[onRunCycle] Детали ошибки:`, {
-      message: err.message,
-      response: err.response?.data,
-      status: err.response?.status,
-      config: err.config,
-    })
+    logger.error(`✗ [onRunCycle] Ошибка при отправке команды ${cycleType}:`, err)
     const errorMsg = err.response?.data?.message || err.message || 'Неизвестная ошибка'
-    console.error(`[onRunCycle] Показываю toast с ошибкой:`, errorMsg)
     showToast(`Ошибка: ${errorMsg}`, 'error', 5000)
+  } finally {
+    loading.value.cycles[cycleType] = false
   }
-  
-  console.log('=== onRunCycle ЗАВЕРШЕНА ===')
 }
 
 const variant = computed(() => {
@@ -372,42 +373,62 @@ const variant = computed(() => {
 
 async function onToggle() {
   if (!zoneId.value) return
+  
+  loading.value.toggle = true
   const url = `/api/zones/${zoneId.value}/${zone.value.status === 'PAUSED' ? 'resume' : 'pause'}`
+  const action = zone.value.status === 'PAUSED' ? 'возобновлена' : 'приостановлена'
+  
   try {
-    await axios.post(url, {}, {
-      headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-    })
-    window.location.reload()
+    await api.post(url, {})
+    showToast(`Зона успешно ${action}`, 'success', 3000)
+    router.reload({ only: ['zone'] })
   } catch (err) {
-    console.error('Failed to toggle zone:', err)
+    logger.error('Failed to toggle zone:', err)
+    const errorMsg = err.response?.data?.message || err.message || 'Неизвестная ошибка'
+    showToast(`Ошибка: ${errorMsg}`, 'error', 5000)
+  } finally {
+    loading.value.toggle = false
   }
 }
 
-async function onIrrigate() {
+async function onIrrigate(durationSec = 10) {
   if (!zoneId.value) return
+  
+  loading.value.irrigate = true
+  
   try {
-    await axios.post(`/api/zones/${zoneId.value}/commands`, {
+    await api.post(`/api/zones/${zoneId.value}/commands`, {
       type: 'FORCE_IRRIGATION',
-      params: { duration_sec: 10 },
-    }, {
-      headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+      params: { duration_sec: durationSec },
     })
+    showToast(`Полив запущен на ${durationSec} секунд`, 'success', 3000)
+    showIrrigationModal.value = false
   } catch (err) {
-    console.error('Failed to irrigate:', err)
+    logger.error('Failed to irrigate:', err)
+    const errorMsg = err.response?.data?.message || err.message || 'Неизвестная ошибка'
+    showToast(`Ошибка: ${errorMsg}`, 'error', 5000)
+  } finally {
+    loading.value.irrigate = false
   }
 }
 
 async function onNextPhase() {
   if (!zoneId.value) return
+  
+  loading.value.nextPhase = true
+  
   try {
-    await axios.post(`/api/zones/${zoneId.value}/change-phase`, {
+    await api.post(`/api/zones/${zoneId.value}/change-phase`, {
       phase_index: (zone.value.recipeInstance?.current_phase_index || 0) + 1,
-    }, {
-      headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
     })
-    window.location.reload()
+    showToast('Фаза успешно изменена', 'success', 3000)
+    router.reload({ only: ['zone'] })
   } catch (err) {
-    console.error('Failed to change phase:', err)
+    logger.error('Failed to change phase:', err)
+    const errorMsg = err.response?.data?.message || err.message || 'Неизвестная ошибка'
+    showToast(`Ошибка: ${errorMsg}`, 'error', 5000)
+  } finally {
+    loading.value.nextPhase = false
   }
 }
 </script>

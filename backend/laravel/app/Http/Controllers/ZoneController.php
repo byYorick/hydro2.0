@@ -211,6 +211,90 @@ class ZoneController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
     }
+
+    /**
+     * Получить информацию о циклах зоны
+     * GET /api/zones/{id}/cycles
+     */
+    public function cycles(Zone $zone)
+    {
+        $cycles = [];
+        $settings = $zone->settings ?? [];
+        $targets = [];
+        
+        // Получаем targets из текущей фазы рецепта
+        if ($zone->recipeInstance?->recipe) {
+            $currentPhaseIndex = $zone->recipeInstance->current_phase_index ?? 0;
+            $zone->load(['recipeInstance.recipe.phases' => function ($q) use ($currentPhaseIndex) {
+                $q->where('phase_index', $currentPhaseIndex);
+            }]);
+            $currentPhase = $zone->recipeInstance->recipe->phases->first();
+            if ($currentPhase && $currentPhase->targets) {
+                $targets = $currentPhase->targets;
+            }
+        }
+        
+        // Получаем последние команды для вычисления last_run
+        $lastCommands = \App\Models\Command::query()
+            ->where('zone_id', $zone->id)
+            ->whereIn('cmd', ['FORCE_PH_CONTROL', 'FORCE_EC_CONTROL', 'FORCE_IRRIGATION', 'FORCE_LIGHTING', 'FORCE_CLIMATE'])
+            ->whereNotNull('ack_at')
+            ->select(['cmd', 'ack_at'])
+            ->orderBy('ack_at', 'desc')
+            ->get()
+            ->groupBy('cmd')
+            ->map(function ($group) {
+                return $group->first()->ack_at?->toIso8601String();
+            });
+        
+        // Определяем интервалы из settings или targets
+        $cycleConfigs = [
+            'PH_CONTROL' => [
+                'strategy' => $settings['ph_control']['strategy'] ?? 'periodic',
+                'interval' => $settings['ph_control']['interval_sec'] ?? 300,
+            ],
+            'EC_CONTROL' => [
+                'strategy' => $settings['ec_control']['strategy'] ?? 'periodic',
+                'interval' => $settings['ec_control']['interval_sec'] ?? 300,
+            ],
+            'IRRIGATION' => [
+                'strategy' => $settings['irrigation']['strategy'] ?? 'periodic',
+                'interval' => $targets['irrigation_interval_sec'] ?? $settings['irrigation']['interval_sec'] ?? null,
+            ],
+            'LIGHTING' => [
+                'strategy' => $settings['lighting']['strategy'] ?? 'periodic',
+                'interval' => isset($targets['light_hours']) ? $targets['light_hours'] * 3600 : ($settings['lighting']['interval_sec'] ?? null),
+            ],
+            'CLIMATE' => [
+                'strategy' => $settings['climate']['strategy'] ?? 'periodic',
+                'interval' => $settings['climate']['interval_sec'] ?? 300,
+            ],
+        ];
+        
+        // Формируем ответ
+        foreach ($cycleConfigs as $type => $config) {
+            $lastRun = $lastCommands->get("FORCE_{$type}");
+            $interval = $config['interval'];
+            $nextRun = null;
+            
+            if ($lastRun && $interval) {
+                $nextRun = \Carbon\Carbon::parse($lastRun)->addSeconds($interval)->toIso8601String();
+            }
+            
+            $cycles[$type] = [
+                'type' => $type,
+                'strategy' => $config['strategy'],
+                'interval' => $interval,
+                'last_run' => $lastRun,
+                'next_run' => $nextRun,
+            ];
+        }
+        
+        return response()->json([
+            'status' => 'ok',
+            'data' => $cycles,
+        ]);
+    }
 }
 
 

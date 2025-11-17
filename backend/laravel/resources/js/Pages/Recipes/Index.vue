@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <h1 class="text-lg font-semibold mb-4">Recipes</h1>
+    <h1 class="text-lg font-semibold mb-4">Рецепты</h1>
     <div class="mb-3 flex flex-wrap items-center gap-2">
       <label class="text-sm text-neutral-300">Поиск:</label>
       <input v-model="query" placeholder="Название или культура..." class="h-9 w-64 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
@@ -24,7 +24,7 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref } from 'vue'
 import { Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
@@ -37,10 +37,5 @@ const filtered = computed(() => all.value.filter(r => {
   const q = query.value.toLowerCase()
   return !q || r.name?.toLowerCase().includes(q) || r.description?.toLowerCase().includes(q)
 }))
-
-onMounted(() => {
-  console.log('Recipes page props:', page.props)
-  console.log('Recipes data:', all.value)
-})
 </script>
 

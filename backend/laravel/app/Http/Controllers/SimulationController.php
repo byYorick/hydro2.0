@@ -3,94 +3,76 @@
 namespace App\Http\Controllers;
 
 use App\Models\Zone;
-use App\Models\ZoneSimulation;
-use App\Models\TelemetryLast;
-use App\Services\DigitalTwinService;
+use App\Services\DigitalTwinClient;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Validation\ValidationException;
 
 class SimulationController extends Controller
 {
     public function __construct(
-        private DigitalTwinService $digitalTwinService
+        private DigitalTwinClient $client
     ) {
     }
 
     /**
-     * POST /api/simulations/zone/{zone}
-     * Запустить симуляцию зоны
+     * Симулировать зону.
+     *
+     * @param Request $request
+     * @param Zone $zone
+     * @return JsonResponse
+     * @throws ValidationException
      */
     public function simulateZone(Request $request, Zone $zone): JsonResponse
     {
-        $validated = $request->validate([
-            'scenario' => ['required', 'array'],
-            'scenario.recipe_id' => ['required', 'integer', 'exists:recipes,id'],
-            'scenario.initial_state' => ['nullable', 'array'],
-            'scenario.initial_state.ph' => ['nullable', 'numeric'],
-            'scenario.initial_state.ec' => ['nullable', 'numeric'],
-            'scenario.initial_state.temp_air' => ['nullable', 'numeric'],
-            'scenario.initial_state.temp_water' => ['nullable', 'numeric'],
-            'scenario.initial_state.humidity_air' => ['nullable', 'numeric'],
-            'duration_hours' => ['nullable', 'integer', 'min:1', 'max:720'], // до 30 дней
-            'step_minutes' => ['nullable', 'integer', 'min:1', 'max:60'],
+        $data = $request->validate([
+            'duration_hours' => 'integer|min:1|max:720',
+            'step_minutes' => 'integer|min:1|max:60',
+            'initial_state' => 'array',
+            'recipe_id' => 'nullable|exists:recipes,id',
         ]);
 
-        // Если initial_state не указан, используем текущие значения телеметрии
-        if (!isset($validated['scenario']['initial_state'])) {
-            $telemetry = TelemetryLast::query()
-                ->where('zone_id', $zone->id)
-                ->get()
-                ->keyBy('metric_type');
+        // Формируем сценарий
+        // Получаем recipe_id из ZoneRecipeInstance, если не указан явно
+        $recipeId = $data['recipe_id'] ?? null;
+        if (!$recipeId) {
+            $zone->load('recipeInstance');
+            if ($zone->recipeInstance) {
+                $recipeId = $zone->recipeInstance->recipe_id;
+            }
+        }
+        
+        $scenario = [
+            'recipe_id' => $recipeId,
+            'initial_state' => $data['initial_state'] ?? [],
+        ];
 
-            $validated['scenario']['initial_state'] = [
-                'ph' => $telemetry->get('ph')?->value ?? 6.0,
-                'ec' => $telemetry->get('ec')?->value ?? 1.2,
-                'temp_air' => $telemetry->get('temp_air')?->value ?? 22.0,
-                'temp_water' => $telemetry->get('temp_water')?->value ?? 20.0,
-                'humidity_air' => $telemetry->get('humidity_air')?->value ?? 60.0,
+        // Если initial_state пустой, можно попробовать получить текущее состояние зоны
+        if (empty($scenario['initial_state'])) {
+            // TODO: Получить текущее состояние из telemetry_last
+            // Пока используем дефолтные значения
+            $scenario['initial_state'] = [
+                'ph' => 6.0,
+                'ec' => 1.2,
+                'temp_air' => 22.0,
+                'temp_water' => 20.0,
+                'humidity_air' => 60.0,
             ];
         }
 
-        $durationHours = $validated['duration_hours'] ?? 72;
-        $stepMinutes = $validated['step_minutes'] ?? 10;
+        try {
+            $result = $this->client->simulateZone($zone->id, [
+                'duration_hours' => $data['duration_hours'] ?? 72,
+                'step_minutes' => $data['step_minutes'] ?? 10,
+                'scenario' => $scenario,
+            ]);
 
-        $simulation = $this->digitalTwinService->simulateZone(
-            $zone,
-            $validated['scenario'],
-            $durationHours,
-            $stepMinutes
-        );
-
-        return response()->json([
-            'status' => 'ok',
-            'data' => [
-                'simulation_id' => $simulation->id,
-                'status' => $simulation->status,
-                'results' => $simulation->results,
-                'error_message' => $simulation->error_message,
-            ],
-        ], $simulation->status === 'completed' ? 200 : 202);
-    }
-
-    /**
-     * GET /api/simulations/{simulation}
-     * Получить результаты симуляции
-     */
-    public function show(ZoneSimulation $simulation): JsonResponse
-    {
-        return response()->json([
-            'status' => 'ok',
-            'data' => [
-                'id' => $simulation->id,
-                'zone_id' => $simulation->zone_id,
-                'scenario' => $simulation->scenario,
-                'results' => $simulation->results,
-                'duration_hours' => $simulation->duration_hours,
-                'step_minutes' => $simulation->step_minutes,
-                'status' => $simulation->status,
-                'error_message' => $simulation->error_message,
-                'created_at' => $simulation->created_at->toIso8601String(),
-            ],
-        ]);
+            return response()->json($result);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
     }
 }

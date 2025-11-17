@@ -22,11 +22,16 @@ class Zone extends Model
         'health_status',
         'hardware_profile',
         'capabilities',
+        'water_state',
+        'solution_started_at',
+        'settings',
     ];
 
     protected $casts = [
         'hardware_profile' => 'array',
         'capabilities' => 'array',
+        'settings' => 'array',
+        'solution_started_at' => 'datetime',
     ];
 
     public function greenhouse(): BelongsTo

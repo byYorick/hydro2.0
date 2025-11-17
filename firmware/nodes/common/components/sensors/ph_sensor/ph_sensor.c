@@ -19,8 +19,8 @@
 #include "i2c_bus.h"
 #include "config_storage.h"
 #include "esp_log.h"
-#include "driver/adc_oneshot.h"
-#include "esp_adc_cal.h"
+#include "esp_adc/adc_oneshot.h"
+#include "esp_adc/adc_cali.h"
 #include <string.h>
 #include <math.h>
 #include <stdlib.h>
@@ -473,7 +473,7 @@ esp_err_t ph_sensor_init_from_config(const char *channel_id) {
     // Для MVP используем значения по умолчанию
     ph_sensor_config_t config = {
         .type = PH_SENSOR_TYPE_ANALOG,
-        .adc_channel = ADC1_CHANNEL_0,
+        .adc_channel = ADC_CHANNEL_0,
         .cal_points = NULL,
         .cal_points_count = 0,
         .cal_method = PH_CALIBRATION_LINEAR,

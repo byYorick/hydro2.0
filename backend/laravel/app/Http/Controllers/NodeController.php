@@ -4,13 +4,18 @@ namespace App\Http\Controllers;
 
 use App\Models\DeviceNode;
 use App\Services\NodeService;
+use App\Services\NodeRegistryService;
+use App\Services\NodeConfigService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
 class NodeController extends Controller
 {
     public function __construct(
-        private NodeService $nodeService
+        private NodeService $nodeService,
+        private NodeRegistryService $registryService,
+        private NodeConfigService $configService,
+        private NodeSwapService $swapService
     ) {
     }
 
@@ -81,6 +86,173 @@ class NodeController extends Controller
                 'status' => 'error',
                 'message' => $e->getMessage(),
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+    }
+
+    /**
+     * Регистрация узла в системе.
+     * Используется для регистрации новых узлов при первом подключении.
+     */
+    public function register(Request $request)
+    {
+        // Проверяем, это node_hello или обычная регистрация
+        if ($request->has('message_type') && $request->input('message_type') === 'node_hello') {
+            // Обработка node_hello из MQTT
+            $data = $request->validate([
+                'message_type' => ['required', 'string', 'in:node_hello'],
+                'hardware_id' => ['required', 'string', 'max:128'],
+                'node_type' => ['nullable', 'string', 'max:64'],
+                'fw_version' => ['nullable', 'string', 'max:64'],
+                'hardware_revision' => ['nullable', 'string', 'max:64'],
+                'capabilities' => ['nullable', 'array'],
+                'provisioning_meta' => ['nullable', 'array'],
+            ]);
+            
+            $node = $this->registryService->registerNodeFromHello($data);
+        } else {
+            // Обычная регистрация через API
+            $data = $request->validate([
+                'node_uid' => ['required', 'string', 'max:64'],
+                'zone_uid' => ['nullable', 'string', 'max:64'],
+                'firmware_version' => ['nullable', 'string', 'max:64'],
+                'hardware_revision' => ['nullable', 'string', 'max:64'],
+                'hardware_id' => ['nullable', 'string', 'max:128'],
+                'name' => ['nullable', 'string', 'max:255'],
+                'type' => ['nullable', 'string', 'max:64'],
+            ]);
+            
+            $node = $this->registryService->registerNode(
+                $data['node_uid'],
+                $data['zone_uid'] ?? null,
+                $data
+            );
+        }
+        
+        return response()->json(['status' => 'ok', 'data' => $node], Response::HTTP_CREATED);
+    }
+
+    /**
+     * Получить NodeConfig для узла.
+     */
+    public function getConfig(DeviceNode $node)
+    {
+        try {
+            $config = $this->configService->generateNodeConfig($node);
+            return response()->json(['status' => 'ok', 'data' => $config]);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], Response::HTTP_BAD_REQUEST);
+        }
+    }
+
+    /**
+     * Опубликовать NodeConfig через MQTT.
+     * Это проксирует запрос в mqtt-bridge для публикации конфига.
+     */
+    public function publishConfig(DeviceNode $node, Request $request)
+    {
+        try {
+            $config = $this->configService->generateNodeConfig($node);
+            
+            // Проверяем, что узел привязан к зоне
+            if (!$node->zone_id) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Node must be assigned to a zone before publishing config',
+                ], Response::HTTP_BAD_REQUEST);
+            }
+            
+            // Получаем greenhouse_uid
+            $node->load('zone.greenhouse');
+            $greenhouseUid = $node->zone?->greenhouse?->uid;
+            if (!$greenhouseUid) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Zone must have a greenhouse before publishing config',
+                ], Response::HTTP_BAD_REQUEST);
+            }
+            
+            // Вызываем mqtt-bridge API для публикации
+            $baseUrl = config('services.python_bridge.base_url');
+            $token = config('services.python_bridge.token');
+            
+            if (!$baseUrl) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'MQTT bridge URL not configured',
+                ], Response::HTTP_INTERNAL_SERVER_ERROR);
+            }
+            
+            $headers = [];
+            if ($token) {
+                $headers['Authorization'] = "Bearer {$token}";
+            }
+            
+            $response = \Illuminate\Support\Facades\Http::withHeaders($headers)
+                ->post("{$baseUrl}/bridge/nodes/{$node->uid}/config", [
+                    'node_uid' => $node->uid,
+                    'zone_id' => $node->zone_id,
+                    'greenhouse_uid' => $greenhouseUid,
+                    'config' => $config,
+                ]);
+            
+            if ($response->successful()) {
+                return response()->json([
+                    'status' => 'ok',
+                    'data' => $response->json('data'),
+                ]);
+            }
+            
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to publish config via MQTT bridge',
+                'details' => $response->json(),
+            ], $response->status());
+        } catch (\InvalidArgumentException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], Response::HTTP_BAD_REQUEST);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to publish config: ' . $e->getMessage(),
+                ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    /**
+     * Заменить узел новым узлом.
+     */
+    public function swap(DeviceNode $node, Request $request)
+    {
+        $data = $request->validate([
+            'new_hardware_id' => ['required', 'string', 'max:128'],
+            'migrate_telemetry' => ['nullable', 'boolean'],
+            'migrate_channels' => ['nullable', 'boolean'],
+        ]);
+        
+        try {
+            $newNode = $this->swapService->swapNode(
+                $node->id,
+                $data['new_hardware_id'],
+                [
+                    'migrate_telemetry' => $data['migrate_telemetry'] ?? false,
+                    'migrate_channels' => $data['migrate_channels'] ?? true,
+                ]
+            );
+            
+            return response()->json([
+                'status' => 'ok',
+                'data' => $newNode,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to swap node: ' . $e->getMessage(),
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
 }

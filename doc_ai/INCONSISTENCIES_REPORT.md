@@ -126,16 +126,13 @@
 В документации упоминаются общие компоненты (i2c_bus, ina209, oled_display и т.д.), но они не реализованы.
 
 **Где найдено:**
-- `doc_ai/01_SYSTEM/01_PROJECT_STRUCTURE_PROD.md` (строки 90-100): описана структура `firmware/common/components/`
-- `firmware/common/components/README.md`: перечислены компоненты, но они не реализованы
+- `doc_ai/01_SYSTEM/01_PROJECT_STRUCTURE_PROD.md` — **ОБНОВЛЕНО**: теперь описывает структуру `firmware/nodes/common/components/`
 
 **Реальная структура:**
-- `firmware/common/components/` существует, но содержит только `README.md`
-- Компоненты не реализованы
+- ✅ Компоненты находятся в `firmware/nodes/common/components/`
+- ✅ Компоненты реализованы (mqtt_client, wifi_manager, config_storage, i2c_bus, oled_ui, logging, sensors)
 
-**Рекомендация:**
-- Обновить `firmware/common/components/README.md`, указав статус (PLANNED вместо реализованных)
-- Или создать скелеты компонентов
+**Статус:** ✅ **РЕШЕНО** — документация обновлена под реальную структуру
 
 ---
 
@@ -200,10 +197,7 @@
 В документации упоминается `NODE_CONFIG_SPEC.md`, но файл не существует.
 
 **Где найдено:**
-- `doc_ai/01_SYSTEM/01_PROJECT_STRUCTURE_PROD.md` (строка 279):
-  ```
-  структура которого описана в `docs/02_HARDWARE_FIRMWARE/NODE_CONFIG_SPEC.md`
-  ```
+- `doc_ai/01_SYSTEM/01_PROJECT_STRUCTURE_PROD.md` (строка 279) — **ИСПРАВЛЕНО**: ссылка обновлена на `doc_ai/02_HARDWARE_FIRMWARE/NODE_CONFIG_SPEC.md`
 
 **Реальная структура:**
 - Файл `NODE_CONFIG_SPEC.md` отсутствует в `doc_ai/02_HARDWARE_FIRMWARE/`

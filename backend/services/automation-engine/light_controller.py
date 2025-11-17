@@ -5,6 +5,7 @@ Light Controller - управление освещением и фотопери
 from typing import Optional, Dict, Any, List
 from datetime import datetime, time
 from common.db import fetch, create_zone_event
+from common.alerts import create_alert, AlertSource, AlertCode
 
 
 # Пороги для обнаружения света
@@ -245,15 +246,12 @@ async def ensure_light_failure_alert(zone_id: int) -> None:
     
     if not rows:
         # Создаем новый алерт
-        from common.db import execute
-        await execute(
-            """
-            INSERT INTO alerts (zone_id, type, details, status, created_at)
-            VALUES ($1, $2, $3, 'ACTIVE', NOW())
-            """,
-            zone_id,
-            'LIGHT_FAILURE',
-            '{"message": "Light should be on but sensor readings indicate failure"}',
+        await create_alert(
+            zone_id=zone_id,
+            source=AlertSource.BIZ.value,
+            code=AlertCode.BIZ_LIGHT_FAILURE.value,
+            type='LIGHT_FAILURE',
+            details={'message': 'Light should be on but sensor readings indicate failure'}
         )
         # Создаем событие
         await create_zone_event(

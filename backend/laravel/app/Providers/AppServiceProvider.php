@@ -7,6 +7,8 @@ use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\Event;
 use App\Events\ZoneUpdated;
 use App\Listeners\PublishZoneConfigUpdate;
+use App\Events\NodeConfigUpdated;
+use App\Listeners\PublishNodeConfigOnUpdate;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -15,7 +17,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Регистрация DigitalTwinClient
+        $this->app->singleton(\App\Services\DigitalTwinClient::class, function ($app) {
+            $baseUrl = config('services.digital_twin.url', 'http://digital-twin:8003');
+            return new \App\Services\DigitalTwinClient($baseUrl);
+        });
     }
 
     /**
@@ -29,6 +35,11 @@ class AppServiceProvider extends ServiceProvider
         Event::listen(
             ZoneUpdated::class,
             PublishZoneConfigUpdate::class
+        );
+        
+        Event::listen(
+            NodeConfigUpdated::class,
+            PublishNodeConfigOnUpdate::class
         );
     }
 }

@@ -2,11 +2,26 @@
   <div class="rounded-xl border border-neutral-800 bg-neutral-925 p-4">
     <div class="flex items-center justify-between">
       <div class="text-sm font-semibold">{{ zone.name }}</div>
-      <Badge :variant="variant">{{ zone.status }}</Badge>
+      <Badge :variant="variant">{{ translateStatus(zone.status) }}</Badge>
     </div>
     <div class="mt-2 text-xs text-neutral-300">
       <div v-if="zone.description">{{ zone.description }}</div>
       <div v-if="zone.greenhouse" class="mt-1">Теплица: {{ zone.greenhouse.name }}</div>
+    </div>
+    <!-- Метрики (если переданы) -->
+    <div v-if="telemetry && hasMetrics" class="mt-3 grid grid-cols-2 gap-2 text-xs">
+      <div v-if="telemetry.ph !== null && telemetry.ph !== undefined" class="text-neutral-400">
+        pH: <span class="text-neutral-200">{{ telemetry.ph }}</span>
+      </div>
+      <div v-if="telemetry.ec !== null && telemetry.ec !== undefined" class="text-neutral-400">
+        EC: <span class="text-neutral-200">{{ telemetry.ec }}</span>
+      </div>
+      <div v-if="telemetry.temperature !== null && telemetry.temperature !== undefined" class="text-neutral-400">
+        Темп: <span class="text-neutral-200">{{ telemetry.temperature }}°C</span>
+      </div>
+      <div v-if="telemetry.humidity !== null && telemetry.humidity !== undefined" class="text-neutral-400">
+        Влаж: <span class="text-neutral-200">{{ telemetry.humidity }}%</span>
+      </div>
     </div>
     <div class="mt-3 flex gap-2">
       <Link :href="`/zones/${zone.id}`" class="inline-block">
@@ -21,9 +36,18 @@ import { computed } from 'vue'
 import { Link } from '@inertiajs/vue3'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
+import { translateStatus } from '@/utils/i18n'
 
 const props = defineProps({
   zone: { type: Object, required: true },
+  telemetry: {
+    type: Object,
+    default: null,
+    validator: (value) => {
+      if (value === null || value === undefined) return true
+      return typeof value === 'object'
+    },
+  },
 })
 
 const variant = computed(() => {
@@ -34,6 +58,14 @@ const variant = computed(() => {
     case 'ALARM': return 'danger'
     default: return 'neutral'
   }
+})
+
+const hasMetrics = computed(() => {
+  if (!props.telemetry) return false
+  return props.telemetry.ph !== null || 
+         props.telemetry.ec !== null || 
+         props.telemetry.temperature !== null || 
+         props.telemetry.humidity !== null
 })
 </script>
 

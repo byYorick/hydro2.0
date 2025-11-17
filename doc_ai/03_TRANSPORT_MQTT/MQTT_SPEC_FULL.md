@@ -96,18 +96,38 @@ payload: "offline"
 ```
 
 ## 4.2. Online status
-При успешном подключении узел публикует:
 
+**ОБЯЗАТЕЛЬНО:** При успешном подключении к MQTT брокеру (событие `MQTT_EVENT_CONNECTED`) узел **ОБЯЗАН** немедленно опубликовать status топик.
+
+**Топик:**
 ```
 hydro/{gh}/{zone}/{node}/status
 ```
 
+**Payload:**
 ```json
 {
  "status": "ONLINE",
  "ts": 1710001555
 }
 ```
+
+**Требования:**
+- QoS = 1
+- Retain = true
+- Публикация выполняется **сразу после** успешного подключения, до подписки на config/command топики
+- Поле `ts` содержит Unix timestamp в секундах (время публикации)
+- Backend использует этот статус для обновления `nodes.status` и `nodes.last_seen_at`
+
+**Последовательность действий при подключении:**
+1. Установка LWT (Last Will and Testament) — выполняется при инициализации MQTT клиента
+2. Подключение к брокеру
+3. **Публикация status с "ONLINE"** ← ОБЯЗАТЕЛЬНО
+4. Подписка на `hydro/{gh}/{zone}/{node}/config`
+5. Подписка на `hydro/{gh}/{zone}/{node}/+/command` (wildcard для всех каналов)
+6. Вызов connection callback (если зарегистрирован)
+
+**Статус реализации:** ✅ **РЕАЛИЗОВАНО** (mqtt_manager.c, строки 370-374)
 
 ## 4.3. Offline
 Отправляется брокером автоматически (LWT):
@@ -329,20 +349,72 @@ Backend никогда не остаётся “в неизвестности”
 ---
 # 9. Дополнительные системные топики
 
-## 9.1. Heartbeat узла
+## 9.1. Node Hello (регистрация узла)
+```
+hydro/node_hello
+hydro/{gh}/{zone}/{node}/node_hello
+```
+
+**Топик:** 
+- `hydro/node_hello` — для начальной регистрации, когда узел не знает gh/zone/node
+- `hydro/{gh}/{zone}/{node}/node_hello` — если узел уже знает свои параметры из provisioning
+
+**Payload:**
+```json
+{
+  "message_type": "node_hello",
+  "hardware_id": "esp32-ABCD1234",
+  "node_type": "ph",
+  "fw_version": "2.0.1",
+  "hardware_revision": "v1.0",
+  "capabilities": ["ph", "temperature"],
+  "provisioning_meta": {
+    "greenhouse_token": "gh-123",
+    "zone_id": null,
+    "node_name": null
+  }
+}
+```
+
+**Requirements:**
+- QoS = 1
+- Retain = false
+- Backend обрабатывает и создаёт/обновляет `DeviceNode` с `logical_node_id` (uid)
+
+**Статус реализации:** ✅ **РЕАЛИЗОВАНО** (обработчик `handle_node_hello` в history-logger, интеграция с Laravel API)
+
+---
+
+## 9.2. Heartbeat узла
 ```
 hydro/{gh}/{zone}/{node}/heartbeat
 ```
 
+**Payload:**
 ```json
 {
- "uptime": 35555,
- "free_heap": 102000,
- "rssi": -62
+  "uptime": 35555,
+  "free_heap": 102000,
+  "rssi": -62
 }
 ```
 
-## 9.2. Debug (опционально)
+**Альтернативные имена полей:**
+- `free_heap` или `free_heap_bytes` — свободная память в байтах
+- `uptime` — время работы узла в секундах
+- `rssi` — сила сигнала Wi-Fi в dBm
+
+**Requirements:**
+- QoS = 1 (обновлено: было 0, теперь 1 для надёжности)
+- Retain = false
+- Backend обновляет поля `last_heartbeat_at`, `uptime_seconds`, `free_heap_bytes`, `rssi` в таблице `nodes`
+- Обновляет также `last_seen_at` при получении heartbeat
+
+**Статус реализации:** ✅ **РЕАЛИЗОВАНО** (обработчик `handle_heartbeat` в history-logger, поля в БД добавлены)
+
+---
+
+## 9.3. Debug (опционально)
 ```
 hydro/{node}/debug
 ```
@@ -360,7 +432,8 @@ hydro/{node}/debug
 | config_response | 1 | false |
 | status | 1 | true |
 | lwt | 1 | true |
-| heartbeat | 0 | false |
+| node_hello | 1 | false |
+| heartbeat | 1 | false |
 
 ---
 
@@ -400,30 +473,67 @@ controller → CommandService → NodeCoordinator → mqtt → node
 
 ## Config → Node
 ```
-backend → mqtt → node → config_response
+backend → NodeConfigService → mqtt-bridge → mqtt → node → config_response
 ```
+
+**Автоматическая синхронизация:**
+- При изменении узла или каналов автоматически генерируется и публикуется новый NodeConfig через Event/Listener систему
+- Публикация выполняется через `mqtt-bridge` сервис
+
+**Статус реализации:** ✅ **РЕАЛИЗОВАНО** (NodeConfigService, автоматическая синхронизация через Events)
 
 ## Status → Backend
 ```
-node → status/lwt → backend → AlertService
+node → status/lwt → history-logger → AlertService
+```
+
+## Node Hello → Backend
+```
+node → node_hello → history-logger → Laravel API → NodeRegistryService
+```
+
+## Heartbeat → Backend
+```
+node → heartbeat → history-logger → nodes table (uptime, free_heap, rssi)
 ```
 
 ---
 
 # 13. Требования к узлам (Node Firmware)
 
-- подписка на:
- - `{node}/config`
- - `{node}/{channel}/command`
-- публикация:
- - telemetry
- - status
- - command_response
- - config_response
- - lwt
+## 13.1. Подписки (обязательные)
 
-- JSON строго формализован
-- Ошибки всегда возвращаются через command_response
+Узел **ОБЯЗАН** подписаться на:
+- `hydro/{gh}/{zone}/{node}/config` — для получения конфигурации
+- `hydro/{gh}/{zone}/{node}/+/command` — для получения команд по всем каналам (wildcard)
+
+## 13.2. Публикации (обязательные)
+
+Узел **ОБЯЗАН** публиковать:
+
+### При подключении к MQTT брокеру:
+- **status** (`hydro/{gh}/{zone}/{node}/status`) — **ОБЯЗАТЕЛЬНО** сразу после `MQTT_EVENT_CONNECTED` (см. раздел 4.2)
+
+### Регулярно:
+- **telemetry** (`hydro/{gh}/{zone}/{node}/{channel}/telemetry`) — по расписанию из NodeConfig
+- **heartbeat** (`hydro/{gh}/{zone}/{node}/heartbeat`) — периодически (например, каждые 30 секунд)
+
+### По запросу:
+- **command_response** (`hydro/{gh}/{zone}/{node}/{channel}/command_response`) — на каждую команду
+- **config_response** (`hydro/{gh}/{zone}/{node}/config_response`) — при получении config
+
+### При регистрации:
+- **node_hello** (`hydro/node_hello` или `hydro/{gh}/{zone}/{node}/node_hello`) — при первой регистрации
+
+### При инициализации:
+- **lwt** (`hydro/{gh}/{zone}/{node}/lwt`) — настраивается при инициализации MQTT клиента
+
+## 13.3. Общие требования
+
+- JSON строго формализован согласно спецификации
+- Ошибки всегда возвращаются через command_response или config_response
+- Все публикации должны соответствовать форматам из разделов 3-9
+- QoS и Retain должны соответствовать таблице из раздела 10
 
 ---
 
@@ -433,7 +543,9 @@ node → status/lwt → backend → AlertService
 - QoS = 1
 - хранение команд
 - таймаут команд (если нет ACK)
-- NodeConfig пересылать при изменениях
+- NodeConfig пересылать при изменениях (✅ реализовано через автоматическую синхронизацию)
+- обработка node_hello для регистрации узлов (✅ реализовано в history-logger)
+- обработка heartbeat для мониторинга узлов (✅ реализовано в history-logger)
 - алерты при offline / telemetry out of range
 
 ---

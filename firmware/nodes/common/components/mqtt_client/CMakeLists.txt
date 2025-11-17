@@ -1,7 +1,6 @@
 idf_component_register(
-    SRCS "mqtt_client.c"
+    SRCS ""
     INCLUDE_DIRS "include"
-    REQUIRES mqtt esp_netif esp_event
-    PRIV_REQUIRES esp_timer
+    REQUIRES mqtt_manager
 )
 

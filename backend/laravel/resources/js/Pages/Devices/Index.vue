@@ -15,9 +15,9 @@
       <label class="text-sm text-neutral-300">Тип:</label>
       <select v-model="type" class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm">
         <option value="">Все</option>
-        <option value="sensor">Sensor</option>
-        <option value="actuator">Actuator</option>
-        <option value="controller">Controller</option>
+        <option value="sensor">Датчик</option>
+        <option value="actuator">Актуатор</option>
+        <option value="controller">Контроллер</option>
       </select>
       <label class="ml-4 text-sm text-neutral-300">Поиск:</label>
       <input v-model="query" placeholder="ID устройства..." class="h-9 w-56 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
@@ -56,6 +56,7 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 import DataTable from '@/Components/DataTable.vue'
 import Button from '@/Components/Button.vue'
 import { useDevicesStore } from '@/stores/devices'
+import { translateDeviceType, translateStatus } from '@/utils/i18n'
 
 const headers = ['UID', 'Зона', 'Имя', 'Тип', 'Статус', 'Версия ПО', 'Последний раз видели']
 const page = usePage()
@@ -76,8 +77,8 @@ const rows = computed(() => filtered.value.map(d => [
   d.uid || d.id,
   d.zone?.name || '-',
   d.name || '-',
-  d.type || '-',
-  d.status || 'unknown',
+  d.type ? translateDeviceType(d.type) : '-',
+  d.status ? translateStatus(d.status) : 'неизвестно',
   d.fw_version || '-',
   d.last_seen_at ? new Date(d.last_seen_at).toLocaleString('ru-RU') : '-'
 ]))

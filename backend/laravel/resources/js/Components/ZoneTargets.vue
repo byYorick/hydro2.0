@@ -31,7 +31,7 @@
     <!-- Temperature -->
     <Card v-if="targets.temp">
       <div class="flex items-center justify-between mb-1">
-        <div class="text-sm font-medium">Temperature</div>
+        <div class="text-sm font-medium">Температура</div>
         <Badge :variant="getIndicatorVariant(telemetry.temperature, targets.temp.min, targets.temp.max)">
           {{ getIndicatorLabel(telemetry.temperature, targets.temp.min, targets.temp.max) }}
         </Badge>
@@ -45,7 +45,7 @@
     <!-- Humidity -->
     <Card v-if="targets.humidity">
       <div class="flex items-center justify-between mb-1">
-        <div class="text-sm font-medium">Humidity</div>
+        <div class="text-sm font-medium">Влажность</div>
         <Badge :variant="getIndicatorVariant(telemetry.humidity, targets.humidity.min, targets.humidity.max)">
           {{ getIndicatorLabel(telemetry.humidity, targets.humidity.min, targets.humidity.max) }}
         </Badge>

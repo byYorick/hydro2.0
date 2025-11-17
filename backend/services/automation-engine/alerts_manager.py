@@ -2,8 +2,35 @@
 Alerts Manager - централизованное управление созданием и обновлением алертов.
 Согласно EVENTS_AND_ALERTS_ENGINE.md раздел 5
 """
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 from common.db import fetch, execute, create_zone_event
+from common.alerts import create_alert, AlertSource, AlertCode
+
+# Маппинг старых alert_type на новые (source, code)
+ALERT_TYPE_MAPPING: Dict[str, Tuple[str, str]] = {
+    'PH_HIGH': (AlertSource.BIZ.value, AlertCode.BIZ_HIGH_PH.value),
+    'PH_LOW': (AlertSource.BIZ.value, AlertCode.BIZ_LOW_PH.value),
+    'EC_HIGH': (AlertSource.BIZ.value, AlertCode.BIZ_HIGH_EC.value),
+    'EC_LOW': (AlertSource.BIZ.value, AlertCode.BIZ_LOW_EC.value),
+    'TEMP_HIGH': (AlertSource.BIZ.value, AlertCode.BIZ_HIGH_TEMP.value),
+    'TEMP_LOW': (AlertSource.BIZ.value, AlertCode.BIZ_LOW_TEMP.value),
+    'HUMIDITY_HIGH': (AlertSource.BIZ.value, AlertCode.BIZ_HIGH_HUMIDITY.value),
+    'HUMIDITY_LOW': (AlertSource.BIZ.value, AlertCode.BIZ_LOW_HUMIDITY.value),
+    'NO_FLOW': (AlertSource.BIZ.value, AlertCode.BIZ_NO_FLOW.value),
+    'WATER_LEVEL_LOW': (AlertSource.BIZ.value, AlertCode.BIZ_DRY_RUN.value),
+    'LIGHT_FAILURE': (AlertSource.BIZ.value, AlertCode.BIZ_LIGHT_FAILURE.value),
+}
+
+
+def _get_alert_source_and_code(alert_type: str) -> Tuple[str, str]:
+    """
+    Получить source и code для alert_type.
+    Если маппинга нет, использует дефолтные значения.
+    """
+    if alert_type in ALERT_TYPE_MAPPING:
+        return ALERT_TYPE_MAPPING[alert_type]
+    # Дефолт для неизвестных типов
+    return (AlertSource.BIZ.value, AlertCode.BIZ_CONFIG_ERROR.value)
 
 
 async def ensure_alert(zone_id: int, alert_type: str, details: Dict[str, Any]) -> None:
@@ -46,16 +73,14 @@ async def ensure_alert(zone_id: int, alert_type: str, details: Dict[str, Any]) -
             alert_id,
         )
     else:
-        # Создаем новый алерт
-        details_json = json.dumps(details)
-        await execute(
-            """
-            INSERT INTO alerts (zone_id, type, details, status, created_at)
-            VALUES ($1, $2, $3, 'ACTIVE', NOW())
-            """,
-            zone_id,
-            alert_type,
-            details_json,
+        # Создаем новый алерт с source и code
+        source, code = _get_alert_source_and_code(alert_type)
+        await create_alert(
+            zone_id=zone_id,
+            source=source,
+            code=code,
+            type=alert_type,  # type остается для обратной совместимости
+            details=details
         )
         # Создаем событие ALERT_CREATED
         await create_zone_event(

@@ -51,6 +51,110 @@ static const char *TAG = "oled_ui";
 #define SSD1306_CMD_PAGE_ADDR 0x22
 #define SSD1306_CMD_DEACTIVATE_SCROLL 0x2E
 
+// Размер шрифта
+#define FONT_WIDTH 6
+#define FONT_HEIGHT 8
+
+// Базовый растровый шрифт 6x8 (ASCII 32-127)
+static const uint8_t font_6x8[][6] = {
+    {0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, // space (32)
+    {0x00, 0x00, 0x5F, 0x00, 0x00, 0x00}, // !
+    {0x00, 0x07, 0x00, 0x07, 0x00, 0x00}, // "
+    {0x14, 0x7F, 0x14, 0x7F, 0x14, 0x00}, // #
+    {0x24, 0x2A, 0x7F, 0x2A, 0x12, 0x00}, // $
+    {0x23, 0x13, 0x08, 0x64, 0x62, 0x00}, // %
+    {0x36, 0x49, 0x55, 0x22, 0x50, 0x00}, // &
+    {0x00, 0x05, 0x03, 0x00, 0x00, 0x00}, // '
+    {0x00, 0x1C, 0x22, 0x41, 0x00, 0x00}, // (
+    {0x00, 0x41, 0x22, 0x1C, 0x00, 0x00}, // )
+    {0x14, 0x08, 0x3E, 0x08, 0x14, 0x00}, // *
+    {0x08, 0x08, 0x3E, 0x08, 0x08, 0x00}, // +
+    {0x00, 0x00, 0xA0, 0x60, 0x00, 0x00}, // ,
+    {0x08, 0x08, 0x08, 0x08, 0x08, 0x00}, // -
+    {0x00, 0x60, 0x60, 0x00, 0x00, 0x00}, // .
+    {0x20, 0x10, 0x08, 0x04, 0x02, 0x00}, // /
+    {0x3E, 0x51, 0x49, 0x45, 0x3E, 0x00}, // 0 (48)
+    {0x00, 0x42, 0x7F, 0x40, 0x00, 0x00}, // 1
+    {0x42, 0x61, 0x51, 0x49, 0x46, 0x00}, // 2
+    {0x21, 0x41, 0x45, 0x4B, 0x31, 0x00}, // 3
+    {0x18, 0x14, 0x12, 0x7F, 0x10, 0x00}, // 4
+    {0x27, 0x45, 0x45, 0x45, 0x39, 0x00}, // 5
+    {0x3C, 0x4A, 0x49, 0x49, 0x30, 0x00}, // 6
+    {0x01, 0x71, 0x09, 0x05, 0x03, 0x00}, // 7
+    {0x36, 0x49, 0x49, 0x49, 0x36, 0x00}, // 8
+    {0x06, 0x49, 0x49, 0x29, 0x1E, 0x00}, // 9
+    {0x00, 0x36, 0x36, 0x00, 0x00, 0x00}, // :
+    {0x00, 0x56, 0x36, 0x00, 0x00, 0x00}, // ;
+    {0x08, 0x14, 0x22, 0x41, 0x00, 0x00}, // <
+    {0x14, 0x14, 0x14, 0x14, 0x14, 0x00}, // =
+    {0x00, 0x41, 0x22, 0x14, 0x08, 0x00}, // >
+    {0x02, 0x01, 0x51, 0x09, 0x06, 0x00}, // ?
+    {0x32, 0x49, 0x59, 0x51, 0x3E, 0x00}, // @
+    {0x7C, 0x12, 0x11, 0x12, 0x7C, 0x00}, // A (65)
+    {0x7F, 0x49, 0x49, 0x49, 0x36, 0x00}, // B
+    {0x3E, 0x41, 0x41, 0x41, 0x22, 0x00}, // C
+    {0x7F, 0x41, 0x41, 0x22, 0x1C, 0x00}, // D
+    {0x7F, 0x49, 0x49, 0x49, 0x41, 0x00}, // E
+    {0x7F, 0x09, 0x09, 0x09, 0x01, 0x00}, // F
+    {0x3E, 0x41, 0x49, 0x49, 0x7A, 0x00}, // G
+    {0x7F, 0x08, 0x08, 0x08, 0x7F, 0x00}, // H
+    {0x00, 0x41, 0x7F, 0x41, 0x00, 0x00}, // I
+    {0x20, 0x40, 0x41, 0x3F, 0x01, 0x00}, // J
+    {0x7F, 0x08, 0x14, 0x22, 0x41, 0x00}, // K
+    {0x7F, 0x40, 0x40, 0x40, 0x40, 0x00}, // L
+    {0x7F, 0x02, 0x0C, 0x02, 0x7F, 0x00}, // M
+    {0x7F, 0x04, 0x08, 0x10, 0x7F, 0x00}, // N
+    {0x3E, 0x41, 0x41, 0x41, 0x3E, 0x00}, // O
+    {0x7F, 0x09, 0x09, 0x09, 0x06, 0x00}, // P
+    {0x3E, 0x41, 0x51, 0x21, 0x5E, 0x00}, // Q
+    {0x7F, 0x09, 0x19, 0x29, 0x46, 0x00}, // R
+    {0x46, 0x49, 0x49, 0x49, 0x31, 0x00}, // S
+    {0x01, 0x01, 0x7F, 0x01, 0x01, 0x00}, // T
+    {0x3F, 0x40, 0x40, 0x40, 0x3F, 0x00}, // U
+    {0x1F, 0x20, 0x40, 0x20, 0x1F, 0x00}, // V
+    {0x3F, 0x40, 0x38, 0x40, 0x3F, 0x00}, // W
+    {0x63, 0x14, 0x08, 0x14, 0x63, 0x00}, // X
+    {0x07, 0x08, 0x70, 0x08, 0x07, 0x00}, // Y
+    {0x61, 0x51, 0x49, 0x45, 0x43, 0x00}, // Z
+    {0x00, 0x7F, 0x41, 0x41, 0x00, 0x00}, // [
+    {0x02, 0x04, 0x08, 0x10, 0x20, 0x00}, // backslash
+    {0x00, 0x41, 0x41, 0x7F, 0x00, 0x00}, // ]
+    {0x04, 0x02, 0x01, 0x02, 0x04, 0x00}, // ^
+    {0x40, 0x40, 0x40, 0x40, 0x40, 0x00}, // _
+    {0x00, 0x01, 0x02, 0x04, 0x00, 0x00}, // `
+    {0x20, 0x54, 0x54, 0x54, 0x78, 0x00}, // a (97)
+    {0x7F, 0x48, 0x44, 0x44, 0x38, 0x00}, // b
+    {0x38, 0x44, 0x44, 0x44, 0x20, 0x00}, // c
+    {0x38, 0x44, 0x44, 0x48, 0x7F, 0x00}, // d
+    {0x38, 0x54, 0x54, 0x54, 0x18, 0x00}, // e
+    {0x08, 0x7E, 0x09, 0x01, 0x02, 0x00}, // f
+    {0x18, 0xA4, 0xA4, 0xA4, 0x7C, 0x00}, // g
+    {0x7F, 0x08, 0x04, 0x04, 0x78, 0x00}, // h
+    {0x00, 0x44, 0x7D, 0x40, 0x00, 0x00}, // i
+    {0x40, 0x80, 0x84, 0x7D, 0x00, 0x00}, // j
+    {0x7F, 0x10, 0x28, 0x44, 0x00, 0x00}, // k
+    {0x00, 0x41, 0x7F, 0x40, 0x00, 0x00}, // l
+    {0x7C, 0x04, 0x18, 0x04, 0x78, 0x00}, // m
+    {0x7C, 0x08, 0x04, 0x04, 0x78, 0x00}, // n
+    {0x38, 0x44, 0x44, 0x44, 0x38, 0x00}, // o
+    {0xFC, 0x24, 0x24, 0x24, 0x18, 0x00}, // p
+    {0x18, 0x24, 0x24, 0x18, 0xFC, 0x00}, // q
+    {0x7C, 0x08, 0x04, 0x04, 0x08, 0x00}, // r
+    {0x48, 0x54, 0x54, 0x54, 0x20, 0x00}, // s
+    {0x04, 0x3F, 0x44, 0x40, 0x20, 0x00}, // t
+    {0x3C, 0x40, 0x40, 0x20, 0x7C, 0x00}, // u
+    {0x1C, 0x20, 0x40, 0x20, 0x1C, 0x00}, // v
+    {0x3C, 0x40, 0x30, 0x40, 0x3C, 0x00}, // w
+    {0x44, 0x28, 0x10, 0x28, 0x44, 0x00}, // x
+    {0x1C, 0xA0, 0xA0, 0xA0, 0x7C, 0x00}, // y
+    {0x44, 0x64, 0x54, 0x4C, 0x44, 0x00}, // z
+    {0x00, 0x08, 0x36, 0x41, 0x00, 0x00}, // {
+    {0x00, 0x00, 0x7F, 0x00, 0x00, 0x00}, // |
+    {0x00, 0x41, 0x36, 0x08, 0x00, 0x00}, // }
+    {0x10, 0x08, 0x08, 0x10, 0x08, 0x00}, // ~
+    {0x78, 0x46, 0x41, 0x46, 0x78, 0x00}, // DEL (127)
+};
+
 // Внутренние структуры
 static struct {
     bool initialized;
@@ -77,9 +181,10 @@ static void render_normal_screen(void);
 static void render_alert_screen(void);
 static void render_calibration_screen(void);
 static void render_service_screen(void);
-static void render_char(uint8_t x, uint8_t y, char c);
+static const uint8_t* get_char_glyph(uint8_t c);
+static void render_char(uint8_t x, uint8_t y, uint8_t c);
 static void render_string(uint8_t x, uint8_t y, const char *str);
-static void render_line(uint8_t y, const char *str);
+static void render_line(uint8_t line_num, const char *str);
 static void task_update_display(void *pvParameters);
 
 /**
@@ -87,7 +192,11 @@ static void task_update_display(void *pvParameters);
  */
 static esp_err_t ssd1306_write_command(uint8_t cmd) {
     uint8_t buffer[2] = {0x00, cmd};  // 0x00 = command mode
-    return i2c_bus_write(s_ui.i2c_address, NULL, 0, buffer, 2, 100);
+    esp_err_t err = i2c_bus_write(s_ui.i2c_address, NULL, 0, buffer, 2, 100);
+    if (err != ESP_OK) {
+        ESP_LOGD(TAG, "Failed to write command 0x%02X to SSD1306: %s", cmd, esp_err_to_name(err));
+    }
+    return err;
 }
 
 /**
@@ -130,6 +239,13 @@ static esp_err_t ssd1306_write_data(const uint8_t *data, size_t len) {
 static esp_err_t ssd1306_init_display(void) {
     esp_err_t err;
     
+    ESP_LOGI(TAG, "Initializing SSD1306 display at I2C address 0x%02X", s_ui.i2c_address);
+    
+    if (!i2c_bus_is_initialized()) {
+        ESP_LOGE(TAG, "I²C bus not initialized before SSD1306 init");
+        return ESP_ERR_INVALID_STATE;
+    }
+    
     // Последовательность инициализации SSD1306
     uint8_t init_commands[] = {
         SSD1306_CMD_DISPLAY_OFF,
@@ -151,9 +267,11 @@ static esp_err_t ssd1306_init_display(void) {
         SSD1306_CMD_DISPLAY_ON
     };
     
+    ESP_LOGI(TAG, "Sending %d initialization commands to SSD1306", (int)sizeof(init_commands));
     for (size_t i = 0; i < sizeof(init_commands); i++) {
         err = ssd1306_write_command(init_commands[i]);
         if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to send command[%d]=0x%02X: %s", (int)i, init_commands[i], esp_err_to_name(err));
             ESP_LOGE(TAG, "Failed to send init command at index %zu", i);
             return err;
         }
@@ -222,42 +340,96 @@ static esp_err_t ssd1306_set_cursor(uint8_t x, uint8_t y) {
 }
 
 /**
- * @brief Отображение символа (упрощенная версия - только ASCII)
- * 
- * Примечание: упрощенная реализация. В реальности нужен растровый шрифт.
- * Для MVP используем простой подход с прямым выводом символов.
+ * @brief Get character glyph from font
+ * @param c Character (ASCII 32-127)
+ * @return Pointer to glyph or NULL if character not supported
  */
-static void render_char(uint8_t x, uint8_t y, char c) {
-    // Упрощенная реализация - в реальности нужен шрифт 8x8
-    // Для MVP пропускаем, так как render_string будет использовать другой подход
-    (void)x;
-    (void)y;
-    (void)c;
+static const uint8_t* get_char_glyph(uint8_t c) {
+    // ASCII 32-127
+    if (c >= 32 && c <= 127) {
+        return font_6x8[c - 32];
+    }
+    // Unknown character - return space
+    return font_6x8[0];
 }
 
 /**
- * @brief Отображение строки
- * 
- * Примечание: упрощенная реализация. В реальности нужен растровый шрифт.
- * Для MVP используем простой текстовый вывод через команды дисплея.
+ * @brief Render character on display
+ * @param x X coordinate (0-127)
+ * @param y Y coordinate (0-63, must be multiple of 8 for proper rendering)
+ * @param c Character to render
+ */
+static void render_char(uint8_t x, uint8_t y, uint8_t c) {
+    if (x >= SSD1306_WIDTH || y >= SSD1306_HEIGHT) {
+        return; // Выход за границы
+    }
+    
+    // Получаем глиф символа
+    const uint8_t *glyph = get_char_glyph(c);
+    if (glyph == NULL) {
+        return;
+    }
+    
+    // Выравниваем Y на границу страницы (8 пикселей)
+    uint8_t page = y / 8;
+    if (page >= SSD1306_PAGES) {
+        return;
+    }
+    
+    // Устанавливаем курсор: колонка x, страница page
+    esp_err_t err = ssd1306_write_command(SSD1306_CMD_COLUMN_ADDR);
+    if (err != ESP_OK) return;
+    err = ssd1306_write_command(x);
+    if (err != ESP_OK) return;
+    err = ssd1306_write_command(x + FONT_WIDTH - 1);
+    if (err != ESP_OK) return;
+    
+    err = ssd1306_write_command(SSD1306_CMD_PAGE_ADDR);
+    if (err != ESP_OK) return;
+    err = ssd1306_write_command(page);
+    if (err != ESP_OK) return;
+    err = ssd1306_write_command(page);
+    if (err != ESP_OK) return;
+    
+    // Отправляем данные глифа на дисплей
+    // Глиф имеет размер 6 байт (ширина) x 8 бит (высота = 1 страница)
+    err = ssd1306_write_data(glyph, FONT_WIDTH);
+    if (err != ESP_OK) {
+        ESP_LOGD(TAG, "Failed to write char data: %s", esp_err_to_name(err));
+    }
+}
+
+/**
+ * @brief Render string on display
+ * @param x Start X coordinate
+ * @param y Start Y coordinate
+ * @param str String to render (ASCII only)
  */
 static void render_string(uint8_t x, uint8_t y, const char *str) {
     if (str == NULL) return;
     
-    // Упрощенная реализация - устанавливаем курсор и выводим данные
-    // В реальности нужно использовать растровый шрифт и отрисовку пикселей
-    ssd1306_set_cursor(x, y);
+    uint8_t pos_x = x;
+    const char *p = str;
     
-    // Для MVP просто устанавливаем курсор
-    // Полная реализация требует растрового шрифта и функции отрисовки пикселей
-    (void)str;
+    // Render ASCII characters only
+    while (*p != '\0' && pos_x < SSD1306_WIDTH - FONT_WIDTH) {
+        uint8_t c = (uint8_t)*p;
+        render_char(pos_x, y, c);
+        pos_x += FONT_WIDTH;
+        p++;
+    }
 }
 
 /**
- * @brief Отображение строки на линии
+ * @brief Render string on line
+ * @param line_num Line number (0-7, each line = 8 pixels)
+ * @param str String to render
  */
-static void render_line(uint8_t y, const char *str) {
-    render_string(0, y * 8, str);
+static void render_line(uint8_t line_num, const char *str) {
+    if (line_num >= SSD1306_PAGES) {
+        return;
+    }
+    render_string(0, line_num * 8, str);
 }
 
 /**
@@ -288,7 +460,7 @@ static void render_wifi_setup_screen(void) {
     ssd1306_clear();
     render_line(0, "WiFi Setup");
     render_line(1, "Connect to:");
-    render_line(2, "HYDRO-SETUP");
+    render_line(2, "PH_SETUP_XXXX");
     render_line(3, "Use app to");
     render_line(4, "configure");
 }
@@ -301,10 +473,13 @@ static void render_normal_screen(void) {
     
     // Верхняя строка: статусы
     char status_line[22];
+    char uid_display[17];  // Ограничиваем длину UID для отображения
+    strncpy(uid_display, s_ui.node_uid, sizeof(uid_display) - 1);
+    uid_display[sizeof(uid_display) - 1] = '\0';
     snprintf(status_line, sizeof(status_line), "%c %c %s",
             s_ui.model.connections.wifi_connected ? 'W' : 'w',
             s_ui.model.connections.mqtt_connected ? 'M' : 'm',
-            s_ui.node_uid);
+            uid_display);
     render_line(0, status_line);
     
     // Основной блок в зависимости от типа узла и текущего экрана
@@ -443,35 +618,49 @@ static void task_update_display(void *pvParameters) {
 
 esp_err_t oled_ui_init(oled_ui_node_type_t node_type, const char *node_uid, 
                       const oled_ui_config_t *config) {
+    ESP_LOGI(TAG, "=== OLED UI Init Start ===");
+    ESP_LOGI(TAG, "node_type=%d, node_uid=%s", node_type, node_uid ? node_uid : "NULL");
+    
     if (s_ui.initialized) {
         ESP_LOGW(TAG, "OLED UI already initialized");
         return ESP_OK;
     }
     
+    ESP_LOGI(TAG, "Checking I²C bus initialization...");
     if (!i2c_bus_is_initialized()) {
         ESP_LOGE(TAG, "I²C bus not initialized");
         return ESP_ERR_INVALID_STATE;
     }
+    ESP_LOGI(TAG, "I²C bus is initialized");
     
     // Сохранение параметров
     s_ui.node_type = node_type;
     if (node_uid != NULL) {
         strncpy(s_ui.node_uid, node_uid, sizeof(s_ui.node_uid) - 1);
+        s_ui.node_uid[sizeof(s_ui.node_uid) - 1] = '\0';
+    } else {
+        s_ui.node_uid[0] = '\0';
     }
     
     // Конфигурация
     if (config != NULL) {
         memcpy(&s_ui.config, config, sizeof(oled_ui_config_t));
+        ESP_LOGI(TAG, "Using provided config: addr=0x%02X, interval=%dms, task=%s", 
+                 config->i2c_address, config->update_interval_ms, 
+                 config->enable_task ? "yes" : "no");
     } else {
         s_ui.config.i2c_address = SSD1306_I2C_ADDR_DEFAULT;
         s_ui.config.update_interval_ms = 500;
         s_ui.config.enable_task = true;
+        ESP_LOGI(TAG, "Using default config: addr=0x%02X, interval=%dms", 
+                 s_ui.config.i2c_address, s_ui.config.update_interval_ms);
     }
     
     s_ui.i2c_address = s_ui.config.i2c_address;
     s_ui.state = OLED_UI_STATE_BOOT;
     s_ui.current_screen = 0;
     
+    ESP_LOGI(TAG, "Starting SSD1306 initialization...");
     // Инициализация дисплея
     esp_err_t err = ssd1306_init_display();
     if (err != ESP_OK) {
@@ -483,16 +672,23 @@ esp_err_t oled_ui_init(oled_ui_node_type_t node_type, const char *node_uid,
     memset(&s_ui.model, 0, sizeof(oled_ui_model_t));
     
     s_ui.initialized = true;
-    ESP_LOGI(TAG, "OLED UI initialized (node_type=%d, addr=0x%02X)", node_type, s_ui.i2c_address);
+    ESP_LOGI(TAG, "OLED UI initialized successfully (node_type=%d, addr=0x%02X, uid=%s)", 
+             node_type, s_ui.i2c_address, s_ui.node_uid);
     
     // Запуск задачи обновления
     if (s_ui.config.enable_task) {
+        ESP_LOGI(TAG, "Starting OLED update task...");
         err = oled_ui_start_task();
         if (err != ESP_OK) {
-            ESP_LOGW(TAG, "Failed to start update task");
+            ESP_LOGW(TAG, "Failed to start update task: %s", esp_err_to_name(err));
+        } else {
+            ESP_LOGI(TAG, "OLED update task started");
         }
+    } else {
+        ESP_LOGI(TAG, "OLED update task disabled in config");
     }
     
+    ESP_LOGI(TAG, "=== OLED UI Init Complete ===");
     return ESP_OK;
 }
 

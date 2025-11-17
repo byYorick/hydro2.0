@@ -37,4 +37,12 @@ return [
         'ingest_token' => env('PY_INGEST_TOKEN'),
     ],
 
+    'history_logger' => [
+        'url' => env('HISTORY_LOGGER_URL', 'http://history-logger:9300'),
+    ],
+
+    'digital_twin' => [
+        'url' => env('DIGITAL_TWIN_URL', 'http://digital-twin:8003'),
+    ],
+
 ];

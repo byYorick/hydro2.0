@@ -1,207 +1,44 @@
 /**
  * @file mqtt_client.h
- * @brief MQTT клиент для ESP32-нод
+ * @brief Алиас для mqtt_manager.h для обратной совместимости
  * 
- * Компонент обеспечивает подключение к MQTT брокеру, подписки на топики,
- * публикацию сообщений и автоматический реконнект согласно:
- * - doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md
- * - doc_ai/02_HARDWARE_FIRMWARE/FIRMWARE_STRUCTURE.md
- * - doc_ai/02_HARDWARE_FIRMWARE/ESP32_C_CODING_STANDARDS.md
+ * Этот файл предоставляет алиасы функций mqtt_manager_* как mqtt_client_*
+ * для совместимости с существующим кодом узлов.
  * 
- * Соответствие стандартам:
- * - Именование: snake_case с префиксом mqtt_client_
- * - Обработка ошибок: все функции возвращают esp_err_t
- * - Логирование: через ESP_LOG* с тегом "mqtt_client"
+ * @note Рекомендуется использовать mqtt_manager.h напрямую в новом коде
  */
 
 #ifndef MQTT_CLIENT_H
 #define MQTT_CLIENT_H
 
-#include "esp_err.h"
-#include <stdint.h>
-#include <stdbool.h>
+#include "mqtt_manager.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/**
- * @brief Структура параметров подключения к MQTT брокеру
- */
-typedef struct {
-    const char *host;           ///< IP адрес или hostname брокера
-    uint16_t port;              ///< Порт брокера (обычно 1883 или 8883)
-    uint16_t keepalive;         ///< Keepalive интервал в секундах
-    const char *client_id;      ///< MQTT client ID (если NULL, используется node_id)
-    const char *username;       ///< Имя пользователя (может быть NULL)
-    const char *password;       ///< Пароль (может быть NULL)
-    bool use_tls;               ///< Использовать TLS
-} mqtt_client_config_t;
+// Алиасы типов
+typedef mqtt_manager_config_t mqtt_client_config_t;
+typedef mqtt_node_info_t mqtt_client_node_info_t;
+typedef mqtt_config_callback_t mqtt_client_config_callback_t;
+typedef mqtt_command_callback_t mqtt_client_command_callback_t;
+typedef mqtt_connection_callback_t mqtt_client_connection_callback_t;
 
-/**
- * @brief Структура параметров узла для формирования топиков
- */
-typedef struct {
-    const char *gh_uid;         ///< UID теплицы (например "gh-1")
-    const char *zone_uid;       ///< UID зоны (например "zn-3")
-    const char *node_uid;       ///< UID узла (например "nd-ph-1")
-} mqtt_node_info_t;
-
-/**
- * @brief Callback для обработки входящих MQTT сообщений (config)
- * 
- * @param topic MQTT топик
- * @param data Данные сообщения (JSON)
- * @param data_len Длина данных
- * @param user_ctx Пользовательский контекст
- */
-typedef void (*mqtt_config_callback_t)(const char *topic, const char *data, int data_len, void *user_ctx);
-
-/**
- * @brief Callback для обработки входящих MQTT сообщений (command)
- * 
- * @param topic MQTT топик
- * @param channel Имя канала из топика
- * @param data Данные сообщения (JSON)
- * @param data_len Длина данных
- * @param user_ctx Пользовательский контекст
- */
-typedef void (*mqtt_command_callback_t)(const char *topic, const char *channel, const char *data, int data_len, void *user_ctx);
-
-/**
- * @brief Callback для событий подключения/отключения
- * 
- * @param connected true если подключен, false если отключен
- * @param user_ctx Пользовательский контекст
- */
-typedef void (*mqtt_connection_callback_t)(bool connected, void *user_ctx);
-
-/**
- * @brief Инициализация MQTT клиента
- * 
- * @param config Параметры подключения к брокеру
- * @param node_info Информация об узле для формирования топиков
- * @return ESP_OK при успехе
- */
-esp_err_t mqtt_client_init(const mqtt_client_config_t *config, const mqtt_node_info_t *node_info);
-
-/**
- * @brief Запуск MQTT клиента
- * 
- * Подключается к брокеру и подписывается на топики config и command
- * 
- * @return ESP_OK при успехе
- */
-esp_err_t mqtt_client_start(void);
-
-/**
- * @brief Остановка MQTT клиента
- * 
- * @return ESP_OK при успехе
- */
-esp_err_t mqtt_client_stop(void);
-
-/**
- * @brief Освобождение ресурсов MQTT клиента
- * 
- * @return ESP_OK при успехе
- */
-esp_err_t mqtt_client_deinit(void);
-
-/**
- * @brief Регистрация callback для обработки config сообщений
- * 
- * @param cb Callback функция
- * @param user_ctx Пользовательский контекст
- */
-void mqtt_client_register_config_cb(mqtt_config_callback_t cb, void *user_ctx);
-
-/**
- * @brief Регистрация callback для обработки command сообщений
- * 
- * @param cb Callback функция
- * @param user_ctx Пользовательский контекст
- */
-void mqtt_client_register_command_cb(mqtt_command_callback_t cb, void *user_ctx);
-
-/**
- * @brief Регистрация callback для событий подключения
- * 
- * @param cb Callback функция
- * @param user_ctx Пользовательский контекст
- */
-void mqtt_client_register_connection_cb(mqtt_connection_callback_t cb, void *user_ctx);
-
-/**
- * @brief Публикация телеметрии
- * 
- * Топик: hydro/{gh}/{zone}/{node}/{channel}/telemetry
- * QoS: 1, Retain: false
- * 
- * @param channel Имя канала
- * @param data JSON данные телеметрии
- * @return ESP_OK при успехе
- */
-esp_err_t mqtt_client_publish_telemetry(const char *channel, const char *data);
-
-/**
- * @brief Публикация статуса узла
- * 
- * Топик: hydro/{gh}/{zone}/{node}/status
- * QoS: 1, Retain: true
- * 
- * @param data JSON данные статуса
- * @return ESP_OK при успехе
- */
-esp_err_t mqtt_client_publish_status(const char *data);
-
-/**
- * @brief Публикация heartbeat
- * 
- * Топик: hydro/{gh}/{zone}/{node}/heartbeat
- * QoS: 0, Retain: false
- * 
- * @param data JSON данные heartbeat
- * @return ESP_OK при успехе
- */
-esp_err_t mqtt_client_publish_heartbeat(const char *data);
-
-/**
- * @brief Публикация ответа на команду
- * 
- * Топик: hydro/{gh}/{zone}/{node}/{channel}/command_response
- * QoS: 1, Retain: false
- * 
- * @param channel Имя канала
- * @param data JSON данные ответа
- * @return ESP_OK при успехе
- */
-esp_err_t mqtt_client_publish_command_response(const char *channel, const char *data);
-
-/**
- * @brief Публикация ответа на конфигурацию
- * 
- * Топик: hydro/{gh}/{zone}/{node}/config_response
- * QoS: 1, Retain: false
- * 
- * @param data JSON данные ответа
- * @return ESP_OK при успехе
- */
-esp_err_t mqtt_client_publish_config_response(const char *data);
-
-/**
- * @brief Проверка подключения к MQTT брокеру
- * 
- * @return true если подключен
- */
-bool mqtt_client_is_connected(void);
-
-/**
- * @brief Переподключение к MQTT брокеру
- * 
- * @return ESP_OK при успехе
- */
-esp_err_t mqtt_client_reconnect(void);
+// Алиасы функций для обратной совместимости
+#define mqtt_client_init mqtt_manager_init
+#define mqtt_client_start mqtt_manager_start
+#define mqtt_client_stop mqtt_manager_stop
+#define mqtt_client_deinit mqtt_manager_deinit
+#define mqtt_client_register_config_cb mqtt_manager_register_config_cb
+#define mqtt_client_register_command_cb mqtt_manager_register_command_cb
+#define mqtt_client_register_connection_cb mqtt_manager_register_connection_cb
+#define mqtt_client_publish_telemetry mqtt_manager_publish_telemetry
+#define mqtt_client_publish_status mqtt_manager_publish_status
+#define mqtt_client_publish_heartbeat mqtt_manager_publish_heartbeat
+#define mqtt_client_publish_command_response mqtt_manager_publish_command_response
+#define mqtt_client_publish_config_response mqtt_manager_publish_config_response
+#define mqtt_client_is_connected mqtt_manager_is_connected
+#define mqtt_client_reconnect mqtt_manager_reconnect
 
 #ifdef __cplusplus
 }

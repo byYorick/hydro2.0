@@ -1,0 +1,35 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Установка системных зависимостей
+RUN apt-get update && apt-get install -y \
+    gcc \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# Копируем requirements для всех сервисов
+COPY requirements-test.txt /app/requirements-test.txt
+COPY history-logger/requirements.txt /app/history-logger-requirements.txt
+COPY automation-engine/requirements.txt /app/automation-engine-requirements.txt
+COPY mqtt-bridge/requirements.txt /app/mqtt-bridge-requirements.txt
+
+# Устанавливаем зависимости
+RUN pip install --no-cache-dir -r /app/requirements-test.txt && \
+    pip install --no-cache-dir -r /app/history-logger-requirements.txt && \
+    pip install --no-cache-dir -r /app/automation-engine-requirements.txt && \
+    pip install --no-cache-dir -r /app/mqtt-bridge-requirements.txt
+
+# Копируем код
+COPY common /app/common
+COPY history-logger /app/history-logger
+COPY automation-engine /app/automation-engine
+COPY pytest.ini /app/pytest.ini
+
+# Устанавливаем PYTHONPATH
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+
+# Команда по умолчанию - запуск всех тестов
+CMD ["python", "-m", "pytest", "-v"]
+

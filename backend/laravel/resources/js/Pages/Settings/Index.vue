@@ -1,6 +1,28 @@
 <template>
   <AppLayout>
-    <h1 class="text-lg font-semibold mb-4">Settings</h1>
+    <!-- Toast notifications -->
+    <Teleport to="body">
+      <div 
+        class="fixed top-4 right-4 z-[10000] space-y-2 pointer-events-none"
+        style="position: fixed !important; top: 1rem !important; right: 1rem !important; z-index: 10000 !important; pointer-events: none;"
+      >
+        <div
+          v-for="toast in toasts"
+          :key="toast.id"
+          class="pointer-events-auto"
+          style="pointer-events: auto;"
+        >
+          <Toast
+            :message="toast.message"
+            :variant="toast.variant"
+            :duration="toast.duration"
+            @close="removeToast(toast.id)"
+          />
+        </div>
+      </div>
+    </Teleport>
+    
+    <h1 class="text-lg font-semibold mb-4">Настройки</h1>
 
     <div v-if="isAdmin" class="mb-6">
       <h2 class="text-md font-semibold mb-3 text-neutral-300">Управление пользователями</h2>
@@ -16,9 +38,9 @@
             class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
           >
             <option value="">Все роли</option>
-            <option value="admin">Admin</option>
-            <option value="operator">Operator</option>
-            <option value="viewer">Viewer</option>
+            <option value="admin">Администратор</option>
+            <option value="operator">Оператор</option>
+            <option value="viewer">Наблюдатель</option>
           </select>
           <Button size="sm" @click="loadUsers">Обновить</Button>
           <Button size="sm" variant="secondary" @click="showCreateModal = true">Создать пользователя</Button>
@@ -45,7 +67,7 @@
                   <Badge
                     :variant="u.role === 'admin' ? 'danger' : u.role === 'operator' ? 'warning' : 'info'"
                   >
-                    {{ u.role }}
+                    {{ translateRole(u.role) }}
                   </Badge>
                 </td>
                 <td class="px-3 py-2 border-b border-neutral-900 text-xs text-neutral-400">
@@ -91,7 +113,7 @@
             <Badge
               :variant="currentUser?.role === 'admin' ? 'danger' : currentUser?.role === 'operator' ? 'warning' : 'info'"
             >
-              {{ currentUser?.role }}
+              {{ translateRole(currentUser?.role) }}
             </Badge>
           </div>
         </div>
@@ -131,9 +153,9 @@
             v-model="userForm.role"
             class="mt-1 w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
           >
-            <option value="viewer">Viewer</option>
-            <option value="operator">Operator</option>
-            <option value="admin">Admin</option>
+            <option value="viewer">Наблюдатель</option>
+            <option value="operator">Оператор</option>
+            <option value="admin">Администратор</option>
           </select>
         </div>
       </div>
@@ -158,18 +180,42 @@
 
 <script setup>
 import { computed, reactive, ref, onMounted } from 'vue'
-import { usePage } from '@inertiajs/vue3'
+import { Teleport } from 'vue'
+import { usePage, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
 import Modal from '@/Components/Modal.vue'
-import axios from 'axios'
+import { translateRole } from '@/utils/i18n'
+import { logger } from '@/utils/logger'
+import Toast from '@/Components/Toast.vue'
+import { useApi } from '@/composables/useApi'
 
 const page = usePage()
 const currentUser = computed(() => page.props.auth?.user)
 const currentUserId = computed(() => currentUser.value?.id)
 const isAdmin = computed(() => currentUser.value?.role === 'admin')
+
+// Toast notifications
+const toasts = ref([])
+let toastIdCounter = 0
+
+function showToast(message, variant = 'info', duration = 3000) {
+  const id = ++toastIdCounter
+  toasts.value.push({ id, message, variant, duration })
+  return id
+}
+
+function removeToast(id) {
+  const index = toasts.value.findIndex(t => t.id === id)
+  if (index > -1) {
+    toasts.value.splice(index, 1)
+  }
+}
+
+// Инициализация API с Toast
+const { api } = useApi(showToast)
 
 const users = ref([])
 const searchQuery = ref('')
@@ -220,13 +266,14 @@ const confirmDelete = (user) => {
     const doDelete = async () => {
       if (!deletingUser.value) return
       try {
-        await axios.delete(`/settings/users/${deletingUser.value.id}`, {
-          headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-        })
-        // Перезагрузить страницу для обновления списка пользователей
-        window.location.reload()
+        await api.delete(`/settings/users/${deletingUser.value.id}`)
+        showToast('Пользователь успешно удален', 'success', 3000)
+        router.reload({ only: ['users'] })
+        deletingUser.value = null
       } catch (err) {
-        console.error('Failed to delete user:', err)
+        logger.error('Failed to delete user:', err)
+        const errorMsg = err.response?.data?.message || err.message || 'Неизвестная ошибка'
+        showToast(`Ошибка: ${errorMsg}`, 'error', 5000)
         deletingUser.value = null
       }
     }
@@ -238,18 +285,16 @@ const confirmDelete = (user) => {
           if (!payload.password) {
             delete payload.password
           }
-          await axios.patch(`/settings/users/${editingUser.value.id}`, payload, {
-            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-          })
+          await api.patch(`/settings/users/${editingUser.value.id}`, payload)
         } else {
-          await axios.post('/settings/users', payload, {
-            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-          })
+          await api.post('/settings/users', payload)
         }
-        // Перезагрузить страницу для обновления списка пользователей
-        window.location.reload()
+        showToast(editingUser.value ? 'Пользователь успешно обновлен' : 'Пользователь успешно создан', 'success', 3000)
+        router.reload({ only: ['users'] })
       } catch (err) {
-        console.error('Failed to save user:', err)
+        logger.error('Failed to save user:', err)
+        const errorMsg = err.response?.data?.message || err.message || 'Неизвестная ошибка'
+        showToast(`Ошибка: ${errorMsg}`, 'error', 5000)
       }
     }
 

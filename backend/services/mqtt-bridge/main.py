@@ -167,6 +167,56 @@ async def zone_drain(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class NodeConfigRequest(BaseModel):
+    node_uid: str
+    zone_id: Optional[int] = None
+    greenhouse_uid: Optional[str] = None
+    config: dict
+
+
+@app.post("/bridge/nodes/{node_uid}/config")
+async def publish_node_config(
+    request: Request,
+    node_uid: str = Path(..., min_length=1),
+    req: NodeConfigRequest = Body(...),
+):
+    """Публиковать NodeConfig в MQTT."""
+    _auth(request)
+    REQ_COUNTER.labels(path="/bridge/nodes/{node_uid}/config").inc()
+    
+    # Получаем zone_id и gh_uid из запроса или из БД
+    zone_id = req.zone_id
+    gh_uid = req.greenhouse_uid
+    
+    # Если не указаны, пытаемся получить из БД
+    if not zone_id or not gh_uid:
+        rows = await fetch(
+            """
+            SELECT n.zone_id, g.uid as gh_uid
+            FROM nodes n
+            LEFT JOIN zones z ON n.zone_id = z.id
+            LEFT JOIN greenhouses g ON z.greenhouse_id = g.id
+            WHERE n.uid = $1
+            """,
+            node_uid,
+        )
+        if rows and len(rows) > 0:
+            if not zone_id:
+                zone_id = rows[0].get("zone_id")
+            if not gh_uid:
+                gh_uid = rows[0].get("gh_uid")
+    
+    if not zone_id:
+        raise HTTPException(status_code=400, detail="zone_id is required (node must be assigned to a zone)")
+    if not gh_uid:
+        raise HTTPException(status_code=400, detail="greenhouse_uid is required (zone must have a greenhouse)")
+    
+    # Публикуем конфиг
+    publisher.publish_config(gh_uid, zone_id, node_uid, req.config)
+    
+    return {"status": "ok", "data": {"published": True, "topic": f"hydro/{gh_uid}/zn-{zone_id}/{node_uid}/config"}}
+
+
 @app.post("/bridge/zones/{zone_id}/calibrate-flow")
 async def zone_calibrate_flow(
     request: Request,

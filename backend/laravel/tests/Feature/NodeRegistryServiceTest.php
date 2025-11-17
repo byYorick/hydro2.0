@@ -1,0 +1,139 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\DeviceNode;
+use App\Models\Zone;
+use App\Services\NodeRegistryService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+class NodeRegistryServiceTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private NodeRegistryService $service;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->service = new NodeRegistryService();
+    }
+
+    public function test_register_node_creates_new_node(): void
+    {
+        $node = $this->service->registerNode(
+            'nd-ph-1',
+            null,
+            [
+                'firmware_version' => '1.0.0',
+                'hardware_revision' => 'rev-A',
+                'name' => 'pH Node 1',
+                'type' => 'ph'
+            ]
+        );
+
+        $this->assertNotNull($node->id);
+        $this->assertEquals('nd-ph-1', $node->uid);
+        $this->assertEquals('1.0.0', $node->fw_version);
+        $this->assertEquals('rev-A', $node->hardware_revision);
+        $this->assertEquals('pH Node 1', $node->name);
+        $this->assertEquals('ph', $node->type);
+        $this->assertTrue($node->validated);
+        $this->assertNotNull($node->first_seen_at);
+    }
+
+    public function test_register_node_updates_existing_node(): void
+    {
+        // Create existing node
+        $existing = DeviceNode::create([
+            'uid' => 'nd-ph-1',
+            'name' => 'Old Name',
+            'fw_version' => '0.9.0',
+            'validated' => false,
+        ]);
+
+        $node = $this->service->registerNode(
+            'nd-ph-1',
+            null,
+            [
+                'firmware_version' => '1.0.0',
+                'name' => 'New Name'
+            ]
+        );
+
+        $this->assertEquals($existing->id, $node->id);
+        $this->assertEquals('1.0.0', $node->fw_version);
+        $this->assertEquals('New Name', $node->name);
+        $this->assertTrue($node->validated);
+        // first_seen_at should not change for existing node
+        $this->assertNotNull($node->first_seen_at);
+    }
+
+    public function test_register_node_with_zone_uid_zn_format(): void
+    {
+        $zone = Zone::factory()->create();
+
+        $node = $this->service->registerNode(
+            'nd-ph-1',
+            "zn-{$zone->id}",
+            []
+        );
+
+        $this->assertEquals($zone->id, $node->zone_id);
+    }
+
+    public function test_register_node_with_zone_uid_numeric(): void
+    {
+        $zone = Zone::factory()->create();
+
+        $node = $this->service->registerNode(
+            'nd-ph-1',
+            (string)$zone->id,
+            []
+        );
+
+        $this->assertEquals($zone->id, $node->zone_id);
+    }
+
+    public function test_register_node_with_invalid_zone_uid(): void
+    {
+        $node = $this->service->registerNode(
+            'nd-ph-1',
+            'zn-99999',  // Non-existent zone
+            []
+        );
+
+        $this->assertNull($node->zone_id);
+    }
+
+    public function test_register_node_sets_validated_to_true(): void
+    {
+        $node = $this->service->registerNode('nd-ph-1', null, []);
+
+        $this->assertTrue($node->validated);
+    }
+
+    public function test_register_node_sets_first_seen_at_on_first_registration(): void
+    {
+        $node = $this->service->registerNode('nd-ph-1', null, []);
+
+        $this->assertNotNull($node->first_seen_at);
+    }
+
+    public function test_register_node_preserves_first_seen_at_on_update(): void
+    {
+        $existing = DeviceNode::create([
+            'uid' => 'nd-ph-1',
+            'first_seen_at' => now()->subDays(5),
+        ]);
+
+        $node = $this->service->registerNode('nd-ph-1', null, []);
+
+        $this->assertEquals(
+            $existing->first_seen_at->format('Y-m-d H:i:s'),
+            $node->first_seen_at->format('Y-m-d H:i:s')
+        );
+    }
+}
+

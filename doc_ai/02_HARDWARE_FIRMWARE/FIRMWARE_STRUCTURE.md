@@ -27,42 +27,34 @@
 9. **Diagnostics / Logging** — диагностика и статусы.
 10. **OLED UI** — локальный интерфейс (см. `NODE_OLED_UI_SPEC.md`).
 
-Пример структуры каталога:
+Пример структуры каталога для ноды:
 
 ```text
-firmware/
- main/
- main.c
- app_main.c
- core/
- app_tasks.c
- app_events.c
- net/
- wifi_manager.c
- mqtt_client.c
- config/
- nvs_config.c
- sensors/
- ph_sensor.c
- ec_sensor.c
- temp_sensor.c
- humidity_sensor.c
- actuators/
- pumps.c
- relays.c
- fans.c
- lights.c
- telemetry/
- telemetry_engine.c
- commands/
- command_engine.c
- ota/
- ota_engine.c
- ui/
- oled_ui.c
- utils/
- log.c
- time_sync.c
+firmware/nodes/ph_node/
+├─ main/
+│  ├─ main.c
+│  ├─ ph_node_app.c
+│  └─ ph_node_tasks.c
+├─ CMakeLists.txt
+├─ sdkconfig.defaults
+└─ Kconfig
+
+firmware/nodes/common/components/  # Общие компоненты для всех нод
+├─ i2c_bus/          # I²C шина
+├─ sensors/          # Драйверы сенсоров
+│  ├─ ph_sensor/
+│  ├─ trema_ph/
+│  ├─ ec_sensor/
+│  ├─ trema_ec/
+│  ├─ sht3x/
+│  └─ ina209/
+├─ mqtt_client/      # MQTT клиент
+├─ mqtt_manager/     # MQTT менеджер
+├─ wifi_manager/     # Wi-Fi менеджер
+├─ config_storage/   # Хранение NodeConfig в NVS
+├─ logging/          # Система логирования
+├─ setup_portal/     # Setup portal для provisioning
+└─ oled_ui/          # OLED UI
 ```
 
 ---

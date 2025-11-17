@@ -96,6 +96,9 @@
 - [x] Zone controller (`automation-engine`: проверка targets, публикация команд корректировки pH/EC) — **MVP_DONE**
 - [x] Scheduler (`scheduler`: расписания поливов/света из recipe phases, публикация команд на MQTT) — **MVP_DONE**
 - [x] Integration bridge (`mqtt-bridge`: FastAPI для отправки команд через MQTT) — **MVP_DONE**
+- [x] Обработка `node_hello` в `history-logger` (регистрация узлов через MQTT) — **MVP_DONE**
+- [x] Обработка `heartbeat` в `history-logger` (uptime, free_heap, rssi) — **MVP_DONE**
+- [x] Публикация `NodeConfig` через MQTT в `mqtt-bridge` — **MVP_DONE**
 - [x] Тесты (pytest) для automation-engine и scheduler — **MVP_DONE**
 - [ ] Интеграционные тесты в docker-compose стенде — **PLANNED**
 
@@ -111,6 +114,11 @@
 - [x] Панель администрирования (минимальная) — **MVP_DONE**
 - [x] Миграции БД и сиды — **MVP_DONE**
 - [x] Интеграция с Python-сервисами (PythonIngestController для telemetry/commands, PythonBridgeService) — **MVP_DONE**
+- [x] Жизненный цикл узлов (lifecycle_state, hardware_id, NodeLifecycleState Enum) — **MVP_DONE**
+- [x] Регистрация узлов через MQTT (node_hello обработка) — **MVP_DONE**
+- [x] NodeConfig генерация и публикация (NodeConfigService, автоматическая синхронизация) — **MVP_DONE**
+- [x] Замена узлов (NodeSwapService, API endpoint) — **MVP_DONE**
+- [x] Heartbeat метрики (uptime_seconds, free_heap_bytes, rssi в таблице nodes) — **MVP_DONE**
 
 ---
 

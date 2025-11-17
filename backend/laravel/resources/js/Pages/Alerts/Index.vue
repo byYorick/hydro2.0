@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <h1 class="text-lg font-semibold mb-4">Alerts</h1>
+    <h1 class="text-lg font-semibold mb-4">Алерты</h1>
     <div class="mb-3 flex flex-wrap items-center gap-2">
       <label class="text-sm text-neutral-300">Фильтр:</label>
       <select v-model="onlyActive" class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm">
@@ -8,7 +8,7 @@
         <option :value="false">Все</option>
       </select>
       <label class="ml-4 text-sm text-neutral-300">Зона:</label>
-      <input v-model="zoneQuery" placeholder="Zone..." class="h-9 w-48 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
+      <input v-model="zoneQuery" placeholder="Зона..." class="h-9 w-48 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
     </div>
 
     <div class="rounded-xl border border-neutral-800 overflow-hidden max-h-[700px]" @scroll.passive="onScroll">
@@ -25,7 +25,7 @@
             <td class="px-3 py-2 border-b border-neutral-900">{{ a.type }}</td>
             <td class="px-3 py-2 border-b border-neutral-900">{{ a.zone?.name || `Zone #${a.zone_id}` || '-' }}</td>
             <td class="px-3 py-2 border-b border-neutral-900">{{ a.created_at ? new Date(a.created_at).toLocaleString('ru-RU') : '-' }}</td>
-            <td class="px-3 py-2 border-b border-neutral-900">{{ a.status === 'resolved' ? 'RESOLVED' : 'ACTIVE' }}</td>
+            <td class="px-3 py-2 border-b border-neutral-900">{{ translateStatus(a.status) }}</td>
             <td class="px-3 py-2 border-b border-neutral-900">
               <div class="flex gap-2">
                 <Button size="sm" variant="secondary" @click="onResolve(a)" :disabled="a.status === 'resolved'">Подтвердить</Button>
@@ -54,11 +54,17 @@ import Modal from '@/Components/Modal.vue'
 import axios from 'axios'
 import { usePage, router } from '@inertiajs/vue3'
 import { subscribeAlerts } from '@/bootstrap'
+import { translateStatus } from '@/utils/i18n'
+import { logger } from '@/utils/logger'
+import { useApi } from '@/composables/useApi'
 
 const page = usePage()
 const alerts = computed(() => page.props.alerts || [])
 
-const headers = ['Type', 'Zone', 'Time', 'Status', 'Actions']
+// Инициализация API без Toast (используем стандартную обработку ошибок)
+const { api } = useApi()
+
+const headers = ['Тип', 'Зона', 'Время', 'Статус', 'Действия']
 const onlyActive = ref(true)
 const zoneQuery = ref('')
 
@@ -77,16 +83,11 @@ const onResolve = (a) => {
 }
 const doResolve = () => {
   const id = confirm.alertId
-  axios.patch(`/api/alerts/${id}/ack`, {}, {
-    headers: {
-      'Accept': 'application/json',
-      'X-Requested-With': 'XMLHttpRequest',
-    },
-  }).then(() => {
+  api.patch(`/api/alerts/${id}/ack`, {}).then(() => {
     router.reload({ only: ['alerts'] })
     confirm.open = false
   }).catch((err) => {
-    console.error('Failed to resolve alert:', err)
+    logger.error('Failed to resolve alert:', err)
     confirm.open = false
   })
 }

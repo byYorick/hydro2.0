@@ -26,7 +26,8 @@
 
 ```text
 hydro2.0/
-├─ docs/                  # Документация и спецификации
+├─ doc_ai/               # Документация и спецификации (эталонная)
+├─ docs/                  # Mirror документации (опционально, для совместимости)
 ├─ firmware/              # Прошивки для всех нод на ESP32
 ├─ backend/               # Backend-сервисы, API, MQTT-мост
 ├─ mobile/                # Мобильное приложение
@@ -42,10 +43,12 @@ hydro2.0/
 
 ---
 
-## 2. `docs/` — документация и спеки
+## 2. `doc_ai/` — документация и спеки
+
+**Примечание:** Основная документация находится в `doc_ai/`. Папка `docs/` может существовать как mirror для совместимости, но эталоном является `doc_ai/`.
 
 ```text
-docs/
+doc_ai/
 ├─ 01_OVERVIEW/
 │  ├─ SYSTEM_OVERVIEW.md
 │  └─ GLOSSARY.md
@@ -86,20 +89,27 @@ docs/
 
 ```text
 firmware/
-├─ common/                     # Общие библиотеки и компоненты
-│  ├─ components/
-│  │  ├─ i2c_bus/
-│  │  ├─ ina209/
-│  │  ├─ oled_display/
-│  │  ├─ sensors/              # pH, EC, SHT3x, CCS811, lux и т.д.
-│  │  ├─ mesh_comm/            # ESP-MESH, MQTT-обвязка
-│  │  ├─ config_loader/        # Загрузка NodeConfig из NVS/JSON
-│  │  ├─ logging/
-│  │  ├─ diagnostics/
-│  │  └─ safe_mode/
-│  ├─ CMakeLists.txt
-│  └─ Kconfig
 ├─ nodes/
+│  ├─ common/                  # Общие библиотеки и компоненты для всех нод
+│  │  ├─ components/
+│  │  │  ├─ i2c_bus/
+│  │  │  ├─ ina209/
+│  │  │  ├─ oled_ui/           # OLED дисплей UI
+│  │  │  ├─ sensors/            # pH, EC, SHT3x, CCS811, lux и т.д.
+│  │  │  │  ├─ ph_sensor/
+│  │  │  │  ├─ trema_ph/
+│  │  │  │  ├─ ec_sensor/
+│  │  │  │  ├─ trema_ec/
+│  │  │  │  ├─ sht3x/
+│  │  │  │  └─ ina209/
+│  │  │  ├─ mqtt_client/       # MQTT клиент
+│  │  │  ├─ mqtt_manager/       # MQTT менеджер
+│  │  │  ├─ wifi_manager/       # Wi-Fi менеджер
+│  │  │  ├─ config_storage/    # Загрузка NodeConfig из NVS/JSON
+│  │  │  ├─ logging/
+│  │  │  ├─ setup_portal/       # Setup portal для provisioning
+│  │  │  └─ oled_ui/            # OLED UI
+│  │  └─ README.md
 │  ├─ pump_node/               # Нода насосов с INA209
 │  │  ├─ main/
 │  │  │  ├─ main.c
@@ -136,7 +146,7 @@ firmware/
 
 **Ключевые моменты боевой структуры:**
 
-1. **Общие компоненты** (датчики, INA209, дисплей, mesh, safe_mode) живут в `firmware/common/components/`.
+1. **Общие компоненты** (датчики, INA209, дисплей, MQTT, Wi-Fi, config) живут в `firmware/nodes/common/components/`.
 2. Каждая нода — отдельный ESP-IDF-проект в `firmware/nodes/<node_type>/`.
 3. Для каждой ноды:
    - есть `sdkconfig.defaults` с боевыми дефолтами,
@@ -276,7 +286,7 @@ configs/
    └─ keystore_structure.md
 ```
 
-**Идея:** все ноды читают свои параметры из `NodeConfig` (JSON/CBOR), структура которого описана в `docs/02_HARDWARE_FIRMWARE/NODE_CONFIG_SPEC.md`. Backend и тулзы умеют генерировать/валидировать эти конфиги.
+**Идея:** все ноды читают свои параметры из `NodeConfig` (JSON/CBOR), структура которого описана в `doc_ai/02_HARDWARE_FIRMWARE/NODE_CONFIG_SPEC.md`. Backend и тулзы умеют генерировать/валидировать эти конфиги.
 
 ---
 
@@ -322,7 +332,7 @@ tools/
 
 Проект можно считать **боевым**, если:
 
-1. В `docs/` заполнены и согласованы:
+1. В `doc_ai/` заполнены и согласованы:
    - `SYSTEM_OVERVIEW.md`,
    - все ключевые спеки по нодам, MQTT и backend,
    - `IMPLEMENTATION_STATUS.md` актуален.

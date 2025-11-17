@@ -70,7 +70,7 @@
                 </div>
               </div>
               <Badge :variant="zone.status === 'ALARM' ? 'danger' : 'warning'">
-                {{ zone.status === 'ALARM' ? 'Тревога' : zone.status === 'WARNING' ? 'Предупреждение' : zone.status === 'RUNNING' ? 'Запущено' : zone.status === 'PAUSED' ? 'Приостановлено' : zone.status }}
+                {{ translateStatus(zone.status) }}
               </Badge>
             </div>
             <div v-if="zone.description" class="text-xs text-neutral-400 mb-2">{{ zone.description }}</div>
@@ -98,7 +98,7 @@
           <div v-for="a in dashboard.latestAlerts" :key="a.id" class="rounded-lg border border-neutral-800 bg-neutral-925 p-3">
             <div class="flex items-start justify-between mb-1">
               <Badge :variant="a.status === 'active' ? 'danger' : 'neutral'" class="text-xs">
-                {{ a.status }}
+                {{ translateStatus(a.status) }}
               </Badge>
               <span class="text-xs text-neutral-500">{{ formatTime(a.created_at) }}</span>
             </div>
@@ -121,12 +121,14 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed } from 'vue'
 import { Link } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
+import { translateStatus } from '@/utils/i18n'
+import { formatTime } from '@/utils/formatTime'
 
 const props = defineProps({
   dashboard: {
@@ -150,32 +152,5 @@ const hasProblematicZones = computed(() => {
   return zones && Array.isArray(zones) && zones.length > 0
 })
 
-// Debug: проверка данных
-onMounted(() => {
-  console.log('Dashboard data:', props.dashboard)
-  console.log('Latest alerts:', props.dashboard.latestAlerts)
-  console.log('Alerts count:', props.dashboard.latestAlerts?.length)
-  console.log('Has alerts:', hasAlerts.value)
-  console.log('Greenhouses:', props.dashboard.greenhouses)
-  console.log('Has greenhouses:', hasGreenhouses.value)
-  console.log('Problematic zones:', props.dashboard.problematicZones)
-  console.log('Has problematic zones:', hasProblematicZones.value)
-})
-
-function formatTime(dateString) {
-  if (!dateString) return ''
-  const date = new Date(dateString)
-  const now = new Date()
-  const diffMs = now - date
-  const diffMins = Math.floor(diffMs / 60000)
-  const diffHours = Math.floor(diffMs / 3600000)
-  const diffDays = Math.floor(diffMs / 86400000)
-  
-  if (diffMins < 1) return 'только что'
-  if (diffMins < 60) return `${diffMins} мин назад`
-  if (diffHours < 24) return `${diffHours} ч назад`
-  if (diffDays < 7) return `${diffDays} дн назад`
-  return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
-}
 </script>
 

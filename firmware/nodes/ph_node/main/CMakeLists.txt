@@ -3,16 +3,25 @@ idf_component_register(
         "main.c"
         "ph_node_app.c"
         "ph_node_tasks.c"
+        "ph_node_init.c"
+        "ph_node_config_handler.c"
+        "ph_node_command_handler.c"
+        "ph_node_callbacks.c"
+        "ph_node_setup.c"
+        "ph_node_telemetry.c"
         "pump_control.c"
     INCLUDE_DIRS 
         "."
     REQUIRES 
-        mqtt_client
+        mqtt_manager
         wifi_manager
         config_storage
         trema_ph
         i2c_bus
         oled_ui
+        setup_portal
+        heartbeat_task
+        connection_status
         driver
         esp_wifi
         nvs_flash

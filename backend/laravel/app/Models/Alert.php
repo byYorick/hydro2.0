@@ -14,6 +14,8 @@ class Alert extends Model
 
     protected $fillable = [
         'zone_id',
+        'source',
+        'code',
         'type',
         'details',
         'status',

@@ -1,6 +1,10 @@
+# LEGACY / NOT USED
+
+**⚠️ ВНИМАНИЕ: Этот сервис больше не используется!**
+
 API Gateway — роль выполняется Laravel.
 
-**Статус:** Этот сервис не реализован как отдельный микросервис.
+**Статус:** **LEGACY / NOT USED** — функционал полностью реализован в Laravel.
 
 **Текущая реализация:**
 Laravel (`backend/laravel/`) выполняет роль API Gateway:
@@ -14,6 +18,6 @@ Laravel (`backend/laravel/`) выполняет роль API Gateway:
 - REST API reference: `doc_ai/04_BACKEND_CORE/REST_API_REFERENCE.md`
 
 **Примечание:**
-Эта папка оставлена как placeholder. Если в будущем потребуется отдельный микросервис API Gateway, его можно реализовать здесь согласно документации в `doc_ai/01_SYSTEM/01_PROJECT_STRUCTURE_PROD.md`.
+Эта папка оставлена как placeholder для исторических целей. Функционал API Gateway полностью реализован в Laravel согласно плану рефакторинга (Фаза 1-2, 2025-01-27).
 
 

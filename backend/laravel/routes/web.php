@@ -101,9 +101,39 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
                     ->with('greenhouse:id,name')
                     ->get();
             });
+            
+            // Загружаем telemetry для всех зон (batch loading)
+            $zoneIds = $zones->pluck('id')->toArray();
+            $telemetryByZone = [];
+            
+            if (!empty($zoneIds)) {
+                $telemetryAll = \App\Models\TelemetryLast::query()
+                    ->whereIn('zone_id', $zoneIds)
+                    ->get(['zone_id', 'metric_type', 'value']);
+                
+                // Группируем по zone_id и преобразуем в формат {ph, ec, temperature, humidity}
+                $telemetryByZone = $telemetryAll->groupBy('zone_id')->map(function ($metrics) {
+                    $result = ['ph' => null, 'ec' => null, 'temperature' => null, 'humidity' => null];
+                    foreach ($metrics as $metric) {
+                        $key = strtolower($metric->metric_type ?? '');
+                        if ($key === 'ph') $result['ph'] = $metric->value;
+                        elseif ($key === 'ec') $result['ec'] = $metric->value;
+                        elseif (in_array($key, ['temp_air', 'temp', 'temperature'])) $result['temperature'] = $metric->value;
+                        elseif (in_array($key, ['humidity', 'rh'])) $result['humidity'] = $metric->value;
+                    }
+                    return $result;
+                })->toArray();
+            }
+            
+            // Добавляем telemetry к каждой зоне
+            $zonesWithTelemetry = $zones->map(function ($zone) use ($telemetryByZone) {
+                $zone->telemetry = $telemetryByZone[$zone->id] ?? null;
+                return $zone;
+            });
+            
             return Inertia::render('Zones/Index', [
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
-                'zones' => $zones,
+                'zones' => $zonesWithTelemetry,
             ]);
         })->name('zones.web.index');
         Route::get('/{zoneId}', function (string $zoneId) {
@@ -153,16 +183,94 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
             $events = collect([]);
             if (class_exists(\App\Models\Event::class)) {
                 try {
-                    $events = \App\Models\Event::query()
+                    $eventsRaw = \App\Models\Event::query()
                         ->where('zone_id', $zoneIdInt)
                         ->select(['id', 'type', 'details', 'created_at'])
                         ->latest('created_at')
                         ->limit(20)
                         ->get();
+                    
+                    // Маппинг структуры Events для фронтенда
+                    // type → kind, details.message → message, created_at → occurred_at
+                    $events = $eventsRaw->map(function ($event) {
+                        $details = $event->details ?? [];
+                        $message = $details['message'] ?? $details['msg'] ?? $event->type ?? '';
+                        
+                        return [
+                            'id' => $event->id,
+                            'kind' => $event->type ?? 'INFO',
+                            'message' => $message,
+                            'occurred_at' => $event->created_at ? $event->created_at->toIso8601String() : null,
+                        ];
+                    });
                 } catch (\Exception $e) {
                     // Event model or table doesn't exist, use empty collection
                     $events = collect([]);
                 }
+            }
+            
+            // Загрузить данные cycles для зоны
+            $cycles = [];
+            try {
+                $settings = $zone->settings ?? [];
+                // Получаем последние команды для вычисления last_run
+                $lastCommands = \App\Models\Command::query()
+                    ->where('zone_id', $zoneIdInt)
+                    ->whereIn('cmd', ['FORCE_PH_CONTROL', 'FORCE_EC_CONTROL', 'FORCE_IRRIGATION', 'FORCE_LIGHTING', 'FORCE_CLIMATE'])
+                    ->whereNotNull('ack_at')
+                    ->select(['cmd', 'ack_at'])
+                    ->orderBy('ack_at', 'desc')
+                    ->get()
+                    ->groupBy('cmd')
+                    ->map(function ($group) {
+                        return $group->first()->ack_at?->toIso8601String();
+                    });
+                
+                // Определяем интервалы из settings или targets
+                $cycleConfigs = [
+                    'PH_CONTROL' => [
+                        'strategy' => $settings['ph_control']['strategy'] ?? 'periodic',
+                        'interval' => $settings['ph_control']['interval_sec'] ?? 300,
+                    ],
+                    'EC_CONTROL' => [
+                        'strategy' => $settings['ec_control']['strategy'] ?? 'periodic',
+                        'interval' => $settings['ec_control']['interval_sec'] ?? 300,
+                    ],
+                    'IRRIGATION' => [
+                        'strategy' => $settings['irrigation']['strategy'] ?? 'periodic',
+                        'interval' => $targets['irrigation_interval_sec'] ?? $settings['irrigation']['interval_sec'] ?? null,
+                    ],
+                    'LIGHTING' => [
+                        'strategy' => $settings['lighting']['strategy'] ?? 'periodic',
+                        'interval' => isset($targets['light_hours']) ? $targets['light_hours'] * 3600 : ($settings['lighting']['interval_sec'] ?? null),
+                    ],
+                    'CLIMATE' => [
+                        'strategy' => $settings['climate']['strategy'] ?? 'periodic',
+                        'interval' => $settings['climate']['interval_sec'] ?? 300,
+                    ],
+                ];
+                
+                // Формируем ответ
+                foreach ($cycleConfigs as $type => $config) {
+                    $lastRun = $lastCommands->get("FORCE_{$type}");
+                    $interval = $config['interval'];
+                    $nextRun = null;
+                    
+                    if ($lastRun && $interval) {
+                        $nextRun = \Carbon\Carbon::parse($lastRun)->addSeconds($interval)->toIso8601String();
+                    }
+                    
+                    $cycles[$type] = [
+                        'type' => $type,
+                        'strategy' => $config['strategy'],
+                        'interval' => $interval,
+                        'last_run' => $lastRun,
+                        'next_run' => $nextRun,
+                    ];
+                }
+            } catch (\Exception $e) {
+                // Если ошибка при загрузке cycles, используем пустой массив
+                $cycles = [];
             }
             
             return Inertia::render('Zones/Show', [
@@ -173,6 +281,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
                 'targets' => $targets,
                 'devices' => $devices,
                 'events' => $events,
+                'cycles' => $cycles,
             ]);
         })->name('zones.show');
     });

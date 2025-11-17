@@ -7,6 +7,7 @@ import os
 from typing import Optional, Dict, Any, Tuple, List
 from datetime import datetime, timedelta
 from .db import fetch, execute, create_zone_event
+from .alerts import create_alert, AlertSource, AlertCode
 try:
     import httpx
     HTTPX_AVAILABLE = True
@@ -198,14 +199,12 @@ async def ensure_water_level_alert(zone_id: int, level: float) -> None:
         
         if not rows:
             # Создаем новый алерт
-            await execute(
-                """
-                INSERT INTO alerts (zone_id, type, details, status, created_at)
-                VALUES ($1, $2, $3, 'ACTIVE', NOW())
-                """,
-                zone_id,
-                'WATER_LEVEL_LOW',
-                f'{{"level": {level}, "threshold": {WATER_LEVEL_LOW_THRESHOLD}}}',
+            await create_alert(
+                zone_id=zone_id,
+                source=AlertSource.BIZ.value,
+                code=AlertCode.BIZ_DRY_RUN.value,  # Низкий уровень воды = риск сухого хода
+                type='Water level low',
+                details={'level': level, 'threshold': WATER_LEVEL_LOW_THRESHOLD}
             )
             # Создаем событие
             await create_zone_event(
@@ -245,14 +244,15 @@ async def ensure_no_flow_alert(zone_id: int, flow_value: Optional[float], min_fl
         
         if not rows:
             # Создаем новый алерт
-            await execute(
-                """
-                INSERT INTO alerts (zone_id, type, details, status, created_at)
-                VALUES ($1, $2, $3, 'ACTIVE', NOW())
-                """,
-                zone_id,
-                'NO_FLOW',
-                f'{{"flow_value": {flow_value if flow_value is not None else "null"}, "min_flow": {min_flow}}}',
+            await create_alert(
+                zone_id=zone_id,
+                source=AlertSource.BIZ.value,
+                code=AlertCode.BIZ_NO_FLOW.value,
+                type='No water flow detected',
+                details={
+                    'flow_value': flow_value,
+                    'min_flow': min_flow
+                }
             )
             # Создаем событие ALERT_CREATED
             await create_zone_event(

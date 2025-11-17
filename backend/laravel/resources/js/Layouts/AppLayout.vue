@@ -6,12 +6,12 @@
           <span class="text-base font-semibold">hydro 2.0</span>
         </div>
         <nav class="p-3 space-y-1">
-          <NavLink href="/" label="Dashboard" />
-          <NavLink href="/zones" label="Zones" />
-          <NavLink href="/devices" label="Devices" />
-          <NavLink href="/recipes" label="Recipes" />
-          <NavLink href="/alerts" label="Alerts" />
-          <NavLink href="/settings" label="Settings" />
+          <NavLink href="/" label="Панель управления" />
+          <NavLink href="/zones" label="Зоны" />
+          <NavLink href="/devices" label="Устройства" />
+          <NavLink href="/recipes" label="Рецепты" />
+          <NavLink href="/alerts" label="Алерты" />
+          <NavLink href="/settings" label="Настройки" />
         </nav>
       </aside>
       
@@ -38,12 +38,12 @@
             </button>
           </div>
           <nav class="p-3 space-y-1" @click="showMobileMenu = false">
-            <NavLink href="/" label="Dashboard" />
-            <NavLink href="/zones" label="Zones" />
-            <NavLink href="/devices" label="Devices" />
-            <NavLink href="/recipes" label="Recipes" />
-            <NavLink href="/alerts" label="Alerts" />
-            <NavLink href="/settings" label="Settings" />
+            <NavLink href="/" label="Панель управления" />
+            <NavLink href="/zones" label="Зоны" />
+            <NavLink href="/devices" label="Устройства" />
+            <NavLink href="/recipes" label="Рецепты" />
+            <NavLink href="/alerts" label="Алерты" />
+            <NavLink href="/settings" label="Настройки" />
           </nav>
         </div>
       </div>
@@ -61,7 +61,7 @@
             </button>
             <span class="text-base font-semibold">hydro 2.0</span>
           </div>
-          <span class="text-xs text-neutral-400 hidden sm:inline">Ctrl+K — Command Palette</span>
+          <span class="text-xs text-neutral-400 hidden sm:inline">Ctrl+K — Командная палитра</span>
         </header>
         <div class="px-4 py-4">
           <slot />
@@ -70,7 +70,7 @@
       </main>
       <aside class="hidden xl:block w-80 shrink-0 border-l border-neutral-800 bg-neutral-925">
         <div class="h-16 flex items-center px-4 border-b border-neutral-800">
-          <span class="text-sm text-neutral-400">Events</span>
+          <span class="text-sm text-neutral-400">События</span>
         </div>
         <div class="p-4 text-neutral-400 text-sm">
           <slot name="context" />

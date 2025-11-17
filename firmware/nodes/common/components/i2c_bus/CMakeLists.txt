@@ -2,6 +2,6 @@ idf_component_register(
     SRCS "i2c_bus.c"
     INCLUDE_DIRS "include"
     REQUIRES driver
-    PRIV_REQUIRES config_storage
+    PRIV_REQUIRES config_storage json
 )
 

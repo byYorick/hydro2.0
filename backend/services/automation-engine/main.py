@@ -13,6 +13,8 @@ from common.water_flow import (
     ensure_water_level_alert,
     ensure_no_flow_alert,
 )
+from common.water_cycle import tick_recirculation
+from common.pump_safety import can_run_pump
 from light_controller import check_and_control_lighting
 from climate_controller import check_and_control_climate
 from irrigation_controller import check_and_control_irrigation, check_and_control_recirculation
@@ -225,6 +227,15 @@ async def check_and_correct_zone(zone_id: int, mqtt: MqttClient, gh_uid: str, cf
             irrigation_cmd = await check_and_control_irrigation(zone_id, targets, telemetry)
         else:
             irrigation_cmd = None
+        
+        # Проверяем безопасность перед запуском насоса
+        if irrigation_cmd:
+            pump_channel = irrigation_cmd.get('channel', 'default')
+            can_run, error_msg = await can_run_pump(zone_id, pump_channel)
+            if not can_run:
+                logger.warning(f"Zone {zone_id}: Cannot run irrigation pump {pump_channel}: {error_msg}")
+                irrigation_cmd = None
+        
         if irrigation_cmd:
             # Создаем событие
             if irrigation_cmd.get('event_type'):
@@ -236,9 +247,9 @@ async def check_and_correct_zone(zone_id: int, mqtt: MqttClient, gh_uid: str, cf
                 irrigation_cmd['cmd'], irrigation_cmd.get('params'),
             )
         
-        # Recirculation Controller (после Irrigation Controller)
+        # Recirculation Controller (после Irrigation Controller) - используем новую логику с учётом NC-насоса
         if capabilities.get("recirculation", False):
-            recirculation_cmd = await check_and_control_recirculation(zone_id, targets, mqtt, gh_uid)
+            recirculation_cmd = await tick_recirculation(zone_id, mqtt, gh_uid, datetime.now())
         else:
             recirculation_cmd = None
         if recirculation_cmd:

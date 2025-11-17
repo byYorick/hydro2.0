@@ -112,6 +112,9 @@ services:
     depends_on:
       - mqtt
       - db
+    ports:
+      - "9300:9300"
+      - "9301:9301"  # Prometheus metrics
   automation-engine:
     build:
       context: ./services
@@ -212,6 +215,60 @@ services:
       - prometheus
       - laravel
     restart: unless-stopped
+
+  digital-twin:
+    build:
+      context: ./services
+      dockerfile: digital-twin/Dockerfile
+    environment:
+      - PG_HOST=db
+      - PG_PORT=5432
+      - PG_DB=hydro_dev
+      - PG_USER=hydro
+      - PG_PASS=hydro
+      - PYTHONPATH=/app
+    depends_on:
+      - db
+    ports:
+      - "8003:8003"
+      - "9403:9403"  # Prometheus metrics
+    restart: unless-stopped
+
+  telemetry-aggregator:
+    build:
+      context: ./services
+      dockerfile: telemetry-aggregator/Dockerfile
+    environment:
+      - PG_HOST=db
+      - PG_PORT=5432
+      - PG_DB=hydro_dev
+      - PG_USER=hydro
+      - PG_PASS=hydro
+      - PYTHONPATH=/app
+    depends_on:
+      - db
+    ports:
+      - "9404:9404"  # Prometheus metrics
+    restart: unless-stopped
+
+  python-tests:
+    build:
+      context: ./services
+      dockerfile: Dockerfile.test
+    environment:
+      - PG_HOST=db
+      - PG_PORT=5432
+      - PG_DB=hydro_dev
+      - PG_USER=hydro
+      - PG_PASS=hydro
+      - PYTHONPATH=/app
+    depends_on:
+      - db
+    volumes:
+      - ./services:/app
+    profiles:
+      - tests
+    command: ["python", "-m", "pytest", "common/test_metrics.py", "common/test_alerts.py", "common/test_telemetry_phase2.py", "automation-engine/test_alerts_manager_phase2.py", "-v"]
 
 volumes:
   postgres_data:
