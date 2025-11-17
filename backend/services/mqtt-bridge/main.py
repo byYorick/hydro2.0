@@ -58,7 +58,8 @@ async def send_node_command(
     REQ_COUNTER.labels(path="/bridge/nodes/{node_uid}/commands").inc()
     if not (req.greenhouse_uid and req.zone_id and req.channel):
         raise HTTPException(status_code=400, detail="greenhouse_uid, zone_id and channel are required")
-    cmd_id = new_command_id()
+    # Use cmd_id from Laravel if provided, otherwise generate new one
+    cmd_id = req.cmd_id or new_command_id()
     payload = {"cmd": req.type, "cmd_id": cmd_id, **({"params": req.params} if req.params else {})}
     publisher.publish_command(req.greenhouse_uid, req.zone_id, node_uid, req.channel, payload)
     await mark_command_sent(cmd_id)

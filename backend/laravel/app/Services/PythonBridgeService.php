@@ -105,6 +105,7 @@ class PythonBridgeService
             'greenhouse_uid' => $ghUid,
             'zone_id' => $zoneId,
             'channel' => $payload['channel'] ?? null,
+            'cmd_id' => $cmdId, // Pass Laravel's cmd_id to Python service
         ])->throw();
         return $cmdId;
     }

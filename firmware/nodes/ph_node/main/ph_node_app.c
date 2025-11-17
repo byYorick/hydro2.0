@@ -12,11 +12,14 @@
 #include "ph_node_app.h"
 #include "trema_ph.h"
 #include "i2c_bus.h"
+#include "oled_ui.h"
+#include "pump_control.h"
 #include <stdbool.h>
 #include "esp_log.h"
 #include "esp_err.h"
 #include "esp_timer.h"
 #include "esp_system.h"
+#include "esp_wifi.h"
 #include "cJSON.h"
 #include <string.h>
 #include <stdio.h>
@@ -25,8 +28,17 @@
 
 static const char *TAG = "ph_node";
 
-// Глобальное состояние pH-сенсора
-static bool ph_sensor_initialized = false;
+// Глобальное состояние pH-сенсора (для доступа из других модулей)
+bool ph_sensor_initialized = false;
+
+// Глобальное состояние OLED UI
+bool oled_ui_initialized = false;
+
+// Глобальное состояние насосов
+static bool pump_control_initialized = false;
+
+// Глобальный node_id для использования в разных местах
+static char g_node_id[64] = "nd-ph-1";
 
 // Пример: обработка config сообщений
 static void on_config_received(const char *topic, const char *data, int data_len, void *user_ctx) {
@@ -189,19 +201,64 @@ static void on_command_received(const char *topic, const char *channel, const ch
     
     // Обработка команд для насосов (pump_acid, pump_base)
     if (strcmp(channel, "pump_acid") == 0 || strcmp(channel, "pump_base") == 0) {
-        if (strcmp(cmd, "run_pump") == 0) {
-            cJSON *duration_item = cJSON_GetObjectItem(json, "duration_ms");
-            if (cJSON_IsNumber(duration_item)) {
-                int duration_ms = (int)cJSON_GetNumberValue(duration_item);
-                ESP_LOGI(TAG, "Running %s for %d ms", channel, duration_ms);
+        pump_id_t pump_id = (strcmp(channel, "pump_acid") == 0) ? PUMP_ACID : PUMP_BASE;
+        
+        if (strcmp(cmd, "DOSE") == 0) {
+            // Команда дозирования по объёму
+            cJSON *ml_item = cJSON_GetObjectItem(json, "ml");
+            if (cJSON_IsNumber(ml_item)) {
+                float dose_ml = (float)cJSON_GetNumberValue(ml_item);
+                ESP_LOGI(TAG, "Dosing %s: %.2f ml", channel, dose_ml);
                 
-                // TODO: Реальная логика управления насосом
-                
-                // Отправка ACK
+                if (!pump_control_initialized) {
+                    ESP_LOGE(TAG, "Pump control not initialized");
+                    cJSON *response = cJSON_CreateObject();
+                    if (response) {
+                        cJSON_AddStringToObject(response, "cmd_id", cmd_id);
+                        cJSON_AddStringToObject(response, "status", "ERROR");
+                        cJSON_AddStringToObject(response, "error_code", "not_initialized");
+                        cJSON_AddStringToObject(response, "error_message", "Pump control not initialized");
+                        cJSON_AddNumberToObject(response, "ts", (double)(esp_timer_get_time() / 1000000));
+                        
+                        char *json_str = cJSON_PrintUnformatted(response);
+                        if (json_str) {
+                            mqtt_client_publish_command_response(channel, json_str);
+                            free(json_str);
+                        }
+                        cJSON_Delete(response);
+                    }
+                } else {
+                    esp_err_t ret = pump_control_dose(pump_id, dose_ml);
+                    
+                    cJSON *response = cJSON_CreateObject();
+                    if (response) {
+                        cJSON_AddStringToObject(response, "cmd_id", cmd_id);
+                        if (ret == ESP_OK) {
+                            cJSON_AddStringToObject(response, "status", "ACK");
+                            cJSON_AddNumberToObject(response, "dose_ml", dose_ml);
+                        } else {
+                            cJSON_AddStringToObject(response, "status", "ERROR");
+                            cJSON_AddStringToObject(response, "error_code", "pump_error");
+                            cJSON_AddStringToObject(response, "error_message", esp_err_to_name(ret));
+                        }
+                        cJSON_AddNumberToObject(response, "ts", (double)(esp_timer_get_time() / 1000000));
+                        
+                        char *json_str = cJSON_PrintUnformatted(response);
+                        if (json_str) {
+                            mqtt_client_publish_command_response(channel, json_str);
+                            free(json_str);
+                        }
+                        cJSON_Delete(response);
+                    }
+                }
+            } else {
+                ESP_LOGE(TAG, "Invalid DOSE command: missing ml parameter");
                 cJSON *response = cJSON_CreateObject();
                 if (response) {
                     cJSON_AddStringToObject(response, "cmd_id", cmd_id);
-                    cJSON_AddStringToObject(response, "status", "ACK");
+                    cJSON_AddStringToObject(response, "status", "ERROR");
+                    cJSON_AddStringToObject(response, "error_code", "invalid_format");
+                    cJSON_AddStringToObject(response, "error_message", "Missing ml parameter");
                     cJSON_AddNumberToObject(response, "ts", (double)(esp_timer_get_time() / 1000000));
                     
                     char *json_str = cJSON_PrintUnformatted(response);
@@ -211,6 +268,89 @@ static void on_command_received(const char *topic, const char *channel, const ch
                     }
                     cJSON_Delete(response);
                 }
+            }
+        } else if (strcmp(cmd, "SET_STATE") == 0) {
+            // Команда установки состояния (включить/выключить)
+            cJSON *state_item = cJSON_GetObjectItem(json, "state");
+            if (cJSON_IsNumber(state_item)) {
+                int state = (int)cJSON_GetNumberValue(state_item);
+                ESP_LOGI(TAG, "Setting %s state to %d", channel, state);
+                
+                if (!pump_control_initialized) {
+                    ESP_LOGE(TAG, "Pump control not initialized");
+                    cJSON *response = cJSON_CreateObject();
+                    if (response) {
+                        cJSON_AddStringToObject(response, "cmd_id", cmd_id);
+                        cJSON_AddStringToObject(response, "status", "ERROR");
+                        cJSON_AddStringToObject(response, "error_code", "not_initialized");
+                        cJSON_AddStringToObject(response, "error_message", "Pump control not initialized");
+                        cJSON_AddNumberToObject(response, "ts", (double)(esp_timer_get_time() / 1000000));
+                        
+                        char *json_str = cJSON_PrintUnformatted(response);
+                        if (json_str) {
+                            mqtt_client_publish_command_response(channel, json_str);
+                            free(json_str);
+                        }
+                        cJSON_Delete(response);
+                    }
+                } else {
+                    esp_err_t ret = pump_control_set_state(pump_id, state);
+                    
+                    cJSON *response = cJSON_CreateObject();
+                    if (response) {
+                        cJSON_AddStringToObject(response, "cmd_id", cmd_id);
+                        if (ret == ESP_OK) {
+                            cJSON_AddStringToObject(response, "status", "ACK");
+                            cJSON_AddNumberToObject(response, "state", state);
+                        } else {
+                            cJSON_AddStringToObject(response, "status", "ERROR");
+                            cJSON_AddStringToObject(response, "error_code", "pump_error");
+                            cJSON_AddStringToObject(response, "error_message", esp_err_to_name(ret));
+                        }
+                        cJSON_AddNumberToObject(response, "ts", (double)(esp_timer_get_time() / 1000000));
+                        
+                        char *json_str = cJSON_PrintUnformatted(response);
+                        if (json_str) {
+                            mqtt_client_publish_command_response(channel, json_str);
+                            free(json_str);
+                        }
+                        cJSON_Delete(response);
+                    }
+                }
+            } else {
+                ESP_LOGE(TAG, "Invalid SET_STATE command: missing state parameter");
+                cJSON *response = cJSON_CreateObject();
+                if (response) {
+                    cJSON_AddStringToObject(response, "cmd_id", cmd_id);
+                    cJSON_AddStringToObject(response, "status", "ERROR");
+                    cJSON_AddStringToObject(response, "error_code", "invalid_format");
+                    cJSON_AddStringToObject(response, "error_message", "Missing state parameter");
+                    cJSON_AddNumberToObject(response, "ts", (double)(esp_timer_get_time() / 1000000));
+                    
+                    char *json_str = cJSON_PrintUnformatted(response);
+                    if (json_str) {
+                        mqtt_client_publish_command_response(channel, json_str);
+                        free(json_str);
+                    }
+                    cJSON_Delete(response);
+                }
+            }
+        } else {
+            ESP_LOGE(TAG, "Unknown command for pump: %s", cmd);
+            cJSON *response = cJSON_CreateObject();
+            if (response) {
+                cJSON_AddStringToObject(response, "cmd_id", cmd_id);
+                cJSON_AddStringToObject(response, "status", "ERROR");
+                cJSON_AddStringToObject(response, "error_code", "unknown_command");
+                cJSON_AddStringToObject(response, "error_message", "Unknown command for pump");
+                cJSON_AddNumberToObject(response, "ts", (double)(esp_timer_get_time() / 1000000));
+                
+                char *json_str = cJSON_PrintUnformatted(response);
+                if (json_str) {
+                    mqtt_client_publish_command_response(channel, json_str);
+                    free(json_str);
+                }
+                cJSON_Delete(response);
             }
         }
     } else if (strcmp(cmd, "calibrate") == 0) {
@@ -310,23 +450,60 @@ static void on_command_received(const char *topic, const char *channel, const ch
     cJSON_Delete(json);
 }
 
-// Пример: обработка событий подключения MQTT
+// Обработка событий подключения MQTT
 static void on_mqtt_connection_changed(bool connected, void *user_ctx) {
     if (connected) {
         ESP_LOGI(TAG, "MQTT connected - ph_node is online");
+        
+        // Обновление OLED UI
+        if (oled_ui_initialized) {
+            oled_ui_model_t model = {0};
+            oled_ui_update_model(&model); // Получим текущую модель
+            model.connections.mqtt_connected = true;
+            oled_ui_update_model(&model);
+        }
     } else {
         ESP_LOGW(TAG, "MQTT disconnected - ph_node is offline");
+        
+        // Обновление OLED UI
+        if (oled_ui_initialized) {
+            oled_ui_model_t model = {0};
+            oled_ui_update_model(&model);
+            model.connections.mqtt_connected = false;
+            oled_ui_update_model(&model);
+        }
     }
 }
 
-// Пример: обработка событий подключения Wi-Fi
+// Обработка событий подключения Wi-Fi
 static void on_wifi_connection_changed(bool connected, void *user_ctx) {
     if (connected) {
         ESP_LOGI(TAG, "Wi-Fi connected");
-        // После подключения Wi-Fi можно инициализировать MQTT
-        // (если еще не инициализирован)
+        
+        // Обновление OLED UI
+        if (oled_ui_initialized) {
+            wifi_ap_record_t ap_info;
+            int8_t rssi = -100;
+            if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+                rssi = ap_info.rssi;
+            }
+            
+            oled_ui_model_t model = {0};
+            oled_ui_update_model(&model);
+            model.connections.wifi_connected = true;
+            model.connections.wifi_rssi = rssi;
+            oled_ui_update_model(&model);
+        }
     } else {
         ESP_LOGW(TAG, "Wi-Fi disconnected");
+        
+        // Обновление OLED UI
+        if (oled_ui_initialized) {
+            oled_ui_model_t model = {0};
+            oled_ui_update_model(&model);
+            model.connections.wifi_connected = false;
+            oled_ui_update_model(&model);
+        }
     }
 }
 
@@ -423,6 +600,54 @@ void ph_node_app_init(void) {
         ESP_LOGW(TAG, "I²C bus not available, pH sensor initialization skipped");
     }
     
+    // Инициализация OLED UI
+    if (i2c_bus_is_initialized()) {
+        ESP_LOGI(TAG, "Initializing OLED UI...");
+        oled_ui_config_t oled_config = {
+            .i2c_address = 0x3C,
+            .update_interval_ms = 500,
+            .enable_task = true
+        };
+        
+        esp_err_t oled_err = oled_ui_init(OLED_UI_NODE_TYPE_PH, g_node_id, &oled_config);
+        if (oled_err == ESP_OK) {
+            oled_ui_initialized = true;
+            oled_ui_set_state(OLED_UI_STATE_BOOT);
+            ESP_LOGI(TAG, "OLED UI initialized successfully");
+        } else {
+            ESP_LOGW(TAG, "Failed to initialize OLED UI: %s", esp_err_to_name(oled_err));
+            oled_ui_initialized = false;
+        }
+    } else {
+        ESP_LOGW(TAG, "I²C bus not available, OLED UI initialization skipped");
+    }
+    
+    // Инициализация управления насосами
+    ESP_LOGI(TAG, "Initializing pump control...");
+    pump_config_t pump_configs[PUMP_MAX] = {
+        {
+            .gpio_pin = 12,  // GPIO для pump_acid (можно переопределить через NodeConfig)
+            .max_duration_ms = 30000,  // 30 секунд максимум
+            .min_off_time_ms = 5000,   // 5 секунд минимум между запусками
+            .ml_per_second = 2.0f     // 2 мл/сек по умолчанию
+        },
+        {
+            .gpio_pin = 13,  // GPIO для pump_base (можно переопределить через NodeConfig)
+            .max_duration_ms = 30000,
+            .min_off_time_ms = 5000,
+            .ml_per_second = 2.0f
+        }
+    };
+    
+    esp_err_t pump_err = pump_control_init(pump_configs);
+    if (pump_err == ESP_OK) {
+        pump_control_initialized = true;
+        ESP_LOGI(TAG, "Pump control initialized successfully");
+    } else {
+        ESP_LOGE(TAG, "Failed to initialize pump control: %s", esp_err_to_name(pump_err));
+        pump_control_initialized = false;
+    }
+    
     // Инициализация MQTT клиента (из конфига или значения по умолчанию)
     config_storage_mqtt_t mqtt_cfg;
     mqtt_client_config_t mqtt_config;
@@ -470,10 +695,12 @@ void ph_node_app_init(void) {
     // Получение node_id из конфига
     if (config_storage_get_node_id(node_id, sizeof(node_id)) == ESP_OK) {
         node_info.node_uid = node_id;
+        strncpy(g_node_id, node_id, sizeof(g_node_id) - 1);
         ESP_LOGI(TAG, "Node ID from config: %s", node_id);
     } else {
         // Значение по умолчанию
         strncpy(node_id, "nd-ph-1", sizeof(node_id) - 1);
+        strncpy(g_node_id, node_id, sizeof(g_node_id) - 1);
         node_info.node_uid = node_id;
         ESP_LOGW(TAG, "Using default node ID");
     }
@@ -502,6 +729,11 @@ void ph_node_app_init(void) {
     }
     
     ESP_LOGI(TAG, "ph_node initialized");
+    
+    // Переход OLED UI в нормальный режим после инициализации
+    if (oled_ui_initialized) {
+        oled_ui_set_state(OLED_UI_STATE_NORMAL);
+    }
     
     // Запуск FreeRTOS задач для опроса сенсоров и heartbeat
     ph_node_start_tasks();

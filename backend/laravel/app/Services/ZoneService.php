@@ -211,6 +211,10 @@ class ZoneService
     public function fill(Zone $zone, array $data): array
     {
         $baseUrl = config('services.python_bridge.base_url');
+        if (!$baseUrl) {
+            throw new \DomainException('Python bridge URL not configured');
+        }
+        
         $token = config('services.python_bridge.token');
         $headers = $token ? ['Authorization' => "Bearer {$token}"] : [];
 
@@ -243,6 +247,10 @@ class ZoneService
     public function drain(Zone $zone, array $data): array
     {
         $baseUrl = config('services.python_bridge.base_url');
+        if (!$baseUrl) {
+            throw new \DomainException('Python bridge URL not configured');
+        }
+        
         $token = config('services.python_bridge.token');
         $headers = $token ? ['Authorization' => "Bearer {$token}"] : [];
 
@@ -275,6 +283,10 @@ class ZoneService
     public function calibrateFlow(Zone $zone, array $data): array
     {
         $baseUrl = config('services.python_bridge.base_url');
+        if (!$baseUrl) {
+            throw new \DomainException('Python bridge URL not configured');
+        }
+        
         $token = config('services.python_bridge.token');
         $headers = $token ? ['Authorization' => "Bearer {$token}"] : [];
 

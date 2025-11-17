@@ -22,16 +22,17 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => \App\Http\Middleware\EnsureUserHasRole::class,
         ]);
         
-        // Exclude API routes from CSRF verification for session-based auth
+        // Exclude API routes from CSRF verification
         $middleware->validateCsrfTokens(except: [
             'api/*',
         ]);
         
-        // Add session middleware to API routes for session-based authentication
-        $middleware->api(prepend: [
-            \Illuminate\Session\Middleware\StartSession::class,
-            \Illuminate\Cookie\Middleware\EncryptCookies::class,
-        ]);
+        // Note: Session middleware is NOT added globally to API routes
+        // because API routes use mixed authentication:
+        // - Token-based (Sanctum) for /api/auth/* endpoints
+        // - Session-based (auth middleware) for Inertia.js routes
+        // Session middleware should be added conditionally per route group if needed
+        // If session middleware is needed, EncryptCookies must come before StartSession
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

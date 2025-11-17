@@ -16,3 +16,17 @@ CONFIG_FREERTOS_HZ=1000
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 CONFIG_LOG_MAXIMUM_LEVEL_VERBOSE=y
 
+# GPIO Configuration for pumps
+# GPIO pins for pump control (can be overridden in code via NodeConfig)
+# Default values: pump_acid = GPIO 12, pump_base = GPIO 13
+# These can be configured via hardware.gpio in NodeConfig JSON
+CONFIG_PH_NODE_PUMP_ACID_GPIO=12
+CONFIG_PH_NODE_PUMP_BASE_GPIO=13
+
+# I2C Configuration
+# I2C pins for sensors and OLED (can be overridden in code via NodeConfig)
+# Default values: SDA = GPIO 21, SCL = GPIO 22
+# These can be configured via hardware.i2c in NodeConfig JSON
+CONFIG_PH_NODE_I2C_SDA_GPIO=21
+CONFIG_PH_NODE_I2C_SCL_GPIO=22
+

@@ -9,9 +9,15 @@
 
 #include "ph_node_app.h"
 #include "mqtt_client.h"
+#include "oled_ui.h"
+#include "wifi_manager.h"
+#include "trema_ph.h"
 
-// Объявление функции из ph_node_app.c
+// Объявление функций и переменных из ph_node_app.c
 extern void ph_node_publish_telemetry_example(void);
+extern bool oled_ui_initialized;
+extern bool ph_sensor_initialized;
+
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_system.h"
@@ -21,6 +27,7 @@ extern void ph_node_publish_telemetry_example(void);
 #include "cJSON.h"
 #include <string.h>
 #include <stdlib.h>
+#include <math.h>
 
 static const char *TAG = "ph_node_tasks";
 
@@ -50,6 +57,44 @@ static void task_sensors(void *pvParameters) {
         
         // Публикация телеметрии pH
         ph_node_publish_telemetry_example();
+        
+        // Обновление OLED UI с текущими значениями
+        if (oled_ui_initialized) {
+            // Получение текущего значения pH (через функцию из ph_node_app.c)
+            // Для упрощения используем публикацию телеметрии, которая уже читает pH
+            // В реальности можно добавить функцию получения текущего значения
+            
+            // Получение статуса соединений
+            wifi_ap_record_t ap_info;
+            int8_t rssi = -100;
+            bool wifi_connected = wifi_manager_is_connected();
+            if (wifi_connected && esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+                rssi = ap_info.rssi;
+            }
+            
+            bool mqtt_connected = mqtt_client_is_connected();
+            
+            // Обновление модели OLED UI
+            oled_ui_model_t model = {0};
+            model.connections.wifi_connected = wifi_connected;
+            model.connections.mqtt_connected = mqtt_connected;
+            model.connections.wifi_rssi = rssi;
+            
+            // Получение текущего значения pH (используем функцию из trema_ph)
+            if (ph_sensor_initialized) {
+                float ph_value = NAN;
+                if (trema_ph_read(&ph_value) && !isnan(ph_value)) {
+                    model.ph_value = ph_value;
+                } else {
+                    model.ph_value = 0.0f; // Неизвестно
+                }
+            }
+            
+            model.alert = false;
+            model.paused = false;
+            
+            oled_ui_update_model(&model);
+        }
     }
 }
 

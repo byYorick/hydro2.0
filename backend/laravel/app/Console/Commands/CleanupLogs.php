@@ -24,6 +24,26 @@ class CleanupLogs extends ConsoleCommand
         $totalDeleted = 0;
 
         foreach ($tables as $table) {
+            // Проверяем существование таблицы перед операциями
+            $tableExists = DB::selectOne(
+                "SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_schema = 'public' 
+                    AND table_name = ?
+                ) as exists",
+                [$table]
+            );
+            
+            // Проверяем результат (может быть boolean или объект с полем exists)
+            $exists = is_bool($tableExists) 
+                ? $tableExists 
+                : ($tableExists->exists ?? false);
+            
+            if (!$exists) {
+                $this->warn("  {$table}: таблица не существует, пропущена");
+                continue;
+            }
+            
             $deleted = DB::table($table)
                 ->where('created_at', '<', $cutoffDate)
                 ->delete();
@@ -38,7 +58,32 @@ class CleanupLogs extends ConsoleCommand
         if ($this->confirm('Выполнить VACUUM для освобождения места?', false)) {
             $this->info('Выполняется VACUUM...');
             foreach ($tables as $table) {
-                DB::statement("VACUUM ANALYZE {$table};");
+                // Проверяем существование таблицы перед VACUUM
+                $tableExists = DB::selectOne(
+                    "SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_schema = 'public' 
+                        AND table_name = ?
+                    ) as exists",
+                    [$table]
+                );
+                
+                // Проверяем результат (может быть boolean или объект с полем exists)
+                $exists = is_bool($tableExists) 
+                    ? $tableExists 
+                    : ($tableExists->exists ?? false);
+                
+                if (!$exists) {
+                    $this->warn("  {$table}: таблица не существует, пропущена");
+                    continue;
+                }
+                
+                try {
+                    DB::statement("VACUUM ANALYZE {$table};");
+                    $this->info("  {$table}: VACUUM выполнен");
+                } catch (\Exception $e) {
+                    $this->error("  {$table}: ошибка VACUUM - {$e->getMessage()}");
+                }
             }
             $this->info('VACUUM завершен.');
         }

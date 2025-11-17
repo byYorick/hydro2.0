@@ -1,0 +1,26 @@
+idf_component_register(
+    SRCS 
+        "main.c"
+        "ph_node_app.c"
+        "ph_node_tasks.c"
+        "pump_control.c"
+    INCLUDE_DIRS 
+        "."
+    REQUIRES 
+        mqtt_client
+        wifi_manager
+        config_storage
+        trema_ph
+        i2c_bus
+        oled_ui
+        driver
+        esp_wifi
+        nvs_flash
+        esp_netif
+        esp_event
+        freertos
+        mqtt
+        esp_timer
+        json
+)
+

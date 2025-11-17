@@ -30,8 +30,13 @@ Route::get('system/health', [SystemController::class, 'health']);
 Route::get('system/config/full', [SystemController::class, 'configFull']);
 
 // API routes for Inertia (using session authentication)
-// Note: 'web' middleware is not needed here as API routes don't use CSRF
-Route::middleware('auth')->group(function () {
+// Note: Session middleware is added here for routes that use session-based auth
+// EncryptCookies must come before StartSession
+Route::middleware([
+    \Illuminate\Cookie\Middleware\EncryptCookies::class,
+    \Illuminate\Session\Middleware\StartSession::class,
+    'auth',
+])->group(function () {
     Route::apiResource('greenhouses', GreenhouseController::class);
     Route::apiResource('zones', ZoneController::class);
     Route::apiResource('nodes', NodeController::class);
@@ -68,6 +73,7 @@ Route::middleware('auth')->group(function () {
     // Commands
     Route::post('zones/{zone}/commands', [ZoneCommandController::class, 'store']);
     Route::post('nodes/{node}/commands', [NodeCommandController::class, 'store']);
+    Route::get('commands/{cmdId}/status', [\App\Http\Controllers\CommandStatusController::class, 'show']);
 
     // Alerts
     Route::get('alerts', [AlertController::class, 'index']);
