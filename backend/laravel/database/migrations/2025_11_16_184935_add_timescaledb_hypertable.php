@@ -33,18 +33,35 @@ return new class extends Migration
         // chunk_time_interval = 1 день для оптимальной производительности
         // Сначала нужно удалить primary key, так как TimescaleDB требует, чтобы partitioning column была частью primary key
         try {
+            // Проверяем, не является ли таблица уже hypertable
+            $isHypertable = DB::selectOne("
+                SELECT EXISTS (
+                    SELECT 1 FROM timescaledb_information.hypertables 
+                    WHERE hypertable_name = 'telemetry_samples'
+                ) as exists;
+            ");
+            
+            if ($isHypertable && $isHypertable->exists) {
+                // Уже является hypertable, пропускаем
+                return;
+            }
+            
             // Удаляем существующий primary key
             DB::statement("ALTER TABLE telemetry_samples DROP CONSTRAINT IF EXISTS telemetry_samples_pkey;");
             
             // Создаем составной primary key с ts
             DB::statement("ALTER TABLE telemetry_samples ADD PRIMARY KEY (id, ts);");
             
-            // Преобразуем в hypertable
+            // Преобразуем в hypertable с миграцией данных, если таблица не пустая
+            $rowCount = DB::selectOne("SELECT COUNT(*) as count FROM telemetry_samples")->count;
+            $migrateData = $rowCount > 0;
+            
             DB::statement("
                 SELECT create_hypertable(
                     'telemetry_samples',
                     'ts',
                     chunk_time_interval => INTERVAL '1 day',
+                    migrate_data => " . ($migrateData ? 'true' : 'false') . ",
                     if_not_exists => TRUE
                 );
             ");
