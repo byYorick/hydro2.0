@@ -89,10 +89,11 @@ services:
     ports:
       - "9000:9000"
     healthcheck:
-      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:9000/metrics\")' || exit 1"]
+      test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9000)); s.close()' || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 5
+      start_period: 10s
   history-logger:
     build:
       context: ./services
@@ -125,10 +126,11 @@ services:
     ports:
       - "9401:9401"
     healthcheck:
-      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:9401/metrics\")' || exit 1"]
+      test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9401)); s.close()' || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
+      start_period: 30s
   scheduler:
     build:
       context: ./services
@@ -145,10 +147,11 @@ services:
     ports:
       - "9402:9402"
     healthcheck:
-      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:9402/metrics\")' || exit 1"]
+      test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9402)); s.close()' || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
+      start_period: 30s
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
