@@ -1,0 +1,55 @@
+{
+  "dashboard": {
+    "title": "Alerts Dashboard",
+    "tags": ["alerts", "monitoring"],
+    "timezone": "browser",
+    "schemaVersion": 16,
+    "version": 1,
+    "refresh": "15s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Active Alerts",
+        "type": "table",
+        "gridPos": {"h": 10, "w": 12, "x": 0, "y": 0},
+        "datasource": {"type": "postgres", "uid": "PostgreSQL"},
+        "targets": [
+          {
+            "rawSql": "SELECT id, zone_id, type, status, details, created_at FROM alerts WHERE status = 'ACTIVE' ORDER BY created_at DESC",
+            "format": "table",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Alerts by Type",
+        "type": "bargauge",
+        "gridPos": {"h": 10, "w": 12, "x": 12, "y": 0},
+        "datasource": {"type": "postgres", "uid": "PostgreSQL"},
+        "targets": [
+          {
+            "rawSql": "SELECT type, COUNT(*) as count FROM alerts WHERE status = 'ACTIVE' GROUP BY type",
+            "format": "table",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Alerts Timeline",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 10},
+        "datasource": {"type": "postgres", "uid": "PostgreSQL"},
+        "targets": [
+          {
+            "rawSql": "SELECT created_at as time, COUNT(*) as value, type as metric FROM alerts WHERE created_at >= $__timeFrom() AND created_at <= $__timeTo() GROUP BY created_at, type ORDER BY time",
+            "format": "time_series",
+            "refId": "A"
+          }
+        ]
+      }
+    ]
+  }
+}
+

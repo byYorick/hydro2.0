@@ -3,25 +3,93 @@ services:
   mqtt:
     image: eclipse-mosquitto:2
   db:
-    image: postgres:16
+    image: timescaledb/timescaledb:latest-pg16
     environment:
       POSTGRES_PASSWORD: change-me
       POSTGRES_USER: hydro
       POSTGRES_DB: hydro
-  api-gateway:
-    build: ./services/api-gateway
-    depends_on: [db]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - wal_archive:/wal_archive
+    command:
+      - "postgres"
+      - "-c"
+      - "archive_mode=on"
+      - "-c"
+      - "wal_level=replica"
+      - "-c"
+      - "archive_command='test ! -f /wal_archive/%f && cp %p /wal_archive/%f'"
+  # api-gateway: роль выполняется Laravel (см. backend/laravel/)
   mqtt-bridge:
     build: ./services/mqtt-bridge
     depends_on: [mqtt, db]
-  device-registry:
-    build: ./services/device-registry
-    depends_on: [db]
+  # device-registry: PLANNED - функционал частично в Laravel (см. backend/services/device-registry/README.md)
+  # device-registry:
+  #   build: ./services/device-registry
+  #   depends_on: [db]
   automation-engine:
     build: ./services/automation-engine
     depends_on: [db, mqtt]
   history-logger:
     build: ./services/history-logger
     depends_on: [db, mqtt]
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    volumes:
+      - ./configs/prod/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./configs/prod/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - automation-engine
+      - scheduler
+      - mqtt-bridge
+    restart: unless-stopped
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=change-me
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - ./configs/prod/grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./configs/prod/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - db
+    restart: unless-stopped
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/config.yml'
+      - '--storage.path=/alertmanager'
+    volumes:
+      - ./configs/prod/alertmanager/config.yml:/etc/alertmanager/config.yml:ro
+      - alertmanager_data:/alertmanager
+    ports:
+      - "9093:9093"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  prometheus_data:
+  grafana_data:
+  alertmanager_data:
+  wal_archive:
 
 

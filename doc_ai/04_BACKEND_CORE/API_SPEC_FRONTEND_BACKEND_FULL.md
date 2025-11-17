@@ -94,6 +94,10 @@
 
 ### 3.5. GET /api/zones/{id}
 
+MVP-реализация (для Inertia props страниц):
+
+- `GET /api/zones` — плоский список зон `{id,name,status,crop,phase}`.
+
 - Полная карточка зоны:
  - конфигурация;
  - активный рецепт и фаза;
@@ -231,7 +235,13 @@
 
 - Список активных/исторических алертов.
 
-### 7.2. PATCH /api/alerts/{id}/ack
+### 7.2. PATCH /api/auth/alerts/{id}/ack
+- Требует роль `operator` или `admin`.
+
+### 7.3. GET /api/auth/alerts
+
+- Возвращает список алертов для UI (аутентифицированный доступ).
+
 
 - Подтверждение алерта оператором.
 
@@ -260,11 +270,11 @@
 - Laravel WebSockets;
 - или внешний WS-gateway.
 
-Основные каналы:
+Основные каналы (MVP):
 
-- `zones.{id}.telemetry` — обновления телеметрии;
-- `zones.{id}.alerts` — новые алерты;
-- `nodes.{id}.status` — статусы узлов и команд.
+- `hydro.zones.{id}` — обновления по зоне (событие ZoneUpdated);
+- `hydro.alerts` — новые алерты (событие AlertCreated);
+- `nodes.{id}.status` — статусы узлов (резерв).
 
 ---
 

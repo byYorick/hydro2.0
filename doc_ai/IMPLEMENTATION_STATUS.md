@@ -37,11 +37,12 @@
 - [x] `I2C_BUS_AND_SENSORS.md` — **SPEC_READY**
 - [x] `OLED_UI_SPEC.md` — **SPEC_READY**
 - [x] `SDKCONFIG_PROFILES.md` — **SPEC_READY**
-- [ ] Общий компонент `mqtt_client` (ESP-IDF) — **PLANNED**
-- [ ] Общий компонент `i2c_bus` (сенсоры) — **PLANNED**
-- [ ] Общий компонент `oled_ui` — **PLANNED**
-- [ ] Общий компонент `config_storage` — **PLANNED**
-- [ ] Общий компонент `logging` — **PLANNED**
+- [x] Общий компонент `mqtt_client` (ESP-IDF) — **MVP_DONE**
+- [x] Общий компонент `wifi_manager` — **MVP_DONE**
+- [x] Общий компонент `config_storage` — **MVP_DONE** (спецификация в `doc_ai/02_HARDWARE_FIRMWARE/NODE_CONFIG_SPEC.md`)
+- [x] Общий компонент `i2c_bus` (сенсоры) — **MVP_DONE**
+- [x] Общий компонент `oled_ui` — **MVP_DONE**
+- [x] Общий компонент `logging` — **MVP_DONE**
 
 ### 2.2. pH-node
 
@@ -90,55 +91,124 @@
 
 ## 3. Python-сервисы
 
-- [x] Общая архитектура Python-сервисов описана (`PYTHON_SERVICES_ARCH.md` или аналог) — **SPEC_READY**
-- [ ] Telemetry ingestor (приём и запись данных из MQTT) — **PLANNED**
-- [ ] Zone controller (управление поливом/дозированием по правилам) — **PLANNED**
-- [ ] Scheduler (расписания поливов, света) — **PLANNED**
-- [ ] Integration bridge (связка с backend при необходимости) — **PLANNED**
-- [ ] Тесты и локальный docker-compose стенд — **PLANNED**
+- [x] Общая архитектура Python-сервисов описана (`PYTHON_SERVICES_ARCH.md`) — **SPEC_READY** (создан в `doc_ai/04_BACKEND_CORE/` и `backend/services/`)
+- [x] Telemetry ingestor (`history-logger`: приём и запись данных из MQTT, батчинг, upsert в `telemetry_last`) — **MVP_DONE**
+- [x] Zone controller (`automation-engine`: проверка targets, публикация команд корректировки pH/EC) — **MVP_DONE**
+- [x] Scheduler (`scheduler`: расписания поливов/света из recipe phases, публикация команд на MQTT) — **MVP_DONE**
+- [x] Integration bridge (`mqtt-bridge`: FastAPI для отправки команд через MQTT) — **MVP_DONE**
+- [x] Тесты (pytest) для automation-engine и scheduler — **MVP_DONE**
+- [ ] Интеграционные тесты в docker-compose стенде — **PLANNED**
 
 ---
 
 ## 4. Backend (Laravel)
 
 - [x] Архитектура backend (`04_BACKEND_CORE/BACKEND_ARCH_FULL.md` и связанные файлы) — **SPEC_READY**
-- [ ] Модели зон, нод, рецептов — **PLANNED**
-- [ ] REST API v1 (базовый набор эндпоинтов) — **PLANNED**
-- [ ] Авторизация/аутентификация — **PLANNED**
-- [ ] WebSocket/Realtime-обновления — **PLANNED**
-- [ ] Панель администрирования (минимальная) — **PLANNED**
-- [ ] Миграции БД и сиды — **PLANNED**
-- [ ] Интеграция с Python-сервисами — **PLANNED**
+- [x] Модели зон, нод, рецептов — **MVP_DONE**
+- [x] REST API v1 (базовый набор эндпоинтов) — **MVP_DONE**
+- [x] Авторизация/аутентификация (Breeze/Sanctum, web + api) — **MVP_DONE**
+- [x] WebSocket/Realtime-обновления — **MVP_DONE**
+- [x] Панель администрирования (минимальная) — **MVP_DONE**
+- [x] Миграции БД и сиды — **MVP_DONE**
+- [x] Интеграция с Python-сервисами (PythonIngestController для telemetry/commands, PythonBridgeService) — **MVP_DONE**
 
 ---
 
 ## 5. Хранилище данных и мониторинг
 
 - [x] Модель данных и пайплайн телеметрии описаны (`05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md` и т.п.) — **SPEC_READY**
-- [ ] Выбор конкретной СУБД/TSDB и настройка (PostgreSQL, InfluxDB и т.д.) — **PLANNED**
-- [ ] Настройка retention политик — **PLANNED**
-- [ ] Grafana/дашборды мониторинга — **PLANNED**
-- [ ] Алерты по ключевым метрикам (падение нод, брокера, сервисов) — **PLANNED**
+- [x] Выбор конкретной СУБД/TSDB и настройка (PostgreSQL + TimescaleDB) — **MVP_DONE**
+- [x] Настройка retention политик — **MVP_DONE**
+- [x] Grafana/дашборды мониторинга — **MVP_DONE**
+- [x] Алерты по ключевым метрикам (падение нод, брокера, сервисов) — **MVP_DONE**
 
 ---
 
 ## 6. Доменные зоны, рецепты, логика агрономии
 
 - [x] Базовые концепции зон и рецептов описаны (`06_DOMAIN_ZONES_RECIPES/ZONES_AND_PRESETS.md` и т.п.) — **SPEC_READY**
-- [ ] Набор пресетов культур (салаты, зелень и т.д.) — **PLANNED**
-- [ ] Реализация в backend/Python (CRUD рецептов, применение к зонам) — **PLANNED**
-- [ ] Отчётность по урожайности и эффективности рецептов — **PLANNED**
+- [x] Набор пресетов культур (салаты, зелень и т.д.) — **MVP_DONE** (6 пресетов: салат, руккола, томат/огурец, микрозелень, базилик, клубника)
+- [x] Реализация в backend/Python (CRUD рецептов, применение к зонам) — **MVP_DONE** (RecipeController, RecipePhaseController, ZoneService::attachRecipe, интеграция с Python)
+- [x] Отчётность по урожайности и эффективности рецептов — **MVP_DONE** (Harvest модель, RecipeAnalytics, ReportController с аналитикой и сравнением рецептов)
 
 ---
 
 ## 7. Frontend / Web UI
 
-- [x] Архитектура фронтенда и макеты (`07_FRONTEND/FRONTEND_ARCH_FULL.md`, `07_FRONTEND/FRONTEND_UI_UX_SPEC.md`) — **SPEC_READY**
-- [ ] Экран обзора системы (все зоны/теплицы) — **PLANNED**
-- [ ] Экран детали зоны (телеметрия, рецепты, полив) — **PLANNED**
-- [ ] Графики истории параметров — **PLANNED**
-- [ ] Экран аварий/уведомлений — **PLANNED**
-- [ ] Экран настроек пользователей и прав — **PLANNED**
+### 7.1. Документация и архитектура
+
+- [x] Архитектура фронтенда (`07_FRONTEND/FRONTEND_ARCH_FULL.md`) — **SPEC_READY**
+- [x] Спецификация UI/UX (`07_FRONTEND/FRONTEND_UI_UX_SPEC.md`) — **SPEC_READY**
+- [x] Стратегия тестирования фронтенда (`07_FRONTEND/FRONTEND_TESTING.md`) — **SPEC_READY**
+
+### 7.2. Основные страницы и экраны
+
+- [x] Dashboard (обзор системы: статистика теплиц/зон/устройств, проблемные зоны, последние алерты) — **MVP_DONE**
+- [x] Zones/Index (список всех зон с фильтрацией по статусу и поиском) — **MVP_DONE**
+- [x] Zones/Show (детальный экран зоны — главный рабочий экран) — **MVP_DONE**
+  - [x] Компонент ZoneTargets (Target vs Actual: pH, EC, температура, влажность с индикаторами статуса) — **MVP_DONE**
+  - [x] Компонент ZoneTelemetryChart (графики pH/EC с выбором временного диапазона: 1H/24H/7D/30D/ALL) — **MVP_DONE**
+  - [x] Блок Cycles (расписание подсистем: PH_CONTROL, EC_CONTROL, IRRIGATION, LIGHTING, CLIMATE с кнопками запуска) — **MVP_DONE**
+  - [x] Интеграция с API для загрузки истории телеметрии через `/api/zones/{id}/telemetry/history` — **MVP_DONE**
+  - [x] Отображение устройств зоны (Devices) — **MVP_DONE**
+  - [x] Блок Events (история событий зоны с цветовой кодировкой) — **MVP_DONE**
+  - [x] Кнопки управления (Pause/Resume, Irrigate Now, Next Phase) с отправкой команд через API — **MVP_DONE**
+- [x] Devices/Index (список всех устройств с фильтрацией по типу и статусу) — **MVP_DONE**
+- [x] Devices/Show (детальный экран устройства: каналы, NodeConfig, команды) — **MVP_DONE**
+- [x] Recipes/Index (список рецептов с поиском) — **MVP_DONE**
+- [x] Recipes/Show (детальный экран рецепта: фазы, цели) — **MVP_DONE**
+- [x] Recipes/Edit (редактирование рецепта) — **MVP_DONE**
+- [x] Alerts/Index (экран аварий/уведомлений с фильтрацией и управлением) — **MVP_DONE**
+- [x] Settings/Index (настройки: профиль пользователя, управление пользователями для admin) — **MVP_DONE**
+- [x] Admin панель (Index, Zones, Recipes) — **MVP_DONE**
+- [x] Аутентификация (Login, Register, Password Reset) — **MVP_DONE**
+
+### 7.3. Компоненты и UI элементы
+
+- [x] AppLayout (главный layout с навигацией, Command Palette, контекстная панель) — **MVP_DONE**
+- [x] ZoneTargets (компонент Target vs Actual с индикаторами статуса) — **MVP_DONE**
+- [x] ZoneTelemetryChart (компонент графиков телеметрии с ECharts) — **MVP_DONE**
+- [x] ZoneCard (карточка зоны для списка) — **MVP_DONE**
+- [x] CommandPalette (командная палитра Ctrl+K) — **MVP_DONE**
+- [x] Badge (компонент статусных бейджей: success/warning/danger/info/neutral) — **MVP_DONE**
+- [x] ChartBase (базовый компонент графиков на ECharts) — **MVP_DONE**
+- [x] DeviceChannelsTable (таблица каналов устройства) — **MVP_DONE**
+- [x] Базовые UI компоненты (Card, Button, Modal, Input, Dropdown, DataTable и др.) — **MVP_DONE**
+
+### 7.4. Real-time и WebSocket
+
+- [x] Laravel Echo интеграция в `bootstrap.js` (поддержка WebSocket через Pusher/Reverb) — **MVP_DONE**
+- [x] WebSocket подписка на алерты (`subscribeAlerts` в `bootstrap.js`) — **MVP_DONE**
+  - [x] Использование в Alerts/Index для real-time обновлений — **MVP_DONE**
+- [x] WebSocket подписка на зоны (`subscribeZone` в `bootstrap.js`, возвращает функцию отписки) — **MVP_DONE**
+  - [ ] Использование в Zones/Show для real-time обновления телеметрии — **PLANNED**
+- [ ] Real-time обновление графиков телеметрии без перезагрузки страницы — **PLANNED**
+
+### 7.5. State Management
+
+- [x] Pinia stores (zones, devices, alerts) — **MVP_DONE**
+- [x] Интеграция с Inertia.js для серверного state — **MVP_DONE**
+
+### 7.6. Тестирование
+
+- [x] Unit-тесты компонентов (ZoneTargets, ZoneTelemetryChart, Badge) — **MVP_DONE**
+  - [x] Тесты граничных случаев (ZoneTargets edge cases) — **MVP_DONE**
+- [x] Интеграционные тесты страниц (Zones/Show, Zones/Index, Alerts/Index, Devices/Index) — **MVP_DONE**
+- [x] E2E тесты (Playwright: smoke, zones-show, filters) — **MVP_DONE**
+- [x] Конфигурация тестов (Vitest, Playwright) — **MVP_DONE**
+- [ ] Тесты для Recipes страниц — **PLANNED**
+- [ ] Тесты для Devices/Show — **PLANNED**
+- [ ] Тесты для WebSocket-обновлений — **PLANNED**
+
+### 7.7. Дополнительные функции
+
+- [x] Фильтрация и поиск (Zones, Devices, Alerts, Recipes) — **MVP_DONE**
+- [x] Виртуализация списков для производительности — **MVP_DONE**
+- [x] Обработка ошибок API с логированием — **MVP_DONE**
+- [ ] Переключатель темы (Dark/Light) — **PLANNED** (текущая реализация: только dark тема)
+- [ ] AI Panel (рекомендации, прогнозы, чат) — **PLANNED**
+- [ ] Горячие клавиши для навигации (Shift+Z, Shift+D и т.д.) — **PLANNED**
+- [ ] Избранные зоны (pin zones) — **PLANNED**
 
 ---
 
@@ -156,10 +226,27 @@
 ## 9. Безопасность, DevOps и эксплуатация
 
 - [x] Основные требования безопасности и DevOps описаны (`SECURITY_AND_OPS.md` и связанные) — **SPEC_READY**
-- [ ] CI/CD-конвейер (проверки, сборка, деплой) — **PLANNED**
-- [ ] Резервное копирование и восстановление (manual + scripted) — **PLANNED**
-- [ ] Документация по эксплуатации и ручным процедурам — **PLANNED**
-- [ ] Набор runbook'ов на случай аварий — **PLANNED**
+- [x] CI/CD-конвейер (проверки, сборка, деплой) — **MVP_DONE**
+  - GitHub Actions: Postgres сервис, `migrate:fresh --seed` перед тестами
+  - Vitest: JUnit-отчёт и coverage (артефакты Actions)
+  - Playwright: HTML‑репорт (артефакт Actions)
+  - Кэш Composer/NPM, конфиг‑кеши Laravel
+- [x] Резервное копирование и восстановление (manual + scripted) — **MVP_DONE**
+  - Скрипты автоматического бэкапа: PostgreSQL, Laravel, Python, MQTT, Docker volumes
+  - Master скрипт `full_backup.sh` для координации всех бэкапов
+  - WAL архивирование PostgreSQL настроено
+  - Скрипты восстановления: PostgreSQL, Laravel, полное восстановление
+  - Ротация бэкапов (30 дней полных, 7 дней WAL)
+  - Laravel Artisan команды: `backup:database`, `backup:full`, `backup:list`
+  - Автоматическое расписание бэкапов (ежедневно в 3:00)
+- [x] Документация по эксплуатации и ручным процедурам — **MVP_DONE**
+  - `OPERATIONS_GUIDE.md` с ежедневными, еженедельными и ежемесячными операциями
+  - Процедуры обновления системы
+  - Процедуры масштабирования
+- [x] Набор runbook'ов на случай аварий — **MVP_DONE**
+  - Расширенный `RUNBOOKS.md` с процедурами восстановления
+  - Процедуры диагностики бэкапов
+  - Процедуры для аварийных ситуаций (полный сбой, потеря БД, потеря MQTT, потеря узлов ESP32)
 
 ---
 

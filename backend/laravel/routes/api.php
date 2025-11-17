@@ -1,0 +1,100 @@
+<?php
+
+use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\AuthController;
+use App\Http\Controllers\GreenhouseController;
+use App\Http\Controllers\ZoneController;
+use App\Http\Controllers\NodeController;
+use App\Http\Controllers\TelemetryController;
+use App\Http\Controllers\RecipeController;
+use App\Http\Controllers\RecipePhaseController;
+use App\Http\Controllers\PresetController;
+use App\Http\Controllers\ReportController;
+use App\Http\Controllers\ZoneCommandController;
+use App\Http\Controllers\NodeCommandController;
+use App\Http\Controllers\SystemController;
+use App\Http\Controllers\AlertController;
+use App\Http\Controllers\AlertStreamController;
+use App\Http\Controllers\PythonIngestController;
+use App\Http\Controllers\AiController;
+use App\Http\Controllers\SimulationController;
+
+Route::prefix('auth')->group(function () {
+    Route::post('/login', [AuthController::class, 'login']);
+    Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
+    Route::get('/me', [AuthController::class, 'me'])->middleware('auth:sanctum');
+});
+
+// Публичные системные эндпоинты
+Route::get('system/health', [SystemController::class, 'health']);
+Route::get('system/config/full', [SystemController::class, 'configFull']);
+
+Route::middleware('auth:sanctum')->group(function () {
+    Route::apiResource('greenhouses', GreenhouseController::class);
+    Route::apiResource('zones', ZoneController::class);
+    Route::apiResource('nodes', NodeController::class);
+    Route::apiResource('recipes', RecipeController::class);
+    Route::post('recipes/{recipe}/phases', [RecipePhaseController::class, 'store']);
+    Route::patch('recipe-phases/{recipePhase}', [RecipePhaseController::class, 'update']);
+    Route::delete('recipe-phases/{recipePhase}', [RecipePhaseController::class, 'destroy']);
+
+    // Presets
+    Route::apiResource('presets', PresetController::class);
+
+    // Reports
+    Route::get('recipes/{recipe}/analytics', [ReportController::class, 'recipeAnalytics']);
+    Route::get('zones/{zone}/harvests', [ReportController::class, 'zoneHarvests']);
+    Route::post('harvests', [ReportController::class, 'storeHarvest']);
+    Route::post('recipes/comparison', [ReportController::class, 'compareRecipes']);
+
+    // Telemetry
+    Route::get('zones/{id}/telemetry/last', [TelemetryController::class, 'zoneLast']);
+    Route::get('zones/{id}/telemetry/history', [TelemetryController::class, 'zoneHistory']);
+    Route::get('nodes/{id}/telemetry/last', [TelemetryController::class, 'nodeLast']);
+
+    // Recipes attach/change-phase
+    Route::post('zones/{zone}/attach-recipe', [ZoneController::class, 'attachRecipe']);
+    Route::post('zones/{zone}/change-phase', [ZoneController::class, 'changePhase']);
+    Route::post('zones/{zone}/pause', [ZoneController::class, 'pause']);
+    Route::post('zones/{zone}/resume', [ZoneController::class, 'resume']);
+
+    // Commands
+    Route::post('zones/{zone}/commands', [ZoneCommandController::class, 'store']);
+    Route::post('nodes/{node}/commands', [NodeCommandController::class, 'store']);
+
+    // Alerts
+    Route::get('alerts', [AlertController::class, 'index']);
+    Route::get('alerts/{alert}', [AlertController::class, 'show']);
+    Route::patch('alerts/{alert}/ack', [AlertController::class, 'ack']);
+    Route::get('alerts/stream', [AlertStreamController::class, 'stream']);
+
+    // AI endpoints
+    Route::post('ai/predict', [AiController::class, 'predict']);
+    Route::post('ai/explain_zone', [AiController::class, 'explainZone']);
+    Route::post('ai/recommend', [AiController::class, 'recommend']);
+    Route::post('ai/diagnostics', [AiController::class, 'diagnostics']);
+
+    // Simulations (Digital Twin)
+    Route::post('simulations/zone/{zone}', [SimulationController::class, 'simulateZone']);
+    Route::get('simulations/{simulation}', [SimulationController::class, 'show']);
+
+    // Admin (минимальный CRUD поверх ресурсов): зоны быстрый create, рецепт быстрый update
+    Route::middleware('role:admin')->prefix('admin')->group(function () {
+        Route::post('zones/quick-create', [ZoneController::class, 'store']); // переиспользуем resource
+        Route::patch('recipes/{recipe}/quick-update', [RecipeController::class, 'update']); // переиспользуем resource
+    });
+
+    // Users management (admin only)
+    Route::middleware('role:admin')->apiResource('users', \App\Http\Controllers\UserController::class);
+});
+
+// Python ingest (token-based)
+Route::prefix('python')->group(function () {
+    Route::post('ingest/telemetry', [PythonIngestController::class, 'telemetry']);
+    Route::post('commands/ack', [PythonIngestController::class, 'commandAck']);
+});
+
+// Alertmanager webhook (публичный, но можно добавить токен)
+Route::post('alerts/webhook', [\App\Http\Controllers\Api\AlertWebhookController::class, 'webhook']);
+
+

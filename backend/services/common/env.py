@@ -1,0 +1,35 @@
+import os
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class Settings:
+    mqtt_host: str = os.getenv("MQTT_HOST", "mqtt")
+    mqtt_port: int = int(os.getenv("MQTT_PORT", "1883"))
+    mqtt_client_id: str = os.getenv("MQTT_CLIENT_ID", "hydro-core")
+    mqtt_clean_session: bool = os.getenv("MQTT_CLEAN_SESSION", "0") == "1"
+    mqtt_user: str | None = os.getenv("MQTT_USER")
+    mqtt_pass: str | None = os.getenv("MQTT_PASS")
+    mqtt_tls: bool = os.getenv("MQTT_TLS", "0") == "1"
+    mqtt_ca_file: str | None = os.getenv("MQTT_CA_FILE")
+
+    pg_host: str = os.getenv("PG_HOST", "db")
+    pg_port: int = int(os.getenv("PG_PORT", "5432"))
+    pg_db: str = os.getenv("PG_DB", "hydro_dev")
+    pg_user: str = os.getenv("PG_USER", "hydro")
+    pg_pass: str = os.getenv("PG_PASS", "hydro")
+
+    laravel_api_url: str = os.getenv("LARAVEL_API_URL", "http://laravel")
+    laravel_api_token: str = os.getenv("LARAVEL_API_TOKEN", "")
+    bridge_api_token: str = os.getenv("PY_API_TOKEN", "")
+
+    telemetry_batch_size: int = int(os.getenv("TELEMETRY_BATCH_SIZE", "200"))
+    telemetry_flush_ms: int = int(os.getenv("TELEMETRY_FLUSH_MS", "500"))
+    command_timeout_sec: int = int(os.getenv("COMMAND_TIMEOUT_SEC", "30"))
+    mqtt_zone_format: str = os.getenv("MQTT_ZONE_FORMAT", "id")  # id | uid
+
+
+def get_settings() -> Settings:
+    return Settings()
+
+

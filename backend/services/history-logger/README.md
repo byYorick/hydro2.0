@@ -1,3 +1,4 @@
-History Logger — запись телеметрии (заглушка).
+History Logger — запись телеметрии в PostgreSQL.
+
 
 

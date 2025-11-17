@@ -1,0 +1,59 @@
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+  external_labels:
+    cluster: 'hydro-prod'
+    environment: 'production'
+
+# Настройки retention для метрик
+storage:
+  tsdb:
+    retention:
+      time: 15d
+      size: 20GB
+
+scrape_configs:
+  # Prometheus сам себя
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Automation Engine
+  - job_name: 'automation-engine'
+    static_configs:
+      - targets: ['automation-engine:9401']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  # Scheduler
+  - job_name: 'scheduler'
+    static_configs:
+      - targets: ['scheduler:9402']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  # MQTT Bridge
+  - job_name: 'mqtt-bridge'
+    static_configs:
+      - targets: ['mqtt-bridge:9000']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  # History Logger (если есть метрики)
+  - job_name: 'history-logger'
+    static_configs:
+      - targets: ['history-logger:9403']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+# Правила алертов
+rule_files:
+  - '/etc/prometheus/alerts.yml'
+
+# Alertmanager конфигурация
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - 'alertmanager:9093'
+

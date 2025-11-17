@@ -1,0 +1,101 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Hydro 2.0 Laravel API",
+    "version": "1.0.0"
+  },
+  "servers": [
+    { "url": "http://localhost:8080" }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" }
+    },
+    "schemas": {
+      "ApiResponse": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string" },
+          "data": {}
+        }
+      }
+    }
+  },
+  "security": [{ "bearerAuth": [] }],
+  "paths": {
+    "/api/auth/login": {
+      "post": {
+        "summary": "Login",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": { "type": "string" },
+                  "password": { "type": "string" }
+                },
+                "required": ["email", "password"]
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/api/greenhouses": {
+      "get": { "summary": "List greenhouses", "responses": { "200": { "description": "OK" } } },
+      "post": { "summary": "Create greenhouse", "responses": { "201": { "description": "Created" } } }
+    },
+    "/api/zones": {
+      "get": { "summary": "List zones", "responses": { "200": { "description": "OK" } } },
+      "post": { "summary": "Create zone", "responses": { "201": { "description": "Created" } } }
+    },
+    "/api/nodes": {
+      "get": { "summary": "List nodes", "responses": { "200": { "description": "OK" } } },
+      "post": { "summary": "Register node", "responses": { "201": { "description": "Created" } } }
+    },
+    "/api/zones/{id}/telemetry/last": {
+      "get": {
+        "summary": "Zone last telemetry",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/api/zones/{id}/telemetry/history": {
+      "get": {
+        "summary": "Zone telemetry history",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } },
+          { "name": "metric", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "from", "in": "query", "required": false, "schema": { "type": "string", "format": "date-time" } },
+          { "name": "to", "in": "query", "required": false, "schema": { "type": "string", "format": "date-time" } }
+        ],
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/api/zones/{zone}/commands": {
+      "post": {
+        "summary": "Send zone command",
+        "parameters": [{ "name": "zone", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/api/system/health": {
+      "get": { "summary": "Health", "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/alerts": {
+      "get": { "summary": "List alerts", "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/alerts/{id}/ack": {
+      "patch": {
+        "summary": "Ack alert",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "OK" } }
+      }
+    }
+  }
+}
+
+

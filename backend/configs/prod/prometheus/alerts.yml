@@ -1,0 +1,58 @@
+groups:
+  - name: node_alerts
+    interval: 30s
+    rules:
+      - alert: NodeOffline
+        expr: |
+          (time() - node_last_seen_timestamp{status="offline"}) > 300
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Node {{ $labels.uid }} is offline"
+          description: "Node {{ $labels.uid }} ({{ $labels.name }}) has been offline for more than 5 minutes"
+
+  - name: service_alerts
+    interval: 30s
+    rules:
+      - alert: ServiceDown
+        expr: up{job=~"automation-engine|scheduler|mqtt-bridge"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "Service {{ $labels.job }} has been down for more than 2 minutes"
+
+      - alert: MQTTBrokerDown
+        expr: up{job="mqtt-bridge"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "MQTT broker is unreachable"
+          description: "MQTT bridge service is not responding"
+
+  - name: zone_alerts
+    interval: 30s
+    rules:
+      - alert: ZoneCriticalAlert
+        expr: |
+          increase(zone_critical_alerts_total[5m]) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Zone {{ $labels.zone_id }} has multiple critical alerts"
+          description: "Zone {{ $labels.zone_id }} has generated more than 3 critical alerts in the last 5 minutes"
+
+      - alert: HighCommandFailureRate
+        expr: |
+          rate(commands_failed_total[5m]) / rate(commands_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High command failure rate"
+          description: "Command failure rate is above 10% for the last 5 minutes"
+

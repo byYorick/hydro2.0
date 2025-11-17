@@ -1,0 +1,55 @@
+{
+  "dashboard": {
+    "title": "Node Status",
+    "tags": ["nodes", "status"],
+    "timezone": "browser",
+    "schemaVersion": 16,
+    "version": 1,
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Node Online Status",
+        "type": "table",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "datasource": {"type": "postgres", "uid": "PostgreSQL"},
+        "targets": [
+          {
+            "rawSql": "SELECT uid, name, type, status, last_seen_at, CASE WHEN last_seen_at > NOW() - INTERVAL '5 minutes' THEN 'online' ELSE 'offline' END as current_status FROM nodes ORDER BY last_seen_at DESC",
+            "format": "table",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Nodes by Type",
+        "type": "piechart",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+        "datasource": {"type": "postgres", "uid": "PostgreSQL"},
+        "targets": [
+          {
+            "rawSql": "SELECT type, COUNT(*) as count FROM nodes GROUP BY type",
+            "format": "table",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Node Last Seen Timeline",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
+        "datasource": {"type": "postgres", "uid": "PostgreSQL"},
+        "targets": [
+          {
+            "rawSql": "SELECT last_seen_at as time, COUNT(*) as value, type as metric FROM nodes WHERE last_seen_at >= NOW() - INTERVAL '24 hours' GROUP BY last_seen_at, type ORDER BY time",
+            "format": "time_series",
+            "refId": "A"
+          }
+        ]
+      }
+    ]
+  }
+}
+

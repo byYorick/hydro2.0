@@ -1,0 +1,74 @@
+{
+  "dashboard": {
+    "title": "Commands & Automation",
+    "tags": ["commands", "automation"],
+    "timezone": "browser",
+    "schemaVersion": 16,
+    "version": 1,
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Commands Status",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+        "datasource": {"type": "postgres", "uid": "PostgreSQL"},
+        "targets": [
+          {
+            "rawSql": "SELECT COUNT(*) as value FROM commands WHERE status = 'pending'",
+            "format": "table",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "displayName": "Pending"
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "Commands Success Rate",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 6, "y": 0},
+        "datasource": {"type": "postgres", "uid": "PostgreSQL"},
+        "targets": [
+          {
+            "rawSql": "SELECT DATE_TRUNC('hour', created_at) as time, COUNT(*) FILTER (WHERE status = 'ack') * 100.0 / COUNT(*) as success_rate FROM commands WHERE created_at >= NOW() - INTERVAL '24 hours' GROUP BY time ORDER BY time",
+            "format": "time_series",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Commands by Type",
+        "type": "table",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+        "datasource": {"type": "postgres", "uid": "PostgreSQL"},
+        "targets": [
+          {
+            "rawSql": "SELECT cmd, status, COUNT(*) as count FROM commands WHERE created_at >= NOW() - INTERVAL '24 hours' GROUP BY cmd, status ORDER BY count DESC",
+            "format": "table",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Recent Commands",
+        "type": "table",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+        "datasource": {"type": "postgres", "uid": "PostgreSQL"},
+        "targets": [
+          {
+            "rawSql": "SELECT cmd_id, zone_id, cmd, status, created_at, sent_at, ack_at FROM commands ORDER BY created_at DESC LIMIT 50",
+            "format": "table",
+            "refId": "A"
+          }
+        ]
+      }
+    ]
+  }
+}
+

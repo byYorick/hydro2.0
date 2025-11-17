@@ -1,0 +1,56 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'hydro-dev'
+    environment: 'development'
+
+# Настройки retention для метрик
+# Примечание: retention настраивается через флаги командной строки в docker-compose
+# storage.tsdb.retention.time и storage.tsdb.retention.size не поддерживаются в конфигурационном файле
+
+scrape_configs:
+  # Prometheus сам себя
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Automation Engine
+  - job_name: 'automation-engine'
+    static_configs:
+      - targets: ['automation-engine:9401']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Scheduler
+  - job_name: 'scheduler'
+    static_configs:
+      - targets: ['scheduler:9402']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # MQTT Bridge
+  - job_name: 'mqtt-bridge'
+    static_configs:
+      - targets: ['mqtt-bridge:9000']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # History Logger (если есть метрики)
+  - job_name: 'history-logger'
+    static_configs:
+      - targets: ['history-logger:9403']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+# Правила алертов
+rule_files:
+  - '/etc/prometheus/alerts.yml'
+
+# Alertmanager конфигурация
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - 'alertmanager:9093'
+

@@ -1,0 +1,6 @@
+asyncpg==0.29.0
+paho-mqtt==1.6.1
+pydantic==2.9.2
+prometheus-client==0.20.0
+
+

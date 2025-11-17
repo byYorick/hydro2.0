@@ -1,0 +1,126 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: hydro
+          POSTGRES_USER: hydro
+          POSTGRES_PASSWORD: hydro
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U hydro -d hydro"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    defaults:
+      run:
+        working-directory: backend/laravel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/laravel/package-lock.json
+      - name: Cache Composer
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache/files
+          key: composer-${{ runner.os }}-${{ hashFiles('backend/laravel/composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
+      - name: Install PHP deps
+        run: composer install --no-interaction --prefer-dist
+      - name: Composer audit (security)
+        continue-on-error: true
+        run: composer audit --no-interaction || true
+      - name: Prepare env
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+          php -r "file_put_contents('.env', str_replace(['DB_CONNECTION=mysql','DB_DATABASE=laravel','DB_USERNAME=root','DB_PASSWORD='], ['DB_CONNECTION=pgsql','DB_DATABASE=hydro','DB_USERNAME=hydro','DB_PASSWORD=hydro'], file_get_contents('.env')));"
+          php -r "file_put_contents('.env', str_replace(['BROADCAST_DRIVER=log'], ['BROADCAST_DRIVER=log'], file_get_contents('.env')));"
+      - name: PHP configs cache
+        run: |
+          php artisan config:clear
+          php artisan cache:clear
+          php artisan config:cache
+      - name: DB migrate + seed
+        env:
+          DB_CONNECTION: pgsql
+          DB_DATABASE: hydro
+          DB_USERNAME: hydro
+          DB_PASSWORD: hydro
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+        run: |
+          php artisan migrate:fresh --seed --force
+      - name: PHP tests (phpunit via artisan)
+        env:
+          DB_CONNECTION: pgsql
+          DB_DATABASE: hydro
+          DB_USERNAME: hydro
+          DB_PASSWORD: hydro
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+        run: |
+          mkdir -p test-results
+          php artisan test --testsuite=Unit,Feature --no-coverage --log-junit test-results/phpunit.xml
+      - name: Upload PHPUnit JUnit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phpunit-junit
+          path: backend/laravel/test-results/phpunit.xml
+          retention-days: 7
+      - name: Install Node deps
+        run: npm ci
+      - name: NPM audit (production)
+        continue-on-error: true
+        run: npm audit --omit=dev || true
+      - name: Unit tests (vitest)
+        run: |
+          mkdir -p test-results
+          npm run test -- --reporter=dot --reporter=junit --outputFile=test-results/junit.xml
+      - name: Upload Vitest JUnit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vitest-junit
+          path: backend/laravel/test-results/junit.xml
+          retention-days: 7
+      - name: Coverage (Vitest)
+        run: npm run test -- --coverage --reporter=dot
+      - name: Upload Coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vitest-coverage
+          path: backend/laravel/coverage
+          retention-days: 7
+      - name: Build
+        run: npm run build
+      - name: Install Playwright
+        run: npx playwright install --with-deps
+      - name: E2E (Playwright)
+        run: npx playwright test --reporter=list,html
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: backend/laravel/playwright-report
+          retention-days: 7
+
