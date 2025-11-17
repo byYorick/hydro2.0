@@ -64,26 +64,45 @@ const nodeConfig = computed(() => {
   return JSON.stringify(config, null, 2)
 })
 
-const onRestart = () => {
-  axios.post(`/api/nodes/${device.value.id}/commands`, {
-    type: 'restart',
-  }, {
-    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-  }).catch(err => {
+const onRestart = async () => {
+  try {
+    const response = await axios.post(`/api/nodes/${device.value.id}/commands`, {
+      type: 'restart',
+      params: {},
+    }, {
+      headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+    })
+    
+    if (response.data?.status === 'ok') {
+      console.log('Device restart command sent successfully', response.data)
+      // Можно добавить toast уведомление здесь
+    }
+  } catch (err) {
     console.error('Failed to restart device:', err)
-  })
+    const errorMsg = err.response?.data?.message || err.message || 'Неизвестная ошибка'
+    console.error('Error details:', errorMsg)
+  }
 }
 
-const onTestChannel = (channelName) => {
-  axios.post(`/api/nodes/${device.value.id}/commands`, {
-    type: 'test_channel',
-    channel: channelName,
-    params: { mode: 'pulse', seconds: 2 },
-  }, {
-    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-  }).catch(err => {
+const onTestChannel = async (channelName) => {
+  try {
+    const response = await axios.post(`/api/nodes/${device.value.id}/commands`, {
+      type: 'test_channel',
+      channel: channelName,
+      params: { mode: 'pulse', seconds: 2 },
+    }, {
+      headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+    })
+    
+    if (response.data?.status === 'ok') {
+      console.log('Channel test command sent successfully', response.data)
+      // Можно добавить toast уведомление здесь
+    }
+  } catch (err) {
     console.error('Failed to test channel:', err)
-  })
+    const errorMsg = err.response?.data?.message || err.message || 'Неизвестная ошибка'
+    console.error('Error details:', errorMsg)
+  }
 }
 </script>
 

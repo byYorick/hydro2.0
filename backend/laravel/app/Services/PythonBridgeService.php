@@ -22,15 +22,50 @@ class PythonBridgeService
             'cmd_id' => $cmdId,
         ]);
         $ghUid = optional($zone->greenhouse)->uid ?? 'gh-1';
+        
+        // Get default node_uid and channel from zone if not provided
+        $nodeUid = $payload['node_uid'] ?? null;
+        $channel = $payload['channel'] ?? null;
+        
+        if (!$nodeUid || !$channel) {
+            // Try to get first node and channel from zone
+            $firstNode = DeviceNode::where('zone_id', $zone->id)->first();
+            if ($firstNode) {
+                $nodeUid = $nodeUid ?? $firstNode->uid;
+                if (!$channel) {
+                    // Get first channel from node
+                    $firstChannel = $firstNode->channels()->first();
+                    $channel = $firstChannel ? $firstChannel->channel : 'default';
+                }
+            }
+        }
+        
+        // Fallback values if still not set
+        $nodeUid = $nodeUid ?? 'default';
+        $channel = $channel ?? 'default';
+        
         $baseUrl = Config::get('services.python_bridge.base_url');
         $token = Config::get('services.python_bridge.token');
         $headers = $token ? ['Authorization' => "Bearer {$token}"] : [];
+        // Ensure params is an associative array (dict), not a list
+        // Python service expects Dict[str, Any], not a list
+        // Empty array [] serializes to [] in JSON, but we need {} for Python
+        $params = $command->params ?? [];
+        if (is_array($params) && array_is_list($params)) {
+            // Convert indexed array to empty object (will serialize as {} in JSON)
+            $params = new \stdClass();
+        } elseif (empty($params) && is_array($params)) {
+            // Empty associative array - convert to object to ensure {} in JSON
+            $params = new \stdClass();
+        }
+        
         Http::withHeaders($headers)->post("{$baseUrl}/bridge/zones/{$zone->id}/commands", [
             'type' => $command->cmd,
-            'params' => $command->params ?? [],
+            'params' => $params,
             'greenhouse_uid' => $ghUid,
-            'node_uid' => $payload['node_uid'] ?? null,
-            'channel' => $payload['channel'] ?? null,
+            'node_uid' => $nodeUid,
+            'channel' => $channel,
+            'cmd_id' => $cmdId, // Pass Laravel's cmd_id to Python service
         ])->throw();
         return $cmdId;
     }
@@ -52,9 +87,21 @@ class PythonBridgeService
         $baseUrl = Config::get('services.python_bridge.base_url');
         $token = Config::get('services.python_bridge.token');
         $headers = $token ? ['Authorization' => "Bearer {$token}"] : [];
+        // Ensure params is an associative array (dict), not a list
+        // Python service expects Dict[str, Any], not a list
+        // Empty array [] serializes to [] in JSON, but we need {} for Python
+        $params = $command->params ?? [];
+        if (is_array($params) && array_is_list($params)) {
+            // Convert indexed array to empty object (will serialize as {} in JSON)
+            $params = new \stdClass();
+        } elseif (empty($params) && is_array($params)) {
+            // Empty associative array - convert to object to ensure {} in JSON
+            $params = new \stdClass();
+        }
+        
         Http::withHeaders($headers)->post("{$baseUrl}/bridge/nodes/{$node->uid}/commands", [
             'type' => $command->cmd,
-            'params' => $command->params ?? [],
+            'params' => $params,
             'greenhouse_uid' => $ghUid,
             'zone_id' => $zoneId,
             'channel' => $payload['channel'] ?? null,

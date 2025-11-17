@@ -42,7 +42,7 @@ class ZoneController extends Controller
 
     public function show(Zone $zone)
     {
-        $zone->load(['greenhouse', 'preset', 'nodes']);
+        $zone->load(['greenhouse', 'preset', 'nodes', 'recipeInstance.recipe.phases']);
         return response()->json(['status' => 'ok', 'data' => $zone]);
     }
 
@@ -101,6 +101,19 @@ class ZoneController extends Controller
         }
     }
 
+    public function nextPhase(Zone $zone)
+    {
+        try {
+            $instance = $this->zoneService->nextPhase($zone);
+            return response()->json(['status' => 'ok', 'data' => $instance]);
+        } catch (\DomainException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+    }
+
     public function pause(Zone $zone)
     {
         try {
@@ -119,6 +132,78 @@ class ZoneController extends Controller
         try {
             $zone = $this->zoneService->resume($zone);
             return response()->json(['status' => 'ok', 'data' => $zone]);
+        } catch (\DomainException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+    }
+
+    public function health(Zone $zone)
+    {
+        // Возвращаем детальную информацию о здоровье зоны
+        return response()->json([
+            'status' => 'ok',
+            'data' => [
+                'zone_id' => $zone->id,
+                'health_score' => $zone->health_score,
+                'health_status' => $zone->health_status,
+                'zone_status' => $zone->status,
+                'active_alerts_count' => $zone->alerts()->where('status', 'ACTIVE')->count(),
+                'nodes_online' => $zone->nodes()->where('status', 'online')->count(),
+                'nodes_total' => $zone->nodes()->count(),
+            ],
+        ]);
+    }
+
+    public function fill(Request $request, Zone $zone)
+    {
+        $data = $request->validate([
+            'target_level' => ['required', 'numeric', 'min:0.1', 'max:1.0'],
+            'max_duration_sec' => ['nullable', 'integer', 'min:10', 'max:600'],
+        ]);
+
+        try {
+            $result = $this->zoneService->fill($zone, $data);
+            return response()->json(['status' => 'ok', 'data' => $result]);
+        } catch (\DomainException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+    }
+
+    public function drain(Request $request, Zone $zone)
+    {
+        $data = $request->validate([
+            'target_level' => ['required', 'numeric', 'min:0.0', 'max:0.9'],
+            'max_duration_sec' => ['nullable', 'integer', 'min:10', 'max:600'],
+        ]);
+
+        try {
+            $result = $this->zoneService->drain($zone, $data);
+            return response()->json(['status' => 'ok', 'data' => $result]);
+        } catch (\DomainException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+    }
+
+    public function calibrateFlow(Request $request, Zone $zone)
+    {
+        $data = $request->validate([
+            'node_id' => ['required', 'integer', 'exists:nodes,id'],
+            'channel' => ['required', 'string', 'max:128'],
+            'pump_duration_sec' => ['nullable', 'integer', 'min:5', 'max:60'],
+        ]);
+
+        try {
+            $result = $this->zoneService->calibrateFlow($zone, $data);
+            return response()->json(['status' => 'ok', 'data' => $result]);
         } catch (\DomainException $e) {
             return response()->json([
                 'status' => 'error',

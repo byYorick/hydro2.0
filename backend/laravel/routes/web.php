@@ -11,61 +11,80 @@ use App\Models\Greenhouse;
 
 Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function () {
     Route::get('/', function () {
-        // Статистика по статусам зон
-        $zonesByStatus = Zone::query()
-            ->selectRaw('status, COUNT(*) as count')
-            ->groupBy('status')
-            ->pluck('count', 'status')
-            ->toArray();
-        
-        // Статистика по статусам узлов
-        $nodesByStatus = DeviceNode::query()
-            ->selectRaw('status, COUNT(*) as count')
-            ->groupBy('status')
-            ->pluck('count', 'status')
-            ->toArray();
-        
-        // Проблемные зоны (ALARM, WARNING или с активными алертами)
-        $problematicZones = Zone::query()
-            ->withCount(['alerts' => function ($q) {
-                $q->where('status', 'active');
-            }])
-            ->where(function ($q) {
-                $q->whereIn('status', ['ALARM', 'WARNING'])
-                  ->orWhereHas('alerts', function ($q2) {
-                      $q2->where('status', 'active');
-                  });
-            })
-            ->orderByRaw("CASE status WHEN 'ALARM' THEN 1 WHEN 'WARNING' THEN 2 ELSE 3 END")
-            ->orderBy('alerts_count', 'desc')
-            ->limit(5)
-            ->get(['id', 'name', 'status', 'description', 'greenhouse_id'])
-            ->load('greenhouse:id,name');
-        
-        // Теплицы с краткой информацией
-        $greenhouses = Greenhouse::query()
-            ->withCount(['zones', 'zones as zones_running' => function ($q) {
-                $q->where('status', 'RUNNING');
-            }])
-            ->get(['id', 'uid', 'name', 'type']);
-        
-        $dashboard = [
-            'greenhousesCount' => Greenhouse::query()->count(),
-            'zonesCount' => Zone::query()->count(),
-            'devicesCount' => DeviceNode::query()->count(),
-            'alertsCount' => Alert::query()->where('status', 'active')->count(),
-            'zonesByStatus' => $zonesByStatus,
-            'nodesByStatus' => $nodesByStatus,
-            'problematicZones' => $problematicZones,
-            'greenhouses' => $greenhouses,
-            'latestAlerts' => Alert::query()
-                ->with(['zone' => function ($q) {
-                    $q->select('id', 'name');
+        // Используем кеш для статических данных (TTL 30 секунд)
+        $cacheKey = 'dashboard_data_' . auth()->id();
+        $dashboard = \Illuminate\Support\Facades\Cache::remember($cacheKey, 30, function () {
+            // Оптимизированные запросы - выполняем все параллельно через DB::select
+            $stats = \Illuminate\Support\Facades\DB::select("
+                SELECT 
+                    (SELECT COUNT(*) FROM greenhouses) as greenhouses_count,
+                    (SELECT COUNT(*) FROM zones) as zones_count,
+                    (SELECT COUNT(*) FROM nodes) as devices_count,
+                    (SELECT COUNT(*) FROM alerts WHERE status = 'active') as alerts_count
+            ")[0];
+            
+            // Статистика по статусам зон и узлов одним запросом
+            $zonesByStatus = Zone::query()
+                ->selectRaw('status, COUNT(*) as count')
+                ->groupBy('status')
+                ->pluck('count', 'status')
+                ->toArray();
+            
+            $nodesByStatus = DeviceNode::query()
+                ->selectRaw('status, COUNT(*) as count')
+                ->groupBy('status')
+                ->pluck('count', 'status')
+                ->toArray();
+            
+            // Оптимизированный запрос проблемных зон - используем JOIN вместо whereHas
+            $problematicZones = Zone::query()
+                ->select(['zones.id', 'zones.name', 'zones.status', 'zones.description', 'zones.greenhouse_id'])
+                ->leftJoin('alerts', function ($join) {
+                    $join->on('alerts.zone_id', '=', 'zones.id')
+                         ->where('alerts.status', '=', 'active');
+                })
+                ->where(function ($q) {
+                    $q->whereIn('zones.status', ['ALARM', 'WARNING'])
+                      ->orWhereNotNull('alerts.id');
+                })
+                ->selectRaw('COUNT(DISTINCT alerts.id) as alerts_count')
+                ->groupBy('zones.id', 'zones.name', 'zones.status', 'zones.description', 'zones.greenhouse_id')
+                ->orderByRaw("CASE zones.status WHEN 'ALARM' THEN 1 WHEN 'WARNING' THEN 2 ELSE 3 END")
+                ->orderBy('alerts_count', 'desc')
+                ->limit(5)
+                ->with('greenhouse:id,name')
+                ->get();
+            
+            // Теплицы с оптимизированным подсчетом
+            $greenhouses = Greenhouse::query()
+                ->select(['id', 'uid', 'name', 'type'])
+                ->withCount(['zones', 'zones as zones_running' => function ($q) {
+                    $q->where('status', 'RUNNING');
                 }])
+                ->get();
+            
+            // Последние алерты
+            $latestAlerts = Alert::query()
+                ->select(['id', 'type', 'status', 'details', 'zone_id', 'created_at'])
+                ->with('zone:id,name')
+                ->where('status', 'active')
                 ->latest('id')
                 ->limit(10)
-                ->get(['id', 'type', 'status', 'details', 'zone_id', 'created_at']),
-        ];
+                ->get();
+            
+            return [
+                'greenhousesCount' => (int)$stats->greenhouses_count,
+                'zonesCount' => (int)$stats->zones_count,
+                'devicesCount' => (int)$stats->devices_count,
+                'alertsCount' => (int)$stats->alerts_count,
+                'zonesByStatus' => $zonesByStatus,
+                'nodesByStatus' => $nodesByStatus,
+                'problematicZones' => $problematicZones,
+                'greenhouses' => $greenhouses,
+                'latestAlerts' => $latestAlerts,
+            ];
+        });
+        
         return Inertia::render('Dashboard/Index', [
             'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
             'dashboard' => $dashboard,
@@ -74,24 +93,31 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
 
     Route::prefix('zones')->group(function () {
         Route::get('/', function () {
-            $zones = Zone::query()
-                ->select(['id','name','status','description','greenhouse_id'])
-                ->with('greenhouse:id,name')
-                ->get();
+            // Кешируем список зон на 10 секунд
+            $cacheKey = 'zones_list_' . auth()->id();
+            $zones = \Illuminate\Support\Facades\Cache::remember($cacheKey, 10, function () {
+                return Zone::query()
+                    ->select(['id','name','status','description','greenhouse_id'])
+                    ->with('greenhouse:id,name')
+                    ->get();
+            });
             return Inertia::render('Zones/Index', [
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
                 'zones' => $zones,
             ]);
         })->name('zones.web.index');
         Route::get('/{zoneId}', function (string $zoneId) {
+            // Convert zoneId to integer
+            $zoneIdInt = (int)$zoneId;
+            
             $zone = Zone::query()
                 ->select(['id','name','status','description','greenhouse_id'])
                 ->with(['greenhouse:id,name', 'recipeInstance.recipe:id,name'])
-                ->findOrFail($zoneId);
+                ->findOrFail($zoneIdInt);
             
             // Загрузить телеметрию
             $telemetryLast = \App\Models\TelemetryLast::query()
-                ->where('zone_id', $zoneId)
+                ->where('zone_id', $zoneIdInt)
                 ->get(['metric_type', 'value'])
                 ->mapWithKeys(function ($item) {
                     $key = strtolower($item->metric_type ?? '');
@@ -119,21 +145,29 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
             // Загрузить устройства зоны
             $devices = \App\Models\DeviceNode::query()
                 ->select(['id','uid','zone_id','name','type','status','fw_version','last_seen_at'])
-                ->where('zone_id', $zoneId)
+                ->where('zone_id', $zoneIdInt)
                 ->with('zone:id,name')
                 ->get();
             
-            // Загрузить последние события зоны
-            $events = \App\Models\Event::query()
-                ->where('zone_id', $zoneId)
-                ->select(['id', 'kind', 'message', 'occurred_at'])
-                ->latest('occurred_at')
-                ->limit(20)
-                ->get();
+            // Загрузить последние события зоны (если модель Event существует)
+            $events = collect([]);
+            if (class_exists(\App\Models\Event::class)) {
+                try {
+                    $events = \App\Models\Event::query()
+                        ->where('zone_id', $zoneIdInt)
+                        ->select(['id', 'type', 'details', 'created_at'])
+                        ->latest('created_at')
+                        ->limit(20)
+                        ->get();
+                } catch (\Exception $e) {
+                    // Event model or table doesn't exist, use empty collection
+                    $events = collect([]);
+                }
+            }
             
             return Inertia::render('Zones/Show', [
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
-                'zoneId' => (int)$zoneId,
+                'zoneId' => $zoneIdInt,
                 'zone' => $zone,
                 'telemetry' => $telemetryLast,
                 'targets' => $targets,
@@ -145,19 +179,35 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
 
     Route::prefix('devices')->group(function () {
         Route::get('/', function () {
-            $devices = DeviceNode::query()
-                ->select(['id','uid','zone_id','name','type','status','fw_version','last_seen_at'])
-                ->with('zone:id,name')
-                ->get();
+            // Кешируем список устройств на 10 секунд
+            $cacheKey = 'devices_list_' . auth()->id();
+            $devices = \Illuminate\Support\Facades\Cache::remember($cacheKey, 10, function () {
+                return DeviceNode::query()
+                    ->select(['id','uid','zone_id','name','type','status','fw_version','last_seen_at'])
+                    ->with('zone:id,name')
+                    ->get();
+            });
             return Inertia::render('Devices/Index', [
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
                 'devices' => $devices,
             ]);
         })->name('devices.index');
-        Route::get('/{nodeId}', function (int $nodeId) {
-            $device = DeviceNode::query()
-                ->with(['channels:id,node_id,channel,type,metric,unit','zone:id,name'])
-                ->findOrFail($nodeId);
+        Route::get('/add', function () {
+            return Inertia::render('Devices/Add', [
+                'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
+            ]);
+        })->name('devices.add');
+        Route::get('/{nodeId}', function (string $nodeId) {
+            // Support both ID (int) and UID (string) lookup
+            $query = DeviceNode::query()
+                ->with(['channels:id,node_id,channel,type,metric,unit','zone:id,name']);
+            
+            // Try to find by ID if nodeId is numeric, otherwise by UID
+            if (is_numeric($nodeId)) {
+                $device = $query->findOrFail((int)$nodeId);
+            } else {
+                $device = $query->where('uid', $nodeId)->firstOrFail();
+            }
             return Inertia::render('Devices/Show', [
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
                 'device' => $device,
@@ -167,18 +217,22 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
 
     Route::prefix('recipes')->group(function () {
         Route::get('/', function () {
-            $recipes = Recipe::query()
-                ->select(['id','name','description'])
-                ->withCount('phases')
-                ->get()
-                ->map(function ($recipe) {
-                    return [
-                        'id' => $recipe->id,
-                        'name' => $recipe->name,
-                        'description' => $recipe->description,
-                        'phases_count' => $recipe->phases_count ?? 0,
-                    ];
-                });
+            // Кешируем список рецептов на 10 секунд
+            $cacheKey = 'recipes_list_' . auth()->id();
+            $recipes = \Illuminate\Support\Facades\Cache::remember($cacheKey, 10, function () {
+                return Recipe::query()
+                    ->select(['id','name','description'])
+                    ->withCount('phases')
+                    ->get()
+                    ->map(function ($recipe) {
+                        return [
+                            'id' => $recipe->id,
+                            'name' => $recipe->name,
+                            'description' => $recipe->description,
+                            'phases_count' => $recipe->phases_count ?? 0,
+                        ];
+                    });
+            });
             return Inertia::render('Recipes/Index', [
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
                 'recipes' => $recipes,
@@ -205,13 +259,17 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
     });
 
         Route::get('/alerts', function () {
-            $alerts = \App\Models\Alert::query()
-                ->with(['zone' => function ($q) {
-                    $q->select('id', 'name');
-                }])
-                ->latest('id')
-                ->limit(100)
-                ->get(['id', 'type', 'status', 'details', 'zone_id', 'created_at', 'resolved_at']);
+            // Кешируем список алертов на 5 секунд (более динамичные данные)
+            $cacheKey = 'alerts_list_' . auth()->id();
+            $alerts = \Illuminate\Support\Facades\Cache::remember($cacheKey, 5, function () {
+                return \App\Models\Alert::query()
+                    ->with(['zone' => function ($q) {
+                        $q->select('id', 'name');
+                    }])
+                    ->latest('id')
+                    ->limit(100)
+                    ->get(['id', 'type', 'status', 'details', 'zone_id', 'created_at', 'resolved_at']);
+            });
             return Inertia::render('Alerts/Index', [
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
                 'alerts' => $alerts,

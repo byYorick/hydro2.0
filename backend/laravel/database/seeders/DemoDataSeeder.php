@@ -9,6 +9,8 @@ use App\Models\DeviceNode;
 use App\Models\NodeChannel;
 use App\Models\Recipe;
 use App\Models\RecipePhase;
+use App\Models\ZoneRecipeInstance;
+use App\Models\Preset;
 use App\Models\Alert;
 use Carbon\Carbon;
 
@@ -237,6 +239,54 @@ class DemoDataSeeder extends Seeder
             ]
         );
 
+        // Link zones with presets
+        $lettucePreset = Preset::where('name', 'Lettuce Standard')->first();
+        $basilPreset = Preset::where('name', 'Basil/Herbs')->first();
+        $tomatoPreset = Preset::where('name', 'Tomato/Cucumber')->first();
+
+        if ($lettucePreset) {
+            $zone1->preset_id = $lettucePreset->id;
+            $zone1->save();
+        }
+
+        if ($basilPreset) {
+            $zone2->preset_id = $basilPreset->id;
+            $zone2->save();
+        }
+
+        if ($tomatoPreset) {
+            $zone3->preset_id = $tomatoPreset->id;
+            $zone3->save();
+        }
+
+        // Create recipe instances for zones
+        ZoneRecipeInstance::firstOrCreate(
+            ['zone_id' => $zone1->id],
+            [
+                'recipe_id' => $recipe1->id,
+                'current_phase_index' => 1,
+                'started_at' => Carbon::now()->subDays(5),
+            ]
+        );
+
+        ZoneRecipeInstance::firstOrCreate(
+            ['zone_id' => $zone2->id],
+            [
+                'recipe_id' => $recipe2->id,
+                'current_phase_index' => 0,
+                'started_at' => Carbon::now()->subDays(2),
+            ]
+        );
+
+        ZoneRecipeInstance::firstOrCreate(
+            ['zone_id' => $zone3->id],
+            [
+                'recipe_id' => $recipe1->id,
+                'current_phase_index' => 0,
+                'started_at' => Carbon::now()->subDays(1),
+            ]
+        );
+
         // Create alerts (only if they don't exist - skip duplicates)
         if (Alert::where('zone_id', $zone1->id)->where('type', 'ph_high')->where('status', 'active')->count() === 0) {
             Alert::create([
@@ -291,9 +341,10 @@ class DemoDataSeeder extends Seeder
 
         $this->command->info('Demo data seeded successfully!');
         $this->command->info('- 1 Greenhouse');
-        $this->command->info('- 3 Zones');
+        $this->command->info('- 3 Zones (with presets)');
         $this->command->info('- 4 Nodes with 7 Channels');
         $this->command->info('- 2 Recipes with 4 Phases');
+        $this->command->info('- 3 Active Recipe Instances');
         $this->command->info('- 5 Alerts');
     }
 }

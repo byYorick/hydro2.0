@@ -99,6 +99,20 @@ return new class extends Migration
         DB::statement("DROP INDEX IF EXISTS telemetry_samples_metric_ts_idx;");
 
         // Удаляем hypertable (преобразует обратно в обычную таблицу)
-        DB::statement("SELECT drop_hypertable('telemetry_samples', if_exists => TRUE);");
+        try {
+            // Проверяем, является ли таблица hypertable
+            $isHypertable = DB::selectOne("
+                SELECT EXISTS (
+                    SELECT 1 FROM timescaledb_information.hypertables 
+                    WHERE hypertable_name = 'telemetry_samples'
+                ) as exists;
+            ");
+            
+            if ($isHypertable && $isHypertable->exists) {
+                DB::statement("SELECT drop_hypertable('telemetry_samples', if_exists => TRUE);");
+            }
+        } catch (\Exception $e) {
+            // Игнорируем ошибки при удалении hypertable
+        }
     }
 };

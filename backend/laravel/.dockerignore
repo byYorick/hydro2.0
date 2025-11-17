@@ -1,0 +1,20 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+.env
+.env.backup
+.phpunit.result.cache
+storage
+bootstrap/cache
+*.log
+.DS_Store
+Thumbs.db
+.vscode
+.idea
+# Игнорируем большие директории для уменьшения контекста сборки
+vendor
+public/hot
+public/build
+tests
+

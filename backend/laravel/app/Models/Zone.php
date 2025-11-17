@@ -18,6 +18,15 @@ class Zone extends Model
         'name',
         'description',
         'status',
+        'health_score',
+        'health_status',
+        'hardware_profile',
+        'capabilities',
+    ];
+
+    protected $casts = [
+        'hardware_profile' => 'array',
+        'capabilities' => 'array',
     ];
 
     public function greenhouse(): BelongsTo
@@ -58,6 +67,79 @@ class Zone extends Model
     public function modelParams(): HasMany
     {
         return $this->hasMany(ZoneModelParams::class);
+    }
+
+    public function zoneEvents(): HasMany
+    {
+        return $this->hasMany(ZoneEvent::class);
+    }
+
+    public function aiLogs(): HasMany
+    {
+        return $this->hasMany(AiLog::class);
+    }
+
+    /**
+     * Проверка возможности управления pH
+     */
+    public function canPhControl(): bool
+    {
+        $capabilities = $this->capabilities ?? [];
+        return $capabilities['ph_control'] ?? false;
+    }
+
+    /**
+     * Проверка возможности управления EC
+     */
+    public function canEcControl(): bool
+    {
+        $capabilities = $this->capabilities ?? [];
+        return $capabilities['ec_control'] ?? false;
+    }
+
+    /**
+     * Проверка возможности управления климатом
+     */
+    public function canClimateControl(): bool
+    {
+        $capabilities = $this->capabilities ?? [];
+        return $capabilities['climate_control'] ?? false;
+    }
+
+    /**
+     * Проверка возможности управления освещением
+     */
+    public function canLightControl(): bool
+    {
+        $capabilities = $this->capabilities ?? [];
+        return $capabilities['light_control'] ?? false;
+    }
+
+    /**
+     * Проверка возможности управления поливом
+     */
+    public function canIrrigationControl(): bool
+    {
+        $capabilities = $this->capabilities ?? [];
+        return $capabilities['irrigation_control'] ?? false;
+    }
+
+    /**
+     * Проверка возможности рециркуляции
+     */
+    public function canRecirculation(): bool
+    {
+        $capabilities = $this->capabilities ?? [];
+        return $capabilities['recirculation'] ?? false;
+    }
+
+    /**
+     * Проверка наличия датчика расхода
+     */
+    public function hasFlowSensor(): bool
+    {
+        $capabilities = $this->capabilities ?? [];
+        return $capabilities['flow_sensor'] ?? false;
     }
 }
 

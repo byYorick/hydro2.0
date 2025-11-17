@@ -143,6 +143,31 @@ class ZoneService
     }
 
     /**
+     * Перейти на следующую фазу рецепта
+     */
+    public function nextPhase(Zone $zone): ZoneRecipeInstance
+    {
+        $instance = $zone->recipeInstance;
+        if (!$instance) {
+            throw new \DomainException('Zone has no active recipe');
+        }
+
+        $currentPhaseIndex = $instance->current_phase_index;
+        $nextPhaseIndex = $currentPhaseIndex + 1;
+
+        // Проверка: следующая фаза должна существовать в рецепте
+        $recipe = $instance->recipe;
+        $maxPhaseIndex = $recipe->phases()->max('phase_index') ?? 0;
+        
+        if ($nextPhaseIndex > $maxPhaseIndex) {
+            throw new \DomainException("No next phase available. Current phase is {$currentPhaseIndex}, max phase is {$maxPhaseIndex}");
+        }
+
+        // Используем существующий метод changePhase
+        return $this->changePhase($zone, $nextPhaseIndex);
+    }
+
+    /**
      * Пауза/возобновление зоны
      */
     public function pause(Zone $zone): Zone
@@ -178,6 +203,104 @@ class ZoneService
         event(new ZoneUpdated($zone));
         
         return $zone;
+    }
+
+    /**
+     * Режим наполнения (Fill Mode)
+     */
+    public function fill(Zone $zone, array $data): array
+    {
+        $baseUrl = config('services.python_bridge.base_url');
+        $token = config('services.python_bridge.token');
+        $headers = $token ? ['Authorization' => "Bearer {$token}"] : [];
+
+        $payload = [
+            'target_level' => $data['target_level'],
+        ];
+        if (isset($data['max_duration_sec'])) {
+            $payload['max_duration_sec'] = $data['max_duration_sec'];
+        }
+
+        $response = \Illuminate\Support\Facades\Http::withHeaders($headers)
+            ->timeout(350) // Больше чем max_duration_sec (300) + запас
+            ->post("{$baseUrl}/bridge/zones/{$zone->id}/fill", $payload);
+
+        if (!$response->successful()) {
+            throw new \DomainException('Fill operation failed: ' . $response->body());
+        }
+
+        Log::info('Zone fill executed', [
+            'zone_id' => $zone->id,
+            'target_level' => $data['target_level'],
+        ]);
+
+        return $response->json('data', []);
+    }
+
+    /**
+     * Режим слива (Drain Mode)
+     */
+    public function drain(Zone $zone, array $data): array
+    {
+        $baseUrl = config('services.python_bridge.base_url');
+        $token = config('services.python_bridge.token');
+        $headers = $token ? ['Authorization' => "Bearer {$token}"] : [];
+
+        $payload = [
+            'target_level' => $data['target_level'],
+        ];
+        if (isset($data['max_duration_sec'])) {
+            $payload['max_duration_sec'] = $data['max_duration_sec'];
+        }
+
+        $response = \Illuminate\Support\Facades\Http::withHeaders($headers)
+            ->timeout(350) // Больше чем max_duration_sec (300) + запас
+            ->post("{$baseUrl}/bridge/zones/{$zone->id}/drain", $payload);
+
+        if (!$response->successful()) {
+            throw new \DomainException('Drain operation failed: ' . $response->body());
+        }
+
+        Log::info('Zone drain executed', [
+            'zone_id' => $zone->id,
+            'target_level' => $data['target_level'],
+        ]);
+
+        return $response->json('data', []);
+    }
+
+    /**
+     * Калибровка расхода воды
+     */
+    public function calibrateFlow(Zone $zone, array $data): array
+    {
+        $baseUrl = config('services.python_bridge.base_url');
+        $token = config('services.python_bridge.token');
+        $headers = $token ? ['Authorization' => "Bearer {$token}"] : [];
+
+        $payload = [
+            'node_id' => $data['node_id'],
+            'channel' => $data['channel'],
+        ];
+        if (isset($data['pump_duration_sec'])) {
+            $payload['pump_duration_sec'] = $data['pump_duration_sec'];
+        }
+
+        $response = \Illuminate\Support\Facades\Http::withHeaders($headers)
+            ->timeout(30) // Калибровка занимает ~12 секунд (10 сек насос + 2 сек ожидание)
+            ->post("{$baseUrl}/bridge/zones/{$zone->id}/calibrate-flow", $payload);
+
+        if (!$response->successful()) {
+            throw new \DomainException('Flow calibration failed: ' . $response->body());
+        }
+
+        Log::info('Flow calibration executed', [
+            'zone_id' => $zone->id,
+            'node_id' => $data['node_id'],
+            'channel' => $data['channel'],
+        ]);
+
+        return $response->json('data', []);
     }
 }
 

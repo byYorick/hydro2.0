@@ -1,6 +1,7 @@
 <template>
   <Link
     :href="href"
+    :prefetch="true"
     class="block rounded-md px-3 py-2 text-sm transition-colors"
     :class="isActive ? 'bg-neutral-800 text-neutral-100' : 'text-neutral-300 hover:bg-neutral-850 hover:text-neutral-100'"
   >

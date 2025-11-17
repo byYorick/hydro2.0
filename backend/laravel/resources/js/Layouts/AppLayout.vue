@@ -14,10 +14,54 @@
           <NavLink href="/settings" label="Settings" />
         </nav>
       </aside>
+      
+      <!-- Mobile Navigation Menu -->
+      <div
+        v-if="showMobileMenu"
+        class="fixed inset-0 z-50 lg:hidden"
+        @click="showMobileMenu = false"
+      >
+        <div class="fixed inset-0 bg-black/50" />
+        <div
+          class="fixed left-0 top-0 bottom-0 w-64 bg-neutral-925 border-r border-neutral-800"
+          @click.stop
+        >
+          <div class="h-16 flex items-center justify-between px-4 border-b border-neutral-800">
+            <span class="text-base font-semibold">hydro 2.0</span>
+            <button
+              @click="showMobileMenu = false"
+              class="p-2 rounded-md text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800"
+            >
+              <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <nav class="p-3 space-y-1" @click="showMobileMenu = false">
+            <NavLink href="/" label="Dashboard" />
+            <NavLink href="/zones" label="Zones" />
+            <NavLink href="/devices" label="Devices" />
+            <NavLink href="/recipes" label="Recipes" />
+            <NavLink href="/alerts" label="Alerts" />
+            <NavLink href="/settings" label="Settings" />
+          </nav>
+        </div>
+      </div>
+      
       <main class="flex-1">
         <header class="h-16 flex items-center justify-between px-4 border-b border-neutral-800 bg-neutral-925 lg:hidden">
-          <span class="text-base font-semibold">hydro 2.0</span>
-          <span class="text-xs text-neutral-400">Ctrl+K — Command Palette</span>
+          <div class="flex items-center gap-3">
+            <button
+              @click="showMobileMenu = !showMobileMenu"
+              class="p-2 rounded-md text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800"
+            >
+              <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            <span class="text-base font-semibold">hydro 2.0</span>
+          </div>
+          <span class="text-xs text-neutral-400 hidden sm:inline">Ctrl+K — Command Palette</span>
         </header>
         <div class="px-4 py-4">
           <slot />
@@ -37,8 +81,11 @@
   </template>
   
   <script setup>
+  import { ref } from 'vue'
   import CommandPalette from '@/Components/CommandPalette.vue'
   import NavLink from '@/Components/NavLink.vue'
+  
+  const showMobileMenu = ref(false)
   </script>
   
   <style>

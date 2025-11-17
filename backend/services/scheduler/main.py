@@ -4,8 +4,16 @@ from datetime import datetime, time
 from typing import Optional, Dict, Any, List
 from common.env import get_settings
 from common.mqtt import MqttClient
-from common.db import fetch, execute
+from common.db import fetch, execute, create_scheduler_log, create_zone_event
 from prometheus_client import Counter, Gauge, start_http_server
+from common.water_flow import (
+    check_water_level,
+    check_flow,
+    calculate_irrigation_volume,
+    ensure_water_level_alert,
+    ensure_no_flow_alert,
+    check_dry_run_protection,
+)
 
 SCHEDULE_EXECUTIONS = Counter("schedule_executions_total", "Scheduled tasks executed", ["zone_id", "task_type"])
 ACTIVE_SCHEDULES = Gauge("active_schedules", "Number of active schedules")
@@ -87,7 +95,7 @@ async def get_zone_nodes_for_type(zone_id: int, node_type: str) -> List[Dict[str
     """Fetch nodes of specific type for zone."""
     rows = await fetch(
         """
-        SELECT n.id, n.uid, n.type, nc.name as channel_name, nc.channel_id
+        SELECT n.id, n.uid, n.type, nc.channel
         FROM nodes n
         LEFT JOIN node_channels nc ON nc.node_id = n.id
         WHERE n.zone_id = $1 AND n.type = $2 AND n.status = 'online'
@@ -100,7 +108,7 @@ async def get_zone_nodes_for_type(zone_id: int, node_type: str) -> List[Dict[str
             "node_id": row["id"],
             "node_uid": row["uid"],
             "type": row["type"],
-            "channel": row["channel_name"] or row["channel_id"] or "default",
+            "channel": row["channel"] or "default",
         })
     return result
 
@@ -121,40 +129,176 @@ async def get_gh_uid_for_zone(zone_id: int) -> Optional[str]:
     return None
 
 
+async def monitor_pump_safety(
+    zone_id: int,
+    pump_start_time: datetime,
+    mqtt: MqttClient,
+    gh_uid: str,
+    node_uid: str,
+    channel: str
+):
+    """
+    Мониторинг безопасности насоса - проверка на сухой ход.
+    
+    Через 3 секунды после запуска проверяет flow и останавливает насос
+    при обнаружении сухого хода.
+    """
+    # Ждем 3 секунды перед проверкой
+    await asyncio.sleep(3)  # DRY_RUN_CHECK_DELAY_SEC
+    
+    # Проверяем защиту от сухого хода
+    is_safe, error = await check_dry_run_protection(zone_id, pump_start_time)
+    
+    if not is_safe:
+        # Отправляем команду остановки насоса
+        payload = {"cmd": "stop"}
+        topic = f"hydro/{gh_uid}/zn-{zone_id}/{node_uid}/{channel}/command"
+        mqtt.publish_json(topic, payload, qos=1, retain=False)
+        
+        # Создаем событие остановки насоса
+        await create_zone_event(
+            zone_id,
+            'PUMP_STOPPED',
+            {
+                'reason': 'dry_run_detected',
+                'error': error,
+                'node_uid': node_uid,
+                'channel': channel,
+                'pump_start_time': pump_start_time.isoformat()
+            }
+        )
+        
+        # Обновляем scheduler log
+        await create_scheduler_log(
+            f"irrigation_zone_{zone_id}",
+            "failed",
+            {
+                "zone_id": zone_id,
+                "error": "dry_run_detected",
+                "error_message": error
+            }
+        )
+
+
 async def execute_irrigation_schedule(
     zone_id: int, mqtt: MqttClient, gh_uid: str, schedule: Dict[str, Any],
 ):
-    """Execute irrigation schedule for zone."""
-    nodes = await get_zone_nodes_for_type(zone_id, "irrigation")
-    if not nodes:
-        return
-    for node_info in nodes:
-        payload = {"cmd": "irrigate", "params": {"duration_sec": 60, "amount_ml": 100}}
-        topic = f"hydro/{gh_uid}/zn-{zone_id}/{node_info['node_uid']}/{node_info['channel']}/command"
-        mqtt.publish_json(topic, payload, qos=1, retain=False)
-    SCHEDULE_EXECUTIONS.labels(zone_id=zone_id, task_type="irrigation").inc()
+    """Execute irrigation schedule for zone with Water Flow Engine integration."""
+    task_name = f"irrigation_zone_{zone_id}"
+    try:
+        await create_scheduler_log(task_name, "running", {"zone_id": zone_id, "type": "irrigation"})
+        
+        # Check water level before irrigation
+        water_level_ok, water_level = await check_water_level(zone_id)
+        if water_level is not None:
+            await ensure_water_level_alert(zone_id, water_level)
+        
+        if not water_level_ok:
+            await create_scheduler_log(
+                task_name, "failed", 
+                {"zone_id": zone_id, "error": "water_level_low", "level": water_level}
+            )
+            return
+        
+        nodes = await get_zone_nodes_for_type(zone_id, "irrig")
+        if not nodes:
+            await create_scheduler_log(task_name, "failed", {"zone_id": zone_id, "error": "no_nodes"})
+            return
+        
+        # Get irrigation duration from targets
+        targets = schedule.get("targets", {})
+        duration_sec = targets.get("irrigation_duration_sec", 60)
+        
+        # Create IRRIGATION_STARTED event
+        irrigation_start_time = datetime.utcnow()
+        await create_zone_event(
+            zone_id,
+            'IRRIGATION_STARTED',
+            {
+                'nodes_count': len(nodes),
+                'duration_sec': duration_sec,
+                'start_time': irrigation_start_time.isoformat()
+            }
+        )
+        
+        # Send irrigation commands
+        for node_info in nodes:
+            payload = {"cmd": "irrigate", "params": {"duration_sec": duration_sec}}
+            topic = f"hydro/{gh_uid}/zn-{zone_id}/{node_info['node_uid']}/{node_info['channel']}/command"
+            mqtt.publish_json(topic, payload, qos=1, retain=False)
+            
+            # Start async monitoring for dry run protection
+            asyncio.create_task(
+                monitor_pump_safety(
+                    zone_id, irrigation_start_time, mqtt, gh_uid,
+                    node_info['node_uid'], node_info['channel']
+                )
+            )
+        
+        SCHEDULE_EXECUTIONS.labels(zone_id=zone_id, task_type="irrigation").inc()
+        
+        # Wait for irrigation to complete (approximate)
+        await asyncio.sleep(min(duration_sec, 10))  # Max wait 10 seconds for async check
+        
+        # Calculate volume and create IRRIGATION_FINISHED event
+        irrigation_end_time = datetime.utcnow()
+        volume = await calculate_irrigation_volume(zone_id, irrigation_start_time, irrigation_end_time)
+        
+        # Check flow after irrigation
+        flow_ok, flow_value = await check_flow(zone_id)
+        if not flow_ok:
+            await ensure_no_flow_alert(zone_id, flow_value, 0.1)
+        
+        await create_zone_event(
+            zone_id,
+            'IRRIGATION_FINISHED',
+            {
+                'nodes_count': len(nodes),
+                'duration_sec': duration_sec,
+                'actual_duration_sec': (irrigation_end_time - irrigation_start_time).total_seconds(),
+                'volume_l': volume,
+                'flow_value': flow_value,
+                'start_time': irrigation_start_time.isoformat(),
+                'end_time': irrigation_end_time.isoformat()
+            }
+        )
+        
+        await create_scheduler_log(
+            task_name, "completed", 
+            {"zone_id": zone_id, "nodes_count": len(nodes), "volume_l": volume}
+        )
+    except Exception as e:
+        await create_scheduler_log(task_name, "failed", {"zone_id": zone_id, "error": str(e)})
 
 
 async def execute_lighting_schedule(
     zone_id: int, mqtt: MqttClient, gh_uid: str, schedule: Dict[str, Any],
 ):
     """Execute lighting schedule for zone (on/off based on time)."""
-    nodes = await get_zone_nodes_for_type(zone_id, "lighting")
-    if not nodes:
-        return
-    now = datetime.now().time()
-    start_time = schedule.get("start_time")
-    end_time = schedule.get("end_time")
-    if not start_time or not end_time:
-        return
-    # Check if current time is within lighting window
-    should_be_on = start_time <= now <= end_time
-    cmd = "light_on" if should_be_on else "light_off"
-    for node_info in nodes:
-        payload = {"cmd": cmd}
-        topic = f"hydro/{gh_uid}/zn-{zone_id}/{node_info['node_uid']}/{node_info['channel']}/command"
-        mqtt.publish_json(topic, payload, qos=1, retain=False)
-    SCHEDULE_EXECUTIONS.labels(zone_id=zone_id, task_type="lighting").inc()
+    task_name = f"lighting_zone_{zone_id}"
+    try:
+        await create_scheduler_log(task_name, "running", {"zone_id": zone_id, "type": "lighting"})
+        nodes = await get_zone_nodes_for_type(zone_id, "light")
+        if not nodes:
+            await create_scheduler_log(task_name, "failed", {"zone_id": zone_id, "error": "no_nodes"})
+            return
+        now = datetime.now().time()
+        start_time = schedule.get("start_time")
+        end_time = schedule.get("end_time")
+        if not start_time or not end_time:
+            await create_scheduler_log(task_name, "failed", {"zone_id": zone_id, "error": "no_time_range"})
+            return
+        # Check if current time is within lighting window
+        should_be_on = start_time <= now <= end_time
+        cmd = "light_on" if should_be_on else "light_off"
+        for node_info in nodes:
+            payload = {"cmd": cmd}
+            topic = f"hydro/{gh_uid}/zn-{zone_id}/{node_info['node_uid']}/{node_info['channel']}/command"
+            mqtt.publish_json(topic, payload, qos=1, retain=False)
+        SCHEDULE_EXECUTIONS.labels(zone_id=zone_id, task_type="lighting").inc()
+        await create_scheduler_log(task_name, "completed", {"zone_id": zone_id, "command": cmd, "nodes_count": len(nodes)})
+    except Exception as e:
+        await create_scheduler_log(task_name, "failed", {"zone_id": zone_id, "error": str(e)})
 
 
 async def check_and_execute_schedules(mqtt: MqttClient):

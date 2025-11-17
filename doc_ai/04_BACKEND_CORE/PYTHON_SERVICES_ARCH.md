@@ -344,6 +344,42 @@ backend/services/
 - `LARAVEL_API_URL` — URL Laravel API (по умолчанию: `http://laravel`)
 - `LARAVEL_API_TOKEN` — токен для аутентификации
 
+**Пример использования LARAVEL_API_TOKEN:**
+
+```python
+import os
+import httpx
+from common.env import get_settings
+
+settings = get_settings()
+
+# Запрос к Laravel API с токеном
+headers = {}
+if settings.laravel_api_token:
+    headers['Authorization'] = f'Bearer {settings.laravel_api_token}'
+
+response = httpx.get(
+    f'{settings.laravel_api_url}/api/system/config/full',
+    headers=headers,
+    timeout=10.0
+)
+config = response.json()
+```
+
+**Генерация токена:**
+
+Токен генерируется в Laravel через Laravel Sanctum:
+
+```bash
+# В Laravel контейнере
+php artisan tinker
+>>> $user = \App\Models\User::first();
+>>> $token = $user->createToken('python-service')->plainTextToken;
+>>> echo $token;
+```
+
+Полученный токен устанавливается в переменную окружения `LARAVEL_API_TOKEN` для Python сервисов.
+
 ### Прочее
 - `TELEMETRY_BATCH_SIZE` — размер батча для телеметрии (по умолчанию: `200`)
 - `TELEMETRY_FLUSH_MS` — интервал записи батча (по умолчанию: `500` мс)

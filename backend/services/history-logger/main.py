@@ -3,7 +3,7 @@ import json
 from typing import Optional
 from time import time as now_ts
 
-from common.db import execute, upsert_telemetry_last
+from common.db import execute, upsert_telemetry_last, create_zone_event, fetch
 from common.mqtt import MqttClient
 from common.commands import mark_command_ack, mark_command_failed, mark_timeouts
 from common.env import get_settings
@@ -96,10 +96,32 @@ async def handle_status(topic: str, payload: bytes):
     node_uid = _extract_node_uid(topic)
     if not node_uid:
         return
+    new_status = (data or {}).get("status", "online").lower()
+    
+    # Получаем старый статус для определения перехода
+    rows = await fetch(
+        "SELECT status, zone_id FROM nodes WHERE uid=$1",
+        node_uid,
+    )
+    
+    old_status = None
+    zone_id = None
+    if rows:
+        old_status = rows[0]["status"]
+        zone_id = rows[0]["zone_id"]
+    
     await execute(
         "UPDATE nodes SET status=$1, last_seen_at=NOW(), updated_at=NOW() WHERE uid=$2",
-        (data or {}).get("status", "online").lower(), node_uid,
+        new_status, node_uid,
     )
+    
+    # Создаем событие при переходе в ONLINE
+    if zone_id and new_status == "online" and old_status != "online":
+        await create_zone_event(
+            zone_id,
+            'DEVICE_ONLINE',
+            {'node_uid': node_uid}
+        )
 
 
 async def handle_lwt(topic: str, payload: bytes):
@@ -120,6 +142,18 @@ async def handle_lwt(topic: str, payload: bytes):
             VALUES ($1, $2, $3, 'ACTIVE', NOW())
             """,
             zone_id, 'node_offline', json.dumps({'node_uid': node_uid}),
+        )
+        # Create zone events for NODE_OFFLINE
+        await create_zone_event(
+            zone_id,
+            'DEVICE_OFFLINE',
+            {'node_uid': node_uid}
+        )
+        # Also create NODE_OFFLINE for compatibility
+        await create_zone_event(
+            zone_id,
+            'NODE_OFFLINE',
+            {'node_uid': node_uid}
         )
 
 

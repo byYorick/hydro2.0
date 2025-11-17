@@ -21,6 +21,10 @@ createInertiaApp({
         const pinia = createPinia();
         // Verbose Vue error/warn -> console
         vueApp.config.errorHandler = (err, instance, info) => {
+            // Игнорируем отмененные запросы Inertia.js
+            if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError' || err?.message === 'canceled') {
+                return;
+            }
             // eslint-disable-next-line no-console
             console.error('[VUE ERROR]', err, { info, instance });
         };
@@ -36,5 +40,6 @@ createInertiaApp({
     },
     progress: {
         color: '#4B5563',
+        delay: 100, // Задержка перед показом индикатора (100ms)
     },
 });

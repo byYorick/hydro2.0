@@ -7,9 +7,34 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Event extends Model
 {
-    protected $fillable = ['zone_id', 'kind', 'message', 'occurred_at'];
-    protected $casts = ['occurred_at' => 'datetime'];
+    protected $table = 'zone_events';
+    
+    protected $fillable = ['zone_id', 'type', 'details'];
+    
+    protected $casts = [
+        'details' => 'array',
+        'created_at' => 'datetime',
+    ];
 
-    public function zone(): BelongsTo { return $this->belongsTo(Zone::class); }
+    public function zone(): BelongsTo 
+    { 
+        return $this->belongsTo(Zone::class); 
+    }
+    
+    // Accessors for compatibility with old field names
+    public function getKindAttribute()
+    {
+        return $this->type;
+    }
+    
+    public function getMessageAttribute()
+    {
+        return $this->details['message'] ?? $this->type;
+    }
+    
+    public function getOccurredAtAttribute()
+    {
+        return $this->created_at;
+    }
 }
 

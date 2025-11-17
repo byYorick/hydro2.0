@@ -19,20 +19,109 @@ services:
       - "wal_level=replica"
       - "-c"
       - "archive_command='test ! -f /wal_archive/%f && cp %p /wal_archive/%f'"
+  redis:
+    image: redis:7-alpine
+  laravel:
+    build:
+      context: ./laravel
+      dockerfile: Dockerfile
+    working_dir: /app
+    command: >
+      sh -c "
+        if [ \"$$REVERB_AUTO_START\" = \"true\" ]; then
+          echo 'Starting Laravel Reverb...';
+          cd /app && nohup php artisan reverb:start --host=0.0.0.0 --port=6001 > /tmp/reverb.log 2>&1 &
+          sleep 2;
+        fi;
+        exec /opt/docker/bin/entrypoint.sh supervisord
+      "
+    environment:
+      - WEB_DOCUMENT_ROOT=/app/public
+      - APP_ENV=production
+      - APP_DEBUG=false
+      - SESSION_DRIVER=redis
+      - CACHE_DRIVER=redis
+      - LOG_CHANNEL=stderr
+      - LOG_LEVEL=info
+      - BROADCAST_DRIVER=reverb
+      - DB_CONNECTION=pgsql
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_DATABASE=hydro
+      - DB_USERNAME=hydro
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-change-me}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REVERB_APP_ID=${REVERB_APP_ID:-app}
+      - REVERB_APP_KEY=${REVERB_APP_KEY:-change-me}
+      - REVERB_APP_SECRET=${REVERB_APP_SECRET:-change-me}
+      - REVERB_HOST=0.0.0.0
+      - REVERB_PORT=6001
+      - REVERB_SCHEME=http
+      - REVERB_DEBUG=false
+      - REVERB_AUTO_START=${REVERB_AUTO_START:-true}
+    volumes:
+      - ./laravel:/app
+    ports:
+      - "8080:80"
+      - "6001:6001"
+    depends_on:
+      - db
+      - redis
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80/api/system/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
   # api-gateway: роль выполняется Laravel (см. backend/laravel/)
   mqtt-bridge:
-    build: ./services/mqtt-bridge
-    depends_on: [mqtt, db]
+    build:
+      context: ./services
+      dockerfile: mqtt-bridge/Dockerfile
+    environment:
+      - MQTT_HOST=mqtt
+      - PG_HOST=db
+      - PG_DB=hydro
+      - PG_USER=hydro
+      - PG_PASS=${POSTGRES_PASSWORD:-change-me}
+      - LARAVEL_API_URL=http://laravel
+    depends_on:
+      - mqtt
+      - db
+      - laravel
   # device-registry: PLANNED - функционал частично в Laravel (см. backend/services/device-registry/README.md)
   # device-registry:
   #   build: ./services/device-registry
   #   depends_on: [db]
   automation-engine:
     build: ./services/automation-engine
-    depends_on: [db, mqtt]
+    environment:
+      - MQTT_HOST=mqtt
+      - PG_HOST=db
+      - PG_DB=hydro
+      - PG_USER=hydro
+      - PG_PASS=${POSTGRES_PASSWORD:-change-me}
+      - LARAVEL_API_URL=http://laravel
+      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-}
+    depends_on:
+      - db
+      - mqtt
+      - laravel
   history-logger:
-    build: ./services/history-logger
-    depends_on: [db, mqtt]
+    build:
+      context: ./services
+      dockerfile: history-logger/Dockerfile
+    environment:
+      - MQTT_HOST=mqtt
+      - PG_HOST=db
+      - PG_DB=hydro
+      - PG_USER=hydro
+      - PG_PASS=${POSTGRES_PASSWORD:-change-me}
+    depends_on:
+      - mqtt
+      - db
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
@@ -83,7 +172,29 @@ services:
       - "9093:9093"
     depends_on:
       - prometheus
+      - laravel
     restart: unless-stopped
+  scheduler:
+    build:
+      context: ./services
+      dockerfile: scheduler/Dockerfile
+    environment:
+      - MQTT_HOST=mqtt
+      - PG_HOST=db
+      - PG_DB=hydro
+      - PG_USER=hydro
+      - PG_PASS=${POSTGRES_PASSWORD:-change-me}
+    depends_on:
+      - mqtt
+      - db
+    ports:
+      - "9402:9402"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9402)); s.close()' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
 volumes:
   postgres_data:

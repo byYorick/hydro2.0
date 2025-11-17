@@ -46,6 +46,20 @@ class AlertService
                 'resolved_at' => now(),
             ]);
 
+            // Создаем событие ALERT_RESOLVED
+            if ($alert->zone_id) {
+                DB::table('zone_events')->insert([
+                    'zone_id' => $alert->zone_id,
+                    'type' => 'ALERT_RESOLVED',
+                    'details' => json_encode([
+                        'alert_id' => $alert->id,
+                        'alert_type' => $alert->type,
+                        'resolved_at' => $alert->resolved_at->toIso8601String(),
+                    ]),
+                    'created_at' => now(),
+                ]);
+            }
+
             Log::info('Alert acknowledged', ['alert_id' => $alert->id]);
             return $alert->fresh();
         });

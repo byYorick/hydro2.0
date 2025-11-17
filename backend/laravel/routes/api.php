@@ -29,7 +29,9 @@ Route::prefix('auth')->group(function () {
 Route::get('system/health', [SystemController::class, 'health']);
 Route::get('system/config/full', [SystemController::class, 'configFull']);
 
-Route::middleware('auth:sanctum')->group(function () {
+// API routes for Inertia (using session authentication)
+// Note: 'web' middleware is not needed here as API routes don't use CSRF
+Route::middleware('auth')->group(function () {
     Route::apiResource('greenhouses', GreenhouseController::class);
     Route::apiResource('zones', ZoneController::class);
     Route::apiResource('nodes', NodeController::class);
@@ -55,8 +57,13 @@ Route::middleware('auth:sanctum')->group(function () {
     // Recipes attach/change-phase
     Route::post('zones/{zone}/attach-recipe', [ZoneController::class, 'attachRecipe']);
     Route::post('zones/{zone}/change-phase', [ZoneController::class, 'changePhase']);
+    Route::post('zones/{zone}/next-phase', [ZoneController::class, 'nextPhase']);
     Route::post('zones/{zone}/pause', [ZoneController::class, 'pause']);
     Route::post('zones/{zone}/resume', [ZoneController::class, 'resume']);
+    Route::get('zones/{zone}/health', [ZoneController::class, 'health']);
+    Route::post('zones/{zone}/fill', [ZoneController::class, 'fill']);
+    Route::post('zones/{zone}/drain', [ZoneController::class, 'drain']);
+    Route::post('zones/{zone}/calibrate-flow', [ZoneController::class, 'calibrateFlow']);
 
     // Commands
     Route::post('zones/{zone}/commands', [ZoneCommandController::class, 'store']);

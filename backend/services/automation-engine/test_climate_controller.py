@@ -1,0 +1,152 @@
+"""Tests for climate_controller module."""
+import pytest
+import sys
+from pathlib import Path
+from unittest.mock import AsyncMock, patch
+
+# Add current directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent))
+
+from climate_controller import (
+    check_and_control_climate,
+    get_climate_nodes,
+    check_temp_alerts,
+    check_humidity_alerts,
+)
+
+
+@pytest.mark.asyncio
+async def test_get_climate_nodes():
+    """Test getting climate nodes for zone."""
+    with patch("climate_controller.fetch") as mock_fetch:
+        mock_fetch.return_value = [
+            {"node_uid": "nd-climate-1", "channel": "fan_air", "type": "climate"},
+            {"node_uid": "nd-climate-1", "channel": "heater_air", "type": "climate"},
+        ]
+        
+        nodes = await get_climate_nodes(1)
+        assert "fan" in nodes
+        assert "heater" in nodes
+        assert nodes["fan"]["node_uid"] == "nd-climate-1"
+
+
+@pytest.mark.asyncio
+async def test_check_and_control_climate_heating():
+    """Test climate control when temperature is too low."""
+    targets = {"temp_air": 25.0, "humidity_air": 60.0}
+    telemetry = {"TEMP_AIR": 22.0, "HUMIDITY": 55.0}
+    
+    with patch("climate_controller.get_climate_nodes") as mock_nodes, \
+         patch("climate_controller.check_temp_alerts") as mock_temp_alerts, \
+         patch("climate_controller.check_humidity_alerts") as mock_hum_alerts:
+        mock_nodes.return_value = {
+            "heater": {"node_uid": "nd-climate-1", "channel": "heater_air"},
+            "fan": {"node_uid": "nd-climate-1", "channel": "fan_air"},
+        }
+        mock_temp_alerts.return_value = None
+        mock_hum_alerts.return_value = None
+        
+        commands = await check_and_control_climate(1, targets, telemetry)
+        
+        # Должен включить нагреватель
+        assert len(commands) > 0
+        heater_cmd = next((c for c in commands if c.get("channel") == "heater_air"), None)
+        assert heater_cmd is not None
+        assert heater_cmd["cmd"] == "set_relay"
+        assert heater_cmd["params"]["state"] is True
+        assert heater_cmd["event_type"] == "CLIMATE_HEATING_ON"
+
+
+@pytest.mark.asyncio
+async def test_check_and_control_climate_cooling():
+    """Test climate control when temperature is too high."""
+    targets = {"temp_air": 25.0, "humidity_air": 60.0}
+    telemetry = {"TEMP_AIR": 28.0, "HUMIDITY": 55.0}
+    
+    with patch("climate_controller.get_climate_nodes") as mock_nodes, \
+         patch("climate_controller.check_temp_alerts") as mock_temp_alerts, \
+         patch("climate_controller.check_humidity_alerts") as mock_hum_alerts:
+        mock_nodes.return_value = {
+            "heater": {"node_uid": "nd-climate-1", "channel": "heater_air"},
+            "fan": {"node_uid": "nd-climate-1", "channel": "fan_air"},
+        }
+        mock_temp_alerts.return_value = None
+        mock_hum_alerts.return_value = None
+        
+        commands = await check_and_control_climate(1, targets, telemetry)
+        
+        # Должен включить вентилятор для охлаждения
+        assert len(commands) > 0
+        fan_cmd = next((c for c in commands if c.get("channel") == "fan_air"), None)
+        assert fan_cmd is not None
+        assert fan_cmd["event_type"] == "CLIMATE_COOLING_ON"
+
+
+@pytest.mark.asyncio
+async def test_check_and_control_climate_humidity_high():
+    """Test climate control when humidity is too high."""
+    targets = {"temp_air": 25.0, "humidity_air": 60.0}
+    telemetry = {"TEMP_AIR": 25.0, "HUMIDITY": 80.0}
+    
+    with patch("climate_controller.get_climate_nodes") as mock_nodes, \
+         patch("climate_controller.check_temp_alerts") as mock_temp_alerts, \
+         patch("climate_controller.check_humidity_alerts") as mock_hum_alerts:
+        mock_nodes.return_value = {
+            "fan": {"node_uid": "nd-climate-1", "channel": "fan_air"},
+        }
+        mock_temp_alerts.return_value = None
+        mock_hum_alerts.return_value = None
+        
+        commands = await check_and_control_climate(1, targets, telemetry)
+        
+        # Должен увеличить вентиляцию
+        fan_cmd = next((c for c in commands if c.get("channel") == "fan_air"), None)
+        assert fan_cmd is not None
+        assert fan_cmd["cmd"] == "set_pwm"
+        assert fan_cmd["params"]["value"] == 100  # Максимальная вентиляция
+        assert fan_cmd["event_type"] == "FAN_ON"
+
+
+@pytest.mark.asyncio
+async def test_check_temp_alerts_high():
+    """Test temperature alert when temp is too high."""
+    with patch("climate_controller.ensure_alert") as mock_ensure_alert:
+        await check_temp_alerts(1, 27.0, 25.0)  # temp > target + 2.0
+        
+        mock_ensure_alert.assert_called_once()
+        call_args = mock_ensure_alert.call_args
+        assert call_args[0][1] == "TEMP_HIGH"
+
+
+@pytest.mark.asyncio
+async def test_check_temp_alerts_low():
+    """Test temperature alert when temp is too low."""
+    with patch("climate_controller.ensure_alert") as mock_ensure_alert:
+        await check_temp_alerts(1, 22.0, 25.0)  # temp < target - 2.0
+        
+        mock_ensure_alert.assert_called_once()
+        call_args = mock_ensure_alert.call_args
+        assert call_args[0][1] == "TEMP_LOW"
+
+
+@pytest.mark.asyncio
+async def test_check_humidity_alerts_high():
+    """Test humidity alert when humidity is too high."""
+    with patch("climate_controller.ensure_alert") as mock_ensure_alert:
+        await check_humidity_alerts(1, 80.0, 60.0)  # humidity > target + 15
+        
+        mock_ensure_alert.assert_called_once()
+        call_args = mock_ensure_alert.call_args
+        assert call_args[0][1] == "HUMIDITY_HIGH"
+
+
+@pytest.mark.asyncio
+async def test_check_humidity_alerts_low():
+    """Test humidity alert when humidity is too low."""
+    with patch("climate_controller.ensure_alert") as mock_ensure_alert:
+        await check_humidity_alerts(1, 40.0, 60.0)  # humidity < target - 15
+        
+        mock_ensure_alert.assert_called_once()
+        call_args = mock_ensure_alert.call_args
+        assert call_args[0][1] == "HUMIDITY_LOW"
+

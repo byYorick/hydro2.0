@@ -10,154 +10,201 @@
 
 ## 1. Auth
 
-| Метод | Путь | Описание |
-|-------|---------------------|-----------------------------------|
-| POST | /api/auth/login | Вход, выдача токена |
-| POST | /api/auth/logout | Выход, отзыв токена |
-| GET | /api/auth/me | Инфо о текущем пользователе |
+| Метод | Путь | Auth | Описание |
+|-------|---------------------|------|-----------------------------------|
+| POST | /api/auth/login | public | Вход, выдача токена |
+| POST | /api/auth/logout | auth:sanctum | Выход, отзыв токена |
+| GET | /api/auth/me | auth:sanctum | Инфо о текущем пользователе |
 
 ---
 
 ## 2. Greenhouses
 
-| Метод | Путь | Описание |
-|-------|-------------------------|-------------------------------|
-| GET | /api/greenhouses | Список теплиц |
-| POST | /api/greenhouses | Создать теплицу |
-| GET | /api/greenhouses/{id} | Детали теплицы |
-| PATCH | /api/greenhouses/{id} | Обновить теплицу |
-| DELETE| /api/greenhouses/{id} | Удалить (если безопасно) |
+| Метод | Путь | Auth | Описание |
+|-------|-------------------------|------|-------------------------------|
+| GET | /api/greenhouses | auth:sanctum | Список теплиц |
+| POST | /api/greenhouses | auth:sanctum (admin/operator) | Создать теплицу |
+| GET | /api/greenhouses/{id} | auth:sanctum | Детали теплицы |
+| PATCH | /api/greenhouses/{id} | auth:sanctum (admin/operator) | Обновить теплицу |
+| DELETE| /api/greenhouses/{id} | auth:sanctum (admin) | Удалить (если безопасно) |
 
 ---
 
 ## 3. Zones
 
-| Метод | Путь | Описание |
-|-------|-----------------------|------------------------------------------------|
-| GET | /api/zones | Список зон (фильтры по теплице, статусу) |
-Доп. публичные чтения (MVP):
-
-| Метод | Путь | Описание |
-|-------|-----------------------|------------------------------|
-| GET | /api/zones | Список зон (id, name, status, crop, phase) |
-
-| POST | /api/zones | Создать зону |
-| GET | /api/zones/{id} | Детали зоны + активный рецепт |
-| PATCH | /api/zones/{id} | Обновить параметры зоны |
-| DELETE| /api/zones/{id} | Удалить зону (если нет активных зависимостей) |
+| Метод | Путь | Auth | Описание |
+|-------|-----------------------|------|------------------------------------------------|
+| GET | /api/zones | auth:sanctum | Список зон (фильтры по теплице, статусу) |
+| POST | /api/zones | auth:sanctum (operator/admin) | Создать зону |
+| GET | /api/zones/{id} | auth:sanctum | Детали зоны + активный рецепт |
+| PATCH | /api/zones/{id} | auth:sanctum (operator/admin) | Обновить параметры зоны |
+| DELETE| /api/zones/{id} | auth:sanctum (admin) | Удалить зону (если нет активных зависимостей) |
 
 Доп. действия:
 
-| Метод | Путь | Описание |
-|-------|-----------------------------------|------------------------------------|
-| POST | /api/zones/{id}/attach-recipe | Назначить рецепт |
-| POST | /api/zones/{id}/change-phase | Сменить фазу рецепта |
-| POST | /api/zones/{id}/commands | Отправить команду зоне |
-| GET | /api/zones/{id}/telemetry/last | Последняя телеметрия |
-| GET | /api/zones/{id}/telemetry/history| История телеметрии по метрикам |
+| Метод | Путь | Auth | Описание |
+|-------|-----------------------------------|------|------------------------------------|
+| POST | /api/zones/{id}/attach-recipe | auth:sanctum (operator/admin) | Назначить рецепт |
+| POST | /api/zones/{id}/change-phase | auth:sanctum (operator/admin) | Сменить фазу рецепта |
+| POST | /api/zones/{id}/pause | auth:sanctum (operator/admin) | Приостановить зону |
+| POST | /api/zones/{id}/resume | auth:sanctum (operator/admin) | Возобновить зону |
+| POST | /api/zones/{id}/commands | auth:sanctum (operator/admin) | Отправить команду зоне |
+| GET | /api/zones/{id}/telemetry/last | auth:sanctum | Последняя телеметрия |
+| GET | /api/zones/{id}/telemetry/history| auth:sanctum | История телеметрии по метрикам |
 
 ---
 
 ## 4. Nodes
 
-| Метод | Путь | Описание |
-|-------|----------------------|-----------------------------------------------|
-| GET | /api/nodes | Список узлов |
-| POST | /api/nodes | Зарегистрировать узел |
-| GET | /api/nodes/{id} | Детали узла |
-| PATCH | /api/nodes/{id} | Обновить конфигурацию |
-| DELETE| /api/nodes/{id} | Удалить узел |
+| Метод | Путь | Auth | Описание |
+|-------|----------------------|------|-----------------------------------------------|
+| GET | /api/nodes | auth:sanctum | Список узлов |
+| POST | /api/nodes | auth:sanctum (operator/admin) | Зарегистрировать узел |
+| GET | /api/nodes/{id} | auth:sanctum | Детали узла |
+| PATCH | /api/nodes/{id} | auth:sanctum (operator/admin) | Обновить конфигурацию |
+| DELETE| /api/nodes/{id} | auth:sanctum (admin) | Удалить узел |
 
 Доп. действия:
 
-| Метод | Путь | Описание |
-|-------|------------------------------------|--------------------------------------------------|
-| GET | /api/nodes/{id}/telemetry/last | Последняя телеметрия по узлу |
-| POST | /api/nodes/{id}/commands | Отправка низкоуровневых команд |
+| Метод | Путь | Auth | Описание |
+|-------|------------------------------------|------|--------------------------------------------------|
+| GET | /api/nodes/{id}/telemetry/last | auth:sanctum | Последняя телеметрия по узлу |
+| POST | /api/nodes/{id}/commands | auth:sanctum (operator/admin) | Отправка низкоуровневых команд |
 
 ---
 
 ## 5. Recipes
 
-| Метод | Путь | Описание |
-|-------|--------------------------|-------------------------------------|
-| GET | /api/recipes | Список рецептов |
-| POST | /api/recipes | Создать рецепт |
-| GET | /api/recipes/{id} | Детали рецепта |
-| PATCH | /api/recipes/{id} | Обновить рецепт |
-| DELETE| /api/recipes/{id} | Удалить рецепт |
+| Метод | Путь | Auth | Описание |
+|-------|--------------------------|------|-------------------------------------|
+| GET | /api/recipes | auth:sanctum | Список рецептов |
+| POST | /api/recipes | auth:sanctum (operator/admin) | Создать рецепт |
+| GET | /api/recipes/{id} | auth:sanctum | Детали рецепта |
+| PATCH | /api/recipes/{id} | auth:sanctum (operator/admin) | Обновить рецепт |
+| DELETE| /api/recipes/{id} | auth:sanctum (admin) | Удалить рецепт |
 
 ### Фазы рецептов
 
-| Метод | Путь | Описание |
-|-------|-------------------------------|------------------------------------|
-| POST | /api/recipes/{id}/phases | Добавить фазу |
-| PATCH | /api/recipe-phases/{id} | Обновить фазу |
-| DELETE| /api/recipe-phases/{id} | Удалить фазу |
+| Метод | Путь | Auth | Описание |
+|-------|-------------------------------|------|------------------------------------|
+| POST | /api/recipes/{id}/phases | auth:sanctum (operator/admin) | Добавить фазу |
+| PATCH | /api/recipe-phases/{id} | auth:sanctum (operator/admin) | Обновить фазу |
+| DELETE| /api/recipe-phases/{id} | auth:sanctum (admin) | Удалить фазу |
 
 ---
 
 ## 6. Telemetry / History
 
-| Метод | Путь | Описание |
-|-------|----------------------------------------------|-----------------------------------------------|
-| GET | /api/zones/{id}/telemetry/last | Последние значения по зоне |
-| GET | /api/zones/{id}/telemetry/history | История по зоне |
-| GET | /api/nodes/{id}/telemetry/last | Последние значения по узлу |
+| Метод | Путь | Auth | Описание |
+|-------|----------------------------------------------|------|-----------------------------------------------|
+| GET | /api/zones/{id}/telemetry/last | auth:sanctum | Последние значения по зоне |
+| GET | /api/zones/{id}/telemetry/history | auth:sanctum | История по зоне |
+| GET | /api/nodes/{id}/telemetry/last | auth:sanctum | Последние значения по узлу |
 
 ---
 
 ## 7. Alerts / Events
 
-| Метод | Путь | Описание |
-|-------|------------------------------|-----------------------------------|
-| GET | /api/alerts | Список алертов |
-| GET | /api/alerts/{id} | Детали алерта |
-| PATCH | /api/alerts/{id}/ack | Подтвердить/принять алерт (auth, role operator/admin) |
-| GET | /api/alerts/stream | Server-Sent Events поток алертов |
+| Метод | Путь | Auth | Описание |
+|-------|------------------------------|------|-----------------------------------|
+| GET | /api/alerts | auth:sanctum | Список алертов |
+| GET | /api/alerts/{id} | auth:sanctum | Детали алерта |
+| PATCH | /api/alerts/{id}/ack | auth:sanctum (operator/admin) | Подтвердить/принять алерт |
+| GET | /api/alerts/stream | auth:sanctum | Server-Sent Events поток алертов |
 
 ---
 
 ## 8. Users (Admin only)
 
-| Метод | Путь | Описание |
-|-------|--------------------------|-------------------------------------|
-| GET | /api/users | Список пользователей (фильтры: role, search) |
-| POST | /api/users | Создать пользователя |
-| GET | /api/users/{id} | Детали пользователя |
-| PATCH | /api/users/{id} | Обновить пользователя (имя, email, пароль, роль) |
-| DELETE| /api/users/{id} | Удалить пользователя |
+| Метод | Путь | Auth | Описание |
+|-------|--------------------------|------|-------------------------------------|
+| GET | /api/users | auth:sanctum (admin) | Список пользователей (фильтры: role, search) |
+| POST | /api/users | auth:sanctum (admin) | Создать пользователя |
+| GET | /api/users/{id} | auth:sanctum (admin) | Детали пользователя |
+| PATCH | /api/users/{id} | auth:sanctum (admin) | Обновить пользователя (имя, email, пароль, роль) |
+| DELETE| /api/users/{id} | auth:sanctum (admin) | Удалить пользователя |
 
 ---
 
-## 9. System / AI / Service
+## 9. System
 
-| Метод | Путь | Описание |
-|-------|---------------------------------|-------------------------------------------|
-| GET | /api/system/config/full | Экспорт полной конфигурации |
-| GET | /api/system/health | Проверка здоровья сервиса |
-
----
-
-## 10. Admin (минимальный CRUD)
-
-| Метод | Путь | Описание |
-|-------|----------------------------------------|-------------------------------------------|
-| POST | /api/admin/zones/quick-create | Быстрое создание зоны (role: admin) |
-| PATCH | /api/admin/recipes/{id}/quick-update | Быстрое обновление рецепта (role: admin) |
+| Метод | Путь | Auth | Описание |
+|-------|---------------------------------|------|-------------------------------------------|
+| GET | /api/system/config/full | public | Экспорт полной конфигурации (для Python сервисов) |
+| GET | /api/system/health | public | Проверка здоровья сервиса |
 
 ---
 
-## 11. Python integration
+## 10. Presets
 
-| Метод | Путь | Описание |
-|-------|-------------------------------------|-------------------------------------------|
-| POST | /api/python/ingest/telemetry | Инжест телеметрии из Python‑сервисов (token) |
-| POST | /api/python/commands/ack | ACK выполнения команд узлами (token) |
+| Метод | Путь | Auth | Описание |
+|-------|--------------------------|------|-------------------------------------|
+| GET | /api/presets | auth:sanctum | Список пресетов |
+| POST | /api/presets | auth:sanctum (operator/admin) | Создать пресет |
+| GET | /api/presets/{id} | auth:sanctum | Детали пресета |
+| PATCH | /api/presets/{id} | auth:sanctum (operator/admin) | Обновить пресет |
+| DELETE| /api/presets/{id} | auth:sanctum (admin) | Удалить пресет |
 
 ---
 
-## 12. Правила расширения REST API для ИИ-агентов
+## 11. Reports & Analytics
+
+| Метод | Путь | Auth | Описание |
+|-------|-------------------------------------|------|-------------------------------------------|
+| GET | /api/recipes/{id}/analytics | auth:sanctum | Аналитика по рецепту |
+| GET | /api/zones/{id}/harvests | auth:sanctum | История урожаев по зоне |
+| POST | /api/harvests | auth:sanctum (operator/admin) | Регистрация урожая |
+| POST | /api/recipes/comparison | auth:sanctum | Сравнение рецептов |
+
+---
+
+## 12. AI
+
+| Метод | Путь | Auth | Описание |
+|-------|-------------------------------------|------|-------------------------------------------|
+| POST | /api/ai/predict | auth:sanctum | Прогнозирование параметров |
+| POST | /api/ai/explain_zone | auth:sanctum | Объяснение состояния зоны |
+| POST | /api/ai/recommend | auth:sanctum | Рекомендации AI |
+| POST | /api/ai/diagnostics | auth:sanctum | Диагностика системы |
+
+---
+
+## 13. Simulations (Digital Twin)
+
+| Метод | Путь | Auth | Описание |
+|-------|-------------------------------------|------|-------------------------------------------|
+| POST | /api/simulations/zone/{zone} | auth:sanctum (operator/admin) | Запуск симуляции |
+| GET | /api/simulations/{id} | auth:sanctum | Результат симуляции |
+
+---
+
+## 14. Admin (минимальный CRUD)
+
+| Метод | Путь | Auth | Описание |
+|-------|----------------------------------------|------|-------------------------------------------|
+| POST | /api/admin/zones/quick-create | auth:sanctum (admin) | Быстрое создание зоны |
+| PATCH | /api/admin/recipes/{id}/quick-update | auth:sanctum (admin) | Быстрое обновление рецепта |
+
+---
+
+## 15. Python integration
+
+| Метод | Путь | Auth | Описание |
+|-------|-------------------------------------|------|-------------------------------------------|
+| POST | /api/python/ingest/telemetry | token-based | Инжест телеметрии из Python‑сервисов |
+| POST | /api/python/commands/ack | token-based | ACK выполнения команд узлами |
+
+---
+
+## 16. Webhooks
+
+| Метод | Путь | Auth | Описание |
+|-------|-------------------------------------|------|-------------------------------------------|
+| POST | /api/alerts/webhook | public | Webhook от Alertmanager для создания алертов |
+
+---
+
+## 17. Правила расширения REST API для ИИ-агентов
 
 1. **Не менять семантику существующих путей и HTTP-методов.**
 2. Для принципиально новых возможностей — добавлять новые пути

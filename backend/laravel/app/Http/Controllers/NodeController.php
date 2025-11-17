@@ -23,6 +23,14 @@ class NodeController extends Controller
         if ($request->filled('status')) {
             $query->where('status', $request->string('status'));
         }
+        // Поиск новых нод (без привязки к зоне)
+        if ($request->boolean('new_only')) {
+            $query->whereNull('zone_id');
+        }
+        // Поиск непривязанных нод (новые или без зоны)
+        if ($request->boolean('unassigned')) {
+            $query->whereNull('zone_id');
+        }
         $items = $query->latest('id')->paginate(25);
         return response()->json(['status' => 'ok', 'data' => $items]);
     }

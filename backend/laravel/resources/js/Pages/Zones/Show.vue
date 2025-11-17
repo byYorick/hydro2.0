@@ -1,5 +1,27 @@
 <template>
   <AppLayout>
+    <!-- Toast notifications -->
+    <Teleport to="body">
+      <div 
+        class="fixed top-4 right-4 z-[10000] space-y-2 pointer-events-none"
+        style="position: fixed !important; top: 1rem !important; right: 1rem !important; z-index: 10000 !important; pointer-events: none;"
+      >
+        <div
+          v-for="toast in toasts"
+          :key="toast.id"
+          class="pointer-events-auto"
+          style="pointer-events: auto;"
+        >
+          <Toast
+            :message="toast.message"
+            :variant="toast.variant"
+            :duration="toast.duration"
+            @close="removeToast(toast.id)"
+          />
+        </div>
+      </div>
+    </Teleport>
+    
     <div class="flex flex-col gap-3">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div>
@@ -154,11 +176,34 @@ import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
 import ZoneTargets from '@/Components/ZoneTargets.vue'
+import Toast from '@/Components/Toast.vue'
 import axios from 'axios'
 
 const ZoneTelemetryChart = defineAsyncComponent(() => import('@/Pages/Zones/ZoneTelemetryChart.vue'))
 
 const page = usePage()
+
+// Toast notifications
+const toasts = ref([])
+let toastIdCounter = 0
+
+function showToast(message, variant = 'info', duration = 3000) {
+  console.log('=== showToast ВЫЗВАНА ===', { message, variant, duration, timestamp: new Date().toISOString() })
+  const id = ++toastIdCounter
+  toasts.value.push({ id, message, variant, duration })
+  console.log(`[showToast] Уведомление добавлено, ID: ${id}`)
+  console.log(`[showToast] Всего уведомлений: ${toasts.value.length}`)
+  console.log(`[showToast] Массив toasts:`, JSON.stringify(toasts.value, null, 2))
+  console.log('=== showToast ЗАВЕРШЕНА ===')
+  return id
+}
+
+function removeToast(id) {
+  const index = toasts.value.findIndex(t => t.id === id)
+  if (index > -1) {
+    toasts.value.splice(index, 1)
+  }
+}
 const zone = computed(() => page.props.zone || {})
 const zoneId = computed(() => {
   const id = zone.value.id || page.props.zoneId
@@ -228,6 +273,16 @@ async function onChartTimeRangeChange(newRange) {
 }
 
 onMounted(async () => {
+  console.log('========================================')
+  console.log('[Show.vue] ===== КОМПОНЕНТ СМОНТИРОВАН =====')
+  console.log('[Show.vue] zoneId:', zoneId.value)
+  console.log('[Show.vue] zone:', zone.value)
+  console.log('[Show.vue] Функция onRunCycle доступна:', typeof onRunCycle)
+  console.log('[Show.vue] Функция showToast доступна:', typeof showToast)
+  console.log('[Show.vue] Массив toasts:', toasts.value)
+  console.log('[Show.vue] window.console:', typeof window.console)
+  console.log('========================================')
+  
   // Загрузить данные для графиков
   chartDataPh.value = await loadChartData('PH', chartTimeRange.value)
   chartDataEc.value = await loadChartData('EC', chartTimeRange.value)
@@ -244,17 +299,65 @@ function formatTime(timestamp) {
 }
 
 async function onRunCycle(cycleType) {
-  if (!zoneId.value) return
+  // Принудительный лог в начале функции
+  console.log('=== onRunCycle ВЫЗВАНА ===', { cycleType, zoneId: zoneId.value, timestamp: new Date().toISOString() })
+  
+  if (!zoneId.value) {
+    console.warn('[onRunCycle] zoneId is missing')
+    showToast('Ошибка: зона не найдена', 'error', 3000)
+    return
+  }
+  
+  // Show loading state (optional - can add button disabled state)
+  const cycleNames = {
+    'PH_CONTROL': 'Контроль pH',
+    'EC_CONTROL': 'Контроль EC',
+    'IRRIGATION': 'Полив',
+    'LIGHTING': 'Освещение',
+    'CLIMATE': 'Климат',
+  }
+  const cycleName = cycleNames[cycleType] || cycleType
+  
+  console.log(`[onRunCycle] Отправка команды ${cycleType} для зоны ${zoneId.value}`)
+  console.log(`[onRunCycle] Имя цикла: ${cycleName}`)
+  
   try {
-    await axios.post(`/api/zones/${zoneId.value}/commands`, {
+    const url = `/api/zones/${zoneId.value}/commands`
+    const payload = {
       type: `FORCE_${cycleType}`,
       params: {},
-    }, {
+    }
+    console.log(`[onRunCycle] POST запрос:`, { url, payload })
+    
+    const response = await axios.post(url, payload, {
       headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
     })
+    
+    console.log(`[onRunCycle] Ответ сервера получен:`, response.data)
+    console.log(`[onRunCycle] Статус ответа:`, response.data?.status)
+    
+    // Show success message
+    if (response.data?.status === 'ok') {
+      console.log(`✓ [onRunCycle] Команда "${cycleName}" отправлена успешно`, response.data)
+      showToast(`Команда "${cycleName}" отправлена успешно`, 'success', 3000)
+    } else {
+      console.warn(`[onRunCycle] Неожиданный ответ:`, response.data)
+      showToast(`Неизвестный ответ сервера: ${JSON.stringify(response.data)}`, 'error', 5000)
+    }
   } catch (err) {
-    console.error(`Failed to run ${cycleType}:`, err)
+    console.error(`✗ [onRunCycle] Ошибка при отправке команды ${cycleType}:`, err)
+    console.error(`[onRunCycle] Детали ошибки:`, {
+      message: err.message,
+      response: err.response?.data,
+      status: err.response?.status,
+      config: err.config,
+    })
+    const errorMsg = err.response?.data?.message || err.message || 'Неизвестная ошибка'
+    console.error(`[onRunCycle] Показываю toast с ошибкой:`, errorMsg)
+    showToast(`Ошибка: ${errorMsg}`, 'error', 5000)
   }
+  
+  console.log('=== onRunCycle ЗАВЕРШЕНА ===')
 }
 
 const variant = computed(() => {

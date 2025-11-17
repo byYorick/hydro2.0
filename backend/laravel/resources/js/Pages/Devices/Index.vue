@@ -1,6 +1,16 @@
 <template>
   <AppLayout>
-    <h1 class="text-lg font-semibold mb-4">Devices</h1>
+    <div class="flex items-center justify-between mb-4">
+      <h1 class="text-lg font-semibold">Устройства</h1>
+      <Link href="/devices/add">
+        <Button size="sm" variant="primary">
+          <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          Добавить ноду
+        </Button>
+      </Link>
+    </div>
     <div class="mb-3 flex flex-wrap items-center gap-2">
       <label class="text-sm text-neutral-300">Тип:</label>
       <select v-model="type" class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm">
@@ -44,9 +54,10 @@ import { computed, ref, onMounted } from 'vue'
 import { Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import DataTable from '@/Components/DataTable.vue'
+import Button from '@/Components/Button.vue'
 import { useDevicesStore } from '@/stores/devices'
 
-const headers = ['UID', 'Zone', 'Name', 'Type', 'Status', 'FW Version', 'Last Seen']
+const headers = ['UID', 'Зона', 'Имя', 'Тип', 'Статус', 'Версия ПО', 'Последний раз видели']
 const page = usePage()
 const devicesStore = useDevicesStore()
 onMounted(() => devicesStore.initFromProps(page.props))

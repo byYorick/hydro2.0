@@ -21,12 +21,47 @@ export default defineConfig({
         hmr: {
             host: 'localhost',
             port: 5173,
+            protocol: 'ws',
+        },
+        watch: {
+            usePolling: true, // Для Docker на Windows
+            interval: 2000, // Увеличен интервал до 2 секунд для снижения нагрузки на CPU
+            ignored: [
+                '**/node_modules/**',
+                '**/.git/**',
+                '**/storage/**',
+                '**/vendor/**',
+                '**/bootstrap/cache/**',
+                '**/public/build/**',
+                '**/public/hot',
+                '**/.env*',
+                '**/tests/**',
+                '**/database/**',
+            ],
+        },
+        // Оптимизация для быстрой загрузки
+        fs: {
+            strict: false,
+        },
+    },
+    // Оптимизация сборки
+    build: {
+        cssCodeSplit: false, // Не разбивать CSS на чанки для dev
+        rollupOptions: {
+            output: {
+                manualChunks: undefined, // Отключить разбиение на чанки в dev
+            },
         },
     },
     plugins: [
         laravel({
             input: 'resources/js/app.js',
-            refresh: true,
+            refresh: [
+                'resources/views/**',
+                'resources/js/**',
+                'app/Http/Controllers/**',
+                'routes/**',
+            ], // Ограничиваем refresh только нужными файлами для снижения нагрузки
         }),
         vue({
             template: {
@@ -37,4 +72,12 @@ export default defineConfig({
             },
         }),
     ],
+    // Оптимизация зависимостей для снижения нагрузки
+    optimizeDeps: {
+        include: ['vue', '@inertiajs/vue3'],
+        exclude: [],
+        force: false, // Не пересобирать принудительно
+    },
+    // Кеш для оптимизированных зависимостей
+    cacheDir: 'node_modules/.vite',
 });

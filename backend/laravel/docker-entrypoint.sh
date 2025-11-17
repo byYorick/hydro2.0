@@ -1,14 +1,56 @@
 #!/bin/bash
 set -e
 
-# Start supervisor for Reverb (only if REVERB_AUTO_START is set)
-if [ "${REVERB_AUTO_START:-true}" = "true" ]; then
-    echo "Starting supervisor for Laravel Reverb..."
-    /usr/bin/supervisord -c /etc/supervisor/supervisord.conf &
-    sleep 2
-    echo "Supervisor started, Reverb should be running"
+# Create .env file from .env.example if it doesn't exist
+if [ ! -f /app/.env ] && [ -f /app/.env.example ]; then
+    echo "Creating .env file from .env.example..."
+    cp /app/.env.example /app/.env
+fi
+
+# Generate application key if not set
+if [ ! -f /app/.env ] || ! grep -q "APP_KEY=base64:" /app/.env 2>/dev/null; then
+    echo "Generating application key..."
+    php artisan key:generate --force || true
+fi
+
+# Configure PHP for development (disable opcache if APP_ENV=local)
+if [ "${APP_ENV:-production}" = "local" ]; then
+    echo "Development mode detected: configuring PHP for hot reload..."
+    # Ensure dev PHP configuration is loaded (opcache disabled)
+    if [ -f /usr/local/etc/php/conf.d/99-dev.ini ]; then
+        echo "✓ Dev PHP configuration loaded (opcache should be disabled)"
+        # Verify opcache is disabled
+        php -r "echo 'opcache.enable: ' . (ini_get('opcache.enable') ? 'On' : 'Off') . PHP_EOL;" 2>/dev/null || true
+    else
+        echo "⚠ Dev PHP configuration not found, opcache may still be enabled"
+    fi
+    
+    # Исправить права доступа для Vite кеша
+    if [ -d /app/node_modules/.vite ]; then
+        chown -R application:application /app/node_modules/.vite 2>/dev/null || true
+        chmod -R 755 /app/node_modules/.vite 2>/dev/null || true
+    fi
+fi
+
+# Copy supervisor configs to base image supervisor directory
+# Base image uses /opt/docker/etc/supervisor.d/ for configs
+if [ -f /app/reverb-supervisor.conf ] && [ ! -f /opt/docker/etc/supervisor.d/reverb.conf ]; then
+    echo "Copying reverb supervisor config to base image directory..."
+    cp /app/reverb-supervisor.conf /opt/docker/etc/supervisor.d/reverb.conf
+fi
+
+if [ -f /app/vite-supervisor.conf ] && [ ! -f /opt/docker/etc/supervisor.d/vite.conf ]; then
+    echo "Copying vite supervisor config to base image directory..."
+    cp /app/vite-supervisor.conf /opt/docker/etc/supervisor.d/vite.conf
 fi
 
 # Execute the main command (nginx/php-fpm from base image)
-exec "$@"
+# Base image entrypoint will start supervisord with all configs including ours
+if [ $# -eq 0 ]; then
+    # Call base image entrypoint to start nginx/php-fpm and supervisor
+    exec /opt/docker/bin/entrypoint.sh supervisord
+else
+    # Execute the provided command
+    exec "$@"
+fi
 

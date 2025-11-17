@@ -16,25 +16,25 @@
 
 ## 1. Структура репозитория
 
-Рекомендуемая структура:
+Актуальная структура проекта:
 
 ```text
-hydro2/
- backend-laravel/
- backend-python/
- frontend-laravel/ # фактически это же backend-laravel (Inertia + Vue)
- docker/
- laravel.Dockerfile
- python.Dockerfile
- mosquitto.conf
- docker-compose.yml
- docs/
- TECH_STACK_LARAVEL_INERTIA_VUE3_PG.md
- BACKEND_LARAVEL_PG_AI_GUIDE.md
- PYTHON_MQTT_SERVICE_AI_GUIDE.md
- DATABASE_SCHEMA_AI_GUIDE.md
- MQTT_TOPICS_SPEC_AI_GUIDE.md
- # дополнительные документы по системе 2.0 (можно расширять)
+hydro2.0/
+ backend/
+  laravel/              # Laravel приложение (Inertia + Vue 3)
+  services/             # Python сервисы
+   mqtt-bridge/
+   history-logger/
+   automation-engine/
+   scheduler/
+   common/              # Общая библиотека для Python сервисов
+  docker-compose.dev.yml
+  docker-compose.prod.yml
+  configs/              # Конфигурации для dev/prod
+ doc_ai/                # Документация
+ firmware/              # Прошивки ESP32
+ mobile/                # Android приложение
+ infra/                 # Инфраструктура (Terraform, Ansible, K8s)
 ```
 
 **Правило для ИИ-агентов:** 
@@ -53,90 +53,154 @@ hydro2/
 
 ### 2.2. PostgreSQL
 
-- PostgreSQL 16 (или совместимая)
-- Одна БД `hydro` для:
- - доменных таблиц (zones, devices, recipes…),
- - телеметрии (telemetry_samples),
- - команд и событий.
+- PostgreSQL 16 (или совместимая, TimescaleDB для production)
+- База данных:
+ - Development: `hydro_dev`
+ - Production: `hydro`
+- Содержит:
+ - доменные таблицы (zones, devices, recipes…),
+ - телеметрию (telemetry_samples),
+ - команды и события.
 
 ### 2.3. Mosquitto
 
 - MQTT брокер (`eclipse-mosquitto`)
 - Слушает на порту `1883`.
 
-### 2.4. Python MQTT Service
+### 2.4. Python MQTT Services
 
 - Python 3.11+
-- Пакеты:
- - `asyncio-mqtt` или `gmqtt`,
- - `sqlalchemy`,
- - `psycopg2` или `asyncpg`,
- - базовые утилиты (pydantic, loguru и т.п. по желанию).
+- Несколько независимых сервисов:
+ - `mqtt-bridge` - FastAPI мост для отправки команд через MQTT
+ - `history-logger` - запись телеметрии в PostgreSQL
+ - `automation-engine` - контроллер зон, проверка targets
+ - `scheduler` - расписания поливов/света из recipe phases
+- Общая библиотека `common/` для всех сервисов
+- Пакеты: `asyncio-mqtt` или `gmqtt`, `sqlalchemy`, `psycopg2` или `asyncpg`, `pydantic`, `loguru`
+
+### 2.5. Redis
+
+- Redis 7+ для кэша и сессий Laravel
+- Используется для очередей и realtime обновлений
+
+### 2.6. Laravel Reverb (WebSocket)
+
+- Встроенный WebSocket сервер Laravel
+- Используется для realtime обновлений UI
+- Порт: `6001`
 
 ---
 
-## 3. docker-compose.yml (базовый пример)
+## 3. docker-compose.yml (актуальная структура)
+
+Основные сервисы:
 
 ```yaml
 version: "3.9"
 
 services:
- postgres:
- image: postgres:16
- environment:
- POSTGRES_DB: hydro
- POSTGRES_USER: hydro
- POSTGRES_PASSWORD: hydro
- volumes:
- - pgdata:/var/lib/postgresql/data
- ports:
- - "5432:5432"
+ db:
+   image: timescale/timescaledb:latest-pg16
+   environment:
+     POSTGRES_DB: hydro_dev  # или hydro для production
+     POSTGRES_USER: hydro
+     POSTGRES_PASSWORD: hydro
+   volumes:
+     - postgres_data:/var/lib/postgresql/data
+   ports:
+     - "5432:5432"
 
- mosquitto:
- image: eclipse-mosquitto:2
- volumes:
- - ./docker/mosquitto.conf:/mosquitto/config/mosquitto.conf
- ports:
- - "1883:1883"
+ mqtt:
+   image: eclipse-mosquitto:2
+   ports:
+     - "1883:1883"
+
+ redis:
+   image: redis:7-alpine
+   ports:
+     - "6379:6379"
 
  laravel:
- build:
- context: ./backend-laravel
- dockerfile: ../docker/laravel.Dockerfile
- environment:
- APP_ENV: local
- APP_KEY: base64:GENERATE_ME
- DB_CONNECTION: pgsql
- DB_HOST: postgres
- DB_PORT: 5432
- DB_DATABASE: hydro
- DB_USERNAME: hydro
- DB_PASSWORD: hydro
- depends_on:
- - postgres
- ports:
- - "8000:8000"
- volumes:
- - ./backend-laravel:/var/www/html
+   build:
+     context: ./laravel
+     dockerfile: Dockerfile
+   environment:
+     APP_ENV: local
+     DB_HOST: db
+     DB_DATABASE: hydro_dev  # или hydro для production
+     REDIS_HOST: redis
+     REVERB_APP_ID: app
+     REVERB_APP_KEY: local
+     REVERB_APP_SECRET: secret
+   depends_on:
+     - db
+     - redis
+   ports:
+     - "8080:80"      # HTTP
+     - "5173:5173"    # Vite dev server (только dev)
+     - "6001:6001"    # Reverb WebSocket
 
- python_service:
- build:
- context: ./backend-python
- dockerfile: ../docker/python.Dockerfile
- environment:
- DB_HOST: postgres
- DB_PORT: 5432
- DB_NAME: hydro
- DB_USER: hydro
- DB_PASS: hydro
- MQTT_HOST: mosquitto
- MQTT_PORT: 1883
- depends_on:
- - postgres
- - mosquitto
+ mqtt-bridge:
+   build:
+     context: ./services
+     dockerfile: mqtt-bridge/Dockerfile
+   environment:
+     MQTT_HOST: mqtt
+     PG_HOST: db
+     PG_DB: hydro_dev  # или hydro для production
+     LARAVEL_API_URL: http://laravel
+   depends_on:
+     - mqtt
+     - db
+     - laravel
+   ports:
+     - "9000:9000"
+
+ history-logger:
+   build:
+     context: ./services
+     dockerfile: history-logger/Dockerfile
+   environment:
+     MQTT_HOST: mqtt
+     PG_HOST: db
+     PG_DB: hydro_dev  # или hydro для production
+   depends_on:
+     - mqtt
+     - db
+
+ automation-engine:
+   build:
+     context: ./services
+     dockerfile: automation-engine/Dockerfile
+   environment:
+     MQTT_HOST: mqtt
+     PG_HOST: db
+     PG_DB: hydro_dev  # или hydro для production
+     LARAVEL_API_URL: http://laravel
+     LARAVEL_API_TOKEN: ${LARAVEL_API_TOKEN}
+   depends_on:
+     - mqtt
+     - db
+     - laravel
+   ports:
+     - "9401:9401"
+
+ scheduler:
+   build:
+     context: ./services
+     dockerfile: scheduler/Dockerfile
+   environment:
+     MQTT_HOST: mqtt
+     PG_HOST: db
+     PG_DB: hydro_dev  # или hydro для production
+   depends_on:
+     - mqtt
+     - db
+   ports:
+     - "9402:9402"
 
 volumes:
- pgdata:
+ postgres_data:
 ```
 
 ИИ-агент может:
@@ -147,7 +211,7 @@ volumes:
 
 ## 4. Dockerfile для Laravel
 
-`docker/laravel.Dockerfile` (минимальный вариант):
+`backend/laravel/Dockerfile`:
 
 ```dockerfile
 FROM php:8.2-fpm
@@ -158,16 +222,18 @@ RUN apt-get update && apt-get install -y \
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-WORKDIR /var/www/html
+WORKDIR /app
 
-COPY backend-laravel/composer.json backend-laravel/composer.lock ./
+COPY composer.json composer.lock ./
 RUN composer install --no-interaction --no-scripts --no-autoloader
 
-COPY backend-laravel/ ./
+COPY . ./
 RUN composer dump-autoload --optimize
 
-CMD php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=8000
+CMD php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=80
 ```
+
+**Примечание:** В production используется Apache/Nginx через `supervisord`, порт `80` внутри контейнера, внешний порт `8080`.
 
 ИИ-агент не должен:
 - удалять миграции из команды запуска,
@@ -175,31 +241,34 @@ CMD php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=8000
 
 ---
 
-## 5. Dockerfile для Python-сервиса
+## 5. Dockerfile для Python-сервисов
 
-`docker/python.Dockerfile`:
+Каждый сервис имеет свой Dockerfile в `backend/services/<service-name>/Dockerfile`:
 
 ```dockerfile
 FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY backend-python/ ./
+COPY common/ ./common/
+COPY <service-name>/ ./
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-CMD ["python", "main_mqtt.py"]
+CMD ["python", "main.py"]
 ```
 
-При необходимости можно добавить второй контейнер:
-
-- `python_scheduler` с `CMD ["python", "main_scheduler.py"]`.
+**Сервисы:**
+- `mqtt-bridge` - FastAPI сервис на порту `9000`
+- `history-logger` - подписка на MQTT, запись телеметрии
+- `automation-engine` - контроллер зон, порт `9401` (Prometheus metrics)
+- `scheduler` - расписания, порт `9402` (Prometheus metrics)
 
 ---
 
 ## 6. Конфиг Mosquitto
 
-`docker/mosquitto.conf` (минимальный):
+`backend/services/mqtt-bridge/mosquitto.dev.conf` (для dev):
 
 ```conf
 listener 1883
@@ -219,30 +288,92 @@ allow_anonymous true
 
 `.env` (или environment секция docker-compose):
 
+**Development:**
 ```env
 APP_ENV=local
-APP_KEY=base64:GENERATE_ME
 APP_DEBUG=true
-
 DB_CONNECTION=pgsql
-DB_HOST=postgres
+DB_HOST=db
+DB_PORT=5432
+DB_DATABASE=hydro_dev
+DB_USERNAME=hydro
+DB_PASSWORD=hydro
+REDIS_HOST=redis
+REDIS_PORT=6379
+BROADCAST_DRIVER=reverb
+REVERB_APP_ID=app
+REVERB_APP_KEY=local
+REVERB_APP_SECRET=secret
+REVERB_HOST=0.0.0.0
+REVERB_PORT=6001
+REVERB_SCHEME=http
+REVERB_DEBUG=true
+REVERB_AUTO_START=true
+```
+
+**Production:**
+```env
+APP_ENV=production
+APP_DEBUG=false
+DB_CONNECTION=pgsql
+DB_HOST=db
 DB_PORT=5432
 DB_DATABASE=hydro
 DB_USERNAME=hydro
-DB_PASSWORD=hydro
+DB_PASSWORD=change-me
+REDIS_HOST=redis
+REDIS_PORT=6379
+BROADCAST_DRIVER=reverb
+REVERB_APP_ID=app
+REVERB_APP_KEY=change-me
+REVERB_APP_SECRET=change-me
+REVERB_HOST=0.0.0.0
+REVERB_PORT=6001
+REVERB_SCHEME=http
+REVERB_DEBUG=false
+REVERB_AUTO_START=true
 ```
 
-### 7.2. Python
+### 7.2. Python Services
 
+**Общие переменные для всех Python сервисов:**
 ```env
-DB_HOST=postgres
-DB_PORT=5432
-DB_NAME=hydro
-DB_USER=hydro
-DB_PASS=hydro
-MQTT_HOST=mosquitto
+MQTT_HOST=mqtt
 MQTT_PORT=1883
+PG_HOST=db
+PG_PORT=5432
+PG_DB=hydro_dev  # или hydro для production
+PG_USER=hydro
+PG_PASS=hydro
 ```
+
+**Для automation-engine и mqtt-bridge (требуют доступ к Laravel API):**
+```env
+LARAVEL_API_URL=http://laravel
+LARAVEL_API_TOKEN=<token>  # Генерируется через Laravel Sanctum или отдельный API token
+```
+
+**Генерация токенов:**
+
+1. **LARAVEL_API_TOKEN** - для Python сервисов:
+   ```bash
+   # В Laravel контейнере
+   php artisan tinker
+   >>> $token = \App\Models\User::first()->createToken('python-service')->plainTextToken;
+   >>> echo $token;
+   ```
+
+2. **REVERB_APP_KEY и REVERB_APP_SECRET** - для WebSocket:
+   ```bash
+   # В Laravel контейнере
+   php artisan reverb:install
+   # Или сгенерировать вручную через openssl
+   ```
+
+3. **PY_API_TOKEN** - для Laravel → Python bridge (опционально):
+   ```bash
+   # Можно использовать тот же LARAVEL_API_TOKEN или отдельный
+   ```
 
 ИИ-агент не должен:
 - хардкодить пароли в коде,
@@ -271,12 +402,21 @@ MQTT_PORT=1883
 
 ## 9. Локальный доступ
 
-- Laravel (Inertia UI): 
- `http://localhost:8000`
-- MQTT брокер: 
- `mqtt://localhost:1883`
-- PostgreSQL: 
- `localhost:5432`, БД `hydro`
+**Development окружение:**
+- Laravel (Inertia UI): `http://localhost:8080`
+- Vite dev server: `http://localhost:5173` (только dev)
+- Reverb WebSocket: `ws://localhost:6001`
+- MQTT брокер: `mqtt://localhost:1883`
+- PostgreSQL: `localhost:5432`, БД `hydro_dev`
+- Redis: `localhost:6379`
+- Prometheus: `http://localhost:9090` (если включен)
+- Grafana: `http://localhost:3000` (если включен)
+
+**Production окружение:**
+- Laravel (Inertia UI): `http://localhost:8080`
+- Reverb WebSocket: `ws://localhost:6001`
+- MQTT брокер: `mqtt://localhost:1883` (внутренний, не публичный)
+- PostgreSQL: `localhost:5432`, БД `hydro` (внутренний)
 
 ---
 
@@ -292,21 +432,27 @@ MQTT_PORT=1883
  - для очередей Laravel;
  - для кэша.
 
-3. **Laravel WebSockets**:
- - отдельный сервис websockets;
- - использовать для realtime обновлений UI.
+3. **Laravel Reverb (WebSocket)**:
+ - встроен в Laravel сервис;
+ - автоматически запускается при `REVERB_AUTO_START=true`;
+ - используется для realtime обновлений UI;
+ - см. раздел 13 ниже.
 
-4. **Отдельный контейнер python_scheduler**:
- - для контроллеров (main_scheduler.py) отдельно от main_mqtt.py.
+4. **Python сервисы уже разделены**:
+ - `scheduler` - отдельный контейнер для расписаний;
+ - `automation-engine` - отдельный контейнер для контроллеров зон;
+ - `history-logger` - отдельный контейнер для записи телеметрии;
+ - `mqtt-bridge` - отдельный контейнер для REST → MQTT моста.
 
 ---
 
 ## 11. Чего нельзя делать ИИ-агенту
 
-- Менять имена сервисов (`postgres`, `mosquitto`, `laravel`, `python_service`) без обновления всех зависимостей.
+- Менять имена сервисов (`db`, `mqtt`, `laravel`, `redis`, `mqtt-bridge`, `history-logger`, `automation-engine`, `scheduler`) без обновления всех зависимостей.
 - Менять порты без синхронизации с конфигами ESP32/клиентов.
 - Удалять автоматический запуск миграций без замены на понятный альтернативный процесс.
 - Хардкодить IP-адреса внутри контейнеров (использовать имена сервисов).
+- Менять структуру `backend/services/` без обновления Dockerfile путей.
 
 ---
 
@@ -315,8 +461,61 @@ MQTT_PORT=1883
 1. Laravel, Python и ESP32 всё ещё могут достучаться до PostgreSQL и MQTT?
 2. Имена сервисов не изменены или везде обновлены?
 3. Порты на хосте не конфликтуют между собой?
-4. Секреты (пароли) не захардкожены в изображениях?
-5. В случае добавления новых сервисов (Grafana, Redis) — они не ломают зависимости?
+4. Секреты (пароли, токены) не захардкожены в изображениях?
+5. В случае добавления новых сервисов (Grafana, Redis, Prometheus) — они не ломают зависимости?
+6. Reverb WebSocket правильно настроен для realtime обновлений?
+
+---
+
+## 13. Laravel Reverb (WebSocket)
+
+Laravel Reverb — встроенный WebSocket сервер для realtime обновлений UI.
+
+### 13.1. Конфигурация
+
+Reverb автоматически запускается при старте Laravel контейнера, если `REVERB_AUTO_START=true`.
+
+**Переменные окружения:**
+- `REVERB_APP_ID` - идентификатор приложения (по умолчанию: `app`)
+- `REVERB_APP_KEY` - публичный ключ для клиентов
+- `REVERB_APP_SECRET` - секретный ключ для сервера
+- `REVERB_HOST` - хост для прослушивания (по умолчанию: `0.0.0.0`)
+- `REVERB_PORT` - порт WebSocket (по умолчанию: `6001`)
+- `REVERB_SCHEME` - схема (`http` или `https`)
+- `REVERB_DEBUG` - режим отладки (только для dev)
+- `REVERB_AUTO_START` - автоматический запуск при старте контейнера
+
+### 13.2. Подключение клиентов
+
+**Frontend (Vue 3):**
+```javascript
+import Echo from 'laravel-echo';
+import Pusher from 'pusher-js';
+
+window.Pusher = Pusher;
+window.Echo = new Echo({
+    broadcaster: 'reverb',
+    key: import.meta.env.VITE_REVERB_APP_KEY,
+    wsHost: import.meta.env.VITE_REVERB_HOST,
+    wsPort: import.meta.env.VITE_REVERB_PORT,
+    wssPort: import.meta.env.VITE_REVERB_PORT,
+    forceTLS: (import.meta.env.VITE_REVERB_SCHEME ?? 'https') === 'https',
+    enabledTransports: ['ws', 'wss'],
+});
+```
+
+### 13.3. Использование
+
+См. `REALTIME_UPDATES_ARCH.md` для детального описания событий и каналов.
+
+**Основные каналы:**
+- `hydro.zones.{id}` - обновления по зоне
+- `hydro.alerts` - новые алерты
+- `nodes.{id}.status` - статусы узлов
+
+### 13.4. Мониторинг
+
+Reverb логирует подключения и события. В production рекомендуется настроить логирование в файл или внешний сервис.
 
 ---
 

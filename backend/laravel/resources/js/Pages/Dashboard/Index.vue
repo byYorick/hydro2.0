@@ -1,7 +1,7 @@
 <template>
   <AppLayout>
     <template #default>
-      <h1 class="text-lg font-semibold mb-4">Dashboard</h1>
+      <h1 class="text-lg font-semibold mb-4">Панель управления</h1>
       
       <!-- Основные статистики -->
       <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
@@ -13,18 +13,18 @@
           <div class="text-neutral-400 text-sm mb-1">Зоны</div>
           <div class="text-3xl font-bold">{{ dashboard.zonesCount }}</div>
           <div v-if="zonesStatusSummary" class="text-xs text-neutral-500 mt-1">
-            <span v-if="zonesStatusSummary.RUNNING">RUNNING: {{ zonesStatusSummary.RUNNING }}</span>
-            <span v-if="zonesStatusSummary.PAUSED" class="ml-2">PAUSED: {{ zonesStatusSummary.PAUSED }}</span>
-            <span v-if="zonesStatusSummary.ALARM" class="ml-2 text-red-400">ALARM: {{ zonesStatusSummary.ALARM }}</span>
-            <span v-if="zonesStatusSummary.WARNING" class="ml-2 text-amber-400">WARNING: {{ zonesStatusSummary.WARNING }}</span>
+            <span v-if="zonesStatusSummary.RUNNING">Запущено: {{ zonesStatusSummary.RUNNING }}</span>
+            <span v-if="zonesStatusSummary.PAUSED" class="ml-2">Приостановлено: {{ zonesStatusSummary.PAUSED }}</span>
+            <span v-if="zonesStatusSummary.ALARM" class="ml-2 text-red-400">Тревога: {{ zonesStatusSummary.ALARM }}</span>
+            <span v-if="zonesStatusSummary.WARNING" class="ml-2 text-amber-400">Предупреждение: {{ zonesStatusSummary.WARNING }}</span>
           </div>
         </Card>
         <Card>
           <div class="text-neutral-400 text-sm mb-1">Устройства</div>
           <div class="text-3xl font-bold">{{ dashboard.devicesCount }}</div>
           <div v-if="nodesStatusSummary" class="text-xs text-neutral-500 mt-1">
-            <span v-if="nodesStatusSummary.online" class="text-emerald-400">ONLINE: {{ nodesStatusSummary.online }}</span>
-            <span v-if="nodesStatusSummary.offline" class="ml-2 text-red-400">OFFLINE: {{ nodesStatusSummary.offline }}</span>
+            <span v-if="nodesStatusSummary.online" class="text-emerald-400">Онлайн: {{ nodesStatusSummary.online }}</span>
+            <span v-if="nodesStatusSummary.offline" class="ml-2 text-red-400">Офлайн: {{ nodesStatusSummary.offline }}</span>
           </div>
         </Card>
         <Card>
@@ -70,7 +70,7 @@
                 </div>
               </div>
               <Badge :variant="zone.status === 'ALARM' ? 'danger' : 'warning'">
-                {{ zone.status }}
+                {{ zone.status === 'ALARM' ? 'Тревога' : zone.status === 'WARNING' ? 'Предупреждение' : zone.status === 'RUNNING' ? 'Запущено' : zone.status === 'PAUSED' ? 'Приостановлено' : zone.status }}
               </Badge>
             </div>
             <div v-if="zone.description" class="text-xs text-neutral-400 mb-2">{{ zone.description }}</div>

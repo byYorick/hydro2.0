@@ -9,10 +9,11 @@ class SystemController extends Controller
 {
     public function health()
     {
-        // Простая проверка подключения к БД
+        // Быстрая проверка подключения к БД с таймаутом
         $dbOk = false;
         try {
-            DB::connection()->getPdo();
+            // Используем простой SELECT 1 вместо getPdo() для быстрой проверки
+            DB::connection()->selectOne('SELECT 1 as test');
             $dbOk = true;
         } catch (\Throwable $e) {
             $dbOk = false;

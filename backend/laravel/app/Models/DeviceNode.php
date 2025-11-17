@@ -38,6 +38,11 @@ class DeviceNode extends Model
     {
         return $this->hasMany(NodeChannel::class, 'node_id');
     }
+
+    public function nodeLogs(): HasMany
+    {
+        return $this->hasMany(NodeLog::class, 'node_id');
+    }
 }
 
 

@@ -29,12 +29,21 @@ const wsEnabled = String(import.meta.env.VITE_ENABLE_WS || 'false') === 'true';
 window.axios.interceptors.response.use(
   (res) => res,
   (error) => {
+    // Игнорируем отмененные запросы (CanceledError) - это нормальное поведение Inertia.js
+    // при быстром переключении между страницами
+    if (error?.code === 'ERR_CANCELED' || error?.name === 'CanceledError' || error?.message === 'canceled') {
+      // Не логируем отмененные запросы - это нормальное поведение
+      return Promise.reject(error);
+    }
+    
     // Network or API errors
     const cfg = error?.config || {};
     const url = cfg.url || '(unknown url)';
     const method = (cfg.method || 'GET').toUpperCase();
     const status = error?.response?.status;
     const data = error?.response?.data;
+    
+    // Логируем только реальные ошибки
     // eslint-disable-next-line no-console
     console.error('[HTTP ERROR]', method, url, { status, data, error });
     return Promise.reject(error);
@@ -87,6 +96,20 @@ window.addEventListener('error', (event) => {
   console.error('[WINDOW ERROR]', event?.message, event?.error);
 });
 window.addEventListener('unhandledrejection', (event) => {
+  // Игнорируем отмененные запросы Inertia.js
+  const reason = event?.reason;
+  if (reason?.code === 'ERR_CANCELED' || reason?.name === 'CanceledError' || reason?.message === 'canceled') {
+    // Не логируем отмененные запросы
+    event.preventDefault();
+    return;
+  }
   // eslint-disable-next-line no-console
-  console.error('[UNHANDLED REJECTION]', event?.reason || event);
+  console.error('[UNHANDLED REJECTION]', reason || event);
 });
+
+// Принудительное включение всех логов
+console.log('[bootstrap.js] Инициализация завершена, все логи включены')
+console.log('[bootstrap.js] window.console доступен:', typeof window.console)
+console.log('[bootstrap.js] console.log доступен:', typeof console.log)
+console.log('[bootstrap.js] console.error доступен:', typeof console.error)
+console.log('[bootstrap.js] console.warn доступен:', typeof console.warn)

@@ -92,6 +92,11 @@ return [
             'prefix_indexes' => true,
             'search_path' => 'public',
             'sslmode' => 'prefer',
+            'options' => [
+                // Оптимизация для быстрого подключения
+                PDO::ATTR_TIMEOUT => 2,
+                PDO::ATTR_EMULATE_PREPARES => false,
+            ],
         ],
 
         'sqlsrv' => [

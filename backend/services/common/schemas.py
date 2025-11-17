@@ -18,6 +18,7 @@ class CommandRequest(BaseModel):
     channel: Optional[str] = None
     greenhouse_uid: Optional[str] = None
     zone_id: Optional[int] = None
+    cmd_id: Optional[str] = None  # Command ID from Laravel, if provided
 
 
 class CommandResponse(BaseModel):

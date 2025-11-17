@@ -21,6 +21,17 @@ return Application::configure(basePath: dirname(__DIR__))
             'admin' => \App\Http\Middleware\EnsureAdmin::class,
             'role' => \App\Http\Middleware\EnsureUserHasRole::class,
         ]);
+        
+        // Exclude API routes from CSRF verification for session-based auth
+        $middleware->validateCsrfTokens(except: [
+            'api/*',
+        ]);
+        
+        // Add session middleware to API routes for session-based authentication
+        $middleware->api(prepend: [
+            \Illuminate\Session\Middleware\StartSession::class,
+            \Illuminate\Cookie\Middleware\EncryptCookies::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

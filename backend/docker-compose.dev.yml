@@ -28,15 +28,8 @@ services:
       context: ./laravel
       dockerfile: Dockerfile
     working_dir: /app
-    command: >
-      sh -c "
-        if [ \"$$REVERB_AUTO_START\" = \"true\" ]; then
-          echo 'Starting Laravel Reverb...';
-          cd /app && nohup php artisan reverb:start --host=0.0.0.0 --port=6001 > /tmp/reverb.log 2>&1 &
-          sleep 2;
-        fi;
-        exec /opt/docker/bin/entrypoint.sh supervisord
-      "
+    # docker-entrypoint.sh will handle supervisor startup automatically
+    # Base image will start nginx/php-fpm via its default entrypoint
     environment:
       - WEB_DOCUMENT_ROOT=/app/public
       - APP_ENV=local
@@ -62,6 +55,18 @@ services:
       - REVERB_SCHEME=http
       - REVERB_DEBUG=true
       - REVERB_AUTO_START=true
+      - VITE_DEV_SERVER_URL=http://localhost:5173
+      # PHP opcache settings for development (disable caching)
+      - PHP_OPCACHE_ENABLE=0
+      - PHP_OPCACHE_VALIDATE_TIMESTAMPS=1
+      - PHP_OPCACHE_REVALIDATE_FREQ=0
+      # PHP-FPM оптимизация для снижения нагрузки на CPU
+      - PHP_FPM_PM=dynamic
+      - PHP_FPM_PM_MAX_CHILDREN=5
+      - PHP_FPM_PM_START_SERVERS=2
+      - PHP_FPM_PM_MIN_SPARE_SERVERS=1
+      - PHP_FPM_PM_MAX_SPARE_SERVERS=3
+      - PHP_FPM_PM_MAX_REQUESTS=500
     volumes:
       - ./laravel:/app
     ports:
@@ -179,9 +184,12 @@ services:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+      - GF_DEFAULT_LANGUAGE=ru
+      - GF_USERS_DEFAULT_LANGUAGE=ru
     volumes:
       - ./configs/dev/grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
       - ./configs/dev/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./configs/dev/grafana/grafana.ini:/etc/grafana/grafana.ini:ro
       - grafana_data:/var/lib/grafana
     ports:
       - "3000:3000"
