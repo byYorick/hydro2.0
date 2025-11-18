@@ -22,17 +22,26 @@
 
 static const char *TAG = "pump_driver";
 
-#define MAX_PUMP_CHANNELS 16
-#define PUMP_DRIVER_MAX_STRING_LEN 64
+typedef struct {
+    uint64_t total_run_time_ms;
+    uint32_t last_run_duration_ms;
+    uint32_t run_count;
+    uint32_t failure_count;
+    uint32_t overcurrent_events;
+    uint32_t no_current_events;
+    uint64_t last_start_timestamp_ms;
+    uint64_t last_stop_timestamp_ms;
+    bool last_run_success;
+} pump_channel_stats_t;
 
 /**
  * @brief Структура канала насоса
  */
 typedef struct {
-    char channel_name[PUMP_DRIVER_MAX_STRING_LEN];
+    char channel_name[PUMP_DRIVER_MAX_CHANNEL_NAME_LEN];
     int gpio_pin;
     bool use_relay;
-    char relay_channel[PUMP_DRIVER_MAX_STRING_LEN];
+    char relay_channel[PUMP_DRIVER_MAX_CHANNEL_NAME_LEN];
     bool fail_safe_nc;
     uint32_t max_duration_ms;
     uint32_t min_off_time_ms;
@@ -44,21 +53,27 @@ typedef struct {
     uint64_t last_stop_time_ms;
     TimerHandle_t timer;
     bool initialized;
+    pump_channel_stats_t stats;
+    bool last_command_success;
 } pump_channel_t;
 
-static pump_channel_t s_channels[MAX_PUMP_CHANNELS] = {0};
+static pump_channel_t s_channels[PUMP_DRIVER_MAX_CHANNELS] = {0};
 static size_t s_channel_count = 0;
 static bool s_initialized = false;
 static SemaphoreHandle_t s_mutex = NULL;
 static ina209_config_t s_ina209_config = {0};
 static bool s_ina209_enabled = false;
 static uint32_t s_stabilization_delay_ms = 200; // Задержка стабилизации тока после включения насоса
+static pump_driver_ina_status_t s_ina_status = {0};
 
 // Forward declarations
 static void pump_timer_callback(TimerHandle_t timer);
 static esp_err_t pump_start_internal(const char *channel_name, uint32_t duration_ms);
 static esp_err_t pump_stop_internal(const char *channel_name);
 static pump_channel_t *find_channel(const char *channel_name);
+static void pump_record_failure(pump_channel_t *channel);
+static void pump_record_overcurrent(pump_channel_t *channel, bool undercurrent);
+static void pump_fill_channel_health(const pump_channel_t *channel, pump_driver_channel_health_t *out);
 
 static esp_err_t pump_set_gpio_state(pump_channel_t *channel, bool on) {
     if (channel->use_relay) {
@@ -80,9 +95,9 @@ esp_err_t pump_driver_init(const pump_channel_config_t *channels, size_t channel
         ESP_LOGE(TAG, "Invalid arguments");
         return ESP_ERR_INVALID_ARG;
     }
-    
-    if (channel_count > MAX_PUMP_CHANNELS) {
-        ESP_LOGE(TAG, "Too many channels: %zu (max: %d)", channel_count, MAX_PUMP_CHANNELS);
+
+    if (channel_count > PUMP_DRIVER_MAX_CHANNELS) {
+        ESP_LOGE(TAG, "Too many channels: %zu (max: %d)", channel_count, PUMP_DRIVER_MAX_CHANNELS);
         return ESP_ERR_INVALID_ARG;
     }
     
@@ -145,6 +160,8 @@ esp_err_t pump_driver_init(const pump_channel_config_t *channels, size_t channel
         channel->run_duration_ms = 0;
         channel->last_stop_time_ms = 0;
         channel->initialized = true;
+        memset(&channel->stats, 0, sizeof(channel->stats));
+        channel->last_command_success = false;
         
         // Устанавливаем начальное состояние (выключено)
         pump_set_gpio_state(channel, false);
@@ -176,7 +193,7 @@ esp_err_t pump_driver_init(const pump_channel_config_t *channels, size_t channel
     
     s_channel_count = channel_count;
     s_initialized = true;
-    
+
     ESP_LOGI(TAG, "Pump driver initialized with %zu channels", channel_count);
     return ESP_OK;
 }
@@ -202,11 +219,11 @@ esp_err_t pump_driver_init_from_config(void) {
         return ESP_ERR_NOT_FOUND;
     }
     
-    pump_channel_config_t pump_configs[MAX_PUMP_CHANNELS];
+    pump_channel_config_t pump_configs[PUMP_DRIVER_MAX_CHANNELS];
     size_t pump_count = 0;
-    
+
     int channel_count = cJSON_GetArraySize(channels);
-    for (int i = 0; i < channel_count && pump_count < MAX_PUMP_CHANNELS; i++) {
+    for (int i = 0; i < channel_count && pump_count < PUMP_DRIVER_MAX_CHANNELS; i++) {
         cJSON *channel = cJSON_GetArrayItem(channels, i);
         if (channel == NULL || !cJSON_IsObject(channel)) {
             continue;
@@ -577,6 +594,11 @@ bool pump_driver_is_initialized(void) {
 esp_err_t pump_driver_set_ina209_config(const ina209_config_t *config) {
     if (config == NULL) {
         s_ina209_enabled = false;
+        s_ina_status.enabled = false;
+        s_ina_status.last_read_valid = false;
+        s_ina_status.last_read_overcurrent = false;
+        s_ina_status.last_read_undercurrent = false;
+        s_ina_status.last_current_ma = 0.0f;
         return ESP_OK;
     }
     
@@ -593,8 +615,13 @@ esp_err_t pump_driver_set_ina209_config(const ina209_config_t *config) {
         ESP_LOGE(TAG, "Failed to initialize INA209: %s", esp_err_to_name(err));
         s_ina209_enabled = false;
     } else {
-        ESP_LOGI(TAG, "INA209 configured: min=%.2f mA, max=%.2f mA", 
+        ESP_LOGI(TAG, "INA209 configured: min=%.2f mA, max=%.2f mA",
                 config->min_bus_current_on, config->max_bus_current_on);
+        s_ina_status.enabled = true;
+        s_ina_status.last_read_valid = false;
+        s_ina_status.last_read_overcurrent = false;
+        s_ina_status.last_read_undercurrent = false;
+        s_ina_status.last_current_ma = 0.0f;
     }
     
     xSemaphoreGive(s_mutex);
@@ -613,61 +640,82 @@ static esp_err_t pump_start_internal(const char *channel_name, uint32_t duration
         xSemaphoreGive(s_mutex);
         return ESP_ERR_NOT_FOUND;
     }
-    
-    ESP_LOGI(TAG, "Starting pump %s: %lu ms (GPIO %d)", 
+
+    ESP_LOGI(TAG, "Starting pump %s: %lu ms (GPIO %d)",
              channel_name, (unsigned long)duration_ms, channel->gpio_pin);
-    
+    channel->last_command_success = false;
+    channel->stats.last_run_success = false;
+
     // Включение насоса
     esp_err_t err = pump_set_gpio_state(channel, true);
     if (err != ESP_OK) {
+        pump_record_failure(channel);
         xSemaphoreGive(s_mutex);
         ESP_LOGE(TAG, "Failed to set GPIO state for pump %s", channel_name);
         return err;
     }
-    
+
     // Если INA209 настроен, ждем стабилизации и проверяем ток
     if (s_ina209_enabled) {
         xSemaphoreGive(s_mutex);
         vTaskDelay(pdMS_TO_TICKS(s_stabilization_delay_ms));
-        
-        ina209_reading_t reading;
+        if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+            return ESP_ERR_TIMEOUT;
+        }
+
+        ina209_reading_t reading = {0};
+        s_ina_status.enabled = true;
+        s_ina_status.last_read_valid = false;
+        s_ina_status.last_read_overcurrent = false;
+        s_ina_status.last_read_undercurrent = false;
+        s_ina_status.last_current_ma = 0.0f;
+
         err = ina209_read(&reading);
         if (err == ESP_OK && reading.valid) {
             float current_ma = reading.bus_current_ma;
             ESP_LOGI(TAG, "Pump %s started, bus current: %.2f mA", channel_name, current_ma);
-            
-            // Проверка диапазона тока
-            if (!ina209_check_current_range(current_ma)) {
+
+            s_ina_status.last_read_valid = true;
+            s_ina_status.last_current_ma = current_ma;
+
+            bool in_range = ina209_check_current_range(current_ma);
+            bool undercurrent = current_ma < s_ina209_config.min_bus_current_on;
+            bool overcurrent = current_ma > s_ina209_config.max_bus_current_on;
+            s_ina_status.last_read_undercurrent = undercurrent;
+            s_ina_status.last_read_overcurrent = overcurrent;
+
+            if (!in_range) {
                 ESP_LOGE(TAG, "Pump %s current out of range: %.2f mA (expected: %.2f-%.2f mA)",
-                        channel_name, current_ma, 
+                        channel_name, current_ma,
                         s_ina209_config.min_bus_current_on, s_ina209_config.max_bus_current_on);
-                
-                // Немедленное выключение насоса
+
+                pump_record_overcurrent(channel, undercurrent);
+                xSemaphoreGive(s_mutex);
                 pump_stop_internal(channel_name);
-                
-                // Возвращаем ошибку для формирования command_response с ERROR
-                if (current_ma < s_ina209_config.min_bus_current_on) {
-                    return ESP_ERR_INVALID_RESPONSE; // Будет интерпретировано как current_not_detected
-                } else {
-                    return ESP_ERR_INVALID_SIZE; // Будет интерпретировано как overcurrent
+
+                if (undercurrent) {
+                    return ESP_ERR_INVALID_RESPONSE;
                 }
+                return ESP_ERR_INVALID_SIZE;
             }
         } else {
             ESP_LOGW(TAG, "Failed to read INA209 for pump %s: %s", channel_name, esp_err_to_name(err));
-            // Продолжаем работу, но логируем предупреждение
+            s_ina_status.last_read_valid = false;
         }
-        
-        if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
-            return ESP_ERR_TIMEOUT;
-        }
+    } else {
+        s_ina_status.enabled = false;
     }
-    
+
     // Обновление состояния
     channel->current_state = PUMP_STATE_ON;
     channel->is_running = true;
     channel->start_time_ms = esp_timer_get_time() / 1000; // мс
+    channel->stats.last_start_timestamp_ms = channel->start_time_ms;
     channel->run_duration_ms = duration_ms;
-    
+    channel->stats.last_run_success = true;
+    channel->stats.run_count++;
+    channel->last_command_success = true;
+
     // Запуск таймера автоостановки
     xTimerChangePeriod(channel->timer, pdMS_TO_TICKS(duration_ms), 0);
     xTimerStart(channel->timer, 0);
@@ -705,8 +753,12 @@ static esp_err_t pump_stop_internal(const char *channel_name) {
     channel->last_stop_time_ms = current_time_ms;
     channel->is_running = false;
     channel->current_state = PUMP_STATE_COOLDOWN;
-    
-    ESP_LOGI(TAG, "Pump %s stopped: %llu ms (GPIO %d)", 
+    channel->stats.total_run_time_ms += actual_time_ms;
+    channel->stats.last_run_duration_ms = (uint32_t)actual_time_ms;
+    channel->stats.last_stop_timestamp_ms = current_time_ms;
+    channel->stats.last_run_success = channel->last_command_success;
+
+    ESP_LOGI(TAG, "Pump %s stopped: %llu ms (GPIO %d)",
              channel_name, (unsigned long long)actual_time_ms, channel->gpio_pin);
     
     xSemaphoreGive(s_mutex);
@@ -715,10 +767,111 @@ static esp_err_t pump_stop_internal(const char *channel_name) {
 
 static void pump_timer_callback(TimerHandle_t timer) {
     size_t channel_index = (size_t)(uintptr_t)pvTimerGetTimerID(timer);
-    
+
     if (channel_index < s_channel_count && s_channels[channel_index].initialized) {
         ESP_LOGD(TAG, "Timer callback for pump %s", s_channels[channel_index].channel_name);
         pump_stop_internal(s_channels[channel_index].channel_name);
     }
+}
+
+static void pump_record_failure(pump_channel_t *channel) {
+    if (channel == NULL) {
+        return;
+    }
+
+    channel->stats.failure_count++;
+    channel->last_command_success = false;
+    channel->stats.last_run_success = false;
+}
+
+static void pump_record_overcurrent(pump_channel_t *channel, bool undercurrent) {
+    if (channel == NULL) {
+        return;
+    }
+
+    if (undercurrent) {
+        channel->stats.no_current_events++;
+    } else {
+        channel->stats.overcurrent_events++;
+    }
+
+    pump_record_failure(channel);
+}
+
+static void pump_fill_channel_health(const pump_channel_t *channel, pump_driver_channel_health_t *out) {
+    if (channel == NULL || out == NULL) {
+        return;
+    }
+
+    memset(out, 0, sizeof(*out));
+    strncpy(out->channel_name, channel->channel_name, sizeof(out->channel_name) - 1);
+    out->last_run_duration_ms = channel->stats.last_run_duration_ms;
+    out->total_run_time_ms = channel->stats.total_run_time_ms;
+    out->run_count = channel->stats.run_count;
+    out->failure_count = channel->stats.failure_count;
+    out->overcurrent_events = channel->stats.overcurrent_events;
+    out->no_current_events = channel->stats.no_current_events;
+    out->last_start_timestamp_ms = channel->stats.last_start_timestamp_ms;
+    out->last_stop_timestamp_ms = channel->stats.last_stop_timestamp_ms;
+    out->last_run_success = channel->stats.last_run_success;
+    out->is_running = channel->is_running;
+}
+
+esp_err_t pump_driver_get_health_snapshot(pump_driver_health_snapshot_t *snapshot) {
+    if (snapshot == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!s_initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    memset(snapshot, 0, sizeof(*snapshot));
+
+    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    size_t out_index = 0;
+    for (size_t i = 0; i < s_channel_count && out_index < PUMP_DRIVER_MAX_CHANNELS; i++) {
+        if (!s_channels[i].initialized) {
+            continue;
+        }
+
+        pump_fill_channel_health(&s_channels[i], &snapshot->channels[out_index]);
+        out_index++;
+    }
+
+    snapshot->channel_count = out_index;
+    snapshot->ina_status = s_ina_status;
+    snapshot->ina_status.enabled = s_ina209_enabled && snapshot->ina_status.enabled;
+
+    xSemaphoreGive(s_mutex);
+    return ESP_OK;
+}
+
+esp_err_t pump_driver_get_channel_health(const char *channel_name, pump_driver_channel_health_t *stats) {
+    if (channel_name == NULL || stats == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!s_initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    pump_channel_t *channel = find_channel(channel_name);
+    if (channel == NULL || !channel->initialized) {
+        xSemaphoreGive(s_mutex);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    pump_fill_channel_health(channel, stats);
+
+    xSemaphoreGive(s_mutex);
+    return ESP_OK;
 }
 

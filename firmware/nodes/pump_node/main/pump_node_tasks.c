@@ -4,6 +4,8 @@
  * 
  * Реализует периодические задачи согласно FIRMWARE_STRUCTURE.md:
  * - task_heartbeat - публикация heartbeat
+ * - task_current_poll - периодический опрос INA209
+ * - task_pump_health - health-метрики насосов
  * 
  * Примечание: pump_node не имеет периодических сенсоров,
  * телеметрия публикуется только при выполнении команд (ток насоса)
@@ -12,10 +14,12 @@
 #include "mqtt_manager.h"
 #include "ina209.h"
 #include "config_storage.h"
+#include "pump_driver.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_system.h"
 #include "esp_wifi.h"
+#include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "cJSON.h"
@@ -27,6 +31,7 @@ static const char *TAG = "pump_node_tasks";
 // Периоды задач (в миллисекундах)
 #define HEARTBEAT_INTERVAL_MS      15000 // 15 секунд - heartbeat
 #define DEFAULT_CURRENT_POLL_MS   1000  // 1 секунда по умолчанию для тока насоса
+#define PUMP_HEALTH_INTERVAL_MS    10000 // 10 секунд - health отчеты
 
 // Глобальная переменная для интервала опроса тока
 static uint32_t s_current_poll_interval_ms = DEFAULT_CURRENT_POLL_MS;
@@ -137,6 +142,86 @@ static void task_current_poll(void *pvParameters) {
 }
 
 /**
+ * @brief Задача публикации health-метрик насосов и INA209
+ */
+static void task_pump_health(void *pvParameters) {
+    ESP_LOGI(TAG, "Pump health task started");
+
+    TickType_t last_wake_time = xTaskGetTickCount();
+    const TickType_t interval = pdMS_TO_TICKS(PUMP_HEALTH_INTERVAL_MS);
+    pump_driver_health_snapshot_t snapshot;
+
+    while (1) {
+        vTaskDelayUntil(&last_wake_time, interval);
+
+        if (!mqtt_manager_is_connected()) {
+            continue;
+        }
+
+        esp_err_t err = pump_driver_get_health_snapshot(&snapshot);
+        if (err != ESP_OK) {
+            ESP_LOGD(TAG, "Health snapshot unavailable: %s", esp_err_to_name(err));
+            continue;
+        }
+
+        cJSON *health = cJSON_CreateObject();
+        if (!health) {
+            continue;
+        }
+
+        cJSON_AddNumberToObject(health, "timestamp", (double)(esp_timer_get_time() / 1000000));
+
+        cJSON *channels = cJSON_CreateArray();
+        if (!channels) {
+            cJSON_Delete(health);
+            continue;
+        }
+
+        for (size_t i = 0; i < snapshot.channel_count; i++) {
+            const pump_driver_channel_health_t *ch = &snapshot.channels[i];
+            cJSON *entry = cJSON_CreateObject();
+            if (!entry) {
+                continue;
+            }
+
+            cJSON_AddStringToObject(entry, "channel", ch->channel_name);
+            cJSON_AddBoolToObject(entry, "running", ch->is_running);
+            cJSON_AddBoolToObject(entry, "last_run_success", ch->last_run_success);
+            cJSON_AddNumberToObject(entry, "last_run_ms", (double)ch->last_run_duration_ms);
+            cJSON_AddNumberToObject(entry, "total_run_ms", (double)ch->total_run_time_ms);
+            cJSON_AddNumberToObject(entry, "run_count", (double)ch->run_count);
+            cJSON_AddNumberToObject(entry, "failure_count", (double)ch->failure_count);
+            cJSON_AddNumberToObject(entry, "overcurrent_events", (double)ch->overcurrent_events);
+            cJSON_AddNumberToObject(entry, "no_current_events", (double)ch->no_current_events);
+            cJSON_AddNumberToObject(entry, "last_start_ts", (double)ch->last_start_timestamp_ms);
+            cJSON_AddNumberToObject(entry, "last_stop_ts", (double)ch->last_stop_timestamp_ms);
+
+            cJSON_AddItemToArray(channels, entry);
+        }
+
+        cJSON_AddItemToObject(health, "channels", channels);
+
+        cJSON *ina = cJSON_CreateObject();
+        if (ina) {
+            cJSON_AddBoolToObject(ina, "enabled", snapshot.ina_status.enabled);
+            cJSON_AddBoolToObject(ina, "reading_valid", snapshot.ina_status.last_read_valid);
+            cJSON_AddBoolToObject(ina, "overcurrent", snapshot.ina_status.last_read_overcurrent);
+            cJSON_AddBoolToObject(ina, "undercurrent", snapshot.ina_status.last_read_undercurrent);
+            cJSON_AddNumberToObject(ina, "last_current_ma", snapshot.ina_status.last_current_ma);
+            cJSON_AddItemToObject(health, "ina209", ina);
+        }
+
+        char *json_str = cJSON_PrintUnformatted(health);
+        if (json_str) {
+            mqtt_manager_publish_telemetry("pump_health", json_str);
+            free(json_str);
+        }
+
+        cJSON_Delete(health);
+    }
+}
+
+/**
  * @brief Обновление интервала опроса тока из NodeConfig
  * 
  * Ищет канал "pump_bus_current" в NodeConfig и обновляет s_current_poll_interval_ms
@@ -187,7 +272,10 @@ void pump_node_start_tasks(void) {
     // Задача опроса тока насоса (если INA209 инициализирован)
     // Проверяем, что INA209 доступен через pump_driver
     xTaskCreate(task_current_poll, "current_poll_task", 3072, NULL, 4, NULL);
-    
+
+    // Health отчеты по насосам и INA209
+    xTaskCreate(task_pump_health, "pump_health_task", 4096, NULL, 4, NULL);
+
     // Задача heartbeat
     xTaskCreate(task_heartbeat, "heartbeat_task", 3072, NULL, 3, NULL);
     
