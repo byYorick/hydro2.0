@@ -11,16 +11,16 @@
     <!-- Метрики (если переданы) -->
     <div v-if="telemetry && hasMetrics" class="mt-3 grid grid-cols-2 gap-2 text-xs">
       <div v-if="telemetry.ph !== null && telemetry.ph !== undefined" class="text-neutral-400">
-        pH: <span class="text-neutral-200">{{ telemetry.ph }}</span>
+        pH: <span class="text-neutral-200">{{ formatValue(telemetry.ph, 'ph') }}</span>
       </div>
       <div v-if="telemetry.ec !== null && telemetry.ec !== undefined" class="text-neutral-400">
-        EC: <span class="text-neutral-200">{{ telemetry.ec }}</span>
+        EC: <span class="text-neutral-200">{{ formatValue(telemetry.ec, 'ec') }}</span>
       </div>
       <div v-if="telemetry.temperature !== null && telemetry.temperature !== undefined" class="text-neutral-400">
-        Темп: <span class="text-neutral-200">{{ telemetry.temperature }}°C</span>
+        Темп: <span class="text-neutral-200">{{ formatValue(telemetry.temperature, 'temp') }}°C</span>
       </div>
       <div v-if="telemetry.humidity !== null && telemetry.humidity !== undefined" class="text-neutral-400">
-        Влаж: <span class="text-neutral-200">{{ telemetry.humidity }}%</span>
+        Влаж: <span class="text-neutral-200">{{ formatValue(telemetry.humidity, 'humidity') }}%</span>
       </div>
     </div>
     <div class="mt-3 flex gap-2">
@@ -67,5 +67,15 @@ const hasMetrics = computed(() => {
          props.telemetry.temperature !== null || 
          props.telemetry.humidity !== null
 })
+
+// Форматирование значений телеметрии
+function formatValue(value, type) {
+  if (value === null || value === undefined) return '-'
+  if (typeof value !== 'number') return value
+  
+  // Для pH показываем 2 знака после точки, для остальных - 1
+  const decimals = type === 'ph' ? 2 : 1
+  return value.toFixed(decimals)
+}
 </script>
 

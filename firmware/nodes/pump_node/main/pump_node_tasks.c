@@ -9,10 +9,9 @@
  * телеметрия публикуется только при выполнении команд (ток насоса)
  */
 
-#include "mqtt_client.h"
-
-// Объявление функции из pump_node_app.c (если нужна)
-// extern void pump_node_publish_telemetry_example(void);
+#include "mqtt_manager.h"
+#include "ina209.h"
+#include "config_storage.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_system.h"
@@ -27,6 +26,10 @@ static const char *TAG = "pump_node_tasks";
 
 // Периоды задач (в миллисекундах)
 #define HEARTBEAT_INTERVAL_MS      15000 // 15 секунд - heartbeat
+#define DEFAULT_CURRENT_POLL_MS   1000  // 1 секунда по умолчанию для тока насоса
+
+// Глобальная переменная для интервала опроса тока
+static uint32_t s_current_poll_interval_ms = DEFAULT_CURRENT_POLL_MS;
 
 /**
  * @brief Задача публикации heartbeat
@@ -42,7 +45,7 @@ static void task_heartbeat(void *pvParameters) {
     while (1) {
         vTaskDelayUntil(&last_wake_time, interval);
         
-        if (!mqtt_client_is_connected()) {
+        if (!mqtt_manager_is_connected()) {
             continue;
         }
         
@@ -62,7 +65,7 @@ static void task_heartbeat(void *pvParameters) {
             
             char *json_str = cJSON_PrintUnformatted(heartbeat);
             if (json_str) {
-                mqtt_client_publish_heartbeat(json_str);
+                mqtt_manager_publish_heartbeat(json_str);
                 free(json_str);
             }
             cJSON_Delete(heartbeat);
@@ -71,9 +74,120 @@ static void task_heartbeat(void *pvParameters) {
 }
 
 /**
+ * @brief Задача опроса тока насоса (INA209)
+ * 
+ * Периодически опрашивает INA209 и публикует телеметрию pump_bus_current
+ * Интервал опроса берется из NodeConfig для канала "pump_bus_current"
+ */
+static void task_current_poll(void *pvParameters) {
+    ESP_LOGI(TAG, "Current poll task started");
+    
+    TickType_t last_wake_time = xTaskGetTickCount();
+    
+    while (1) {
+        // Получаем актуальный интервал из конфигурации
+        uint32_t poll_interval = s_current_poll_interval_ms;
+        const TickType_t interval = pdMS_TO_TICKS(poll_interval);
+        
+        vTaskDelayUntil(&last_wake_time, interval);
+        
+        if (!mqtt_manager_is_connected()) {
+            ESP_LOGW(TAG, "MQTT not connected, skipping current poll");
+            continue;
+        }
+        
+        // Чтение тока из INA209
+        ina209_reading_t reading;
+        esp_err_t err = ina209_read(&reading);
+        
+        if (err == ESP_OK && reading.valid) {
+            // Получение node_id из config_storage
+            static char node_id[64] = {0};
+            if (node_id[0] == '\0') {
+                if (config_storage_get_node_id(node_id, sizeof(node_id)) != ESP_OK) {
+                    strncpy(node_id, "pump-001", sizeof(node_id) - 1);
+                }
+            }
+            
+            // Публикация телеметрии согласно MQTT_SPEC_FULL.md
+            cJSON *telemetry = cJSON_CreateObject();
+            if (telemetry) {
+                cJSON_AddStringToObject(telemetry, "node_id", node_id);
+                cJSON_AddStringToObject(telemetry, "channel", "pump_bus_current");
+                cJSON_AddStringToObject(telemetry, "metric_type", "CURRENT");
+                cJSON_AddNumberToObject(telemetry, "value", reading.bus_current_ma);
+                cJSON_AddNumberToObject(telemetry, "raw", (double)reading.bus_current_ma);
+                cJSON_AddNumberToObject(telemetry, "timestamp", (double)(esp_timer_get_time() / 1000000));
+                
+                // Дополнительные поля для диагностики
+                cJSON_AddNumberToObject(telemetry, "voltage", reading.bus_voltage_v);
+                cJSON_AddNumberToObject(telemetry, "power", reading.power_mw);
+                
+                char *json_str = cJSON_PrintUnformatted(telemetry);
+                if (json_str) {
+                    mqtt_manager_publish_telemetry("pump_bus_current", json_str);
+                    free(json_str);
+                }
+                cJSON_Delete(telemetry);
+            }
+        } else {
+            ESP_LOGW(TAG, "Failed to read INA209: %s", esp_err_to_name(err));
+        }
+    }
+}
+
+/**
+ * @brief Обновление интервала опроса тока из NodeConfig
+ * 
+ * Ищет канал "pump_bus_current" в NodeConfig и обновляет s_current_poll_interval_ms
+ */
+void pump_node_update_current_poll_interval(void) {
+    char config_json[CONFIG_STORAGE_MAX_JSON_SIZE];
+    if (config_storage_get_json(config_json, sizeof(config_json)) != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to load config for poll interval update");
+        return;
+    }
+    
+    cJSON *config = cJSON_Parse(config_json);
+    if (config == NULL) {
+        ESP_LOGW(TAG, "Failed to parse config for poll interval update");
+        return;
+    }
+    
+    cJSON *channels = cJSON_GetObjectItem(config, "channels");
+    if (channels != NULL && cJSON_IsArray(channels)) {
+        int channel_count = cJSON_GetArraySize(channels);
+        for (int i = 0; i < channel_count; i++) {
+            cJSON *ch = cJSON_GetArrayItem(channels, i);
+            if (ch != NULL && cJSON_IsObject(ch)) {
+                cJSON *name = cJSON_GetObjectItem(ch, "name");
+                if (name != NULL && cJSON_IsString(name) && 
+                    strcmp(name->valuestring, "pump_bus_current") == 0) {
+                    cJSON *poll_interval = cJSON_GetObjectItem(ch, "poll_interval_ms");
+                    if (poll_interval != NULL && cJSON_IsNumber(poll_interval)) {
+                        s_current_poll_interval_ms = (uint32_t)cJSON_GetNumberValue(poll_interval);
+                        ESP_LOGI(TAG, "Updated current poll interval to %lu ms", s_current_poll_interval_ms);
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    
+    cJSON_Delete(config);
+}
+
+/**
  * @brief Запуск FreeRTOS задач
  */
 void pump_node_start_tasks(void) {
+    // Обновляем интервал опроса из конфигурации
+    pump_node_update_current_poll_interval();
+    
+    // Задача опроса тока насоса (если INA209 инициализирован)
+    // Проверяем, что INA209 доступен через pump_driver
+    xTaskCreate(task_current_poll, "current_poll_task", 3072, NULL, 4, NULL);
+    
     // Задача heartbeat
     xTaskCreate(task_heartbeat, "heartbeat_task", 3072, NULL, 3, NULL);
     

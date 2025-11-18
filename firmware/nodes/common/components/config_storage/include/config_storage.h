@@ -119,6 +119,24 @@ esp_err_t config_storage_get_type(char *type, size_t type_size);
 esp_err_t config_storage_get_version(int *version);
 
 /**
+ * @brief Получение gh_uid из конфигурации
+ * 
+ * @param gh_uid Буфер для gh_uid
+ * @param gh_uid_size Размер буфера
+ * @return esp_err_t ESP_OK при успехе
+ */
+esp_err_t config_storage_get_gh_uid(char *gh_uid, size_t gh_uid_size);
+
+/**
+ * @brief Получение zone_uid из конфигурации
+ * 
+ * @param zone_uid Буфер для zone_uid
+ * @param zone_uid_size Размер буфера
+ * @return esp_err_t ESP_OK при успехе
+ */
+esp_err_t config_storage_get_zone_uid(char *zone_uid, size_t zone_uid_size);
+
+/**
  * @brief Получение параметров MQTT из конфигурации
  * 
  * @param mqtt Указатель на структуру для заполнения

@@ -106,6 +106,9 @@ NodeConfig полностью формируется на backend.
 {
  "node_id": "nd-ph-1",
  "version": 3,
+ "type": "ph_node",
+ "gh_uid": "gh-1",
+ "zone_uid": "zn-3",
  "channels": [
  {
  "name": "ph_sensor",
@@ -134,6 +137,11 @@ NodeConfig полностью формируется на backend.
  }
 }
 ```
+
+**Важные поля:**
+- `gh_uid` — уникальный идентификатор теплицы (обязательное поле с версии 3)
+- `zone_uid` — уникальный идентификатор зоны (обязательное поле с версии 3)
+- Используются в MQTT топиках для маршрутизации сообщений
 
 ## 4.2. Применение
 - сохраняется в NVS,
@@ -267,7 +275,9 @@ payload: "offline"
 
 ---
 
-# 10. Безопасность ноды
+# 10. Безопасность ноды и драйверы актуаторов
+
+## 10.1. Защита узла
 
 Узел должен иметь защиту:
 
@@ -277,6 +287,47 @@ payload: "offline"
 - защита от зависания команд
 - защита от дублирующих MQTT сообщений
 - watchdog таймер
+
+## 10.2. Relay Driver
+
+**Компонент:** `firmware/nodes/common/components/relay_driver/`
+
+Абстракция для управления реле:
+
+- Поддержка нормально-замкнутых (NC) и нормально-разомкнутых (NO) реле
+- Управление через GPIO с учётом `active_low`
+- Fail-safe режим для NC-реле (при потере питания реле замкнуто)
+- Инициализация из NodeConfig
+- Используется в `climate_node` для управления реле
+
+**API:**
+- `relay_driver_init_from_config()` — инициализация из NodeConfig
+- `relay_driver_set_state(channel, state)` — установка состояния (OPEN/CLOSED)
+- `relay_driver_get_state(channel)` — получение текущего состояния
+
+## 10.3. Pump Driver
+
+**Компонент:** `firmware/nodes/common/components/pump_driver/`
+
+Абстракция для управления насосами:
+
+- Интеграция с INA209 для мониторинга тока
+- Проверка overcurrent и no-flow при запуске насоса
+- Поддержка управления через relay_driver (для NC-реле)
+- Безопасные лимиты (max_duration_ms, min_off_time_ms)
+- Дозирование по объёму (ml_per_second)
+- Используется в `ec_node` и `pump_node`
+
+**API:**
+- `pump_driver_init_from_config()` — инициализация из NodeConfig
+- `pump_driver_run(channel, duration_ms)` — запуск насоса на заданное время
+- `pump_driver_dose(channel, dose_ml)` — дозирование по объёму
+- `pump_driver_set_ina209_config(config)` — настройка INA209 для проверки тока
+
+**Интеграция INA209:**
+- Проверка тока после запуска насоса (стабилизация 200ms)
+- Пороги из NodeConfig (`limits.currentMin`, `limits.currentMax`)
+- Ошибки: `current_not_detected` (ESP_ERR_INVALID_RESPONSE), `overcurrent` (ESP_ERR_INVALID_SIZE)
 
 ---
 
@@ -290,12 +341,34 @@ payload: "offline"
 
 ---
 
-# 12. Wi-Fi архитектура
+# 12. Wi-Fi архитектура и Setup Mode
 
-## Режимы:
+## 12.1. Режимы:
 - STA (обычный режим)
 - Wi‑Fi Reconnect Loop
 - Ping watchdog
+- **Setup Mode (AP режим)** — для первичной настройки
+
+## 12.2. Setup Portal (Provisioning)
+
+При первом запуске или отсутствии Wi-Fi конфигурации:
+
+- Узел переходит в режим Access Point (AP)
+- SSID: `{NODE_TYPE}_SETUP_{PIN}`, где PIN генерируется из MAC-адреса
+- Пароль: `hydro2025` (настраивается)
+- HTTP-сервер для ввода Wi-Fi credentials
+- После получения credentials:
+  - Сохранение в NVS через `config_storage`
+  - Перезагрузка устройства
+  - Подключение к указанной Wi-Fi сети
+
+**Реализовано для всех типов нод:**
+- `ph_node`
+- `ec_node`
+- `climate_node`
+- `pump_node`
+
+**Компонент:** `firmware/nodes/common/components/setup_portal/`
 
 ---
 
@@ -321,13 +394,53 @@ payload: "offline"
 
 ---
 
-# 15. Будущие расширения
+# 15. Реализованные компоненты (статус: 2025-01-27)
+
+## 15.1. Компоненты прошивки
+
+✅ **config_storage** — хранение NodeConfig в NVS
+- Поддержка версии 3 с `gh_uid` и `zone_uid`
+- Функции: `config_storage_get_gh_uid()`, `config_storage_get_zone_uid()`
+
+✅ **setup_portal** — первичная настройка Wi-Fi
+- AP режим с веб-интерфейсом
+- Генерация PIN из MAC-адреса
+- Интеграция с config_storage
+
+✅ **relay_driver** — управление реле
+- Поддержка NC/NO реле
+- Интеграция в `climate_node`
+
+✅ **pump_driver** — управление насосами
+- Интеграция INA209 для проверки тока
+- Периодический опрос тока в `pump_node`
+- Интеграция в `ec_node` и `pump_node`
+
+✅ **Graceful переподключение Wi-Fi/MQTT**
+- Автоматическое переподключение при изменении NodeConfig
+- Реализовано в `pump_node`
+
+## 15.2. Backend компоненты
+
+✅ **Water Cycle Engine** (`backend/services/common/water_cycle.py`)
+- Логика циркуляции с учётом NC-реле
+- Проверка EC drift для смены воды
+- Точная логика duty_cycle (циклы по 10 минут)
+- Фиксация параметров после стабилизации
+
+✅ **Pump Safety Engine** (`backend/services/common/pump_safety.py`)
+- Проверка MCU offline
+- Получение порогов из конфигурации узла
+- Улучшенная проверка pump_stuck_on с учётом типов насосов
+
+# 16. Будущие расширения
 
 - Каналы для CO₂
 - PWM-регулирование света
 - Поддержка RS485 модулей
 - Zero‑conf добавление нод
 - Поддержка ESP‑Now fallback
+- ML калибровка Digital Twin
 
 ---
 

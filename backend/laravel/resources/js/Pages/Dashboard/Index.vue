@@ -90,45 +90,85 @@
           <div class="text-sm text-neutral-400">Нет проблемных зон</div>
         </Card>
       </div>
+
+      <!-- Мини-графики телеметрии (если есть зоны) -->
+      <div v-if="hasZonesForTelemetry" class="mb-6">
+        <h2 class="text-md font-semibold mb-3">Телеметрия за 24 часа</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+          <MiniTelemetryChart
+            v-for="metric in telemetryMetrics"
+            :key="metric.key"
+            :label="metric.label"
+            :data="metric.data"
+            :current-value="metric.currentValue"
+            :unit="metric.unit"
+            :loading="metric.loading"
+            :color="metric.color"
+          />
+        </div>
+      </div>
+
+      <!-- Heatmap зон по статусам -->
+      <div v-if="hasZones" class="mb-6">
+        <h2 class="text-md font-semibold mb-3">Статусы зон</h2>
+        <ZonesHeatmap :zones-by-status="zonesStatusSummary" />
+      </div>
     </template>
     <template #context>
       <div class="h-full flex flex-col">
-        <div class="text-neutral-300 font-medium mb-3">Последние алерты</div>
-        <div v-if="hasAlerts" class="space-y-2 flex-1 overflow-y-auto">
-          <div v-for="a in dashboard.latestAlerts" :key="a.id" class="rounded-lg border border-neutral-800 bg-neutral-925 p-3">
+        <div class="text-neutral-300 font-medium mb-3">Последние события</div>
+        
+        <!-- Фильтр по типу событий -->
+        <div class="mb-2 flex gap-1">
+          <button
+            v-for="kind in ['ALL', 'ALERT', 'WARNING', 'INFO']"
+            :key="kind"
+            @click="eventFilter = kind"
+            class="px-2 py-1 text-xs rounded border"
+            :class="eventFilter === kind ? 'border-neutral-600 bg-neutral-800' : 'border-neutral-800 bg-neutral-900'"
+          >
+            {{ kind === 'ALL' ? 'Все' : kind }}
+          </button>
+        </div>
+        
+        <div v-if="filteredEvents.length > 0" class="space-y-2 flex-1 overflow-y-auto">
+          <div v-for="e in filteredEvents" :key="e.id" class="rounded-lg border border-neutral-800 bg-neutral-925 p-2">
             <div class="flex items-start justify-between mb-1">
-              <Badge :variant="a.status === 'active' ? 'danger' : 'neutral'" class="text-xs">
-                {{ translateStatus(a.status) }}
+              <Badge 
+                :variant="e.kind === 'ALERT' ? 'danger' : e.kind === 'WARNING' ? 'warning' : 'info'" 
+                class="text-xs"
+              >
+                {{ e.kind }}
               </Badge>
-              <span class="text-xs text-neutral-500">{{ formatTime(a.created_at) }}</span>
+              <span class="text-xs text-neutral-500">{{ formatTime(e.occurred_at || e.created_at) }}</span>
             </div>
-            <div class="text-xs text-neutral-400 mb-1">{{ a.type }}</div>
-            <div v-if="a.zone" class="text-xs text-neutral-500 mb-1">
-              Зона: <Link :href="`/zones/${a.zone.id}`" class="text-sky-400 hover:underline">{{ a.zone.name }}</Link>
+            <div v-if="e.zone_id" class="text-xs text-neutral-500 mb-1">
+              Зона ID: {{ e.zone_id }}
             </div>
-            <div v-else-if="a.zone_id" class="text-xs text-neutral-500 mb-1">
-              Зона ID: {{ a.zone_id }}
-            </div>
-            <div v-if="a.details && a.details.message" class="text-sm text-neutral-300 mt-1">
-              {{ a.details.message }}
+            <div class="text-sm text-neutral-300 mt-1">
+              {{ e.message }}
             </div>
           </div>
         </div>
-        <div v-else class="text-neutral-500 text-sm">Нет алертов</div>
+        <div v-else class="text-neutral-500 text-sm">Нет событий</div>
       </div>
     </template>
   </AppLayout>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { Link } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
+import MiniTelemetryChart from '@/Components/MiniTelemetryChart.vue'
+import ZonesHeatmap from '@/Components/ZonesHeatmap.vue'
 import { translateStatus } from '@/utils/i18n'
 import { formatTime } from '@/utils/formatTime'
+import { useTelemetry } from '@/composables/useTelemetry'
+import { useWebSocket } from '@/composables/useWebSocket'
 
 const props = defineProps({
   dashboard: {
@@ -150,6 +190,152 @@ const hasGreenhouses = computed(() => {
 const hasProblematicZones = computed(() => {
   const zones = props.dashboard.problematicZones
   return zones && Array.isArray(zones) && zones.length > 0
+})
+
+const hasZones = computed(() => {
+  return props.dashboard.zonesCount > 0
+})
+
+const hasZonesForTelemetry = computed(() => {
+  return props.dashboard.zonesCount > 0
+})
+
+// Телеметрия для мини-графиков
+const { fetchAggregates } = useTelemetry()
+const { subscribeToGlobalEvents } = useWebSocket()
+const telemetryData = ref({
+  ph: { data: [], currentValue: null, loading: false },
+  ec: { data: [], currentValue: null, loading: false },
+  temp: { data: [], currentValue: null, loading: false },
+  humidity: { data: [], currentValue: null, loading: false },
+})
+
+// События для боковой панели
+const events = ref([])
+const eventFilter = ref('ALL')
+
+// Объединяем события из props и WebSocket
+const allEvents = computed(() => {
+  const propsEvents = (props.dashboard.latestAlerts || []).map(a => ({
+    id: a.id,
+    kind: 'ALERT',
+    message: a.details?.message || a.type,
+    zone_id: a.zone_id,
+    occurred_at: a.created_at,
+    created_at: a.created_at
+  }))
+  
+  return [...events.value, ...propsEvents].sort((a, b) => {
+    const timeA = new Date(a.occurred_at || a.created_at).getTime()
+    const timeB = new Date(b.occurred_at || b.created_at).getTime()
+    return timeB - timeA
+  }).slice(0, 20)
+})
+
+const filteredEvents = computed(() => {
+  if (eventFilter.value === 'ALL') {
+    return allEvents.value
+  }
+  return allEvents.value.filter(e => e.kind === eventFilter.value)
+})
+
+// Получаем первую зону для отображения телеметрии (можно расширить для всех зон)
+const firstZoneId = computed(() => {
+  if (props.dashboard.problematicZones && props.dashboard.problematicZones.length > 0) {
+    return props.dashboard.problematicZones[0].id
+  }
+  return null
+})
+
+const telemetryMetrics = computed(() => [
+  {
+    key: 'ph',
+    label: 'pH',
+    data: telemetryData.value.ph.data,
+    currentValue: telemetryData.value.ph.currentValue,
+    unit: '',
+    loading: telemetryData.value.ph.loading,
+    color: '#3b82f6'
+  },
+  {
+    key: 'ec',
+    label: 'EC',
+    data: telemetryData.value.ec.data,
+    currentValue: telemetryData.value.ec.currentValue,
+    unit: 'мСм/см',
+    loading: telemetryData.value.ec.loading,
+    color: '#10b981'
+  },
+  {
+    key: 'temp',
+    label: 'Температура',
+    data: telemetryData.value.temp.data,
+    currentValue: telemetryData.value.temp.currentValue,
+    unit: '°C',
+    loading: telemetryData.value.temp.loading,
+    color: '#f59e0b'
+  },
+  {
+    key: 'humidity',
+    label: 'Влажность',
+    data: telemetryData.value.humidity.data,
+    currentValue: telemetryData.value.humidity.currentValue,
+    unit: '%',
+    loading: telemetryData.value.humidity.loading,
+    color: '#8b5cf6'
+  }
+])
+
+async function loadTelemetryMetrics() {
+  if (!firstZoneId.value) return
+
+  const metrics = ['ph', 'ec', 'temp', 'humidity']
+  
+  for (const metric of metrics) {
+    telemetryData.value[metric].loading = true
+    try {
+      const data = await fetchAggregates(firstZoneId.value, metric, '24h')
+      telemetryData.value[metric].data = data.map(item => ({
+        ts: new Date(item.ts).getTime(),
+        value: item.value,
+        avg: item.avg,
+        min: item.min,
+        max: item.max
+      }))
+      // Текущее значение - последнее значение из данных
+      if (data.length > 0) {
+        telemetryData.value[metric].currentValue = data[data.length - 1].value || data[data.length - 1].avg
+      }
+    } catch (err) {
+      console.error(`Failed to load ${metric} telemetry:`, err)
+    } finally {
+      telemetryData.value[metric].loading = false
+    }
+  }
+}
+
+onMounted(() => {
+  if (hasZonesForTelemetry.value) {
+    loadTelemetryMetrics()
+  }
+  
+  // Подписаться на глобальные события
+  subscribeToGlobalEvents((event) => {
+    // Добавляем событие в начало списка
+    events.value.unshift({
+      id: event.id,
+      kind: event.kind,
+      message: event.message,
+      zone_id: event.zoneId,
+      occurred_at: event.occurredAt,
+      created_at: event.occurredAt
+    })
+    
+    // Ограничиваем список 20 событиями
+    if (events.value.length > 20) {
+      events.value = events.value.slice(0, 20)
+    }
+  })
 })
 
 </script>

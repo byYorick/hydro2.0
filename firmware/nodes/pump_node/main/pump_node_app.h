@@ -27,6 +27,11 @@ void pump_node_publish_telemetry_example(void);
  */
 void pump_node_publish_heartbeat_example(void);
 
+/**
+ * @brief Обновление интервала опроса тока из NodeConfig
+ */
+void pump_node_update_current_poll_interval(void);
+
 #ifdef __cplusplus
 }
 #endif

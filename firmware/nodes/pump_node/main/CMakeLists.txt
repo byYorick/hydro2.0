@@ -1,0 +1,24 @@
+idf_component_register(
+    SRCS 
+        "main.c"
+        "pump_node_app.c"
+        "pump_node_tasks.c"
+    INCLUDE_DIRS 
+        "."
+    REQUIRES 
+        mqtt_manager
+        mqtt_client
+        wifi_manager
+        config_storage
+        pump_driver
+        setup_portal
+        esp_wifi
+        nvs_flash
+        esp_netif
+        esp_event
+        freertos
+        mqtt
+        esp_timer
+        json
+)
+

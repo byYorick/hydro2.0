@@ -60,6 +60,16 @@ services:
       - REVERB_SCHEME=http
       - REVERB_DEBUG=false
       - REVERB_AUTO_START=${REVERB_AUTO_START:-true}
+      # Vite environment variables for WebSocket (передаются при сборке)
+      - VITE_ENABLE_WS=true
+      - VITE_REVERB_APP_KEY=${REVERB_APP_KEY:-change-me}
+      - VITE_REVERB_HOST=${REVERB_HOST:-0.0.0.0}
+      - VITE_REVERB_PORT=6001
+      - VITE_REVERB_SCHEME=http
+      - VITE_PUSHER_APP_KEY=${REVERB_APP_KEY:-change-me}
+      - VITE_WS_HOST=${REVERB_HOST:-0.0.0.0}
+      - VITE_WS_PORT=6001
+      - VITE_WS_TLS=false
     volumes:
       - ./laravel:/app
     ports:

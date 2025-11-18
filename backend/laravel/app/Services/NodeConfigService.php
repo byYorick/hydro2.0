@@ -18,14 +18,25 @@ class NodeConfigService
      */
     public function generateNodeConfig(DeviceNode $node, ?int $version = null): array
     {
-        // Загружаем каналы узла
-        $node->load('channels');
+        // Загружаем каналы узла и связанные данные
+        $node->load(['channels', 'zone.greenhouse']);
         
         // Определяем версию конфига
         if ($version === null) {
-            // Берём версию из config узла или устанавливаем 1
+            // Берём версию из config узла или устанавливаем 3 (текущая версия с gh_uid/zone_uid)
             $nodeConfig = $node->config ?? [];
-            $version = $nodeConfig['version'] ?? 1;
+            $version = $nodeConfig['version'] ?? 3;
+        }
+        
+        // Получаем gh_uid и zone_uid из связанной зоны и теплицы
+        $ghUid = 'gh-1'; // Значение по умолчанию
+        $zoneUid = 'zn-1'; // Значение по умолчанию
+        
+        if ($node->zone) {
+            $zoneUid = $node->zone->uid ?? 'zn-' . $node->zone->id;
+            if ($node->zone->greenhouse) {
+                $ghUid = $node->zone->greenhouse->uid ?? 'gh-' . $node->zone->greenhouse->id;
+            }
         }
         
         // Формируем channels
@@ -73,6 +84,9 @@ class NodeConfigService
         $nodeConfig = [
             'node_id' => $node->uid,
             'version' => $version,
+            'type' => $node->type ?? 'unknown',
+            'gh_uid' => $ghUid,
+            'zone_uid' => $zoneUid,
             'channels' => $channels,
             'wifi' => $wifi,
             'mqtt' => $mqtt,
@@ -196,6 +210,14 @@ class NodeConfigService
         
         if (!isset($config['version']) || $config['version'] < 1) {
             throw new \InvalidArgumentException('NodeConfig must have valid version');
+        }
+        
+        if (empty($config['gh_uid'])) {
+            throw new \InvalidArgumentException('NodeConfig must have gh_uid');
+        }
+        
+        if (empty($config['zone_uid'])) {
+            throw new \InvalidArgumentException('NodeConfig must have zone_uid');
         }
         
         if (!is_array($config['channels'] ?? null)) {

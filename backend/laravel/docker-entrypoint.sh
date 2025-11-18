@@ -13,6 +13,51 @@ if [ ! -f /app/.env ] || ! grep -q "APP_KEY=base64:" /app/.env 2>/dev/null; then
     php artisan key:generate --force || true
 fi
 
+# Add VITE_* environment variables to .env file if they exist in environment
+# This ensures Vite can access them during build
+if [ -f /app/.env ]; then
+    echo "Updating VITE_* variables in .env file..."
+    # Remove existing VITE_* lines
+    sed -i '/^VITE_/d' /app/.env 2>/dev/null || true
+    
+    # Add VITE_* variables from environment
+    env | grep '^VITE_' | while read -r line; do
+        if ! grep -q "^${line%%=*}=" /app/.env 2>/dev/null; then
+            echo "$line" >> /app/.env
+        fi
+    done
+    
+    # Ensure VITE variables are set with defaults if not in environment
+    if ! grep -q "^VITE_ENABLE_WS=" /app/.env 2>/dev/null; then
+        echo "VITE_ENABLE_WS=true" >> /app/.env
+    fi
+    if ! grep -q "^VITE_REVERB_APP_KEY=" /app/.env 2>/dev/null; then
+        echo "VITE_REVERB_APP_KEY=${REVERB_APP_KEY:-local}" >> /app/.env
+    fi
+    if ! grep -q "^VITE_PUSHER_APP_KEY=" /app/.env 2>/dev/null; then
+        echo "VITE_PUSHER_APP_KEY=${REVERB_APP_KEY:-local}" >> /app/.env
+    fi
+    if ! grep -q "^VITE_REVERB_HOST=" /app/.env 2>/dev/null; then
+        # For dev mode, use localhost so browser can connect from host
+        echo "VITE_REVERB_HOST=localhost" >> /app/.env
+    fi
+    if ! grep -q "^VITE_WS_HOST=" /app/.env 2>/dev/null; then
+        echo "VITE_WS_HOST=localhost" >> /app/.env
+    fi
+    if ! grep -q "^VITE_REVERB_PORT=" /app/.env 2>/dev/null; then
+        echo "VITE_REVERB_PORT=${REVERB_PORT:-6001}" >> /app/.env
+    fi
+    if ! grep -q "^VITE_WS_PORT=" /app/.env 2>/dev/null; then
+        echo "VITE_WS_PORT=${REVERB_PORT:-6001}" >> /app/.env
+    fi
+    if ! grep -q "^VITE_REVERB_SCHEME=" /app/.env 2>/dev/null; then
+        echo "VITE_REVERB_SCHEME=${REVERB_SCHEME:-http}" >> /app/.env
+    fi
+    if ! grep -q "^VITE_WS_TLS=" /app/.env 2>/dev/null; then
+        echo "VITE_WS_TLS=false" >> /app/.env
+    fi
+fi
+
 # Configure PHP for development (disable opcache if APP_ENV=local)
 if [ "${APP_ENV:-production}" = "local" ]; then
     echo "Development mode detected: configuring PHP for hot reload..."

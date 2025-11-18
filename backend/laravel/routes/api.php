@@ -58,6 +58,7 @@ Route::middleware([
     Route::get('zones/{id}/telemetry/last', [TelemetryController::class, 'zoneLast']);
     Route::get('zones/{id}/telemetry/history', [TelemetryController::class, 'zoneHistory']);
     Route::get('nodes/{id}/telemetry/last', [TelemetryController::class, 'nodeLast']);
+    Route::get('telemetry/aggregates', [TelemetryController::class, 'aggregates']);
 
     // Recipes attach/change-phase
     Route::post('zones/{zone}/attach-recipe', [ZoneController::class, 'attachRecipe']);

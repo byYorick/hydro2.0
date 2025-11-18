@@ -14,10 +14,11 @@ logger = logging.getLogger(__name__)
 
 # Пороги для безопасности насосов
 MIN_WATER_LEVEL = 0.15  # 15% - минимальный уровень для работы насоса
-CURRENT_IDLE_THRESHOLD = 50.0  # mA - порог тока в режиме простоя
+CURRENT_IDLE_THRESHOLD = 50.0  # mA - порог тока в режиме простоя (по умолчанию)
 DRY_RUN_CHECK_DELAY_SEC = 3  # Задержка перед проверкой flow после запуска насоса
 MAX_RECENT_FAILURES = 3  # Максимальное количество недавних ошибок
 FAILURE_WINDOW_MINUTES = 30  # Окно времени для подсчёта ошибок
+MCU_OFFLINE_TIMEOUT_SEC = 300  # 5 минут - время без телеметрии для определения offline
 
 
 async def check_dry_run(zone_id: int, min_water_level: Optional[float] = None) -> tuple[bool, Optional[str]]:
@@ -116,12 +117,125 @@ async def check_no_flow(
     return True, None
 
 
+async def check_mcu_offline(zone_id: int, node_id: Optional[int] = None) -> tuple[bool, Optional[str]]:
+    """
+    Проверка, не оффлайн ли MCU (узел).
+    
+    Проверяет последнюю телеметрию или heartbeat узла.
+    
+    Args:
+        zone_id: ID зоны
+        node_id: ID узла (опционально, если не указан, проверяются все узлы зоны)
+    
+    Returns:
+        (is_online, error_message): True если MCU онлайн, False если оффлайн
+    """
+    if node_id is not None:
+        # Проверяем конкретный узел
+        rows = await fetch(
+            """
+            SELECT n.id, n.status, MAX(tl.updated_at) as last_telemetry
+            FROM nodes n
+            LEFT JOIN telemetry_last tl ON tl.node_id = n.id
+            WHERE n.id = $1 AND n.zone_id = $2
+            GROUP BY n.id, n.status
+            """,
+            node_id,
+            zone_id,
+        )
+    else:
+        # Проверяем все узлы зоны
+        rows = await fetch(
+            """
+            SELECT n.id, n.status, MAX(tl.updated_at) as last_telemetry
+            FROM nodes n
+            LEFT JOIN telemetry_last tl ON tl.node_id = n.id
+            WHERE n.zone_id = $1
+            GROUP BY n.id, n.status
+            """,
+            zone_id,
+        )
+    
+    if not rows:
+        return False, "No nodes found for zone"
+    
+    now = datetime.utcnow()
+    for row in rows:
+        node_status = row.get("status")
+        last_telemetry = row.get("last_telemetry")
+        
+        # Проверяем статус узла
+        if node_status != "online":
+            return False, f"Node {row['id']} status is {node_status}"
+        
+        # Проверяем последнюю телеметрию
+        if last_telemetry:
+            elapsed_sec = (now - last_telemetry).total_seconds()
+            if elapsed_sec > MCU_OFFLINE_TIMEOUT_SEC:
+                return False, f"Node {row['id']} offline: no telemetry for {elapsed_sec:.0f}s"
+        else:
+            # Если нет телеметрии вообще, считаем оффлайн
+            return False, f"Node {row['id']} offline: no telemetry data"
+    
+    return True, None
+
+
+async def get_pump_thresholds(zone_id: int, pump_channel: str) -> Dict[str, float]:
+    """
+    Получить пороги безопасности для насоса из конфигурации узла.
+    
+    Args:
+        zone_id: ID зоны
+        pump_channel: Канал насоса
+    
+    Returns:
+        Словарь с порогами: {"current_min": float, "current_max": float, "idle_threshold": float}
+    """
+    rows = await fetch(
+        """
+        SELECT n.config, nc.config as channel_config
+        FROM nodes n
+        LEFT JOIN node_channels nc ON nc.node_id = n.id AND nc.channel = $1
+        WHERE n.zone_id = $2 AND n.status = 'online'
+        LIMIT 1
+        """,
+        pump_channel,
+        zone_id,
+    )
+    
+    if not rows:
+        # Возвращаем значения по умолчанию
+        return {
+            "current_min": 0.1,
+            "current_max": 2.5,
+            "idle_threshold": CURRENT_IDLE_THRESHOLD
+        }
+    
+    node_config = rows[0].get("config") or {}
+    channel_config = rows[0].get("channel_config") or {}
+    
+    # Получаем пороги из limits в NodeConfig
+    limits = node_config.get("limits", {})
+    current_min = float(limits.get("currentMin", 0.1))
+    current_max = float(limits.get("currentMax", 2.5))
+    
+    # Idle threshold = 10% от current_max или значение по умолчанию
+    idle_threshold = max(CURRENT_IDLE_THRESHOLD, current_max * 0.1)
+    
+    return {
+        "current_min": current_min,
+        "current_max": current_max,
+        "idle_threshold": idle_threshold
+    }
+
+
 async def check_pump_stuck_on(
     zone_id: int,
     pump_channel: str,
     desired_state: str,
     current_ma: Optional[float] = None,
-    flow_value: Optional[float] = None
+    flow_value: Optional[float] = None,
+    node_id: Optional[int] = None
 ) -> tuple[bool, Optional[str]]:
     """
     Проверка залипшего насоса (pump_stuck_on).
@@ -143,8 +257,19 @@ async def check_pump_stuck_on(
         # Проверяем только если желаемое состояние OFF
         return True, None
     
+    # Проверяем MCU offline
+    mcu_online, mcu_error = await check_mcu_offline(zone_id, node_id)
+    if not mcu_online:
+        logger.warning(f"Zone {zone_id}, pump {pump_channel}: {mcu_error}")
+        # Если MCU оффлайн, не можем проверить stuck_on, возвращаем True (не блокируем)
+        return True, None
+    
+    # Получаем пороги из конфигурации
+    thresholds = await get_pump_thresholds(zone_id, pump_channel)
+    idle_threshold = thresholds["idle_threshold"]
+    
     # Проверяем ток
-    if current_ma is not None and current_ma > CURRENT_IDLE_THRESHOLD:
+    if current_ma is not None and current_ma > idle_threshold:
         # Создаём alert
         await create_alert(
             zone_id=zone_id,
@@ -156,14 +281,14 @@ async def check_pump_stuck_on(
                 "pump_channel": pump_channel,
                 "desired_state": desired_state,
                 "current_ma": current_ma,
-                "threshold_ma": CURRENT_IDLE_THRESHOLD
+                "threshold_ma": idle_threshold
             }
         )
         logger.error(
             f"Zone {zone_id}, pump {pump_channel}: Pump stuck ON - "
-            f"desired_state={desired_state}, current_ma={current_ma} > {CURRENT_IDLE_THRESHOLD}"
+            f"desired_state={desired_state}, current_ma={current_ma} > {idle_threshold}"
         )
-        return False, f"Pump stuck ON: current={current_ma} mA > {CURRENT_IDLE_THRESHOLD} mA"
+        return False, f"Pump stuck ON: current={current_ma} mA > {idle_threshold} mA"
     
     # Проверяем flow (если ток не доступен)
     if current_ma is None and flow_value is not None and flow_value > MIN_FLOW_THRESHOLD:
@@ -271,12 +396,14 @@ async def too_many_recent_failures(
 async def can_run_pump(
     zone_id: int,
     pump_channel: str,
-    min_water_level: Optional[float] = None
+    min_water_level: Optional[float] = None,
+    node_id: Optional[int] = None
 ) -> tuple[bool, Optional[str]]:
     """
     Общая функция проверки безопасности перед запуском насоса.
     
     Проверяет:
+    - MCU offline
     - Активные критические алерты
     - Уровень воды (dry_run)
     - Количество недавних ошибок
@@ -285,10 +412,16 @@ async def can_run_pump(
         zone_id: ID зоны
         pump_channel: Канал насоса
         min_water_level: Минимальный уровень воды (опционально)
+        node_id: ID узла (опционально, для проверки конкретного узла)
     
     Returns:
         (can_run, error_message): True если можно запустить, False если нельзя
     """
+    # Проверяем MCU offline
+    mcu_online, mcu_error = await check_mcu_offline(zone_id, node_id)
+    if not mcu_online:
+        return False, f"MCU offline: {mcu_error}"
+    
     # Проверяем активные критические алерты
     active_alerts = await get_active_critical_alerts(zone_id)
     critical_codes = {

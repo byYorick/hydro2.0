@@ -9,6 +9,8 @@ from common.pump_safety import (
     can_run_pump,
     get_active_critical_alerts,
     too_many_recent_failures,
+    check_mcu_offline,
+    get_pump_thresholds,
     MIN_WATER_LEVEL,
     CURRENT_IDLE_THRESHOLD,
     DRY_RUN_CHECK_DELAY_SEC,
@@ -93,7 +95,15 @@ async def test_check_no_flow_ok():
 @pytest.mark.asyncio
 async def test_check_pump_stuck_on_by_current():
     """Test pump stuck on detection by current."""
-    with patch("common.pump_safety.create_alert") as mock_alert:
+    with patch("common.pump_safety.check_mcu_offline") as mock_mcu, \
+         patch("common.pump_safety.get_pump_thresholds") as mock_thresholds, \
+         patch("common.pump_safety.create_alert") as mock_alert:
+        mock_mcu.return_value = (True, None)  # MCU онлайн
+        mock_thresholds.return_value = {
+            "current_min": 0.1,
+            "current_max": 2.5,
+            "idle_threshold": CURRENT_IDLE_THRESHOLD,
+        }
         # Желаемое состояние OFF, но ток > порога
         is_ok, error_msg = await check_pump_stuck_on(
             1, "pump_recirc", "OFF", current_ma=100.0, flow_value=None
@@ -110,7 +120,15 @@ async def test_check_pump_stuck_on_by_current():
 @pytest.mark.asyncio
 async def test_check_pump_stuck_on_by_flow():
     """Test pump stuck on detection by flow."""
-    with patch("common.pump_safety.create_alert") as mock_alert:
+    with patch("common.pump_safety.check_mcu_offline") as mock_mcu, \
+         patch("common.pump_safety.get_pump_thresholds") as mock_thresholds, \
+         patch("common.pump_safety.create_alert") as mock_alert:
+        mock_mcu.return_value = (True, None)  # MCU онлайн
+        mock_thresholds.return_value = {
+            "current_min": 0.1,
+            "current_max": 2.5,
+            "idle_threshold": CURRENT_IDLE_THRESHOLD,
+        }
         # Желаемое состояние OFF, но flow > порога
         is_ok, error_msg = await check_pump_stuck_on(
             1, "pump_recirc", "OFF", current_ma=None, flow_value=0.5
@@ -125,13 +143,21 @@ async def test_check_pump_stuck_on_by_flow():
 @pytest.mark.asyncio
 async def test_check_pump_stuck_on_ok():
     """Test pump stuck on check when pump is actually off."""
-    # Желаемое состояние OFF, ток и flow в норме
-    is_ok, error_msg = await check_pump_stuck_on(
-        1, "pump_recirc", "OFF", current_ma=10.0, flow_value=0.0
-    )
-    
-    assert is_ok is True
-    assert error_msg is None
+    with patch("common.pump_safety.check_mcu_offline") as mock_mcu, \
+         patch("common.pump_safety.get_pump_thresholds") as mock_thresholds:
+        mock_mcu.return_value = (True, None)  # MCU онлайн
+        mock_thresholds.return_value = {
+            "current_min": 0.1,
+            "current_max": 2.5,
+            "idle_threshold": CURRENT_IDLE_THRESHOLD,
+        }
+        # Желаемое состояние OFF, ток и flow в норме
+        is_ok, error_msg = await check_pump_stuck_on(
+            1, "pump_recirc", "OFF", current_ma=10.0, flow_value=0.0
+        )
+        
+        assert is_ok is True
+        assert error_msg is None
 
 
 @pytest.mark.asyncio
@@ -215,7 +241,9 @@ async def test_can_run_pump_with_active_critical_alert():
         }
     ]
     
-    with patch("common.pump_safety.get_active_critical_alerts") as mock_get_alerts:
+    with patch("common.pump_safety.check_mcu_offline") as mock_mcu, \
+         patch("common.pump_safety.get_active_critical_alerts") as mock_get_alerts:
+        mock_mcu.return_value = (True, None)  # MCU онлайн
         mock_get_alerts.return_value = mock_alerts
         
         can_run, error_msg = await can_run_pump(1, "pump_recirc")
@@ -227,8 +255,10 @@ async def test_can_run_pump_with_active_critical_alert():
 @pytest.mark.asyncio
 async def test_can_run_pump_dry_run():
     """Test can_run_pump when dry run detected."""
-    with patch("common.pump_safety.get_active_critical_alerts") as mock_get_alerts, \
+    with patch("common.pump_safety.check_mcu_offline") as mock_mcu, \
+         patch("common.pump_safety.get_active_critical_alerts") as mock_get_alerts, \
          patch("common.pump_safety.check_dry_run") as mock_dry_run:
+        mock_mcu.return_value = (True, None)  # MCU онлайн
         mock_get_alerts.return_value = []  # Нет активных алертов
         mock_dry_run.return_value = (False, "Water level too low")
         
@@ -241,9 +271,11 @@ async def test_can_run_pump_dry_run():
 @pytest.mark.asyncio
 async def test_can_run_pump_too_many_failures():
     """Test can_run_pump when too many recent failures."""
-    with patch("common.pump_safety.get_active_critical_alerts") as mock_get_alerts, \
+    with patch("common.pump_safety.check_mcu_offline") as mock_mcu, \
+         patch("common.pump_safety.get_active_critical_alerts") as mock_get_alerts, \
          patch("common.pump_safety.check_dry_run") as mock_dry_run, \
          patch("common.pump_safety.too_many_recent_failures") as mock_failures:
+        mock_mcu.return_value = (True, None)  # MCU онлайн
         mock_get_alerts.return_value = []
         mock_dry_run.return_value = (True, None)
         mock_failures.return_value = True
@@ -259,13 +291,177 @@ async def test_can_run_pump_ok():
     """Test can_run_pump when all checks pass."""
     with patch("common.pump_safety.get_active_critical_alerts") as mock_get_alerts, \
          patch("common.pump_safety.check_dry_run") as mock_dry_run, \
-         patch("common.pump_safety.too_many_recent_failures") as mock_failures:
+         patch("common.pump_safety.too_many_recent_failures") as mock_failures, \
+         patch("common.pump_safety.check_mcu_offline") as mock_mcu:
         mock_get_alerts.return_value = []
         mock_dry_run.return_value = (True, None)
         mock_failures.return_value = False
+        mock_mcu.return_value = (True, None)  # MCU онлайн
         
         can_run, error_msg = await can_run_pump(1, "pump_recirc")
         
         assert can_run is True
         assert error_msg is None
+
+
+@pytest.mark.asyncio
+async def test_check_mcu_offline_online():
+    """Test MCU offline check when MCU is online."""
+    now = datetime.utcnow()
+    mock_nodes = [
+        {
+            "id": 1,
+            "status": "online",
+            "last_telemetry": now - timedelta(seconds=60),  # Телеметрия 1 минуту назад
+        }
+    ]
+    
+    with patch("common.pump_safety.fetch") as mock_fetch:
+        mock_fetch.return_value = mock_nodes
+        
+        is_online, error_msg = await check_mcu_offline(1)
+        
+        assert is_online is True
+        assert error_msg is None
+
+
+@pytest.mark.asyncio
+async def test_check_mcu_offline_offline():
+    """Test MCU offline check when MCU is offline."""
+    now = datetime.utcnow()
+    mock_nodes = [
+        {
+            "id": 1,
+            "status": "online",
+            "last_telemetry": now - timedelta(seconds=400),  # Телеметрия 400 секунд назад (> 300)
+        }
+    ]
+    
+    with patch("common.pump_safety.fetch") as mock_fetch:
+        mock_fetch.return_value = mock_nodes
+        
+        is_online, error_msg = await check_mcu_offline(1)
+        
+        assert is_online is False
+        assert error_msg is not None
+        assert "offline" in error_msg.lower()
+
+
+@pytest.mark.asyncio
+async def test_check_mcu_offline_no_telemetry():
+    """Test MCU offline check when no telemetry data."""
+    mock_nodes = [
+        {
+            "id": 1,
+            "status": "online",
+            "last_telemetry": None,  # Нет телеметрии
+        }
+    ]
+    
+    with patch("common.pump_safety.fetch") as mock_fetch:
+        mock_fetch.return_value = mock_nodes
+        
+        is_online, error_msg = await check_mcu_offline(1)
+        
+        assert is_online is False
+        assert error_msg is not None
+        assert "no telemetry" in error_msg.lower()
+
+
+@pytest.mark.asyncio
+async def test_check_mcu_offline_wrong_status():
+    """Test MCU offline check when node status is not online."""
+    mock_nodes = [
+        {
+            "id": 1,
+            "status": "offline",
+            "last_telemetry": datetime.utcnow(),
+        }
+    ]
+    
+    with patch("common.pump_safety.fetch") as mock_fetch:
+        mock_fetch.return_value = mock_nodes
+        
+        is_online, error_msg = await check_mcu_offline(1)
+        
+        assert is_online is False
+        assert error_msg is not None
+        assert "status" in error_msg.lower()
+
+
+@pytest.mark.asyncio
+async def test_get_pump_thresholds_from_config():
+    """Test getting pump thresholds from node config."""
+    mock_config = {
+        "config": {
+            "limits": {
+                "currentMin": 0.2,
+                "currentMax": 2.0,
+            }
+        },
+        "channel_config": {},
+    }
+    
+    with patch("common.pump_safety.fetch") as mock_fetch:
+        mock_fetch.return_value = [mock_config]
+        
+        from common.pump_safety import get_pump_thresholds
+        thresholds = await get_pump_thresholds(1, "pump_recirc")
+        
+        assert thresholds["current_min"] == 0.2
+        assert thresholds["current_max"] == 2.0
+        assert thresholds["idle_threshold"] >= 0.2  # Idle threshold = max(50.0, 2.0 * 0.1) = max(50.0, 0.2) = 50.0
+
+
+@pytest.mark.asyncio
+async def test_get_pump_thresholds_defaults():
+    """Test getting pump thresholds with defaults."""
+    with patch("common.pump_safety.fetch") as mock_fetch:
+        mock_fetch.return_value = []  # Нет конфигурации
+        
+        from common.pump_safety import get_pump_thresholds
+        thresholds = await get_pump_thresholds(1, "pump_recirc")
+        
+        assert thresholds["current_min"] == 0.1
+        assert thresholds["current_max"] == 2.5
+        assert thresholds["idle_threshold"] == CURRENT_IDLE_THRESHOLD
+
+
+@pytest.mark.asyncio
+async def test_check_pump_stuck_on_with_thresholds():
+    """Test pump stuck on check with thresholds from config."""
+    with patch("common.pump_safety.check_mcu_offline") as mock_mcu, \
+         patch("common.pump_safety.get_pump_thresholds") as mock_thresholds, \
+         patch("common.pump_safety.create_alert") as mock_alert:
+        mock_mcu.return_value = (True, None)  # MCU онлайн
+        mock_thresholds.return_value = {
+            "current_min": 0.2,
+            "current_max": 2.0,
+            "idle_threshold": 100.0,  # Кастомный порог
+        }
+        
+        # Ток 120 мА > порога 100 мА
+        is_ok, error_msg = await check_pump_stuck_on(
+            1, "pump_recirc", "OFF", current_ma=120.0, flow_value=None, node_id=1
+        )
+        
+        assert is_ok is False
+        assert "Pump stuck ON" in error_msg
+        mock_alert.assert_called_once()
+        call_args = mock_alert.call_args
+        assert call_args[1]["code"] == AlertCode.BIZ_PUMP_STUCK_ON.value
+        # Проверяем, что использовался кастомный порог
+        assert call_args[1]["details"]["threshold_ma"] == 100.0
+
+
+@pytest.mark.asyncio
+async def test_can_run_pump_mcu_offline():
+    """Test can_run_pump when MCU is offline."""
+    with patch("common.pump_safety.check_mcu_offline") as mock_mcu:
+        mock_mcu.return_value = (False, "Node 1 offline: no telemetry for 400s")
+        
+        can_run, error_msg = await can_run_pump(1, "pump_recirc")
+        
+        assert can_run is False
+        assert "MCU offline" in error_msg
 

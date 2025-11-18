@@ -4,6 +4,7 @@ Digital Twin Engine - симуляция зон для тестирования 
 import asyncio
 import json
 from typing import Dict, Any, List, Optional
+from fastapi import Query
 from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
@@ -19,6 +20,9 @@ app = FastAPI(title="Digital Twin Engine")
 
 # Модели для симуляции
 from models import PHModel, ECModel, ClimateModel
+import logging
+
+logging.basicConfig(level=logging.INFO)
 
 
 class SimulationRequest(BaseModel):
@@ -71,10 +75,14 @@ async def simulate_zone(request: SimulationRequest) -> Dict[str, Any]:
         temp_water = initial_state.get("temp_water", 20.0)
         humidity_air = initial_state.get("humidity_air", 60.0)
 
-        # Инициализация моделей
-        ph_model = PHModel()
-        ec_model = ECModel()
-        climate_model = ClimateModel()
+        # Получаем калиброванные параметры для зоны (опционально, можно кэшировать)
+        # Для MVP используем дефолтные параметры, калибровку можно вызывать отдельно
+        calibrated_params = None
+        
+        # Инициализация моделей с калиброванными параметрами (если есть)
+        ph_model = PHModel(calibrated_params.get("ph") if calibrated_params else None)
+        ec_model = ECModel(calibrated_params.get("ec") if calibrated_params else None)
+        climate_model = ClimateModel(calibrated_params.get("climate") if calibrated_params else None)
 
         # Результаты симуляции
         points = []
@@ -168,36 +176,33 @@ async def simulate_zone_endpoint(request: SimulationRequest):
 
 
 @app.post("/calibrate/zone/{zone_id}")
-async def calibrate_zone(zone_id: int):
+async def calibrate_zone(zone_id: int, days: int = Query(7, ge=1, le=30)):
     """
     Калибровка параметров модели по историческим данным.
-    Пока заглушка - в будущем можно реализовать ML-калибровку.
+    
+    Args:
+        zone_id: ID зоны для калибровки
+        days: Количество дней исторических данных для анализа (по умолчанию 7)
+    
+    Returns:
+        Калиброванные параметры моделей
     """
-    # TODO: Реализовать калибровку по историческим данным
-    # Пока возвращаем дефолтные параметры
-    return JSONResponse(content={
-        "status": "ok",
-        "data": {
-            "zone_id": zone_id,
-            "models": {
-                "ph": {
-                    "buffer_capacity": 0.1,
-                    "natural_drift": 0.01,
-                    "correction_rate": 0.05,
-                },
-                "ec": {
-                    "evaporation_rate": 0.02,
-                    "dilution_rate": 0.01,
-                    "nutrient_addition_rate": 0.03,
-                },
-                "climate": {
-                    "heat_loss_rate": 0.5,
-                    "humidity_decay_rate": 0.02,
-                    "ventilation_cooling": 1.0,
-                },
-            },
-        },
-    })
+    from calibration import calibrate_zone_models
+    
+    try:
+        result = await calibrate_zone_models(zone_id, days)
+        
+        # Сохраняем калиброванные параметры в БД (опционально)
+        # Можно создать таблицу zone_model_params для хранения
+        
+        return JSONResponse(content={
+            "status": "ok",
+            "data": result,
+        })
+    except Exception as e:
+        import logging
+        logging.error(f"Calibration failed for zone {zone_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Calibration failed: {str(e)}")
 
 
 @app.get("/health")

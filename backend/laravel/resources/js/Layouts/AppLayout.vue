@@ -49,6 +49,9 @@
       </div>
       
       <main class="flex-1">
+        <!-- Header Status Bar (всегда видимый) -->
+        <HeaderStatusBar />
+        
         <header class="h-16 flex items-center justify-between px-4 border-b border-neutral-800 bg-neutral-925 lg:hidden">
           <div class="flex items-center gap-3">
             <button
@@ -80,13 +83,20 @@
   </div>
   </template>
   
-  <script setup>
-  import { ref } from 'vue'
-  import CommandPalette from '@/Components/CommandPalette.vue'
-  import NavLink from '@/Components/NavLink.vue'
+<script setup>
+import { ref, onMounted } from 'vue'
+import CommandPalette from '@/Components/CommandPalette.vue'
+import NavLink from '@/Components/NavLink.vue'
+import HeaderStatusBar from '@/Components/HeaderStatusBar.vue'
+import { useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts'
   
-  const showMobileMenu = ref(false)
-  </script>
+const showMobileMenu = ref(false)
+
+// Инициализируем keyboard shortcuts
+onMounted(() => {
+  useKeyboardShortcuts()
+})
+</script>
   
   <style>
   :root {

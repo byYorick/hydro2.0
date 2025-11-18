@@ -192,6 +192,14 @@ esp_err_t config_storage_get_version(int *version) {
     return get_json_number_field("version", version);
 }
 
+esp_err_t config_storage_get_gh_uid(char *gh_uid, size_t gh_uid_size) {
+    return get_json_string_field("gh_uid", gh_uid, gh_uid_size);
+}
+
+esp_err_t config_storage_get_zone_uid(char *zone_uid, size_t zone_uid_size) {
+    return get_json_string_field("zone_uid", zone_uid, zone_uid_size);
+}
+
 esp_err_t config_storage_get_mqtt(config_storage_mqtt_t *mqtt) {
     if (mqtt == NULL) {
         return ESP_ERR_INVALID_ARG;
@@ -311,6 +319,8 @@ esp_err_t config_storage_validate(const char *json_config, size_t json_len,
     cJSON *node_id = cJSON_GetObjectItem(config, "node_id");
     cJSON *version = cJSON_GetObjectItem(config, "version");
     cJSON *type = cJSON_GetObjectItem(config, "type");
+    cJSON *gh_uid = cJSON_GetObjectItem(config, "gh_uid");
+    cJSON *zone_uid = cJSON_GetObjectItem(config, "zone_uid");
     cJSON *channels = cJSON_GetObjectItem(config, "channels");
     cJSON *wifi = cJSON_GetObjectItem(config, "wifi");
     cJSON *mqtt = cJSON_GetObjectItem(config, "mqtt");
@@ -335,6 +345,22 @@ esp_err_t config_storage_validate(const char *json_config, size_t json_len,
         cJSON_Delete(config);
         if (error_msg && error_msg_size > 0) {
             strncpy(error_msg, "Missing or invalid type", error_msg_size - 1);
+        }
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (!cJSON_IsString(gh_uid)) {
+        cJSON_Delete(config);
+        if (error_msg && error_msg_size > 0) {
+            strncpy(error_msg, "Missing or invalid gh_uid", error_msg_size - 1);
+        }
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (!cJSON_IsString(zone_uid)) {
+        cJSON_Delete(config);
+        if (error_msg && error_msg_size > 0) {
+            strncpy(error_msg, "Missing or invalid zone_uid", error_msg_size - 1);
         }
         return ESP_ERR_INVALID_ARG;
     }

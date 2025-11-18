@@ -163,8 +163,8 @@ describe('ZoneTargets.vue', () => {
     expect(cards.length).toBe(4)
     expect(wrapper.text()).toContain('pH')
     expect(wrapper.text()).toContain('EC')
-    expect(wrapper.text()).toContain('Temperature')
-    expect(wrapper.text()).toContain('Humidity')
+    expect(wrapper.text()).toContain('Температура')
+    expect(wrapper.text()).toContain('Влажность')
   })
 
   it('правильно форматирует температуру и влажность', () => {

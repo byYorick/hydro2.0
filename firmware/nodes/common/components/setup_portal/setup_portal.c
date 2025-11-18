@@ -267,14 +267,8 @@ esp_err_t setup_portal_generate_pin(char *pin_out, size_t pin_size) {
     return ESP_OK;
 }
 
-// Callback wrapper for full setup mode
-static void credentials_callback_wrapper(const setup_portal_credentials_t *creds, void *ctx) {
-    (void)ctx; // Unused
-    if (creds && s_full_setup_sem) {
-        save_credentials_to_config_storage(creds);
-        xSemaphoreGive(s_full_setup_sem);
-    }
-}
+// Forward declaration
+static void credentials_callback_wrapper(const setup_portal_credentials_t *creds, void *ctx);
 
 // Internal callback for saving credentials to config_storage
 static void save_credentials_to_config_storage(const setup_portal_credentials_t *credentials) {
@@ -356,6 +350,15 @@ static void save_credentials_to_config_storage(const setup_portal_credentials_t 
             free(json_str);
         }
         cJSON_Delete(config);
+    }
+}
+
+// Callback wrapper for full setup mode
+static void credentials_callback_wrapper(const setup_portal_credentials_t *creds, void *ctx) {
+    (void)ctx; // Unused
+    if (creds && s_full_setup_sem) {
+        save_credentials_to_config_storage(creds);
+        xSemaphoreGive(s_full_setup_sem);
     }
 }
 

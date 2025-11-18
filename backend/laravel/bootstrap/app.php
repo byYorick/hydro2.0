@@ -22,9 +22,10 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => \App\Http\Middleware\EnsureUserHasRole::class,
         ]);
         
-        // Exclude API routes from CSRF verification
+        // Exclude API routes and broadcasting auth from CSRF verification
         $middleware->validateCsrfTokens(except: [
             'api/*',
+            'broadcasting/auth',
         ]);
         
         // Note: Session middleware is NOT added globally to API routes

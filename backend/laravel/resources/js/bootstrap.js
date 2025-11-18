@@ -18,12 +18,15 @@ import Echo from 'laravel-echo';
 import Pusher from 'pusher-js';
 window.Pusher = Pusher;
 
-const wsHost = import.meta.env.VITE_WS_HOST || window.location.hostname;
-const wsPort = Number(import.meta.env.VITE_WS_PORT || 8080);
-const useTLS = String(import.meta.env.VITE_WS_TLS || 'false') === 'true';
+// Поддержка как Reverb, так и Pusher переменных для совместимости
+const wsHost = import.meta.env.VITE_REVERB_HOST || import.meta.env.VITE_WS_HOST || window.location.hostname;
+const wsPort = Number(import.meta.env.VITE_REVERB_PORT || import.meta.env.VITE_WS_PORT || 6001);
+const useTLS = String(import.meta.env.VITE_REVERB_SCHEME || import.meta.env.VITE_WS_TLS || 'false') === 'true' || 
+               String(import.meta.env.VITE_REVERB_SCHEME || 'http') === 'https';
 const cluster = import.meta.env.VITE_PUSHER_APP_CLUSTER || 'mt1';
-const appKey = import.meta.env.VITE_PUSHER_APP_KEY;
-const wsEnabled = String(import.meta.env.VITE_ENABLE_WS || 'false') === 'true';
+// Поддержка как REVERB, так и PUSHER ключей
+const appKey = import.meta.env.VITE_REVERB_APP_KEY || import.meta.env.VITE_PUSHER_APP_KEY;
+const wsEnabled = String(import.meta.env.VITE_ENABLE_WS || 'true') === 'true';
 
 // Axios error logging to console
 window.axios.interceptors.response.use(
@@ -52,19 +55,34 @@ window.axios.interceptors.response.use(
 
 try {
   if (wsEnabled && appKey) {
+    console.log('[bootstrap.js] Инициализация Echo:', { wsHost, wsPort, appKey: appKey ? '***' : 'missing', useTLS });
     window.Echo = new Echo({
       broadcaster: 'pusher',
       key: appKey,
       cluster,
       wsHost,
       wsPort,
+      wssPort: wsPort,
       forceTLS: useTLS,
       disableStats: true,
       enabledTransports: ['ws', 'wss'],
+      // Дополнительные опции для Reverb
+      authEndpoint: '/broadcasting/auth',
+      auth: {
+        headers: {
+          'X-CSRF-TOKEN': csrfToken || '',
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+      },
+      // Используем сессии для аутентификации
+      withCredentials: true,
     });
+    console.log('[bootstrap.js] Echo инициализирован успешно');
+  } else {
+    console.warn('[bootstrap.js] Echo не инициализирован:', { wsEnabled, appKey: !!appKey });
   }
 } catch (e) {
-  console.warn('Echo init disabled:', e?.message || e);
+  console.error('[bootstrap.js] Ошибка инициализации Echo:', e?.message || e);
   window.Echo = undefined;
 }
 

@@ -300,10 +300,24 @@ esp_err_t ph_node_init_components(void) {
         ESP_LOGW(TAG, "Using default node ID");
     }
     
-    // gh_uid and zone_uid are not stored in NodeConfig yet, use defaults
-    // TODO: Add these fields to NodeConfig or get from another source
-    node_info.gh_uid = default_gh_uid;
-    node_info.zone_uid = default_zone_uid;
+    // Get gh_uid and zone_uid from NodeConfig
+    static char gh_uid[CONFIG_STORAGE_MAX_STRING_LEN];
+    static char zone_uid[CONFIG_STORAGE_MAX_STRING_LEN];
+    if (config_storage_get_gh_uid(gh_uid, sizeof(gh_uid)) == ESP_OK) {
+        node_info.gh_uid = gh_uid;
+        ESP_LOGI(TAG, "GH UID from config: %s", gh_uid);
+    } else {
+        node_info.gh_uid = default_gh_uid;
+        ESP_LOGW(TAG, "GH UID not found in config, using default: %s", default_gh_uid);
+    }
+    
+    if (config_storage_get_zone_uid(zone_uid, sizeof(zone_uid)) == ESP_OK) {
+        node_info.zone_uid = zone_uid;
+        ESP_LOGI(TAG, "Zone UID from config: %s", zone_uid);
+    } else {
+        node_info.zone_uid = default_zone_uid;
+        ESP_LOGW(TAG, "Zone UID not found in config, using default: %s", default_zone_uid);
+    }
     
     err = mqtt_manager_init(&mqtt_config, &node_info);
     if (err != ESP_OK) {

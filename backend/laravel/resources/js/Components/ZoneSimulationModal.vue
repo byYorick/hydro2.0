@@ -78,7 +78,7 @@
               />
             </div>
             <div class="col-span-2">
-              <label class="block text-xs text-neutral-400 mb-1">Humidity (%)</label>
+              <label class="block text-xs text-neutral-400 mb-1">Влажность (%)</label>
               <input
                 v-model.number="form.initial_state.humidity_air"
                 type="number"

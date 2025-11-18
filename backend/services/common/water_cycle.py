@@ -264,9 +264,19 @@ async def tick_recirculation(
     else:
         # В окне расписания - проверяем duty_cycle
         duty_cycle = schedule[0].get("duty_cycle", 0.5) if schedule else 0.5
-        # Упрощённая логика: включаем/выключаем по duty_cycle
-        # TODO: Реализовать более точную логику с учётом времени
-        desired_state = "ON"  # По умолчанию ON для NC-насоса
+        
+        # Точная логика duty_cycle: разбиваем время на циклы
+        # Цикл = 10 минут (600 секунд) - можно настроить
+        cycle_duration_sec = 600
+        cycle_position_sec = int(now.timestamp()) % cycle_duration_sec
+        
+        # Вычисляем, должен ли насос быть ON в текущий момент цикла
+        on_duration_sec = int(cycle_duration_sec * duty_cycle)
+        
+        if cycle_position_sec < on_duration_sec:
+            desired_state = "ON"
+        else:
+            desired_state = "OFF"
     
     # Проверяем ограничение max_recirc_off_minutes
     max_off_minutes = recirc_cfg.get("max_recirc_off_minutes", 10)
@@ -366,6 +376,19 @@ async def tick_recirculation(
     # Для NC-насоса: relay OPEN = насос OFF, relay CLOSED = насос ON
     relay_state = "OPEN" if desired_state == "OFF" else "CLOSED"
     
+    # Если включаем насос, добавляем информацию для мониторинга no_flow
+    event_details = {
+        'desired_state': desired_state,
+        'relay_state': relay_state,
+        'is_nc_pump': is_nc_pump,
+        'max_off_minutes': max_off_minutes,
+    }
+    
+    if desired_state == "ON":
+        # Добавляем время запуска для мониторинга no_flow
+        event_details['pump_start_time'] = now.isoformat()
+        event_details['monitor_no_flow'] = True
+    
     return {
         'node_uid': node_info["uid"],
         'channel': pump_channel,
@@ -375,12 +398,7 @@ async def tick_recirculation(
             'reason': 'recirculation_control'
         },
         'event_type': 'RECIRCULATION_STATE_CHANGED',
-        'event_details': {
-            'desired_state': desired_state,
-            'relay_state': relay_state,
-            'is_nc_pump': is_nc_pump,
-            'max_off_minutes': max_off_minutes,
-        }
+        'event_details': event_details
     }
 
 
@@ -425,8 +443,54 @@ async def check_water_change_required(zone_id: int) -> Tuple[bool, Optional[str]
     # Проверяем EC drift (если включён)
     if water_change_cfg.get("trigger_by_ec_drift", False):
         ec_drift_threshold = water_change_cfg.get("ec_drift_threshold", 30)
-        # TODO: Вычислить EC drift из истории телеметрии
-        # Пока пропускаем эту проверку
+        
+        # Получаем начальное значение EC (при solution_started_at или в течение первых 2 часов)
+        initial_ec_window = solution_started_at + timedelta(hours=2)
+        initial_ec_rows = await fetch(
+            """
+            SELECT AVG(value) as avg_value
+            FROM telemetry_samples
+            WHERE zone_id = $1 
+              AND metric_type = 'EC'
+              AND created_at >= $2
+              AND created_at <= $3
+            """,
+            zone_id,
+            solution_started_at,
+            initial_ec_window,
+        )
+        
+        if initial_ec_rows and initial_ec_rows[0].get("avg_value") is not None:
+            initial_ec = float(initial_ec_rows[0]["avg_value"])
+            
+            # Получаем текущее значение EC (последние 2 часа)
+            recent_cutoff = now - timedelta(hours=2)
+            current_ec_rows = await fetch(
+                """
+                SELECT AVG(value) as avg_value
+                FROM telemetry_samples
+                WHERE zone_id = $1 
+                  AND metric_type = 'EC'
+                  AND created_at >= $2
+                """,
+                zone_id,
+                recent_cutoff,
+            )
+            
+            if current_ec_rows and current_ec_rows[0].get("avg_value") is not None:
+                current_ec = float(current_ec_rows[0]["avg_value"])
+                
+                # Вычисляем процент дрифта: |current - initial| / initial * 100
+                if initial_ec > 0:
+                    ec_drift_percent = abs(current_ec - initial_ec) / initial_ec * 100.0
+                    
+                    if ec_drift_percent >= ec_drift_threshold:
+                        logger.info(
+                            f"Zone {zone_id}: EC drift detected - "
+                            f"initial={initial_ec:.3f}, current={current_ec:.3f}, "
+                            f"drift={ec_drift_percent:.1f}% >= {ec_drift_threshold}%"
+                        )
+                        return True, f"EC drift {ec_drift_percent:.1f}% >= {ec_drift_threshold}%"
     
     return False, None
 
@@ -556,8 +620,24 @@ async def execute_water_change(
         elapsed_minutes = (datetime.utcnow() - solution_started_at).total_seconds() / 60.0
         
         if elapsed_minutes >= stabilize_minutes:
-            # Фиксируем параметры
-            # TODO: Получить текущие pH, EC, temperature из telemetry_last
+            # Фиксируем параметры после стабилизации
+            # Получаем текущие pH, EC, temperature из telemetry_last
+            params_rows = await fetch(
+                """
+                SELECT metric_type, value
+                FROM telemetry_last
+                WHERE zone_id = $1 
+                  AND metric_type IN ('PH', 'EC', 'TEMPERATURE')
+                """,
+                zone_id,
+            )
+            
+            stabilized_params = {}
+            for row in params_rows:
+                metric_type = row["metric_type"]
+                value = row.get("value")
+                if value is not None:
+                    stabilized_params[metric_type.lower()] = float(value)
             
             # Создаём событие завершения смены воды
             await create_zone_event(
@@ -566,7 +646,8 @@ async def execute_water_change(
                 {
                     'zone_id': zone_id,
                     'solution_started_at': solution_started_at.isoformat(),
-                    'completed_at': datetime.utcnow().isoformat()
+                    'completed_at': datetime.utcnow().isoformat(),
+                    'stabilized_params': stabilized_params
                 }
             )
             

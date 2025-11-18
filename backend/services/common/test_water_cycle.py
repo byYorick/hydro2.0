@@ -308,6 +308,115 @@ async def test_check_water_change_required_not_required():
 
 
 @pytest.mark.asyncio
+async def test_check_water_change_required_by_ec_drift():
+    """Test water change required by EC drift."""
+    solution_started_at = datetime.utcnow() - timedelta(days=3)
+    config = {
+        "water_change": {
+            "enabled": True,
+            "interval_days": 7,
+            "max_solution_age_days": 10,
+            "trigger_by_ec_drift": True,
+            "ec_drift_threshold": 30,
+        },
+    }
+    
+    # Начальное EC = 1.5, текущее EC = 2.0, дрифт = (2.0 - 1.5) / 1.5 * 100 = 33.3% > 30%
+    with patch("common.water_cycle.get_zone_water_cycle_config") as mock_config, \
+         patch("common.water_cycle.get_solution_started_at") as mock_started, \
+         patch("common.water_cycle.fetch") as mock_fetch:
+        mock_config.return_value = config
+        mock_started.return_value = solution_started_at
+        # Первый вызов - начальное EC (первые 2 часа), второй - текущее EC (последние 2 часа)
+        mock_fetch.side_effect = [
+            [{"avg_value": 1.5}],  # Начальное EC
+            [{"avg_value": 2.0}],  # Текущее EC
+        ]
+        
+        required, reason = await check_water_change_required(1)
+        
+        assert required is True
+        assert "EC drift" in reason
+        assert "33" in reason or "30" in reason  # Дрифт 33.3% >= 30%
+
+
+@pytest.mark.asyncio
+async def test_check_water_change_required_ec_drift_below_threshold():
+    """Test water change not required when EC drift is below threshold."""
+    solution_started_at = datetime.utcnow() - timedelta(days=3)
+    config = {
+        "water_change": {
+            "enabled": True,
+            "interval_days": 7,
+            "max_solution_age_days": 10,
+            "trigger_by_ec_drift": True,
+            "ec_drift_threshold": 30,
+        },
+    }
+    
+    # Начальное EC = 1.5, текущее EC = 1.6, дрифт = (1.6 - 1.5) / 1.5 * 100 = 6.7% < 30%
+    with patch("common.water_cycle.get_zone_water_cycle_config") as mock_config, \
+         patch("common.water_cycle.get_solution_started_at") as mock_started, \
+         patch("common.water_cycle.fetch") as mock_fetch:
+        mock_config.return_value = config
+        mock_started.return_value = solution_started_at
+        mock_fetch.side_effect = [
+            [{"avg_value": 1.5}],  # Начальное EC
+            [{"avg_value": 1.6}],  # Текущее EC
+        ]
+        
+        required, reason = await check_water_change_required(1)
+        
+        assert required is False
+        assert reason is None
+
+
+@pytest.mark.asyncio
+async def test_tick_recirculation_duty_cycle():
+    """Test tick recirculation with duty cycle logic."""
+    # Время, когда насос должен быть ON (в первой половине 10-минутного цикла)
+    now = datetime(2025, 1, 27, 14, 0, 30)  # 14:00:30 - позиция в цикле: 30 сек из 600
+    config = {
+        "mode": "RECIRCULATING",
+        "recirc": {
+            "enabled": True,
+            "schedule": [{"from": "08:00", "to": "18:00", "duty_cycle": 0.5}],
+            "max_recirc_off_minutes": 10,
+        },
+    }
+    
+    node_info = {
+        "id": 1,
+        "uid": "nd-recirc-1",
+        "type": "recirculation",
+        "channel": "pump_recirc",
+        "config": {"fail_safe_mode": "NC"},
+    }
+    
+    with patch("common.water_cycle.get_zone_water_cycle_config") as mock_config, \
+         patch("common.water_cycle.fetch") as mock_fetch, \
+         patch("common.water_cycle.check_pump_stuck_on") as mock_stuck, \
+         patch("common.water_cycle.can_run_pump") as mock_can_run:
+        mock_config.return_value = config
+        mock_fetch.side_effect = [
+            [node_info],  # Узлы
+            [],  # Ток
+            [],  # Flow
+            [],  # Последнее состояние (нет)
+        ]
+        mock_stuck.return_value = (True, None)
+        mock_can_run.return_value = (True, None)
+        
+        mqtt_client = Mock()
+        result = await tick_recirculation(1, mqtt_client, "gh-1", now)
+        
+        # Должна быть команда для управления насосом
+        assert result is not None
+        # С duty_cycle=0.5 и позицией 30 сек из 600, насос должен быть ON
+        assert result["event_details"]["desired_state"] == "ON"
+
+
+@pytest.mark.asyncio
 async def test_check_water_change_required_disabled():
     """Test water change check when disabled."""
     config = {
@@ -348,7 +457,11 @@ async def test_execute_water_change_drain():
          patch("common.water_cycle.set_zone_water_state") as mock_set_state, \
          patch("common.water_cycle.create_zone_event") as mock_event, \
          patch("common.water_cycle.fetch") as mock_fetch, \
-         patch("common.water_cycle.execute_drain_mode") as mock_drain:
+         patch("common.water_cycle.execute_drain_mode") as mock_drain, \
+         patch("common.water_cycle.execute_fill_mode") as mock_fill, \
+         patch("common.water_flow.create_zone_event") as mock_flow_event, \
+         patch("common.water_cycle.set_solution_started_at") as mock_set_started, \
+         patch("common.db.execute") as mock_execute:
         mock_fetch.return_value = [
             {
                 "id": 1,
@@ -357,6 +470,7 @@ async def test_execute_water_change_drain():
             }
         ]
         mock_drain.return_value = drain_result
+        mock_fill.return_value = {"success": True}  # Для следующего состояния
         
         result = await execute_water_change(1, mqtt_client, "gh-1")
         
@@ -376,9 +490,15 @@ async def test_execute_water_change_fill():
     with patch("common.water_cycle.get_zone_water_state") as mock_get_state, \
          patch("common.water_cycle.set_zone_water_state") as mock_set_state, \
          patch("common.water_cycle.create_zone_event") as mock_event, \
-         patch("common.water_cycle.execute_fill_mode") as mock_fill:
+         patch("common.water_cycle.execute_fill_mode") as mock_fill, \
+         patch("common.water_cycle.get_solution_started_at") as mock_started, \
+         patch("common.water_cycle.set_solution_started_at") as mock_set_started, \
+         patch("common.water_cycle.fetch") as mock_fetch, \
+         patch("common.water_flow.create_zone_event") as mock_flow_event, \
+         patch("common.db.execute") as mock_execute:
         mock_get_state.return_value = WATER_STATE_WATER_CHANGE_FILL
         mock_fill.return_value = fill_result
+        mock_started.return_value = None  # Нет solution_started_at, будет установлен
         
         result = await execute_water_change(1, mqtt_client, "gh-1")
         
@@ -393,13 +513,20 @@ async def test_execute_water_change_stabilize():
     mqtt_client = Mock()
     solution_started_at = datetime.utcnow() - timedelta(minutes=35)
     
+    mock_params = [
+        {"metric_type": "PH", "value": 6.5},
+        {"metric_type": "EC", "value": 1.8},
+    ]
+    
     with patch("common.water_cycle.get_zone_water_state") as mock_get_state, \
          patch("common.water_cycle.set_zone_water_state") as mock_set_state, \
          patch("common.water_cycle.create_zone_event") as mock_event, \
          patch("common.water_cycle.get_solution_started_at") as mock_started, \
-         patch("common.water_cycle.set_solution_started_at") as mock_set_started:
+         patch("common.water_cycle.set_solution_started_at") as mock_set_started, \
+         patch("common.water_cycle.fetch") as mock_fetch:
         mock_get_state.return_value = WATER_STATE_WATER_CHANGE_STABILIZE
         mock_started.return_value = solution_started_at
+        mock_fetch.return_value = mock_params  # Параметры для фиксации
         
         result = await execute_water_change(1, mqtt_client, "gh-1")
         
@@ -471,4 +598,43 @@ async def test_execute_water_change_drain_failed():
         # Проверяем, что был вызов для возврата в NORMAL_RECIRC при ошибке
         normal_recirc_calls = [call for call in mock_set_state.call_args_list if len(call[0]) > 1 and call[0][1] == WATER_STATE_NORMAL_RECIRC]
         assert len(normal_recirc_calls) >= 1
+
+
+@pytest.mark.asyncio
+async def test_execute_water_change_stabilize_with_params():
+    """Test execute water change - stabilize phase with parameter fixation."""
+    mqtt_client = Mock()
+    solution_started_at = datetime.utcnow() - timedelta(minutes=35)
+    
+    mock_params = [
+        {"metric_type": "PH", "value": 6.5},
+        {"metric_type": "EC", "value": 1.8},
+        {"metric_type": "TEMPERATURE", "value": 22.5},
+    ]
+    
+    with patch("common.water_cycle.get_zone_water_state") as mock_get_state, \
+         patch("common.water_cycle.set_zone_water_state") as mock_set_state, \
+         patch("common.water_cycle.create_zone_event") as mock_event, \
+         patch("common.water_cycle.get_solution_started_at") as mock_started, \
+         patch("common.water_cycle.set_solution_started_at") as mock_set_started, \
+         patch("common.water_cycle.fetch") as mock_fetch:
+        mock_get_state.return_value = WATER_STATE_WATER_CHANGE_STABILIZE
+        mock_started.return_value = solution_started_at
+        mock_fetch.return_value = mock_params
+        
+        result = await execute_water_change(1, mqtt_client, "gh-1")
+        
+        # Должен завершиться и вернуться в NORMAL_RECIRC
+        assert result["success"] is True
+        assert result["state"] == WATER_STATE_NORMAL_RECIRC
+        mock_set_state.assert_called_with(1, WATER_STATE_NORMAL_RECIRC)
+        
+        # Проверяем, что были зафиксированы параметры
+        event_calls = [call for call in mock_event.call_args_list if len(call[0]) > 1 and call[0][1] == "WATER_CHANGE_COMPLETED"]
+        assert len(event_calls) >= 1
+        event_details = event_calls[0][0][2]
+        assert "stabilized_params" in event_details
+        assert event_details["stabilized_params"]["ph"] == 6.5
+        assert event_details["stabilized_params"]["ec"] == 1.8
+        assert event_details["stabilized_params"]["temperature"] == 22.5
 

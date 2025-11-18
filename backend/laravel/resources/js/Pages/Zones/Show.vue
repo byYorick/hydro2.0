@@ -42,7 +42,7 @@
             <Button size="sm" variant="secondary" @click="onToggle" :disabled="loading.toggle">
               {{ zone.status === 'PAUSED' ? 'Возобновить' : 'Приостановить' }}
             </Button>
-            <Button size="sm" variant="outline" @click="showIrrigationModal = true" :disabled="loading.irrigate">
+            <Button size="sm" variant="outline" @click="openActionModal('FORCE_IRRIGATION')" :disabled="loading.irrigate">
               Полить сейчас
             </Button>
             <Button size="sm" @click="onNextPhase" :disabled="loading.nextPhase">
@@ -91,12 +91,43 @@
       <Card>
         <div class="text-sm font-semibold mb-3">Циклы</div>
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
-          <div v-for="cycle in cyclesList" :key="cycle.type" class="text-xs text-neutral-400 p-2 rounded border border-neutral-800">
-            <div class="font-semibold text-sm mb-1">{{ translateCycleType(cycle.type) }}</div>
-            <div class="text-xs">Стратегия: {{ translateStrategy(cycle.strategy || 'periodic') }}</div>
-            <div class="text-xs mt-1">Интервал: {{ cycle.interval ? formatInterval(cycle.interval) : 'Не настроено' }}</div>
-            <div class="text-xs mt-1">Последний запуск: {{ formatTimeShort(cycle.last_run) }}</div>
-            <div class="text-xs mt-1">Следующий запуск: {{ formatTimeShort(cycle.next_run) }}</div>
+          <div v-for="cycle in cyclesList" :key="cycle.type" class="text-xs text-neutral-400 p-3 rounded border border-neutral-800 bg-neutral-925 hover:border-neutral-700 transition-colors">
+            <div class="font-semibold text-sm mb-2 text-neutral-200">{{ translateCycleType(cycle.type) }}</div>
+            <div class="text-xs mb-1">Стратегия: {{ translateStrategy(cycle.strategy || 'periodic') }}</div>
+            <div class="text-xs mb-2">Интервал: {{ cycle.interval ? formatInterval(cycle.interval) : 'Не настроено' }}</div>
+            
+            <!-- Последний запуск с индикатором -->
+            <div class="mb-2">
+              <div class="text-xs text-neutral-500 mb-1">Последний запуск:</div>
+              <div class="flex items-center gap-2">
+                <div v-if="cycle.last_run" class="w-2 h-2 rounded-full bg-emerald-400"></div>
+                <div v-else class="w-2 h-2 rounded-full bg-neutral-600"></div>
+                <span class="text-xs text-neutral-300">{{ formatTimeShort(cycle.last_run) }}</span>
+              </div>
+            </div>
+            
+            <!-- Следующий запуск с прогресс-баром -->
+            <div class="mb-2">
+              <div class="text-xs text-neutral-500 mb-1">Следующий запуск:</div>
+              <div v-if="cycle.next_run" class="space-y-1">
+                <div class="flex items-center gap-2">
+                  <div class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></div>
+                  <span class="text-xs text-neutral-300">{{ formatTimeShort(cycle.next_run) }}</span>
+                </div>
+                <!-- Прогресс-бар до следующего запуска -->
+                <div v-if="cycle.last_run && cycle.interval" class="w-full h-1.5 bg-neutral-800 rounded-full overflow-hidden">
+                  <div 
+                    class="h-full bg-amber-400 transition-all duration-300"
+                    :style="{ width: `${getProgressToNextRun(cycle)}%` }"
+                  ></div>
+                </div>
+                <div v-if="cycle.last_run && cycle.interval" class="text-xs text-neutral-500">
+                  {{ getTimeUntilNextRun(cycle) }}
+                </div>
+              </div>
+              <div v-else class="text-xs text-neutral-500">Не запланирован</div>
+            </div>
+            
             <Button 
               size="sm" 
               variant="secondary" 
@@ -106,6 +137,23 @@
             >
               {{ loading.cycles[cycle.type] ? 'Запуск...' : 'Запустить сейчас' }}
             </Button>
+            
+            <!-- Индикатор статуса последней команды -->
+            <div v-if="getLastCommandStatus(cycle.type)" class="mt-2 text-xs">
+              <div class="flex items-center gap-1">
+                <div 
+                  class="w-1.5 h-1.5 rounded-full"
+                  :class="{
+                    'bg-amber-400 animate-pulse': getLastCommandStatus(cycle.type) === 'pending' || getLastCommandStatus(cycle.type) === 'executing',
+                    'bg-emerald-400': getLastCommandStatus(cycle.type) === 'completed',
+                    'bg-red-400': getLastCommandStatus(cycle.type) === 'failed'
+                  }"
+                ></div>
+                <span class="text-neutral-500">
+                  {{ getCommandStatusText(getLastCommandStatus(cycle.type)) }}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </Card>
@@ -149,28 +197,15 @@
       @close="showSimulationModal = false"
     />
     
-    <!-- Irrigation Modal -->
-    <Modal :open="showIrrigationModal" title="Полив зоны" @close="showIrrigationModal = false">
-      <div class="space-y-3">
-        <div>
-          <label class="text-sm text-neutral-300">Длительность полива (секунды)</label>
-          <input
-            v-model.number="irrigationDuration"
-            type="number"
-            min="1"
-            max="3600"
-            class="mt-1 w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
-            placeholder="10"
-          />
-        </div>
-      </div>
-      <template #footer>
-        <Button size="sm" variant="secondary" @click="showIrrigationModal = false">Отмена</Button>
-        <Button size="sm" @click="onIrrigate(irrigationDuration)" :disabled="loading.irrigate">
-          {{ loading.irrigate ? 'Запуск...' : 'Полить' }}
-        </Button>
-      </template>
-    </Modal>
+    <!-- Модальное окно для действий с параметрами -->
+    <ZoneActionModal
+      v-if="showActionModal"
+      :show="showActionModal"
+      :action-type="currentActionType"
+      :zone-id="zoneId"
+      @close="showActionModal = false"
+      @submit="onActionSubmit"
+    />
   </AppLayout>
 </template>
 
@@ -184,11 +219,15 @@ import Badge from '@/Components/Badge.vue'
 import ZoneTargets from '@/Components/ZoneTargets.vue'
 import Toast from '@/Components/Toast.vue'
 import ZoneSimulationModal from '@/Components/ZoneSimulationModal.vue'
-import Modal from '@/Components/Modal.vue'
+import ZoneActionModal from '@/Components/ZoneActionModal.vue'
 import { translateStatus, translateEventKind, translateCycleType, translateStrategy } from '@/utils/i18n'
 import { formatTimeShort, formatInterval } from '@/utils/formatTime'
 import { logger } from '@/utils/logger'
+import { useCommands } from '@/composables/useCommands'
+import { useTelemetry } from '@/composables/useTelemetry'
+import { useZones } from '@/composables/useZones'
 import { useApi } from '@/composables/useApi'
+import { useWebSocket } from '@/composables/useWebSocket'
 
 const ZoneTelemetryChart = defineAsyncComponent(() => import('@/Pages/Zones/ZoneTelemetryChart.vue'))
 
@@ -200,8 +239,8 @@ let toastIdCounter = 0
 
 // Simulation modal
 const showSimulationModal = ref(false)
-const showIrrigationModal = ref(false)
-const irrigationDuration = ref(10)
+const showActionModal = ref(false)
+const currentActionType = ref('FORCE_IRRIGATION')
 
 // Loading states
 const loading = ref({
@@ -223,8 +262,12 @@ function showToast(message, variant = 'info', duration = 3000) {
   return id
 }
 
-// Инициализация API с Toast (после определения showToast)
+// Инициализация composables с Toast (после определения showToast)
+const { sendZoneCommand, reloadZoneAfterCommand, updateCommandStatus, pendingCommands } = useCommands(showToast)
+const { fetchHistory } = useTelemetry(showToast)
+const { reloadZone } = useZones(showToast)
 const { api } = useApi(showToast)
+const { subscribeToZoneCommands } = useWebSocket(showToast)
 
 function removeToast(id) {
   const index = toasts.value.findIndex(t => t.id === id)
@@ -263,14 +306,70 @@ const cyclesList = computed(() => {
   }))
 })
 
+// Функции для вычисления прогресса до следующего запуска
+function getProgressToNextRun(cycle) {
+  if (!cycle.last_run || !cycle.next_run || !cycle.interval) return 0
+  
+  const now = new Date().getTime()
+  const lastRun = new Date(cycle.last_run).getTime()
+  const nextRun = new Date(cycle.next_run).getTime()
+  
+  if (now >= nextRun) return 100
+  if (now <= lastRun) return 0
+  
+  const total = nextRun - lastRun
+  const elapsed = now - lastRun
+  return Math.min(100, Math.max(0, (elapsed / total) * 100))
+}
+
+function getTimeUntilNextRun(cycle) {
+  if (!cycle.next_run) return ''
+  
+  const now = new Date().getTime()
+  const nextRun = new Date(cycle.next_run).getTime()
+  const diff = nextRun - now
+  
+  if (diff <= 0) return 'Просрочено'
+  
+  const minutes = Math.floor(diff / 60000)
+  const hours = Math.floor(minutes / 60)
+  const days = Math.floor(hours / 24)
+  
+  if (days > 0) return `Через ${days} дн.`
+  if (hours > 0) return `Через ${hours} ч.`
+  if (minutes > 0) return `Через ${minutes} мин.`
+  return 'Скоро'
+}
+
+// Функции для отображения статуса команд
+function getLastCommandStatus(cycleType) {
+  const commandType = `FORCE_${cycleType}`
+  const command = pendingCommands.value.find(cmd => 
+    cmd.type === commandType && 
+    cmd.zoneId === zoneId.value &&
+    (cmd.status === 'pending' || cmd.status === 'executing' || cmd.status === 'completed' || cmd.status === 'failed')
+  )
+  return command?.status || null
+}
+
+function getCommandStatusText(status) {
+  const texts = {
+    'pending': 'Ожидание...',
+    'executing': 'Выполняется...',
+    'completed': 'Выполнено',
+    'failed': 'Ошибка'
+  }
+  return texts[status] || status
+}
+
 // Графики: загрузка данных истории
 const chartTimeRange = ref('24H') // 1H, 24H, 7D, 30D, ALL
 const chartDataPh = ref([])
 const chartDataEc = ref([])
 
-// Загрузка данных истории для графиков
+// Загрузка данных истории для графиков через useTelemetry
 async function loadChartData(metric, timeRange) {
-  if (!zoneId.value) return
+  if (!zoneId.value) return []
   
   const now = new Date()
   let from = null
@@ -293,17 +392,11 @@ async function loadChartData(metric, timeRange) {
   }
   
   try {
-    const params = { metric }
+    const params = {}
     if (from) params.from = from.toISOString()
     params.to = now.toISOString()
     
-    const res = await api.get(`/api/zones/${zoneId.value}/telemetry/history`, { params })
-    
-    const data = res.data?.data || []
-    return data.map(item => ({
-      ts: new Date(item.ts).getTime(),
-      value: item.value,
-    }))
+    return await fetchHistory(zoneId.value, metric, params)
   } catch (err) {
     logger.error(`Failed to load ${metric} history:`, err)
     return []
@@ -322,6 +415,19 @@ onMounted(async () => {
   // Загрузить данные для графиков
   chartDataPh.value = await loadChartData('PH', chartTimeRange.value)
   chartDataEc.value = await loadChartData('EC', chartTimeRange.value)
+  
+  // Подписаться на WebSocket канал команд зоны
+  if (zoneId.value) {
+    subscribeToZoneCommands(zoneId.value, (event) => {
+      // Обновляем статус команды через useCommands
+      updateCommandStatus(event.commandId, event.status, event.message)
+      
+      // Если команда завершена, обновляем зону
+      if (event.status === 'completed' || event.status === 'failed') {
+        reloadZoneAfterCommand(zoneId.value, ['zone', 'cycles'])
+      }
+    })
+  }
 })
 
 async function onRunCycle(cycleType) {
@@ -337,25 +443,12 @@ async function onRunCycle(cycleType) {
   logger.log(`[onRunCycle] Отправка команды ${cycleType} для зоны ${zoneId.value}`)
   
   try {
-    const url = `/api/zones/${zoneId.value}/commands`
-    const payload = {
-      type: `FORCE_${cycleType}`,
-      params: {},
-    }
-    
-    const response = await api.post(url, payload)
-    
-    if (response.data?.status === 'ok') {
-      logger.log(`✓ [onRunCycle] Команда "${cycleName}" отправлена успешно`)
-      showToast(`Команда "${cycleName}" отправлена успешно`, 'success', 3000)
-    } else {
-      logger.warn(`[onRunCycle] Неожиданный ответ:`, response.data)
-      showToast('Неожиданный ответ сервера', 'error', 5000)
-    }
+    await sendZoneCommand(zoneId.value, `FORCE_${cycleType}`, {})
+    logger.log(`✓ [onRunCycle] Команда "${cycleName}" отправлена успешно`)
+    // Обновляем зону и cycles через Inertia partial reload
+    reloadZoneAfterCommand(zoneId.value, ['zone', 'cycles'])
   } catch (err) {
     logger.error(`✗ [onRunCycle] Ошибка при отправке команды ${cycleType}:`, err)
-    const errorMsg = err.response?.data?.message || err.message || 'Неизвестная ошибка'
-    showToast(`Ошибка: ${errorMsg}`, 'error', 5000)
   } finally {
     loading.value.cycles[cycleType] = false
   }
@@ -375,38 +468,47 @@ async function onToggle() {
   if (!zoneId.value) return
   
   loading.value.toggle = true
-  const url = `/api/zones/${zoneId.value}/${zone.value.status === 'PAUSED' ? 'resume' : 'pause'}`
-  const action = zone.value.status === 'PAUSED' ? 'возобновлена' : 'приостановлена'
+  const action = zone.value.status === 'PAUSED' ? 'resume' : 'pause'
+  const actionText = zone.value.status === 'PAUSED' ? 'возобновлена' : 'приостановлена'
   
   try {
-    await api.post(url, {})
-    showToast(`Зона успешно ${action}`, 'success', 3000)
-    router.reload({ only: ['zone'] })
+    // Используем прямой API вызов для pause/resume (это не команды, а действия зоны)
+    await api.post(`/api/zones/${zoneId.value}/${action}`, {})
+    showToast(`Зона успешно ${actionText}`, 'success', 3000)
+    // Обновляем зону через Inertia partial reload
+    reloadZone(zoneId.value, ['zone'])
   } catch (err) {
     logger.error('Failed to toggle zone:', err)
-    const errorMsg = err.response?.data?.message || err.message || 'Неизвестная ошибка'
-    showToast(`Ошибка: ${errorMsg}`, 'error', 5000)
   } finally {
     loading.value.toggle = false
   }
 }
 
-async function onIrrigate(durationSec = 10) {
+function openActionModal(actionType) {
+  currentActionType.value = actionType
+  showActionModal.value = true
+}
+
+async function onActionSubmit({ actionType, params }) {
   if (!zoneId.value) return
   
   loading.value.irrigate = true
   
   try {
-    await api.post(`/api/zones/${zoneId.value}/commands`, {
-      type: 'FORCE_IRRIGATION',
-      params: { duration_sec: durationSec },
-    })
-    showToast(`Полив запущен на ${durationSec} секунд`, 'success', 3000)
-    showIrrigationModal.value = false
+    await sendZoneCommand(zoneId.value, actionType, params)
+    const actionNames = {
+      'FORCE_IRRIGATION': 'Полив',
+      'FORCE_PH_CONTROL': 'Коррекция pH',
+      'FORCE_EC_CONTROL': 'Коррекция EC',
+      'FORCE_CLIMATE': 'Управление климатом',
+      'FORCE_LIGHTING': 'Управление освещением'
+    }
+    const actionName = actionNames[actionType] || 'Действие'
+    showToast(`${actionName} запущено успешно`, 'success', 3000)
+    // Обновляем зону и cycles через Inertia partial reload
+    reloadZoneAfterCommand(zoneId.value, ['zone', 'cycles'])
   } catch (err) {
-    logger.error('Failed to irrigate:', err)
-    const errorMsg = err.response?.data?.message || err.message || 'Неизвестная ошибка'
-    showToast(`Ошибка: ${errorMsg}`, 'error', 5000)
+    logger.error(`Failed to execute ${actionType}:`, err)
   } finally {
     loading.value.irrigate = false
   }
@@ -422,11 +524,10 @@ async function onNextPhase() {
       phase_index: (zone.value.recipeInstance?.current_phase_index || 0) + 1,
     })
     showToast('Фаза успешно изменена', 'success', 3000)
-    router.reload({ only: ['zone'] })
+    // Обновляем зону через Inertia partial reload
+    reloadZone(zoneId.value, ['zone'])
   } catch (err) {
     logger.error('Failed to change phase:', err)
-    const errorMsg = err.response?.data?.message || err.message || 'Неизвестная ошибка'
-    showToast(`Ошибка: ${errorMsg}`, 'error', 5000)
   } finally {
     loading.value.nextPhase = false
   }

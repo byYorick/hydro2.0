@@ -1,7 +1,7 @@
 """
 Модели для симуляции параметров зоны.
 """
-from typing import Tuple
+from typing import Tuple, Optional, Dict
 
 
 class PHModel:
@@ -9,11 +9,23 @@ class PHModel:
     Модель pH: учитывает буферную ёмкость, влияние дозировок, естественный дрифт.
     """
     
-    def __init__(self):
-        # Параметры модели (можно калибровать по историческим данным)
-        self.buffer_capacity = 0.1  # буферная ёмкость раствора
-        self.natural_drift = 0.01  # естественное смещение pH в час
-        self.correction_rate = 0.05  # скорость коррекции при дозировке
+    def __init__(self, params: Optional[Dict[str, float]] = None):
+        """
+        Инициализация модели pH.
+        
+        Args:
+            params: Словарь с параметрами модели (buffer_capacity, natural_drift, correction_rate)
+                   Если не указан, используются значения по умолчанию
+        """
+        if params:
+            self.buffer_capacity = params.get("buffer_capacity", 0.1)
+            self.natural_drift = params.get("natural_drift", 0.01)
+            self.correction_rate = params.get("correction_rate", 0.05)
+        else:
+            # Параметры модели по умолчанию (можно калибровать по историческим данным)
+            self.buffer_capacity = 0.1  # буферная ёмкость раствора
+            self.natural_drift = 0.01  # естественное смещение pH в час
+            self.correction_rate = 0.05  # скорость коррекции при дозировке
         
     def step(self, current_ph: float, target_ph: float, elapsed_hours: float) -> float:
         """
@@ -47,10 +59,22 @@ class ECModel:
     Модель EC: учитывает концентрацию солей, дозировку, испарение/долив.
     """
     
-    def __init__(self):
-        self.evaporation_rate = 0.02  # испарение в час (%)
-        self.dilution_rate = 0.01  # разбавление при доливе чистой воды
-        self.nutrient_addition_rate = 0.03  # скорость добавления питательных веществ
+    def __init__(self, params: Optional[Dict[str, float]] = None):
+        """
+        Инициализация модели EC.
+        
+        Args:
+            params: Словарь с параметрами модели (evaporation_rate, dilution_rate, nutrient_addition_rate)
+                   Если не указан, используются значения по умолчанию
+        """
+        if params:
+            self.evaporation_rate = params.get("evaporation_rate", 0.02)
+            self.dilution_rate = params.get("dilution_rate", 0.01)
+            self.nutrient_addition_rate = params.get("nutrient_addition_rate", 0.03)
+        else:
+            self.evaporation_rate = 0.02  # испарение в час (%)
+            self.dilution_rate = 0.01  # разбавление при доливе чистой воды
+            self.nutrient_addition_rate = 0.03  # скорость добавления питательных веществ
         
     def step(self, current_ec: float, target_ec: float, elapsed_hours: float) -> float:
         """
@@ -88,10 +112,22 @@ class ClimateModel:
     Модель климата: баланс тепла и влаги, влияние вентиляции.
     """
     
-    def __init__(self):
-        self.heat_loss_rate = 0.5  # потери тепла в час (°C)
-        self.humidity_decay_rate = 0.02  # снижение влажности в час (%)
-        self.ventilation_cooling = 1.0  # охлаждение при вентиляции (°C/час)
+    def __init__(self, params: Optional[Dict[str, float]] = None):
+        """
+        Инициализация модели климата.
+        
+        Args:
+            params: Словарь с параметрами модели (heat_loss_rate, humidity_decay_rate, ventilation_cooling)
+                   Если не указан, используются значения по умолчанию
+        """
+        if params:
+            self.heat_loss_rate = params.get("heat_loss_rate", 0.5)
+            self.humidity_decay_rate = params.get("humidity_decay_rate", 0.02)
+            self.ventilation_cooling = params.get("ventilation_cooling", 1.0)
+        else:
+            self.heat_loss_rate = 0.5  # потери тепла в час (°C)
+            self.humidity_decay_rate = 0.02  # снижение влажности в час (%)
+            self.ventilation_cooling = 1.0  # охлаждение при вентиляции (°C/час)
         
     def step(
         self,

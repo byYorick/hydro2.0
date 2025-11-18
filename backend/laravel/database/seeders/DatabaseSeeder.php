@@ -23,7 +23,13 @@ class DatabaseSeeder extends Seeder
             $this->call(DemoDataSeeder::class);
             
             // Seed telemetry data (only in development, after demo data)
-            $this->call(TelemetrySeeder::class);
+            // Используйте TelemetryMiniGraphSeeder для быстрого заполнения только миниграфиков
+            // или TelemetrySeeder для полного набора данных
+            if (config('app.telemetry_seeder_fast', false)) {
+                $this->call(TelemetryMiniGraphSeeder::class);
+            } else {
+                $this->call(TelemetrySeeder::class);
+            }
         }
     }
 }

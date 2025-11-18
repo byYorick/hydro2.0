@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Broadcast;
 use Inertia\Inertia;
 use App\Models\Zone;
 use App\Models\DeviceNode;
@@ -9,7 +10,36 @@ use App\Models\Recipe;
 use App\Models\Alert;
 use App\Models\Greenhouse;
 
+// Broadcasting authentication route
+// Поддерживает сессионную аутентификацию для Inertia.js
+Route::post('/broadcasting/auth', function () {
+    // Проверяем, что пользователь аутентифицирован
+    if (!auth()->check()) {
+        return response()->json(['message' => 'Unauthenticated.'], 403);
+    }
+    return Broadcast::auth(request());
+})->middleware(['web', 'auth']);
+
 Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function () {
+    /**
+     * Dashboard - главная страница
+     * 
+     * Inertia Props:
+     * - auth: { user: { role: 'viewer'|'operator'|'admin' } }
+     * - dashboard: {
+     *     greenhousesCount: int,
+     *     zonesCount: int,
+     *     devicesCount: int,
+     *     alertsCount: int,
+     *     zonesByStatus: { 'RUNNING': int, 'PAUSED': int, 'WARNING': int, 'ALARM': int },
+     *     nodesByStatus: { 'online': int, 'offline': int },
+     *     problematicZones: Array<{ id, name, status, description, greenhouse_id, greenhouse, alerts_count }>,
+     *     greenhouses: Array<{ id, uid, name, type, zones_count, zones_running }>,
+     *     latestAlerts: Array<{ id, type, status, details, zone_id, created_at, zone }>
+     *   }
+     * 
+     * Кеширование: 30 секунд
+     */
     Route::get('/', function () {
         // Используем кеш для статических данных (TTL 30 секунд)
         $cacheKey = 'dashboard_data_' . auth()->id();
@@ -91,7 +121,28 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
         ]);
     })->name('dashboard');
 
+    /**
+     * Zones routes
+     */
     Route::prefix('zones')->group(function () {
+        /**
+         * Zones Index - список всех зон
+         * 
+         * Inertia Props:
+         * - auth: { user: { role: 'viewer'|'operator'|'admin' } }
+         * - zones: Array<{
+         *     id: int,
+         *     name: string,
+         *     status: 'RUNNING'|'PAUSED'|'WARNING'|'ALARM',
+         *     description: string,
+         *     greenhouse_id: int,
+         *     greenhouse: { id: int, name: string },
+         *     telemetry: { ph: float|null, ec: float|null, temperature: float|null, humidity: float|null }
+         *   }>
+         * 
+         * Кеширование: 10 секунд
+         * Telemetry: batch loading для всех зон
+         */
         Route::get('/', function () {
             // Кешируем список зон на 10 секунд
             $cacheKey = 'zones_list_' . auth()->id();
@@ -136,6 +187,37 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
                 'zones' => $zonesWithTelemetry,
             ]);
         })->name('zones.web.index');
+        
+        /**
+         * Zone Show - детальная страница зоны
+         * 
+         * Inertia Props:
+         * - auth: { user: { role: 'viewer'|'operator'|'admin' } }
+         * - zoneId: int
+         * - zone: {
+         *     id: int,
+         *     name: string,
+         *     status: 'RUNNING'|'PAUSED'|'WARNING'|'ALARM',
+         *     description: string,
+         *     greenhouse_id: int,
+         *     greenhouse: { id: int, name: string },
+         *     recipeInstance: {
+         *       recipe: { id: int, name: string },
+         *       current_phase_index: int
+         *     }
+         *   }
+         * - telemetry: { ph: float|null, ec: float|null, temperature: float|null, humidity: float|null }
+         * - targets: Object - цели из текущей фазы рецепта (ph_min, ph_max, ec_min, ec_max, etc.)
+         * - devices: Array<{ id, uid, zone_id, name, type, status, fw_version, last_seen_at, zone }>
+         * - events: Array<{ id, kind: 'ALERT'|'WARNING'|'INFO', message: string, occurred_at: ISO8601 }>
+         * - cycles: {
+         *     PH_CONTROL: { type, strategy, interval, last_run, next_run },
+         *     EC_CONTROL: { type, strategy, interval, last_run, next_run },
+         *     IRRIGATION: { type, strategy, interval, last_run, next_run },
+         *     LIGHTING: { type, strategy, interval, last_run, next_run },
+         *     CLIMATE: { type, strategy, interval, last_run, next_run }
+         *   }
+         */
         Route::get('/{zoneId}', function (string $zoneId) {
             // Convert zoneId to integer
             $zoneIdInt = (int)$zoneId;
@@ -286,7 +368,29 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
         })->name('zones.show');
     });
 
+    /**
+     * Devices routes
+     */
     Route::prefix('devices')->group(function () {
+        /**
+         * Devices Index - список всех устройств
+         * 
+         * Inertia Props:
+         * - auth: { user: { role: 'viewer'|'operator'|'admin' } }
+         * - devices: Array<{
+         *     id: int,
+         *     uid: string,
+         *     zone_id: int,
+         *     name: string,
+         *     type: string,
+         *     status: string,
+         *     fw_version: string,
+         *     last_seen_at: datetime,
+         *     zone: { id: int, name: string }
+         *   }>
+         * 
+         * Кеширование: 10 секунд
+         */
         Route::get('/', function () {
             // Кешируем список устройств на 10 секунд
             $cacheKey = 'devices_list_' . auth()->id();
@@ -301,11 +405,39 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
                 'devices' => $devices,
             ]);
         })->name('devices.index');
+        
+        /**
+         * Devices Add - форма добавления устройства
+         * 
+         * Inertia Props:
+         * - auth: { user: { role: 'viewer'|'operator'|'admin' } }
+         */
         Route::get('/add', function () {
             return Inertia::render('Devices/Add', [
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
             ]);
         })->name('devices.add');
+        
+        /**
+         * Device Show - детальная страница устройства
+         * 
+         * Inertia Props:
+         * - auth: { user: { role: 'viewer'|'operator'|'admin' } }
+         * - device: {
+         *     id: int,
+         *     uid: string,
+         *     zone_id: int,
+         *     name: string,
+         *     type: string,
+         *     status: string,
+         *     fw_version: string,
+         *     last_seen_at: datetime,
+         *     zone: { id: int, name: string },
+         *     channels: Array<{ id, node_id, channel, type, metric, unit }>
+         *   }
+         * 
+         * Поддержка поиска по ID (int) или UID (string)
+         */
         Route::get('/{nodeId}', function (string $nodeId) {
             // Support both ID (int) and UID (string) lookup
             $query = DeviceNode::query()
@@ -324,7 +456,24 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
         })->name('devices.show');
     });
 
+    /**
+     * Recipes routes
+     */
     Route::prefix('recipes')->group(function () {
+        /**
+         * Recipes Index - список всех рецептов
+         * 
+         * Inertia Props:
+         * - auth: { user: { role: 'viewer'|'operator'|'admin' } }
+         * - recipes: Array<{
+         *     id: int,
+         *     name: string,
+         *     description: string,
+         *     phases_count: int
+         *   }>
+         * 
+         * Кеширование: 10 секунд
+         */
         Route::get('/', function () {
             // Кешируем список рецептов на 10 секунд
             $cacheKey = 'recipes_list_' . auth()->id();
@@ -347,6 +496,19 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
                 'recipes' => $recipes,
             ]);
         })->name('recipes.index');
+        
+        /**
+         * Recipe Show - детальная страница рецепта
+         * 
+         * Inertia Props:
+         * - auth: { user: { role: 'viewer'|'operator'|'admin' } }
+         * - recipe: {
+         *     id: int,
+         *     name: string,
+         *     description: string,
+         *     phases: Array<{ id, recipe_id, phase_index, name, duration_hours, targets }>
+         *   }
+         */
         Route::get('/{recipeId}', function (int $recipeId) {
             $recipe = Recipe::query()
                 ->with('phases:id,recipe_id,phase_index,name,duration_hours,targets')
@@ -356,6 +518,19 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
                 'recipe' => $recipe,
             ]);
         })->name('recipes.show');
+        
+        /**
+         * Recipe Edit - форма редактирования рецепта
+         * 
+         * Inertia Props:
+         * - auth: { user: { role: 'viewer'|'operator'|'admin' } }
+         * - recipe: {
+         *     id: int,
+         *     name: string,
+         *     description: string,
+         *     phases: Array<{ id, recipe_id, phase_index, name, duration_hours, targets }>
+         *   }
+         */
         Route::get('/{recipeId}/edit', function (int $recipeId) {
             $recipe = Recipe::query()
                 ->with('phases:id,recipe_id,phase_index,name,duration_hours,targets')
@@ -367,8 +542,26 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
         })->name('recipes.edit');
     });
 
-        Route::get('/alerts', function () {
-            // Кешируем список алертов на 5 секунд (более динамичные данные)
+    /**
+     * Alerts Index - список всех алертов
+     * 
+     * Inertia Props:
+     * - auth: { user: { role: 'viewer'|'operator'|'admin' } }
+     * - alerts: Array<{
+     *     id: int,
+     *     type: string,
+     *     status: 'active'|'resolved',
+     *     details: object,
+     *     zone_id: int,
+     *     created_at: datetime,
+     *     resolved_at: datetime|null,
+     *     zone: { id: int, name: string }
+     *   }>
+     * 
+     * Кеширование: 5 секунд (более динамичные данные)
+     */
+    Route::get('/alerts', function () {
+        // Кешируем список алертов на 5 секунд (более динамичные данные)
             $cacheKey = 'alerts_list_' . auth()->id();
             $alerts = \Illuminate\Support\Facades\Cache::remember($cacheKey, 5, function () {
                 return \App\Models\Alert::query()
@@ -383,8 +576,22 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
                 'alerts' => $alerts,
             ]);
-        })->name('alerts.index');
+    })->name('alerts.index');
 
+    /**
+     * Settings Index - страница настроек
+     * 
+     * Inertia Props:
+     * - auth: {
+     *     user: {
+     *       id: int,
+     *       name: string,
+     *       email: string,
+     *       role: 'viewer'|'operator'|'admin'
+     *     }
+     *   }
+     * - users: Array<{ id, name, email, role, created_at }> - только для admin
+     */
     Route::get('/settings', function () {
         $user = auth()->user();
         $users = [];
@@ -462,11 +669,27 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
         })->name('settings.users.destroy');
     });
 
-    // Admin
+    /**
+     * Admin routes (только для admin)
+     */
     Route::middleware('role:admin')->prefix('admin')->group(function () {
+        /**
+         * Admin Index - главная страница админки
+         * 
+         * Inertia Props:
+         * - auth: { user: { role: 'admin' } }
+         */
         Route::get('/', fn () => Inertia::render('Admin/Index', [
             'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
         ]))->name('admin.index');
+        
+        /**
+         * Admin Zones - управление зонами
+         * 
+         * Inertia Props:
+         * - auth: { user: { role: 'admin' } }
+         * - zones: Array<{ id, name, status, description, greenhouse_id, greenhouse }>
+         */
         Route::get('/zones', function () {
             $zones = Zone::query()
                 ->select(['id','name','status','description','greenhouse_id'])
@@ -477,6 +700,14 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
                 'zones' => $zones,
             ]);
         })->name('admin.zones');
+        
+        /**
+         * Admin Recipes - управление рецептами
+         * 
+         * Inertia Props:
+         * - auth: { user: { role: 'admin' } }
+         * - recipes: Array<{ id, name, description, phases_count }>
+         */
         Route::get('/recipes', function () {
             $recipes = Recipe::query()
                 ->select(['id','name','description'])

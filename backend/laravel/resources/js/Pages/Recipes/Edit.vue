@@ -6,11 +6,13 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
             <label class="block text-xs text-neutral-400 mb-1">Название</label>
-            <input v-model="form.name" class="h-9 w-full rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
+            <input v-model="form.name" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors.name ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
+            <div v-if="form.errors.name" class="text-xs text-red-400 mt-1">{{ form.errors.name }}</div>
           </div>
           <div>
             <label class="block text-xs text-neutral-400 mb-1">Описание</label>
-            <input v-model="form.description" class="h-9 w-full rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
+            <input v-model="form.description" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors.description ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
+            <div v-if="form.errors.description" class="text-xs text-red-400 mt-1">{{ form.errors.description }}</div>
           </div>
         </div>
 
@@ -18,14 +20,35 @@
           <div class="text-sm font-semibold mb-2">Фазы</div>
           <div v-for="(p, i) in sortedPhases" :key="p.id || i" class="rounded-lg border border-neutral-800 p-3 mb-2">
             <div class="grid grid-cols-1 md:grid-cols-6 gap-2">
-              <input v-model.number="p.phase_index" type="number" min="0" placeholder="Индекс" class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
-              <input v-model="p.name" placeholder="Имя фазы" class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
-              <input v-model.number="p.duration_hours" type="number" min="1" placeholder="часов" class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
-              <input v-model.number="p.targets.ph.min" type="number" step="0.1" placeholder="pH min" class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
-              <input v-model.number="p.targets.ph.max" type="number" step="0.1" placeholder="pH max" class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
+              <div>
+                <input v-model.number="p.phase_index" type="number" min="0" placeholder="Индекс" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors[`phases.${i}.phase_index`] ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
+                <div v-if="form.errors[`phases.${i}.phase_index`]" class="text-xs text-red-400 mt-1">{{ form.errors[`phases.${i}.phase_index`] }}</div>
+              </div>
+              <div>
+                <input v-model="p.name" placeholder="Имя фазы" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors[`phases.${i}.name`] ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
+                <div v-if="form.errors[`phases.${i}.name`]" class="text-xs text-red-400 mt-1">{{ form.errors[`phases.${i}.name`] }}</div>
+              </div>
+              <div>
+                <input v-model.number="p.duration_hours" type="number" min="1" placeholder="часов" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors[`phases.${i}.duration_hours`] ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
+                <div v-if="form.errors[`phases.${i}.duration_hours`]" class="text-xs text-red-400 mt-1">{{ form.errors[`phases.${i}.duration_hours`] }}</div>
+              </div>
+              <div>
+                <input v-model.number="p.targets.ph.min" type="number" step="0.1" placeholder="pH min" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors[`phases.${i}.targets.ph.min`] ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
+                <div v-if="form.errors[`phases.${i}.targets.ph.min`]" class="text-xs text-red-400 mt-1">{{ form.errors[`phases.${i}.targets.ph.min`] }}</div>
+              </div>
+              <div>
+                <input v-model.number="p.targets.ph.max" type="number" step="0.1" placeholder="pH max" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors[`phases.${i}.targets.ph.max`] ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
+                <div v-if="form.errors[`phases.${i}.targets.ph.max`]" class="text-xs text-red-400 mt-1">{{ form.errors[`phases.${i}.targets.ph.max`] }}</div>
+              </div>
               <div class="md:col-span-2 grid grid-cols-2 gap-2">
-                <input v-model.number="p.targets.ec.min" type="number" step="0.1" placeholder="EC min" class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
-                <input v-model.number="p.targets.ec.max" type="number" step="0.1" placeholder="EC max" class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
+                <div>
+                  <input v-model.number="p.targets.ec.min" type="number" step="0.1" placeholder="EC min" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors[`phases.${i}.targets.ec.min`] ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
+                  <div v-if="form.errors[`phases.${i}.targets.ec.min`]" class="text-xs text-red-400 mt-1">{{ form.errors[`phases.${i}.targets.ec.min`] }}</div>
+                </div>
+                <div>
+                  <input v-model.number="p.targets.ec.max" type="number" step="0.1" placeholder="EC max" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors[`phases.${i}.targets.ec.max`] ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
+                  <div v-if="form.errors[`phases.${i}.targets.ec.max`]" class="text-xs text-red-400 mt-1">{{ form.errors[`phases.${i}.targets.ec.max`] }}</div>
+                </div>
               </div>
             </div>
           </div>
@@ -36,7 +59,7 @@
           <Link href="/recipes">
             <Button size="sm" variant="secondary" type="button">Отмена</Button>
           </Link>
-          <Button size="sm" type="submit" :disabled="saving">{{ saving ? 'Сохранение...' : 'Сохранить' }}</Button>
+          <Button size="sm" type="submit" :disabled="form.processing">{{ form.processing ? 'Сохранение...' : 'Сохранить' }}</Button>
         </div>
       </form>
     </Card>
@@ -44,19 +67,16 @@
 </template>
 
 <script setup>
-import { reactive, computed, ref } from 'vue'
-import { Link, usePage, router } from '@inertiajs/vue3'
+import { computed } from 'vue'
+import { Link, usePage, router, useForm } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
-import axios from 'axios'
 
 const page = usePage()
 const recipe = page.props.recipe || {}
 
-const saving = ref(false)
-
-const form = reactive({
+const form = useForm({
   name: recipe.name || '',
   description: recipe.description || '',
   phases: (recipe.phases || []).map(p => ({
@@ -90,20 +110,13 @@ const onAddPhase = () => {
   })
 }
 
-const onSave = async () => {
-  saving.value = true
-  try {
-    await axios.patch(`/api/recipes/${recipe.id}`, {
-      name: form.name,
-      description: form.description,
-    })
-    // Обновить фазы отдельно через API (нужно будет добавить эндпоинт)
-    router.visit(`/recipes/${recipe.id}`)
-  } catch (err) {
-    console.error('Failed to save recipe:', err)
-  } finally {
-    saving.value = false
-  }
+const onSave = () => {
+  form.patch(`/api/recipes/${recipe.id}`, {
+    preserveScroll: true,
+    onSuccess: () => {
+      router.visit(`/recipes/${recipe.id}`)
+    }
+  })
 }
 </script>
 
