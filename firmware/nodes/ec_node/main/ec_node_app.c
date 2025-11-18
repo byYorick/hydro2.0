@@ -487,21 +487,37 @@ static void on_command_received(const char *topic, const char *channel, const ch
         ESP_LOGI(TAG, "Starting EC calibration: stage=%d, known_tds=%u ppm", stage, known_tds);
         
         bool cal_success = trema_ec_calibrate(stage, known_tds);
-        
+        trema_ec_error_t cal_error = trema_ec_get_error();
+        uint16_t raw_tds = trema_ec_get_tds();
+        trema_ec_error_t tds_error = trema_ec_get_error();
+        if (cal_error == TREMA_EC_ERROR_NONE && tds_error != TREMA_EC_ERROR_NONE) {
+            cal_error = tds_error;
+        }
+
+        ESP_LOGI(TAG, "Calibration stage %d %s (solution=%u ppm, raw_tds=%u, error=%d)",
+                 stage,
+                 cal_success ? "success" : "failed",
+                 known_tds,
+                 raw_tds,
+                 cal_error);
+
         cJSON *response = cJSON_CreateObject();
         if (response) {
             cJSON_AddStringToObject(response, "cmd_id", cmd_id);
             if (cal_success) {
                 cJSON_AddStringToObject(response, "status", "ACK");
                 cJSON_AddNumberToObject(response, "stage", stage);
-                cJSON_AddNumberToObject(response, "known_tds", known_tds);
             } else {
                 cJSON_AddStringToObject(response, "status", "ERROR");
-                cJSON_AddStringToObject(response, "error_code", "calibration_failed");
+                cJSON_AddStringToObject(response, "error_reason", "calibration_failed");
                 cJSON_AddStringToObject(response, "error_message", "Failed to start calibration");
             }
+            cJSON_AddNumberToObject(response, "known_tds", known_tds);
+            cJSON_AddNumberToObject(response, "solution_ppm", known_tds);
+            cJSON_AddNumberToObject(response, "raw_tds", raw_tds);
+            cJSON_AddNumberToObject(response, "error_code", cal_error);
             cJSON_AddNumberToObject(response, "ts", (double)(esp_timer_get_time() / 1000000));
-            
+
             char *json_str = cJSON_PrintUnformatted(response);
             if (json_str) {
                 mqtt_client_publish_command_response(channel, json_str);
@@ -757,12 +773,12 @@ void ec_node_app_init(void) {
 /**
  * @brief Публикация телеметрии EC с реальными значениями от Trema EC-сенсора
  */
-void ec_node_publish_telemetry_example(void) {
+void ec_node_publish_telemetry(void) {
     if (!mqtt_client_is_connected()) {
         ESP_LOGW(TAG, "MQTT not connected, skipping telemetry");
         return;
     }
-    
+
     // Инициализация сенсора, если еще не инициализирован
     if (!ec_sensor_initialized && i2c_bus_is_initialized()) {
         if (trema_ec_init()) {
@@ -770,38 +786,84 @@ void ec_node_publish_telemetry_example(void) {
             ESP_LOGI(TAG, "Trema EC sensor initialized");
         }
     }
-    
+
+    float compensation_temp = 25.0f;
+    bool stored_temp_valid = (config_storage_get_last_temperature(&compensation_temp) == ESP_OK);
+    if (!stored_temp_valid) {
+        compensation_temp = 25.0f;
+    }
+
+    // Если сенсор готов - применяем температурную компенсацию
+    if (ec_sensor_initialized) {
+        if (!trema_ec_set_temperature(compensation_temp)) {
+            ESP_LOGW(TAG, "Failed to apply stored temperature %.2fC", compensation_temp);
+        }
+    }
+
     // Чтение значения EC
     float ec_value = NAN;
     bool read_success = false;
     bool using_stub = false;
     uint16_t tds_value = 0;
-    
+    trema_ec_error_t read_error = TREMA_EC_ERROR_NOT_INITIALIZED;
+    trema_ec_error_t tds_error = TREMA_EC_ERROR_NONE;
+
     if (ec_sensor_initialized) {
         read_success = trema_ec_read(&ec_value);
         using_stub = trema_ec_is_using_stub_values();
-        
+        read_error = trema_ec_get_error();
         if (!read_success || isnan(ec_value)) {
             ESP_LOGW(TAG, "Failed to read EC value, using stub");
-            ec_value = 1.2f;  // Значение по умолчанию
+            ec_value = 1.2f;
             using_stub = true;
-        } else {
-            // Читаем TDS значение
-            tds_value = trema_ec_get_tds();
         }
+        tds_value = trema_ec_get_tds();
+        tds_error = trema_ec_get_error();
     } else {
         ESP_LOGW(TAG, "EC sensor not initialized, using stub value");
         ec_value = 1.2f;
         tds_value = 800;
         using_stub = true;
+        read_error = TREMA_EC_ERROR_NOT_INITIALIZED;
+        tds_error = TREMA_EC_ERROR_NOT_INITIALIZED;
     }
-    
+
+    float measured_temperature = NAN;
+    bool temperature_valid = false;
+    trema_ec_error_t temp_error = ec_sensor_initialized ? TREMA_EC_ERROR_NONE : TREMA_EC_ERROR_NOT_INITIALIZED;
+    if (ec_sensor_initialized) {
+        temperature_valid = trema_ec_get_temperature(&measured_temperature);
+        temp_error = trema_ec_get_error();
+        if (temperature_valid) {
+            esp_err_t temp_store_err = config_storage_set_last_temperature(measured_temperature);
+            if (temp_store_err != ESP_OK) {
+                ESP_LOGW(TAG, "Failed to store temperature %.2fC: %s", measured_temperature, esp_err_to_name(temp_store_err));
+            }
+        } else if (stored_temp_valid) {
+            measured_temperature = compensation_temp;
+            temperature_valid = true;
+        }
+    } else if (stored_temp_valid) {
+        measured_temperature = compensation_temp;
+        temperature_valid = true;
+        temp_error = TREMA_EC_ERROR_NONE;
+    }
+
+    trema_ec_error_t sensor_error = read_error;
+    if (sensor_error == TREMA_EC_ERROR_NONE && tds_error != TREMA_EC_ERROR_NONE) {
+        sensor_error = tds_error;
+    }
+    if (sensor_error == TREMA_EC_ERROR_NONE && temp_error != TREMA_EC_ERROR_NONE) {
+        sensor_error = temp_error;
+    }
+
     // Получение node_id из конфига
     char node_id[64];
     if (config_storage_get_node_id(node_id, sizeof(node_id)) != ESP_OK) {
         strncpy(node_id, "nd-ec-1", sizeof(node_id) - 1);
+        node_id[sizeof(node_id) - 1] = '\0';
     }
-    
+
     // Формат согласно MQTT_SPEC_FULL.md раздел 3.2
     cJSON *telemetry = cJSON_CreateObject();
     if (telemetry) {
@@ -809,11 +871,15 @@ void ec_node_publish_telemetry_example(void) {
         cJSON_AddStringToObject(telemetry, "channel", "ec_sensor");
         cJSON_AddStringToObject(telemetry, "metric_type", "EC");
         cJSON_AddNumberToObject(telemetry, "value", ec_value);
-        cJSON_AddNumberToObject(telemetry, "raw", (int)(ec_value * 1000));  // Сырое значение в тысячных
-        cJSON_AddNumberToObject(telemetry, "tds", tds_value);  // TDS значение в ppm
-        cJSON_AddBoolToObject(telemetry, "stub", using_stub);  // Флаг использования заглушки
+        cJSON_AddNumberToObject(telemetry, "raw", (int)(ec_value * 1000));
+        cJSON_AddNumberToObject(telemetry, "tds", tds_value);
+        cJSON_AddBoolToObject(telemetry, "stub", using_stub);
+        cJSON_AddNumberToObject(telemetry, "error_code", sensor_error);
+        if (temperature_valid) {
+            cJSON_AddNumberToObject(telemetry, "temperature", measured_temperature);
+        }
         cJSON_AddNumberToObject(telemetry, "timestamp", (double)(esp_timer_get_time() / 1000000));
-        
+
         char *json_str = cJSON_PrintUnformatted(telemetry);
         if (json_str) {
             mqtt_client_publish_telemetry("ec_sensor", json_str);

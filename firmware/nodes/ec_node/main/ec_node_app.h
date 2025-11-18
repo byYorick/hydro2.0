@@ -18,9 +18,9 @@ extern "C" {
 void ec_node_app_init(void);
 
 /**
- * @brief Пример публикации телеметрии EC
+ * @brief Публикация телеметрии EC с реальными данными
  */
-void ec_node_publish_telemetry_example(void);
+void ec_node_publish_telemetry(void);
 
 /**
  * @brief Запуск FreeRTOS задач

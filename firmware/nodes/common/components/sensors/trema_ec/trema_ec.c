@@ -19,6 +19,8 @@ static const char *TAG = "trema_ec";
 static bool use_stub_values = false;
 static float stub_ec = 1.2f;  // 1.2 mS/cm
 static uint16_t stub_tds = 800;  // 800 ppm
+static trema_ec_error_t last_error = TREMA_EC_ERROR_NONE;
+static float last_temperature_c = NAN;
 
 // Buffer for I2C communication
 static uint8_t data[4];
@@ -30,6 +32,7 @@ bool trema_ec_init(void)
 {
     if (!i2c_bus_is_initialized()) {
         ESP_LOGE(TAG, "I²C bus not initialized");
+        last_error = TREMA_EC_ERROR_I2C;
         return false;
     }
     
@@ -39,6 +42,7 @@ bool trema_ec_init(void)
     esp_err_t err = i2c_bus_read(TREMA_EC_ADDR, &reg_model, 1, data, 1, 1000);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to read from EC sensor: %s", esp_err_to_name(err));
+        last_error = TREMA_EC_ERROR_I2C;
         return false;
     }
     
@@ -46,11 +50,13 @@ bool trema_ec_init(void)
     // For iarduino TDS sensor, model ID should be 0x19
     if (data[0] != 0x19) {
         ESP_LOGW(TAG, "Invalid EC sensor model ID: 0x%02X", data[0]);
+        last_error = TREMA_EC_ERROR_INVALID_VALUE;
         return false;
     }
-    
+
     sensor_initialized = true;
     use_stub_values = false;
+    last_error = TREMA_EC_ERROR_NONE;
     ESP_LOGI(TAG, "EC sensor initialized successfully");
     return true;
 }
@@ -58,22 +64,25 @@ bool trema_ec_init(void)
 bool trema_ec_read(float *ec)
 {
     if (ec == NULL) {
+        last_error = TREMA_EC_ERROR_INVALID_VALUE;
         return false;
     }
-    
+
     if (!sensor_initialized) {
         if (!trema_ec_init()) {
             ESP_LOGD(TAG, "EC sensor not connected, returning stub value");
             *ec = stub_ec;
             use_stub_values = true;
+            last_error = TREMA_EC_ERROR_NOT_INITIALIZED;
             return false;
         }
     }
-    
+
     if (!i2c_bus_is_initialized()) {
         ESP_LOGE(TAG, "I²C bus not initialized");
         *ec = stub_ec;
         use_stub_values = true;
+        last_error = TREMA_EC_ERROR_I2C;
         return false;
     }
     
@@ -83,6 +92,7 @@ bool trema_ec_read(float *ec)
         ESP_LOGD(TAG, "EC sensor read failed: %s, returning stub value", esp_err_to_name(err));
         *ec = stub_ec;
         use_stub_values = true;
+        last_error = TREMA_EC_ERROR_I2C;
         return false;
     }
     
@@ -93,10 +103,12 @@ bool trema_ec_read(float *ec)
         ESP_LOGW(TAG, "Invalid EC value: %.3f mS/cm, using stub value", *ec);
         *ec = stub_ec;
         use_stub_values = true;
+        last_error = TREMA_EC_ERROR_INVALID_VALUE;
         return false;
     }
-    
+
     use_stub_values = false;
+    last_error = TREMA_EC_ERROR_NONE;
     return true;
 }
 
@@ -105,17 +117,20 @@ bool trema_ec_calibrate(uint8_t stage, uint16_t known_tds)
     // Check if sensor is initialized
     if (!sensor_initialized) {
         ESP_LOGW(TAG, "Sensor not initialized");
+        last_error = TREMA_EC_ERROR_NOT_INITIALIZED;
         return false;
     }
     
     if (!i2c_bus_is_initialized()) {
         ESP_LOGE(TAG, "I²C bus not initialized");
+        last_error = TREMA_EC_ERROR_I2C;
         return false;
     }
     
     // Validate parameters
     if ((stage != 1 && stage != 2) || known_tds > 10000) {
         ESP_LOGW(TAG, "Invalid calibration parameters");
+        last_error = TREMA_EC_ERROR_INVALID_VALUE;
         return false;
     }
     
@@ -129,6 +144,7 @@ bool trema_ec_calibrate(uint8_t stage, uint16_t known_tds)
     esp_err_t err = i2c_bus_write(TREMA_EC_ADDR, &reg_known_tds, 1, tds_data, 2, 1000);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to write known TDS value: %s", esp_err_to_name(err));
+        last_error = TREMA_EC_ERROR_I2C;
         return false;
     }
     
@@ -141,10 +157,12 @@ bool trema_ec_calibrate(uint8_t stage, uint16_t known_tds)
     err = i2c_bus_write(TREMA_EC_ADDR, &reg_cal, 1, &cal_cmd, 1, 1000);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to send calibration command: %s", esp_err_to_name(err));
+        last_error = TREMA_EC_ERROR_I2C;
         return false;
     }
-    
+
     ESP_LOGI(TAG, "Calibration stage %d started with TDS %u ppm", stage, known_tds);
+    last_error = TREMA_EC_ERROR_NONE;
     return true;
 }
 
@@ -181,17 +199,20 @@ bool trema_ec_set_temperature(float temperature)
     // Check if sensor is initialized
     if (!sensor_initialized) {
         ESP_LOGW(TAG, "Sensor not initialized");
+        last_error = TREMA_EC_ERROR_NOT_INITIALIZED;
         return false;
     }
-    
+
     if (!i2c_bus_is_initialized()) {
         ESP_LOGE(TAG, "I²C bus not initialized");
+        last_error = TREMA_EC_ERROR_I2C;
         return false;
     }
     
     // Validate temperature range (0 - 63.75 °C)
     if (temperature < 0.0f || temperature > 63.75f) {
         ESP_LOGW(TAG, "Invalid temperature: %.2f C", temperature);
+        last_error = TREMA_EC_ERROR_INVALID_VALUE;
         return false;
     }
     
@@ -203,10 +224,50 @@ bool trema_ec_set_temperature(float temperature)
     esp_err_t err = i2c_bus_write(TREMA_EC_ADDR, &reg_temp, 1, &temp_reg, 1, 1000);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to set temperature: %s", esp_err_to_name(err));
+        last_error = TREMA_EC_ERROR_I2C;
         return false;
     }
-    
+
     ESP_LOGD(TAG, "Temperature set to %.2f C", temperature);
+    last_temperature_c = temperature;
+    last_error = TREMA_EC_ERROR_NONE;
+    return true;
+}
+
+bool trema_ec_get_temperature(float *temperature)
+{
+    if (temperature == NULL) {
+        last_error = TREMA_EC_ERROR_INVALID_VALUE;
+        return false;
+    }
+
+    if (!sensor_initialized) {
+        last_error = TREMA_EC_ERROR_NOT_INITIALIZED;
+        return false;
+    }
+
+    if (!i2c_bus_is_initialized()) {
+        last_error = TREMA_EC_ERROR_I2C;
+        return false;
+    }
+
+    uint8_t reg_temp = REG_TDS_t;
+    esp_err_t err = i2c_bus_read(TREMA_EC_ADDR, &reg_temp, 1, data, 1, 1000);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to read temperature: %s", esp_err_to_name(err));
+        last_error = TREMA_EC_ERROR_I2C;
+        return false;
+    }
+
+    float temp_c = (float)data[0] / 4.0f;
+    if (temp_c < 0.0f || temp_c > 63.75f) {
+        last_error = TREMA_EC_ERROR_INVALID_VALUE;
+        return false;
+    }
+
+    *temperature = temp_c;
+    last_temperature_c = temp_c;
+    last_error = TREMA_EC_ERROR_NONE;
     return true;
 }
 
@@ -214,10 +275,12 @@ uint16_t trema_ec_get_tds(void)
 {
     // Check if sensor is initialized
     if (!sensor_initialized) {
+        last_error = TREMA_EC_ERROR_NOT_INITIALIZED;
         return stub_tds;
     }
-    
+
     if (!i2c_bus_is_initialized()) {
+        last_error = TREMA_EC_ERROR_I2C;
         return stub_tds;
     }
     
@@ -226,10 +289,12 @@ uint16_t trema_ec_get_tds(void)
     esp_err_t err = i2c_bus_read(TREMA_EC_ADDR, &reg_tds, 1, data, 2, 1000);
     if (err != ESP_OK) {
         ESP_LOGD(TAG, "TDS sensor read failed: %s, using stub values", esp_err_to_name(err));
+        last_error = TREMA_EC_ERROR_I2C;
         return stub_tds;
     }
-    
+
     // Convert the 2-byte value to uint16_t
+    last_error = TREMA_EC_ERROR_NONE;
     return ((uint16_t)data[1] << 8) | data[0];
 }
 
@@ -245,5 +310,10 @@ float trema_ec_get_conductivity(void)
 bool trema_ec_is_using_stub_values(void)
 {
     return use_stub_values;
+}
+
+trema_ec_error_t trema_ec_get_error(void)
+{
+    return last_error;
 }
 

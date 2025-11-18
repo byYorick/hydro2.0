@@ -50,8 +50,24 @@ typedef struct {
 } config_storage_wifi_t;
 
 /**
+ * @brief Сохранение последней валидной температуры для компенсации EC
+ *
+ * @param temperature Температура раствора в градусах Цельсия
+ * @return esp_err_t ESP_OK при успехе
+ */
+esp_err_t config_storage_set_last_temperature(float temperature);
+
+/**
+ * @brief Получение сохраненной температуры для компенсации EC
+ *
+ * @param temperature Указатель для сохранения значения
+ * @return esp_err_t ESP_OK если значение найдено
+ */
+esp_err_t config_storage_get_last_temperature(float *temperature);
+
+/**
  * @brief Инициализация config_storage
- * 
+ *
  * @return esp_err_t ESP_OK при успехе
  */
 esp_err_t config_storage_init(void);

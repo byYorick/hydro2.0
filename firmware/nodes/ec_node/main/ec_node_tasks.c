@@ -9,9 +9,6 @@
 
 #include "ec_node_app.h"
 #include "mqtt_client.h"
-
-// Объявление функции из ec_node_app.c
-extern void ec_node_publish_telemetry_example(void);
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_system.h"
@@ -46,7 +43,7 @@ static void task_sensors(void *pvParameters) {
         }
         
         // Публикация телеметрии EC
-        ec_node_publish_telemetry_example();
+        ec_node_publish_telemetry();
     }
 }
 

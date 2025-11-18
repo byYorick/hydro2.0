@@ -39,6 +39,13 @@ extern "C" {
 #define TDS_BIT_CALC_2      0x02  // Start calibration stage 2
 #define TDS_CODE_CALC_SAVE  0x24  // Calibration save code
 
+typedef enum {
+    TREMA_EC_ERROR_NONE = 0,
+    TREMA_EC_ERROR_NOT_INITIALIZED = 1,
+    TREMA_EC_ERROR_I2C = 2,
+    TREMA_EC_ERROR_INVALID_VALUE = 3
+} trema_ec_error_t;
+
 /**
  * @brief Initialize the Trema EC sensor
  * @return true on success, false on failure
@@ -80,6 +87,13 @@ bool trema_ec_set_temperature(float temperature);
 uint16_t trema_ec_get_tds(void);
 
 /**
+ * @brief Read the last temperature value used for compensation
+ * @param temperature Pointer to store the temperature (Celsius)
+ * @return true on success, false otherwise
+ */
+bool trema_ec_get_temperature(float *temperature);
+
+/**
  * @brief Get the last measured conductivity
  * @return Conductivity value (mS/cm)
  */
@@ -90,6 +104,12 @@ float trema_ec_get_conductivity(void);
  * @return true if using stub values, false if sensor is connected
  */
 bool trema_ec_is_using_stub_values(void);
+
+/**
+ * @brief Retrieve the last error code from EC operations
+ * @return trema_ec_error_t value
+ */
+trema_ec_error_t trema_ec_get_error(void);
 
 #ifdef __cplusplus
 }
