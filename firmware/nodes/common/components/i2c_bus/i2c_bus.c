@@ -25,17 +25,25 @@
 
 static const char *TAG = "i2c_bus";
 
-// I²C master bus handle
-static i2c_master_bus_handle_t s_i2c_bus_handle = NULL;
-static i2c_bus_config_t s_config = {0};
-static bool s_initialized = false;
-static SemaphoreHandle_t s_mutex = NULL;
+// Структура для хранения состояния шины
+typedef struct {
+    i2c_master_bus_handle_t bus_handle;
+    i2c_bus_config_t config;
+    bool initialized;
+    SemaphoreHandle_t mutex;
+} i2c_bus_state_t;
+
+// Массив состояний для двух шин
+static i2c_bus_state_t s_buses[I2C_BUS_MAX] = {0};
+
+// Для обратной совместимости - указатель на шину 0
+#define I2C_BUS_0_PTR (&s_buses[I2C_BUS_0])
 
 // Константы
 #define I2C_BUS_DEFAULT_TIMEOUT_MS 1000
 #define I2C_BUS_MAX_RETRY_COUNT 3
-#define I2C_BUS_DEFAULT_SDA_PIN 8
-#define I2C_BUS_DEFAULT_SCL_PIN 9
+#define I2C_BUS_DEFAULT_SDA_PIN 21  // ESP32 стандартный SDA
+#define I2C_BUS_DEFAULT_SCL_PIN 22  // ESP32 стандартный SCL
 #define I2C_BUS_DEFAULT_CLOCK_SPEED 100000
 
 /**
@@ -68,41 +76,58 @@ static esp_err_t i2c_bus_operation_with_retry(esp_err_t (*operation)(void), cons
     return err;
 }
 
+// Предварительные объявления
+static esp_err_t i2c_bus_deinit_bus(i2c_bus_id_t bus_id);
+static esp_err_t i2c_bus_scan_bus(i2c_bus_id_t bus_id, uint8_t *found_addresses, size_t max_addresses, size_t *found_count);
+static esp_err_t i2c_bus_recover_bus(i2c_bus_id_t bus_id);
+
 esp_err_t i2c_bus_init(const i2c_bus_config_t *config) {
-    ESP_LOGI(TAG, "=== I²C Bus Init Start ===");
+    // Для обратной совместимости - инициализация шины 0
+    return i2c_bus_init_bus(I2C_BUS_0, config);
+}
+
+esp_err_t i2c_bus_init_bus(i2c_bus_id_t bus_id, const i2c_bus_config_t *config) {
+    ESP_LOGI(TAG, "=== I²C Bus %d Init Start ===", bus_id);
+    
+    if (bus_id >= I2C_BUS_MAX) {
+        ESP_LOGE(TAG, "Invalid bus_id: %d", bus_id);
+        return ESP_ERR_INVALID_ARG;
+    }
     
     if (config == NULL) {
         ESP_LOGE(TAG, "Invalid config: NULL");
         return ESP_ERR_INVALID_ARG;
     }
     
-    ESP_LOGI(TAG, "I²C config: SDA=%d, SCL=%d, speed=%d Hz, pullup=%s", 
-             config->sda_pin, config->scl_pin, config->clock_speed,
+    i2c_bus_state_t *bus = &s_buses[bus_id];
+    
+    ESP_LOGI(TAG, "I²C bus %d config: SDA=%d, SCL=%d, speed=%d Hz, pullup=%s", 
+             bus_id, config->sda_pin, config->scl_pin, config->clock_speed,
              config->pullup_enable ? "enabled" : "disabled");
     
-    if (s_initialized) {
-        ESP_LOGW(TAG, "I²C bus already initialized");
+    if (bus->initialized) {
+        ESP_LOGW(TAG, "I²C bus %d already initialized", bus_id);
         return ESP_OK;
     }
     
     // Создание mutex для thread-safe доступа
-    if (s_mutex == NULL) {
-        ESP_LOGI(TAG, "Creating I²C mutex...");
-        s_mutex = xSemaphoreCreateMutex();
-        if (s_mutex == NULL) {
-            ESP_LOGE(TAG, "Failed to create mutex");
+    if (bus->mutex == NULL) {
+        ESP_LOGI(TAG, "Creating I²C bus %d mutex...", bus_id);
+        bus->mutex = xSemaphoreCreateMutex();
+        if (bus->mutex == NULL) {
+            ESP_LOGE(TAG, "Failed to create mutex for bus %d", bus_id);
             return ESP_ERR_NO_MEM;
         }
-        ESP_LOGI(TAG, "I²C mutex created");
+        ESP_LOGI(TAG, "I²C bus %d mutex created", bus_id);
     }
     
     // Сохранение конфигурации
-    memcpy(&s_config, config, sizeof(i2c_bus_config_t));
+    memcpy(&bus->config, config, sizeof(i2c_bus_config_t));
     
     // Настройка I²C master bus
-    ESP_LOGI(TAG, "Configuring I²C master bus...");
+    ESP_LOGI(TAG, "Configuring I²C master bus %d...", bus_id);
     i2c_master_bus_config_t bus_cfg = {
-        .i2c_port = I2C_NUM_0,
+        .i2c_port = (i2c_port_t)bus_id,
         .sda_io_num = config->sda_pin,
         .scl_io_num = config->scl_pin,
         .clk_source = I2C_CLK_SRC_DEFAULT,
@@ -112,58 +137,90 @@ esp_err_t i2c_bus_init(const i2c_bus_config_t *config) {
         }
     };
     
-    ESP_LOGI(TAG, "Creating I²C master bus (port=%d, SDA=%d, SCL=%d)...", 
-             bus_cfg.i2c_port, bus_cfg.sda_io_num, bus_cfg.scl_io_num);
-    esp_err_t err = i2c_new_master_bus(&bus_cfg, &s_i2c_bus_handle);
+    ESP_LOGI(TAG, "Creating I²C master bus %d (port=%d, SDA=%d, SCL=%d)...", 
+             bus_id, bus_cfg.i2c_port, bus_cfg.sda_io_num, bus_cfg.scl_io_num);
+    esp_err_t err = i2c_new_master_bus(&bus_cfg, &bus->bus_handle);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to create I²C master bus: %s (error code: %d)", 
-                 esp_err_to_name(err), err);
-        vSemaphoreDelete(s_mutex);
-        s_mutex = NULL;
+        ESP_LOGE(TAG, "Failed to create I²C master bus %d: %s (error code: %d)", 
+                 bus_id, esp_err_to_name(err), err);
+        vSemaphoreDelete(bus->mutex);
+        bus->mutex = NULL;
         return err;
     }
     
-    s_initialized = true;
-    ESP_LOGI(TAG, "I²C bus initialized successfully: SDA=%d, SCL=%d, speed=%lu Hz", 
-            config->sda_pin, config->scl_pin, config->clock_speed);
-    ESP_LOGI(TAG, "=== I²C Bus Init Complete ===");
+    bus->initialized = true;
+    ESP_LOGI(TAG, "I²C bus %d initialized successfully: SDA=%d, SCL=%d, speed=%lu Hz", 
+            bus_id, config->sda_pin, config->scl_pin, config->clock_speed);
+    ESP_LOGI(TAG, "=== I²C Bus %d Init Complete ===", bus_id);
     
     return ESP_OK;
 }
 
 esp_err_t i2c_bus_deinit(void) {
-    if (!s_initialized) {
+    // Для обратной совместимости - деинициализация шины 0
+    return i2c_bus_deinit_bus(I2C_BUS_0);
+}
+
+static esp_err_t i2c_bus_deinit_bus(i2c_bus_id_t bus_id) {
+    if (bus_id >= I2C_BUS_MAX) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    i2c_bus_state_t *bus = &s_buses[bus_id];
+    
+    if (!bus->initialized) {
         return ESP_OK;
     }
     
-    if (s_i2c_bus_handle != NULL) {
-        esp_err_t err = i2c_del_master_bus(s_i2c_bus_handle);
+    if (bus->bus_handle != NULL) {
+        esp_err_t err = i2c_del_master_bus(bus->bus_handle);
         if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to delete I²C master bus: %s", esp_err_to_name(err));
+            ESP_LOGE(TAG, "Failed to delete I²C master bus %d: %s", bus_id, esp_err_to_name(err));
         }
-        s_i2c_bus_handle = NULL;
+        bus->bus_handle = NULL;
     }
     
-    if (s_mutex != NULL) {
-        vSemaphoreDelete(s_mutex);
-        s_mutex = NULL;
+    if (bus->mutex != NULL) {
+        vSemaphoreDelete(bus->mutex);
+        bus->mutex = NULL;
     }
     
-    s_initialized = false;
-    memset(&s_config, 0, sizeof(s_config));
+    bus->initialized = false;
+    memset(&bus->config, 0, sizeof(i2c_bus_config_t));
     
-    ESP_LOGI(TAG, "I²C bus deinitialized");
+    ESP_LOGI(TAG, "I²C bus %d deinitialized", bus_id);
     return ESP_OK;
 }
 
 bool i2c_bus_is_initialized(void) {
-    return s_initialized;
+    // Для обратной совместимости - проверка шины 0
+    return i2c_bus_is_initialized_bus(I2C_BUS_0);
+}
+
+bool i2c_bus_is_initialized_bus(i2c_bus_id_t bus_id) {
+    if (bus_id >= I2C_BUS_MAX) {
+        return false;
+    }
+    return s_buses[bus_id].initialized;
 }
 
 esp_err_t i2c_bus_read(uint8_t device_addr, const uint8_t *reg_addr, size_t reg_addr_len,
                       uint8_t *data, size_t data_len, uint32_t timeout_ms) {
-    if (!s_initialized) {
-        ESP_LOGE(TAG, "I²C bus not initialized");
+    // Для обратной совместимости - чтение с шины 0
+    return i2c_bus_read_bus(I2C_BUS_0, device_addr, reg_addr, reg_addr_len, data, data_len, timeout_ms);
+}
+
+esp_err_t i2c_bus_read_bus(i2c_bus_id_t bus_id, uint8_t device_addr, const uint8_t *reg_addr, size_t reg_addr_len,
+                          uint8_t *data, size_t data_len, uint32_t timeout_ms) {
+    if (bus_id >= I2C_BUS_MAX) {
+        ESP_LOGE(TAG, "Invalid bus_id: %d", bus_id);
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    i2c_bus_state_t *bus = &s_buses[bus_id];
+    
+    if (!bus->initialized) {
+        ESP_LOGE(TAG, "I²C bus %d not initialized", bus_id);
         return ESP_ERR_INVALID_STATE;
     }
     
@@ -173,8 +230,8 @@ esp_err_t i2c_bus_read(uint8_t device_addr, const uint8_t *reg_addr, size_t reg_
     }
     
     // Захват mutex
-    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {
-        ESP_LOGE(TAG, "Failed to take mutex");
+    if (xSemaphoreTake(bus->mutex, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {
+        ESP_LOGE(TAG, "Failed to take mutex for bus %d", bus_id);
         return ESP_ERR_TIMEOUT;
     }
     
@@ -185,13 +242,13 @@ esp_err_t i2c_bus_read(uint8_t device_addr, const uint8_t *reg_addr, size_t reg_
     i2c_device_config_t dev_cfg = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
         .device_address = device_addr,
-        .scl_speed_hz = s_config.clock_speed,
+        .scl_speed_hz = bus->config.clock_speed,
     };
     
-    err = i2c_master_bus_add_device(s_i2c_bus_handle, &dev_cfg, &dev_handle);
+    err = i2c_master_bus_add_device(bus->bus_handle, &dev_cfg, &dev_handle);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to add device: %s", esp_err_to_name(err));
-        xSemaphoreGive(s_mutex);
+        ESP_LOGE(TAG, "Failed to add device to bus %d: %s", bus_id, esp_err_to_name(err));
+        xSemaphoreGive(bus->mutex);
         return err;
     }
     
@@ -207,10 +264,10 @@ esp_err_t i2c_bus_read(uint8_t device_addr, const uint8_t *reg_addr, size_t reg_
     // Удаление device handle (в реальной реализации можно кэшировать)
     i2c_master_bus_rm_device(dev_handle);
     
-    xSemaphoreGive(s_mutex);
+    xSemaphoreGive(bus->mutex);
     
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "I²C read failed: %s (addr=0x%02X)", esp_err_to_name(err), device_addr);
+        ESP_LOGE(TAG, "I²C read failed on bus %d: %s (addr=0x%02X)", bus_id, esp_err_to_name(err), device_addr);
     }
     
     return err;
@@ -218,8 +275,21 @@ esp_err_t i2c_bus_read(uint8_t device_addr, const uint8_t *reg_addr, size_t reg_
 
 esp_err_t i2c_bus_write(uint8_t device_addr, const uint8_t *reg_addr, size_t reg_addr_len,
                        const uint8_t *data, size_t data_len, uint32_t timeout_ms) {
-    if (!s_initialized) {
-        ESP_LOGE(TAG, "I²C bus not initialized");
+    // Для обратной совместимости - запись на шину 0
+    return i2c_bus_write_bus(I2C_BUS_0, device_addr, reg_addr, reg_addr_len, data, data_len, timeout_ms);
+}
+
+esp_err_t i2c_bus_write_bus(i2c_bus_id_t bus_id, uint8_t device_addr, const uint8_t *reg_addr, size_t reg_addr_len,
+                           const uint8_t *data, size_t data_len, uint32_t timeout_ms) {
+    if (bus_id >= I2C_BUS_MAX) {
+        ESP_LOGE(TAG, "Invalid bus_id: %d", bus_id);
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    i2c_bus_state_t *bus = &s_buses[bus_id];
+    
+    if (!bus->initialized) {
+        ESP_LOGE(TAG, "I²C bus %d not initialized", bus_id);
         return ESP_ERR_INVALID_STATE;
     }
     
@@ -228,12 +298,12 @@ esp_err_t i2c_bus_write(uint8_t device_addr, const uint8_t *reg_addr, size_t reg
         return ESP_ERR_INVALID_ARG;
     }
     
-    ESP_LOGD(TAG, "I²C write: addr=0x%02X, reg_len=%zu, data_len=%zu", 
-             device_addr, reg_addr_len, data_len);
+    ESP_LOGD(TAG, "I²C write on bus %d: addr=0x%02X, reg_len=%zu, data_len=%zu", 
+             bus_id, device_addr, reg_addr_len, data_len);
     
     // Захват mutex
-    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {
-        ESP_LOGE(TAG, "Failed to take mutex");
+    if (xSemaphoreTake(bus->mutex, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {
+        ESP_LOGE(TAG, "Failed to take mutex for bus %d", bus_id);
         return ESP_ERR_TIMEOUT;
     }
     
@@ -244,13 +314,13 @@ esp_err_t i2c_bus_write(uint8_t device_addr, const uint8_t *reg_addr, size_t reg
     i2c_device_config_t dev_cfg = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
         .device_address = device_addr,
-        .scl_speed_hz = s_config.clock_speed,
+        .scl_speed_hz = bus->config.clock_speed,
     };
     
-    err = i2c_master_bus_add_device(s_i2c_bus_handle, &dev_cfg, &dev_handle);
+    err = i2c_master_bus_add_device(bus->bus_handle, &dev_cfg, &dev_handle);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to add device: %s", esp_err_to_name(err));
-        xSemaphoreGive(s_mutex);
+        ESP_LOGE(TAG, "Failed to add device to bus %d: %s", bus_id, esp_err_to_name(err));
+        xSemaphoreGive(bus->mutex);
         return err;
     }
     
@@ -260,7 +330,7 @@ esp_err_t i2c_bus_write(uint8_t device_addr, const uint8_t *reg_addr, size_t reg
     if (write_buf == NULL) {
         ESP_LOGE(TAG, "Failed to allocate write buffer");
         i2c_master_bus_rm_device(dev_handle);
-        xSemaphoreGive(s_mutex);
+        xSemaphoreGive(bus->mutex);
         return ESP_ERR_NO_MEM;
     }
     
@@ -275,10 +345,10 @@ esp_err_t i2c_bus_write(uint8_t device_addr, const uint8_t *reg_addr, size_t reg
     
     free(write_buf);
     i2c_master_bus_rm_device(dev_handle);
-    xSemaphoreGive(s_mutex);
+    xSemaphoreGive(bus->mutex);
     
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "I²C write failed: %s (addr=0x%02X)", esp_err_to_name(err), device_addr);
+        ESP_LOGE(TAG, "I²C write failed on bus %d: %s (addr=0x%02X)", bus_id, esp_err_to_name(err), device_addr);
     }
     
     return err;
@@ -293,8 +363,20 @@ esp_err_t i2c_bus_write_byte(uint8_t device_addr, uint8_t reg_addr, uint8_t data
 }
 
 esp_err_t i2c_bus_scan(uint8_t *found_addresses, size_t max_addresses, size_t *found_count) {
-    if (!s_initialized) {
-        ESP_LOGE(TAG, "I²C bus not initialized");
+    // Для обратной совместимости - сканирование шины 0
+    return i2c_bus_scan_bus(I2C_BUS_0, found_addresses, max_addresses, found_count);
+}
+
+static esp_err_t i2c_bus_scan_bus(i2c_bus_id_t bus_id, uint8_t *found_addresses, size_t max_addresses, size_t *found_count) {
+    if (bus_id >= I2C_BUS_MAX) {
+        ESP_LOGE(TAG, "Invalid bus_id: %d", bus_id);
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    i2c_bus_state_t *bus = &s_buses[bus_id];
+    
+    if (!bus->initialized) {
+        ESP_LOGE(TAG, "I²C bus %d not initialized", bus_id);
         return ESP_ERR_INVALID_STATE;
     }
     
@@ -306,8 +388,8 @@ esp_err_t i2c_bus_scan(uint8_t *found_addresses, size_t max_addresses, size_t *f
     *found_count = 0;
     
     // Захват mutex
-    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
-        ESP_LOGE(TAG, "Failed to take mutex");
+    if (xSemaphoreTake(bus->mutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
+        ESP_LOGE(TAG, "Failed to take mutex for bus %d", bus_id);
         return ESP_ERR_TIMEOUT;
     }
     
@@ -317,10 +399,10 @@ esp_err_t i2c_bus_scan(uint8_t *found_addresses, size_t max_addresses, size_t *f
         i2c_device_config_t dev_cfg = {
             .dev_addr_length = I2C_ADDR_BIT_LEN_7,
             .device_address = addr,
-            .scl_speed_hz = s_config.clock_speed,
+            .scl_speed_hz = bus->config.clock_speed,
         };
         
-        esp_err_t err = i2c_master_bus_add_device(s_i2c_bus_handle, &dev_cfg, &dev_handle);
+        esp_err_t err = i2c_master_bus_add_device(bus->bus_handle, &dev_cfg, &dev_handle);
         if (err == ESP_OK) {
             // Попытка чтения для проверки наличия устройства
             uint8_t dummy;
@@ -328,40 +410,55 @@ esp_err_t i2c_bus_scan(uint8_t *found_addresses, size_t max_addresses, size_t *f
             if (err == ESP_OK) {
                 found_addresses[*found_count] = addr;
                 (*found_count)++;
-                ESP_LOGI(TAG, "Found I²C device at address 0x%02X", addr);
+                ESP_LOGI(TAG, "Found I²C device at address 0x%02X on bus %d", addr, bus_id);
             }
             i2c_master_bus_rm_device(dev_handle);
         }
     }
     
-    xSemaphoreGive(s_mutex);
+    xSemaphoreGive(bus->mutex);
     
-    ESP_LOGI(TAG, "I²C scan completed: found %zu device(s)", *found_count);
+    ESP_LOGI(TAG, "I²C bus %d scan completed: found %zu device(s)", bus_id, *found_count);
     return ESP_OK;
 }
 
 esp_err_t i2c_bus_recover(void) {
-    if (!s_initialized) {
-        ESP_LOGE(TAG, "I²C bus not initialized");
+    // Для обратной совместимости - восстановление шины 0
+    return i2c_bus_recover_bus(I2C_BUS_0);
+}
+
+static esp_err_t i2c_bus_recover_bus(i2c_bus_id_t bus_id) {
+    if (bus_id >= I2C_BUS_MAX) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    i2c_bus_state_t *bus = &s_buses[bus_id];
+    
+    if (!bus->initialized) {
+        ESP_LOGE(TAG, "I²C bus %d not initialized", bus_id);
         return ESP_ERR_INVALID_STATE;
     }
     
-    ESP_LOGI(TAG, "Recovering I²C bus...");
+    ESP_LOGI(TAG, "Recovering I²C bus %d...", bus_id);
+    
+    // Сохранение конфигурации
+    i2c_bus_config_t saved_config;
+    memcpy(&saved_config, &bus->config, sizeof(i2c_bus_config_t));
     
     // Деинициализация
-    i2c_bus_deinit();
+    i2c_bus_deinit_bus(bus_id);
     
     // Небольшая задержка
     vTaskDelay(pdMS_TO_TICKS(100));
     
     // Повторная инициализация с теми же параметрами
-    esp_err_t err = i2c_bus_init(&s_config);
+    esp_err_t err = i2c_bus_init_bus(bus_id, &saved_config);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to reinitialize I²C bus after recovery");
+        ESP_LOGE(TAG, "Failed to reinitialize I²C bus %d after recovery", bus_id);
         return err;
     }
     
-    ESP_LOGI(TAG, "I²C bus recovered successfully");
+    ESP_LOGI(TAG, "I²C bus %d recovered successfully", bus_id);
     return ESP_OK;
 }
 

@@ -200,6 +200,30 @@ esp_err_t oled_ui_stop_task(void);
  */
 bool oled_ui_is_initialized(void);
 
+/**
+ * @brief Отображение шага инициализации на экране BOOT
+ * 
+ * Показывает шаг инициализации с анимацией точек (каждые 500ms)
+ * Формат: "pH NODE INIT"
+ *         "Step {step_num}/8"
+ *         "{step_text}"
+ *         "{dots}" (анимация: "", ".", "..", "...")
+ * 
+ * @param step_num Номер шага (1-8)
+ * @param step_text Текст шага (например, "I2C init", "pH Sensor init")
+ * @return esp_err_t ESP_OK при успехе
+ */
+esp_err_t oled_ui_show_init_step(int step_num, const char *step_text);
+
+/**
+ * @brief Остановка анимации шагов инициализации
+ * 
+ * Останавливает анимацию точек и переходит к нормальному режиму
+ * 
+ * @return esp_err_t ESP_OK при успехе
+ */
+esp_err_t oled_ui_stop_init_steps(void);
+
 #ifdef __cplusplus
 }
 #endif

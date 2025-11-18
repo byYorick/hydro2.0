@@ -26,6 +26,15 @@ extern "C" {
 #endif
 
 /**
+ * @brief ID I²C шины
+ */
+typedef enum {
+    I2C_BUS_0 = 0,  ///< I²C шина 0
+    I2C_BUS_1 = 1,  ///< I²C шина 1
+    I2C_BUS_MAX = 2
+} i2c_bus_id_t;
+
+/**
  * @brief Конфигурация I²C шины
  */
 typedef struct {
@@ -36,12 +45,21 @@ typedef struct {
 } i2c_bus_config_t;
 
 /**
- * @brief Инициализация I²C шины
+ * @brief Инициализация I²C шины (шина 0 по умолчанию, для обратной совместимости)
  * 
  * @param config Конфигурация I²C шины
  * @return esp_err_t ESP_OK при успехе
  */
 esp_err_t i2c_bus_init(const i2c_bus_config_t *config);
+
+/**
+ * @brief Инициализация конкретной I²C шины
+ * 
+ * @param bus_id ID шины (I2C_BUS_0 или I2C_BUS_1)
+ * @param config Конфигурация I²C шины
+ * @return esp_err_t ESP_OK при успехе
+ */
+esp_err_t i2c_bus_init_bus(i2c_bus_id_t bus_id, const i2c_bus_config_t *config);
 
 /**
  * @brief Деинициализация I²C шины
@@ -51,14 +69,22 @@ esp_err_t i2c_bus_init(const i2c_bus_config_t *config);
 esp_err_t i2c_bus_deinit(void);
 
 /**
- * @brief Проверка инициализации I²C шины
+ * @brief Проверка инициализации I²C шины (шина 0 по умолчанию)
  * 
  * @return true если шина инициализирована
  */
 bool i2c_bus_is_initialized(void);
 
 /**
- * @brief Чтение данных с I²C устройства
+ * @brief Проверка инициализации конкретной I²C шины
+ * 
+ * @param bus_id ID шины
+ * @return true если шина инициализирована
+ */
+bool i2c_bus_is_initialized_bus(i2c_bus_id_t bus_id);
+
+/**
+ * @brief Чтение данных с I²C устройства (шина 0 по умолчанию, для обратной совместимости)
  * 
  * @param device_addr Адрес I²C устройства (7-bit)
  * @param reg_addr Адрес регистра (может быть NULL для устройств без регистров)
@@ -72,7 +98,22 @@ esp_err_t i2c_bus_read(uint8_t device_addr, const uint8_t *reg_addr, size_t reg_
                       uint8_t *data, size_t data_len, uint32_t timeout_ms);
 
 /**
- * @brief Запись данных в I²C устройство
+ * @brief Чтение данных с I²C устройства на конкретной шине
+ * 
+ * @param bus_id ID шины
+ * @param device_addr Адрес I²C устройства (7-bit)
+ * @param reg_addr Адрес регистра (может быть NULL для устройств без регистров)
+ * @param reg_addr_len Длина адреса регистра в байтах (0 если reg_addr == NULL)
+ * @param data Буфер для чтения данных
+ * @param data_len Количество байт для чтения
+ * @param timeout_ms Таймаут операции в миллисекундах
+ * @return esp_err_t ESP_OK при успехе
+ */
+esp_err_t i2c_bus_read_bus(i2c_bus_id_t bus_id, uint8_t device_addr, const uint8_t *reg_addr, size_t reg_addr_len,
+                           uint8_t *data, size_t data_len, uint32_t timeout_ms);
+
+/**
+ * @brief Запись данных в I²C устройство (шина 0 по умолчанию, для обратной совместимости)
  * 
  * @param device_addr Адрес I²C устройства (7-bit)
  * @param reg_addr Адрес регистра (может быть NULL для устройств без регистров)
@@ -84,6 +125,21 @@ esp_err_t i2c_bus_read(uint8_t device_addr, const uint8_t *reg_addr, size_t reg_
  */
 esp_err_t i2c_bus_write(uint8_t device_addr, const uint8_t *reg_addr, size_t reg_addr_len,
                        const uint8_t *data, size_t data_len, uint32_t timeout_ms);
+
+/**
+ * @brief Запись данных в I²C устройство на конкретной шине
+ * 
+ * @param bus_id ID шины
+ * @param device_addr Адрес I²C устройства (7-bit)
+ * @param reg_addr Адрес регистра (может быть NULL для устройств без регистров)
+ * @param reg_addr_len Длина адреса регистра в байтах (0 если reg_addr == NULL)
+ * @param data Буфер с данными для записи
+ * @param data_len Количество байт для записи
+ * @param timeout_ms Таймаут операции в миллисекундах
+ * @return esp_err_t ESP_OK при успехе
+ */
+esp_err_t i2c_bus_write_bus(i2c_bus_id_t bus_id, uint8_t device_addr, const uint8_t *reg_addr, size_t reg_addr_len,
+                            const uint8_t *data, size_t data_len, uint32_t timeout_ms);
 
 /**
  * @brief Чтение одного байта из регистра

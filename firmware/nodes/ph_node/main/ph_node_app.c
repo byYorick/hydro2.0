@@ -12,7 +12,7 @@
 #include "ph_node_init.h"
 #include "trema_ph.h"
 #include "oled_ui.h"
-#include "pump_control.h"
+#include "pump_driver.h"
 #include "config_storage.h"
 #include "esp_log.h"
 #include <string.h>
@@ -34,7 +34,7 @@ bool ph_node_is_oled_initialized(void) {
 }
 
 bool ph_node_is_pump_control_initialized(void) {
-    return pump_control_is_initialized();
+    return pump_driver_is_initialized();
 }
 
 const char* ph_node_get_node_id(void) {

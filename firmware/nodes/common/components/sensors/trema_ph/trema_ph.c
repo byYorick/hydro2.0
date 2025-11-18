@@ -27,15 +27,15 @@ static bool sensor_initialized = false;
 
 bool trema_ph_init(void)
 {
-    if (!i2c_bus_is_initialized()) {
-        ESP_LOGE(TAG, "I²C bus not initialized");
+    if (!i2c_bus_is_initialized_bus(I2C_BUS_1)) {
+        ESP_LOGE(TAG, "I²C bus 1 not initialized");
         return false;
     }
     
     // Try to communicate with the sensor
     // Read the model register to verify sensor presence
     uint8_t reg_model = REG_MODEL;
-    esp_err_t err = i2c_bus_read(TREMA_PH_ADDR, &reg_model, 1, data, 1, 1000);
+    esp_err_t err = i2c_bus_read_bus(I2C_BUS_1, TREMA_PH_ADDR, &reg_model, 1, data, 1, 1000);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to read from pH sensor: %s", esp_err_to_name(err));
         return false;
@@ -69,15 +69,15 @@ bool trema_ph_read(float *ph)
         }
     }
     
-    if (!i2c_bus_is_initialized()) {
-        ESP_LOGE(TAG, "I²C bus not initialized");
+    if (!i2c_bus_is_initialized_bus(I2C_BUS_1)) {
+        ESP_LOGE(TAG, "I²C bus 1 not initialized");
         *ph = stub_ph;
         use_stub_values = true;
         return false;
     }
     
     uint8_t reg_ph = REG_PH_pH;
-    esp_err_t err = i2c_bus_read(TREMA_PH_ADDR, &reg_ph, 1, data, 2, 1000);
+    esp_err_t err = i2c_bus_read_bus(I2C_BUS_1, TREMA_PH_ADDR, &reg_ph, 1, data, 2, 1000);
     if (err != ESP_OK) {
         ESP_LOGD(TAG, "PH sensor read failed: %s, returning stub value", esp_err_to_name(err));
         *ph = stub_ph;
@@ -129,7 +129,7 @@ bool trema_ph_calibrate(uint8_t stage, float known_pH)
         (ph_value_int >> 8) & 0x00FF // MSB
     };
     
-    esp_err_t err = i2c_bus_write(TREMA_PH_ADDR, &reg_known_ph, 1, ph_data, 2, 1000);
+    esp_err_t err = i2c_bus_write_bus(I2C_BUS_1, TREMA_PH_ADDR, &reg_known_ph, 1, ph_data, 2, 1000);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to write known pH value: %s", esp_err_to_name(err));
         return false;
@@ -141,7 +141,7 @@ bool trema_ph_calibrate(uint8_t stage, float known_pH)
     uint8_t reg_cal = REG_PH_CALIBRATION;
     uint8_t cal_cmd = (stage == 1 ? PH_BIT_CALC_1 : PH_BIT_CALC_2) | PH_CODE_CALC_SAVE;
     
-    err = i2c_bus_write(TREMA_PH_ADDR, &reg_cal, 1, &cal_cmd, 1, 1000);
+    err = i2c_bus_write_bus(I2C_BUS_1, TREMA_PH_ADDR, &reg_cal, 1, &cal_cmd, 1, 1000);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to send calibration command: %s", esp_err_to_name(err));
         return false;
@@ -164,7 +164,7 @@ uint8_t trema_ph_get_calibration_status(void)
     
     // Read calibration status
     uint8_t reg_cal = REG_PH_CALIBRATION;
-    esp_err_t err = i2c_bus_read(TREMA_PH_ADDR, &reg_cal, 1, data, 1, 1000);
+    esp_err_t err = i2c_bus_read_bus(I2C_BUS_1, TREMA_PH_ADDR, &reg_cal, 1, data, 1, 1000);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to read calibration status: %s", esp_err_to_name(err));
         return 0;
@@ -192,7 +192,7 @@ bool trema_ph_get_calibration_result(void)
     
     // Read error flags
     uint8_t reg_error = REG_PH_ERROR;
-    esp_err_t err = i2c_bus_read(TREMA_PH_ADDR, &reg_error, 1, data, 1, 1000);
+    esp_err_t err = i2c_bus_read_bus(I2C_BUS_1, TREMA_PH_ADDR, &reg_error, 1, data, 1, 1000);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to read calibration result: %s", esp_err_to_name(err));
         return false;
@@ -215,7 +215,7 @@ bool trema_ph_get_stability(void)
     
     // Read error flags
     uint8_t reg_error = REG_PH_ERROR;
-    esp_err_t err = i2c_bus_read(TREMA_PH_ADDR, &reg_error, 1, data, 1, 1000);
+    esp_err_t err = i2c_bus_read_bus(I2C_BUS_1, TREMA_PH_ADDR, &reg_error, 1, data, 1, 1000);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to read stability status: %s", esp_err_to_name(err));
         return false;
@@ -281,7 +281,7 @@ bool trema_ph_reset(void)
     uint8_t reg_bits = 0x01; // REG_BITS_0
     
     // Read current value
-    esp_err_t err = i2c_bus_read(TREMA_PH_ADDR, &reg_bits, 1, data, 1, 1000);
+    esp_err_t err = i2c_bus_read_bus(I2C_BUS_1, TREMA_PH_ADDR, &reg_bits, 1, data, 1, 1000);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to read from pH sensor for reset: %s", esp_err_to_name(err));
         return false;
@@ -289,7 +289,7 @@ bool trema_ph_reset(void)
     
     // Set reset bit (bit 7)
     uint8_t reset_value = data[0] | 0x80;
-    err = i2c_bus_write(TREMA_PH_ADDR, &reg_bits, 1, &reset_value, 1, 1000);
+    err = i2c_bus_write_bus(I2C_BUS_1, TREMA_PH_ADDR, &reg_bits, 1, &reset_value, 1, 1000);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to send reset command to pH sensor: %s", esp_err_to_name(err));
         return false;

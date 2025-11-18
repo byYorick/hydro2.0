@@ -5,7 +5,6 @@ idf_component_register(
         "ph_node_tasks.c"
         "ph_node_init.c"
         "ph_node_handlers.c"
-        "pump_control.c"
     INCLUDE_DIRS 
         "."
     REQUIRES 
@@ -19,6 +18,7 @@ idf_component_register(
         setup_portal
         heartbeat_task
         connection_status
+        pump_driver
         driver
         esp_wifi
         nvs_flash

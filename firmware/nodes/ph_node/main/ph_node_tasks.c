@@ -17,8 +17,12 @@
 #include "heartbeat_task.h"
 #include "config_storage.h"
 #include "i2c_bus.h"
+#include "ina209.h"
+#include "pump_driver.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_netif.h"
+#include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "cJSON.h"
@@ -32,6 +36,8 @@ static const char *TAG = "ph_node_tasks";
 
 // Период опроса датчика (в миллисекундах)
 #define SENSOR_POLL_INTERVAL_MS    3000  // 3 секунды - опрос pH датчика
+#define PUMP_CURRENT_POLL_INTERVAL_MS 5000  // 5 секунд - опрос тока насосов (по умолчанию)
+#define STATUS_PUBLISH_INTERVAL_MS 60000  // 60 секунд - публикация STATUS согласно DEVICE_NODE_PROTOCOL.md
 
 /**
  * @brief Задача опроса сенсоров
@@ -87,11 +93,64 @@ static void task_sensors(void *pvParameters) {
 }
 
 /**
+ * @brief Задача опроса тока насосов (INA209)
+ * 
+ * Периодически опрашивает INA209 и публикует телеметрию pump_bus_current
+ * Согласно NODE_CHANNELS_REFERENCE.md раздел 3.4
+ */
+static void task_pump_current(void *pvParameters) {
+    ESP_LOGI(TAG, "Pump current task started");
+    
+    TickType_t last_wake_time = xTaskGetTickCount();
+    const TickType_t interval = pdMS_TO_TICKS(PUMP_CURRENT_POLL_INTERVAL_MS);
+    
+    while (1) {
+        vTaskDelayUntil(&last_wake_time, interval);
+        
+        if (!mqtt_manager_is_connected()) {
+            continue;
+        }
+        
+        // Публикация telemetry тока насосов
+        ph_node_publish_pump_current_telemetry();
+    }
+}
+
+/**
+ * @brief Задача публикации STATUS сообщений
+ * 
+ * Публикует status каждые 60 секунд согласно DEVICE_NODE_PROTOCOL.md раздел 4.2
+ */
+static void task_status(void *pvParameters) {
+    ESP_LOGI(TAG, "Status task started");
+    
+    TickType_t last_wake_time = xTaskGetTickCount();
+    const TickType_t interval = pdMS_TO_TICKS(STATUS_PUBLISH_INTERVAL_MS);
+    
+    while (1) {
+        vTaskDelayUntil(&last_wake_time, interval);
+        
+        if (!mqtt_manager_is_connected()) {
+            continue;
+        }
+        
+        // Публикация STATUS
+        ph_node_publish_status();
+    }
+}
+
+/**
  * @brief Запуск FreeRTOS задач
  */
 void ph_node_start_tasks(void) {
     // Задача опроса pH датчика (pH-специфичная)
     xTaskCreate(task_sensors, "sensor_task", 4096, NULL, 5, NULL);
+    
+    // Задача опроса тока насосов (INA209)
+    xTaskCreate(task_pump_current, "pump_current_task", 3072, NULL, 4, NULL);
+    
+    // Задача публикации STATUS
+    xTaskCreate(task_status, "status_task", 3072, NULL, 3, NULL);
     
     // Задача heartbeat (общая логика через компонент)
     heartbeat_task_start_default();
@@ -147,7 +206,7 @@ void ph_node_publish_telemetry(void) {
         cJSON_AddNumberToObject(telemetry, "value", ph_value);
         cJSON_AddNumberToObject(telemetry, "raw", (int)(ph_value * 1000));  // Raw value in thousandths
         cJSON_AddBoolToObject(telemetry, "stub", using_stub);  // Stub flag
-        cJSON_AddNumberToObject(telemetry, "timestamp", (double)(esp_timer_get_time() / 1000000));
+        cJSON_AddNumberToObject(telemetry, "ts", (double)(esp_timer_get_time() / 1000000));
         
         // Add stability information if available
         if (trema_ph_is_initialized() && !using_stub) {
@@ -161,6 +220,92 @@ void ph_node_publish_telemetry(void) {
             free(json_str);
         }
         cJSON_Delete(telemetry);
+    }
+}
+
+/**
+ * @brief Publish pump bus current telemetry from INA209
+ */
+void ph_node_publish_pump_current_telemetry(void) {
+    if (!mqtt_manager_is_connected()) {
+        return;
+    }
+    
+    // Проверяем, инициализирован ли INA209 через pump_driver
+    // INA209 может быть не настроен, если нет конфигурации
+    ina209_reading_t reading = {0};
+    esp_err_t err = ina209_read(&reading);
+    
+    if (err != ESP_OK || !reading.valid) {
+        // INA209 не инициализирован или ошибка чтения - не публикуем telemetry
+        return;
+    }
+    
+    // Get node_id from config
+    const char *node_id = ph_node_get_node_id();
+    
+    // Format according to NODE_CHANNELS_REFERENCE.md section 3.4
+    cJSON *telemetry = cJSON_CreateObject();
+    if (telemetry) {
+        cJSON_AddStringToObject(telemetry, "node_id", node_id);
+        cJSON_AddStringToObject(telemetry, "channel", "pump_bus_current");
+        cJSON_AddStringToObject(telemetry, "metric_type", "CURRENT_MA");
+        cJSON_AddNumberToObject(telemetry, "value", reading.bus_current_ma);
+        cJSON_AddNumberToObject(telemetry, "ts", (double)(esp_timer_get_time() / 1000000));
+        
+        char *json_str = cJSON_PrintUnformatted(telemetry);
+        if (json_str) {
+            mqtt_manager_publish_telemetry("pump_bus_current", json_str);
+            free(json_str);
+        }
+        cJSON_Delete(telemetry);
+    }
+}
+
+/**
+ * @brief Publish STATUS message
+ * 
+ * Публикует статус узла согласно DEVICE_NODE_PROTOCOL.md раздел 4.2
+ */
+void ph_node_publish_status(void) {
+    if (!mqtt_manager_is_connected()) {
+        return;
+    }
+    
+    // Получение IP адреса
+    esp_netif_ip_info_t ip_info;
+    char ip_str[16] = "0.0.0.0";
+    esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    if (netif != NULL) {
+        if (esp_netif_get_ip_info(netif, &ip_info) == ESP_OK) {
+            snprintf(ip_str, sizeof(ip_str), IPSTR, IP2STR(&ip_info.ip));
+        }
+    }
+    
+    // Получение RSSI
+    wifi_ap_record_t ap_info;
+    int8_t rssi = -100;
+    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+        rssi = ap_info.rssi;
+    }
+    
+    // Версия прошивки (можно взять из IDF_VER или hardcode)
+    const char *fw_version = IDF_VER;
+    
+    // Формат согласно DEVICE_NODE_PROTOCOL.md раздел 4.2
+    cJSON *status = cJSON_CreateObject();
+    if (status) {
+        cJSON_AddBoolToObject(status, "online", true);
+        cJSON_AddStringToObject(status, "ip", ip_str);
+        cJSON_AddNumberToObject(status, "rssi", rssi);
+        cJSON_AddStringToObject(status, "fw", fw_version);
+        
+        char *json_str = cJSON_PrintUnformatted(status);
+        if (json_str) {
+            mqtt_manager_publish_status(json_str);
+            free(json_str);
+        }
+        cJSON_Delete(status);
     }
 }
 

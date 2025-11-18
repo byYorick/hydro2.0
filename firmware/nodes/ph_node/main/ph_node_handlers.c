@@ -13,7 +13,7 @@
 #include "wifi_manager.h"
 #include "config_storage.h"
 #include "config_apply.h"
-#include "pump_control.h"
+#include "pump_driver.h"
 #include "trema_ph.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -23,10 +23,75 @@
 #include "cJSON.h"
 #include <string.h>
 #include <stdlib.h>
+#include <stdbool.h>
+#include <stdint.h>
 
 static const char *TAG = "ph_node_handlers";
 
 extern void ph_node_mqtt_connection_cb(bool connected, void *user_ctx);
+
+// Защита от дублирующих команд
+#define CMD_ID_CACHE_SIZE 20
+#define CMD_ID_TTL_MS 60000  // 60 секунд TTL
+
+typedef struct {
+    char cmd_id[64];
+    uint64_t timestamp_ms;
+    bool valid;
+} cmd_id_cache_entry_t;
+
+static cmd_id_cache_entry_t s_cmd_id_cache[CMD_ID_CACHE_SIZE] = {0};
+
+/**
+ * @brief Проверка и добавление cmd_id в кеш
+ * @return true если команда уже обработана (дубликат), false если новая
+ */
+static bool check_and_add_cmd_id(const char *cmd_id) {
+    if (cmd_id == NULL) {
+        return false;
+    }
+    
+    uint64_t now_ms = esp_timer_get_time() / 1000;
+    
+    // Очистка устаревших записей и поиск существующей
+    int oldest_idx = 0;
+    uint64_t oldest_ts = UINT64_MAX;
+    
+    for (int i = 0; i < CMD_ID_CACHE_SIZE; i++) {
+        if (s_cmd_id_cache[i].valid) {
+            // Проверка TTL
+            if (now_ms - s_cmd_id_cache[i].timestamp_ms > CMD_ID_TTL_MS) {
+                s_cmd_id_cache[i].valid = false;
+                continue;
+            }
+            
+            // Проверка на дубликат
+            if (strcmp(s_cmd_id_cache[i].cmd_id, cmd_id) == 0) {
+                // Обновляем timestamp
+                s_cmd_id_cache[i].timestamp_ms = now_ms;
+                return true; // Дубликат найден
+            }
+            
+            // Поиск самой старой записи для замены
+            if (s_cmd_id_cache[i].timestamp_ms < oldest_ts) {
+                oldest_ts = s_cmd_id_cache[i].timestamp_ms;
+                oldest_idx = i;
+            }
+        } else {
+            // Нашли свободное место
+            oldest_idx = i;
+            break;
+        }
+    }
+    
+    // Добавляем новую запись
+    strncpy(s_cmd_id_cache[oldest_idx].cmd_id, cmd_id, sizeof(s_cmd_id_cache[oldest_idx].cmd_id) - 1);
+    s_cmd_id_cache[oldest_idx].cmd_id[sizeof(s_cmd_id_cache[oldest_idx].cmd_id) - 1] = '\0';
+    s_cmd_id_cache[oldest_idx].timestamp_ms = now_ms;
+    s_cmd_id_cache[oldest_idx].valid = true;
+    
+    return false; // Новая команда
+}
 
 // Helper function to send error response
 static void send_command_error_response(const char *channel, const char *cmd_id, 
@@ -227,7 +292,7 @@ void ph_node_config_handler(const char *topic, const char *data, int data_len, v
         cJSON_Delete(previous_config);
     }
     cJSON_Delete(config);
-
+}
 
 /**
  * @brief Handle MQTT command message
@@ -255,15 +320,35 @@ void ph_node_command_handler(const char *topic, const char *channel, const char 
     const char *cmd_id = cmd_id_item->valuestring;
     const char *cmd_type = cmd_item->valuestring;
     
+    // Проверка на дублирующую команду
+    if (check_and_add_cmd_id(cmd_id)) {
+        ESP_LOGW(TAG, "Duplicate command detected: %s (cmd_id: %s), ignoring", cmd_type, cmd_id);
+        // Отправляем ответ со статусом NO_EFFECT
+        cJSON *response = cJSON_CreateObject();
+        if (response) {
+            cJSON_AddStringToObject(response, "cmd_id", cmd_id);
+            cJSON_AddStringToObject(response, "status", "NO_EFFECT");
+            cJSON_AddStringToObject(response, "error_message", "Command already processed");
+            cJSON_AddNumberToObject(response, "ts", (double)(esp_timer_get_time() / 1000000));
+            
+            char *json_str = cJSON_PrintUnformatted(response);
+            if (json_str) {
+                mqtt_manager_publish_command_response(channel, json_str);
+                free(json_str);
+            }
+            cJSON_Delete(response);
+        }
+        cJSON_Delete(cmd);
+        return;
+    }
+    
     ESP_LOGI(TAG, "Processing command: %s (cmd_id: %s)", cmd_type, cmd_id);
     
     // Handle pump commands
     if (strcmp(channel, "pump_acid") == 0 || strcmp(channel, "pump_base") == 0) {
-        pump_id_t pump_id = (strcmp(channel, "pump_acid") == 0) ? PUMP_ACID : PUMP_BASE;
-        
         if (!ph_node_is_pump_control_initialized()) {
             send_command_error_response(channel, cmd_id, "pump_not_initialized", 
-                                       "Pump control not initialized");
+                                       "Pump driver not initialized");
             cJSON_Delete(cmd);
             return;
         }
@@ -278,22 +363,36 @@ void ph_node_command_handler(const char *topic, const char *channel, const char 
             }
             
             uint32_t duration_ms = (uint32_t)cJSON_GetNumberValue(duration_item);
-            esp_err_t err = pump_control_run(pump_id, duration_ms);
+            esp_err_t err = pump_driver_run(channel, duration_ms);
             
             if (err == ESP_OK) {
                 send_command_success_response(channel, cmd_id, NULL);
             } else if (err == ESP_ERR_INVALID_STATE) {
                 send_command_error_response(channel, cmd_id, "pump_busy", 
                                            "Pump is already running or in cooldown");
+            } else if (err == ESP_ERR_NOT_FOUND) {
+                send_command_error_response(channel, cmd_id, "pump_not_found", 
+                                           "Pump channel not found");
+            } else if (err == ESP_ERR_INVALID_RESPONSE) {
+                // Ток не обнаружен (undercurrent)
+                send_command_error_response(channel, cmd_id, "current_not_detected", 
+                                           "Pump started but no current detected");
+            } else if (err == ESP_ERR_INVALID_SIZE) {
+                // Перегрузка (overcurrent)
+                send_command_error_response(channel, cmd_id, "overcurrent", 
+                                           "Pump current exceeds maximum limit");
             } else {
                 send_command_error_response(channel, cmd_id, "pump_error", 
                                            "Failed to start pump");
             }
         } else if (strcmp(cmd_type, "stop_pump") == 0) {
-            esp_err_t err = pump_control_stop(pump_id);
+            esp_err_t err = pump_driver_stop(channel);
             
             if (err == ESP_OK) {
                 send_command_success_response(channel, cmd_id, NULL);
+            } else if (err == ESP_ERR_NOT_FOUND) {
+                send_command_error_response(channel, cmd_id, "pump_not_found", 
+                                           "Pump channel not found");
             } else {
                 send_command_error_response(channel, cmd_id, "pump_error", 
                                            "Failed to stop pump");
@@ -308,13 +407,24 @@ void ph_node_command_handler(const char *topic, const char *channel, const char 
             }
             
             float dose_ml = (float)cJSON_GetNumberValue(dose_item);
-            esp_err_t err = pump_control_dose(pump_id, dose_ml);
+            esp_err_t err = pump_driver_dose(channel, dose_ml);
             
             if (err == ESP_OK) {
                 send_command_success_response(channel, cmd_id, NULL);
             } else if (err == ESP_ERR_INVALID_STATE) {
                 send_command_error_response(channel, cmd_id, "pump_busy", 
                                            "Pump is already running or in cooldown");
+            } else if (err == ESP_ERR_NOT_FOUND) {
+                send_command_error_response(channel, cmd_id, "pump_not_found", 
+                                           "Pump channel not found");
+            } else if (err == ESP_ERR_INVALID_RESPONSE) {
+                // Ток не обнаружен (undercurrent)
+                send_command_error_response(channel, cmd_id, "current_not_detected", 
+                                           "Pump started but no current detected");
+            } else if (err == ESP_ERR_INVALID_SIZE) {
+                // Перегрузка (overcurrent)
+                send_command_error_response(channel, cmd_id, "overcurrent", 
+                                           "Pump current exceeds maximum limit");
             } else {
                 send_command_error_response(channel, cmd_id, "pump_error", 
                                            "Failed to dose pump");
@@ -329,10 +439,27 @@ void ph_node_command_handler(const char *topic, const char *channel, const char 
             }
             
             int state = (int)cJSON_GetNumberValue(state_item);
-            esp_err_t err = pump_control_set_state(pump_id, state);
+            esp_err_t err;
+            if (state == 0) {
+                err = pump_driver_stop(channel);
+            } else {
+                // Для включения используем максимальную длительность (5 минут)
+                err = pump_driver_run(channel, 300000);
+            }
             
             if (err == ESP_OK) {
                 send_command_success_response(channel, cmd_id, NULL);
+            } else if (err == ESP_ERR_NOT_FOUND) {
+                send_command_error_response(channel, cmd_id, "pump_not_found", 
+                                           "Pump channel not found");
+            } else if (err == ESP_ERR_INVALID_RESPONSE) {
+                // Ток не обнаружен (undercurrent)
+                send_command_error_response(channel, cmd_id, "current_not_detected", 
+                                           "Pump started but no current detected");
+            } else if (err == ESP_ERR_INVALID_SIZE) {
+                // Перегрузка (overcurrent)
+                send_command_error_response(channel, cmd_id, "overcurrent", 
+                                           "Pump current exceeds maximum limit");
             } else {
                 send_command_error_response(channel, cmd_id, "pump_error", 
                                            "Failed to set pump state");

@@ -37,6 +37,16 @@ esp_err_t ph_node_init_components(void);
  */
 void ph_node_publish_telemetry(void);
 
+/**
+ * @brief Publish pump bus current telemetry
+ */
+void ph_node_publish_pump_current_telemetry(void);
+
+/**
+ * @brief Publish STATUS message
+ */
+void ph_node_publish_status(void);
+
 // State getters - делегируют в компоненты
 bool ph_node_is_ph_sensor_initialized(void);
 bool ph_node_is_oled_initialized(void);

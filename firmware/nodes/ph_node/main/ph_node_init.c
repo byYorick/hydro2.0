@@ -15,13 +15,15 @@
 #include "i2c_bus.h"
 #include "trema_ph.h"
 #include "oled_ui.h"
-#include "pump_control.h"
+#include "pump_driver.h"
 #include "mqtt_manager.h"
 #include "ph_node_handlers.h"
 #include "setup_portal.h"
 #include "connection_status.h"
 #include "esp_log.h"
 #include "esp_err.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include <string.h>
 
 static const char *TAG = "ph_node_init";
@@ -86,7 +88,8 @@ void ph_node_wifi_connection_cb(bool connected, void *user_ctx) {
 esp_err_t ph_node_init_components(void) {
     ESP_LOGI(TAG, "Initializing ph_node components...");
     
-    // Initialize config storage
+    // [Step 1/8] Loading config from NVS
+    ESP_LOGI(TAG, "[Step 1/8] Loading config...");
     esp_err_t err = config_storage_init();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize config storage: %s", esp_err_to_name(err));
@@ -102,41 +105,57 @@ esp_err_t ph_node_init_components(void) {
         ESP_LOGW(TAG, "Using default values, waiting for config from MQTT...");
     }
     
-    // Initialize Wi-Fi manager
+    // [Step 2/8] Initialize Wi-Fi manager
+    ESP_LOGI(TAG, "[Step 2/8] Wi-Fi manager init...");
     err = wifi_manager_init();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize Wi-Fi manager: %s", esp_err_to_name(err));
         return err;
     }
     
-    // Initialize I2C bus (needed for OLED and sensors)
+    // [Step 3/8] Initialize I2C buses (I2C 0: OLED + INA209, I2C 1: pH sensor)
+    ESP_LOGI(TAG, "[Step 3/8] I2C init...");
     ESP_LOGI(TAG, "=== I2C Bus Initialization ===");
-    if (!i2c_bus_is_initialized()) {
-        ESP_LOGI(TAG, "I2C bus not initialized, starting initialization...");
-        err = i2c_bus_init_from_config();
+    // OLED еще не инициализирован на этом шаге, поэтому не показываем
+    
+    // Инициализация I2C 0 для OLED и INA209 (ESP32: SDA=21, SCL=22 - стандартные пины)
+    if (!i2c_bus_is_initialized_bus(I2C_BUS_0)) {
+        ESP_LOGI(TAG, "Initializing I2C bus 0 (OLED + INA209)...");
+        i2c_bus_config_t i2c0_config = {
+            .sda_pin = 21,  // ESP32 стандартный SDA
+            .scl_pin = 22,  // ESP32 стандартный SCL
+            .clock_speed = 100000,
+            .pullup_enable = true
+        };
+        err = i2c_bus_init_bus(I2C_BUS_0, &i2c0_config);
         if (err != ESP_OK) {
-            ESP_LOGW(TAG, "Failed to initialize I2C bus from config (%s), using defaults", esp_err_to_name(err));
-            i2c_bus_config_t i2c_config = {
-                .sda_pin = 8,
-                .scl_pin = 9,
-                .clock_speed = 100000,
-                .pullup_enable = true
-            };
-            ESP_LOGI(TAG, "Initializing I2C bus with default config: SDA=%d, SCL=%d, speed=%d", 
-                     i2c_config.sda_pin, i2c_config.scl_pin, i2c_config.clock_speed);
-            err = i2c_bus_init(&i2c_config);
-            if (err != ESP_OK) {
-                ESP_LOGE(TAG, "Failed to initialize I2C bus: %s (error code: %d)", esp_err_to_name(err), err);
-                // Continue, I2C may not be needed
-            } else {
-                ESP_LOGI(TAG, "I2C bus initialized successfully with defaults");
-            }
+            ESP_LOGE(TAG, "Failed to initialize I2C bus 0: %s (error code: %d)", esp_err_to_name(err), err);
         } else {
-            ESP_LOGI(TAG, "I2C bus initialized successfully from config");
+            ESP_LOGI(TAG, "I2C bus 0 initialized: SDA=%d, SCL=%d", i2c0_config.sda_pin, i2c0_config.scl_pin);
         }
     } else {
-        ESP_LOGI(TAG, "I2C bus already initialized");
+        ESP_LOGI(TAG, "I2C bus 0 already initialized");
     }
+    
+    // Инициализация I2C 1 для pH сенсора (ESP32: SDA=18, SCL=19)
+    if (!i2c_bus_is_initialized_bus(I2C_BUS_1)) {
+        ESP_LOGI(TAG, "Initializing I2C bus 1 (pH sensor)...");
+        i2c_bus_config_t i2c1_config = {
+            .sda_pin = 18,  // ESP32 альтернативный SDA
+            .scl_pin = 19,  // ESP32 альтернативный SCL
+            .clock_speed = 100000,
+            .pullup_enable = true
+        };
+        err = i2c_bus_init_bus(I2C_BUS_1, &i2c1_config);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to initialize I2C bus 1: %s (error code: %d)", esp_err_to_name(err), err);
+        } else {
+            ESP_LOGI(TAG, "I2C bus 1 initialized: SDA=%d, SCL=%d", i2c1_config.sda_pin, i2c1_config.scl_pin);
+        }
+    } else {
+        ESP_LOGI(TAG, "I2C bus 1 already initialized");
+    }
+    
     ESP_LOGI(TAG, "=== I2C Bus Initialization Complete ===");
     
     // Check for WiFi config
@@ -170,24 +189,27 @@ esp_err_t ph_node_init_components(void) {
         // Continue - Wi-Fi will try to reconnect automatically
     }
     
-    // Initialize Trema pH sensor
-    if (i2c_bus_is_initialized()) {
-        ESP_LOGI(TAG, "Initializing Trema pH sensor...");
+    // [Step 4/8] Initialize Trema pH sensor (на I2C 1)
+    ESP_LOGI(TAG, "[Step 4/8] pH Sensor init...");
+    // OLED еще не инициализирован на этом шаге, поэтому не показываем
+    if (i2c_bus_is_initialized_bus(I2C_BUS_1)) {
+        ESP_LOGI(TAG, "Initializing Trema pH sensor on I2C bus 1...");
         if (trema_ph_init()) {
             ESP_LOGI(TAG, "Trema pH sensor initialized successfully");
         } else {
             ESP_LOGW(TAG, "Failed to initialize Trema pH sensor, will retry later");
         }
     } else {
-        ESP_LOGW(TAG, "I2C bus not available, pH sensor initialization skipped");
+        ESP_LOGW(TAG, "I2C bus 1 not available, pH sensor initialization skipped");
     }
     
-    // Initialize OLED UI
+    // [Step 5/8] Initialize OLED UI (после I2C, чтобы можно было показывать шаги)
+    ESP_LOGI(TAG, "[Step 5/8] OLED UI init...");
     ESP_LOGI(TAG, "=== OLED UI Initialization ===");
-    if (!i2c_bus_is_initialized()) {
-        ESP_LOGW(TAG, "I2C bus not initialized, cannot initialize OLED");
+    if (!i2c_bus_is_initialized_bus(I2C_BUS_0)) {
+        ESP_LOGW(TAG, "I2C bus 0 not initialized, cannot initialize OLED");
     } else {
-        ESP_LOGI(TAG, "I2C bus is initialized, proceeding with OLED init");
+        ESP_LOGI(TAG, "I2C bus 0 is initialized, proceeding with OLED init");
         // Получаем node_id из config_storage или используем дефолт
         char node_id[64];
         if (config_storage_get_node_id(node_id, sizeof(node_id)) != ESP_OK) {
@@ -212,6 +234,13 @@ esp_err_t ph_node_init_components(void) {
                 ESP_LOGW(TAG, "Failed to set OLED state: %s", esp_err_to_name(oled_err));
             }
             ESP_LOGI(TAG, "OLED UI initialized and configured successfully");
+            // Показываем предыдущие шаги, которые уже выполнены
+            oled_ui_show_init_step(3, "I2C init");
+            vTaskDelay(pdMS_TO_TICKS(200));
+            oled_ui_show_init_step(4, "pH Sensor init");
+            vTaskDelay(pdMS_TO_TICKS(200));
+            // Показываем текущий шаг
+            oled_ui_show_init_step(5, "OLED UI init");
         } else {
             ESP_LOGE(TAG, "Failed to initialize OLED UI: %s (error code: %d)", 
                      esp_err_to_name(oled_err), oled_err);
@@ -219,31 +248,26 @@ esp_err_t ph_node_init_components(void) {
     }
     ESP_LOGI(TAG, "=== OLED UI Initialization Complete ===");
     
-    // Initialize pump control
-    ESP_LOGI(TAG, "Initializing pump control...");
-    pump_config_t pump_configs[PUMP_MAX] = {
-        {
-            .gpio_pin = 12,  // GPIO for pump_acid (can be overridden via NodeConfig)
-            .max_duration_ms = 30000,  // 30 seconds maximum
-            .min_off_time_ms = 5000,   // 5 seconds minimum between starts
-            .ml_per_second = 2.0f     // 2 ml/sec default
-        },
-        {
-            .gpio_pin = 13,  // GPIO for pump_base (can be overridden via NodeConfig)
-            .max_duration_ms = 30000,
-            .min_off_time_ms = 5000,
-            .ml_per_second = 2.0f
-        }
-    };
-    
-    esp_err_t pump_err = pump_control_init(pump_configs);
+    // [Step 6/8] Initialize pump driver from NodeConfig
+    ESP_LOGI(TAG, "[Step 6/8] Pumps init...");
+    if (oled_ui_is_initialized()) {
+        oled_ui_show_init_step(6, "Pumps init");
+    }
+    ESP_LOGI(TAG, "Initializing pump driver...");
+    esp_err_t pump_err = pump_driver_init_from_config();
     if (pump_err == ESP_OK) {
-        ESP_LOGI(TAG, "Pump control initialized successfully");
+        ESP_LOGI(TAG, "Pump driver initialized successfully from config");
+    } else if (pump_err == ESP_ERR_NOT_FOUND) {
+        ESP_LOGW(TAG, "No pump channels found in config, pumps will be initialized when config is received");
     } else {
-        ESP_LOGE(TAG, "Failed to initialize pump control: %s", esp_err_to_name(pump_err));
+        ESP_LOGE(TAG, "Failed to initialize pump driver: %s", esp_err_to_name(pump_err));
     }
     
-    // Initialize MQTT client (from config or defaults)
+    // [Step 7/8] Initialize MQTT client (from config or defaults)
+    ESP_LOGI(TAG, "[Step 7/8] MQTT init...");
+    if (oled_ui_is_initialized()) {
+        oled_ui_show_init_step(7, "MQTT init");
+    }
     config_storage_mqtt_t mqtt_cfg;
     mqtt_manager_config_t mqtt_config;
     mqtt_node_info_t node_info;
@@ -337,10 +361,18 @@ esp_err_t ph_node_init_components(void) {
         return err;
     }
     
+    // [Step 8/8] Starting
+    ESP_LOGI(TAG, "[Step 8/8] Starting...");
+    if (oled_ui_is_initialized()) {
+        oled_ui_show_init_step(8, "Starting");
+    }
+    
     ESP_LOGI(TAG, "All components initialized successfully");
     
-    // Transition OLED UI to normal mode after initialization
+    // Останавливаем анимацию шагов инициализации
     if (oled_ui_is_initialized()) {
+        oled_ui_stop_init_steps();
+        // Transition OLED UI to normal mode after initialization
         oled_ui_set_state(OLED_UI_STATE_NORMAL);
     }
     

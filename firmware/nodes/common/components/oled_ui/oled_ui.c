@@ -167,6 +167,14 @@ static struct {
     int current_screen;  // Текущий экран в режиме NORMAL
     TaskHandle_t update_task_handle;
     bool task_running;
+    
+    // Шаги инициализации
+    bool init_steps_active;
+    int current_step_num;
+    char current_step_text[32];
+    TaskHandle_t init_animation_task;
+    bool init_animation_active;
+    int init_dot_count;  // Текущее количество точек для анимации (0-3)
 } s_ui = {0};
 
 // Внутренние функции
@@ -437,19 +445,65 @@ static void render_line(uint8_t line_num, const char *str) {
  */
 static void render_boot_screen(void) {
     ssd1306_clear();
-    render_line(0, "Hydro 2.0");
-    render_line(1, "Booting...");
     
-    if (s_ui.model.connections.wifi_connected) {
-        render_line(2, "WiFi: OK");
+    // Если активны шаги инициализации, показываем их
+    if (s_ui.init_steps_active) {
+        // Определяем заголовок в зависимости от типа узла
+        const char *header = "pH NODE INIT";
+        switch (s_ui.node_type) {
+            case OLED_UI_NODE_TYPE_PH:
+                header = "pH NODE INIT";
+                break;
+            case OLED_UI_NODE_TYPE_EC:
+                header = "EC NODE INIT";
+                break;
+            case OLED_UI_NODE_TYPE_CLIMATE:
+                header = "CLIMATE INIT";
+                break;
+            case OLED_UI_NODE_TYPE_PUMP:
+                header = "PUMP NODE INIT";
+                break;
+            default:
+                header = "NODE INIT";
+                break;
+        }
+        
+        render_line(0, header);
+        
+        // Строка 1: "Step X/8"
+        char step_line[22];
+        snprintf(step_line, sizeof(step_line), "Step %d/8", s_ui.current_step_num);
+        render_line(1, step_line);
+        
+        // Строка 2: Текст шага
+        render_line(2, s_ui.current_step_text);
+        
+        // Строка 3: Анимация точек
+        char dots_line[22] = "";
+        if (s_ui.init_animation_active) {
+            // Формируем строку с точками
+            for (int i = 0; i < s_ui.init_dot_count && i < 3; i++) {
+                dots_line[i] = '.';
+            }
+            dots_line[s_ui.init_dot_count] = '\0';
+        }
+        render_line(3, dots_line);
     } else {
-        render_line(2, "WiFi: Connecting");
-    }
-    
-    if (s_ui.model.connections.mqtt_connected) {
-        render_line(3, "MQTT: OK");
-    } else {
-        render_line(3, "MQTT: Connecting");
+        // Стандартный экран загрузки
+        render_line(0, "Hydro 2.0");
+        render_line(1, "Booting...");
+        
+        if (s_ui.model.connections.wifi_connected) {
+            render_line(2, "WiFi: OK");
+        } else {
+            render_line(2, "WiFi: Connecting");
+        }
+        
+        if (s_ui.model.connections.mqtt_connected) {
+            render_line(3, "MQTT: OK");
+        } else {
+            render_line(3, "MQTT: Connecting");
+        }
     }
 }
 
@@ -839,5 +893,101 @@ esp_err_t oled_ui_stop_task(void) {
 
 bool oled_ui_is_initialized(void) {
     return s_ui.initialized;
+}
+
+// Задача анимации точек для шагов инициализации
+#define INIT_STEP_ANIMATION_INTERVAL_MS 500
+
+static void init_step_animation_task(void *arg) {
+    (void)arg;
+    s_ui.init_dot_count = 0;
+
+    while (s_ui.init_animation_active && s_ui.init_steps_active) {
+        // Обновляем количество точек (0, 1, 2, 3 -> "", ".", "..", "...")
+        s_ui.init_dot_count = (s_ui.init_dot_count + 1) % 4;
+
+        // Обновляем отображение
+        if (s_ui.initialized && s_ui.state == OLED_UI_STATE_BOOT) {
+            render_boot_screen();
+            oled_ui_refresh();
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(INIT_STEP_ANIMATION_INTERVAL_MS));
+    }
+
+    s_ui.init_animation_task = NULL;
+    s_ui.init_dot_count = 0;
+    vTaskDelete(NULL);
+}
+
+esp_err_t oled_ui_show_init_step(int step_num, const char *step_text) {
+    if (!s_ui.initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    // Устанавливаем состояние BOOT, если еще не установлено
+    if (s_ui.state != OLED_UI_STATE_BOOT) {
+        s_ui.state = OLED_UI_STATE_BOOT;
+    }
+
+    // Активируем режим шагов инициализации
+    s_ui.init_steps_active = true;
+    s_ui.current_step_num = step_num;
+    
+    if (step_text) {
+        strncpy(s_ui.current_step_text, step_text, sizeof(s_ui.current_step_text) - 1);
+        s_ui.current_step_text[sizeof(s_ui.current_step_text) - 1] = '\0';
+    } else {
+        s_ui.current_step_text[0] = '\0';
+    }
+
+    // Запускаем анимацию, если еще не запущена
+    if (!s_ui.init_animation_active) {
+        s_ui.init_animation_active = true;
+        if (xTaskCreate(init_step_animation_task, "init_step_anim", 2048, NULL, 4, 
+                       &s_ui.init_animation_task) != pdPASS) {
+            ESP_LOGE(TAG, "Failed to create init step animation task");
+            s_ui.init_animation_task = NULL;
+            s_ui.init_animation_active = false;
+            return ESP_FAIL;
+        }
+    }
+
+    // Обновляем экран
+    render_boot_screen();
+    oled_ui_refresh();
+
+    ESP_LOGI(TAG, "Init step %d: %s", step_num, step_text ? step_text : "");
+    return ESP_OK;
+}
+
+esp_err_t oled_ui_stop_init_steps(void) {
+    if (!s_ui.initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    // Останавливаем анимацию
+    s_ui.init_animation_active = false;
+    int wait_count = 0;
+    while (s_ui.init_animation_task != NULL && wait_count < 50) {
+        vTaskDelay(pdMS_TO_TICKS(20));
+        wait_count++;
+    }
+
+    if (s_ui.init_animation_task != NULL) {
+        ESP_LOGW(TAG, "Init animation task still exists after wait");
+    }
+
+    // Деактивируем режим шагов
+    s_ui.init_steps_active = false;
+    s_ui.current_step_num = 0;
+    s_ui.current_step_text[0] = '\0';
+
+    // Обновляем экран (вернется к стандартному BOOT экрану)
+    render_boot_screen();
+    oled_ui_refresh();
+
+    ESP_LOGI(TAG, "Init steps stopped");
+    return ESP_OK;
 }
 

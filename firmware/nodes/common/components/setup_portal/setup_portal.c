@@ -297,9 +297,9 @@ static void save_credentials_to_config_storage(const setup_portal_credentials_t 
                 cJSON_AddItemToObject(config, "wifi", wifi_obj);
             }
             cJSON_DeleteItemFromObject(wifi_obj, "ssid");
-            cJSON_DeleteItemFromObject(wifi_obj, "password");
+            cJSON_DeleteItemFromObject(wifi_obj, "pass");
             cJSON_AddStringToObject(wifi_obj, "ssid", wifi_cfg.ssid);
-            cJSON_AddStringToObject(wifi_obj, "password", wifi_cfg.password);
+            cJSON_AddStringToObject(wifi_obj, "pass", wifi_cfg.password);
             
             char *json_str = cJSON_PrintUnformatted(config);
             if (json_str) {
@@ -315,13 +315,15 @@ static void save_credentials_to_config_storage(const setup_portal_credentials_t 
         }
     } else {
         // If no config exists, create minimal valid config
-        // Validation requires: node_id, version, type, channels, wifi, mqtt
+        // Validation requires: node_id, version, type, gh_uid, zone_uid, channels, wifi, mqtt
         cJSON *config = cJSON_CreateObject();
         
         // Required fields for validation
         cJSON_AddStringToObject(config, "node_id", "node-temp"); // Temporary ID, will be replaced
         cJSON_AddNumberToObject(config, "version", 1);
         cJSON_AddStringToObject(config, "type", "unknown");
+        cJSON_AddStringToObject(config, "gh_uid", "gh-temp"); // Temporary, will be replaced via MQTT
+        cJSON_AddStringToObject(config, "zone_uid", "zn-temp"); // Temporary, will be replaced via MQTT
         
         // Empty channels array (required field)
         cJSON *channels = cJSON_CreateArray();
@@ -330,7 +332,7 @@ static void save_credentials_to_config_storage(const setup_portal_credentials_t 
         // WiFi configuration
         cJSON *wifi_obj = cJSON_CreateObject();
         cJSON_AddStringToObject(wifi_obj, "ssid", wifi_cfg.ssid);
-        cJSON_AddStringToObject(wifi_obj, "password", wifi_cfg.password);
+        cJSON_AddStringToObject(wifi_obj, "pass", wifi_cfg.password);
         cJSON_AddItemToObject(config, "wifi", wifi_obj);
         
         // Minimal MQTT config (required field)
