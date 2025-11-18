@@ -1,0 +1,27 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "climate_node_app.c"
+        "climate_node_tasks.c"
+        "pwm_driver.c"
+    INCLUDE_DIRS
+        "."
+    REQUIRES
+        mqtt_client
+        wifi_manager
+        config_storage
+        relay_driver
+        i2c_bus
+        sht3x
+        ccs811
+        setup_portal
+        esp_wifi
+        esp_timer
+        esp_system
+        nvs_flash
+        esp_netif
+        esp_event
+        freertos
+        driver
+        json
+)
