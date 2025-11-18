@@ -11,6 +11,7 @@ idf_component_register(
         wifi_manager
         config_storage
         pump_driver
+        config_apply
         setup_portal
         esp_wifi
         nvs_flash

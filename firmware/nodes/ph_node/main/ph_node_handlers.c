@@ -12,6 +12,7 @@
 #include "mqtt_manager.h"
 #include "wifi_manager.h"
 #include "config_storage.h"
+#include "config_apply.h"
 #include "pump_control.h"
 #include "trema_ph.h"
 #include "esp_log.h"
@@ -24,6 +25,8 @@
 #include <stdlib.h>
 
 static const char *TAG = "ph_node_handlers";
+
+extern void ph_node_mqtt_connection_cb(bool connected, void *user_ctx);
 
 // Helper function to send error response
 static void send_command_error_response(const char *channel, const char *cmd_id, 
@@ -96,6 +99,8 @@ void ph_node_config_handler(const char *topic, const char *data, int data_len, v
         return;
     }
     
+    cJSON *previous_config = config_apply_load_previous_config();
+
     // Validate required fields
     cJSON *node_id_item = cJSON_GetObjectItem(config, "node_id");
     cJSON *version_item = cJSON_GetObjectItem(config, "version");
@@ -112,6 +117,9 @@ void ph_node_config_handler(const char *topic, const char *data, int data_len, v
     if (!valid) {
         ESP_LOGE(TAG, "Invalid config structure");
         cJSON_Delete(config);
+        if (previous_config) {
+            cJSON_Delete(previous_config);
+        }
         cJSON *error_response = cJSON_CreateObject();
         if (error_response) {
             cJSON_AddStringToObject(error_response, "status", "ERROR");
@@ -133,6 +141,9 @@ void ph_node_config_handler(const char *topic, const char *data, int data_len, v
     if (validate_err != ESP_OK) {
         ESP_LOGE(TAG, "Config validation failed: %s", error_msg);
         cJSON_Delete(config);
+        if (previous_config) {
+            cJSON_Delete(previous_config);
+        }
         cJSON *error_response = cJSON_CreateObject();
         if (error_response) {
             cJSON_AddStringToObject(error_response, "status", "ERROR");
@@ -148,86 +159,14 @@ void ph_node_config_handler(const char *topic, const char *data, int data_len, v
         return;
     }
     
-    // Проверка изменений Wi-Fi и MQTT параметров (ПЕРЕД сохранением нового конфига)
-    config_storage_wifi_t old_wifi_cfg;
-    config_storage_mqtt_t old_mqtt_cfg;
-    bool wifi_changed = false;
-    bool mqtt_changed = false;
-    
-    // Загружаем старые параметры для сравнения
-    if (config_storage_get_wifi(&old_wifi_cfg) == ESP_OK) {
-        cJSON *wifi_item = cJSON_GetObjectItem(config, "wifi");
-        if (wifi_item != NULL && cJSON_IsObject(wifi_item)) {
-            cJSON *ssid_item = cJSON_GetObjectItem(wifi_item, "ssid");
-            cJSON *pass_item = cJSON_GetObjectItem(wifi_item, "pass");
-            
-            if (ssid_item != NULL && cJSON_IsString(ssid_item)) {
-                if (strcmp(old_wifi_cfg.ssid, ssid_item->valuestring) != 0) {
-                    wifi_changed = true;
-                    ESP_LOGI(TAG, "Wi-Fi SSID changed: %s -> %s", old_wifi_cfg.ssid, ssid_item->valuestring);
-                }
-            }
-            
-            if (pass_item != NULL && cJSON_IsString(pass_item)) {
-                if (strcmp(old_wifi_cfg.password, pass_item->valuestring) != 0) {
-                    wifi_changed = true;
-                    ESP_LOGI(TAG, "Wi-Fi password changed");
-                }
-            }
-        }
-    }
-    
-    if (config_storage_get_mqtt(&old_mqtt_cfg) == ESP_OK) {
-        cJSON *mqtt_item = cJSON_GetObjectItem(config, "mqtt");
-        if (mqtt_item != NULL && cJSON_IsObject(mqtt_item)) {
-            cJSON *host_item = cJSON_GetObjectItem(mqtt_item, "host");
-            cJSON *port_item = cJSON_GetObjectItem(mqtt_item, "port");
-            cJSON *username_item = cJSON_GetObjectItem(mqtt_item, "username");
-            cJSON *password_item = cJSON_GetObjectItem(mqtt_item, "password");
-            cJSON *use_tls_item = cJSON_GetObjectItem(mqtt_item, "use_tls");
-            
-            if (host_item != NULL && cJSON_IsString(host_item)) {
-                if (strcmp(old_mqtt_cfg.host, host_item->valuestring) != 0) {
-                    mqtt_changed = true;
-                    ESP_LOGI(TAG, "MQTT host changed: %s -> %s", old_mqtt_cfg.host, host_item->valuestring);
-                }
-            }
-            
-            if (port_item != NULL && cJSON_IsNumber(port_item)) {
-                if (old_mqtt_cfg.port != (uint16_t)cJSON_GetNumberValue(port_item)) {
-                    mqtt_changed = true;
-                    ESP_LOGI(TAG, "MQTT port changed: %d -> %d", old_mqtt_cfg.port, (uint16_t)cJSON_GetNumberValue(port_item));
-                }
-            }
-            
-            if (username_item != NULL && cJSON_IsString(username_item)) {
-                if (strcmp(old_mqtt_cfg.username, username_item->valuestring) != 0) {
-                    mqtt_changed = true;
-                    ESP_LOGI(TAG, "MQTT username changed");
-                }
-            }
-            
-            if (password_item != NULL && cJSON_IsString(password_item)) {
-                if (strcmp(old_mqtt_cfg.password, password_item->valuestring) != 0) {
-                    mqtt_changed = true;
-                    ESP_LOGI(TAG, "MQTT password changed");
-                }
-            }
-            
-            if (use_tls_item != NULL && cJSON_IsBool(use_tls_item)) {
-                if (old_mqtt_cfg.use_tls != cJSON_IsTrue(use_tls_item)) {
-                    mqtt_changed = true;
-                    ESP_LOGI(TAG, "MQTT TLS setting changed");
-                }
-            }
-        }
-    }
-    
     // Save config to NVS
     esp_err_t save_err = config_storage_save(data, data_len);
     if (save_err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to save config: %s", esp_err_to_name(save_err));
         cJSON_Delete(config);
+        if (previous_config) {
+            cJSON_Delete(previous_config);
+        }
         cJSON *error_response = cJSON_CreateObject();
         if (error_response) {
             cJSON_AddStringToObject(error_response, "status", "ERROR");
@@ -255,147 +194,40 @@ void ph_node_config_handler(const char *topic, const char *data, int data_len, v
     }
     
     ESP_LOGI(TAG, "Config saved and reloaded successfully");
-    
+
+    config_apply_result_t apply_result;
+    config_apply_result_init(&apply_result);
+
+    const config_apply_mqtt_params_t mqtt_params = {
+        .default_node_id = "nd-ph-1",
+        .default_gh_uid = "gh-1",
+        .default_zone_uid = "zn-1",
+        .config_cb = ph_node_config_handler,
+        .command_cb = ph_node_command_handler,
+        .connection_cb = ph_node_mqtt_connection_cb,
+        .user_ctx = NULL,
+    };
+
+    esp_err_t wifi_err = config_apply_wifi(config, previous_config, &apply_result);
+    if (wifi_err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to reapply Wi-Fi config: %s", esp_err_to_name(wifi_err));
+    }
+
+    esp_err_t mqtt_err = config_apply_mqtt(config, previous_config, &mqtt_params, &apply_result);
+    if (mqtt_err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to reapply MQTT config: %s", esp_err_to_name(mqtt_err));
+    }
+
+    esp_err_t ack_err = config_apply_publish_ack(&apply_result);
+    if (ack_err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to publish config ACK: %s", esp_err_to_name(ack_err));
+    }
+
+    if (previous_config) {
+        cJSON_Delete(previous_config);
+    }
     cJSON_Delete(config);
-    
-    // Graceful переподключение Wi-Fi при изменении параметров
-    if (wifi_changed) {
-        ESP_LOGI(TAG, "Wi-Fi config changed, reconnecting...");
-        
-        // Остановка MQTT перед переподключением Wi-Fi
-        if (mqtt_manager_is_connected()) {
-            mqtt_manager_stop();
-            vTaskDelay(pdMS_TO_TICKS(500)); // Даем время на остановку
-        }
-        
-        // Отключение от текущей Wi-Fi сети
-        wifi_manager_disconnect();
-        vTaskDelay(pdMS_TO_TICKS(1000)); // Даем время на отключение
-        
-        // Подключение с новыми параметрами
-        config_storage_wifi_t new_wifi_cfg;
-        if (config_storage_get_wifi(&new_wifi_cfg) == ESP_OK) {
-            wifi_manager_config_t wifi_config;
-            static char wifi_ssid[CONFIG_STORAGE_MAX_STRING_LEN];
-            static char wifi_password[CONFIG_STORAGE_MAX_STRING_LEN];
-            
-            strncpy(wifi_ssid, new_wifi_cfg.ssid, sizeof(wifi_ssid) - 1);
-            strncpy(wifi_password, new_wifi_cfg.password, sizeof(wifi_password) - 1);
-            wifi_config.ssid = wifi_ssid;
-            wifi_config.password = wifi_password;
-            
-            esp_err_t err = wifi_manager_connect(&wifi_config);
-            if (err != ESP_OK) {
-                ESP_LOGE(TAG, "Failed to reconnect to Wi-Fi: %s", esp_err_to_name(err));
-            } else {
-                ESP_LOGI(TAG, "Wi-Fi reconnected successfully");
-            }
-        }
-    }
-    
-    // Graceful переподключение MQTT при изменении параметров
-    if (mqtt_changed) {
-        ESP_LOGI(TAG, "MQTT config changed, reconnecting...");
-        
-        // Остановка текущего MQTT подключения
-        if (mqtt_manager_is_connected()) {
-            mqtt_manager_stop();
-            vTaskDelay(pdMS_TO_TICKS(500)); // Даем время на остановку
-        }
-        
-        // Деинициализация MQTT менеджера
-        mqtt_manager_deinit();
-        vTaskDelay(pdMS_TO_TICKS(500));
-        
-        // Инициализация с новыми параметрами
-        config_storage_mqtt_t new_mqtt_cfg;
-        mqtt_manager_config_t mqtt_config;
-        mqtt_node_info_t node_info;
-        static char mqtt_host[CONFIG_STORAGE_MAX_STRING_LEN];
-        static char mqtt_username[CONFIG_STORAGE_MAX_STRING_LEN];
-        static char mqtt_password[CONFIG_STORAGE_MAX_STRING_LEN];
-        static char node_id_buf[64];
-        static const char *default_gh_uid = "gh-1";
-        static const char *default_zone_uid = "zn-1";
-        
-        if (config_storage_get_mqtt(&new_mqtt_cfg) == ESP_OK) {
-            strncpy(mqtt_host, new_mqtt_cfg.host, sizeof(mqtt_host) - 1);
-            mqtt_config.host = mqtt_host;
-            mqtt_config.port = new_mqtt_cfg.port;
-            mqtt_config.keepalive = new_mqtt_cfg.keepalive;
-            mqtt_config.client_id = NULL;
-            if (strlen(new_mqtt_cfg.username) > 0) {
-                strncpy(mqtt_username, new_mqtt_cfg.username, sizeof(mqtt_username) - 1);
-                mqtt_config.username = mqtt_username;
-            } else {
-                mqtt_config.username = NULL;
-            }
-            if (strlen(new_mqtt_cfg.password) > 0) {
-                strncpy(mqtt_password, new_mqtt_cfg.password, sizeof(mqtt_password) - 1);
-                mqtt_config.password = mqtt_password;
-            } else {
-                mqtt_config.password = NULL;
-            }
-            mqtt_config.use_tls = new_mqtt_cfg.use_tls;
-        }
-        
-        if (config_storage_get_node_id(node_id_buf, sizeof(node_id_buf)) == ESP_OK) {
-            node_info.node_uid = node_id_buf;
-        } else {
-            strncpy(node_id_buf, "nd-ph-1", sizeof(node_id_buf) - 1);
-            node_info.node_uid = node_id_buf;
-        }
-        
-        static char gh_uid[CONFIG_STORAGE_MAX_STRING_LEN];
-        static char zone_uid[CONFIG_STORAGE_MAX_STRING_LEN];
-        if (config_storage_get_gh_uid(gh_uid, sizeof(gh_uid)) == ESP_OK) {
-            node_info.gh_uid = gh_uid;
-        } else {
-            node_info.gh_uid = default_gh_uid;
-        }
-        
-        if (config_storage_get_zone_uid(zone_uid, sizeof(zone_uid)) == ESP_OK) {
-            node_info.zone_uid = zone_uid;
-        } else {
-            node_info.zone_uid = default_zone_uid;
-        }
-        
-        esp_err_t err = mqtt_manager_init(&mqtt_config, &node_info);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to reinitialize MQTT manager: %s", esp_err_to_name(err));
-        } else {
-            // Регистрация callbacks (нужно получить из ph_node_init.c)
-            extern void ph_node_config_handler(const char *topic, const char *data, int data_len, void *user_ctx);
-            extern void ph_node_command_handler(const char *topic, const char *channel, const char *data, int data_len, void *user_ctx);
-            extern void ph_node_mqtt_connection_cb(bool connected, void *user_ctx);
-            
-            mqtt_manager_register_config_cb(ph_node_config_handler, NULL);
-            mqtt_manager_register_command_cb(ph_node_command_handler, NULL);
-            mqtt_manager_register_connection_cb(ph_node_mqtt_connection_cb, NULL);
-            
-            // Запуск MQTT менеджера
-            err = mqtt_manager_start();
-            if (err != ESP_OK) {
-                ESP_LOGE(TAG, "Failed to restart MQTT manager: %s", esp_err_to_name(err));
-            } else {
-                ESP_LOGI(TAG, "MQTT reconnected successfully");
-            }
-        }
-    }
-    
-    // Send success response
-    cJSON *success_response = cJSON_CreateObject();
-    if (success_response) {
-        cJSON_AddStringToObject(success_response, "status", "OK");
-        cJSON_AddNumberToObject(success_response, "timestamp", (double)(esp_timer_get_time() / 1000000));
-        char *json_str = cJSON_PrintUnformatted(success_response);
-        if (json_str) {
-            mqtt_manager_publish_config_response(json_str);
-            free(json_str);
-        }
-        cJSON_Delete(success_response);
-    }
-}
+
 
 /**
  * @brief Handle MQTT command message

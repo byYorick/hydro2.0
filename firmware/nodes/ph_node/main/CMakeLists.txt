@@ -12,6 +12,7 @@ idf_component_register(
         mqtt_manager
         wifi_manager
         config_storage
+        config_apply
         trema_ph
         i2c_bus
         oled_ui
