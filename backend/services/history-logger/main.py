@@ -254,13 +254,17 @@ async def handle_node_hello(topic: str, payload: bytes):
         }
     }
     """
+    logger.info(f"handle_node_hello called: topic={topic}, payload_len={len(payload)}")
     data = _parse_json(payload)
     if not data:
-        logger.warning(f"Invalid JSON in node_hello from topic {topic}")
+        logger.warning(f"Invalid JSON in node_hello from topic {topic}, payload preview: {payload[:200] if payload else 'empty'}")
         return
+    
+    logger.info(f"Parsed node_hello JSON: {data}")
     
     # Проверяем, что это действительно node_hello
     if data.get("message_type") != "node_hello":
+        logger.warning(f"Not a node_hello message, message_type={data.get('message_type')}")
         return
     
     hardware_id = data.get("hardware_id")
@@ -268,22 +272,27 @@ async def handle_node_hello(topic: str, payload: bytes):
         logger.warning(f"Missing hardware_id in node_hello from topic {topic}")
         return
     
+    logger.info(f"Processing node_hello for hardware_id={hardware_id}")
+    
     # Извлекаем параметры из топика (если они есть)
     zone_uid = _extract_zone_uid(topic)
     node_uid = _extract_node_uid(topic)
     
-    # Формируем данные для регистрации
+    # Формируем данные для регистрации в формате node_hello
+    # Laravel ожидает message_type="node_hello" для обработки через registerNodeFromHello
     provisioning_meta = data.get("provisioning_meta") or {}
     register_data = {
-        "node_uid": hardware_id,  # Временно используем hardware_id как uid, Laravel может перегенерировать
-        "zone_uid": zone_uid or provisioning_meta.get("zone_id"),
-        "firmware_version": data.get("fw_version"),
-        "hardware_revision": data.get("hardware_revision"),
-        "type": data.get("node_type"),
-        "name": provisioning_meta.get("node_name"),
+        "message_type": "node_hello",  # Важно: указываем message_type для обработки node_hello
         "hardware_id": hardware_id,
+        "node_type": data.get("node_type"),
+        "fw_version": data.get("fw_version"),
+        "hardware_revision": data.get("hardware_revision"),
         "capabilities": data.get("capabilities", []),
-        "greenhouse_token": provisioning_meta.get("greenhouse_token"),
+        "provisioning_meta": {
+            "node_name": provisioning_meta.get("node_name"),
+            "greenhouse_token": provisioning_meta.get("greenhouse_token"),
+            "zone_id": zone_uid or provisioning_meta.get("zone_id"),
+        }
     }
     
     # Вызываем Laravel API для регистрации
@@ -296,6 +305,11 @@ async def handle_node_hello(topic: str, payload: bytes):
                 headers["X-API-TOKEN"] = s.laravel_api_token
             
             url = f"{s.laravel_api_url}/api/nodes/register"
+            logger.info(f"Calling Laravel API for node_hello registration", {
+                "hardware_id": hardware_id,
+                "url": url,
+                "data": register_data,
+            })
             response = await client.post(url, json=register_data, headers=headers)
             
             if response.status_code == 201:
@@ -475,7 +489,12 @@ async def run_mqtt_listener():
     """Запустить MQTT-слушатель в фоне."""
     loop = asyncio.get_running_loop()
     mqtt = MqttClient(client_id_suffix="-logger")
+    logger.info("Starting MQTT client...")
     mqtt.start()
+    logger.info("MQTT client started, waiting for connection...")
+    # Даем время на подключение
+    await asyncio.sleep(2)
+    logger.info("Setting up MQTT subscriptions...")
     start_http_server(9301)
 
     def telemetry_cb(topic: str, payload: bytes):
@@ -491,6 +510,7 @@ async def run_mqtt_listener():
         asyncio.run_coroutine_threadsafe(handle_lwt(topic, payload), loop)
 
     def node_hello_cb(topic: str, payload: bytes):
+        logger.info(f"node_hello_cb called: topic={topic}, payload_len={len(payload)}")
         asyncio.run_coroutine_threadsafe(handle_node_hello(topic, payload), loop)
 
     def heartbeat_cb(topic: str, payload: bytes):
@@ -502,8 +522,10 @@ async def run_mqtt_listener():
     mqtt.subscribe("hydro/+/+/+/lwt", lwt_cb, qos=1)
     mqtt.subscribe("hydro/+/+/+/config_response", lambda t, p: asyncio.run_coroutine_threadsafe(handle_config_response(t, p), loop), qos=1)
     # Подписка на node_hello: общий топик для начальной регистрации и топик с параметрами
+    logger.info("Subscribing to node_hello topics...")
     mqtt.subscribe("hydro/node_hello", node_hello_cb, qos=1)
     mqtt.subscribe("hydro/+/+/+/node_hello", node_hello_cb, qos=1)
+    logger.info("Subscribed to hydro/node_hello and hydro/+/+/+/node_hello")
     # Подписка на heartbeat
     mqtt.subscribe("hydro/+/+/+/heartbeat", heartbeat_cb, qos=1)
 

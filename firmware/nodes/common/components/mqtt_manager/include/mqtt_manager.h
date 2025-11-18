@@ -204,6 +204,19 @@ bool mqtt_manager_is_connected(void);
  */
 esp_err_t mqtt_manager_reconnect(void);
 
+/**
+ * @brief Публикация сообщения в произвольный топик
+ * 
+ * Используется для специальных сообщений, таких как node_hello
+ * 
+ * @param topic MQTT топик
+ * @param data JSON данные
+ * @param qos QoS уровень (0, 1, 2)
+ * @param retain Retain флаг
+ * @return ESP_OK при успехе
+ */
+esp_err_t mqtt_manager_publish_raw(const char *topic, const char *data, int qos, int retain);
+
 #ifdef __cplusplus
 }
 #endif

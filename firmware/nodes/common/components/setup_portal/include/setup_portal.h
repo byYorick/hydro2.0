@@ -3,6 +3,7 @@
 
 #include "esp_err.h"
 #include <stdbool.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -11,6 +12,8 @@ extern "C" {
 typedef struct {
     char ssid[33];
     char password[65];
+    char mqtt_host[128];
+    uint16_t mqtt_port;
 } setup_portal_credentials_t;
 
 typedef void (*setup_portal_credentials_cb_t)(const setup_portal_credentials_t *credentials, void *user_ctx);

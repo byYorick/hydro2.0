@@ -314,6 +314,13 @@ esp_err_t mqtt_manager_reconnect(void) {
 }
 
 /**
+ * @brief Публикация сообщения в произвольный топик
+ */
+esp_err_t mqtt_manager_publish_raw(const char *topic, const char *data, int qos, int retain) {
+    return mqtt_manager_publish_internal(topic, data, qos, retain);
+}
+
+/**
  * @brief Внутренняя функция публикации
  */
 static esp_err_t mqtt_manager_publish_internal(const char *topic, const char *data, int qos, int retain) {
@@ -331,15 +338,30 @@ static esp_err_t mqtt_manager_publish_internal(const char *topic, const char *da
     oled_ui_notify_mqtt_tx();
 
     int data_len = strlen(data);
+    
+    // Логирование всех публикаций
+    // Ограничиваем длину данных для лога (первые 200 символов)
+    const int log_data_max = 200;
+    char log_data[log_data_max + 4]; // +4 для "..."
+    if (data_len <= log_data_max) {
+        snprintf(log_data, sizeof(log_data), "%s", data);
+    } else {
+        strncpy(log_data, data, log_data_max);
+        log_data[log_data_max] = '\0';
+        strcat(log_data, "...");
+    }
+    
+    ESP_LOGI(TAG, "MQTT PUBLISH: topic='%s', qos=%d, retain=%d, len=%d, data=%s", 
+             topic, qos, retain, data_len, log_data);
+    
     int msg_id = esp_mqtt_client_publish(s_mqtt_client, topic, data, data_len, qos, retain);
     
     if (msg_id < 0) {
-        ESP_LOGE(TAG, "Failed to publish to %s", topic);
+        ESP_LOGE(TAG, "Failed to publish to %s (msg_id=%d)", topic, msg_id);
         return ESP_FAIL;
     }
-
-    ESP_LOGD(TAG, "Published to %s (msg_id=%d, len=%d, qos=%d, retain=%d)", 
-             topic, msg_id, data_len, qos, retain);
+    
+    ESP_LOGI(TAG, "MQTT PUBLISH SUCCESS: topic='%s', msg_id=%d, len=%d", topic, msg_id, data_len);
     return ESP_OK;
 }
 
@@ -408,12 +430,6 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
             break;
 
         case MQTT_EVENT_DATA: {
-            ESP_LOGI(TAG, "MQTT data received on topic: %.*s", event->topic_len, event->topic);
-            
-            // Уведомляем OLED UI о MQTT активности (прием)
-            extern void oled_ui_notify_mqtt_rx(void);
-            oled_ui_notify_mqtt_rx();
-            
             // Создание null-terminated строк для topic и data
             char topic[128] = {0};
             char data[2048] = {0};
@@ -429,6 +445,34 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
             if (event->data) {
                 memcpy(data, event->data, data_len);
             }
+            
+            // Логирование входящих сообщений
+            const int log_data_max = 200;
+            char log_data[log_data_max + 4];
+            if (event->data_len <= log_data_max) {
+                if (event->data) {
+                    memcpy(log_data, event->data, event->data_len);
+                    log_data[event->data_len] = '\0';
+                } else {
+                    log_data[0] = '\0';
+                }
+            } else {
+                if (event->data) {
+                    memcpy(log_data, event->data, log_data_max);
+                    log_data[log_data_max] = '\0';
+                    strcat(log_data, "...");
+                } else {
+                    log_data[0] = '\0';
+                }
+            }
+            
+            ESP_LOGI(TAG, "MQTT RECEIVE: topic='%.*s', len=%d, data=%s", 
+                     event->topic_len, event->topic ? event->topic : "", 
+                     event->data_len, log_data);
+            
+            // Уведомляем OLED UI о MQTT активности (прием)
+            extern void oled_ui_notify_mqtt_rx(void);
+            oled_ui_notify_mqtt_rx();
 
             // Определяем тип топика и вызываем соответствующий callback
             // Согласно MQTT_SPEC_FULL.md раздел 2:

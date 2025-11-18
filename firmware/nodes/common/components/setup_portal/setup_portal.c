@@ -32,16 +32,23 @@ static const char *HTML_PAGE = "<!DOCTYPE html><html><head><meta charset='UTF-8'
     ".container{max-width:420px;margin:4rem auto;background:#1f2937;padding:2rem;border-radius:16px;box-shadow:0 22px 45px rgba(15,23,42,0.45);}h1{text-align:center;}" \
     "label{display:block;margin-top:1rem;font-size:0.9rem;color:#94a3b8;text-transform:uppercase;}" \
     "input{width:100%;padding:0.75rem;margin-top:0.5rem;border-radius:10px;border:1px solid #334155;background:#0f172a;color:#f8fafc;}" \
+    "input:invalid{border-color:#ef4444;}" \
     "button{margin-top:1.5rem;width:100%;padding:0.9rem;border:none;border-radius:12px;background:#38bdf8;color:#0f172a;font-weight:600;font-size:1rem;cursor:pointer;}" \
     "button:disabled{background:#1e40af;color:#94a3b8;cursor:not-allowed;}" \
     ".status{margin-top:1.5rem;line-height:1.6;} .status-success{color:#22c55e;} .status-error{color:#ef4444;}</style></head><body>" \
-    "<div class='container'><h1>🌱 Hydro Setup</h1><p>Введите данные вашего WiFi, чтобы PH нода подключилась к сети.</p>" \
+    "<div class='container'><h1>🌱 Hydro Setup</h1><p>Введите данные вашего WiFi и MQTT, чтобы нода подключилась к сети.</p>" \
     "<form id='wifiForm'><label>WiFi SSID<input name='ssid' placeholder='MyHomeWiFi' required></label>" \
     "<label>WiFi Пароль<input name='password' type='password' placeholder='Пароль' required></label>" \
+    "<label>MQTT Хост<input name='mqtt_host' type='text' placeholder='192.168.1.4' pattern='^([0-9]{1,3}\\.){3}[0-9]{1,3}$' required></label>" \
+    "<label>MQTT Порт<input name='mqtt_port' type='number' placeholder='1883' min='1' max='65535' required></label>" \
     "<button type='submit' id='submitBtn'>Подключить</button><div class='status' id='statusMsg'></div></form></div>" \
     "<script>(function(){const form=document.getElementById('wifiForm');const statusEl=document.getElementById('statusMsg');const btn=document.getElementById('submitBtn');" \
-    "form.addEventListener('submit',function(e){e.preventDefault();btn.disabled=true;statusEl.textContent='Отправка...';" \
-    "const payload=JSON.stringify({ssid:form.ssid.value,password:form.password.value});" \
+    "function validateIP(ip){const parts=ip.split('.');if(parts.length!==4)return false;for(let i=0;i<4;i++){const num=parseInt(parts[i],10);if(isNaN(num)||num<0||num>255)return false;}return true;}" \
+    "form.addEventListener('submit',function(e){e.preventDefault();const mqttHost=form.mqtt_host.value.trim();const mqttPort=parseInt(form.mqtt_port.value,10);" \
+    "if(!validateIP(mqttHost)){statusEl.innerHTML='<span class=\\'status-error\\'>Неверный формат IP-адреса. Используйте формат xxx.xxx.xxx.xxx</span>';return;}" \
+    "if(isNaN(mqttPort)||mqttPort<1||mqttPort>65535){statusEl.innerHTML='<span class=\\'status-error\\'>Порт должен быть числом от 1 до 65535</span>';return;}" \
+    "btn.disabled=true;statusEl.textContent='Отправка...';" \
+    "const payload=JSON.stringify({ssid:form.ssid.value,password:form.password.value,mqtt_host:mqttHost,mqtt_port:mqttPort});" \
     "fetch('/wifi/connect',{method:'POST',headers:{'Content-Type':'application/json'},body:payload}).then(function(resp){" \
     "if(resp.ok){statusEl.innerHTML='<span class=\\'status-success\\'>✓ Данные получены. Устройство перезапустится автоматически.</span>';return null;}" \
     "return resp.json().then(function(body){throw new Error(body.message||resp.statusText||'Ошибка');});}).catch(function(err){" \
@@ -108,6 +115,41 @@ static esp_err_t stop_softap(void) {
     return ESP_OK;
 }
 
+/**
+ * @brief Валидация IP-адреса в формате xxx.xxx.xxx.xxx
+ * 
+ * @param ip_str Строка с IP-адресом
+ * @return true если IP-адрес валиден, false иначе
+ */
+static bool validate_ip_address(const char *ip_str) {
+    if (!ip_str || strlen(ip_str) == 0) {
+        return false;
+    }
+    
+    int octets[4];
+    int count = sscanf(ip_str, "%d.%d.%d.%d", &octets[0], &octets[1], &octets[2], &octets[3]);
+    
+    if (count != 4) {
+        return false;
+    }
+    
+    // Проверка каждого октета на диапазон 0-255
+    for (int i = 0; i < 4; i++) {
+        if (octets[i] < 0 || octets[i] > 255) {
+            return false;
+        }
+    }
+    
+    // Проверка, что строка не содержит лишних символов после последнего октета
+    char test_str[128];
+    snprintf(test_str, sizeof(test_str), "%d.%d.%d.%d", octets[0], octets[1], octets[2], octets[3]);
+    if (strcmp(ip_str, test_str) != 0) {
+        return false;
+    }
+    
+    return true;
+}
+
 static esp_err_t wifi_get_handler(httpd_req_t *req) {
     httpd_resp_set_type(req, "text/html");
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
@@ -150,16 +192,47 @@ static esp_err_t wifi_post_handler(httpd_req_t *req) {
 
     const cJSON *ssid = cJSON_GetObjectItem(root, "ssid");
     const cJSON *password = cJSON_GetObjectItem(root, "password");
-    if (!cJSON_IsString(ssid) || !cJSON_IsString(password)) {
+    const cJSON *mqtt_host = cJSON_GetObjectItem(root, "mqtt_host");
+    const cJSON *mqtt_port = cJSON_GetObjectItem(root, "mqtt_port");
+    
+    // Валидация обязательных полей
+    if (!cJSON_IsString(ssid) || !cJSON_IsString(password) || 
+        !cJSON_IsString(mqtt_host) || !cJSON_IsNumber(mqtt_port)) {
         cJSON_Delete(root);
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing ssid/password");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing required fields: ssid, password, mqtt_host, mqtt_port");
+        return ESP_FAIL;
+    }
+    
+    // Валидация IP-адреса
+    if (!validate_ip_address(mqtt_host->valuestring)) {
+        cJSON_Delete(root);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid MQTT host format. Expected xxx.xxx.xxx.xxx");
+        return ESP_FAIL;
+    }
+    
+    // Валидация порта
+    int port_value = (int)cJSON_GetNumberValue(mqtt_port);
+    if (port_value < 1 || port_value > 65535) {
+        cJSON_Delete(root);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid MQTT port. Must be between 1 and 65535");
+        return ESP_FAIL;
+    }
+    
+    // Проверка максимальной длины хоста
+    if (strlen(mqtt_host->valuestring) >= CONFIG_STORAGE_MAX_STRING_LEN) {
+        cJSON_Delete(root);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "MQTT host too long");
         return ESP_FAIL;
     }
 
     setup_portal_credentials_t creds = {0};
     strncpy(creds.ssid, ssid->valuestring, sizeof(creds.ssid) - 1);
     strncpy(creds.password, password->valuestring, sizeof(creds.password) - 1);
+    strncpy(creds.mqtt_host, mqtt_host->valuestring, sizeof(creds.mqtt_host) - 1);
+    creds.mqtt_port = (uint16_t)port_value;
+    
     ESP_LOGI(TAG, "Данные WiFi: SSID='%s', пароль (%d символов)", creds.ssid, (int)strlen(creds.password));
+    ESP_LOGI(TAG, "Данные MQTT: хост='%s', порт=%d", creds.mqtt_host, creds.mqtt_port);
     cJSON_Delete(root);
 
     if (s_config.on_credentials) {
@@ -276,7 +349,8 @@ static void save_credentials_to_config_storage(const setup_portal_credentials_t 
         return;
     }
     
-    ESP_LOGI(TAG, "Saving WiFi credentials to config_storage: SSID='%s'", credentials->ssid);
+    ESP_LOGI(TAG, "Saving WiFi and MQTT credentials to config_storage: SSID='%s', MQTT host='%s', port=%d", 
+             credentials->ssid, credentials->mqtt_host, credentials->mqtt_port);
     
     // Prepare WiFi config
     config_storage_wifi_t wifi_cfg = {0};
@@ -285,12 +359,13 @@ static void save_credentials_to_config_storage(const setup_portal_credentials_t 
     wifi_cfg.auto_reconnect = true;
     wifi_cfg.timeout_sec = 30;
     
-    // Load current config, update WiFi and save
+    // Load current config, update WiFi and MQTT, then save
     char json_buf[CONFIG_STORAGE_MAX_JSON_SIZE];
     if (config_storage_get_json(json_buf, sizeof(json_buf)) == ESP_OK) {
         // Update existing config
         cJSON *config = cJSON_Parse(json_buf);
         if (config) {
+            // Update WiFi configuration
             cJSON *wifi_obj = cJSON_GetObjectItem(config, "wifi");
             if (!wifi_obj) {
                 wifi_obj = cJSON_CreateObject();
@@ -301,13 +376,24 @@ static void save_credentials_to_config_storage(const setup_portal_credentials_t 
             cJSON_AddStringToObject(wifi_obj, "ssid", wifi_cfg.ssid);
             cJSON_AddStringToObject(wifi_obj, "pass", wifi_cfg.password);
             
+            // Update MQTT configuration
+            cJSON *mqtt_obj = cJSON_GetObjectItem(config, "mqtt");
+            if (!mqtt_obj) {
+                mqtt_obj = cJSON_CreateObject();
+                cJSON_AddItemToObject(config, "mqtt", mqtt_obj);
+            }
+            cJSON_DeleteItemFromObject(mqtt_obj, "host");
+            cJSON_DeleteItemFromObject(mqtt_obj, "port");
+            cJSON_AddStringToObject(mqtt_obj, "host", credentials->mqtt_host);
+            cJSON_AddNumberToObject(mqtt_obj, "port", credentials->mqtt_port);
+            
             char *json_str = cJSON_PrintUnformatted(config);
             if (json_str) {
                 esp_err_t err = config_storage_save(json_str, strlen(json_str));
                 if (err != ESP_OK) {
-                    ESP_LOGE(TAG, "Failed to save WiFi config: %s", esp_err_to_name(err));
+                    ESP_LOGE(TAG, "Failed to save config: %s", esp_err_to_name(err));
                 } else {
-                    ESP_LOGI(TAG, "WiFi config saved successfully");
+                    ESP_LOGI(TAG, "WiFi and MQTT config saved successfully");
                 }
                 free(json_str);
             }
@@ -335,19 +421,19 @@ static void save_credentials_to_config_storage(const setup_portal_credentials_t 
         cJSON_AddStringToObject(wifi_obj, "pass", wifi_cfg.password);
         cJSON_AddItemToObject(config, "wifi", wifi_obj);
         
-        // Minimal MQTT config (required field)
+        // MQTT configuration (using provided values)
         cJSON *mqtt_obj = cJSON_CreateObject();
-        cJSON_AddStringToObject(mqtt_obj, "host", "192.168.1.1"); // Temporary, will be replaced
-        cJSON_AddNumberToObject(mqtt_obj, "port", 1883);
+        cJSON_AddStringToObject(mqtt_obj, "host", credentials->mqtt_host);
+        cJSON_AddNumberToObject(mqtt_obj, "port", credentials->mqtt_port);
         cJSON_AddItemToObject(config, "mqtt", mqtt_obj);
         
         char *json_str = cJSON_PrintUnformatted(config);
         if (json_str) {
             esp_err_t err = config_storage_save(json_str, strlen(json_str));
             if (err != ESP_OK) {
-                ESP_LOGE(TAG, "Failed to save WiFi config: %s", esp_err_to_name(err));
+                ESP_LOGE(TAG, "Failed to save config: %s", esp_err_to_name(err));
             } else {
-                ESP_LOGI(TAG, "WiFi config saved successfully");
+                ESP_LOGI(TAG, "WiFi and MQTT config saved successfully");
             }
             free(json_str);
         }

@@ -24,9 +24,13 @@
 #include "connection_status.h"
 #include "esp_log.h"
 #include "esp_err.h"
+#include "esp_mac.h"
+#include "esp_idf_version.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "cJSON.h"
 #include <string.h>
+#include <stdio.h>
 
 static const char *TAG = "ph_node_init";
 
@@ -65,9 +69,89 @@ static void update_oled_connections(void) {
     oled_ui_update_model(&model);
 }
 
+/**
+ * @brief Публикация node_hello сообщения для регистрации узла
+ */
+static void ph_node_publish_hello(void) {
+    // Получаем MAC адрес как hardware_id
+    uint8_t mac[6] = {0};
+    esp_err_t err = esp_efuse_mac_get_default(mac);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to get MAC address: %s", esp_err_to_name(err));
+        return;
+    }
+    
+    // Формируем hardware_id из MAC адреса
+    char hardware_id[32];
+    snprintf(hardware_id, sizeof(hardware_id), "esp32-%02x%02x%02x%02x%02x%02x",
+             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    
+    // Получаем версию прошивки
+    // Используем версию ESP-IDF, так как версия прошивки не хранится в config_storage
+    char fw_version[64];
+    const char *idf_ver = esp_get_idf_version();
+    // esp_get_idf_version() уже возвращает версию с префиксом "v", не добавляем еще один
+    snprintf(fw_version, sizeof(fw_version), "%s", idf_ver);
+    
+    // Создаем JSON сообщение node_hello
+    cJSON *hello = cJSON_CreateObject();
+    if (!hello) {
+        ESP_LOGE(TAG, "Failed to create node_hello JSON");
+        return;
+    }
+    
+    cJSON_AddStringToObject(hello, "message_type", "node_hello");
+    cJSON_AddStringToObject(hello, "hardware_id", hardware_id);
+    cJSON_AddStringToObject(hello, "node_type", "ph");
+    cJSON_AddStringToObject(hello, "fw_version", fw_version);
+    
+    // Добавляем capabilities
+    cJSON *capabilities = cJSON_CreateArray();
+    cJSON_AddItemToArray(capabilities, cJSON_CreateString("ph"));
+    cJSON_AddItemToArray(capabilities, cJSON_CreateString("temperature"));
+    cJSON_AddItemToObject(hello, "capabilities", capabilities);
+    
+    // Публикуем в общий топик для регистрации
+    char *json_str = cJSON_PrintUnformatted(hello);
+    if (json_str) {
+        // Используем внутреннюю функцию публикации через mqtt_manager
+        // Публикуем в hydro/node_hello для начальной регистрации
+        // Это будет обработано history-logger и зарегистрирует узел
+        ESP_LOGI(TAG, "Publishing node_hello: hardware_id=%s", hardware_id);
+        
+        // Публикуем через mqtt_manager_publish_raw
+        esp_err_t pub_err = mqtt_manager_publish_raw("hydro/node_hello", json_str, 1, 0);
+        if (pub_err == ESP_OK) {
+            ESP_LOGI(TAG, "node_hello published successfully");
+        } else {
+            ESP_LOGE(TAG, "Failed to publish node_hello: %s", esp_err_to_name(pub_err));
+        }
+        
+        free(json_str);
+    }
+    
+    cJSON_Delete(hello);
+}
+
 void ph_node_mqtt_connection_cb(bool connected, void *user_ctx) {
     if (connected) {
         ESP_LOGI(TAG, "MQTT connected - ph_node is online");
+        
+        // Публикуем node_hello при первом подключении для регистрации
+        // Проверяем, есть ли уже конфиг с правильными ID (не временные)
+        char node_id[CONFIG_STORAGE_MAX_STRING_LEN];
+        char gh_uid[CONFIG_STORAGE_MAX_STRING_LEN];
+        bool has_node_id = (config_storage_get_node_id(node_id, sizeof(node_id)) == ESP_OK);
+        bool has_gh_uid = (config_storage_get_gh_uid(gh_uid, sizeof(gh_uid)) == ESP_OK);
+        bool has_valid_config = has_node_id && 
+                                strcmp(node_id, "node-temp") != 0 &&
+                                has_gh_uid &&
+                                strcmp(gh_uid, "gh-temp") != 0;
+        
+        if (!has_valid_config) {
+            // Устройство еще не зарегистрировано - публикуем node_hello
+            ph_node_publish_hello();
+        }
     } else {
         ESP_LOGW(TAG, "MQTT disconnected - ph_node is offline");
     }
