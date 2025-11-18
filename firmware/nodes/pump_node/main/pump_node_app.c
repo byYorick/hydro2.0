@@ -32,6 +32,7 @@ static const char *TAG = "pump_node";
 static void on_command_received(const char *topic, const char *channel, const char *data, int data_len, void *user_ctx);
 static void on_mqtt_connection_changed(bool connected, void *user_ctx);
 static void on_wifi_connection_changed(bool connected, void *user_ctx);
+static void append_channel_health(cJSON *response, const char *channel_name);
 
 // Пример: обработка config сообщений
 static void on_config_received(const char *topic, const char *data, int data_len, void *user_ctx) {
@@ -367,6 +368,35 @@ static void on_config_received(const char *topic, const char *data, int data_len
     }
 }
 
+static void append_channel_health(cJSON *response, const char *channel_name) {
+    if (response == NULL || channel_name == NULL) {
+        return;
+    }
+
+    pump_driver_channel_health_t stats;
+    if (pump_driver_get_channel_health(channel_name, &stats) != ESP_OK) {
+        return;
+    }
+
+    cJSON *health = cJSON_CreateObject();
+    if (!health) {
+        return;
+    }
+
+    cJSON_AddStringToObject(health, "channel", stats.channel_name);
+    cJSON_AddBoolToObject(health, "running", stats.is_running);
+    cJSON_AddBoolToObject(health, "last_run_success", stats.last_run_success);
+    cJSON_AddNumberToObject(health, "last_run_ms", (double)stats.last_run_duration_ms);
+    cJSON_AddNumberToObject(health, "run_count", (double)stats.run_count);
+    cJSON_AddNumberToObject(health, "failure_count", (double)stats.failure_count);
+    cJSON_AddNumberToObject(health, "overcurrent_events", (double)stats.overcurrent_events);
+    cJSON_AddNumberToObject(health, "no_current_events", (double)stats.no_current_events);
+    cJSON_AddNumberToObject(health, "last_start_ts", (double)stats.last_start_timestamp_ms);
+    cJSON_AddNumberToObject(health, "last_stop_ts", (double)stats.last_stop_timestamp_ms);
+
+    cJSON_AddItemToObject(response, "health", health);
+}
+
 // Пример: обработка command сообщений
 static void on_command_received(const char *topic, const char *channel, const char *data, int data_len, void *user_ctx) {
     ESP_LOGI(TAG, "Command received on %s (channel: %s): %.*s", topic, channel, data_len, data);
@@ -424,7 +454,8 @@ static void on_command_received(const char *topic, const char *channel, const ch
                     }
                 }
                 cJSON_AddNumberToObject(response, "ts", (double)(esp_timer_get_time() / 1000000));
-                
+                append_channel_health(response, channel);
+
                 char *json_str = cJSON_PrintUnformatted(response);
                 if (json_str) {
                     mqtt_manager_publish_command_response(channel, json_str);

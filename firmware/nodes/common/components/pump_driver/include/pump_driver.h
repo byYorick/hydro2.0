@@ -20,6 +20,7 @@
 #include "esp_err.h"
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,6 +29,16 @@ extern "C" {
 // Forward declaration для ina209_config_t
 // Реальная структура определена в ina209.h
 #include "ina209.h"
+
+/**
+ * @brief Максимальное количество насосных каналов, поддерживаемое драйвером
+ */
+#define PUMP_DRIVER_MAX_CHANNELS 16
+
+/**
+ * @brief Максимальная длина имени канала насоса
+ */
+#define PUMP_DRIVER_MAX_CHANNEL_NAME_LEN 64
 
 /**
  * @brief Состояние насоса
@@ -143,6 +154,60 @@ bool pump_driver_is_running(const char *channel_name);
  * @return true если драйвер инициализирован
  */
 bool pump_driver_is_initialized(void);
+
+/**
+ * @brief Статистика по конкретному каналу насоса
+ */
+typedef struct {
+    char channel_name[PUMP_DRIVER_MAX_CHANNEL_NAME_LEN];
+    uint32_t last_run_duration_ms;
+    uint64_t total_run_time_ms;
+    uint32_t run_count;
+    uint32_t failure_count;
+    uint32_t overcurrent_events;
+    uint32_t no_current_events;
+    uint64_t last_start_timestamp_ms;
+    uint64_t last_stop_timestamp_ms;
+    bool last_run_success;
+    bool is_running;
+} pump_driver_channel_health_t;
+
+/**
+ * @brief Состояние INA209, используемое pump_driver для health-отчетов
+ */
+typedef struct {
+    bool enabled;
+    bool last_read_valid;
+    bool last_read_overcurrent;
+    bool last_read_undercurrent;
+    float last_current_ma;
+} pump_driver_ina_status_t;
+
+/**
+ * @brief Снимок состояния всех каналов и INA209
+ */
+typedef struct {
+    pump_driver_channel_health_t channels[PUMP_DRIVER_MAX_CHANNELS];
+    size_t channel_count;
+    pump_driver_ina_status_t ina_status;
+} pump_driver_health_snapshot_t;
+
+/**
+ * @brief Получение health-снимка всех каналов
+ *
+ * @param snapshot Указатель для сохранения снимка
+ * @return esp_err_t ESP_OK при успехе
+ */
+esp_err_t pump_driver_get_health_snapshot(pump_driver_health_snapshot_t *snapshot);
+
+/**
+ * @brief Получение health-метрик для конкретного канала
+ *
+ * @param channel_name Имя канала
+ * @param stats Указатель для сохранения статистики
+ * @return esp_err_t ESP_OK при успехе, ESP_ERR_NOT_FOUND если канал не найден
+ */
+esp_err_t pump_driver_get_channel_health(const char *channel_name, pump_driver_channel_health_t *stats);
 
 #ifdef __cplusplus
 }
