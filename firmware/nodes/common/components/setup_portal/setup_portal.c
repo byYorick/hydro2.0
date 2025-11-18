@@ -396,7 +396,7 @@ esp_err_t setup_portal_run_full_setup(const setup_portal_full_config_t *config) 
             ESP_LOGI(TAG, "I2C bus is initialized, initializing OLED for setup mode...");
             oled_ui_config_t oled_config = {
                 .i2c_address = 0x3C,
-                .update_interval_ms = 500,
+                .update_interval_ms = 1500,  // Увеличено с 500 до 1500 мс для плавного обновления
                 .enable_task = true
             };
             ESP_LOGI(TAG, "OLED config: addr=0x%02X, interval=%dms", 

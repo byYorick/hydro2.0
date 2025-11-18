@@ -17,10 +17,13 @@
 #include "oled_ui.h"
 #include "i2c_bus.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include <string.h>
 #include <stdio.h>
+#include <math.h>
 
 static const char *TAG = "oled_ui";
 
@@ -175,6 +178,15 @@ static struct {
     TaskHandle_t init_animation_task;
     bool init_animation_active;
     int init_dot_count;  // Текущее количество точек для анимации (0-3)
+    
+    // Mutex для защиты операций отрисовки
+    SemaphoreHandle_t render_mutex;
+    
+    // Флаги мигания для MQTT активности
+    bool mqtt_tx_active;  // Флаг активности отправки
+    bool mqtt_rx_active;  // Флаг активности приема
+    uint64_t mqtt_tx_timestamp;  // Время последней отправки
+    uint64_t mqtt_rx_timestamp;  // Время последнего приема
 } s_ui = {0};
 
 // Внутренние функции
@@ -193,6 +205,7 @@ static const uint8_t* get_char_glyph(uint8_t c);
 static void render_char(uint8_t x, uint8_t y, uint8_t c);
 static void render_string(uint8_t x, uint8_t y, const char *str);
 static void render_line(uint8_t line_num, const char *str);
+static void render_wifi_icon(uint8_t x, uint8_t y, int8_t rssi);
 static void task_update_display(void *pvParameters);
 
 /**
@@ -200,7 +213,7 @@ static void task_update_display(void *pvParameters);
  */
 static esp_err_t ssd1306_write_command(uint8_t cmd) {
     uint8_t buffer[2] = {0x00, cmd};  // 0x00 = command mode
-    esp_err_t err = i2c_bus_write(s_ui.i2c_address, NULL, 0, buffer, 2, 100);
+    esp_err_t err = i2c_bus_write(s_ui.i2c_address, NULL, 0, buffer, 2, 1000);  // Увеличено с 100 до 1000 мс
     if (err != ESP_OK) {
         ESP_LOGD(TAG, "Failed to write command 0x%02X to SSD1306: %s", cmd, esp_err_to_name(err));
     }
@@ -231,7 +244,7 @@ static esp_err_t ssd1306_write_data(const uint8_t *data, size_t len) {
         memcpy(&buffer[1], &data[offset], chunk_len);
         
         // Запись через I²C: адрес устройства, затем данные с префиксом 0x40
-        err = i2c_bus_write(s_ui.i2c_address, NULL, 0, buffer, chunk_len + 1, 100);
+        err = i2c_bus_write(s_ui.i2c_address, NULL, 0, buffer, chunk_len + 1, 1000);  // Увеличено с 100 до 1000 мс
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "Failed to write data to SSD1306: %s", esp_err_to_name(err));
             return err;
@@ -441,9 +454,96 @@ static void render_line(uint8_t line_num, const char *str) {
 }
 
 /**
+ * @brief Render WiFi icon with signal strength bars (like on phone)
+ * @param x X coordinate (0-127)
+ * @param y Y coordinate (0-63, must be multiple of 8)
+ * @param rssi RSSI value in dBm (-100 to 0, or -100 if not connected)
+ * 
+ * Иконка WiFi: 4 полоски разной длины, расположенные по диагонали
+ * - 0 полосок: нет подключения или RSSI < -80
+ * - 1 полоска: -80 <= RSSI < -70
+ * - 2 полоски: -70 <= RSSI < -60
+ * - 3 полоски: -60 <= RSSI < -50
+ * - 4 полоски: RSSI >= -50
+ */
+static void render_wifi_icon(uint8_t x, uint8_t y, int8_t rssi) {
+    if (x >= SSD1306_WIDTH - 8 || y >= SSD1306_HEIGHT) {
+        return;
+    }
+    
+    // Определяем количество полосок на основе RSSI
+    int bars = 0;
+    if (rssi >= -50) {
+        bars = 4;  // Отличный сигнал
+    } else if (rssi >= -60) {
+        bars = 3;  // Хороший сигнал
+    } else if (rssi >= -70) {
+        bars = 2;  // Средний сигнал
+    } else if (rssi >= -80) {
+        bars = 1;  // Слабый сигнал
+    } else {
+        bars = 0;  // Нет сигнала или не подключено
+    }
+    
+    // Выравниваем Y на границу страницы
+    uint8_t page = y / 8;
+    if (page >= SSD1306_PAGES) {
+        return;
+    }
+    
+    // Создаем растровое изображение иконки WiFi (8x8 пикселей)
+    // Иконка: 4 полоски, расположенные по диагонали справа налево
+    uint8_t icon_data[8] = {0};
+    
+    if (bars >= 1) {
+        // Самая короткая полоска (верхняя правая)
+        icon_data[6] |= 0x01;  // 1 пиксель
+    }
+    if (bars >= 2) {
+        // Вторая полоска
+        icon_data[5] |= 0x03;  // 2 пикселя
+    }
+    if (bars >= 3) {
+        // Третья полоска
+        icon_data[4] |= 0x07;  // 3 пикселя
+    }
+    if (bars >= 4) {
+        // Самая длинная полоска (нижняя левая)
+        icon_data[3] |= 0x0F;  // 4 пикселя
+    }
+    
+    // Устанавливаем область отрисовки: 8 колонок x 1 страница
+    esp_err_t err = ssd1306_write_command(SSD1306_CMD_COLUMN_ADDR);
+    if (err != ESP_OK) return;
+    err = ssd1306_write_command(x);
+    if (err != ESP_OK) return;
+    err = ssd1306_write_command(x + 7);
+    if (err != ESP_OK) return;
+    
+    err = ssd1306_write_command(SSD1306_CMD_PAGE_ADDR);
+    if (err != ESP_OK) return;
+    err = ssd1306_write_command(page);
+    if (err != ESP_OK) return;
+    err = ssd1306_write_command(page);
+    if (err != ESP_OK) return;
+    
+    // Отправляем данные иконки
+    err = ssd1306_write_data(icon_data, 8);
+    if (err != ESP_OK) {
+        ESP_LOGD(TAG, "Failed to write WiFi icon data: %s", esp_err_to_name(err));
+    }
+}
+
+/**
  * @brief Отрисовка экрана BOOT
  */
 static void render_boot_screen(void) {
+    // Захватываем mutex для защиты от одновременного доступа
+    if (s_ui.render_mutex != NULL && xSemaphoreTake(s_ui.render_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        ESP_LOGW(TAG, "Failed to take render mutex, skipping render");
+        return;
+    }
+    
     ssd1306_clear();
     
     // Если активны шаги инициализации, показываем их
@@ -505,35 +605,82 @@ static void render_boot_screen(void) {
             render_line(3, "MQTT: Connecting");
         }
     }
+    
+    // Освобождаем mutex
+    if (s_ui.render_mutex != NULL) {
+        xSemaphoreGive(s_ui.render_mutex);
+    }
 }
 
 /**
  * @brief Отрисовка экрана WIFI_SETUP
  */
 static void render_wifi_setup_screen(void) {
+    // Захватываем mutex для защиты от одновременного доступа
+    if (s_ui.render_mutex != NULL && xSemaphoreTake(s_ui.render_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        ESP_LOGW(TAG, "Failed to take render mutex, skipping render");
+        return;
+    }
+    
     ssd1306_clear();
     render_line(0, "WiFi Setup");
     render_line(1, "Connect to:");
     render_line(2, "PH_SETUP_XXXX");
     render_line(3, "Use app to");
     render_line(4, "configure");
+    
+    // Освобождаем mutex
+    if (s_ui.render_mutex != NULL) {
+        xSemaphoreGive(s_ui.render_mutex);
+    }
 }
 
 /**
  * @brief Отрисовка экрана NORMAL (основной)
  */
 static void render_normal_screen(void) {
+    // Захватываем mutex для защиты от одновременного доступа
+    if (s_ui.render_mutex != NULL && xSemaphoreTake(s_ui.render_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        ESP_LOGW(TAG, "Failed to take render mutex, skipping render");
+        return;
+    }
+    
     ssd1306_clear();
     
-    // Верхняя строка: статусы
+    // Верхняя строка: статусы с миганием для MQTT
     char status_line[22];
     char uid_display[17];  // Ограничиваем длину UID для отображения
     strncpy(uid_display, s_ui.node_uid, sizeof(uid_display) - 1);
     uid_display[sizeof(uid_display) - 1] = '\0';
+    
+    // WiFi индикатор
+    char wifi_char = s_ui.model.connections.wifi_connected ? 'W' : 'w';
+    
+    // MQTT индикатор с миганием
+    char mqtt_char = 'm';  // По умолчанию отключен
+    if (s_ui.model.connections.mqtt_connected) {
+        // Проверяем активность мигания (мигание длится 200 мс)
+        uint64_t now_ms = esp_timer_get_time() / 1000;
+        bool tx_blink = s_ui.mqtt_tx_active && (now_ms - s_ui.mqtt_tx_timestamp) < 200;
+        bool rx_blink = s_ui.mqtt_rx_active && (now_ms - s_ui.mqtt_rx_timestamp) < 200;
+        
+        if (tx_blink || rx_blink) {
+            mqtt_char = 'M';  // Мигание - заглавная буква
+        } else {
+            mqtt_char = 'm';  // Обычное состояние - строчная буква
+        }
+        
+        // Сбрасываем флаги после мигания
+        if (!tx_blink) {
+            s_ui.mqtt_tx_active = false;
+        }
+        if (!rx_blink) {
+            s_ui.mqtt_rx_active = false;
+        }
+    }
+    
     snprintf(status_line, sizeof(status_line), "%c %c %s",
-            s_ui.model.connections.wifi_connected ? 'W' : 'w',
-            s_ui.model.connections.mqtt_connected ? 'M' : 'm',
-            uid_display);
+            wifi_char, mqtt_char, uid_display);
     render_line(0, status_line);
     
     // Основной блок в зависимости от типа узла и текущего экрана
@@ -593,36 +740,74 @@ static void render_normal_screen(void) {
     } else {
         render_line(7, "OK");
     }
+    
+    // Освобождаем mutex
+    if (s_ui.render_mutex != NULL) {
+        xSemaphoreGive(s_ui.render_mutex);
+    }
 }
 
 /**
  * @brief Отрисовка экрана ALERT
  */
 static void render_alert_screen(void) {
+    // Захватываем mutex для защиты от одновременного доступа
+    if (s_ui.render_mutex != NULL && xSemaphoreTake(s_ui.render_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        ESP_LOGW(TAG, "Failed to take render mutex, skipping render");
+        return;
+    }
+    
     ssd1306_clear();
     render_line(2, "ALERT");
     render_line(3, s_ui.model.alert_message);
     render_line(5, "See app");
+    
+    // Освобождаем mutex
+    if (s_ui.render_mutex != NULL) {
+        xSemaphoreGive(s_ui.render_mutex);
+    }
 }
 
 /**
  * @brief Отрисовка экрана CALIBRATION
  */
 static void render_calibration_screen(void) {
+    // Захватываем mutex для защиты от одновременного доступа
+    if (s_ui.render_mutex != NULL && xSemaphoreTake(s_ui.render_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        ESP_LOGW(TAG, "Failed to take render mutex, skipping render");
+        return;
+    }
+    
     ssd1306_clear();
     render_line(1, "Calibration");
     render_line(2, "Follow");
     render_line(3, "instructions");
+    
+    // Освобождаем mutex
+    if (s_ui.render_mutex != NULL) {
+        xSemaphoreGive(s_ui.render_mutex);
+    }
 }
 
 /**
  * @brief Отрисовка экрана SERVICE
  */
 static void render_service_screen(void) {
+    // Захватываем mutex для защиты от одновременного доступа
+    if (s_ui.render_mutex != NULL && xSemaphoreTake(s_ui.render_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        ESP_LOGW(TAG, "Failed to take render mutex, skipping render");
+        return;
+    }
+    
     ssd1306_clear();
     render_line(0, "Service Menu");
     render_line(2, "Node:");
     render_line(3, s_ui.node_uid);
+    
+    // Освобождаем mutex
+    if (s_ui.render_mutex != NULL) {
+        xSemaphoreGive(s_ui.render_mutex);
+    }
 }
 
 /**
@@ -687,6 +872,22 @@ esp_err_t oled_ui_init(oled_ui_node_type_t node_type, const char *node_uid,
     }
     ESP_LOGI(TAG, "I²C bus is initialized");
     
+    // Создание mutex для защиты операций отрисовки
+    if (s_ui.render_mutex == NULL) {
+        s_ui.render_mutex = xSemaphoreCreateMutex();
+        if (s_ui.render_mutex == NULL) {
+            ESP_LOGE(TAG, "Failed to create render mutex");
+            return ESP_ERR_NO_MEM;
+        }
+        ESP_LOGI(TAG, "Render mutex created");
+    }
+    
+    // Инициализация флагов MQTT активности
+    s_ui.mqtt_tx_active = false;
+    s_ui.mqtt_rx_active = false;
+    s_ui.mqtt_tx_timestamp = 0;
+    s_ui.mqtt_rx_timestamp = 0;
+    
     // Сохранение параметров
     s_ui.node_type = node_type;
     if (node_uid != NULL) {
@@ -704,7 +905,7 @@ esp_err_t oled_ui_init(oled_ui_node_type_t node_type, const char *node_uid,
                  config->enable_task ? "yes" : "no");
     } else {
         s_ui.config.i2c_address = SSD1306_I2C_ADDR_DEFAULT;
-        s_ui.config.update_interval_ms = 500;
+        s_ui.config.update_interval_ms = 1500;  // Увеличено с 500 до 1500 мс для плавного обновления
         s_ui.config.enable_task = true;
         ESP_LOGI(TAG, "Using default config: addr=0x%02X, interval=%dms", 
                  s_ui.config.i2c_address, s_ui.config.update_interval_ms);
@@ -754,6 +955,13 @@ esp_err_t oled_ui_deinit(void) {
     // Остановка задачи
     oled_ui_stop_task();
     
+    // Удаление mutex
+    if (s_ui.render_mutex != NULL) {
+        vSemaphoreDelete(s_ui.render_mutex);
+        s_ui.render_mutex = NULL;
+        ESP_LOGI(TAG, "Render mutex deleted");
+    }
+    
     // Выключение дисплея
     ssd1306_write_command(SSD1306_CMD_DISPLAY_OFF);
     
@@ -789,7 +997,58 @@ esp_err_t oled_ui_update_model(const oled_ui_model_t *model) {
         return ESP_ERR_INVALID_ARG;
     }
     
-    memcpy(&s_ui.model, model, sizeof(oled_ui_model_t));
+    // Мержим значения вместо полной замены, чтобы сохранить необновленные поля
+    // Обновляем только те поля, которые были явно установлены (не равны 0 или не пустые)
+    
+    // Соединения - всегда обновляем
+    s_ui.model.connections = model->connections;
+    
+    // Значения сенсоров - обновляем только если они валидны (не NaN, не бесконечность)
+    if (!isnan(model->ph_value) && isfinite(model->ph_value)) {
+        s_ui.model.ph_value = model->ph_value;
+    }
+    if (!isnan(model->ec_value) && isfinite(model->ec_value)) {
+        s_ui.model.ec_value = model->ec_value;
+    }
+    if (!isnan(model->temperature_air) && isfinite(model->temperature_air)) {
+        s_ui.model.temperature_air = model->temperature_air;
+    }
+    if (!isnan(model->temperature_water) && isfinite(model->temperature_water)) {
+        s_ui.model.temperature_water = model->temperature_water;
+    }
+    if (!isnan(model->humidity) && isfinite(model->humidity)) {
+        s_ui.model.humidity = model->humidity;
+    }
+    if (!isnan(model->co2) && isfinite(model->co2)) {
+        s_ui.model.co2 = model->co2;
+    }
+    
+    // Статус узла - всегда обновляем
+    s_ui.model.alert = model->alert;
+    s_ui.model.paused = model->paused;
+    if (model->alert_message[0] != '\0') {
+        strncpy(s_ui.model.alert_message, model->alert_message, sizeof(s_ui.model.alert_message) - 1);
+        s_ui.model.alert_message[sizeof(s_ui.model.alert_message) - 1] = '\0';
+    }
+    
+    // Информация о зоне/рецепте - обновляем только если не пустые
+    if (model->zone_name[0] != '\0') {
+        strncpy(s_ui.model.zone_name, model->zone_name, sizeof(s_ui.model.zone_name) - 1);
+        s_ui.model.zone_name[sizeof(s_ui.model.zone_name) - 1] = '\0';
+    }
+    if (model->recipe_name[0] != '\0') {
+        strncpy(s_ui.model.recipe_name, model->recipe_name, sizeof(s_ui.model.recipe_name) - 1);
+        s_ui.model.recipe_name[sizeof(s_ui.model.recipe_name) - 1] = '\0';
+    }
+    
+    // Каналы - обновляем только если есть каналы
+    if (model->channel_count > 0 && model->channel_count <= 8) {
+        s_ui.model.channel_count = model->channel_count;
+        for (size_t i = 0; i < model->channel_count; i++) {
+            s_ui.model.channels[i] = model->channels[i];
+        }
+    }
+    
     return ESP_OK;
 }
 
@@ -821,6 +1080,22 @@ esp_err_t oled_ui_refresh(void) {
     }
     
     return ESP_OK;
+}
+
+void oled_ui_notify_mqtt_tx(void) {
+    if (!s_ui.initialized) {
+        return;
+    }
+    s_ui.mqtt_tx_active = true;
+    s_ui.mqtt_tx_timestamp = esp_timer_get_time() / 1000;  // Время в миллисекундах
+}
+
+void oled_ui_notify_mqtt_rx(void) {
+    if (!s_ui.initialized) {
+        return;
+    }
+    s_ui.mqtt_rx_active = true;
+    s_ui.mqtt_rx_timestamp = esp_timer_get_time() / 1000;  // Время в миллисекундах
 }
 
 esp_err_t oled_ui_next_screen(void) {
@@ -906,9 +1181,8 @@ static void init_step_animation_task(void *arg) {
         // Обновляем количество точек (0, 1, 2, 3 -> "", ".", "..", "...")
         s_ui.init_dot_count = (s_ui.init_dot_count + 1) % 4;
 
-        // Обновляем отображение
+        // Обновляем отображение через oled_ui_refresh (он сам вызовет render_boot_screen с защитой mutex)
         if (s_ui.initialized && s_ui.state == OLED_UI_STATE_BOOT) {
-            render_boot_screen();
             oled_ui_refresh();
         }
 
@@ -953,8 +1227,7 @@ esp_err_t oled_ui_show_init_step(int step_num, const char *step_text) {
         }
     }
 
-    // Обновляем экран
-    render_boot_screen();
+    // Обновляем экран (oled_ui_refresh сам вызовет render_boot_screen с защитой mutex)
     oled_ui_refresh();
 
     ESP_LOGI(TAG, "Init step %d: %s", step_num, step_text ? step_text : "");
@@ -983,8 +1256,7 @@ esp_err_t oled_ui_stop_init_steps(void) {
     s_ui.current_step_num = 0;
     s_ui.current_step_text[0] = '\0';
 
-    // Обновляем экран (вернется к стандартному BOOT экрану)
-    render_boot_screen();
+    // Обновляем экран (вернется к стандартному BOOT экрану, oled_ui_refresh сам вызовет render_boot_screen с защитой mutex)
     oled_ui_refresh();
 
     ESP_LOGI(TAG, "Init steps stopped");

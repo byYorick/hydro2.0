@@ -9,6 +9,7 @@
 
 #include "ph_node_handlers.h"
 #include "ph_node_app.h"
+#include "ph_node_defaults.h"
 #include "mqtt_manager.h"
 #include "wifi_manager.h"
 #include "config_storage.h"
@@ -264,9 +265,9 @@ void ph_node_config_handler(const char *topic, const char *data, int data_len, v
     config_apply_result_init(&apply_result);
 
     const config_apply_mqtt_params_t mqtt_params = {
-        .default_node_id = "nd-ph-1",
-        .default_gh_uid = "gh-1",
-        .default_zone_uid = "zn-1",
+        .default_node_id = PH_NODE_DEFAULT_NODE_ID,
+        .default_gh_uid = PH_NODE_DEFAULT_GH_UID,
+        .default_zone_uid = PH_NODE_DEFAULT_ZONE_UID,
         .config_cb = ph_node_config_handler,
         .command_cb = ph_node_command_handler,
         .connection_cb = ph_node_mqtt_connection_cb,

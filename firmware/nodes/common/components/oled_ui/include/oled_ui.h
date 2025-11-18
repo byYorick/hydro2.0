@@ -149,6 +149,20 @@ esp_err_t oled_ui_update_model(const oled_ui_model_t *model);
 esp_err_t oled_ui_refresh(void);
 
 /**
+ * @brief Уведомление о MQTT активности (отправка сообщения)
+ * 
+ * Вызывается при отправке MQTT сообщения для мигания индикатора
+ */
+void oled_ui_notify_mqtt_tx(void);
+
+/**
+ * @brief Уведомление о MQTT активности (прием сообщения)
+ * 
+ * Вызывается при приеме MQTT сообщения для мигания индикатора
+ */
+void oled_ui_notify_mqtt_rx(void);
+
+/**
  * @brief Переключение на следующий экран (для режима NORMAL)
  * 
  * @return esp_err_t ESP_OK при успехе

@@ -4,6 +4,7 @@ idf_component_register(
         "ph_node_app.c"
         "ph_node_tasks.c"
         "ph_node_init.c"
+        "ph_node_init_steps.c"
         "ph_node_handlers.c"
     INCLUDE_DIRS 
         "."

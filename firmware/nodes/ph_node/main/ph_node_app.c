@@ -10,6 +10,7 @@
 
 #include "ph_node_app.h"
 #include "ph_node_init.h"
+#include "ph_node_defaults.h"
 #include "trema_ph.h"
 #include "oled_ui.h"
 #include "pump_driver.h"
@@ -51,7 +52,7 @@ const char* ph_node_get_node_id(void) {
     
     // Если не найдено, возвращаем дефолтное значение
     if (s_node_id_cache[0] == '\0') {
-        strncpy(s_node_id_cache, "nd-ph-1", sizeof(s_node_id_cache) - 1);
+        strncpy(s_node_id_cache, PH_NODE_DEFAULT_NODE_ID, sizeof(s_node_id_cache) - 1);
         s_node_id_cache[sizeof(s_node_id_cache) - 1] = '\0';
     }
     return s_node_id_cache;

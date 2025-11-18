@@ -54,21 +54,30 @@ static void task_sensors(void *pvParameters) {
     while (1) {
         vTaskDelayUntil(&last_wake_time, interval);
         
-        if (!mqtt_manager_is_connected()) {
+        // Publish pH telemetry только если MQTT подключен
+        if (mqtt_manager_is_connected()) {
+            ph_node_publish_telemetry();
+        } else {
             ESP_LOGW(TAG, "MQTT not connected, skipping sensor poll");
-            continue;
         }
         
-        // Publish pH telemetry (pH-специфичная логика)
-        ph_node_publish_telemetry();
-        
         // Update OLED UI with current pH values (pH-специфичная логика)
+        // Обновляем OLED независимо от MQTT подключения
         if (ph_node_is_oled_initialized()) {
             // Получение статуса соединений через общий компонент
             connection_status_t conn_status;
             if (connection_status_get(&conn_status) == ESP_OK) {
-                // Обновление модели OLED UI
+                // Обновление модели OLED UI - обновляем только изменяемые поля
                 oled_ui_model_t model = {0};
+                // Инициализируем неиспользуемые поля как NaN, чтобы они не обновлялись
+                model.ph_value = NAN;
+                model.ec_value = NAN;
+                model.temperature_air = NAN;
+                model.temperature_water = NAN;
+                model.humidity = NAN;
+                model.co2 = NAN;
+                
+                // Обновляем соединения
                 model.connections.wifi_connected = conn_status.wifi_connected;
                 model.connections.mqtt_connected = conn_status.mqtt_connected;
                 model.connections.wifi_rssi = conn_status.wifi_rssi;
@@ -78,11 +87,11 @@ static void task_sensors(void *pvParameters) {
                     float ph_value = 0.0f;
                     if (trema_ph_read(&ph_value) && !isnan(ph_value) && isfinite(ph_value)) {
                         model.ph_value = ph_value;
-                    } else {
-                        model.ph_value = 0.0f; // Unknown
                     }
+                    // Если не удалось прочитать, оставляем NaN - старое значение сохранится
                 }
                 
+                // Статус узла
                 model.alert = false;
                 model.paused = false;
                 

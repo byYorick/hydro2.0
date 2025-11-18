@@ -326,6 +326,10 @@ static esp_err_t mqtt_manager_publish_internal(const char *topic, const char *da
         return ESP_ERR_INVALID_STATE;
     }
 
+    // Уведомляем OLED UI о MQTT активности (отправка)
+    extern void oled_ui_notify_mqtt_tx(void);
+    oled_ui_notify_mqtt_tx();
+
     int data_len = strlen(data);
     int msg_id = esp_mqtt_client_publish(s_mqtt_client, topic, data, data_len, qos, retain);
     
@@ -405,6 +409,10 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
 
         case MQTT_EVENT_DATA: {
             ESP_LOGI(TAG, "MQTT data received on topic: %.*s", event->topic_len, event->topic);
+            
+            // Уведомляем OLED UI о MQTT активности (прием)
+            extern void oled_ui_notify_mqtt_rx(void);
+            oled_ui_notify_mqtt_rx();
             
             // Создание null-terminated строк для topic и data
             char topic[128] = {0};
