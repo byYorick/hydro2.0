@@ -236,6 +236,11 @@ esp_err_t pump_driver_init_from_config(void) {
                         pump_cfg->use_relay = false; // По умолчанию прямое управление через GPIO
                         pump_cfg->relay_channel = NULL;
                         pump_cfg->ml_per_second = 2.0f; // Значение по умолчанию
+
+                        cJSON *ml_per_second_item = cJSON_GetObjectItem(channel, "ml_per_second");
+                        if (ml_per_second_item != NULL && cJSON_IsNumber(ml_per_second_item)) {
+                            pump_cfg->ml_per_second = (float)cJSON_GetNumberValue(ml_per_second_item);
+                        }
                         
                         // Определяем fail_safe_mode
                         if (fail_safe_item != NULL && cJSON_IsString(fail_safe_item)) {
@@ -248,7 +253,7 @@ esp_err_t pump_driver_init_from_config(void) {
                         if (safe_limits != NULL && cJSON_IsObject(safe_limits)) {
                             cJSON *max_duration = cJSON_GetObjectItem(safe_limits, "max_duration_ms");
                             cJSON *min_off = cJSON_GetObjectItem(safe_limits, "min_off_ms");
-                            
+
                             if (max_duration != NULL && cJSON_IsNumber(max_duration)) {
                                 pump_cfg->max_duration_ms = (uint32_t)cJSON_GetNumberValue(max_duration);
                             } else {
@@ -264,7 +269,12 @@ esp_err_t pump_driver_init_from_config(void) {
                             pump_cfg->max_duration_ms = 60000;
                             pump_cfg->min_off_time_ms = 5000;
                         }
-                        
+
+                        cJSON *max_duration_override = cJSON_GetObjectItem(channel, "max_duration_ms");
+                        if (max_duration_override != NULL && cJSON_IsNumber(max_duration_override)) {
+                            pump_cfg->max_duration_ms = (uint32_t)cJSON_GetNumberValue(max_duration_override);
+                        }
+
                         pump_count++;
                     }
                 }
