@@ -13,6 +13,10 @@
 #include "climate_node_app.h"
 #include "relay_driver.h"
 #include "setup_portal.h"
+#include "i2c_bus.h"
+#include "sht3x.h"
+#include "ccs811.h"
+#include "pwm_driver.h"
 #include "esp_log.h"
 #include "esp_err.h"
 #include "esp_timer.h"
@@ -26,6 +30,60 @@
 #include <stdlib.h>
 
 static const char *TAG = "climate_node";
+static esp_err_t climate_node_init_i2c_bus(void) {
+    esp_err_t err = i2c_bus_init_from_config();
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "I2C bus initialized from config");
+        return ESP_OK;
+    }
+
+    if (err == ESP_ERR_NOT_FOUND) {
+        ESP_LOGW(TAG, "I2C config not found, using defaults");
+        i2c_bus_config_t cfg = {
+            .sda_pin = 21,
+            .scl_pin = 22,
+            .clock_speed = 400000,
+            .pullup_enable = true,
+        };
+        err = i2c_bus_init(&cfg);
+    }
+
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "I2C bus initialized with fallback config");
+    } else {
+        ESP_LOGE(TAG, "Failed to initialize I2C bus: %s", esp_err_to_name(err));
+    }
+
+    return err;
+}
+
+static void climate_node_init_sensors(void) {
+    esp_err_t err = climate_node_init_i2c_bus();
+    if (err != ESP_OK) {
+        return;
+    }
+
+    sht3x_config_t sht_cfg = {
+        .i2c_address = 0x44,
+    };
+    err = sht3x_init(&sht_cfg);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "SHT3x driver initialized");
+    } else {
+        ESP_LOGE(TAG, "Failed to init SHT3x: %s", esp_err_to_name(err));
+    }
+
+    ccs811_config_t ccs_cfg = {
+        .i2c_address = 0x5A,
+        .measurement_interval_ms = 1000,
+    };
+    err = ccs811_init(&ccs_cfg);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "CCS811 driver initialized");
+    } else {
+        ESP_LOGE(TAG, "Failed to init CCS811: %s", esp_err_to_name(err));
+    }
+}
 
 // Пример: обработка config сообщений
 static void on_config_received(const char *topic, const char *data, int data_len, void *user_ctx) {
@@ -413,16 +471,34 @@ static void on_command_received(const char *topic, const char *channel, const ch
         cJSON *value_item = cJSON_GetObjectItem(json, "value");
         if (cJSON_IsNumber(value_item)) {
             int pwm_value = (int)cJSON_GetNumberValue(value_item);
-            ESP_LOGI(TAG, "Setting %s PWM to %d", channel, pwm_value);
-            
-            // TODO: Реальная логика управления PWM
-            
+            float duty_percent;
+            if (pwm_value <= 100) {
+                duty_percent = (float)pwm_value;
+            } else {
+                if (pwm_value < 0) {
+                    pwm_value = 0;
+                }
+                if (pwm_value > 255) {
+                    pwm_value = 255;
+                }
+                duty_percent = ((float)pwm_value / 255.0f) * 100.0f;
+            }
+
+            ESP_LOGI(TAG, "Setting %s PWM to %d (%.1f%%)", channel, pwm_value, duty_percent);
+            esp_err_t pwm_err = pwm_driver_set_duty_percent(channel, duty_percent);
+
             cJSON *response = cJSON_CreateObject();
             if (response) {
                 cJSON_AddStringToObject(response, "cmd_id", cmd_id);
-                cJSON_AddStringToObject(response, "status", "ACK");
+                if (pwm_err == ESP_OK) {
+                    cJSON_AddStringToObject(response, "status", "ACK");
+                } else {
+                    cJSON_AddStringToObject(response, "status", "ERROR");
+                    cJSON_AddStringToObject(response, "error_code", "pwm_failed");
+                    cJSON_AddStringToObject(response, "error_message", esp_err_to_name(pwm_err));
+                }
                 cJSON_AddNumberToObject(response, "ts", (double)(esp_timer_get_time() / 1000000));
-                
+
                 char *json_str = cJSON_PrintUnformatted(response);
                 if (json_str) {
                     mqtt_client_publish_command_response(channel, json_str);
@@ -634,123 +710,21 @@ void climate_node_app_init(void) {
     } else {
         ESP_LOGE(TAG, "Failed to initialize relay driver: %s", esp_err_to_name(err));
     }
-    
+
+    err = pwm_driver_init_from_config();
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "PWM driver initialized from config");
+    } else if (err == ESP_ERR_NOT_FOUND) {
+        ESP_LOGW(TAG, "No PWM channels found in config");
+    } else {
+        ESP_LOGE(TAG, "Failed to initialize PWM driver: %s", esp_err_to_name(err));
+    }
+
+    climate_node_init_sensors();
+
     ESP_LOGI(TAG, "climate_node initialized");
-    
+
     // Запуск FreeRTOS задач для опроса сенсоров и heartbeat
     climate_node_start_tasks();
-}
-
-/**
- * @brief Пример публикации телеметрии температуры
- */
-void climate_node_publish_temperature_example(void) {
-    if (!mqtt_client_is_connected()) {
-        ESP_LOGW(TAG, "MQTT not connected, skipping telemetry");
-        return;
-    }
-    
-    // Формат согласно MQTT_SPEC_FULL.md раздел 3.2
-    cJSON *telemetry = cJSON_CreateObject();
-    if (telemetry) {
-        cJSON_AddStringToObject(telemetry, "node_id", "nd-climate-1");
-        cJSON_AddStringToObject(telemetry, "channel", "temperature");
-        cJSON_AddStringToObject(telemetry, "metric_type", "TEMPERATURE");
-        cJSON_AddNumberToObject(telemetry, "value", 24.5);  // TODO: Реальное значение с SHT3x
-        cJSON_AddNumberToObject(telemetry, "raw", 2450);     // TODO: Сырое значение
-        cJSON_AddNumberToObject(telemetry, "timestamp", (double)(esp_timer_get_time() / 1000000));
-        
-        char *json_str = cJSON_PrintUnformatted(telemetry);
-        if (json_str) {
-            mqtt_client_publish_telemetry("temperature", json_str);
-            free(json_str);
-        }
-        cJSON_Delete(telemetry);
-    }
-}
-
-/**
- * @brief Пример публикации телеметрии влажности
- */
-void climate_node_publish_humidity_example(void) {
-    if (!mqtt_client_is_connected()) {
-        ESP_LOGW(TAG, "MQTT not connected, skipping telemetry");
-        return;
-    }
-    
-    cJSON *telemetry = cJSON_CreateObject();
-    if (telemetry) {
-        cJSON_AddStringToObject(telemetry, "node_id", "nd-climate-1");
-        cJSON_AddStringToObject(telemetry, "channel", "humidity");
-        cJSON_AddStringToObject(telemetry, "metric_type", "HUMIDITY");
-        cJSON_AddNumberToObject(telemetry, "value", 55.0);   // TODO: Реальное значение с SHT3x
-        cJSON_AddNumberToObject(telemetry, "raw", 5500);     // TODO: Сырое значение
-        cJSON_AddNumberToObject(telemetry, "timestamp", (double)(esp_timer_get_time() / 1000000));
-        
-        char *json_str = cJSON_PrintUnformatted(telemetry);
-        if (json_str) {
-            mqtt_client_publish_telemetry("humidity", json_str);
-            free(json_str);
-        }
-        cJSON_Delete(telemetry);
-    }
-}
-
-/**
- * @brief Пример публикации телеметрии CO₂
- */
-void climate_node_publish_co2_example(void) {
-    if (!mqtt_client_is_connected()) {
-        ESP_LOGW(TAG, "MQTT not connected, skipping telemetry");
-        return;
-    }
-    
-    cJSON *telemetry = cJSON_CreateObject();
-    if (telemetry) {
-        cJSON_AddStringToObject(telemetry, "node_id", "nd-climate-1");
-        cJSON_AddStringToObject(telemetry, "channel", "co2");
-        cJSON_AddStringToObject(telemetry, "metric_type", "CO2");
-        cJSON_AddNumberToObject(telemetry, "value", 650.0);  // TODO: Реальное значение с CCS811
-        cJSON_AddNumberToObject(telemetry, "raw", 650);       // TODO: Сырое значение
-        cJSON_AddNumberToObject(telemetry, "timestamp", (double)(esp_timer_get_time() / 1000000));
-        
-        char *json_str = cJSON_PrintUnformatted(telemetry);
-        if (json_str) {
-            mqtt_client_publish_telemetry("co2", json_str);
-            free(json_str);
-        }
-        cJSON_Delete(telemetry);
-    }
-}
-
-/**
- * @brief Пример публикации heartbeat с RSSI
- */
-void climate_node_publish_heartbeat_example(void) {
-    if (!mqtt_client_is_connected()) {
-        return;
-    }
-    
-    // Получение RSSI
-    wifi_ap_record_t ap_info;
-    int8_t rssi = -100;
-    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
-        rssi = ap_info.rssi;
-    }
-    
-    // Формат согласно MQTT_SPEC_FULL.md раздел 9.1
-    cJSON *heartbeat = cJSON_CreateObject();
-    if (heartbeat) {
-        cJSON_AddNumberToObject(heartbeat, "uptime", (double)(esp_timer_get_time() / 1000));
-        cJSON_AddNumberToObject(heartbeat, "free_heap", (double)esp_get_free_heap_size());
-        cJSON_AddNumberToObject(heartbeat, "rssi", rssi);
-        
-        char *json_str = cJSON_PrintUnformatted(heartbeat);
-        if (json_str) {
-            mqtt_client_publish_heartbeat(json_str);
-            free(json_str);
-        }
-        cJSON_Delete(heartbeat);
-    }
 }
 
