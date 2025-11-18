@@ -504,26 +504,29 @@ static void render_wifi_icon(uint8_t x, uint8_t y, int8_t rssi) {
     // Иконка: 4 полоски, расположенные по дуге (как на телефоне)
     // Полоски идут от центра вверх и вниз
     // Каждый байт = одна строка из 8 пикселей (8 строк всего)
+    // В SSD1306 биты идут слева направо: бит 7 (MSB) = левый пиксель, бит 0 (LSB) = правый пиксель
     uint8_t icon_data[8] = {0};
     
-    if (is_connected) {
-        // Рисуем полоски сигнала только если есть подключение
+    if (is_connected && bars > 0) {
+        // Рисуем полоски сигнала - более видимые, расположенные по дуге
+        // Полоски идут снизу вверх, увеличиваясь в размере
         if (bars >= 1) {
             // Самая короткая полоска (верхняя) - 2 пикселя в центре
-            icon_data[0] |= 0x18;  // Бит 3 и 4 (0b00011000)
+            icon_data[7] = 0x18;  // Бит 3 и 4 (0b00011000) - строка 7 (нижняя)
         }
         if (bars >= 2) {
             // Вторая полоска - 4 пикселя
-            icon_data[1] |= 0x3C;  // Бит 2-5 (0b00111100)
+            icon_data[6] = 0x3C;  // Бит 2-5 (0b00111100) - строка 6
         }
         if (bars >= 3) {
             // Третья полоска - 6 пикселей
-            icon_data[2] |= 0x7E;  // Бит 1-6 (0b01111110)
+            icon_data[5] = 0x7E;  // Бит 1-6 (0b01111110) - строка 5
         }
         if (bars >= 4) {
             // Самая длинная полоска (нижняя) - 8 пикселей
-            icon_data[3] |= 0xFF;  // Все биты (0b11111111)
+            icon_data[4] = 0xFF;  // Все биты (0b11111111) - строка 4
         }
+        // Верхние строки (0-3) остаются пустыми для визуального эффекта дуги
     } else {
         // Если нет подключения, рисуем крестик для индикации отсутствия подключения
         // Крестик: диагональные линии через всю иконку (X)
@@ -531,10 +534,10 @@ static void render_wifi_icon(uint8_t x, uint8_t y, int8_t rssi) {
         icon_data[1] = 0x42;  // (0b01000010)
         icon_data[2] = 0x24;  // (0b00100100)
         icon_data[3] = 0x18;  // Центр (0b00011000)
-        icon_data[4] = 0x24;  // (0b00100100)
-        icon_data[5] = 0x42;  // (0b01000010)
-        icon_data[6] = 0x81;  // Нижние углы (0b10000001)
-        icon_data[7] = 0x00;  // Пустая строка снизу
+        icon_data[4] = 0x18;  // Центр (0b00011000)
+        icon_data[5] = 0x24;  // (0b00100100)
+        icon_data[6] = 0x42;  // (0b01000010)
+        icon_data[7] = 0x81;  // Нижние углы (0b10000001)
     }
     
     // Устанавливаем область отрисовки: 8 колонок x 1 страница
@@ -574,10 +577,13 @@ static void render_wifi_icon(uint8_t x, uint8_t y, int8_t rssi) {
     // Отправляем данные иконки (8 байт для 8 строк)
     err = ssd1306_write_data(icon_data, 8);
     if (err != ESP_OK) {
-        ESP_LOGD(TAG, "Failed to write WiFi icon data: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, "Failed to write WiFi icon data: %s (x=%d, y=%d, page=%d)", 
+                 esp_err_to_name(err), x, y, page);
     } else {
-        ESP_LOGD(TAG, "WiFi icon rendered: x=%d, y=%d, page=%d, rssi=%d, bars=%d, connected=%d", 
-                 x, y, page, rssi, bars, is_connected);
+        ESP_LOGI(TAG, "WiFi icon rendered: x=%d, y=%d, page=%d, rssi=%d, bars=%d, connected=%d, data=[%02X %02X %02X %02X %02X %02X %02X %02X]", 
+                 x, y, page, rssi, bars, is_connected,
+                 icon_data[0], icon_data[1], icon_data[2], icon_data[3],
+                 icon_data[4], icon_data[5], icon_data[6], icon_data[7]);
     }
 }
 
