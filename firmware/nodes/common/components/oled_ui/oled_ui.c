@@ -538,24 +538,46 @@ static void render_wifi_icon(uint8_t x, uint8_t y, int8_t rssi) {
     }
     
     // Устанавливаем область отрисовки: 8 колонок x 1 страница
+    // Используем тот же подход, что и в render_char
     esp_err_t err = ssd1306_write_command(SSD1306_CMD_COLUMN_ADDR);
-    if (err != ESP_OK) return;
+    if (err != ESP_OK) {
+        ESP_LOGD(TAG, "Failed to set column addr for WiFi icon: %s", esp_err_to_name(err));
+        return;
+    }
     err = ssd1306_write_command(x);
-    if (err != ESP_OK) return;
-    err = ssd1306_write_command(x + 7);
-    if (err != ESP_OK) return;
+    if (err != ESP_OK) {
+        ESP_LOGD(TAG, "Failed to set column start for WiFi icon: %s", esp_err_to_name(err));
+        return;
+    }
+    err = ssd1306_write_command(x + 7);  // 8 колонок (0-7)
+    if (err != ESP_OK) {
+        ESP_LOGD(TAG, "Failed to set column end for WiFi icon: %s", esp_err_to_name(err));
+        return;
+    }
     
     err = ssd1306_write_command(SSD1306_CMD_PAGE_ADDR);
-    if (err != ESP_OK) return;
+    if (err != ESP_OK) {
+        ESP_LOGD(TAG, "Failed to set page addr for WiFi icon: %s", esp_err_to_name(err));
+        return;
+    }
     err = ssd1306_write_command(page);
-    if (err != ESP_OK) return;
-    err = ssd1306_write_command(page);
-    if (err != ESP_OK) return;
+    if (err != ESP_OK) {
+        ESP_LOGD(TAG, "Failed to set page start for WiFi icon: %s", esp_err_to_name(err));
+        return;
+    }
+    err = ssd1306_write_command(page);  // 1 страница
+    if (err != ESP_OK) {
+        ESP_LOGD(TAG, "Failed to set page end for WiFi icon: %s", esp_err_to_name(err));
+        return;
+    }
     
-    // Отправляем данные иконки
+    // Отправляем данные иконки (8 байт для 8 строк)
     err = ssd1306_write_data(icon_data, 8);
     if (err != ESP_OK) {
         ESP_LOGD(TAG, "Failed to write WiFi icon data: %s", esp_err_to_name(err));
+    } else {
+        ESP_LOGD(TAG, "WiFi icon rendered: x=%d, y=%d, page=%d, rssi=%d, bars=%d, connected=%d", 
+                 x, y, page, rssi, bars, is_connected);
     }
 }
 
@@ -674,10 +696,14 @@ static void render_normal_screen(void) {
     
     // Верхняя строка: иконка WiFi, статус MQTT, UID
     // Иконка WiFi (8x8 пикселей) в позиции (0, 0)
+    // ВАЖНО: render_wifi_icon должен вызываться ПОСЛЕ ssd1306_clear(), 
+    // но ПЕРЕД render_string/render_line, чтобы не конфликтовать с областью отрисовки
     int8_t wifi_rssi = s_ui.model.connections.wifi_rssi;
     if (!s_ui.model.connections.wifi_connected) {
         wifi_rssi = -100;  // Нет подключения
     }
+    
+    // Отображаем иконку WiFi
     render_wifi_icon(0, 0, wifi_rssi);
     
     // Статус MQTT: "OK" или "ERR"
