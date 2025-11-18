@@ -33,6 +33,59 @@ static const char *TAG = "ec_node";
 // Глобальное состояние EC-сенсора
 static bool ec_sensor_initialized = false;
 
+static const char *ec_node_pump_state_to_string(pump_driver_state_t state) {
+    switch (state) {
+        case PUMP_STATE_OFF:
+            return "OFF";
+        case PUMP_STATE_ON:
+            return "ON";
+        case PUMP_STATE_COOLDOWN:
+            return "COOLDOWN";
+        case PUMP_STATE_ERROR:
+        default:
+            return "ERROR";
+    }
+}
+
+static void ec_node_publish_pump_status(const char *channel, const char *event) {
+    if (channel == NULL || !mqtt_client_is_connected()) {
+        return;
+    }
+
+    pump_driver_state_t pump_state;
+    if (pump_driver_get_state(channel, &pump_state) != ESP_OK) {
+        return;
+    }
+
+    char node_id[CONFIG_STORAGE_MAX_STRING_LEN] = {0};
+    if (config_storage_get_node_id(node_id, sizeof(node_id)) != ESP_OK) {
+        strncpy(node_id, "nd-ec-1", sizeof(node_id) - 1);
+    }
+
+    cJSON *status = cJSON_CreateObject();
+    if (!status) {
+        return;
+    }
+
+    cJSON_AddStringToObject(status, "node_id", node_id);
+    cJSON_AddStringToObject(status, "channel", channel);
+    cJSON_AddStringToObject(status, "metric_type", "PUMP_STATE");
+    cJSON_AddNumberToObject(status, "value", (int)pump_state);
+    cJSON_AddStringToObject(status, "state", ec_node_pump_state_to_string(pump_state));
+    if (event) {
+        cJSON_AddStringToObject(status, "event", event);
+    }
+    cJSON_AddNumberToObject(status, "timestamp", (double)(esp_timer_get_time() / 1000000));
+
+    char *json_str = cJSON_PrintUnformatted(status);
+    if (json_str) {
+        mqtt_client_publish_telemetry(channel, json_str);
+        free(json_str);
+    }
+
+    cJSON_Delete(status);
+}
+
 // Пример: обработка config сообщений
 static void on_config_received(const char *topic, const char *data, int data_len, void *user_ctx) {
     ESP_LOGI(TAG, "Config received on %s: %.*s", topic, data_len, data);
@@ -200,22 +253,41 @@ static void on_command_received(const char *topic, const char *channel, const ch
             if (cJSON_IsNumber(duration_item)) {
                 int duration_ms = (int)cJSON_GetNumberValue(duration_item);
                 ESP_LOGI(TAG, "Running pump_nutrient for %d ms", duration_ms);
-                
-                // Реальная логика управления насосом через pump_driver
-                esp_err_t err = pump_driver_run(channel, duration_ms);
-                
+
+                pump_driver_state_t pump_state;
+                esp_err_t state_err = pump_driver_get_state(channel, &pump_state);
+
                 cJSON *response = cJSON_CreateObject();
                 if (response) {
                     cJSON_AddStringToObject(response, "cmd_id", cmd_id);
-                    if (err == ESP_OK) {
-                        cJSON_AddStringToObject(response, "status", "ACK");
-                    } else {
+
+                    if (state_err != ESP_OK) {
                         cJSON_AddStringToObject(response, "status", "ERROR");
-                        cJSON_AddStringToObject(response, "error_code", "pump_driver_failed");
-                        cJSON_AddStringToObject(response, "error_message", esp_err_to_name(err));
+                        cJSON_AddStringToObject(response, "error_code", "pump_state_unavailable");
+                        cJSON_AddStringToObject(response, "error_message", esp_err_to_name(state_err));
+                    } else if (pump_state == PUMP_STATE_ON) {
+                        cJSON_AddStringToObject(response, "status", "ERROR");
+                        cJSON_AddStringToObject(response, "error_code", "pump_busy");
+                        cJSON_AddStringToObject(response, "error_message", "Pump already running");
+                    } else if (pump_state == PUMP_STATE_COOLDOWN) {
+                        cJSON_AddStringToObject(response, "status", "ERROR");
+                        cJSON_AddStringToObject(response, "error_code", "pump_cooldown");
+                        cJSON_AddStringToObject(response, "error_message", "Pump is cooling down");
+                    } else {
+                        esp_err_t err = pump_driver_run(channel, duration_ms);
+                        if (err == ESP_OK) {
+                            cJSON_AddStringToObject(response, "status", "ACK");
+                            cJSON_AddNumberToObject(response, "duration_ms", duration_ms);
+                            ec_node_publish_pump_status(channel, "run_pump");
+                        } else {
+                            cJSON_AddStringToObject(response, "status", "ERROR");
+                            cJSON_AddStringToObject(response, "error_code", "pump_driver_failed");
+                            cJSON_AddStringToObject(response, "error_message", esp_err_to_name(err));
+                        }
                     }
+
                     cJSON_AddNumberToObject(response, "ts", (double)(esp_timer_get_time() / 1000000));
-                    
+
                     char *json_str = cJSON_PrintUnformatted(response);
                     if (json_str) {
                         mqtt_client_publish_command_response(channel, json_str);
@@ -223,6 +295,30 @@ static void on_command_received(const char *topic, const char *channel, const ch
                     }
                     cJSON_Delete(response);
                 }
+            }
+        } else if (strcmp(cmd, "stop_pump") == 0) {
+            ESP_LOGI(TAG, "Stopping pump_nutrient");
+            esp_err_t err = pump_driver_stop(channel);
+
+            cJSON *response = cJSON_CreateObject();
+            if (response) {
+                cJSON_AddStringToObject(response, "cmd_id", cmd_id);
+                if (err == ESP_OK) {
+                    cJSON_AddStringToObject(response, "status", "ACK");
+                    ec_node_publish_pump_status(channel, "stop_pump");
+                } else {
+                    cJSON_AddStringToObject(response, "status", "ERROR");
+                    cJSON_AddStringToObject(response, "error_code", "pump_driver_failed");
+                    cJSON_AddStringToObject(response, "error_message", esp_err_to_name(err));
+                }
+                cJSON_AddNumberToObject(response, "ts", (double)(esp_timer_get_time() / 1000000));
+
+                char *json_str = cJSON_PrintUnformatted(response);
+                if (json_str) {
+                    mqtt_client_publish_command_response(channel, json_str);
+                    free(json_str);
+                }
+                cJSON_Delete(response);
             }
         }
     } else if (strcmp(cmd, "calibrate") == 0) {
