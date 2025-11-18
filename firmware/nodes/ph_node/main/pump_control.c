@@ -415,3 +415,7 @@ static void pump_timer_callback(TimerHandle_t timer) {
     pump_stop_internal(pump_id);
 }
 
+bool pump_control_is_initialized(void) {
+    return s_initialized;
+}
+

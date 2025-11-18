@@ -1,6 +1,6 @@
 /**
  * @file ph_node_init.h
- * @brief Component initialization for ph_node
+ * @brief Component initialization, setup mode and callbacks for ph_node
  */
 
 #ifndef PH_NODE_INIT_H
@@ -17,6 +17,21 @@ extern "C" {
  * @return ESP_OK on success
  */
 esp_err_t ph_node_init_components(void);
+
+/**
+ * @brief Run setup mode (WiFi provisioning)
+ */
+void ph_node_run_setup_mode(void);
+
+/**
+ * @brief MQTT connection callback
+ */
+void ph_node_mqtt_connection_cb(bool connected, void *user_ctx);
+
+/**
+ * @brief WiFi connection callback
+ */
+void ph_node_wifi_connection_cb(bool connected, void *user_ctx);
 
 #ifdef __cplusplus
 }

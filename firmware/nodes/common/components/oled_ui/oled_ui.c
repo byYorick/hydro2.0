@@ -837,3 +837,7 @@ esp_err_t oled_ui_stop_task(void) {
     return ESP_OK;
 }
 
+bool oled_ui_is_initialized(void) {
+    return s_ui.initialized;
+}
+

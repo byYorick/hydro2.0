@@ -1,6 +1,11 @@
 /**
  * @file ph_node_init.c
- * @brief Component initialization implementation
+ * @brief Component initialization, setup mode and callbacks implementation
+ * 
+ * Объединяет:
+ * - Инициализацию компонентов
+ * - Setup mode (WiFi provisioning)
+ * - Event callbacks (WiFi, MQTT)
  */
 
 #include "ph_node_init.h"
@@ -12,15 +17,71 @@
 #include "oled_ui.h"
 #include "pump_control.h"
 #include "mqtt_manager.h"
-#include "ph_node_callbacks.h"
-#include "ph_node_config_handler.h"
-#include "ph_node_command_handler.h"
-#include "ph_node_setup.h"
+#include "ph_node_handlers.h"
+#include "setup_portal.h"
+#include "connection_status.h"
 #include "esp_log.h"
 #include "esp_err.h"
 #include <string.h>
 
 static const char *TAG = "ph_node_init";
+
+// Setup mode function
+void ph_node_run_setup_mode(void) {
+    ESP_LOGI(TAG, "Starting setup mode for PH node");
+    
+    setup_portal_full_config_t config = {
+        .node_type_prefix = "PH",
+        .ap_password = "hydro2025",
+        .enable_oled = true,
+        .oled_user_ctx = NULL
+    };
+    
+    // This function will block until credentials are received and device reboots
+    setup_portal_run_full_setup(&config);
+}
+
+// Callback functions
+static void update_oled_connections(void) {
+    if (!oled_ui_is_initialized()) {
+        return;
+    }
+    
+    connection_status_t conn_status;
+    if (connection_status_get(&conn_status) != ESP_OK) {
+        return;
+    }
+    
+    // Получение текущей модели и обновление только статуса соединений
+    oled_ui_model_t model = {0};
+    model.connections.wifi_connected = conn_status.wifi_connected;
+    model.connections.mqtt_connected = conn_status.mqtt_connected;
+    model.connections.wifi_rssi = conn_status.wifi_rssi;
+    
+    oled_ui_update_model(&model);
+}
+
+void ph_node_mqtt_connection_cb(bool connected, void *user_ctx) {
+    if (connected) {
+        ESP_LOGI(TAG, "MQTT connected - ph_node is online");
+    } else {
+        ESP_LOGW(TAG, "MQTT disconnected - ph_node is offline");
+    }
+    
+    // Обновление OLED UI через общий компонент
+    update_oled_connections();
+}
+
+void ph_node_wifi_connection_cb(bool connected, void *user_ctx) {
+    if (connected) {
+        ESP_LOGI(TAG, "Wi-Fi connected");
+    } else {
+        ESP_LOGW(TAG, "Wi-Fi disconnected");
+    }
+    
+    // Обновление OLED UI через общий компонент
+    update_oled_connections();
+}
 
 esp_err_t ph_node_init_components(void) {
     ESP_LOGI(TAG, "Initializing ph_node components...");
@@ -113,11 +174,9 @@ esp_err_t ph_node_init_components(void) {
     if (i2c_bus_is_initialized()) {
         ESP_LOGI(TAG, "Initializing Trema pH sensor...");
         if (trema_ph_init()) {
-            ph_node_set_ph_sensor_initialized(true);
             ESP_LOGI(TAG, "Trema pH sensor initialized successfully");
         } else {
             ESP_LOGW(TAG, "Failed to initialize Trema pH sensor, will retry later");
-            ph_node_set_ph_sensor_initialized(false);
         }
     } else {
         ESP_LOGW(TAG, "I2C bus not available, pH sensor initialization skipped");
@@ -129,8 +188,12 @@ esp_err_t ph_node_init_components(void) {
         ESP_LOGW(TAG, "I2C bus not initialized, cannot initialize OLED");
     } else {
         ESP_LOGI(TAG, "I2C bus is initialized, proceeding with OLED init");
-        const char *node_id = ph_node_get_node_id();
-        ESP_LOGI(TAG, "Node ID for OLED: %s", node_id ? node_id : "NULL");
+        // Получаем node_id из config_storage или используем дефолт
+        char node_id[64];
+        if (config_storage_get_node_id(node_id, sizeof(node_id)) != ESP_OK) {
+            strncpy(node_id, "nd-ph-1", sizeof(node_id) - 1);
+        }
+        ESP_LOGI(TAG, "Node ID for OLED: %s", node_id);
         
         oled_ui_config_t oled_config = {
             .i2c_address = 0x3C,
@@ -143,7 +206,6 @@ esp_err_t ph_node_init_components(void) {
         
         esp_err_t oled_err = oled_ui_init(OLED_UI_NODE_TYPE_PH, node_id, &oled_config);
         if (oled_err == ESP_OK) {
-            ph_node_set_oled_initialized(true);
             ESP_LOGI(TAG, "Setting OLED state to BOOT");
             oled_err = oled_ui_set_state(OLED_UI_STATE_BOOT);
             if (oled_err != ESP_OK) {
@@ -153,7 +215,6 @@ esp_err_t ph_node_init_components(void) {
         } else {
             ESP_LOGE(TAG, "Failed to initialize OLED UI: %s (error code: %d)", 
                      esp_err_to_name(oled_err), oled_err);
-            ph_node_set_oled_initialized(false);
         }
     }
     ESP_LOGI(TAG, "=== OLED UI Initialization Complete ===");
@@ -177,11 +238,9 @@ esp_err_t ph_node_init_components(void) {
     
     esp_err_t pump_err = pump_control_init(pump_configs);
     if (pump_err == ESP_OK) {
-        ph_node_set_pump_control_initialized(true);
         ESP_LOGI(TAG, "Pump control initialized successfully");
     } else {
         ESP_LOGE(TAG, "Failed to initialize pump control: %s", esp_err_to_name(pump_err));
-        ph_node_set_pump_control_initialized(false);
     }
     
     // Initialize MQTT client (from config or defaults)
@@ -231,12 +290,12 @@ esp_err_t ph_node_init_components(void) {
     // Get node_id from config
     if (config_storage_get_node_id(node_id, sizeof(node_id)) == ESP_OK) {
         node_info.node_uid = node_id;
-        ph_node_set_node_id(node_id);
+        ph_node_set_node_id(node_id);  // Обновляем кеш
         ESP_LOGI(TAG, "Node ID from config: %s", node_id);
     } else {
         // Default value
         strncpy(node_id, "nd-ph-1", sizeof(node_id) - 1);
-        ph_node_set_node_id(node_id);
+        ph_node_set_node_id(node_id);  // Обновляем кеш
         node_info.node_uid = node_id;
         ESP_LOGW(TAG, "Using default node ID");
     }
@@ -267,7 +326,7 @@ esp_err_t ph_node_init_components(void) {
     ESP_LOGI(TAG, "All components initialized successfully");
     
     // Transition OLED UI to normal mode after initialization
-    if (ph_node_is_oled_initialized()) {
+    if (oled_ui_is_initialized()) {
         oled_ui_set_state(OLED_UI_STATE_NORMAL);
     }
     

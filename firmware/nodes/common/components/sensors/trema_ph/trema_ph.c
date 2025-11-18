@@ -307,3 +307,8 @@ bool trema_ph_is_using_stub_values(void)
     return use_stub_values;
 }
 
+bool trema_ph_is_initialized(void)
+{
+    return sensor_initialized;
+}
+

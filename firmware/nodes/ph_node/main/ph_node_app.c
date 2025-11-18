@@ -4,55 +4,65 @@
  * 
  * pH node for measuring pH and controlling acid/base pumps
  * According to NODE_ARCH_FULL.md and MQTT_SPEC_FULL.md
+ * 
+ * Тонкий слой координации - вся логика делегируется в компоненты
  */
 
 #include "ph_node_app.h"
 #include "ph_node_init.h"
-#include "ph_node_tasks.h"
+#include "trema_ph.h"
+#include "oled_ui.h"
+#include "pump_control.h"
+#include "config_storage.h"
 #include "esp_log.h"
 #include <string.h>
+#include <stdio.h>
 
 static const char *TAG = "ph_node";
 
-// Global state
-static bool s_ph_sensor_initialized = false;
-static bool s_oled_ui_initialized = false;
-static bool s_pump_control_initialized = false;
-static char s_node_id[64] = "nd-ph-1";
+// Кеш для node_id (опционально, для быстрого доступа)
+static char s_node_id_cache[64] = {0};
+static bool s_node_id_cache_valid = false;
 
-// State getters/setters
+// State getters/setters - делегируют в компоненты
 bool ph_node_is_ph_sensor_initialized(void) {
-    return s_ph_sensor_initialized;
-}
-
-void ph_node_set_ph_sensor_initialized(bool initialized) {
-    s_ph_sensor_initialized = initialized;
+    return trema_ph_is_initialized();
 }
 
 bool ph_node_is_oled_initialized(void) {
-    return s_oled_ui_initialized;
-}
-
-void ph_node_set_oled_initialized(bool initialized) {
-    s_oled_ui_initialized = initialized;
+    return oled_ui_is_initialized();
 }
 
 bool ph_node_is_pump_control_initialized(void) {
-    return s_pump_control_initialized;
-}
-
-void ph_node_set_pump_control_initialized(bool initialized) {
-    s_pump_control_initialized = initialized;
+    return pump_control_is_initialized();
 }
 
 const char* ph_node_get_node_id(void) {
-    return s_node_id;
+    // Если кеш валиден, возвращаем его
+    if (s_node_id_cache_valid) {
+        return s_node_id_cache;
+    }
+    
+    // Иначе получаем из config_storage
+    if (config_storage_get_node_id(s_node_id_cache, sizeof(s_node_id_cache)) == ESP_OK) {
+        s_node_id_cache_valid = true;
+        return s_node_id_cache;
+    }
+    
+    // Если не найдено, возвращаем дефолтное значение
+    if (s_node_id_cache[0] == '\0') {
+        strncpy(s_node_id_cache, "nd-ph-1", sizeof(s_node_id_cache) - 1);
+        s_node_id_cache[sizeof(s_node_id_cache) - 1] = '\0';
+    }
+    return s_node_id_cache;
 }
 
 void ph_node_set_node_id(const char *node_id) {
     if (node_id) {
-        strncpy(s_node_id, node_id, sizeof(s_node_id) - 1);
-        s_node_id[sizeof(s_node_id) - 1] = '\0';
+        strncpy(s_node_id_cache, node_id, sizeof(s_node_id_cache) - 1);
+        s_node_id_cache[sizeof(s_node_id_cache) - 1] = '\0';
+        s_node_id_cache_valid = true;
+        // Примечание: сохранение в config_storage должно происходить через config handler
     }
 }
 

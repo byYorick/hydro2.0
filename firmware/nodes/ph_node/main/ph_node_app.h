@@ -1,6 +1,9 @@
 /**
  * @file ph_node_app.h
  * @brief Main application header for ph_node
+ * 
+ * Тонкий слой координации - геттеры/сеттеры делегируют в компоненты
+ * Объединяет заголовки: tasks, init, telemetry
  */
 
 #ifndef PH_NODE_APP_H
@@ -23,16 +26,23 @@ void ph_node_app_init(void);
  */
 void ph_node_start_tasks(void);
 
-// State getters/setters for components
+/**
+ * @brief Initialize all ph_node components
+ * @return ESP_OK on success
+ */
+esp_err_t ph_node_init_components(void);
+
+/**
+ * @brief Publish pH telemetry
+ */
+void ph_node_publish_telemetry(void);
+
+// State getters - делегируют в компоненты
 bool ph_node_is_ph_sensor_initialized(void);
-void ph_node_set_ph_sensor_initialized(bool initialized);
-
 bool ph_node_is_oled_initialized(void);
-void ph_node_set_oled_initialized(bool initialized);
-
 bool ph_node_is_pump_control_initialized(void);
-void ph_node_set_pump_control_initialized(bool initialized);
 
+// Node ID getter/setter - использует config_storage
 const char* ph_node_get_node_id(void);
 void ph_node_set_node_id(const char *node_id);
 

@@ -104,6 +104,12 @@ bool trema_ph_reset(void);
  */
 bool trema_ph_is_using_stub_values(void);
 
+/**
+ * @brief Check if pH sensor is initialized
+ * @return true if sensor is initialized, false otherwise
+ */
+bool trema_ph_is_initialized(void);
+
 #ifdef __cplusplus
 }
 #endif

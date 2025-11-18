@@ -158,6 +158,13 @@ esp_err_t pump_control_reset_stats(pump_id_t pump_id);
  */
 esp_err_t pump_control_update_config(pump_id_t pump_id, const pump_config_t *config);
 
+/**
+ * @brief Проверка инициализации модуля управления насосами
+ * 
+ * @return true если модуль инициализирован
+ */
+bool pump_control_is_initialized(void);
+
 #ifdef __cplusplus
 }
 #endif

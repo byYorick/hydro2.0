@@ -4,11 +4,7 @@ idf_component_register(
         "ph_node_app.c"
         "ph_node_tasks.c"
         "ph_node_init.c"
-        "ph_node_config_handler.c"
-        "ph_node_command_handler.c"
-        "ph_node_callbacks.c"
-        "ph_node_setup.c"
-        "ph_node_telemetry.c"
+        "ph_node_handlers.c"
         "pump_control.c"
     INCLUDE_DIRS 
         "."

@@ -193,6 +193,13 @@ esp_err_t oled_ui_start_task(void);
  */
 esp_err_t oled_ui_stop_task(void);
 
+/**
+ * @brief Проверка инициализации OLED UI
+ * 
+ * @return true если OLED UI инициализирован
+ */
+bool oled_ui_is_initialized(void);
+
 #ifdef __cplusplus
 }
 #endif
