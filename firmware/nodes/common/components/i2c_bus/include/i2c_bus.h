@@ -139,7 +139,7 @@ esp_err_t i2c_bus_write(uint8_t device_addr, const uint8_t *reg_addr, size_t reg
  * @return esp_err_t ESP_OK при успехе
  */
 esp_err_t i2c_bus_write_bus(i2c_bus_id_t bus_id, uint8_t device_addr, const uint8_t *reg_addr, size_t reg_addr_len,
-                            const uint8_t *data, size_t data_len, uint32_t timeout_ms);
+                       const uint8_t *data, size_t data_len, uint32_t timeout_ms);
 
 /**
  * @brief Чтение одного байта из регистра

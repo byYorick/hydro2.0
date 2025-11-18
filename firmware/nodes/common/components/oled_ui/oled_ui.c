@@ -459,12 +459,15 @@ static void render_line(uint8_t line_num, const char *str) {
  * @param y Y coordinate (0-63, must be multiple of 8)
  * @param rssi RSSI value in dBm (-100 to 0, or -100 if not connected)
  * 
- * Иконка WiFi: 4 полоски разной длины, расположенные по диагонали
- * - 0 полосок: нет подключения или RSSI < -80
+ * Иконка WiFi: 4 полоски разной длины, расположенные по дуге (как на телефоне)
+ * - 0 полосок: нет подключения или RSSI < -80 (отображается пустая иконка)
  * - 1 полоска: -80 <= RSSI < -70
  * - 2 полоски: -70 <= RSSI < -60
  * - 3 полоски: -60 <= RSSI < -50
  * - 4 полоски: RSSI >= -50
+ * 
+ * Дизайн: полоски расположены по дуге, самая короткая сверху, самая длинная снизу
+ * Даже при отсутствии подключения отображается пустая иконка WiFi
  */
 static void render_wifi_icon(uint8_t x, uint8_t y, int8_t rssi) {
     if (x >= SSD1306_WIDTH - 8 || y >= SSD1306_HEIGHT) {
@@ -473,16 +476,22 @@ static void render_wifi_icon(uint8_t x, uint8_t y, int8_t rssi) {
     
     // Определяем количество полосок на основе RSSI
     int bars = 0;
-    if (rssi >= -50) {
-        bars = 4;  // Отличный сигнал
-    } else if (rssi >= -60) {
-        bars = 3;  // Хороший сигнал
-    } else if (rssi >= -70) {
-        bars = 2;  // Средний сигнал
-    } else if (rssi >= -80) {
-        bars = 1;  // Слабый сигнал
+    bool is_connected = (rssi > -100);  // RSSI -100 означает отсутствие подключения
+    
+    if (is_connected) {
+        if (rssi >= -50) {
+            bars = 4;  // Отличный сигнал
+        } else if (rssi >= -60) {
+            bars = 3;  // Хороший сигнал
+        } else if (rssi >= -70) {
+            bars = 2;  // Средний сигнал
+        } else if (rssi >= -80) {
+            bars = 1;  // Слабый сигнал
+        } else {
+            bars = 0;  // Очень слабый сигнал, но подключение есть
+        }
     } else {
-        bars = 0;  // Нет сигнала или не подключено
+        bars = 0;  // Нет подключения - отображаем пустую иконку
     }
     
     // Выравниваем Y на границу страницы
@@ -492,24 +501,40 @@ static void render_wifi_icon(uint8_t x, uint8_t y, int8_t rssi) {
     }
     
     // Создаем растровое изображение иконки WiFi (8x8 пикселей)
-    // Иконка: 4 полоски, расположенные по диагонали справа налево
+    // Иконка: 4 полоски, расположенные по дуге (как на телефоне)
+    // Полоски идут от центра вверх и вниз
+    // Каждый байт = одна строка из 8 пикселей (8 строк всего)
     uint8_t icon_data[8] = {0};
     
-    if (bars >= 1) {
-        // Самая короткая полоска (верхняя правая)
-        icon_data[6] |= 0x01;  // 1 пиксель
-    }
-    if (bars >= 2) {
-        // Вторая полоска
-        icon_data[5] |= 0x03;  // 2 пикселя
-    }
-    if (bars >= 3) {
-        // Третья полоска
-        icon_data[4] |= 0x07;  // 3 пикселя
-    }
-    if (bars >= 4) {
-        // Самая длинная полоска (нижняя левая)
-        icon_data[3] |= 0x0F;  // 4 пикселя
+    if (is_connected) {
+        // Рисуем полоски сигнала только если есть подключение
+        if (bars >= 1) {
+            // Самая короткая полоска (верхняя) - 2 пикселя в центре
+            icon_data[0] |= 0x18;  // Бит 3 и 4 (0b00011000)
+        }
+        if (bars >= 2) {
+            // Вторая полоска - 4 пикселя
+            icon_data[1] |= 0x3C;  // Бит 2-5 (0b00111100)
+        }
+        if (bars >= 3) {
+            // Третья полоска - 6 пикселей
+            icon_data[2] |= 0x7E;  // Бит 1-6 (0b01111110)
+        }
+        if (bars >= 4) {
+            // Самая длинная полоска (нижняя) - 8 пикселей
+            icon_data[3] |= 0xFF;  // Все биты (0b11111111)
+        }
+    } else {
+        // Если нет подключения, рисуем крестик для индикации отсутствия подключения
+        // Крестик: диагональные линии через всю иконку (X)
+        icon_data[0] = 0x81;  // Верхние углы (0b10000001)
+        icon_data[1] = 0x42;  // (0b01000010)
+        icon_data[2] = 0x24;  // (0b00100100)
+        icon_data[3] = 0x18;  // Центр (0b00011000)
+        icon_data[4] = 0x24;  // (0b00100100)
+        icon_data[5] = 0x42;  // (0b01000010)
+        icon_data[6] = 0x81;  // Нижние углы (0b10000001)
+        icon_data[7] = 0x00;  // Пустая строка снизу
     }
     
     // Устанавливаем область отрисовки: 8 колонок x 1 страница
@@ -647,28 +672,24 @@ static void render_normal_screen(void) {
     
     ssd1306_clear();
     
-    // Верхняя строка: статусы с миганием для MQTT
-    char status_line[22];
-    char uid_display[17];  // Ограничиваем длину UID для отображения
-    strncpy(uid_display, s_ui.node_uid, sizeof(uid_display) - 1);
-    uid_display[sizeof(uid_display) - 1] = '\0';
+    // Верхняя строка: иконка WiFi, статус MQTT, UID
+    // Иконка WiFi (8x8 пикселей) в позиции (0, 0)
+    int8_t wifi_rssi = s_ui.model.connections.wifi_rssi;
+    if (!s_ui.model.connections.wifi_connected) {
+        wifi_rssi = -100;  // Нет подключения
+    }
+    render_wifi_icon(0, 0, wifi_rssi);
     
-    // WiFi индикатор
-    char wifi_char = s_ui.model.connections.wifi_connected ? 'W' : 'w';
-    
-    // MQTT индикатор с миганием
-    char mqtt_char = 'm';  // По умолчанию отключен
+    // Статус MQTT: "OK" или "ERR"
+    const char *mqtt_status = "ERR";
     if (s_ui.model.connections.mqtt_connected) {
+        mqtt_status = "OK";
+        
         // Проверяем активность мигания (мигание длится 200 мс)
+        // Мигание можно использовать для других целей, но статус остается "OK"
         uint64_t now_ms = esp_timer_get_time() / 1000;
         bool tx_blink = s_ui.mqtt_tx_active && (now_ms - s_ui.mqtt_tx_timestamp) < 200;
         bool rx_blink = s_ui.mqtt_rx_active && (now_ms - s_ui.mqtt_rx_timestamp) < 200;
-        
-        if (tx_blink || rx_blink) {
-            mqtt_char = 'M';  // Мигание - заглавная буква
-        } else {
-            mqtt_char = 'm';  // Обычное состояние - строчная буква
-        }
         
         // Сбрасываем флаги после мигания
         if (!tx_blink) {
@@ -679,9 +700,16 @@ static void render_normal_screen(void) {
         }
     }
     
-    snprintf(status_line, sizeof(status_line), "%c %c %s",
-            wifi_char, mqtt_char, uid_display);
-    render_line(0, status_line);
+    // Отображаем статус MQTT и UID
+    // Формат: "M:OK  nd-ph-1" или "M:ERR nd-ph-1" (компактнее)
+    char status_line[22];
+    char uid_display[12];  // Ограничиваем длину UID для отображения (12 символов)
+    strncpy(uid_display, s_ui.node_uid, sizeof(uid_display) - 1);
+    uid_display[sizeof(uid_display) - 1] = '\0';
+    
+    // Компактный формат: "M:OK" или "M:ERR" (занимает меньше места)
+    snprintf(status_line, sizeof(status_line), "M:%s %s", mqtt_status, uid_display);
+    render_string(10, 0, status_line);  // Начинаем с позиции 10 (после иконки WiFi 8px + 2px отступ)
     
     // Основной блок в зависимости от типа узла и текущего экрана
     if (s_ui.current_screen == 0) {
