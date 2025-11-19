@@ -173,6 +173,7 @@ static bool config_apply_mqtt_changed(const cJSON *previous_config, const cJSON 
     const cJSON *new_mqtt = config_apply_get_section(new_config, "mqtt");
 
     if (prev_mqtt == NULL && new_mqtt == NULL) {
+        // Нет MQTT секции вообще -> настройки не изменились
         return false;
     }
 
@@ -205,6 +206,20 @@ static bool config_apply_mqtt_changed(const cJSON *previous_config, const cJSON 
     }
 
     if (config_apply_bool_field_changed(prev_mqtt, new_mqtt, "use_tls")) {
+        return true;
+    }
+
+    // Также нужно перезапускать MQTT менеджер, если изменились идентификаторы ноды.
+    // Именно эти поля формируют MQTT-топики (hydro/{gh}/{zone}/{node}/...).
+    if (config_apply_string_field_changed(previous_config, new_config, "node_id")) {
+        return true;
+    }
+
+    if (config_apply_string_field_changed(previous_config, new_config, "gh_uid")) {
+        return true;
+    }
+
+    if (config_apply_string_field_changed(previous_config, new_config, "zone_uid")) {
         return true;
     }
 
