@@ -2,11 +2,12 @@
   <Transition name="toast">
     <div
       v-if="show"
+      ref="toastElement"
       :data-toast-id="message"
       :class="[
         'fixed top-4 right-4 z-[10000] min-w-[300px] max-w-md rounded-lg border p-4 shadow-2xl',
         variantClasses[variant]
-      ]"
+        ]"
       style="position: fixed !important; z-index: 10000 !important; display: block !important; visibility: visible !important; opacity: 1 !important;"
     >
       <div class="flex items-start gap-3">
@@ -85,6 +86,7 @@ const props = defineProps({
 })
 
 const show = ref(true) // Start visible
+const toastElement = ref(null)
 
 const variantClasses = {
   success: 'bg-emerald-900/90 text-emerald-100 border-emerald-700',
@@ -106,18 +108,24 @@ onMounted(() => {
   
   // Log DOM element for debugging
   setTimeout(() => {
-    const el = document.querySelector(`[data-toast-id="${props.message}"]`)
-    console.log('[Toast] DOM элемент найден:', el)
-    if (el) {
-      console.log('[Toast] Стили элемента:', {
-        display: window.getComputedStyle(el).display,
-        visibility: window.getComputedStyle(el).visibility,
-        opacity: window.getComputedStyle(el).opacity,
-        zIndex: window.getComputedStyle(el).zIndex,
-        position: window.getComputedStyle(el).position,
-        top: window.getComputedStyle(el).top,
-        right: window.getComputedStyle(el).right,
-      })
+    try {
+      // Используем ref вместо querySelector для надежного доступа к элементу
+      const el = toastElement.value
+      console.log('[Toast] DOM элемент найден:', el)
+      if (el) {
+        console.log('[Toast] Стили элемента:', {
+          display: window.getComputedStyle(el).display,
+          visibility: window.getComputedStyle(el).visibility,
+          opacity: window.getComputedStyle(el).opacity,
+          zIndex: window.getComputedStyle(el).zIndex,
+          position: window.getComputedStyle(el).position,
+          top: window.getComputedStyle(el).top,
+          right: window.getComputedStyle(el).right,
+        })
+      }
+    } catch (error) {
+      // Игнорируем ошибки при отладке - это не критично
+      console.debug('[Toast] Не удалось найти DOM элемент для отладки:', error)
     }
   }, 100)
   

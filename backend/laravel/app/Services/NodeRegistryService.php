@@ -6,6 +6,7 @@ use App\Enums\NodeLifecycleState;
 use App\Models\DeviceNode;
 use App\Models\Greenhouse;
 use App\Models\Zone;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -195,6 +196,12 @@ class NodeRegistryService
             $node->validated = true;
             
             $node->save();
+            
+            // Очищаем кеш списка устройств и статистики для всех пользователей
+            // Кеш формируется как 'devices_list_' . auth()->id()
+            // Очищаем кеш для всех пользователей (паттерн не поддерживается напрямую)
+            // Используем flush, так как это редкое событие (регистрация узла)
+            Cache::flush();
             
             Log::info('Node registered from node_hello', [
                 'node_id' => $node->id,

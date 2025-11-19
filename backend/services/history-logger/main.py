@@ -255,12 +255,15 @@ async def handle_node_hello(topic: str, payload: bytes):
     }
     """
     logger.info(f"handle_node_hello called: topic={topic}, payload_len={len(payload)}")
+    print(f"handle_node_hello called: topic={topic}, payload_len={len(payload)}", flush=True)
     data = _parse_json(payload)
     if not data:
         logger.warning(f"Invalid JSON in node_hello from topic {topic}, payload preview: {payload[:200] if payload else 'empty'}")
+        print(f"ERROR: Invalid JSON in node_hello from topic {topic}", flush=True)
         return
     
     logger.info(f"Parsed node_hello JSON: {data}")
+    print(f"Parsed node_hello JSON: {data}", flush=True)
     
     # Проверяем, что это действительно node_hello
     if data.get("message_type") != "node_hello":
@@ -297,6 +300,15 @@ async def handle_node_hello(topic: str, payload: bytes):
     
     # Вызываем Laravel API для регистрации
     s = get_settings()
+    url = f"{s.laravel_api_url}/api/nodes/register"
+    logger.info(f"Preparing to call Laravel API for node_hello registration", {
+        "hardware_id": hardware_id,
+        "url": url,
+        "laravel_api_url": s.laravel_api_url,
+        "has_token": bool(s.laravel_api_token),
+    })
+    print(f"Preparing to call Laravel API for node_hello registration: hardware_id={hardware_id}, url={url}", flush=True)
+    
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             headers = {}
@@ -304,42 +316,76 @@ async def handle_node_hello(topic: str, payload: bytes):
                 headers["Authorization"] = f"Bearer {s.laravel_api_token}"
                 headers["X-API-TOKEN"] = s.laravel_api_token
             
-            url = f"{s.laravel_api_url}/api/nodes/register"
             logger.info(f"Calling Laravel API for node_hello registration", {
                 "hardware_id": hardware_id,
                 "url": url,
+                "headers": list(headers.keys()),
                 "data": register_data,
             })
             response = await client.post(url, json=register_data, headers=headers)
             
+            logger.info(f"Laravel API response received", {
+                "hardware_id": hardware_id,
+                "status_code": response.status_code,
+            })
+            
             if response.status_code == 201:
                 result = response.json()
                 node_data = result.get("data", {})
-                logger.info(f"Node registered via node_hello", {
+                logger.info(f"Node registered via node_hello successfully", {
                     "hardware_id": hardware_id,
                     "node_id": node_data.get("id"),
                     "uid": node_data.get("uid"),
+                    "node_type": node_data.get("type"),
                 })
             elif response.status_code == 422:
                 # Ошибка валидации - возможно, узел уже зарегистрирован
-                error_data = response.json()
-                logger.warning(f"Node registration validation error", {
-                    "hardware_id": hardware_id,
-                    "errors": error_data.get("errors"),
-                })
+                try:
+                    error_data = response.json()
+                    logger.warning(f"Node registration validation error", {
+                        "hardware_id": hardware_id,
+                        "status_code": response.status_code,
+                        "errors": error_data.get("errors"),
+                    })
+                except Exception:
+                    logger.warning(f"Node registration validation error (could not parse response)", {
+                        "hardware_id": hardware_id,
+                        "status_code": response.status_code,
+                        "response": response.text[:500],
+                    })
             else:
-                logger.error(f"Failed to register node via node_hello", {
-                    "hardware_id": hardware_id,
-                    "status_code": response.status_code,
-                    "response": response.text,
-                })
-    except httpx.TimeoutException:
-        logger.error(f"Timeout calling Laravel API for node_hello", {"hardware_id": hardware_id})
+                try:
+                    error_data = response.json()
+                    logger.error(f"Failed to register node via node_hello", {
+                        "hardware_id": hardware_id,
+                        "status_code": response.status_code,
+                        "error": error_data,
+                    })
+                except Exception:
+                    logger.error(f"Failed to register node via node_hello", {
+                        "hardware_id": hardware_id,
+                        "status_code": response.status_code,
+                        "response": response.text[:500],
+                    })
+    except httpx.TimeoutException as e:
+        logger.error(f"Timeout calling Laravel API for node_hello", {
+            "hardware_id": hardware_id,
+            "url": url,
+            "error": str(e),
+        })
+    except httpx.ConnectError as e:
+        logger.error(f"Connection error calling Laravel API for node_hello", {
+            "hardware_id": hardware_id,
+            "url": url,
+            "error": str(e),
+        })
     except Exception as e:
         logger.error(f"Error handling node_hello", {
             "hardware_id": hardware_id,
+            "url": url,
             "error": str(e),
-        })
+            "error_type": type(e).__name__,
+        }, exc_info=True)
 
 
 async def handle_heartbeat(topic: str, payload: bytes):
@@ -495,6 +541,7 @@ async def run_mqtt_listener():
     # Даем время на подключение
     await asyncio.sleep(2)
     logger.info("Setting up MQTT subscriptions...")
+    print("Setting up MQTT subscriptions...", flush=True)
     start_http_server(9301)
 
     def telemetry_cb(topic: str, payload: bytes):
@@ -511,21 +558,28 @@ async def run_mqtt_listener():
 
     def node_hello_cb(topic: str, payload: bytes):
         logger.info(f"node_hello_cb called: topic={topic}, payload_len={len(payload)}")
+        print(f"node_hello_cb called: topic={topic}, payload_len={len(payload)}", flush=True)
         asyncio.run_coroutine_threadsafe(handle_node_hello(topic, payload), loop)
 
     def heartbeat_cb(topic: str, payload: bytes):
         asyncio.run_coroutine_threadsafe(handle_heartbeat(topic, payload), loop)
 
     mqtt.subscribe("hydro/+/+/+/+/telemetry", telemetry_cb, qos=1)
+    logger.info("Subscribed to hydro/+/+/+/+/telemetry")
     mqtt.subscribe("hydro/+/+/+/+/command_response", cmd_resp_cb, qos=1)
     mqtt.subscribe("hydro/+/+/+/status", status_cb, qos=1)
     mqtt.subscribe("hydro/+/+/+/lwt", lwt_cb, qos=1)
     mqtt.subscribe("hydro/+/+/+/config_response", lambda t, p: asyncio.run_coroutine_threadsafe(handle_config_response(t, p), loop), qos=1)
     # Подписка на node_hello: общий топик для начальной регистрации и топик с параметрами
     logger.info("Subscribing to node_hello topics...")
+    print("Subscribing to node_hello topics...", flush=True)
     mqtt.subscribe("hydro/node_hello", node_hello_cb, qos=1)
+    logger.info("Subscribed to hydro/node_hello")
+    print("Subscribed to hydro/node_hello", flush=True)
     mqtt.subscribe("hydro/+/+/+/node_hello", node_hello_cb, qos=1)
-    logger.info("Subscribed to hydro/node_hello and hydro/+/+/+/node_hello")
+    logger.info("Subscribed to hydro/+/+/+/node_hello")
+    print("Subscribed to hydro/+/+/+/node_hello", flush=True)
+    logger.info("All node_hello subscriptions completed")
     # Подписка на heartbeat
     mqtt.subscribe("hydro/+/+/+/heartbeat", heartbeat_cb, qos=1)
 

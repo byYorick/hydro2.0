@@ -119,9 +119,12 @@ services:
       - PG_DB=hydro_dev
       - PG_USER=hydro
       - PG_PASS=hydro
+      - LARAVEL_API_URL=http://laravel
+      - LARAVEL_API_TOKEN=
     depends_on:
       - mqtt
       - db
+      - laravel
     ports:
       - "9300:9300"
       - "9301:9301"  # Prometheus metrics

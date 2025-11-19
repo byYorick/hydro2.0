@@ -23,13 +23,23 @@ class Publisher:
         
         Топик: hydro/{gh_uid}/{zone_segment}/{node_uid}/config
         QoS: 1
-        Retain: false
+        Retain: true (чтобы узел получил конфигурацию при подписке)
+        
+        Также публикуем на временный топик (gh-temp/zn-temp/node-temp), 
+        если узел еще не получил конфигурацию и подписан на временные идентификаторы.
         """
         s = get_settings()
         zone_segment = f"zn-{zone_id}"  # id by default
         if s.mqtt_zone_format == "uid" and config.get("zone_uid"):
             zone_segment = config["zone_uid"]
+        
+        # Публикуем на правильный топик с retain=true
         topic = f"hydro/{gh_uid}/{zone_segment}/{node_uid}/config"
-        self._mqtt.publish_json(topic, config, qos=1, retain=False)
+        self._mqtt.publish_json(topic, config, qos=1, retain=True)
+        
+        # Также публикуем на временный топик для узлов, которые еще не получили конфигурацию
+        # Узел может быть подписан на временные идентификаторы до получения первой конфигурации
+        temp_topic = f"hydro/gh-temp/zn-temp/{node_uid}/config"
+        self._mqtt.publish_json(temp_topic, config, qos=1, retain=True)
 
 
