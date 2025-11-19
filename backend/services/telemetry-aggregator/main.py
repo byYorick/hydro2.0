@@ -18,6 +18,9 @@ AGGREGATION_RUNS = Counter("aggregation_runs_total", "Aggregation runs", ["type"
 AGGREGATION_RECORDS = Counter("aggregation_records_total", "Aggregated records", ["type"])
 AGGREGATION_LAT = Histogram("aggregation_seconds", "Aggregation duration seconds", ["type"])
 AGGREGATION_ERRORS = Counter("aggregation_errors_total", "Aggregation errors", ["type"])
+CLEANUP_RUNS = Counter("cleanup_runs_total", "Cleanup runs")
+CLEANUP_DELETED = Counter("cleanup_deleted_total", "Deleted records", ["table"])
+CLEANUP_LAT = Histogram("cleanup_seconds", "Cleanup duration seconds")
 
 
 async def get_last_ts(aggregation_type: str) -> Optional[datetime]:
@@ -352,6 +355,81 @@ async def run_aggregation():
     logger.info("Telemetry aggregation completed")
 
 
+async def cleanup_old_data():
+    """
+    Очистка старых данных согласно retention policy.
+    
+    Retention policy:
+    - telemetry_samples: 90 дней (храним raw данные 3 месяца)
+    - telemetry_agg_1m: 30 дней (храним минутные агрегаты 1 месяц)
+    - telemetry_agg_1h: 365 дней (храним часовые агрегаты 1 год)
+    - telemetry_daily: бессрочно (дневные агрегаты храним всегда)
+    """
+    with CLEANUP_LAT.time():
+        try:
+            CLEANUP_RUNS.inc()
+            s = get_settings()
+            
+            # Retention periods (в днях)
+            retention_samples_days = int(os.getenv('RETENTION_SAMPLES_DAYS', '90'))
+            retention_1m_days = int(os.getenv('RETENTION_1M_DAYS', '30'))
+            retention_1h_days = int(os.getenv('RETENTION_1H_DAYS', '365'))
+            
+            cutoff_samples = datetime.utcnow() - timedelta(days=retention_samples_days)
+            cutoff_1m = datetime.utcnow() - timedelta(days=retention_1m_days)
+            cutoff_1h = datetime.utcnow() - timedelta(days=retention_1h_days)
+            
+            # Удаляем старые raw samples
+            deleted_samples = await execute(
+                """
+                DELETE FROM telemetry_samples
+                WHERE ts < $1
+                """,
+                cutoff_samples,
+            )
+            deleted_samples_count = int(deleted_samples.split()[-1]) if deleted_samples and 'DELETE' in deleted_samples else 0
+            if deleted_samples_count > 0:
+                CLEANUP_DELETED.labels(table="telemetry_samples").inc(deleted_samples_count)
+                logger.info(f"Deleted {deleted_samples_count} old telemetry_samples (older than {retention_samples_days} days)")
+            
+            # Удаляем старые 1m агрегаты
+            deleted_1m = await execute(
+                """
+                DELETE FROM telemetry_agg_1m
+                WHERE ts < $1
+                """,
+                cutoff_1m,
+            )
+            deleted_1m_count = int(deleted_1m.split()[-1]) if deleted_1m and 'DELETE' in deleted_1m else 0
+            if deleted_1m_count > 0:
+                CLEANUP_DELETED.labels(table="telemetry_agg_1m").inc(deleted_1m_count)
+                logger.info(f"Deleted {deleted_1m_count} old telemetry_agg_1m records (older than {retention_1m_days} days)")
+            
+            # Удаляем старые 1h агрегаты
+            deleted_1h = await execute(
+                """
+                DELETE FROM telemetry_agg_1h
+                WHERE ts < $1
+                """,
+                cutoff_1h,
+            )
+            deleted_1h_count = int(deleted_1h.split()[-1]) if deleted_1h and 'DELETE' in deleted_1h else 0
+            if deleted_1h_count > 0:
+                CLEANUP_DELETED.labels(table="telemetry_agg_1h").inc(deleted_1h_count)
+                logger.info(f"Deleted {deleted_1h_count} old telemetry_agg_1h records (older than {retention_1h_days} days)")
+            
+            # telemetry_daily не удаляем (храним бессрочно)
+            
+            return {
+                'samples_deleted': deleted_samples_count,
+                '1m_deleted': deleted_1m_count,
+                '1h_deleted': deleted_1h_count,
+            }
+        except Exception as e:
+            logger.error(f"Error cleaning up old data: {e}", exc_info=True)
+            return None
+
+
 async def main():
     """Главный цикл агрегатора."""
     s = get_settings()
@@ -362,11 +440,22 @@ async def main():
     # Интервал агрегации (по умолчанию каждые 5 минут)
     aggregation_interval_seconds = int(os.getenv('AGGREGATION_INTERVAL_SECONDS', '300'))
     
-    logger.info(f"Telemetry aggregator started (interval: {aggregation_interval_seconds}s)")
+    # Интервал очистки старых данных (по умолчанию раз в день)
+    cleanup_interval_seconds = int(os.getenv('CLEANUP_INTERVAL_SECONDS', '86400'))  # 24 часа
+    
+    logger.info(f"Telemetry aggregator started (interval: {aggregation_interval_seconds}s, cleanup: {cleanup_interval_seconds}s)")
+    
+    last_cleanup = datetime.utcnow()
     
     while True:
         try:
             await run_aggregation()
+            
+            # Периодически запускаем очистку старых данных
+            now = datetime.utcnow()
+            if (now - last_cleanup).total_seconds() >= cleanup_interval_seconds:
+                await cleanup_old_data()
+                last_cleanup = now
         except Exception as e:
             logger.error(f"Error in aggregation cycle: {e}")
         

@@ -134,44 +134,46 @@
   </Modal>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'
+import type { CommandType } from '@/types'
 
-const props = defineProps({
-  show: {
-    type: Boolean,
-    default: false
-  },
-  actionType: {
-    type: String,
-    required: true,
-    validator: (value) => [
-      'FORCE_IRRIGATION',
-      'FORCE_PH_CONTROL',
-      'FORCE_EC_CONTROL',
-      'FORCE_CLIMATE',
-      'FORCE_LIGHTING'
-    ].includes(value)
-  },
-  zoneId: {
-    type: Number,
-    required: true
-  },
-  defaultParams: {
-    type: Object,
-    default: () => ({})
-  }
+type ActionType = CommandType
+
+interface ActionParams {
+  duration_sec?: number
+  target_ph?: number
+  target_ec?: number
+  target_temp?: number
+  target_humidity?: number
+  intensity?: number
+  duration_hours?: number
+}
+
+interface Props {
+  show?: boolean
+  actionType: ActionType
+  zoneId: number
+  defaultParams?: ActionParams
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  show: false,
+  defaultParams: () => ({})
 })
 
-const emit = defineEmits(['close', 'submit'])
+const emit = defineEmits<{
+  close: []
+  submit: [data: { actionType: ActionType; params: ActionParams }]
+}>()
 
-const loading = ref(false)
-const error = ref(null)
+const loading = ref<boolean>(false)
+const error = ref<string | null>(null)
 
 // Форма с параметрами по умолчанию
-const form = ref({
+const form = ref<ActionParams>({
   duration_sec: 10,
   target_ph: 6.0,
   target_ec: 1.5,
@@ -183,8 +185,8 @@ const form = ref({
 })
 
 // Заголовок и описание в зависимости от типа действия
-const title = computed(() => {
-  const titles = {
+const title = computed<string>(() => {
+  const titles: Record<ActionType, string> = {
     'FORCE_IRRIGATION': 'Полив зоны',
     'FORCE_PH_CONTROL': 'Коррекция pH',
     'FORCE_EC_CONTROL': 'Коррекция EC',
@@ -194,8 +196,8 @@ const title = computed(() => {
   return titles[props.actionType] || 'Действие'
 })
 
-const description = computed(() => {
-  const descriptions = {
+const description = computed<string>(() => {
+  const descriptions: Record<ActionType, string> = {
     'FORCE_IRRIGATION': 'Укажите длительность полива в секундах',
     'FORCE_PH_CONTROL': 'Укажите целевое значение pH',
     'FORCE_EC_CONTROL': 'Укажите целевое значение EC',
@@ -206,7 +208,7 @@ const description = computed(() => {
 })
 
 // Сброс формы при открытии модального окна
-watch(() => props.show, (newVal) => {
+watch(() => props.show, (newVal: boolean) => {
   if (newVal) {
     error.value = null
     form.value = {
@@ -222,11 +224,47 @@ watch(() => props.show, (newVal) => {
   }
 })
 
-function onSubmit() {
+function onSubmit(): void {
   error.value = null
 
+  // Валидация полей
+  if (props.actionType === 'FORCE_IRRIGATION') {
+    if (!form.value.duration_sec || form.value.duration_sec < 1 || form.value.duration_sec > 3600) {
+      error.value = 'Длительность должна быть от 1 до 3600 секунд'
+      return
+    }
+  } else if (props.actionType === 'FORCE_PH_CONTROL') {
+    if (!form.value.target_ph || form.value.target_ph < 4.0 || form.value.target_ph > 9.0) {
+      error.value = 'pH должен быть от 4.0 до 9.0'
+      return
+    }
+  } else if (props.actionType === 'FORCE_EC_CONTROL') {
+    if (!form.value.target_ec || form.value.target_ec < 0.1 || form.value.target_ec > 10.0) {
+      error.value = 'EC должен быть от 0.1 до 10.0'
+      return
+    }
+  } else if (props.actionType === 'FORCE_CLIMATE') {
+    if (!form.value.target_temp || form.value.target_temp < 10 || form.value.target_temp > 35) {
+      error.value = 'Температура должна быть от 10 до 35°C'
+      return
+    }
+    if (!form.value.target_humidity || form.value.target_humidity < 30 || form.value.target_humidity > 90) {
+      error.value = 'Влажность должна быть от 30 до 90%'
+      return
+    }
+  } else if (props.actionType === 'FORCE_LIGHTING') {
+    if (form.value.intensity === undefined || form.value.intensity < 0 || form.value.intensity > 100) {
+      error.value = 'Интенсивность должна быть от 0 до 100%'
+      return
+    }
+    if (!form.value.duration_hours || form.value.duration_hours < 0.5 || form.value.duration_hours > 24) {
+      error.value = 'Длительность должна быть от 0.5 до 24 часов'
+      return
+    }
+  }
+
   // Формируем параметры в зависимости от типа действия
-  const params = {}
+  const params: ActionParams = {}
   
   if (props.actionType === 'FORCE_IRRIGATION') {
     params.duration_sec = form.value.duration_sec

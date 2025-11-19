@@ -37,22 +37,27 @@
   </AppLayout>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed } from 'vue'
 import { Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
+import type { Recipe } from '@/types'
 
-const page = usePage()
-const recipe = computed(() => page.props.recipe || {})
+interface PageProps {
+  recipe?: Recipe
+}
+
+const page = usePage<PageProps>()
+const recipe = computed(() => (page.props.recipe || {}) as Recipe)
 
 const sortedPhases = computed(() => {
   const phases = recipe.value.phases || []
   return [...phases].sort((a, b) => (a.phase_index || 0) - (b.phase_index || 0))
 })
 
-function formatDuration(hours) {
+function formatDuration(hours: number | null | undefined): string {
   if (!hours) return '-'
   if (hours < 24) return `${hours} ч`
   const days = Math.floor(hours / 24)

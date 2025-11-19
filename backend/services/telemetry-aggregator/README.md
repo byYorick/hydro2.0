@@ -17,13 +17,31 @@
 ## Конфигурация
 
 - `AGGREGATION_INTERVAL_SECONDS` - интервал запуска агрегации (по умолчанию 300 секунд = 5 минут)
+- `CLEANUP_INTERVAL_SECONDS` - интервал запуска очистки старых данных (по умолчанию 86400 секунд = 24 часа)
+- `RETENTION_SAMPLES_DAYS` - retention для telemetry_samples (по умолчанию 90 дней)
+- `RETENTION_1M_DAYS` - retention для telemetry_agg_1m (по умолчанию 30 дней)
+- `RETENTION_1H_DAYS` - retention для telemetry_agg_1h (по умолчанию 365 дней)
+
+## Retention Policy
+
+Сервис автоматически удаляет старые данные согласно retention policy:
+
+- **telemetry_samples**: 90 дней (raw данные хранятся 3 месяца)
+- **telemetry_agg_1m**: 30 дней (минутные агрегаты хранятся 1 месяц)
+- **telemetry_agg_1h**: 365 дней (часовые агрегаты хранятся 1 год)
+- **telemetry_daily**: бессрочно (дневные агрегаты хранятся всегда)
+
+Очистка запускается автоматически раз в день (настраивается через `CLEANUP_INTERVAL_SECONDS`).
 
 ## Метрики Prometheus
 
-- `aggregation_runs_total` - количество запусков агрегации
-- `aggregation_records_total` - количество созданных записей
-- `aggregation_seconds` - длительность агрегации
-- `aggregation_errors_total` - количество ошибок
+- `aggregation_runs_total` - количество запусков агрегации (по типам: 1m, 1h, daily)
+- `aggregation_records_total` - количество созданных записей (по типам)
+- `aggregation_seconds` - длительность агрегации (по типам)
+- `aggregation_errors_total` - количество ошибок (по типам)
+- `cleanup_runs_total` - количество запусков очистки
+- `cleanup_deleted_total` - количество удаленных записей (по таблицам)
+- `cleanup_seconds` - длительность очистки
 
 Порт: `9404`
 

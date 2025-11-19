@@ -5,6 +5,25 @@ vi.mock('@/Layouts/AppLayout.vue', () => ({
   default: { name: 'AppLayout', template: '<div><slot /></div>' },
 }))
 
+// Mock RecycleScroller для тестов
+vi.mock('vue-virtual-scroller', () => ({
+  RecycleScroller: {
+    name: 'RecycleScroller',
+    template: `
+      <div>
+        <template v-for="(item, index) in items" :key="index">
+          <slot :item="item" :index="index" />
+        </template>
+      </div>
+    `,
+    props: {
+      items: { type: Array, required: true },
+      'item-size': { type: Number },
+      'key-field': { type: String }
+    }
+  }
+}))
+
 const sampleDevices = [
   { id: 'dev-1', uid: 'dev-1', zone: { name: 'Z1' }, type: 'sensor', status: 'OK', fw_version: '1.0' },
   { id: 'dev-2', uid: 'dev-2', zone: { name: 'Z2' }, type: 'sensor', status: 'OK', fw_version: '1.1' },

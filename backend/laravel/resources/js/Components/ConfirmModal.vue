@@ -17,47 +17,37 @@
   </Modal>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed } from 'vue'
 import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'
 
-const props = defineProps({
-  open: {
-    type: Boolean,
-    default: false,
-  },
-  title: {
-    type: String,
-    default: 'Подтверждение',
-  },
-  message: {
-    type: String,
-    required: true,
-  },
-  confirmText: {
-    type: String,
-    default: 'Подтвердить',
-  },
-  cancelText: {
-    type: String,
-    default: 'Отмена',
-  },
-  confirmVariant: {
-    type: String,
-    default: 'primary',
-    validator: (value) => ['primary', 'danger', 'warning', 'secondary'].includes(value),
-  },
-  loading: {
-    type: Boolean,
-    default: false,
-  },
-  loadingText: {
-    type: String,
-    default: 'Загрузка...',
-  },
+type ButtonVariant = 'primary' | 'danger' | 'warning' | 'secondary'
+
+interface Props {
+  open?: boolean
+  title?: string
+  message: string
+  confirmText?: string
+  cancelText?: string
+  confirmVariant?: ButtonVariant
+  loading?: boolean
+  loadingText?: string
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  open: false,
+  title: 'Подтверждение',
+  confirmText: 'Подтвердить',
+  cancelText: 'Отмена',
+  confirmVariant: 'primary',
+  loading: false,
+  loadingText: 'Загрузка...'
 })
 
-defineEmits(['close', 'confirm'])
+defineEmits<{
+  close: []
+  confirm: []
+}>()
 </script>
 

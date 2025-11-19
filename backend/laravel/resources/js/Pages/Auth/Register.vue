@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import GuestLayout from '@/Layouts/GuestLayout.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
@@ -6,14 +6,21 @@ import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 
-const form = useForm({
+interface RegisterFormData {
+    name: string
+    email: string
+    password: string
+    password_confirmation: string
+}
+
+const form = useForm<RegisterFormData>({
     name: '',
     email: '',
     password: '',
     password_confirmation: '',
 });
 
-const submit = () => {
+const submit = (): void => {
     form.post(route('register'), {
         onFinish: () => form.reset('password', 'password_confirmation'),
     });

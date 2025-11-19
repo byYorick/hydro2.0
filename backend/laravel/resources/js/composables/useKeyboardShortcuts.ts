@@ -4,19 +4,24 @@
 import { onMounted, onUnmounted } from 'vue'
 import { router } from '@inertiajs/vue3'
 
+interface ShortcutOptions {
+  ctrl?: boolean
+  meta?: boolean
+  shift?: boolean
+  alt?: boolean
+  handler: (event: KeyboardEvent) => void
+}
+
 /**
  * Composable для работы с keyboard shortcuts
- * @returns {Object} Методы для управления shortcuts
  */
 export function useKeyboardShortcuts() {
-  const shortcuts = new Map()
+  const shortcuts = new Map<string, (event: KeyboardEvent) => void>()
 
   /**
    * Регистрирует keyboard shortcut
-   * @param {string} key - Клавиша (например, 'k', 'z')
-   * @param {Object} options - Опции (ctrl, meta, shift, alt, handler)
    */
-  function registerShortcut(key, options = {}) {
+  function registerShortcut(key: string, options: ShortcutOptions = {} as ShortcutOptions): void {
     const {
       ctrl = false,
       meta = false,
@@ -32,10 +37,8 @@ export function useKeyboardShortcuts() {
 
   /**
    * Удаляет keyboard shortcut
-   * @param {string} key - Клавиша
-   * @param {Object} options - Опции
    */
-  function unregisterShortcut(key, options = {}) {
+  function unregisterShortcut(key: string, options: ShortcutOptions = {} as ShortcutOptions): void {
     const {
       ctrl = false,
       meta = false,
@@ -51,12 +54,13 @@ export function useKeyboardShortcuts() {
   /**
    * Обработчик нажатий клавиш
    */
-  function handleKeyDown(event) {
+  function handleKeyDown(event: KeyboardEvent): void {
     // Игнорируем если фокус в input/textarea
     if (
-      event.target.tagName === 'INPUT' ||
+      event.target instanceof HTMLElement &&
+      (event.target.tagName === 'INPUT' ||
       event.target.tagName === 'TEXTAREA' ||
-      event.target.isContentEditable
+      event.target.isContentEditable)
     ) {
       // Разрешаем только Ctrl+K для Command Palette
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
@@ -81,25 +85,35 @@ export function useKeyboardShortcuts() {
     }
   }
 
-  // Регистрируем стандартные shortcuts
+  // Регистрируем стандартные shortcuts для навигации
+  // Ctrl+Z - Zones
   registerShortcut('z', {
     ctrl: true,
     handler: () => router.visit('/zones')
   })
 
+  // Ctrl+D - Dashboard
   registerShortcut('d', {
     ctrl: true,
     handler: () => router.visit('/')
   })
 
+  // Ctrl+A - Alerts
   registerShortcut('a', {
     ctrl: true,
     handler: () => router.visit('/alerts')
   })
 
+  // Ctrl+R - Recipes
   registerShortcut('r', {
     ctrl: true,
     handler: () => router.visit('/recipes')
+  })
+
+  // Shift+D - Devices (чтобы не конфликтовать с Ctrl+D)
+  registerShortcut('d', {
+    shift: true,
+    handler: () => router.visit('/devices')
   })
 
   onMounted(() => {

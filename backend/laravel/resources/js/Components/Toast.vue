@@ -76,21 +76,32 @@
   </Transition>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, watch, onMounted } from 'vue'
+import type { ToastVariant } from '@/composables/useToast'
 
-const props = defineProps({
-  message: { type: String, required: true },
-  variant: { type: String, default: 'info' }, // success | error | info
-  duration: { type: Number, default: 3000 },
+interface Props {
+  message: string
+  variant?: ToastVariant
+  duration?: number
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  variant: 'info',
+  duration: 3000
 })
 
-const show = ref(true) // Start visible
-const toastElement = ref(null)
+const emit = defineEmits<{
+  close: []
+}>()
 
-const variantClasses = {
+const show = ref<boolean>(true) // Start visible
+const toastElement = ref<HTMLElement | null>(null)
+
+const variantClasses: Record<ToastVariant, string> = {
   success: 'bg-emerald-900/90 text-emerald-100 border-emerald-700',
   error: 'bg-red-900/90 text-red-100 border-red-700',
+  warning: 'bg-amber-900/90 text-amber-100 border-amber-700',
   info: 'bg-sky-900/90 text-sky-100 border-sky-700',
 }
 
@@ -147,8 +158,6 @@ watch(show, (newVal) => {
     }, 300) // Wait for transition
   }
 }, { immediate: false })
-
-const emit = defineEmits(['close'])
 </script>
 
 <style scoped>

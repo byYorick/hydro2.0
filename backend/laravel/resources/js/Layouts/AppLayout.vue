@@ -1,6 +1,7 @@
 <template>
-  <div class="min-h-screen bg-neutral-950 text-neutral-100">
-    <div class="flex">
+  <ErrorBoundary>
+    <div class="min-h-screen bg-neutral-950 text-neutral-100">
+      <div class="flex">
       <aside class="hidden lg:block w-64 shrink-0 border-r border-neutral-800 bg-neutral-925">
         <div class="h-16 flex items-center px-4 border-b border-neutral-800">
           <span class="text-base font-semibold">hydro 2.0</span>
@@ -81,13 +82,15 @@
       </aside>
     </div>
   </div>
-  </template>
+  </ErrorBoundary>
+</template>
   
-<script setup>
+<script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import CommandPalette from '@/Components/CommandPalette.vue'
 import NavLink from '@/Components/NavLink.vue'
 import HeaderStatusBar from '@/Components/HeaderStatusBar.vue'
+import ErrorBoundary from '@/Components/ErrorBoundary.vue'
 import { useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts'
   
 const showMobileMenu = ref(false)

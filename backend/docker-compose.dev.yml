@@ -6,6 +6,10 @@ services:
       - "1883:1883"
     volumes:
       - ./services/mqtt-bridge/mosquitto.dev.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./services/mqtt-bridge/passwords:/mosquitto/config/passwords:ro
+      - ./services/mqtt-bridge/acl:/mosquitto/config/acl:ro
+      - mqtt_data:/mosquitto/data
+      - mqtt_logs:/mosquitto/log
   db:
     image: timescale/timescaledb:latest-pg16
     environment:
@@ -92,6 +96,8 @@ services:
       dockerfile: mqtt-bridge/Dockerfile
     environment:
       - MQTT_HOST=mqtt
+      - MQTT_USER=mqtt_bridge
+      - MQTT_PASS=bridge_pass
       - PG_HOST=db
       - PG_DB=hydro_dev
       - PG_USER=hydro
@@ -115,6 +121,8 @@ services:
       dockerfile: history-logger/Dockerfile
     environment:
       - MQTT_HOST=mqtt
+      - MQTT_USER=history_logger
+      - MQTT_PASS=logger_pass
       - PG_HOST=db
       - PG_DB=hydro_dev
       - PG_USER=hydro
@@ -134,6 +142,8 @@ services:
       dockerfile: automation-engine/Dockerfile
     environment:
       - MQTT_HOST=mqtt
+      - MQTT_USER=automation_engine
+      - MQTT_PASS=automation_pass
       - PG_HOST=db
       - PG_DB=hydro_dev
       - PG_USER=hydro
@@ -158,6 +168,8 @@ services:
       dockerfile: scheduler/Dockerfile
     environment:
       - MQTT_HOST=mqtt
+      - MQTT_USER=scheduler
+      - MQTT_PASS=scheduler_pass
       - PG_HOST=db
       - PG_DB=hydro_dev
       - PG_USER=hydro
@@ -289,5 +301,7 @@ volumes:
   grafana_data:
   alertmanager_data:
   wal_archive:
+  mqtt_data:
+  mqtt_logs:
 
 

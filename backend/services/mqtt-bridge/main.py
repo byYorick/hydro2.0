@@ -167,11 +167,13 @@ async def zone_drain(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+from common.schemas import NodeConfigModel
+
 class NodeConfigRequest(BaseModel):
-    node_uid: str
-    zone_id: Optional[int] = None
-    greenhouse_uid: Optional[str] = None
-    config: dict
+    node_uid: str = Field(..., min_length=1, max_length=128)
+    zone_id: Optional[int] = Field(None, ge=1)
+    greenhouse_uid: Optional[str] = Field(None, max_length=128)
+    config: NodeConfigModel
 
 
 @app.post("/bridge/nodes/{node_uid}/config")

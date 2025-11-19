@@ -17,46 +17,44 @@
   </Card>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed } from 'vue'
 import Card from '@/Components/Card.vue'
 import ChartBase from '@/Components/ChartBase.vue'
 
-const props = defineProps({
-  label: {
-    type: String,
-    required: true
-  },
-  data: {
-    type: Array,
-    default: () => [] // [{ts, value, min, max, avg}]
-  },
-  currentValue: {
-    type: Number,
-    default: null
-  },
-  unit: {
-    type: String,
-    default: ''
-  },
-  loading: {
-    type: Boolean,
-    default: false
-  },
-  color: {
-    type: String,
-    default: '#3b82f6' // синий по умолчанию
-  }
+interface TelemetryDataPoint {
+  ts: number
+  value?: number
+  min?: number
+  max?: number
+  avg?: number
+}
+
+interface Props {
+  label: string
+  data?: TelemetryDataPoint[]
+  currentValue?: number | null
+  unit?: string
+  loading?: boolean
+  color?: string
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  data: () => [],
+  currentValue: null,
+  unit: '',
+  loading: false,
+  color: '#3b82f6'
 })
 
-function formatValue(value) {
+function formatValue(value: number | null | undefined): string {
   if (value === null || value === undefined) return '-'
   if (typeof value === 'number') {
     // Для pH показываем 2 знака после точки, для остальных - 1
     const isPH = props.label.toLowerCase().includes('ph')
     return value.toFixed(isPH ? 2 : 1)
   }
-  return value
+  return String(value)
 }
 
 const chartOption = computed(() => {

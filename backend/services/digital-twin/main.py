@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from common.env import get_settings
 from common.db import fetch, execute
+from common.schemas import SimulationRequest, SimulationScenario
 from prometheus_client import Counter, Histogram, start_http_server
 
 SIMULATIONS_RUN = Counter("simulations_run_total", "Total simulations executed")
@@ -23,13 +24,6 @@ from models import PHModel, ECModel, ClimateModel
 import logging
 
 logging.basicConfig(level=logging.INFO)
-
-
-class SimulationRequest(BaseModel):
-    zone_id: int
-    duration_hours: int = 72
-    step_minutes: int = 10
-    scenario: Dict[str, Any]  # {recipe_id, initial_state: {ph, ec, temp_air, temp_water}}
 
 
 class SimulationResponse(BaseModel):
@@ -59,7 +53,7 @@ async def simulate_zone(request: SimulationRequest) -> Dict[str, Any]:
         SIMULATIONS_RUN.inc()
 
         # Получаем фазы рецепта
-        recipe_id = request.scenario.get("recipe_id")
+        recipe_id = request.scenario.recipe_id
         if not recipe_id:
             raise HTTPException(status_code=400, detail="recipe_id required in scenario")
 
@@ -68,7 +62,7 @@ async def simulate_zone(request: SimulationRequest) -> Dict[str, Any]:
             raise HTTPException(status_code=404, detail=f"Recipe {recipe_id} not found or has no phases")
 
         # Начальное состояние
-        initial_state = request.scenario.get("initial_state", {})
+        initial_state = request.scenario.initial_state or {}
         ph = initial_state.get("ph", 6.0)
         ec = initial_state.get("ec", 1.2)
         temp_air = initial_state.get("temp_air", 22.0)

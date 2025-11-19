@@ -10,7 +10,11 @@
       {{ all.length === 0 ? 'Рецепты не найдены' : 'Нет рецептов по текущему фильтру' }}
     </div>
     <div v-else class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-      <Card v-for="r in filtered" :key="r.id">
+      <Card 
+        v-for="r in filtered" 
+        :key="r.id"
+        v-memo="[r.id, r.name, r.description, r.phases_count]"
+      >
         <div class="flex items-start justify-between">
           <div>
             <div class="text-sm font-semibold">{{ r.name }}</div>
@@ -23,19 +27,29 @@
   </AppLayout>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, ref } from 'vue'
 import { Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
+import type { Recipe } from '@/types'
 
-const page = usePage()
-const all = computed(() => page.props.recipes || [])
-const query = ref('')
-const filtered = computed(() => all.value.filter(r => {
-  const q = query.value.toLowerCase()
-  return !q || r.name?.toLowerCase().includes(q) || r.description?.toLowerCase().includes(q)
-}))
+const page = usePage<{ recipes?: Recipe[] }>()
+const all = computed(() => (page.props.recipes || []) as Recipe[])
+const query = ref<string>('')
+
+// Оптимизируем фильтрацию: мемоизируем нижний регистр запроса
+const queryLower = computed(() => query.value.toLowerCase())
+const filtered = computed(() => {
+  const q = queryLower.value
+  if (!q) {
+    return all.value // Если запроса нет, возвращаем все рецепты
+  }
+  
+  return all.value.filter(r => {
+    return r.name?.toLowerCase().includes(q) || r.description?.toLowerCase().includes(q)
+  })
+})
 </script>
 

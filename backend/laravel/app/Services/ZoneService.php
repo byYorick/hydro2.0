@@ -106,14 +106,16 @@ class ZoneService
     public function changePhase(Zone $zone, int $phaseIndex): ZoneRecipeInstance
     {
         return DB::transaction(function () use ($zone, $phaseIndex) {
-            $instance = $zone->recipeInstance;
+            // Eager loading для предотвращения N+1 запросов
+            $instance = $zone->load('recipeInstance.recipe.phases')->recipeInstance;
             if (!$instance) {
                 throw new \DomainException('Zone has no active recipe');
             }
 
             // Проверка: фаза должна существовать в рецепте
+            // Используем загруженные phases вместо нового запроса
             $recipe = $instance->recipe;
-            $maxPhaseIndex = $recipe->phases()->max('phase_index') ?? 0;
+            $maxPhaseIndex = $recipe->phases->max('phase_index') ?? 0;
             if ($phaseIndex < 0 || $phaseIndex > $maxPhaseIndex) {
                 throw new \DomainException("Phase index {$phaseIndex} is out of range (0-{$maxPhaseIndex})");
             }
@@ -128,8 +130,7 @@ class ZoneService
             ]);
 
             // Проверить, завершён ли рецепт (все фазы пройдены)
-            $recipe = $instance->recipe;
-            $maxPhaseIndex = $recipe->phases()->max('phase_index') ?? 0;
+            // Используем уже загруженные phases
             if ($phaseIndex >= $maxPhaseIndex) {
                 // Рецепт завершён - запустить расчёт аналитики
                 \App\Jobs\CalculateRecipeAnalyticsJob::dispatch($zone->id, $instance->id);
@@ -147,7 +148,8 @@ class ZoneService
      */
     public function nextPhase(Zone $zone): ZoneRecipeInstance
     {
-        $instance = $zone->recipeInstance;
+        // Eager loading для предотвращения N+1 запросов
+        $instance = $zone->load('recipeInstance.recipe.phases')->recipeInstance;
         if (!$instance) {
             throw new \DomainException('Zone has no active recipe');
         }
@@ -156,8 +158,9 @@ class ZoneService
         $nextPhaseIndex = $currentPhaseIndex + 1;
 
         // Проверка: следующая фаза должна существовать в рецепте
+        // Используем загруженные phases вместо нового запроса
         $recipe = $instance->recipe;
-        $maxPhaseIndex = $recipe->phases()->max('phase_index') ?? 0;
+        $maxPhaseIndex = $recipe->phases->max('phase_index') ?? 0;
         
         if ($nextPhaseIndex > $maxPhaseIndex) {
             throw new \DomainException("No next phase available. Current phase is {$currentPhaseIndex}, max phase is {$maxPhaseIndex}");

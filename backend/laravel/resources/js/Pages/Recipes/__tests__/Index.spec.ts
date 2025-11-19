@@ -52,7 +52,7 @@ describe('Recipes/Index.vue', () => {
   it('отображает заголовок Recipes', () => {
     const wrapper = mount(RecipesIndex)
     
-    expect(wrapper.text()).toContain('Recipes')
+    expect(wrapper.text()).toContain('Рецепты')
   })
 
   it('отображает список рецептов', () => {

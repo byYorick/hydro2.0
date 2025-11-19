@@ -58,24 +58,31 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed } from 'vue'
 import Card from '@/Components/Card.vue'
 import Badge from '@/Components/Badge.vue'
+import type { ZoneTelemetry, ZoneTargets } from '@/types'
 
-const props = defineProps({
-  telemetry: {
-    type: Object,
-    default: () => ({ ph: null, ec: null, temperature: null, humidity: null }),
-  },
-  targets: {
-    type: Object,
-    default: () => ({}),
-  },
+type BadgeVariant = 'success' | 'warning' | 'danger' | 'info' | 'neutral'
+
+interface Props {
+  telemetry?: ZoneTelemetry
+  targets?: Partial<ZoneTargets> & {
+    ph?: { min?: number; max?: number; target?: number }
+    ec?: { min?: number; max?: number; target?: number }
+    temp?: { min?: number; max?: number; target?: number }
+    humidity?: { min?: number; max?: number; target?: number }
+  }
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  telemetry: () => ({ ph: null, ec: null, temperature: null, humidity: null }),
+  targets: () => ({})
 })
 
 // Вычисляем индикатор (зеленый/желтый/красный)
-function getIndicatorVariant(value, min, max) {
+function getIndicatorVariant(value: number | null | undefined, min: number | null | undefined, max: number | null | undefined): BadgeVariant {
   if (value === null || value === undefined) return 'neutral'
   if (min === null || max === null) return 'info'
   
@@ -87,7 +94,7 @@ function getIndicatorVariant(value, min, max) {
   return 'danger'
 }
 
-function getIndicatorLabel(value, min, max) {
+function getIndicatorLabel(value: number | null | undefined, min: number | null | undefined, max: number | null | undefined): string {
   if (value === null || value === undefined) return 'Нет данных'
   if (min === null || max === null) return 'OK'
   
@@ -97,9 +104,9 @@ function getIndicatorLabel(value, min, max) {
 }
 
 // Форматирование значений телеметрии
-function formatTelemetryValue(value, type, unit = '') {
+function formatTelemetryValue(value: number | null | undefined, type: string, unit: string = ''): string {
   if (value === null || value === undefined) return '-'
-  if (typeof value !== 'number') return value
+  if (typeof value !== 'number') return String(value)
   
   // Для pH показываем 2 знака после точки, для остальных - 1
   const decimals = type === 'ph' ? 2 : 1
@@ -109,7 +116,7 @@ function formatTelemetryValue(value, type, unit = '') {
 }
 
 // Форматирование целей
-function formatTarget(target, unit = '') {
+function formatTarget(target: { min?: number | null; max?: number | null; target?: number | null } | undefined, unit: string = ''): string {
   if (!target) return '-'
   
   if (target.target !== null && target.target !== undefined) {
@@ -117,7 +124,7 @@ function formatTarget(target, unit = '') {
     return `${Number(target.target).toFixed(decimals)}${unit}`
   }
   
-  if (target.min !== null && target.max !== null) {
+  if (target.min !== null && target.max !== null && target.min !== undefined && target.max !== undefined) {
     const decimals = unit === '' ? 2 : 1
     return `${Number(target.min).toFixed(decimals)}–${Number(target.max).toFixed(decimals)}${unit}`
   }

@@ -8,6 +8,30 @@ vi.mock('@/Pages/Zones/ZoneCard.vue', () => ({
   default: { name: 'ZoneCard', props: ['zone'], template: '<div class="zone-card">{{ zone.name }}</div>' },
 }))
 
+// Mock DynamicScroller для тестов
+vi.mock('vue-virtual-scroller', () => ({
+  DynamicScroller: {
+    name: 'DynamicScroller',
+    template: `
+      <div>
+        <template v-for="(item, index) in items" :key="item.id || index">
+          <slot :item="item" :index="index" :active="true" />
+        </template>
+      </div>
+    `,
+    props: {
+      items: { type: Array, required: true },
+      'min-item-size': { type: Number },
+      'key-field': { type: String }
+    }
+  },
+  DynamicScrollerItem: {
+    name: 'DynamicScrollerItem',
+    template: '<div><slot /></div>',
+    props: ['item', 'active', 'size-dependencies']
+  }
+}))
+
 const sampleZones = [
   { id: 1, name: 'Alpha', status: 'RUNNING' },
   { id: 2, name: 'Beta', status: 'PAUSED' },

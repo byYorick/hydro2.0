@@ -60,7 +60,7 @@
   </AppLayout>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, ref } from 'vue'
 import { Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
@@ -70,12 +70,25 @@ import Button from '@/Components/Button.vue'
 import DeviceChannelsTable from '@/Pages/Devices/DeviceChannelsTable.vue'
 import Toast from '@/Components/Toast.vue'
 import axios from 'axios'
+import type { Device, DeviceChannel } from '@/types'
+import type { ToastVariant } from '@/composables/useToast'
 
-const page = usePage()
-const device = computed(() => page.props.device || {})
-const channels = computed(() => device.value.channels || [])
-const testingChannels = ref(new Set())
-const toasts = ref([])
+interface PageProps {
+  device?: Device
+}
+
+interface ToastItem {
+  id: number
+  message: string
+  variant: ToastVariant
+  duration: number
+}
+
+const page = usePage<PageProps>()
+const device = computed(() => (page.props.device || {}) as Device)
+const channels = computed(() => (device.value.channels || []) as DeviceChannel[])
+const testingChannels = ref<Set<string>>(new Set())
+const toasts = ref<ToastItem[]>([])
 let toastIdCounter = 0
 
 const nodeConfig = computed(() => {
@@ -96,20 +109,20 @@ const nodeConfig = computed(() => {
   return JSON.stringify(config, null, 2)
 })
 
-function showToast(message, variant = 'info', duration = 3000) {
+function showToast(message: string, variant: ToastVariant = 'info', duration: number = 3000): number {
   const id = ++toastIdCounter
   toasts.value.push({ id, message, variant, duration })
   return id
 }
 
-function removeToast(id) {
+function removeToast(id: number): void {
   const index = toasts.value.findIndex(t => t.id === id)
   if (index > -1) {
     toasts.value.splice(index, 1)
   }
 }
 
-const onRestart = async () => {
+const onRestart = async (): Promise<void> => {
   try {
     const response = await axios.post(`/api/nodes/${device.value.id}/commands`, {
       type: 'restart',
@@ -124,13 +137,15 @@ const onRestart = async () => {
     }
   } catch (err) {
     console.error('Failed to restart device:', err)
-    const errorMsg = err.response?.data?.message || err.message || 'Неизвестная ошибка'
+    const errorMsg = (err as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message || 
+                     (err as { message?: string })?.message || 
+                     'Неизвестная ошибка'
     console.error('Error details:', errorMsg)
   }
 }
 
 // Функция для теста конкретного насоса/клапана
-const onTestPump = async (channelName, channelType) => {
+const onTestPump = async (channelName: string, channelType: string): Promise<void> => {
   if (testingChannels.value.has(channelName)) return
   
   testingChannels.value.add(channelName)

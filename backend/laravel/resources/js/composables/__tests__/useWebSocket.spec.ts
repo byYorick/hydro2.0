@@ -91,12 +91,12 @@ describe('useWebSocket', () => {
 
     expect(statusListener).toBeDefined()
 
-    // Simulate event
+    // Simulate event (события приходят уже с camelCase полями)
     const event = {
-      command_id: 123,
+      commandId: 123,
       status: 'completed',
       message: 'Command completed',
-      zone_id: 1
+      zoneId: 1
     }
     statusListener(event)
 
@@ -129,12 +129,12 @@ describe('useWebSocket', () => {
 
     expect(failureListener).toBeDefined()
 
-    // Simulate failure event
+    // Simulate failure event (события приходят уже с camelCase полями)
     const event = {
-      command_id: 123,
+      commandId: 123,
       message: 'Command failed',
       error: 'Some error',
-      zone_id: 1
+      zoneId: 1
     }
     failureListener(event)
 
@@ -195,13 +195,13 @@ describe('useWebSocket', () => {
 
     expect(eventListener).toBeDefined()
 
-    // Simulate event
+    // Simulate event (события приходят уже с camelCase полями)
     const event = {
       id: 456,
       kind: 'ALERT',
       message: 'Alert occurred',
-      zone_id: 1,
-      occurred_at: '2024-01-01T00:00:00Z'
+      zoneId: 1,
+      occurredAt: '2024-01-01T00:00:00Z'
     }
     eventListener(event)
 

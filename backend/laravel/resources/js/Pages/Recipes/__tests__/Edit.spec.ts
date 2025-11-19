@@ -40,12 +40,38 @@ const sampleRecipe = vi.hoisted(() => ({
   ],
 }))
 
+const useFormMock = vi.hoisted(() => {
+  const formData = {
+    name: '',
+    description: '',
+    phases: [] as any[]
+  }
+  return vi.fn((initialData: any) => {
+    Object.assign(formData, initialData)
+    return {
+      data: formData,
+      errors: {},
+      processing: false,
+      submit: vi.fn((url: string, options?: any) => {
+        return axiosPatchMock(url, formData, options)
+      }),
+      patch: vi.fn((url: string, options?: any) => {
+        return axiosPatchMock(url, formData, options)
+      }),
+      clearErrors: vi.fn(),
+      reset: vi.fn(),
+      transform: vi.fn((callback: any) => callback(formData))
+    }
+  })
+})
+
 vi.mock('@inertiajs/vue3', () => ({
   usePage: () => ({
     props: {
       recipe: sampleRecipe,
     },
   }),
+  useForm: useFormMock,
   router: {
     visit: routerVisitMock,
   },

@@ -77,8 +77,8 @@ class RecipeAnalyticsService
                 ->whereBetween('created_at', [$startDate, $endDate])
                 ->count();
 
-            // Рассчитать фактическую длительность
-            $totalDurationHours = $startDate->diffInHours($endDate);
+            // Рассчитать фактическую длительность (округляем до целого числа часов)
+            $totalDurationHours = (int) round($startDate->diffInHours($endDate));
 
             // Рассчитать планируемую длительность
             $plannedDurationHours = $phases->sum('duration_hours');

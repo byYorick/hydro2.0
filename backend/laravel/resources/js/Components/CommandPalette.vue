@@ -44,24 +44,52 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { onMounted, onUnmounted, ref, computed, watch, nextTick } from 'vue'
 import { router } from '@inertiajs/vue3'
 import { useApi } from '@/composables/useApi'
 import { useCommands } from '@/composables/useCommands'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
+import type { Zone, Device, Recipe } from '@/types'
 
-const open = ref(false)
-const q = ref('')
-const selectedIndex = ref(0)
-const inputRef = ref(null)
-const loading = ref(false)
+interface CommandItem {
+  type: 'nav' | 'zone' | 'node' | 'recipe' | 'action'
+  id?: number | string
+  label: string
+  icon?: string
+  category?: string
+  action?: () => void
+  actionFn?: () => void | Promise<void>
+  requiresConfirm?: boolean
+  zoneId?: number
+  zoneName?: string
+  actionType?: string
+}
+
+interface ConfirmModalState {
+  open: boolean
+  title: string
+  message: string
+  action: (() => void | Promise<void>) | null
+}
+
+interface SearchResults {
+  zones: Zone[]
+  nodes: Device[]
+  recipes: Recipe[]
+}
+
+const open = ref<boolean>(false)
+const q = ref<string>('')
+const selectedIndex = ref<number>(0)
+const inputRef = ref<HTMLInputElement | null>(null)
+const loading = ref<boolean>(false)
 
 const { api } = useApi()
 const { sendZoneCommand } = useCommands()
 
 // Модальное окно подтверждения
-const confirmModal = ref({
+const confirmModal = ref<ConfirmModalState>({
   open: false,
   title: '',
   message: '',
@@ -69,7 +97,7 @@ const confirmModal = ref({
 })
 
 // Статические команды навигации
-const staticCommands = [
+const staticCommands: CommandItem[] = [
   { type: 'nav', label: 'Открыть Zones', icon: '📁', action: () => router.visit('/zones') },
   { type: 'nav', label: 'Открыть Devices', icon: '📱', action: () => router.visit('/devices') },
   { type: 'nav', label: 'Открыть Recipes', icon: '📋', action: () => router.visit('/recipes') },
@@ -78,14 +106,14 @@ const staticCommands = [
 ]
 
 // Результаты поиска
-const searchResults = ref({
+const searchResults = ref<SearchResults>({
   zones: [],
   nodes: [],
   recipes: []
 })
 
 // Fuzzy search функция
-function fuzzyMatch(text, query) {
+function fuzzyMatch(text: string, query: string): boolean {
   if (!query) return true
   const textLower = text.toLowerCase()
   const queryLower = query.toLowerCase()
@@ -103,14 +131,14 @@ function fuzzyMatch(text, query) {
 }
 
 // Подсветка совпадений
-function highlightMatch(text, query) {
+function highlightMatch(text: string, query: string): string {
   if (!query) return text
   const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi')
   return text.replace(regex, '<mark class="bg-amber-500/30">$1</mark>')
 }
 
 // Поиск через API
-async function searchAPI(query) {
+async function searchAPI(query: string): Promise<void> {
   if (!query || query.length < 2) {
     searchResults.value = { zones: [], nodes: [], recipes: [] }
     return
@@ -138,8 +166,8 @@ async function searchAPI(query) {
 }
 
 // Debounce для поиска
-let searchTimeout = null
-watch(q, (newQuery) => {
+let searchTimeout: ReturnType<typeof setTimeout> | null = null
+watch(q, (newQuery: string) => {
   selectedIndex.value = 0
   if (searchTimeout) clearTimeout(searchTimeout)
   searchTimeout = setTimeout(() => {
@@ -148,7 +176,7 @@ watch(q, (newQuery) => {
 })
 
 // Формируем результаты
-const filteredResults = computed(() => {
+const filteredResults = computed<CommandItem[]>(() => {
   const query = q.value.toLowerCase()
   
   // Если запрос пустой, показываем только статические команды
@@ -188,7 +216,7 @@ const filteredResults = computed(() => {
           category: 'Действие',
           zoneId: zone.id,
           zoneName: zone.name,
-          action: 'resume',
+          actionType: 'resume',
           requiresConfirm: false,
           actionFn: () => executeZoneAction(zone.id, 'resume', zone.name)
         })
@@ -201,7 +229,7 @@ const filteredResults = computed(() => {
           category: 'Действие',
           zoneId: zone.id,
           zoneName: zone.name,
-          action: 'pause',
+          actionType: 'pause',
           requiresConfirm: true,
           actionFn: () => executeZoneAction(zone.id, 'pause', zone.name)
         })
@@ -213,7 +241,7 @@ const filteredResults = computed(() => {
           category: 'Действие',
           zoneId: zone.id,
           zoneName: zone.name,
-          action: 'irrigate',
+          actionType: 'irrigate',
           requiresConfirm: true,
           actionFn: () => executeZoneAction(zone.id, 'irrigate', zone.name)
         })
@@ -225,7 +253,7 @@ const filteredResults = computed(() => {
           category: 'Действие',
           zoneId: zone.id,
           zoneName: zone.name,
-          action: 'next-phase',
+          actionType: 'next-phase',
           requiresConfirm: true,
           actionFn: () => executeZoneAction(zone.id, 'next-phase', zone.name)
         })
@@ -265,7 +293,7 @@ const filteredResults = computed(() => {
   return results
 })
 
-const run = (item) => {
+const run = (item: CommandItem | undefined): void => {
   if (!item) return
   
   // Если действие требует подтверждения
@@ -279,7 +307,7 @@ const run = (item) => {
     confirmModal.value = {
       open: true,
       title: 'Подтверждение действия',
-      message: `Вы уверены, что хотите ${actionNames[item.action] || 'выполнить это действие'} для зоны "${item.zoneName}"?`,
+      message: `Вы уверены, что хотите ${actionNames[item.actionType || ''] || 'выполнить это действие'} для зоны "${item.zoneName}"?`,
       action: item.actionFn
     }
     return
@@ -294,7 +322,7 @@ const run = (item) => {
   close()
 }
 
-async function executeZoneAction(zoneId, action, zoneName) {
+async function executeZoneAction(zoneId: number, action: string, zoneName: string): Promise<void> {
   try {
     if (action === 'pause') {
       await api.post(`/api/zones/${zoneId}/pause`, {})
@@ -313,7 +341,7 @@ async function executeZoneAction(zoneId, action, zoneName) {
   }
 }
 
-function confirmAction() {
+function confirmAction(): void {
   if (confirmModal.value.action) {
     confirmModal.value.action()
   }
@@ -321,14 +349,14 @@ function confirmAction() {
   close()
 }
 
-const close = () => {
+const close = (): void => {
   open.value = false
   q.value = ''
   selectedIndex.value = 0
   searchResults.value = { zones: [], nodes: [], recipes: [] }
 }
 
-watch(open, (isOpen) => {
+watch(open, (isOpen: boolean) => {
   if (isOpen) {
     nextTick(() => {
       inputRef.value?.focus()
@@ -336,7 +364,7 @@ watch(open, (isOpen) => {
   }
 })
 
-const onKey = (e) => {
+const onKey = (e: KeyboardEvent): void => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault()
     open.value = !open.value

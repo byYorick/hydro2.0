@@ -35,22 +35,26 @@
   </Card>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed } from 'vue'
 import Card from '@/Components/Card.vue'
 import { translateStatus } from '@/utils/i18n'
+import type { ZoneStatus } from '@/types'
 
-const props = defineProps({
-  zonesByStatus: {
-    type: Object,
-    default: () => ({})
-  }
+interface Props {
+  zonesByStatus?: Record<ZoneStatus | string, number>
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  zonesByStatus: () => ({})
 })
 
-const emit = defineEmits(['filter'])
+const emit = defineEmits<{
+  filter: [status: ZoneStatus | string]
+}>()
 
-function getStatusClasses(status) {
-  const classes = {
+function getStatusClasses(status: string): string {
+  const classes: Record<string, string> = {
     'RUNNING': 'bg-emerald-500/10 border-emerald-500/50 hover:border-emerald-500',
     'PAUSED': 'bg-neutral-500/10 border-neutral-500/50 hover:border-neutral-500',
     'WARNING': 'bg-amber-500/10 border-amber-500/50 hover:border-amber-500',

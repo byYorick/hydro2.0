@@ -22,6 +22,13 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => \App\Http\Middleware\EnsureUserHasRole::class,
         ]);
         
+        // Rate Limiting для API роутов
+        // Стандартный лимит: 60 запросов в минуту для всех API роутов
+        // Более строгие лимиты применяются на уровне отдельных роутов
+        $middleware->api(prepend: [
+            \Illuminate\Routing\Middleware\ThrottleRequests::class.':60,1',
+        ]);
+        
         // Exclude API routes and broadcasting auth from CSRF verification
         $middleware->validateCsrfTokens(except: [
             'api/*',

@@ -66,20 +66,42 @@
   </AppLayout>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed } from 'vue'
 import { Link, usePage, router, useForm } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
+import type { Recipe, RecipePhase } from '@/types'
 
-const page = usePage()
+interface RecipePhaseForm {
+  id?: number
+  phase_index: number
+  name: string
+  duration_hours: number
+  targets: {
+    ph: { min: number; max: number }
+    ec: { min: number; max: number }
+  }
+}
+
+interface RecipeFormData {
+  name: string
+  description: string
+  phases: RecipePhaseForm[]
+}
+
+interface PageProps {
+  recipe?: Recipe
+}
+
+const page = usePage<PageProps>()
 const recipe = page.props.recipe || {}
 
-const form = useForm({
+const form = useForm<RecipeFormData>({
   name: recipe.name || '',
   description: recipe.description || '',
-  phases: (recipe.phases || []).map(p => ({
+  phases: (recipe.phases || []).map((p: RecipePhase) => ({
     id: p.id,
     phase_index: p.phase_index || 0,
     name: p.name || '',
@@ -91,11 +113,11 @@ const form = useForm({
   })),
 })
 
-const sortedPhases = computed(() => {
+const sortedPhases = computed<RecipePhaseForm[]>(() => {
   return [...form.phases].sort((a, b) => (a.phase_index || 0) - (b.phase_index || 0))
 })
 
-const onAddPhase = () => {
+const onAddPhase = (): void => {
   const maxIndex = form.phases.length > 0 
     ? Math.max(...form.phases.map(p => p.phase_index || 0))
     : -1
@@ -110,7 +132,7 @@ const onAddPhase = () => {
   })
 }
 
-const onSave = () => {
+const onSave = (): void => {
   form.patch(`/api/recipes/${recipe.id}`, {
     preserveScroll: true,
     onSuccess: () => {

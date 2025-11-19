@@ -1,0 +1,8 @@
+# Ignore generated password files
+passwords
+passwords.*
+
+# Keep example files
+!passwords.example
+!acl.example
+

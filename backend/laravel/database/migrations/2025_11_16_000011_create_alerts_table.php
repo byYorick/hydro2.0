@@ -11,6 +11,8 @@ return new class extends Migration
         Schema::create('alerts', function (Blueprint $table) {
             $table->id();
             $table->foreignId('zone_id')->nullable()->constrained('zones')->nullOnDelete();
+            $table->string('source')->default('biz')->after('zone_id'); // biz / infra
+            $table->string('code')->nullable()->after('source'); // biz_no_flow, biz_overcurrent, etc.
             $table->string('type');
             $table->jsonb('details')->nullable();
             $table->string('status')->default('ACTIVE'); // ACTIVE/RESOLVED

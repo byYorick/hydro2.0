@@ -2,15 +2,22 @@
   <div ref="el" :class="containerClass" :style="containerStyle"></div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import * as echarts from 'echarts'
 import { onMounted, onBeforeUnmount, ref, watch, computed } from 'vue'
+import type { EChartsOption } from 'echarts'
 
-const props = defineProps({
-  option: { type: Object, required: true },
-  dark: { type: Boolean, default: true },
-  height: { type: String, default: '256px' }, // По умолчанию h-64 (256px)
-  fullHeight: { type: Boolean, default: false }, // Использовать 100% высоты родителя
+interface Props {
+  option: EChartsOption
+  dark?: boolean
+  height?: string
+  fullHeight?: boolean
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  dark: true,
+  height: '256px',
+  fullHeight: false
 })
 
 const containerClass = computed(() => {

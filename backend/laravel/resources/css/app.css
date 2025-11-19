@@ -1,3 +1,17 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Стили для vue-virtual-scroller */
+.virtual-table-body {
+  width: 100%;
+}
+
+.virtual-table-body .vue-recycle-scroller__item-wrapper {
+  overflow: visible;
+}
+
+.vue-recycle-scroller__item-view {
+  display: flex;
+  align-items: center;
+}

@@ -1,9 +1,10 @@
-<script setup>
-defineProps({
-    value: {
-        type: String,
-    },
-});
+<script setup lang="ts">
+interface Props {
+    value?: string
+    for?: string
+}
+
+defineProps<Props>()
 </script>
 
 <template>

@@ -1,24 +1,28 @@
 import asyncio
 import json
 import httpx
+import logging
 from typing import Optional, Dict, Any
 from datetime import datetime
 from common.env import get_settings
 from common.mqtt import MqttClient
 from common.db import fetch, execute, create_zone_event, create_ai_log
 from prometheus_client import Counter, Histogram, start_http_server
+
+logger = logging.getLogger(__name__)
 from recipe_utils import calculate_current_phase, advance_phase, get_phase_targets
 from common.water_flow import (
     check_water_level,
     ensure_water_level_alert,
     ensure_no_flow_alert,
 )
-from common.water_cycle import tick_recirculation
+# tick_recirculation moved to irrigation_controller
 from common.pump_safety import can_run_pump
 from light_controller import check_and_control_lighting
 from climate_controller import check_and_control_climate
 from irrigation_controller import check_and_control_irrigation, check_and_control_recirculation
 from health_monitor import calculate_zone_health, update_zone_health_in_db
+from correction_cooldown import should_apply_correction, record_correction
 
 ZONE_CHECKS = Counter("zone_checks_total", "Zone automation checks")
 COMMANDS_SENT = Counter("automation_commands_sent_total", "Commands sent by automation", ["zone_id", "metric"])
@@ -249,7 +253,7 @@ async def check_and_correct_zone(zone_id: int, mqtt: MqttClient, gh_uid: str, cf
         
         # Recirculation Controller (после Irrigation Controller) - используем новую логику с учётом NC-насоса
         if capabilities.get("recirculation", False):
-            recirculation_cmd = await tick_recirculation(zone_id, mqtt, gh_uid, datetime.now())
+            recirculation_cmd = await check_and_control_recirculation(zone_id, targets, telemetry)
         else:
             recirculation_cmd = None
         if recirculation_cmd:
@@ -274,8 +278,26 @@ async def check_and_correct_zone(zone_id: int, mqtt: MqttClient, gh_uid: str, cf
                     # Simple rule: if pH is too low (diff > 0.2), add base; if too high (diff < -0.2), add acid
                     diff = ph_current_val - ph_target_val
                     if abs(diff) > 0.2:
+                        # Проверяем cooldown и анализ тренда перед корректировкой
+                        should_correct, reason = await should_apply_correction(
+                            zone_id, "ph", ph_current_val, ph_target_val, diff
+                        )
+                        
+                        if not should_correct:
+                            logger.info(f"Zone {zone_id}: pH correction skipped - {reason}")
+                            # Создаем событие о пропуске корректировки
+                            await create_zone_event(
+                                zone_id,
+                                'PH_CORRECTION_SKIPPED',
+                                {
+                                    'current_ph': ph_current_val,
+                                    'target_ph': ph_target_val,
+                                    'diff': diff,
+                                    'reason': reason
+                                }
+                            )
                         # Check water level before dosing
-                        if water_level_ok:
+                        elif should_correct and water_level_ok:
                             # Find irrigation node for pH correction
                             irrig_node = None
                             for key, node_info in nodes.items():
@@ -289,63 +311,71 @@ async def check_and_correct_zone(zone_id: int, mqtt: MqttClient, gh_uid: str, cf
                             irrig_node["node_uid"], irrig_node["channel"],
                             "adjust_ph", {"amount": abs(diff) * 10, "type": correction_type},
                         )
-                        # Create zone events for pH correction
-                        await create_zone_event(
-                            zone_id,
-                            'PH_CORRECTED',
-                            {
-                                'correction_type': correction_type,
-                                'current_ph': ph_current_val,
-                                'target_ph': ph_target_val,
-                                'diff': diff,
-                                'dose_ml': abs(diff) * 10
-                            }
-                        )
-                        # Also create DOSING event for compatibility
-                        await create_zone_event(
-                            zone_id,
-                            'DOSING',
-                            {
-                                'type': 'ph_correction',
-                                'correction_type': correction_type,
-                                'current_ph': ph_current_val,
-                                'target_ph': ph_target_val,
-                                'diff': diff
-                            }
-                        )
-                        # Create PH_TOO_HIGH_DETECTED or PH_TOO_LOW_DETECTED if deviation is significant
-                        if diff > 0.3:
-                            await create_zone_event(
-                                zone_id,
-                                'PH_TOO_HIGH_DETECTED',
-                                {
-                                    'current_ph': ph_current_val,
-                                    'target_ph': ph_target_val,
-                                    'diff': diff
-                                }
-                            )
-                        elif diff < -0.3:
-                            await create_zone_event(
-                                zone_id,
-                                'PH_TOO_LOW_DETECTED',
-                                {
-                                    'current_ph': ph_current_val,
-                                    'target_ph': ph_target_val,
-                                    'diff': diff
-                                }
-                            )
-                        # Create AI log
-                        await create_ai_log(
-                            zone_id,
-                            'recommend',
-                            {
-                                'action': 'ph_correction',
-                                'metric': 'ph',
-                                'current': ph_current_val,
-                                'target': ph_target_val,
-                                'correction': correction_type
-                            }
-                        )
+                                # Записываем информацию о корректировке
+                                await record_correction(zone_id, "ph", {
+                                    "correction_type": correction_type,
+                                    "current_ph": ph_current_val,
+                                    "target_ph": ph_target_val,
+                                    "diff": diff,
+                                    "reason": reason
+                                })
+                                # Create zone events for pH correction
+                                await create_zone_event(
+                                    zone_id,
+                                    'PH_CORRECTED',
+                                    {
+                                        'correction_type': correction_type,
+                                        'current_ph': ph_current_val,
+                                        'target_ph': ph_target_val,
+                                        'diff': diff,
+                                        'dose_ml': abs(diff) * 10
+                                    }
+                                )
+                                # Also create DOSING event for compatibility
+                                await create_zone_event(
+                                    zone_id,
+                                    'DOSING',
+                                    {
+                                        'type': 'ph_correction',
+                                        'correction_type': correction_type,
+                                        'current_ph': ph_current_val,
+                                        'target_ph': ph_target_val,
+                                        'diff': diff
+                                    }
+                                )
+                                # Create PH_TOO_HIGH_DETECTED or PH_TOO_LOW_DETECTED if deviation is significant
+                                if diff > 0.3:
+                                    await create_zone_event(
+                                        zone_id,
+                                        'PH_TOO_HIGH_DETECTED',
+                                        {
+                                            'current_ph': ph_current_val,
+                                            'target_ph': ph_target_val,
+                                            'diff': diff
+                                        }
+                                    )
+                                elif diff < -0.3:
+                                    await create_zone_event(
+                                        zone_id,
+                                        'PH_TOO_LOW_DETECTED',
+                                        {
+                                            'current_ph': ph_current_val,
+                                            'target_ph': ph_target_val,
+                                            'diff': diff
+                                        }
+                                    )
+                                # Create AI log
+                                await create_ai_log(
+                                    zone_id,
+                                    'recommend',
+                                    {
+                                        'action': 'ph_correction',
+                                        'metric': 'ph',
+                                        'current': ph_current_val,
+                                        'target': ph_target_val,
+                                        'correction': correction_type
+                                    }
+                                )
         # Check EC target (only if ec_control capability is enabled)
         if capabilities.get("ec_control", False):
             ec_target = targets.get("ec")
@@ -357,8 +387,26 @@ async def check_and_correct_zone(zone_id: int, mqtt: MqttClient, gh_uid: str, cf
                     # Simple rule: if EC is too low (diff < -0.2), add nutrients; if too high (diff > 0.2), dilute
                     diff = ec_current_val - ec_target_val
                     if abs(diff) > 0.2:
+                        # Проверяем cooldown и анализ тренда перед корректировкой
+                        should_correct, reason = await should_apply_correction(
+                            zone_id, "ec", ec_current_val, ec_target_val, diff
+                        )
+                        
+                        if not should_correct:
+                            logger.info(f"Zone {zone_id}: EC correction skipped - {reason}")
+                            # Создаем событие о пропуске корректировки
+                            await create_zone_event(
+                                zone_id,
+                                'EC_CORRECTION_SKIPPED',
+                                {
+                                    'current_ec': ec_current_val,
+                                    'target_ec': ec_target_val,
+                                    'diff': diff,
+                                    'reason': reason
+                                }
+                            )
                         # Check water level before dosing
-                        if water_level_ok:
+                        elif should_correct and water_level_ok:
                             irrig_node = None
                             for key, node_info in nodes.items():
                                 if node_info["type"] == "irrig":
@@ -371,6 +419,14 @@ async def check_and_correct_zone(zone_id: int, mqtt: MqttClient, gh_uid: str, cf
                                     irrig_node["node_uid"], irrig_node["channel"],
                                     "adjust_ec", {"amount": abs(diff) * 100, "type": correction_type},
                                 )
+                                # Записываем информацию о корректировке
+                                await record_correction(zone_id, "ec", {
+                                    "correction_type": correction_type,
+                                    "current_ec": ec_current_val,
+                                    "target_ec": ec_target_val,
+                                    "diff": diff,
+                                    "reason": reason
+                                })
                                 # Create zone events for EC correction
                                 await create_zone_event(
                                     zone_id,

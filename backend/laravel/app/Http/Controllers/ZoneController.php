@@ -16,12 +16,22 @@ class ZoneController extends Controller
 
     public function index(Request $request)
     {
-        $query = Zone::query()->withCount('nodes');
-        if ($request->filled('greenhouse_id')) {
-            $query->where('greenhouse_id', $request->integer('greenhouse_id'));
+        // Валидация query параметров
+        $validated = $request->validate([
+            'greenhouse_id' => ['nullable', 'integer', 'exists:greenhouses,id'],
+            'status' => ['nullable', 'string', 'in:online,offline,warning'],
+        ]);
+        
+        // Eager loading для предотвращения N+1 запросов
+        $query = Zone::query()
+            ->withCount('nodes') // Счетчик узлов
+            ->with(['greenhouse:id,name', 'preset:id,name']); // Загружаем только нужные поля
+        
+        if (isset($validated['greenhouse_id'])) {
+            $query->where('greenhouse_id', $validated['greenhouse_id']);
         }
-        if ($request->filled('status')) {
-            $query->where('status', $request->string('status'));
+        if (isset($validated['status'])) {
+            $query->where('status', $validated['status']);
         }
         $items = $query->latest('id')->paginate(25);
         return response()->json(['status' => 'ok', 'data' => $items]);
@@ -142,7 +152,18 @@ class ZoneController extends Controller
 
     public function health(Zone $zone)
     {
+        // Eager loading для предотвращения N+1 запросов
+        $zone->load([
+            'nodes' => function ($query) {
+                $query->select('id', 'zone_id', 'status'); // Оптимизация: загружаем только нужные поля
+            },
+            'alerts' => function ($query) {
+                $query->where('status', 'ACTIVE')->select('id', 'zone_id', 'status'); // Оптимизация
+            }
+        ]);
+        
         // Возвращаем детальную информацию о здоровье зоны
+        // Используем уже загруженные отношения вместо новых запросов
         return response()->json([
             'status' => 'ok',
             'data' => [
@@ -150,9 +171,9 @@ class ZoneController extends Controller
                 'health_score' => $zone->health_score,
                 'health_status' => $zone->health_status,
                 'zone_status' => $zone->status,
-                'active_alerts_count' => $zone->alerts()->where('status', 'ACTIVE')->count(),
-                'nodes_online' => $zone->nodes()->where('status', 'online')->count(),
-                'nodes_total' => $zone->nodes()->count(),
+                'active_alerts_count' => $zone->alerts->count(), // Используем загруженную коллекцию
+                'nodes_online' => $zone->nodes->where('status', 'online')->count(), // Используем загруженную коллекцию
+                'nodes_total' => $zone->nodes->count(), // Используем загруженную коллекцию
             ],
         ]);
     }

@@ -15,44 +15,60 @@
       <input v-model="query" placeholder="Имя зоны..." class="h-9 w-56 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
     </div>
 
-    <div class="rounded-xl border border-neutral-800 max-h-[720px] overflow-y-auto p-3" @scroll.passive="onScroll">
-      <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
-        <ZoneCard v-for="z in windowedZones" :key="z.id" :zone="z" :telemetry="z.telemetry" />
-      </div>
+    <div class="rounded-xl border border-neutral-800 max-h-[720px] overflow-hidden p-3">
+      <DynamicScroller
+        :items="filteredZones"
+        :min-item-size="approxRowHeight"
+        key-field="id"
+        class="h-full"
+        v-slot="{ item: z, index, active }"
+      >
+        <DynamicScrollerItem
+          :item="z"
+          :active="active"
+          :data-index="index"
+          :size-dependencies="[z.name, z.status]"
+        >
+          <ZoneCard :zone="z" :telemetry="z.telemetry" />
+        </DynamicScrollerItem>
+      </DynamicScroller>
       <div v-if="!filteredZones.length" class="text-sm text-neutral-400 px-1 py-6">Нет зон по текущим фильтрам</div>
     </div>
   </AppLayout>
 </template>
 
-<script setup>
-import { computed, ref } from 'vue'
+<script setup lang="ts">
+import { computed, ref, shallowRef } from 'vue'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import ZoneCard from '@/Pages/Zones/ZoneCard.vue'
 import { usePage } from '@inertiajs/vue3'
 import { translateStatus } from '@/utils/i18n'
+import type { Zone } from '@/types'
 
-const page = usePage()
-const zones = computed(() => page.props.zones || [])
+const page = usePage<{ zones?: Zone[] }>()
+const zones = computed(() => (page.props.zones || []) as Zone[])
 
-const status = ref('')
-const query = ref('')
+const status = ref<string>('')
+const query = ref<string>('')
 
+// Оптимизируем фильтрацию: мемоизируем нижний регистр запроса
+const queryLower = computed(() => query.value.toLowerCase())
 const filteredZones = computed(() => {
+  const statusFilter = status.value
+  const queryFilter = queryLower.value
+  
+  if (!statusFilter && !queryFilter) {
+    return zones.value // Если фильтров нет, возвращаем все зоны без фильтрации
+  }
+  
   return zones.value.filter((z) => {
-    const okStatus = status.value ? z.status === status.value : true
-    const okQuery = query.value ? (z.name || '').toLowerCase().includes(query.value.toLowerCase()) : true
+    const okStatus = statusFilter ? z.status === statusFilter : true
+    const okQuery = queryFilter ? (z.name || '').toLowerCase().includes(queryFilter) : true
     return okStatus && okQuery
   })
 })
 
-// Простейшая виртуализация по окну
-const start = ref(0)
-const visibleCount = 20
+// Виртуализация через DynamicScroller (для элементов переменной высоты)
 const approxRowHeight = 160 // px
-function onScroll(ev) {
-  const top = ev.target.scrollTop || 0
-  start.value = Math.max(0, Math.floor(top / approxRowHeight) * 2) // грубая оценка для 2 колоночной сетки
-}
-const windowedZones = computed(() => filteredZones.value.slice(start.value, start.value + visibleCount))
 </script>
 

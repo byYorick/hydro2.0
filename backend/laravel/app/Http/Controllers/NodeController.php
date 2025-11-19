@@ -22,7 +22,10 @@ class NodeController extends Controller
 
     public function index(Request $request)
     {
-        $query = DeviceNode::query()->with('zone');
+        // Eager loading для предотвращения N+1 запросов
+        $query = DeviceNode::query()
+            ->with(['zone:id,name,status', 'channels']); // Загружаем связанные данные
+        
         if ($request->filled('zone_id')) {
             $query->where('zone_id', $request->integer('zone_id'));
         }

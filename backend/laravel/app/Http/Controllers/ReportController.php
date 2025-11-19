@@ -58,8 +58,9 @@ class ReportController extends Controller
      */
     public function zoneHarvests(Request $request, Zone $zone)
     {
+        // Eager loading для предотвращения N+1 запросов
         $query = Harvest::where('zone_id', $zone->id)
-            ->with(['recipe']);
+            ->with(['recipe:id,name']); // Загружаем рецепт
 
         if ($request->filled('recipe_id')) {
             $query->where('recipe_id', $request->integer('recipe_id'));

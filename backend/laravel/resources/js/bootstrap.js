@@ -78,6 +78,50 @@ try {
       withCredentials: true,
     });
     console.log('[bootstrap.js] Echo инициализирован успешно');
+    
+    // Настройка автоматической переподписки при reconnect
+    if (window.Echo?.connector?.pusher?.connection) {
+      const pusher = window.Echo.connector.pusher;
+      
+      // Подписываемся на событие подключения
+      pusher.connection.bind('connected', () => {
+        console.log('[WebSocket] Reconnected! Resubscribing to all channels...');
+        // Импортируем функцию resubscribe динамически, чтобы избежать циклических зависимостей
+        import('./composables/useWebSocket').then(({ resubscribeAllChannels }) => {
+          resubscribeAllChannels();
+        }).catch((err) => {
+          console.error('[WebSocket] Failed to import resubscribeAllChannels:', err);
+        });
+      });
+      
+      // Логируем отключение
+      pusher.connection.bind('disconnected', () => {
+        console.warn('[WebSocket] Disconnected!');
+      });
+      
+      // Также проверяем, если уже подключены
+      if (pusher.connection.state === 'connected') {
+        console.log('[WebSocket] Already connected, setting up resubscribe handler');
+      }
+    } else {
+      // Если connection еще не готов, ждем немного и пробуем снова
+      setTimeout(() => {
+        if (window.Echo?.connector?.pusher?.connection) {
+          const pusher = window.Echo.connector.pusher;
+          pusher.connection.bind('connected', () => {
+            console.log('[WebSocket] Reconnected! Resubscribing to all channels...');
+            import('./composables/useWebSocket').then(({ resubscribeAllChannels }) => {
+              resubscribeAllChannels();
+            }).catch((err) => {
+              console.error('[WebSocket] Failed to import resubscribeAllChannels:', err);
+            });
+          });
+          pusher.connection.bind('disconnected', () => {
+            console.warn('[WebSocket] Disconnected!');
+          });
+        }
+      }, 500);
+    }
   } else {
     console.warn('[bootstrap.js] Echo не инициализирован:', { wsEnabled, appKey: !!appKey });
   }

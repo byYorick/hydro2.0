@@ -30,15 +30,32 @@ class TelemetryCleanupCommand extends Command
     {
         $days = (int) $this->option('days');
         $cutoffDate = Carbon::now()->subDays($days);
+        $chunkSize = 1000; // Размер чанка для обработки
 
         $this->info("Очистка raw данных телеметрии старше {$days} дней (до {$cutoffDate->toDateTimeString()})...");
 
-        // Удаляем старые записи из telemetry_samples
+        $totalDeleted = 0;
+        
+        // Удаляем старые записи из telemetry_samples порциями для предотвращения утечки памяти
+        do {
         $deleted = DB::table('telemetry_samples')
             ->where('ts', '<', $cutoffDate)
+                ->limit($chunkSize)
             ->delete();
 
-        $this->info("Удалено записей: {$deleted}");
+            $totalDeleted += $deleted;
+            
+            if ($deleted > 0) {
+                $this->info("Удалено записей: {$totalDeleted}...");
+                
+                // Принудительная сборка мусора после каждого чанка
+                if (function_exists('gc_collect_cycles')) {
+                    gc_collect_cycles();
+                }
+            }
+        } while ($deleted > 0);
+
+        $this->info("Всего удалено записей: {$totalDeleted}");
 
         // Выполняем VACUUM для освобождения места (опционально, может быть медленным)
         if ($this->confirm('Выполнить VACUUM для освобождения места?', false)) {

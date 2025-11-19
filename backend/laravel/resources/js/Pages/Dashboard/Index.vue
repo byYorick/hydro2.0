@@ -39,7 +39,12 @@
       <div v-if="hasGreenhouses" class="mb-6">
         <h2 class="text-md font-semibold mb-3">Теплицы</h2>
         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-          <Card v-for="gh in dashboard.greenhouses" :key="gh.id" class="hover:border-neutral-700 transition-colors">
+          <Card 
+            v-for="gh in dashboard.greenhouses" 
+            :key="gh.id" 
+            v-memo="[gh.id, gh.name, gh.zones_count, gh.zones_running]"
+            class="hover:border-neutral-700 transition-colors"
+          >
             <div class="flex items-start justify-between">
               <div>
                 <div class="text-sm font-semibold">{{ gh.name }}</div>
@@ -61,7 +66,12 @@
       <div v-if="hasProblematicZones" class="mb-6">
         <h2 class="text-md font-semibold mb-3">Проблемные зоны</h2>
         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-          <Card v-for="zone in dashboard.problematicZones" :key="zone.id" class="hover:border-neutral-700 transition-colors">
+          <Card 
+            v-for="zone in dashboard.problematicZones" 
+            :key="zone.id" 
+            v-memo="[zone.id, zone.status, zone.alerts_count]"
+            class="hover:border-neutral-700 transition-colors"
+          >
             <div class="flex items-start justify-between mb-2">
               <div>
                 <div class="text-sm font-semibold">{{ zone.name }}</div>
@@ -98,6 +108,7 @@
           <MiniTelemetryChart
             v-for="metric in telemetryMetrics"
             :key="metric.key"
+            v-memo="[metric.data, metric.currentValue, metric.loading]"
             :label="metric.label"
             :data="metric.data"
             :current-value="metric.currentValue"
@@ -132,7 +143,12 @@
         </div>
         
         <div v-if="filteredEvents.length > 0" class="space-y-2 flex-1 overflow-y-auto">
-          <div v-for="e in filteredEvents" :key="e.id" class="rounded-lg border border-neutral-800 bg-neutral-925 p-2">
+          <div 
+            v-for="e in filteredEvents" 
+            :key="e.id" 
+            v-memo="[e.id, e.kind, e.message, e.occurred_at]"
+            class="rounded-lg border border-neutral-800 bg-neutral-925 p-2"
+          >
             <div class="flex items-start justify-between mb-1">
               <Badge 
                 :variant="e.kind === 'ALERT' ? 'danger' : e.kind === 'WARNING' ? 'warning' : 'info'" 
@@ -156,8 +172,8 @@
   </AppLayout>
 </template>
 
-<script setup>
-import { computed, ref, onMounted } from 'vue'
+<script setup lang="ts">
+import { computed, ref, onMounted, shallowRef } from 'vue'
 import { Link } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
@@ -169,13 +185,25 @@ import { translateStatus } from '@/utils/i18n'
 import { formatTime } from '@/utils/formatTime'
 import { useTelemetry } from '@/composables/useTelemetry'
 import { useWebSocket } from '@/composables/useWebSocket'
+import type { Zone, Greenhouse, Alert, Event, EventKind } from '@/types'
 
-const props = defineProps({
-  dashboard: {
-    type: Object,
-    required: true
-  }
-})
+interface DashboardData {
+  greenhousesCount: number
+  zonesCount: number
+  devicesCount: number
+  alertsCount: number
+  zonesByStatus?: Record<string, number>
+  nodesByStatus?: Record<string, number>
+  greenhouses?: Greenhouse[]
+  problematicZones?: Zone[]
+  latestAlerts?: Alert[]
+}
+
+interface Props {
+  dashboard: DashboardData
+}
+
+const props = defineProps<Props>()
 
 const zonesStatusSummary = computed(() => props.dashboard.zonesByStatus || {})
 const nodesStatusSummary = computed(() => props.dashboard.nodesByStatus || {})
@@ -203,31 +231,35 @@ const hasZonesForTelemetry = computed(() => {
 // Телеметрия для мини-графиков
 const { fetchAggregates } = useTelemetry()
 const { subscribeToGlobalEvents } = useWebSocket()
-const telemetryData = ref({
+// Используем shallowRef для больших объектов телеметрии
+const telemetryData = shallowRef({
   ph: { data: [], currentValue: null, loading: false },
   ec: { data: [], currentValue: null, loading: false },
   temp: { data: [], currentValue: null, loading: false },
   humidity: { data: [], currentValue: null, loading: false },
 })
 
-// События для боковой панели
-const events = ref([])
-const eventFilter = ref('ALL')
+// События для боковой панели - используем shallowRef для массива
+const events = shallowRef<Array<Event & { created_at?: string }>>([])
+const eventFilter = ref<'ALL' | EventKind>('ALL')
 
 // Объединяем события из props и WebSocket
-const allEvents = computed(() => {
-  const propsEvents = (props.dashboard.latestAlerts || []).map(a => ({
+// Мемоизируем propsEvents для избежания пересоздания при каждом рендере
+const propsEvents = computed(() => {
+  return (props.dashboard.latestAlerts || []).map(a => ({
     id: a.id,
-    kind: 'ALERT',
+    kind: 'ALERT' as const,
     message: a.details?.message || a.type,
     zone_id: a.zone_id,
     occurred_at: a.created_at,
     created_at: a.created_at
   }))
-  
-  return [...events.value, ...propsEvents].sort((a, b) => {
-    const timeA = new Date(a.occurred_at || a.created_at).getTime()
-    const timeB = new Date(b.occurred_at || b.created_at).getTime()
+})
+
+const allEvents = computed(() => {
+  return [...events.value, ...propsEvents.value].sort((a, b) => {
+    const timeA = new Date(a.occurred_at || a.created_at || 0).getTime()
+    const timeB = new Date(b.occurred_at || b.created_at || 0).getTime()
     return timeB - timeA
   }).slice(0, 20)
 })
@@ -247,44 +279,48 @@ const firstZoneId = computed(() => {
   return null
 })
 
-const telemetryMetrics = computed(() => [
-  {
-    key: 'ph',
-    label: 'pH',
-    data: telemetryData.value.ph.data,
-    currentValue: telemetryData.value.ph.currentValue,
-    unit: '',
-    loading: telemetryData.value.ph.loading,
-    color: '#3b82f6'
-  },
-  {
-    key: 'ec',
-    label: 'EC',
-    data: telemetryData.value.ec.data,
-    currentValue: telemetryData.value.ec.currentValue,
-    unit: 'мСм/см',
-    loading: telemetryData.value.ec.loading,
-    color: '#10b981'
-  },
-  {
-    key: 'temp',
-    label: 'Температура',
-    data: telemetryData.value.temp.data,
-    currentValue: telemetryData.value.temp.currentValue,
-    unit: '°C',
-    loading: telemetryData.value.temp.loading,
-    color: '#f59e0b'
-  },
-  {
-    key: 'humidity',
-    label: 'Влажность',
-    data: telemetryData.value.humidity.data,
-    currentValue: telemetryData.value.humidity.currentValue,
-    unit: '%',
-    loading: telemetryData.value.humidity.loading,
-    color: '#8b5cf6'
-  }
-])
+// Мемоизируем метрики телеметрии для избежания пересоздания массива
+const telemetryMetrics = computed(() => {
+  const data = telemetryData.value
+  return [
+    {
+      key: 'ph',
+      label: 'pH',
+      data: data.ph.data,
+      currentValue: data.ph.currentValue,
+      unit: '',
+      loading: data.ph.loading,
+      color: '#3b82f6'
+    },
+    {
+      key: 'ec',
+      label: 'EC',
+      data: data.ec.data,
+      currentValue: data.ec.currentValue,
+      unit: 'мСм/см',
+      loading: data.ec.loading,
+      color: '#10b981'
+    },
+    {
+      key: 'temp',
+      label: 'Температура',
+      data: data.temp.data,
+      currentValue: data.temp.currentValue,
+      unit: '°C',
+      loading: data.temp.loading,
+      color: '#f59e0b'
+    },
+    {
+      key: 'humidity',
+      label: 'Влажность',
+      data: data.humidity.data,
+      currentValue: data.humidity.currentValue,
+      unit: '%',
+      loading: data.humidity.loading,
+      color: '#8b5cf6'
+    }
+  ]
+})
 
 async function loadTelemetryMetrics() {
   if (!firstZoneId.value) return

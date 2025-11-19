@@ -19,23 +19,28 @@ use App\Http\Controllers\PythonIngestController;
 use App\Http\Controllers\AiController;
 use App\Http\Controllers\SimulationController;
 
-Route::prefix('auth')->group(function () {
+// Auth роуты с более строгим rate limiting для предотвращения брутфорса
+Route::prefix('auth')->middleware('throttle:10,1')->group(function () {
     Route::post('/login', [AuthController::class, 'login']);
     Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
     Route::get('/me', [AuthController::class, 'me'])->middleware('auth:sanctum');
 });
 
-// Публичные системные эндпоинты
-Route::get('system/health', [SystemController::class, 'health']);
-Route::get('system/config/full', [SystemController::class, 'configFull']);
+// Публичные системные эндпоинты с умеренным rate limiting
+Route::middleware('throttle:30,1')->group(function () {
+    Route::get('system/health', [SystemController::class, 'health']);
+    Route::get('system/config/full', [SystemController::class, 'configFull']);
+});
 
 // API routes for Inertia (using session authentication)
 // Note: Session middleware is added here for routes that use session-based auth
 // EncryptCookies must come before StartSession
+// Rate limiting: 60 requests per minute (default from bootstrap/app.php)
 Route::middleware([
     \Illuminate\Cookie\Middleware\EncryptCookies::class,
     \Illuminate\Session\Middleware\StartSession::class,
     'auth',
+    'throttle:60,1', // Явно указываем rate limiting для этой группы
 ])->group(function () {
     Route::apiResource('greenhouses', GreenhouseController::class);
     Route::apiResource('zones', ZoneController::class);
@@ -109,16 +114,18 @@ Route::middleware([
     Route::middleware('role:admin')->apiResource('users', \App\Http\Controllers\UserController::class);
 });
 
-// Python ingest (token-based)
-Route::prefix('python')->group(function () {
+// Python ingest (token-based) - более высокий лимит для внутренних сервисов
+Route::prefix('python')->middleware('throttle:120,1')->group(function () {
     Route::post('ingest/telemetry', [PythonIngestController::class, 'telemetry']);
     Route::post('commands/ack', [PythonIngestController::class, 'commandAck']);
 });
 
-// Node registration (token-based or public)
-Route::post('nodes/register', [NodeController::class, 'register']);
-
-// Alertmanager webhook (публичный, но можно добавить токен)
-Route::post('alerts/webhook', [\App\Http\Controllers\Api\AlertWebhookController::class, 'webhook']);
+// Node registration (token-based or public) - умеренный лимит
+Route::middleware('throttle:20,1')->group(function () {
+    Route::post('nodes/register', [NodeController::class, 'register']);
+    
+    // Alertmanager webhook (публичный, но можно добавить токен)
+    Route::post('alerts/webhook', [\App\Http\Controllers\Api\AlertWebhookController::class, 'webhook']);
+});
 
 

@@ -1,9 +1,9 @@
-<script setup>
-defineProps({
-    message: {
-        type: String,
-    },
-});
+<script setup lang="ts">
+interface Props {
+    message?: string | null
+}
+
+defineProps<Props>()
 </script>
 
 <template>

@@ -12,10 +12,20 @@
         </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import Button from './Button.vue'
-defineProps({
-  open: { type: Boolean, default: false },
-  title: { type: String, default: '' },
+
+interface Props {
+  open?: boolean
+  title?: string
+}
+
+withDefaults(defineProps<Props>(), {
+  open: false,
+  title: ''
 })
+
+defineEmits<{
+  close: []
+}>()
 </script>

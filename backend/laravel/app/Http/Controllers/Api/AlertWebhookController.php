@@ -19,12 +19,25 @@ class AlertWebhookController extends Controller
      */
     public function webhook(Request $request)
     {
-        $data = $request->all();
+        // Валидация webhook данных от Alertmanager
+        // Формат: https://prometheus.io/docs/alerting/latest/configuration/#webhook_config
+        $data = $request->validate([
+            'version' => ['nullable', 'string'],
+            'groupKey' => ['nullable', 'string'],
+            'status' => ['nullable', 'string', 'in:firing,resolved'],
+            'receiver' => ['nullable', 'string'],
+            'alerts' => ['required', 'array'],
+            'alerts.*.status' => ['required', 'string', 'in:firing,resolved'],
+            'alerts.*.labels' => ['required', 'array'],
+            'alerts.*.annotations' => ['nullable', 'array'],
+            'alerts.*.startsAt' => ['nullable', 'date'],
+            'alerts.*.endsAt' => ['nullable', 'date'],
+        ]);
         
         Log::info('Alertmanager webhook received', ['data' => $data]);
 
         // Alertmanager отправляет массив алертов
-        if (isset($data['alerts'])) {
+        if (isset($data['alerts']) && is_array($data['alerts'])) {
             foreach ($data['alerts'] as $alertData) {
                 $this->processAlert($alertData);
             }

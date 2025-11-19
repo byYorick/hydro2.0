@@ -1,18 +1,24 @@
 /**
  * Composable для управления зонами с кешированием и Inertia partial reloads
  */
-import { ref, computed } from 'vue'
+import { ref, computed, type Ref, type ComputedRef } from 'vue'
 import { router } from '@inertiajs/vue3'
-import { useApi } from './useApi'
+import { useApi, type ToastHandler } from './useApi'
+import type { Zone } from '@/types'
 
 // Кеш в памяти (TTL 10-30 секунд)
-const zonesCache = new Map()
+interface CacheEntry {
+  data: Zone | Zone[]
+  timestamp: number
+}
+
+const zonesCache = new Map<string, CacheEntry>()
 const CACHE_TTL = 10 * 1000 // 10 секунд
 
 /**
  * Очистка устаревших записей из кеша
  */
-function cleanupCache() {
+function cleanupCache(): void {
   const now = Date.now()
   for (const [key, value] of zonesCache.entries()) {
     if (now - value.timestamp > CACHE_TTL) {
@@ -23,27 +29,23 @@ function cleanupCache() {
 
 /**
  * Composable для работы с зонами
- * @param {Function} showToast - Функция для показа Toast уведомлений
- * @returns {Object} Методы для работы с зонами
  */
-export function useZones(showToast = null) {
-  const { api } = useApi(showToast)
-  const loading = ref(false)
-  const error = ref(null)
+export function useZones(showToast?: ToastHandler) {
+  const { api } = useApi(showToast || null)
+  const loading: Ref<boolean> = ref(false)
+  const error: Ref<Error | null> = ref(null)
 
   /**
    * Получить список всех зон
-   * @param {boolean} forceRefresh - Принудительно обновить данные (игнорировать кеш)
-   * @returns {Promise<Array>} Список зон
    */
-  async function fetchZones(forceRefresh = false) {
+  async function fetchZones(forceRefresh: boolean = false): Promise<Zone[]> {
     const cacheKey = 'zones_list'
     
     // Проверяем кеш
     if (!forceRefresh && zonesCache.has(cacheKey)) {
-      const cached = zonesCache.get(cacheKey)
+      const cached = zonesCache.get(cacheKey)!
       if (Date.now() - cached.timestamp < CACHE_TTL) {
-        return cached.data
+        return cached.data as Zone[]
       }
     }
 
@@ -51,8 +53,10 @@ export function useZones(showToast = null) {
     error.value = null
 
     try {
-      const response = await api.get('/api/zones')
-      const zones = response.data?.data || response.data || []
+      const response = await api.get<{ data?: Zone[] } | Zone[]>('/api/zones')
+      const zones = ((response.data as { data?: Zone[] })?.data || 
+                    (response.data as Zone[]) || 
+                    []) as Zone[]
       
       // Сохраняем в кеш
       zonesCache.set(cacheKey, {
@@ -63,7 +67,7 @@ export function useZones(showToast = null) {
       cleanupCache()
       return zones
     } catch (err) {
-      error.value = err
+      error.value = err as Error
       if (showToast) {
         showToast('Ошибка при загрузке зон', 'error', 5000)
       }
@@ -75,18 +79,15 @@ export function useZones(showToast = null) {
 
   /**
    * Получить детальную информацию о зоне
-   * @param {number} zoneId - ID зоны
-   * @param {boolean} forceRefresh - Принудительно обновить данные
-   * @returns {Promise<Object>} Данные зоны
    */
-  async function fetchZone(zoneId, forceRefresh = false) {
+  async function fetchZone(zoneId: number, forceRefresh: boolean = false): Promise<Zone> {
     const cacheKey = `zone_${zoneId}`
     
     // Проверяем кеш
     if (!forceRefresh && zonesCache.has(cacheKey)) {
-      const cached = zonesCache.get(cacheKey)
+      const cached = zonesCache.get(cacheKey)!
       if (Date.now() - cached.timestamp < CACHE_TTL) {
-        return cached.data
+        return cached.data as Zone
       }
     }
 
@@ -94,8 +95,9 @@ export function useZones(showToast = null) {
     error.value = null
 
     try {
-      const response = await api.get(`/api/zones/${zoneId}`)
-      const zone = response.data?.data || response.data
+      const response = await api.get<{ data?: Zone } | Zone>(`/api/zones/${zoneId}`)
+      const zone = ((response.data as { data?: Zone })?.data || 
+                   (response.data as Zone)) as Zone
       
       // Сохраняем в кеш
       zonesCache.set(cacheKey, {
@@ -106,7 +108,7 @@ export function useZones(showToast = null) {
       cleanupCache()
       return zone
     } catch (err) {
-      error.value = err
+      error.value = err as Error
       if (showToast) {
         showToast('Ошибка при загрузке зоны', 'error', 5000)
       }
@@ -118,26 +120,22 @@ export function useZones(showToast = null) {
 
   /**
    * Обновить зону через Inertia partial reload
-   * @param {number} zoneId - ID зоны
-   * @param {Array<string>} only - Список props для обновления (по умолчанию ['zone'])
    */
-  function reloadZone(zoneId, only = ['zone']) {
+  function reloadZone(zoneId: number, only: string[] = ['zone']): void {
     router.reload({ only })
   }
 
   /**
    * Обновить список зон через Inertia partial reload
-   * @param {Array<string>} only - Список props для обновления (по умолчанию ['zones'])
    */
-  function reloadZones(only = ['zones']) {
+  function reloadZones(only: string[] = ['zones']): void {
     router.reload({ only })
   }
 
   /**
    * Очистить кеш для конкретной зоны или всех зон
-   * @param {number|null} zoneId - ID зоны (если null, очистить весь кеш)
    */
-  function clearCache(zoneId = null) {
+  function clearCache(zoneId: number | null = null): void {
     if (zoneId) {
       zonesCache.delete(`zone_${zoneId}`)
     } else {
@@ -146,8 +144,8 @@ export function useZones(showToast = null) {
   }
 
   return {
-    loading: computed(() => loading.value),
-    error: computed(() => error.value),
+    loading: computed(() => loading.value) as ComputedRef<boolean>,
+    error: computed(() => error.value) as ComputedRef<Error | null>,
     fetchZones,
     fetchZone,
     reloadZone,
@@ -159,7 +157,7 @@ export function useZones(showToast = null) {
 /**
  * Очистить весь кеш зон (для тестирования)
  */
-export function clearZonesCache() {
+export function clearZonesCache(): void {
   zonesCache.clear()
 }
 

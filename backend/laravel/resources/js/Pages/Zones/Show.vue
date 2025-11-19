@@ -209,7 +209,7 @@
   </AppLayout>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
 import { Link, usePage, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
@@ -228,22 +228,53 @@ import { useTelemetry } from '@/composables/useTelemetry'
 import { useZones } from '@/composables/useZones'
 import { useApi } from '@/composables/useApi'
 import { useWebSocket } from '@/composables/useWebSocket'
+import type { Zone, Device, ZoneTelemetry, ZoneTargets, Event, Cycle, CommandType } from '@/types'
+import type { ToastVariant } from '@/composables/useToast'
 
 const ZoneTelemetryChart = defineAsyncComponent(() => import('@/Pages/Zones/ZoneTelemetryChart.vue'))
 
-const page = usePage()
+interface PageProps {
+  zone?: Zone
+  zoneId?: number
+  telemetry?: ZoneTelemetry
+  targets?: ZoneTargets
+  devices?: Device[]
+  events?: Event[]
+  cycles?: Record<string, Cycle>
+  auth?: {
+    user?: {
+      role?: string
+    }
+  }
+}
+
+const page = usePage<PageProps>()
+
+interface ToastItem {
+  id: number
+  message: string
+  variant: ToastVariant
+  duration: number
+}
 
 // Toast notifications
-const toasts = ref([])
+const toasts = ref<ToastItem[]>([])
 let toastIdCounter = 0
 
 // Simulation modal
-const showSimulationModal = ref(false)
-const showActionModal = ref(false)
-const currentActionType = ref('FORCE_IRRIGATION')
+const showSimulationModal = ref<boolean>(false)
+const showActionModal = ref<boolean>(false)
+const currentActionType = ref<CommandType>('FORCE_IRRIGATION')
 
 // Loading states
-const loading = ref({
+interface LoadingState {
+  toggle: boolean
+  irrigate: boolean
+  nextPhase: boolean
+  cycles: Record<string, boolean>
+}
+
+const loading = ref<LoadingState>({
   toggle: false,
   irrigate: false,
   nextPhase: false,
@@ -256,7 +287,7 @@ const loading = ref({
   },
 })
 
-function showToast(message, variant = 'info', duration = 3000) {
+function showToast(message: string, variant: ToastVariant = 'info', duration: number = 3000): number {
   const id = ++toastIdCounter
   toasts.value.push({ id, message, variant, duration })
   return id
@@ -269,24 +300,24 @@ const { reloadZone } = useZones(showToast)
 const { api } = useApi(showToast)
 const { subscribeToZoneCommands } = useWebSocket(showToast)
 
-function removeToast(id) {
+function removeToast(id: number): void {
   const index = toasts.value.findIndex(t => t.id === id)
   if (index > -1) {
     toasts.value.splice(index, 1)
   }
 }
-const zone = computed(() => page.props.zone || {})
+const zone = computed(() => (page.props.zone || {}) as Zone)
 const zoneId = computed(() => {
   const id = zone.value.id || page.props.zoneId
   return typeof id === 'string' ? parseInt(id) : id
 })
 
 // Телеметрия, цели и устройства из props
-const telemetry = computed(() => page.props.telemetry || { ph: null, ec: null, temperature: null, humidity: null })
-const targets = computed(() => page.props.targets || {})
-const devices = computed(() => page.props.devices || [])
-const events = computed(() => page.props.events || [])
-const cycles = computed(() => page.props.cycles || {})
+const telemetry = computed(() => (page.props.telemetry || { ph: null, ec: null, temperature: null, humidity: null }) as ZoneTelemetry)
+const targets = computed(() => (page.props.targets || {}) as ZoneTargets)
+const devices = computed(() => (page.props.devices || []) as Device[])
+const events = computed(() => (page.props.events || []) as Event[])
+const cycles = computed(() => (page.props.cycles || {}) as Record<string, Cycle>)
 
 // Список циклов для отображения
 const cyclesList = computed(() => {
@@ -307,7 +338,7 @@ const cyclesList = computed(() => {
 })
 
 // Функции для вычисления прогресса до следующего запуска
-function getProgressToNextRun(cycle) {
+function getProgressToNextRun(cycle: Cycle & { last_run?: string | null; next_run?: string | null; interval?: number | null }): number {
   if (!cycle.last_run || !cycle.next_run || !cycle.interval) return 0
   
   const now = new Date().getTime()
@@ -322,7 +353,7 @@ function getProgressToNextRun(cycle) {
   return Math.min(100, Math.max(0, (elapsed / total) * 100))
 }
 
-function getTimeUntilNextRun(cycle) {
+function getTimeUntilNextRun(cycle: Cycle & { next_run?: string | null }): string {
   if (!cycle.next_run) return ''
   
   const now = new Date().getTime()
@@ -342,8 +373,8 @@ function getTimeUntilNextRun(cycle) {
 }
 
 // Функции для отображения статуса команд
-function getLastCommandStatus(cycleType) {
-  const commandType = `FORCE_${cycleType}`
+function getLastCommandStatus(cycleType: string): string | null {
+  const commandType = `FORCE_${cycleType}` as CommandType
   const command = pendingCommands.value.find(cmd => 
     cmd.type === commandType && 
     cmd.zoneId === zoneId.value &&
@@ -352,8 +383,9 @@ function getLastCommandStatus(cycleType) {
   return command?.status || null
 }
 
-function getCommandStatusText(status) {
-  const texts = {
+function getCommandStatusText(status: string | null): string {
+  if (!status) return ''
+  const texts: Record<string, string> = {
     'pending': 'Ожидание...',
     'executing': 'Выполняется...',
     'completed': 'Выполнено',
@@ -363,16 +395,16 @@ function getCommandStatusText(status) {
 }
 
 // Графики: загрузка данных истории
-const chartTimeRange = ref('24H') // 1H, 24H, 7D, 30D, ALL
-const chartDataPh = ref([])
-const chartDataEc = ref([])
+const chartTimeRange = ref<'1H' | '24H' | '7D' | '30D' | 'ALL'>('24H')
+const chartDataPh = ref<Array<{ ts: number; value: number }>>([])
+const chartDataEc = ref<Array<{ ts: number; value: number }>>([])
 
 // Загрузка данных истории для графиков через useTelemetry
-async function loadChartData(metric, timeRange) {
+async function loadChartData(metric: 'PH' | 'EC', timeRange: string): Promise<Array<{ ts: number; value: number }>> {
   if (!zoneId.value) return []
   
   const now = new Date()
-  let from = null
+  let from: Date | null = null
   switch (timeRange) {
     case '1H':
       from = new Date(now.getTime() - 60 * 60 * 1000)
@@ -392,9 +424,8 @@ async function loadChartData(metric, timeRange) {
   }
   
   try {
-    const params = {}
+    const params: { from?: string; to: string } = { to: now.toISOString() }
     if (from) params.from = from.toISOString()
-    params.to = now.toISOString()
     
     return await fetchHistory(zoneId.value, metric, params)
   } catch (err) {
@@ -403,8 +434,8 @@ async function loadChartData(metric, timeRange) {
   }
 }
 
-async function onChartTimeRangeChange(newRange) {
-  chartTimeRange.value = newRange
+async function onChartTimeRangeChange(newRange: string): Promise<void> {
+  chartTimeRange.value = newRange as '1H' | '24H' | '7D' | '30D' | 'ALL'
   chartDataPh.value = await loadChartData('PH', newRange)
   chartDataEc.value = await loadChartData('EC', newRange)
 }
@@ -430,7 +461,7 @@ onMounted(async () => {
   }
 })
 
-async function onRunCycle(cycleType) {
+async function onRunCycle(cycleType: string): Promise<void> {
   if (!zoneId.value) {
     logger.warn('[onRunCycle] zoneId is missing')
     showToast('Ошибка: зона не найдена', 'error', 3000)
@@ -443,7 +474,7 @@ async function onRunCycle(cycleType) {
   logger.log(`[onRunCycle] Отправка команды ${cycleType} для зоны ${zoneId.value}`)
   
   try {
-    await sendZoneCommand(zoneId.value, `FORCE_${cycleType}`, {})
+    await sendZoneCommand(zoneId.value, `FORCE_${cycleType}` as CommandType, {})
     logger.log(`✓ [onRunCycle] Команда "${cycleName}" отправлена успешно`)
     // Обновляем зону и cycles через Inertia partial reload
     reloadZoneAfterCommand(zoneId.value, ['zone', 'cycles'])
@@ -454,7 +485,7 @@ async function onRunCycle(cycleType) {
   }
 }
 
-const variant = computed(() => {
+const variant = computed<'success' | 'neutral' | 'warning' | 'danger'>(() => {
   switch (zone.value.status) {
     case 'RUNNING': return 'success'
     case 'PAUSED': return 'neutral'
@@ -464,7 +495,7 @@ const variant = computed(() => {
   }
 })
 
-async function onToggle() {
+async function onToggle(): Promise<void> {
   if (!zoneId.value) return
   
   loading.value.toggle = true
@@ -484,25 +515,25 @@ async function onToggle() {
   }
 }
 
-function openActionModal(actionType) {
+function openActionModal(actionType: CommandType): void {
   currentActionType.value = actionType
   showActionModal.value = true
 }
 
-async function onActionSubmit({ actionType, params }) {
+async function onActionSubmit({ actionType, params }: { actionType: CommandType; params: Record<string, unknown> }): Promise<void> {
   if (!zoneId.value) return
   
   loading.value.irrigate = true
   
   try {
     await sendZoneCommand(zoneId.value, actionType, params)
-    const actionNames = {
+    const actionNames: Record<CommandType, string> = {
       'FORCE_IRRIGATION': 'Полив',
       'FORCE_PH_CONTROL': 'Коррекция pH',
       'FORCE_EC_CONTROL': 'Коррекция EC',
       'FORCE_CLIMATE': 'Управление климатом',
       'FORCE_LIGHTING': 'Управление освещением'
-    }
+    } as Record<CommandType, string>
     const actionName = actionNames[actionType] || 'Действие'
     showToast(`${actionName} запущено успешно`, 'success', 3000)
     // Обновляем зону и cycles через Inertia partial reload
@@ -514,7 +545,7 @@ async function onActionSubmit({ actionType, params }) {
   }
 }
 
-async function onNextPhase() {
+async function onNextPhase(): Promise<void> {
   if (!zoneId.value) return
   
   loading.value.nextPhase = true

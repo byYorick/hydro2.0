@@ -6,6 +6,8 @@ import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createApp, h } from 'vue';
 import { createPinia } from 'pinia';
 import { ZiggyVue } from '../../vendor/tightenco/ziggy';
+import { RecycleScroller, DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller';
+import 'vue-virtual-scroller/dist/vue-virtual-scroller.css';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
@@ -32,6 +34,11 @@ createInertiaApp({
             // eslint-disable-next-line no-console
             console.warn('[VUE WARN]', msg, { trace, instance });
         };
+        // Регистрируем компоненты виртуализации глобально
+        vueApp.component('RecycleScroller', RecycleScroller);
+        vueApp.component('DynamicScroller', DynamicScroller);
+        vueApp.component('DynamicScrollerItem', DynamicScrollerItem);
+        
         return vueApp
             .use(plugin)
             .use(pinia)

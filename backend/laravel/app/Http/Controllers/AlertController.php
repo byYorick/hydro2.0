@@ -16,7 +16,10 @@ class AlertController extends Controller
 
     public function index(Request $request)
     {
-        $query = Alert::query();
+        // Eager loading для предотвращения N+1 запросов
+        $query = Alert::query()
+            ->with(['zone:id,name,status']); // Загружаем только нужные поля зоны
+        
         if ($request->filled('zone_id')) {
             $query->where('zone_id', $request->integer('zone_id'));
         }

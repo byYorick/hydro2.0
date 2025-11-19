@@ -1,35 +1,43 @@
 /**
  * Composable для централизованного управления Toast уведомлениями
  */
-import { ref } from 'vue'
+import { ref, type Ref } from 'vue'
+
+export type ToastVariant = 'success' | 'error' | 'warning' | 'info'
+
+export interface Toast {
+  id: number
+  message: string
+  variant: ToastVariant
+  duration: number
+}
 
 // Глобальное хранилище для Toast уведомлений
-const toasts = ref([])
+const toasts: Ref<Toast[]> = ref([])
 let toastIdCounter = 0
 
 /**
  * Очистить все toasts (для тестирования)
  */
-export function clearAllToasts() {
+export function clearAllToasts(): void {
   toasts.value = []
   toastIdCounter = 0
 }
 
 /**
  * Composable для работы с Toast уведомлениями
- * @returns {Object} Методы для управления Toast
  */
 export function useToast() {
   /**
    * Показать Toast уведомление
-   * @param {string} message - Сообщение
-   * @param {string} variant - Тип (success, error, warning, info)
-   * @param {number} duration - Длительность в миллисекундах
-   * @returns {number} ID уведомления
    */
-  function showToast(message, variant = 'info', duration = 3000) {
+  function showToast(
+    message: string,
+    variant: ToastVariant = 'info',
+    duration: number = 3000
+  ): number {
     const id = ++toastIdCounter
-    const toast = {
+    const toast: Toast = {
       id,
       message,
       variant,
@@ -50,9 +58,8 @@ export function useToast() {
 
   /**
    * Удалить Toast уведомление
-   * @param {number} id - ID уведомления
    */
-  function removeToast(id) {
+  function removeToast(id: number): void {
     const index = toasts.value.findIndex(t => t.id === id)
     if (index > -1) {
       toasts.value.splice(index, 1)
@@ -61,44 +68,36 @@ export function useToast() {
 
   /**
    * Показать успешное уведомление
-   * @param {string} message - Сообщение
-   * @param {number} duration - Длительность
    */
-  function success(message, duration = 3000) {
+  function success(message: string, duration: number = 3000): number {
     return showToast(message, 'success', duration)
   }
 
   /**
    * Показать уведомление об ошибке
-   * @param {string} message - Сообщение
-   * @param {number} duration - Длительность
    */
-  function error(message, duration = 5000) {
+  function error(message: string, duration: number = 5000): number {
     return showToast(message, 'error', duration)
   }
 
   /**
    * Показать предупреждение
-   * @param {string} message - Сообщение
-   * @param {number} duration - Длительность
    */
-  function warning(message, duration = 4000) {
+  function warning(message: string, duration: number = 4000): number {
     return showToast(message, 'warning', duration)
   }
 
   /**
    * Показать информационное уведомление
-   * @param {string} message - Сообщение
-   * @param {number} duration - Длительность
    */
-  function info(message, duration = 3000) {
+  function info(message: string, duration: number = 3000): number {
     return showToast(message, 'info', duration)
   }
 
   /**
    * Очистить все уведомления
    */
-  function clearAll() {
+  function clearAll(): void {
     toasts.value = []
   }
 
