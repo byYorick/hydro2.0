@@ -185,7 +185,7 @@ import { translateStatus } from '@/utils/i18n'
 import { formatTime } from '@/utils/formatTime'
 import { useTelemetry } from '@/composables/useTelemetry'
 import { useWebSocket } from '@/composables/useWebSocket'
-import type { Zone, Greenhouse, Alert, Event, EventKind } from '@/types'
+import type { Zone, Greenhouse, Alert, ZoneEvent, EventKind } from '@/types'
 
 interface DashboardData {
   greenhousesCount: number
@@ -240,7 +240,7 @@ const telemetryData = shallowRef({
 })
 
 // События для боковой панели - используем shallowRef для массива
-const events = shallowRef<Array<Event & { created_at?: string }>>([])
+const events = shallowRef<Array<ZoneEvent & { created_at?: string }>>([])
 const eventFilter = ref<'ALL' | EventKind>('ALL')
 
 // Объединяем события из props и WebSocket

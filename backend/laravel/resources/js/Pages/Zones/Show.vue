@@ -228,7 +228,8 @@ import { useTelemetry } from '@/composables/useTelemetry'
 import { useZones } from '@/composables/useZones'
 import { useApi } from '@/composables/useApi'
 import { useWebSocket } from '@/composables/useWebSocket'
-import type { Zone, Device, ZoneTelemetry, ZoneTargets, ZoneEvent, Cycle, CommandType } from '@/types'
+import type { Zone, Device, ZoneTelemetry, ZoneTargets, Cycle, CommandType } from '@/types'
+import type { ZoneEvent } from '@/types/ZoneEvent'
 import type { ToastVariant } from '@/composables/useToast'
 
 const ZoneTelemetryChart = defineAsyncComponent(() => import('@/Pages/Zones/ZoneTelemetryChart.vue'))

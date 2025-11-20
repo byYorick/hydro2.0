@@ -8,7 +8,7 @@ import type {
   Telemetry,
   User,
   Greenhouse,
-  Event,
+  ZoneEvent,
   Cycle
 } from '../index'
 
@@ -131,9 +131,9 @@ describe('Type Definitions (P1-1)', () => {
     })
   })
 
-  describe('Event type', () => {
+  describe('ZoneEvent type', () => {
     it('should have required fields', () => {
-      const event: Event = {
+      const event: ZoneEvent = {
         id: 1,
         kind: 'INFO',
         message: 'Test event',

@@ -15,7 +15,7 @@ declare global {
           connection?: {
             state?: string
             socket_id?: string
-            bind: (event: string, handler: () => void) => void
+            bind: (eventName: string, handler: () => void) => void
           }
           channels?: {
             channels?: Record<string, unknown>
@@ -76,7 +76,7 @@ export function useWebSocket(showToast?: ToastHandler) {
    */
   function subscribeToZoneCommands(
     zoneId: number,
-    onCommandUpdate?: (event: CommandUpdateEvent) => void
+    onCommandUpdate?: (commandEvent: CommandUpdateEvent) => void
   ): () => void {
     if (!window.Echo) {
       if (showToast) {

@@ -71,10 +71,11 @@ if [ "${APP_ENV:-production}" = "local" ]; then
     fi
     
     # Исправить права доступа для Vite кеша
-    if [ -d /app/node_modules/.vite ]; then
-        chown -R application:application /app/node_modules/.vite 2>/dev/null || true
-        chmod -R 755 /app/node_modules/.vite 2>/dev/null || true
-    fi
+    mkdir -p /app/node_modules/.vite 2>/dev/null || true
+    chown -R application:application /app/node_modules/.vite 2>/dev/null || true
+    chmod -R 755 /app/node_modules/.vite 2>/dev/null || true
+    # Также исправить права на node_modules для предотвращения проблем с правами доступа
+    chown -R application:application /app/node_modules 2>/dev/null || true
 fi
 
 # Copy supervisor configs to base image supervisor directory

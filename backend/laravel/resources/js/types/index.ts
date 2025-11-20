@@ -12,6 +12,5 @@ export type * from './Command'
 export type * from './Cycle'
 export type * from './Greenhouse'
 export type * from './User'
-// Экспортируем ZoneEvent отдельно, избегая конфликта с встроенным типом Event
-export type { ZoneEvent } from './ZoneEvent'
-export type { EventKind } from './ZoneEvent'
+// ZoneEvent экспортируется отдельно, чтобы избежать конфликта с встроенным типом Event
+export type { ZoneEvent, EventKind } from './ZoneEvent'
