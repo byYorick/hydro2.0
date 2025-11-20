@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Path
 from fastapi import HTTPException, Request
 from fastapi import Body, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from common.schemas import CommandRequest
 from common.commands import new_command_id, mark_command_sent
@@ -19,10 +19,18 @@ publisher = Publisher()
 
 
 def _auth(request: Request):
+    """Проверка токена аутентификации. Токен обязателен, если настроен."""
     s = get_settings()
+    if not s.bridge_api_token:
+        # Если токен не настроен, это ошибка конфигурации безопасности
+        raise HTTPException(
+            status_code=500,
+            detail="Server misconfiguration: PY_API_TOKEN must be set for security"
+        )
+    
     token = request.headers.get("Authorization", "")
-    if s.bridge_api_token and token != f"Bearer {s.bridge_api_token}":
-        raise HTTPException(status_code=401, detail="Unauthorized")
+    if token != f"Bearer {s.bridge_api_token}":
+        raise HTTPException(status_code=401, detail="Unauthorized: invalid or missing token")
 
 
 @app.get("/metrics")
@@ -128,6 +136,9 @@ async def zone_fill(
         return {"status": "ok", "data": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        # Закрываем соединение MQTT для предотвращения утечек
+        mqtt.stop()
 
 
 @app.post("/bridge/zones/{zone_id}/drain")
@@ -165,6 +176,9 @@ async def zone_drain(
         return {"status": "ok", "data": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        # Закрываем соединение MQTT для предотвращения утечек
+        mqtt.stop()
 
 
 from common.schemas import NodeConfigModel
@@ -255,5 +269,8 @@ async def zone_calibrate_flow(
         return {"status": "ok", "data": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        # Закрываем соединение MQTT для предотвращения утечек
+        mqtt.stop()
 
 

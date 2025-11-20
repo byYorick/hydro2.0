@@ -36,10 +36,11 @@
   - ✅ `history-logger/` — реализован
   - ✅ `automation-engine/` — реализован
   - ✅ `scheduler/` — реализован
-  - ✅ `device-registry/` — заглушка (PLANNED)
+  - ⚠️ `api-gateway/` — LEGACY / NOT USED (функционал в Laravel)
+  - ⚠️ `device-registry/` — LEGACY / NOT USED (функционал в Laravel)
 - ✅ `backend/configs/` — конфигурации (dev/prod/staging)
 - ✅ `backend/docker-compose.dev.yml` и `docker-compose.prod.yml`
-- ✅ `backend/laravel/` — Laravel приложение (выполняет роль API Gateway)
+- ✅ `backend/laravel/` — Laravel приложение (выполняет роль API Gateway и Device Registry)
 
 #### 1.3. Mobile структура
 - ✅ `mobile/app/` — исходники приложения

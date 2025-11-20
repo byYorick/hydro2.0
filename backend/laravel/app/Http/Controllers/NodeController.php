@@ -96,9 +96,22 @@ class NodeController extends Controller
     /**
      * Регистрация узла в системе.
      * Используется для регистрации новых узлов при первом подключении.
+     * Требует токен аутентификации для защиты от несанкционированной регистрации.
      */
     public function register(Request $request)
     {
+        // Проверка токена для защиты от несанкционированной регистрации
+        $expectedToken = config('services.python_bridge.ingest_token') ?? config('services.python_bridge.token');
+        $givenToken = $request->bearerToken();
+        
+        // Если токен настроен, он обязателен
+        if ($expectedToken && !hash_equals($expectedToken, (string)$givenToken)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized: token required',
+            ], 401);
+        }
+        
         // Проверяем, это node_hello или обычная регистрация
         if ($request->has('message_type') && $request->input('message_type') === 'node_hello') {
             // Обработка node_hello из MQTT

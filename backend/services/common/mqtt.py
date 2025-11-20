@@ -1,4 +1,5 @@
 import json
+import logging
 import threading
 import time
 from typing import Callable, Optional, List, Tuple
@@ -6,6 +7,8 @@ from typing import Callable, Optional, List, Tuple
 import paho.mqtt.client as mqtt
 
 from .env import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class MqttClient:
@@ -56,8 +59,12 @@ class MqttClient:
         def on_message(client, userdata, msg):
             try:
                 handler(msg.topic, msg.payload)
-            except Exception:
-                pass
+            except Exception as e:
+                # Логируем исключения вместо молчаливого игнорирования
+                logger.error(
+                    f"Error in MQTT message handler for topic {msg.topic}: {e}",
+                    exc_info=True
+                )
         return on_message
 
     def start(self):

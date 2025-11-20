@@ -209,16 +209,21 @@ scheduler/
 
 ---
 
-### 3.5. device-registry (PLANNED)
+### 3.5. device-registry (LEGACY / NOT USED)
 
 **Назначение:** Реестр устройств, хранение и выдача NodeConfig.
 
-**Статус:** PLANNED — функционал частично в Laravel.
+**Статус:** LEGACY / NOT USED — функционал полностью реализован в Laravel.
 
-**Планируемый функционал:**
-- Хранение информации по нодам (ID, тип, конфиг каналов)
-- Отдача конфига ноде при первом соединении/по запросу
-- См. `backend/services/device-registry/README.md`
+**Текущая реализация:**
+- Функционал device-registry полностью реализован в Laravel:
+  - Модели `DeviceNode` хранят информацию о нодах
+  - Конфигурация нод хранится в БД через Laravel
+  - NodeConfig может быть сгенерирован из данных БД
+  - `NodeRegistryService` — регистрация нод
+  - API `/api/nodes/register` — регистрация новых нод
+
+**См. также:** `backend/services/device-registry/README.md` (описание legacy статуса)
 
 ---
 

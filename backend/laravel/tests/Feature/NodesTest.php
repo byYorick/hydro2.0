@@ -114,5 +114,98 @@ class NodesTest extends TestCase
         $this->assertCount(1, $data);
         $this->assertEquals($zone1->id, $data[0]['zone_id']);
     }
+
+    public function test_register_node_requires_token_when_configured(): void
+    {
+        // Настраиваем токен
+        config(['services.python_bridge.token' => 'test-token-123']);
+        
+        // Без токена должен вернуть 401
+        $response = $this->postJson('/api/nodes/register', [
+            'node_uid' => 'test-node-001',
+            'type' => 'ph',
+        ]);
+        
+        $response->assertStatus(401)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('message', 'Unauthorized: token required');
+    }
+
+    public function test_register_node_with_valid_token(): void
+    {
+        config(['services.python_bridge.token' => 'test-token-123']);
+        
+        $response = $this->withHeader('Authorization', 'Bearer test-token-123')
+            ->postJson('/api/nodes/register', [
+                'node_uid' => 'test-node-002',
+                'type' => 'ph',
+                'firmware_version' => '1.0.0',
+            ]);
+        
+        $response->assertCreated()
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('data.uid', 'test-node-002');
+        
+        $this->assertDatabaseHas('nodes', [
+            'uid' => 'test-node-002',
+            'type' => 'ph',
+        ]);
+    }
+
+    public function test_register_node_with_invalid_token(): void
+    {
+        config(['services.python_bridge.token' => 'test-token-123']);
+        
+        $response = $this->withHeader('Authorization', 'Bearer wrong-token')
+            ->postJson('/api/nodes/register', [
+                'node_uid' => 'test-node-003',
+                'type' => 'ph',
+            ]);
+        
+        $response->assertStatus(401)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('message', 'Unauthorized: token required');
+    }
+
+    public function test_register_node_without_token_when_not_configured(): void
+    {
+        // Токен не настроен
+        config(['services.python_bridge.token' => null]);
+        
+        // Должен разрешить регистрацию (для обратной совместимости)
+        $response = $this->postJson('/api/nodes/register', [
+            'node_uid' => 'test-node-004',
+            'type' => 'ec',
+        ]);
+        
+        $response->assertCreated()
+            ->assertJsonPath('status', 'ok');
+        
+        $this->assertDatabaseHas('nodes', [
+            'uid' => 'test-node-004',
+        ]);
+    }
+
+    public function test_register_node_hello_with_token(): void
+    {
+        config(['services.python_bridge.token' => 'test-token-123']);
+        
+        $response = $this->withHeader('Authorization', 'Bearer test-token-123')
+            ->postJson('/api/nodes/register', [
+                'message_type' => 'node_hello',
+                'hardware_id' => 'esp32-ABCD1234',
+                'node_type' => 'ph',
+                'fw_version' => '2.0.1',
+            ]);
+        
+        $response->assertCreated()
+            ->assertJsonPath('status', 'ok');
+        
+        // Проверяем, что узел был создан
+        $this->assertDatabaseHas('nodes', [
+            'hardware_id' => 'esp32-ABCD1234',
+            'type' => 'ph',
+        ]);
+    }
 }
 

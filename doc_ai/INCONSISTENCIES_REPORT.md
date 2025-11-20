@@ -49,9 +49,11 @@
 - Laravel предоставляет все API эндпоинты через `/api/*`
 
 **Рекомендация:**
-- Обновить документацию: указать, что Laravel выполняет роль api-gateway
-- Удалить или переименовать `backend/services/api-gateway/` (если не планируется отдельный сервис)
-- Обновить `backend/README.md`
+- Обновить документацию: указать, что Laravel выполняет роль api-gateway ✅
+- Удалить или переименовать `backend/services/api-gateway/` (если не планируется отдельный сервис) ✅ (оставлен как legacy placeholder)
+- Обновить `backend/README.md` ✅
+
+**Статус:** ✅ Исправлено — документация обновлена в `01_PROJECT_STRUCTURE_PROD.md`, api-gateway помечен как LEGACY / NOT USED
 
 ---
 
@@ -68,12 +70,14 @@
 
 **Реальная структура:**
 - Сервис существует, но не реализован
-- Функционал device-registry, вероятно, реализован в Laravel (модели Device, DeviceNode)
+- Функционал device-registry полностью реализован в Laravel (модели DeviceNode, NodeRegistryService)
 
 **Рекомендация:**
 - Либо реализовать device-registry как отдельный Python-сервис
-- Либо удалить упоминания из документации и docker-compose, если функционал полностью в Laravel
+- Либо удалить упоминания из документации и docker-compose, если функционал полностью в Laravel ✅ (выбрано)
 - Обновить `IMPLEMENTATION_STATUS.md` с корректным статусом
+
+**Статус:** ✅ Исправлено — документация обновлена в `01_PROJECT_STRUCTURE_PROD.md`, device-registry помечен как LEGACY / NOT USED, функционал реализован в Laravel
 
 ---
 

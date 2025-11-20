@@ -13,9 +13,10 @@ services:
   db:
     image: timescaledb/timescaledb:latest-pg16
     environment:
-      POSTGRES_PASSWORD: change-me
-      POSTGRES_USER: hydro
-      POSTGRES_DB: hydro
+      # ВАЖНО: Замените на уникальный пароль через переменную окружения
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_USER: ${POSTGRES_USER:-hydro}
+      POSTGRES_DB: ${POSTGRES_DB:-hydro}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - wal_archive:/wal_archive
@@ -61,8 +62,9 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REVERB_APP_ID=${REVERB_APP_ID:-app}
-      - REVERB_APP_KEY=${REVERB_APP_KEY:-change-me}
-      - REVERB_APP_SECRET=${REVERB_APP_SECRET:-change-me}
+      # ВАЖНО: Замените на уникальные ключи через переменные окружения
+      - REVERB_APP_KEY=${REVERB_APP_KEY:?REVERB_APP_KEY must be set}
+      - REVERB_APP_SECRET=${REVERB_APP_SECRET:?REVERB_APP_SECRET must be set}
       - REVERB_HOST=0.0.0.0
       - REVERB_PORT=6001
       - REVERB_SCHEME=http
@@ -100,8 +102,9 @@ services:
       dockerfile: mqtt-bridge/Dockerfile
     environment:
       - MQTT_HOST=mqtt
-      - MQTT_USER=mqtt_bridge
-      - MQTT_PASS=${MQTT_MQTT_BRIDGE_PASS:-change-me}
+      - MQTT_USER=${MQTT_MQTT_BRIDGE_USER:-mqtt_bridge}
+      # ВАЖНО: Замените на уникальный пароль через переменную окружения
+      - MQTT_PASS=${MQTT_MQTT_BRIDGE_PASS:?MQTT_MQTT_BRIDGE_PASS must be set}
       - PG_HOST=db
       - PG_DB=hydro
       - PG_USER=hydro
@@ -119,8 +122,9 @@ services:
     build: ./services/automation-engine
     environment:
       - MQTT_HOST=mqtt
-      - MQTT_USER=automation_engine
-      - MQTT_PASS=${MQTT_AUTOMATION_ENGINE_PASS:-change-me}
+      - MQTT_USER=${MQTT_AUTOMATION_ENGINE_USER:-automation_engine}
+      # ВАЖНО: Замените на уникальный пароль через переменную окружения
+      - MQTT_PASS=${MQTT_AUTOMATION_ENGINE_PASS:?MQTT_AUTOMATION_ENGINE_PASS must be set}
       - PG_HOST=db
       - PG_DB=hydro
       - PG_USER=hydro
@@ -137,8 +141,9 @@ services:
       dockerfile: history-logger/Dockerfile
     environment:
       - MQTT_HOST=mqtt
-      - MQTT_USER=history_logger
-      - MQTT_PASS=${MQTT_HISTORY_LOGGER_PASS:-change-me}
+      - MQTT_USER=${MQTT_HISTORY_LOGGER_USER:-history_logger}
+      # ВАЖНО: Замените на уникальный пароль через переменную окружения
+      - MQTT_PASS=${MQTT_HISTORY_LOGGER_PASS:?MQTT_HISTORY_LOGGER_PASS must be set}
       - PG_HOST=db
       - PG_DB=hydro
       - PG_USER=hydro
@@ -170,8 +175,9 @@ services:
     image: grafana/grafana:latest
     container_name: grafana
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=change-me
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      # ВАЖНО: Замените на уникальный пароль через переменную окружения
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set}
       - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
     volumes:
       - ./configs/prod/grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
@@ -204,8 +210,9 @@ services:
       dockerfile: scheduler/Dockerfile
     environment:
       - MQTT_HOST=mqtt
-      - MQTT_USER=scheduler
-      - MQTT_PASS=${MQTT_SCHEDULER_PASS:-change-me}
+      - MQTT_USER=${MQTT_SCHEDULER_USER:-scheduler}
+      # ВАЖНО: Замените на уникальный пароль через переменную окружения
+      - MQTT_PASS=${MQTT_SCHEDULER_PASS:?MQTT_SCHEDULER_PASS must be set}
       - PG_HOST=db
       - PG_DB=hydro
       - PG_USER=hydro

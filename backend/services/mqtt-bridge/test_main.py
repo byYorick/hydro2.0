@@ -230,3 +230,136 @@ async def test_zone_calibrate_flow_zone_not_found(mock_auth):
             assert response.status_code == 404
             assert "Zone not found" in response.json()["detail"]
 
+
+@pytest.mark.asyncio
+async def test_auth_requires_token_when_configured():
+    """Test that auth requires token when PY_API_TOKEN is set."""
+    from unittest.mock import patch, MagicMock
+    from common.env import Settings
+    
+    # Мокаем настройки с токеном
+    mock_settings_obj = Settings(
+        bridge_api_token="required-token-123"
+    )
+    
+    with patch("main.get_settings", return_value=mock_settings_obj):
+        async with AsyncClient(app=app, base_url="http://test") as client:
+            # Без токена
+            response = await client.post(
+                "/bridge/zones/1/fill",
+                json={"target_level": 0.9}
+            )
+            assert response.status_code == 401
+            
+            # С неправильным токеном
+            response = await client.post(
+                "/bridge/zones/1/fill",
+                json={"target_level": 0.9},
+                headers={"Authorization": "Bearer wrong-token"}
+            )
+            assert response.status_code == 401
+            
+            # С правильным токеном (но может упасть на других проверках, например zone not found)
+            response = await client.post(
+                "/bridge/zones/1/fill",
+                json={"target_level": 0.9},
+                headers={"Authorization": "Bearer required-token-123"}
+            )
+            # Должен пройти проверку auth (но может упасть на других проверках)
+            # Проверяем, что не 401
+            assert response.status_code != 401
+
+
+@pytest.mark.asyncio
+async def test_auth_fails_when_token_not_set():
+    """Test that auth fails with 500 when token is required but not set."""
+    from unittest.mock import patch
+    from common.env import Settings
+    
+    # Мокаем настройки с пустым токеном (токен обязателен)
+    mock_settings_obj = Settings(
+        bridge_api_token=""  # Пустой токен - должен вызвать ошибку
+    )
+    
+    with patch("main.get_settings", return_value=mock_settings_obj):
+        async with AsyncClient(app=app, base_url="http://test") as client:
+            response = await client.post(
+                "/bridge/zones/1/fill",
+                json={"target_level": 0.9}
+            )
+            # Должен вернуть 500, так как токен обязателен, но не задан
+            assert response.status_code == 500
+            assert "PY_API_TOKEN must be set" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_mqtt_client_stopped_after_fill(mock_auth, mock_mqtt_client):
+    """Test that MQTT client is stopped after fill operation."""
+    mock_auth.return_value = None
+    mock_mqtt_client.stop = Mock()
+    
+    with patch("main.get_gh_uid_for_zone") as mock_gh, \
+         patch("main.execute_fill_mode") as mock_fill:
+        
+        mock_gh.return_value = "gh-1"
+        mock_fill.return_value = {"success": True}
+        
+        async with AsyncClient(app=app, base_url="http://test") as client:
+            response = await client.post(
+                "/bridge/zones/1/fill",
+                json={"target_level": 0.9},
+                headers={"Authorization": "Bearer test-token"}
+            )
+            
+            assert response.status_code == 200
+            # Проверяем, что stop был вызван
+            mock_mqtt_client.stop.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_mqtt_client_stopped_after_drain(mock_auth, mock_mqtt_client):
+    """Test that MQTT client is stopped after drain operation."""
+    mock_auth.return_value = None
+    mock_mqtt_client.stop = Mock()
+    
+    with patch("main.get_gh_uid_for_zone") as mock_gh, \
+         patch("main.execute_drain_mode") as mock_drain:
+        
+        mock_gh.return_value = "gh-1"
+        mock_drain.return_value = {"success": True}
+        
+        async with AsyncClient(app=app, base_url="http://test") as client:
+            response = await client.post(
+                "/bridge/zones/1/drain",
+                json={"target_level": 0.1},
+                headers={"Authorization": "Bearer test-token"}
+            )
+            
+            assert response.status_code == 200
+            # Проверяем, что stop был вызван
+            mock_mqtt_client.stop.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_mqtt_client_stopped_after_calibrate(mock_auth, mock_mqtt_client):
+    """Test that MQTT client is stopped after calibrate operation."""
+    mock_auth.return_value = None
+    mock_mqtt_client.stop = Mock()
+    
+    with patch("main.get_gh_uid_for_zone") as mock_gh, \
+         patch("main.calibrate_flow") as mock_calibrate:
+        
+        mock_gh.return_value = "gh-1"
+        mock_calibrate.return_value = {"success": True}
+        
+        async with AsyncClient(app=app, base_url="http://test") as client:
+            response = await client.post(
+                "/bridge/zones/1/calibrate-flow",
+                json={"node_id": 1, "channel": "flow_sensor"},
+                headers={"Authorization": "Bearer test-token"}
+            )
+            
+            assert response.status_code == 200
+            # Проверяем, что stop был вызван
+            mock_mqtt_client.stop.assert_called_once()
+

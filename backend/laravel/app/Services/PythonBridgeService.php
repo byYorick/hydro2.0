@@ -23,26 +23,31 @@ class PythonBridgeService
         ]);
         $ghUid = optional($zone->greenhouse)->uid ?? 'gh-1';
         
-        // Get default node_uid and channel from zone if not provided
+        // Получаем node_uid и channel из payload - они обязательны
         $nodeUid = $payload['node_uid'] ?? null;
         $channel = $payload['channel'] ?? null;
         
+        // Если не указаны, пытаемся найти подходящие из зоны
         if (!$nodeUid || !$channel) {
-            // Try to get first node and channel from zone
+            // Пытаемся найти первый узел и канал из зоны
             $firstNode = DeviceNode::where('zone_id', $zone->id)->first();
             if ($firstNode) {
                 $nodeUid = $nodeUid ?? $firstNode->uid;
                 if (!$channel) {
-                    // Get first channel from node
+                    // Получаем первый канал из узла
                     $firstChannel = $firstNode->channels()->first();
-                    $channel = $firstChannel ? $firstChannel->channel : 'default';
+                    $channel = $firstChannel ? $firstChannel->channel : null;
                 }
             }
         }
         
-        // Fallback values if still not set
-        $nodeUid = $nodeUid ?? 'default';
-        $channel = $channel ?? 'default';
+        // Если после всех попыток node_uid или channel не найдены, выбрасываем исключение
+        if (!$nodeUid || !$channel) {
+            throw new \InvalidArgumentException(
+                'node_uid and channel are required. ' .
+                'Please specify target device and channel explicitly to prevent accidental commands.'
+            );
+        }
         
         $baseUrl = Config::get('services.python_bridge.base_url');
         $token = Config::get('services.python_bridge.token');

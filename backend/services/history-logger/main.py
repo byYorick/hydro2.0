@@ -175,11 +175,13 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
             ts = sample.ts or datetime.utcnow()
             value = sample.value
             
+            # Исправлено: добавляем ts в плейсхолдеры (6 параметров вместо 5)
             values_list.append(
-                f"(${param_index}, ${param_index + 1}, ${param_index + 2}, ${param_index + 3}, ${param_index + 4})"
+                f"(${param_index}, ${param_index + 1}, ${param_index + 2}, ${param_index + 3}, ${param_index + 4}, ${param_index + 5})"
             )
-            params_list.extend([zone_id, node_id, metric_type, channel, value])
-            param_index += 5
+            # Исправлено: добавляем ts в параметры
+            params_list.extend([zone_id, node_id, metric_type, channel, value, ts])
+            param_index += 6
         
         if values_list:
             query = f"""

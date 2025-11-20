@@ -37,7 +37,8 @@ onErrorCaptured((err: Error) => {
 
 function retry(): void {
   error.value = null
-  window.location.reload()
+  // Используем Inertia для повторной загрузки вместо жесткой перезагрузки страницы
+  router.reload({ only: [] })
 }
 
 function goHome(): void {

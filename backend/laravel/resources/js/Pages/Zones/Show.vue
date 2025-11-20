@@ -476,10 +476,13 @@ async function onRunCycle(cycleType: string): Promise<void> {
   try {
     await sendZoneCommand(zoneId.value, `FORCE_${cycleType}` as CommandType, {})
     logger.log(`✓ [onRunCycle] Команда "${cycleName}" отправлена успешно`)
+    showToast(`Команда "${cycleName}" отправлена успешно`, 'success', 3000)
     // Обновляем зону и cycles через Inertia partial reload
     reloadZoneAfterCommand(zoneId.value, ['zone', 'cycles'])
   } catch (err) {
     logger.error(`✗ [onRunCycle] Ошибка при отправке команды ${cycleType}:`, err)
+    const errorMessage = err instanceof Error ? err.message : 'Неизвестная ошибка'
+    showToast(`Ошибка при отправке команды "${cycleName}": ${errorMessage}`, 'error', 5000)
   } finally {
     loading.value.cycles[cycleType] = false
   }
@@ -510,6 +513,8 @@ async function onToggle(): Promise<void> {
     reloadZone(zoneId.value, ['zone'])
   } catch (err) {
     logger.error('Failed to toggle zone:', err)
+    const errorMessage = err instanceof Error ? err.message : 'Неизвестная ошибка'
+    showToast(`Ошибка при изменении статуса зоны: ${errorMessage}`, 'error', 5000)
   } finally {
     loading.value.toggle = false
   }
@@ -540,6 +545,9 @@ async function onActionSubmit({ actionType, params }: { actionType: CommandType;
     reloadZoneAfterCommand(zoneId.value, ['zone', 'cycles'])
   } catch (err) {
     logger.error(`Failed to execute ${actionType}:`, err)
+    const errorMessage = err instanceof Error ? err.message : 'Неизвестная ошибка'
+    const actionName = actionNames[actionType] || 'Действие'
+    showToast(`Ошибка при выполнении "${actionName}": ${errorMessage}`, 'error', 5000)
   } finally {
     loading.value.irrigate = false
   }
@@ -559,6 +567,8 @@ async function onNextPhase(): Promise<void> {
     reloadZone(zoneId.value, ['zone'])
   } catch (err) {
     logger.error('Failed to change phase:', err)
+    const errorMessage = err instanceof Error ? err.message : 'Неизвестная ошибка'
+    showToast(`Ошибка при изменении фазы: ${errorMessage}`, 'error', 5000)
   } finally {
     loading.value.nextPhase = false
   }

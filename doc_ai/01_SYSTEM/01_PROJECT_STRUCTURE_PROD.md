@@ -49,33 +49,67 @@ hydro2.0/
 
 ```text
 doc_ai/
-├─ 01_OVERVIEW/
-│  ├─ SYSTEM_OVERVIEW.md
-│  └─ GLOSSARY.md
+├─ 01_SYSTEM/
+│  ├─ LOGIC_ARCH.md
+│  ├─ DATAFLOW_FULL.md
+│  ├─ NODE_LIFECYCLE_AND_PROVISIONING.md
+│  ├─ 01_PROJECT_STRUCTURE_PROD.md
+│  └─ ...
 ├─ 02_HARDWARE_FIRMWARE/
 │  ├─ HARDWARE_ARCH_FULL.md
+│  ├─ NODE_ARCH_FULL.md
 │  ├─ NODE_TYPES.md               # Описание типов нод (pH, EC, климат, насосы и т.д.)
 │  ├─ NODE_LOGIC_FULL.md          # Логика работы нод
-│  ├─ PUMP_NODE_EXECUTION_FLOW.md # Поток исполнения команд насосной ноды (команда → текущий ток → ACK/ERROR)
+│  ├─ NODE_CONFIG_SPEC.md
 │  └─ ...
 ├─ 03_TRANSPORT_MQTT/
 │  ├─ MQTT_SPEC_FULL.md
 │  ├─ BACKEND_NODE_CONTRACT_FULL.md
-│  └─ TOPICS_REFERENCE.md
-├─ 04_BACKEND/
-│  ├─ BACKEND_ARCH.md
-│  ├─ AUTOMATION_ENGINE_SPEC.md
-│  └─ DEVICE_REGISTRY_SPEC.md
-├─ 05_MOBILE/
-│  ├─ MOBILE_APP_SPEC.md
-│  └─ UX_FLOW.md
-├─ 06_INFRA/
-│  ├─ DEPLOY_SCENARIOS.md
-│  ├─ MONITORING_LOGGING.md
-│  └─ GRAFANA_DASHBOARDS.md
+│  ├─ MQTT_NAMESPACE.md
+│  └─ ...
+├─ 04_BACKEND_CORE/
+│  ├─ BACKEND_ARCH_FULL.md
+│  ├─ PYTHON_SERVICES_ARCH.md
+│  ├─ API_SPEC_FRONTEND_BACKEND_FULL.md
+│  ├─ REST_API_REFERENCE.md
+│  └─ ...
+├─ 05_DATA_AND_STORAGE/
+│  ├─ DATA_MODEL_REFERENCE.md
+│  ├─ TELEMETRY_PIPELINE.md
+│  ├─ DATA_RETENTION_POLICY.md
+│  └─ ...
+├─ 06_DOMAIN_ZONES_RECIPES/
+│  ├─ ZONE_CONTROLLER_FULL.md
+│  ├─ RECIPE_ENGINE_FULL.md
+│  ├─ SCHEDULER_ENGINE.md
+│  ├─ EVENTS_AND_ALERTS_ENGINE.md
+│  └─ ...
+├─ 07_FRONTEND/
+│  ├─ FRONTEND_ARCH_FULL.md
+│  ├─ FRONTEND_UI_UX_SPEC.md
+│  └─ ...
+├─ 08_SECURITY_AND_OPS/
+│  ├─ SECURITY_ARCHITECTURE.md
+│  ├─ AUTH_SYSTEM.md
+│  ├─ LOGGING_AND_MONITORING.md
+│  ├─ OPERATIONS_GUIDE.md
+│  └─ ...
+├─ 09_AI_AND_DIGITAL_TWIN/
+│  ├─ AI_ARCH_FULL.md
+│  ├─ DIGITAL_TWIN_ENGINE.md
+│  └─ ...
 ├─ 10_AI_DEV_GUIDES/
 │  ├─ TASKS_FOR_AI_AGENTS.md
 │  └─ PROMPTS_LIBRARY.md
+├─ 11_LEGACY_ARCHIVES/
+│  └─ ...                         # Исторические архивы документации
+├─ 12_ANDROID_APP/
+│  ├─ ANDROID_APP_ARCH.md
+│  ├─ ANDROID_APP_SCREENS.md
+│  ├─ ANDROID_APP_API_INTEGRATION.md
+│  └─ ...
+├─ INDEX.md                       # Главный индекс документации
+├─ README_STRUCTURE.md            # Описание структуры папок
 └─ IMPLEMENTATION_STATUS.md
 ```
 
@@ -160,18 +194,21 @@ firmware/
 
 ```text
 backend/
+├─ laravel/                     # Laravel-приложение (выполняет роль API Gateway)
+│  ├─ app/
+│  ├─ routes/
+│  ├─ tests/
+│  └─ ...
 ├─ services/
-│  ├─ api-gateway/             # HTTP API для мобилки и UI
-│  │  ├─ src/
-│  │  ├─ tests/
-│  │  ├─ Dockerfile
-│  │  └─ ...
+│  ├─ api-gateway/             # LEGACY / NOT USED — роль API Gateway выполняет Laravel
+│  │  ├─ README.md             # Описание legacy статуса
+│  │  └─ Dockerfile            # Placeholder
 │  ├─ mqtt-bridge/             # MQTT-мост: подписка на ноды, публикация команд
 │  │  ├─ src/
 │  │  ├─ tests/
 │  │  ├─ Dockerfile
 │  │  └─ ...
-│  ├─ device-registry/         # Реестр устройств, хранение NodeConfig
+│  ├─ device-registry/         # LEGACY / NOT USED — функционал реализован в Laravel
 │  ├─ automation-engine/       # Правила автоматизации (по расписанию/датчикам)
 │  ├─ history-logger/          # Логирование телеметрии в БД/TSDB
 │  └─ ...
@@ -193,18 +230,23 @@ backend/
 
 **Минимальный набор боевых сервисов:**
 
+- `Laravel` (выполняет роль API Gateway и Device Registry):
+  - REST API для фронтенда и мобильного приложения (`/api/*`);
+  - WebSocket/Realtime обновления (Laravel Reverb);
+  - Управление конфигурацией (зоны, ноды, рецепты);
+  - Реестр устройств: хранение информации о нодах (ID, тип, конфиг каналов, пороги, лимиты тока);
+  - Авторизация и управление пользователями.
 - `mqtt-bridge`:
   - подписывается на `node/+/+/telemetry`, `node/+/+/command_response`;
   - публикует `node/+/+/command`;
   - валидирует и логирует всё, что идёт от/к нодам.
-- `device-registry`:
-  - хранит инфу по нодам (ID, тип, конфиг каналов, пороги, лимиты тока);
-  - отдаёт конфиг ноде при первом соединении/по запросу.
 - `automation-engine`:
   - принимает события (`telemetry`, `command_response`);
   - решает, когда включить насос/свет/климат в зависимости от состояния.
 - `history-logger`:
   - пишет телеметрию в БД/TSDB (InfluxDB, PostgreSQL + Timescale и т.п.).
+
+**Примечание:** Сервисы `api-gateway` и `device-registry` помечены как LEGACY / NOT USED — их функционал полностью реализован в Laravel.
 
 ---
 

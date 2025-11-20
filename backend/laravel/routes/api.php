@@ -29,7 +29,8 @@ Route::prefix('auth')->middleware('throttle:10,1')->group(function () {
 // Публичные системные эндпоинты с умеренным rate limiting
 Route::middleware('throttle:30,1')->group(function () {
     Route::get('system/health', [SystemController::class, 'health']);
-    Route::get('system/config/full', [SystemController::class, 'configFull']);
+    // configFull требует авторизации для защиты конфигурации системы
+    Route::get('system/config/full', [SystemController::class, 'configFull'])->middleware('auth:sanctum');
 });
 
 // API routes for Inertia (using session authentication)
