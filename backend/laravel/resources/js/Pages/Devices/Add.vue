@@ -138,6 +138,7 @@ import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
 import Toast from '@/Components/Toast.vue'
+import { logger } from '@/utils/logger'
 import axios from 'axios'
 
 // Toast notifications
@@ -219,7 +220,7 @@ async function loadNewNodes() {
       }
     })
   } catch (err) {
-    console.error('Failed to load new nodes:', err)
+    logger.error('[Devices/Add] Failed to load new nodes:', err)
     showToast('Ошибка при загрузке новых нод', 'error', 5000)
   } finally {
     loading.value = false
@@ -241,7 +242,7 @@ async function loadGreenhouses() {
       greenhouses.value = []
     }
   } catch (err) {
-    console.error('Failed to load greenhouses:', err)
+    logger.error('[Devices/Add] Failed to load greenhouses:', err)
   }
 }
 
@@ -260,7 +261,7 @@ async function loadZones() {
       zones.value = []
     }
   } catch (err) {
-    console.error('Failed to load zones:', err)
+    logger.error('[Devices/Add] Failed to load zones:', err)
   }
 }
 
@@ -289,8 +290,10 @@ async function assignNode(node) {
       delete assignmentForms[node.id]
     }
   } catch (err) {
-    console.error('Failed to assign node:', err)
-    const errorMsg = err.response?.data?.message || err.message || 'Неизвестная ошибка'
+    logger.error('[Devices/Add] Failed to assign node:', err)
+    const errorMsg = (err as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message || 
+                     (err as { message?: string })?.message || 
+                     'Неизвестная ошибка'
     showToast(`Ошибка при привязке: ${errorMsg}`, 'error', 5000)
   } finally {
     assigning[node.id] = false

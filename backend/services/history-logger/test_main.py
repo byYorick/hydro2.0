@@ -116,13 +116,14 @@ def test_ingest_telemetry_endpoint_with_ts_numeric(client):
 
 def test_ingest_telemetry_endpoint_invalid_payload(client):
     """Test telemetry ingestion with invalid payload."""
-    # Пустой payload
-    response = client.post("/ingest/telemetry", json={})
-    assert response.status_code == 400
-    
-    # Нет samples
+    # Нет samples - пустой массив допустим
     response = client.post("/ingest/telemetry", json={"samples": []})
-    assert response.status_code == 200  # Пустой массив допустим
+    assert response.status_code == 200
+    assert response.json()["count"] == 0
+    
+    # Нет samples в payload
+    response = client.post("/ingest/telemetry", json={})
+    assert response.status_code == 200  # Возвращает 200 с count=0
     assert response.json()["count"] == 0
 
 
@@ -208,4 +209,73 @@ async def test_process_telemetry_batch_includes_ts_parameter():
                 # Формат: zone_id, node_id, metric_type, channel, value, ts
                 assert isinstance(params[5], datetime)  # ts для первого образца
                 assert isinstance(params[11], datetime)  # ts для второго образца
+
+
+@pytest.mark.asyncio
+async def test_extract_zone_id_from_uid():
+    """Test extract_zone_id_from_uid function."""
+    from main import extract_zone_id_from_uid
+    
+    # Валидные значения
+    assert extract_zone_id_from_uid("zn-1") == 1
+    assert extract_zone_id_from_uid("zn-123") == 123
+    
+    # Невалидные значения
+    assert extract_zone_id_from_uid("zone-1") is None
+    assert extract_zone_id_from_uid("zn") is None
+    assert extract_zone_id_from_uid(None) is None
+    assert extract_zone_id_from_uid("") is None
+
+
+@pytest.mark.asyncio
+async def test_telemetry_payload_model_validation():
+    """Test TelemetryPayloadModel validation."""
+    from main import TelemetryPayloadModel
+    from pydantic import ValidationError
+    
+    # Валидный payload
+    payload = TelemetryPayloadModel(metric_type="PH", value=6.5)
+    assert payload.metric_type == "PH"
+    assert payload.value == 6.5
+    
+    # Пустой metric_type недопустим
+    with pytest.raises(ValidationError):
+        TelemetryPayloadModel(metric_type="", value=6.5)
+    
+    # Слишком длинный metric_type недопустим
+    with pytest.raises(ValidationError):
+        TelemetryPayloadModel(metric_type="A" * 51, value=6.5)
+
+
+@pytest.mark.asyncio
+async def test_process_telemetry_batch_with_zone_id_extraction():
+    """Test process_telemetry_batch with zone_id extraction from zone_uid."""
+    from main import process_telemetry_batch, TelemetrySampleModel
+    from unittest.mock import patch, AsyncMock
+    from datetime import datetime
+    
+    samples = [
+        TelemetrySampleModel(
+            node_uid="nd-ph-1",
+            zone_uid="zn-1",  # zone_id будет извлечен из zone_uid
+            metric_type="PH",
+            value=6.5,
+            ts=datetime.utcnow()
+        )
+    ]
+    
+    with patch("main.execute", new_callable=AsyncMock) as mock_execute, \
+         patch("main.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("main.upsert_telemetry_last", new_callable=AsyncMock):
+        mock_fetch.return_value = [{"id": 1, "uid": "nd-ph-1"}]
+        
+        await process_telemetry_batch(samples)
+        
+        # Проверяем, что execute был вызван
+        assert mock_execute.called
+        
+        # Проверяем, что zone_id был правильно извлечен (должен быть 1)
+        call_args = mock_execute.call_args
+        params = call_args[0][1:]  # Параметры
+        assert params[0] == 1  # zone_id должен быть 1
 

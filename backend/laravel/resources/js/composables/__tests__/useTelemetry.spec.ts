@@ -1,6 +1,24 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { useTelemetry, clearTelemetryCache } from '../useTelemetry'
 
+// Mock logger
+vi.mock('@/utils/logger', () => ({
+  logger: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    group: vi.fn(),
+    groupEnd: vi.fn(),
+    groupCollapsed: vi.fn(),
+    table: vi.fn(),
+    time: vi.fn(),
+    timeEnd: vi.fn(),
+    isDev: true,
+    isProd: false
+  }
+}))
+
 // Mock useApi
 vi.mock('../useApi', () => ({
   useApi: vi.fn(() => ({
@@ -10,13 +28,28 @@ vi.mock('../useApi', () => ({
   }))
 }))
 
+// Mock useErrorHandler
+vi.mock('../useErrorHandler', () => ({
+  useErrorHandler: vi.fn(() => ({
+    handleError: vi.fn((err) => {
+      // Return normalized error
+      if (err instanceof Error) return err
+      return new Error(err?.message || 'Unknown error')
+    }),
+    clearError: vi.fn(),
+    isErrorType: vi.fn(),
+    lastError: { value: null },
+    errorContext: { value: null }
+  }))
+}))
+
 describe('useTelemetry', () => {
   let mockApiGet: vi.Mock
   let mockShowToast: vi.Mock
 
-  beforeEach(() => {
+  beforeEach(async () => {
     clearTelemetryCache() // Очищаем кеш перед каждым тестом
-    const { useApi } = require('../useApi')
+    const { useApi } = await import('../useApi')
     const mockApi = {
       api: {
         get: vi.fn()

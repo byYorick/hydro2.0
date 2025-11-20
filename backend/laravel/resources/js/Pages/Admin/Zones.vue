@@ -40,6 +40,7 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import { reactive, ref, onMounted } from 'vue'
+import { logger } from '@/utils/logger'
 import axios from 'axios'
 import { usePage, router } from '@inertiajs/vue3'
 
@@ -55,7 +56,7 @@ onMounted(() => {
     const data = res.data?.data
     greenhouses.value = (data?.data || (Array.isArray(data) ? data : [])) || []
   }).catch(err => {
-    console.error('Failed to load greenhouses:', err)
+    logger.error('[Admin/Zones] Failed to load greenhouses:', err)
   })
 })
 
@@ -68,7 +69,7 @@ async function onCreate() {
     form.description = ''
     form.greenhouse_id = null
   }).catch(err => {
-    console.error('Failed to create zone:', err)
+    logger.error('[Admin/Zones] Failed to create zone:', err)
   })
 }
 </script>

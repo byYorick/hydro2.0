@@ -2,6 +2,7 @@
  * Composable для централизованной работы с API
  */
 import axios, { type AxiosInstance, type AxiosRequestConfig } from 'axios'
+import { logger } from '@/utils/logger'
 
 // Тип функции для показа Toast
 export type ToastHandler = (message: string, variant?: string, duration?: number) => void
@@ -28,10 +29,23 @@ export function setToastHandler(showToast: ToastHandler): void {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    // Игнорируем отмененные запросы (Inertia.js)
+    if (error?.code === 'ERR_CANCELED' || error?.name === 'CanceledError' || error?.message === 'canceled') {
+      return Promise.reject(error)
+    }
+
     const message = error.response?.data?.message || error.message || 'Неизвестная ошибка'
     
+    // Логируем ошибку
+    logger.error('[API Error]', {
+      url: error.config?.url,
+      method: error.config?.method,
+      status: error.response?.status,
+      message,
+    })
+    
+    // 401 - не показываем Toast, обычно это обрабатывается на уровне auth
     if (globalShowToast && error.response?.status !== 401) {
-      // 401 - не показываем Toast, обычно это обрабатывается на уровне auth
       globalShowToast(`Ошибка: ${message}`, 'error', 5000)
     }
     

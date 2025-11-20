@@ -1,6 +1,24 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { useSystemStatus } from '../useSystemStatus'
 
+// Mock logger
+vi.mock('@/utils/logger', () => ({
+  logger: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    group: vi.fn(),
+    groupEnd: vi.fn(),
+    groupCollapsed: vi.fn(),
+    table: vi.fn(),
+    time: vi.fn(),
+    timeEnd: vi.fn(),
+    isDev: true,
+    isProd: false
+  }
+}))
+
 // Mock useApi
 vi.mock('../useApi', () => ({
   useApi: vi.fn(() => ({
@@ -14,8 +32,8 @@ describe('useSystemStatus', () => {
   let mockApiGet: vi.Mock
   let mockShowToast: vi.Mock
 
-  beforeEach(() => {
-    const { useApi } = require('../useApi')
+  beforeEach(async () => {
+    const { useApi } = await import('../useApi')
     const mockApi = {
       api: {
         get: vi.fn()

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useMemoizedFilter, useLowercaseQuery, useMultiFilter } from '../usePerformance'
 
 describe('usePerformance (P3-4)', () => {

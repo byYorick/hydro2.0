@@ -69,6 +69,7 @@ import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import DeviceChannelsTable from '@/Pages/Devices/DeviceChannelsTable.vue'
 import Toast from '@/Components/Toast.vue'
+import { logger } from '@/utils/logger'
 import axios from 'axios'
 import type { Device, DeviceChannel } from '@/types'
 import type { ToastVariant } from '@/composables/useToast'
@@ -132,15 +133,15 @@ const onRestart = async (): Promise<void> => {
     })
     
     if (response.data?.status === 'ok') {
-      console.log('Device restart command sent successfully', response.data)
-      // Можно добавить toast уведомление здесь
+      logger.debug('[Devices/Show] Device restart command sent successfully', response.data)
+      showToast('Команда перезапуска отправлена', 'success', 3000)
     }
   } catch (err) {
-    console.error('Failed to restart device:', err)
+    logger.error('[Devices/Show] Failed to restart device:', err)
     const errorMsg = (err as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message || 
                      (err as { message?: string })?.message || 
                      'Неизвестная ошибка'
-    console.error('Error details:', errorMsg)
+    showToast(`Ошибка перезапуска: ${errorMsg}`, 'error', 5000)
   }
 }
 
@@ -185,8 +186,10 @@ const onTestPump = async (channelName: string, channelType: string): Promise<voi
       showToast(`Не удалось отправить команду для ${channelLabel}`, 'error', 5000)
     }
   } catch (err) {
-    console.error(`Failed to test ${channelName}:`, err)
-    const errorMsg = err.response?.data?.message || err.message || 'Неизвестная ошибка'
+    logger.error(`[Devices/Show] Failed to test ${channelName}:`, err)
+    const errorMsg = (err as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message || 
+                     (err as { message?: string })?.message || 
+                     'Неизвестная ошибка'
     showToast(`Ошибка теста ${channelLabel}: ${errorMsg}`, 'error', 5000)
   } finally {
     testingChannels.value.delete(channelName)
@@ -245,9 +248,9 @@ async function checkCommandStatus(cmdId, maxAttempts = 30) {
         }
       }
     } catch (err) {
-      console.error('Failed to check command status:', err)
+      logger.error('[Devices/Show] Failed to check command status:', err)
       // Если команда не найдена, возможно она еще не создана, продолжаем ожидание
-      if (err.response?.status === 404 && i < maxAttempts - 1) {
+      if ((err as { response?: { status?: number } })?.response?.status === 404 && i < maxAttempts - 1) {
         await new Promise(resolve => setTimeout(resolve, 500))
         continue
       }

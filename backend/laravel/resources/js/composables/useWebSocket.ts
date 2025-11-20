@@ -2,6 +2,7 @@
  * Composable для работы с WebSocket через Laravel Echo
  */
 import { ref, onUnmounted, type Ref } from 'vue'
+import { logger } from '@/utils/logger'
 import type { ToastHandler } from './useApi'
 
 // Расширяем Window для Echo
@@ -165,7 +166,7 @@ export function useWebSocket(showToast?: ToastHandler) {
 
       return unsubscribe
     } catch (err) {
-      console.error('Failed to subscribe to zone commands:', err)
+      logger.error('[WebSocket] Failed to subscribe to zone commands:', err)
       if (showToast) {
         showToast('Ошибка при подключении к WebSocket', 'error', 5000)
       }
@@ -241,7 +242,7 @@ export function useWebSocket(showToast?: ToastHandler) {
 
       return unsubscribe
     } catch (err) {
-      console.error('Failed to subscribe to global events:', err)
+      logger.error('[WebSocket] Failed to subscribe to global events:', err)
       if (showToast) {
         showToast('Ошибка при подключении к WebSocket', 'error', 5000)
       }
@@ -280,10 +281,10 @@ export function useWebSocket(showToast?: ToastHandler) {
  * при reconnect, когда компоненты могут быть еще не смонтированы.
  */
 export function resubscribeAllChannels(): void {
-  console.log('[WebSocket] Resubscribing to all channels...', activeSubscriptions.length, 'subscriptions')
+  logger.debug('[WebSocket] Resubscribing to all channels...', activeSubscriptions.length, 'subscriptions')
   
   if (!window.Echo) {
-    console.warn('[WebSocket] Echo не доступен для resubscribe')
+    logger.warn('[WebSocket] Echo не доступен для resubscribe')
     return
   }
 
@@ -320,7 +321,7 @@ export function resubscribeAllChannels(): void {
           })
         })
 
-        console.log(`[WebSocket] ✓ Resubscribed to zone commands: ${sub.id}`)
+        logger.debug(`[WebSocket] ✓ Resubscribed to zone commands: ${sub.id}`)
       } else if (sub.type === 'global_events') {
         const channelName = 'events.global'
         const channel = window.Echo!.channel(channelName)
@@ -337,13 +338,13 @@ export function resubscribeAllChannels(): void {
           })
         })
 
-        console.log('[WebSocket] ✓ Resubscribed to global events')
+        logger.debug('[WebSocket] ✓ Resubscribed to global events')
       }
     } catch (err) {
-      console.error(`[WebSocket] ✗ Failed to resubscribe to ${sub.type}${sub.id ? ` (id: ${sub.id})` : ''}:`, err)
+      logger.error(`[WebSocket] ✗ Failed to resubscribe to ${sub.type}${sub.id ? ` (id: ${sub.id})` : ''}:`, err)
     }
   })
   
-  console.log(`[WebSocket] Resubscribe completed: ${activeSubscriptions.length} channels restored`)
+  logger.debug(`[WebSocket] Resubscribe completed: ${activeSubscriptions.length} channels restored`)
 }
 

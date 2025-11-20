@@ -149,8 +149,7 @@ async def get_last_recirculation_time(zone_id: int) -> Optional[datetime]:
 async def check_and_control_recirculation(
     zone_id: int,
     targets: Dict[str, Any],
-    mqtt_client: Any,  # MqttClient
-    gh_uid: str
+    telemetry: Dict[str, Optional[float]]
 ) -> Optional[Dict[str, Any]]:
     """
     Проверка и управление рециркуляцией воды.
@@ -160,8 +159,7 @@ async def check_and_control_recirculation(
     Args:
         zone_id: ID зоны
         targets: Целевые значения из рецепта (recirculation_enabled, recirculation_interval_min, recirculation_duration_sec)
-        mqtt_client: MQTT клиент для отправки команд
-        gh_uid: UID теплицы
+        telemetry: Текущие значения телеметрии (не используется, но для совместимости с другими контроллерами)
     
     Returns:
         Команда для запуска рециркуляции или None

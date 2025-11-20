@@ -3,6 +3,8 @@
  */
 import { ref, computed, type Ref, type ComputedRef } from 'vue'
 import { useApi, type ToastHandler } from './useApi'
+import { useErrorHandler } from './useErrorHandler'
+import { logger } from '@/utils/logger'
 import type { ZoneTelemetry, TelemetrySample, TelemetryMetric } from '@/types'
 
 // Кеш в памяти (TTL 30-60 секунд для телеметрии)
@@ -30,7 +32,7 @@ function saveCacheToStorage(): void {
     
     // Проверяем размер перед сохранением
     if (json.length > MAX_STORAGE_SIZE) {
-      console.warn('[Telemetry] Cache too large, clearing old entries')
+      logger.warn('[Telemetry] Cache too large, clearing old entries')
       // Удаляем самые старые записи
       const sorted = Array.from(telemetryCache.entries())
         .sort((a, b) => a[1].timestamp - b[1].timestamp)
@@ -50,7 +52,7 @@ function saveCacheToStorage(): void {
       sessionStorage.setItem(STORAGE_KEY, json)
     }
   } catch (err) {
-    console.warn('[Telemetry] Failed to save cache to sessionStorage:', err)
+    logger.warn('[Telemetry] Failed to save cache to sessionStorage:', err)
     // Если sessionStorage переполнен, очищаем его и пробуем снова
     try {
       sessionStorage.removeItem(STORAGE_KEY)
@@ -60,7 +62,7 @@ function saveCacheToStorage(): void {
       }
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(cacheData))
     } catch (e) {
-      console.error('[Telemetry] Failed to recover from storage error:', e)
+      logger.error('[Telemetry] Failed to recover from storage error:', e)
     }
   }
 }
@@ -84,12 +86,12 @@ function loadCacheFromStorage(): void {
       }
     }
   } catch (err) {
-    console.warn('[Telemetry] Failed to load cache from sessionStorage:', err)
+    logger.warn('[Telemetry] Failed to load cache from sessionStorage:', err)
     // Очищаем поврежденные данные
     try {
       sessionStorage.removeItem(STORAGE_KEY)
     } catch (e) {
-      console.error('[Telemetry] Failed to clear corrupted storage:', e)
+      logger.error('[Telemetry] Failed to clear corrupted storage:', e)
     }
   }
 }
@@ -121,6 +123,7 @@ function cleanupCache(): void {
  */
 export function useTelemetry(showToast?: ToastHandler) {
   const { api } = useApi(showToast || null)
+  const { handleError } = useErrorHandler(showToast)
   const loading: Ref<boolean> = ref(false)
   const error: Ref<Error | null> = ref(null)
 
@@ -162,11 +165,13 @@ export function useTelemetry(showToast?: ToastHandler) {
       saveCacheToStorage()
       return telemetry
     } catch (err) {
-      error.value = err as Error
-      if (showToast) {
-        showToast('Ошибка при загрузке телеметрии', 'error', 5000)
-      }
-      throw err
+      const normalizedError = handleError(err, {
+        component: 'useTelemetry',
+        action: 'fetchLastTelemetry',
+        zoneId,
+      })
+      error.value = normalizedError instanceof Error ? normalizedError : new Error('Unknown error')
+      throw normalizedError
     } finally {
       loading.value = false
     }
@@ -221,11 +226,14 @@ export function useTelemetry(showToast?: ToastHandler) {
       saveCacheToStorage()
       return history
     } catch (err) {
-      error.value = err as Error
-      if (showToast) {
-        showToast(`Ошибка при загрузке истории ${metric}`, 'error', 5000)
-      }
-      throw err
+      const normalizedError = handleError(err, {
+        component: 'useTelemetry',
+        action: 'fetchHistory',
+        zoneId,
+        metric,
+      })
+      error.value = normalizedError instanceof Error ? normalizedError : new Error('Unknown error')
+      throw normalizedError
     } finally {
       loading.value = false
     }
@@ -277,11 +285,15 @@ export function useTelemetry(showToast?: ToastHandler) {
       saveCacheToStorage()
       return data
     } catch (err) {
-      error.value = err as Error
-      if (showToast) {
-        showToast(`Ошибка при загрузке агрегированных данных ${metric}`, 'error', 5000)
-      }
-      throw err
+      const normalizedError = handleError(err, {
+        component: 'useTelemetry',
+        action: 'fetchAggregates',
+        zoneId,
+        metric,
+        period,
+      })
+      error.value = normalizedError instanceof Error ? normalizedError : new Error('Unknown error')
+      throw normalizedError
     } finally {
       loading.value = false
     }
@@ -321,7 +333,7 @@ export function clearTelemetryCache(): void {
   try {
     sessionStorage.removeItem(STORAGE_KEY)
   } catch (err) {
-    console.warn('[Telemetry] Failed to clear sessionStorage:', err)
+    logger.warn('[Telemetry] Failed to clear sessionStorage:', err)
   }
 }
 

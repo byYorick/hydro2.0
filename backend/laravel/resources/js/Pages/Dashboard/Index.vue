@@ -183,6 +183,7 @@ import MiniTelemetryChart from '@/Components/MiniTelemetryChart.vue'
 import ZonesHeatmap from '@/Components/ZonesHeatmap.vue'
 import { translateStatus } from '@/utils/i18n'
 import { formatTime } from '@/utils/formatTime'
+import { logger } from '@/utils/logger'
 import { useTelemetry } from '@/composables/useTelemetry'
 import { useWebSocket } from '@/composables/useWebSocket'
 import type { Zone, Greenhouse, Alert, ZoneEvent, EventKind } from '@/types'
@@ -343,7 +344,7 @@ async function loadTelemetryMetrics() {
         telemetryData.value[metric].currentValue = data[data.length - 1].value || data[data.length - 1].avg
       }
     } catch (err) {
-      console.error(`Failed to load ${metric} telemetry:`, err)
+      logger.error(`[Dashboard] Failed to load ${metric} telemetry:`, err)
     } finally {
       telemetryData.value[metric].loading = false
     }

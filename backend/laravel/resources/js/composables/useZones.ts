@@ -4,6 +4,7 @@
 import { ref, computed, type Ref, type ComputedRef } from 'vue'
 import { router } from '@inertiajs/vue3'
 import { useApi, type ToastHandler } from './useApi'
+import { useErrorHandler } from './useErrorHandler'
 import type { Zone } from '@/types'
 
 // Кеш в памяти (TTL 10-30 секунд)
@@ -32,6 +33,7 @@ function cleanupCache(): void {
  */
 export function useZones(showToast?: ToastHandler) {
   const { api } = useApi(showToast || null)
+  const { handleError } = useErrorHandler(showToast)
   const loading: Ref<boolean> = ref(false)
   const error: Ref<Error | null> = ref(null)
 
@@ -67,11 +69,12 @@ export function useZones(showToast?: ToastHandler) {
       cleanupCache()
       return zones
     } catch (err) {
-      error.value = err as Error
-      if (showToast) {
-        showToast('Ошибка при загрузке зон', 'error', 5000)
-      }
-      throw err
+      const normalizedError = handleError(err, {
+        component: 'useZones',
+        action: 'fetchZones',
+      })
+      error.value = normalizedError instanceof Error ? normalizedError : new Error('Unknown error')
+      throw normalizedError
     } finally {
       loading.value = false
     }
@@ -108,11 +111,13 @@ export function useZones(showToast?: ToastHandler) {
       cleanupCache()
       return zone
     } catch (err) {
-      error.value = err as Error
-      if (showToast) {
-        showToast('Ошибка при загрузке зоны', 'error', 5000)
-      }
-      throw err
+      const normalizedError = handleError(err, {
+        component: 'useZones',
+        action: 'fetchZone',
+        zoneId,
+      })
+      error.value = normalizedError instanceof Error ? normalizedError : new Error('Unknown error')
+      throw normalizedError
     } finally {
       loading.value = false
     }

@@ -66,3 +66,71 @@ Object.defineProperty(HTMLCanvasElement.prototype, 'clientHeight', {
   get: vi.fn(() => 600),
   configurable: true,
 })
+
+// Глобальный мок для logger (если не замокан в конкретном тесте)
+vi.mock('@/utils/logger', async () => {
+  const actual = await vi.importActual('@/utils/logger')
+  return {
+    ...actual,
+    logger: {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      group: vi.fn(),
+      groupEnd: vi.fn(),
+      groupCollapsed: vi.fn(),
+      table: vi.fn(),
+      time: vi.fn(),
+      timeEnd: vi.fn(),
+      isDev: true,
+      isProd: false
+    }
+  }
+})
+
+// Глобальные моки для виртуализации компонентов
+// Используем простые компоненты-обертки, которые просто рендерят слоты
+vi.mock('vue-virtual-scroller', () => {
+  return {
+    DynamicScroller: {
+      name: 'DynamicScroller',
+      props: ['items', 'minItemSize', 'keyField'],
+      template: `
+        <div class="dynamic-scroller">
+          <template v-for="(item, index) in (items || [])" :key="getKey(item, index)">
+            <slot :item="item" :index="index" :active="true" />
+          </template>
+        </div>
+      `,
+      methods: {
+        getKey(item: any, index: number) {
+          const keyField = this.$props.keyField || 'id'
+          return item?.[keyField] ?? index
+        }
+      }
+    },
+    DynamicScrollerItem: {
+      name: 'DynamicScrollerItem',
+      props: ['item', 'active', 'sizeDependencies'],
+      template: '<div class="dynamic-scroller-item"><slot /></div>'
+    },
+    RecycleScroller: {
+      name: 'RecycleScroller',
+      props: ['items', 'itemSize', 'keyField'],
+      template: `
+        <div class="recycle-scroller">
+          <template v-for="(item, index) in (items || [])" :key="getKey(item, index)">
+            <slot :item="item" :index="index" />
+          </template>
+        </div>
+      `,
+      methods: {
+        getKey(item: any, index: number) {
+          const keyField = this.$props.keyField || 'id'
+          return item?.[keyField] ?? index
+        }
+      }
+    }
+  }
+})

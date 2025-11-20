@@ -8,8 +8,10 @@ from typing import Optional, List
 import httpx
 
 from fastapi import FastAPI
-from prometheus_client import Counter, Histogram
-from pydantic import BaseModel
+from prometheus_client import Counter, Histogram, Gauge
+from pydantic import BaseModel, Field
+from typing import Union
+import time
 
 from common.db import execute, fetch, upsert_telemetry_last, create_zone_event
 from common.redis_queue import TelemetryQueue, TelemetryQueueItem, close_redis_client
@@ -30,8 +32,9 @@ async def lifespan(app: FastAPI):
     # Инициализация Redis queue
     telemetry_queue = TelemetryQueue()
     
-    # Запуск фоновой задачи обработки очереди
-    asyncio.create_task(process_telemetry_queue())
+    # Запуск фоновой задачи обработки очереди и отслеживание для graceful shutdown
+    task = asyncio.create_task(process_telemetry_queue())
+    background_tasks.append(task)
     
     # Подключение к MQTT
     mqtt = await get_mqtt_client()
@@ -52,11 +55,30 @@ async def lifespan(app: FastAPI):
     # Устанавливаем флаг завершения
     shutdown_event.set()
     
+    # Ждем завершения фоновых задач с таймаутом
+    s = get_settings()
+    if background_tasks:
+        logger.info(f"Waiting for {len(background_tasks)} background tasks to complete...")
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(*background_tasks, return_exceptions=True),
+                timeout=s.shutdown_timeout_sec
+            )
+            logger.info("All background tasks completed")
+        except asyncio.TimeoutError:
+            logger.warning("Timeout waiting for background tasks, forcing shutdown")
+            # Отменяем оставшиеся задачи
+            for task in background_tasks:
+                if not task.done():
+                    task.cancel()
+    
     # Даем время на обработку оставшихся элементов
-    await asyncio.sleep(2)
+    await asyncio.sleep(s.shutdown_wait_sec)
     
     # Закрываем Redis клиент
     await close_redis_client()
+    
+    logger.info("History Logger service stopped")
 
 
 # FastAPI app
@@ -79,11 +101,44 @@ NODE_HELLO_ERRORS = Counter("node_hello_errors_total",
                            "Total errors processing node_hello",
                            ["error_type"])
 
+# Дополнительные метрики для мониторинга
+TELEMETRY_QUEUE_SIZE = Gauge("telemetry_queue_size",
+                             "Current size of Redis telemetry queue")
+TELEMETRY_QUEUE_AGE = Gauge("telemetry_queue_age_seconds",
+                           "Age of oldest item in queue in seconds")
+TELEMETRY_PROCESSING_DURATION = Histogram("telemetry_processing_duration_seconds",
+                                         "Time to process telemetry batch",
+                                         buckets=[0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0])
+LARAVEL_API_DURATION = Histogram("laravel_api_request_duration_seconds",
+                                "Laravel API request duration",
+                                buckets=[0.1, 0.5, 1.0, 2.0, 5.0, 10.0])
+REDIS_OPERATION_DURATION = Histogram("redis_operation_duration_seconds",
+                                     "Redis operation duration",
+                                     buckets=[0.001, 0.005, 0.01, 0.05, 0.1, 0.5])
+TELEMETRY_DROPPED = Counter("telemetry_dropped_total",
+                           "Total dropped telemetry messages",
+                           ["reason"])
+DATABASE_ERRORS = Counter("database_errors_total",
+                         "Total database errors",
+                         ["error_type"])
+
 # Global telemetry queue
 telemetry_queue: Optional[TelemetryQueue] = None
 
 # Shutdown event
 shutdown_event = asyncio.Event()
+
+# Background tasks для отслеживания при shutdown
+background_tasks: List[asyncio.Task] = []
+
+
+class TelemetryPayloadModel(BaseModel):
+    """Model for validating telemetry payload from MQTT."""
+    metric_type: str = Field(..., min_length=1, max_length=50, description="Type of metric")
+    value: float = Field(..., description="Metric value")
+    timestamp: Optional[Union[int, float, str]] = Field(None, description="Timestamp in milliseconds, ISO string, or Unix timestamp")
+    channel: Optional[str] = Field(None, max_length=100, description="Channel identifier")
+    metric: Optional[str] = Field(None, max_length=50, description="Alternative metric type field (for backward compatibility)")
 
 
 class TelemetrySampleModel(BaseModel):
@@ -98,9 +153,71 @@ class TelemetrySampleModel(BaseModel):
     channel: Optional[str] = None
 
 
+# Максимальный размер MQTT payload (64KB) для защиты от DoS
+MAX_PAYLOAD_SIZE = 64 * 1024  # 64KB
+
+# Конфигурация retry логики для Redis
+REDIS_PUSH_MAX_RETRIES = 3
+REDIS_PUSH_RETRY_BACKOFF_BASE = 2  # exponential backoff: 2^attempt секунд
+
+async def _push_with_retry(queue_item: TelemetryQueueItem, max_retries: int = REDIS_PUSH_MAX_RETRIES) -> bool:
+    """
+    Добавить элемент в Redis queue с retry логикой и exponential backoff.
+    
+    Args:
+        queue_item: Элемент для добавления в очередь
+        max_retries: Максимальное количество попыток
+        
+    Returns:
+        True если успешно добавлен, False если все попытки провалились
+    """
+    global telemetry_queue
+    
+    if not telemetry_queue:
+        return False
+    
+    for attempt in range(max_retries):
+        try:
+            success = await telemetry_queue.push(queue_item)
+            if success:
+                if attempt > 0:
+                    logger.info(f"Successfully pushed to Redis queue after {attempt + 1} attempts")
+                return True
+            
+            # Если очередь переполнена, не повторяем
+            if attempt == 0:
+                logger.warning(
+                    f"Redis queue full, cannot push telemetry: "
+                    f"node_uid={queue_item.node_uid}, metric_type={queue_item.metric_type}"
+                )
+            return False
+            
+        except Exception as e:
+            if attempt < max_retries - 1:
+                backoff_seconds = REDIS_PUSH_RETRY_BACKOFF_BASE ** attempt
+                logger.warning(
+                    f"Failed to push to Redis queue (attempt {attempt + 1}/{max_retries}), "
+                    f"retrying in {backoff_seconds}s: {e}"
+                )
+                await asyncio.sleep(backoff_seconds)
+            else:
+                logger.error(
+                    f"Failed to push to Redis queue after {max_retries} attempts: {e}",
+                    exc_info=True
+                )
+                return False
+    
+    return False
+
+
 def _parse_json(payload: bytes) -> Optional[dict]:
-    """Parse JSON payload."""
+    """Parse JSON payload with size validation."""
     try:
+        # Проверяем размер payload для защиты от DoS
+        if len(payload) > MAX_PAYLOAD_SIZE:
+            logger.error(f"Payload too large: {len(payload)} bytes (max: {MAX_PAYLOAD_SIZE})")
+            return None
+        
         return json.loads(payload.decode('utf-8'))
     except Exception as e:
         logger.error(f"Failed to parse JSON: {e}")
@@ -117,6 +234,23 @@ async def handle_telemetry(topic: str, payload: bytes):
     data = _parse_json(payload)
     if not data:
         return
+    
+    # Валидация данных через Pydantic
+    try:
+        validated_data = TelemetryPayloadModel(**data)
+    except Exception as e:
+        logger.warning(
+            "Invalid telemetry payload",
+            extra={
+                "error": str(e),
+                "topic": topic,
+                "payload_keys": list(data.keys()) if isinstance(data, dict) else None,
+                "payload_size": len(payload)
+            }
+        )
+        TELEMETRY_DROPPED.labels(reason="validation_failed").inc()
+        return
+    
     TELEM_RECEIVED.inc()
 
     # Извлекаем данные из топика и payload
@@ -125,10 +259,10 @@ async def handle_telemetry(topic: str, payload: bytes):
 
     # Создаём модель для очереди
     ts = None
-    if data.get("timestamp"):
+    if validated_data.timestamp:
         try:
             # Если timestamp в миллисекундах
-            ts_value = data.get("timestamp")
+            ts_value = validated_data.timestamp
             if isinstance(ts_value, (int, float)):
                 ts = datetime.fromtimestamp(ts_value / 1000.0)
             elif isinstance(ts_value, str):
@@ -136,21 +270,60 @@ async def handle_telemetry(topic: str, payload: bytes):
         except Exception:
             pass
 
+    # Используем metric_type или metric (для обратной совместимости)
+    metric_type = validated_data.metric_type or validated_data.metric or ""
+    if not metric_type:
+        logger.warning(
+            "Missing metric_type in telemetry payload",
+            extra={
+                "topic": topic,
+                "node_uid": node_uid,
+                "zone_uid": zone_uid,
+                "payload_keys": list(data.keys()) if isinstance(data, dict) else None
+            }
+        )
+        TELEMETRY_DROPPED.labels(reason="missing_metric_type").inc()
+        return
+
     queue_item = TelemetryQueueItem(
         node_uid=node_uid or "",
         zone_uid=zone_uid,
-        metric_type=data.get("metric_type") or data.get("metric", ""),
-        value=data.get("value", 0.0),
+        metric_type=metric_type,
+        value=validated_data.value,
         ts=ts,
         raw=data,
-        channel=data.get("channel")
+        channel=validated_data.channel
     )
 
-    # Добавляем в Redis queue
+    # Добавляем в Redis queue с retry логикой
     if telemetry_queue:
-        await telemetry_queue.push(queue_item)
+        start_time = time.time()
+        success = await _push_with_retry(queue_item)
+        redis_duration = time.time() - start_time
+        REDIS_OPERATION_DURATION.observe(redis_duration)
+        
+        if not success:
+            TELEMETRY_DROPPED.labels(reason="queue_push_failed").inc()
+            logger.error(
+                "Failed to push telemetry to queue after retries, dropping message",
+                extra={
+                    "node_uid": node_uid,
+                    "zone_uid": zone_uid,
+                    "metric_type": queue_item.metric_type,
+                    "topic": topic
+                }
+            )
     else:
-        logger.error("Telemetry queue not initialized, dropping message")
+        TELEMETRY_DROPPED.labels(reason="queue_not_initialized").inc()
+        logger.error(
+            "Telemetry queue not initialized, dropping message",
+            extra={
+                "node_uid": node_uid,
+                "zone_uid": zone_uid,
+                "metric_type": metric_type,
+                "topic": topic
+            }
+        )
 
 
 async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
@@ -160,22 +333,21 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
     if not samples:
         return
 
+    start_time = time.time()
     s = get_settings()
     
     # Получаем zone_id из zone_uid для каждого образца
     zone_uid_to_id: dict[str, int] = {}
-    zone_uids = list(set(s.zone_uid for s in samples if s.zone_uid))
+    zone_uids = list(set(sample.zone_uid for sample in samples if sample.zone_uid))
     
     if zone_uids:
         # Извлекаем zone_id из zone_uid (формат: zn-{id})
         for zone_uid in zone_uids:
-            try:
-                if zone_uid.startswith("zn-"):
-                    zone_id = int(zone_uid.split("-")[1])
-                    zone_uid_to_id[zone_uid] = zone_id
-            except (ValueError, IndexError):
+            zone_id = extract_zone_id_from_uid(zone_uid)
+            if zone_id is not None:
+                zone_uid_to_id[zone_uid] = zone_id
+            else:
                 logger.warning(f"Invalid zone_uid format: {zone_uid}")
-                continue
     
     # Получаем node_id из node_uid для каждого образца
     node_uid_to_id: dict[str, int] = {}
@@ -206,7 +378,14 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
             node_id = node_uid_to_id.get(sample.node_uid)
         
         if not zone_id:
-            logger.warning(f"Skipping sample: zone_id not found for zone_uid={sample.zone_uid}")
+            logger.warning(
+                "Skipping sample: zone_id not found",
+                extra={
+                    "zone_uid": sample.zone_uid,
+                    "node_uid": sample.node_uid,
+                    "metric_type": sample.metric_type
+                }
+            )
             continue
         
         key = (zone_id, sample.metric_type, node_id, sample.channel)
@@ -241,7 +420,19 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
             try:
                 await execute(query, *params_list)
             except Exception as e:
-                logger.error(f"Failed to insert telemetry batch: {e}", exc_info=True)
+                error_type = type(e).__name__
+                DATABASE_ERRORS.labels(error_type=error_type).inc()
+                logger.error(
+                    "Failed to insert telemetry batch",
+                    extra={
+                        "error_type": error_type,
+                        "error": str(e),
+                        "zone_id": zone_id,
+                        "metric_type": metric_type,
+                        "samples_count": len(group_samples)
+                    },
+                    exc_info=True
+                )
         
         # Обновляем telemetry_last
         if group_samples:
@@ -254,6 +445,8 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
                 last_sample.value
             )
     
+    processing_duration = time.time() - start_time
+    TELEMETRY_PROCESSING_DURATION.observe(processing_duration)
     TELEM_PROCESSED.inc(len(samples))
     TELEM_BATCH_SIZE.observe(len(samples))
 
@@ -273,7 +466,14 @@ async def process_telemetry_queue():
     while not shutdown_event.is_set():
         try:
             # Проверяем условия для flush
+            queue_start_time = time.time()
             queue_size = await telemetry_queue.size()
+            queue_duration = time.time() - queue_start_time
+            REDIS_OPERATION_DURATION.observe(queue_duration)
+            
+            # Обновляем метрики размера очереди
+            TELEMETRY_QUEUE_SIZE.set(queue_size)
+            
             time_since_flush = (datetime.utcnow() - last_flush).total_seconds() * 1000
 
             should_flush = (
@@ -291,13 +491,7 @@ async def process_telemetry_queue():
                     samples = []
                     for item in queue_items:
                         # Получаем zone_id из zone_uid
-                        zone_id = None
-                        if item.zone_uid:
-                            try:
-                                if item.zone_uid.startswith("zn-"):
-                                    zone_id = int(item.zone_uid.split("-")[1])
-                            except (ValueError, IndexError):
-                                pass
+                        zone_id = extract_zone_id_from_uid(item.zone_uid)
 
                         sample = TelemetrySampleModel(
                             node_uid=item.node_uid,
@@ -316,25 +510,19 @@ async def process_telemetry_queue():
                     last_flush = datetime.utcnow()
 
             # Небольшая задержка перед следующей проверкой
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(s.queue_check_interval_sec)
 
         except Exception as e:
             logger.error(f"Error in telemetry queue processor: {e}", exc_info=True)
-            await asyncio.sleep(1)
+            await asyncio.sleep(s.queue_error_retry_delay_sec)
 
     # При завершении обрабатываем оставшиеся элементы
     logger.info("Shutting down telemetry queue processor, processing remaining items...")
-    remaining_items = await telemetry_queue.pop_batch(s.telemetry_batch_size * 10)  # Большой батч для финальной обработки
+    remaining_items = await telemetry_queue.pop_batch(s.telemetry_batch_size * s.final_batch_multiplier)
     if remaining_items:
         samples = []
         for item in remaining_items:
-            zone_id = None
-            if item.zone_uid:
-                try:
-                    if item.zone_uid.startswith("zn-"):
-                        zone_id = int(item.zone_uid.split("-")[1])
-                except (ValueError, IndexError):
-                    pass
+            zone_id = extract_zone_id_from_uid(item.zone_uid)
 
             sample = TelemetrySampleModel(
                 node_uid=item.node_uid,
@@ -415,53 +603,120 @@ async def handle_node_hello(topic: str, payload: bytes):
         else:
             logger.debug(f"[NODE_HELLO] No API token configured, registering without auth")
         
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        # Retry логика для Laravel API с exponential backoff
+        MAX_API_RETRIES = 3
+        API_RETRY_BACKOFF_BASE = 2  # exponential backoff: 2^attempt секунд
+        API_TIMEOUT = s.laravel_api_timeout_sec
+        
+        last_error = None
+        for attempt in range(MAX_API_RETRIES):
             try:
-                response = await client.post(
-                    f"{laravel_url}/api/nodes/register",
-                    json=api_data,
-                    headers=headers,
-                )
+                api_start_time = time.time()
+                async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
+                    response = await client.post(
+                        f"{laravel_url}/api/nodes/register",
+                        json=api_data,
+                        headers=headers,
+                    )
+                api_duration = time.time() - api_start_time
+                LARAVEL_API_DURATION.observe(api_duration)
                 
                 if response.status_code == 201:
                     response_data = response.json()
                     node_uid = response_data.get("data", {}).get("uid", "unknown")
                     logger.info(
                         f"[NODE_HELLO] Node registered successfully: hardware_id={hardware_id}, "
-                        f"node_uid={node_uid}"
+                        f"node_uid={node_uid}, attempts={attempt + 1}"
                     )
                     NODE_HELLO_REGISTERED.inc()
+                    return  # Успешно зарегистрирован, выходим
                 elif response.status_code == 200:
                     response_data = response.json()
                     node_uid = response_data.get("data", {}).get("uid", "unknown")
                     logger.info(
                         f"[NODE_HELLO] Node updated successfully: hardware_id={hardware_id}, "
-                        f"node_uid={node_uid}"
+                        f"node_uid={node_uid}, attempts={attempt + 1}"
                     )
                     NODE_HELLO_REGISTERED.inc()
+                    return  # Успешно обновлен, выходим
                 elif response.status_code == 401:
+                    # Неавторизован - не повторяем (токен неверный)
                     logger.error(
                         f"[NODE_HELLO] Unauthorized: token required or invalid. "
                         f"hardware_id={hardware_id}, "
                         f"response={response.text[:200]}"
                     )
                     NODE_HELLO_ERRORS.labels(error_type="unauthorized").inc()
+                    return
+                elif response.status_code >= 500:
+                    # Серверная ошибка - можно повторить
+                    last_error = f"HTTP {response.status_code}: {response.text[:200]}"
+                    if attempt < MAX_API_RETRIES - 1:
+                        backoff_seconds = API_RETRY_BACKOFF_BASE ** attempt
+                        logger.warning(
+                            f"[NODE_HELLO] Server error {response.status_code} (attempt {attempt + 1}/{MAX_API_RETRIES}), "
+                            f"retrying in {backoff_seconds}s: hardware_id={hardware_id}"
+                        )
+                        await asyncio.sleep(backoff_seconds)
+                        continue
+                    else:
+                        logger.error(
+                            f"[NODE_HELLO] Failed to register node after {MAX_API_RETRIES} attempts: "
+                            f"status={response.status_code}, hardware_id={hardware_id}, "
+                            f"response={response.text[:500]}"
+                        )
+                        NODE_HELLO_ERRORS.labels(error_type=f"http_{response.status_code}").inc()
+                        return
                 else:
+                    # Клиентская ошибка (4xx) - не повторяем
                     logger.error(
                         f"[NODE_HELLO] Failed to register node: status={response.status_code}, "
                         f"hardware_id={hardware_id}, "
                         f"response={response.text[:500]}"
                     )
                     NODE_HELLO_ERRORS.labels(error_type=f"http_{response.status_code}").inc()
-            except httpx.TimeoutException:
-                logger.error(f"[NODE_HELLO] Timeout while registering node: hardware_id={hardware_id}")
-                NODE_HELLO_ERRORS.labels(error_type="timeout").inc()
+                    return
+                        
+            except httpx.TimeoutException as e:
+                last_error = f"Timeout: {str(e)}"
+                if attempt < MAX_API_RETRIES - 1:
+                    backoff_seconds = API_RETRY_BACKOFF_BASE ** attempt
+                    logger.warning(
+                        f"[NODE_HELLO] Timeout (attempt {attempt + 1}/{MAX_API_RETRIES}), "
+                        f"retrying in {backoff_seconds}s: hardware_id={hardware_id}"
+                    )
+                    await asyncio.sleep(backoff_seconds)
+                else:
+                    logger.error(
+                        f"[NODE_HELLO] Timeout while registering node after {MAX_API_RETRIES} attempts: "
+                        f"hardware_id={hardware_id}"
+                    )
+                    NODE_HELLO_ERRORS.labels(error_type="timeout").inc()
+                    return
             except httpx.RequestError as e:
-                logger.error(
-                    f"[NODE_HELLO] Request error while registering node: hardware_id={hardware_id}, "
-                    f"error={str(e)}"
-                )
-                NODE_HELLO_ERRORS.labels(error_type="request_error").inc()
+                last_error = f"Request error: {str(e)}"
+                if attempt < MAX_API_RETRIES - 1:
+                    backoff_seconds = API_RETRY_BACKOFF_BASE ** attempt
+                    logger.warning(
+                        f"[NODE_HELLO] Request error (attempt {attempt + 1}/{MAX_API_RETRIES}), "
+                        f"retrying in {backoff_seconds}s: hardware_id={hardware_id}, error={str(e)}"
+                    )
+                    await asyncio.sleep(backoff_seconds)
+                else:
+                    logger.error(
+                        f"[NODE_HELLO] Request error while registering node after {MAX_API_RETRIES} attempts: "
+                        f"hardware_id={hardware_id}, error={str(e)}"
+                    )
+                    NODE_HELLO_ERRORS.labels(error_type="request_error").inc()
+                    return
+        
+        # Если дошли сюда, все попытки провалились
+        if last_error:
+            logger.error(
+                f"[NODE_HELLO] Failed to register node after {MAX_API_RETRIES} attempts: "
+                f"hardware_id={hardware_id}, last_error={last_error}"
+            )
+            NODE_HELLO_ERRORS.labels(error_type="max_retries_exceeded").inc()
                 
     except Exception as e:
         logger.error(
@@ -563,6 +818,24 @@ async def handle_heartbeat(topic: str, payload: bytes):
     )
 
 
+def extract_zone_id_from_uid(zone_uid: Optional[str]) -> Optional[int]:
+    """
+    Извлечь zone_id из zone_uid (формат: zn-{id}).
+    
+    Args:
+        zone_uid: zone_uid в формате "zn-{id}" или None
+        
+    Returns:
+        zone_id как int или None если формат неверный
+    """
+    if not zone_uid or not zone_uid.startswith("zn-"):
+        return None
+    try:
+        return int(zone_uid.split("-")[1])
+    except (ValueError, IndexError):
+        return None
+
+
 def _extract_zone_id(topic: str) -> Optional[int]:
     """Извлечь zone_id (int) из топика (для обратной совместимости)."""
     # Формат: hydro/{gh_uid}/{zone_uid}/{node_uid}/telemetry/{metric_type}
@@ -570,11 +843,7 @@ def _extract_zone_id(topic: str) -> Optional[int]:
     parts = topic.split("/")
     if len(parts) >= 3:
         zone_part = parts[2]
-        if zone_part.startswith("zn-"):
-            try:
-                return int(zone_part.split("-")[1])
-            except (ValueError, IndexError):
-                pass
+        return extract_zone_id_from_uid(zone_part)
     return None
 
 
@@ -597,8 +866,76 @@ def _extract_node_uid(topic: str) -> Optional[str]:
 
 
 # Startup и shutdown события теперь обрабатываются через lifespan handler выше
+
+
+@app.get("/health")
+async def health():
+    """Health check endpoint."""
+    return {"status": "ok"}
+
+
+@app.post("/ingest/telemetry")
+async def ingest_telemetry(payload: dict):
+    """
+    HTTP endpoint для приема телеметрии.
+    Принимает JSON с массивом samples и обрабатывает их батчем.
+    """
+    samples_data = payload.get("samples", [])
+    if not samples_data:
+        return {"status": "ok", "count": 0}
     
-    logger.info("History Logger service stopped")
+    # Преобразуем в TelemetrySampleModel
+    samples = []
+    for sample_data in samples_data:
+        # Преобразуем timestamp если есть
+        ts = None
+        if sample_data.get("ts"):
+            ts_value = sample_data.get("ts")
+            if isinstance(ts_value, str):
+                try:
+                    ts = datetime.fromisoformat(ts_value.replace('Z', '+00:00'))
+                except Exception:
+                    pass
+            elif isinstance(ts_value, (int, float)):
+                try:
+                    ts = datetime.fromtimestamp(ts_value / 1000.0)
+                except Exception:
+                    pass
+        elif sample_data.get("timestamp"):
+            ts_value = sample_data.get("timestamp")
+            if isinstance(ts_value, str):
+                try:
+                    ts = datetime.fromisoformat(ts_value.replace('Z', '+00:00'))
+                except Exception:
+                    pass
+            elif isinstance(ts_value, (int, float)):
+                try:
+                    ts = datetime.fromtimestamp(ts_value / 1000.0)
+                except Exception:
+                    pass
+        
+        # Извлекаем zone_id из zone_uid если нужно
+        zone_id = sample_data.get("zone_id")
+        if not zone_id and sample_data.get("zone_uid"):
+            zone_uid = sample_data.get("zone_uid")
+            zone_id = extract_zone_id_from_uid(zone_uid)
+        
+        sample = TelemetrySampleModel(
+            node_uid=sample_data.get("node_uid", ""),
+            zone_uid=sample_data.get("zone_uid"),
+            zone_id=zone_id,
+            metric_type=sample_data.get("metric_type", ""),
+            value=sample_data.get("value", 0.0),
+            ts=ts,
+            raw=sample_data,
+            channel=sample_data.get("channel")
+        )
+        samples.append(sample)
+    
+    # Обрабатываем батч
+    await process_telemetry_batch(samples)
+    
+    return {"status": "ok", "count": len(samples)}
 
 
 def setup_signal_handlers():

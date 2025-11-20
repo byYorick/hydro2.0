@@ -2,6 +2,13 @@ import { mount } from '@vue/test-utils'
 import { describe, it, expect, vi } from 'vitest'
 import ErrorBoundary from '../ErrorBoundary.vue'
 
+// Mock router
+vi.mock('@inertiajs/vue3', () => ({
+  router: {
+    visit: vi.fn()
+  }
+}))
+
 describe('ErrorBoundary (P1-3)', () => {
   it('renders slot content when no error occurs', () => {
     const wrapper = mount(ErrorBoundary, {

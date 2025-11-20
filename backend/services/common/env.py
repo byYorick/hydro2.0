@@ -31,6 +31,14 @@ class Settings:
     mqtt_zone_format: str = os.getenv("MQTT_ZONE_FORMAT", "id")  # id | uid
     service_port: int = int(os.getenv("SERVICE_PORT", "9300"))  # Порт для history-logger
     
+    # History Logger specific settings
+    shutdown_wait_sec: int = int(os.getenv("SHUTDOWN_WAIT_SEC", "2"))  # Время ожидания перед закрытием Redis
+    shutdown_timeout_sec: float = float(os.getenv("SHUTDOWN_TIMEOUT_SEC", "30.0"))  # Таймаут graceful shutdown
+    final_batch_multiplier: int = int(os.getenv("FINAL_BATCH_MULTIPLIER", "10"))  # Множитель для финального батча
+    queue_check_interval_sec: float = float(os.getenv("QUEUE_CHECK_INTERVAL_SEC", "0.1"))  # Интервал проверки очереди
+    queue_error_retry_delay_sec: float = float(os.getenv("QUEUE_ERROR_RETRY_DELAY_SEC", "1.0"))  # Задержка при ошибке обработки очереди
+    laravel_api_timeout_sec: float = float(os.getenv("LARAVEL_API_TIMEOUT_SEC", "10.0"))  # Таймаут для Laravel API
+    
     redis_host: str = os.getenv("REDIS_HOST", "redis")
     redis_port: int = int(os.getenv("REDIS_PORT", "6379"))
 

@@ -1,4 +1,262 @@
-History Logger — запись телеметрии в PostgreSQL.
+# History Logger Service
 
+Сервис для записи телеметрии в PostgreSQL/TimescaleDB из MQTT.
 
+## Описание
 
+History Logger — критически важный сервис в системе Hydro 2.0, отвечающий за:
+- Прием телеметрии из MQTT
+- Буферизацию данных в Redis
+- Батчевую запись в PostgreSQL/TimescaleDB
+- Регистрацию новых узлов через Laravel API
+- Обновление heartbeat статусов узлов
+
+## Архитектура
+
+### Поток данных
+
+```
+MQTT Topics → handle_telemetry() → Redis Queue → process_telemetry_queue() → PostgreSQL/TimescaleDB
+```
+
+1. **MQTT Handler** (`handle_telemetry`) - получает сообщения из MQTT, валидирует через Pydantic, добавляет в Redis queue
+2. **Redis Queue** - буферизует телеметрию для батчевой обработки
+3. **Queue Processor** (`process_telemetry_queue`) - извлекает батчи из очереди и записывает в БД
+4. **Batch Writer** (`process_telemetry_batch`) - группирует данные и выполняет batch insert
+
+### Технологический стек
+
+- **FastAPI** (0.115.4) — веб-фреймворк
+- **Uvicorn** (0.32.0) — ASGI сервер
+- **asyncpg** (0.29.0) — асинхронный PostgreSQL драйвер
+- **redis** (5.0.1) — Redis клиент для буферизации
+- **paho-mqtt** (1.6.1) — MQTT клиент
+- **httpx** (0.27.2) — HTTP клиент для Laravel API
+- **Prometheus** (0.20.0) — метрики
+- **Pydantic** (2.9.2) — валидация данных
+
+## Конфигурация
+
+### Переменные окружения
+
+#### MQTT
+- `MQTT_HOST` - хост MQTT брокера (по умолчанию: `mqtt`)
+- `MQTT_PORT` - порт MQTT брокера (по умолчанию: `1883`)
+- `MQTT_TLS` - использовать TLS (по умолчанию: `1`)
+
+#### PostgreSQL
+- `PG_HOST` - хост PostgreSQL (по умолчанию: `db`)
+- `PG_PORT` - порт PostgreSQL (по умолчанию: `5432`)
+- `PG_DB` - имя базы данных (по умолчанию: `hydro_dev`)
+- `PG_USER` - пользователь БД (по умолчанию: `hydro`)
+- `PG_PASS` - пароль БД (обязателен в production)
+
+#### Redis
+- `REDIS_HOST` - хост Redis (по умолчанию: `redis`)
+- `REDIS_PORT` - порт Redis (по умолчанию: `6379`)
+
+#### Laravel API
+- `LARAVEL_API_URL` - URL Laravel API (по умолчанию: `http://laravel`)
+- `LARAVEL_API_TOKEN` - токен для Laravel API (опционален)
+
+#### History Logger специфичные настройки
+- `TELEMETRY_BATCH_SIZE` - размер батча для записи в БД (по умолчанию: `200`)
+- `TELEMETRY_FLUSH_MS` - интервал принудительного flush в мс (по умолчанию: `500`)
+- `SHUTDOWN_WAIT_SEC` - время ожидания перед закрытием Redis (по умолчанию: `2`)
+- `SHUTDOWN_TIMEOUT_SEC` - таймаут graceful shutdown в секундах (по умолчанию: `30.0`)
+- `FINAL_BATCH_MULTIPLIER` - множитель для финального батча при shutdown (по умолчанию: `10`)
+- `QUEUE_CHECK_INTERVAL_SEC` - интервал проверки очереди в секундах (по умолчанию: `0.1`)
+- `QUEUE_ERROR_RETRY_DELAY_SEC` - задержка при ошибке обработки очереди (по умолчанию: `1.0`)
+- `LARAVEL_API_TIMEOUT_SEC` - таймаут для Laravel API в секундах (по умолчанию: `10.0`)
+- `SERVICE_PORT` - порт для HTTP API (по умолчанию: `9300`)
+
+## API Endpoints
+
+### GET /health
+Health check endpoint.
+
+**Response:**
+```json
+{
+  "status": "ok"
+}
+```
+
+### POST /ingest/telemetry
+HTTP endpoint для приема телеметрии.
+
+**Request:**
+```json
+{
+  "samples": [
+    {
+      "node_uid": "nd-ph-1",
+      "zone_uid": "zn-1",
+      "zone_id": 1,
+      "metric_type": "PH",
+      "value": 6.5,
+      "ts": "2025-01-27T10:00:00Z",
+      "channel": "ph_sensor"
+    }
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "count": 1
+}
+```
+
+## MQTT Topics
+
+Сервис подписывается на следующие топики:
+
+- `hydro/+/+/+/telemetry/+` - телеметрия от узлов
+- `hydro/+/+/+/heartbeat` - heartbeat сообщения от узлов
+- `hydro/node_hello` - регистрация новых узлов
+- `hydro/+/+/+/node_hello` - регистрация новых узлов (альтернативный формат)
+
+### Формат топика телеметрии
+
+```
+hydro/{gh_uid}/{zone_uid}/{node_uid}/telemetry/{metric_type}
+```
+
+Пример: `hydro/gh-1/zn-1/nd-ph-1/telemetry/PH`
+
+### Формат payload телеметрии
+
+```json
+{
+  "metric_type": "PH",
+  "value": 6.5,
+  "timestamp": 1737979200000,
+  "channel": "ph_sensor"
+}
+```
+
+## Метрики Prometheus
+
+### Counter метрики
+- `telemetry_received_total` - общее количество полученных сообщений
+- `telemetry_processed_total` - общее количество обработанных сообщений
+- `heartbeat_received_total{node_uid}` - heartbeat по узлам
+- `node_hello_received_total` - количество node_hello
+- `node_hello_registered_total` - количество зарегистрированных узлов
+- `node_hello_errors_total{error_type}` - ошибки по типам
+
+### Histogram метрики
+- `telemetry_batch_size` - размер батчей
+
+### Gauge метрики
+- `telemetry_queue_size` - текущий размер очереди Redis
+- `telemetry_queue_age_seconds` - возраст самого старого элемента в очереди
+
+### Histogram метрики (время обработки)
+- `telemetry_processing_duration_seconds` - время обработки батча
+- `laravel_api_request_duration_seconds` - время ответа Laravel API
+- `redis_operation_duration_seconds` - время операций с Redis
+
+### Counter метрики (ошибки)
+- `telemetry_dropped_total{reason}` - потерянные сообщения по причинам
+- `database_errors_total{error_type}` - ошибки БД по типам
+
+## Особенности реализации
+
+### Retry логика
+
+- **Redis push**: до 3 попыток с exponential backoff (2^attempt секунд)
+- **Laravel API**: до 3 попыток для серверных ошибок (5xx), без retry для клиентских (4xx)
+
+### Валидация данных
+
+- Валидация размера payload (максимум 64KB)
+- Валидация через Pydantic модели
+- Проверка обязательных полей (metric_type, value)
+
+### Batch обработка
+
+- Группировка по `(zone_id, metric_type, node_id, channel)`
+- Один INSERT с множеством VALUES для каждой группы
+- Автоматический flush при достижении размера батча или интервала времени
+
+### Graceful shutdown
+
+- Отслеживание фоновых задач
+- Таймаут 30 секунд на завершение
+- Обработка оставшихся элементов в очереди
+
+## Разработка
+
+### Запуск локально
+
+```bash
+cd backend/services/history-logger
+python -m pip install -r requirements.txt
+python main.py
+```
+
+### Тестирование
+
+```bash
+# Все тесты
+pytest history-logger/test_main.py -v
+
+# Тесты критических исправлений
+pytest history-logger/test_critical_fixes.py -v
+```
+
+### Docker
+
+```bash
+docker build -t history-logger -f Dockerfile .
+docker run -p 9300:9300 history-logger
+```
+
+## Производительность
+
+### Текущие настройки
+- Размер батча: 200 элементов
+- Интервал flush: 500 мс
+- Максимальный размер очереди: 10000 элементов
+- PostgreSQL pool: min_size=1, max_size=10
+
+### Рекомендации по тюнингу
+- Увеличить `TELEMETRY_BATCH_SIZE` для высокой нагрузки
+- Уменьшить `TELEMETRY_FLUSH_MS` для более частой записи
+- Настроить PostgreSQL pool в зависимости от нагрузки
+
+## Безопасность
+
+- Валидация размера payload (защита от DoS)
+- Параметризованные SQL запросы (защита от SQL injection)
+- Whitelist полей для обновления в heartbeat
+- TLS для MQTT (по умолчанию включен)
+
+## Мониторинг
+
+Рекомендуется настроить алерты на:
+- Размер очереди Redis (приближение к максимуму)
+- Количество ошибок обработки
+- Время обработки батчей
+- Доступность сервиса (health endpoint)
+
+## Troubleshooting
+
+### Проблема: Потеря данных
+- Проверить размер очереди Redis
+- Проверить логи на ошибки записи в БД
+- Проверить метрику `telemetry_dropped_total`
+
+### Проблема: Медленная обработка
+- Проверить размер батчей (`telemetry_batch_size`)
+- Проверить производительность БД
+- Проверить метрику `telemetry_processing_duration_seconds`
+
+### Проблема: Ошибки регистрации узлов
+- Проверить доступность Laravel API
+- Проверить токен авторизации
+- Проверить метрику `node_hello_errors_total`

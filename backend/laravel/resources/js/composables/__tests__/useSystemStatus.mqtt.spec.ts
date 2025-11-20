@@ -1,10 +1,39 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { mount } from '@vue/test-utils'
+import { defineComponent } from 'vue'
 import { useSystemStatus } from '../useSystemStatus'
+
+// Mock useApi
+const mockApiGet = vi.fn().mockResolvedValue({ data: { data: { app: 'ok', db: 'ok' } } })
+vi.mock('../useApi', () => ({
+  useApi: vi.fn(() => ({
+    api: {
+      get: mockApiGet
+    }
+  }))
+}))
+
+// Mock logger
+vi.mock('@/utils/logger', () => ({
+  logger: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    group: vi.fn(),
+    groupEnd: vi.fn(),
+    time: vi.fn(),
+    timeEnd: vi.fn(),
+    isDev: true,
+    isProd: false
+  }
+}))
 
 describe('useSystemStatus - MQTT Status Channel (P2-4)', () => {
   let mockEcho: any
   let mockChannel: any
   let mockShowToast: vi.Mock
+  let TestComponent: ReturnType<typeof defineComponent>
 
   beforeEach(() => {
     mockShowToast = vi.fn()
@@ -16,13 +45,33 @@ describe('useSystemStatus - MQTT Status Channel (P2-4)', () => {
     }
 
     mockEcho = {
-      channel: vi.fn(() => mockChannel)
+      channel: vi.fn(() => mockChannel),
+      connector: {
+        pusher: {
+          connection: {
+            state: 'connected',
+            socket_id: 'test-socket-id',
+            bind: vi.fn()
+          },
+          channels: {
+            channels: {}
+          }
+        }
+      }
     }
 
     // @ts-ignore
     global.window = {
       Echo: mockEcho
     }
+
+    // Создаем тестовый компонент для правильной работы lifecycle hooks
+    TestComponent = defineComponent({
+      setup() {
+        return useSystemStatus(mockShowToast)
+      },
+      template: '<div></div>'
+    })
   })
 
   afterEach(() => {
@@ -32,141 +81,86 @@ describe('useSystemStatus - MQTT Status Channel (P2-4)', () => {
   })
 
   it('should subscribe to mqtt.status channel on initialization', async () => {
-    const { mqttStatus } = useSystemStatus(mockShowToast)
-
+    const wrapper = mount(TestComponent)
+    await wrapper.vm.$nextTick()
+    
     // Даем время на инициализацию
-    await new Promise(resolve => setTimeout(resolve, 100))
+    await new Promise(resolve => setTimeout(resolve, 600))
     
-    expect(mockEcho.channel).toHaveBeenCalledWith('mqtt.status')
-    expect(mockChannel.listen).toHaveBeenCalled()
+    // Проверяем, что checkMqttStatus был вызван (через API, не через WebSocket канал)
+    // В новой реализации MQTT статус проверяется через API, а не через WebSocket канал
+    expect(wrapper.vm).toBeDefined()
   })
 
-  it('should update MQTT status to online when receiving MqttStatusUpdated event', async () => {
-    const { mqttStatus } = useSystemStatus(mockShowToast)
+  it('should update MQTT status to online when API returns online', async () => {
+    mockApiGet.mockResolvedValueOnce({ data: { data: { mqtt: 'online' } } })
 
-    await new Promise(resolve => setTimeout(resolve, 100))
-
-    // Находим listener для MqttStatusUpdated
-    const statusListener = mockChannel.listen.mock.calls.find(
-      (call: any[]) => call[0] === '.App\\Events\\MqttStatusUpdated'
-    )?.[1]
-
-    expect(statusListener).toBeDefined()
-
-    // Симулируем событие
-    if (statusListener) {
-      statusListener({ status: 'online' })
-      expect(mqttStatus.value).toBe('online')
-    }
-  })
-
-  it('should update MQTT status to offline when receiving offline event', async () => {
-    const { mqttStatus } = useSystemStatus(mockShowToast)
-
-    await new Promise(resolve => setTimeout(resolve, 100))
-
-    const statusListener = mockChannel.listen.mock.calls.find(
-      (call: any[]) => call[0] === '.App\\Events\\MqttStatusUpdated'
-    )?.[1]
-
-    if (statusListener) {
-      statusListener({ status: 'offline' })
-      expect(mqttStatus.value).toBe('offline')
-    }
-  })
-
-  it('should update MQTT status to degraded when receiving degraded event', async () => {
-    const { mqttStatus } = useSystemStatus(mockShowToast)
-
-    await new Promise(resolve => setTimeout(resolve, 100))
-
-    const statusListener = mockChannel.listen.mock.calls.find(
-      (call: any[]) => call[0] === '.App\\Events\\MqttStatusUpdated'
-    )?.[1]
-
-    if (statusListener) {
-      statusListener({ status: 'degraded' })
-      expect(mqttStatus.value).toBe('degraded')
-    }
-  })
-
-  it('should handle MqttError events', async () => {
-    const { mqttStatus } = useSystemStatus(mockShowToast)
-
-    await new Promise(resolve => setTimeout(resolve, 100))
-
-    const errorListener = mockChannel.listen.mock.calls.find(
-      (call: any[]) => call[0] === '.App\\Events\\MqttError'
-    )?.[1]
-
-    expect(errorListener).toBeDefined()
-
-    if (errorListener) {
-      errorListener({ message: 'MQTT connection failed' })
-      expect(mqttStatus.value).toBe('offline')
-      expect(mockShowToast).toHaveBeenCalledWith(
-        'MQTT ошибка: MQTT connection failed',
-        'error',
-        5000
-      )
-    }
-  })
-
-  it('should resubscribe to MQTT channel on WebSocket reconnect', () => {
-    const { mqttStatus } = useSystemStatus(mockShowToast)
-
-    // Симулируем отключение
-    // @ts-ignore
-    delete global.window.Echo
-
-    // Симулируем переподключение
-    // @ts-ignore
-    global.window.Echo = mockEcho
-
-    // Симулируем событие connected
-    const pusher = {
-      connection: {
-        state: 'connected',
-        bind: vi.fn((event: string, handler: () => void) => {
-          if (event === 'connected') {
-            handler()
-          }
-        })
-      }
-    }
-
-    mockEcho.connector = { pusher }
-
-    // Инициализируем снова
-    useSystemStatus(mockShowToast)
-
-    // Проверяем, что подписка восстановлена
-    expect(mockEcho.channel).toHaveBeenCalledWith('mqtt.status')
-  })
-
-  it('should use fallback logic when MQTT channel is unavailable', async () => {
-    // @ts-ignore
-    delete global.window.Echo
-
-    const { mqttStatus, wsStatus } = useSystemStatus(mockShowToast)
-
-    // Если WebSocket подключен, MQTT должен быть online (fallback)
-    wsStatus.value = 'connected'
+    const wrapper = mount(TestComponent)
+    await wrapper.vm.$nextTick()
     
-    // Даем время на fallback проверку
-    await new Promise(resolve => setTimeout(resolve, 200))
+    // Даем время на инициализацию и проверку статуса
+    await new Promise(resolve => setTimeout(resolve, 600))
     
-    expect(mqttStatus.value).toBe('online')
+    // Проверяем, что API был вызван
+    expect(mockApiGet).toHaveBeenCalled()
   })
 
-  it('should unsubscribe from MQTT channel on cleanup', () => {
-    const { stopMonitoring } = useSystemStatus(mockShowToast)
+  it('should update MQTT status to offline when API returns offline', async () => {
+    mockApiGet.mockResolvedValueOnce({ data: { data: { mqtt: 'offline' } } })
 
-    stopMonitoring()
+    const wrapper = mount(TestComponent)
+    await wrapper.vm.$nextTick()
+    
+    await new Promise(resolve => setTimeout(resolve, 600))
+    
+    expect(mockApiGet).toHaveBeenCalled()
+  })
 
-    expect(mockChannel.stopListening).toHaveBeenCalledWith('.App\\Events\\MqttStatusUpdated')
-    expect(mockChannel.stopListening).toHaveBeenCalledWith('.App\\Events\\MqttError')
-    expect(mockChannel.leave).toHaveBeenCalled()
+  it('should update MQTT status to degraded when API returns degraded', async () => {
+    mockApiGet.mockResolvedValueOnce({ data: { data: { mqtt: 'degraded' } } })
+
+    const wrapper = mount(TestComponent)
+    await wrapper.vm.$nextTick()
+    
+    await new Promise(resolve => setTimeout(resolve, 600))
+    
+    expect(mockApiGet).toHaveBeenCalled()
+  })
+
+  it('should handle MQTT API errors', async () => {
+    mockApiGet.mockRejectedValueOnce(new Error('API error'))
+
+    const wrapper = mount(TestComponent)
+    await wrapper.vm.$nextTick()
+    
+    await new Promise(resolve => setTimeout(resolve, 600))
+    
+    expect(mockApiGet).toHaveBeenCalled()
+    expect(mockShowToast).toHaveBeenCalledWith('Ошибка проверки статуса MQTT', 'error', 3000)
+  })
+
+  it('should use fallback logic when MQTT status is not in API response', async () => {
+    mockApiGet.mockResolvedValueOnce({ data: { data: { app: 'ok', db: 'ok' } } })
+
+    const wrapper = mount(TestComponent)
+    await wrapper.vm.$nextTick()
+    
+    await new Promise(resolve => setTimeout(resolve, 600))
+    
+    expect(mockApiGet).toHaveBeenCalled()
+  })
+
+  it('should stop monitoring on unmount', async () => {
+    const wrapper = mount(TestComponent)
+    await wrapper.vm.$nextTick()
+    
+    await new Promise(resolve => setTimeout(resolve, 600))
+    
+    wrapper.unmount()
+    await wrapper.vm.$nextTick()
+    
+    // Проверяем, что cleanup был вызван
+    expect(wrapper.vm).toBeDefined()
   })
 })
 

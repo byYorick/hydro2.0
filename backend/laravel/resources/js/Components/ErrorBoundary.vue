@@ -23,6 +23,7 @@
 <script setup lang="ts">
 import { ref, onErrorCaptured, computed } from 'vue'
 import { router } from '@inertiajs/vue3'
+import { logger } from '@/utils/logger'
 import Card from './Card.vue'
 import Button from './Button.vue'
 
@@ -31,7 +32,7 @@ const isDev = computed(() => import.meta.env.DEV)
 
 onErrorCaptured((err: Error) => {
   error.value = err
-  console.error('[ErrorBoundary] Caught error:', err)
+  logger.error('[ErrorBoundary] Caught error:', err)
   return false // Prevent propagation
 })
 

@@ -93,7 +93,7 @@ async def test_process_telemetry_queue_flush_by_size(mock_redis_queue):
 @pytest.mark.asyncio
 async def test_process_telemetry_queue_flush_by_time(mock_redis_queue):
     """Тест обработки очереди по времени (flush_ms)."""
-    from main import process_telemetry_batch
+    from main import process_telemetry_queue
     import time
     
     queue_items = [
@@ -110,15 +110,22 @@ async def test_process_telemetry_queue_flush_by_time(mock_redis_queue):
     
     with patch('main.telemetry_queue', mock_redis_queue), \
          patch('main.get_settings') as mock_settings, \
-         patch('main.now_ts') as mock_now_ts, \
+         patch('main.shutdown_event') as mock_shutdown, \
          patch('main.process_telemetry_batch', new_callable=AsyncMock) as mock_process:
         
         # Настраиваем моки
         mock_settings.return_value.telemetry_batch_size = 200
         mock_settings.return_value.telemetry_flush_ms = 500
+        mock_settings.return_value.queue_check_interval_sec = 0.1
+        mock_settings.return_value.final_batch_multiplier = 10
         
-        # Симулируем прошедшее время
-        mock_now_ts.side_effect = [1000.0, 1501.0]  # Прошло 501 мс
+        # Симулируем shutdown_event - сначала False, потом True
+        call_count = [0]
+        def is_set():
+            call_count[0] += 1
+            return call_count[0] > 2  # После нескольких вызовов возвращаем True
+        
+        mock_shutdown.is_set = is_set
         
         mock_redis_queue.pop_batch.return_value = queue_items
         
@@ -198,10 +205,14 @@ async def test_telemetry_queue_item_conversion():
     )
     
     # Преобразуем в TelemetrySampleModel
+    # zone_id извлекается из zone_uid в process_telemetry_queue
+    from main import extract_zone_id_from_uid
+    zone_id = extract_zone_id_from_uid(queue_item.zone_uid) if queue_item.zone_uid else None
+    
     sample = TelemetrySampleModel(
         node_uid=queue_item.node_uid,
         zone_uid=queue_item.zone_uid,
-        zone_id=queue_item.zone_id,
+        zone_id=zone_id,
         metric_type=queue_item.metric_type,
         value=queue_item.value,
         ts=queue_item.ts,

@@ -4,6 +4,8 @@
 import { ref, computed, type Ref, type ComputedRef } from 'vue'
 import { router } from '@inertiajs/vue3'
 import { useApi, type ToastHandler } from './useApi'
+import { useErrorHandler } from './useErrorHandler'
+import { logger } from '@/utils/logger'
 import type { Command, CommandType, CommandStatus, CommandParams, PendingCommand } from '@/types'
 
 interface PendingCommandInternal {
@@ -20,6 +22,7 @@ interface PendingCommandInternal {
  */
 export function useCommands(showToast?: ToastHandler) {
   const { api } = useApi(showToast || null)
+  const { handleError } = useErrorHandler(showToast)
   const loading: Ref<boolean> = ref(false)
   const error: Ref<Error | null> = ref(null)
   const pendingCommands: Ref<Map<number | string, PendingCommandInternal>> = ref(new Map())
@@ -117,17 +120,14 @@ export function useCommands(showToast?: ToastHandler) {
 
       return command
     } catch (err) {
-      error.value = err as Error
-      const errorMsg = (err as { response?: { data?: { message?: string } }; message?: string })
-        ?.response?.data?.message || 
-        (err as { message?: string })?.message || 
-        'Неизвестная ошибка'
-      
-      if (showToast) {
-        showToast(`Ошибка: ${errorMsg}`, 'error', 5000)
-      }
-      
-      throw err
+      const normalizedError = handleError(err, {
+        component: 'useCommands',
+        action: 'sendNodeCommand',
+        nodeId,
+        commandType: type,
+      })
+      error.value = normalizedError instanceof Error ? normalizedError : new Error('Unknown error')
+      throw normalizedError
     } finally {
       loading.value = false
     }
@@ -153,11 +153,13 @@ export function useCommands(showToast?: ToastHandler) {
       
       return status
     } catch (err) {
-      error.value = err as Error
-      if (showToast) {
-        showToast('Ошибка при получении статуса команды', 'error', 5000)
-      }
-      throw err
+      const normalizedError = handleError(err, {
+        component: 'useCommands',
+        action: 'getCommandStatus',
+        commandId,
+      })
+      error.value = normalizedError instanceof Error ? normalizedError : new Error('Unknown error')
+      throw normalizedError
     }
   }
 

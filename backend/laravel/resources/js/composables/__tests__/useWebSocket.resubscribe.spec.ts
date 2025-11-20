@@ -1,5 +1,23 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
+// Mock logger
+vi.mock('@/utils/logger', () => ({
+  logger: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    group: vi.fn(),
+    groupEnd: vi.fn(),
+    groupCollapsed: vi.fn(),
+    table: vi.fn(),
+    time: vi.fn(),
+    timeEnd: vi.fn(),
+    isDev: true,
+    isProd: false
+  }
+}))
+
 describe('useWebSocket - Resubscribe (P1-2)', () => {
   let mockEcho: any
   let mockChannel: any

@@ -120,6 +120,7 @@
 
 <script setup>
 import { ref, reactive, computed } from 'vue'
+import { logger } from '@/utils/logger'
 import Button from '@/Components/Button.vue'
 import ChartBase from '@/Components/ChartBase.vue'
 import axios from 'axios'
@@ -266,8 +267,10 @@ async function onSubmit() {
       error.value = 'Unexpected response format'
     }
   } catch (err) {
-    console.error('Simulation error:', err)
-    error.value = err.response?.data?.message || err.message || 'Failed to run simulation'
+    logger.error('[ZoneSimulationModal] Simulation error:', err)
+    error.value = (err as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message || 
+                  (err as { message?: string })?.message || 
+                  'Failed to run simulation'
   } finally {
     loading.value = false
   }

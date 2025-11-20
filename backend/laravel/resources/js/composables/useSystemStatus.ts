@@ -3,6 +3,7 @@
  */
 import { ref, computed, onMounted, onUnmounted, type Ref, type ComputedRef } from 'vue'
 import { useApi, type ToastHandler } from './useApi'
+import { logger } from '@/utils/logger'
 
 const POLL_INTERVAL = 30000 // 30 секунд
 
@@ -148,7 +149,7 @@ export function useSystemStatus(showToast?: ToastHandler) {
       }
     } catch (err) {
       // Если произошла ошибка при проверке, считаем disconnected
-      console.warn('[useSystemStatus] Ошибка проверки WebSocket:', err)
+      logger.warn('[useSystemStatus] Ошибка проверки WebSocket:', err)
       wsStatus.value = 'disconnected'
     }
   }
@@ -196,7 +197,7 @@ export function useSystemStatus(showToast?: ToastHandler) {
       bindConnectionEvents(pusher.connection)
     } catch (err) {
       // Если не удалось настроить слушатели, просто используем периодическую проверку
-      console.warn('[useSystemStatus] Ошибка настройки WebSocket listeners:', err)
+      logger.warn('[useSystemStatus] Ошибка настройки WebSocket listeners:', err)
     }
   }
 
@@ -234,7 +235,7 @@ export function useSystemStatus(showToast?: ToastHandler) {
         wsStatus.value = 'connected'
       }
     } catch (err) {
-      console.warn('[useSystemStatus] Ошибка привязки событий connection:', err)
+      logger.warn('[useSystemStatus] Ошибка привязки событий connection:', err)
     }
   }
 

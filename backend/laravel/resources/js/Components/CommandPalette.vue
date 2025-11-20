@@ -47,6 +47,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, computed, watch, nextTick } from 'vue'
 import { router } from '@inertiajs/vue3'
+import { logger } from '@/utils/logger'
 import { useApi } from '@/composables/useApi'
 import { useCommands } from '@/composables/useCommands'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
@@ -158,7 +159,7 @@ async function searchAPI(query: string): Promise<void> {
       recipes: recipesRes.status === 'fulfilled' ? (recipesRes.value.data?.data || recipesRes.value.data || []) : []
     }
   } catch (err) {
-    console.error('Search error:', err)
+    logger.error('[CommandPalette] Search error:', err)
     searchResults.value = { zones: [], nodes: [], recipes: [] }
   } finally {
     loading.value = false
@@ -337,7 +338,7 @@ async function executeZoneAction(zoneId: number, action: string, zoneName: strin
     }
     close()
   } catch (err) {
-    console.error(`Failed to execute ${action}:`, err)
+    logger.error(`[CommandPalette] Failed to execute ${action}:`, err)
   }
 }
 

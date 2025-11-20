@@ -11,6 +11,21 @@ vi.mock('../useApi', () => ({
   }))
 }))
 
+// Mock useErrorHandler
+vi.mock('../useErrorHandler', () => ({
+  useErrorHandler: vi.fn(() => ({
+    handleError: vi.fn((err) => {
+      // Return normalized error
+      if (err instanceof Error) return err
+      return new Error(err?.message || 'Unknown error')
+    }),
+    clearError: vi.fn(),
+    isErrorType: vi.fn(),
+    lastError: { value: null },
+    errorContext: { value: null }
+  }))
+}))
+
 // Mock router
 vi.mock('@inertiajs/vue3', () => ({
   router: {

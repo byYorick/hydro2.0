@@ -65,8 +65,7 @@ async def test_get_zone_nodes():
                 "id": 1,
                 "uid": "nd-irrig-1",
                 "type": "irrigation",
-                "channel_name": "pump1",
-                "channel_id": None,
+                "channel": "pump1",
             }
         ]
         result = await get_zone_nodes(1)
@@ -77,34 +76,64 @@ async def test_get_zone_nodes():
 @pytest.mark.asyncio
 async def test_check_and_correct_zone_no_targets():
     """Test zone check when no targets exist."""
+    from repositories import ZoneRepository, TelemetryRepository, NodeRepository, RecipeRepository
+    
+    zone_repo = Mock(spec=ZoneRepository)
+    telemetry_repo = Mock(spec=TelemetryRepository)
+    node_repo = Mock(spec=NodeRepository)
+    recipe_repo = Mock(spec=RecipeRepository)
+    
+    recipe_repo.get_zone_data_batch = AsyncMock(return_value={
+        "recipe_info": None,
+        "telemetry": {},
+        "nodes": {},
+        "capabilities": {}
+    })
+    
     mqtt = Mock()
-    with patch("main.get_zone_recipe_and_targets") as mock_recipe:
-        mock_recipe.return_value = None
-        await check_and_correct_zone(1, mqtt, "gh-1", {})
-        mqtt.publish_json.assert_not_called()
+    with patch("recipe_utils.calculate_current_phase", return_value=None):
+        await check_and_correct_zone(1, mqtt, "gh-1", {}, zone_repo, telemetry_repo, node_repo, recipe_repo)
+    mqtt.publish_json.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_check_and_correct_zone_ph_correction():
     """Test pH correction command when pH is too low."""
-    mqtt = Mock()
-    with patch("main.get_zone_recipe_and_targets") as mock_recipe, \
-         patch("main.get_zone_telemetry_last") as mock_telemetry, \
-         patch("main.get_zone_nodes") as mock_nodes:
-        mock_recipe.return_value = {
+    from repositories import ZoneRepository, TelemetryRepository, NodeRepository, RecipeRepository
+    
+    zone_repo = Mock(spec=ZoneRepository)
+    telemetry_repo = Mock(spec=TelemetryRepository)
+    node_repo = Mock(spec=NodeRepository)
+    recipe_repo = Mock(spec=RecipeRepository)
+    
+    recipe_repo.get_zone_data_batch = AsyncMock(return_value={
+        "recipe_info": {
             "zone_id": 1,
             "targets": {"ph": 6.5, "ec": 1.8},
             "phase_name": "Germination",
-        }
-        mock_telemetry.return_value = {"ph": 6.2, "ec": 1.8}  # pH too low
-        mock_nodes.return_value = {
-            "irrigation:pump1": {
+        },
+        "telemetry": {"PH": 6.2, "EC": 1.8},  # pH too low
+        "nodes": {
+            "irrig:default": {
                 "node_uid": "nd-irrig-1",
-                "channel": "pump1",
-                "type": "irrigation",
+                "channel": "default",
+                "type": "irrig",
             }
-        }
-        await check_and_correct_zone(1, mqtt, "gh-1", {})
+        },
+        "capabilities": {"ph_control": True, "ec_control": False}
+    })
+    
+    mqtt = Mock()
+    mqtt.publish_json = AsyncMock()
+    
+    with patch("recipe_utils.calculate_current_phase", return_value=None), \
+         patch("main.check_water_level", return_value=(True, 0.5)), \
+         patch("health_monitor.calculate_zone_health", return_value={"health_score": 85.0}), \
+         patch("health_monitor.update_zone_health_in_db"), \
+         patch("correction_controller.should_apply_correction", return_value=(True, "Ready")), \
+         patch("correction_controller.record_correction"), \
+         patch("infrastructure.command_bus.CommandBus.publish_controller_command", return_value=True):
+        await check_and_correct_zone(1, mqtt, "gh-1", {}, zone_repo, telemetry_repo, node_repo, recipe_repo)
         # Should publish correction command
         assert mqtt.publish_json.called
 
@@ -157,34 +186,25 @@ async def test_get_zone_capabilities_default():
 @pytest.mark.asyncio
 async def test_check_and_correct_zone_with_capabilities():
     """Test zone correction with capabilities enabled."""
-    mqtt = Mock()
-    mqtt.publish_json = Mock()
-    cfg = {"greenhouses": [{"uid": "gh-1"}]}
+    from repositories import ZoneRepository, TelemetryRepository, NodeRepository, RecipeRepository
     
-    with patch("main.get_zone_recipe_and_targets") as mock_recipe, \
-         patch("main.get_zone_telemetry_last") as mock_telemetry, \
-         patch("main.get_zone_nodes") as mock_nodes, \
-         patch("main.get_zone_capabilities") as mock_capabilities, \
-         patch("main.check_water_level") as mock_water_level, \
-         patch("main.check_and_control_lighting") as mock_light, \
-         patch("main.check_and_control_climate") as mock_climate, \
-         patch("main.check_and_control_irrigation") as mock_irrigation, \
-         patch("main.check_and_control_recirculation") as mock_recirculation, \
-         patch("main.create_zone_event") as mock_event, \
-         patch("main.publish_correction_command") as mock_publish:
-        
-        mock_recipe.return_value = {
+    zone_repo = Mock(spec=ZoneRepository)
+    telemetry_repo = Mock(spec=TelemetryRepository)
+    node_repo = Mock(spec=NodeRepository)
+    recipe_repo = Mock(spec=RecipeRepository)
+    
+    recipe_repo.get_zone_data_batch = AsyncMock(return_value={
+        "recipe_info": {
             "zone_id": 1,
             "phase_index": 0,
             "targets": {"ph": 6.5, "ec": 1.8, "temp_air": 25.0},
             "phase_name": "Germination",
-        }
-        mock_telemetry.return_value = {"ph": 6.3, "ec": 1.7, "TEMP_AIR": 24.0}
-        mock_nodes.return_value = {
-            "irrig:default": {"node_uid": "nd-irrig-1", "channel": "pump1", "type": "irrig"}
-        }
-        # Все capabilities включены
-        mock_capabilities.return_value = {
+        },
+        "telemetry": {"PH": 6.3, "EC": 1.7, "TEMP_AIR": 24.0},
+        "nodes": {
+            "irrig:default": {"node_uid": "nd-irrig-1", "channel": "default", "type": "irrig"}
+        },
+        "capabilities": {
             "ph_control": True,
             "ec_control": True,
             "climate_control": True,
@@ -193,16 +213,29 @@ async def test_check_and_correct_zone_with_capabilities():
             "recirculation": True,
             "flow_sensor": True,
         }
-        mock_water_level.return_value = (True, 0.5)
-        mock_light.return_value = None
-        mock_climate.return_value = []
-        mock_irrigation.return_value = None
-        mock_recirculation.return_value = None
+    })
+    
+    mqtt = Mock()
+    mqtt.publish_json = AsyncMock()
+    cfg = {"greenhouses": [{"uid": "gh-1"}]}
+    
+    with patch("recipe_utils.calculate_current_phase", return_value=None), \
+         patch("main.check_water_level", return_value=(True, 0.5)), \
+         patch("light_controller.check_and_control_lighting") as mock_light, \
+         patch("climate_controller.check_and_control_climate") as mock_climate, \
+         patch("irrigation_controller.check_and_control_irrigation") as mock_irrigation, \
+         patch("irrigation_controller.check_and_control_recirculation") as mock_recirculation, \
+         patch("main.create_zone_event"), \
+         patch("main.publish_correction_command"), \
+         patch("health_monitor.calculate_zone_health", return_value={"health_score": 85.0}), \
+         patch("health_monitor.update_zone_health_in_db"), \
+         patch("correction_controller.should_apply_correction", return_value=(False, "Cooldown")), \
+         patch("infrastructure.command_bus.CommandBus.publish_controller_command", return_value=True):
         
-        await check_and_correct_zone(1, mqtt, "gh-1", cfg)
+        await check_and_correct_zone(1, mqtt, "gh-1", cfg, zone_repo, telemetry_repo, node_repo, recipe_repo)
         
-        # Проверяем, что capabilities были получены
-        mock_capabilities.assert_called_once_with(1)
+        # Проверяем, что данные были получены
+        recipe_repo.get_zone_data_batch.assert_called_once_with(1)
         
         # Проверяем, что контроллеры были вызваны
         mock_light.assert_called_once()
@@ -214,31 +247,23 @@ async def test_check_and_correct_zone_with_capabilities():
 @pytest.mark.asyncio
 async def test_check_and_correct_zone_with_capabilities_disabled():
     """Test zone correction with capabilities disabled."""
-    mqtt = Mock()
-    mqtt.publish_json = Mock()
-    cfg = {"greenhouses": [{"uid": "gh-1"}]}
+    from repositories import ZoneRepository, TelemetryRepository, NodeRepository, RecipeRepository
     
-    with patch("main.get_zone_recipe_and_targets") as mock_recipe, \
-         patch("main.get_zone_telemetry_last") as mock_telemetry, \
-         patch("main.get_zone_nodes") as mock_nodes, \
-         patch("main.get_zone_capabilities") as mock_capabilities, \
-         patch("main.check_water_level") as mock_water_level, \
-         patch("main.check_and_control_lighting") as mock_light, \
-         patch("main.check_and_control_climate") as mock_climate, \
-         patch("main.check_and_control_irrigation") as mock_irrigation, \
-         patch("main.check_and_control_recirculation") as mock_recirculation, \
-         patch("main.create_zone_event") as mock_event:
-        
-        mock_recipe.return_value = {
+    zone_repo = Mock(spec=ZoneRepository)
+    telemetry_repo = Mock(spec=TelemetryRepository)
+    node_repo = Mock(spec=NodeRepository)
+    recipe_repo = Mock(spec=RecipeRepository)
+    
+    recipe_repo.get_zone_data_batch = AsyncMock(return_value={
+        "recipe_info": {
             "zone_id": 1,
             "phase_index": 0,
             "targets": {"ph": 6.5, "ec": 1.8},
             "phase_name": "Germination",
-        }
-        mock_telemetry.return_value = {"ph": 6.3, "ec": 1.7}
-        mock_nodes.return_value = {}
-        # Все capabilities отключены
-        mock_capabilities.return_value = {
+        },
+        "telemetry": {"PH": 6.3, "EC": 1.7},
+        "nodes": {},
+        "capabilities": {
             "ph_control": False,
             "ec_control": False,
             "climate_control": False,
@@ -247,9 +272,23 @@ async def test_check_and_correct_zone_with_capabilities_disabled():
             "recirculation": False,
             "flow_sensor": False,
         }
-        mock_water_level.return_value = (True, 0.5)
+    })
+    
+    mqtt = Mock()
+    mqtt.publish_json = AsyncMock()
+    cfg = {"greenhouses": [{"uid": "gh-1"}]}
+    
+    with patch("recipe_utils.calculate_current_phase", return_value=None), \
+         patch("main.check_water_level", return_value=(True, 0.5)), \
+         patch("light_controller.check_and_control_lighting") as mock_light, \
+         patch("climate_controller.check_and_control_climate") as mock_climate, \
+         patch("irrigation_controller.check_and_control_irrigation") as mock_irrigation, \
+         patch("irrigation_controller.check_and_control_recirculation") as mock_recirculation, \
+         patch("health_monitor.calculate_zone_health", return_value={"health_score": 85.0}), \
+         patch("health_monitor.update_zone_health_in_db"), \
+         patch("infrastructure.command_bus.CommandBus.publish_controller_command", return_value=True):
         
-        await check_and_correct_zone(1, mqtt, "gh-1", cfg)
+        await check_and_correct_zone(1, mqtt, "gh-1", cfg, zone_repo, telemetry_repo, node_repo, recipe_repo)
         
         # Проверяем, что контроллеры НЕ были вызваны
         mock_light.assert_not_called()

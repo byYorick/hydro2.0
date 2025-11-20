@@ -2,7 +2,7 @@ import asyncio
 import json
 import httpx
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple, List
 from datetime import datetime
 from common.env import get_settings
 from common.mqtt import MqttClient
@@ -16,7 +16,7 @@ from recipe_utils import calculate_current_phase, advance_phase, get_phase_targe
 LOOP_ERRORS = Counter("automation_loop_errors_total", "Errors in automation main loop", ["error_type"])
 CONFIG_FETCH_ERRORS = Counter("config_fetch_errors_total", "Errors fetching config from Laravel", ["error_type"])
 CONFIG_FETCH_SUCCESS = Counter("config_fetch_success_total", "Successful config fetches from Laravel")
-MQTT_PUBLISH_ERRORS = Counter("mqtt_publish_errors_total", "MQTT publish errors", ["error_type"])
+# MQTT_PUBLISH_ERRORS и COMMANDS_SENT перенесены в infrastructure/command_bus.py
 from common.water_flow import (
     check_water_level,
     ensure_water_level_alert,
@@ -24,15 +24,48 @@ from common.water_flow import (
 )
 # tick_recirculation moved to irrigation_controller
 from common.pump_safety import can_run_pump
-from light_controller import check_and_control_lighting
-from climate_controller import check_and_control_climate
-from irrigation_controller import check_and_control_irrigation, check_and_control_recirculation
-from health_monitor import calculate_zone_health, update_zone_health_in_db
-from correction_cooldown import should_apply_correction, record_correction
+from repositories import ZoneRepository, TelemetryRepository, NodeRepository, RecipeRepository
+from services import ZoneAutomationService
+from infrastructure import CommandBus
+from config.settings import get_settings as get_automation_settings
+from error_handler import handle_automation_error, error_handler
+from exceptions import InvalidConfigurationError
 
-ZONE_CHECKS = Counter("zone_checks_total", "Zone automation checks")
-COMMANDS_SENT = Counter("automation_commands_sent_total", "Commands sent by automation", ["zone_id", "metric"])
-CHECK_LAT = Histogram("zone_check_seconds", "Zone check duration seconds")
+# Метрики перенесены в соответствующие модули:
+# - ZONE_CHECKS и CHECK_LAT в services/zone_automation_service.py
+# - COMMANDS_SENT и MQTT_PUBLISH_ERRORS в infrastructure/command_bus.py
+
+
+def validate_config(cfg: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
+    """
+    Валидация конфигурации из API.
+    
+    Returns:
+        Tuple[is_valid, error_message]
+    """
+    if not isinstance(cfg, dict):
+        return False, "Config must be a dictionary"
+    
+    if "greenhouses" not in cfg:
+        return False, "Config missing 'greenhouses' key"
+    
+    if not isinstance(cfg["greenhouses"], list):
+        return False, "'greenhouses' must be a list"
+    
+    if len(cfg["greenhouses"]) == 0:
+        return False, "'greenhouses' list is empty"
+    
+    gh = cfg["greenhouses"][0]
+    if not isinstance(gh, dict):
+        return False, "Greenhouse must be a dictionary"
+    
+    if "uid" not in gh:
+        return False, "Greenhouse must have 'uid' field"
+    
+    if not isinstance(gh["uid"], str) or not gh["uid"]:
+        return False, "Greenhouse 'uid' must be a non-empty string"
+    
+    return True, None
 
 
 def _extract_gh_uid_from_config(cfg: Dict[str, Any]) -> Optional[str]:
@@ -131,6 +164,8 @@ async def get_zone_capabilities(zone_id: int) -> Dict[str, bool]:
     }
 
 
+# DEPRECATED: Используйте CommandBus вместо этой функции
+# Оставлено для обратной совместимости
 async def publish_correction_command(
     mqtt: MqttClient,
     gh_uid: str,
@@ -140,24 +175,13 @@ async def publish_correction_command(
     cmd: str,
     params: Optional[Dict[str, Any]] = None,
 ) -> bool:
-    """Publish command via MQTT for zone automation."""
-    try:
-        if not mqtt.is_connected():
-            error_type = "not_connected"
-            MQTT_PUBLISH_ERRORS.labels(error_type=error_type).inc()
-            logger.error(f"Zone {zone_id}: Cannot publish command - MQTT not connected")
-            return False
-        
-        payload = {"cmd": cmd, **(({"params": params}) if params else {})}
-        topic = f"hydro/{gh_uid}/zn-{zone_id}/{node_uid}/{channel}/command"
-        mqtt.publish_json(topic, payload, qos=1, retain=False)
-        COMMANDS_SENT.labels(zone_id=zone_id, metric=cmd).inc()
-        return True
-    except Exception as e:
-        error_type = type(e).__name__
-        MQTT_PUBLISH_ERRORS.labels(error_type=error_type).inc()
-        logger.error(f"Zone {zone_id}: Failed to publish command {cmd} to {topic}: {e}", exc_info=True)
-        return False
+    """
+    DEPRECATED: Используйте CommandBus.publish_command() вместо этой функции.
+    Оставлено для обратной совместимости.
+    """
+    from infrastructure import CommandBus
+    command_bus = CommandBus(mqtt, gh_uid)
+    return await command_bus.publish_command(zone_id, node_uid, channel, cmd, params)
 
 
 async def check_phase_transitions(zone_id: int):
@@ -182,306 +206,78 @@ async def check_phase_transitions(zone_id: int):
             )
 
 
-async def check_and_correct_zone(zone_id: int, mqtt: MqttClient, gh_uid: str, cfg: Dict[str, Any]):
-    """Check zone telemetry against targets and send correction commands."""
-    with CHECK_LAT.time():
-        ZONE_CHECKS.inc()
+def validate_zone_id(zone_id: Any) -> int:
+    """Валидация zone_id."""
+    if not isinstance(zone_id, int):
+        raise ValueError(f"zone_id must be int, got {type(zone_id)}")
+    if zone_id <= 0:
+        raise ValueError(f"zone_id must be positive, got {zone_id}")
+    return zone_id
 
-        # Check phase transitions first
-        await check_phase_transitions(zone_id)
 
-        # Get recipe phase and targets
-        recipe_info = await get_zone_recipe_and_targets(zone_id)
-        if not recipe_info or not recipe_info.get("targets"):
-            return
-        targets = recipe_info["targets"]
-        if not isinstance(targets, dict):
-            return
-        # Get current telemetry
-        telemetry = await get_zone_telemetry_last(zone_id)
-        # Get nodes for zone
-        nodes = await get_zone_nodes(zone_id)
-        # Get zone capabilities
-        capabilities = await get_zone_capabilities(zone_id)
-        
-        # Check water level before any dosing/pumping operations
-        water_level_ok, water_level = await check_water_level(zone_id)
-        if water_level is not None:
-            await ensure_water_level_alert(zone_id, water_level)
-        
-        # Light Controller (первый согласно ZONE_LOGIC_FLOW.md раздел 2.3)
-        if capabilities.get("light_control", False):
-            light_cmd = await check_and_control_lighting(zone_id, targets, datetime.now())
-        if light_cmd:
-            # Создаем событие
-            if light_cmd.get('event_type'):
-                await create_zone_event(zone_id, light_cmd['event_type'], light_cmd.get('event_details', {}))
-            # Отправляем команду
-            await publish_correction_command(
-                mqtt, gh_uid, zone_id,
-                light_cmd['node_uid'], light_cmd['channel'],
-                light_cmd['cmd'], light_cmd.get('params'),
-            )
-        
-        # Climate Controller (после Light, перед Irrigation согласно ZONE_LOGIC_FLOW.md)
-        # Получаем команды от Climate Controller
-        if capabilities.get("climate_control", False):
-            climate_commands = await check_and_control_climate(zone_id, targets, telemetry)
-        else:
-            climate_commands = []
-        for cmd in climate_commands:
-            if cmd.get('event_type'):
-                # Создаем событие
-                await create_zone_event(zone_id, cmd['event_type'], cmd.get('event_details', {}))
-            # Отправляем команду
-            await publish_correction_command(
-                mqtt, gh_uid, zone_id,
-                cmd['node_uid'], cmd['channel'],
-                cmd['cmd'], cmd.get('params'),
-            )
-        
-        # Irrigation Controller (после Climate, перед pH согласно ZONE_LOGIC_FLOW.md)
-        # Проверяем, нужно ли запустить полив по интервалу
-        if capabilities.get("irrigation_control", False):
-            irrigation_cmd = await check_and_control_irrigation(zone_id, targets, telemetry)
-        else:
-            irrigation_cmd = None
-        
-        # Проверяем безопасность перед запуском насоса
-        if irrigation_cmd:
-            pump_channel = irrigation_cmd.get('channel', 'default')
-            can_run, error_msg = await can_run_pump(zone_id, pump_channel)
-            if not can_run:
-                logger.warning(f"Zone {zone_id}: Cannot run irrigation pump {pump_channel}: {error_msg}")
-                irrigation_cmd = None
-        
-        if irrigation_cmd:
-            # Создаем событие
-            if irrigation_cmd.get('event_type'):
-                await create_zone_event(zone_id, irrigation_cmd['event_type'], irrigation_cmd.get('event_details', {}))
-            # Отправляем команду
-            await publish_correction_command(
-                mqtt, gh_uid, zone_id,
-                irrigation_cmd['node_uid'], irrigation_cmd['channel'],
-                irrigation_cmd['cmd'], irrigation_cmd.get('params'),
-            )
-        
-        # Recirculation Controller (после Irrigation Controller) - используем новую логику с учётом NC-насоса
-        if capabilities.get("recirculation", False):
-            recirculation_cmd = await check_and_control_recirculation(zone_id, targets, telemetry)
-        else:
-            recirculation_cmd = None
-        if recirculation_cmd:
-            # Создаем событие
-            if recirculation_cmd.get('event_type'):
-                await create_zone_event(zone_id, recirculation_cmd['event_type'], recirculation_cmd.get('event_details', {}))
-            # Отправляем команду
-            await publish_correction_command(
-                mqtt, gh_uid, zone_id,
-                recirculation_cmd['node_uid'], recirculation_cmd['channel'],
-                recirculation_cmd['cmd'], recirculation_cmd.get('params'),
-            )
-        
-        # Check pH target (only if ph_control capability is enabled)
-        if capabilities.get("ph_control", False):
-            ph_target = targets.get("ph")
-            ph_current = telemetry.get("ph")
-            if ph_target is not None and ph_current is not None:
-                ph_target_val = float(ph_target) if isinstance(ph_target, (int, float, str)) else None
-                ph_current_val = float(ph_current) if isinstance(ph_current, (int, float)) else None
-                if ph_target_val is not None and ph_current_val is not None:
-                    # Simple rule: if pH is too low (diff > 0.2), add base; if too high (diff < -0.2), add acid
-                    diff = ph_current_val - ph_target_val
-                    if abs(diff) > 0.2:
-                        # Проверяем cooldown и анализ тренда перед корректировкой
-                        should_correct, reason = await should_apply_correction(
-                            zone_id, "ph", ph_current_val, ph_target_val, diff
-                        )
-                        
-                        if not should_correct:
-                            logger.info(f"Zone {zone_id}: pH correction skipped - {reason}")
-                            # Создаем событие о пропуске корректировки
-                            await create_zone_event(
-                                zone_id,
-                                'PH_CORRECTION_SKIPPED',
-                                {
-                                    'current_ph': ph_current_val,
-                                    'target_ph': ph_target_val,
-                                    'diff': diff,
-                                    'reason': reason
-                                }
-                            )
-                        # Check water level before dosing
-                        elif should_correct and water_level_ok:
-                            # Find irrigation node for pH correction
-                            irrig_node = None
-                            for key, node_info in nodes.items():
-                                if node_info["type"] == "irrig":
-                                    irrig_node = node_info
-                                    break
-                            if irrig_node:
-                                correction_type = "add_base" if diff < -0.2 else "add_acid"
-                                await publish_correction_command(
-                            mqtt, gh_uid, zone_id,
-                            irrig_node["node_uid"], irrig_node["channel"],
-                            "adjust_ph", {"amount": abs(diff) * 10, "type": correction_type},
-                        )
-                                # Записываем информацию о корректировке
-                                await record_correction(zone_id, "ph", {
-                                    "correction_type": correction_type,
-                                    "current_ph": ph_current_val,
-                                    "target_ph": ph_target_val,
-                                    "diff": diff,
-                                    "reason": reason
-                                })
-                                # Create zone events for pH correction
-                                await create_zone_event(
-                                    zone_id,
-                                    'PH_CORRECTED',
-                                    {
-                                        'correction_type': correction_type,
-                                        'current_ph': ph_current_val,
-                                        'target_ph': ph_target_val,
-                                        'diff': diff,
-                                        'dose_ml': abs(diff) * 10
-                                    }
-                                )
-                                # Also create DOSING event for compatibility
-                                await create_zone_event(
-                                    zone_id,
-                                    'DOSING',
-                                    {
-                                        'type': 'ph_correction',
-                                        'correction_type': correction_type,
-                                        'current_ph': ph_current_val,
-                                        'target_ph': ph_target_val,
-                                        'diff': diff
-                                    }
-                                )
-                                # Create PH_TOO_HIGH_DETECTED or PH_TOO_LOW_DETECTED if deviation is significant
-                                if diff > 0.3:
-                                    await create_zone_event(
-                                        zone_id,
-                                        'PH_TOO_HIGH_DETECTED',
-                                        {
-                                            'current_ph': ph_current_val,
-                                            'target_ph': ph_target_val,
-                                            'diff': diff
-                                        }
-                                    )
-                                elif diff < -0.3:
-                                    await create_zone_event(
-                                        zone_id,
-                                        'PH_TOO_LOW_DETECTED',
-                                        {
-                                            'current_ph': ph_current_val,
-                                            'target_ph': ph_target_val,
-                                            'diff': diff
-                                        }
-                                    )
-                                # Create AI log
-                                await create_ai_log(
-                                    zone_id,
-                                    'recommend',
-                                    {
-                                        'action': 'ph_correction',
-                                        'metric': 'ph',
-                                        'current': ph_current_val,
-                                        'target': ph_target_val,
-                                        'correction': correction_type
-                                    }
-                                )
-        # Check EC target (only if ec_control capability is enabled)
-        if capabilities.get("ec_control", False):
-            ec_target = targets.get("ec")
-            ec_current = telemetry.get("ec")
-            if ec_target is not None and ec_current is not None:
-                ec_target_val = float(ec_target) if isinstance(ec_target, (int, float, str)) else None
-                ec_current_val = float(ec_current) if isinstance(ec_current, (int, float)) else None
-                if ec_target_val is not None and ec_current_val is not None:
-                    # Simple rule: if EC is too low (diff < -0.2), add nutrients; if too high (diff > 0.2), dilute
-                    diff = ec_current_val - ec_target_val
-                    if abs(diff) > 0.2:
-                        # Проверяем cooldown и анализ тренда перед корректировкой
-                        should_correct, reason = await should_apply_correction(
-                            zone_id, "ec", ec_current_val, ec_target_val, diff
-                        )
-                        
-                        if not should_correct:
-                            logger.info(f"Zone {zone_id}: EC correction skipped - {reason}")
-                            # Создаем событие о пропуске корректировки
-                            await create_zone_event(
-                                zone_id,
-                                'EC_CORRECTION_SKIPPED',
-                                {
-                                    'current_ec': ec_current_val,
-                                    'target_ec': ec_target_val,
-                                    'diff': diff,
-                                    'reason': reason
-                                }
-                            )
-                        # Check water level before dosing
-                        elif should_correct and water_level_ok:
-                            irrig_node = None
-                            for key, node_info in nodes.items():
-                                if node_info["type"] == "irrig":
-                                    irrig_node = node_info
-                                    break
-                            if irrig_node:
-                                correction_type = "add_nutrients" if diff < -0.2 else "dilute"
-                                await publish_correction_command(
-                                    mqtt, gh_uid, zone_id,
-                                    irrig_node["node_uid"], irrig_node["channel"],
-                                    "adjust_ec", {"amount": abs(diff) * 100, "type": correction_type},
-                                )
-                                # Записываем информацию о корректировке
-                                await record_correction(zone_id, "ec", {
-                                    "correction_type": correction_type,
-                                    "current_ec": ec_current_val,
-                                    "target_ec": ec_target_val,
-                                    "diff": diff,
-                                    "reason": reason
-                                })
-                                # Create zone events for EC correction
-                                await create_zone_event(
-                                    zone_id,
-                                    'EC_DOSING',
-                                    {
-                                        'correction_type': correction_type,
-                                        'current_ec': ec_current_val,
-                                        'target_ec': ec_target_val,
-                                        'diff': diff,
-                                        'dose_ml': abs(diff) * 100
-                                    }
-                                )
-                                # Also create DOSING event for compatibility
-                                await create_zone_event(
-                                    zone_id,
-                                    'DOSING',
-                                    {
-                                        'type': 'ec_correction',
-                                        'correction_type': correction_type,
-                                        'current_ec': ec_current_val,
-                                        'target_ec': ec_target_val,
-                                        'diff': diff
-                                    }
-                                )
-                                # Create AI log
-                                await create_ai_log(
-                                    zone_id,
-                                    'recommend',
-                                    {
-                                        'action': 'ec_correction',
-                                        'metric': 'ec',
-                                        'current': ec_current_val,
-                                        'target': ec_target_val,
-                                        'correction': correction_type
-                                    }
-                                )
-        
-        # Zone Health Monitor (после всех контроллеров согласно ZONE_CONTROLLER_FULL.md раздел 8)
-        health_data = await calculate_zone_health(zone_id)
-        await update_zone_health_in_db(zone_id, health_data)
+async def process_zones_parallel(
+    zones: List[Dict[str, Any]],
+    zone_service: ZoneAutomationService,
+    max_concurrent: int = 5
+) -> None:
+    """
+    Обработка зон параллельно с ограничением количества одновременных операций.
+    
+    Args:
+        zones: Список зон для обработки
+        zone_service: Сервис автоматизации зон
+        max_concurrent: Максимальное количество одновременных операций
+    """
+    semaphore = asyncio.Semaphore(max_concurrent)
+    
+    async def process_zone(zone_row: Dict[str, Any]) -> None:
+        """Обработка одной зоны с ограничением через semaphore."""
+        async with semaphore:
+            zone_id = zone_row["id"]
+            try:
+                await zone_service.process_zone(zone_id)
+            except Exception as e:
+                from error_handler import handle_zone_error
+                handle_zone_error(zone_id, e, {"action": "process_zone"})
+                # Продолжаем с другими зонами даже если одна упала
+    
+    # Создаем задачи для всех зон и выполняем их параллельно
+    tasks = [process_zone(zone_row) for zone_row in zones]
+    await asyncio.gather(*tasks, return_exceptions=True)
+
+
+# DEPRECATED: Используйте ZoneAutomationService.process_zone() вместо этой функции
+# Оставлено для обратной совместимости и тестов
+async def check_and_correct_zone(
+    zone_id: int,
+    mqtt: MqttClient,
+    gh_uid: str,
+    cfg: Dict[str, Any],
+    zone_repo: ZoneRepository,
+    telemetry_repo: TelemetryRepository,
+    node_repo: NodeRepository,
+    recipe_repo: RecipeRepository
+):
+    """
+    DEPRECATED: Используйте ZoneAutomationService.process_zone() вместо этой функции.
+    Оставлено для обратной совместимости и тестов.
+    """
+    from infrastructure import CommandBus
+    from services import ZoneAutomationService
+    
+    # Валидация zone_id
+    try:
+        zone_id = validate_zone_id(zone_id)
+    except ValueError as e:
+        logger.error(f"Invalid zone_id: {e}")
+        return
+    
+    # Используем новый сервисный слой (метрики внутри сервиса)
+    command_bus = CommandBus(mqtt, gh_uid)
+    zone_service = ZoneAutomationService(
+        zone_repo, telemetry_repo, node_repo, recipe_repo, command_bus
+    )
+    await zone_service.process_zone(zone_id)
 
 
 async def fetch_full_config(client: httpx.AsyncClient, base_url: str, token: str) -> Optional[Dict[str, Any]]:
@@ -551,6 +347,7 @@ async def fetch_full_config(client: httpx.AsyncClient, base_url: str, token: str
 
 async def main():
     s = get_settings()
+    automation_settings = get_automation_settings()
     mqtt = MqttClient(client_id_suffix="-auto")
     try:
         mqtt.start()
@@ -559,7 +356,8 @@ async def main():
         # Exit on critical configuration errors
         raise
     
-    start_http_server(9401)  # Prometheus metrics
+        automation_settings = get_automation_settings()
+        start_http_server(automation_settings.PROMETHEUS_PORT)  # Prometheus metrics
 
     async with httpx.AsyncClient() as client:
         while True:
@@ -568,44 +366,56 @@ async def main():
                 cfg = await fetch_full_config(client, s.laravel_api_url, s.laravel_api_token)
                 if not cfg:
                     logger.warning("Config fetch returned None, sleeping before retry")
-                    await asyncio.sleep(15)
+                    await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
+                    continue
+                
+                # Validate config structure
+                is_valid, error_msg = validate_config(cfg)
+                if not is_valid:
+                    handle_automation_error(
+                        InvalidConfigurationError(error_msg, cfg),
+                        {"action": "config_validation"}
+                    )
+                    await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
                     continue
                 
                 gh_uid = _extract_gh_uid_from_config(cfg)
                 if not gh_uid:
                     logger.warning("No greenhouse UID found in config, sleeping before retry")
-                    await asyncio.sleep(15)
+                    await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
                     continue
                 
-                # Get active zones with recipes
-                zones = await fetch(
-                    """
-                    SELECT DISTINCT z.id, z.status
-                    FROM zones z
-                    JOIN zone_recipe_instances zri ON zri.zone_id = z.id
-                    WHERE z.status IN ('online', 'warning')
-                    """
+                # Инициализация репозиториев
+                zone_repo = ZoneRepository()
+                telemetry_repo = TelemetryRepository()
+                node_repo = NodeRepository()
+                recipe_repo = RecipeRepository()
+                
+                # Инициализация Command Bus
+                command_bus = CommandBus(mqtt, gh_uid)
+                
+                # Инициализация сервиса автоматизации зон
+                zone_service = ZoneAutomationService(
+                    zone_repo, telemetry_repo, node_repo, recipe_repo, command_bus
                 )
-                # Check each zone
-                for zone_row in zones:
-                    zone_id = zone_row["id"]
-                    try:
-                        await check_and_correct_zone(zone_id, mqtt, gh_uid, cfg)
-                    except Exception as e:
-                        error_type = type(e).__name__
-                        LOOP_ERRORS.labels(error_type=error_type).inc()
-                        logger.error(f"Error checking zone {zone_id}: {e}", exc_info=True)
-                        # Continue with other zones even if one fails
+                
+                # Get active zones with recipes
+                zones = await zone_repo.get_active_zones()
+                
+                # Параллельная обработка зон с ограничением количества одновременных операций
+                if zones:
+                    await process_zones_parallel(
+                        zones, zone_service,
+                        max_concurrent=automation_settings.MAX_CONCURRENT_ZONES
+                    )
             except KeyboardInterrupt:
                 logger.info("Received interrupt signal, shutting down")
                 break
             except Exception as e:
-                error_type = type(e).__name__
-                LOOP_ERRORS.labels(error_type=error_type).inc()
-                logger.exception(f"Critical error in automation main loop: {e}")
+                handle_automation_error(e, {"action": "main_loop"})
                 # Sleep before retrying to avoid tight error loops
-                await asyncio.sleep(15)
-            await asyncio.sleep(15)
+                await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
+            await asyncio.sleep(automation_settings.MAIN_LOOP_SLEEP_SECONDS)
 
 
 if __name__ == "__main__":

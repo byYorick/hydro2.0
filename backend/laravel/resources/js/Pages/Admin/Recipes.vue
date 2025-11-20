@@ -28,6 +28,7 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import { reactive, ref } from 'vue'
+import { logger } from '@/utils/logger'
 import axios from 'axios'
 import { usePage, router } from '@inertiajs/vue3'
 
@@ -45,7 +46,7 @@ async function onUpdate() {
     form.name = ''
     form.description = ''
   }).catch(err => {
-    console.error('Failed to update recipe:', err)
+    logger.error('[Admin/Recipes] Failed to update recipe:', err)
   })
 }
 </script>

@@ -168,8 +168,7 @@ async def test_check_and_control_recirculation_enabled_interval_reached():
         "recirculation_duration_sec": 300,  # 5 минут
     }
     
-    mqtt_client = None  # Не используется в тесте
-    gh_uid = "gh-1"
+    telemetry = {}  # Не используется в тесте, но требуется для совместимости
     
     # Последняя рециркуляция была 2 часа назад (с timezone)
     from datetime import timezone
@@ -190,7 +189,7 @@ async def test_check_and_control_recirculation_enabled_interval_reached():
         ]
         mock_water_level.return_value = (True, 0.5)  # Уровень воды нормальный
         
-        cmd = await check_and_control_recirculation(1, targets, mqtt_client, gh_uid)
+        cmd = await check_and_control_recirculation(1, targets, telemetry)
         
         # Должен вернуть команду на рециркуляцию
         assert cmd is not None
@@ -209,10 +208,9 @@ async def test_check_and_control_recirculation_disabled():
         "recirculation_duration_sec": 300,
     }
     
-    mqtt_client = None
-    gh_uid = "gh-1"
+    telemetry = {}
     
-    cmd = await check_and_control_recirculation(1, targets, mqtt_client, gh_uid)
+    cmd = await check_and_control_recirculation(1, targets, telemetry)
     
     # Не должен возвращать команду
     assert cmd is None
@@ -227,8 +225,7 @@ async def test_check_and_control_recirculation_interval_not_reached():
         "recirculation_duration_sec": 300,
     }
     
-    mqtt_client = None
-    gh_uid = "gh-1"
+    telemetry = {}
     
     # Последняя рециркуляция была 30 минут назад (с timezone)
     from datetime import timezone
@@ -237,7 +234,7 @@ async def test_check_and_control_recirculation_interval_not_reached():
     with patch("irrigation_controller.get_last_recirculation_time") as mock_last_time:
         mock_last_time.return_value = last_recirculation_time
         
-        cmd = await check_and_control_recirculation(1, targets, mqtt_client, gh_uid)
+        cmd = await check_and_control_recirculation(1, targets, telemetry)
         
         # Не должен возвращать команду
         assert cmd is None
@@ -252,10 +249,9 @@ async def test_check_and_control_recirculation_no_interval():
         # recirculation_interval_min отсутствует
     }
     
-    mqtt_client = None
-    gh_uid = "gh-1"
+    telemetry = {}
     
-    cmd = await check_and_control_recirculation(1, targets, mqtt_client, gh_uid)
+    cmd = await check_and_control_recirculation(1, targets, telemetry)
     
     # Не должен возвращать команду
     assert cmd is None
@@ -270,8 +266,7 @@ async def test_check_and_control_recirculation_water_level_low():
         "recirculation_duration_sec": 300,
     }
     
-    mqtt_client = None
-    gh_uid = "gh-1"
+    telemetry = {}
     
     from datetime import timezone
     last_recirculation_time = datetime.utcnow().replace(tzinfo=timezone.utc) - timedelta(hours=2)
@@ -291,7 +286,7 @@ async def test_check_and_control_recirculation_water_level_low():
         ]
         mock_water_level.return_value = (False, 0.15)  # Низкий уровень воды
         
-        cmd = await check_and_control_recirculation(1, targets, mqtt_client, gh_uid)
+        cmd = await check_and_control_recirculation(1, targets, telemetry)
         
         # Не должен возвращать команду из-за низкого уровня воды
         assert cmd is None
@@ -306,8 +301,7 @@ async def test_check_and_control_recirculation_no_nodes():
         "recirculation_duration_sec": 300,
     }
     
-    mqtt_client = None
-    gh_uid = "gh-1"
+    telemetry = {}
     
     from datetime import timezone
     last_recirculation_time = datetime.utcnow().replace(tzinfo=timezone.utc) - timedelta(hours=2)
@@ -320,7 +314,7 @@ async def test_check_and_control_recirculation_no_nodes():
         mock_fetch.return_value = []  # Нет узлов
         mock_water_level.return_value = (True, 0.5)
         
-        cmd = await check_and_control_recirculation(1, targets, mqtt_client, gh_uid)
+        cmd = await check_and_control_recirculation(1, targets, telemetry)
         
         # Не должен возвращать команду
         assert cmd is None
@@ -335,8 +329,7 @@ async def test_check_and_control_recirculation_first_time():
         "recirculation_duration_sec": 300,
     }
     
-    mqtt_client = None
-    gh_uid = "gh-1"
+    telemetry = {}
     
     with patch("irrigation_controller.get_last_recirculation_time") as mock_last_time, \
          patch("irrigation_controller.fetch") as mock_fetch, \
@@ -353,7 +346,7 @@ async def test_check_and_control_recirculation_first_time():
         ]
         mock_water_level.return_value = (True, 0.5)
         
-        cmd = await check_and_control_recirculation(1, targets, mqtt_client, gh_uid)
+        cmd = await check_and_control_recirculation(1, targets, telemetry)
         
         # Должен вернуть команду (первая рециркуляция)
         assert cmd is not None

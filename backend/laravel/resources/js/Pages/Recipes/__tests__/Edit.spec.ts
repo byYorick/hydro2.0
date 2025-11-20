@@ -41,14 +41,13 @@ const sampleRecipe = vi.hoisted(() => ({
 }))
 
 const useFormMock = vi.hoisted(() => {
-  const formData = {
-    name: '',
-    description: '',
-    phases: [] as any[]
-  }
   return vi.fn((initialData: any) => {
-    Object.assign(formData, initialData)
-    return {
+    const formData = {
+      name: initialData?.name || '',
+      description: initialData?.description || '',
+      phases: Array.isArray(initialData?.phases) ? [...initialData.phases] : []
+    }
+    const form = {
       data: formData,
       errors: {},
       processing: false,
@@ -60,8 +59,41 @@ const useFormMock = vi.hoisted(() => {
       }),
       clearErrors: vi.fn(),
       reset: vi.fn(),
-      transform: vi.fn((callback: any) => callback(formData))
+      transform: vi.fn((callback: any) => callback(formData)),
+      set: vi.fn((key: string, value: any) => {
+        if (key.includes('.')) {
+          const keys = key.split('.')
+          let obj: any = formData
+          for (let i = 0; i < keys.length - 1; i++) {
+            if (!obj[keys[i]]) obj[keys[i]] = {}
+            obj = obj[keys[i]]
+          }
+          obj[keys[keys.length - 1]] = value
+        } else {
+          (formData as any)[key] = value
+        }
+      })
     }
+    // Добавляем геттеры для прямого доступа к полям
+    Object.defineProperty(form, 'name', {
+      get: () => formData.name,
+      set: (v) => { formData.name = v },
+      enumerable: true,
+      configurable: true
+    })
+    Object.defineProperty(form, 'description', {
+      get: () => formData.description,
+      set: (v) => { formData.description = v },
+      enumerable: true,
+      configurable: true
+    })
+    Object.defineProperty(form, 'phases', {
+      get: () => formData.phases,
+      set: (v) => { formData.phases = Array.isArray(v) ? v : [] },
+      enumerable: true,
+      configurable: true
+    })
+    return form
   })
 })
 
@@ -96,9 +128,13 @@ describe('Recipes/Edit.vue', () => {
   it('заполняет форму данными рецепта', () => {
     const wrapper = mount(RecipesEdit)
     
-    const nameInput = wrapper.find('input[placeholder=""]')
-    if (nameInput.exists()) {
-      expect(nameInput.element.value || '').toContain('Test Recipe')
+    // Проверяем, что форма инициализирована с данными рецепта
+    const formInstance = useFormMock.mock.results[0]?.value
+    expect(formInstance).toBeDefined()
+    if (formInstance) {
+      expect(formInstance.data.name).toBe('Test Recipe')
+      expect(formInstance.data.description).toBe('Test Description')
+      expect(formInstance.data.phases.length).toBeGreaterThan(0)
     }
   })
 
