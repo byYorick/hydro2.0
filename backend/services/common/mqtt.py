@@ -94,12 +94,13 @@ class MqttClient:
                                 exc_info=True
                             )
                     else:
-                        # Fallback: пытаемся найти или создать event loop
-                        # Это может случиться, если event_loop еще не установлен
+                        # Fallback: выполняем handler в новом event loop
+                        # Это критично для обработки node_hello и других сообщений
+                        # даже если event_loop еще не установлен
                         logger.warning(
                             f"No running event loop available for async handler on topic {msg.topic}, "
                             f"event_loop_set={current_loop is not None}, "
-                            f"trying to get running loop"
+                            f"creating new event loop for fallback execution"
                         )
                         try:
                             # Пытаемся получить текущий running loop (если мы в async контексте)
@@ -107,12 +108,33 @@ class MqttClient:
                             loop.create_task(handler(msg.topic, msg.payload))
                             logger.debug(f"Created task in running loop for topic {msg.topic}")
                         except RuntimeError:
-                            # Нет running loop - это нормально для MQTT callback thread
+                            # Нет running loop - создаем новый для выполнения handler
+                            # Это критично для обработки node_hello и других важных сообщений
                             logger.warning(
                                 f"No running event loop found for topic {msg.topic}. "
-                                f"Handler will not be executed. "
-                                f"Make sure event_loop is set in MqttClient before subscribing."
+                                f"Creating new event loop for fallback execution to avoid dropped messages."
                             )
+                            try:
+                                # Создаем новый event loop в отдельном потоке для выполнения handler
+                                # Это гарантирует, что node_hello и другие сообщения будут обработаны
+                                def run_in_new_loop():
+                                    new_loop = asyncio.new_event_loop()
+                                    asyncio.set_event_loop(new_loop)
+                                    try:
+                                        new_loop.run_until_complete(handler(msg.topic, msg.payload))
+                                        logger.debug(f"Handler executed in fallback event loop for topic {msg.topic}")
+                                    finally:
+                                        new_loop.close()
+                                
+                                # Запускаем в отдельном потоке, чтобы не блокировать MQTT callback
+                                thread = threading.Thread(target=run_in_new_loop, daemon=True)
+                                thread.start()
+                                logger.info(f"Started fallback execution thread for topic {msg.topic}")
+                            except Exception as fallback_error:
+                                logger.error(
+                                    f"Failed to execute handler in fallback event loop for topic {msg.topic}: {fallback_error}",
+                                    exc_info=True
+                                )
                 else:
                     # Обычный синхронный handler
                     handler(msg.topic, msg.payload)
