@@ -36,12 +36,19 @@ class MqttClient:
     def _on_connect(self, client, userdata, flags, rc):
         if rc == 0:
             self._connected.set()
-            # resubscribe - используем event_loop из атрибута объекта
+            logger.info(f"MQTT client connected to {self._host}:{self._port}, subscribing to {len(self._subs)} topics")
+            # resubscribe - создаем новые handlers с актуальным event_loop
             for topic, qos, handler in self._subs:
                 self._client.subscribe(topic, qos=qos)
-                self._client.message_callback_add(topic, self._wrap(handler, self._event_loop))
+                wrapped_handler = self._wrap(handler, self._event_loop)
+                self._client.message_callback_add(topic, wrapped_handler)
+                logger.debug(
+                    f"Subscribed to topic: {topic}, qos={qos}, "
+                    f"event_loop_set={self._event_loop is not None}"
+                )
         else:
             self._connected.clear()
+            logger.error(f"MQTT connection failed with rc={rc}")
 
     def _on_disconnect(self, client, userdata, rc):
         self._connected.clear()
@@ -60,47 +67,52 @@ class MqttClient:
         import asyncio
         import inspect
         
-        # Используем переданный event_loop или берем из атрибута объекта
-        loop_to_use = event_loop or self._event_loop
-        
         def on_message(client, userdata, msg):
             try:
                 # Проверяем, является ли handler корутиной
                 if inspect.iscoroutinefunction(handler):
-                    # Если handler - корутина, используем run_coroutine_threadsafe для безопасного вызова из другого потока
-                    # Используем переданный event_loop из замыкания
-                    current_loop = loop_to_use
-                    # Если loop_to_use не передан, пытаемся получить из self._event_loop
-                    if not current_loop:
-                        current_loop = getattr(self, '_event_loop', None)
-                    
-                    logger.info(f"Received message on topic {msg.topic}, handler is coroutine, current_loop={current_loop is not None}, is_running={current_loop.is_running() if current_loop else False}")
+                    # КРИТИЧНО: Всегда используем свежее значение self._event_loop, 
+                    # а не захваченное в замыкание, так как event_loop устанавливается
+                    # после создания этого замыкания
+                    current_loop = getattr(self, '_event_loop', None) or event_loop
                     
                     if current_loop and current_loop.is_running():
-                        # Используем переданный event loop для безопасного вызова из другого потока
+                        # Используем run_coroutine_threadsafe для безопасного вызова из MQTT thread
                         try:
-                            future = asyncio.run_coroutine_threadsafe(handler(msg.topic, msg.payload), current_loop)
-                            # Не ждем результата, но можем проверить исключения позже
-                            # future.result() можно вызвать для получения результата или исключения
-                            logger.info(f"Scheduled async handler for topic {msg.topic} in event loop, future={future}")
+                            future = asyncio.run_coroutine_threadsafe(
+                                handler(msg.topic, msg.payload), 
+                                current_loop
+                            )
+                            # Логируем только при ошибках или для важных сообщений
+                            logger.debug(
+                                f"MQTT message on {msg.topic}: scheduled async handler "
+                                f"(future={future})"
+                            )
                         except Exception as e:
-                            logger.error(f"Failed to schedule coroutine in event loop: {e}", exc_info=True)
+                            logger.error(
+                                f"Failed to schedule async handler for topic {msg.topic}: {e}",
+                                exc_info=True
+                            )
                     else:
-                        # Fallback: пытаемся получить event loop
-                        logger.warning(f"No running event loop available for async handler on topic {msg.topic}, trying fallback")
+                        # Fallback: пытаемся найти или создать event loop
+                        # Это может случиться, если event_loop еще не установлен
+                        logger.warning(
+                            f"No running event loop available for async handler on topic {msg.topic}, "
+                            f"event_loop_set={current_loop is not None}, "
+                            f"trying to get running loop"
+                        )
                         try:
+                            # Пытаемся получить текущий running loop (если мы в async контексте)
                             loop = asyncio.get_running_loop()
                             loop.create_task(handler(msg.topic, msg.payload))
+                            logger.debug(f"Created task in running loop for topic {msg.topic}")
                         except RuntimeError:
-                            try:
-                                loop = asyncio.get_event_loop()
-                                if loop.is_running():
-                                    loop.create_task(handler(msg.topic, msg.payload))
-                                else:
-                                    loop.run_until_complete(handler(msg.topic, msg.payload))
-                            except RuntimeError:
-                                logger.warning(f"No event loop available for async handler, creating new one")
-                                asyncio.run(handler(msg.topic, msg.payload))
+                            # Нет running loop - это нормально для MQTT callback thread
+                            logger.warning(
+                                f"No running event loop found for topic {msg.topic}. "
+                                f"Handler will not be executed. "
+                                f"Make sure event_loop is set in MqttClient before subscribing."
+                            )
                 else:
                     # Обычный синхронный handler
                     handler(msg.topic, msg.payload)
@@ -159,14 +171,25 @@ class MqttClient:
             raise
 
     def subscribe(self, topic: str, handler: Callable[[str, bytes], None], qos: int = 1):
+        """Подписаться на MQTT топик."""
         self._subs.append((topic, qos, handler))
-        self._client.subscribe(topic, qos=qos)
-        # Используем event_loop из атрибута объекта (установлен из AsyncMqttClient)
-        # Важно: передаем self._event_loop в _wrap, чтобы он мог использовать его в замыкании
-        logger.info(f"Subscribing to topic: {topic}, qos={qos}, event_loop={self._event_loop is not None}, is_running={self._event_loop.is_running() if self._event_loop else False}")
-        # Создаем wrapped_handler с правильным event_loop
+        
+        # Создаем wrapped_handler - event_loop будет получен из self._event_loop в момент вызова
         wrapped_handler = self._wrap(handler, self._event_loop)
-        self._client.message_callback_add(topic, wrapped_handler)
+        
+        if self.is_connected():
+            # Если уже подключены, подписываемся сразу
+            self._client.subscribe(topic, qos=qos)
+            self._client.message_callback_add(topic, wrapped_handler)
+            logger.info(
+                f"Subscribed to topic: {topic}, qos={qos}, "
+                f"event_loop_set={self._event_loop is not None}, "
+                f"is_running={self._event_loop.is_running() if self._event_loop else False}"
+            )
+        else:
+            # Если не подключены, подписка произойдет в _on_connect
+            # wrapped_handler будет использован там
+            logger.debug(f"Deferred subscription to topic: {topic} (not connected yet)")
 
 
 # Async wrapper для использования в async контексте
@@ -201,9 +224,14 @@ class AsyncMqttClient:
         if not self._started:
             await self.start()
         
-        # Просто вызываем subscribe базового клиента
-        # Базовый клиент уже знает про event_loop через _client._event_loop
-        # и будет использовать его в _wrap через subscribe -> message_callback_add
+        # Убеждаемся, что event_loop установлен
+        if not self._event_loop:
+            import asyncio
+            self._event_loop = asyncio.get_event_loop()
+            self._client._event_loop = self._event_loop
+        
+        # Вызываем subscribe базового клиента
+        # Базовый клиент использует self._event_loop в _wrap
         self._client.subscribe(topic, handler, qos)
     
     def is_connected(self) -> bool:

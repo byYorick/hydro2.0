@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import signal
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional, List
 import httpx
@@ -17,8 +18,49 @@ from common.env import get_settings
 
 logger = logging.getLogger(__name__)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager для управления startup и shutdown событиями."""
+    # Startup
+    global telemetry_queue
+    
+    logger.info("Starting History Logger service")
+    
+    # Инициализация Redis queue
+    telemetry_queue = TelemetryQueue()
+    
+    # Запуск фоновой задачи обработки очереди
+    asyncio.create_task(process_telemetry_queue())
+    
+    # Подключение к MQTT
+    mqtt = await get_mqtt_client()
+    await mqtt.subscribe("hydro/+/+/+/telemetry/+", handle_telemetry)
+    await mqtt.subscribe("hydro/+/+/+/heartbeat", handle_heartbeat)
+    # Подписка на node_hello для регистрации новых узлов
+    await mqtt.subscribe("hydro/node_hello", handle_node_hello)
+    await mqtt.subscribe("hydro/+/+/+/node_hello", handle_node_hello)
+    
+    logger.info("History Logger service started")
+    logger.info("Subscribed to MQTT topics: hydro/+/+/+/telemetry/+, hydro/+/+/+/heartbeat, hydro/node_hello, hydro/+/+/+/node_hello")
+    
+    yield
+    
+    # Shutdown
+    logger.info("Shutting down History Logger service")
+    
+    # Устанавливаем флаг завершения
+    shutdown_event.set()
+    
+    # Даем время на обработку оставшихся элементов
+    await asyncio.sleep(2)
+    
+    # Закрываем Redis клиент
+    await close_redis_client()
+
+
 # FastAPI app
-app = FastAPI(title="History Logger")
+app = FastAPI(title="History Logger", lifespan=lifespan)
 
 TELEM_RECEIVED = Counter("telemetry_received_total",
                          "Total telemetry messages received")
@@ -316,7 +358,6 @@ async def handle_node_hello(topic: str, payload: bytes):
     """
     try:
         logger.info(f"[NODE_HELLO] Received message on topic {topic}, payload length: {len(payload)}")
-        logger.info(f"[NODE_HELLO] Payload (first 200 chars): {payload[:200]}")
         data = _parse_json(payload)
         if not data or not isinstance(data, dict):
             logger.warning(f"[NODE_HELLO] Invalid JSON in node_hello from topic {topic}")
@@ -328,18 +369,25 @@ async def handle_node_hello(topic: str, payload: bytes):
             logger.debug(f"[NODE_HELLO] Not a node_hello message, skipping: {data.get('message_type')}")
             return
         
-        logger.info(f"[NODE_HELLO] Processing node_hello from hardware_id: {data.get('hardware_id')}")
+        hardware_id = data.get("hardware_id")
+        if not hardware_id:
+            logger.warning(f"[NODE_HELLO] Missing hardware_id in node_hello message")
+            NODE_HELLO_ERRORS.labels(error_type="missing_hardware_id").inc()
+            return
+        
+        logger.info(f"[NODE_HELLO] Processing node_hello from hardware_id: {hardware_id}")
         NODE_HELLO_RECEIVED.inc()
     except Exception as e:
-        logger.error(f"[NODE_HELLO] Error in handle_node_hello: {e}", exc_info=True)
-        raise
+        logger.error(f"[NODE_HELLO] Error parsing node_hello: {e}", exc_info=True)
+        NODE_HELLO_ERRORS.labels(error_type="parse_error").inc()
+        return
     
     s = get_settings()
     laravel_url = s.laravel_api_url if hasattr(s, 'laravel_api_url') else None
     laravel_token = s.laravel_api_token if hasattr(s, 'laravel_api_token') else None
     
     if not laravel_url:
-        logger.error("Laravel API URL not configured, cannot register node")
+        logger.error("[NODE_HELLO] Laravel API URL not configured, cannot register node")
         NODE_HELLO_ERRORS.labels(error_type="config_missing").inc()
         return
     
@@ -361,37 +409,65 @@ async def handle_node_hello(topic: str, payload: bytes):
             "Accept": "application/json",
         }
         
+        # Токен опционален - если он не установлен, Laravel проверит это в своем контроллере
         if laravel_token:
             headers["Authorization"] = f"Bearer {laravel_token}"
+        else:
+            logger.debug(f"[NODE_HELLO] No API token configured, registering without auth")
         
         async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.post(
-                f"{laravel_url}/api/nodes/register",
-                json=api_data,
-                headers=headers,
-            )
-            
-            if response.status_code == 201:
-                logger.info(f"Node registered successfully: {data.get('hardware_id')}")
-                NODE_HELLO_REGISTERED.inc()
-            elif response.status_code == 200:
-                logger.info(f"Node updated successfully: {data.get('hardware_id')}")
-                NODE_HELLO_REGISTERED.inc()
-            else:
-                logger.error(
-                    f"Failed to register node: {response.status_code} - {response.text}",
-                    extra={"hardware_id": data.get("hardware_id")}
+            try:
+                response = await client.post(
+                    f"{laravel_url}/api/nodes/register",
+                    json=api_data,
+                    headers=headers,
                 )
-                NODE_HELLO_ERRORS.labels(error_type=f"http_{response.status_code}").inc()
                 
-    except httpx.TimeoutException:
-        logger.error(f"Timeout while registering node: {data.get('hardware_id')}")
-        NODE_HELLO_ERRORS.labels(error_type="timeout").inc()
+                if response.status_code == 201:
+                    response_data = response.json()
+                    node_uid = response_data.get("data", {}).get("uid", "unknown")
+                    logger.info(
+                        f"[NODE_HELLO] Node registered successfully: hardware_id={hardware_id}, "
+                        f"node_uid={node_uid}"
+                    )
+                    NODE_HELLO_REGISTERED.inc()
+                elif response.status_code == 200:
+                    response_data = response.json()
+                    node_uid = response_data.get("data", {}).get("uid", "unknown")
+                    logger.info(
+                        f"[NODE_HELLO] Node updated successfully: hardware_id={hardware_id}, "
+                        f"node_uid={node_uid}"
+                    )
+                    NODE_HELLO_REGISTERED.inc()
+                elif response.status_code == 401:
+                    logger.error(
+                        f"[NODE_HELLO] Unauthorized: token required or invalid. "
+                        f"hardware_id={hardware_id}, "
+                        f"response={response.text[:200]}"
+                    )
+                    NODE_HELLO_ERRORS.labels(error_type="unauthorized").inc()
+                else:
+                    logger.error(
+                        f"[NODE_HELLO] Failed to register node: status={response.status_code}, "
+                        f"hardware_id={hardware_id}, "
+                        f"response={response.text[:500]}"
+                    )
+                    NODE_HELLO_ERRORS.labels(error_type=f"http_{response.status_code}").inc()
+            except httpx.TimeoutException:
+                logger.error(f"[NODE_HELLO] Timeout while registering node: hardware_id={hardware_id}")
+                NODE_HELLO_ERRORS.labels(error_type="timeout").inc()
+            except httpx.RequestError as e:
+                logger.error(
+                    f"[NODE_HELLO] Request error while registering node: hardware_id={hardware_id}, "
+                    f"error={str(e)}"
+                )
+                NODE_HELLO_ERRORS.labels(error_type="request_error").inc()
+                
     except Exception as e:
         logger.error(
-            f"Error registering node: {e}",
-            exc_info=True,
-            extra={"hardware_id": data.get("hardware_id")}
+            f"[NODE_HELLO] Unexpected error registering node: hardware_id={hardware_id}, "
+            f"error={str(e)}",
+            exc_info=True
         )
         NODE_HELLO_ERRORS.labels(error_type="exception").inc()
 
@@ -520,47 +596,7 @@ def _extract_node_uid(topic: str) -> Optional[str]:
     return None
 
 
-@app.on_event("startup")
-async def startup_event():
-    """Инициализация при старте приложения."""
-    global telemetry_queue
-    
-    logger.info("Starting History Logger service")
-    
-    # Инициализация Redis queue
-    telemetry_queue = TelemetryQueue()
-    
-    # Запуск фоновой задачи обработки очереди
-    asyncio.create_task(process_telemetry_queue())
-    
-    # Подключение к MQTT
-    mqtt = await get_mqtt_client()
-    await mqtt.subscribe("hydro/+/+/+/telemetry/+", handle_telemetry)
-    await mqtt.subscribe("hydro/+/+/+/heartbeat", handle_heartbeat)
-    # Подписка на node_hello для регистрации новых узлов
-    await mqtt.subscribe("hydro/node_hello", handle_node_hello)
-    await mqtt.subscribe("hydro/+/+/+/node_hello", handle_node_hello)
-    
-    logger.info("History Logger service started")
-    logger.info("Subscribed to MQTT topics: hydro/+/+/+/telemetry/+, hydro/+/+/+/heartbeat, hydro/node_hello, hydro/+/+/+/node_hello")
-    logger.info("Subscribed to MQTT topics: hydro/+/+/+/telemetry/+, hydro/+/+/+/heartbeat, hydro/node_hello, hydro/+/+/+/node_hello")
-
-
-@app.on_event("shutdown")
-async def shutdown_event_handler():
-    """Обработка завершения приложения."""
-    global telemetry_queue
-    
-    logger.info("Shutting down History Logger service")
-    
-    # Устанавливаем флаг завершения
-    shutdown_event.set()
-    
-    # Даем время на обработку оставшихся элементов
-    await asyncio.sleep(2)
-    
-    # Закрываем Redis клиент
-    await close_redis_client()
+# Startup и shutdown события теперь обрабатываются через lifespan handler выше
     
     logger.info("History Logger service stopped")
 
