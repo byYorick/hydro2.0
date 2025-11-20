@@ -74,13 +74,15 @@ class MqttClient:
                     if not current_loop:
                         current_loop = getattr(self, '_event_loop', None)
                     
+                    logger.info(f"Received message on topic {msg.topic}, handler is coroutine, current_loop={current_loop is not None}, is_running={current_loop.is_running() if current_loop else False}")
+                    
                     if current_loop and current_loop.is_running():
                         # Используем переданный event loop для безопасного вызова из другого потока
                         try:
                             future = asyncio.run_coroutine_threadsafe(handler(msg.topic, msg.payload), current_loop)
                             # Не ждем результата, но можем проверить исключения позже
                             # future.result() можно вызвать для получения результата или исключения
-                            logger.debug(f"Scheduled async handler for topic {msg.topic} in event loop")
+                            logger.info(f"Scheduled async handler for topic {msg.topic} in event loop, future={future}")
                         except Exception as e:
                             logger.error(f"Failed to schedule coroutine in event loop: {e}", exc_info=True)
                     else:
