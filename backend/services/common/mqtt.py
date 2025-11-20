@@ -68,21 +68,50 @@ class MqttClient:
         return on_message
 
     def start(self):
+        """Start MQTT client and wait for connection. Raises exception if connection fails."""
         self._client.connect(self._host, self._port, keepalive=30)
         self._client.loop_start()
-        # wait connected
-        for _ in range(100):
+        # wait connected with timeout
+        timeout = 10.0  # 10 seconds
+        elapsed = 0.0
+        check_interval = 0.1
+        while elapsed < timeout:
             if self._connected.is_set():
+                logger.info(f"MQTT client connected to {self._host}:{self._port}")
                 return
-            time.sleep(0.1)
+            time.sleep(check_interval)
+            elapsed += check_interval
+        
+        # Connection failed
+        self._client.loop_stop()
+        raise ConnectionError(
+            f"MQTT client failed to connect to {self._host}:{self._port} within {timeout} seconds"
+        )
 
     def stop(self):
         self._client.loop_stop()
         self._client.disconnect()
 
+    def is_connected(self) -> bool:
+        """Check if MQTT client is connected."""
+        return self._connected.is_set()
+    
     def publish_json(self, topic: str, payload: dict, qos: int = 1, retain: bool = False):
-        data = json.dumps(payload, separators=(",", ":"))
-        self._client.publish(topic, data, qos=qos, retain=retain)
+        """Publish JSON payload to MQTT topic. Raises exception if not connected or publish fails."""
+        if not self.is_connected():
+            raise ConnectionError(f"MQTT client is not connected, cannot publish to {topic}")
+        
+        try:
+            data = json.dumps(payload, separators=(",", ":"))
+            result = self._client.publish(topic, data, qos=qos, retain=retain)
+            # rc == 0 means success in paho-mqtt
+            if result.rc != 0:
+                error_msg = f"MQTT publish failed with rc={result.rc} for topic {topic}"
+                logger.error(error_msg)
+                raise RuntimeError(error_msg)
+        except Exception as e:
+            logger.error(f"Error publishing to MQTT topic {topic}: {e}", exc_info=True)
+            raise
 
     def subscribe(self, topic: str, handler: Callable[[str, bytes], None], qos: int = 1):
         self._subs.append((topic, qos, handler))

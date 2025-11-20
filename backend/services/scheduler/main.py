@@ -391,14 +391,25 @@ async def check_and_execute_schedules(mqtt: MqttClient):
 async def main():
     s = get_settings()
     mqtt = MqttClient(client_id_suffix="-scheduler")
-    mqtt.start()
+    try:
+        mqtt.start()
+    except Exception as e:
+        logger.critical(f"Failed to start MQTT client: {e}. Exiting.", exc_info=True)
+        # Exit on critical configuration errors
+        raise
+    
     start_http_server(9402)  # Prometheus metrics
 
     while True:
         try:
             await check_and_execute_schedules(mqtt)
-        except Exception:
-            pass
+        except KeyboardInterrupt:
+            logger.info("Received interrupt signal, shutting down")
+            break
+        except Exception as e:
+            logger.exception(f"Error in scheduler main loop: {e}")
+            # Sleep before retrying to avoid tight error loops
+            await asyncio.sleep(60)
         # Check schedules every minute
         await asyncio.sleep(60)
 

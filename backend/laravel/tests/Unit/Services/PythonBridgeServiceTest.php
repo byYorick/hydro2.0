@@ -46,10 +46,11 @@ class PythonBridgeServiceTest extends TestCase
         $this->assertNotEmpty($cmdId);
         
         Http::assertSent(function ($request) {
+            $data = $request->data();
             return $request->url() === 'http://test-bridge/bridge/zones/1/commands'
                 && $request->hasHeader('Authorization', 'Bearer test-token')
-                && $request->json('node_uid') === 'nd-pump-1'
-                && $request->json('channel') === 'pump_main';
+                && isset($data['node_uid']) && $data['node_uid'] === 'nd-pump-1'
+                && isset($data['channel']) && $data['channel'] === 'pump_main';
         });
     }
 
@@ -72,8 +73,9 @@ class PythonBridgeServiceTest extends TestCase
         $this->assertNotEmpty($cmdId);
         
         Http::assertSent(function ($request) use ($node) {
-            return $request->json('node_uid') === $node->uid
-                && $request->json('channel') === 'ph_sensor';
+            $data = $request->data();
+            return isset($data['node_uid']) && $data['node_uid'] === $node->uid
+                && isset($data['channel']) && $data['channel'] === 'ph_sensor';
         });
     }
 

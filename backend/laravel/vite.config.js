@@ -7,6 +7,7 @@ export default defineConfig({
     resolve: {
         alias: {
             '@': resolve(__dirname, './resources/js'),
+            'vue-virtual-scroller': resolve(__dirname, './node_modules/vue-virtual-scroller/dist/vue-virtual-scroller.esm.js'),
         },
     },
     server: {
@@ -74,9 +75,12 @@ export default defineConfig({
     ],
     // Оптимизация зависимостей для снижения нагрузки
     optimizeDeps: {
-        include: ['vue', '@inertiajs/vue3'],
+        include: ['vue', '@inertiajs/vue3', 'vue-virtual-scroller'],
         exclude: [],
         force: false, // Не пересобирать принудительно
+        esbuildOptions: {
+            resolveExtensions: ['.mjs', '.js', '.mts', '.ts', '.jsx', '.tsx', '.json'],
+        },
     },
     // Кеш для оптимизированных зависимостей
     cacheDir: 'node_modules/.vite',

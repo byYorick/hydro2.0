@@ -11,6 +11,12 @@ from prometheus_client import Counter, Histogram, start_http_server
 
 logger = logging.getLogger(__name__)
 from recipe_utils import calculate_current_phase, advance_phase, get_phase_targets
+
+# Metrics for error tracking
+LOOP_ERRORS = Counter("automation_loop_errors_total", "Errors in automation main loop", ["error_type"])
+CONFIG_FETCH_ERRORS = Counter("config_fetch_errors_total", "Errors fetching config from Laravel", ["error_type"])
+CONFIG_FETCH_SUCCESS = Counter("config_fetch_success_total", "Successful config fetches from Laravel")
+MQTT_PUBLISH_ERRORS = Counter("mqtt_publish_errors_total", "MQTT publish errors", ["error_type"])
 from common.water_flow import (
     check_water_level,
     ensure_water_level_alert,
@@ -136,12 +142,21 @@ async def publish_correction_command(
 ) -> bool:
     """Publish command via MQTT for zone automation."""
     try:
+        if not mqtt.is_connected():
+            error_type = "not_connected"
+            MQTT_PUBLISH_ERRORS.labels(error_type=error_type).inc()
+            logger.error(f"Zone {zone_id}: Cannot publish command - MQTT not connected")
+            return False
+        
         payload = {"cmd": cmd, **(({"params": params}) if params else {})}
         topic = f"hydro/{gh_uid}/zn-{zone_id}/{node_uid}/{channel}/command"
         mqtt.publish_json(topic, payload, qos=1, retain=False)
         COMMANDS_SENT.labels(zone_id=zone_id, metric=cmd).inc()
         return True
-    except Exception:
+    except Exception as e:
+        error_type = type(e).__name__
+        MQTT_PUBLISH_ERRORS.labels(error_type=error_type).inc()
+        logger.error(f"Zone {zone_id}: Failed to publish command {cmd} to {topic}: {e}", exc_info=True)
         return False
 
 
@@ -470,20 +485,80 @@ async def check_and_correct_zone(zone_id: int, mqtt: MqttClient, gh_uid: str, cf
 
 
 async def fetch_full_config(client: httpx.AsyncClient, base_url: str, token: str) -> Optional[Dict[str, Any]]:
-    """Fetch full config from Laravel API."""
+    """Fetch full config from Laravel API with proper error handling and retry logic."""
     headers = {"Authorization": f"Bearer {token}"} if token else {}
-    try:
-        r = await client.get(f"{base_url}/api/system/config/full", headers=headers, timeout=10)
-        r.raise_for_status()
-        return r.json()
-    except Exception:
-        return None
+    max_retries = 3
+    retry_delay = 2.0
+    
+    for attempt in range(max_retries):
+        try:
+            r = await client.get(f"{base_url}/api/system/config/full", headers=headers, timeout=10)
+            r.raise_for_status()
+            data = r.json()
+            CONFIG_FETCH_SUCCESS.inc()
+            return data
+        except httpx.HTTPStatusError as e:
+            error_type = f"http_{e.response.status_code}"
+            CONFIG_FETCH_ERRORS.labels(error_type=error_type).inc()
+            if e.response.status_code == 401:
+                logger.error(f"Config fetch failed: Unauthorized (401) - invalid or missing token. Attempt {attempt + 1}/{max_retries}")
+                # Don't retry on 401 - it's a configuration issue
+                return None
+            elif e.response.status_code >= 500:
+                logger.warning(f"Config fetch failed: Server error {e.response.status_code}. Attempt {attempt + 1}/{max_retries}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(retry_delay * (attempt + 1))
+                    continue
+                else:
+                    logger.error(f"Config fetch failed after {max_retries} attempts: Server error {e.response.status_code}")
+                    return None
+            else:
+                logger.error(f"Config fetch failed: HTTP {e.response.status_code}. Attempt {attempt + 1}/{max_retries}")
+                return None
+        except httpx.TimeoutException:
+            error_type = "timeout"
+            CONFIG_FETCH_ERRORS.labels(error_type=error_type).inc()
+            logger.warning(f"Config fetch failed: Timeout. Attempt {attempt + 1}/{max_retries}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_delay * (attempt + 1))
+                continue
+            else:
+                logger.error(f"Config fetch failed after {max_retries} attempts: Timeout")
+                return None
+        except httpx.NetworkError as e:
+            error_type = "network_error"
+            CONFIG_FETCH_ERRORS.labels(error_type=error_type).inc()
+            logger.warning(f"Config fetch failed: Network error - {e}. Attempt {attempt + 1}/{max_retries}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_delay * (attempt + 1))
+                continue
+            else:
+                logger.error(f"Config fetch failed after {max_retries} attempts: Network error - {e}")
+                return None
+        except Exception as e:
+            error_type = type(e).__name__
+            CONFIG_FETCH_ERRORS.labels(error_type=error_type).inc()
+            logger.exception(f"Config fetch failed: Unexpected error - {e}. Attempt {attempt + 1}/{max_retries}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_delay * (attempt + 1))
+                continue
+            else:
+                logger.error(f"Config fetch failed after {max_retries} attempts: {e}")
+                return None
+    
+    return None
 
 
 async def main():
     s = get_settings()
     mqtt = MqttClient(client_id_suffix="-auto")
-    mqtt.start()
+    try:
+        mqtt.start()
+    except Exception as e:
+        logger.critical(f"Failed to start MQTT client: {e}. Exiting.", exc_info=True)
+        # Exit on critical configuration errors
+        raise
+    
     start_http_server(9401)  # Prometheus metrics
 
     async with httpx.AsyncClient() as client:
@@ -492,12 +567,16 @@ async def main():
                 # Fetch config
                 cfg = await fetch_full_config(client, s.laravel_api_url, s.laravel_api_token)
                 if not cfg:
+                    logger.warning("Config fetch returned None, sleeping before retry")
                     await asyncio.sleep(15)
                     continue
+                
                 gh_uid = _extract_gh_uid_from_config(cfg)
                 if not gh_uid:
+                    logger.warning("No greenhouse UID found in config, sleeping before retry")
                     await asyncio.sleep(15)
                     continue
+                
                 # Get active zones with recipes
                 zones = await fetch(
                     """
@@ -510,9 +589,22 @@ async def main():
                 # Check each zone
                 for zone_row in zones:
                     zone_id = zone_row["id"]
-                    await check_and_correct_zone(zone_id, mqtt, gh_uid, cfg)
-            except Exception:
-                pass
+                    try:
+                        await check_and_correct_zone(zone_id, mqtt, gh_uid, cfg)
+                    except Exception as e:
+                        error_type = type(e).__name__
+                        LOOP_ERRORS.labels(error_type=error_type).inc()
+                        logger.error(f"Error checking zone {zone_id}: {e}", exc_info=True)
+                        # Continue with other zones even if one fails
+            except KeyboardInterrupt:
+                logger.info("Received interrupt signal, shutting down")
+                break
+            except Exception as e:
+                error_type = type(e).__name__
+                LOOP_ERRORS.labels(error_type=error_type).inc()
+                logger.exception(f"Critical error in automation main loop: {e}")
+                # Sleep before retrying to avoid tight error loops
+                await asyncio.sleep(15)
             await asyncio.sleep(15)
 
 

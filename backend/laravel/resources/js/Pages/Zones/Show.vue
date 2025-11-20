@@ -228,7 +228,7 @@ import { useTelemetry } from '@/composables/useTelemetry'
 import { useZones } from '@/composables/useZones'
 import { useApi } from '@/composables/useApi'
 import { useWebSocket } from '@/composables/useWebSocket'
-import type { Zone, Device, ZoneTelemetry, ZoneTargets, Event, Cycle, CommandType } from '@/types'
+import type { Zone, Device, ZoneTelemetry, ZoneTargets, ZoneEvent, Cycle, CommandType } from '@/types'
 import type { ToastVariant } from '@/composables/useToast'
 
 const ZoneTelemetryChart = defineAsyncComponent(() => import('@/Pages/Zones/ZoneTelemetryChart.vue'))
@@ -239,7 +239,7 @@ interface PageProps {
   telemetry?: ZoneTelemetry
   targets?: ZoneTargets
   devices?: Device[]
-  events?: Event[]
+  events?: ZoneEvent[]
   cycles?: Record<string, Cycle>
   auth?: {
     user?: {
@@ -316,7 +316,7 @@ const zoneId = computed(() => {
 const telemetry = computed(() => (page.props.telemetry || { ph: null, ec: null, temperature: null, humidity: null }) as ZoneTelemetry)
 const targets = computed(() => (page.props.targets || {}) as ZoneTargets)
 const devices = computed(() => (page.props.devices || []) as Device[])
-const events = computed(() => (page.props.events || []) as Event[])
+const events = computed(() => (page.props.events || []) as ZoneEvent[])
 const cycles = computed(() => (page.props.cycles || {}) as Record<string, Cycle>)
 
 // Список циклов для отображения
@@ -449,12 +449,12 @@ onMounted(async () => {
   
   // Подписаться на WebSocket канал команд зоны
   if (zoneId.value) {
-    subscribeToZoneCommands(zoneId.value, (event) => {
+    subscribeToZoneCommands(zoneId.value, (commandEvent) => {
       // Обновляем статус команды через useCommands
-      updateCommandStatus(event.commandId, event.status, event.message)
+      updateCommandStatus(commandEvent.commandId, commandEvent.status, commandEvent.message)
       
       // Если команда завершена, обновляем зону
-      if (event.status === 'completed' || event.status === 'failed') {
+      if (commandEvent.status === 'completed' || commandEvent.status === 'failed') {
         reloadZoneAfterCommand(zoneId.value, ['zone', 'cycles'])
       }
     })
