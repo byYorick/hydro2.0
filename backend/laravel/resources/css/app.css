@@ -1,3 +1,6 @@
+/* Vue Virtual Scroller styles */
+@import 'vue-virtual-scroller/dist/vue-virtual-scroller.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

@@ -27,7 +27,7 @@ declare global {
 }
 
 interface EchoChannel {
-  listen: (event: string, handler: (data: unknown) => void) => void
+  listen: (eventName: string, handler: (data: unknown) => void) => void
   stopListening: (event: string) => void
   leave: () => void
 }
@@ -45,7 +45,7 @@ interface CommandUpdateEvent {
   zoneId?: number
 }
 
-interface GlobalEvent {
+interface GlobalZoneEvent {
   id: number
   kind: string
   message: string
@@ -59,7 +59,7 @@ interface GlobalEvent {
 interface ActiveSubscription {
   type: 'zone_commands' | 'global_events'
   id?: number
-  handler: (event: CommandUpdateEvent | GlobalEvent) => void
+  handler: (event: CommandUpdateEvent | GlobalZoneEvent) => void
 }
 
 // Глобальное хранилище (не ref, так как используется вне Vue компонентов)
@@ -119,8 +119,8 @@ export function useWebSocket(showToast?: ToastHandler) {
       })
 
       // Слушаем события ошибок команд
-      channel.listen('.App\\Events\\CommandFailed', (event: unknown) => {
-        const e = event as CommandUpdateEvent
+      channel.listen('.App\\Events\\CommandFailed', (evt: unknown) => {
+        const e = evt as CommandUpdateEvent
         if (onCommandUpdate) {
           onCommandUpdate({
             commandId: e.commandId,
@@ -176,7 +176,7 @@ export function useWebSocket(showToast?: ToastHandler) {
   /**
    * Подписаться на глобальный канал событий
    */
-  function subscribeToGlobalEvents(onEvent?: (event: GlobalEvent) => void): () => void {
+  function subscribeToGlobalEvents(onEvent?: (globalEvent: GlobalZoneEvent) => void): () => void {
     if (!window.Echo) {
       if (showToast) {
         showToast('WebSocket не доступен', 'warning', 3000)
@@ -202,8 +202,8 @@ export function useWebSocket(showToast?: ToastHandler) {
       const channel = window.Echo.channel(channelName)
       
       // Слушаем события
-      channel.listen('.App\\Events\\EventCreated', (event: unknown) => {
-        const e = event as GlobalEvent
+      channel.listen('.App\\Events\\EventCreated', (evt: unknown) => {
+        const e = evt as GlobalZoneEvent
         if (onEvent) {
           onEvent({
             id: e.id,
@@ -309,8 +309,8 @@ export function resubscribeAllChannels(): void {
         })
 
         // Слушаем события ошибок команд
-        channel.listen('.App\\Events\\CommandFailed', (event: unknown) => {
-          const e = event as CommandUpdateEvent
+        channel.listen('.App\\Events\\CommandFailed', (evt: unknown) => {
+          const e = evt as CommandUpdateEvent
           sub.handler({
             commandId: e.commandId,
             status: 'failed',
@@ -326,8 +326,8 @@ export function resubscribeAllChannels(): void {
         const channel = window.Echo!.channel(channelName)
         
         // Слушаем события
-        channel.listen('.App\\Events\\EventCreated', (event: unknown) => {
-          const e = event as GlobalEvent
+        channel.listen('.App\\Events\\EventCreated', (evt: unknown) => {
+          const e = evt as GlobalZoneEvent
           sub.handler({
             id: e.id,
             kind: e.kind || 'INFO',

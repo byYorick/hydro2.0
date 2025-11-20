@@ -210,10 +210,6 @@ export function useSystemStatus(showToast?: ToastHandler) {
       // Слушаем события подключения/отключения
       connection.bind('connected', () => {
         wsStatus.value = 'connected'
-        // При переподключении WebSocket переподписываемся на MQTT канал
-        if (!mqttStatusChannel) {
-          setupMqttStatusSubscription()
-        }
       })
 
       connection.bind('disconnected', () => {
@@ -228,10 +224,6 @@ export function useSystemStatus(showToast?: ToastHandler) {
         // states: { previous: 'disconnected', current: 'connected' }
         if (states.current === 'connected') {
           wsStatus.value = 'connected'
-          // При переподключении WebSocket переподписываемся на MQTT канал
-          if (!mqttStatusChannel) {
-            setupMqttStatusSubscription()
-          }
         } else if (states.current === 'disconnected' || states.current === 'failed') {
           wsStatus.value = 'disconnected'
         }
@@ -240,10 +232,6 @@ export function useSystemStatus(showToast?: ToastHandler) {
       // Также проверяем текущее состояние сразу после привязки
       if (connection.state === 'connected') {
         wsStatus.value = 'connected'
-        // Если уже подключены, подписываемся на MQTT канал
-        if (!mqttStatusChannel) {
-          setupMqttStatusSubscription()
-        }
       }
     } catch (err) {
       console.warn('[useSystemStatus] Ошибка привязки событий connection:', err)
@@ -251,106 +239,45 @@ export function useSystemStatus(showToast?: ToastHandler) {
   }
 
   /**
-   * Подписка на dedicated канал для MQTT статуса
+   * Проверка статуса MQTT через API
+   * Фронтенд не может напрямую взаимодействовать с MQTT, только через API
    */
-  let mqttStatusChannel: ReturnType<typeof window.Echo>['channel'] | null = null
-  let mqttStatusUnsubscribe: (() => void) | null = null
-
-  /**
-   * Настройка подписки на канал MQTT статуса
-   */
-  function setupMqttStatusSubscription(): void {
-    if (!window.Echo) {
-      mqttStatus.value = 'unknown'
-      return
-    }
-
-    // Отписываемся от предыдущей подписки, если есть
-    if (mqttStatusUnsubscribe) {
-      mqttStatusUnsubscribe()
-      mqttStatusUnsubscribe = null
-      mqttStatusChannel = null
-    }
-
+  async function checkMqttStatus(): Promise<void> {
     try {
-      // Подписываемся на dedicated канал для MQTT статуса
-      const channelName = 'mqtt.status'
-      mqttStatusChannel = window.Echo.channel(channelName)
+      // Проверяем статус MQTT через API health endpoint
+      // Backend должен возвращать статус MQTT в ответе health
+      const response = await api.get<{ data?: { mqtt?: string } } | { mqtt?: string }>(
+        '/api/system/health'
+      )
+      const data = ((response.data as { data?: { mqtt?: string } })?.data || 
+                   (response.data as { mqtt?: string })) || {}
       
-      // Слушаем события изменения статуса MQTT брокера
-      mqttStatusChannel.listen('.App\\Events\\MqttStatusUpdated', (event: unknown) => {
-        const e = event as { status?: string; message?: string; degraded?: boolean }
-        
-        if (e.status === 'online' || e.status === 'connected') {
+      // Обрабатываем статус MQTT из ответа API
+      if (data.mqtt === 'ok' || data.mqtt === 'online' || data.mqtt === 'connected') {
+        mqttStatus.value = 'online'
+      } else if (data.mqtt === 'fail' || data.mqtt === 'offline' || data.mqtt === 'disconnected') {
+        mqttStatus.value = 'offline'
+      } else if (data.mqtt === 'degraded') {
+        mqttStatus.value = 'degraded'
+      } else {
+        // Если статус MQTT не указан в ответе, используем fallback логику
+        // Считаем MQTT доступным, если WebSocket подключен (так как WebSocket используется для получения данных от backend)
+        if (wsStatus.value === 'connected') {
           mqttStatus.value = 'online'
-        } else if (e.status === 'offline' || e.status === 'disconnected') {
-          mqttStatus.value = 'offline'
-        } else if (e.degraded || e.status === 'degraded') {
-          mqttStatus.value = 'degraded'
         } else {
           mqttStatus.value = 'unknown'
         }
-        
-        lastUpdate.value = new Date()
-      })
-
-      // Также слушаем события ошибок MQTT
-      mqttStatusChannel.listen('.App\\Events\\MqttError', (event: unknown) => {
-        const e = event as { message?: string }
-        mqttStatus.value = 'offline'
-        lastUpdate.value = new Date()
-        
-        if (showToast && e.message) {
-          showToast(`MQTT ошибка: ${e.message}`, 'error', 5000)
-        }
-      })
-
-      // Функция для отписки
-      mqttStatusUnsubscribe = () => {
-        if (mqttStatusChannel) {
-          try {
-            mqttStatusChannel.stopListening('.App\\Events\\MqttStatusUpdated')
-            mqttStatusChannel.stopListening('.App\\Events\\MqttError')
-            mqttStatusChannel.leave()
-          } catch (err) {
-            console.warn('[useSystemStatus] Ошибка отписки от MQTT канала:', err)
-          }
-          mqttStatusChannel = null
-        }
       }
+      
+      lastUpdate.value = new Date()
     } catch (err) {
-      console.warn('[useSystemStatus] Ошибка подписки на MQTT канал:', err)
-      // Fallback: используем упрощенную логику
-      checkMqttStatusFallback()
-    }
-  }
-
-  /**
-   * Fallback проверка статуса MQTT (если канал недоступен)
-   */
-  function checkMqttStatusFallback(): void {
-    if (!window.Echo) {
-      mqttStatus.value = 'unknown'
-      return
-    }
-
-    // Упрощенная логика: если WebSocket подключен, считаем MQTT доступным
-    // Это временная мера, пока backend не настроит dedicated канал
-    if (wsStatus.value === 'connected') {
-      mqttStatus.value = 'online'
-    } else {
+      // При ошибке API считаем MQTT недоступным
       mqttStatus.value = 'offline'
-    }
-  }
-
-  /**
-   * Проверка статуса MQTT (legacy метод для обратной совместимости)
-   */
-  function checkMqttStatus(): void {
-    // Если есть активная подписка, статус обновляется автоматически
-    // Этот метод используется только для fallback проверки
-    if (!mqttStatusChannel) {
-      checkMqttStatusFallback()
+      lastUpdate.value = new Date()
+      
+      if (showToast) {
+        showToast('Ошибка проверки статуса MQTT', 'error', 3000)
+      }
     }
   }
 
@@ -366,34 +293,25 @@ export function useSystemStatus(showToast?: ToastHandler) {
       checkWebSocketStatus()
       setupWebSocketListeners()
       
-      // Настраиваем подписку на MQTT статус после инициализации WebSocket
-      setupMqttStatusSubscription()
+      // Проверяем статус MQTT через API
+      checkMqttStatus()
     }, 500)
-    
-    // Fallback проверка MQTT (на случай, если канал еще не готов)
-    checkMqttStatus()
 
-    // Периодическая проверка здоровья (Core + DB)
+    // Периодическая проверка здоровья (Core + DB + MQTT)
     healthPollInterval = setInterval(() => {
       checkHealth()
+      // Также проверяем MQTT статус через API
+      checkMqttStatus()
     }, POLL_INTERVAL)
 
     // Периодическая проверка WebSocket
     wsConnectionCheckInterval = setInterval(() => {
       checkWebSocketStatus()
-      
-      // Если WebSocket переподключился, переподписываемся на MQTT канал
-      if (wsStatus.value === 'connected' && !mqttStatusChannel) {
-        setupMqttStatusSubscription()
-      }
     }, 5000) // Каждые 5 секунд
 
-    // Периодическая fallback проверка MQTT (если канал недоступен)
+    // Периодическая проверка MQTT через API
     mqttStatusCheckInterval = setInterval(() => {
-      // Проверяем только если нет активной подписки
-      if (!mqttStatusChannel) {
-        checkMqttStatus()
-      }
+      checkMqttStatus()
     }, 10000) // Каждые 10 секунд
   }
 
@@ -412,13 +330,6 @@ export function useSystemStatus(showToast?: ToastHandler) {
     if (mqttStatusCheckInterval) {
       clearInterval(mqttStatusCheckInterval)
       mqttStatusCheckInterval = null
-    }
-    
-    // Отписываемся от MQTT канала
-    if (mqttStatusUnsubscribe) {
-      mqttStatusUnsubscribe()
-      mqttStatusUnsubscribe = null
-      mqttStatusChannel = null
     }
   }
 

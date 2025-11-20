@@ -7,7 +7,6 @@ export default defineConfig({
     resolve: {
         alias: {
             '@': resolve(__dirname, './resources/js'),
-            'vue-virtual-scroller': resolve(__dirname, './node_modules/vue-virtual-scroller/dist/vue-virtual-scroller.esm.js'),
         },
     },
     server: {
