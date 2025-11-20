@@ -63,6 +63,16 @@ class DeviceNode extends Model
                 $node->wasRecentlyCreated) {
                 event(new NodeConfigUpdated($node));
             }
+            
+            // Очищаем кеш списка устройств при создании или обновлении ноды
+            // Это гарантирует, что фронтенд увидит новые ноды сразу
+            try {
+                \Illuminate\Support\Facades\Cache::tags(['devices_list'])->flush();
+            } catch (\BadMethodCallException $e) {
+                // Если теги не поддерживаются, очищаем весь кеш
+                // В production лучше использовать Redis с тегами
+                \Illuminate\Support\Facades\Cache::flush();
+            }
         });
     }
 

@@ -16,6 +16,17 @@ class NodeService
         return DB::transaction(function () use ($data) {
             $node = DeviceNode::create($data);
             Log::info('Node created', ['node_id' => $node->id, 'uid' => $node->uid]);
+            
+            // Очищаем кеш списка устройств для всех пользователей
+            // Используем паттерн для очистки всех ключей devices_list_*
+            try {
+                \Illuminate\Support\Facades\Cache::tags(['devices_list'])->flush();
+            } catch (\BadMethodCallException $e) {
+                // Если теги не поддерживаются, очищаем все ключи с паттерном
+                // В production лучше использовать Redis с тегами
+                \Illuminate\Support\Facades\Cache::flush();
+            }
+            
             return $node;
         });
     }
@@ -49,6 +60,15 @@ class NodeService
                 'zone_id' => $node->zone_id,
                 'lifecycle_state' => $node->lifecycle_state?->value,
             ]);
+            
+            // Очищаем кеш списка устройств для всех пользователей
+            try {
+                \Illuminate\Support\Facades\Cache::tags(['devices_list'])->flush();
+            } catch (\BadMethodCallException $e) {
+                // Если теги не поддерживаются, очищаем все ключи с паттерном
+                \Illuminate\Support\Facades\Cache::flush();
+            }
+            
             return $node->fresh();
         });
     }

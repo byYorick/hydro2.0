@@ -30,6 +30,9 @@ class Settings:
     command_timeout_sec: int = int(os.getenv("COMMAND_TIMEOUT_SEC", "30"))
     mqtt_zone_format: str = os.getenv("MQTT_ZONE_FORMAT", "id")  # id | uid
     service_port: int = int(os.getenv("SERVICE_PORT", "9300"))  # Порт для history-logger
+    
+    redis_host: str = os.getenv("REDIS_HOST", "redis")
+    redis_port: int = int(os.getenv("REDIS_PORT", "6379"))
 
 
 def get_settings() -> Settings:

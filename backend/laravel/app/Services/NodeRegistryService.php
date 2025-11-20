@@ -131,7 +131,9 @@ class NodeRegistryService
                 $node->hardware_id = $hardwareId;
                 $node->type = $nodeType;
                 $node->first_seen_at = now();
-                $node->lifecycle_state = NodeLifecycleState::UNPROVISIONED;
+                // Новые ноды с временными конфигами регистрируются как REGISTERED_BACKEND
+                // Когда нода получит реальные конфиги и будет привязана к зоне, состояние изменится на ASSIGNED_TO_ZONE
+                $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
             }
             
             // Обновляем атрибуты
@@ -179,16 +181,18 @@ class NodeRegistryService
             
             // Устанавливаем lifecycle_state
             if (!$node->id) {
-                // Новый узел
-                if ($node->zone_id) {
-                    $node->lifecycle_state = NodeLifecycleState::ASSIGNED_TO_ZONE;
-                } else {
-                    $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
-                }
+                // Новый узел - всегда REGISTERED_BACKEND, даже если есть zone_id
+                // (нода с временными конфигами еще не привязана к реальной зоне)
+                $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
             } else {
                 // Существующий узел - обновляем состояние в зависимости от наличия зоны
+                // Но только если узел действительно привязан к реальной зоне (не временные конфиги)
                 if ($node->zone_id && $node->lifecycle_state === NodeLifecycleState::REGISTERED_BACKEND) {
-                    $node->lifecycle_state = NodeLifecycleState::ASSIGNED_TO_ZONE;
+                    // Проверяем, что это не временная зона (zn-temp)
+                    $zone = Zone::find($node->zone_id);
+                    if ($zone && !str_contains($zone->name ?? '', 'temp') && !str_contains($zone->uid ?? '', 'temp')) {
+                        $node->lifecycle_state = NodeLifecycleState::ASSIGNED_TO_ZONE;
+                    }
                 }
             }
             

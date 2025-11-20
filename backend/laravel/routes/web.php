@@ -392,14 +392,29 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
          * Кеширование: 10 секунд
          */
         Route::get('/', function () {
-            // Кешируем список устройств на 10 секунд
+            // Кешируем список устройств на 2 секунды для быстрого обновления
             $cacheKey = 'devices_list_' . auth()->id();
-            $devices = \Illuminate\Support\Facades\Cache::remember($cacheKey, 10, function () {
-                return DeviceNode::query()
-                    ->select(['id','uid','zone_id','name','type','status','fw_version','last_seen_at'])
-                    ->with('zone:id,name')
-                    ->get();
-            });
+            $devices = null;
+            
+            // Пытаемся использовать теги, если поддерживаются
+            try {
+                $devices = \Illuminate\Support\Facades\Cache::tags(['devices_list'])->remember($cacheKey, 2, function () {
+                    return DeviceNode::query()
+                        ->select(['id','uid','zone_id','name','type','status','fw_version','last_seen_at'])
+                        ->with('zone:id,name')
+                        ->latest('id') // Сортируем по ID, чтобы новые ноды были сверху
+                        ->get();
+                });
+            } catch (\BadMethodCallException $e) {
+                // Если теги не поддерживаются, используем обычный кеш
+                $devices = \Illuminate\Support\Facades\Cache::remember($cacheKey, 2, function () {
+                    return DeviceNode::query()
+                        ->select(['id','uid','zone_id','name','type','status','fw_version','last_seen_at'])
+                        ->with('zone:id,name')
+                        ->latest('id') // Сортируем по ID, чтобы новые ноды были сверху
+                        ->get();
+                });
+            }
             return Inertia::render('Devices/Index', [
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
                 'devices' => $devices,

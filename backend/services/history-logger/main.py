@@ -4,6 +4,7 @@ import logging
 import signal
 from datetime import datetime
 from typing import Optional, List
+import httpx
 
 from fastapi import FastAPI
 from prometheus_client import Counter, Histogram
@@ -28,6 +29,13 @@ TELEM_BATCH_SIZE = Histogram("telemetry_batch_size",
 HEARTBEAT_RECEIVED = Counter("heartbeat_received_total",
                              "Total heartbeat messages received",
                              ["node_uid"])
+NODE_HELLO_RECEIVED = Counter("node_hello_received_total",
+                              "Total node_hello messages received")
+NODE_HELLO_REGISTERED = Counter("node_hello_registered_total",
+                               "Total nodes registered from node_hello")
+NODE_HELLO_ERRORS = Counter("node_hello_errors_total",
+                           "Total errors processing node_hello",
+                           ["error_type"])
 
 # Global telemetry queue
 telemetry_queue: Optional[TelemetryQueue] = None
@@ -301,6 +309,93 @@ async def process_telemetry_queue():
     logger.info("Telemetry queue processor stopped")
 
 
+async def handle_node_hello(topic: str, payload: bytes):
+    """
+    Обработчик node_hello сообщений от узлов ESP32.
+    Регистрирует новые узлы через Laravel API.
+    """
+    try:
+        logger.info(f"[NODE_HELLO] Received message on topic {topic}, payload length: {len(payload)}")
+        logger.info(f"[NODE_HELLO] Payload (first 200 chars): {payload[:200]}")
+        data = _parse_json(payload)
+        if not data or not isinstance(data, dict):
+            logger.warning(f"[NODE_HELLO] Invalid JSON in node_hello from topic {topic}")
+            NODE_HELLO_ERRORS.labels(error_type="invalid_json").inc()
+            return
+        
+        # Проверяем, что это действительно node_hello сообщение
+        if data.get("message_type") != "node_hello":
+            logger.debug(f"[NODE_HELLO] Not a node_hello message, skipping: {data.get('message_type')}")
+            return
+        
+        logger.info(f"[NODE_HELLO] Processing node_hello from hardware_id: {data.get('hardware_id')}")
+        NODE_HELLO_RECEIVED.inc()
+    except Exception as e:
+        logger.error(f"[NODE_HELLO] Error in handle_node_hello: {e}", exc_info=True)
+        raise
+    
+    s = get_settings()
+    laravel_url = s.laravel_api_url if hasattr(s, 'laravel_api_url') else None
+    laravel_token = s.laravel_api_token if hasattr(s, 'laravel_api_token') else None
+    
+    if not laravel_url:
+        logger.error("Laravel API URL not configured, cannot register node")
+        NODE_HELLO_ERRORS.labels(error_type="config_missing").inc()
+        return
+    
+    try:
+        # Подготавливаем данные для Laravel API
+        api_data = {
+            "message_type": "node_hello",
+            "hardware_id": data.get("hardware_id"),
+            "node_type": data.get("node_type"),
+            "fw_version": data.get("fw_version"),
+            "hardware_revision": data.get("hardware_revision"),
+            "capabilities": data.get("capabilities"),
+            "provisioning_meta": data.get("provisioning_meta"),
+        }
+        
+        # Вызываем Laravel API для регистрации узла
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        
+        if laravel_token:
+            headers["Authorization"] = f"Bearer {laravel_token}"
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                f"{laravel_url}/api/nodes/register",
+                json=api_data,
+                headers=headers,
+            )
+            
+            if response.status_code == 201:
+                logger.info(f"Node registered successfully: {data.get('hardware_id')}")
+                NODE_HELLO_REGISTERED.inc()
+            elif response.status_code == 200:
+                logger.info(f"Node updated successfully: {data.get('hardware_id')}")
+                NODE_HELLO_REGISTERED.inc()
+            else:
+                logger.error(
+                    f"Failed to register node: {response.status_code} - {response.text}",
+                    extra={"hardware_id": data.get("hardware_id")}
+                )
+                NODE_HELLO_ERRORS.labels(error_type=f"http_{response.status_code}").inc()
+                
+    except httpx.TimeoutException:
+        logger.error(f"Timeout while registering node: {data.get('hardware_id')}")
+        NODE_HELLO_ERRORS.labels(error_type="timeout").inc()
+    except Exception as e:
+        logger.error(
+            f"Error registering node: {e}",
+            exc_info=True,
+            extra={"hardware_id": data.get("hardware_id")}
+        )
+        NODE_HELLO_ERRORS.labels(error_type="exception").inc()
+
+
 async def handle_heartbeat(topic: str, payload: bytes):
     """
     Обработчик heartbeat сообщений от узлов ESP32.
@@ -442,8 +537,13 @@ async def startup_event():
     mqtt = await get_mqtt_client()
     await mqtt.subscribe("hydro/+/+/+/telemetry/+", handle_telemetry)
     await mqtt.subscribe("hydro/+/+/+/heartbeat", handle_heartbeat)
+    # Подписка на node_hello для регистрации новых узлов
+    await mqtt.subscribe("hydro/node_hello", handle_node_hello)
+    await mqtt.subscribe("hydro/+/+/+/node_hello", handle_node_hello)
     
     logger.info("History Logger service started")
+    logger.info("Subscribed to MQTT topics: hydro/+/+/+/telemetry/+, hydro/+/+/+/heartbeat, hydro/node_hello, hydro/+/+/+/node_hello")
+    logger.info("Subscribed to MQTT topics: hydro/+/+/+/telemetry/+, hydro/+/+/+/heartbeat, hydro/node_hello, hydro/+/+/+/node_hello")
 
 
 @app.on_event("shutdown")

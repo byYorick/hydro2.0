@@ -120,6 +120,8 @@ services:
       dockerfile: history-logger/Dockerfile
     environment:
       - MQTT_HOST=mqtt
+      - MQTT_PORT=1883
+      - MQTT_TLS=0
       - MQTT_USER=history_logger
       - MQTT_PASS=logger_pass
       - PG_HOST=db
@@ -127,7 +129,9 @@ services:
       - PG_USER=hydro
       - PG_PASS=hydro
       - LARAVEL_API_URL=http://laravel
-      - LARAVEL_API_TOKEN=
+      - LARAVEL_API_TOKEN=${PY_INGEST_TOKEN:-${PY_API_TOKEN:-}}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
     depends_on:
       - mqtt
       - db
