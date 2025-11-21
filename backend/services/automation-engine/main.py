@@ -17,6 +17,8 @@ LOOP_ERRORS = Counter("automation_loop_errors_total", "Errors in automation main
 CONFIG_FETCH_ERRORS = Counter("config_fetch_errors_total", "Errors fetching config from Laravel", ["error_type"])
 CONFIG_FETCH_SUCCESS = Counter("config_fetch_success_total", "Successful config fetches from Laravel")
 # MQTT_PUBLISH_ERRORS и COMMANDS_SENT перенесены в infrastructure/command_bus.py
+# Импортируем метрики для регистрации в REGISTRY до запуска start_http_server
+from infrastructure.command_bus import COMMANDS_SENT, MQTT_PUBLISH_ERRORS
 from common.water_flow import (
     check_water_level,
     ensure_water_level_alert,
@@ -34,6 +36,8 @@ from exceptions import InvalidConfigurationError
 # Метрики перенесены в соответствующие модули:
 # - ZONE_CHECKS и CHECK_LAT в services/zone_automation_service.py
 # - COMMANDS_SENT и MQTT_PUBLISH_ERRORS в infrastructure/command_bus.py
+# Импортируем метрики для регистрации в REGISTRY до запуска start_http_server
+from services.zone_automation_service import ZONE_CHECKS, CHECK_LAT
 
 
 def validate_config(cfg: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
@@ -353,6 +357,10 @@ async def fetch_full_config(client: httpx.AsyncClient, base_url: str, token: str
 async def main():
     s = get_settings()
     automation_settings = get_automation_settings()
+    
+    # Start Prometheus metrics server
+    start_http_server(automation_settings.PROMETHEUS_PORT)  # Prometheus metrics
+    
     mqtt = MqttClient(client_id_suffix="-auto")
     try:
         mqtt.start()
@@ -360,9 +368,6 @@ async def main():
         logger.critical(f"Failed to start MQTT client: {e}. Exiting.", exc_info=True)
         # Exit on critical configuration errors
         raise
-    
-        automation_settings = get_automation_settings()
-        start_http_server(automation_settings.PROMETHEUS_PORT)  # Prometheus metrics
 
     async with httpx.AsyncClient() as client:
         while True:

@@ -1,7 +1,17 @@
 <template>
   <AppLayout>
     <template #default>
-      <h1 class="text-lg font-semibold mb-4">Панель управления</h1>
+      <div class="flex items-center justify-between mb-4">
+        <h1 class="text-lg font-semibold">Панель управления</h1>
+        <div class="flex gap-2">
+          <Link href="/setup/wizard">
+            <Button size="sm" variant="secondary">Мастер настройки</Button>
+          </Link>
+          <Link href="/greenhouses/create">
+            <Button size="sm" variant="outline">Создать теплицу</Button>
+          </Link>
+        </div>
+      </div>
       
       <!-- Основные статистики -->
       <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
@@ -35,9 +45,36 @@
         </Card>
       </div>
 
+      <!-- Быстрые действия -->
+      <div v-if="!hasGreenhouses || dashboard.greenhousesCount === 0" class="mb-6">
+        <Card class="bg-sky-900/20 border-sky-700">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-sm font-semibold mb-1">Начать работу</div>
+              <div class="text-xs text-neutral-400">
+                Создайте теплицу и зоны для начала работы с системой
+              </div>
+            </div>
+            <div class="flex gap-2">
+              <Link href="/setup/wizard">
+                <Button size="sm">Мастер настройки</Button>
+              </Link>
+              <Link href="/greenhouses/create">
+                <Button size="sm" variant="secondary">Создать теплицу</Button>
+              </Link>
+            </div>
+          </div>
+        </Card>
+      </div>
+
       <!-- Теплицы -->
       <div v-if="hasGreenhouses" class="mb-6">
-        <h2 class="text-md font-semibold mb-3">Теплицы</h2>
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-md font-semibold">Теплицы</h2>
+          <Link href="/greenhouses/create">
+            <Button size="sm" variant="outline">Создать теплицу</Button>
+          </Link>
+        </div>
         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
           <Card 
             v-for="gh in dashboard.greenhouses" 

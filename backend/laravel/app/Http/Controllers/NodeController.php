@@ -30,9 +30,17 @@ class NodeController extends Controller
             'zone_id' => ['nullable', 'integer', 'exists:zones,id'],
             'status' => ['nullable', 'string'],
             'search' => ['nullable', 'string', 'max:255'],
-            'new_only' => ['nullable', 'boolean'],
-            'unassigned' => ['nullable', 'boolean'],
+            'new_only' => ['nullable', 'string', 'in:true,false,1,0'],
+            'unassigned' => ['nullable', 'string', 'in:true,false,1,0'],
         ]);
+        
+        // Преобразуем строковые boolean значения
+        if (isset($validated['new_only'])) {
+            $validated['new_only'] = filter_var($validated['new_only'], FILTER_VALIDATE_BOOLEAN);
+        }
+        if (isset($validated['unassigned'])) {
+            $validated['unassigned'] = filter_var($validated['unassigned'], FILTER_VALIDATE_BOOLEAN);
+        }
         
         // Eager loading для предотвращения N+1 запросов
         $query = DeviceNode::query()

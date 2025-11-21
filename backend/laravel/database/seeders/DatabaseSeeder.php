@@ -30,6 +30,9 @@ class DatabaseSeeder extends Seeder
             } else {
                 $this->call(TelemetrySeeder::class);
             }
+            
+            // Seed comprehensive dashboard data (all tables for all Grafana dashboards)
+            $this->call(ComprehensiveDashboardSeeder::class);
         }
     }
 }

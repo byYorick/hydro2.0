@@ -7,8 +7,8 @@ from datetime import datetime
 from typing import Optional, List
 import httpx
 
-from fastapi import FastAPI
-from prometheus_client import Counter, Histogram, Gauge
+from fastapi import FastAPI, Response
+from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 from pydantic import BaseModel, Field
 from typing import Union
 import time
@@ -83,6 +83,19 @@ async def lifespan(app: FastAPI):
 
 # FastAPI app
 app = FastAPI(title="History Logger", lifespan=lifespan)
+
+
+@app.get("/health")
+async def health():
+    """Health check endpoint."""
+    return {"status": "ok"}
+
+
+@app.get("/metrics")
+def metrics():
+    """Prometheus metrics endpoint."""
+    metrics_data = generate_latest()
+    return Response(content=metrics_data.decode('utf-8') if isinstance(metrics_data, bytes) else metrics_data, media_type=CONTENT_TYPE_LATEST)
 
 TELEM_RECEIVED = Counter("telemetry_received_total",
                          "Total telemetry messages received")
@@ -866,12 +879,6 @@ def _extract_node_uid(topic: str) -> Optional[str]:
 
 
 # Startup и shutdown события теперь обрабатываются через lifespan handler выше
-
-
-@app.get("/health")
-async def health():
-    """Health check endpoint."""
-    return {"status": "ok"}
 
 
 @app.post("/ingest/telemetry")

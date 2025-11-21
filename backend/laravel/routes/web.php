@@ -122,6 +122,24 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
     })->name('dashboard');
 
     /**
+     * Setup Wizard - мастер настройки системы
+     */
+    Route::get('/setup/wizard', function () {
+        return Inertia::render('Setup/Wizard', [
+            'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
+        ]);
+    })->name('setup.wizard');
+
+    /**
+     * Create Greenhouse - создание теплицы
+     */
+    Route::get('/greenhouses/create', function () {
+        return Inertia::render('Greenhouses/Create', [
+            'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
+        ]);
+    })->name('greenhouses.create');
+
+    /**
      * Zones routes
      */
     Route::prefix('zones')->group(function () {
@@ -149,7 +167,10 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
             $zones = \Illuminate\Support\Facades\Cache::remember($cacheKey, 10, function () {
                 return Zone::query()
                     ->select(['id','name','status','description','greenhouse_id'])
-                    ->with('greenhouse:id,name')
+                    ->with([
+                        'greenhouse:id,name',
+                        'recipeInstance.recipe:id,name' // Загружаем рецепт для отображения
+                    ])
                     ->get();
             });
             
@@ -222,10 +243,28 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
             // Convert zoneId to integer
             $zoneIdInt = (int)$zoneId;
             
+            // Загружаем зону с recipeInstance и recipe
+            // ВАЖНО: Используем fresh() чтобы получить свежие данные из БД
             $zone = Zone::query()
-                ->select(['id','name','status','description','greenhouse_id'])
-                ->with(['greenhouse:id,name', 'recipeInstance.recipe:id,name'])
+                ->with([
+                    'greenhouse:id,name',
+                    'recipeInstance.recipe:id,name,description'
+                ])
                 ->findOrFail($zoneIdInt);
+            
+            // Обновляем зону, чтобы гарантировать загрузку свежих данных
+            $zone->refresh();
+            $zone->loadMissing(['recipeInstance.recipe']);
+            
+            // Логируем для отладки
+            \Log::info('Loading zone for web route', [
+                'zone_id' => $zoneIdInt,
+                'has_recipe_instance' => $zone->recipeInstance !== null,
+                'recipe_instance_id' => $zone->recipeInstance?->id,
+                'recipe_id' => $zone->recipeInstance?->recipe_id,
+                'recipe_name' => $zone->recipeInstance?->recipe?->name,
+                'recipe_instance_full' => $zone->recipeInstance ? $zone->recipeInstance->toArray() : null,
+            ]);
             
             // Загрузить телеметрию
             $telemetryLast = \App\Models\TelemetryLast::query()
@@ -355,10 +394,36 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
                 $cycles = [];
             }
             
+            // Формируем данные для отправки в Inertia
+            // ВАЖНО: Используем оригинальную модель, так как Inertia правильно сериализует отношения
+            // Но убеждаемся, что все отношения загружены
+            if (!$zone->relationLoaded('recipeInstance')) {
+                $zone->load('recipeInstance.recipe');
+            }
+            
+            // Дополнительная проверка: если recipeInstance есть, но recipe не загружен - загружаем
+            if ($zone->recipeInstance && !$zone->recipeInstance->relationLoaded('recipe')) {
+                $zone->recipeInstance->load('recipe');
+            }
+            
+            // Логируем данные перед отправкой в Inertia
+            \Log::info('Sending zone data to Inertia', [
+                'zone_id' => $zone->id,
+                'zone_name' => $zone->name,
+                'has_recipe_instance' => $zone->recipeInstance !== null,
+                'recipe_instance' => $zone->recipeInstance ? [
+                    'id' => $zone->recipeInstance->id,
+                    'recipe_id' => $zone->recipeInstance->recipe_id,
+                    'recipe_name' => $zone->recipeInstance->recipe?->name,
+                    'current_phase_index' => $zone->recipeInstance->current_phase_index,
+                ] : null,
+                'zone_data_has_recipe_instance' => isset($zoneData['recipe_instance']),
+            ]);
+            
             return Inertia::render('Zones/Show', [
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
                 'zoneId' => $zoneIdInt,
-                'zone' => $zone,
+                'zone' => $zone, // Используем модель - Inertia правильно сериализует отношения
                 'telemetry' => $telemetryLast,
                 'targets' => $targets,
                 'devices' => $devices,
@@ -475,6 +540,13 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
      * Recipes routes
      */
     Route::prefix('recipes')->group(function () {
+        Route::get('/create', function () {
+            return Inertia::render('Recipes/Edit', [
+                'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
+                'recipe' => null,
+            ]);
+        })->name('recipes.create');
+        
         /**
          * Recipes Index - список всех рецептов
          * 
@@ -546,7 +618,15 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
          *     phases: Array<{ id, recipe_id, phase_index, name, duration_hours, targets }>
          *   }
          */
-        Route::get('/{recipeId}/edit', function (int $recipeId) {
+        Route::get('/create', function () {
+        $recipe = new \App\Models\Recipe();
+        $recipe->phases = [];
+        return Inertia::render('Recipes/Edit', [
+            'recipe' => $recipe,
+        ]);
+    })->name('recipes.create');
+
+    Route::get('/{recipeId}/edit', function (int $recipeId) {
             $recipe = Recipe::query()
                 ->with('phases:id,recipe_id,phase_index,name,duration_hours,targets')
                 ->findOrFail($recipeId);

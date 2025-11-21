@@ -36,10 +36,10 @@ scrape_configs:
     metrics_path: '/metrics'
     scrape_interval: 15s
 
-  # History Logger (если есть метрики)
+  # History Logger
   - job_name: 'history-logger'
     static_configs:
-      - targets: ['history-logger:9403']
+      - targets: ['history-logger:9300']
     metrics_path: '/metrics'
     scrape_interval: 15s
 
@@ -53,4 +53,3 @@ alerting:
     - static_configs:
         - targets:
           - 'alertmanager:9093'
-

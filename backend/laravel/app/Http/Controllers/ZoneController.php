@@ -94,16 +94,42 @@ class ZoneController extends Controller
 
     public function attachRecipe(Request $request, Zone $zone)
     {
-        $data = $request->validate([
-            'recipe_id' => ['required', 'integer', 'exists:recipes,id'],
-            'start_at' => ['nullable', 'date'],
-        ]);
-        $this->zoneService->attachRecipe(
-            $zone,
-            $data['recipe_id'],
-            isset($data['start_at']) ? new \DateTime($data['start_at']) : null
-        );
-        return response()->json(['status' => 'ok']);
+        try {
+            $data = $request->validate([
+                'recipe_id' => ['required', 'integer', 'exists:recipes,id'],
+                'start_at' => ['nullable', 'date'],
+            ]);
+            
+            $instance = $this->zoneService->attachRecipe(
+                $zone,
+                $data['recipe_id'],
+                isset($data['start_at']) ? new \DateTime($data['start_at']) : null
+            );
+            
+            // Загружаем обновленную зону с recipeInstance
+            $zone->refresh();
+            $zone->load(['recipeInstance.recipe']);
+            
+            return response()->json([
+                'status' => 'ok',
+                'data' => [
+                    'zone_id' => $zone->id,
+                    'recipe_instance_id' => $instance->id,
+                    'recipe_id' => $instance->recipe_id,
+                ]
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Failed to attach recipe', [
+                'zone_id' => $zone->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
     }
 
     public function changePhase(Request $request, Zone $zone)

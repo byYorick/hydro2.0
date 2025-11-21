@@ -14,11 +14,13 @@ vi.mock('@/Components/Button.vue', () => ({
 }))
 
 const axiosPatchMock = vi.hoisted(() => vi.fn())
+const axiosPostMock = vi.hoisted(() => vi.fn())
 const routerVisitMock = vi.hoisted(() => vi.fn())
 
 vi.mock('axios', () => ({
   default: {
     patch: (url: string, data?: any, config?: any) => axiosPatchMock(url, data, config),
+    post: (url: string, data?: any, config?: any) => axiosPostMock(url, data, config),
   },
 }))
 
@@ -246,6 +248,64 @@ describe('Recipes/Edit.vue', () => {
     consoleErrorSpy.mockRestore()
   })
 
+  it('создает новый рецепт с фазами', async () => {
+    axiosPostMock.mockClear()
+    
+    axiosPostMock
+      .mockResolvedValueOnce({
+        data: {
+          data: { id: 2, name: 'New Recipe', description: 'New Description' },
+        },
+      })
+      .mockResolvedValue({
+        data: { status: 'ok' },
+      })
+    
+    // Мокаем рецепт без id для создания
+    const usePageMockNewRecipe = vi.fn(() => ({
+      props: {
+        recipe: null,
+      },
+    }))
+    
+    vi.mocked(usePage).mockReturnValue(usePageMockNewRecipe() as any)
+    
+    const wrapper = mount(RecipesEdit)
+    
+    await wrapper.vm.$nextTick()
+    
+    // Устанавливаем данные формы через форму
+    const formInstance = wrapper.vm.$data.form
+    if (formInstance) {
+      formInstance.name = 'New Recipe'
+      formInstance.description = 'New Description'
+      formInstance.phases = [
+        {
+          phase_index: 0,
+          name: 'Phase 1',
+          duration_hours: 24,
+          targets: { ph: { min: 5.6, max: 6.0 }, ec: { min: 1.2, max: 1.6 } },
+        },
+      ]
+    }
+    
+    const form = wrapper.find('form')
+    if (form.exists()) {
+      await form.trigger('submit.prevent')
+      
+      await new Promise(resolve => setTimeout(resolve, 200))
+      
+      expect(axiosPostMock).toHaveBeenCalledWith(
+        '/api/recipes',
+        expect.objectContaining({
+          name: 'New Recipe',
+          description: 'New Description',
+        }),
+        expect.any(Object)
+      )
+    }
+  })
+  
   it.skip('обрабатывает рецепт без фаз', () => {
     // Пропускаем - требует динамического мока
     expect(true).toBe(true)

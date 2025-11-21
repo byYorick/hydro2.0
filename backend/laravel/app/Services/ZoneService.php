@@ -75,7 +75,17 @@ class ZoneService
             // Удалить предыдущий экземпляр рецепта, если есть
             $existing = $zone->recipeInstance;
             if ($existing) {
+                Log::info('Deleting existing recipe instance', [
+                    'zone_id' => $zone->id,
+                    'existing_instance_id' => $existing->id,
+                ]);
                 $existing->delete();
+            }
+
+            // Проверяем, что рецепт существует
+            $recipe = \App\Models\Recipe::find($recipeId);
+            if (!$recipe) {
+                throw new \DomainException("Recipe with ID {$recipeId} not found");
             }
 
             $instance = ZoneRecipeInstance::create([
@@ -88,10 +98,16 @@ class ZoneService
             Log::info('Recipe attached to zone', [
                 'zone_id' => $zone->id,
                 'recipe_id' => $recipeId,
+                'instance_id' => $instance->id,
+                'started_at' => $instance->started_at,
             ]);
 
+            // Обновляем зону и загружаем relationships
+            $zone->refresh();
+            $zone->load(['recipeInstance.recipe']);
+
             // Dispatch event для уведомления Python-сервиса
-            event(new ZoneUpdated($zone->fresh()));
+            event(new ZoneUpdated($zone));
 
             // Запустить задачу расчёта аналитики при завершении рецепта (если нужно)
             // Можно запускать периодически или при завершении всех фаз

@@ -107,6 +107,9 @@ const staticCommands: CommandItem[] = [
   { type: 'nav', label: 'Открыть Recipes', icon: '📋', action: () => router.visit('/recipes') },
   { type: 'nav', label: 'Открыть Alerts', icon: '⚠️', action: () => router.visit('/alerts') },
   { type: 'nav', label: 'Открыть Dashboard', icon: '📊', action: () => router.visit('/') },
+  { type: 'nav', label: 'Мастер настройки системы', icon: '⚙️', action: () => router.visit('/setup/wizard'), category: 'Настройка' },
+  { type: 'nav', label: 'Создать теплицу', icon: '🏠', action: () => router.visit('/greenhouses/create'), category: 'Создание' },
+  { type: 'nav', label: 'Создать рецепт', icon: '➕', action: () => router.visit('/recipes/create'), category: 'Создание' },
 ]
 
 // Результаты поиска

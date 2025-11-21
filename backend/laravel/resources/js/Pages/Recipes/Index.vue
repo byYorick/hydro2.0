@@ -4,7 +4,9 @@
     <div class="mb-3 flex flex-wrap items-center gap-2">
       <label class="text-sm text-neutral-300">Поиск:</label>
       <input v-model="query" placeholder="Название или культура..." class="h-9 w-64 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
-      <Button class="ml-auto" size="sm">Создать рецепт</Button>
+      <Link href="/recipes/create" class="ml-auto">
+        <Button size="sm">Создать рецепт</Button>
+      </Link>
     </div>
     <div v-if="filtered.length === 0" class="text-sm text-neutral-400 px-1 py-6">
       {{ all.length === 0 ? 'Рецепты не найдены' : 'Нет рецептов по текущему фильтру' }}

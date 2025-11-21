@@ -1,0 +1,77 @@
+{
+  "title": "Test Simple Queries",
+  "tags": ["test", "debug"],
+  "timezone": "browser",
+  "schemaVersion": 16,
+  "version": 1,
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Simple Count Test",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "PostgreSQL"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*)::float as value FROM alerts WHERE status = 'ACTIVE'",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Simple Table Test",
+      "type": "table",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 6,
+        "y": 0
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "PostgreSQL"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT id, type, status, created_at FROM alerts WHERE status = 'ACTIVE' ORDER BY created_at DESC LIMIT 10",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Simple Time Series Test",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "PostgreSQL"
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT created_at::timestamp as time, 1.0::float as value, type as metric FROM alerts WHERE status = 'ACTIVE' AND created_at >= NOW() - INTERVAL '7 days' ORDER BY created_at LIMIT 100",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}
+

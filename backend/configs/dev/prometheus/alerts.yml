@@ -16,7 +16,7 @@ groups:
     interval: 30s
     rules:
       - alert: ServiceDown
-        expr: up{job=~"automation-engine|scheduler|mqtt-bridge"} == 0
+        expr: up{job=~"automation-engine|scheduler|mqtt-bridge|history-logger"} == 0
         for: 2m
         labels:
           severity: critical
@@ -55,4 +55,121 @@ groups:
         annotations:
           summary: "High command failure rate"
           description: "Command failure rate is above 10% for the last 5 minutes"
+
+  - name: history_logger_alerts
+    interval: 30s
+    rules:
+      - alert: HistoryLoggerQueueOverflow
+        expr: telemetry_queue_size > 10000
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "History Logger queue is overflowing"
+          description: "Telemetry queue size is {{ $value }} (threshold: 10000). Messages may be dropped."
+
+      - alert: HistoryLoggerQueueStale
+        expr: telemetry_queue_age_seconds > 300
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "History Logger queue has stale items"
+          description: "Oldest item in queue is {{ $value }} seconds old (threshold: 300s). Processing may be delayed."
+
+      - alert: HistoryLoggerDroppingMessages
+        expr: rate(telemetry_dropped_total{reason="queue_push_failed"}[5m]) > 10
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "History Logger is dropping messages"
+          description: "Dropping {{ $value }} messages/sec due to queue push failures. Data loss is occurring."
+
+      - alert: HistoryLoggerDatabaseErrors
+        expr: rate(database_errors_total[5m]) > 5
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "History Logger has database errors"
+          description: "Database error rate is {{ $value }} errors/sec. Check database connectivity and performance."
+
+      - alert: HistoryLoggerSlowProcessing
+        expr: histogram_quantile(0.99, rate(telemetry_processing_duration_seconds_bucket[5m])) > 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "History Logger processing is slow"
+          description: "P99 processing time is {{ $value }}s (threshold: 5s). Performance degradation detected."
+
+      - alert: HistoryLoggerNoProcessing
+        expr: rate(telemetry_processed_total[5m]) == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "History Logger is not processing telemetry"
+          description: "No telemetry messages processed in the last 5 minutes. Service may be stuck."
+
+  - name: automation_engine_alerts
+    interval: 30s
+    rules:
+      - alert: AutomationEngineLoopErrors
+        expr: rate(automation_loop_errors_total[5m]) > 5
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Automation Engine has loop errors"
+          description: "Error rate in main loop is {{ $value }} errors/sec. Check service logs for details."
+
+      - alert: AutomationEngineConfigFetchErrors
+        expr: rate(config_fetch_errors_total[5m]) > 3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Automation Engine cannot fetch configuration"
+          description: "Config fetch error rate is {{ $value }} errors/sec. Check Laravel API connectivity."
+
+      - alert: AutomationEngineMQTTPublishErrors
+        expr: rate(mqtt_publish_errors_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Automation Engine cannot publish commands"
+          description: "MQTT publish error rate is {{ $value }} errors/sec. Commands are not being sent to nodes."
+
+      - alert: AutomationEngineSlowZoneProcessing
+        expr: histogram_quantile(0.99, rate(zone_check_seconds_bucket[5m])) > 30
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Automation Engine zone processing is slow"
+          description: "P99 zone check duration is {{ $value }}s (threshold: 30s). Performance degradation detected."
+
+      - alert: AutomationEngineNoZoneChecks
+        expr: rate(zone_checks_total[5m]) == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Automation Engine is not processing zones"
+          description: "No zone checks performed in the last 5 minutes. Service may be stuck or configuration is invalid."
+
+      - alert: AutomationEngineHighErrorRate
+        expr: |
+          (sum(rate(automation_loop_errors_total[5m])) + 
+           sum(rate(automation_errors_total[5m])) + 
+           sum(rate(mqtt_publish_errors_total[5m]))) > 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Automation Engine has high error rate"
+          description: "Total error rate is {{ $value }} errors/sec. Multiple components may be failing."
 

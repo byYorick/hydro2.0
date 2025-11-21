@@ -225,6 +225,7 @@ services:
       - GF_USERS_DEFAULT_LANGUAGE=ru
     volumes:
       - ./configs/dev/grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./configs/dev/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
       - ./configs/dev/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - ./configs/dev/grafana/grafana.ini:/etc/grafana/grafana.ini:ro
       - grafana_data:/var/lib/grafana

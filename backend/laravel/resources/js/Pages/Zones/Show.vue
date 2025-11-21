@@ -76,14 +76,76 @@
           />
         </div>
         <Card>
-          <div class="text-sm font-semibold mb-2">Устройства</div>
+          <div class="flex items-center justify-between mb-2">
+            <div class="text-sm font-semibold">Устройства</div>
+            <template v-if="page.props.auth?.user?.role === 'admin' || page.props.auth?.user?.role === 'operator'">
+              <Button size="sm" variant="secondary" @click="showAttachNodesModal = true">
+                Привязать узлы
+              </Button>
+            </template>
+          </div>
           <ul v-if="devices.length > 0" class="text-sm text-neutral-300 space-y-1">
-            <li v-for="d in devices" :key="d.id">
-              <Link :href="`/devices/${d.id}`" class="text-sky-400 hover:underline">{{ d.uid || d.name }}</Link>
-              — {{ translateStatus(d.status) }}
+            <li v-for="d in devices" :key="d.id" class="flex items-center justify-between">
+              <div>
+                <Link :href="`/devices/${d.id}`" class="text-sky-400 hover:underline">{{ d.uid || d.name }}</Link>
+                — {{ translateStatus(d.status) }}
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                @click="openNodeConfig(d.id, d)"
+                class="text-xs"
+              >
+                Настроить
+              </Button>
             </li>
           </ul>
-          <div v-else class="text-sm text-neutral-400">Нет устройств</div>
+          <div v-else class="text-sm text-neutral-400">
+            Нет устройств
+            <template v-if="page.props.auth?.user?.role === 'admin' || page.props.auth?.user?.role === 'operator'">
+              <Button size="sm" variant="secondary" @click="showAttachNodesModal = true" class="ml-2">
+                Привязать узлы
+              </Button>
+            </template>
+          </div>
+        </Card>
+        
+        <!-- Рецепт зоны -->
+        <Card>
+          <div class="flex items-center justify-between mb-2">
+            <div class="text-sm font-semibold">Рецепт</div>
+            <template v-if="page.props.auth?.user?.role === 'admin' || page.props.auth?.user?.role === 'operator'">
+              <Button
+                size="sm"
+                :variant="zone.recipeInstance?.recipe ? 'secondary' : 'primary'"
+                @click="showAttachRecipeModal = true"
+              >
+                {{ zone.recipeInstance?.recipe ? 'Изменить рецепт' : 'Привязать рецепт' }}
+              </Button>
+            </template>
+          </div>
+          <div v-if="zone.recipeInstance?.recipe" class="text-sm text-neutral-300">
+            <div class="font-semibold">{{ zone.recipeInstance.recipe.name }}</div>
+            <div class="text-xs text-neutral-400">
+              Фаза {{ (zone.recipeInstance.current_phase_index || 0) + 1 }} из {{ zone.recipeInstance.recipe.phases?.length || 0 }}
+              <span v-if="zone.recipeInstance.current_phase_name">
+                — {{ zone.recipeInstance.current_phase_name }}
+              </span>
+            </div>
+          </div>
+          <div v-else class="space-y-2">
+            <div class="text-sm text-neutral-400">
+              Рецепт не привязан
+              <span v-if="zone.recipeInstance && !zone.recipeInstance.recipe" class="text-red-400 text-xs block mt-1">
+                DEBUG: recipeInstance существует (id={{ zone.recipeInstance.id }}, recipe_id={{ zone.recipeInstance.recipe_id }}), но recipe не загружен!
+              </span>
+            </div>
+            <template v-if="page.props.auth?.user?.role === 'admin' || page.props.auth?.user?.role === 'operator'">
+              <div class="text-xs text-neutral-500">
+                Привяжите рецепт для автоматического управления фазами выращивания
+              </div>
+            </template>
+          </div>
         </Card>
       </div>
 
@@ -206,11 +268,39 @@
       @close="showActionModal = false"
       @submit="onActionSubmit"
     />
+    
+    <!-- Модальное окно привязки рецепта -->
+    <AttachRecipeModal
+      v-if="showAttachRecipeModal"
+      :show="showAttachRecipeModal"
+      :zone-id="zoneId"
+      @close="showAttachRecipeModal = false"
+      @attached="onRecipeAttached"
+    />
+    
+    <!-- Модальное окно привязки узлов -->
+    <AttachNodesModal
+      v-if="showAttachNodesModal"
+      :show="showAttachNodesModal"
+      :zone-id="zoneId"
+      @close="showAttachNodesModal = false"
+      @attached="onNodesAttached"
+    />
+    
+    <!-- Модальное окно настройки узла -->
+    <NodeConfigModal
+      v-if="showNodeConfigModal && selectedNodeId"
+      :show="showNodeConfigModal"
+      :node-id="selectedNodeId"
+      :node="selectedNode"
+      @close="showNodeConfigModal = false"
+      @published="onNodeConfigPublished"
+    />
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
 import { Link, usePage, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
@@ -220,9 +310,18 @@ import ZoneTargets from '@/Components/ZoneTargets.vue'
 import Toast from '@/Components/Toast.vue'
 import ZoneSimulationModal from '@/Components/ZoneSimulationModal.vue'
 import ZoneActionModal from '@/Components/ZoneActionModal.vue'
+import AttachRecipeModal from '@/Components/AttachRecipeModal.vue'
+import AttachNodesModal from '@/Components/AttachNodesModal.vue'
+import NodeConfigModal from '@/Components/NodeConfigModal.vue'
 import { translateStatus, translateEventKind, translateCycleType, translateStrategy } from '@/utils/i18n'
 import { formatTimeShort, formatInterval } from '@/utils/formatTime'
 import { logger } from '@/utils/logger'
+
+// Безопасные обёртки для логирования
+const logInfo = logger?.info || ((...args: unknown[]) => console.log('[INFO]', ...args))
+const logError = logger?.error || ((...args: unknown[]) => console.error('[ERROR]', ...args))
+const logWarn = logger?.warn || ((...args: unknown[]) => console.warn('[WARN]', ...args))
+const logLog = logger?.log || ((...args: unknown[]) => console.log('[LOG]', ...args))
 import { useCommands } from '@/composables/useCommands'
 import { useTelemetry } from '@/composables/useTelemetry'
 import { useZones } from '@/composables/useZones'
@@ -269,6 +368,11 @@ let toastIdCounter = 0
 const showSimulationModal = ref<boolean>(false)
 const showActionModal = ref<boolean>(false)
 const currentActionType = ref<CommandType>('FORCE_IRRIGATION')
+const showAttachRecipeModal = ref<boolean>(false)
+const showAttachNodesModal = ref<boolean>(false)
+const showNodeConfigModal = ref<boolean>(false)
+const selectedNodeId = ref<number | null>(null)
+const selectedNode = ref<any>(null)
 
 // Loading states
 interface LoadingState {
@@ -313,7 +417,18 @@ function removeToast(id: number): void {
     toasts.value.splice(index, 1)
   }
 }
-const zone = computed(() => (page.props.zone || {}) as Zone)
+const zone = computed(() => {
+  const rawZoneData = (page.props.zone || {}) as any
+  
+  // Нормализуем snake_case в camelCase для recipe_instance
+  // Laravel/Inertia может отправлять данные в snake_case, а фронтенд ожидает camelCase
+  const zoneData = { ...rawZoneData }
+  if (zoneData.recipe_instance && !zoneData.recipeInstance) {
+    zoneData.recipeInstance = zoneData.recipe_instance
+  }
+  
+  return zoneData as Zone
+})
 const zoneId = computed(() => {
   const id = zone.value.id || page.props.zoneId
   return typeof id === 'string' ? parseInt(id) : id
@@ -436,7 +551,7 @@ async function loadChartData(metric: 'PH' | 'EC', timeRange: string): Promise<Ar
     
     return await fetchHistory(zoneId.value, metric, params)
   } catch (err) {
-    logger.error(`Failed to load ${metric} history:`, err)
+    logError(`Failed to load ${metric} history:`, err)
     return []
   }
 }
@@ -447,8 +562,13 @@ async function onChartTimeRangeChange(newRange: string): Promise<void> {
   chartDataEc.value = await loadChartData('EC', newRange)
 }
 
+// Watch для отслеживания изменений zone props (отключен для производительности)
+// watch(() => page.props.zone, (newZone: any, oldZone: any) => {
+//   logInfo('[Zones/Show] Zone props changed')
+// }, { deep: true, immediate: true })
+
 onMounted(async () => {
-  logger.log('[Show.vue] Компонент смонтирован', { zoneId: zoneId.value })
+  logLog('[Show.vue] Компонент смонтирован', { zoneId: zoneId.value })
   
   // Загрузить данные для графиков
   chartDataPh.value = await loadChartData('PH', chartTimeRange.value)
@@ -624,7 +744,7 @@ function getDefaultCycleParams(cycleType: string): Record<string, unknown> {
 
 async function onRunCycle(cycleType: string): Promise<void> {
   if (!zoneId.value) {
-    logger.warn('[onRunCycle] zoneId is missing')
+    logWarn('[onRunCycle] zoneId is missing')
     showToast('Ошибка: зона не найдена', 'error', 3000)
     return
   }
@@ -636,16 +756,16 @@ async function onRunCycle(cycleType: string): Promise<void> {
   // Получаем параметры по умолчанию из targets/recipe
   const defaultParams = getDefaultCycleParams(cycleType)
   
-  logger.info(`[onRunCycle] Отправка команды ${commandType} для зоны ${zoneId.value} с параметрами:`, defaultParams)
+  logInfo(`[onRunCycle] Отправка команды ${commandType} для зоны ${zoneId.value} с параметрами:`, defaultParams)
   
   try {
     await sendZoneCommand(zoneId.value, commandType, defaultParams)
-    logger.info(`✓ [onRunCycle] Команда "${cycleName}" отправлена успешно`)
+    logInfo(`✓ [onRunCycle] Команда "${cycleName}" отправлена успешно`)
     showToast(`Команда "${cycleName}" отправлена успешно`, 'success', 3000)
     // Обновляем зону и cycles через Inertia partial reload (не window.location.reload!)
     reloadZoneAfterCommand(zoneId.value, ['zone', 'cycles'])
   } catch (err) {
-    logger.error(`✗ [onRunCycle] Ошибка при отправке команды ${cycleType}:`, err)
+    logError(`✗ [onRunCycle] Ошибка при отправке команды ${cycleType}:`, err)
     handleError(err, {
       component: 'Zones/Show',
       action: 'onRunCycle',
@@ -712,7 +832,7 @@ async function onToggle(): Promise<void> {
           reloadZone(zoneId.value, ['zone'])
         },
         onError: (error) => {
-          logger.error('Failed to toggle zone:', error)
+          logError('Failed to toggle zone:', error)
           let errorMessage = 'Неизвестная ошибка'
           if (error && typeof error === 'object' && 'message' in error) {
             errorMessage = String(error.message)
@@ -725,7 +845,7 @@ async function onToggle(): Promise<void> {
     )
   } catch (err) {
     // Ошибка уже обработана в onError callback
-    logger.error('Failed to toggle zone (unhandled):', err)
+    logError('Failed to toggle zone (unhandled):', err)
   } finally {
     loading.value.toggle = false
   }
@@ -755,7 +875,7 @@ async function onActionSubmit({ actionType, params }: { actionType: CommandType;
     // Обновляем зону и cycles через Inertia partial reload
     reloadZoneAfterCommand(zoneId.value, ['zone', 'cycles'])
   } catch (err) {
-    logger.error(`Failed to execute ${actionType}:`, err)
+    logError(`Failed to execute ${actionType}:`, err)
     let errorMessage = 'Неизвестная ошибка'
     if (err && typeof err === 'object' && 'message' in err) errorMessage = String(err.message)
     const actionName = actionNames[actionType] || 'Действие'
@@ -763,6 +883,57 @@ async function onActionSubmit({ actionType, params }: { actionType: CommandType;
   } finally {
     loading.value.irrigate = false
   }
+}
+
+function openNodeConfig(nodeId: number, node: any): void {
+  selectedNodeId.value = nodeId
+  selectedNode.value = node
+  showNodeConfigModal.value = true
+}
+
+async function onRecipeAttached(recipeId: number): Promise<void> {
+  logInfo('[Zones/Show] Recipe attached event received:', recipeId)
+  
+  // Показываем уведомление
+  showToast('Рецепт успешно привязан к зоне', 'success', 3000)
+  
+  // Даем время для отображения toast перед обновлением
+  await new Promise(resolve => setTimeout(resolve, 300))
+  
+  // Делаем полный reload страницы через Inertia для получения обновленных данных
+  // Используем router.reload() для гарантированного обновления всех данных
+  // preserveState: false чтобы обновить все props, включая zone с recipeInstance
+  logInfo('[Zones/Show] Starting zone reload after recipe attachment')
+  
+  router.reload({ 
+    only: ['zone'],
+    preserveScroll: true,
+    preserveState: false, // Важно! Это гарантирует обновление всех props
+    onSuccess: (page) => {
+      logInfo('[Zones/Show] Zone reloaded successfully after recipe attachment', {
+        zone: page.props.zone,
+        hasRecipeInstance: !!page.props.zone?.recipeInstance,
+        recipeId: page.props.zone?.recipeInstance?.recipe_id,
+        recipeName: page.props.zone?.recipeInstance?.recipe?.name
+      })
+    },
+    onError: (error) => {
+      logError('[Zones/Show] Failed to reload zone:', error)
+    },
+    onFinish: () => {
+      logInfo('[Zones/Show] Zone reload finished')
+    }
+  })
+}
+
+function onNodesAttached(nodeIds: number[]): void {
+  showToast(`Успешно привязано узлов: ${nodeIds.length}`, 'success', 3000)
+  reloadZone(zoneId.value, ['zone', 'devices'])
+}
+
+function onNodeConfigPublished(): void {
+  showToast('Конфигурация узла успешно отправлена', 'success', 3000)
+  reloadZone(zoneId.value, ['devices'])
 }
 
 async function onNextPhase(): Promise<void> {
@@ -815,7 +986,7 @@ async function onNextPhase(): Promise<void> {
           reloadZone(zoneId.value, ['zone'])
         },
         onError: (error) => {
-          logger.error('Failed to change phase:', error)
+          logError('Failed to change phase:', error)
           let errorMessage = 'Неизвестная ошибка'
           if (error && typeof error === 'object' && 'message' in error) {
             errorMessage = String(error.message)
@@ -828,7 +999,7 @@ async function onNextPhase(): Promise<void> {
     )
   } catch (err) {
     // Ошибка уже обработана в onError callback
-    logger.error('Failed to change phase (unhandled):', err)
+    logError('Failed to change phase (unhandled):', err)
   } finally {
     loading.value.nextPhase = false
   }
