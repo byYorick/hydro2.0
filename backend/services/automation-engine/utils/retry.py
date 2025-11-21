@@ -5,13 +5,19 @@ import asyncio
 import logging
 from typing import Callable, Awaitable, TypeVar, Optional, List, Type
 from functools import wraps
-from tenacity import (
-    retry,
-    stop_after_attempt,
-    wait_exponential,
-    retry_if_exception_type,
-    RetryError,
-)
+
+# tenacity опционален - если не установлен, используется простая реализация
+try:
+    from tenacity import (
+        retry,
+        stop_after_attempt,
+        wait_exponential,
+        retry_if_exception_type,
+        RetryError,
+    )
+    HAS_TENACITY = True
+except ImportError:
+    HAS_TENACITY = False
 
 logger = logging.getLogger(__name__)
 

@@ -121,7 +121,9 @@ describe('useTelemetry', () => {
     await expect(fetchLastTelemetry(1)).rejects.toThrow(errorMessage)
     expect(loading.value).toBe(false)
     expect(error.value).toBeInstanceOf(Error)
-    expect(mockShowToast).toHaveBeenCalledWith('Ошибка при загрузке телеметрии', 'error', 5000)
+    // useErrorHandler показывает общие сообщения об ошибках
+    expect(mockShowToast).toHaveBeenCalled()
+    expect(mockShowToast.mock.calls[0][1]).toBe('error')
   })
 
   it('should fetch history from API', async () => {
@@ -167,7 +169,9 @@ describe('useTelemetry', () => {
 
     await expect(fetchHistory(1, 'PH')).rejects.toThrow(errorMessage)
     expect(error.value).toBeInstanceOf(Error)
-    expect(mockShowToast).toHaveBeenCalledWith('Ошибка при загрузке истории PH', 'error', 5000)
+    // useErrorHandler показывает общие сообщения об ошибках
+    expect(mockShowToast).toHaveBeenCalled()
+    expect(mockShowToast.mock.calls[0][1]).toBe('error')
   })
 
   it('should fetch aggregates from API', async () => {
@@ -210,7 +214,9 @@ describe('useTelemetry', () => {
 
     await expect(fetchAggregates(1, 'ph', '24h')).rejects.toThrow(errorMessage)
     expect(error.value).toBeInstanceOf(Error)
-    expect(mockShowToast).toHaveBeenCalledWith('Ошибка при загрузке агрегированных данных ph', 'error', 5000)
+    // useErrorHandler показывает общие сообщения об ошибках
+    expect(mockShowToast).toHaveBeenCalled()
+    expect(mockShowToast.mock.calls[0][1]).toBe('error')
   })
 
   it('should clear cache for specific zone', () => {

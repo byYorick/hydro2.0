@@ -228,7 +228,7 @@ import { useTelemetry } from '@/composables/useTelemetry'
 import { useZones } from '@/composables/useZones'
 import { useApi } from '@/composables/useApi'
 import { useWebSocket } from '@/composables/useWebSocket'
-import type { Zone, Device, ZoneTelemetry, ZoneTargets, Cycle, CommandType } from '@/types'
+import type { Zone, Device, ZoneTelemetry, ZoneTargets as ZoneTargetsType, Cycle, CommandType } from '@/types'
 import type { ZoneEvent } from '@/types/ZoneEvent'
 import type { ToastVariant } from '@/composables/useToast'
 
@@ -238,7 +238,7 @@ interface PageProps {
   zone?: Zone
   zoneId?: number
   telemetry?: ZoneTelemetry
-  targets?: ZoneTargets
+  targets?: ZoneTargetsType
   devices?: Device[]
   events?: ZoneEvent[]
   cycles?: Record<string, Cycle>
@@ -315,7 +315,7 @@ const zoneId = computed(() => {
 
 // Телеметрия, цели и устройства из props
 const telemetry = computed(() => (page.props.telemetry || { ph: null, ec: null, temperature: null, humidity: null }) as ZoneTelemetry)
-const targets = computed(() => (page.props.targets || {}) as ZoneTargets)
+const targets = computed(() => (page.props.targets || {}) as ZoneTargetsType)
 const devices = computed(() => (page.props.devices || []) as Device[])
 const events = computed(() => (page.props.events || []) as ZoneEvent[])
 const cycles = computed(() => (page.props.cycles || {}) as Record<string, Cycle>)
@@ -482,7 +482,8 @@ async function onRunCycle(cycleType: string): Promise<void> {
     reloadZoneAfterCommand(zoneId.value, ['zone', 'cycles'])
   } catch (err) {
     logger.error(`✗ [onRunCycle] Ошибка при отправке команды ${cycleType}:`, err)
-    const errorMessage = err instanceof Error ? err.message : 'Неизвестная ошибка'
+    let errorMessage = 'Неизвестная ошибка'
+    if (err && typeof err === 'object' && 'message' in err) errorMessage = String(err.message)
     showToast(`Ошибка при отправке команды "${cycleName}": ${errorMessage}`, 'error', 5000)
   } finally {
     loading.value.cycles[cycleType] = false
@@ -514,7 +515,8 @@ async function onToggle(): Promise<void> {
     reloadZone(zoneId.value, ['zone'])
   } catch (err) {
     logger.error('Failed to toggle zone:', err)
-    const errorMessage = err instanceof Error ? err.message : 'Неизвестная ошибка'
+    let errorMessage = 'Неизвестная ошибка'
+    if (err && typeof err === 'object' && 'message' in err) errorMessage = String(err.message)
     showToast(`Ошибка при изменении статуса зоны: ${errorMessage}`, 'error', 5000)
   } finally {
     loading.value.toggle = false
@@ -546,7 +548,8 @@ async function onActionSubmit({ actionType, params }: { actionType: CommandType;
     reloadZoneAfterCommand(zoneId.value, ['zone', 'cycles'])
   } catch (err) {
     logger.error(`Failed to execute ${actionType}:`, err)
-    const errorMessage = err instanceof Error ? err.message : 'Неизвестная ошибка'
+    let errorMessage = 'Неизвестная ошибка'
+    if (err && typeof err === 'object' && 'message' in err) errorMessage = String(err.message)
     const actionName = actionNames[actionType] || 'Действие'
     showToast(`Ошибка при выполнении "${actionName}": ${errorMessage}`, 'error', 5000)
   } finally {
@@ -568,7 +571,8 @@ async function onNextPhase(): Promise<void> {
     reloadZone(zoneId.value, ['zone'])
   } catch (err) {
     logger.error('Failed to change phase:', err)
-    const errorMessage = err instanceof Error ? err.message : 'Неизвестная ошибка'
+    let errorMessage = 'Неизвестная ошибка'
+    if (err && typeof err === 'object' && 'message' in err) errorMessage = String(err.message)
     showToast(`Ошибка при изменении фазы: ${errorMessage}`, 'error', 5000)
   } finally {
     loading.value.nextPhase = false

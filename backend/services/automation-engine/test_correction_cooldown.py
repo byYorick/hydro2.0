@@ -117,8 +117,11 @@ async def test_analyze_trend_not_enough_data():
 @pytest.mark.asyncio
 async def test_should_apply_correction_in_cooldown():
     """Тест should_apply_correction - в cooldown периоде."""
-    with patch("correction_cooldown.is_in_cooldown") as mock_cooldown:
+    from datetime import datetime, timedelta
+    with patch("correction_cooldown.is_in_cooldown") as mock_cooldown, \
+         patch("correction_cooldown.get_last_correction_time") as mock_get_time:
         mock_cooldown.return_value = True
+        mock_get_time.return_value = datetime.utcnow() - timedelta(minutes=5)
         
         should, reason = await should_apply_correction(1, "ph", 6.0, 6.5, -0.5)
         

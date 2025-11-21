@@ -56,23 +56,22 @@ describe('useTelemetry - SessionStorage Cache (P2-2)', () => {
   })
 
   it('should save telemetry data to sessionStorage', async () => {
-    const { fetchLastTelemetry } = useTelemetry()
-    
-    // Мокируем API ответ
-    global.fetch = vi.fn(() =>
-      Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve({
-          data: {
-            ph: 6.5,
-            ec: 1.5,
-            temperature: 22,
-            humidity: 60
-          }
-        })
-      })
-    ) as any
+    const { useApi } = await import('../useApi')
+    const mockApiGet = vi.fn().mockResolvedValue({
+      data: {
+        data: {
+          ph: 6.5,
+          ec: 1.5,
+          temperature: 22,
+          humidity: 60
+        }
+      }
+    })
+    vi.mocked(useApi).mockReturnValue({
+      api: { get: mockApiGet }
+    } as any)
 
+    const { fetchLastTelemetry } = useTelemetry()
     await fetchLastTelemetry(1)
 
     // Проверяем, что данные сохранены в sessionStorage
@@ -81,7 +80,13 @@ describe('useTelemetry - SessionStorage Cache (P2-2)', () => {
     
     if (cached) {
       const cacheData = JSON.parse(cached)
-      expect(cacheData).toHaveProperty('last_telemetry_1')
+      expect(cacheData).toHaveProperty('telemetry_last_1')
+      expect(cacheData.telemetry_last_1.data).toEqual({
+        ph: 6.5,
+        ec: 1.5,
+        temperature: 22,
+        humidity: 60
+      })
     }
   })
 
@@ -118,7 +123,7 @@ describe('useTelemetry - SessionStorage Cache (P2-2)', () => {
     const expiredData = {
       telemetry_last_1: {
         data: { ph: 6.5 },
-        timestamp: Date.now() - 400000, // Старые данные (больше TTL 30s)
+        timestamp: Date.now() - 40000, // Старые данные (больше TTL 30s)
       },
       telemetry_last_2: {
         data: { ph: 6.0 },
@@ -127,18 +132,19 @@ describe('useTelemetry - SessionStorage Cache (P2-2)', () => {
     }
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(expiredData))
 
-    // Инициализируем useTelemetry - должен очистить истекшие записи при следующем запросе
-    const { fetchLastTelemetry } = useTelemetry()
+    // Перезагружаем модуль для инициализации кеша
+    vi.resetModules()
     
     const { useApi } = await import('../useApi')
-    const mockApi = {
-      api: {
-        get: vi.fn().mockResolvedValue({
-          data: { data: { ph: 6.0 } }
-        })
-      }
-    }
-    vi.mocked(useApi).mockReturnValue(mockApi)
+    const mockApiGet = vi.fn().mockResolvedValue({
+      data: { data: { ph: 6.0 } }
+    })
+    vi.mocked(useApi).mockReturnValue({
+      api: { get: mockApiGet }
+    } as any)
+    
+    const { useTelemetry } = await import('../useTelemetry')
+    const { fetchLastTelemetry } = useTelemetry()
     
     await fetchLastTelemetry(3) // Вызов очистит кеш
 

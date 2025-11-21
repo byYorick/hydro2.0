@@ -19,15 +19,16 @@ from alerts_manager import (
 async def test_ensure_alert_new():
     """Test creating new alert."""
     with patch("alerts_manager.fetch") as mock_fetch, \
-         patch("alerts_manager.execute") as mock_execute, \
+         patch("alerts_manager.create_alert") as mock_create_alert, \
          patch("alerts_manager.create_zone_event") as mock_event:
         # Нет активного алерта
         mock_fetch.return_value = []
+        mock_create_alert.return_value = None
         
         await ensure_alert(1, "TEMP_HIGH", {"temp": 30.0, "target": 25.0})
         
         # Должен создать новый алерт
-        mock_execute.assert_called_once()
+        mock_create_alert.assert_called_once()
         # Должен создать событие ALERT_CREATED
         mock_event.assert_called_once()
         call_args = mock_event.call_args

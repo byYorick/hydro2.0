@@ -5,7 +5,8 @@ import ErrorBoundary from '../ErrorBoundary.vue'
 // Mock router
 vi.mock('@inertiajs/vue3', () => ({
   router: {
-    visit: vi.fn()
+    visit: vi.fn(),
+    reload: vi.fn()
   }
 }))
 
@@ -90,12 +91,10 @@ describe('ErrorBoundary (P1-3)', () => {
   })
 
   it('has "Try Again" button that resets error state', async () => {
-    // Мокируем window.location.reload
+    // Мокируем router.reload вместо window.location.reload
+    const { router } = await import('@inertiajs/vue3')
     const reloadSpy = vi.fn()
-    Object.defineProperty(window, 'location', {
-      value: { reload: reloadSpy },
-      writable: true
-    })
+    vi.mocked(router.reload).mockImplementation(reloadSpy as any)
 
     const ThrowError = {
       setup() {
@@ -116,11 +115,11 @@ describe('ErrorBoundary (P1-3)', () => {
     expect(tryAgainButton.exists()).toBe(true)
     expect(tryAgainButton.text()).toContain('Попробовать снова')
 
-    // При клике должна быть вызвана reload
+    // При клике должна быть вызвана router.reload
     await tryAgainButton.trigger('click')
     
-    // Проверяем, что reload был вызван
-    expect(reloadSpy).toHaveBeenCalled()
+    // Проверяем, что router.reload был вызван
+    expect(reloadSpy).toHaveBeenCalledWith({ only: [] })
   })
 
   it('has "Go Home" button', async () => {

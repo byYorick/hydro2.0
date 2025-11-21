@@ -291,9 +291,9 @@ async function assignNode(node) {
     }
   } catch (err) {
     logger.error('[Devices/Add] Failed to assign node:', err)
-    const errorMsg = (err as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message || 
-                     (err as { message?: string })?.message || 
-                     'Неизвестная ошибка'
+    let errorMsg = 'Неизвестная ошибка'
+    if (err && err.response && err.response.data && err.response.data.message) errorMsg = err.response.data.message
+    else if (err && err.message) errorMsg = err.message
     showToast(`Ошибка при привязке: ${errorMsg}`, 'error', 5000)
   } finally {
     assigning[node.id] = false

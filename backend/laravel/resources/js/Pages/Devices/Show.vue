@@ -138,9 +138,9 @@ const onRestart = async (): Promise<void> => {
     }
   } catch (err) {
     logger.error('[Devices/Show] Failed to restart device:', err)
-    const errorMsg = (err as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message || 
-                     (err as { message?: string })?.message || 
-                     'Неизвестная ошибка'
+    let errorMsg = 'Неизвестная ошибка'
+    if (err && err.response && err.response.data && err.response.data.message) errorMsg = err.response.data.message
+    else if (err && err.message) errorMsg = err.message
     showToast(`Ошибка перезапуска: ${errorMsg}`, 'error', 5000)
   }
 }
@@ -187,9 +187,9 @@ const onTestPump = async (channelName: string, channelType: string): Promise<voi
     }
   } catch (err) {
     logger.error(`[Devices/Show] Failed to test ${channelName}:`, err)
-    const errorMsg = (err as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message || 
-                     (err as { message?: string })?.message || 
-                     'Неизвестная ошибка'
+    let errorMsg = 'Неизвестная ошибка'
+    if (err && err.response && err.response.data && err.response.data.message) errorMsg = err.response.data.message
+    else if (err && err.message) errorMsg = err.message
     showToast(`Ошибка теста ${channelLabel}: ${errorMsg}`, 'error', 5000)
   } finally {
     testingChannels.value.delete(channelName)

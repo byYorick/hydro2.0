@@ -22,11 +22,12 @@ async def test_process_zone_no_recipe():
         "capabilities": {}
     })
     
-    service = ZoneAutomationService(zone_repo, telemetry_repo, node_repo, recipe_repo, command_bus)
-    await service.process_zone(1)
-    
-    # Должен вернуться рано, не вызывая контроллеры
-    recipe_repo.get_zone_data_batch.assert_called_once_with(1)
+    with patch("services.zone_automation_service.calculate_current_phase", return_value=None):
+        service = ZoneAutomationService(zone_repo, telemetry_repo, node_repo, recipe_repo, command_bus)
+        await service.process_zone(1)
+        
+        # Должен вернуться рано, не вызывая контроллеры
+        recipe_repo.get_zone_data_batch.assert_called_once_with(1)
 
 
 @pytest.mark.asyncio
@@ -60,23 +61,22 @@ async def test_process_zone_with_recipe():
         }
     })
     
-    with patch("services.zone_automation_service.calculate_current_phase") as mock_phase, \
-         patch("services.zone_automation_service.check_water_level") as mock_water, \
-         patch("services.zone_automation_service.check_and_control_lighting") as mock_light, \
-         patch("services.zone_automation_service.check_and_control_climate") as mock_climate, \
-         patch("services.zone_automation_service.check_and_control_irrigation") as mock_irrigation, \
-         patch("services.zone_automation_service.check_and_control_recirculation") as mock_recirculation, \
-         patch("services.zone_automation_service.calculate_zone_health") as mock_health, \
-         patch("services.zone_automation_service.CorrectionController") as mock_correction:
+    with patch("services.zone_automation_service.ZoneAutomationService._check_phase_transitions") as mock_phase_check, \
+         patch("services.zone_automation_service.check_water_level", return_value=(True, 0.5)) as mock_water, \
+         patch("services.zone_automation_service.ensure_water_level_alert") as mock_water_alert, \
+         patch("services.zone_automation_service.calculate_zone_health", return_value={"health_score": 85.0, "health_status": "ok"}) as mock_health, \
+         patch("services.zone_automation_service.update_zone_health_in_db") as mock_update_health, \
+         patch("services.zone_automation_service.check_and_control_lighting", return_value=None) as mock_light, \
+         patch("services.zone_automation_service.check_and_control_climate", return_value=[]) as mock_climate, \
+         patch("services.zone_automation_service.check_and_control_irrigation", return_value=None) as mock_irrigation, \
+         patch("services.zone_automation_service.check_and_control_recirculation", return_value=None) as mock_recirculation, \
+         patch("services.zone_automation_service.create_zone_event") as mock_event, \
+         patch("correction_controller.create_zone_event") as mock_correction_event, \
+         patch("correction_controller.create_ai_log") as mock_ai_log, \
+         patch("correction_controller.should_apply_correction", return_value=(True, "Ready")) as mock_should_correct, \
+         patch("correction_controller.CorrectionController") as mock_correction:
         
-        mock_phase.return_value = None
-        mock_water.return_value = (True, 0.5)
-        mock_light.return_value = None
-        mock_climate.return_value = []
-        mock_irrigation.return_value = None
-        mock_recirculation.return_value = None
-        mock_health.return_value = {"health_score": 85.0, "health_status": "ok"}
-        
+        mock_phase_check.return_value = None
         # Мокируем CorrectionController
         mock_ph_controller = Mock()
         mock_ph_controller.check_and_correct = AsyncMock(return_value=None)
@@ -85,6 +85,9 @@ async def test_process_zone_with_recipe():
         mock_correction.side_effect = [mock_ph_controller, mock_ec_controller]
         
         service = ZoneAutomationService(zone_repo, telemetry_repo, node_repo, recipe_repo, command_bus)
+        # Заменяем реальные контроллеры на моки
+        service.ph_controller = mock_ph_controller
+        service.ec_controller = mock_ec_controller
         await service.process_zone(1)
         
         # Проверяем, что все контроллеры были вызваны
@@ -127,24 +130,22 @@ async def test_process_zone_light_controller():
         }
     })
     
-    with patch("services.zone_automation_service.calculate_current_phase") as mock_phase, \
-         patch("services.zone_automation_service.check_water_level") as mock_water, \
-         patch("services.zone_automation_service.check_and_control_lighting") as mock_light, \
-         patch("services.zone_automation_service.create_zone_event") as mock_event, \
-         patch("services.zone_automation_service.calculate_zone_health") as mock_health:
-        
-        mock_phase.return_value = None
-        mock_water.return_value = (True, 0.5)
-        mock_light.return_value = {
+    with patch("services.zone_automation_service.ZoneAutomationService._check_phase_transitions") as mock_phase_check, \
+         patch("services.zone_automation_service.check_water_level", return_value=(True, 0.5)) as mock_water, \
+         patch("services.zone_automation_service.ensure_water_level_alert") as mock_water_alert, \
+         patch("services.zone_automation_service.calculate_zone_health", return_value={"health_score": 85.0, "health_status": "ok"}) as mock_health, \
+         patch("services.zone_automation_service.update_zone_health_in_db") as mock_update_health, \
+         patch("services.zone_automation_service.check_and_control_lighting", return_value={
             'node_uid': 'nd-light-1',
             'channel': 'default',
             'cmd': 'set_relay',
             'params': {'state': True},
             'event_type': 'LIGHT_ON',
             'event_details': {}
-        }
-        mock_health.return_value = {"health_score": 85.0, "health_status": "ok"}
+        }) as mock_light, \
+         patch("services.zone_automation_service.create_zone_event") as mock_event:
         
+        mock_phase_check.return_value = None
         service = ZoneAutomationService(zone_repo, telemetry_repo, node_repo, recipe_repo, command_bus)
         await service.process_zone(1)
         

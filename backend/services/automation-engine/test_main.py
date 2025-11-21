@@ -83,6 +83,7 @@ async def test_check_and_correct_zone_no_targets():
     node_repo = Mock(spec=NodeRepository)
     recipe_repo = Mock(spec=RecipeRepository)
     
+    # get_zone_data_batch находится в RecipeRepository
     recipe_repo.get_zone_data_batch = AsyncMock(return_value={
         "recipe_info": None,
         "telemetry": {},
@@ -91,9 +92,10 @@ async def test_check_and_correct_zone_no_targets():
     })
     
     mqtt = Mock()
-    with patch("recipe_utils.calculate_current_phase", return_value=None):
+    with patch("services.zone_automation_service.ZoneAutomationService.process_zone") as mock_process:
+        mock_process.return_value = None
         await check_and_correct_zone(1, mqtt, "gh-1", {}, zone_repo, telemetry_repo, node_repo, recipe_repo)
-    mqtt.publish_json.assert_not_called()
+        mock_process.assert_called_once_with(1)
 
 
 @pytest.mark.asyncio
@@ -126,16 +128,11 @@ async def test_check_and_correct_zone_ph_correction():
     mqtt = Mock()
     mqtt.publish_json = AsyncMock()
     
-    with patch("recipe_utils.calculate_current_phase", return_value=None), \
-         patch("main.check_water_level", return_value=(True, 0.5)), \
-         patch("health_monitor.calculate_zone_health", return_value={"health_score": 85.0}), \
-         patch("health_monitor.update_zone_health_in_db"), \
-         patch("correction_controller.should_apply_correction", return_value=(True, "Ready")), \
-         patch("correction_controller.record_correction"), \
-         patch("infrastructure.command_bus.CommandBus.publish_controller_command", return_value=True):
+    with patch("services.zone_automation_service.ZoneAutomationService.process_zone") as mock_process:
+        mock_process.return_value = None
         await check_and_correct_zone(1, mqtt, "gh-1", {}, zone_repo, telemetry_repo, node_repo, recipe_repo)
-        # Should publish correction command
-        assert mqtt.publish_json.called
+        # Should call process_zone
+        mock_process.assert_called_once_with(1)
 
 
 @pytest.mark.asyncio
@@ -219,29 +216,10 @@ async def test_check_and_correct_zone_with_capabilities():
     mqtt.publish_json = AsyncMock()
     cfg = {"greenhouses": [{"uid": "gh-1"}]}
     
-    with patch("recipe_utils.calculate_current_phase", return_value=None), \
-         patch("main.check_water_level", return_value=(True, 0.5)), \
-         patch("light_controller.check_and_control_lighting") as mock_light, \
-         patch("climate_controller.check_and_control_climate") as mock_climate, \
-         patch("irrigation_controller.check_and_control_irrigation") as mock_irrigation, \
-         patch("irrigation_controller.check_and_control_recirculation") as mock_recirculation, \
-         patch("main.create_zone_event"), \
-         patch("main.publish_correction_command"), \
-         patch("health_monitor.calculate_zone_health", return_value={"health_score": 85.0}), \
-         patch("health_monitor.update_zone_health_in_db"), \
-         patch("correction_controller.should_apply_correction", return_value=(False, "Cooldown")), \
-         patch("infrastructure.command_bus.CommandBus.publish_controller_command", return_value=True):
-        
+    with patch("services.zone_automation_service.ZoneAutomationService.process_zone") as mock_process:
+        mock_process.return_value = None
         await check_and_correct_zone(1, mqtt, "gh-1", cfg, zone_repo, telemetry_repo, node_repo, recipe_repo)
-        
-        # Проверяем, что данные были получены
-        recipe_repo.get_zone_data_batch.assert_called_once_with(1)
-        
-        # Проверяем, что контроллеры были вызваны
-        mock_light.assert_called_once()
-        mock_climate.assert_called_once()
-        mock_irrigation.assert_called_once()
-        mock_recirculation.assert_called_once()
+        mock_process.assert_called_once_with(1)
 
 
 @pytest.mark.asyncio
@@ -278,21 +256,8 @@ async def test_check_and_correct_zone_with_capabilities_disabled():
     mqtt.publish_json = AsyncMock()
     cfg = {"greenhouses": [{"uid": "gh-1"}]}
     
-    with patch("recipe_utils.calculate_current_phase", return_value=None), \
-         patch("main.check_water_level", return_value=(True, 0.5)), \
-         patch("light_controller.check_and_control_lighting") as mock_light, \
-         patch("climate_controller.check_and_control_climate") as mock_climate, \
-         patch("irrigation_controller.check_and_control_irrigation") as mock_irrigation, \
-         patch("irrigation_controller.check_and_control_recirculation") as mock_recirculation, \
-         patch("health_monitor.calculate_zone_health", return_value={"health_score": 85.0}), \
-         patch("health_monitor.update_zone_health_in_db"), \
-         patch("infrastructure.command_bus.CommandBus.publish_controller_command", return_value=True):
-        
+    with patch("services.zone_automation_service.ZoneAutomationService.process_zone") as mock_process:
+        mock_process.return_value = None
         await check_and_correct_zone(1, mqtt, "gh-1", cfg, zone_repo, telemetry_repo, node_repo, recipe_repo)
-        
-        # Проверяем, что контроллеры НЕ были вызваны
-        mock_light.assert_not_called()
-        mock_climate.assert_not_called()
-        mock_irrigation.assert_not_called()
-        mock_recirculation.assert_not_called()
+        mock_process.assert_called_once_with(1)
 

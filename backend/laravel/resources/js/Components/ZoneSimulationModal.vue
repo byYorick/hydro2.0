@@ -268,9 +268,16 @@ async function onSubmit() {
     }
   } catch (err) {
     logger.error('[ZoneSimulationModal] Simulation error:', err)
-    error.value = (err as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message || 
-                  (err as { message?: string })?.message || 
-                  'Failed to run simulation'
+    let errorMsg = 'Failed to run simulation'
+    if (err && typeof err === 'object') {
+      const errorObj = err
+      if (errorObj.response && errorObj.response.data && errorObj.response.data.message) {
+        errorMsg = errorObj.response.data.message
+      } else if (errorObj.message) {
+        errorMsg = errorObj.message
+      }
+    }
+    error.value = errorMsg
   } finally {
     loading.value = false
   }
