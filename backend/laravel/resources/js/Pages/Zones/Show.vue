@@ -229,6 +229,8 @@ import { useZones } from '@/composables/useZones'
 import { useApi } from '@/composables/useApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useErrorHandler } from '@/composables/useErrorHandler'
+import { useOptimisticUpdate, createOptimisticZoneUpdate } from '@/composables/useOptimisticUpdate'
+import { useZonesStore } from '@/stores/zones'
 import type { Zone, Device, ZoneTelemetry, ZoneTargets as ZoneTargetsType, Cycle, CommandType } from '@/types'
 import type { ZoneEvent } from '@/types/ZoneEvent'
 import type { ToastVariant } from '@/composables/useToast'
@@ -302,6 +304,8 @@ const { reloadZone } = useZones(showToast)
 const { api } = useApi(showToast)
 const { subscribeToZoneCommands } = useWebSocket(showToast)
 const { handleError } = useErrorHandler(showToast)
+const { performUpdate } = useOptimisticUpdate()
+const zonesStore = useZonesStore()
 
 function removeToast(id: number): void {
   const index = toasts.value.findIndex(t => t.id === id)
@@ -462,6 +466,26 @@ onMounted(async () => {
       }
     })
   }
+  
+  // Автоматическая синхронизация через события stores
+  const { useStoreEvents } = await import('@/composables/useStoreEvents')
+  const { subscribeWithCleanup } = useStoreEvents()
+  
+  // Слушаем события обновления зоны для автоматического обновления
+  subscribeWithCleanup('zone:updated', (updatedZone: any) => {
+    if (updatedZone.id === zoneId.value) {
+      // Обновляем зону через Inertia partial reload
+      reloadZone(zoneId.value, ['zone'])
+    }
+  })
+  
+  // Слушаем события присвоения рецепта к зоне
+  subscribeWithCleanup('zone:recipe:attached', ({ zoneId: eventZoneId }: { zoneId: number; recipeId: number }) => {
+    if (eventZoneId === zoneId.value) {
+      // Обновляем зону при присвоении рецепта
+      reloadZone(zoneId.value, ['zone'])
+    }
+  })
 })
 
 /**
@@ -647,20 +671,61 @@ async function onToggle(): Promise<void> {
   if (!zoneId.value) return
   
   loading.value.toggle = true
+  
+  // Оптимистично обновляем статус зоны в store
+  const newStatus = zone.value.status === 'PAUSED' ? 'RUNNING' : 'PAUSED'
   const action = zone.value.status === 'PAUSED' ? 'resume' : 'pause'
   const actionText = zone.value.status === 'PAUSED' ? 'возобновлена' : 'приостановлена'
   
+  // Создаем оптимистичное обновление
+  const optimisticUpdate = createOptimisticZoneUpdate(
+    zonesStore,
+    zoneId.value,
+    { status: newStatus }
+  )
+  
   try {
-    // Используем прямой API вызов для pause/resume (это не команды, а действия зоны)
-    await api.post(`/api/zones/${zoneId.value}/${action}`, {})
-    showToast(`Зона успешно ${actionText}`, 'success', 3000)
-    // Обновляем зону через Inertia partial reload
-    reloadZone(zoneId.value, ['zone'])
+    // Применяем оптимистичное обновление и выполняем операцию на сервере
+    await performUpdate(
+      `zone-toggle-${zoneId.value}-${Date.now()}`,
+      {
+        applyUpdate: optimisticUpdate.applyUpdate,
+        rollback: optimisticUpdate.rollback,
+        syncWithServer: async () => {
+          // Выполняем операцию на сервере
+          const response = await api.post(`/api/zones/${zoneId.value}/${action}`, {})
+          
+          // Обновляем зону в store с данными с сервера
+          const updatedZone = (response.data as { data?: Zone })?.data || 
+                            (response.data as Zone) || 
+                            zone.value
+          
+          if (updatedZone.id) {
+            zonesStore.upsert(updatedZone)
+          }
+          
+          return updatedZone
+        },
+        onSuccess: () => {
+          showToast(`Зона успешно ${actionText}`, 'success', 3000)
+          // Обновляем зону через Inertia partial reload для синхронизации всех данных
+          reloadZone(zoneId.value, ['zone'])
+        },
+        onError: (error) => {
+          logger.error('Failed to toggle zone:', error)
+          let errorMessage = 'Неизвестная ошибка'
+          if (error && typeof error === 'object' && 'message' in error) {
+            errorMessage = String(error.message)
+          }
+          showToast(`Ошибка при изменении статуса зоны: ${errorMessage}`, 'error', 5000)
+        },
+        showLoading: false, // Управляем loading вручную
+        timeout: 10000, // 10 секунд таймаут
+      }
+    )
   } catch (err) {
-    logger.error('Failed to toggle zone:', err)
-    let errorMessage = 'Неизвестная ошибка'
-    if (err && typeof err === 'object' && 'message' in err) errorMessage = String(err.message)
-    showToast(`Ошибка при изменении статуса зоны: ${errorMessage}`, 'error', 5000)
+    // Ошибка уже обработана в onError callback
+    logger.error('Failed to toggle zone (unhandled):', err)
   } finally {
     loading.value.toggle = false
   }
@@ -701,22 +766,69 @@ async function onActionSubmit({ actionType, params }: { actionType: CommandType;
 }
 
 async function onNextPhase(): Promise<void> {
-  if (!zoneId.value) return
+  if (!zoneId.value || !zone.value.recipeInstance) return
   
   loading.value.nextPhase = true
   
+  // Оптимистично обновляем фазу в store
+  const nextPhaseIndex = (zone.value.recipeInstance.current_phase_index || 0) + 1
+  
+  // Создаем оптимистичное обновление
+  const optimisticUpdate = createOptimisticZoneUpdate(
+    zonesStore,
+    zoneId.value,
+    {
+      recipeInstance: {
+        ...zone.value.recipeInstance,
+        current_phase_index: nextPhaseIndex,
+      },
+    }
+  )
+  
   try {
-    await api.post(`/api/zones/${zoneId.value}/change-phase`, {
-      phase_index: (zone.value.recipeInstance?.current_phase_index || 0) + 1,
-    })
-    showToast('Фаза успешно изменена', 'success', 3000)
-    // Обновляем зону через Inertia partial reload
-    reloadZone(zoneId.value, ['zone'])
+    // Применяем оптимистичное обновление и выполняем операцию на сервере
+    await performUpdate(
+      `zone-phase-${zoneId.value}-${Date.now()}`,
+      {
+        applyUpdate: optimisticUpdate.applyUpdate,
+        rollback: optimisticUpdate.rollback,
+        syncWithServer: async () => {
+          // Выполняем операцию на сервере
+          const response = await api.post(`/api/zones/${zoneId.value}/change-phase`, {
+            phase_index: nextPhaseIndex,
+          })
+          
+          // Обновляем зону в store с данными с сервера
+          const updatedZone = (response.data as { data?: Zone })?.data || 
+                            (response.data as Zone) || 
+                            zone.value
+          
+          if (updatedZone.id) {
+            zonesStore.upsert(updatedZone)
+          }
+          
+          return updatedZone
+        },
+        onSuccess: () => {
+          showToast('Фаза успешно изменена', 'success', 3000)
+          // Обновляем зону через Inertia partial reload для синхронизации всех данных
+          reloadZone(zoneId.value, ['zone'])
+        },
+        onError: (error) => {
+          logger.error('Failed to change phase:', error)
+          let errorMessage = 'Неизвестная ошибка'
+          if (error && typeof error === 'object' && 'message' in error) {
+            errorMessage = String(error.message)
+          }
+          showToast(`Ошибка при изменении фазы: ${errorMessage}`, 'error', 5000)
+        },
+        showLoading: false, // Управляем loading вручную
+        timeout: 10000, // 10 секунд таймаут
+      }
+    )
   } catch (err) {
-    logger.error('Failed to change phase:', err)
-    let errorMessage = 'Неизвестная ошибка'
-    if (err && typeof err === 'object' && 'message' in err) errorMessage = String(err.message)
-    showToast(`Ошибка при изменении фазы: ${errorMessage}`, 'error', 5000)
+    // Ошибка уже обработана в onError callback
+    logger.error('Failed to change phase (unhandled):', err)
   } finally {
     loading.value.nextPhase = false
   }

@@ -95,6 +95,8 @@ services:
       dockerfile: mqtt-bridge/Dockerfile
     environment:
       - MQTT_HOST=mqtt
+      - MQTT_PORT=1883
+      - MQTT_TLS=0
       - MQTT_USER=mqtt_bridge
       - MQTT_PASS=bridge_pass
       - PG_HOST=db
@@ -145,6 +147,8 @@ services:
       dockerfile: automation-engine/Dockerfile
     environment:
       - MQTT_HOST=mqtt
+      - MQTT_PORT=1883
+      - MQTT_TLS=0
       - MQTT_USER=automation_engine
       - MQTT_PASS=automation_pass
       - PG_HOST=db
@@ -152,7 +156,7 @@ services:
       - PG_USER=hydro
       - PG_PASS=hydro
       - LARAVEL_API_URL=http://laravel
-      - LARAVEL_API_TOKEN=
+      - LARAVEL_API_TOKEN=3|RHa9yFl42oIL52qnZ9eb2QNXVL7XILR9Tudoe5eIe51e23a1
     depends_on:
       - mqtt
       - db
@@ -171,6 +175,8 @@ services:
       dockerfile: scheduler/Dockerfile
     environment:
       - MQTT_HOST=mqtt
+      - MQTT_PORT=1883
+      - MQTT_TLS=0
       - MQTT_USER=scheduler
       - MQTT_PASS=scheduler_pass
       - PG_HOST=db

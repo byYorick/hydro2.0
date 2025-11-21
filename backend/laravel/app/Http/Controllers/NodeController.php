@@ -7,6 +7,8 @@ use App\Services\NodeService;
 use App\Services\NodeRegistryService;
 use App\Services\NodeConfigService;
 use App\Services\NodeSwapService;
+use App\Services\NodeLifecycleService;
+use App\Enums\NodeLifecycleState;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
@@ -16,7 +18,8 @@ class NodeController extends Controller
         private NodeService $nodeService,
         private NodeRegistryService $registryService,
         private NodeConfigService $configService,
-        private NodeSwapService $swapService
+        private NodeSwapService $swapService,
+        private NodeLifecycleService $lifecycleService
     ) {
     }
 
@@ -289,6 +292,99 @@ class NodeController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to swap node: ' . $e->getMessage(),
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    /**
+     * Переход узла в указанное lifecycle состояние.
+     * POST /api/nodes/{node}/lifecycle/transition
+     */
+    public function transitionLifecycle(DeviceNode $node, Request $request)
+    {
+        $validated = $request->validate([
+            'target_state' => ['required', 'string', 'in:' . implode(',', NodeLifecycleState::values())],
+            'reason' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        try {
+            $targetState = NodeLifecycleState::from($validated['target_state']);
+            $reason = $validated['reason'] ?? null;
+
+            $success = $this->lifecycleService->transition($node, $targetState, $reason);
+
+            if (!$success) {
+                $currentState = $node->lifecycleState();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => "Transition from {$currentState->value} to {$targetState->value} is not allowed",
+                    'current_state' => $currentState->value,
+                    'target_state' => $targetState->value,
+                ], Response::HTTP_BAD_REQUEST);
+            }
+
+            // Обновляем модель после перехода
+            $node->refresh();
+
+            return response()->json([
+                'status' => 'ok',
+                'data' => [
+                    'node' => $node->fresh(),
+                    'previous_state' => $node->getOriginal('lifecycle_state'),
+                    'current_state' => $node->lifecycle_state?->value,
+                ],
+            ]);
+        } catch (\ValueError $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Invalid lifecycle state: ' . $e->getMessage(),
+            ], Response::HTTP_BAD_REQUEST);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to transition lifecycle: ' . $e->getMessage(),
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    /**
+     * Получить разрешенные переходы для узла.
+     * GET /api/nodes/{node}/lifecycle/allowed-transitions
+     */
+    public function getAllowedTransitions(DeviceNode $node)
+    {
+        try {
+            $currentState = $node->lifecycleState();
+            $allowedTransitions = [];
+
+            // Получаем разрешенные переходы для текущего состояния
+            foreach (NodeLifecycleState::cases() as $state) {
+                if ($this->lifecycleService->isTransitionAllowed($currentState, $state)) {
+                    $allowedTransitions[] = [
+                        'value' => $state->value,
+                        'label' => $state->label(),
+                        'can_receive_telemetry' => $state->canReceiveTelemetry(),
+                        'is_active' => $state->isActive(),
+                    ];
+                }
+            }
+
+            return response()->json([
+                'status' => 'ok',
+                'data' => [
+                    'current_state' => [
+                        'value' => $currentState->value,
+                        'label' => $currentState->label(),
+                        'can_receive_telemetry' => $currentState->canReceiveTelemetry(),
+                        'is_active' => $currentState->isActive(),
+                    ],
+                    'allowed_transitions' => $allowedTransitions,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to get allowed transitions: ' . $e->getMessage(),
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }

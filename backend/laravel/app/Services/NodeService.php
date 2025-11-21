@@ -3,11 +3,18 @@
 namespace App\Services;
 
 use App\Models\DeviceNode;
+use App\Services\NodeLifecycleService;
+use App\Enums\NodeLifecycleState;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class NodeService
 {
+    public function __construct(
+        private NodeLifecycleService $lifecycleService
+    ) {
+    }
+
     /**
      * Создать/зарегистрировать узел
      */
@@ -42,15 +49,28 @@ class NodeService
             
             // Если узел привязан к зоне и раньше не был привязан, обновляем lifecycle_state
             if ($node->zone_id && !$oldZoneId) {
-                // Переводим узел в состояние ASSIGNED_TO_ZONE
-                if ($node->lifecycle_state === \App\Enums\NodeLifecycleState::REGISTERED_BACKEND) {
-                    $node->lifecycle_state = \App\Enums\NodeLifecycleState::ASSIGNED_TO_ZONE;
-                    $node->save();
-                    Log::info('Node lifecycle state updated to ASSIGNED_TO_ZONE', [
+                // Используем NodeLifecycleService для безопасного перехода
+                $currentState = $node->lifecycleState();
+                if ($currentState === NodeLifecycleState::REGISTERED_BACKEND) {
+                    $this->lifecycleService->transitionToAssigned(
+                        $node,
+                        'Node assigned to zone via NodeService::update'
+                    );
+                } elseif ($currentState === NodeLifecycleState::ASSIGNED_TO_ZONE) {
+                    // Узел уже в правильном состоянии
+                    Log::debug('Node already in ASSIGNED_TO_ZONE state', [
                         'node_id' => $node->id,
-                        'uid' => $node->uid,
                         'zone_id' => $node->zone_id,
                     ]);
+                } else {
+                    // Попытка присвоить узел, который не в правильном состоянии
+                    Log::warning('Cannot assign node to zone - invalid lifecycle state', [
+                        'node_id' => $node->id,
+                        'zone_id' => $node->zone_id,
+                        'current_state' => $currentState->value,
+                        'required_state' => NodeLifecycleState::REGISTERED_BACKEND->value,
+                    ]);
+                    // Можно выбросить исключение, но для обратной совместимости оставляем как есть
                 }
             }
             
@@ -91,4 +111,5 @@ class NodeService
         });
     }
 }
+
 

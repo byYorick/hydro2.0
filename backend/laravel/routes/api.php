@@ -87,6 +87,11 @@ Route::middleware([
     Route::get('nodes/{node}/config', [NodeController::class, 'getConfig']);
     Route::post('nodes/{node}/config/publish', [NodeController::class, 'publishConfig']);
     Route::post('nodes/{node}/swap', [NodeController::class, 'swap']);
+    
+    // Node lifecycle transitions
+    Route::post('nodes/{node}/lifecycle/transition', [NodeController::class, 'transitionLifecycle']);
+    Route::get('nodes/{node}/lifecycle/allowed-transitions', [NodeController::class, 'getAllowedTransitions']);
+    
     Route::get('commands/{cmdId}/status', [\App\Http\Controllers\CommandStatusController::class, 'show']);
 
     // Alerts

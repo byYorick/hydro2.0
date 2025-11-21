@@ -1,8 +1,9 @@
 /**
- * Composable для работы с телеметрией с кешированием
+ * Composable для работы с телеметрией с кешированием и rate limiting
  */
 import { ref, computed, type Ref, type ComputedRef } from 'vue'
 import { useApi, type ToastHandler } from './useApi'
+import { useRateLimitedApi } from './useRateLimitedApi'
 import { useErrorHandler } from './useErrorHandler'
 import { logger } from '@/utils/logger'
 import type { ZoneTelemetry, TelemetrySample, TelemetryMetric } from '@/types'
@@ -123,6 +124,7 @@ function cleanupCache(): void {
  */
 export function useTelemetry(showToast?: ToastHandler) {
   const { api } = useApi(showToast || null)
+  const { rateLimitedGet } = useRateLimitedApi(showToast || null)
   const { handleError } = useErrorHandler(showToast)
   const loading: Ref<boolean> = ref(false)
   const error: Ref<Error | null> = ref(null)
@@ -148,12 +150,22 @@ export function useTelemetry(showToast?: ToastHandler) {
     error.value = null
 
     try {
-      const response = await api.get<{ data?: ZoneTelemetry } | ZoneTelemetry>(
-        `/api/zones/${zoneId}/telemetry/last`
+      // Используем rate-limited API для предотвращения превышения лимитов
+      const response = await rateLimitedGet<{ data?: ZoneTelemetry } | ZoneTelemetry>(
+        `/api/zones/${zoneId}/telemetry/last`,
+        {},
+        {
+          retries: 2,
+          backoff: 'exponential',
+          baseDelay: 1000,
+        }
       )
-      const telemetry = (response.data as { data?: ZoneTelemetry })?.data || 
-                       (response.data as ZoneTelemetry) || 
-                       {} as ZoneTelemetry
+      
+      // rateLimitedGet возвращает axios response, нужно обращаться к response.data
+      const responseData = (response as any)?.data || response
+      const telemetry: ZoneTelemetry = (responseData as { data?: ZoneTelemetry })?.data || 
+                                       (responseData as ZoneTelemetry) || 
+                                       {} as ZoneTelemetry
       
       // Сохраняем в кеш
       telemetryCache.set(cacheKey, {
@@ -200,17 +212,25 @@ export function useTelemetry(showToast?: ToastHandler) {
     error.value = null
 
     try {
-      const response = await api.get<{ data?: Array<{ ts: string; value: number }> }>(
+      // Используем rate-limited API для предотвращения превышения лимитов
+      const response = await rateLimitedGet<{ data?: Array<{ ts: string; value: number }> }>(
         `/api/zones/${zoneId}/telemetry/history`,
         {
           params: {
             metric,
             ...params
           }
+        },
+        {
+          retries: 2,
+          backoff: 'exponential',
+          baseDelay: 1000,
         }
       )
       
-      const data = (response.data as { data?: Array<{ ts: string; value: number }> })?.data || []
+      // rateLimitedGet возвращает axios response, нужно обращаться к response.data
+      const responseData = (response as any)?.data || response
+      const data = (responseData as { data?: Array<{ ts: string; value: number }> })?.data || []
       const history: TelemetrySample[] = data.map(item => ({
         ts: new Date(item.ts).getTime(),
         value: item.value,
@@ -262,7 +282,8 @@ export function useTelemetry(showToast?: ToastHandler) {
     error.value = null
 
     try {
-      const response = await api.get<{ data?: TelemetrySample[] }>(
+      // Используем rate-limited API для предотвращения превышения лимитов
+      const response = await rateLimitedGet<{ data?: TelemetrySample[] }>(
         '/api/telemetry/aggregates',
         {
           params: {
@@ -270,10 +291,17 @@ export function useTelemetry(showToast?: ToastHandler) {
             metric,
             period
           }
+        },
+        {
+          retries: 2,
+          backoff: 'exponential',
+          baseDelay: 1000,
         }
       )
       
-      const data = (response.data as { data?: TelemetrySample[] })?.data || []
+      // rateLimitedGet возвращает axios response, нужно обращаться к response.data
+      const responseData = (response as any)?.data || response
+      const data = (responseData as { data?: TelemetrySample[] })?.data || []
       
       // Сохраняем в кеш
       telemetryCache.set(cacheKey, {

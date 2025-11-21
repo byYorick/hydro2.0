@@ -10,8 +10,9 @@ class Settings:
     mqtt_clean_session: bool = os.getenv("MQTT_CLEAN_SESSION", "0") == "1"
     mqtt_user: str | None = os.getenv("MQTT_USER")
     mqtt_pass: str | None = os.getenv("MQTT_PASS")
-    # По умолчанию TLS включен для безопасности (можно отключить через MQTT_TLS=0)
-    mqtt_tls: bool = os.getenv("MQTT_TLS", "1") == "1"
+    # По умолчанию TLS выключен для dev окружения (можно включить через MQTT_TLS=1)
+    # В продакшене TLS должен быть включен
+    mqtt_tls: bool = os.getenv("MQTT_TLS", "0") in ("1", "true", "True", "yes", "Yes")
     mqtt_ca_file: str | None = os.getenv("MQTT_CA_FILE")
 
     pg_host: str = os.getenv("PG_HOST", "db")

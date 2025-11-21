@@ -61,19 +61,48 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
-import { Link, usePage } from '@inertiajs/vue3'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { Link, usePage, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import DataTable from '@/Components/DataTable.vue'
 import Button from '@/Components/Button.vue'
 import { useDevicesStore } from '@/stores/devices'
+import { useStoreEvents } from '@/composables/useStoreEvents'
 import { translateDeviceType, translateStatus } from '@/utils/i18n'
 import type { Device } from '@/types'
 
 const headers = ['UID', 'Зона', 'Имя', 'Тип', 'Статус', 'Версия ПО', 'Последний раз видели']
 const page = usePage<{ devices?: Device[] }>()
 const devicesStore = useDevicesStore()
-onMounted(() => devicesStore.initFromProps(page.props))
+const { subscribeWithCleanup } = useStoreEvents()
+
+onMounted(() => {
+  devicesStore.initFromProps(page.props)
+  
+  // Автоматическая синхронизация через события stores
+  // Слушаем события обновления устройств
+  subscribeWithCleanup('device:updated', (device: Device) => {
+    devicesStore.upsert(device)
+  })
+  
+  // Слушаем события создания устройств
+  subscribeWithCleanup('device:created', (device: Device) => {
+    devicesStore.upsert(device)
+  })
+  
+  // Слушаем события удаления устройств
+  subscribeWithCleanup('device:deleted', (deviceId: number | string) => {
+    devicesStore.remove(deviceId)
+  })
+  
+  // Слушаем события lifecycle переходов
+  subscribeWithCleanup('device:lifecycle:transitioned', ({ deviceId }: { deviceId: number; fromState: string; toState: string }) => {
+    // Инвалидируем кеш при lifecycle переходе
+    devicesStore.invalidateCache()
+    // Можно выполнить частичный reload для синхронизации
+    router.reload({ only: ['devices'], preserveScroll: true })
+  })
+})
 const type = ref<string>('')
 const query = ref<string>('')
 

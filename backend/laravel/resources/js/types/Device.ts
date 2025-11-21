@@ -31,12 +31,24 @@ export interface DeviceConfig {
 /**
  * Модель устройства
  */
+export type NodeLifecycleState = 
+  | 'MANUFACTURED'
+  | 'UNPROVISIONED'
+  | 'PROVISIONED_WIFI'
+  | 'REGISTERED_BACKEND'
+  | 'ASSIGNED_TO_ZONE'
+  | 'ACTIVE'
+  | 'DEGRADED'
+  | 'MAINTENANCE'
+  | 'DECOMMISSIONED'
+
 export interface Device {
   id: number
   uid: string
   name?: string
   type: DeviceType
   status: DeviceStatus
+  lifecycle_state?: NodeLifecycleState
   fw_version?: string
   config?: DeviceConfig
   zone?: Zone

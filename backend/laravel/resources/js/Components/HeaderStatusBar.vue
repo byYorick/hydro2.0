@@ -161,15 +161,44 @@
           </div>
         </div>
       </div>
+
+      <!-- Services Status (компактный вид с возможностью открыть модальное окно) -->
+      <div class="flex items-center gap-2 ml-auto">
+        <button
+          @click="showMonitoringModal = true"
+          class="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-neutral-800 transition-colors text-xs text-neutral-400 hover:text-neutral-200"
+          title="Мониторинг сервисов"
+        >
+          <span>📊</span>
+          <span class="hidden sm:inline">Сервисы</span>
+        </button>
+      </div>
     </div>
+    
+    <!-- Модальное окно мониторинга сервисов -->
+    <SystemMonitoringModal
+      :show="showMonitoringModal"
+      @close="showMonitoringModal = false"
+    />
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
+import { ref } from 'vue'
 import { useSystemStatus } from '@/composables/useSystemStatus'
 import { formatTime } from '@/utils/formatTime'
+import SystemMonitoringModal from '@/Components/SystemMonitoringModal.vue'
 
-const { coreStatus, dbStatus, wsStatus, mqttStatus, lastUpdate } = useSystemStatus()
+const { 
+  coreStatus, 
+  dbStatus, 
+  wsStatus, 
+  mqttStatus, 
+  historyLoggerStatus,
+  automationEngineStatus,
+  lastUpdate 
+} = useSystemStatus()
+const showMonitoringModal = ref(false)
 
 function getStatusDotClass(status) {
   switch (status) {

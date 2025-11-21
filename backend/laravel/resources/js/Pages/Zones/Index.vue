@@ -38,15 +38,58 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, shallowRef } from 'vue'
+import { computed, ref, shallowRef, onMounted, onUnmounted, watch } from 'vue'
+import { router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import ZoneCard from '@/Pages/Zones/ZoneCard.vue'
 import { usePage } from '@inertiajs/vue3'
+import { useZonesStore } from '@/stores/zones'
+import { useStoreEvents } from '@/composables/useStoreEvents'
 import { translateStatus } from '@/utils/i18n'
 import type { Zone } from '@/types'
 
 const page = usePage<{ zones?: Zone[] }>()
-const zones = computed(() => (page.props.zones || []) as Zone[])
+const zonesStore = useZonesStore()
+const { subscribeWithCleanup } = useStoreEvents()
+
+// Инициализируем store из props
+zonesStore.initFromProps(page.props)
+
+// Используем getter allZones для получения всех зон
+const zones = computed(() => zonesStore.allZones)
+
+// Автоматическая синхронизация через события stores
+onMounted(() => {
+  // Слушаем события обновления зон для автоматического обновления списка
+  subscribeWithCleanup('zone:updated', (zone: Zone) => {
+    // Обновляем зону в store
+    zonesStore.upsert(zone)
+  })
+  
+  // Слушаем события создания зон
+  subscribeWithCleanup('zone:created', (zone: Zone) => {
+    zonesStore.upsert(zone)
+  })
+  
+  // Слушаем события удаления зон
+  subscribeWithCleanup('zone:deleted', (zoneId: number) => {
+    zonesStore.remove(zoneId)
+  })
+  
+  // Слушаем события присвоения рецептов к зонам
+  subscribeWithCleanup('zone:recipe:attached', ({ zoneId }: { zoneId: number; recipeId: number }) => {
+    // Инвалидируем кеш и обновляем зону
+    zonesStore.invalidateCache()
+    // Можно выполнить частичный reload, если нужно
+    router.reload({ only: ['zones'], preserveScroll: true })
+  })
+})
+
+// Реакция на изменения в store для обновления списка зон
+watch(() => zonesStore.cacheVersion, () => {
+  // При изменении cacheVersion можно выполнить частичный reload для синхронизации
+  // Но лучше обновить через Inertia только если зоны действительно изменились
+})
 
 const status = ref<string>('')
 const query = ref<string>('')

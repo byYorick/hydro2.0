@@ -38,6 +38,7 @@
         <Badge :variant="device.status === 'online' ? 'success' : device.status === 'offline' ? 'danger' : 'neutral'">
           {{ device.status?.toUpperCase() || 'UNKNOWN' }}
         </Badge>
+        <NodeLifecycleBadge v-if="device.lifecycle_state" :lifecycle-state="device.lifecycle_state" />
         <Button size="sm" variant="secondary" @click="onRestart">Restart</Button>
       </div>
     </div>
@@ -67,6 +68,7 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
+import NodeLifecycleBadge from '@/Components/NodeLifecycleBadge.vue'
 import DeviceChannelsTable from '@/Pages/Devices/DeviceChannelsTable.vue'
 import Toast from '@/Components/Toast.vue'
 import { logger } from '@/utils/logger'

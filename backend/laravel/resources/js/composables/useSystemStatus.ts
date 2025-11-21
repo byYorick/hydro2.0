@@ -6,11 +6,14 @@ import { useApi, type ToastHandler } from './useApi'
 import { logger } from '@/utils/logger'
 
 const POLL_INTERVAL = 30000 // 30 секунд
+const RATE_LIMIT_BACKOFF = 60000 // 60 секунд при ошибке 429
+const WS_CHECK_INTERVAL = 5000 // 5 секунд для проверки WebSocket
 
 type CoreStatus = 'ok' | 'fail' | 'unknown'
 type DbStatus = 'ok' | 'fail' | 'unknown'
 type WsStatus = 'connected' | 'disconnected' | 'unknown'
 type MqttStatus = 'online' | 'offline' | 'degraded' | 'unknown'
+type ServiceStatus = 'ok' | 'fail' | 'unknown'
 
 // Расширяем Window для Echo
 declare global {
@@ -40,34 +43,160 @@ export function useSystemStatus(showToast?: ToastHandler) {
   const dbStatus: Ref<DbStatus> = ref('unknown')
   const wsStatus: Ref<WsStatus> = ref('unknown')
   const mqttStatus: Ref<MqttStatus> = ref('unknown')
+  const historyLoggerStatus: Ref<ServiceStatus> = ref('unknown')
+  const automationEngineStatus: Ref<ServiceStatus> = ref('unknown')
   
   const lastUpdate: Ref<Date | null> = ref(null)
   let healthPollInterval: ReturnType<typeof setInterval> | null = null
   let wsConnectionCheckInterval: ReturnType<typeof setInterval> | null = null
-  let mqttStatusCheckInterval: ReturnType<typeof setInterval> | null = null
+  
+  // Флаг для отслеживания rate limiting
+  let isRateLimited = false
+  let rateLimitTimeout: ReturnType<typeof setTimeout> | null = null
+  
+  // Флаг для предотвращения одновременных запросов
+  let isCheckingHealth = false
 
   /**
-   * Проверка статуса Core и Database через /api/system/health
+   * Проверка статуса Core, Database, MQTT и сервисов через /api/system/health
+   * Объединенная функция для избежания дублирующих запросов
    */
   async function checkHealth(): Promise<void> {
+    // Пропускаем запрос, если активен rate limiting
+    if (isRateLimited) {
+      logger.warn('[useSystemStatus] Пропуск запроса из-за rate limiting')
+      return
+    }
+    
+    // Пропускаем запрос, если уже выполняется проверка
+    if (isCheckingHealth) {
+      logger.warn('[useSystemStatus] Пропуск запроса - проверка уже выполняется')
+      return
+    }
+    
+    isCheckingHealth = true
+
     try {
-      const response = await api.get<{ data?: { app?: string; db?: string } } | { app?: string; db?: string }>(
-        '/api/system/health'
-      )
-      const data = ((response.data as { data?: { app?: string; db?: string } })?.data || 
-                   (response.data as { app?: string; db?: string })) || {}
+      const response = await api.get<{ 
+        data?: { 
+          app?: string
+          db?: string
+          mqtt?: string
+          history_logger?: string
+          automation_engine?: string
+        }
+      } | { 
+        app?: string
+        db?: string
+        mqtt?: string
+        history_logger?: string
+        automation_engine?: string
+      }>('/api/system/health')
       
+      const data = ((response.data as { data?: { app?: string; db?: string; mqtt?: string; history_logger?: string; automation_engine?: string } })?.data || 
+                   (response.data as { app?: string; db?: string; mqtt?: string; history_logger?: string; automation_engine?: string })) || {}
+      
+      // Обновляем статусы Core и DB
       coreStatus.value = data.app === 'ok' ? 'ok' : 'fail'
       dbStatus.value = data.db === 'ok' ? 'ok' : 'fail'
-      lastUpdate.value = new Date()
-    } catch (err) {
-      coreStatus.value = 'fail'
-      dbStatus.value = 'fail'
+      
+      // Обновляем статус MQTT
+      if (data.mqtt === 'ok' || data.mqtt === 'online' || data.mqtt === 'connected') {
+        mqttStatus.value = 'online'
+      } else if (data.mqtt === 'fail' || data.mqtt === 'offline' || data.mqtt === 'disconnected') {
+        mqttStatus.value = 'offline'
+      } else if (data.mqtt === 'degraded') {
+        mqttStatus.value = 'degraded'
+      } else {
+        // Если статус MQTT не указан, используем fallback логику
+        if (wsStatus.value === 'connected') {
+          mqttStatus.value = 'online'
+        } else {
+          mqttStatus.value = 'unknown'
+        }
+      }
+      
+      // Проверка статусов сервисов
+      if (data.history_logger) {
+        historyLoggerStatus.value = data.history_logger === 'ok' ? 'ok' : 'fail'
+      } else {
+        historyLoggerStatus.value = 'unknown'
+      }
+      
+      if (data.automation_engine) {
+        automationEngineStatus.value = data.automation_engine === 'ok' ? 'ok' : 'fail'
+      } else {
+        automationEngineStatus.value = 'unknown'
+      }
+      
       lastUpdate.value = new Date()
       
-      if (showToast) {
-        showToast('Ошибка проверки статуса системы', 'error', 3000)
+      // Сбрасываем флаг rate limiting при успешном запросе
+      if (isRateLimited) {
+        isRateLimited = false
+        if (rateLimitTimeout) {
+          clearTimeout(rateLimitTimeout)
+          rateLimitTimeout = null
+        }
       }
+    } catch (err: any) {
+      // Обработка ошибки 429 (Too Many Requests)
+      if (err?.response?.status === 429) {
+        isRateLimited = true
+        logger.warn('[useSystemStatus] Получена ошибка 429, приостанавливаем запросы на', RATE_LIMIT_BACKOFF / 1000, 'секунд')
+        
+        // Очищаем предыдущий timeout, если он был
+        if (rateLimitTimeout) {
+          clearTimeout(rateLimitTimeout)
+        }
+        
+        // Устанавливаем таймер для сброса rate limiting
+        rateLimitTimeout = setTimeout(() => {
+          isRateLimited = false
+          rateLimitTimeout = null
+          logger.info('[useSystemStatus] Rate limiting сброшен, возобновляем запросы')
+        }, RATE_LIMIT_BACKOFF)
+        
+        // Не показываем toast для 429, чтобы не спамить
+        return
+      }
+      
+      // Логируем ошибку для диагностики
+      const errorMessage = err?.response?.data?.message || err?.message || 'Неизвестная ошибка'
+      const errorStatus = err?.response?.status
+      logger.error('[useSystemStatus] Ошибка проверки здоровья системы:', {
+        message: errorMessage,
+        status: errorStatus,
+        url: '/api/system/health',
+        error: err,
+      })
+      
+      // Для других ошибок обновляем статусы как fail
+      // Но не сбрасываем статусы, если они уже были установлены ранее (сохраняем последние известные значения)
+      if (coreStatus.value === 'unknown') {
+        coreStatus.value = 'fail'
+      }
+      if (dbStatus.value === 'unknown') {
+        dbStatus.value = 'fail'
+      }
+      if (mqttStatus.value === 'unknown') {
+        mqttStatus.value = 'offline'
+      }
+      if (historyLoggerStatus.value === 'unknown') {
+        historyLoggerStatus.value = 'fail'
+      }
+      if (automationEngineStatus.value === 'unknown') {
+        automationEngineStatus.value = 'fail'
+      }
+      
+      lastUpdate.value = new Date()
+      
+      if (showToast && err?.response?.status !== 429) {
+        showToast(`Ошибка проверки статуса системы: ${errorMessage}`, 'error', 5000)
+      }
+    } finally {
+      // Всегда сбрасываем флаг проверки
+      isCheckingHealth = false
     }
   }
 
@@ -241,45 +370,12 @@ export function useSystemStatus(showToast?: ToastHandler) {
 
   /**
    * Проверка статуса MQTT через API
-   * Фронтенд не может напрямую взаимодействовать с MQTT, только через API
+   * Теперь MQTT статус получается из checkHealth(), эта функция оставлена для обратной совместимости
+   * @deprecated Используйте checkHealth() вместо этой функции
    */
   async function checkMqttStatus(): Promise<void> {
-    try {
-      // Проверяем статус MQTT через API health endpoint
-      // Backend должен возвращать статус MQTT в ответе health
-      const response = await api.get<{ data?: { mqtt?: string } } | { mqtt?: string }>(
-        '/api/system/health'
-      )
-      const data = ((response.data as { data?: { mqtt?: string } })?.data || 
-                   (response.data as { mqtt?: string })) || {}
-      
-      // Обрабатываем статус MQTT из ответа API
-      if (data.mqtt === 'ok' || data.mqtt === 'online' || data.mqtt === 'connected') {
-        mqttStatus.value = 'online'
-      } else if (data.mqtt === 'fail' || data.mqtt === 'offline' || data.mqtt === 'disconnected') {
-        mqttStatus.value = 'offline'
-      } else if (data.mqtt === 'degraded') {
-        mqttStatus.value = 'degraded'
-      } else {
-        // Если статус MQTT не указан в ответе, используем fallback логику
-        // Считаем MQTT доступным, если WebSocket подключен (так как WebSocket используется для получения данных от backend)
-        if (wsStatus.value === 'connected') {
-          mqttStatus.value = 'online'
-        } else {
-          mqttStatus.value = 'unknown'
-        }
-      }
-      
-      lastUpdate.value = new Date()
-    } catch (err) {
-      // При ошибке API считаем MQTT недоступным
-      mqttStatus.value = 'offline'
-      lastUpdate.value = new Date()
-      
-      if (showToast) {
-        showToast('Ошибка проверки статуса MQTT', 'error', 3000)
-      }
-    }
+    // Просто вызываем checkHealth, так как он уже получает статус MQTT
+    await checkHealth()
   }
 
   /**
@@ -293,27 +389,18 @@ export function useSystemStatus(showToast?: ToastHandler) {
     setTimeout(() => {
       checkWebSocketStatus()
       setupWebSocketListeners()
-      
-      // Проверяем статус MQTT через API
-      checkMqttStatus()
     }, 500)
 
-    // Периодическая проверка здоровья (Core + DB + MQTT)
+    // Периодическая проверка здоровья (Core + DB + MQTT + сервисы)
+    // Все статусы получаются из одного запроса /api/system/health
     healthPollInterval = setInterval(() => {
       checkHealth()
-      // Также проверяем MQTT статус через API
-      checkMqttStatus()
     }, POLL_INTERVAL)
 
-    // Периодическая проверка WebSocket
+    // Периодическая проверка WebSocket (не требует API запросов)
     wsConnectionCheckInterval = setInterval(() => {
       checkWebSocketStatus()
-    }, 5000) // Каждые 5 секунд
-
-    // Периодическая проверка MQTT через API
-    mqttStatusCheckInterval = setInterval(() => {
-      checkMqttStatus()
-    }, 10000) // Каждые 10 секунд
+    }, WS_CHECK_INTERVAL)
   }
 
   /**
@@ -328,10 +415,11 @@ export function useSystemStatus(showToast?: ToastHandler) {
       clearInterval(wsConnectionCheckInterval)
       wsConnectionCheckInterval = null
     }
-    if (mqttStatusCheckInterval) {
-      clearInterval(mqttStatusCheckInterval)
-      mqttStatusCheckInterval = null
+    if (rateLimitTimeout) {
+      clearTimeout(rateLimitTimeout)
+      rateLimitTimeout = null
     }
+    isRateLimited = false
   }
 
   onMounted(() => {
@@ -354,6 +442,8 @@ export function useSystemStatus(showToast?: ToastHandler) {
     dbStatus: computed(() => dbStatus.value) as ComputedRef<DbStatus>,
     wsStatus: computed(() => wsStatus.value) as ComputedRef<WsStatus>,
     mqttStatus: computed(() => mqttStatus.value) as ComputedRef<MqttStatus>,
+    historyLoggerStatus: computed(() => historyLoggerStatus.value) as ComputedRef<ServiceStatus>,
+    automationEngineStatus: computed(() => automationEngineStatus.value) as ComputedRef<ServiceStatus>,
     lastUpdate: computed(() => lastUpdate.value) as ComputedRef<Date | null>,
     
     // Computed флаги

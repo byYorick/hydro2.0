@@ -27,14 +27,15 @@ describe('devices store', () => {
 
   it('should initialize with empty items', () => {
     const store = useDevicesStore()
-    expect(store.items).toEqual([])
+    expect(store.items).toEqual({})
+    expect(store.ids).toEqual([])
   })
 
   it('should init from props', () => {
     const store = useDevicesStore()
     store.initFromProps({ devices: [mockDevice1] })
-    expect(store.items.length).toBe(1)
-    expect(store.items[0]).toEqual(mockDevice1)
+    expect(store.devicesCount).toBe(1)
+    expect(store.deviceById(1)).toEqual(mockDevice1)
   })
 
   it('should upsert existing device by id', () => {
@@ -44,8 +45,8 @@ describe('devices store', () => {
     const updatedDevice = { ...mockDevice1, name: 'Device 1 updated' }
     store.upsert(updatedDevice)
     
-    expect(store.items.length).toBe(1)
-    expect(store.items[0].name).toBe('Device 1 updated')
+    expect(store.devicesCount).toBe(1)
+    expect(store.deviceById(1)?.name).toBe('Device 1 updated')
   })
 
   it('should add new device on upsert', () => {
@@ -53,8 +54,8 @@ describe('devices store', () => {
     store.initFromProps({ devices: [mockDevice1] })
     store.upsert(mockDevice2)
     
-    expect(store.items.length).toBe(2)
-    expect(store.items[1]).toEqual(mockDevice2)
+    expect(store.devicesCount).toBe(2)
+    expect(store.deviceById(2)).toEqual(mockDevice2)
   })
 
   it('should remove device by id', () => {
@@ -63,8 +64,8 @@ describe('devices store', () => {
     
     store.remove(1)
     
-    expect(store.items.length).toBe(1)
-    expect(store.items[0].id).toBe(2)
+    expect(store.devicesCount).toBe(1)
+    expect(store.deviceById(2)?.id).toBe(2)
   })
 
   it('should remove device by uid', () => {
@@ -73,8 +74,8 @@ describe('devices store', () => {
     
     store.remove('device-1')
     
-    expect(store.items.length).toBe(1)
-    expect(store.items[0].uid).toBe('device-2')
+    expect(store.devicesCount).toBe(1)
+    expect(store.deviceById('device-2')?.uid).toBe('device-2')
   })
 
   it('should clear all devices', () => {
@@ -83,7 +84,8 @@ describe('devices store', () => {
     
     store.clear()
     
-    expect(store.items).toEqual([])
+    expect(store.items).toEqual({})
+    expect(store.ids).toEqual([])
   })
 
   it('should get device by id', () => {
@@ -133,6 +135,68 @@ describe('devices store', () => {
     
     expect(zoneDevices.length).toBe(1)
     expect(zoneDevices[0].zone_id).toBe(1)
+  })
+
+  it('should get devices by lifecycle state', () => {
+    const store = useDevicesStore()
+    const deviceWithLifecycle = { ...mockDevice1, lifecycle_state: 'ACTIVE' as const }
+    store.initFromProps({ devices: [deviceWithLifecycle, mockDevice2] })
+    
+    const activeDevices = store.devicesByLifecycleState('ACTIVE')
+    
+    expect(activeDevices.length).toBe(1)
+    expect(activeDevices[0].lifecycle_state).toBe('ACTIVE')
+  })
+
+  it('should support optimistic updates', () => {
+    const store = useDevicesStore()
+    store.initFromProps({ devices: [mockDevice1] })
+    
+    const originalDevice = store.deviceById(1)
+    const optimisticDevice = { ...mockDevice1, status: 'offline' as const }
+    
+    // Оптимистичное обновление
+    store.optimisticUpsert(optimisticDevice)
+    expect(store.deviceById(1)?.status).toBe('offline')
+    
+    // Откат
+    store.rollbackOptimisticUpdate(1, originalDevice || null)
+    expect(store.deviceById(1)?.status).toBe('online')
+  })
+
+  it('should track loading state', () => {
+    const store = useDevicesStore()
+    
+    expect(store.loading).toBe(false)
+    
+    store.setLoading(true)
+    expect(store.loading).toBe(true)
+    
+    store.setLoading(false)
+    expect(store.loading).toBe(false)
+    expect(store.lastFetch).toBeInstanceOf(Date)
+  })
+
+  it('should track error state', () => {
+    const store = useDevicesStore()
+    
+    expect(store.error).toBe(null)
+    
+    store.setError('Test error')
+    expect(store.error).toBe('Test error')
+    
+    store.setError(null)
+    expect(store.error).toBe(null)
+  })
+
+  it('should invalidate cache', () => {
+    const store = useDevicesStore()
+    const initialVersion = store.cacheVersion
+    
+    store.invalidateCache()
+    
+    expect(store.cacheVersion).toBe(initialVersion + 1)
+    expect(store.cacheInvalidatedAt).toBeInstanceOf(Date)
   })
 })
 

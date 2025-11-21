@@ -288,9 +288,14 @@ async def fetch_full_config(client: httpx.AsyncClient, base_url: str, token: str
     
     for attempt in range(max_retries):
         try:
-            r = await client.get(f"{base_url}/api/system/config/full", headers=headers, timeout=10)
+            r = await client.get(f"{base_url}/api/system/config/full", headers=headers, timeout=30.0)
             r.raise_for_status()
-            data = r.json()
+            response_data = r.json()
+            # Laravel API returns {"status": "ok", "data": {...}}, extract "data" part
+            if isinstance(response_data, dict) and "data" in response_data:
+                data = response_data["data"]
+            else:
+                data = response_data
             CONFIG_FETCH_SUCCESS.inc()
             return data
         except httpx.HTTPStatusError as e:

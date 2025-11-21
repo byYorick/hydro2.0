@@ -62,7 +62,7 @@
             :key="node.id"
             class="p-3 rounded-lg border border-neutral-800 bg-neutral-900"
           >
-            <div class="flex items-start justify-between mb-2">
+              <div class="flex items-start justify-between mb-2">
               <div>
                 <div class="text-sm font-semibold">{{ node.name || node.uid || `Node #${node.id}` }}</div>
                 <div class="text-xs text-neutral-400 mt-1">
@@ -75,11 +75,22 @@
                     Последний раз видели: {{ formatDate(node.last_seen_at) }}
                   </span>
                   <span v-else>Никогда не видели</span>
+                  <span v-if="node.lifecycle_state" class="ml-2">
+                    · Lifecycle: <span class="text-sky-400">{{ getStateLabel(node.lifecycle_state) }}</span>
+                  </span>
                 </div>
               </div>
-              <Badge :variant="getStatusVariant(node.status)">
-                {{ node.status || 'unknown' }}
-              </Badge>
+              <div class="flex items-center gap-2">
+                <Badge :variant="getStatusVariant(node.status)">
+                  {{ node.status || 'unknown' }}
+                </Badge>
+                <Badge 
+                  v-if="node.lifecycle_state" 
+                  :variant="getLifecycleVariant(node.lifecycle_state)"
+                >
+                  {{ getStateLabel(node.lifecycle_state) }}
+                </Badge>
+              </div>
             </div>
 
             <!-- Форма привязки к зоне -->
@@ -130,7 +141,7 @@
   </AppLayout>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, reactive, onMounted, computed } from 'vue'
 import { router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
@@ -140,6 +151,9 @@ import Badge from '@/Components/Badge.vue'
 import Toast from '@/Components/Toast.vue'
 import { logger } from '@/utils/logger'
 import axios from 'axios'
+import { useNodeLifecycle } from '@/composables/useNodeLifecycle'
+import { useErrorHandler } from '@/composables/useErrorHandler'
+import type { Device } from '@/types'
 
 // Toast notifications
 const toasts = ref([])
@@ -157,6 +171,10 @@ function removeToast(id) {
     toasts.value.splice(index, 1)
   }
 }
+
+// Инициализация composables для lifecycle
+const { canAssignToZone, getStateLabel } = useNodeLifecycle(showToast)
+const { handleError } = useErrorHandler(showToast)
 
 const loading = ref(false)
 const newNodes = ref([])
@@ -176,6 +194,18 @@ function getStatusVariant(status) {
     case 'offline': return 'neutral'
     case 'degraded': return 'warning'
     case 'maintenance': return 'info'
+    default: return 'neutral'
+  }
+}
+
+function getLifecycleVariant(lifecycleState) {
+  switch (lifecycleState) {
+    case 'ACTIVE': return 'success'
+    case 'REGISTERED_BACKEND': return 'info'
+    case 'ASSIGNED_TO_ZONE': return 'info'
+    case 'DEGRADED': return 'warning'
+    case 'MAINTENANCE': return 'warning'
+    case 'DECOMMISSIONED': return 'neutral'
     default: return 'neutral'
   }
 }
@@ -272,6 +302,35 @@ async function assignNode(node) {
     return
   }
 
+  // Lifecycle-aware валидация: проверяем, может ли узел быть присвоен к зоне
+  if (node.lifecycle_state && node.lifecycle_state !== 'REGISTERED_BACKEND') {
+    const currentStateLabel = getStateLabel(node.lifecycle_state)
+    showToast(
+      `Узел не может быть присвоен к зоне. Текущее состояние: ${currentStateLabel}. Требуется: Зарегистрирован (REGISTERED_BACKEND)`,
+      'error',
+      6000
+    )
+    return
+  }
+
+  // Дополнительная проверка через API, если lifecycle_state не доступен
+  if (!node.lifecycle_state) {
+    try {
+      const canAssign = await canAssignToZone(node.id)
+      if (!canAssign) {
+        showToast(
+          'Узел не может быть присвоен к зоне. Узел должен быть зарегистрирован (REGISTERED_BACKEND) перед присвоением.',
+          'error',
+          6000
+        )
+        return
+      }
+    } catch (err) {
+      logger.warn('[Devices/Add] Failed to check lifecycle state, proceeding with assignment:', err)
+      // Продолжаем с присвоением, backend вернет ошибку если lifecycle не подходит
+    }
+  }
+
   assigning[node.id] = true
   try {
     const updateData = {
@@ -285,16 +344,40 @@ async function assignNode(node) {
     
     if (response.data?.status === 'ok') {
       showToast(`Нода "${node.uid}" успешно привязана к зоне`, 'success', 3000)
-      // Удалить ноду из списка новых
+      
+      // Backend автоматически переведет узел в ASSIGNED_TO_ZONE, обновляем данные
+      const updatedNode = response.data.data
+      if (updatedNode) {
+        const nodeIndex = newNodes.value.findIndex(n => n.id === node.id)
+        if (nodeIndex >= 0) {
+          newNodes.value[nodeIndex] = { ...newNodes.value[nodeIndex], ...updatedNode }
+        }
+      }
+      
+      // Удалить ноду из списка новых (так как она теперь привязана)
       newNodes.value = newNodes.value.filter(n => n.id !== node.id)
       delete assignmentForms[node.id]
     }
   } catch (err) {
     logger.error('[Devices/Add] Failed to assign node:', err)
-    let errorMsg = 'Неизвестная ошибка'
-    if (err && err.response && err.response.data && err.response.data.message) errorMsg = err.response.data.message
-    else if (err && err.message) errorMsg = err.message
-    showToast(`Ошибка при привязке: ${errorMsg}`, 'error', 5000)
+    
+    // Используем централизованный обработчик ошибок
+    handleError(err, {
+      component: 'Devices/Add',
+      action: 'assignNode',
+      nodeId: node.id,
+      zoneId: form.zone_id,
+    })
+    
+    // Дополнительная обработка lifecycle ошибок
+    if (err?.response?.data?.message?.includes('lifecycle') || 
+        err?.response?.data?.message?.includes('state')) {
+      showToast(
+        `Ошибка lifecycle: ${err.response.data.message}. Убедитесь, что узел в состоянии REGISTERED_BACKEND.`,
+        'error',
+        7000
+      )
+    }
   } finally {
     assigning[node.id] = false
   }

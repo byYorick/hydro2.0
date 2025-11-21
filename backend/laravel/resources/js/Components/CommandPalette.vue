@@ -474,17 +474,29 @@ async function executeZoneCycle(zoneId: number, cycleType: string, zoneName: str
 }
 
 /**
- * Применить рецепт к зоне
+ * Применить рецепт к зоне с перекрестной инвалидацией кеша
  */
 async function applyRecipeToZone(zoneId: number, recipeId: number, zoneName: string, recipeName: string): Promise<void> {
   try {
     await api.post(`/api/zones/${zoneId}/attach-recipe`, {
       recipe_id: recipeId
     })
+    
+    // Инвалидируем кеш зон и рецептов через stores
+    const { useZonesStore } = await import('@/stores/zones')
+    const zonesStore = useZonesStore()
+    await zonesStore.attachRecipe(zoneId, recipeId)
+    
     logger.info(`[CommandPalette] Рецепт "${recipeName}" применен к зоне "${zoneName}"`)
     close()
   } catch (err) {
     logger.error(`[CommandPalette] Failed to apply recipe:`, err)
+    handleError(err, {
+      component: 'CommandPalette',
+      action: 'applyRecipeToZone',
+      zoneId,
+      recipeId,
+    })
     close()
   }
 }
