@@ -5,12 +5,8 @@ global:
     cluster: 'hydro-prod'
     environment: 'production'
 
-# Настройки retention для метрик
-storage:
-  tsdb:
-    retention:
-      time: 15d
-      size: 20GB
+# Примечание: retention настраивается через флаги командной строки в docker-compose
+# storage.tsdb.retention.time и storage.tsdb.retention.size не поддерживаются в конфигурационном файле
 
 scrape_configs:
   # Prometheus сам себя

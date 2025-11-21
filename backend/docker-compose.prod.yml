@@ -1,4 +1,3 @@
-version: "3.9"
 services:
   mqtt:
     image: eclipse-mosquitto:2
@@ -10,8 +9,9 @@ services:
       - ./services/mqtt-bridge/acl:/mosquitto/config/acl:ro
       - mqtt_data:/mosquitto/data
       - mqtt_logs:/mosquitto/log
+    restart: unless-stopped
   db:
-    image: timescaledb/timescaledb:latest-pg16
+    image: timescale/timescaledb:latest-pg16
     environment:
       # ВАЖНО: Замените на уникальный пароль через переменную окружения
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
@@ -28,8 +28,66 @@ services:
       - "wal_level=replica"
       - "-c"
       - "archive_command='test ! -f /wal_archive/%f && cp %p /wal_archive/%f'"
+      # Performance optimizations
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "effective_cache_size=1GB"
+      - "-c"
+      - "maintenance_work_mem=128MB"
+      - "-c"
+      - "checkpoint_completion_target=0.9"
+      - "-c"
+      - "wal_buffers=16MB"
+      - "-c"
+      - "default_statistics_target=100"
+      - "-c"
+      - "random_page_cost=1.1"
+      - "-c"
+      - "effective_io_concurrency=200"
+      - "-c"
+      - "work_mem=4MB"
+      - "-c"
+      - "min_wal_size=1GB"
+      - "-c"
+      - "max_wal_size=4GB"
+      - "-c"
+      - "max_connections=200"
+      - "-c"
+      - "max_worker_processes=8"
+      - "-c"
+      - "max_parallel_workers_per_gather=4"
+      - "-c"
+      - "max_parallel_workers=8"
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    restart: unless-stopped
   redis:
     image: redis:7-alpine
+    command: >
+      redis-server
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --save ""
+      --appendonly no
+      --tcp-backlog 511
+      --timeout 0
+      --tcp-keepalive 300
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    restart: unless-stopped
   laravel:
     build:
       context: ./laravel
@@ -44,6 +102,14 @@ services:
         fi;
         exec /opt/docker/bin/entrypoint.sh supervisord
       "
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
     environment:
       - WEB_DOCUMENT_ROOT=/app/public
       - APP_ENV=production
@@ -53,6 +119,17 @@ services:
       - LOG_CHANNEL=stderr
       - LOG_LEVEL=info
       - BROADCAST_DRIVER=reverb
+      # PHP-FPM performance settings
+      - PHP_FPM_PM=dynamic
+      - PHP_FPM_PM_MAX_CHILDREN=50
+      - PHP_FPM_PM_START_SERVERS=10
+      - PHP_FPM_PM_MIN_SPARE_SERVERS=5
+      - PHP_FPM_PM_MAX_SPARE_SERVERS=20
+      - PHP_FPM_PM_MAX_REQUESTS=500
+      - PHP_FPM_PM_PROCESS_IDLE_TIMEOUT=10s
+      # Nginx worker processes (auto-detected, but can be set)
+      - NGINX_WORKER_PROCESSES=auto
+      - NGINX_WORKER_CONNECTIONS=1024
       - DB_CONNECTION=pgsql
       - DB_HOST=db
       - DB_PORT=5432
@@ -71,13 +148,14 @@ services:
       - REVERB_DEBUG=false
       - REVERB_AUTO_START=${REVERB_AUTO_START:-true}
       # Vite environment variables for WebSocket (передаются при сборке)
+      # ВАЖНО: Для браузера используем localhost, а не 0.0.0.0
       - VITE_ENABLE_WS=true
       - VITE_REVERB_APP_KEY=${REVERB_APP_KEY:-change-me}
-      - VITE_REVERB_HOST=${REVERB_HOST:-0.0.0.0}
+      - VITE_REVERB_HOST=localhost
       - VITE_REVERB_PORT=6001
       - VITE_REVERB_SCHEME=http
       - VITE_PUSHER_APP_KEY=${REVERB_APP_KEY:-change-me}
-      - VITE_WS_HOST=${REVERB_HOST:-0.0.0.0}
+      - VITE_WS_HOST=localhost
       - VITE_WS_PORT=6001
       - VITE_WS_TLS=false
     volumes:
@@ -102,6 +180,8 @@ services:
       dockerfile: mqtt-bridge/Dockerfile
     environment:
       - MQTT_HOST=mqtt
+      - MQTT_PORT=1883
+      - MQTT_TLS=0
       - MQTT_USER=${MQTT_MQTT_BRIDGE_USER:-mqtt_bridge}
       # ВАЖНО: Замените на уникальный пароль через переменную окружения
       - MQTT_PASS=${MQTT_MQTT_BRIDGE_PASS:?MQTT_MQTT_BRIDGE_PASS must be set}
@@ -114,14 +194,27 @@ services:
       - mqtt
       - db
       - laravel
+    ports:
+      - "9000:9000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9000)); s.close()' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
   # device-registry: PLANNED - функционал частично в Laravel (см. backend/services/device-registry/README.md)
   # device-registry:
   #   build: ./services/device-registry
   #   depends_on: [db]
   automation-engine:
-    build: ./services/automation-engine
+    build:
+      context: ./services
+      dockerfile: automation-engine/Dockerfile
     environment:
       - MQTT_HOST=mqtt
+      - MQTT_PORT=1883
+      - MQTT_TLS=0
       - MQTT_USER=${MQTT_AUTOMATION_ENGINE_USER:-automation_engine}
       # ВАЖНО: Замените на уникальный пароль через переменную окружения
       - MQTT_PASS=${MQTT_AUTOMATION_ENGINE_PASS:?MQTT_AUTOMATION_ENGINE_PASS must be set}
@@ -132,15 +225,26 @@ services:
       - LARAVEL_API_URL=http://laravel
       - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-}
     depends_on:
-      - db
       - mqtt
+      - db
       - laravel
+    ports:
+      - "9401:9401"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9401)); s.close()' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
   history-logger:
     build:
       context: ./services
       dockerfile: history-logger/Dockerfile
     environment:
       - MQTT_HOST=mqtt
+      - MQTT_PORT=1883
+      - MQTT_TLS=0
       - MQTT_USER=${MQTT_HISTORY_LOGGER_USER:-history_logger}
       # ВАЖНО: Замените на уникальный пароль через переменную окружения
       - MQTT_PASS=${MQTT_HISTORY_LOGGER_PASS:?MQTT_HISTORY_LOGGER_PASS must be set}
@@ -148,9 +252,19 @@ services:
       - PG_DB=hydro
       - PG_USER=hydro
       - PG_PASS=${POSTGRES_PASSWORD:-change-me}
+      - LARAVEL_API_URL=http://laravel
+      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-${PY_INGEST_TOKEN:-${PY_API_TOKEN:-}}}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
     depends_on:
       - mqtt
       - db
+      - laravel
+      - redis
+    ports:
+      - "9300:9300"
+      - "9301:9301"  # Prometheus metrics
+    restart: unless-stopped
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
@@ -179,6 +293,8 @@ services:
       # ВАЖНО: Замените на уникальный пароль через переменную окружения
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set}
       - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+      - GF_DEFAULT_LANGUAGE=ru
+      - GF_USERS_DEFAULT_LANGUAGE=ru
     volumes:
       - ./configs/prod/grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
       - ./configs/prod/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
@@ -211,6 +327,8 @@ services:
       dockerfile: scheduler/Dockerfile
     environment:
       - MQTT_HOST=mqtt
+      - MQTT_PORT=1883
+      - MQTT_TLS=0
       - MQTT_USER=${MQTT_SCHEDULER_USER:-scheduler}
       # ВАЖНО: Замените на уникальный пароль через переменную окружения
       - MQTT_PASS=${MQTT_SCHEDULER_PASS:?MQTT_SCHEDULER_PASS must be set}
@@ -229,6 +347,40 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
+    restart: unless-stopped
+  digital-twin:
+    build:
+      context: ./services
+      dockerfile: digital-twin/Dockerfile
+    environment:
+      - PG_HOST=db
+      - PG_PORT=5432
+      - PG_DB=hydro
+      - PG_USER=hydro
+      - PG_PASS=${POSTGRES_PASSWORD:-change-me}
+      - PYTHONPATH=/app
+    depends_on:
+      - db
+    ports:
+      - "8003:8003"
+      - "9403:9403"  # Prometheus metrics
+    restart: unless-stopped
+  telemetry-aggregator:
+    build:
+      context: ./services
+      dockerfile: telemetry-aggregator/Dockerfile
+    environment:
+      - PG_HOST=db
+      - PG_PORT=5432
+      - PG_DB=hydro
+      - PG_USER=hydro
+      - PG_PASS=${POSTGRES_PASSWORD:-change-me}
+      - PYTHONPATH=/app
+    depends_on:
+      - db
+    ports:
+      - "9404:9404"  # Prometheus metrics
+    restart: unless-stopped
 
 volumes:
   postgres_data:

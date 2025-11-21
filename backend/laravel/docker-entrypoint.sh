@@ -58,9 +58,13 @@ if [ -f /app/.env ]; then
     fi
 fi
 
-# Configure PHP for development (disable opcache if APP_ENV=local)
+# Configure PHP based on environment
 if [ "${APP_ENV:-production}" = "local" ]; then
     echo "Development mode detected: configuring PHP for hot reload..."
+    # Disable production PHP config and ensure dev config is active
+    if [ -f /usr/local/etc/php/conf.d/99-prod.ini ]; then
+        mv /usr/local/etc/php/conf.d/99-prod.ini /usr/local/etc/php/conf.d/99-prod.ini.disabled 2>/dev/null || true
+    fi
     # Ensure dev PHP configuration is loaded (opcache disabled)
     if [ -f /usr/local/etc/php/conf.d/99-dev.ini ]; then
         echo "✓ Dev PHP configuration loaded (opcache should be disabled)"
@@ -76,6 +80,30 @@ if [ "${APP_ENV:-production}" = "local" ]; then
     chmod -R 755 /app/node_modules/.vite 2>/dev/null || true
     # Также исправить права на node_modules для предотвращения проблем с правами доступа
     chown -R application:application /app/node_modules 2>/dev/null || true
+else
+    echo "Production mode detected: optimizing Laravel and PHP..."
+    # Ensure production PHP config is active
+    if [ -f /usr/local/etc/php/conf.d/99-prod.ini.disabled ]; then
+        mv /usr/local/etc/php/conf.d/99-prod.ini.disabled /usr/local/etc/php/conf.d/99-prod.ini 2>/dev/null || true
+    fi
+    if [ -f /usr/local/etc/php/conf.d/99-dev.ini ]; then
+        mv /usr/local/etc/php/conf.d/99-dev.ini /usr/local/etc/php/conf.d/99-dev.ini.disabled 2>/dev/null || true
+    fi
+    
+    # Optimize Laravel for production (non-blocking)
+    echo "Optimizing Laravel application..."
+    # Run optimizations in background to not block container startup
+    (php artisan config:cache 2>&1 || echo "⚠ config:cache failed") &
+    (php artisan view:cache 2>&1 || echo "⚠ view:cache failed") &
+    # Route cache may fail if routes have issues, so we skip it for now
+    # php artisan route:cache || echo "⚠ route:cache failed"
+    (php artisan event:cache 2>&1 || echo "⚠ event:cache failed (Laravel 11+)") &
+    wait
+    
+    # Clear OPcache to ensure fresh start
+    php -r "if (function_exists('opcache_reset')) { opcache_reset(); echo 'OPcache reset\n'; }" || true
+    
+    echo "✓ Production optimizations applied"
 fi
 
 # Copy supervisor configs to base image supervisor directory
@@ -85,9 +113,24 @@ if [ -f /app/reverb-supervisor.conf ] && [ ! -f /opt/docker/etc/supervisor.d/rev
     cp /app/reverb-supervisor.conf /opt/docker/etc/supervisor.d/reverb.conf
 fi
 
-if [ -f /app/vite-supervisor.conf ] && [ ! -f /opt/docker/etc/supervisor.d/vite.conf ]; then
-    echo "Copying vite supervisor config to base image directory..."
-    cp /app/vite-supervisor.conf /opt/docker/etc/supervisor.d/vite.conf
+# Vite supervisor only in development mode
+if [ "${APP_ENV:-production}" = "local" ]; then
+    if [ -f /app/vite-supervisor.conf ] && [ ! -f /opt/docker/etc/supervisor.d/vite.conf ]; then
+        echo "Copying vite supervisor config to base image directory (dev mode)..."
+        cp /app/vite-supervisor.conf /opt/docker/etc/supervisor.d/vite.conf
+    fi
+else
+    # Disable Vite supervisor in production - use built assets instead
+    if [ -f /opt/docker/etc/supervisor.d/vite.conf ]; then
+        echo "Disabling Vite supervisor in production mode..."
+        mv /opt/docker/etc/supervisor.d/vite.conf /opt/docker/etc/supervisor.d/vite.conf.disabled 2>/dev/null || true
+    fi
+    # Ensure public/hot file doesn't exist (would trigger Vite dev server)
+    if [ -f /app/public/hot ]; then
+        echo "Removing public/hot file (production mode uses built assets)..."
+        rm -f /app/public/hot
+    fi
+    echo "✓ Vite dev server disabled - using production build"
 fi
 
 # Execute the main command (nginx/php-fpm from base image)

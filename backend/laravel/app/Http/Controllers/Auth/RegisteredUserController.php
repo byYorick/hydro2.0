@@ -40,6 +40,8 @@ class RegisteredUserController extends Controller
             'name' => $request->name,
             'email' => $request->email,
             'password' => Hash::make($request->password),
+            'email_verified_at' => now(), // Автоматически подтверждаем email
+            'role' => 'viewer', // Роль по умолчанию для новых пользователей
         ]);
 
         event(new Registered($user));

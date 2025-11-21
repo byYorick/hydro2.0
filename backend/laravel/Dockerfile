@@ -42,9 +42,30 @@ RUN if [ -f composer.json ] && [ -f artisan ]; then \
         composer dump-autoload --optimize || true; \
     fi
 
-# Build frontend assets
+# Build frontend assets for production
+# VITE_* variables are passed as build args and used during build
+ARG VITE_REVERB_HOST=localhost
+ARG VITE_WS_HOST=localhost
+ARG VITE_REVERB_PORT=6001
+ARG VITE_WS_PORT=6001
+ARG VITE_REVERB_SCHEME=http
+ARG VITE_WS_TLS=false
+ARG VITE_ENABLE_WS=true
+ARG VITE_REVERB_APP_KEY
+ARG VITE_PUSHER_APP_KEY
+
+ENV VITE_REVERB_HOST=${VITE_REVERB_HOST}
+ENV VITE_WS_HOST=${VITE_WS_HOST}
+ENV VITE_REVERB_PORT=${VITE_REVERB_PORT}
+ENV VITE_WS_PORT=${VITE_WS_PORT}
+ENV VITE_REVERB_SCHEME=${VITE_REVERB_SCHEME}
+ENV VITE_WS_TLS=${VITE_WS_TLS}
+ENV VITE_ENABLE_WS=${VITE_ENABLE_WS}
+ENV VITE_REVERB_APP_KEY=${VITE_REVERB_APP_KEY}
+ENV VITE_PUSHER_APP_KEY=${VITE_PUSHER_APP_KEY}
+
 RUN if [ -f package.json ]; then \
-        npm run build; \
+        NODE_ENV=production npm run build; \
     fi
 
 # Copy supervisor config for Reverb and Vite
@@ -60,8 +81,9 @@ RUN chmod +x /usr/local/bin/start-reverb.sh
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Copy PHP dev configuration (will be used if APP_ENV=local)
+# Copy PHP configurations
 COPY php-dev.ini /usr/local/etc/php/conf.d/99-dev.ini
+COPY php-prod.ini /usr/local/etc/php/conf.d/99-prod.ini
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 
