@@ -30,7 +30,7 @@ declare global {
 interface EchoChannel {
   listen: (eventName: string, handler: (data: unknown) => void) => void
   stopListening: (event: string) => void
-  leave: () => void
+  leave?: () => void
 }
 
 interface Subscription {
@@ -139,7 +139,9 @@ export function useWebSocket(showToast?: ToastHandler) {
       const unsubscribe = () => {
         channel.stopListening('.App\\Events\\CommandStatusUpdated')
         channel.stopListening('.App\\Events\\CommandFailed')
-        channel.leave()
+        if (typeof channel.leave === 'function') {
+          channel.leave()
+        }
         subscriptions.value.delete(channelName)
         // Удаляем из активных подписок
         const index = activeSubscriptions.findIndex(
@@ -218,7 +220,9 @@ export function useWebSocket(showToast?: ToastHandler) {
 
       const unsubscribe = () => {
         channel.stopListening('.App\\Events\\EventCreated')
-        channel.leave()
+        if (typeof channel.leave === 'function') {
+          channel.leave()
+        }
         subscriptions.value.delete(channelName)
         // Удаляем из активных подписок
         const index = activeSubscriptions.findIndex(s => s.type === 'global_events')
@@ -281,7 +285,9 @@ export function useWebSocket(showToast?: ToastHandler) {
  * при reconnect, когда компоненты могут быть еще не смонтированы.
  */
 export function resubscribeAllChannels(): void {
-  logger.debug('[WebSocket] Resubscribing to all channels...', activeSubscriptions.length, 'subscriptions')
+  if (logger.debug && typeof logger.debug === 'function') {
+    logger.debug('[WebSocket] Resubscribing to all channels...', activeSubscriptions.length, 'subscriptions')
+  }
   
   if (!window.Echo) {
     logger.warn('[WebSocket] Echo не доступен для resubscribe')
@@ -321,7 +327,9 @@ export function resubscribeAllChannels(): void {
           })
         })
 
-        logger.debug(`[WebSocket] ✓ Resubscribed to zone commands: ${sub.id}`)
+        if (logger.debug && typeof logger.debug === 'function') {
+          logger.debug(`[WebSocket] ✓ Resubscribed to zone commands: ${sub.id}`)
+        }
       } else if (sub.type === 'global_events') {
         const channelName = 'events.global'
         const channel = window.Echo!.channel(channelName)
@@ -338,13 +346,17 @@ export function resubscribeAllChannels(): void {
           })
         })
 
-        logger.debug('[WebSocket] ✓ Resubscribed to global events')
+        if (logger.debug && typeof logger.debug === 'function') {
+          logger.debug('[WebSocket] ✓ Resubscribed to global events')
+        }
       }
     } catch (err) {
       logger.error(`[WebSocket] ✗ Failed to resubscribe to ${sub.type}${sub.id ? ` (id: ${sub.id})` : ''}:`, err)
     }
   })
   
-  logger.debug(`[WebSocket] Resubscribe completed: ${activeSubscriptions.length} channels restored`)
+  if (logger.debug && typeof logger.debug === 'function') {
+    logger.debug(`[WebSocket] Resubscribe completed: ${activeSubscriptions.length} channels restored`)
+  }
 }
 

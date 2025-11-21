@@ -22,24 +22,44 @@ class NodeController extends Controller
 
     public function index(Request $request)
     {
+        // Валидация query параметров
+        $validated = $request->validate([
+            'zone_id' => ['nullable', 'integer', 'exists:zones,id'],
+            'status' => ['nullable', 'string'],
+            'search' => ['nullable', 'string', 'max:255'],
+            'new_only' => ['nullable', 'boolean'],
+            'unassigned' => ['nullable', 'boolean'],
+        ]);
+        
         // Eager loading для предотвращения N+1 запросов
         $query = DeviceNode::query()
             ->with(['zone:id,name,status', 'channels']); // Загружаем связанные данные
         
-        if ($request->filled('zone_id')) {
-            $query->where('zone_id', $request->integer('zone_id'));
+        if (isset($validated['zone_id'])) {
+            $query->where('zone_id', $validated['zone_id']);
         }
-        if ($request->filled('status')) {
-            $query->where('status', $request->string('status'));
+        if (isset($validated['status'])) {
+            $query->where('status', $validated['status']);
         }
         // Поиск новых нод (без привязки к зоне)
-        if ($request->boolean('new_only')) {
+        if (isset($validated['new_only']) && $validated['new_only']) {
             $query->whereNull('zone_id');
         }
         // Поиск непривязанных нод (новые или без зоны)
-        if ($request->boolean('unassigned')) {
+        if (isset($validated['unassigned']) && $validated['unassigned']) {
             $query->whereNull('zone_id');
         }
+        
+        // Поиск по имени, UID или типу
+        if (isset($validated['search']) && $validated['search']) {
+            $searchTerm = '%' . strtolower($validated['search']) . '%';
+            $query->where(function ($q) use ($searchTerm) {
+                $q->whereRaw('LOWER(name) LIKE ?', [$searchTerm])
+                  ->orWhereRaw('LOWER(uid) LIKE ?', [$searchTerm])
+                  ->orWhereRaw('LOWER(type) LIKE ?', [$searchTerm]);
+            });
+        }
+        
         $items = $query->latest('id')->paginate(25);
         return response()->json(['status' => 'ok', 'data' => $items]);
     }

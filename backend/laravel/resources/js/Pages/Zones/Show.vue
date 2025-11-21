@@ -228,6 +228,7 @@ import { useTelemetry } from '@/composables/useTelemetry'
 import { useZones } from '@/composables/useZones'
 import { useApi } from '@/composables/useApi'
 import { useWebSocket } from '@/composables/useWebSocket'
+import { useErrorHandler } from '@/composables/useErrorHandler'
 import type { Zone, Device, ZoneTelemetry, ZoneTargets as ZoneTargetsType, Cycle, CommandType } from '@/types'
 import type { ZoneEvent } from '@/types/ZoneEvent'
 import type { ToastVariant } from '@/composables/useToast'
@@ -300,6 +301,7 @@ const { fetchHistory } = useTelemetry(showToast)
 const { reloadZone } = useZones(showToast)
 const { api } = useApi(showToast)
 const { subscribeToZoneCommands } = useWebSocket(showToast)
+const { handleError } = useErrorHandler(showToast)
 
 function removeToast(id: number): void {
   const index = toasts.value.findIndex(t => t.id === id)
@@ -462,6 +464,140 @@ onMounted(async () => {
   }
 })
 
+/**
+ * Получить параметры по умолчанию для команды цикла на основе targets/recipe
+ */
+function getDefaultCycleParams(cycleType: string): Record<string, unknown> {
+  const params: Record<string, unknown> = {}
+  
+  switch (cycleType) {
+    case 'IRRIGATION':
+      // Используем длительность полива из targets или рецепта
+      if (targets.value.irrigation_duration_sec) {
+        params.duration_sec = targets.value.irrigation_duration_sec
+      } else if (zone.value.recipeInstance?.recipe?.phases) {
+        // Ищем текущую фазу рецепта
+        const currentPhaseIndex = zone.value.recipeInstance.current_phase_index ?? 0
+        const currentPhase = zone.value.recipeInstance.recipe.phases?.find(
+          (p: { phase_index: number }) => p.phase_index === currentPhaseIndex
+        )
+        if (currentPhase?.targets?.irrigation_duration_sec) {
+          params.duration_sec = currentPhase.targets.irrigation_duration_sec
+        } else {
+          // Значение по умолчанию, если не найдено
+          params.duration_sec = 10
+        }
+      } else {
+        params.duration_sec = 10
+      }
+      break
+      
+    case 'PH_CONTROL':
+      // Используем целевой pH из targets или рецепта
+      if (targets.value.ph?.min && targets.value.ph?.max) {
+        params.target_ph = (targets.value.ph.min + targets.value.ph.max) / 2
+      } else if (targets.value.ph) {
+        params.target_ph = targets.value.ph
+      } else if (zone.value.recipeInstance?.recipe?.phases) {
+        const currentPhaseIndex = zone.value.recipeInstance.current_phase_index ?? 0
+        const currentPhase = zone.value.recipeInstance.recipe.phases?.find(
+          (p: { phase_index: number }) => p.phase_index === currentPhaseIndex
+        )
+        if (currentPhase?.targets?.ph?.min && currentPhase?.targets?.ph?.max) {
+          params.target_ph = (currentPhase.targets.ph.min + currentPhase.targets.ph.max) / 2
+        } else if (currentPhase?.targets?.ph) {
+          params.target_ph = currentPhase.targets.ph
+        } else {
+          params.target_ph = 6.0
+        }
+      } else {
+        params.target_ph = 6.0
+      }
+      break
+      
+    case 'EC_CONTROL':
+      // Используем целевой EC из targets или рецепта
+      if (targets.value.ec?.min && targets.value.ec?.max) {
+        params.target_ec = (targets.value.ec.min + targets.value.ec.max) / 2
+      } else if (targets.value.ec) {
+        params.target_ec = targets.value.ec
+      } else if (zone.value.recipeInstance?.recipe?.phases) {
+        const currentPhaseIndex = zone.value.recipeInstance.current_phase_index ?? 0
+        const currentPhase = zone.value.recipeInstance.recipe.phases?.find(
+          (p: { phase_index: number }) => p.phase_index === currentPhaseIndex
+        )
+        if (currentPhase?.targets?.ec?.min && currentPhase?.targets?.ec?.max) {
+          params.target_ec = (currentPhase.targets.ec.min + currentPhase.targets.ec.max) / 2
+        } else if (currentPhase?.targets?.ec) {
+          params.target_ec = currentPhase.targets.ec
+        } else {
+          params.target_ec = 1.5
+        }
+      } else {
+        params.target_ec = 1.5
+      }
+      break
+      
+    case 'CLIMATE':
+      // Используем целевые параметры климата из targets или рецепта
+      if (targets.value.temp_air) {
+        params.target_temp = targets.value.temp_air
+      } else if (zone.value.recipeInstance?.recipe?.phases) {
+        const currentPhaseIndex = zone.value.recipeInstance.current_phase_index ?? 0
+        const currentPhase = zone.value.recipeInstance.recipe.phases?.find(
+          (p: { phase_index: number }) => p.phase_index === currentPhaseIndex
+        )
+        if (currentPhase?.targets?.temp_air) {
+          params.target_temp = currentPhase.targets.temp_air
+        } else {
+          params.target_temp = 22
+        }
+      } else {
+        params.target_temp = 22
+      }
+      
+      if (targets.value.humidity_air) {
+        params.target_humidity = targets.value.humidity_air
+      } else if (zone.value.recipeInstance?.recipe?.phases) {
+        const currentPhaseIndex = zone.value.recipeInstance.current_phase_index ?? 0
+        const currentPhase = zone.value.recipeInstance.recipe.phases?.find(
+          (p: { phase_index: number }) => p.phase_index === currentPhaseIndex
+        )
+        if (currentPhase?.targets?.humidity_air) {
+          params.target_humidity = currentPhase.targets.humidity_air
+        } else {
+          params.target_humidity = 60
+        }
+      } else {
+        params.target_humidity = 60
+      }
+      break
+      
+    case 'LIGHTING':
+      // Используем параметры освещения из targets или рецепта
+      if (targets.value.light_hours) {
+        params.duration_hours = targets.value.light_hours
+      } else if (zone.value.recipeInstance?.recipe?.phases) {
+        const currentPhaseIndex = zone.value.recipeInstance.current_phase_index ?? 0
+        const currentPhase = zone.value.recipeInstance.recipe.phases?.find(
+          (p: { phase_index: number }) => p.phase_index === currentPhaseIndex
+        )
+        if (currentPhase?.targets?.light_hours) {
+          params.duration_hours = currentPhase.targets.light_hours
+        } else {
+          params.duration_hours = 12
+        }
+      } else {
+        params.duration_hours = 12
+      }
+      
+      params.intensity = 80 // Интенсивность по умолчанию
+      break
+  }
+  
+  return params
+}
+
 async function onRunCycle(cycleType: string): Promise<void> {
   if (!zoneId.value) {
     logger.warn('[onRunCycle] zoneId is missing')
@@ -471,20 +607,27 @@ async function onRunCycle(cycleType: string): Promise<void> {
   
   loading.value.cycles[cycleType] = true
   const cycleName = translateCycleType(cycleType)
+  const commandType = `FORCE_${cycleType}` as CommandType
   
-  logger.log(`[onRunCycle] Отправка команды ${cycleType} для зоны ${zoneId.value}`)
+  // Получаем параметры по умолчанию из targets/recipe
+  const defaultParams = getDefaultCycleParams(cycleType)
+  
+  logger.info(`[onRunCycle] Отправка команды ${commandType} для зоны ${zoneId.value} с параметрами:`, defaultParams)
   
   try {
-    await sendZoneCommand(zoneId.value, `FORCE_${cycleType}` as CommandType, {})
-    logger.log(`✓ [onRunCycle] Команда "${cycleName}" отправлена успешно`)
+    await sendZoneCommand(zoneId.value, commandType, defaultParams)
+    logger.info(`✓ [onRunCycle] Команда "${cycleName}" отправлена успешно`)
     showToast(`Команда "${cycleName}" отправлена успешно`, 'success', 3000)
-    // Обновляем зону и cycles через Inertia partial reload
+    // Обновляем зону и cycles через Inertia partial reload (не window.location.reload!)
     reloadZoneAfterCommand(zoneId.value, ['zone', 'cycles'])
   } catch (err) {
     logger.error(`✗ [onRunCycle] Ошибка при отправке команды ${cycleType}:`, err)
-    let errorMessage = 'Неизвестная ошибка'
-    if (err && typeof err === 'object' && 'message' in err) errorMessage = String(err.message)
-    showToast(`Ошибка при отправке команды "${cycleName}": ${errorMessage}`, 'error', 5000)
+    handleError(err, {
+      component: 'Zones/Show',
+      action: 'onRunCycle',
+      cycleType,
+      zoneId: zoneId.value,
+    })
   } finally {
     loading.value.cycles[cycleType] = false
   }

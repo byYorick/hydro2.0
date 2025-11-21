@@ -64,7 +64,10 @@ interface CommandItem {
   requiresConfirm?: boolean
   zoneId?: number
   zoneName?: string
+  recipeId?: number
+  recipeName?: string
   actionType?: string
+  cycleType?: string
 }
 
 interface ConfirmModalState {
@@ -234,24 +237,75 @@ const filteredResults = computed<CommandItem[]>(() => {
           requiresConfirm: true,
           actionFn: () => executeZoneAction(zone.id, 'pause', zone.name)
         })
+        
+        // Быстрые действия для циклов
         results.push({
           type: 'action',
           id: `zone-${zone.id}-irrigate`,
           label: `Полить зону "${zone.name}"`,
           icon: '💧',
-          category: 'Действие',
+          category: 'Цикл: Полив',
           zoneId: zone.id,
           zoneName: zone.name,
           actionType: 'irrigate',
           requiresConfirm: true,
-          actionFn: () => executeZoneAction(zone.id, 'irrigate', zone.name)
+          actionFn: () => executeZoneCycle(zone.id, 'IRRIGATION', zone.name)
         })
+        results.push({
+          type: 'action',
+          id: `zone-${zone.id}-ph-control`,
+          label: `Коррекция pH в зоне "${zone.name}"`,
+          icon: '🧪',
+          category: 'Цикл: pH',
+          zoneId: zone.id,
+          zoneName: zone.name,
+          actionType: 'ph-control',
+          requiresConfirm: true,
+          actionFn: () => executeZoneCycle(zone.id, 'PH_CONTROL', zone.name)
+        })
+        results.push({
+          type: 'action',
+          id: `zone-${zone.id}-ec-control`,
+          label: `Коррекция EC в зоне "${zone.name}"`,
+          icon: '⚡',
+          category: 'Цикл: EC',
+          zoneId: zone.id,
+          zoneName: zone.name,
+          actionType: 'ec-control',
+          requiresConfirm: true,
+          actionFn: () => executeZoneCycle(zone.id, 'EC_CONTROL', zone.name)
+        })
+        results.push({
+          type: 'action',
+          id: `zone-${zone.id}-climate`,
+          label: `Управление климатом в зоне "${zone.name}"`,
+          icon: '🌡️',
+          category: 'Цикл: Климат',
+          zoneId: zone.id,
+          zoneName: zone.name,
+          actionType: 'climate',
+          requiresConfirm: true,
+          actionFn: () => executeZoneCycle(zone.id, 'CLIMATE', zone.name)
+        })
+        results.push({
+          type: 'action',
+          id: `zone-${zone.id}-lighting`,
+          label: `Управление освещением в зоне "${zone.name}"`,
+          icon: '💡',
+          category: 'Цикл: Освещение',
+          zoneId: zone.id,
+          zoneName: zone.name,
+          actionType: 'lighting',
+          requiresConfirm: true,
+          actionFn: () => executeZoneCycle(zone.id, 'LIGHTING', zone.name)
+        })
+        
         results.push({
           type: 'action',
           id: `zone-${zone.id}-next-phase`,
           label: `Следующая фаза в зоне "${zone.name}"`,
           icon: '⏭️',
-          category: 'Действие',
+          category: 'Рецепт',
           zoneId: zone.id,
           zoneName: zone.name,
           actionType: 'next-phase',
@@ -277,9 +331,10 @@ const filteredResults = computed<CommandItem[]>(() => {
     }
   })
 
-  // Добавляем рецепты
+  // Добавляем рецепты с действиями
   searchResults.value.recipes.forEach(recipe => {
     if (fuzzyMatch(recipe.name, query)) {
+      // Переход к рецепту
       results.push({
         type: 'recipe',
         id: recipe.id,
@@ -287,6 +342,27 @@ const filteredResults = computed<CommandItem[]>(() => {
         icon: '📋',
         category: 'Рецепт',
         action: () => router.visit(`/recipes/${recipe.id}`)
+      })
+      
+      // Действие: применить рецепт к зоне (нужно выбрать зону)
+      // Это будет работать только если в запросе упомянута зона
+      searchResults.value.zones.forEach(zone => {
+        if (fuzzyMatch(zone.name, query) || query.includes(zone.name.toLowerCase())) {
+          results.push({
+            type: 'action',
+            id: `recipe-${recipe.id}-apply-zone-${zone.id}`,
+            label: `Применить рецепт "${recipe.name}" к зоне "${zone.name}"`,
+            icon: '🔄',
+            category: 'Рецепт',
+            zoneId: zone.id,
+            zoneName: zone.name,
+            recipeId: recipe.id,
+            recipeName: recipe.name,
+            actionType: 'apply-recipe',
+            requiresConfirm: true,
+            actionFn: () => applyRecipeToZone(zone.id, recipe.id, zone.name, recipe.name)
+          })
+        }
       })
     }
   })
@@ -299,16 +375,23 @@ const run = (item: CommandItem | undefined): void => {
   
   // Если действие требует подтверждения
   if (item.requiresConfirm && item.actionFn) {
-    const actionNames = {
+    const actionNames: Record<string, string> = {
       'pause': 'приостановить',
       'irrigate': 'полить',
+      'ph-control': 'запустить коррекцию pH',
+      'ec-control': 'запустить коррекцию EC',
+      'climate': 'запустить управление климатом',
+      'lighting': 'запустить управление освещением',
       'next-phase': 'перейти к следующей фазе',
-      'resume': 'возобновить'
+      'resume': 'возобновить',
+      'apply-recipe': `применить рецепт "${item.recipeName}"`
     }
+    const actionName = actionNames[item.actionType || ''] || 'выполнить это действие'
+    const zoneName = item.zoneName ? ` для зоны "${item.zoneName}"` : ''
     confirmModal.value = {
       open: true,
       title: 'Подтверждение действия',
-      message: `Вы уверены, что хотите ${actionNames[item.actionType || ''] || 'выполнить это действие'} для зоны "${item.zoneName}"?`,
+      message: `Вы уверены, что хотите ${actionName}${zoneName}?`,
       action: item.actionFn
     }
     return
@@ -327,18 +410,82 @@ async function executeZoneAction(zoneId: number, action: string, zoneName: strin
   try {
     if (action === 'pause') {
       await api.post(`/api/zones/${zoneId}/pause`, {})
+      logger.info(`[CommandPalette] Зона "${zoneName}" приостановлена`)
     } else if (action === 'resume') {
       await api.post(`/api/zones/${zoneId}/resume`, {})
-    } else if (action === 'irrigate') {
-      await sendZoneCommand(zoneId, 'FORCE_IRRIGATION', { duration_sec: 10 })
+      logger.info(`[CommandPalette] Зона "${zoneName}" возобновлена`)
     } else if (action === 'next-phase') {
-      await api.post(`/api/zones/${zoneId}/change-phase`, {
-        phase_index: null // следующая фаза
-      })
+      await api.post(`/api/zones/${zoneId}/next-phase`, {})
+      logger.info(`[CommandPalette] Переход к следующей фазе в зоне "${zoneName}"`)
     }
     close()
   } catch (err) {
     logger.error(`[CommandPalette] Failed to execute ${action}:`, err)
+    close()
+  }
+}
+
+/**
+ * Выполнить цикл в зоне
+ */
+async function executeZoneCycle(zoneId: number, cycleType: string, zoneName: string): Promise<void> {
+  try {
+    const commandType = `FORCE_${cycleType}` as any
+    const cycleNames: Record<string, string> = {
+      'IRRIGATION': 'Полив',
+      'PH_CONTROL': 'Коррекция pH',
+      'EC_CONTROL': 'Коррекция EC',
+      'CLIMATE': 'Управление климатом',
+      'LIGHTING': 'Управление освещением'
+    }
+    const cycleName = cycleNames[cycleType] || cycleType
+    
+    // Используем параметры по умолчанию из targets/recipe (как в Zone Detail)
+    // Для простоты используем базовые значения, в реальности нужно получать из API
+    const defaultParams: Record<string, unknown> = {}
+    
+    switch (cycleType) {
+      case 'IRRIGATION':
+        defaultParams.duration_sec = 10
+        break
+      case 'PH_CONTROL':
+        defaultParams.target_ph = 6.0
+        break
+      case 'EC_CONTROL':
+        defaultParams.target_ec = 1.5
+        break
+      case 'CLIMATE':
+        defaultParams.target_temp = 22
+        defaultParams.target_humidity = 60
+        break
+      case 'LIGHTING':
+        defaultParams.duration_hours = 12
+        defaultParams.intensity = 80
+        break
+    }
+    
+    await sendZoneCommand(zoneId, commandType, defaultParams)
+    logger.info(`[CommandPalette] Цикл "${cycleName}" запущен в зоне "${zoneName}"`)
+    close()
+  } catch (err) {
+    logger.error(`[CommandPalette] Failed to execute cycle ${cycleType}:`, err)
+    close()
+  }
+}
+
+/**
+ * Применить рецепт к зоне
+ */
+async function applyRecipeToZone(zoneId: number, recipeId: number, zoneName: string, recipeName: string): Promise<void> {
+  try {
+    await api.post(`/api/zones/${zoneId}/attach-recipe`, {
+      recipe_id: recipeId
+    })
+    logger.info(`[CommandPalette] Рецепт "${recipeName}" применен к зоне "${zoneName}"`)
+    close()
+  } catch (err) {
+    logger.error(`[CommandPalette] Failed to apply recipe:`, err)
+    close()
   }
 }
 

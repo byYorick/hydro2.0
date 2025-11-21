@@ -20,6 +20,7 @@ class ZoneController extends Controller
         $validated = $request->validate([
             'greenhouse_id' => ['nullable', 'integer', 'exists:greenhouses,id'],
             'status' => ['nullable', 'string', 'in:online,offline,warning'],
+            'search' => ['nullable', 'string', 'max:255'],
         ]);
         
         // Eager loading для предотвращения N+1 запросов
@@ -33,6 +34,16 @@ class ZoneController extends Controller
         if (isset($validated['status'])) {
             $query->where('status', $validated['status']);
         }
+        
+        // Поиск по имени или описанию
+        if (isset($validated['search']) && $validated['search']) {
+            $searchTerm = '%' . strtolower($validated['search']) . '%';
+            $query->where(function ($q) use ($searchTerm) {
+                $q->whereRaw('LOWER(name) LIKE ?', [$searchTerm])
+                  ->orWhereRaw('LOWER(description) LIKE ?', [$searchTerm]);
+            });
+        }
+        
         $items = $query->latest('id')->paginate(25);
         return response()->json(['status' => 'ok', 'data' => $items]);
     }

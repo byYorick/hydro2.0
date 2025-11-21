@@ -14,9 +14,25 @@ class RecipeController extends Controller
     ) {
     }
 
-    public function index()
+    public function index(Request $request)
     {
-        $items = Recipe::query()->with('phases')->latest('id')->paginate(25);
+        // Валидация query параметров
+        $validated = $request->validate([
+            'search' => ['nullable', 'string', 'max:255'],
+        ]);
+        
+        $query = Recipe::query()->with('phases');
+        
+        // Поиск по имени или описанию
+        if (isset($validated['search']) && $validated['search']) {
+            $searchTerm = '%' . strtolower($validated['search']) . '%';
+            $query->where(function ($q) use ($searchTerm) {
+                $q->whereRaw('LOWER(name) LIKE ?', [$searchTerm])
+                  ->orWhereRaw('LOWER(description) LIKE ?', [$searchTerm]);
+            });
+        }
+        
+        $items = $query->latest('id')->paginate(25);
         return response()->json(['status' => 'ok', 'data' => $items]);
     }
 
