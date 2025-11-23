@@ -26,10 +26,11 @@ Route::prefix('auth')->middleware('throttle:10,1')->group(function () {
     Route::get('/me', [AuthController::class, 'me'])->middleware('auth:sanctum');
 });
 
-// Публичные системные эндпоинты с умеренным rate limiting
+// Публичные системные эндпоинты
+// Health check имеет более высокий лимит для мониторинга (120 запросов в минуту)
+Route::get('system/health', [SystemController::class, 'health'])->middleware('throttle:120,1');
+// configFull требует авторизации для защиты конфигурации системы
 Route::middleware('throttle:30,1')->group(function () {
-    Route::get('system/health', [SystemController::class, 'health']);
-    // configFull требует авторизации для защиты конфигурации системы
     Route::get('system/config/full', [SystemController::class, 'configFull'])->middleware('auth:sanctum');
 });
 

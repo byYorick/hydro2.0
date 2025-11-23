@@ -30,8 +30,11 @@ RUN if [ -f package.json ]; then \
     fi
 
 # Создать директорию для Vite кеша с правильными правами
+# Используем более надежный способ для Ubuntu
 RUN mkdir -p /app/node_modules/.vite && \
-    chown -R application:application /app/node_modules/.vite || true
+    chown -R application:application /app/node_modules/.vite 2>/dev/null || \
+    (id application >/dev/null 2>&1 && chown -R application:application /app/node_modules/.vite) || \
+    chmod -R 777 /app/node_modules/.vite || true
 
 # Copy application files
 COPY . .
@@ -73,7 +76,10 @@ RUN if [ -f package.json ]; then \
 COPY supervisord.conf /etc/supervisor/supervisord.conf
 COPY reverb-supervisor.conf /opt/docker/etc/supervisor.d/reverb.conf
 COPY vite-supervisor.conf /opt/docker/etc/supervisor.d/vite.conf
-RUN mkdir -p /var/log/supervisor /var/run /opt/docker/etc/supervisor.d
+RUN mkdir -p /var/log/supervisor /var/run /opt/docker/etc/supervisor.d && \
+    chmod 755 /var/log/supervisor /var/run /opt/docker/etc/supervisor.d && \
+    chown -R application:application /var/log/supervisor /var/run 2>/dev/null || \
+    chmod -R 777 /var/log/supervisor /var/run || true
 COPY start-reverb.sh /usr/local/bin/start-reverb.sh
 RUN chmod +x /usr/local/bin/start-reverb.sh
 

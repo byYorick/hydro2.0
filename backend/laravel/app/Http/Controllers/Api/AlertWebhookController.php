@@ -21,12 +21,13 @@ class AlertWebhookController extends Controller
     {
         // Валидация webhook данных от Alertmanager
         // Формат: https://prometheus.io/docs/alerting/latest/configuration/#webhook_config
+        // Поле alerts может быть пустым массивом или отсутствовать (для совместимости)
         $data = $request->validate([
             'version' => ['nullable', 'string'],
             'groupKey' => ['nullable', 'string'],
             'status' => ['nullable', 'string', 'in:firing,resolved'],
             'receiver' => ['nullable', 'string'],
-            'alerts' => ['required', 'array'],
+            'alerts' => ['nullable', 'array'], // Разрешаем отсутствие или пустой массив
             'alerts.*.status' => ['required', 'string', 'in:firing,resolved'],
             'alerts.*.labels' => ['required', 'array'],
             'alerts.*.annotations' => ['nullable', 'array'],
@@ -37,7 +38,8 @@ class AlertWebhookController extends Controller
         Log::info('Alertmanager webhook received', ['data' => $data]);
 
         // Alertmanager отправляет массив алертов
-        if (isset($data['alerts']) && is_array($data['alerts'])) {
+        // Обрабатываем только если массив не пустой
+        if (!empty($data['alerts']) && is_array($data['alerts'])) {
             foreach ($data['alerts'] as $alertData) {
                 $this->processAlert($alertData);
             }

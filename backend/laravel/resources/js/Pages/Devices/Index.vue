@@ -112,18 +112,29 @@ const filtered = computed(() => {
   const typeFilter = type.value
   const queryFilter = queryLower.value
   
-  if (!typeFilter && !queryFilter) {
-    return devicesStore.items // Если фильтров нет, возвращаем все устройства
+  // Используем геттер allDevices для получения массива устройств
+  const devices = devicesStore.allDevices
+  
+  if (!Array.isArray(devices)) {
+    return []
   }
   
-  return devicesStore.items.filter(d => {
+  if (!typeFilter && !queryFilter) {
+    return devices // Если фильтров нет, возвращаем все устройства
+  }
+  
+  return devices.filter(d => {
     const okType = typeFilter ? d.type === typeFilter : true
     const okQuery = queryFilter ? (d.uid || d.name || '').toLowerCase().includes(queryFilter) : true
     return okType && okQuery
   })
 })
 
-const rows = computed(() => filtered.value.map(d => [
+const rows = computed(() => {
+  if (!Array.isArray(filtered.value)) {
+    return []
+  }
+  return filtered.value.map(d => [
   d.uid || d.id,
   d.zone?.name || '-',
   d.name || '-',
@@ -131,7 +142,8 @@ const rows = computed(() => filtered.value.map(d => [
   d.status ? translateStatus(d.status) : 'неизвестно',
   d.fw_version || '-',
   d.last_seen_at ? new Date(d.last_seen_at).toLocaleString('ru-RU') : '-'
-]))
+  ])
+})
 
 // Виртуализация через RecycleScroller
 const rowHeight = 44

@@ -74,12 +74,18 @@ if [ "${APP_ENV:-production}" = "local" ]; then
         echo "⚠ Dev PHP configuration not found, opcache may still be enabled"
     fi
     
-    # Исправить права доступа для Vite кеша
+    # Исправить права доступа для Vite кеша (совместимость с Ubuntu)
     mkdir -p /app/node_modules/.vite 2>/dev/null || true
-    chown -R application:application /app/node_modules/.vite 2>/dev/null || true
+    # Пытаемся использовать пользователя application, если он существует
+    if id application >/dev/null 2>&1; then
+        chown -R application:application /app/node_modules/.vite 2>/dev/null || true
+        chown -R application:application /app/node_modules 2>/dev/null || true
+    else
+        # Если пользователя нет, используем более широкие права для Ubuntu
+        chmod -R 777 /app/node_modules/.vite 2>/dev/null || true
+        chmod -R 755 /app/node_modules 2>/dev/null || true
+    fi
     chmod -R 755 /app/node_modules/.vite 2>/dev/null || true
-    # Также исправить права на node_modules для предотвращения проблем с правами доступа
-    chown -R application:application /app/node_modules 2>/dev/null || true
 else
     echo "Production mode detected: optimizing Laravel and PHP..."
     # Ensure production PHP config is active
@@ -108,9 +114,14 @@ fi
 
 # Copy supervisor configs to base image supervisor directory
 # Base image uses /opt/docker/etc/supervisor.d/ for configs
+# Создаем директорию если её нет (для Ubuntu совместимости)
+mkdir -p /opt/docker/etc/supervisor.d /var/log/supervisor /var/run 2>/dev/null || true
+chmod 755 /opt/docker/etc/supervisor.d /var/log/supervisor /var/run 2>/dev/null || true
+
 if [ -f /app/reverb-supervisor.conf ] && [ ! -f /opt/docker/etc/supervisor.d/reverb.conf ]; then
     echo "Copying reverb supervisor config to base image directory..."
     cp /app/reverb-supervisor.conf /opt/docker/etc/supervisor.d/reverb.conf
+    chmod 644 /opt/docker/etc/supervisor.d/reverb.conf 2>/dev/null || true
 fi
 
 # Vite supervisor only in development mode
@@ -118,6 +129,7 @@ if [ "${APP_ENV:-production}" = "local" ]; then
     if [ -f /app/vite-supervisor.conf ] && [ ! -f /opt/docker/etc/supervisor.d/vite.conf ]; then
         echo "Copying vite supervisor config to base image directory (dev mode)..."
         cp /app/vite-supervisor.conf /opt/docker/etc/supervisor.d/vite.conf
+        chmod 644 /opt/docker/etc/supervisor.d/vite.conf 2>/dev/null || true
     fi
 else
     # Disable Vite supervisor in production - use built assets instead
@@ -131,6 +143,14 @@ else
         rm -f /app/public/hot
     fi
     echo "✓ Vite dev server disabled - using production build"
+fi
+
+# Убеждаемся, что директории для supervisor существуют и имеют правильные права (Ubuntu совместимость)
+mkdir -p /var/log/supervisor /var/run 2>/dev/null || true
+chmod 755 /var/log/supervisor /var/run 2>/dev/null || true
+# Исправляем права на сокет supervisor для Ubuntu
+if [ -S /var/run/supervisor.sock ]; then
+    chmod 700 /var/run/supervisor.sock 2>/dev/null || true
 fi
 
 # Execute the main command (nginx/php-fpm from base image)
