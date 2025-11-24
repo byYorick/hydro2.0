@@ -508,8 +508,8 @@ class TestIntegration:
         # Первая попытка падает, вторая успешна
         mock_queue.push = AsyncMock(side_effect=[Exception("Redis error"), True])
         
-        topic = "hydro/gh-1/zn-1/nd-ph-1/telemetry/PH"
-        payload = b'{"metric_type": "PH", "value": 6.5, "timestamp": 1737979200000}'
+        topic = "hydro/gh-1/zn-1/nd-ph-1/ph_sensor/telemetry"
+        payload = b'{"metric_type": "PH", "value": 6.5, "ts": 1737979.2}'
         
         with patch('main.telemetry_queue', mock_queue), \
              patch('asyncio.sleep', side_effect=lambda x: asyncio.sleep(0)):

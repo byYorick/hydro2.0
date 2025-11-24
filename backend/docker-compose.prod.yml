@@ -92,6 +92,16 @@ services:
     build:
       context: ./laravel
       dockerfile: Dockerfile
+      args:
+        VITE_REVERB_HOST: localhost
+        VITE_WS_HOST: localhost
+        VITE_REVERB_PORT: "6001"
+        VITE_WS_PORT: "6001"
+        VITE_REVERB_SCHEME: http
+        VITE_WS_TLS: "false"
+        VITE_ENABLE_WS: "true"
+        VITE_REVERB_APP_KEY: ${REVERB_APP_KEY:-change-me}
+        VITE_PUSHER_APP_KEY: ${REVERB_APP_KEY:-change-me}
     working_dir: /app
     command: >
       sh -c "

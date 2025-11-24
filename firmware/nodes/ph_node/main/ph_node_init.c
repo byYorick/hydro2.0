@@ -12,6 +12,7 @@
 #include "ph_node_app.h"
 #include "ph_node_defaults.h"
 #include "ph_node_init_steps.h"
+#include "ph_node_framework_integration.h"
 #include "config_storage.h"
 #include "wifi_manager.h"
 #include "i2c_bus.h"
@@ -279,9 +280,20 @@ esp_err_t ph_node_init_components(void) {
         return err;
     }
     
-    // Регистрация MQTT callbacks
-    mqtt_manager_register_config_cb(ph_node_config_handler, NULL);
-    mqtt_manager_register_command_cb(ph_node_command_handler, NULL);
+    // Инициализация node_framework (перед регистрацией MQTT callbacks)
+    esp_err_t fw_err = ph_node_framework_init();
+    if (fw_err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to initialize node_framework: %s (using legacy handlers)", 
+                esp_err_to_name(fw_err));
+        // Fallback на старые обработчики
+        mqtt_manager_register_config_cb(ph_node_config_handler, NULL);
+        mqtt_manager_register_command_cb(ph_node_command_handler, NULL);
+    } else {
+        // Используем node_framework обработчики
+        ph_node_framework_register_mqtt_handlers();
+        ESP_LOGI(TAG, "Using node_framework handlers");
+    }
+    
     mqtt_manager_register_connection_cb(ph_node_mqtt_connection_cb, NULL);
     
     // [Step 8/8] Finalize

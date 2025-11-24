@@ -4,12 +4,16 @@ idf_component_register(
         "climate_node_app.c"
         "climate_node_tasks.c"
         "pwm_driver.c"
+        "climate_node_framework_integration.c"
     INCLUDE_DIRS
         "."
     REQUIRES
+        mqtt_manager
         mqtt_client
         wifi_manager
         config_storage
+        config_apply
+        node_framework
         relay_driver
         i2c_bus
         sht3x

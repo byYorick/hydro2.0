@@ -8,14 +8,17 @@
  */
 
 #include "ec_node_app.h"
-#include "mqtt_client.h"
+#include "ec_node_framework_integration.h"
+#include "node_telemetry_engine.h"
+#include "node_watchdog.h"
+#include "mqtt_manager.h"
+#include "mqtt_client.h"  // Для обратной совместимости
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_system.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "cJSON.h"
 #include <string.h>
 #include <stdlib.h>
 
@@ -31,19 +34,30 @@ static const char *TAG = "ec_node_tasks";
 static void task_sensors(void *pvParameters) {
     ESP_LOGI(TAG, "Sensor task started");
     
+    // Добавляем задачу в watchdog
+    esp_err_t wdt_err = node_watchdog_add_task();
+    if (wdt_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add sensor task to watchdog: %s", esp_err_to_name(wdt_err));
+    }
+    
     TickType_t last_wake_time = xTaskGetTickCount();
     const TickType_t interval = pdMS_TO_TICKS(SENSOR_POLL_INTERVAL_MS);
     
     while (1) {
         vTaskDelayUntil(&last_wake_time, interval);
         
-        if (!mqtt_client_is_connected()) {
+        // Сбрасываем watchdog
+        node_watchdog_reset();
+        
+        if (!mqtt_manager_is_connected()) {
             ESP_LOGW(TAG, "MQTT not connected, skipping sensor poll");
             continue;
         }
         
-        // Публикация телеметрии EC
-        ec_node_publish_telemetry();
+        // Публикация телеметрии EC через node_framework
+        // Используем callback из ec_node_framework_integration
+        extern esp_err_t ec_node_publish_telemetry_callback(void *);
+        ec_node_publish_telemetry_callback(NULL);
     }
 }
 
@@ -53,13 +67,22 @@ static void task_sensors(void *pvParameters) {
 static void task_heartbeat(void *pvParameters) {
     ESP_LOGI(TAG, "Heartbeat task started");
     
+    // Добавляем задачу в watchdog
+    esp_err_t wdt_err = node_watchdog_add_task();
+    if (wdt_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add heartbeat task to watchdog: %s", esp_err_to_name(wdt_err));
+    }
+    
     TickType_t last_wake_time = xTaskGetTickCount();
     const TickType_t interval = pdMS_TO_TICKS(HEARTBEAT_INTERVAL_MS);
     
     while (1) {
         vTaskDelayUntil(&last_wake_time, interval);
         
-        if (!mqtt_client_is_connected()) {
+        // Сбрасываем watchdog
+        node_watchdog_reset();
+        
+        if (!mqtt_manager_is_connected()) {
             continue;
         }
         
@@ -79,7 +102,7 @@ static void task_heartbeat(void *pvParameters) {
             
             char *json_str = cJSON_PrintUnformatted(heartbeat);
             if (json_str) {
-                mqtt_client_publish_heartbeat(json_str);
+                mqtt_manager_publish_heartbeat(json_str);
                 free(json_str);
             }
             cJSON_Delete(heartbeat);

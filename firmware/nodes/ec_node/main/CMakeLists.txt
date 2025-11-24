@@ -1,0 +1,31 @@
+idf_component_register(
+    SRCS 
+        "main.c"
+        "ec_node_app.c"
+        "ec_node_tasks.c"
+        "ec_node_framework_integration.c"
+    INCLUDE_DIRS 
+        "."
+    REQUIRES 
+        mqtt_manager
+        mqtt_client
+        wifi_manager
+        config_storage
+        config_apply
+        node_framework
+        trema_ec
+        i2c_bus
+        setup_portal
+        heartbeat_task
+        pump_driver
+        driver
+        esp_wifi
+        nvs_flash
+        esp_netif
+        esp_event
+        freertos
+        mqtt
+        esp_timer
+        json
+)
+

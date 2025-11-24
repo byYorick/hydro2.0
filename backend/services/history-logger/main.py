@@ -38,7 +38,8 @@ async def lifespan(app: FastAPI):
     
     # Подключение к MQTT
     mqtt = await get_mqtt_client()
-    await mqtt.subscribe("hydro/+/+/+/telemetry/+", handle_telemetry)
+    # Исправлено: формат топика согласно документации: hydro/{gh}/{zone}/{node}/{channel}/telemetry
+    await mqtt.subscribe("hydro/+/+/+/+/telemetry", handle_telemetry)
     await mqtt.subscribe("hydro/+/+/+/heartbeat", handle_heartbeat)
     # Подписка на node_hello для регистрации новых узлов
     await mqtt.subscribe("hydro/node_hello", handle_node_hello)
@@ -47,7 +48,7 @@ async def lifespan(app: FastAPI):
     await mqtt.subscribe("hydro/+/+/+/config_response", handle_config_response)
     
     logger.info("History Logger service started")
-    logger.info("Subscribed to MQTT topics: hydro/+/+/+/telemetry/+, hydro/+/+/+/heartbeat, hydro/node_hello, hydro/+/+/+/node_hello, hydro/+/+/+/config_response")
+    logger.info("Subscribed to MQTT topics: hydro/+/+/+/+/telemetry, hydro/+/+/+/heartbeat, hydro/node_hello, hydro/+/+/+/node_hello, hydro/+/+/+/config_response")
     
     yield
     
@@ -159,11 +160,17 @@ background_tasks: List[asyncio.Task] = []
 
 class TelemetryPayloadModel(BaseModel):
     """Model for validating telemetry payload from MQTT."""
+    model_config = {"extra": "forbid"}  # Запрещаем неизвестные поля (например, timestamp)
+    
     metric_type: str = Field(..., min_length=1, max_length=50, description="Type of metric")
     value: float = Field(..., description="Metric value")
-    timestamp: Optional[Union[int, float, str]] = Field(None, description="Timestamp in milliseconds, ISO string, or Unix timestamp")
+    ts: Optional[Union[int, float, str]] = Field(None, description="Timestamp in seconds (Unix timestamp) from firmware")
     channel: Optional[str] = Field(None, max_length=100, description="Channel identifier")
-    metric: Optional[str] = Field(None, max_length=50, description="Alternative metric type field (for backward compatibility)")
+    # Опциональные поля от прошивок
+    node_id: Optional[str] = Field(None, max_length=100, description="Node ID (from firmware)")
+    raw: Optional[Union[int, float]] = Field(None, description="Raw sensor value (from firmware)")
+    stub: Optional[bool] = Field(None, description="Stub flag indicating if value is simulated (from firmware)")
+    stable: Optional[bool] = Field(None, description="Stability flag for sensor readings (from firmware)")
 
 
 class TelemetrySampleModel(BaseModel):
@@ -279,24 +286,25 @@ async def handle_telemetry(topic: str, payload: bytes):
     TELEM_RECEIVED.inc()
 
     # Извлекаем данные из топика и payload
+    # Формат топика: hydro/{gh_uid}/{zone_uid}/{node_uid}/{channel}/telemetry
     zone_uid = _extract_zone_uid(topic)  # expects zn-{id}
     node_uid = _extract_node_uid(topic)
+    channel = _extract_channel_from_topic(topic)  # Извлекаем channel из топика
 
     # Создаём модель для очереди
     ts = None
-    if validated_data.timestamp:
+    if validated_data.ts:
         try:
-            # Если timestamp в миллисекундах
-            ts_value = validated_data.timestamp
-            if isinstance(ts_value, (int, float)):
-                ts = datetime.fromtimestamp(ts_value / 1000.0)
-            elif isinstance(ts_value, str):
-                ts = datetime.fromisoformat(ts_value.replace('Z', '+00:00'))
+            if isinstance(validated_data.ts, (int, float)):
+                # ts в секундах (от прошивок: esp_timer_get_time() / 1000000)
+                ts = datetime.fromtimestamp(validated_data.ts)
+            elif isinstance(validated_data.ts, str):
+                ts = datetime.fromisoformat(validated_data.ts.replace('Z', '+00:00'))
         except Exception:
             pass
 
-    # Используем metric_type или metric (для обратной совместимости)
-    metric_type = validated_data.metric_type or validated_data.metric or ""
+    # Используем metric_type (обязательное поле)
+    metric_type = validated_data.metric_type
     if not metric_type:
         logger.warning(
             "Missing metric_type in telemetry payload",
@@ -310,6 +318,9 @@ async def handle_telemetry(topic: str, payload: bytes):
         TELEMETRY_DROPPED.labels(reason="missing_metric_type").inc()
         return
 
+    # Используем channel из топика, если не указан в payload
+    channel_name = validated_data.channel or channel
+    
     queue_item = TelemetryQueueItem(
         node_uid=node_uid or "",
         zone_uid=zone_uid,
@@ -317,7 +328,7 @@ async def handle_telemetry(topic: str, payload: bytes):
         value=validated_data.value,
         ts=ts,
         raw=data,
-        channel=validated_data.channel
+        channel=channel_name
     )
 
     # Добавляем в Redis queue с retry логикой
@@ -866,7 +877,8 @@ async def handle_config_response(topic: str, payload: bytes):
         
         status = data.get("status", "").upper()
         
-        if status == "OK":
+        # Ожидаем только "ACK" от прошивок
+        if status == "ACK":
             # Успешная установка конфига - переводим ноду в ASSIGNED_TO_ZONE
             logger.info(f"[CONFIG_RESPONSE] Config successfully installed for node {node_uid}")
             CONFIG_RESPONSE_SUCCESS.labels(node_uid=node_uid).inc()
@@ -1031,8 +1043,8 @@ def extract_zone_id_from_uid(zone_uid: Optional[str]) -> Optional[int]:
 
 def _extract_zone_id(topic: str) -> Optional[int]:
     """Извлечь zone_id (int) из топика (для обратной совместимости)."""
-    # Формат: hydro/{gh_uid}/{zone_uid}/{node_uid}/telemetry/{metric_type}
-    # или: hydro/{gh_uid}/zn-{zone_id}/{node_uid}/telemetry/{metric_type}
+    # Формат: hydro/{gh_uid}/{zone_uid}/{node_uid}/{channel}/telemetry
+    # или: hydro/{gh_uid}/zn-{zone_id}/{node_uid}/{channel}/telemetry
     parts = topic.split("/")
     if len(parts) >= 3:
         zone_part = parts[2]
@@ -1042,7 +1054,7 @@ def _extract_zone_id(topic: str) -> Optional[int]:
 
 def _extract_zone_uid(topic: str) -> Optional[str]:
     """Извлечь zone_uid из топика."""
-    # Формат: hydro/{gh_uid}/{zone_uid}/{node_uid}/telemetry/{metric_type}
+    # Формат: hydro/{gh_uid}/{zone_uid}/{node_uid}/{channel}/telemetry
     parts = topic.split("/")
     if len(parts) >= 3:
         return parts[2]
@@ -1051,10 +1063,19 @@ def _extract_zone_uid(topic: str) -> Optional[str]:
 
 def _extract_node_uid(topic: str) -> Optional[str]:
     """Извлечь node_uid из топика."""
-    # Формат: hydro/{gh_uid}/{zone_uid}/{node_uid}/telemetry/{metric_type}
+    # Формат: hydro/{gh_uid}/{zone_uid}/{node_uid}/{channel}/telemetry
     parts = topic.split("/")
     if len(parts) >= 4:
         return parts[3]
+    return None
+
+
+def _extract_channel_from_topic(topic: str) -> Optional[str]:
+    """Извлечь channel из топика телеметрии."""
+    # Формат: hydro/{gh_uid}/{zone_uid}/{node_uid}/{channel}/telemetry
+    parts = topic.split("/")
+    if len(parts) >= 5:
+        return parts[4]
     return None
 
 
@@ -1074,7 +1095,7 @@ async def ingest_telemetry(payload: dict):
     # Преобразуем в TelemetrySampleModel
     samples = []
     for sample_data in samples_data:
-        # Преобразуем timestamp если есть
+        # Преобразуем ts если есть (только формат от прошивок)
         ts = None
         if sample_data.get("ts"):
             ts_value = sample_data.get("ts")
@@ -1085,19 +1106,8 @@ async def ingest_telemetry(payload: dict):
                     pass
             elif isinstance(ts_value, (int, float)):
                 try:
-                    ts = datetime.fromtimestamp(ts_value / 1000.0)
-                except Exception:
-                    pass
-        elif sample_data.get("timestamp"):
-            ts_value = sample_data.get("timestamp")
-            if isinstance(ts_value, str):
-                try:
-                    ts = datetime.fromisoformat(ts_value.replace('Z', '+00:00'))
-                except Exception:
-                    pass
-            elif isinstance(ts_value, (int, float)):
-                try:
-                    ts = datetime.fromtimestamp(ts_value / 1000.0)
+                    # ts в секундах (от прошивок: esp_timer_get_time() / 1000000)
+                    ts = datetime.fromtimestamp(ts_value)
                 except Exception:
                     pass
         

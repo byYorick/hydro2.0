@@ -11,6 +11,7 @@
 #include "config_storage.h"
 #include "config_apply.h"
 #include "ec_node_app.h"
+#include "ec_node_framework_integration.h"
 #include "trema_ec.h"
 #include "i2c_bus.h"
 #include "pump_driver.h"
@@ -30,6 +31,10 @@
 #include <stdbool.h>
 
 static const char *TAG = "ec_node";
+
+// Forward declarations
+static void on_command_received(const char *topic, const char *channel, const char *data, int data_len, void *user_ctx);
+static void on_mqtt_connection_changed(bool connected, void *user_ctx);
 
 // Глобальное состояние EC-сенсора (потокобезопасно)
 static bool ec_sensor_initialized = false;
@@ -92,7 +97,7 @@ static const char *ec_node_pump_state_to_string(pump_driver_state_t state) {
 }
 
 static void ec_node_publish_pump_status(const char *channel, const char *event) {
-    if (channel == NULL || !mqtt_client_is_connected()) {
+    if (channel == NULL || !mqtt_manager_is_connected()) {
         return;
     }
 
@@ -123,7 +128,7 @@ static void ec_node_publish_pump_status(const char *channel, const char *event) 
 
     char *json_str = cJSON_PrintUnformatted(status);
     if (json_str) {
-        mqtt_client_publish_telemetry(channel, json_str);
+        mqtt_manager_publish_telemetry(channel, json_str);
         free(json_str);
     }
 
@@ -144,7 +149,7 @@ static void on_config_received(const char *topic, const char *data, int data_len
             cJSON_AddNumberToObject(error_response, "ts", (double)(esp_timer_get_time() / 1000000));
             char *json_str = cJSON_PrintUnformatted(error_response);
             if (json_str) {
-                mqtt_client_publish_config_response(json_str);
+                mqtt_manager_publish_config_response(json_str);
                 free(json_str);
             }
             cJSON_Delete(error_response);
@@ -181,7 +186,7 @@ static void on_config_received(const char *topic, const char *data, int data_len
             cJSON_AddNumberToObject(error_response, "ts", (double)(esp_timer_get_time() / 1000000));
             char *json_str = cJSON_PrintUnformatted(error_response);
             if (json_str) {
-                mqtt_client_publish_config_response(json_str);
+                mqtt_manager_publish_config_response(json_str);
                 free(json_str);
             }
             cJSON_Delete(error_response);
@@ -217,7 +222,7 @@ static void on_config_received(const char *topic, const char *data, int data_len
             cJSON_AddNumberToObject(error_response, "ts", (double)(esp_timer_get_time() / 1000000));
             char *error_json = cJSON_PrintUnformatted(error_response);
             if (error_json) {
-                mqtt_client_publish_config_response(error_json);
+                mqtt_manager_publish_config_response(error_json);
                 free(error_json);
             }
             cJSON_Delete(error_response);
@@ -334,7 +339,7 @@ static void on_command_received(const char *topic, const char *channel, const ch
 
                     char *json_str = cJSON_PrintUnformatted(response);
                     if (json_str) {
-                        mqtt_client_publish_command_response(channel, json_str);
+                        mqtt_manager_publish_command_response(channel, json_str);
                         free(json_str);
                     }
                     cJSON_Delete(response);
@@ -359,7 +364,7 @@ static void on_command_received(const char *topic, const char *channel, const ch
 
                 char *json_str = cJSON_PrintUnformatted(response);
                 if (json_str) {
-                    mqtt_client_publish_command_response(channel, json_str);
+                    mqtt_manager_publish_command_response(channel, json_str);
                     free(json_str);
                 }
                 cJSON_Delete(response);
@@ -382,7 +387,7 @@ static void on_command_received(const char *topic, const char *channel, const ch
                 
                 char *json_str = cJSON_PrintUnformatted(response);
                 if (json_str) {
-                    mqtt_client_publish_command_response(channel, json_str);
+                    mqtt_manager_publish_command_response(channel, json_str);
                     free(json_str);
                 }
                 cJSON_Delete(response);
@@ -406,7 +411,7 @@ static void on_command_received(const char *topic, const char *channel, const ch
                 
                 char *json_str = cJSON_PrintUnformatted(response);
                 if (json_str) {
-                    mqtt_client_publish_command_response(channel, json_str);
+                    mqtt_manager_publish_command_response(channel, json_str);
                     free(json_str);
                 }
                 cJSON_Delete(response);
@@ -427,7 +432,7 @@ static void on_command_received(const char *topic, const char *channel, const ch
                 
                 char *json_str = cJSON_PrintUnformatted(response);
                 if (json_str) {
-                    mqtt_client_publish_command_response(channel, json_str);
+                    mqtt_manager_publish_command_response(channel, json_str);
                     free(json_str);
                 }
                 cJSON_Delete(response);
@@ -472,7 +477,7 @@ static void on_command_received(const char *topic, const char *channel, const ch
 
             char *json_str = cJSON_PrintUnformatted(response);
             if (json_str) {
-                mqtt_client_publish_command_response(channel, json_str);
+                mqtt_manager_publish_command_response(channel, json_str);
                 free(json_str);
             }
             cJSON_Delete(response);
@@ -489,7 +494,7 @@ static void on_command_received(const char *topic, const char *channel, const ch
             
             char *json_str = cJSON_PrintUnformatted(response);
             if (json_str) {
-                mqtt_client_publish_command_response(channel, json_str);
+                mqtt_manager_publish_command_response(channel, json_str);
                 free(json_str);
             }
             cJSON_Delete(response);
@@ -619,7 +624,7 @@ void ec_node_app_init(void) {
     
     // Инициализация MQTT клиента
     config_storage_mqtt_t mqtt_cfg;
-    mqtt_client_config_t mqtt_config;
+    mqtt_manager_config_t mqtt_config;
     mqtt_node_info_t node_info;
     static char mqtt_host[CONFIG_STORAGE_MAX_STRING_LEN];
     static char mqtt_username[CONFIG_STORAGE_MAX_STRING_LEN];
@@ -688,19 +693,27 @@ void ec_node_app_init(void) {
         ESP_LOGW(TAG, "Zone UID not found in config, using default: %s", default_zone_uid);
     }
     
-    err = mqtt_client_init(&mqtt_config, &node_info);
+    err = mqtt_manager_init(&mqtt_config, &node_info);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize MQTT client: %s", esp_err_to_name(err));
         return;
     }
     
     // Регистрация callbacks
-    mqtt_client_register_config_cb(on_config_received, NULL);
-    mqtt_client_register_command_cb(on_command_received, NULL);
-    mqtt_client_register_connection_cb(on_mqtt_connection_changed, NULL);
+    // Инициализация node_framework и регистрация MQTT обработчиков
+    esp_err_t fw_err = ec_node_framework_init_integration();
+    if (fw_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize node_framework: %s", esp_err_to_name(fw_err));
+        // Fallback на старые обработчики
+        mqtt_manager_register_config_cb(on_config_received, NULL);
+        mqtt_manager_register_command_cb(on_command_received, NULL);
+    } else {
+        ec_node_framework_register_mqtt_handlers();
+    }
+    mqtt_manager_register_connection_cb(on_mqtt_connection_changed, NULL);
     
     // Запуск MQTT клиента
-    err = mqtt_client_start();
+    err = mqtt_manager_start();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to start MQTT client: %s", esp_err_to_name(err));
         return;
@@ -726,7 +739,7 @@ void ec_node_app_init(void) {
  * @brief Публикация телеметрии EC с реальными значениями от Trema EC-сенсора
  */
 void ec_node_publish_telemetry(void) {
-    if (!mqtt_client_is_connected()) {
+    if (!mqtt_manager_is_connected()) {
         ESP_LOGW(TAG, "MQTT not connected, skipping telemetry");
         return;
     }
@@ -835,7 +848,7 @@ void ec_node_publish_telemetry(void) {
 
         char *json_str = cJSON_PrintUnformatted(telemetry);
         if (json_str) {
-            mqtt_client_publish_telemetry("ec_sensor", json_str);
+            mqtt_manager_publish_telemetry("ec_sensor", json_str);
             free(json_str);
         }
         cJSON_Delete(telemetry);

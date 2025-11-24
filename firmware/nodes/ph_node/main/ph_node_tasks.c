@@ -19,11 +19,12 @@
 #include "i2c_bus.h"
 #include "ina209.h"
 #include "pump_driver.h"
+#include "node_telemetry_engine.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
-#include "esp_task_wdt.h"
+#include "node_watchdog.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "cJSON.h"
@@ -50,7 +51,7 @@ static void task_sensors(void *pvParameters) {
     ESP_LOGI(TAG, "Sensor task started");
     
     // Добавляем задачу в watchdog
-    esp_err_t wdt_err = esp_task_wdt_add(NULL);
+    esp_err_t wdt_err = node_watchdog_add_task();
     if (wdt_err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to add sensor task to watchdog: %s", esp_err_to_name(wdt_err));
     }
@@ -71,7 +72,7 @@ static void task_sensors(void *pvParameters) {
         // TickType_t - беззнаковый тип, переполнение работает по модулю, поэтому
         // разница всегда корректна и не может быть отрицательной
         if (elapsed_since_wdt >= wdt_reset_interval) {
-            esp_task_wdt_reset();
+            node_watchdog_reset();
             last_wdt_reset = current_time;
         }
         
@@ -79,7 +80,7 @@ static void task_sensors(void *pvParameters) {
         TickType_t elapsed_since_wake = current_time - last_wake_time;
         if (elapsed_since_wake >= interval) {
             // Сбрасываем watchdog перед выполнением работы
-            esp_task_wdt_reset();
+            node_watchdog_reset();
             
             // Publish pH telemetry только если MQTT подключен
             if (mqtt_manager_is_connected()) {
@@ -127,7 +128,7 @@ static void task_sensors(void *pvParameters) {
             }
             
             // Сбрасываем watchdog после выполнения работы
-            esp_task_wdt_reset();
+            node_watchdog_reset();
             last_wake_time = current_time;
         }
         
@@ -146,7 +147,7 @@ static void task_pump_current(void *pvParameters) {
     ESP_LOGI(TAG, "Pump current task started");
     
     // Добавляем задачу в watchdog
-    esp_err_t wdt_err = esp_task_wdt_add(NULL);
+    esp_err_t wdt_err = node_watchdog_add_task();
     if (wdt_err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to add pump current task to watchdog: %s", esp_err_to_name(wdt_err));
     }
@@ -167,7 +168,7 @@ static void task_pump_current(void *pvParameters) {
         // TickType_t - беззнаковый тип, переполнение работает по модулю, поэтому
         // разница всегда корректна и не может быть отрицательной
         if (elapsed_since_wdt >= wdt_reset_interval) {
-            esp_task_wdt_reset();
+            node_watchdog_reset();
             last_wdt_reset = current_time;
         }
         
@@ -175,7 +176,7 @@ static void task_pump_current(void *pvParameters) {
         TickType_t elapsed_since_wake = current_time - last_wake_time;
         if (elapsed_since_wake >= interval) {
             // Сбрасываем watchdog перед выполнением работы
-            esp_task_wdt_reset();
+            node_watchdog_reset();
             
             if (mqtt_manager_is_connected()) {
                 // Публикация telemetry тока насосов
@@ -183,7 +184,7 @@ static void task_pump_current(void *pvParameters) {
             }
             
             // Сбрасываем watchdog после выполнения работы
-            esp_task_wdt_reset();
+            node_watchdog_reset();
             last_wake_time = current_time;
         }
         
@@ -204,7 +205,7 @@ static void task_status(void *pvParameters) {
     ESP_LOGI(TAG, "Status task started");
     
     // Добавляем задачу в watchdog
-    esp_err_t wdt_err = esp_task_wdt_add(NULL);
+    esp_err_t wdt_err = node_watchdog_add_task();
     if (wdt_err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to add status task to watchdog: %s", esp_err_to_name(wdt_err));
     }
@@ -225,7 +226,7 @@ static void task_status(void *pvParameters) {
         // TickType_t - беззнаковый тип, переполнение работает по модулю, поэтому
         // разница всегда корректна и не может быть отрицательной
         if (elapsed_since_wdt >= wdt_reset_interval) {
-            esp_task_wdt_reset();
+            node_watchdog_reset();
             last_wdt_reset = current_time;
         }
         
@@ -233,7 +234,7 @@ static void task_status(void *pvParameters) {
         TickType_t elapsed_since_wake = current_time - last_wake_time;
         if (elapsed_since_wake >= interval) {
             // Сбрасываем watchdog перед выполнением работы
-            esp_task_wdt_reset();
+            node_watchdog_reset();
             
             if (mqtt_manager_is_connected()) {
                 // Публикация STATUS
@@ -241,7 +242,7 @@ static void task_status(void *pvParameters) {
             }
             
             // Сбрасываем watchdog после выполнения работы
-            esp_task_wdt_reset();
+            node_watchdog_reset();
             last_wake_time = current_time;
         }
         
@@ -271,6 +272,8 @@ void ph_node_start_tasks(void) {
 
 /**
  * @brief Publish pH telemetry with real values from Trema pH sensor
+ * 
+ * Использует node_telemetry_engine для унифицированной публикации телеметрии
  */
 void ph_node_publish_telemetry(void) {
     if (!mqtt_manager_is_connected()) {
@@ -289,6 +292,8 @@ void ph_node_publish_telemetry(void) {
     float ph_value = NAN;
     bool read_success = false;
     bool using_stub = false;
+    bool is_stable = true;
+    int32_t raw_value = 0;
     
     if (trema_ph_is_initialized()) {
         read_success = trema_ph_read(&ph_value);
@@ -298,6 +303,9 @@ void ph_node_publish_telemetry(void) {
             ESP_LOGW(TAG, "Failed to read pH value, using stub");
             ph_value = 6.5f;  // Neutral value
             using_stub = true;
+        } else {
+            raw_value = (int32_t)(ph_value * 1000);  // Raw value in thousandths
+            is_stable = trema_ph_get_stability();
         }
     } else {
         ESP_LOGW(TAG, "pH sensor not initialized, using stub value");
@@ -305,36 +313,19 @@ void ph_node_publish_telemetry(void) {
         using_stub = true;
     }
     
-    // Get node_id from config (через геттер, который использует config_storage)
-    const char *node_id = ph_node_get_node_id();
-    if (node_id == NULL) {
-        ESP_LOGE(TAG, "Failed to get node_id, skipping telemetry");
-        return;
-    }
+    // Публикация через node_telemetry_engine (унифицированный API)
+    esp_err_t err = node_telemetry_publish_sensor(
+        "ph_sensor",
+        METRIC_TYPE_PH,
+        ph_value,
+        "pH",
+        raw_value,
+        using_stub,
+        is_stable
+    );
     
-    // Format according to MQTT_SPEC_FULL.md section 3.2
-    cJSON *telemetry = cJSON_CreateObject();
-    if (telemetry) {
-        cJSON_AddStringToObject(telemetry, "node_id", node_id);
-        cJSON_AddStringToObject(telemetry, "channel", "ph_sensor");
-        cJSON_AddStringToObject(telemetry, "metric_type", "PH");
-        cJSON_AddNumberToObject(telemetry, "value", ph_value);
-        cJSON_AddNumberToObject(telemetry, "raw", (int)(ph_value * 1000));  // Raw value in thousandths
-        cJSON_AddBoolToObject(telemetry, "stub", using_stub);  // Stub flag
-        cJSON_AddNumberToObject(telemetry, "ts", (double)(esp_timer_get_time() / 1000000));
-        
-        // Add stability information if available
-        if (trema_ph_is_initialized() && !using_stub) {
-            bool is_stable = trema_ph_get_stability();
-            cJSON_AddBoolToObject(telemetry, "stable", is_stable);
-        }
-        
-        char *json_str = cJSON_PrintUnformatted(telemetry);
-        if (json_str) {
-            mqtt_manager_publish_telemetry("ph_sensor", json_str);
-            free(json_str);
-        }
-        cJSON_Delete(telemetry);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to publish telemetry via node_telemetry_engine: %s", esp_err_to_name(err));
     }
 }
 

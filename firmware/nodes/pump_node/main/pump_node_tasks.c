@@ -15,6 +15,9 @@
 #include "ina209.h"
 #include "config_storage.h"
 #include "pump_driver.h"
+#include "pump_node_framework_integration.h"
+#include "node_telemetry_engine.h"
+#include "node_watchdog.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_system.h"
@@ -84,11 +87,20 @@ static void set_current_poll_interval(uint32_t interval_ms) {
 static void task_heartbeat(void *pvParameters) {
     ESP_LOGI(TAG, "Heartbeat task started");
     
+    // Добавляем задачу в watchdog
+    esp_err_t wdt_err = node_watchdog_add_task();
+    if (wdt_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add heartbeat task to watchdog: %s", esp_err_to_name(wdt_err));
+    }
+    
     TickType_t last_wake_time = xTaskGetTickCount();
     const TickType_t interval = pdMS_TO_TICKS(HEARTBEAT_INTERVAL_MS);
     
     while (1) {
         vTaskDelayUntil(&last_wake_time, interval);
+        
+        // Сбрасываем watchdog
+        node_watchdog_reset();
         
         if (!mqtt_manager_is_connected()) {
             continue;
@@ -127,6 +139,12 @@ static void task_heartbeat(void *pvParameters) {
 static void task_current_poll(void *pvParameters) {
     ESP_LOGI(TAG, "Current poll task started");
     
+    // Добавляем задачу в watchdog
+    esp_err_t wdt_err = node_watchdog_add_task();
+    if (wdt_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add current poll task to watchdog: %s", esp_err_to_name(wdt_err));
+    }
+    
     TickType_t last_wake_time = xTaskGetTickCount();
     
     while (1) {
@@ -135,6 +153,9 @@ static void task_current_poll(void *pvParameters) {
         const TickType_t interval = pdMS_TO_TICKS(poll_interval);
         
         vTaskDelayUntil(&last_wake_time, interval);
+        
+        // Сбрасываем watchdog
+        node_watchdog_reset();
         
         if (!mqtt_manager_is_connected()) {
             ESP_LOGW(TAG, "MQTT not connected, skipping current poll");
@@ -146,35 +167,8 @@ static void task_current_poll(void *pvParameters) {
         esp_err_t err = ina209_read(&reading);
         
         if (err == ESP_OK && reading.valid) {
-            // Получение node_id из config_storage
-            static char node_id[64] = {0};
-            if (node_id[0] == '\0') {
-                if (config_storage_get_node_id(node_id, sizeof(node_id)) != ESP_OK) {
-                    strncpy(node_id, "pump-001", sizeof(node_id) - 1);
-                }
-            }
-            
-            // Публикация телеметрии согласно MQTT_SPEC_FULL.md
-            cJSON *telemetry = cJSON_CreateObject();
-            if (telemetry) {
-                cJSON_AddStringToObject(telemetry, "node_id", node_id);
-                cJSON_AddStringToObject(telemetry, "channel", "pump_bus_current");
-                cJSON_AddStringToObject(telemetry, "metric_type", "CURRENT");
-                cJSON_AddNumberToObject(telemetry, "value", reading.bus_current_ma);
-                cJSON_AddNumberToObject(telemetry, "raw", (double)reading.bus_current_ma);
-                cJSON_AddNumberToObject(telemetry, "ts", (double)(esp_timer_get_time() / 1000000));
-                
-                // Дополнительные поля для диагностики
-                cJSON_AddNumberToObject(telemetry, "voltage", reading.bus_voltage_v);
-                cJSON_AddNumberToObject(telemetry, "power", reading.power_mw);
-                
-                char *json_str = cJSON_PrintUnformatted(telemetry);
-                if (json_str) {
-                    mqtt_manager_publish_telemetry("pump_bus_current", json_str);
-                    free(json_str);
-                }
-                cJSON_Delete(telemetry);
-            }
+            // Публикация телеметрии через node_framework
+            pump_node_publish_telemetry_callback(NULL);
         } else {
             ESP_LOGW(TAG, "Failed to read INA209: %s", esp_err_to_name(err));
         }
@@ -187,12 +181,21 @@ static void task_current_poll(void *pvParameters) {
 static void task_pump_health(void *pvParameters) {
     ESP_LOGI(TAG, "Pump health task started");
 
+    // Добавляем задачу в watchdog
+    esp_err_t wdt_err = node_watchdog_add_task();
+    if (wdt_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add pump health task to watchdog: %s", esp_err_to_name(wdt_err));
+    }
+
     TickType_t last_wake_time = xTaskGetTickCount();
     const TickType_t interval = pdMS_TO_TICKS(PUMP_HEALTH_INTERVAL_MS);
     pump_driver_health_snapshot_t snapshot;
 
     while (1) {
         vTaskDelayUntil(&last_wake_time, interval);
+
+        // Сбрасываем watchdog
+        node_watchdog_reset();
 
         if (!mqtt_manager_is_connected()) {
             continue;

@@ -19,7 +19,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_err.h"
-#include "esp_task_wdt.h"
+#include "node_watchdog.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -362,7 +362,7 @@ static void task_command_processor(void *pvParameters) {
     ESP_LOGI(TAG, "Command processor task started");
     
     // Добавляем задачу в watchdog
-    esp_err_t wdt_err = esp_task_wdt_add(NULL);
+    esp_err_t wdt_err = node_watchdog_add_task();
     if (wdt_err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to add command processor task to watchdog: %s", esp_err_to_name(wdt_err));
     }
@@ -381,7 +381,7 @@ static void task_command_processor(void *pvParameters) {
         // TickType_t - беззнаковый тип, переполнение работает по модулю, поэтому
         // разница всегда корректна и не может быть отрицательной
         if (elapsed_since_wdt >= wdt_reset_interval) {
-            esp_task_wdt_reset();
+            node_watchdog_reset();
             last_wdt_reset = current_time;
         }
         
@@ -389,13 +389,13 @@ static void task_command_processor(void *pvParameters) {
         // Используем таймаут 2 секунды, чтобы регулярно проверять watchdog
         if (xQueueReceive(s_command_queue, &item, pdMS_TO_TICKS(2000)) == pdTRUE) {
             // Сбрасываем watchdog перед обработкой команды
-            esp_task_wdt_reset();
+            node_watchdog_reset();
             
             // Обрабатываем команду
             ph_node_command_handler_internal(item.topic, item.channel, item.data, item.data_len, item.user_ctx);
             
             // Сбрасываем watchdog после обработки команды
-            esp_task_wdt_reset();
+            node_watchdog_reset();
             
             // Освобождаем память
             if (item.topic) free(item.topic);
