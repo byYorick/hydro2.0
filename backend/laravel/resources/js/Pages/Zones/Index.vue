@@ -54,24 +54,66 @@
       </div>
     </div>
 
-    <div class="rounded-xl border border-neutral-800 max-h-[720px] overflow-hidden p-3">
-      <DynamicScroller
-        :items="filteredZones"
-        :min-item-size="approxRowHeight"
-        key-field="id"
-        class="h-full"
-        v-slot="{ item: z, index, active }"
-      >
-        <DynamicScrollerItem
-          :item="z"
-          :active="active"
-          :data-index="index"
-          :size-dependencies="[z.name, z.status]"
+    <div class="rounded-xl border border-neutral-800 overflow-hidden max-h-[720px] flex flex-col">
+      <!-- Заголовок таблицы -->
+      <div class="flex-shrink-0 grid grid-cols-7 gap-0 bg-neutral-900 text-neutral-300 text-sm border-b border-neutral-800">
+        <div v-for="(h, i) in headers" :key="i" class="px-3 py-2 text-left font-medium">
+          {{ h }}
+        </div>
+      </div>
+      <!-- Виртуализированный список -->
+      <div class="flex-1 overflow-hidden">
+        <RecycleScroller
+          :items="rows"
+          :item-size="rowHeight"
+          key-field="0"
+          v-slot="{ item: r, index }"
+          class="virtual-table-body h-full"
         >
-          <ZoneCard :zone="z" :telemetry="z.telemetry" />
-        </DynamicScrollerItem>
-      </DynamicScroller>
-      <div v-if="!filteredZones.length" class="text-sm text-neutral-400 px-1 py-6">Нет зон по текущим фильтрам</div>
+          <div 
+            :class="index % 2 === 0 ? 'bg-neutral-950' : 'bg-neutral-925'" 
+            class="grid grid-cols-7 gap-0 text-sm border-b border-neutral-900"
+            style="height:44px"
+          >
+            <div class="px-3 py-2 flex items-center gap-2">
+              <button
+                @click.stop="toggleZoneFavorite(getZoneIdFromRow(r))"
+                class="p-0.5 rounded hover:bg-neutral-800 transition-colors shrink-0"
+                :title="isZoneFavorite(getZoneIdFromRow(r)) ? 'Удалить из избранного' : 'Добавить в избранное'"
+              >
+                <svg
+                  class="w-3.5 h-3.5 transition-colors"
+                  :class="isZoneFavorite(getZoneIdFromRow(r)) ? 'text-amber-400 fill-amber-400' : 'text-neutral-600'"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"
+                  />
+                </svg>
+              </button>
+              <Link :href="`/zones/${r[0]}`" class="text-sky-400 hover:underline">{{ r[1] }}</Link>
+            </div>
+            <div class="px-3 py-2 flex items-center">
+              <Badge :variant="getStatusVariant(r[2])">{{ r[2] }}</Badge>
+            </div>
+            <div class="px-3 py-2 flex items-center text-xs text-neutral-400">{{ r[3] || '-' }}</div>
+            <div class="px-3 py-2 flex items-center text-xs text-neutral-400">{{ r[4] || '-' }}</div>
+            <div class="px-3 py-2 flex items-center text-xs text-neutral-400">{{ r[5] || '-' }}</div>
+            <div class="px-3 py-2 flex items-center text-xs text-neutral-400">{{ r[6] || '-' }}</div>
+            <div class="px-3 py-2 flex items-center">
+              <Link :href="`/zones/${r[0]}`">
+                <Button size="sm" variant="secondary">Подробнее</Button>
+              </Link>
+            </div>
+          </div>
+        </RecycleScroller>
+        <div v-if="!rows.length" class="text-sm text-neutral-400 px-3 py-6">Нет зон по текущим фильтрам</div>
+      </div>
     </div>
 
     <!-- Модальное окно сравнения зон -->
@@ -84,13 +126,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, shallowRef, onMounted, onUnmounted, watch } from 'vue'
-import { router } from '@inertiajs/vue3'
+import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
+import { router, Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
-import ZoneCard from '@/Pages/Zones/ZoneCard.vue'
 import ZoneComparisonModal from '@/Components/ZoneComparisonModal.vue'
 import Button from '@/Components/Button.vue'
-import { usePage } from '@inertiajs/vue3'
+import Badge from '@/Components/Badge.vue'
 import { useZonesStore } from '@/stores/zones'
 import { useStoreEvents } from '@/composables/useStoreEvents'
 import { useBatchUpdates } from '@/composables/useOptimizedUpdates'
@@ -98,6 +139,7 @@ import { useFavorites } from '@/composables/useFavorites'
 import { translateStatus } from '@/utils/i18n'
 import type { Zone } from '@/types'
 
+const headers = ['Название', 'Статус', 'Теплица', 'pH', 'EC', 'Температура', 'Действия']
 const page = usePage<{ zones?: Zone[] }>()
 const zonesStore = useZonesStore()
 const { subscribeWithCleanup } = useStoreEvents()
@@ -166,7 +208,7 @@ const query = ref<string>('')
 const showComparisonModal = ref<boolean>(false)
 const showOnlyFavorites = ref<boolean>(false)
 
-const { isZoneFavorite } = useFavorites()
+const { isZoneFavorite, toggleZoneFavorite } = useFavorites()
 
 // Оптимизируем фильтрацию: мемоизируем нижний регистр запроса
 const queryLower = computed(() => query.value.toLowerCase())
@@ -174,7 +216,7 @@ const filteredZones = computed(() => {
   const statusFilter = status.value
   const queryFilter = queryLower.value
   
-  if (!statusFilter && !queryFilter) {
+  if (!statusFilter && !queryFilter && !showOnlyFavorites.value) {
     return zones.value // Если фильтров нет, возвращаем все зоны без фильтрации
   }
   
@@ -186,7 +228,44 @@ const filteredZones = computed(() => {
   })
 })
 
-// Виртуализация через DynamicScroller (для элементов переменной высоты)
-const approxRowHeight = 160 // px
+// Преобразуем зоны в строки таблицы
+const rows = computed(() => {
+  return filteredZones.value.map(z => [
+    z.id,
+    z.name || '-',
+    translateStatus(z.status),
+    z.greenhouse?.name || '-',
+    z.telemetry?.ph !== null && z.telemetry?.ph !== undefined ? z.telemetry.ph.toFixed(2) : '-',
+    z.telemetry?.ec !== null && z.telemetry?.ec !== undefined ? z.telemetry.ec.toFixed(1) : '-',
+    z.telemetry?.temperature !== null && z.telemetry?.temperature !== undefined ? `${z.telemetry.temperature.toFixed(1)}°C` : '-',
+    z.id // Добавляем ID в конец для удобства доступа
+  ])
+})
+
+// Функция для получения ID зоны из строки таблицы
+function getZoneIdFromRow(row: (string | number)[]): number {
+  // Последний элемент строки - это ID
+  const id = row[row.length - 1]
+  return typeof id === 'number' ? id : 0
+}
+
+// Функция для получения варианта Badge по статусу
+function getStatusVariant(status: string): string {
+  switch (status) {
+    case 'Запущено':
+      return 'success'
+    case 'Приостановлено':
+      return 'neutral'
+    case 'Предупреждение':
+      return 'warning'
+    case 'Тревога':
+      return 'danger'
+    default:
+      return 'neutral'
+  }
+}
+
+// Виртуализация через RecycleScroller
+const rowHeight = 44
 </script>
 

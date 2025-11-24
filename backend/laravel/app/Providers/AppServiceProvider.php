@@ -9,6 +9,10 @@ use App\Events\ZoneUpdated;
 use App\Listeners\PublishZoneConfigUpdate;
 use App\Events\NodeConfigUpdated;
 use App\Listeners\PublishNodeConfigOnUpdate;
+use App\Models\Command;
+use App\Observers\CommandObserver;
+use App\Models\ZoneEvent;
+use App\Observers\ZoneEventObserver;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -41,5 +45,11 @@ class AppServiceProvider extends ServiceProvider
             NodeConfigUpdated::class,
             PublishNodeConfigOnUpdate::class
         );
+        
+        // Регистрация Observer для Command
+        Command::observe(CommandObserver::class);
+        
+        // Регистрация Observer для ZoneEvent
+        ZoneEvent::observe(ZoneEventObserver::class);
     }
 }

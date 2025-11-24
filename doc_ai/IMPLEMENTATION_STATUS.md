@@ -34,8 +34,7 @@
 - [x] `NODE_ARCH_FULL.md` — **SPEC_READY**
 - [x] `FIRMWARE_STRUCTURE.md` — **SPEC_READY**
 - [x] `03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` — **SPEC_READY**
-- [x] `I2C_BUS_AND_SENSORS.md` — **SPEC_READY**
-- [x] `OLED_UI_SPEC.md` — **SPEC_READY**
+- [x] `NODE_OLED_UI_SPEC.md` — **SPEC_READY** (файл существует в `02_HARDWARE_FIRMWARE/`)
 - [x] `SDKCONFIG_PROFILES.md` — **SPEC_READY**
 - [x] Общий компонент `mqtt_client` (ESP-IDF) — **MVP_DONE**
 - [x] Общий компонент `wifi_manager` — **MVP_DONE**
@@ -47,37 +46,42 @@
 ### 2.2. pH-node
 
 - [x] `02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md` — **SPEC_READY**
-- [ ] Инициализация ноды (Wi-Fi + MQTT + OLED) — **PLANNED**
-- [ ] Драйвер pH-датчика и чтение значения — **PLANNED**
-- [ ] Калибровка (2–3 точки) — **PLANNED**
-- [ ] Отправка телеметрии по MQTT — **PLANNED**
-- [ ] Экран состояния и ошибок — **PLANNED**
-- [ ] MVP-тест на стенде — **PLANNED**
+- [x] Инициализация ноды (Wi-Fi + MQTT + OLED) — **MVP_DONE** (реализовано в `ph_node_init.c`, `ph_node_app.c`)
+- [x] Драйвер pH-датчика и чтение значения — **MVP_DONE** (компонент `trema_ph`)
+- [x] Калибровка (2 этапа) — **MVP_DONE** (поддержка калибровки реализована)
+- [x] Отправка телеметрии по MQTT — **MVP_DONE** (через `mqtt_manager`)
+- [x] Экран состояния и ошибок — **MVP_DONE** (компонент `oled_ui`)
+- [x] Обработка команд (run_pump, stop_pump, dose, calibrate) — **MVP_DONE**
+- [ ] MVP-тест на стенде — **IN_PROGRESS** (требуется тестирование на реальном оборудовании)
 
 ### 2.3. EC-node
 
 - [x] `02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md` — **SPEC_READY**
-- [ ] Драйвер EC-датчика — **PLANNED**
-- [ ] Компенсация по температуре — **PLANNED**
-- [ ] Отправка телеметрии по MQTT — **PLANNED**
-- [ ] OLED-интерфейс — **PLANNED**
-- [ ] MVP-тест — **PLANNED**
+- [x] Драйвер EC-датчика — **MVP_DONE** (компонент `trema_ec`)
+- [x] Компенсация по температуре — **MVP_DONE** (реализована в драйвере)
+- [x] Отправка телеметрии по MQTT — **MVP_DONE** (через `mqtt_manager`)
+- [x] Обработка команд (run_pump, calibrate) — **MVP_DONE**
+- [ ] OLED-интерфейс — **PLANNED** (компонент доступен, но не интегрирован)
+- [ ] MVP-тест — **IN_PROGRESS** (требуется тестирование на реальном оборудовании)
 
 ### 2.4. Climate-node
 
 - [x] `02_HARDWARE_FIRMWARE/NODE_LOGIC_FULL.md` — **SPEC_READY**
-- [ ] Поддержка основных сенсоров (температура, влажность, CO₂ при наличии) — **PLANNED**
-- [ ] Телеметрия по MQTT — **PLANNED**
+- [x] Поддержка основных сенсоров (температура, влажность через SHT3x) — **MVP_DONE** (компонент `sht3x`)
+- [ ] Поддержка CO₂ сенсоров (CCS811/SGP30) — **PLANNED**
+- [x] Телеметрия по MQTT — **MVP_DONE** (структура реализована)
+- [x] Обработка команд (set_relay, set_pwm) — **MVP_DONE**
 - [ ] Аварии и пороги — **PLANNED**
-- [ ] MVP-тест — **PLANNED**
+- [ ] MVP-тест — **IN_PROGRESS** (требуется тестирование на реальном оборудовании)
 
-### 2.5. Irrigation-node
+### 2.5. Pump-node
 
 - [x] `02_HARDWARE_FIRMWARE/NODE_LOGIC_FULL.md` — **SPEC_READY**
-- [ ] Управление помпами/клапанами — **PLANNED**
-- [ ] Счётчик поливов / литраж (если есть расходомер) — **PLANNED**
-- [ ] Обработка аварий (сухой ход, ошибки) — **PLANNED**
-- [ ] Получение команд по MQTT — **PLANNED**
+- [x] Базовая структура проекта — **MVP_DONE** (скелет создан)
+- [ ] Управление помпами через INA209 — **IN_PROGRESS** (компонент `ina209` доступен, интеграция в процессе)
+- [ ] Подтверждение команд через ток — **IN_PROGRESS**
+- [ ] Обработка аварий (сухой ход, overcurrent) — **IN_PROGRESS**
+- [ ] Получение команд по MQTT — **IN_PROGRESS**
 - [ ] MVP-тест — **PLANNED**
 
 ### 2.6. Lighting-node
@@ -189,8 +193,9 @@
 - [x] WebSocket подписка на алерты (`subscribeAlerts` в `bootstrap.js`) — **MVP_DONE**
   - [x] Использование в Alerts/Index для real-time обновлений — **MVP_DONE**
 - [x] WebSocket подписка на зоны (`subscribeZone` в `bootstrap.js`, возвращает функцию отписки) — **MVP_DONE**
-  - [ ] Использование в Zones/Show для real-time обновления телеметрии — **PLANNED**
-- [ ] Real-time обновление графиков телеметрии без перезагрузки страницы — **PLANNED**
+  - [x] Использование в Zones/Show для real-time обновления команд — **MVP_DONE** (через `subscribeToZoneCommands`)
+  - [x] Real-time обновление телеметрии через store events — **MVP_DONE** (через `useStoreEvents` и `useTelemetryBatch`)
+- [x] Real-time обновление графиков телеметрии без перезагрузки страницы — **MVP_DONE** (обновление через batch updates)
 
 ### 7.5. State Management
 

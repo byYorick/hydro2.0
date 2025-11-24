@@ -140,57 +140,51 @@ params: { duration_sec: 10 }  // Захардкожено!
 
 ---
 
-### 4. Dashboard не соответствует полной спецификации
+### 4. Dashboard - реализованы ролевые дашборды ✅
 
 **Файл:** `backend/laravel/resources/js/Pages/Dashboard/Index.vue`
 
-**Спецификация FRONTEND_ARCH_FULL.md требует:**
-- Мини-графики pH / EC / t° / RH (за сутки) - **ОТСУТСТВУЮТ**
-- Heatmap зон по статусам - **ОТСУТСТВУЕТ**
-- Последние события ZoneEvents - **ОТСУТСТВУЮТ** (есть только алерты)
+**Реализация:**
+- ✅ Ролевые дашборды для разных типов пользователей (Agronomist, Admin, Engineer, Operator, Viewer)
+- ✅ Общие статистики (теплицы, зоны, устройства, алерты)
+- ✅ Последние события (Events) - **РЕАЛИЗОВАНО**
+- ✅ Проблемные зоны
+- ✅ Список теплиц
+
+**Отсутствует (планируется):**
+- ⏳ Мини-графики pH / EC / t° / RH (за сутки) - планируется в Волне 3
+- ⏳ Heatmap зон по статусам - планируется в Волне 3
 
 ---
 
-### 5. Нет Command Palette функционала
+### 5. Command Palette - реализован ✅
 
-**Файл:** `backend/laravel/resources/js/Components/CommandPalette.vue` (существует, но не проверен на функциональность)
+**Файл:** `backend/laravel/resources/js/Components/CommandPalette.vue`
 
-**Спецификация требует:**
-- Ctrl+K для открытия
-- Поиск зон, нод, рецептов
-- Быстрые действия ("поставить зону 5 на паузу")
+**Реализация:**
+- ✅ Ctrl+K для открытия
+- ✅ Поиск зон, устройств, рецептов
+- ✅ Быстрая навигация
+- ✅ Интеграция с AppLayout
 
-**Проверка:** Требуется проверка реализации CommandPalette.
+**Планируется (Волна 4):**
+- ⏳ Быстрые действия ("поставить зону 5 на паузу")
+- ⏳ Fuzzy search
+- ⏳ История команд
 
 ---
 
 ## Локализация
 
-### ❌ Критично: Все тексты должны быть на русском языке
+### ✅ ВЫПОЛНЕНО: Все тексты переведены на русский язык
 
-#### 1. Навигация (AppLayout.vue)
+#### 1. Навигация (AppLayout.vue) ✅
 
-**Файл:** `backend/laravel/resources/js/Layouts/AppLayout.vue:9-14, 41-46`
+**Файл:** `backend/laravel/resources/js/Layouts/AppLayout.vue`
 
-**Проблема:**
-```vue
-<NavLink href="/" label="Dashboard" />
-<NavLink href="/zones" label="Zones" />
-<NavLink href="/devices" label="Devices" />
-<NavLink href="/recipes" label="Recipes" />
-<NavLink href="/alerts" label="Alerts" />
-<NavLink href="/settings" label="Settings" />
-```
-
-**Исправление:**
-```vue
-<NavLink href="/" label="Панель управления" />
-<NavLink href="/zones" label="Зоны" />
-<NavLink href="/devices" label="Устройства" />
-<NavLink href="/recipes" label="Рецепты" />
-<NavLink href="/alerts" label="Алерты" />
-<NavLink href="/settings" label="Настройки" />
-```
+**Статус:** ✅ Исправлено
+- Используется компонент `RoleBasedNavigation.vue` с русскими метками
+- Все пункты меню на русском языке
 
 ---
 

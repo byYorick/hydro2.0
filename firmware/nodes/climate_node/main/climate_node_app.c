@@ -15,8 +15,12 @@
 #include "relay_driver.h"
 #include "setup_portal.h"
 #include "pwm_driver.h"
+#include "i2c_bus.h"
+#include "sht3x.h"
+#include "ccs811.h"
 #include "esp_log.h"
 #include "esp_err.h"
+#include <string.h>
 
 static const char *TAG = "climate_node";
 
@@ -206,6 +210,59 @@ void climate_node_app_init(void) {
         ESP_LOGW(TAG, "No PWM channels found in config");
     } else {
         ESP_LOGE(TAG, "Failed to initialize PWM driver: %s", esp_err_to_name(err));
+    }
+
+    // Инициализация I²C шины (если еще не инициализирована)
+    if (!i2c_bus_is_initialized_bus(I2C_BUS_1)) {
+        ESP_LOGI(TAG, "Initializing I²C bus 1...");
+        i2c_bus_config_t i2c_config = {
+            .sda_pin = 21,
+            .scl_pin = 22,
+            .clock_speed = 100000,
+            .pullup_enable = true
+        };
+        err = i2c_bus_init_bus(I2C_BUS_1, &i2c_config);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to initialize I²C bus 1: %s", esp_err_to_name(err));
+            // Продолжаем работу, возможно I²C не нужен
+        } else {
+            ESP_LOGI(TAG, "I²C bus 1 initialized: SDA=%d, SCL=%d", i2c_config.sda_pin, i2c_config.scl_pin);
+        }
+    }
+    
+    // Инициализация SHT3x сенсора (температура/влажность)
+    if (i2c_bus_is_initialized_bus(I2C_BUS_1)) {
+        ESP_LOGI(TAG, "Initializing SHT3x sensor...");
+        sht3x_config_t sht_config = {
+            .i2c_address = 0x44  // Адрес по умолчанию для SHT3x
+        };
+        err = sht3x_init(&sht_config);
+        if (err == ESP_OK) {
+            ESP_LOGI(TAG, "SHT3x sensor initialized successfully");
+        } else {
+            ESP_LOGW(TAG, "Failed to initialize SHT3x sensor: %s (will retry later)", esp_err_to_name(err));
+        }
+    } else {
+        ESP_LOGW(TAG, "I²C bus 1 not available, SHT3x sensor initialization skipped");
+    }
+    
+    // Инициализация CCS811 сенсора (CO₂/TVOC)
+    if (i2c_bus_is_initialized_bus(I2C_BUS_1)) {
+        ESP_LOGI(TAG, "Initializing CCS811 sensor...");
+        ccs811_config_t ccs_config = {
+            .i2c_address = CCS811_I2C_ADDR_DEFAULT,
+            .i2c_bus = I2C_BUS_1,
+            .measurement_mode = CCS811_MEAS_MODE_1SEC,
+            .measurement_interval_ms = 1000
+        };
+        err = ccs811_init(&ccs_config);
+        if (err == ESP_OK) {
+            ESP_LOGI(TAG, "CCS811 sensor initialized successfully");
+        } else {
+            ESP_LOGW(TAG, "Failed to initialize CCS811 sensor: %s (will use stub values)", esp_err_to_name(err));
+        }
+    } else {
+        ESP_LOGW(TAG, "I²C bus 1 not available, CCS811 sensor initialization skipped");
     }
 
     ESP_LOGI(TAG, "climate_node initialized");

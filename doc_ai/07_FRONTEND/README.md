@@ -33,11 +33,19 @@
 
 ### Вспомогательные документы
 
-#### [FRONTEND_AUDIT.md](FRONTEND_AUDIT.md)
-Аудит фронтенда
+#### [FRONTEND_REWORK_PLAN.md](FRONTEND_REWORK_PLAN.md)
+План доработки фронтенда после анализа backend 2.0
 
-#### [FRONTEND_BACKEND_FIXES_COMPLETED.md](FRONTEND_BACKEND_FIXES_COMPLETED.md)
-Завершенные исправления интеграции frontend-backend
+#### [API_MAPPING.md](API_MAPPING.md)
+Маппинг API endpoints между фронтендом и бэкендом
+
+#### [ROLE_BASED_UI_SPEC.md](ROLE_BASED_UI_SPEC.md)
+Спецификация ролевого UI
+
+#### [UI_UX_IMPROVEMENT_PLAN.md](UI_UX_IMPROVEMENT_PLAN.md)
+План улучшений UI/UX
+
+**Примечание:** Исторические отчеты об аудите и исправлениях перемещены в архив: `00_ARCHIVE/FRONTEND_REPORTS/`
 
 ---
 

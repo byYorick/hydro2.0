@@ -16,5 +16,7 @@ idf_component_register(
         esp_timer
         freertos
         memory_pool
+        i2c_cache
+        diagnostics
 )
 

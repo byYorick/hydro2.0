@@ -17,6 +17,7 @@ idf_component_register(
         node_framework
         trema_ph
         i2c_bus
+        ina209
         oled_ui
         setup_portal
         heartbeat_task

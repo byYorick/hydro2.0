@@ -29,8 +29,8 @@ return [
     'servers' => [
 
         'reverb' => [
-            'host' => env('REVERB_SERVER_HOST', '0.0.0.0'),
-            'port' => env('REVERB_SERVER_PORT', 6001),
+            'host' => env('REVERB_HOST', '0.0.0.0'),
+            'port' => env('REVERB_PORT', 6001),
             'path' => env('REVERB_SERVER_PATH', ''),
             'hostname' => env('REVERB_HOST', '0.0.0.0'),
             'options' => [
@@ -82,11 +82,17 @@ return [
                     'scheme' => env('REVERB_SCHEME', 'http'),
                     'useTLS' => env('REVERB_SCHEME', 'http') === 'https',
                 ],
-                'allowed_origins' => ['*'],
-                'ping_interval' => env('REVERB_APP_PING_INTERVAL', 60),
-                'activity_timeout' => env('REVERB_APP_ACTIVITY_TIMEOUT', 30),
-                'max_connections' => env('REVERB_APP_MAX_CONNECTIONS'),
-                'max_message_size' => env('REVERB_APP_MAX_MESSAGE_SIZE', 10_000),
+                'allowed_origins' => env('REVERB_ALLOWED_ORIGINS') 
+                    ? explode(',', env('REVERB_ALLOWED_ORIGINS'))
+                    : [
+                        env('APP_URL', 'http://localhost'),
+                        env('FRONTEND_URL', 'http://localhost:5173'),
+                        'http://localhost:8080', // Nginx proxy для Laravel в dev режиме
+                    ],
+                'ping_interval' => env('REVERB_APP_PING_INTERVAL', 30), // Уменьшено с 60 до 30 для более частых проверок
+                'activity_timeout' => env('REVERB_APP_ACTIVITY_TIMEOUT', 60), // Увеличено с 30 до 60 для большей стабильности
+                'max_connections' => env('REVERB_APP_MAX_CONNECTIONS', 1000), // Установлен разумный лимит
+                'max_message_size' => env('REVERB_APP_MAX_MESSAGE_SIZE', 100_000), // Увеличено до 100 KB
             ],
         ],
 

@@ -8,6 +8,7 @@
 
 #include "trema_ec.h"
 #include "i2c_bus.h"
+#include "i2c_cache.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -87,12 +88,41 @@ bool trema_ec_read(float *ec)
     }
     
     uint8_t reg_ec = REG_TDS_EC;
-    esp_err_t err = i2c_bus_read(TREMA_EC_ADDR, &reg_ec, 1, data, 2, 1000);
+    esp_err_t err = ESP_ERR_NOT_FOUND;
+    
+    // Попытка получить данные из кэша (TTL 500ms для частого опроса)
+    if (i2c_cache_is_initialized()) {
+        err = i2c_cache_get(I2C_BUS_0, TREMA_EC_ADDR, &reg_ec, 1, data, 2, 500);
+        if (err == ESP_OK) {
+            ESP_LOGD(TAG, "EC value retrieved from cache");
+        }
+    }
+    
+    // Если данных нет в кэше, читаем из I2C
+    if (err != ESP_OK) {
+        err = i2c_bus_read(TREMA_EC_ADDR, &reg_ec, 1, data, 2, 1000);
+        if (err == ESP_OK && i2c_cache_is_initialized()) {
+            // Сохраняем в кэш
+            i2c_cache_put(I2C_BUS_0, TREMA_EC_ADDR, &reg_ec, 1, data, 2, 500);
+        }
+    }
+    
     if (err != ESP_OK) {
         ESP_LOGD(TAG, "EC sensor read failed: %s, returning stub value", esp_err_to_name(err));
         *ec = stub_ec;
         use_stub_values = true;
         last_error = TREMA_EC_ERROR_I2C;
+        
+        // Обновление метрик диагностики (ошибка чтения)
+        #ifdef __has_include
+            #if __has_include("diagnostics.h")
+                #include "diagnostics.h"
+                if (diagnostics_is_initialized()) {
+                    diagnostics_update_sensor_metrics("ec_sensor", false);
+                }
+            #endif
+        #endif
+        
         return false;
     }
     
@@ -109,6 +139,17 @@ bool trema_ec_read(float *ec)
 
     use_stub_values = false;
     last_error = TREMA_EC_ERROR_NONE;
+    
+    // Обновление метрик диагностики (если доступно)
+    #ifdef __has_include
+        #if __has_include("diagnostics.h")
+            #include "diagnostics.h"
+            if (diagnostics_is_initialized()) {
+                diagnostics_update_sensor_metrics("ec_sensor", true);
+            }
+        #endif
+    #endif
+    
     return true;
 }
 

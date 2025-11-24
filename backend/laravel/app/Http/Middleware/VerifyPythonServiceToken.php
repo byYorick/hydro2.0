@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
@@ -19,15 +20,35 @@ class VerifyPythonServiceToken
      */
     public function handle(Request $request, Closure $next): Response
     {
-        // Проверяем токен Python сервисов
+        // Сначала проверяем, авторизован ли пользователь через Sanctum
+        if (Auth::guard('sanctum')->check()) {
+            Log::debug('Python service route accessed by authenticated user via Sanctum');
+            return $next($request);
+        }
+        
+        // Если пользователь не авторизован, проверяем токен Python сервисов
         $expectedToken = Config::get('services.python_bridge.token');
         
+        // Если токен не настроен
         if (!$expectedToken) {
-            Log::error('Python service token not configured in services.python_bridge.token');
+            // В dev режиме разрешаем доступ без токена (только для локальной разработки)
+            if (config('app.env') === 'local' || config('app.debug')) {
+                Log::info('Python service token not configured, allowing access in dev mode', [
+                    'url' => $request->fullUrl(),
+                    'ip' => $request->ip(),
+                ]);
+                return $next($request);
+            }
+            
+            // В production режиме требуем токен
+            Log::warning('Python service token not configured in services.python_bridge.token', [
+                'url' => $request->fullUrl(),
+                'ip' => $request->ip(),
+            ]);
             return response()->json([
                 'status' => 'error',
-                'message' => 'Service token not configured',
-            ], 500);
+                'message' => 'Unauthorized: service token not configured or missing authentication',
+            ], 401);
         }
         
         $providedToken = $request->bearerToken();

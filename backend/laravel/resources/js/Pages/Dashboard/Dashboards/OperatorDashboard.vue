@@ -32,11 +32,11 @@
           
           <!-- Метрики -->
           <div class="grid grid-cols-2 gap-2 mb-3 text-xs">
-            <div v-if="zone.telemetry?.ph !== null && zone.telemetry?.ph !== undefined">
+            <div v-if="zone.telemetry?.ph !== null && zone.telemetry?.ph !== undefined && typeof zone.telemetry.ph === 'number'">
               <span class="text-neutral-400">pH:</span>
               <span class="ml-1 font-medium">{{ zone.telemetry.ph.toFixed(2) }}</span>
             </div>
-            <div v-if="zone.telemetry?.ec !== null && zone.telemetry?.ec !== undefined">
+            <div v-if="zone.telemetry?.ec !== null && zone.telemetry?.ec !== undefined && typeof zone.telemetry.ec === 'number'">
               <span class="text-neutral-400">EC:</span>
               <span class="ml-1 font-medium">{{ zone.telemetry.ec.toFixed(2) }}</span>
             </div>

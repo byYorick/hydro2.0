@@ -674,6 +674,92 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
     })->name('alerts.index');
 
     /**
+     * Users Index - страница управления пользователями (только для admin)
+     * 
+     * Inertia Props:
+     * - auth: {
+     *     user: {
+     *       id: int,
+     *       name: string,
+     *       email: string,
+     *       role: 'admin'
+     *     }
+     *   }
+     * - users: Array<{ id, name, email, role, created_at }>
+     */
+    Route::middleware('role:admin')->get('/users', function () {
+        $user = auth()->user();
+        $users = \App\Models\User::query()
+            ->select(['id', 'name', 'email', 'role', 'created_at'])
+            ->orderBy('id')
+            ->get();
+        
+        return Inertia::render('Users/Index', [
+            'auth' => [
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'role' => $user->role ?? 'viewer',
+                ],
+            ],
+            'users' => $users,
+        ]);
+    })->name('users.index');
+
+    /**
+     * Audit Index - страница аудита (только для admin)
+     * 
+     * Inertia Props:
+     * - auth: {
+     *     user: {
+     *       id: int,
+     *       name: string,
+     *       email: string,
+     *       role: 'admin'
+     *     }
+     *   }
+     * - logs: Array<{ id, level, message, context, created_at }>
+     * 
+     * Кеширование: 5 секунд (динамичные данные)
+     */
+    Route::middleware('role:admin')->get('/audit', function () {
+        $user = auth()->user();
+        
+        // Кешируем логи на 5 секунд для снижения нагрузки
+        $cacheKey = 'audit_logs_' . auth()->id();
+        $logs = \Illuminate\Support\Facades\Cache::remember($cacheKey, 5, function () {
+            try {
+                $result = \App\Models\SystemLog::query()
+                    ->select(['id', 'level', 'message', 'context', 'created_at'])
+                    ->orderBy('created_at', 'desc')
+                    ->limit(1000)
+                    ->get();
+                
+                // Логируем для отладки
+                \Log::info('Audit logs loaded', ['count' => $result->count()]);
+                
+                return $result;
+            } catch (\Exception $e) {
+                \Log::error('Failed to load audit logs', ['error' => $e->getMessage()]);
+                return collect([]);
+            }
+        });
+        
+        return Inertia::render('Audit/Index', [
+            'auth' => [
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'role' => $user->role ?? 'viewer',
+                ],
+            ],
+            'logs' => $logs,
+        ]);
+    })->name('audit.index');
+
+    /**
      * Settings Index - страница настроек
      * 
      * Inertia Props:
@@ -729,7 +815,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
                 'role' => $data['role'],
             ]);
             
-            return redirect()->route('settings.index');
+            return redirect()->route('users.index');
         })->name('settings.users.store');
         
         Route::patch('/{id}', function (\Illuminate\Http\Request $request, int $id) {
@@ -750,17 +836,17 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
             }
             $user->save();
             
-            return redirect()->route('settings.index');
+            return redirect()->route('users.index');
         })->name('settings.users.update');
         
         Route::delete('/{id}', function (int $id) {
             $user = \App\Models\User::findOrFail($id);
             // Нельзя удалить самого себя
             if ($user->id === auth()->id()) {
-                return redirect()->route('settings.index')->withErrors(['error' => 'Нельзя удалить самого себя']);
+                return redirect()->route('users.index')->withErrors(['error' => 'Нельзя удалить самого себя']);
             }
             $user->delete();
-            return redirect()->route('settings.index');
+            return redirect()->route('users.index');
         })->name('settings.users.destroy');
     });
 

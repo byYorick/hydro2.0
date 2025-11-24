@@ -1,30 +1,59 @@
 <template>
   <AppLayout>
-    <h1 class="text-lg font-semibold mb-4">Рецепты</h1>
-    <div class="mb-3 flex flex-wrap items-center gap-2">
-      <label class="text-sm text-neutral-300">Поиск:</label>
-      <input v-model="query" placeholder="Название или культура..." class="h-9 w-64 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
-      <Link href="/recipes/create" class="ml-auto">
-        <Button size="sm">Создать рецепт</Button>
+    <div class="flex items-center justify-between mb-4">
+      <h1 class="text-lg font-semibold">Рецепты</h1>
+      <Link href="/recipes/create">
+        <Button size="sm" variant="primary">
+          <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          Создать рецепт
+        </Button>
       </Link>
     </div>
-    <div v-if="filtered.length === 0" class="text-sm text-neutral-400 px-1 py-6">
-      {{ all.length === 0 ? 'Рецепты не найдены' : 'Нет рецептов по текущему фильтру' }}
+    <div class="mb-3 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
+      <div class="flex items-center gap-2 flex-1 sm:flex-none">
+        <label class="text-sm text-neutral-300 shrink-0">Поиск:</label>
+        <input v-model="query" placeholder="Название или культура..." class="h-9 flex-1 sm:w-56 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
+      </div>
     </div>
-    <div v-else class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-      <Card 
-        v-for="r in filtered" 
-        :key="r.id"
-        v-memo="[r.id, r.name, r.description, r.phases_count]"
-      >
-        <div class="flex items-start justify-between">
-          <div>
-            <div class="text-sm font-semibold">{{ r.name }}</div>
-            <div class="text-xs text-neutral-400">{{ r.description || 'Без описания' }} · Фаз: {{ r.phases_count || 0 }}</div>
-          </div>
-          <Link :href="`/recipes/${r.id}`" class="text-sky-400 text-sm hover:underline">Открыть</Link>
+    <div class="rounded-xl border border-neutral-800 overflow-hidden max-h-[720px] flex flex-col">
+      <!-- Заголовок таблицы -->
+      <div class="flex-shrink-0 grid grid-cols-4 gap-0 bg-neutral-900 text-neutral-300 text-sm border-b border-neutral-800">
+        <div v-for="(h, i) in headers" :key="i" class="px-3 py-2 text-left font-medium">
+          {{ h }}
         </div>
-      </Card>
+      </div>
+      <!-- Виртуализированный список -->
+      <div class="flex-1 overflow-hidden">
+        <RecycleScroller
+          :items="rows"
+          :item-size="rowHeight"
+          key-field="0"
+          v-slot="{ item: r, index }"
+          class="virtual-table-body h-full"
+        >
+          <div 
+            :class="index % 2 === 0 ? 'bg-neutral-950' : 'bg-neutral-925'" 
+            class="grid grid-cols-4 gap-0 text-sm border-b border-neutral-900"
+            style="height:44px"
+          >
+            <div class="px-3 py-2 flex items-center">
+              <Link :href="`/recipes/${r[0]}`" class="text-sky-400 hover:underline">{{ r[1] }}</Link>
+            </div>
+            <div class="px-3 py-2 flex items-center text-xs text-neutral-400">{{ r[2] || 'Без описания' }}</div>
+            <div class="px-3 py-2 flex items-center">{{ r[3] || 0 }}</div>
+            <div class="px-3 py-2 flex items-center">
+              <Link :href="`/recipes/${r[0]}`">
+                <Button size="sm" variant="secondary">Открыть</Button>
+              </Link>
+            </div>
+          </div>
+        </RecycleScroller>
+        <div v-if="!rows.length" class="text-sm text-neutral-400 px-3 py-6">
+          {{ all.length === 0 ? 'Рецепты не найдены' : 'Нет рецептов по текущему фильтру' }}
+        </div>
+      </div>
     </div>
   </AppLayout>
 </template>
@@ -33,10 +62,10 @@
 import { computed, ref } from 'vue'
 import { Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
-import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import type { Recipe } from '@/types'
 
+const headers = ['Название', 'Описание', 'Фаз', 'Действия']
 const page = usePage<{ recipes?: Recipe[] }>()
 const all = computed(() => (page.props.recipes || []) as Recipe[])
 const query = ref<string>('')
@@ -53,5 +82,19 @@ const filtered = computed(() => {
     return r.name?.toLowerCase().includes(q) || r.description?.toLowerCase().includes(q)
   })
 })
+
+// Преобразуем рецепты в строки таблицы
+const rows = computed(() => {
+  return filtered.value.map(r => [
+    r.id,
+    r.name || '-',
+    r.description || 'Без описания',
+    r.phases_count || 0,
+    r.id // Добавляем ID в конец для удобства доступа
+  ])
+})
+
+// Виртуализация через RecycleScroller
+const rowHeight = 44
 </script>
 

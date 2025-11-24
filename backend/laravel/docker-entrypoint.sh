@@ -166,7 +166,6 @@ if [ "${APP_ENV:-production}" = "local" ]; then
     chown application:application /app/public/hot 2>/dev/null || true
     echo "✓ Created /app/public/hot with http://localhost:8080"
 fi
-fi
 
 # Убеждаемся, что директории для supervisor существуют и имеют правильные права (Ubuntu совместимость)
 mkdir -p /var/log/supervisor /var/run 2>/dev/null || true

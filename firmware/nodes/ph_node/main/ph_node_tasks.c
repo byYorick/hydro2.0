@@ -347,28 +347,19 @@ void ph_node_publish_pump_current_telemetry(void) {
         return;
     }
     
-    // Get node_id from config
-    const char *node_id = ph_node_get_node_id();
-    if (node_id == NULL) {
-        ESP_LOGE(TAG, "Failed to get node_id, skipping pump current telemetry");
-        return;
-    }
+    // Публикация через node_telemetry_engine (унифицированный API)
+    err = node_telemetry_publish_sensor(
+        "pump_bus_current",
+        METRIC_TYPE_CURRENT,
+        reading.bus_current_ma,
+        "mA",
+        0,  // raw value не используется
+        false,  // not stub
+        true     // is_stable
+    );
     
-    // Format according to NODE_CHANNELS_REFERENCE.md section 3.4
-    cJSON *telemetry = cJSON_CreateObject();
-    if (telemetry) {
-        cJSON_AddStringToObject(telemetry, "node_id", node_id);
-        cJSON_AddStringToObject(telemetry, "channel", "pump_bus_current");
-        cJSON_AddStringToObject(telemetry, "metric_type", "CURRENT_MA");
-        cJSON_AddNumberToObject(telemetry, "value", reading.bus_current_ma);
-        cJSON_AddNumberToObject(telemetry, "ts", (double)(esp_timer_get_time() / 1000000));
-        
-        char *json_str = cJSON_PrintUnformatted(telemetry);
-        if (json_str) {
-            mqtt_manager_publish_telemetry("pump_bus_current", json_str);
-            free(json_str);
-        }
-        cJSON_Delete(telemetry);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to publish pump current telemetry: %s", esp_err_to_name(err));
     }
 }
 

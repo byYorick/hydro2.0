@@ -27,8 +27,8 @@ Route::prefix('auth')->middleware('throttle:10,1')->group(function () {
 });
 
 // Публичные системные эндпоинты
-// Health check имеет более высокий лимит для мониторинга (120 запросов в минуту)
-Route::get('system/health', [SystemController::class, 'health'])->middleware('throttle:120,1');
+// Health check имеет более высокий лимит для мониторинга (300 запросов в минуту для поддержки множественных компонентов)
+Route::get('system/health', [SystemController::class, 'health'])->middleware('throttle:300,1');
 // configFull доступен для Python сервисов через токен или для авторизованных пользователей через Sanctum
 Route::middleware('throttle:30,1')->group(function () {
     // Используем middleware, который проверяет либо Sanctum токен, либо Python service token

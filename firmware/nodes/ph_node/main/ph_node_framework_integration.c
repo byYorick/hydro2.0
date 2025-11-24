@@ -175,6 +175,100 @@ static esp_err_t handle_stop_pump(
     return ESP_OK;
 }
 
+// Обработчик команды calibrate для pH сенсора
+static esp_err_t handle_calibrate_ph(
+    const char *channel,
+    const cJSON *params,
+    cJSON **response,
+    void *user_ctx
+) {
+    (void)user_ctx;
+
+    if (channel == NULL || params == NULL || response == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    // Проверяем, что команда для ph_sensor канала
+    if (strcmp(channel, "ph_sensor") != 0) {
+        *response = node_command_handler_create_response(
+            NULL,
+            "ERROR",
+            "invalid_channel",
+            "calibrate command only works for ph_sensor channel",
+            NULL
+        );
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    cJSON *stage_item = cJSON_GetObjectItem(params, "stage");
+    // Поддержка обоих форматов: known_ph и ph_value (для обратной совместимости)
+    cJSON *known_ph_item = cJSON_GetObjectItem(params, "known_ph");
+    if (!known_ph_item || !cJSON_IsNumber(known_ph_item)) {
+        known_ph_item = cJSON_GetObjectItem(params, "ph_value");  // Альтернативный формат
+    }
+
+    if (!stage_item || !cJSON_IsNumber(stage_item) || 
+        !known_ph_item || !cJSON_IsNumber(known_ph_item)) {
+        *response = node_command_handler_create_response(
+            NULL,
+            "ERROR",
+            "invalid_parameter",
+            "Missing or invalid stage/known_ph/ph_value",
+            NULL
+        );
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    uint8_t stage = (uint8_t)cJSON_GetNumberValue(stage_item);
+    float known_ph = (float)cJSON_GetNumberValue(known_ph_item);
+
+    // Валидация: stage должен быть 1 или 2
+    if (stage < 1 || stage > 2) {
+        *response = node_command_handler_create_response(
+            NULL,
+            "ERROR",
+            "invalid_parameter",
+            "stage must be 1 or 2",
+            NULL
+        );
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    // Валидация: known_ph должен быть в разумном диапазоне (0-14)
+    if (known_ph < 0.0f || known_ph > 14.0f || isnan(known_ph) || isinf(known_ph)) {
+        *response = node_command_handler_create_response(
+            NULL,
+            "ERROR",
+            "invalid_parameter",
+            "known_ph must be between 0.0 and 14.0",
+            NULL
+        );
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    // Выполнение калибровки
+    if (trema_ph_calibrate(stage, known_ph)) {
+        *response = node_command_handler_create_response(
+            NULL,
+            "ACK",
+            NULL,
+            NULL,
+            NULL
+        );
+        ESP_LOGI(TAG, "pH sensor calibrated: stage %d, known_pH %.2f", stage, known_ph);
+        return ESP_OK;
+    } else {
+        *response = node_command_handler_create_response(
+            NULL,
+            "ERROR",
+            "calibration_failed",
+            "Failed to calibrate pH sensor",
+            NULL
+        );
+        return ESP_FAIL;
+    }
+}
+
 // Публикация телеметрии через node_framework
 static esp_err_t ph_node_publish_telemetry_callback(void *user_ctx) {
     (void)user_ctx;
@@ -264,6 +358,11 @@ esp_err_t ph_node_framework_init(void) {
     err = node_command_handler_register("stop_pump", handle_stop_pump, NULL);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to register stop_pump handler: %s", esp_err_to_name(err));
+    }
+
+    err = node_command_handler_register("calibrate", handle_calibrate_ph, NULL);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to register calibrate handler: %s", esp_err_to_name(err));
     }
 
     // Регистрация callback для отключения актуаторов в safe_mode

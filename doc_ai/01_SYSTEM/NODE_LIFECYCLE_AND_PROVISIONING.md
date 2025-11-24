@@ -290,4 +290,4 @@ Backend:
 
 ---
 
-**Подробности:** См. `01_SYSTEM_IMPROVEMENTS_COMPLETED.md` для полного описания выполненных доработок.
+**Подробности:** См. `00_ARCHIVE/REPORTS/01_SYSTEM_IMPROVEMENTS_COMPLETED.md` (архивный файл) для исторической справки о выполненных доработках.

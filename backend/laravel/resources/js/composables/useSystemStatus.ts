@@ -5,9 +5,9 @@ import { ref, computed, onMounted, onUnmounted, type Ref, type ComputedRef } fro
 import { useApi, type ToastHandler } from './useApi'
 import { logger } from '@/utils/logger'
 
-const POLL_INTERVAL = 30000 // 30 секунд
+const POLL_INTERVAL = 60000 // 60 секунд (увеличено для снижения нагрузки и предотвращения rate limiting)
 const RATE_LIMIT_BACKOFF = 60000 // 60 секунд при ошибке 429
-const WS_CHECK_INTERVAL = 5000 // 5 секунд для проверки WebSocket
+const WS_CHECK_INTERVAL = 10000 // 10 секунд для проверки WebSocket (увеличено для снижения нагрузки)
 
 type CoreStatus = 'ok' | 'fail' | 'unknown'
 type DbStatus = 'ok' | 'fail' | 'unknown'
@@ -35,6 +35,11 @@ declare global {
   }
 }
 
+// Глобальный singleton для предотвращения множественных запросов
+let globalHealthCheckInProgress = false
+let globalHealthCheckPromise: Promise<void> | null = null
+let globalHealthCheckSubscribers = 0
+
 export function useSystemStatus(showToast?: ToastHandler) {
   const { api } = useApi(showToast || null)
   
@@ -60,6 +65,7 @@ export function useSystemStatus(showToast?: ToastHandler) {
   /**
    * Проверка статуса Core, Database, MQTT и сервисов через /api/system/health
    * Объединенная функция для избежания дублирующих запросов
+   * Использует глобальный singleton для предотвращения множественных одновременных запросов
    */
   async function checkHealth(): Promise<void> {
     // Пропускаем запрос, если активен rate limiting
@@ -68,13 +74,42 @@ export function useSystemStatus(showToast?: ToastHandler) {
       return
     }
     
-    // Пропускаем запрос, если уже выполняется проверка
+    // Если уже выполняется глобальная проверка, ждем её завершения
+    if (globalHealthCheckInProgress && globalHealthCheckPromise) {
+      logger.debug('[useSystemStatus] Ожидание завершения глобальной проверки здоровья')
+      try {
+        await globalHealthCheckPromise
+        return
+      } catch (err) {
+        // Если глобальная проверка завершилась с ошибкой, продолжаем локально
+        logger.warn('[useSystemStatus] Глобальная проверка завершилась с ошибкой, продолжаем локально')
+      }
+    }
+    
+    // Пропускаем запрос, если уже выполняется проверка в этом экземпляре
     if (isCheckingHealth) {
-      logger.warn('[useSystemStatus] Пропуск запроса - проверка уже выполняется')
+      logger.warn('[useSystemStatus] Пропуск запроса - проверка уже выполняется в этом экземпляре')
       return
     }
     
+    // Устанавливаем глобальный флаг и создаем промис
+    globalHealthCheckInProgress = true
+    globalHealthCheckPromise = performHealthCheck()
     isCheckingHealth = true
+    
+    try {
+      await globalHealthCheckPromise
+    } finally {
+      globalHealthCheckInProgress = false
+      globalHealthCheckPromise = null
+      isCheckingHealth = false
+    }
+  }
+  
+  /**
+   * Внутренняя функция для выполнения проверки здоровья
+   */
+  async function performHealthCheck(): Promise<void> {
 
     try {
       const response = await api.get<{ 
@@ -194,9 +229,6 @@ export function useSystemStatus(showToast?: ToastHandler) {
       if (showToast && err?.response?.status !== 429) {
         showToast(`Ошибка проверки статуса системы: ${errorMessage}`, 'error', 5000)
       }
-    } finally {
-      // Всегда сбрасываем флаг проверки
-      isCheckingHealth = false
     }
   }
 
@@ -205,8 +237,8 @@ export function useSystemStatus(showToast?: ToastHandler) {
    */
   function checkWebSocketStatus(): void {
     // Проверяем, включен ли WebSocket вообще
-    const wsEnabled = String(import.meta.env.VITE_ENABLE_WS || 'false') === 'true'
-    const appKey = import.meta.env.VITE_PUSHER_APP_KEY
+    const wsEnabled = String(import.meta.env.VITE_ENABLE_WS || 'true') === 'true'
+    const appKey = import.meta.env.VITE_PUSHER_APP_KEY || import.meta.env.VITE_REVERB_APP_KEY
 
     // Если WebSocket не включен или нет ключа, показываем как отключенный
     if (!wsEnabled || !appKey) {
@@ -218,14 +250,18 @@ export function useSystemStatus(showToast?: ToastHandler) {
     if (!window.Echo) {
       // Если это первая проверка, оставляем unknown, иначе показываем disconnected
       if (wsStatus.value === 'unknown') {
-        // Даем время на инициализацию Echo
-        setTimeout(() => {
+        // Даем время на инициализацию Echo (максимум 3 секунды)
+        const maxWaitTime = 3000
+        const startTime = Date.now()
+        const checkInterval = setInterval(() => {
           if (window.Echo) {
+            clearInterval(checkInterval)
             checkWebSocketStatus()
-          } else {
+          } else if (Date.now() - startTime >= maxWaitTime) {
+            clearInterval(checkInterval)
             wsStatus.value = 'disconnected'
           }
-        }, 1000)
+        }, 200)
       } else {
         wsStatus.value = 'disconnected'
       }
@@ -252,14 +288,25 @@ export function useSystemStatus(showToast?: ToastHandler) {
       // Проверяем все возможные состояния соединения
       if (state === 'connected') {
         wsStatus.value = 'connected'
-      } else if (state === 'connecting' || state === 'unavailable') {
-        // В процессе подключения - сохраняем текущий статус, если он был connected
-        // Иначе показываем как disconnected
-        if (wsStatus.value !== 'connected') {
+      } else if (state === 'connecting') {
+        // В процессе подключения - показываем как disconnected, если не было подключения
+        // Если было подключение, сохраняем его на короткое время (grace period)
+        const wasConnected = wsStatus.value === 'connected'
+        if (!wasConnected) {
           wsStatus.value = 'disconnected'
         }
+        // Если было подключение, сохраняем его (grace period будет сброшен через таймаут)
+      } else if (state === 'unavailable') {
+        // Недоступен - показываем как disconnected
+        wsStatus.value = 'disconnected'
       } else if (state === 'disconnected' || state === 'failed' || state === 'error') {
         wsStatus.value = 'disconnected'
+        // Логируем разрыв соединения для диагностики
+        logger.warn('[useSystemStatus] WebSocket disconnected', {
+          state,
+          socketId: pusher.connection?.socket_id,
+          hasChannels: !!pusher.channels?.channels,
+        })
       } else {
         // Для неизвестных состояний проверяем, есть ли активное соединение
         const socketId = pusher.connection?.socket_id
@@ -288,38 +335,52 @@ export function useSystemStatus(showToast?: ToastHandler) {
    */
   function setupWebSocketListeners(): void {
     // Проверяем, включен ли WebSocket
-    const wsEnabled = String(import.meta.env.VITE_ENABLE_WS || 'false') === 'true'
-    const appKey = import.meta.env.VITE_PUSHER_APP_KEY
+    const wsEnabled = String(import.meta.env.VITE_ENABLE_WS || 'true') === 'true'
+    const appKey = import.meta.env.VITE_PUSHER_APP_KEY || import.meta.env.VITE_REVERB_APP_KEY
 
     if (!wsEnabled || !appKey) {
       return
     }
 
     if (!window.Echo) {
-      // Если Echo еще не готов, попробуем позже
-      setTimeout(() => {
+      // Если Echo еще не готов, попробуем позже (максимум 5 попыток)
+      let attempts = 0
+      const maxAttempts = 5
+      const checkInterval = setInterval(() => {
+        attempts++
         if (window.Echo) {
+          clearInterval(checkInterval)
           setupWebSocketListeners()
+        } else if (attempts >= maxAttempts) {
+          clearInterval(checkInterval)
+          logger.warn('[useSystemStatus] Echo не инициализирован после', maxAttempts, 'попыток')
         }
-      }, 1000)
+      }, 500)
       return
     }
 
     try {
       const pusher = window.Echo?.connector?.pusher
       if (!pusher) {
+        logger.warn('[useSystemStatus] Pusher connector не найден')
         return
       }
 
       // Ждем, пока connection будет готов
       if (!pusher.connection) {
-        // Подписываемся на событие инициализации connection
-        pusher.connection = pusher.connection || {} as typeof pusher.connection
-        setTimeout(() => {
+        // Пытаемся подождать инициализации connection
+        let attempts = 0
+        const maxAttempts = 10
+        const checkInterval = setInterval(() => {
+          attempts++
           if (pusher.connection) {
+            clearInterval(checkInterval)
             bindConnectionEvents(pusher.connection)
+          } else if (attempts >= maxAttempts) {
+            clearInterval(checkInterval)
+            logger.warn('[useSystemStatus] Connection не инициализирован после', maxAttempts, 'попыток')
           }
-        }, 500)
+        }, 200)
         return
       }
 
@@ -382,8 +443,14 @@ export function useSystemStatus(showToast?: ToastHandler) {
    * Инициализация мониторинга статусов
    */
   function startMonitoring(): void {
-    // Первоначальная проверка
-    checkHealth()
+    globalHealthCheckSubscribers++
+    
+    // Первоначальная проверка с задержкой для предотвращения одновременных запросов
+    // Каждый экземпляр ждет случайное время (0-2 секунды) для распределения нагрузки
+    const initialDelay = Math.min(globalHealthCheckSubscribers * 500, 2000)
+    setTimeout(() => {
+      checkHealth()
+    }, initialDelay)
     
     // Даем время на инициализацию Echo перед первой проверкой WebSocket
     setTimeout(() => {
@@ -393,13 +460,33 @@ export function useSystemStatus(showToast?: ToastHandler) {
 
     // Периодическая проверка здоровья (Core + DB + MQTT + сервисы)
     // Все статусы получаются из одного запроса /api/system/health
+    // Используем увеличенный интервал для снижения нагрузки
     healthPollInterval = setInterval(() => {
       checkHealth()
     }, POLL_INTERVAL)
 
     // Периодическая проверка WebSocket (не требует API запросов)
+    // Увеличена частота проверки для более быстрого обнаружения разрывов
     wsConnectionCheckInterval = setInterval(() => {
       checkWebSocketStatus()
+      
+      // Если соединение разорвано, пытаемся переподключиться
+      if (wsStatus.value === 'disconnected' && window.Echo?.connector?.pusher?.connection) {
+        const pusher = window.Echo.connector.pusher
+        const state = pusher.connection?.state
+        
+        // Если состояние disconnected или failed, пытаемся переподключиться
+        if (state === 'disconnected' || state === 'failed') {
+          logger.warn('[useSystemStatus] WebSocket disconnected, attempting to reconnect...')
+          try {
+            if (typeof pusher.connection.connect === 'function') {
+              pusher.connection.connect()
+            }
+          } catch (err) {
+            logger.error('[useSystemStatus] Failed to reconnect WebSocket:', err)
+          }
+        }
+      }
     }, WS_CHECK_INTERVAL)
   }
 
@@ -407,6 +494,8 @@ export function useSystemStatus(showToast?: ToastHandler) {
    * Остановка мониторинга
    */
   function stopMonitoring(): void {
+    globalHealthCheckSubscribers = Math.max(0, globalHealthCheckSubscribers - 1)
+    
     if (healthPollInterval) {
       clearInterval(healthPollInterval)
       healthPollInterval = null

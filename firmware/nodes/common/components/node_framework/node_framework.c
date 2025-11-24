@@ -10,11 +10,24 @@
 #include "node_state_manager.h"
 #include "node_watchdog.h"
 #include "memory_pool.h"
+#include "i2c_cache.h"
 #include "cJSON.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include <string.h>
+
+// Условный include для diagnostics (может быть не всегда доступен)
+// Используем проверку на этапе выполнения
+#ifdef __has_include
+    #if __has_include("diagnostics.h")
+        #include "diagnostics.h"
+        #define DIAGNOSTICS_AVAILABLE 1
+    #endif
+#endif
+#ifndef DIAGNOSTICS_AVAILABLE
+    #define DIAGNOSTICS_AVAILABLE 0
+#endif
 
 static const char *TAG = "node_framework";
 
@@ -33,6 +46,15 @@ static esp_err_t handle_exit_safe_mode(
     cJSON **response,
     void *user_ctx
 );
+
+#if DIAGNOSTICS_AVAILABLE
+static esp_err_t handle_get_diagnostics(
+    const char *channel,
+    const cJSON *params,
+    cJSON **response,
+    void *user_ctx
+);
+#endif
 
 esp_err_t node_framework_init(const node_framework_config_t *config) {
     if (config == NULL) {
@@ -75,6 +97,32 @@ esp_err_t node_framework_init(const node_framework_config_t *config) {
         ESP_LOGW(TAG, "Failed to init memory pool: %s (continuing anyway)", esp_err_to_name(err));
         // Не критично, продолжаем инициализацию
     }
+
+    // Инициализация кэша I2C для оптимизации опроса сенсоров
+    i2c_cache_config_t cache_config = {
+        .max_entries = 32,
+        .default_ttl_ms = 1000,  // 1 секунда по умолчанию
+        .enable_metrics = true
+    };
+    err = i2c_cache_init(&cache_config);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to init I2C cache: %s (continuing anyway)", esp_err_to_name(err));
+        // Не критично, продолжаем инициализацию
+    }
+
+    // Инициализация компонента диагностики (если доступен)
+    #if DIAGNOSTICS_AVAILABLE
+    diagnostics_config_t diagnostics_config = {
+        .publish_interval_ms = 60000,  // 60 секунд
+        .enable_auto_publish = true,
+        .enable_metrics = true
+    };
+    err = diagnostics_init(&diagnostics_config);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to init diagnostics: %s (continuing anyway)", esp_err_to_name(err));
+        // Не критично, продолжаем инициализацию
+    }
+    #endif
 
     // Инициализация подкомпонентов
     err = node_state_manager_init();
@@ -120,6 +168,19 @@ esp_err_t node_framework_init(const node_framework_config_t *config) {
         ESP_LOGW(TAG, "Failed to register exit_safe_mode command: %s", esp_err_to_name(err));
         // Не критично, продолжаем инициализацию
     }
+    
+    // Регистрация встроенной команды get_diagnostics (если diagnostics компонент доступен)
+    #if DIAGNOSTICS_AVAILABLE
+    if (diagnostics_is_initialized()) {
+        err = node_command_handler_register("get_diagnostics", handle_get_diagnostics, NULL);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to register get_diagnostics command: %s", esp_err_to_name(err));
+            // Не критично, продолжаем инициализацию
+        } else {
+            ESP_LOGI(TAG, "get_diagnostics command registered");
+        }
+    }
+    #endif
 
     // Инициализация пула памяти для оптимизации использования памяти
     err = memory_pool_init(NULL);  // Используем конфигурацию по умолчанию
@@ -235,4 +296,166 @@ static esp_err_t handle_exit_safe_mode(
     }
     return err;
 }
+
+#if DIAGNOSTICS_AVAILABLE
+// Обработчик команды get_diagnostics
+static esp_err_t handle_get_diagnostics(
+    const char *channel,
+    const cJSON *params,
+    cJSON **response,
+    void *user_ctx
+) {
+    (void)channel;
+    (void)params;
+    (void)user_ctx;
+    
+    // Проверяем, доступен ли diagnostics компонент
+    if (!diagnostics_is_initialized()) {
+        extern cJSON *node_command_handler_create_response(
+            const char *cmd_id,
+            const char *status,
+            const char *error_code,
+            const char *error_message,
+            const cJSON *extra_data
+        );
+        *response = node_command_handler_create_response(
+            NULL,
+            "ERROR",
+            "diagnostics_not_available",
+            "Diagnostics component not initialized",
+            NULL
+        );
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    // Получаем снимок диагностики
+    extern cJSON *node_command_handler_create_response(
+        const char *cmd_id,
+        const char *status,
+        const char *error_code,
+        const char *error_message,
+        const cJSON *extra_data
+    );
+    
+    diagnostics_snapshot_t snapshot;
+    esp_err_t err = diagnostics_get_snapshot(&snapshot);
+    if (err != ESP_OK) {
+        *response = node_command_handler_create_response(
+            NULL,
+            "ERROR",
+            "diagnostics_get_failed",
+            "Failed to get diagnostics snapshot",
+            NULL
+        );
+        return err;
+    }
+    
+    // Формируем JSON ответ с диагностикой
+    cJSON *diagnostics_json = cJSON_CreateObject();
+    if (diagnostics_json == NULL) {
+        *response = node_command_handler_create_response(
+            NULL,
+            "ERROR",
+            "memory_error",
+            "Failed to allocate memory for diagnostics",
+            NULL
+        );
+        return ESP_ERR_NO_MEM;
+    }
+    
+    // Системные метрики
+    cJSON *system = cJSON_CreateObject();
+    if (system == NULL) {
+        cJSON_Delete(diagnostics_json);
+        *response = node_command_handler_create_response(
+            NULL,
+            "ERROR",
+            "memory_error",
+            "Failed to allocate memory for system metrics",
+            NULL
+        );
+        return ESP_ERR_NO_MEM;
+    }
+    cJSON_AddNumberToObject(system, "uptime_seconds", (double)snapshot.uptime_seconds);
+    cJSON_AddNumberToObject(system, "free_heap", (double)snapshot.memory.free_heap);
+    cJSON_AddNumberToObject(system, "min_free_heap", (double)snapshot.memory.min_free_heap);
+    cJSON_AddItemToObject(diagnostics_json, "system", system);
+    
+    // Метрики ошибок
+    cJSON *errors = cJSON_CreateObject();
+    if (errors == NULL) {
+        cJSON_Delete(diagnostics_json);
+        *response = node_command_handler_create_response(
+            NULL,
+            "ERROR",
+            "memory_error",
+            "Failed to allocate memory for error metrics",
+            NULL
+        );
+        return ESP_ERR_NO_MEM;
+    }
+    cJSON_AddNumberToObject(errors, "total_count", (double)snapshot.errors.total_count);
+    cJSON_AddNumberToObject(errors, "error_count", (double)snapshot.errors.error_count);
+    cJSON_AddItemToObject(diagnostics_json, "errors", errors);
+    
+    // Метрики MQTT
+    cJSON *mqtt = cJSON_CreateObject();
+    if (mqtt == NULL) {
+        cJSON_Delete(diagnostics_json);
+        *response = node_command_handler_create_response(
+            NULL,
+            "ERROR",
+            "memory_error",
+            "Failed to allocate memory for MQTT metrics",
+            NULL
+        );
+        return ESP_ERR_NO_MEM;
+    }
+    cJSON_AddBoolToObject(mqtt, "connected", snapshot.mqtt.connected);
+    cJSON_AddNumberToObject(mqtt, "messages_sent", (double)snapshot.mqtt.messages_sent);
+    cJSON_AddNumberToObject(mqtt, "messages_received", (double)snapshot.mqtt.messages_received);
+    cJSON_AddItemToObject(diagnostics_json, "mqtt", mqtt);
+    
+    // Метрики Wi-Fi
+    cJSON *wifi = cJSON_CreateObject();
+    if (wifi == NULL) {
+        cJSON_Delete(diagnostics_json);
+        *response = node_command_handler_create_response(
+            NULL,
+            "ERROR",
+            "memory_error",
+            "Failed to allocate memory for Wi-Fi metrics",
+            NULL
+        );
+        return ESP_ERR_NO_MEM;
+    }
+    cJSON_AddBoolToObject(wifi, "connected", snapshot.wifi_connected);
+    cJSON_AddNumberToObject(wifi, "rssi", snapshot.wifi_rssi);
+    cJSON_AddItemToObject(diagnostics_json, "wifi", wifi);
+    
+    cJSON_AddBoolToObject(diagnostics_json, "safe_mode", snapshot.safe_mode);
+    
+    // Формируем ответ
+    *response = node_command_handler_create_response(
+        NULL,
+        "ACK",
+        NULL,
+        NULL,
+        diagnostics_json  // extra_data содержит диагностику (будет скопирован через cJSON_Duplicate)
+    );
+    
+    // Проверяем, что response создан успешно
+    if (*response == NULL) {
+        cJSON_Delete(diagnostics_json);
+        return ESP_ERR_NO_MEM;
+    }
+    
+    // diagnostics_json будет удален автоматически при удалении response
+    // так как node_command_handler_create_response делает копию через cJSON_Duplicate
+    // Но нам нужно удалить оригинал, так как он больше не нужен
+    cJSON_Delete(diagnostics_json);
+    
+    return ESP_OK;
+}
+#endif // DIAGNOSTICS_AVAILABLE
 

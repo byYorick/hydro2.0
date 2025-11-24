@@ -12,6 +12,11 @@ Broadcast::channel('commands.{zoneId}', function ($user, $zoneId) {
     return $user !== null; // viewer+ могут слушать статусы команд
 });
 
+// Канал для глобальных команд (приватный)
+Broadcast::channel('commands.global', function ($user) {
+    return $user !== null; // viewer+ могут слушать статусы команд
+});
+
 // Канал для глобальных событий (публичный)
 // Не требует авторизации, так как это публичный канал
 

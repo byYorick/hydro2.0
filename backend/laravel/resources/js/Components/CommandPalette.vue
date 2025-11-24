@@ -201,7 +201,7 @@ const roleBasedCommands = computed<CommandItem[]>(() => {
   // Команды для админа
   if (isAdmin.value) {
     commands.push(
-      { type: 'nav', label: 'Управление пользователями', icon: '👥', category: 'Администрирование', action: () => router.visit('/admin/users') },
+      { type: 'nav', label: 'Управление пользователями', icon: '👥', category: 'Администрирование', action: () => router.visit('/users') },
       { type: 'nav', label: 'Системные настройки', icon: '⚙️', category: 'Администрирование', action: () => router.visit('/settings') },
       { type: 'nav', label: 'Аудит', icon: '📝', category: 'Администрирование', action: () => router.visit('/audit') },
     )

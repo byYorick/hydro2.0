@@ -18,3 +18,15 @@
   display: flex;
   align-items: center;
 }
+
+/* Фиксированные ширины колонок для таблицы аудита */
+.audit-table-container {
+  --col-level: 120px;
+  --col-time: 180px;
+  --col-actions: 120px;
+}
+
+.audit-table-header,
+.audit-table-row {
+  grid-template-columns: var(--col-level) var(--col-time) 1fr var(--col-actions);
+}

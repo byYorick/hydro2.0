@@ -19,6 +19,17 @@
 #include <string.h>
 #include <stdio.h>
 
+// Условный include для diagnostics (может быть не всегда доступен)
+#ifdef __has_include
+    #if __has_include("diagnostics.h")
+        #include "diagnostics.h"
+        #define DIAGNOSTICS_AVAILABLE 1
+    #endif
+#endif
+#ifndef DIAGNOSTICS_AVAILABLE
+    #define DIAGNOSTICS_AVAILABLE 0
+#endif
+
 static const char *TAG = "mqtt_manager";
 
 // Внутренние структуры
@@ -26,7 +37,9 @@ static esp_mqtt_client_handle_t s_mqtt_client = NULL;
 static mqtt_manager_config_t s_config = {0};
 static mqtt_node_info_t s_node_info = {0};
 static bool s_is_connected = false;
+static bool s_was_connected = false;  // Флаг, что было хотя бы одно подключение
 static char s_mqtt_uri[256] = {0};
+static uint32_t s_reconnect_count = 0;  // Счетчик переподключений
 
 // Callbacks
 static mqtt_config_callback_t s_config_cb = NULL;
@@ -210,6 +223,8 @@ esp_err_t mqtt_manager_deinit(void) {
     memset(&s_config, 0, sizeof(s_config));
     memset(&s_node_info, 0, sizeof(s_node_info));
     s_is_connected = false;
+    s_was_connected = false;
+    s_reconnect_count = 0;
 
     ESP_LOGI(TAG, "MQTT manager deinitialized");
     return ESP_OK;
@@ -300,8 +315,26 @@ esp_err_t mqtt_manager_publish_config_response(const char *data) {
     return mqtt_manager_publish_internal(topic, data, 1, 0);
 }
 
+esp_err_t mqtt_manager_publish_diagnostics(const char *data) {
+    if (!data) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    char topic[192];
+    esp_err_t err = build_topic(topic, sizeof(topic), "diagnostics", NULL);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    return mqtt_manager_publish_internal(topic, data, 1, 0);
+}
+
 bool mqtt_manager_is_connected(void) {
     return s_is_connected;
+}
+
+uint32_t mqtt_manager_get_reconnect_count(void) {
+    return s_reconnect_count;
 }
 
 esp_err_t mqtt_manager_reconnect(void) {
@@ -358,10 +391,24 @@ static esp_err_t mqtt_manager_publish_internal(const char *topic, const char *da
     
     if (msg_id < 0) {
         ESP_LOGE(TAG, "Failed to publish to %s (msg_id=%d)", topic, msg_id);
+        // Обновление метрик диагностики (ошибка публикации)
+        #if DIAGNOSTICS_AVAILABLE
+        if (diagnostics_is_initialized()) {
+            diagnostics_update_mqtt_metrics(false, false, true);
+        }
+        #endif
         return ESP_FAIL;
     }
     
     ESP_LOGI(TAG, "MQTT PUBLISH SUCCESS: topic='%s', msg_id=%d, len=%d", topic, msg_id, data_len);
+    
+    // Обновление метрик диагностики (успешная публикация)
+    #if DIAGNOSTICS_AVAILABLE
+    if (diagnostics_is_initialized()) {
+        diagnostics_update_mqtt_metrics(true, false, false);
+    }
+    #endif
+    
     return ESP_OK;
 }
 
@@ -375,7 +422,15 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
     switch ((esp_mqtt_event_id_t)event_id) {
         case MQTT_EVENT_CONNECTED:
             ESP_LOGI(TAG, "MQTT connected to broker");
+            // Увеличиваем счетчик переподключений (если это не первое подключение)
+            // s_was_connected проверяем ДО установки s_is_connected
+            if (s_was_connected) {
+                // Переподключение после отключения
+                s_reconnect_count++;
+                ESP_LOGI(TAG, "MQTT reconnected (count: %u)", s_reconnect_count);
+            }
             s_is_connected = true;
+            s_was_connected = true;  // Отмечаем, что было подключение
 
             // Публикация статуса ONLINE (ОБЯЗАТЕЛЬНО сразу после подключения, до подписки)
             // Согласно MQTT_SPEC_FULL.md раздел 4.2 и BACKEND_NODE_CONTRACT_FULL.md раздел 8.1
@@ -473,6 +528,13 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
             // Уведомляем OLED UI о MQTT активности (прием)
             extern void oled_ui_notify_mqtt_rx(void);
             oled_ui_notify_mqtt_rx();
+            
+            // Обновление метрик диагностики (получение сообщения)
+            #if DIAGNOSTICS_AVAILABLE
+            if (diagnostics_is_initialized()) {
+                diagnostics_update_mqtt_metrics(false, true, false);
+            }
+            #endif
 
             // Определяем тип топика и вызываем соответствующий callback
             // Согласно MQTT_SPEC_FULL.md раздел 2:

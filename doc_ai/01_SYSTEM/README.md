@@ -47,14 +47,16 @@
 #### [MIGRATION_PLAN_FROM_MESH_HYDRO.md](MIGRATION_PLAN_FROM_MESH_HYDRO.md)
 План миграции с mesh_hydro на hydro 2.0
 
-#### [AUDIT_GAPS.md](AUDIT_GAPS.md)
-Аудит пробелов в документации
-
 #### [FULL_SYSTEM_ARCH_PROPOSAL.md](FULL_SYSTEM_ARCH_PROPOSAL.md)
 Предложение по полной системной архитектуре
 
-#### [01_SYSTEM_IMPROVEMENTS_COMPLETED.md](01_SYSTEM_IMPROVEMENTS_COMPLETED.md)
-Завершенные улучшения системы
+#### [NODE_ASSIGNMENT_LOGIC.md](NODE_ASSIGNMENT_LOGIC.md)
+Логика привязки узлов к зонам
+
+#### [NODE_DETACH_IMPLEMENTATION.md](NODE_DETACH_IMPLEMENTATION.md)
+Реализация отвязки узлов от зон
+
+**Примечание:** Исторические отчеты об аудите и улучшениях перемещены в архив: `00_ARCHIVE/REPORTS/`
 
 ---
 

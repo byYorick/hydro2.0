@@ -35,16 +35,33 @@ UI должен быть:
 
 ```
 resources/js/Pages/
- Dashboard/Index.vue
+ Dashboard/Index.vue (ролевые дашборды)
+ Dashboard/Dashboards/
+   - AgronomistDashboard.vue
+   - AdminDashboard.vue
+   - EngineerDashboard.vue
+   - OperatorDashboard.vue
+   - ViewerDashboard.vue
  Zones/Index.vue
  Zones/Show.vue
+ Zones/ZoneCard.vue
+ Zones/ZoneTelemetryChart.vue
  Devices/Index.vue
  Devices/Show.vue
+ Devices/Add.vue
+ Devices/DeviceChannelsTable.vue
  Recipes/Index.vue
  Recipes/Show.vue
  Recipes/Edit.vue
  Alerts/Index.vue
  Settings/Index.vue
+ Admin/Index.vue
+ Admin/Zones.vue
+ Admin/Recipes.vue
+ Greenhouses/Create.vue
+ Profile/Edit.vue
+ Setup/Wizard.vue
+ Auth/ (Login, Register, etc.)
 ```
 
 ### Правило для ИИ:

@@ -9,6 +9,8 @@ class SystemLog extends Model
 {
     use HasFactory;
 
+    protected $table = 'system_logs';
+
     public $timestamps = false;
 
     protected $fillable = [

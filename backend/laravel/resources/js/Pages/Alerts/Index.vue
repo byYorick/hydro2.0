@@ -1,17 +1,23 @@
 <template>
   <AppLayout>
-    <h1 class="text-lg font-semibold mb-4">Алерты</h1>
-    <div class="mb-3 flex flex-wrap items-center gap-2">
-      <label class="text-sm text-neutral-300">Фильтр:</label>
-      <select v-model="onlyActive" class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm">
-        <option :value="true">Только активные</option>
-        <option :value="false">Все</option>
-      </select>
-      <label class="ml-4 text-sm text-neutral-300">Зона:</label>
-      <input v-model="zoneQuery" placeholder="Зона..." class="h-9 w-48 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
+    <div class="flex items-center justify-between mb-4">
+      <h1 class="text-lg font-semibold">Алерты</h1>
+    </div>
+    <div class="mb-3 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
+      <div class="flex items-center gap-2 flex-1 sm:flex-none">
+        <label class="text-sm text-neutral-300 shrink-0">Фильтр:</label>
+        <select v-model="onlyActive" class="h-9 flex-1 sm:w-auto sm:min-w-[140px] rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm">
+          <option :value="true">Только активные</option>
+          <option :value="false">Все</option>
+        </select>
+      </div>
+      <div class="flex items-center gap-2 flex-1 sm:flex-none">
+        <label class="text-sm text-neutral-300 shrink-0">Зона:</label>
+        <input v-model="zoneQuery" placeholder="Зона..." class="h-9 flex-1 sm:w-56 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
+      </div>
     </div>
 
-    <div class="rounded-xl border border-neutral-800 overflow-hidden max-h-[700px] flex flex-col">
+    <div class="rounded-xl border border-neutral-800 overflow-hidden max-h-[720px] flex flex-col">
       <!-- Заголовок таблицы -->
       <div class="flex-shrink-0 grid grid-cols-5 gap-0 bg-neutral-900 text-neutral-300 text-sm border-b border-neutral-800">
         <div v-for="(h, i) in headers" :key="i" class="px-3 py-2 text-left font-medium">

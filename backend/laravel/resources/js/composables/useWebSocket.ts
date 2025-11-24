@@ -66,6 +66,12 @@ interface ActiveSubscription {
 // Глобальное хранилище (не ref, так как используется вне Vue компонентов)
 const activeSubscriptions: ActiveSubscription[] = []
 
+// Отслеживание уже подписанных каналов для предотвращения дублирования
+const subscribedChannels = new Set<string>()
+
+// Флаг для предотвращения одновременного выполнения resubscribe
+let isResubscribing = false
+
 /**
  * Composable для подписки на WebSocket каналы
  */
@@ -103,52 +109,77 @@ export function useWebSocket(showToast?: ToastHandler) {
     }
 
     try {
+      // Проверяем, не подписаны ли уже на этот канал (проверяем subscriptions, а не subscribedChannels)
+      if (subscriptions.value.has(channelName)) {
+        logger.warn(`[WebSocket] Already subscribed to ${channelName}, skipping`)
+        // Возвращаем функцию отписки для существующей подписки
+        const existing = subscriptions.value.get(channelName)
+        if (existing) {
+          return existing.unsubscribe
+        }
+      }
+
       const channel = window.Echo.private(channelName)
       
       // Слушаем события обновления статуса команды
       channel.listen('.App\\Events\\CommandStatusUpdated', (event: unknown) => {
-        const e = event as CommandUpdateEvent
-        if (onCommandUpdate) {
-          onCommandUpdate({
-            commandId: e.commandId,
-            status: e.status,
-            message: e.message,
-            error: e.error,
-            zoneId: e.zoneId
-          })
+        try {
+          const e = event as CommandUpdateEvent
+          if (onCommandUpdate) {
+            onCommandUpdate({
+              commandId: e.commandId,
+              status: e.status,
+              message: e.message,
+              error: e.error,
+              zoneId: e.zoneId
+            })
+          }
+        } catch (err) {
+          logger.error('[WebSocket] Error handling CommandStatusUpdated:', err)
         }
       })
 
       // Слушаем события ошибок команд
       channel.listen('.App\\Events\\CommandFailed', (evt: unknown) => {
-        const e = evt as CommandUpdateEvent
-        if (onCommandUpdate) {
-          onCommandUpdate({
-            commandId: e.commandId,
-            status: 'failed',
-            message: e.message,
-            error: e.error,
-            zoneId: e.zoneId
-          })
-        }
-        if (showToast) {
-          showToast(`Команда завершилась с ошибкой: ${e.message || 'Неизвестная ошибка'}`, 'error', 5000)
+        try {
+          const e = evt as CommandUpdateEvent
+          if (onCommandUpdate) {
+            onCommandUpdate({
+              commandId: e.commandId,
+              status: 'failed',
+              message: e.message,
+              error: e.error,
+              zoneId: e.zoneId
+            })
+          }
+          if (showToast) {
+            showToast(`Команда завершилась с ошибкой: ${e.message || 'Неизвестная ошибка'}`, 'error', 5000)
+          }
+        } catch (err) {
+          logger.error('[WebSocket] Error handling CommandFailed:', err)
         }
       })
 
+      subscribedChannels.add(channelName)
+
       const unsubscribe = () => {
-        channel.stopListening('.App\\Events\\CommandStatusUpdated')
-        channel.stopListening('.App\\Events\\CommandFailed')
-        if (typeof channel.leave === 'function') {
-          channel.leave()
-        }
-        subscriptions.value.delete(channelName)
-        // Удаляем из активных подписок
-        const index = activeSubscriptions.findIndex(
-          s => s.type === 'zone_commands' && s.id === zoneId
-        )
-        if (index > -1) {
-          activeSubscriptions.splice(index, 1)
+        try {
+          channel.stopListening('.App\\Events\\CommandStatusUpdated')
+          channel.stopListening('.App\\Events\\CommandFailed')
+          if (typeof channel.leave === 'function') {
+            channel.leave()
+          }
+          subscriptions.value.delete(channelName)
+          subscribedChannels.delete(channelName)
+          // Удаляем из активных подписок
+          const index = activeSubscriptions.findIndex(
+            s => s.type === 'zone_commands' && s.id === zoneId
+          )
+          if (index > -1) {
+            activeSubscriptions.splice(index, 1)
+          }
+        } catch (err) {
+          logger.error('[WebSocket] Error during unsubscribe:', err)
         }
       }
 
@@ -202,32 +233,53 @@ export function useWebSocket(showToast?: ToastHandler) {
     }
 
     try {
+      // Проверяем, не подписаны ли уже на этот канал (проверяем subscriptions, а не subscribedChannels)
+      if (subscriptions.value.has(channelName)) {
+        logger.warn(`[WebSocket] Already subscribed to ${channelName}, skipping`)
+        // Возвращаем функцию отписки для существующей подписки
+        const existing = subscriptions.value.get(channelName)
+        if (existing) {
+          return existing.unsubscribe
+        }
+      }
+
       const channel = window.Echo.channel(channelName)
       
       // Слушаем события
       channel.listen('.App\\Events\\EventCreated', (evt: unknown) => {
-        const e = evt as GlobalZoneEvent
-        if (onEvent) {
-          onEvent({
-            id: e.id,
-            kind: e.kind || 'INFO',
-            message: e.message,
-            zoneId: e.zoneId,
-            occurredAt: e.occurredAt
-          })
+        try {
+          const e = evt as GlobalZoneEvent
+          if (onEvent) {
+            onEvent({
+              id: e.id,
+              kind: e.kind || 'INFO',
+              message: e.message,
+              zoneId: e.zoneId,
+              occurredAt: e.occurredAt
+            })
+          }
+        } catch (err) {
+          logger.error('[WebSocket] Error handling EventCreated:', err)
         }
       })
 
+      subscribedChannels.add(channelName)
+
       const unsubscribe = () => {
-        channel.stopListening('.App\\Events\\EventCreated')
-        if (typeof channel.leave === 'function') {
-          channel.leave()
-        }
-        subscriptions.value.delete(channelName)
-        // Удаляем из активных подписок
-        const index = activeSubscriptions.findIndex(s => s.type === 'global_events')
-        if (index > -1) {
-          activeSubscriptions.splice(index, 1)
+        try {
+          channel.stopListening('.App\\Events\\EventCreated')
+          if (typeof channel.leave === 'function') {
+            channel.leave()
+          }
+          subscriptions.value.delete(channelName)
+          subscribedChannels.delete(channelName)
+          // Удаляем из активных подписок
+          const index = activeSubscriptions.findIndex(s => s.type === 'global_events')
+          if (index > -1) {
+            activeSubscriptions.splice(index, 1)
+          }
+        } catch (err) {
+          logger.error('[WebSocket] Error during unsubscribe:', err)
         }
       }
 
@@ -258,15 +310,32 @@ export function useWebSocket(showToast?: ToastHandler) {
    * Отписаться от всех каналов
    */
   function unsubscribeAll(): void {
-    for (const [, { unsubscribe }] of subscriptions.value.entries()) {
-      unsubscribe()
+    try {
+      for (const [, { unsubscribe }] of subscriptions.value.entries()) {
+        unsubscribe()
+      }
+      subscriptions.value.clear()
+      subscribedChannels.clear()
+      activeSubscriptions.length = 0
+    } catch (err) {
+      logger.error('[WebSocket] Error during unsubscribeAll:', err)
     }
-    subscriptions.value.clear()
   }
 
   // Автоматическая отписка при размонтировании компонента
   onUnmounted(() => {
-    unsubscribeAll()
+    // Отписываемся только от подписок этого компонента
+    for (const [channelName, { unsubscribe }] of subscriptions.value.entries()) {
+      try {
+        unsubscribe()
+      } catch (err) {
+        logger.error(`[WebSocket] Error during component unmount unsubscribe for ${channelName}:`, err)
+      }
+    }
+    subscriptions.value.clear()
+    
+    // Очищаем подписки из activeSubscriptions, которые принадлежат этому компоненту
+    // Это сложно отследить, поэтому просто очищаем невалидные при следующем resubscribe
   })
 
   return {
@@ -285,6 +354,12 @@ export function useWebSocket(showToast?: ToastHandler) {
  * при reconnect, когда компоненты могут быть еще не смонтированы.
  */
 export function resubscribeAllChannels(): void {
+  // Защита от одновременного выполнения
+  if (isResubscribing) {
+    logger.warn('[WebSocket] Resubscribe already in progress, skipping')
+    return
+  }
+
   if (logger.debug && typeof logger.debug === 'function') {
     logger.debug('[WebSocket] Resubscribing to all channels...', activeSubscriptions.length, 'subscriptions')
   }
@@ -294,69 +369,139 @@ export function resubscribeAllChannels(): void {
     return
   }
 
-  // Переподписываемся на все активные каналы
-  activeSubscriptions.forEach(sub => {
-    try {
-      if (sub.type === 'zone_commands' && sub.id) {
+  // Проверяем состояние соединения
+  const pusher = window.Echo.connector?.pusher
+  if (!pusher?.connection || pusher.connection.state !== 'connected') {
+    logger.warn('[WebSocket] Connection not ready for resubscribe, state:', pusher?.connection?.state)
+    return
+  }
+
+  // Защита от одновременного выполнения
+  if (isResubscribing) {
+    logger.warn('[WebSocket] Resubscribe already in progress, skipping')
+    return
+  }
+
+  isResubscribing = true
+
+  // Фильтруем валидные подписки (удаляем те, у которых нет handler) - делаем до try, чтобы была доступна в finally
+  const validSubscriptions = activeSubscriptions.filter(sub => {
+    if (!sub.handler || typeof sub.handler !== 'function') {
+      logger.warn('[WebSocket] Removing invalid subscription:', sub)
+      return false
+    }
+    return true
+  })
+
+  // Обновляем массив активных подписок
+  activeSubscriptions.length = 0
+  activeSubscriptions.push(...validSubscriptions)
+
+  try {
+
+    // Очищаем отслеживание подписанных каналов, так как при reconnect они сбрасываются
+    subscribedChannels.clear()
+
+    // Переподписываемся на все активные каналы
+    validSubscriptions.forEach(sub => {
+      try {
+        if (sub.type === 'zone_commands' && sub.id) {
         const channelName = `commands.${sub.id}`
         
-        // Проверяем, не подписаны ли уже (Pusher автоматически переподписывается, но мы добавляем listeners)
+        // Проверяем, не подписаны ли уже (после очистки subscribedChannels это всегда false, но оставляем для безопасности)
+        if (subscribedChannels.has(channelName)) {
+          if (logger.debug && typeof logger.debug === 'function') {
+            logger.debug(`[WebSocket] Already subscribed to ${channelName}, skipping`)
+          }
+          return
+        }
+        
         const channel = window.Echo!.private(channelName)
         
         // Слушаем события обновления статуса команды
         channel.listen('.App\\Events\\CommandStatusUpdated', (event: unknown) => {
-          const e = event as CommandUpdateEvent
-          sub.handler({
-            commandId: e.commandId,
-            status: e.status,
-            message: e.message,
-            error: e.error,
-            zoneId: e.zoneId
-          })
+          try {
+            const e = event as CommandUpdateEvent
+            sub.handler({
+              commandId: e.commandId,
+              status: e.status,
+              message: e.message,
+              error: e.error,
+              zoneId: e.zoneId
+            })
+          } catch (err) {
+            logger.error('[WebSocket] Error handling CommandStatusUpdated in resubscribe:', err)
+          }
         })
 
         // Слушаем события ошибок команд
         channel.listen('.App\\Events\\CommandFailed', (evt: unknown) => {
-          const e = evt as CommandUpdateEvent
-          sub.handler({
-            commandId: e.commandId,
-            status: 'failed',
-            message: e.message,
-            error: e.error,
-            zoneId: e.zoneId
-          })
+          try {
+            const e = evt as CommandUpdateEvent
+            sub.handler({
+              commandId: e.commandId,
+              status: 'failed',
+              message: e.message,
+              error: e.error,
+              zoneId: e.zoneId
+            })
+          } catch (err) {
+            logger.error('[WebSocket] Error handling CommandFailed in resubscribe:', err)
+          }
         })
+
+        subscribedChannels.add(channelName)
 
         if (logger.debug && typeof logger.debug === 'function') {
           logger.debug(`[WebSocket] ✓ Resubscribed to zone commands: ${sub.id}`)
         }
       } else if (sub.type === 'global_events') {
         const channelName = 'events.global'
+        
+        // Проверяем, не подписаны ли уже
+        if (subscribedChannels.has(channelName)) {
+          if (logger.debug && typeof logger.debug === 'function') {
+            logger.debug(`[WebSocket] Already subscribed to ${channelName}, skipping`)
+          }
+          return
+        }
+        
         const channel = window.Echo!.channel(channelName)
         
         // Слушаем события
         channel.listen('.App\\Events\\EventCreated', (evt: unknown) => {
-          const e = evt as GlobalZoneEvent
-          sub.handler({
-            id: e.id,
-            kind: e.kind || 'INFO',
-            message: e.message,
-            zoneId: e.zoneId,
-            occurredAt: e.occurredAt
-          })
+          try {
+            const e = evt as GlobalZoneEvent
+            sub.handler({
+              id: e.id,
+              kind: e.kind || 'INFO',
+              message: e.message,
+              zoneId: e.zoneId,
+              occurredAt: e.occurredAt
+            })
+          } catch (err) {
+            logger.error('[WebSocket] Error handling EventCreated in resubscribe:', err)
+          }
         })
+
+        subscribedChannels.add(channelName)
 
         if (logger.debug && typeof logger.debug === 'function') {
           logger.debug('[WebSocket] ✓ Resubscribed to global events')
         }
       }
-    } catch (err) {
-      logger.error(`[WebSocket] ✗ Failed to resubscribe to ${sub.type}${sub.id ? ` (id: ${sub.id})` : ''}:`, err)
+      } catch (err) {
+        logger.error(`[WebSocket] ✗ Failed to resubscribe to ${sub.type}${sub.id ? ` (id: ${sub.id})` : ''}:`, err)
+      }
+    })
+    
+    if (logger.debug && typeof logger.debug === 'function') {
+      logger.debug(`[WebSocket] Resubscribe completed: ${validSubscriptions.length} channels restored`)
     }
-  })
-  
-  if (logger.debug && typeof logger.debug === 'function') {
-    logger.debug(`[WebSocket] Resubscribe completed: ${activeSubscriptions.length} channels restored`)
+  } catch (err) {
+    logger.error('[WebSocket] Error during resubscribe:', err)
+  } finally {
+    isResubscribing = false
   }
 }
 

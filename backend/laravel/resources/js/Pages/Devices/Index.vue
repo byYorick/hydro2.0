@@ -113,7 +113,6 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { Link, usePage, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
-import DataTable from '@/Components/DataTable.vue'
 import Button from '@/Components/Button.vue'
 import { useDevicesStore } from '@/stores/devices'
 import { useStoreEvents } from '@/composables/useStoreEvents'
