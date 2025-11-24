@@ -29,9 +29,11 @@ Route::prefix('auth')->middleware('throttle:10,1')->group(function () {
 // Публичные системные эндпоинты
 // Health check имеет более высокий лимит для мониторинга (120 запросов в минуту)
 Route::get('system/health', [SystemController::class, 'health'])->middleware('throttle:120,1');
-// configFull требует авторизации для защиты конфигурации системы
+// configFull доступен для Python сервисов через токен или для авторизованных пользователей через Sanctum
 Route::middleware('throttle:30,1')->group(function () {
-    Route::get('system/config/full', [SystemController::class, 'configFull'])->middleware('auth:sanctum');
+    // Используем middleware, который проверяет либо Sanctum токен, либо Python service token
+    Route::get('system/config/full', [SystemController::class, 'configFull'])
+        ->middleware('verify.python.service');
 });
 
 // API routes for Inertia (using session authentication)
@@ -47,6 +49,7 @@ Route::middleware([
     Route::apiResource('greenhouses', GreenhouseController::class);
     Route::apiResource('zones', ZoneController::class);
     Route::apiResource('nodes', NodeController::class);
+    Route::post('nodes/{node}/detach', [NodeController::class, 'detach']);
     Route::apiResource('recipes', RecipeController::class);
     Route::post('recipes/{recipe}/phases', [RecipePhaseController::class, 'store']);
     Route::patch('recipe-phases/{recipePhase}', [RecipePhaseController::class, 'update']);

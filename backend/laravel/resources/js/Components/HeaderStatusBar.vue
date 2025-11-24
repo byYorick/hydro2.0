@@ -1,6 +1,6 @@
 <template>
-  <div class="flex items-center gap-4 px-4 py-2 bg-neutral-900 border-b border-neutral-800">
-    <div class="flex items-center gap-4 text-xs">
+  <div class="flex items-center gap-2 sm:gap-4 px-2 sm:px-4 py-2 bg-neutral-900 border-b border-neutral-800 overflow-x-auto">
+    <div class="flex items-center gap-2 sm:gap-4 text-xs shrink-0">
       <!-- Core Status -->
       <div class="flex items-center gap-2 group relative">
         <div class="relative">
@@ -162,8 +162,86 @@
         </div>
       </div>
 
-      <!-- Services Status (компактный вид с возможностью открыть модальное окно) -->
-      <div class="flex items-center gap-2 ml-auto">
+      <!-- Real-time метрики -->
+      <div class="flex items-center gap-3 ml-auto text-xs">
+        <!-- Активные зоны -->
+        <div 
+          v-if="metrics.zonesCount !== null"
+          class="flex items-center gap-1.5 px-2 py-1 rounded-md bg-neutral-800/50 hover:bg-neutral-800 transition-colors group relative"
+        >
+          <span class="text-neutral-400">🌱</span>
+          <span class="font-medium text-neutral-200">{{ metrics.zonesCount }}</span>
+          <span class="text-neutral-500 hidden sm:inline">зон</span>
+          <div
+            class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-neutral-800 rounded text-xs text-neutral-200 opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-lg border border-neutral-700"
+          >
+            <div class="font-medium">Активные зоны</div>
+            <div class="text-[10px] text-neutral-400 mt-0.5">
+              Всего: {{ metrics.zonesCount }}
+            </div>
+            <div v-if="metrics.zonesRunning !== null" class="text-[10px] text-emerald-400 mt-1">
+              Запущено: {{ metrics.zonesRunning }}
+            </div>
+          </div>
+        </div>
+        
+        <!-- Устройства -->
+        <div 
+          v-if="metrics.devicesCount !== null"
+          class="flex items-center gap-1.5 px-2 py-1 rounded-md bg-neutral-800/50 hover:bg-neutral-800 transition-colors group relative"
+        >
+          <span class="text-neutral-400">📱</span>
+          <span class="font-medium text-neutral-200">{{ metrics.devicesCount }}</span>
+          <span class="text-neutral-500 hidden sm:inline">устр.</span>
+          <div
+            class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-neutral-800 rounded text-xs text-neutral-200 opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-lg border border-neutral-700"
+          >
+            <div class="font-medium">Устройства</div>
+            <div class="text-[10px] text-neutral-400 mt-0.5">
+              Всего: {{ metrics.devicesCount }}
+            </div>
+            <div v-if="metrics.devicesOnline !== null" class="text-[10px] text-emerald-400 mt-1">
+              Онлайн: {{ metrics.devicesOnline }}
+            </div>
+            <div v-if="metrics.devicesOffline !== null && metrics.devicesOffline > 0" class="text-[10px] text-red-400 mt-1">
+              Офлайн: {{ metrics.devicesOffline }}
+            </div>
+          </div>
+        </div>
+        
+        <!-- Алерты -->
+        <div 
+          v-if="metrics.alertsCount !== null"
+          class="flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors group relative"
+          :class="metrics.alertsCount > 0 
+            ? 'bg-red-900/30 hover:bg-red-900/40 border border-red-800/30' 
+            : 'bg-neutral-800/50 hover:bg-neutral-800'"
+        >
+          <span :class="metrics.alertsCount > 0 ? 'text-red-400' : 'text-neutral-400'">⚠️</span>
+          <span 
+            class="font-medium transition-colors"
+            :class="metrics.alertsCount > 0 ? 'text-red-400' : 'text-neutral-200'"
+          >
+            {{ metrics.alertsCount }}
+          </span>
+          <span class="text-neutral-500 hidden sm:inline">алерт.</span>
+          <div
+            class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-neutral-800 rounded text-xs text-neutral-200 opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-lg border border-neutral-700"
+          >
+            <div class="font-medium">Активные алерты</div>
+            <div class="text-[10px] text-neutral-400 mt-0.5">
+              Всего: {{ metrics.alertsCount }}
+            </div>
+            <div v-if="metrics.alertsCount > 0" class="text-[10px] text-red-400 mt-1">
+              ⚠️ Требуют внимания
+            </div>
+            <div v-else class="text-[10px] text-emerald-400 mt-1">
+              ✓ Нет активных алертов
+            </div>
+          </div>
+        </div>
+        
+        <!-- Кнопка мониторинга сервисов -->
         <button
           @click="showMonitoringModal = true"
           class="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-neutral-800 transition-colors text-xs text-neutral-400 hover:text-neutral-200"
@@ -184,10 +262,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { usePage } from '@inertiajs/vue3'
 import { useSystemStatus } from '@/composables/useSystemStatus'
+import { useWebSocket } from '@/composables/useWebSocket'
 import { formatTime } from '@/utils/formatTime'
 import SystemMonitoringModal from '@/Components/SystemMonitoringModal.vue'
+import { useApi } from '@/composables/useApi'
 
 const { 
   coreStatus, 
@@ -198,7 +279,87 @@ const {
   automationEngineStatus,
   lastUpdate 
 } = useSystemStatus()
+
+const page = usePage()
+const { api } = useApi()
 const showMonitoringModal = ref(false)
+
+// Real-time метрики
+const metrics = ref<{
+  zonesCount: number | null
+  zonesRunning: number | null
+  devicesCount: number | null
+  devicesOnline: number | null
+  devicesOffline: number | null
+  alertsCount: number | null
+}>({
+  zonesCount: null,
+  zonesRunning: null,
+  devicesCount: null,
+  devicesOnline: null,
+  devicesOffline: null,
+  alertsCount: null,
+})
+
+// Загрузка метрик (только алерты, данные dashboard приходят через props)
+async function loadMetrics() {
+  try {
+    // Загружаем только активные алерты, данные dashboard уже в props
+    const alertsRes = await Promise.allSettled([
+      api.get('/api/alerts', { params: { status: 'active' } })
+    ])
+    
+    if (alertsRes[0]?.status === 'fulfilled') {
+      const alerts = alertsRes[0].value.data?.data || alertsRes[0].value.data || []
+      metrics.value.alertsCount = Array.isArray(alerts) ? alerts.length : 0
+    }
+  } catch (err) {
+    // Игнорируем ошибки загрузки алертов, они не критичны
+    logger.debug('[HeaderStatusBar] Failed to load alerts:', err)
+  }
+}
+
+// Обновление метрик из props (если доступны)
+const dashboardData = computed(() => page.props.dashboard as any)
+watch(dashboardData, (data) => {
+  if (data) {
+    metrics.value.zonesCount = data.zonesCount || null
+    metrics.value.zonesRunning = data.zonesByStatus?.RUNNING || null
+    metrics.value.devicesCount = data.devicesCount || null
+    metrics.value.devicesOnline = data.nodesByStatus?.online || null
+    metrics.value.devicesOffline = data.nodesByStatus?.offline || null
+    metrics.value.alertsCount = data.alertsCount || null
+  }
+}, { immediate: true })
+
+// Подписка на WebSocket обновления
+const { subscribeToGlobalEvents } = useWebSocket()
+let unsubscribeMetrics: (() => void) | null = null
+let metricsInterval: ReturnType<typeof setInterval> | null = null
+
+onMounted(() => {
+  // Загружаем метрики только один раз при монтировании
+  // Dashboard данные обновляются через props, алерты обновляются реже
+  loadMetrics()
+  
+  // Обновляем только алерты каждые 30 секунд (не критично часто)
+  metricsInterval = setInterval(loadMetrics, 30000)
+  
+  // Подписываемся на глобальные события для обновления метрик
+  unsubscribeMetrics = subscribeToGlobalEvents(() => {
+    // Обновляем метрики при получении событий
+    loadMetrics()
+  })
+})
+
+onUnmounted(() => {
+  if (metricsInterval) {
+    clearInterval(metricsInterval)
+  }
+  if (unsubscribeMetrics) {
+    unsubscribeMetrics()
+  }
+})
 
 function getStatusDotClass(status) {
   switch (status) {

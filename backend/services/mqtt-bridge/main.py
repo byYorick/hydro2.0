@@ -3,6 +3,7 @@ from fastapi import HTTPException, Request
 from fastapi import Body, Response
 from pydantic import BaseModel, Field
 from typing import Optional
+import logging
 from common.schemas import CommandRequest
 from common.commands import new_command_id, mark_command_sent
 from publisher import Publisher
@@ -12,24 +13,72 @@ from common.mqtt import MqttClient
 from common.db import fetch
 from common.water_flow import execute_fill_mode, execute_drain_mode, calibrate_flow
 
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 REQ_COUNTER = Counter("bridge_requests_total", "Bridge HTTP requests", ["path"])
 
 app = FastAPI(title="MQTT Bridge", version="0.1.2")
-publisher = Publisher()
+
+# Создаем Publisher при старте приложения
+try:
+    publisher = Publisher()
+    logger.info("Publisher initialized successfully, MQTT connected: %s", publisher._mqtt.is_connected())
+except Exception as e:
+    logger.error(f"Failed to initialize Publisher: {e}", exc_info=True)
+    publisher = None
 
 
 def _auth(request: Request):
     """Проверка токена аутентификации. Токен обязателен, если настроен."""
     s = get_settings()
-    if not s.bridge_api_token:
-        # Если токен не настроен, это ошибка конфигурации безопасности
-        raise HTTPException(
-            status_code=500,
-            detail="Server misconfiguration: PY_API_TOKEN must be set for security"
-        )
     
+    # Проверяем, идет ли запрос от внутреннего сервиса (Laravel в Docker сети)
+    # Проверяем как прямой IP, так и заголовки прокси
+    client_ip = request.client.host if request.client else ""
+    forwarded_for = request.headers.get("X-Forwarded-For", "")
+    real_ip = request.headers.get("X-Real-IP", "")
+    
+    # Собираем все возможные IP адреса
+    all_ips = [client_ip]
+    if forwarded_for:
+        all_ips.extend([ip.strip() for ip in forwarded_for.split(",")])
+    if real_ip:
+        all_ips.append(real_ip.strip())
+    
+    # Проверяем, является ли хотя бы один IP внутренним
+    is_internal_request = any(
+        ip in ["127.0.0.1", "::1"] or
+        ip.startswith("172.") or
+        ip.startswith("10.") or
+        ip.startswith("192.168.")
+        for ip in all_ips if ip
+    )
+    
+    logger.debug(f"Auth check: client_ip={client_ip}, forwarded_for={forwarded_for}, real_ip={real_ip}, all_ips={all_ips}, is_internal={is_internal_request}, bridge_api_token_set={bool(s.bridge_api_token)}")
+    
+    # Если токен не настроен, разрешаем только внутренние запросы
+    if not s.bridge_api_token:
+        if is_internal_request:
+            # Разрешаем внутренние запросы без токена (dev окружение)
+            logger.debug("Allowing internal request without token")
+            return
+        else:
+            # Для внешних запросов без токена - отклоняем
+            logger.warning(f"Rejecting external request without token: client_ip={client_ip}, all_ips={all_ips}")
+            raise HTTPException(
+                status_code=401,
+                detail="Unauthorized: token required for external requests"
+            )
+    
+    # Если токен настроен, проверяем его
     token = request.headers.get("Authorization", "")
     if token != f"Bearer {s.bridge_api_token}":
+        logger.warning(f"Invalid or missing token: token_present={bool(token)}, expected_token_set={bool(s.bridge_api_token)}")
         raise HTTPException(status_code=401, detail="Unauthorized: invalid or missing token")
 
 
@@ -228,9 +277,19 @@ async def publish_node_config(
         raise HTTPException(status_code=400, detail="greenhouse_uid is required (zone must have a greenhouse)")
     
     # Публикуем конфиг
-    publisher.publish_config(gh_uid, zone_id, node_uid, req.config)
+    if not publisher:
+        raise HTTPException(status_code=500, detail="Publisher not initialized")
     
-    return {"status": "ok", "data": {"published": True, "topic": f"hydro/{gh_uid}/zn-{zone_id}/{node_uid}/config"}}
+    try:
+        logger.info(f"Publishing config for node {node_uid}, zone_id: {zone_id}, gh_uid: {gh_uid}")
+        # Преобразуем Pydantic модель в dict для публикации
+        config_dict = req.config.dict() if hasattr(req.config, 'dict') else req.config.model_dump() if hasattr(req.config, 'model_dump') else dict(req.config)
+        publisher.publish_config(gh_uid, zone_id, node_uid, config_dict)
+        logger.info(f"Config published successfully for node {node_uid}")
+        return {"status": "ok", "data": {"published": True, "topic": f"hydro/{gh_uid}/zn-{zone_id}/{node_uid}/config"}}
+    except Exception as e:
+        logger.error(f"Failed to publish config for node {node_uid}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to publish config: {str(e)}")
 
 
 @app.post("/bridge/zones/{zone_id}/calibrate-flow")

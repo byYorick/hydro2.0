@@ -23,6 +23,7 @@
 #include "esp_timer.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
+#include "esp_task_wdt.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "cJSON.h"
@@ -48,56 +49,87 @@ static const char *TAG = "ph_node_tasks";
 static void task_sensors(void *pvParameters) {
     ESP_LOGI(TAG, "Sensor task started");
     
+    // Добавляем задачу в watchdog
+    esp_task_wdt_add(NULL);
+    
     TickType_t last_wake_time = xTaskGetTickCount();
     const TickType_t interval = pdMS_TO_TICKS(SENSOR_POLL_INTERVAL_MS);
     
+    // Интервал для периодического сброса watchdog (каждые 2 секунды)
+    // Это гарантирует, что watchdog будет сброшен даже если задача зависнет
+    const TickType_t wdt_reset_interval = pdMS_TO_TICKS(2000);
+    TickType_t last_wdt_reset = xTaskGetTickCount();
+    
     while (1) {
-        vTaskDelayUntil(&last_wake_time, interval);
+        TickType_t current_time = xTaskGetTickCount();
+        TickType_t elapsed_since_wdt = current_time - last_wdt_reset;
         
-        // Publish pH telemetry только если MQTT подключен
-        if (mqtt_manager_is_connected()) {
-            ph_node_publish_telemetry();
-        } else {
-            ESP_LOGW(TAG, "MQTT not connected, skipping sensor poll");
+        // Периодически сбрасываем watchdog во время ожидания
+        // TickType_t - беззнаковый тип, переполнение работает по модулю, поэтому
+        // разница всегда корректна и не может быть отрицательной
+        if (elapsed_since_wdt >= wdt_reset_interval) {
+            esp_task_wdt_reset();
+            last_wdt_reset = current_time;
         }
         
-        // Update OLED UI with current pH values (pH-специфичная логика)
-        // Обновляем OLED независимо от MQTT подключения
-        if (ph_node_is_oled_initialized()) {
-            // Получение статуса соединений через общий компонент
-            connection_status_t conn_status;
-            if (connection_status_get(&conn_status) == ESP_OK) {
-                // Обновление модели OLED UI - обновляем только изменяемые поля
-                oled_ui_model_t model = {0};
-                // Инициализируем неиспользуемые поля как NaN, чтобы они не обновлялись
-                model.ph_value = NAN;
-                model.ec_value = NAN;
-                model.temperature_air = NAN;
-                model.temperature_water = NAN;
-                model.humidity = NAN;
-                model.co2 = NAN;
-                
-                // Обновляем соединения
-                model.connections.wifi_connected = conn_status.wifi_connected;
-                model.connections.mqtt_connected = conn_status.mqtt_connected;
-                model.connections.wifi_rssi = conn_status.wifi_rssi;
-                
-                // Get current pH value (pH-специфичная логика)
-                if (ph_node_is_ph_sensor_initialized()) {
-                    float ph_value = 0.0f;
-                    if (trema_ph_read(&ph_value) && !isnan(ph_value) && isfinite(ph_value)) {
-                        model.ph_value = ph_value;
-                    }
-                    // Если не удалось прочитать, оставляем NaN - старое значение сохранится
-                }
-                
-                // Статус узла
-                model.alert = false;
-                model.paused = false;
-                
-                oled_ui_update_model(&model);
+        // Проверяем, наступило ли время для опроса сенсора
+        TickType_t elapsed_since_wake = current_time - last_wake_time;
+        if (elapsed_since_wake >= interval) {
+            // Сбрасываем watchdog перед выполнением работы
+            esp_task_wdt_reset();
+            
+            // Publish pH telemetry только если MQTT подключен
+            if (mqtt_manager_is_connected()) {
+                ph_node_publish_telemetry();
+            } else {
+                ESP_LOGW(TAG, "MQTT not connected, skipping sensor poll");
             }
+            
+            // Update OLED UI with current pH values (pH-специфичная логика)
+            // Обновляем OLED независимо от MQTT подключения
+            if (ph_node_is_oled_initialized()) {
+                // Получение статуса соединений через общий компонент
+                connection_status_t conn_status;
+                if (connection_status_get(&conn_status) == ESP_OK) {
+                    // Обновление модели OLED UI - обновляем только изменяемые поля
+                    oled_ui_model_t model = {0};
+                    // Инициализируем неиспользуемые поля как NaN, чтобы они не обновлялись
+                    model.ph_value = NAN;
+                    model.ec_value = NAN;
+                    model.temperature_air = NAN;
+                    model.temperature_water = NAN;
+                    model.humidity = NAN;
+                    model.co2 = NAN;
+                    
+                    // Обновляем соединения
+                    model.connections.wifi_connected = conn_status.wifi_connected;
+                    model.connections.mqtt_connected = conn_status.mqtt_connected;
+                    model.connections.wifi_rssi = conn_status.wifi_rssi;
+                    
+                    // Get current pH value (pH-специфичная логика)
+                    if (ph_node_is_ph_sensor_initialized()) {
+                        float ph_value = 0.0f;
+                        if (trema_ph_read(&ph_value) && !isnan(ph_value) && isfinite(ph_value)) {
+                            model.ph_value = ph_value;
+                        }
+                        // Если не удалось прочитать, оставляем NaN - старое значение сохранится
+                    }
+                    
+                    // Статус узла
+                    model.alert = false;
+                    model.paused = false;
+                    
+                    oled_ui_update_model(&model);
+                }
+            }
+            
+            // Сбрасываем watchdog после выполнения работы
+            esp_task_wdt_reset();
+            last_wake_time = current_time;
         }
+        
+        // Небольшая задержка, чтобы не нагружать CPU
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
@@ -110,18 +142,47 @@ static void task_sensors(void *pvParameters) {
 static void task_pump_current(void *pvParameters) {
     ESP_LOGI(TAG, "Pump current task started");
     
+    // Добавляем задачу в watchdog
+    esp_task_wdt_add(NULL);
+    
     TickType_t last_wake_time = xTaskGetTickCount();
     const TickType_t interval = pdMS_TO_TICKS(PUMP_CURRENT_POLL_INTERVAL_MS);
     
+    // Интервал для периодического сброса watchdog (каждые 3 секунды)
+    // Это гарантирует, что watchdog будет сброшен даже если задача зависнет
+    const TickType_t wdt_reset_interval = pdMS_TO_TICKS(3000);
+    TickType_t last_wdt_reset = xTaskGetTickCount();
+    
     while (1) {
-        vTaskDelayUntil(&last_wake_time, interval);
+        TickType_t current_time = xTaskGetTickCount();
+        TickType_t elapsed_since_wdt = current_time - last_wdt_reset;
         
-        if (!mqtt_manager_is_connected()) {
-            continue;
+        // Периодически сбрасываем watchdog во время ожидания
+        // TickType_t - беззнаковый тип, переполнение работает по модулю, поэтому
+        // разница всегда корректна и не может быть отрицательной
+        if (elapsed_since_wdt >= wdt_reset_interval) {
+            esp_task_wdt_reset();
+            last_wdt_reset = current_time;
         }
         
-        // Публикация telemetry тока насосов
-        ph_node_publish_pump_current_telemetry();
+        // Проверяем, наступило ли время для опроса тока
+        TickType_t elapsed_since_wake = current_time - last_wake_time;
+        if (elapsed_since_wake >= interval) {
+            // Сбрасываем watchdog перед выполнением работы
+            esp_task_wdt_reset();
+            
+            if (mqtt_manager_is_connected()) {
+                // Публикация telemetry тока насосов
+                ph_node_publish_pump_current_telemetry();
+            }
+            
+            // Сбрасываем watchdog после выполнения работы
+            esp_task_wdt_reset();
+            last_wake_time = current_time;
+        }
+        
+        // Небольшая задержка, чтобы не нагружать CPU
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
@@ -129,22 +190,54 @@ static void task_pump_current(void *pvParameters) {
  * @brief Задача публикации STATUS сообщений
  * 
  * Публикует status каждые 60 секунд согласно DEVICE_NODE_PROTOCOL.md раздел 4.2
+ * 
+ * Примечание: интервал 60 секунд больше watchdog таймаута (10 сек),
+ * поэтому используем периодический сброс watchdog во время ожидания
  */
 static void task_status(void *pvParameters) {
     ESP_LOGI(TAG, "Status task started");
     
+    // Добавляем задачу в watchdog
+    esp_task_wdt_add(NULL);
+    
     TickType_t last_wake_time = xTaskGetTickCount();
     const TickType_t interval = pdMS_TO_TICKS(STATUS_PUBLISH_INTERVAL_MS);
     
+    // Интервал для периодического сброса watchdog (каждые 5 секунд)
+    const TickType_t wdt_reset_interval = pdMS_TO_TICKS(5000);
+    TickType_t last_wdt_reset = xTaskGetTickCount();
+    
     while (1) {
-        vTaskDelayUntil(&last_wake_time, interval);
+        // Периодически сбрасываем watchdog во время ожидания
+        // (интервал задачи 60 сек > watchdog таймаут 10 сек)
+        TickType_t current_time = xTaskGetTickCount();
+        TickType_t elapsed_since_wdt = current_time - last_wdt_reset;
         
-        if (!mqtt_manager_is_connected()) {
-            continue;
+        // TickType_t - беззнаковый тип, переполнение работает по модулю, поэтому
+        // разница всегда корректна и не может быть отрицательной
+        if (elapsed_since_wdt >= wdt_reset_interval) {
+            esp_task_wdt_reset();
+            last_wdt_reset = current_time;
         }
         
-        // Публикация STATUS
-        ph_node_publish_status();
+        // Проверяем, наступило ли время для публикации STATUS
+        TickType_t elapsed_since_wake = current_time - last_wake_time;
+        if (elapsed_since_wake >= interval) {
+            // Сбрасываем watchdog перед выполнением работы
+            esp_task_wdt_reset();
+            
+            if (mqtt_manager_is_connected()) {
+                // Публикация STATUS
+                ph_node_publish_status();
+            }
+            
+            // Сбрасываем watchdog после выполнения работы
+            esp_task_wdt_reset();
+            last_wake_time = current_time;
+        }
+        
+        // Небольшая задержка, чтобы не нагружать CPU
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
@@ -205,6 +298,10 @@ void ph_node_publish_telemetry(void) {
     
     // Get node_id from config (через геттер, который использует config_storage)
     const char *node_id = ph_node_get_node_id();
+    if (node_id == NULL) {
+        ESP_LOGE(TAG, "Failed to get node_id, skipping telemetry");
+        return;
+    }
     
     // Format according to MQTT_SPEC_FULL.md section 3.2
     cJSON *telemetry = cJSON_CreateObject();
@@ -252,6 +349,10 @@ void ph_node_publish_pump_current_telemetry(void) {
     
     // Get node_id from config
     const char *node_id = ph_node_get_node_id();
+    if (node_id == NULL) {
+        ESP_LOGE(TAG, "Failed to get node_id, skipping pump current telemetry");
+        return;
+    }
     
     // Format according to NODE_CHANNELS_REFERENCE.md section 3.4
     cJSON *telemetry = cJSON_CreateObject();

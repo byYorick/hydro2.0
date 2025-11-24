@@ -23,34 +23,48 @@
     </Teleport>
     
     <div class="flex flex-col gap-3">
-      <div class="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <div class="text-lg font-semibold">{{ zone.name }}</div>
-          <div class="text-xs text-neutral-400">
-            <span v-if="zone.description">{{ zone.description }}</span>
-            <span v-if="zone.recipeInstance?.recipe">
-              · Рецепт: {{ zone.recipeInstance.recipe.name }}
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div class="flex-1 min-w-0">
+          <div class="text-lg font-semibold truncate">{{ zone.name }}</div>
+          <div class="text-xs text-neutral-400 mt-1">
+            <span v-if="zone.description" class="block sm:inline">{{ zone.description }}</span>
+            <span v-if="zone.recipeInstance?.recipe" class="block sm:inline sm:ml-1">
+              <span v-if="zone.description" class="hidden sm:inline">·</span>
+              Рецепт: {{ zone.recipeInstance.recipe.name }}
               <span v-if="zone.recipeInstance.current_phase_index !== null">
                 (фаза {{ zone.recipeInstance.current_phase_index + 1 }})
               </span>
             </span>
           </div>
         </div>
-        <div class="flex items-center gap-2">
-          <Badge :variant="variant">{{ translateStatus(zone.status) }}</Badge>
+        <div class="flex flex-wrap items-center gap-2">
+          <Badge :variant="variant" class="shrink-0">{{ translateStatus(zone.status) }}</Badge>
           <template v-if="page.props.auth?.user?.role === 'admin' || page.props.auth?.user?.role === 'operator'">
-            <Button size="sm" variant="secondary" @click="onToggle" :disabled="loading.toggle">
-              {{ zone.status === 'PAUSED' ? 'Возобновить' : 'Приостановить' }}
+            <Button size="sm" variant="secondary" @click="onToggle" :disabled="loading.toggle" class="flex-1 sm:flex-none min-w-[120px]">
+              <template v-if="loading.toggle">
+                <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
+              </template>
+              <span class="hidden sm:inline">{{ zone.status === 'PAUSED' ? 'Возобновить' : 'Приостановить' }}</span>
+              <span class="sm:hidden">{{ zone.status === 'PAUSED' ? '▶' : '⏸' }}</span>
             </Button>
-            <Button size="sm" variant="outline" @click="openActionModal('FORCE_IRRIGATION')" :disabled="loading.irrigate">
-              Полить сейчас
+            <Button size="sm" variant="outline" @click="openActionModal('FORCE_IRRIGATION')" :disabled="loading.irrigate" class="flex-1 sm:flex-none">
+              <template v-if="loading.irrigate">
+                <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
+              </template>
+              <span class="hidden sm:inline">Полить сейчас</span>
+              <span class="sm:hidden">💧</span>
             </Button>
-            <Button size="sm" @click="onNextPhase" :disabled="loading.nextPhase">
-              Следующая фаза
+            <Button size="sm" @click="onNextPhase" :disabled="loading.nextPhase" class="flex-1 sm:flex-none">
+              <template v-if="loading.nextPhase">
+                <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
+              </template>
+              <span class="hidden sm:inline">Следующая фаза</span>
+              <span class="sm:hidden">⏭</span>
             </Button>
           </template>
-          <Button size="sm" variant="outline" @click="showSimulationModal = true">
-            Симуляция
+          <Button size="sm" variant="outline" @click="showSimulationModal = true" class="flex-1 sm:flex-none">
+            <span class="hidden sm:inline">Симуляция</span>
+            <span class="sm:hidden">🧪</span>
           </Button>
         </div>
       </div>
@@ -58,57 +72,52 @@
       <!-- Target vs Actual (основная метрика зоны) -->
       <ZoneTargets :telemetry="telemetry" :targets="targets" />
 
+      <!-- Прогресс фазы рецепта -->
+      <PhaseProgress
+        v-if="zone.recipeInstance"
+        :recipe-instance="zone.recipeInstance"
+        :phase-progress="computedPhaseProgress"
+        :phase-days-elapsed="computedPhaseDaysElapsed"
+        :phase-days-total="computedPhaseDaysTotal"
+      />
+
       <div class="grid grid-cols-1 xl:grid-cols-3 gap-3">
         <div class="xl:col-span-2 space-y-3">
-          <ZoneTelemetryChart 
-            title="pH" 
-            :data="chartDataPh" 
-            series-name="pH"
+          <!-- Мульти-серии график pH + EC -->
+          <MultiSeriesTelemetryChart
+            v-if="chartDataPh.length > 0 || chartDataEc.length > 0"
+            title="pH и EC"
+            :series="multiSeriesData"
             :time-range="chartTimeRange"
             @time-range-change="onChartTimeRangeChange"
           />
-          <ZoneTelemetryChart 
-            title="EC" 
-            :data="chartDataEc" 
-            series-name="EC"
-            :time-range="chartTimeRange"
-            @time-range-change="onChartTimeRangeChange"
-          />
+          <!-- Отдельные графики как fallback или опционально -->
+          <div v-if="showSeparateCharts" class="space-y-3">
+            <ZoneTelemetryChart 
+              title="pH" 
+              :data="chartDataPh" 
+              series-name="pH"
+              :time-range="chartTimeRange"
+              @time-range-change="onChartTimeRangeChange"
+            />
+            <ZoneTelemetryChart 
+              title="EC" 
+              :data="chartDataEc" 
+              series-name="EC"
+              :time-range="chartTimeRange"
+              @time-range-change="onChartTimeRangeChange"
+            />
+          </div>
         </div>
-        <Card>
-          <div class="flex items-center justify-between mb-2">
-            <div class="text-sm font-semibold">Устройства</div>
-            <template v-if="page.props.auth?.user?.role === 'admin' || page.props.auth?.user?.role === 'operator'">
-              <Button size="sm" variant="secondary" @click="showAttachNodesModal = true">
-                Привязать узлы
-              </Button>
-            </template>
-          </div>
-          <ul v-if="devices.length > 0" class="text-sm text-neutral-300 space-y-1">
-            <li v-for="d in devices" :key="d.id" class="flex items-center justify-between">
-              <div>
-                <Link :href="`/devices/${d.id}`" class="text-sky-400 hover:underline">{{ d.uid || d.name }}</Link>
-                — {{ translateStatus(d.status) }}
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                @click="openNodeConfig(d.id, d)"
-                class="text-xs"
-              >
-                Настроить
-              </Button>
-            </li>
-          </ul>
-          <div v-else class="text-sm text-neutral-400">
-            Нет устройств
-            <template v-if="page.props.auth?.user?.role === 'admin' || page.props.auth?.user?.role === 'operator'">
-              <Button size="sm" variant="secondary" @click="showAttachNodesModal = true" class="ml-2">
-                Привязать узлы
-              </Button>
-            </template>
-          </div>
-        </Card>
+        <!-- Визуализация устройств зоны -->
+        <ZoneDevicesVisualization
+          :zone-name="zone.name"
+          :zone-status="zone.status"
+          :devices="devices"
+          :can-manage="page.props.auth?.user?.role === 'admin' || page.props.auth?.user?.role === 'operator'"
+          @attach="showAttachNodesModal = true"
+          @configure="(device) => openNodeConfig(device.id, device)"
+        />
         
         <!-- Рецепт зоны -->
         <Card>
@@ -197,6 +206,9 @@
               @click="onRunCycle(cycle.type)"
               :disabled="loading.cycles[cycle.type]"
             >
+              <template v-if="loading.cycles[cycle.type]">
+                <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
+              </template>
               {{ loading.cycles[cycle.type] ? 'Запуск...' : 'Запустить сейчас' }}
             </Button>
             
@@ -300,14 +312,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Link, usePage, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
+import { useHistory } from '@/composables/useHistory'
 import ZoneTargets from '@/Components/ZoneTargets.vue'
+import PhaseProgress from '@/Components/PhaseProgress.vue'
+import ZoneDevicesVisualization from '@/Components/ZoneDevicesVisualization.vue'
 import Toast from '@/Components/Toast.vue'
+import LoadingState from '@/Components/LoadingState.vue'
 import ZoneSimulationModal from '@/Components/ZoneSimulationModal.vue'
 import ZoneActionModal from '@/Components/ZoneActionModal.vue'
 import AttachRecipeModal from '@/Components/AttachRecipeModal.vue'
@@ -330,11 +346,13 @@ import { useWebSocket } from '@/composables/useWebSocket'
 import { useErrorHandler } from '@/composables/useErrorHandler'
 import { useOptimisticUpdate, createOptimisticZoneUpdate } from '@/composables/useOptimisticUpdate'
 import { useZonesStore } from '@/stores/zones'
+import { useOptimizedUpdates, useTelemetryBatch } from '@/composables/useOptimizedUpdates'
 import type { Zone, Device, ZoneTelemetry, ZoneTargets as ZoneTargetsType, Cycle, CommandType } from '@/types'
 import type { ZoneEvent } from '@/types/ZoneEvent'
 import type { ToastVariant } from '@/composables/useToast'
 
 const ZoneTelemetryChart = defineAsyncComponent(() => import('@/Pages/Zones/ZoneTelemetryChart.vue'))
+const MultiSeriesTelemetryChart = defineAsyncComponent(() => import('@/Components/MultiSeriesTelemetryChart.vue'))
 
 interface PageProps {
   zone?: Zone
@@ -434,12 +452,126 @@ const zoneId = computed(() => {
   return typeof id === 'string' ? parseInt(id) : id
 })
 
+// История просмотров
+const { addToHistory } = useHistory()
+
+// Добавляем зону в историю просмотров
+watch(zone, (newZone) => {
+  if (newZone?.id) {
+    addToHistory({
+      id: newZone.id,
+      type: 'zone',
+      name: newZone.name || `Зона ${newZone.id}`,
+      url: `/zones/${newZone.id}`
+    })
+  }
+}, { immediate: true })
+
 // Телеметрия, цели и устройства из props
-const telemetry = computed(() => (page.props.telemetry || { ph: null, ec: null, temperature: null, humidity: null }) as ZoneTelemetry)
+// Оптимизированное обновление телеметрии
+const telemetryRef = ref<ZoneTelemetry>(page.props.telemetry || { ph: null, ec: null, temperature: null, humidity: null } as ZoneTelemetry)
+
+// Используем batch updates для оптимизации частых обновлений телеметрии
+const { addUpdate, flush } = useTelemetryBatch((updates) => {
+  // Применяем обновления пакетом
+  const currentZoneId = zoneId.value
+  updates.forEach((metrics, zoneIdStr) => {
+    if (zoneIdStr === String(currentZoneId)) {
+      const current = { ...telemetryRef.value }
+      metrics.forEach((value, metric) => {
+        switch (metric) {
+          case 'ph':
+            current.ph = value
+            break
+          case 'ec':
+            current.ec = value
+            break
+          case 'temperature':
+            current.temperature = value
+            break
+          case 'humidity':
+            current.humidity = value
+            break
+        }
+      })
+      telemetryRef.value = current
+    }
+  })
+}, 200) // Debounce 200ms для телеметрии
+
+const telemetry = computed(() => telemetryRef.value)
 const targets = computed(() => (page.props.targets || {}) as ZoneTargetsType)
 const devices = computed(() => (page.props.devices || []) as Device[])
 const events = computed(() => (page.props.events || []) as ZoneEvent[])
 const cycles = computed(() => (page.props.cycles || {}) as Record<string, Cycle>)
+
+// Вычисление прогресса фазы рецепта
+const computedPhaseProgress = computed(() => {
+  const instance = zone.value.recipeInstance
+  if (!instance || !instance.recipe?.phases || instance.current_phase_index === null) return null
+  
+  const currentPhase = instance.recipe.phases.find(p => p.phase_index === instance.current_phase_index)
+  if (!currentPhase || !currentPhase.duration_hours || !instance.started_at) return null
+  
+  // Вычисляем кумулятивное время начала текущей фазы
+  let phaseStartCumulative = 0
+  for (const phase of instance.recipe.phases) {
+    if (phase.phase_index < instance.current_phase_index) {
+      phaseStartCumulative += phase.duration_hours || 0
+    } else {
+      break
+    }
+  }
+  
+  // Вычисляем прошедшее время с начала рецепта
+  const startedAt = new Date(instance.started_at)
+  const now = new Date()
+  const elapsedHours = (now.getTime() - startedAt.getTime()) / (1000 * 60 * 60)
+  if (elapsedHours < 0) return 0
+  
+  // Вычисляем время в текущей фазе
+  const timeInPhaseHours = elapsedHours - phaseStartCumulative
+  if (timeInPhaseHours < 0) return 0
+  
+  // Вычисляем прогресс (0-100%)
+  const progress = (timeInPhaseHours / currentPhase.duration_hours) * 100
+  return Math.min(100, Math.max(0, progress))
+})
+
+const computedPhaseDaysElapsed = computed(() => {
+  const instance = zone.value.recipeInstance
+  if (!instance || !instance.recipe?.phases || instance.current_phase_index === null) return null
+  
+  const currentPhase = instance.recipe.phases.find(p => p.phase_index === instance.current_phase_index)
+  if (!currentPhase || !currentPhase.duration_hours || !instance.started_at) return null
+  
+  // Вычисляем кумулятивное время начала текущей фазы
+  let phaseStartCumulative = 0
+  for (const phase of instance.recipe.phases) {
+    if (phase.phase_index < instance.current_phase_index) {
+      phaseStartCumulative += phase.duration_hours || 0
+    } else {
+      break
+    }
+  }
+  
+  const startedAt = new Date(instance.started_at)
+  const now = new Date()
+  const elapsedHours = (now.getTime() - startedAt.getTime()) / (1000 * 60 * 60)
+  const timeInPhaseHours = Math.max(0, elapsedHours - phaseStartCumulative)
+  
+  return Math.floor(timeInPhaseHours / 24)
+})
+
+const computedPhaseDaysTotal = computed(() => {
+  const instance = zone.value.recipeInstance
+  if (!instance || !instance.recipe?.phases || instance.current_phase_index === null) return null
+  
+  const currentPhase = instance.recipe.phases.find(p => p.phase_index === instance.current_phase_index)
+  if (!currentPhase || !currentPhase.duration_hours) return null
+  
+  return Math.ceil(currentPhase.duration_hours / 24)
+})
 
 // Список циклов для отображения
 const cyclesList = computed(() => {
@@ -520,6 +652,29 @@ function getCommandStatusText(status: string | null): string {
 const chartTimeRange = ref<'1H' | '24H' | '7D' | '30D' | 'ALL'>('24H')
 const chartDataPh = ref<Array<{ ts: number; value: number }>>([])
 const chartDataEc = ref<Array<{ ts: number; value: number }>>([])
+const showSeparateCharts = ref(false) // Опция для показа отдельных графиков
+
+// Мульти-серии данные для комбинированного графика
+const multiSeriesData = computed(() => {
+  return [
+    {
+      name: 'ph',
+      label: 'pH',
+      color: '#3b82f6', // blue-500
+      data: chartDataPh.value,
+      currentValue: telemetry.value.ph,
+      yAxisIndex: 0,
+    },
+    {
+      name: 'ec',
+      label: 'EC',
+      color: '#10b981', // emerald-500
+      data: chartDataEc.value,
+      currentValue: telemetry.value.ec,
+      yAxisIndex: 1, // Используем правую ось Y для EC
+    },
+  ]
+})
 
 // Загрузка данных истории для графиков через useTelemetry
 async function loadChartData(metric: 'PH' | 'EC', timeRange: string): Promise<Array<{ ts: number; value: number }>> {
@@ -594,8 +749,25 @@ onMounted(async () => {
   // Слушаем события обновления зоны для автоматического обновления
   subscribeWithCleanup('zone:updated', (updatedZone: any) => {
     if (updatedZone.id === zoneId.value) {
-      // Обновляем зону через Inertia partial reload
-      reloadZone(zoneId.value, ['zone'])
+      // Если есть обновление телеметрии, применяем его оптимизированно
+      if (updatedZone.telemetry) {
+        const tel = updatedZone.telemetry
+        if (tel.ph !== null && tel.ph !== undefined) {
+          addUpdate(String(zoneId.value), 'ph', tel.ph)
+        }
+        if (tel.ec !== null && tel.ec !== undefined) {
+          addUpdate(String(zoneId.value), 'ec', tel.ec)
+        }
+        if (tel.temperature !== null && tel.temperature !== undefined) {
+          addUpdate(String(zoneId.value), 'temperature', tel.temperature)
+        }
+        if (tel.humidity !== null && tel.humidity !== undefined) {
+          addUpdate(String(zoneId.value), 'humidity', tel.humidity)
+        }
+      } else {
+        // Обновляем зону через Inertia partial reload только если нет телеметрии
+        reloadZone(zoneId.value, ['zone'])
+      }
     }
   })
   
@@ -605,6 +777,11 @@ onMounted(async () => {
       // Обновляем зону при присвоении рецепта
       reloadZone(zoneId.value, ['zone'])
     }
+  })
+  
+  // При размонтировании применяем все накопленные обновления телеметрии
+  onUnmounted(() => {
+    flush()
   })
 })
 

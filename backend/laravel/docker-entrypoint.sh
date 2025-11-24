@@ -131,6 +131,15 @@ if [ "${APP_ENV:-production}" = "local" ]; then
         cp /app/vite-supervisor.conf /opt/docker/etc/supervisor.d/vite.conf
         chmod 644 /opt/docker/etc/supervisor.d/vite.conf 2>/dev/null || true
     fi
+    # Copy update-vite-hot script and supervisor config
+    if [ -f /app/update-vite-hot.sh ]; then
+        chmod +x /app/update-vite-hot.sh 2>/dev/null || true
+    fi
+    if [ -f /app/update-vite-hot-supervisor.conf ] && [ ! -f /opt/docker/etc/supervisor.d/update-vite-hot.conf ]; then
+        echo "Copying update-vite-hot supervisor config..."
+        cp /app/update-vite-hot-supervisor.conf /opt/docker/etc/supervisor.d/update-vite-hot.conf
+        chmod 644 /opt/docker/etc/supervisor.d/update-vite-hot.conf 2>/dev/null || true
+    fi
 else
     # Disable Vite supervisor in production - use built assets instead
     if [ -f /opt/docker/etc/supervisor.d/vite.conf ]; then
@@ -142,7 +151,21 @@ else
         echo "Removing public/hot file (production mode uses built assets)..."
         rm -f /app/public/hot
     fi
-    echo "✓ Vite dev server disabled - using production build"
+fi
+
+# В dev режиме создаем файл hot с правильным URL для прокси
+if [ "${APP_ENV:-production}" = "local" ]; then
+    # Убеждаемся, что директория public доступна для записи
+    chmod 777 /app/public 2>/dev/null || true
+    chown -R application:application /app/public 2>/dev/null || true
+    
+    # Всегда перезаписываем файл hot с правильным значением (не шаблоном)
+    echo "Creating /app/public/hot file with proxy URL..."
+    echo "http://localhost:8080" > /app/public/hot
+    chmod 666 /app/public/hot 2>/dev/null || chmod 777 /app/public/hot 2>/dev/null || true
+    chown application:application /app/public/hot 2>/dev/null || true
+    echo "✓ Created /app/public/hot with http://localhost:8080"
+fi
 fi
 
 # Убеждаемся, что директории для supervisor существуют и имеют правильные права (Ubuntu совместимость)

@@ -7,12 +7,7 @@
           <span class="text-base font-semibold">hydro 2.0</span>
         </div>
         <nav class="p-3 space-y-1">
-          <NavLink href="/" label="Панель управления" />
-          <NavLink href="/zones" label="Зоны" />
-          <NavLink href="/devices" label="Устройства" />
-          <NavLink href="/recipes" label="Рецепты" />
-          <NavLink href="/alerts" label="Алерты" />
-          <NavLink href="/settings" label="Настройки" />
+          <RoleBasedNavigation />
         </nav>
       </aside>
       
@@ -39,12 +34,7 @@
             </button>
           </div>
           <nav class="p-3 space-y-1" @click="showMobileMenu = false">
-            <NavLink href="/" label="Панель управления" />
-            <NavLink href="/zones" label="Зоны" />
-            <NavLink href="/devices" label="Устройства" />
-            <NavLink href="/recipes" label="Рецепты" />
-            <NavLink href="/alerts" label="Алерты" />
-            <NavLink href="/settings" label="Настройки" />
+            <RoleBasedNavigation />
           </nav>
         </div>
       </div>
@@ -67,17 +57,31 @@
           </div>
           <span class="text-xs text-neutral-400 hidden sm:inline">Ctrl+K — Командная палитра</span>
         </header>
-        <div class="px-4 py-4">
-          <slot />
+        <div class="px-4 py-4 pb-20 lg:pb-4 relative">
+          <Breadcrumbs />
+          <Transition
+            name="page"
+            mode="out-in"
+          >
+            <div :key="$page.url">
+              <slot />
+            </div>
+          </Transition>
         </div>
         <CommandPalette />
+        <ToastContainer />
+        <MobileNavigation />
       </main>
       <aside class="hidden xl:block w-80 shrink-0 border-l border-neutral-800 bg-neutral-925">
         <div class="h-16 flex items-center px-4 border-b border-neutral-800">
           <span class="text-sm text-neutral-400">События</span>
         </div>
-        <div class="p-4 text-neutral-400 text-sm">
-          <slot name="context" />
+        <div class="p-4 space-y-4">
+          <FavoritesWidget />
+          <HistoryWidget />
+          <div class="text-neutral-400 text-sm">
+            <slot name="context" />
+          </div>
         </div>
       </aside>
     </div>
@@ -86,14 +90,22 @@
 </template>
   
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, usePage } from 'vue'
+import { usePage as useInertiaPage } from '@inertiajs/vue3'
 import CommandPalette from '@/Components/CommandPalette.vue'
 import NavLink from '@/Components/NavLink.vue'
+import RoleBasedNavigation from '@/Components/RoleBasedNavigation.vue'
+import Breadcrumbs from '@/Components/Breadcrumbs.vue'
 import HeaderStatusBar from '@/Components/HeaderStatusBar.vue'
 import ErrorBoundary from '@/Components/ErrorBoundary.vue'
+import ToastContainer from '@/Components/ToastContainer.vue'
+import MobileNavigation from '@/Components/MobileNavigation.vue'
+import FavoritesWidget from '@/Components/FavoritesWidget.vue'
+import HistoryWidget from '@/Components/HistoryWidget.vue'
 import { useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts'
   
 const showMobileMenu = ref(false)
+const page = useInertiaPage()
 
 // Инициализируем keyboard shortcuts
 onMounted(() => {
@@ -101,11 +113,40 @@ onMounted(() => {
 })
 </script>
   
-  <style>
-  :root {
-    color-scheme: dark;
-  }
-  .bg-neutral-925 { background-color: #0f0f10; }
-  .bg-neutral-850 { background-color: #1a1a1b; }
-  </style>
+<style>
+:root {
+  color-scheme: dark;
+}
+.bg-neutral-925 { background-color: #0f0f10; }
+.bg-neutral-850 { background-color: #1a1a1b; }
+
+/* Анимации переходов между страницами */
+.page-enter-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.page-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+.page-enter-to {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.page-leave-from {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.page-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+</style>
 

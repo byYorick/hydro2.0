@@ -43,9 +43,11 @@ async def lifespan(app: FastAPI):
     # Подписка на node_hello для регистрации новых узлов
     await mqtt.subscribe("hydro/node_hello", handle_node_hello)
     await mqtt.subscribe("hydro/+/+/+/node_hello", handle_node_hello)
+    # Подписка на config_response для обработки подтверждений установки конфига
+    await mqtt.subscribe("hydro/+/+/+/config_response", handle_config_response)
     
     logger.info("History Logger service started")
-    logger.info("Subscribed to MQTT topics: hydro/+/+/+/telemetry/+, hydro/+/+/+/heartbeat, hydro/node_hello, hydro/+/+/+/node_hello")
+    logger.info("Subscribed to MQTT topics: hydro/+/+/+/telemetry/+, hydro/+/+/+/heartbeat, hydro/node_hello, hydro/+/+/+/node_hello, hydro/+/+/+/config_response")
     
     yield
     
@@ -113,6 +115,16 @@ NODE_HELLO_REGISTERED = Counter("node_hello_registered_total",
 NODE_HELLO_ERRORS = Counter("node_hello_errors_total",
                            "Total errors processing node_hello",
                            ["error_type"])
+CONFIG_RESPONSE_RECEIVED = Counter("config_response_received_total",
+                                   "Total config_response messages received")
+CONFIG_RESPONSE_SUCCESS = Counter("config_response_success_total",
+                                 "Total successful config_response messages",
+                                 ["node_uid"])
+CONFIG_RESPONSE_ERROR = Counter("config_response_error_total",
+                               "Total error config_response messages",
+                               ["node_uid"])
+CONFIG_RESPONSE_PROCESSED = Counter("config_response_processed_total",
+                                  "Total config_response messages processed")
 
 # Дополнительные метрики для мониторинга
 TELEMETRY_QUEUE_SIZE = Gauge("telemetry_queue_size",
@@ -829,6 +841,174 @@ async def handle_heartbeat(topic: str, payload: bytes):
             "rssi": rssi,
         }
     )
+
+
+async def handle_config_response(topic: str, payload: bytes):
+    """
+    Обработчик config_response сообщений от узлов ESP32.
+    Переводит ноду в ASSIGNED_TO_ZONE после успешной установки конфига.
+    """
+    try:
+        logger.info(f"[CONFIG_RESPONSE] Received message on topic {topic}, payload length: {len(payload)}")
+        data = _parse_json(payload)
+        if not data or not isinstance(data, dict):
+            logger.warning(f"[CONFIG_RESPONSE] Invalid JSON in config_response from topic {topic}")
+            CONFIG_RESPONSE_ERROR.labels(node_uid="unknown").inc()
+            return
+        
+        node_uid = _extract_node_uid(topic)
+        if not node_uid:
+            logger.warning(f"[CONFIG_RESPONSE] Could not extract node_uid from topic {topic}")
+            CONFIG_RESPONSE_ERROR.labels(node_uid="unknown").inc()
+            return
+        
+        CONFIG_RESPONSE_RECEIVED.inc()
+        
+        status = data.get("status", "").upper()
+        
+        if status == "OK":
+            # Успешная установка конфига - переводим ноду в ASSIGNED_TO_ZONE
+            logger.info(f"[CONFIG_RESPONSE] Config successfully installed for node {node_uid}")
+            CONFIG_RESPONSE_SUCCESS.labels(node_uid=node_uid).inc()
+            
+            # Вызываем Laravel API для перевода ноды в ASSIGNED_TO_ZONE
+            s = get_settings()
+            laravel_url = s.laravel_api_url if hasattr(s, 'laravel_api_url') else None
+            laravel_token = s.laravel_api_token if hasattr(s, 'laravel_api_token') else None
+            
+            if not laravel_url:
+                logger.error("[CONFIG_RESPONSE] Laravel API URL not configured, cannot update node lifecycle")
+                return
+            
+            try:
+                # Получаем информацию о ноде
+                headers = {
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                }
+                if laravel_token:
+                    headers["Authorization"] = f"Bearer {laravel_token}"
+                
+                # Получаем информацию о ноде через БД напрямую
+                # (более эффективно, чем через API)
+                rows = await fetch(
+                    """
+                    SELECT id, uid, lifecycle_state, zone_id
+                    FROM nodes
+                    WHERE uid = $1
+                    """,
+                    node_uid
+                )
+                
+                if not rows or len(rows) == 0:
+                    logger.warning(f"[CONFIG_RESPONSE] Node {node_uid} not found in database")
+                    return
+                
+                node = rows[0]
+                node_id = node.get("id")
+                lifecycle_state = node.get("lifecycle_state")
+                zone_id = node.get("zone_id")
+                
+                # Переводим в ASSIGNED_TO_ZONE только если:
+                # 1. Нода в состоянии REGISTERED_BACKEND
+                # 2. Нода привязана к зоне (zone_id не null)
+                if lifecycle_state == "REGISTERED_BACKEND" and zone_id:
+                    logger.info(
+                        f"[CONFIG_RESPONSE] Transitioning node {node_uid} (id={node_id}) to ASSIGNED_TO_ZONE "
+                        f"after successful config installation"
+                    )
+                    
+                    # Переводим через lifecycle API
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        transition_response = await client.post(
+                            f"{laravel_url}/api/nodes/{node_id}/lifecycle/transition",
+                            headers=headers,
+                            json={
+                                "target_state": "ASSIGNED_TO_ZONE",
+                                "reason": "Config successfully installed and confirmed by node"
+                            }
+                        )
+                        
+                        if transition_response.status_code == 200:
+                            logger.info(
+                                f"[CONFIG_RESPONSE] Node {node_uid} (id={node_id}) successfully transitioned to ASSIGNED_TO_ZONE"
+                            )
+                            CONFIG_RESPONSE_PROCESSED.inc()
+                        elif transition_response.status_code == 404:
+                            logger.warning(
+                                f"[CONFIG_RESPONSE] Node {node_uid} (id={node_id}) not found during transition - "
+                                f"node may have been deleted"
+                            )
+                        elif transition_response.status_code == 400:
+                            # Возможно, нода уже в другом состоянии или zone_id был удален
+                            # Проверяем текущее состояние ноды
+                            try:
+                                check_rows = await fetch(
+                                    """
+                                    SELECT id, uid, lifecycle_state, zone_id
+                                    FROM nodes
+                                    WHERE uid = $1
+                                    """,
+                                    node_uid
+                                )
+                                if check_rows and len(check_rows) > 0:
+                                    check_node = check_rows[0]
+                                    logger.warning(
+                                        f"[CONFIG_RESPONSE] Transition failed for node {node_uid}: "
+                                        f"current_state={check_node.get('lifecycle_state')}, "
+                                        f"zone_id={check_node.get('zone_id')}, "
+                                        f"response={transition_response.text}"
+                                    )
+                                else:
+                                    logger.warning(
+                                        f"[CONFIG_RESPONSE] Node {node_uid} not found after transition failure"
+                                    )
+                            except Exception as check_e:
+                                logger.error(
+                                    f"[CONFIG_RESPONSE] Error checking node state after transition failure: {check_e}"
+                                )
+                            logger.error(
+                                f"[CONFIG_RESPONSE] Failed to transition node {node_uid} (id={node_id}) to ASSIGNED_TO_ZONE: "
+                                f"{transition_response.status_code} {transition_response.text}"
+                            )
+                        else:
+                            logger.error(
+                                f"[CONFIG_RESPONSE] Failed to transition node {node_uid} (id={node_id}) to ASSIGNED_TO_ZONE: "
+                                f"{transition_response.status_code} {transition_response.text}"
+                            )
+                elif lifecycle_state == "ASSIGNED_TO_ZONE":
+                    # Нода уже в ASSIGNED_TO_ZONE - возможно, это повторный config_response
+                    # (например, при повторной публикации конфига)
+                    logger.debug(
+                        f"[CONFIG_RESPONSE] Node {node_uid} already in ASSIGNED_TO_ZONE, "
+                        f"skipping transition (may be duplicate config_response)"
+                    )
+                else:
+                    logger.debug(
+                        f"[CONFIG_RESPONSE] Node {node_uid} not in REGISTERED_BACKEND or not assigned to zone, "
+                        f"skipping transition. lifecycle_state={lifecycle_state}, zone_id={zone_id}"
+                    )
+            except Exception as e:
+                logger.error(
+                    f"[CONFIG_RESPONSE] Error processing config_response for node {node_uid}: {e}",
+                    exc_info=True
+                )
+        elif status == "ERROR":
+            # Ошибка установки конфига
+            error_msg = data.get("error", "Unknown error")
+            logger.warning(
+                f"[CONFIG_RESPONSE] Config installation failed for node {node_uid}: {error_msg}"
+            )
+            CONFIG_RESPONSE_ERROR.labels(node_uid=node_uid).inc()
+        else:
+            logger.warning(
+                f"[CONFIG_RESPONSE] Unknown status in config_response from node {node_uid}: {status}"
+            )
+            CONFIG_RESPONSE_ERROR.labels(node_uid=node_uid).inc()
+            
+    except Exception as e:
+        logger.error(f"[CONFIG_RESPONSE] Unexpected error processing config_response: {e}", exc_info=True)
+        CONFIG_RESPONSE_ERROR.labels(node_uid="unknown").inc()
 
 
 def extract_zone_id_from_uid(zone_uid: Optional[str]) -> Optional[int]:

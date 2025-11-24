@@ -1,0 +1,225 @@
+<template>
+  <div class="space-y-6">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <h1 class="text-lg font-semibold">Панель инженера</h1>
+      <div class="flex flex-wrap gap-2">
+        <Link href="/system" class="flex-1 sm:flex-none min-w-[160px]">
+          <Button size="sm" variant="outline" class="w-full sm:w-auto">Системные метрики</Button>
+        </Link>
+        <Link href="/logs" class="flex-1 sm:flex-none min-w-[120px]">
+          <Button size="sm" variant="outline" class="w-full sm:w-auto">Логи</Button>
+        </Link>
+      </div>
+    </div>
+
+    <!-- Статус устройств -->
+    <div class="space-y-4">
+      <h2 class="text-md font-semibold">Статус устройств</h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <Card
+          v-for="device in devices"
+          :key="device.id"
+          class="hover:border-neutral-700 transition-colors"
+        >
+          <div class="flex items-start justify-between mb-3">
+            <div>
+              <div class="text-sm font-semibold">{{ device.uid || device.name }}</div>
+              <div class="text-xs text-neutral-400 mt-1">
+                {{ device.type || 'Устройство' }}
+              </div>
+            </div>
+            <Badge :variant="device.status === 'ONLINE' ? 'success' : 'danger'">
+              {{ translateStatus(device.status) }}
+            </Badge>
+          </div>
+          
+          <div class="space-y-2 text-xs">
+            <div v-if="device.rssi !== null && device.rssi !== undefined" class="flex items-center justify-between">
+              <span class="text-neutral-400">RSSI:</span>
+              <span :class="getRssiColor(device.rssi)">{{ device.rssi }} dBm</span>
+            </div>
+            <div v-if="device.firmwareVersion" class="flex items-center justify-between">
+              <span class="text-neutral-400">Прошивка:</span>
+              <span class="text-neutral-300">{{ device.firmwareVersion }}</span>
+            </div>
+            <div v-if="device.lastSeen" class="flex items-center justify-between">
+              <span class="text-neutral-400">Обновление:</span>
+              <span class="text-neutral-300">{{ formatTimeAgo(device.lastSeen) }}</span>
+            </div>
+            <div v-if="device.issues && device.issues.length > 0" class="mt-2">
+              <div class="text-amber-400 text-xs">
+                <div v-for="issue in device.issues" :key="issue">
+                  ⚠️ {{ issue }}
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="mt-3 flex gap-2">
+            <Link :href="`/devices/${device.id}`">
+              <Button size="sm" variant="secondary">Подробнее</Button>
+            </Link>
+            <Button
+              size="sm"
+              variant="outline"
+              @click="testDevice(device.id)"
+            >
+              Тест
+            </Button>
+          </div>
+        </Card>
+      </div>
+    </div>
+
+    <!-- Проблемные устройства -->
+    <div v-if="problematicDevices.length > 0" class="space-y-4">
+      <h2 class="text-md font-semibold">Проблемные устройства</h2>
+      <Card class="border-red-800 bg-red-950/10">
+        <div class="space-y-3">
+          <div
+            v-for="device in problematicDevices"
+            :key="device.id"
+            class="flex items-center justify-between p-3 bg-neutral-900 rounded-lg"
+          >
+            <div>
+              <div class="text-sm font-semibold">{{ device.uid || device.name }}</div>
+              <div class="text-xs text-neutral-400 mt-1">
+                {{ device.issues?.join(', ') || 'Проблема не указана' }}
+              </div>
+            </div>
+            <div class="flex gap-2">
+              <Link :href="`/devices/${device.id}`">
+                <Button size="sm" variant="secondary">Открыть</Button>
+              </Link>
+              <Button
+                size="sm"
+                variant="outline"
+                @click="restartDevice(device.id)"
+              >
+                Перезапустить
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Card>
+    </div>
+
+    <!-- Системные метрики -->
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+      <Card>
+        <div class="text-neutral-400 text-sm mb-1">Нагрузка CPU</div>
+        <div class="text-3xl font-bold">{{ systemMetrics.cpu || '-' }}%</div>
+        <div class="w-full bg-neutral-800 rounded-full h-2 mt-2">
+          <div
+            class="bg-sky-500 h-2 rounded-full transition-all duration-300"
+            :style="{ width: `${systemMetrics.cpu || 0}%` }"
+          />
+        </div>
+      </Card>
+      <Card>
+        <div class="text-neutral-400 text-sm mb-1">Память</div>
+        <div class="text-3xl font-bold">{{ systemMetrics.memory || '-' }}%</div>
+        <div class="w-full bg-neutral-800 rounded-full h-2 mt-2">
+          <div
+            class="bg-emerald-500 h-2 rounded-full transition-all duration-300"
+            :style="{ width: `${systemMetrics.memory || 0}%` }"
+          />
+        </div>
+      </Card>
+      <Card>
+        <div class="text-neutral-400 text-sm mb-1">База данных</div>
+        <div class="text-3xl font-bold" :class="systemMetrics.dbStatus === 'OK' ? 'text-emerald-400' : 'text-red-400'">
+          {{ systemMetrics.dbStatus === 'OK' ? '✅' : '❌' }}
+        </div>
+      </Card>
+      <Card>
+        <div class="text-neutral-400 text-sm mb-1">MQTT брокер</div>
+        <div class="text-3xl font-bold" :class="systemMetrics.mqttStatus === 'OK' ? 'text-emerald-400' : 'text-red-400'">
+          {{ systemMetrics.mqttStatus === 'OK' ? '✅' : '❌' }}
+        </div>
+      </Card>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed } from 'vue'
+import { Link } from '@inertiajs/vue3'
+import Card from '@/Components/Card.vue'
+import Button from '@/Components/Button.vue'
+import Badge from '@/Components/Badge.vue'
+import { translateStatus } from '@/utils/i18n'
+import { formatTime } from '@/utils/formatTime'
+import { useApi } from '@/composables/useApi'
+import type { Device } from '@/types'
+
+interface Props {
+  dashboard: {
+    devices?: Array<Device & {
+      rssi?: number | null
+      firmwareVersion?: string
+      lastSeen?: string
+      issues?: string[]
+    }>
+    systemMetrics?: {
+      cpu?: number
+      memory?: number
+      dbStatus?: 'OK' | 'FAIL'
+      mqttStatus?: 'OK' | 'FAIL'
+    }
+  }
+}
+
+const props = defineProps<Props>()
+
+const { api } = useApi()
+
+const devices = computed(() => props.dashboard.devices || [])
+
+const problematicDevices = computed(() => {
+  return devices.value.filter(d => 
+    d.status !== 'ONLINE' || 
+    (d.issues && d.issues.length > 0) ||
+    (d.rssi !== null && d.rssi !== undefined && d.rssi < -80)
+  )
+})
+
+const systemMetrics = computed(() => props.dashboard.systemMetrics || {
+  cpu: null,
+  memory: null,
+  dbStatus: 'OK',
+  mqttStatus: 'OK'
+})
+
+function getRssiColor(rssi: number): string {
+  if (rssi >= -50) return 'text-emerald-400'
+  if (rssi >= -70) return 'text-amber-400'
+  return 'text-red-400'
+}
+
+function formatTimeAgo(timestamp: string | Date): string {
+  const now = new Date()
+  const time = new Date(timestamp)
+  const diff = now.getTime() - time.getTime()
+  const seconds = Math.floor(diff / 1000)
+  
+  if (seconds < 60) return `${seconds} сек назад`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes} мин назад`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} ч назад`
+  const days = Math.floor(hours / 24)
+  return `${days} дн назад`
+}
+
+function testDevice(deviceId: number) {
+  // TODO: Реализовать тестирование устройства
+  console.log('Test device:', deviceId)
+}
+
+function restartDevice(deviceId: number) {
+  // TODO: Реализовать перезапуск устройства
+  console.log('Restart device:', deviceId)
+}
+</script>
+

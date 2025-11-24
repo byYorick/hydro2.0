@@ -38,6 +38,24 @@ static const char *TAG = "ph_node_init";
 void ph_node_run_setup_mode(void) {
     ESP_LOGI(TAG, "Starting setup mode for PH node");
     
+    // Инициализируем I2C шину для OLED перед запуском setup mode
+    // Это нужно, чтобы OLED мог работать в setup mode
+    if (!i2c_bus_is_initialized_bus(I2C_BUS_0)) {
+        ESP_LOGI(TAG, "Initializing I2C bus 0 for OLED in setup mode...");
+        i2c_bus_config_t i2c0_config = {
+            .sda_pin = PH_NODE_I2C_BUS_0_SDA,
+            .scl_pin = PH_NODE_I2C_BUS_0_SCL,
+            .clock_speed = 100000,
+            .pullup_enable = true
+        };
+        esp_err_t i2c_err = i2c_bus_init_bus(I2C_BUS_0, &i2c0_config);
+        if (i2c_err == ESP_OK) {
+            ESP_LOGI(TAG, "I2C bus 0 initialized for setup mode OLED");
+        } else {
+            ESP_LOGW(TAG, "Failed to initialize I2C bus 0 for setup mode: %s", esp_err_to_name(i2c_err));
+        }
+    }
+    
     setup_portal_full_config_t config = {
         .node_type_prefix = "PH",
         .ap_password = PH_NODE_SETUP_AP_PASSWORD,
@@ -205,21 +223,23 @@ esp_err_t ph_node_init_components(void) {
     
     config_storage_wifi_t wifi_cfg;
     if (config_storage_get_wifi(&wifi_cfg) == ESP_OK) {
-    wifi_manager_config_t wifi_config;
-    static char wifi_ssid[CONFIG_STORAGE_MAX_STRING_LEN];
-    static char wifi_password[CONFIG_STORAGE_MAX_STRING_LEN];
-    
-    strncpy(wifi_ssid, wifi_cfg.ssid, sizeof(wifi_ssid) - 1);
-    strncpy(wifi_password, wifi_cfg.password, sizeof(wifi_password) - 1);
-    wifi_config.ssid = wifi_ssid;
-    wifi_config.password = wifi_password;
-    ESP_LOGI(TAG, "Connecting to Wi-Fi from config: %s", wifi_cfg.ssid);
-    
-    err = wifi_manager_connect(&wifi_config);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to connect to Wi-Fi: %s", esp_err_to_name(err));
-        // Continue - Wi-Fi will try to reconnect automatically
-    }
+        wifi_manager_config_t wifi_config;
+        static char wifi_ssid[CONFIG_STORAGE_MAX_STRING_LEN];
+        static char wifi_password[CONFIG_STORAGE_MAX_STRING_LEN];
+        
+        strncpy(wifi_ssid, wifi_cfg.ssid, sizeof(wifi_ssid) - 1);
+        wifi_ssid[sizeof(wifi_ssid) - 1] = '\0';
+        strncpy(wifi_password, wifi_cfg.password, sizeof(wifi_password) - 1);
+        wifi_password[sizeof(wifi_password) - 1] = '\0';
+        wifi_config.ssid = wifi_ssid;
+        wifi_config.password = wifi_password;
+        ESP_LOGI(TAG, "Connecting to Wi-Fi from config: %s", wifi_cfg.ssid);
+        
+        err = wifi_manager_connect(&wifi_config);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to connect to Wi-Fi: %s", esp_err_to_name(err));
+            // Continue - Wi-Fi will try to reconnect automatically
+        }
     }
     
     // [Step 3/8] I2C Buses

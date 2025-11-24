@@ -22,18 +22,26 @@ class AlertWebhookController extends Controller
         // Валидация webhook данных от Alertmanager
         // Формат: https://prometheus.io/docs/alerting/latest/configuration/#webhook_config
         // Поле alerts может быть пустым массивом или отсутствовать (для совместимости)
-        $data = $request->validate([
+        
+        // Базовые правила валидации
+        $rules = [
             'version' => ['nullable', 'string'],
             'groupKey' => ['nullable', 'string'],
             'status' => ['nullable', 'string', 'in:firing,resolved'],
             'receiver' => ['nullable', 'string'],
-            'alerts' => ['nullable', 'array'], // Разрешаем отсутствие или пустой массив
-            'alerts.*.status' => ['required', 'string', 'in:firing,resolved'],
-            'alerts.*.labels' => ['required', 'array'],
-            'alerts.*.annotations' => ['nullable', 'array'],
-            'alerts.*.startsAt' => ['nullable', 'date'],
-            'alerts.*.endsAt' => ['nullable', 'date'],
-        ]);
+            'alerts' => ['nullable', 'array'],
+        ];
+        
+        // Добавляем вложенные правила для alerts только если alerts присутствует и не пустое
+        if ($request->has('alerts') && !empty($request->input('alerts'))) {
+            $rules['alerts.*.status'] = ['required', 'string', 'in:firing,resolved'];
+            $rules['alerts.*.labels'] = ['required', 'array'];
+            $rules['alerts.*.annotations'] = ['nullable', 'array'];
+            $rules['alerts.*.startsAt'] = ['nullable', 'date'];
+            $rules['alerts.*.endsAt'] = ['nullable', 'date'];
+        }
+        
+        $data = $request->validate($rules);
         
         Log::info('Alertmanager webhook received', ['data' => $data]);
 

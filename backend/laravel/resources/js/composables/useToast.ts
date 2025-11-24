@@ -3,13 +3,27 @@
  */
 import { ref, type Ref } from 'vue'
 
+// Группировка похожих уведомлений
+const groupedToasts = new Map<string, number[]>()
+
 export type ToastVariant = 'success' | 'error' | 'warning' | 'info'
+
+export interface ToastAction {
+  label: string
+  variant?: 'primary' | 'secondary'
+  handler: () => void
+}
 
 export interface Toast {
   id: number
   message: string
   variant: ToastVariant
   duration: number
+  title?: string
+  actions?: ToastAction[]
+  grouped?: boolean
+  showProgress?: boolean
+  progress?: number
 }
 
 // Глобальное хранилище для Toast уведомлений
@@ -34,22 +48,80 @@ export function useToast() {
   function showToast(
     message: string,
     variant: ToastVariant = 'info',
-    duration: number = 3000
+    duration: number = 3000,
+    options?: {
+      title?: string
+      actions?: ToastAction[]
+      groupKey?: string
+      showProgress?: boolean
+    }
   ): number {
     const id = ++toastIdCounter
+    
+    // Проверяем группировку
+    let grouped = false
+    if (options?.groupKey) {
+      const existingGroup = groupedToasts.get(options.groupKey)
+      if (existingGroup && existingGroup.length > 0) {
+        grouped = true
+        // Обновляем существующее уведомление вместо создания нового
+        const existingId = existingGroup[existingGroup.length - 1]
+        const existingToast = toasts.value.find(t => t.id === existingId)
+        if (existingToast) {
+          existingToast.message = `${existingToast.message}\n${message}`
+          return existingId
+        }
+      } else {
+        groupedToasts.set(options.groupKey, [id])
+      }
+    }
+    
     const toast: Toast = {
       id,
       message,
       variant,
-      duration
+      duration,
+      title: options?.title,
+      actions: options?.actions,
+      grouped,
+      showProgress: options?.showProgress ?? true,
+      progress: 100
     }
     
     toasts.value.push(toast)
+    
+    // Обновление прогресс-бара
+    if (duration > 0 && toast.showProgress) {
+      const startTime = Date.now()
+      const interval = setInterval(() => {
+        const elapsed = Date.now() - startTime
+        const remaining = Math.max(0, 100 - (elapsed / duration) * 100)
+        const toastIndex = toasts.value.findIndex(t => t.id === id)
+        if (toastIndex > -1) {
+          toasts.value[toastIndex].progress = remaining
+        }
+        if (remaining <= 0) {
+          clearInterval(interval)
+        }
+      }, 50)
+    }
     
     // Автоматическое удаление через duration
     if (duration > 0) {
       setTimeout(() => {
         removeToast(id)
+        if (options?.groupKey) {
+          const group = groupedToasts.get(options.groupKey)
+          if (group) {
+            const index = group.indexOf(id)
+            if (index > -1) {
+              group.splice(index, 1)
+            }
+            if (group.length === 0) {
+              groupedToasts.delete(options.groupKey)
+            }
+          }
+        }
       }, duration)
     }
     

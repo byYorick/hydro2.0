@@ -10,18 +10,26 @@ export default defineConfig({
         },
     },
     server: {
-        host: '0.0.0.0',
+        // Используем 0.0.0.0 для доступа из локальной сети
+        // nginx прокси будет работать с 127.0.0.1 внутри контейнера
+        host: process.env.VITE_HOST || '0.0.0.0',
         port: 5173,
         strictPort: true,
-        origin: 'http://localhost:5173',
         cors: {
-            origin: ['http://localhost:8080'],
+            origin: true, // Разрешить все источники
             credentials: true,
+            methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+            allowedHeaders: ['*'],
         },
         hmr: {
+            // HMR через nginx прокси на порту 8080
+            // Используем тот же хост, что и основной запрос
             host: 'localhost',
-            port: 5173,
+            port: 8080,
+            clientPort: 8080,
             protocol: 'ws',
+            // Путь для WebSocket через прокси
+            path: '/@vite/client',
         },
         watch: {
             usePolling: true, // Для Docker на Windows
@@ -100,6 +108,10 @@ export default defineConfig({
                 'app/Http/Controllers/**',
                 'routes/**',
             ], // Ограничиваем refresh только нужными файлами для снижения нагрузки
+            detectTls: false, // Отключить автоматическое определение TLS
+            // Использовать прокси через nginx вместо прямых ссылок на Vite
+            buildDirectory: 'build',
+            hotFile: 'public/hot',
         }),
         vue({
             template: {

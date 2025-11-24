@@ -200,6 +200,8 @@ hydro/{gh}/{zone}/{node}/config_response
 ```
 
 ## 6.2. Пример JSON
+
+При успешной установке конфига:
 ```json
 {
  "status": "OK",
@@ -217,6 +219,20 @@ hydro/{gh}/{zone}/{node}/config_response
  "timestamp": 1710002223
 }
 ```
+
+## 6.3. Обработка на backend
+
+Backend подписывается на топик `hydro/+/+/+/config_response` через сервис `history-logger` и обрабатывает сообщения:
+
+- **При `status: "OK"`:**
+  - Если нода в состоянии `REGISTERED_BACKEND` и имеет `zone_id`, backend переводит ноду в `ASSIGNED_TO_ZONE` через Laravel API `/api/nodes/{node}/lifecycle/transition`
+  - Это гарантирует, что нода считается привязанной к зоне только после успешной установки конфига
+- **При `status: "ERROR"`:**
+  - Backend логирует ошибку
+  - Нода остается в состоянии `REGISTERED_BACKEND`
+  - Нода не считается привязанной к зоне
+
+**Важно:** Переход в `ASSIGNED_TO_ZONE` происходит только после получения успешного `config_response` от ноды. Это обеспечивает надежность привязки и гарантирует, что нода получила и применила конфиг перед началом работы.
 
 ---
 

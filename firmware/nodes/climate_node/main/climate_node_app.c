@@ -97,7 +97,7 @@ static void on_config_received(const char *topic, const char *data, int data_len
         if (error_response) {
             cJSON_AddStringToObject(error_response, "status", "ERROR");
             cJSON_AddStringToObject(error_response, "error", "Invalid JSON");
-            cJSON_AddNumberToObject(error_response, "timestamp", (double)(esp_timer_get_time() / 1000000));
+            cJSON_AddNumberToObject(error_response, "ts", (double)(esp_timer_get_time() / 1000000));
             char *json_str = cJSON_PrintUnformatted(error_response);
             if (json_str) {
                 mqtt_client_publish_config_response(json_str);
@@ -134,7 +134,7 @@ static void on_config_received(const char *topic, const char *data, int data_len
         if (error_response) {
             cJSON_AddStringToObject(error_response, "status", "ERROR");
             cJSON_AddStringToObject(error_response, "error", "Missing required fields");
-            cJSON_AddNumberToObject(error_response, "timestamp", (double)(esp_timer_get_time() / 1000000));
+            cJSON_AddNumberToObject(error_response, "ts", (double)(esp_timer_get_time() / 1000000));
             char *json_str = cJSON_PrintUnformatted(error_response);
             if (json_str) {
                 mqtt_client_publish_config_response(json_str);
@@ -170,7 +170,7 @@ static void on_config_received(const char *topic, const char *data, int data_len
         if (error_response) {
             cJSON_AddStringToObject(error_response, "status", "ERROR");
             cJSON_AddStringToObject(error_response, "error", error_msg);
-            cJSON_AddNumberToObject(error_response, "timestamp", (double)(esp_timer_get_time() / 1000000));
+            cJSON_AddNumberToObject(error_response, "ts", (double)(esp_timer_get_time() / 1000000));
             char *error_json = cJSON_PrintUnformatted(error_response);
             if (error_json) {
                 mqtt_client_publish_config_response(error_json);
@@ -195,7 +195,7 @@ static void on_config_received(const char *topic, const char *data, int data_len
         if (error_response) {
             cJSON_AddStringToObject(error_response, "status", "ERROR");
             cJSON_AddStringToObject(error_response, "error", "Failed to save config to NVS");
-            cJSON_AddNumberToObject(error_response, "timestamp", (double)(esp_timer_get_time() / 1000000));
+            cJSON_AddNumberToObject(error_response, "ts", (double)(esp_timer_get_time() / 1000000));
             char *error_json = cJSON_PrintUnformatted(error_response);
             if (error_json) {
                 mqtt_client_publish_config_response(error_json);

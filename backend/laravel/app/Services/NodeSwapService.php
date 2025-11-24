@@ -43,7 +43,9 @@ class NodeSwapService
                 $newNode->type = $oldNode->type;
                 $newNode->name = $oldNode->name . ' (заменён)';
                 $newNode->zone_id = $oldNode->zone_id;
-                $newNode->lifecycle_state = NodeLifecycleState::ASSIGNED_TO_ZONE;
+                // НЕ переводим сразу в ASSIGNED_TO_ZONE - это произойдет только после успешной публикации конфига
+                // и получения config_response от ноды
+                $newNode->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
                 $newNode->validated = true;
                 $newNode->first_seen_at = now();
                 $newNode->save();
@@ -58,8 +60,25 @@ class NodeSwapService
                 if (!$newNode->zone_id && $oldNode->zone_id) {
                     $newNode->zone_id = $oldNode->zone_id;
                 }
-                if ($newNode->lifecycle_state === NodeLifecycleState::REGISTERED_BACKEND && $newNode->zone_id) {
-                    $newNode->lifecycle_state = NodeLifecycleState::ASSIGNED_TO_ZONE;
+                // НЕ переводим сразу в ASSIGNED_TO_ZONE - это произойдет только после успешной публикации конфига
+                // и получения config_response от ноды
+                // Если узел был в ASSIGNED_TO_ZONE или ACTIVE, переводим в REGISTERED_BACKEND,
+                // чтобы конфиг был опубликован заново и нода подтвердила установку
+                $previousState = $newNode->lifecycle_state;
+                if ($newNode->lifecycle_state && 
+                    in_array($newNode->lifecycle_state, [
+                        NodeLifecycleState::ASSIGNED_TO_ZONE,
+                        NodeLifecycleState::ACTIVE,
+                        NodeLifecycleState::DEGRADED
+                    ])) {
+                    $newNode->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
+                    Log::info('Node lifecycle reset to REGISTERED_BACKEND during swap to trigger config publish', [
+                        'node_id' => $newNode->id,
+                        'previous_state' => $previousState?->value,
+                        'new_state' => NodeLifecycleState::REGISTERED_BACKEND->value,
+                    ]);
+                } elseif (!$newNode->lifecycle_state) {
+                    $newNode->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
                 }
                 $newNode->save();
                 

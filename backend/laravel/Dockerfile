@@ -91,6 +91,9 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 COPY php-dev.ini /usr/local/etc/php/conf.d/99-dev.ini
 COPY php-prod.ini /usr/local/etc/php/conf.d/99-prod.ini
 
+# Copy nginx Vite proxy configuration
+COPY nginx-vite-proxy.conf /opt/docker/etc/nginx/vhost.common.d/vite-proxy.conf
+
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 
 

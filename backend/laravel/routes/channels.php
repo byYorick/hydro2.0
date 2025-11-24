@@ -15,3 +15,8 @@ Broadcast::channel('commands.{zoneId}', function ($user, $zoneId) {
 // Канал для глобальных событий (публичный)
 // Не требует авторизации, так как это публичный канал
 
+// Канал для обновлений устройств (публичный, но требует авторизации)
+Broadcast::channel('hydro.devices', function ($user) {
+    return $user !== null; // Требует авторизации
+});
+

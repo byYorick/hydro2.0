@@ -141,14 +141,20 @@ Backend:
 
 Привязка управляется через UI (frontend/Android):
 
-- оператор выбирает зону и тип ноды;
-- backend обновляет `DeviceNode`:
- - `zone_id`,
- - `node_role` (например, `ZONE_PH_CONTROLLER`),
- - имя.
+1. **Оператор выбирает зону и тип ноды**
+2. **Backend обновляет `DeviceNode`:**
+   - `zone_id`,
+   - `node_role` (например, `ZONE_PH_CONTROLLER`),
+   - имя
+3. **Нода остается в состоянии `REGISTERED_BACKEND`**
+4. **Backend публикует `NodeConfig`** в MQTT топик `hydro/{gh}/{zone}/{node}/config`
+5. **Нода получает конфиг**, валидирует, сохраняет в NVS и применяет
+6. **Нода отправляет `config_response`** с `status: "OK"` в топик `hydro/{gh}/{zone}/{node}/config_response`
+7. **Backend обрабатывает `config_response`** и переводит ноду в `ASSIGNED_TO_ZONE`
+8. **После перехода в `ASSIGNED_TO_ZONE`** узел участвует в **зонной логике** 
+   (`ZONE_CONTROLLER_FULL.md`, `RECIPE_ENGINE_FULL.md`)
 
-После привязки узел участвует в **зонной логике** 
-(`ZONE_CONTROLLER_FULL.md`, `RECIPE_ENGINE_FULL.md`).
+**Важно:** Переход в `ASSIGNED_TO_ZONE` происходит только после получения успешного `config_response` от ноды. Это гарантирует, что нода получила и применила конфиг перед началом работы. Если установка конфига не удалась (`config_response` с `status: "ERROR"`), нода остается в `REGISTERED_BACKEND` и не считается привязанной к зоне.
 
 Состояние: `ASSIGNED_TO_ZONE`.
 

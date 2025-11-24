@@ -10,6 +10,7 @@
 #include "esp_timer.h"
 #include "esp_system.h"
 #include "esp_wifi.h"
+#include "esp_task_wdt.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "cJSON.h"
@@ -32,37 +33,67 @@ static void task_heartbeat(void *pvParameters) {
     
     ESP_LOGI(TAG, "Heartbeat task started (interval: %lu ms)", (unsigned long)interval_ms);
     
+    // Добавляем задачу в watchdog
+    esp_task_wdt_add(NULL);
+    
     TickType_t last_wake_time = xTaskGetTickCount();
     const TickType_t interval = pdMS_TO_TICKS(interval_ms);
     
+    // Интервал для периодического сброса watchdog (каждые 5 секунд)
+    // Это необходимо, так как интервал heartbeat (15 сек) может быть больше watchdog таймаута (10 сек)
+    const TickType_t wdt_reset_interval = pdMS_TO_TICKS(5000);
+    TickType_t last_wdt_reset = xTaskGetTickCount();
+    
     while (1) {
-        vTaskDelayUntil(&last_wake_time, interval);
+        // Периодически сбрасываем watchdog во время ожидания
+        // (интервал задачи может быть больше watchdog таймаута)
+        TickType_t current_time = xTaskGetTickCount();
+        TickType_t elapsed_since_wdt = current_time - last_wdt_reset;
         
-        if (!mqtt_manager_is_connected()) {
-            continue;
+        // TickType_t - беззнаковый тип, переполнение работает по модулю, поэтому
+        // разница всегда корректна и не может быть отрицательной
+        if (elapsed_since_wdt >= wdt_reset_interval) {
+            esp_task_wdt_reset();
+            last_wdt_reset = current_time;
         }
         
-        // Получение RSSI
-        wifi_ap_record_t ap_info;
-        int8_t rssi = -100;
-        if (wifi_manager_is_connected() && esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
-            rssi = ap_info.rssi;
-        }
-        
-        // Формат согласно MQTT_SPEC_FULL.md раздел 9.2
-        cJSON *heartbeat = cJSON_CreateObject();
-        if (heartbeat) {
-            cJSON_AddNumberToObject(heartbeat, "uptime", (double)(esp_timer_get_time() / 1000));
-            cJSON_AddNumberToObject(heartbeat, "free_heap", (double)esp_get_free_heap_size());
-            cJSON_AddNumberToObject(heartbeat, "rssi", rssi);
+        // Проверяем, наступило ли время для публикации heartbeat
+        TickType_t elapsed_since_wake = current_time - last_wake_time;
+        if (elapsed_since_wake >= interval) {
+            // Сбрасываем watchdog перед выполнением работы
+            esp_task_wdt_reset();
             
-            char *json_str = cJSON_PrintUnformatted(heartbeat);
-            if (json_str) {
-                mqtt_manager_publish_heartbeat(json_str);
-                free(json_str);
+            if (mqtt_manager_is_connected()) {
+                // Получение RSSI
+                wifi_ap_record_t ap_info;
+                int8_t rssi = -100;
+                if (wifi_manager_is_connected() && esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+                    rssi = ap_info.rssi;
+                }
+                
+                // Формат согласно MQTT_SPEC_FULL.md раздел 9.2
+                cJSON *heartbeat = cJSON_CreateObject();
+                if (heartbeat) {
+                    cJSON_AddNumberToObject(heartbeat, "uptime", (double)(esp_timer_get_time() / 1000));
+                    cJSON_AddNumberToObject(heartbeat, "free_heap", (double)esp_get_free_heap_size());
+                    cJSON_AddNumberToObject(heartbeat, "rssi", rssi);
+                    
+                    char *json_str = cJSON_PrintUnformatted(heartbeat);
+                    if (json_str) {
+                        mqtt_manager_publish_heartbeat(json_str);
+                        free(json_str);
+                    }
+                    cJSON_Delete(heartbeat);
+                }
             }
-            cJSON_Delete(heartbeat);
+            
+            // Сбрасываем watchdog после выполнения работы
+            esp_task_wdt_reset();
+            last_wake_time = current_time;
         }
+        
+        // Небольшая задержка, чтобы не нагружать CPU
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 

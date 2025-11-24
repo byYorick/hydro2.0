@@ -343,20 +343,30 @@ async function assignNode(node) {
     })
     
     if (response.data?.status === 'ok') {
-      showToast(`Нода "${node.uid}" успешно привязана к зоне`, 'success', 3000)
-      
-      // Backend автоматически переведет узел в ASSIGNED_TO_ZONE, обновляем данные
       const updatedNode = response.data.data
-      if (updatedNode) {
+      
+      // Проверяем, что конфиг был успешно опубликован (lifecycle_state = ASSIGNED_TO_ZONE)
+      // Если lifecycle_state все еще REGISTERED_BACKEND, значит публикация конфига не удалась
+      if (updatedNode?.lifecycle_state === 'ASSIGNED_TO_ZONE') {
+        showToast(`Нода "${node.uid}" успешно привязана к зоне и получила конфиг`, 'success', 3000)
+        
+        // Удалить ноду из списка новых (так как она теперь привязана)
+        newNodes.value = newNodes.value.filter(n => n.id !== node.id)
+        delete assignmentForms[node.id]
+      } else if (updatedNode?.lifecycle_state === 'REGISTERED_BACKEND' && updatedNode?.zone_id) {
+        // Конфиг еще не опубликован, но zone_id установлен
+        // Показываем предупреждение, что нужно подождать публикации конфига
+        showToast(`Нода "${node.uid}" привязана к зоне, ожидание публикации конфига...`, 'info', 5000)
+        
+        // Обновляем данные ноды, но не удаляем из списка
         const nodeIndex = newNodes.value.findIndex(n => n.id === node.id)
         if (nodeIndex >= 0) {
           newNodes.value[nodeIndex] = { ...newNodes.value[nodeIndex], ...updatedNode }
         }
+      } else {
+        // Что-то пошло не так
+        showToast(`Нода "${node.uid}" обновлена, но привязка может быть не завершена`, 'warning', 5000)
       }
-      
-      // Удалить ноду из списка новых (так как она теперь привязана)
-      newNodes.value = newNodes.value.filter(n => n.id !== node.id)
-      delete assignmentForms[node.id]
     }
   } catch (err) {
     logger.error('[Devices/Add] Failed to assign node:', err)

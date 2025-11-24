@@ -22,6 +22,7 @@
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "cJSON.h"
 #include <string.h>
 #include <stdlib.h>
@@ -33,8 +34,47 @@ static const char *TAG = "pump_node_tasks";
 #define DEFAULT_CURRENT_POLL_MS   1000  // 1 секунда по умолчанию для тока насоса
 #define PUMP_HEALTH_INTERVAL_MS    10000 // 10 секунд - health отчеты
 
-// Глобальная переменная для интервала опроса тока
+// Глобальная переменная для интервала опроса тока (потокобезопасно)
 static uint32_t s_current_poll_interval_ms = DEFAULT_CURRENT_POLL_MS;
+static SemaphoreHandle_t s_current_poll_interval_mutex = NULL;
+
+/**
+ * @brief Инициализация mutex для s_current_poll_interval_ms
+ */
+static void init_current_poll_interval_mutex(void) {
+    if (s_current_poll_interval_mutex == NULL) {
+        s_current_poll_interval_mutex = xSemaphoreCreateMutex();
+        if (s_current_poll_interval_mutex == NULL) {
+            ESP_LOGE(TAG, "Failed to create current poll interval mutex");
+        }
+    }
+}
+
+/**
+ * @brief Потокобезопасное получение интервала опроса
+ */
+static uint32_t get_current_poll_interval(void) {
+    init_current_poll_interval_mutex();
+    uint32_t result = DEFAULT_CURRENT_POLL_MS;
+    if (s_current_poll_interval_mutex != NULL && 
+        xSemaphoreTake(s_current_poll_interval_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        result = s_current_poll_interval_ms;
+        xSemaphoreGive(s_current_poll_interval_mutex);
+    }
+    return result;
+}
+
+/**
+ * @brief Потокобезопасная установка интервала опроса
+ */
+static void set_current_poll_interval(uint32_t interval_ms) {
+    init_current_poll_interval_mutex();
+    if (s_current_poll_interval_mutex != NULL && 
+        xSemaphoreTake(s_current_poll_interval_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        s_current_poll_interval_ms = interval_ms;
+        xSemaphoreGive(s_current_poll_interval_mutex);
+    }
+}
 
 /**
  * @brief Задача публикации heartbeat
@@ -90,8 +130,8 @@ static void task_current_poll(void *pvParameters) {
     TickType_t last_wake_time = xTaskGetTickCount();
     
     while (1) {
-        // Получаем актуальный интервал из конфигурации
-        uint32_t poll_interval = s_current_poll_interval_ms;
+        // Получаем актуальный интервал из конфигурации (потокобезопасно)
+        uint32_t poll_interval = get_current_poll_interval();
         const TickType_t interval = pdMS_TO_TICKS(poll_interval);
         
         vTaskDelayUntil(&last_wake_time, interval);
@@ -122,7 +162,7 @@ static void task_current_poll(void *pvParameters) {
                 cJSON_AddStringToObject(telemetry, "metric_type", "CURRENT");
                 cJSON_AddNumberToObject(telemetry, "value", reading.bus_current_ma);
                 cJSON_AddNumberToObject(telemetry, "raw", (double)reading.bus_current_ma);
-                cJSON_AddNumberToObject(telemetry, "timestamp", (double)(esp_timer_get_time() / 1000000));
+                cJSON_AddNumberToObject(telemetry, "ts", (double)(esp_timer_get_time() / 1000000));
                 
                 // Дополнительные поля для диагностики
                 cJSON_AddNumberToObject(telemetry, "voltage", reading.bus_voltage_v);
@@ -169,7 +209,7 @@ static void task_pump_health(void *pvParameters) {
             continue;
         }
 
-        cJSON_AddNumberToObject(health, "timestamp", (double)(esp_timer_get_time() / 1000000));
+        cJSON_AddNumberToObject(health, "ts", (double)(esp_timer_get_time() / 1000000));
 
         cJSON *channels = cJSON_CreateArray();
         if (!channels) {
@@ -250,8 +290,9 @@ void pump_node_update_current_poll_interval(void) {
                     strcmp(name->valuestring, "pump_bus_current") == 0) {
                     cJSON *poll_interval = cJSON_GetObjectItem(ch, "poll_interval_ms");
                     if (poll_interval != NULL && cJSON_IsNumber(poll_interval)) {
-                        s_current_poll_interval_ms = (uint32_t)cJSON_GetNumberValue(poll_interval);
-                        ESP_LOGI(TAG, "Updated current poll interval to %lu ms", s_current_poll_interval_ms);
+                        uint32_t new_interval = (uint32_t)cJSON_GetNumberValue(poll_interval);
+                        set_current_poll_interval(new_interval);
+                        ESP_LOGI(TAG, "Updated current poll interval to %lu ms", new_interval);
                     }
                     break;
                 }

@@ -38,3 +38,11 @@ CONFIG_PARTITION_TABLE_SINGLE_APP=n
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 
+# Task Watchdog Configuration
+# Отключаем проверку idle задач, так как они не могут сбрасывать watchdog
+# и это вызывает ложные срабатывания
+CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0=n
+CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1=n
+# Устанавливаем таймаут 10 секунд (согласно DEVICE_NODE_PROTOCOL.md)
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
+

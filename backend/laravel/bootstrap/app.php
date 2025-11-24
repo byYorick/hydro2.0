@@ -20,6 +20,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'admin' => \App\Http\Middleware\EnsureAdmin::class,
             'role' => \App\Http\Middleware\EnsureUserHasRole::class,
+            'verify.python.service' => \App\Http\Middleware\VerifyPythonServiceToken::class,
         ]);
         
         // Rate Limiting для API роутов

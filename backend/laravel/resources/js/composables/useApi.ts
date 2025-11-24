@@ -15,6 +15,18 @@ const api: AxiosInstance = axios.create({
   },
 })
 
+// Request interceptor для добавления префикса /api к запросам, которые его не имеют
+api.interceptors.request.use(
+  (config) => {
+    // Если URL не начинается с /api/ или /settings/, и не является абсолютным URL, добавляем /api
+    if (config.url && !config.url.startsWith('/api/') && !config.url.startsWith('/settings/') && !config.url.startsWith('http')) {
+      config.url = `/api${config.url}`
+    }
+    return config
+  },
+  (error) => Promise.reject(error)
+)
+
 // Глобальная функция для показа Toast (будет установлена через setToastHandler)
 let globalShowToast: ToastHandler | null = null
 

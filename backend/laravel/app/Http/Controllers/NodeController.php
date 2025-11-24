@@ -111,6 +111,27 @@ class NodeController extends Controller
         return response()->json(['status' => 'ok', 'data' => $node]);
     }
 
+    /**
+     * Отвязать узел от зоны.
+     * При отвязке нода сбрасывается в REGISTERED_BACKEND и считается новой.
+     */
+    public function detach(DeviceNode $node)
+    {
+        try {
+            $node = $this->nodeService->detach($node);
+            return response()->json([
+                'status' => 'ok',
+                'data' => $node,
+                'message' => 'Node detached from zone successfully',
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
     public function destroy(DeviceNode $node)
     {
         try {
@@ -135,12 +156,28 @@ class NodeController extends Controller
         $expectedToken = config('services.python_bridge.ingest_token') ?? config('services.python_bridge.token');
         $givenToken = $request->bearerToken();
         
-        // Если токен настроен, он обязателен
-        if ($expectedToken && !hash_equals($expectedToken, (string)$givenToken)) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Unauthorized: token required',
-            ], 401);
+        // Если токен настроен и не пустой, он обязателен
+        // Для node_hello от внутренних сервисов (history-logger) разрешаем без токена,
+        // если запрос идет из Docker сети (127.0.0.1 или внутренний IP)
+        if (!empty($expectedToken)) {
+            // Проверяем, идет ли запрос от внутреннего сервиса
+            $isInternalRequest = in_array($request->ip(), ['127.0.0.1', '::1']) || 
+                                 str_starts_with($request->ip(), '172.') ||
+                                 str_starts_with($request->ip(), '10.') ||
+                                 str_starts_with($request->ip(), '192.168.');
+            
+            // Для node_hello от внутренних сервисов токен опционален
+            $isNodeHello = $request->has('message_type') && $request->input('message_type') === 'node_hello';
+            
+            if ($isNodeHello && $isInternalRequest) {
+                // Разрешаем node_hello от внутренних сервисов без токена
+                // (history-logger работает в той же Docker сети)
+            } elseif (!hash_equals($expectedToken, (string)$givenToken)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Unauthorized: token required',
+                ], 401);
+            }
         }
         
         // Проверяем, это node_hello или обычная регистрация

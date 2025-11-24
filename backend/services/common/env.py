@@ -49,7 +49,9 @@ def get_settings() -> Settings:
     settings = Settings()
     
     # Проверка обязательных паролей в продакшене
-    is_prod = os.getenv("APP_ENV", "").lower() in ("production", "prod")
+    # Проверяем явно production, игнорируя пустые значения и dev/local окружения
+    app_env = os.getenv("APP_ENV", "").lower().strip()
+    is_prod = app_env in ("production", "prod") and app_env != ""
     
     if is_prod:
         # В продакшене пароли обязательны

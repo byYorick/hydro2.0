@@ -473,7 +473,6 @@ esp_err_t setup_portal_run_full_setup(const setup_portal_full_config_t *config) 
     const char *ap_password = config->ap_password ? config->ap_password : "hydro2025";
     
     // Initialize OLED if enabled
-    bool oled_initialized = false;
     if (config->enable_oled) {
         ESP_LOGI(TAG, "=== Setup Mode OLED Initialization ===");
         if (!i2c_bus_is_initialized()) {
@@ -502,7 +501,7 @@ esp_err_t setup_portal_run_full_setup(const setup_portal_full_config_t *config) 
             
             err = oled_ui_init(node_type, ap_ssid, &oled_config);
             if (err == ESP_OK) {
-                oled_initialized = true;
+                ESP_LOGI(TAG, "OLED initialized successfully for setup mode");
                 ESP_LOGI(TAG, "Setting OLED state to WIFI_SETUP...");
                 err = oled_ui_set_state(OLED_UI_STATE_WIFI_SETUP);
                 if (err != ESP_OK) {
@@ -512,12 +511,19 @@ esp_err_t setup_portal_run_full_setup(const setup_portal_full_config_t *config) 
                 // Update OLED model with AP SSID
                 oled_ui_model_t model = {0};
                 strncpy(model.zone_name, ap_ssid, sizeof(model.zone_name) - 1);
+                model.zone_name[sizeof(model.zone_name) - 1] = '\0';  // Гарантируем null-termination
                 model.connections.wifi_connected = false;
                 model.connections.mqtt_connected = false;
-                oled_ui_update_model(&model);
-                oled_ui_refresh();
                 
-                ESP_LOGI(TAG, "OLED initialized successfully for setup mode");
+                ESP_LOGI(TAG, "Updating OLED model with AP SSID: %s", model.zone_name);
+                oled_ui_update_model(&model);
+                
+                // Принудительное обновление экрана сразу
+                vTaskDelay(pdMS_TO_TICKS(100));  // Небольшая задержка для завершения инициализации
+                oled_ui_refresh();
+                vTaskDelay(pdMS_TO_TICKS(100));  // Даем время на отрисовку
+                
+                ESP_LOGI(TAG, "OLED initialized successfully for setup mode (SSID: %s)", ap_ssid);
             } else {
                 ESP_LOGE(TAG, "Failed to initialize OLED: %s (error code: %d)", 
                          esp_err_to_name(err), err);

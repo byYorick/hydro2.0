@@ -180,21 +180,15 @@ class NodeRegistryService
             }
             
             // Устанавливаем lifecycle_state
-            if (!$node->id) {
+            // Всегда оставляем REGISTERED_BACKEND - переход в ASSIGNED_TO_ZONE произойдет
+            // только после успешной публикации конфига через PublishNodeConfigOnUpdate
+            if (!$node->id || !$node->lifecycle_state) {
                 // Новый узел - всегда REGISTERED_BACKEND, даже если есть zone_id
                 // (нода с временными конфигами еще не привязана к реальной зоне)
                 $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
-            } else {
-                // Существующий узел - обновляем состояние в зависимости от наличия зоны
-                // Но только если узел действительно привязан к реальной зоне (не временные конфиги)
-                if ($node->zone_id && $node->lifecycle_state === NodeLifecycleState::REGISTERED_BACKEND) {
-                    // Проверяем, что это не временная зона (zn-temp)
-                    $zone = Zone::find($node->zone_id);
-                    if ($zone && !str_contains($zone->name ?? '', 'temp') && !str_contains($zone->uid ?? '', 'temp')) {
-                        $node->lifecycle_state = NodeLifecycleState::ASSIGNED_TO_ZONE;
-                    }
-                }
             }
+            // Для существующих узлов не меняем lifecycle_state здесь
+            // Переход в ASSIGNED_TO_ZONE произойдет только после успешной публикации конфига
             
             // Отмечаем как validated
             $node->validated = true;

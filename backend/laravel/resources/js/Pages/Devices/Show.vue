@@ -43,6 +43,52 @@
       </div>
     </div>
 
+    <!-- Визуализация связи с зоной -->
+    <Card v-if="device.zone" class="mb-3">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-12 h-12 rounded-lg border-2 border-sky-500/50 bg-sky-950/20 flex items-center justify-center">
+            <span class="text-2xl">🌱</span>
+          </div>
+          <div>
+            <div class="text-sm font-semibold text-neutral-200">Привязано к зоне</div>
+            <Link :href="`/zones/${device.zone.id}`" class="text-sky-400 hover:text-sky-300 hover:underline text-sm">
+              {{ device.zone.name }}
+            </Link>
+            <div v-if="device.zone.status" class="text-xs text-neutral-400 mt-1">
+              Статус: {{ device.zone.status }}
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <Link :href="`/zones/${device.zone.id}`">
+            <Button size="sm" variant="outline">
+              Перейти к зоне →
+            </Button>
+          </Link>
+          <button 
+            @click="detachNode"
+            :disabled="detaching"
+            class="inline-flex items-center justify-center rounded-md font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-red-600/50 h-8 px-3 text-xs bg-red-900/50 hover:bg-red-800/50 text-red-200 border border-red-700/50 hover:border-red-600/50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <svg v-if="!detaching" class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+            <span v-if="detaching">Отвязка...</span>
+            <span v-else>Отвязать от зоны</span>
+          </button>
+        </div>
+      </div>
+    </Card>
+    <Card v-else class="mb-3 border-amber-500/30 bg-amber-950/10">
+      <div class="flex items-center gap-2 text-amber-400">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+        <span class="text-sm">Устройство не привязано к зоне</span>
+      </div>
+    </Card>
+
     <div class="grid grid-cols-1 xl:grid-cols-3 gap-3">
       <Card class="xl:col-span-2">
         <div class="text-sm font-semibold mb-2">Channels</div>
@@ -62,8 +108,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { Link, usePage } from '@inertiajs/vue3'
+import { computed, ref, watch } from 'vue'
+import { Link, usePage, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Badge from '@/Components/Badge.vue'
@@ -73,6 +119,7 @@ import DeviceChannelsTable from '@/Pages/Devices/DeviceChannelsTable.vue'
 import Toast from '@/Components/Toast.vue'
 import { logger } from '@/utils/logger'
 import axios from 'axios'
+import { useHistory } from '@/composables/useHistory'
 import type { Device, DeviceChannel } from '@/types'
 import type { ToastVariant } from '@/composables/useToast'
 
@@ -92,7 +139,23 @@ const device = computed(() => (page.props.device || {}) as Device)
 const channels = computed(() => (device.value.channels || []) as DeviceChannel[])
 const testingChannels = ref<Set<string>>(new Set())
 const toasts = ref<ToastItem[]>([])
+const detaching = ref(false)
 let toastIdCounter = 0
+
+// История просмотров
+const { addToHistory } = useHistory()
+
+// Добавляем устройство в историю просмотров
+watch(device, (newDevice) => {
+  if (newDevice?.id) {
+    addToHistory({
+      id: newDevice.id,
+      type: 'device',
+      name: newDevice.name || newDevice.uid || `Устройство ${newDevice.id}`,
+      url: `/devices/${newDevice.id}`
+    })
+  }
+}, { immediate: true })
 
 const nodeConfig = computed(() => {
   const config = {
@@ -144,6 +207,43 @@ const onRestart = async (): Promise<void> => {
     if (err && err.response && err.response.data && err.response.data.message) errorMsg = err.response.data.message
     else if (err && err.message) errorMsg = err.message
     showToast(`Ошибка перезапуска: ${errorMsg}`, 'error', 5000)
+  }
+}
+
+const detachNode = async (): Promise<void> => {
+  if (!device.value.zone_id) {
+    showToast('Нода уже отвязана от зоны', 'warning', 3000)
+    return
+  }
+
+  if (!confirm('Вы уверены, что хотите отвязать ноду от зоны? Нода будет сброшена в состояние "Зарегистрирована" и появится в списке новых нод.')) {
+    return
+  }
+
+  detaching.value = true
+  try {
+    const response = await axios.post(`/api/nodes/${device.value.id}/detach`, {}, {
+      headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+    })
+    
+    if (response.data?.status === 'ok') {
+      logger.debug('[Devices/Show] Node detached successfully', response.data)
+      showToast(`Нода "${device.value.uid || device.value.name}" успешно отвязана от зоны`, 'success', 3000)
+      
+      // Перезагружаем страницу для обновления данных
+      router.reload({ only: ['device'], preserveScroll: false })
+    }
+  } catch (err: any) {
+    logger.error('[Devices/Show] Failed to detach node:', err)
+    let errorMsg = 'Неизвестная ошибка'
+    if (err?.response?.data?.message) {
+      errorMsg = err.response.data.message
+    } else if (err?.message) {
+      errorMsg = err.message
+    }
+    showToast(`Ошибка отвязки: ${errorMsg}`, 'error', 5000)
+  } finally {
+    detaching.value = false
   }
 }
 

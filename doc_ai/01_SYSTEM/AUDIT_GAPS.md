@@ -76,11 +76,13 @@ tools/
 - Публикует в MQTT топик `hydro/{gh}/{zone}/{node}/config`
 - Узел принимает config, валидирует, сохраняет в NVS
 - Узел отправляет `config_response`
+- Backend обрабатывает `config_response` и переводит ноду в `ASSIGNED_TO_ZONE` (если нода была привязана к зоне)
 
 **Текущее состояние:**
 - ✅ Есть модель `NodeConfig` в firmware
 - ✅ Есть API `/api/nodes/register` в Laravel
 - ✅ Есть обработка `config_response` в `history-logger` (подписка на `hydro/+/+/+/config_response`)
+- ✅ Обработка `config_response` переводит ноду в `ASSIGNED_TO_ZONE` после успешной установки конфига
 - ✅ Есть топик `hydro/{gh}/{zone}/{node}/config` в MQTT спецификации
 - ✅ Есть публикация `NodeConfig` через MQTT от backend (mqtt-bridge, NodeConfigService)
 - ✅ Есть автоматическая синхронизация `NodeConfig` при изменениях (Event/Listener система)

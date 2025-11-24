@@ -21,6 +21,7 @@
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "cJSON.h"
 #include <string.h>
 #include <stdio.h>
@@ -30,8 +31,51 @@
 
 static const char *TAG = "ec_node";
 
-// Глобальное состояние EC-сенсора
+// Глобальное состояние EC-сенсора (потокобезопасно)
 static bool ec_sensor_initialized = false;
+static SemaphoreHandle_t ec_sensor_mutex = NULL;
+
+/**
+ * @brief Инициализация mutex для ec_sensor_initialized
+ */
+static void init_ec_sensor_mutex(void) {
+    if (ec_sensor_mutex == NULL) {
+        ec_sensor_mutex = xSemaphoreCreateMutex();
+        if (ec_sensor_mutex == NULL) {
+            ESP_LOGE(TAG, "Failed to create ec_sensor mutex");
+        }
+    }
+}
+
+/**
+ * @brief Потокобезопасная установка состояния сенсора
+ */
+static void set_ec_sensor_initialized(bool initialized) {
+    init_ec_sensor_mutex();
+    if (ec_sensor_mutex != NULL && xSemaphoreTake(ec_sensor_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        ec_sensor_initialized = initialized;
+        xSemaphoreGive(ec_sensor_mutex);
+    } else {
+        // Fallback без защиты
+        ec_sensor_initialized = initialized;
+    }
+}
+
+/**
+ * @brief Потокобезопасное получение состояния сенсора
+ */
+static bool get_ec_sensor_initialized(void) {
+    init_ec_sensor_mutex();
+    bool result = false;
+    if (ec_sensor_mutex != NULL && xSemaphoreTake(ec_sensor_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        result = ec_sensor_initialized;
+        xSemaphoreGive(ec_sensor_mutex);
+    } else {
+        // Fallback без защиты
+        result = ec_sensor_initialized;
+    }
+    return result;
+}
 
 static const char *ec_node_pump_state_to_string(pump_driver_state_t state) {
     switch (state) {
@@ -75,7 +119,7 @@ static void ec_node_publish_pump_status(const char *channel, const char *event) 
     if (event) {
         cJSON_AddStringToObject(status, "event", event);
     }
-    cJSON_AddNumberToObject(status, "timestamp", (double)(esp_timer_get_time() / 1000000));
+    cJSON_AddNumberToObject(status, "ts", (double)(esp_timer_get_time() / 1000000));
 
     char *json_str = cJSON_PrintUnformatted(status);
     if (json_str) {
@@ -97,7 +141,7 @@ static void on_config_received(const char *topic, const char *data, int data_len
         if (error_response) {
             cJSON_AddStringToObject(error_response, "status", "ERROR");
             cJSON_AddStringToObject(error_response, "error", "Invalid JSON");
-            cJSON_AddNumberToObject(error_response, "timestamp", (double)(esp_timer_get_time() / 1000000));
+            cJSON_AddNumberToObject(error_response, "ts", (double)(esp_timer_get_time() / 1000000));
             char *json_str = cJSON_PrintUnformatted(error_response);
             if (json_str) {
                 mqtt_client_publish_config_response(json_str);
@@ -134,7 +178,7 @@ static void on_config_received(const char *topic, const char *data, int data_len
         if (error_response) {
             cJSON_AddStringToObject(error_response, "status", "ERROR");
             cJSON_AddStringToObject(error_response, "error", "Missing required fields");
-            cJSON_AddNumberToObject(error_response, "timestamp", (double)(esp_timer_get_time() / 1000000));
+            cJSON_AddNumberToObject(error_response, "ts", (double)(esp_timer_get_time() / 1000000));
             char *json_str = cJSON_PrintUnformatted(error_response);
             if (json_str) {
                 mqtt_client_publish_config_response(json_str);
@@ -170,7 +214,7 @@ static void on_config_received(const char *topic, const char *data, int data_len
         if (error_response) {
             cJSON_AddStringToObject(error_response, "status", "ERROR");
             cJSON_AddStringToObject(error_response, "error", error_msg);
-            cJSON_AddNumberToObject(error_response, "timestamp", (double)(esp_timer_get_time() / 1000000));
+            cJSON_AddNumberToObject(error_response, "ts", (double)(esp_timer_get_time() / 1000000));
             char *error_json = cJSON_PrintUnformatted(error_response);
             if (error_json) {
                 mqtt_client_publish_config_response(error_json);
@@ -563,11 +607,11 @@ void ec_node_app_init(void) {
     if (i2c_bus_is_initialized()) {
         ESP_LOGI(TAG, "Initializing Trema EC sensor...");
         if (trema_ec_init()) {
-            ec_sensor_initialized = true;
+            set_ec_sensor_initialized(true);
             ESP_LOGI(TAG, "Trema EC sensor initialized successfully");
         } else {
             ESP_LOGW(TAG, "Failed to initialize Trema EC sensor, will retry later");
-            ec_sensor_initialized = false;
+            set_ec_sensor_initialized(false);
         }
     } else {
         ESP_LOGW(TAG, "I²C bus not available, EC sensor initialization skipped");
@@ -688,9 +732,9 @@ void ec_node_publish_telemetry(void) {
     }
 
     // Инициализация сенсора, если еще не инициализирован
-    if (!ec_sensor_initialized && i2c_bus_is_initialized()) {
+    if (!get_ec_sensor_initialized() && i2c_bus_is_initialized()) {
         if (trema_ec_init()) {
-            ec_sensor_initialized = true;
+            set_ec_sensor_initialized(true);
             ESP_LOGI(TAG, "Trema EC sensor initialized");
         }
     }
@@ -702,7 +746,8 @@ void ec_node_publish_telemetry(void) {
     }
 
     // Если сенсор готов - применяем температурную компенсацию
-    if (ec_sensor_initialized) {
+    bool sensor_ready = get_ec_sensor_initialized();
+    if (sensor_ready) {
         if (!trema_ec_set_temperature(compensation_temp)) {
             ESP_LOGW(TAG, "Failed to apply stored temperature %.2fC", compensation_temp);
         }
@@ -716,7 +761,7 @@ void ec_node_publish_telemetry(void) {
     trema_ec_error_t read_error = TREMA_EC_ERROR_NOT_INITIALIZED;
     trema_ec_error_t tds_error = TREMA_EC_ERROR_NONE;
 
-    if (ec_sensor_initialized) {
+    if (sensor_ready) {
         read_success = trema_ec_read(&ec_value);
         using_stub = trema_ec_is_using_stub_values();
         read_error = trema_ec_get_error();
@@ -738,8 +783,8 @@ void ec_node_publish_telemetry(void) {
 
     float measured_temperature = NAN;
     bool temperature_valid = false;
-    trema_ec_error_t temp_error = ec_sensor_initialized ? TREMA_EC_ERROR_NONE : TREMA_EC_ERROR_NOT_INITIALIZED;
-    if (ec_sensor_initialized) {
+    trema_ec_error_t temp_error = sensor_ready ? TREMA_EC_ERROR_NONE : TREMA_EC_ERROR_NOT_INITIALIZED;
+    if (sensor_ready) {
         temperature_valid = trema_ec_get_temperature(&measured_temperature);
         temp_error = trema_ec_get_error();
         if (temperature_valid) {
@@ -786,7 +831,7 @@ void ec_node_publish_telemetry(void) {
         if (temperature_valid) {
             cJSON_AddNumberToObject(telemetry, "temperature", measured_temperature);
         }
-        cJSON_AddNumberToObject(telemetry, "timestamp", (double)(esp_timer_get_time() / 1000000));
+        cJSON_AddNumberToObject(telemetry, "ts", (double)(esp_timer_get_time() / 1000000));
 
         char *json_str = cJSON_PrintUnformatted(telemetry);
         if (json_str) {
