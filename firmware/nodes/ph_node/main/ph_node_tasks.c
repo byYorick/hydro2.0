@@ -50,7 +50,10 @@ static void task_sensors(void *pvParameters) {
     ESP_LOGI(TAG, "Sensor task started");
     
     // Добавляем задачу в watchdog
-    esp_task_wdt_add(NULL);
+    esp_err_t wdt_err = esp_task_wdt_add(NULL);
+    if (wdt_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add sensor task to watchdog: %s", esp_err_to_name(wdt_err));
+    }
     
     TickType_t last_wake_time = xTaskGetTickCount();
     const TickType_t interval = pdMS_TO_TICKS(SENSOR_POLL_INTERVAL_MS);
@@ -143,7 +146,10 @@ static void task_pump_current(void *pvParameters) {
     ESP_LOGI(TAG, "Pump current task started");
     
     // Добавляем задачу в watchdog
-    esp_task_wdt_add(NULL);
+    esp_err_t wdt_err = esp_task_wdt_add(NULL);
+    if (wdt_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add pump current task to watchdog: %s", esp_err_to_name(wdt_err));
+    }
     
     TickType_t last_wake_time = xTaskGetTickCount();
     const TickType_t interval = pdMS_TO_TICKS(PUMP_CURRENT_POLL_INTERVAL_MS);
@@ -198,7 +204,10 @@ static void task_status(void *pvParameters) {
     ESP_LOGI(TAG, "Status task started");
     
     // Добавляем задачу в watchdog
-    esp_task_wdt_add(NULL);
+    esp_err_t wdt_err = esp_task_wdt_add(NULL);
+    if (wdt_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add status task to watchdog: %s", esp_err_to_name(wdt_err));
+    }
     
     TickType_t last_wake_time = xTaskGetTickCount();
     const TickType_t interval = pdMS_TO_TICKS(STATUS_PUBLISH_INTERVAL_MS);

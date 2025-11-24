@@ -362,7 +362,10 @@ static void task_command_processor(void *pvParameters) {
     ESP_LOGI(TAG, "Command processor task started");
     
     // Добавляем задачу в watchdog
-    esp_task_wdt_add(NULL);
+    esp_err_t wdt_err = esp_task_wdt_add(NULL);
+    if (wdt_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add command processor task to watchdog: %s", esp_err_to_name(wdt_err));
+    }
     
     command_queue_item_t item;
     

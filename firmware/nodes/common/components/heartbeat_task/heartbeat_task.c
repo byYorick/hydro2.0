@@ -34,7 +34,10 @@ static void task_heartbeat(void *pvParameters) {
     ESP_LOGI(TAG, "Heartbeat task started (interval: %lu ms)", (unsigned long)interval_ms);
     
     // Добавляем задачу в watchdog
-    esp_task_wdt_add(NULL);
+    esp_err_t wdt_err = esp_task_wdt_add(NULL);
+    if (wdt_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add heartbeat task to watchdog: %s", esp_err_to_name(wdt_err));
+    }
     
     TickType_t last_wake_time = xTaskGetTickCount();
     const TickType_t interval = pdMS_TO_TICKS(interval_ms);
