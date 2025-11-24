@@ -21,10 +21,16 @@
 
 ### Системные компоненты
 - `config_storage/` — загрузка NodeConfig из NVS ✅
+- `config_apply/` — применение конфигурации (Wi-Fi, MQTT, актуаторы) ✅
 - `logging/` — система логирования ✅
 - `setup_portal/` — портал настройки Wi-Fi ✅
 - `heartbeat_task/` — задача публикации heartbeat ✅
 - `connection_status/` — получение статуса соединений (WiFi/MQTT/RSSI) ✅
+- `node_framework/` — унифицированный фреймворк для всех нод ✅
+  - Обработка NodeConfig, команд, телеметрии
+  - Управление состоянием (Safe Mode)
+  - Унифицированный watchdog
+- `memory_pool/` — оптимизация использования памяти (пул для JSON строк) ✅
 
 ## Планируемые компоненты
 
@@ -37,8 +43,9 @@
 - `mesh_comm/` — ESP-MESH коммуникация (если используется)
 
 ### Системные компоненты
-- `diagnostics/` — диагностика, метрики, watchdog
-- `safe_mode/` — безопасный режим при ошибках
+- `diagnostics/` — диагностика и метрики (планируется)
+- ~~`safe_mode/`~~ — реализовано в `node_framework/node_state_manager` ✅
+- ~~`watchdog/`~~ — реализовано в `node_framework/node_watchdog` ✅
 
 ## Документация
 

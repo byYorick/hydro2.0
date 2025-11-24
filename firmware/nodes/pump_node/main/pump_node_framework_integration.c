@@ -8,6 +8,7 @@
 
 #include "pump_node_framework_integration.h"
 #include "node_framework.h"
+#include "node_state_manager.h"
 #include "node_config_handler.h"
 #include "node_command_handler.h"
 #include "node_telemetry_engine.h"
