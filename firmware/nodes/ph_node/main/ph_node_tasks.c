@@ -88,6 +88,7 @@ static void task_sensors(void *pvParameters) {
                 ph_node_publish_telemetry();
             } else {
                 ESP_LOGW(TAG, "MQTT not connected, skipping sensor poll");
+                trema_ph_log_connection_status();
             }
             
             // Update OLED UI with current pH values (pH-специфичная логика)
@@ -214,8 +215,8 @@ static void task_status(void *pvParameters) {
     TickType_t last_wake_time = xTaskGetTickCount();
     const TickType_t interval = pdMS_TO_TICKS(STATUS_PUBLISH_INTERVAL_MS);
     
-    // Интервал для периодического сброса watchdog (каждые 5 секунд)
-    const TickType_t wdt_reset_interval = pdMS_TO_TICKS(5000);
+    // Сбрасываем watchdog каждую секунду, чтобы иметь запас к системному таймауту
+    const TickType_t wdt_reset_interval = pdMS_TO_TICKS(1000);
     TickType_t last_wdt_reset = xTaskGetTickCount();
     
     while (1) {

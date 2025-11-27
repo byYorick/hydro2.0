@@ -15,6 +15,7 @@
 #include <math.h>
 
 static const char *TAG = "trema_ph";
+static const uint8_t kExpectedModelId = 0x1A;
 
 // Stub values for when sensor is not connected
 static bool use_stub_values = false;
@@ -43,8 +44,7 @@ bool trema_ph_init(void)
     }
     
     // Check if we got a valid response
-    // For iarduino pH sensor, model ID should be 0x1A
-    if (data[0] != 0x1A) {
+    if (data[0] != kExpectedModelId) {
         ESP_LOGW(TAG, "Invalid pH sensor model ID: 0x%02X", data[0]);
         return false;
     }
@@ -351,5 +351,29 @@ bool trema_ph_is_using_stub_values(void)
 bool trema_ph_is_initialized(void)
 {
     return sensor_initialized;
+}
+
+bool trema_ph_log_connection_status(void)
+{
+    if (!i2c_bus_is_initialized_bus(I2C_BUS_1)) {
+        ESP_LOGW(TAG, "I²C bus 1 not initialized (pH sensor unreachable)");
+        return false;
+    }
+
+    uint8_t reg_model = REG_MODEL;
+    uint8_t model_id = 0;
+    esp_err_t err = i2c_bus_read_bus(I2C_BUS_1, TREMA_PH_ADDR, &reg_model, 1, &model_id, 1, 200);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "I²C bus 1 -> pH sensor (0x%02X) no response: %s", TREMA_PH_ADDR, esp_err_to_name(err));
+        return false;
+    }
+
+    if (model_id == kExpectedModelId) {
+        ESP_LOGI(TAG, "I²C bus 1 -> pH sensor connected (model_id=0x%02X)", model_id);
+        return true;
+    }
+
+    ESP_LOGW(TAG, "I²C bus 1 responded with unexpected model_id=0x%02X", model_id);
+    return false;
 }
 

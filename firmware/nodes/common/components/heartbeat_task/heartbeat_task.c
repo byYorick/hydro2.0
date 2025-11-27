@@ -44,9 +44,8 @@ static void task_heartbeat(void *pvParameters) {
     TickType_t last_wake_time = xTaskGetTickCount();
     const TickType_t interval = pdMS_TO_TICKS(interval_ms);
     
-    // Интервал для периодического сброса watchdog (каждые 5 секунд)
-    // Это необходимо, так как интервал heartbeat (15 сек) может быть больше watchdog таймаута (10 сек)
-    const TickType_t wdt_reset_interval = pdMS_TO_TICKS(5000);
+    // Сбрасываем watchdog чаще (каждую секунду), чтобы быть устойчивыми к системному таймауту 5 сек
+    const TickType_t wdt_reset_interval = pdMS_TO_TICKS(1000);
     TickType_t last_wdt_reset = xTaskGetTickCount();
     
     while (1) {

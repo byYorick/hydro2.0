@@ -152,13 +152,15 @@ esp_err_t ph_node_init_step_i2c(ph_node_init_context_t *ctx,
     }
     
     // Инициализация I2C 1 для pH сенсора
+    ESP_LOGI(TAG, "Configured I2C bus 1 pins: SDA=%d, SCL=%d (ph_node_defaults.h)",
+             PH_NODE_I2C_BUS_1_SDA, PH_NODE_I2C_BUS_1_SCL);
     if (!i2c_bus_is_initialized_bus(I2C_BUS_1)) {
         ESP_LOGI(TAG, "Initializing I2C bus 1 (pH sensor)...");
         i2c_bus_config_t i2c1_config = {
             .sda_pin = PH_NODE_I2C_BUS_1_SDA,
             .scl_pin = PH_NODE_I2C_BUS_1_SCL,
             .clock_speed = PH_NODE_I2C_CLOCK_SPEED,
-            .pullup_enable = true
+            .pullup_enable = false
         };
         err = i2c_bus_init_bus(I2C_BUS_1, &i2c1_config);
         if (err != ESP_OK) {
