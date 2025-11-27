@@ -5,6 +5,7 @@
 
 #include "node_state_manager.h"
 #include "node_framework.h"
+#include "node_utils.h"
 #include "mqtt_manager.h"
 #include "config_storage.h"
 #include "cJSON.h"
@@ -92,7 +93,7 @@ esp_err_t node_state_manager_enter_safe_mode(const char *reason) {
         if (status) {
             cJSON_AddStringToObject(status, "state", "safe_mode");
             cJSON_AddStringToObject(status, "reason", reason ? reason : "Unknown");
-            cJSON_AddNumberToObject(status, "ts", (double)(esp_timer_get_time() / 1000000));
+            cJSON_AddNumberToObject(status, "ts", (double)node_utils_get_timestamp_seconds());
             
             char *json_str = cJSON_PrintUnformatted(status);
             if (json_str) {
@@ -174,7 +175,7 @@ esp_err_t node_state_manager_report_error(
                 cJSON_AddStringToObject(error_json, "error_code", esp_err_to_name(error_code));
                 cJSON_AddNumberToObject(error_json, "error_code_num", error_code);
                 cJSON_AddStringToObject(error_json, "message", message ? message : "Unknown error");
-                cJSON_AddNumberToObject(error_json, "ts", (double)(esp_timer_get_time() / 1000000));
+                cJSON_AddNumberToObject(error_json, "ts", (double)node_utils_get_timestamp_seconds());
                 
                 char *json_str = cJSON_PrintUnformatted(error_json);
                 if (json_str) {

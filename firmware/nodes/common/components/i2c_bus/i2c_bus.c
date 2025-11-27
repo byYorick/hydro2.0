@@ -540,11 +540,15 @@ esp_err_t i2c_bus_init_from_config(void) {
         i2c_config.clock_speed = (uint32_t)cJSON_GetNumberValue(item);
     }
     
-    cJSON_Delete(config);
-    
     ESP_LOGI(TAG, "Initializing I²C bus from NodeConfig: SDA=%d, SCL=%d, speed=%lu Hz",
             i2c_config.sda_pin, i2c_config.scl_pin, i2c_config.clock_speed);
     
-    return i2c_bus_init(&i2c_config);
+    // Сохраняем результат инициализации перед удалением config
+    esp_err_t result = i2c_bus_init(&i2c_config);
+    
+    // Освобождаем память в любом случае
+    cJSON_Delete(config);
+    
+    return result;
 }
 

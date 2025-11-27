@@ -13,9 +13,14 @@ class CommandFailed implements ShouldBroadcast
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
+    public string $queue = 'broadcasts';
+
     public int|string $commandId;
+
     public string $message;
+
     public ?string $error;
+
     public ?int $zoneId;
 
     public function __construct(
@@ -39,7 +44,7 @@ class CommandFailed implements ShouldBroadcast
         if ($this->zoneId) {
             return new PrivateChannel("commands.{$this->zoneId}");
         }
-        
+
         // Иначе отправляем в глобальный канал команд
         return new PrivateChannel('commands.global');
     }
@@ -66,4 +71,3 @@ class CommandFailed implements ShouldBroadcast
         ];
     }
 }
-

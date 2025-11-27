@@ -20,6 +20,7 @@
 #include "ina209.h"
 #include "pump_driver.h"
 #include "node_telemetry_engine.h"
+#include "node_utils.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_netif.h"

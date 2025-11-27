@@ -16,6 +16,7 @@
 #include "i2c_bus.h"
 #include "pump_driver.h"
 #include "setup_portal.h"
+#include "node_utils.h"
 #include "esp_log.h"
 #include "esp_err.h"
 #include "esp_timer.h"
@@ -109,6 +110,7 @@ static void ec_node_publish_pump_status(const char *channel, const char *event) 
     char node_id[CONFIG_STORAGE_MAX_STRING_LEN] = {0};
     if (config_storage_get_node_id(node_id, sizeof(node_id)) != ESP_OK) {
         strncpy(node_id, "nd-ec-1", sizeof(node_id) - 1);
+        node_id[sizeof(node_id) - 1] = '\0';  // Гарантируем null-termination
     }
 
     cJSON *status = cJSON_CreateObject();
@@ -124,7 +126,7 @@ static void ec_node_publish_pump_status(const char *channel, const char *event) 
     if (event) {
         cJSON_AddStringToObject(status, "event", event);
     }
-    cJSON_AddNumberToObject(status, "ts", (double)(esp_timer_get_time() / 1000000));
+    cJSON_AddNumberToObject(status, "ts", (double)node_utils_get_timestamp_seconds());
 
     char *json_str = cJSON_PrintUnformatted(status);
     if (json_str) {
@@ -137,7 +139,8 @@ static void ec_node_publish_pump_status(const char *channel, const char *event) 
 
 // Пример: обработка config сообщений
 static void on_config_received(const char *topic, const char *data, int data_len, void *user_ctx) {
-    ESP_LOGI(TAG, "Config received on %s: %.*s", topic, data_len, data);
+    // Безопасность: не логируем полный JSON с секретами, только топик и длину
+    ESP_LOGI(TAG, "Config received on %s: [%d bytes]", topic, data_len);
     
     cJSON *config = cJSON_ParseWithLength(data, data_len);
     if (!config) {
@@ -146,7 +149,7 @@ static void on_config_received(const char *topic, const char *data, int data_len
         if (error_response) {
             cJSON_AddStringToObject(error_response, "status", "ERROR");
             cJSON_AddStringToObject(error_response, "error", "Invalid JSON");
-            cJSON_AddNumberToObject(error_response, "ts", (double)(esp_timer_get_time() / 1000000));
+            cJSON_AddNumberToObject(error_response, "ts", (double)node_utils_get_timestamp_seconds());
             char *json_str = cJSON_PrintUnformatted(error_response);
             if (json_str) {
                 mqtt_manager_publish_config_response(json_str);
@@ -183,7 +186,7 @@ static void on_config_received(const char *topic, const char *data, int data_len
         if (error_response) {
             cJSON_AddStringToObject(error_response, "status", "ERROR");
             cJSON_AddStringToObject(error_response, "error", "Missing required fields");
-            cJSON_AddNumberToObject(error_response, "ts", (double)(esp_timer_get_time() / 1000000));
+            cJSON_AddNumberToObject(error_response, "ts", (double)node_utils_get_timestamp_seconds());
             char *json_str = cJSON_PrintUnformatted(error_response);
             if (json_str) {
                 mqtt_manager_publish_config_response(json_str);
@@ -219,7 +222,7 @@ static void on_config_received(const char *topic, const char *data, int data_len
         if (error_response) {
             cJSON_AddStringToObject(error_response, "status", "ERROR");
             cJSON_AddStringToObject(error_response, "error", error_msg);
-            cJSON_AddNumberToObject(error_response, "ts", (double)(esp_timer_get_time() / 1000000));
+            cJSON_AddNumberToObject(error_response, "ts", (double)node_utils_get_timestamp_seconds());
             char *error_json = cJSON_PrintUnformatted(error_response);
             if (error_json) {
                 mqtt_manager_publish_config_response(error_json);
@@ -335,7 +338,7 @@ static void on_command_received(const char *topic, const char *channel, const ch
                         }
                     }
 
-                    cJSON_AddNumberToObject(response, "ts", (double)(esp_timer_get_time() / 1000000));
+                    cJSON_AddNumberToObject(response, "ts", (double)node_utils_get_timestamp_seconds());
 
                     char *json_str = cJSON_PrintUnformatted(response);
                     if (json_str) {
@@ -360,7 +363,7 @@ static void on_command_received(const char *topic, const char *channel, const ch
                     cJSON_AddStringToObject(response, "error_code", "pump_driver_failed");
                     cJSON_AddStringToObject(response, "error_message", esp_err_to_name(err));
                 }
-                cJSON_AddNumberToObject(response, "ts", (double)(esp_timer_get_time() / 1000000));
+                cJSON_AddNumberToObject(response, "ts", (double)node_utils_get_timestamp_seconds());
 
                 char *json_str = cJSON_PrintUnformatted(response);
                 if (json_str) {
@@ -383,7 +386,7 @@ static void on_command_received(const char *topic, const char *channel, const ch
                 cJSON_AddStringToObject(response, "status", "ERROR");
                 cJSON_AddStringToObject(response, "error_code", "invalid_format");
                 cJSON_AddStringToObject(response, "error_message", "Missing stage or tds_value");
-                cJSON_AddNumberToObject(response, "ts", (double)(esp_timer_get_time() / 1000000));
+                cJSON_AddNumberToObject(response, "ts", (double)node_utils_get_timestamp_seconds());
                 
                 char *json_str = cJSON_PrintUnformatted(response);
                 if (json_str) {
@@ -407,7 +410,7 @@ static void on_command_received(const char *topic, const char *channel, const ch
                 cJSON_AddStringToObject(response, "status", "ERROR");
                 cJSON_AddStringToObject(response, "error_code", "invalid_stage");
                 cJSON_AddStringToObject(response, "error_message", "Stage must be 1 or 2");
-                cJSON_AddNumberToObject(response, "ts", (double)(esp_timer_get_time() / 1000000));
+                cJSON_AddNumberToObject(response, "ts", (double)node_utils_get_timestamp_seconds());
                 
                 char *json_str = cJSON_PrintUnformatted(response);
                 if (json_str) {
@@ -428,7 +431,7 @@ static void on_command_received(const char *topic, const char *channel, const ch
                 cJSON_AddStringToObject(response, "status", "ERROR");
                 cJSON_AddStringToObject(response, "error_code", "invalid_tds");
                 cJSON_AddStringToObject(response, "error_message", "TDS value must be <= 10000");
-                cJSON_AddNumberToObject(response, "ts", (double)(esp_timer_get_time() / 1000000));
+                cJSON_AddNumberToObject(response, "ts", (double)node_utils_get_timestamp_seconds());
                 
                 char *json_str = cJSON_PrintUnformatted(response);
                 if (json_str) {
@@ -508,6 +511,26 @@ static void on_command_received(const char *topic, const char *channel, const ch
 static void on_mqtt_connection_changed(bool connected, void *user_ctx) {
     if (connected) {
         ESP_LOGI(TAG, "MQTT connected - ec_node is online");
+        
+        // Публикуем node_hello при первом подключении для регистрации
+        // Проверяем, есть ли уже конфиг с правильными ID (не временные)
+        char node_id[CONFIG_STORAGE_MAX_STRING_LEN];
+        char gh_uid[CONFIG_STORAGE_MAX_STRING_LEN];
+        bool has_node_id = (config_storage_get_node_id(node_id, sizeof(node_id)) == ESP_OK);
+        bool has_gh_uid = (config_storage_get_gh_uid(gh_uid, sizeof(gh_uid)) == ESP_OK);
+        bool has_valid_config = has_node_id && 
+                                strcmp(node_id, "node-temp") != 0 &&
+                                has_gh_uid &&
+                                strcmp(gh_uid, "gh-temp") != 0;
+        
+        if (!has_valid_config) {
+            // Устройство еще не зарегистрировано - публикуем node_hello
+            const char *capabilities[] = {"ec", "temperature"};
+            node_utils_publish_node_hello("ec", capabilities, 2);
+        }
+        
+        // Запрашиваем время у сервера для синхронизации
+        node_utils_request_time();
     } else {
         ESP_LOGW(TAG, "MQTT disconnected - ec_node is offline");
     }
@@ -576,8 +599,11 @@ void ec_node_app_init(void) {
     static char wifi_ssid[CONFIG_STORAGE_MAX_STRING_LEN];
     static char wifi_password[CONFIG_STORAGE_MAX_STRING_LEN];
     
+    // Используем уже загруженный wifi_cfg
     strncpy(wifi_ssid, wifi_cfg.ssid, sizeof(wifi_ssid) - 1);
+    wifi_ssid[sizeof(wifi_ssid) - 1] = '\0';  // Гарантируем null-termination
     strncpy(wifi_password, wifi_cfg.password, sizeof(wifi_password) - 1);
+    wifi_password[sizeof(wifi_password) - 1] = '\0';  // Гарантируем null-termination
     wifi_config.ssid = wifi_ssid;
     wifi_config.password = wifi_password;
     ESP_LOGI(TAG, "Connecting to Wi-Fi from config: %s", wifi_cfg.ssid);
@@ -623,74 +649,32 @@ void ec_node_app_init(void) {
     }
     
     // Инициализация MQTT клиента
-    config_storage_mqtt_t mqtt_cfg;
     mqtt_manager_config_t mqtt_config;
     mqtt_node_info_t node_info;
     static char mqtt_host[CONFIG_STORAGE_MAX_STRING_LEN];
     static char mqtt_username[CONFIG_STORAGE_MAX_STRING_LEN];
     static char mqtt_password[CONFIG_STORAGE_MAX_STRING_LEN];
     static char node_id[64];
-    static const char *default_gh_uid = "gh-1";
-    static const char *default_zone_uid = "zn-3";
-    
-    if (config_storage_get_mqtt(&mqtt_cfg) == ESP_OK) {
-        strncpy(mqtt_host, mqtt_cfg.host, sizeof(mqtt_host) - 1);
-        mqtt_config.host = mqtt_host;
-        mqtt_config.port = mqtt_cfg.port;
-        mqtt_config.keepalive = mqtt_cfg.keepalive;
-        mqtt_config.client_id = NULL;
-        if (strlen(mqtt_cfg.username) > 0) {
-            strncpy(mqtt_username, mqtt_cfg.username, sizeof(mqtt_username) - 1);
-            mqtt_config.username = mqtt_username;
-        } else {
-            mqtt_config.username = NULL;
-        }
-        if (strlen(mqtt_cfg.password) > 0) {
-            strncpy(mqtt_password, mqtt_cfg.password, sizeof(mqtt_password) - 1);
-            mqtt_config.password = mqtt_password;
-        } else {
-            mqtt_config.password = NULL;
-        }
-        mqtt_config.use_tls = mqtt_cfg.use_tls;
-        ESP_LOGI(TAG, "MQTT config from storage: %s:%d", mqtt_cfg.host, mqtt_cfg.port);
-    } else {
-        strncpy(mqtt_host, "192.168.1.10", sizeof(mqtt_host) - 1);
-        mqtt_config.host = mqtt_host;
-        mqtt_config.port = 1883;
-        mqtt_config.keepalive = 30;
-        mqtt_config.client_id = NULL;
-        mqtt_config.username = NULL;
-        mqtt_config.password = NULL;
-        mqtt_config.use_tls = false;
-        ESP_LOGW(TAG, "Using default MQTT config");
-    }
-    
-    if (config_storage_get_node_id(node_id, sizeof(node_id)) == ESP_OK) {
-        node_info.node_uid = node_id;
-        ESP_LOGI(TAG, "Node ID from config: %s", node_id);
-    } else {
-        strncpy(node_id, "nd-ec-1", sizeof(node_id) - 1);
-        node_info.node_uid = node_id;
-        ESP_LOGW(TAG, "Using default node ID");
-    }
-    
-    // Get gh_uid and zone_uid from NodeConfig
     static char gh_uid[CONFIG_STORAGE_MAX_STRING_LEN];
     static char zone_uid[CONFIG_STORAGE_MAX_STRING_LEN];
-    if (config_storage_get_gh_uid(gh_uid, sizeof(gh_uid)) == ESP_OK) {
-        node_info.gh_uid = gh_uid;
-        ESP_LOGI(TAG, "GH UID from config: %s", gh_uid);
-    } else {
-        node_info.gh_uid = default_gh_uid;
-        ESP_LOGW(TAG, "GH UID not found in config, using default: %s", default_gh_uid);
-    }
     
-    if (config_storage_get_zone_uid(zone_uid, sizeof(zone_uid)) == ESP_OK) {
-        node_info.zone_uid = zone_uid;
-        ESP_LOGI(TAG, "Zone UID from config: %s", zone_uid);
-    } else {
-        node_info.zone_uid = default_zone_uid;
-        ESP_LOGW(TAG, "Zone UID not found in config, using default: %s", default_zone_uid);
+    err = node_utils_init_mqtt_config(
+        &mqtt_config,
+        &node_info,
+        mqtt_host,
+        mqtt_username,
+        mqtt_password,
+        node_id,
+        gh_uid,
+        zone_uid,
+        "gh-1",  // default_gh_uid
+        "zn-3",  // default_zone_uid
+        "nd-ec-1"  // default_node_id
+    );
+    
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize MQTT config: %s", esp_err_to_name(err));
+        return;
     }
     
     err = mqtt_manager_init(&mqtt_config, &node_info);
@@ -844,7 +828,7 @@ void ec_node_publish_telemetry(void) {
         if (temperature_valid) {
             cJSON_AddNumberToObject(telemetry, "temperature", measured_temperature);
         }
-        cJSON_AddNumberToObject(telemetry, "ts", (double)(esp_timer_get_time() / 1000000));
+        cJSON_AddNumberToObject(telemetry, "ts", (double)node_utils_get_timestamp_seconds());
 
         char *json_str = cJSON_PrintUnformatted(telemetry);
         if (json_str) {

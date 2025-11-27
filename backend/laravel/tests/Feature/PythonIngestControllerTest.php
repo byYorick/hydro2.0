@@ -19,6 +19,8 @@ class PythonIngestControllerTest extends TestCase
     private function token(): string
     {
         $user = User::factory()->create();
+        $this->actingAs($user);
+
         return $user->createToken('test')->plainTextToken;
     }
 

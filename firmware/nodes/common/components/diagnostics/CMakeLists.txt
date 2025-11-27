@@ -3,6 +3,7 @@ idf_component_register(
     INCLUDE_DIRS "include"
     REQUIRES 
         node_framework
+        node_utils
         mqtt_manager
         wifi_manager
         memory_pool

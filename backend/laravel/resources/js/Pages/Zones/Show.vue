@@ -232,6 +232,9 @@
         </div>
       </Card>
 
+      <!-- Automation Engine -->
+      <AutomationEngine :zone-id="zoneId" />
+
       <!-- Events (история событий) -->
       <Card>
         <div class="text-sm font-semibold mb-2">События</div>
@@ -329,6 +332,7 @@ import ZoneActionModal from '@/Components/ZoneActionModal.vue'
 import AttachRecipeModal from '@/Components/AttachRecipeModal.vue'
 import AttachNodesModal from '@/Components/AttachNodesModal.vue'
 import NodeConfigModal from '@/Components/NodeConfigModal.vue'
+import AutomationEngine from '@/Components/AutomationEngine.vue'
 import { translateStatus, translateEventKind, translateCycleType, translateStrategy } from '@/utils/i18n'
 import { formatTimeShort, formatInterval } from '@/utils/formatTime'
 import { logger } from '@/utils/logger'

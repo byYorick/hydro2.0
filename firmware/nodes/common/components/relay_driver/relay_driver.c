@@ -93,6 +93,7 @@ esp_err_t relay_driver_init(const relay_channel_config_t *channels, size_t chann
     for (size_t i = 0; i < channel_count; i++) {
         relay_channel_t *channel = &s_channels[i];
         strncpy(channel->channel_name, channels[i].channel_name, sizeof(channel->channel_name) - 1);
+        channel->channel_name[sizeof(channel->channel_name) - 1] = '\0';  // Гарантируем null-termination
         channel->gpio_pin = channels[i].gpio_pin;
         channel->relay_type = channels[i].relay_type;
         channel->active_high = channels[i].active_high;

@@ -230,16 +230,32 @@ const filteredZones = computed(() => {
 
 // Преобразуем зоны в строки таблицы
 const rows = computed(() => {
-  return filteredZones.value.map(z => [
-    z.id,
-    z.name || '-',
-    translateStatus(z.status),
-    z.greenhouse?.name || '-',
-    z.telemetry?.ph !== null && z.telemetry?.ph !== undefined ? z.telemetry.ph.toFixed(2) : '-',
-    z.telemetry?.ec !== null && z.telemetry?.ec !== undefined ? z.telemetry.ec.toFixed(1) : '-',
-    z.telemetry?.temperature !== null && z.telemetry?.temperature !== undefined ? `${z.telemetry.temperature.toFixed(1)}°C` : '-',
-    z.id // Добавляем ID в конец для удобства доступа
-  ])
+  return filteredZones.value.map(z => {
+    // Безопасное форматирование чисел
+    const formatNumber = (value: unknown, decimals: number): string => {
+      if (value === null || value === undefined) return '-'
+      const num = typeof value === 'number' ? value : Number(value)
+      return !isNaN(num) && isFinite(num) ? num.toFixed(decimals) : '-'
+    }
+    
+    return [
+      z.id,
+      z.name || '-',
+      translateStatus(z.status),
+      z.greenhouse?.name || '-',
+      formatNumber(z.telemetry?.ph, 2),
+      formatNumber(z.telemetry?.ec, 1),
+      z.telemetry?.temperature !== null && z.telemetry?.temperature !== undefined 
+        ? (() => {
+            const temp = typeof z.telemetry.temperature === 'number' 
+              ? z.telemetry.temperature 
+              : Number(z.telemetry.temperature)
+            return !isNaN(temp) && isFinite(temp) ? `${temp.toFixed(1)}°C` : '-'
+          })()
+        : '-',
+      z.id // Добавляем ID в конец для удобства доступа
+    ]
+  })
 })
 
 // Функция для получения ID зоны из строки таблицы

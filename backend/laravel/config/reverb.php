@@ -1,16 +1,36 @@
 <?php
 
+$allowedOrigins = env('REVERB_ALLOWED_ORIGINS');
+$parsedAllowedOrigins = $allowedOrigins
+    ? array_values(array_filter(array_map('trim', explode(',', $allowedOrigins))))
+    : [
+        env('APP_URL', 'http://localhost'),
+        env('FRONTEND_URL', 'http://localhost:5173'),
+        'http://localhost:8080',
+        'http://127.0.0.1:8080',
+        'http://127.0.0.1:5173',
+        'http://localhost',
+        'http://127.0.0.1',
+        'null',
+        '*',
+    ];
+
+$clientOptions = [];
+
+if (env('REVERB_CLIENT_OPTIONS')) {
+    try {
+        $clientOptions = json_decode(env('REVERB_CLIENT_OPTIONS'), true, 512, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_IGNORE) ?: [];
+    } catch (\Throwable $e) {
+        $clientOptions = [];
+    }
+}
+
 return [
 
     /*
     |--------------------------------------------------------------------------
     | Default Reverb Server
     |--------------------------------------------------------------------------
-    |
-    | This option controls the default server used by Reverb to handle
-    | incoming messages as well as broadcasting message to all your
-    | connected clients. At this time only "reverb" is supported.
-    |
     */
 
     'default' => env('REVERB_SERVER', 'reverb'),
@@ -19,22 +39,18 @@ return [
     |--------------------------------------------------------------------------
     | Reverb Servers
     |--------------------------------------------------------------------------
-    |
-    | Here you may define details for each of the supported Reverb servers.
-    | Each server has its own configuration options that are defined in
-    | the array below. You should ensure all the options are present.
-    |
     */
 
     'servers' => [
 
         'reverb' => [
-            'host' => env('REVERB_HOST', '0.0.0.0'),
-            'port' => env('REVERB_PORT', 6001),
+            'host' => env('REVERB_SERVER_HOST', env('REVERB_HOST', '0.0.0.0')),
+            'port' => env('REVERB_SERVER_PORT', env('REVERB_PORT', 6001)),
             'path' => env('REVERB_SERVER_PATH', ''),
             'hostname' => env('REVERB_HOST', '0.0.0.0'),
             'options' => [
                 'tls' => [],
+                'debug' => env('REVERB_DEBUG', false),
             ],
             'max_request_size' => env('REVERB_MAX_REQUEST_SIZE', 10_000),
             'scaling' => [
@@ -60,11 +76,6 @@ return [
     |--------------------------------------------------------------------------
     | Reverb Applications
     |--------------------------------------------------------------------------
-    |
-    | Here you may define how Reverb applications are managed. If you choose
-    | to use the "config" provider, you may define an array of apps which
-    | your server will support, including their connection credentials.
-    |
     */
 
     'apps' => [
@@ -76,23 +87,19 @@ return [
                 'key' => env('REVERB_APP_KEY'),
                 'secret' => env('REVERB_APP_SECRET'),
                 'app_id' => env('REVERB_APP_ID'),
-                'options' => [
-                    'host' => env('REVERB_HOST', '0.0.0.0'),
+                'options' => array_filter([
+                    'host' => env('REVERB_HOST', '127.0.0.1'),
                     'port' => env('REVERB_PORT', 6001),
                     'scheme' => env('REVERB_SCHEME', 'http'),
                     'useTLS' => env('REVERB_SCHEME', 'http') === 'https',
-                ],
-                'allowed_origins' => env('REVERB_ALLOWED_ORIGINS') 
-                    ? explode(',', env('REVERB_ALLOWED_ORIGINS'))
-                    : [
-                        env('APP_URL', 'http://localhost'),
-                        env('FRONTEND_URL', 'http://localhost:5173'),
-                        'http://localhost:8080', // Nginx proxy для Laravel в dev режиме
-                    ],
-                'ping_interval' => env('REVERB_APP_PING_INTERVAL', 30), // Уменьшено с 60 до 30 для более частых проверок
-                'activity_timeout' => env('REVERB_APP_ACTIVITY_TIMEOUT', 60), // Увеличено с 30 до 60 для большей стабильности
-                'max_connections' => env('REVERB_APP_MAX_CONNECTIONS', 1000), // Установлен разумный лимит
-                'max_message_size' => env('REVERB_APP_MAX_MESSAGE_SIZE', 100_000), // Увеличено до 100 KB
+                    'path' => env('REVERB_CLIENT_PATH', env('REVERB_SERVER_PATH', '')),
+                ]),
+                'allowed_origins' => $parsedAllowedOrigins,
+                'ping_interval' => env('REVERB_APP_PING_INTERVAL', 30),
+                'activity_timeout' => env('REVERB_APP_ACTIVITY_TIMEOUT', 60),
+                'max_connections' => env('REVERB_APP_MAX_CONNECTIONS', 1000),
+                'max_message_size' => env('REVERB_APP_MAX_MESSAGE_SIZE', 100_000),
+                'client_options' => $clientOptions,
             ],
         ],
 

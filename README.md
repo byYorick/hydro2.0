@@ -23,6 +23,17 @@ hydro2.0 Monorepo (skeleton)
 **Приоритеты разработки:**
 - См. приоритеты: `DEVELOPMENT_PRIORITIES.md`
 
+**WebSocket (Real-time обновления):**
+- Архитектура: `backend/laravel/docs/WEBSOCKET_ARCHITECTURE.md`
+- Договор событий: `backend/laravel/docs/WEBSOCKET_EVENTS.md`
+- Troubleshooting: `backend/laravel/docs/WEBSOCKET_TROUBLESHOOTING.md`
+- Smoke test: `tools/ws-smoke-test.sh`
+
+**Конфигурация WebSocket:**
+- Frontend переменные: `VITE_REVERB_APP_KEY`, `VITE_REVERB_HOST`, `VITE_REVERB_PORT`
+- Backend переменные: `REVERB_APP_ID`, `REVERB_APP_KEY`, `REVERB_APP_SECRET`, `REVERB_PORT`
+- Запуск Reverb: `php artisan reverb:start`
+
 См. подробности в `doc_ai/01_SYSTEM/01_PROJECT_STRUCTURE_PROD.md`.
 
 

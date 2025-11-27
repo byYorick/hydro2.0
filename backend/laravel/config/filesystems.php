@@ -32,7 +32,8 @@ return [
 
         'local' => [
             'driver' => 'local',
-            'root' => storage_path('app'),
+            // Laravel 12 по умолчанию размещает локальные файлы в storage/app/private
+            'root' => storage_path('app/private'),
             'throw' => false,
         ],
 

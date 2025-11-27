@@ -6,6 +6,7 @@
 #include "node_command_handler.h"
 #include "node_framework.h"
 #include "mqtt_manager.h"
+#include "node_utils.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -67,8 +68,8 @@ esp_err_t node_command_handler_register(
     }
 
     if (xSemaphoreTake(s_command_handler.mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
-        // Проверяем, не зарегистрирована ли уже команда
-        for (size_t i = 0; i < s_command_handler.handler_count; i++) {
+        // Проверяем, не зарегистрирована ли уже команда (по всему массиву)
+        for (size_t i = 0; i < NODE_COMMAND_HANDLER_MAX; i++) {
             if (s_command_handler.handlers[i].used &&
                 strcmp(s_command_handler.handlers[i].cmd_name, cmd_name) == 0) {
                 xSemaphoreGive(s_command_handler.mutex);
@@ -77,25 +78,30 @@ esp_err_t node_command_handler_register(
             }
         }
 
-        // Ищем свободный слот
-        if (s_command_handler.handler_count >= NODE_COMMAND_HANDLER_MAX) {
-            xSemaphoreGive(s_command_handler.mutex);
-            ESP_LOGE(TAG, "Command handler registry is full");
-            return ESP_ERR_NO_MEM;
+        // Ищем свободный слот по всему массиву
+        for (size_t i = 0; i < NODE_COMMAND_HANDLER_MAX; i++) {
+            if (!s_command_handler.handlers[i].used) {
+                // Найден свободный слот
+                strncpy(s_command_handler.handlers[i].cmd_name, cmd_name, NODE_COMMAND_NAME_MAX_LEN - 1);
+                s_command_handler.handlers[i].cmd_name[NODE_COMMAND_NAME_MAX_LEN - 1] = '\0';
+                s_command_handler.handlers[i].handler = handler;
+                s_command_handler.handlers[i].user_ctx = user_ctx;
+                s_command_handler.handlers[i].used = true;
+                
+                // Обновляем handler_count для оптимизации поиска при следующей регистрации
+                if (i >= s_command_handler.handler_count) {
+                    s_command_handler.handler_count = i + 1;
+                }
+                
+                xSemaphoreGive(s_command_handler.mutex);
+                ESP_LOGI(TAG, "Command handler registered: %s", cmd_name);
+                return ESP_OK;
+            }
         }
-
-        // Регистрируем обработчик
-        size_t idx = s_command_handler.handler_count;
-        strncpy(s_command_handler.handlers[idx].cmd_name, cmd_name, NODE_COMMAND_NAME_MAX_LEN - 1);
-        s_command_handler.handlers[idx].cmd_name[NODE_COMMAND_NAME_MAX_LEN - 1] = '\0';
-        s_command_handler.handlers[idx].handler = handler;
-        s_command_handler.handlers[idx].user_ctx = user_ctx;
-        s_command_handler.handlers[idx].used = true;
-        s_command_handler.handler_count++;
-
+        
         xSemaphoreGive(s_command_handler.mutex);
-        ESP_LOGI(TAG, "Command handler registered: %s", cmd_name);
-        return ESP_OK;
+        ESP_LOGE(TAG, "Command handler registry is full");
+        return ESP_ERR_NO_MEM;
     }
 
     return ESP_ERR_TIMEOUT;
@@ -107,12 +113,15 @@ esp_err_t node_command_handler_unregister(const char *cmd_name) {
     }
 
     if (xSemaphoreTake(s_command_handler.mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
-        for (size_t i = 0; i < s_command_handler.handler_count; i++) {
+        // Ищем обработчик по всему массиву, не только до handler_count
+        // чтобы не пропустить обработчики после удаления других
+        for (size_t i = 0; i < NODE_COMMAND_HANDLER_MAX; i++) {
             if (s_command_handler.handlers[i].used &&
                 strcmp(s_command_handler.handlers[i].cmd_name, cmd_name) == 0) {
                 s_command_handler.handlers[i].used = false;
                 memset(&s_command_handler.handlers[i], 0, sizeof(command_handler_entry_t));
-                s_command_handler.handler_count--;
+                // НЕ уменьшаем handler_count - он используется только для поиска свободного слота
+                // при регистрации, а при поиске обработчика проверяем used флаг
                 xSemaphoreGive(s_command_handler.mutex);
                 ESP_LOGI(TAG, "Command handler unregistered: %s", cmd_name);
                 return ESP_OK;
@@ -197,7 +206,8 @@ void node_command_handler_process(
 
     if (s_command_handler.mutex &&
         xSemaphoreTake(s_command_handler.mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
-        for (size_t i = 0; i < s_command_handler.handler_count; i++) {
+        // Поиск по всему массиву, проверяя used флаг
+        for (size_t i = 0; i < NODE_COMMAND_HANDLER_MAX; i++) {
             if (s_command_handler.handlers[i].used &&
                 strcmp(s_command_handler.handlers[i].cmd_name, cmd) == 0) {
                 handler = s_command_handler.handlers[i].handler;
@@ -215,7 +225,16 @@ void node_command_handler_process(
     if (handler) {
         // Извлекаем параметры команды (все поля кроме cmd и cmd_id)
         cJSON *params = cJSON_Duplicate(json, 1);
-        if (params) {
+        if (params == NULL) {
+            ESP_LOGE(TAG, "Failed to duplicate command JSON (out of memory)");
+            response = node_command_handler_create_response(
+                cmd_id,
+                "ERROR",
+                "memory_error",
+                "Failed to parse command parameters",
+                NULL
+            );
+        } else {
             cJSON_DeleteItemFromObject(params, "cmd");
             cJSON_DeleteItemFromObject(params, "cmd_id");
             
@@ -275,6 +294,95 @@ void node_command_handler_process(
     cJSON_Delete(json);
 }
 
+/**
+ * @brief Обработчик команды set_time
+ * 
+ * Устанавливает время на ноде через смещение.
+ * Формат команды:
+ * {
+ *   "cmd": "set_time",
+ *   "cmd_id": "<uuid>",
+ *   "unix_ts": 1717770000,
+ *   "source": "server"
+ * }
+ */
+static esp_err_t handle_set_time(
+    const char *channel,
+    const cJSON *params,
+    cJSON **response,
+    void *user_ctx
+) {
+    (void)channel;
+    (void)user_ctx;
+    
+    if (params == NULL) {
+        if (response) {
+            *response = node_command_handler_create_response(
+                NULL,
+                "ERROR",
+                "invalid_params",
+                "Missing parameters",
+                NULL
+            );
+        }
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    // Извлекаем unix_ts
+    cJSON *unix_ts_item = cJSON_GetObjectItem(params, "unix_ts");
+    if (!cJSON_IsNumber(unix_ts_item)) {
+        if (response) {
+            *response = node_command_handler_create_response(
+                NULL,
+                "ERROR",
+                "invalid_params",
+                "Missing or invalid unix_ts",
+                NULL
+            );
+        }
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    int64_t unix_ts = (int64_t)cJSON_GetNumberValue(unix_ts_item);
+    esp_err_t err = node_utils_set_time(unix_ts);
+    
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "Time set successfully: %lld", (long long)unix_ts);
+        if (response) {
+            *response = node_command_handler_create_response(
+                NULL,
+                "ACK",
+                NULL,
+                NULL,
+                NULL
+            );
+        }
+        return ESP_OK;
+    } else {
+        ESP_LOGE(TAG, "Failed to set time: %s", esp_err_to_name(err));
+        if (response) {
+            *response = node_command_handler_create_response(
+                NULL,
+                "ERROR",
+                "set_time_failed",
+                "Failed to set time",
+                NULL
+            );
+        }
+        return err;
+    }
+}
+
+/**
+ * @brief Инициализация встроенных обработчиков команд
+ * 
+ * Регистрирует системные команды, такие как set_time
+ */
+void node_command_handler_init_builtin_handlers(void) {
+    node_command_handler_register("set_time", handle_set_time, NULL);
+    ESP_LOGI(TAG, "Built-in command handlers registered");
+}
+
 cJSON *node_command_handler_create_response(
     const char *cmd_id,
     const char *status,
@@ -295,7 +403,7 @@ cJSON *node_command_handler_create_response(
         cJSON_AddStringToObject(response, "status", status);
     }
 
-    cJSON_AddNumberToObject(response, "ts", (double)(esp_timer_get_time() / 1000000));
+    cJSON_AddNumberToObject(response, "ts", (double)node_utils_get_timestamp_seconds());
 
     if (error_code && strcmp(status, "ERROR") == 0) {
         cJSON_AddStringToObject(response, "error_code", error_code);

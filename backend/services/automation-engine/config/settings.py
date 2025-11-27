@@ -23,6 +23,39 @@ class AutomationSettings:
     EC_CORRECTION_THRESHOLD: float = 0.2
     PH_DOSING_MULTIPLIER: float = 10.0  # diff * 10 для pH
     EC_DOSING_MULTIPLIER: float = 100.0  # diff * 100 для EC
+
+    # PID настройки pH
+    PH_PID_DEAD_ZONE: float = 0.2
+    PH_PID_CLOSE_ZONE: float = 0.5
+    PH_PID_FAR_ZONE: float = 1.0
+    PH_PID_KP_CLOSE: float = 10.0
+    PH_PID_KI_CLOSE: float = 0.0
+    PH_PID_KD_CLOSE: float = 0.0
+    PH_PID_KP_FAR: float = 12.0
+    PH_PID_KI_FAR: float = 0.0
+    PH_PID_KD_FAR: float = 0.0
+    PH_PID_MAX_OUTPUT: float = 50.0
+    PH_PID_MIN_INTERVAL_MS: int = 60000
+    PH_PID_ENABLE_AUTOTUNE: bool = False
+    PH_PID_ADAPTATION_RATE: float = 0.05
+
+    # PID настройки EC
+    EC_PID_DEAD_ZONE: float = 0.2
+    EC_PID_CLOSE_ZONE: float = 0.5
+    EC_PID_FAR_ZONE: float = 1.0
+    EC_PID_KP_CLOSE: float = 100.0
+    EC_PID_KI_CLOSE: float = 0.0
+    EC_PID_KD_CLOSE: float = 0.0
+    EC_PID_KP_FAR: float = 120.0
+    EC_PID_KI_FAR: float = 0.0
+    EC_PID_KD_FAR: float = 0.0
+    EC_PID_MAX_OUTPUT: float = 200.0
+    EC_PID_MIN_INTERVAL_MS: int = 60000
+    EC_PID_ENABLE_AUTOTUNE: bool = False
+    EC_PID_ADAPTATION_RATE: float = 0.05
+    
+    # Максимальный возраст данных телеметрии для корректировки (в минутах)
+    TELEMETRY_MAX_AGE_MINUTES: int = 30  # Не корректировать если данные старше 30 минут
     
     # Пороги для критических отклонений
     PH_TOO_HIGH_THRESHOLD: float = 0.3
@@ -112,4 +145,3 @@ def reload_settings() -> AutomationSettings:
     global _settings
     _settings = AutomationSettings()
     return _settings
-

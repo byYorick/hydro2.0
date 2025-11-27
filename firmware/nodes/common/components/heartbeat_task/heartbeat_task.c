@@ -7,6 +7,7 @@
 #include "mqtt_manager.h"
 #include "wifi_manager.h"
 #include "memory_pool.h"
+#include "node_utils.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_system.h"
@@ -78,7 +79,10 @@ static void task_heartbeat(void *pvParameters) {
                 // Формат согласно MQTT_SPEC_FULL.md раздел 9.2
                 cJSON *heartbeat = cJSON_CreateObject();
                 if (heartbeat) {
+            // uptime - аптайм в миллисекундах (диагностика)
             cJSON_AddNumberToObject(heartbeat, "uptime", (double)(esp_timer_get_time() / 1000));
+            // ts - Unix timestamp в секундах (для синхронизации с сервером)
+            cJSON_AddNumberToObject(heartbeat, "ts", (double)node_utils_now_epoch());
             cJSON_AddNumberToObject(heartbeat, "free_heap", (double)esp_get_free_heap_size());
             cJSON_AddNumberToObject(heartbeat, "rssi", rssi);
             

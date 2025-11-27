@@ -143,10 +143,13 @@ describe('useRateLimitedApi', () => {
     })
 
     // Продвигаем время для всех попыток
-    await vi.advanceTimersByTimeAsync(1000) // Первая попытка
-    await vi.advanceTimersByTimeAsync(2000) // Вторая попытка
-    await vi.advanceTimersByTimeAsync(4000) // Третья попытка
+    vi.advanceTimersByTime(1000) // Первая попытка
+    vi.advanceTimersByTime(2000) // Вторая попытка
+    vi.advanceTimersByTime(4000) // Третья попытка
 
+    // Ждем завершения промиса
+    await vi.runAllTimersAsync()
+    
     await expect(promise).rejects.toThrow('Network error')
     expect(mockApi.get).toHaveBeenCalledTimes(3) // 1 initial + 2 retries
   })

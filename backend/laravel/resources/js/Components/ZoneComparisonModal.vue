@@ -133,7 +133,6 @@ import Button from '@/Components/Button.vue'
 import LoadingState from '@/Components/LoadingState.vue'
 import MultiSeriesTelemetryChart from '@/Components/MultiSeriesTelemetryChart.vue'
 import { useTelemetry } from '@/composables/useTelemetry'
-import { useApi } from '@/composables/useApi'
 import type { Zone, TelemetrySample } from '@/types'
 
 type TimeRange = '1H' | '24H' | '7D' | '30D' | 'ALL'
@@ -149,14 +148,15 @@ const emit = defineEmits<{
 }>()
 
 const { fetchAggregates } = useTelemetry()
-const { api } = useApi()
 
 const selectedZoneIds = ref<number[]>([])
 const timeRange = ref<TimeRange>('24H')
 const loading = ref(false)
 const telemetryData = ref<Map<number, Map<string, TelemetrySample[]>>>(new Map())
+const requestVersion = ref(0)
 
 const availableZones = computed(() => props.zones)
+const hasMinimumSelection = computed(() => selectedZoneIds.value.length >= 2)
 
 const metrics = [
   { key: 'ph', label: 'pH', unit: '' },
@@ -220,33 +220,40 @@ function getChartSeries(metricKey: string) {
 }
 
 async function loadTelemetryData(): Promise<void> {
-  if (selectedZoneIds.value.length < 2) return
-  
+  if (!hasMinimumSelection.value) return
+
+  const currentRequest = ++requestVersion.value
   loading.value = true
-  
+  telemetryData.value.clear()
+
+  const period = timeRange.value === '1H' ? '1h' :
+                 timeRange.value === '24H' ? '24h' :
+                 timeRange.value === '7D' ? '7d' :
+                 timeRange.value === '30D' ? '30d' : '30d'
+
+  const zoneSnapshot = [...selectedZoneIds.value]
+
   try {
-    const period = timeRange.value === '1H' ? '1h' :
-                   timeRange.value === '24H' ? '24h' :
-                   timeRange.value === '7D' ? '7d' :
-                   timeRange.value === '30D' ? '30d' : '30d'
-    
-    const promises = selectedZoneIds.value.flatMap(zoneId =>
-      chartMetrics.map(async metric => {
+    const promises = zoneSnapshot.flatMap(zoneId =>
+      chartMetrics.map(async (metric) => {
         try {
           const data = await fetchAggregates(zoneId, metric.key, period, true)
+          if (requestVersion.value !== currentRequest) return
           if (!telemetryData.value.has(zoneId)) {
             telemetryData.value.set(zoneId, new Map())
           }
-          telemetryData.value.get(zoneId)!.set(metric.key, data)
+          telemetryData.value.get(zoneId)?.set(metric.key, data)
         } catch (err) {
-          console.error(`Failed to load ${metric.key} for zone ${zoneId}:`, err)
+          console.error(`[ZoneComparisonModal] Failed to load ${metric.key} for zone ${zoneId}:`, err)
         }
       })
     )
-    
+
     await Promise.all(promises)
   } finally {
-    loading.value = false
+    if (requestVersion.value === currentRequest) {
+      loading.value = false
+    }
   }
 }
 
@@ -304,20 +311,30 @@ function exportComparison(): void {
   link.click()
 }
 
-// Загружаем данные при изменении выбранных зон или временного диапазона
-watch([selectedZoneIds, timeRange], () => {
-  if (selectedZoneIds.value.length >= 2) {
-    loadTelemetryData()
-  } else {
-    telemetryData.value.clear()
+function resetComparisonState() {
+  if (selectedZoneIds.value.length > 0) {
+    selectedZoneIds.value = []
   }
-}, { deep: true })
+  telemetryData.value.clear()
+  loading.value = false
+  requestVersion.value += 1
+}
 
-// Загружаем данные при открытии модального окна
-watch(() => props.open, (isOpen) => {
-  if (isOpen && selectedZoneIds.value.length >= 2) {
+watch(
+  () => [selectedZoneIds.value.slice(), timeRange.value, props.open],
+  ([zones, , isOpen]) => {
+    if (!isOpen) {
+      resetComparisonState()
+      return
+    }
+
+    if (zones.length < 2) {
+      telemetryData.value.clear()
+      return
+    }
+
     loadTelemetryData()
-  }
-})
+  },
+  { immediate: true }
+)
 </script>
-

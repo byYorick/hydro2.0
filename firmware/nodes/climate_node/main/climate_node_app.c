@@ -18,6 +18,7 @@
 #include "i2c_bus.h"
 #include "sht3x.h"
 #include "ccs811.h"
+#include "node_utils.h"
 #include "esp_log.h"
 #include "esp_err.h"
 #include <string.h>
@@ -26,12 +27,41 @@ static const char *TAG = "climate_node";
 
 // Forward declaration
 static void on_wifi_connection_changed(bool connected, void *user_ctx);
+static void on_mqtt_connection_changed(bool connected, void *user_ctx);
 
 static void on_wifi_connection_changed(bool connected, void *user_ctx) {
     if (connected) {
         ESP_LOGI(TAG, "Wi-Fi connected");
     } else {
         ESP_LOGW(TAG, "Wi-Fi disconnected");
+    }
+}
+
+static void on_mqtt_connection_changed(bool connected, void *user_ctx) {
+    if (connected) {
+        ESP_LOGI(TAG, "MQTT connected - climate_node is online");
+        
+        // Публикуем node_hello при первом подключении для регистрации
+        // Проверяем, есть ли уже конфиг с правильными ID (не временные)
+        char node_id[CONFIG_STORAGE_MAX_STRING_LEN];
+        char gh_uid[CONFIG_STORAGE_MAX_STRING_LEN];
+        bool has_node_id = (config_storage_get_node_id(node_id, sizeof(node_id)) == ESP_OK);
+        bool has_gh_uid = (config_storage_get_gh_uid(gh_uid, sizeof(gh_uid)) == ESP_OK);
+        bool has_valid_config = has_node_id && 
+                                strcmp(node_id, "node-temp") != 0 &&
+                                has_gh_uid &&
+                                strcmp(gh_uid, "gh-temp") != 0;
+        
+        if (!has_valid_config) {
+            // Устройство еще не зарегистрировано - публикуем node_hello
+            const char *capabilities[] = {"temperature", "humidity", "co2", "lighting", "ventilation"};
+            node_utils_publish_node_hello("climate", capabilities, 5);
+        }
+        
+        // Запрашиваем время у сервера для синхронизации
+        node_utils_request_time();
+    } else {
+        ESP_LOGW(TAG, "MQTT disconnected - climate_node is offline");
     }
 }
 
@@ -90,7 +120,9 @@ void climate_node_app_init(void) {
     static char wifi_password[CONFIG_STORAGE_MAX_STRING_LEN];
     
     strncpy(wifi_ssid, wifi_cfg.ssid, sizeof(wifi_ssid) - 1);
+    wifi_ssid[sizeof(wifi_ssid) - 1] = '\0';  // Гарантируем null-termination
     strncpy(wifi_password, wifi_cfg.password, sizeof(wifi_password) - 1);
+    wifi_password[sizeof(wifi_password) - 1] = '\0';  // Гарантируем null-termination
     wifi_config.ssid = wifi_ssid;
     wifi_config.password = wifi_password;
     ESP_LOGI(TAG, "Connecting to Wi-Fi from config: %s", wifi_cfg.ssid);
@@ -113,18 +145,21 @@ void climate_node_app_init(void) {
     
     if (config_storage_get_mqtt(&mqtt_cfg) == ESP_OK) {
         strncpy(mqtt_host, mqtt_cfg.host, sizeof(mqtt_host) - 1);
+        mqtt_host[sizeof(mqtt_host) - 1] = '\0';  // Гарантируем null-termination
         mqtt_config.host = mqtt_host;
         mqtt_config.port = mqtt_cfg.port;
         mqtt_config.keepalive = mqtt_cfg.keepalive;
         mqtt_config.client_id = NULL;
         if (strlen(mqtt_cfg.username) > 0) {
             strncpy(mqtt_username, mqtt_cfg.username, sizeof(mqtt_username) - 1);
+            mqtt_username[sizeof(mqtt_username) - 1] = '\0';  // Гарантируем null-termination
             mqtt_config.username = mqtt_username;
         } else {
             mqtt_config.username = NULL;
         }
         if (strlen(mqtt_cfg.password) > 0) {
             strncpy(mqtt_password, mqtt_cfg.password, sizeof(mqtt_password) - 1);
+            mqtt_password[sizeof(mqtt_password) - 1] = '\0';  // Гарантируем null-termination
             mqtt_config.password = mqtt_password;
         } else {
             mqtt_config.password = NULL;
@@ -133,6 +168,7 @@ void climate_node_app_init(void) {
         ESP_LOGI(TAG, "MQTT config from storage: %s:%d", mqtt_cfg.host, mqtt_cfg.port);
     } else {
         strncpy(mqtt_host, "192.168.1.10", sizeof(mqtt_host) - 1);
+        mqtt_host[sizeof(mqtt_host) - 1] = '\0';  // Гарантируем null-termination
         mqtt_config.host = mqtt_host;
         mqtt_config.port = 1883;
         mqtt_config.keepalive = 30;
@@ -148,6 +184,7 @@ void climate_node_app_init(void) {
         ESP_LOGI(TAG, "Node ID from config: %s", node_id);
     } else {
         strncpy(node_id, "nd-climate-1", sizeof(node_id) - 1);
+        node_id[sizeof(node_id) - 1] = '\0';  // Гарантируем null-termination
         node_info.node_uid = node_id;
         ESP_LOGW(TAG, "Using default node ID");
     }
@@ -185,6 +222,9 @@ void climate_node_app_init(void) {
     }
     
     climate_node_framework_register_mqtt_handlers();
+    
+    // Регистрация callback для публикации node_hello при подключении MQTT
+    mqtt_manager_register_connection_cb(on_mqtt_connection_changed, NULL);
     
     // Запуск MQTT клиента
     err = mqtt_manager_start();

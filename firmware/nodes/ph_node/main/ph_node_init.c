@@ -23,6 +23,7 @@
 #include "ph_node_handlers.h"
 #include "setup_portal.h"
 #include "connection_status.h"
+#include "node_utils.h"
 #include "esp_log.h"
 #include "esp_err.h"
 #include "esp_mac.h"
@@ -171,6 +172,9 @@ void ph_node_mqtt_connection_cb(bool connected, void *user_ctx) {
             // Устройство еще не зарегистрировано - публикуем node_hello
             ph_node_publish_hello();
         }
+        
+        // Запрашиваем время у сервера для синхронизации
+        node_utils_request_time();
     } else {
         ESP_LOGW(TAG, "MQTT disconnected - ph_node is offline");
     }

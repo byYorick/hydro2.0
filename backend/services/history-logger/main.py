@@ -7,10 +7,11 @@ from datetime import datetime
 from typing import Optional, List
 import httpx
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Response, Request, HTTPException
 from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 from pydantic import BaseModel, Field
-from typing import Union
+from typing import Union, Dict
+from collections import defaultdict
 import time
 
 from common.db import execute, fetch, upsert_telemetry_last, create_zone_event
@@ -147,6 +148,13 @@ TELEMETRY_DROPPED = Counter("telemetry_dropped_total",
 DATABASE_ERRORS = Counter("database_errors_total",
                          "Total database errors",
                          ["error_type"])
+INGEST_AUTH_FAILED = Counter("ingest_auth_failed_total",
+                             "Total failed authentication attempts for HTTP ingest")
+INGEST_RATE_LIMITED = Counter("ingest_rate_limited_total",
+                              "Total rate limited requests for HTTP ingest")
+INGEST_REQUESTS = Counter("ingest_requests_total",
+                          "Total HTTP ingest requests",
+                          ["status"])
 
 # Global telemetry queue
 telemetry_queue: Optional[TelemetryQueue] = None
@@ -157,10 +165,17 @@ shutdown_event = asyncio.Event()
 # Background tasks для отслеживания при shutdown
 background_tasks: List[asyncio.Task] = []
 
+# Rate limiting для HTTP ingest endpoint
+# Простой in-memory rate limiter (можно улучшить через Redis для распределенных систем)
+_ingest_rate_limiter: Dict[str, List[float]] = defaultdict(list)
+# Настройки rate limiting
+INGEST_RATE_LIMIT_REQUESTS = 100  # Максимум запросов
+INGEST_RATE_LIMIT_WINDOW_SEC = 60  # За окно времени (60 секунд)
+
 
 class TelemetryPayloadModel(BaseModel):
     """Model for validating telemetry payload from MQTT."""
-    model_config = {"extra": "forbid"}  # Запрещаем неизвестные поля (например, timestamp)
+    model_config = {"extra": "allow"}  # Разрешаем дополнительные поля от прошивок (tds, error_code, temperature, health и т.п.)
     
     metric_type: str = Field(..., min_length=1, max_length=50, description="Type of metric")
     value: float = Field(..., description="Metric value")
@@ -171,6 +186,16 @@ class TelemetryPayloadModel(BaseModel):
     raw: Optional[Union[int, float]] = Field(None, description="Raw sensor value (from firmware)")
     stub: Optional[bool] = Field(None, description="Stub flag indicating if value is simulated (from firmware)")
     stable: Optional[bool] = Field(None, description="Stability flag for sensor readings (from firmware)")
+    # Дополнительные поля от прошивок (ec_node, ph_node, pump_node и т.п.)
+    tds: Optional[Union[int, float]] = Field(None, description="TDS value (from ec_node)")
+    error_code: Optional[Union[int, str]] = Field(None, description="Error code (from firmware)")
+    temperature: Optional[float] = Field(None, description="Temperature value (from firmware)")
+    state: Optional[str] = Field(None, max_length=50, description="State (from firmware)")
+    event: Optional[str] = Field(None, max_length=100, description="Event (from firmware)")
+    health: Optional[dict] = Field(None, description="Health metrics (from pump_node)")
+    zone_uid: Optional[str] = Field(None, max_length=100, description="Zone UID (fallback from payload)")
+    node_uid: Optional[str] = Field(None, max_length=100, description="Node UID (fallback from payload)")
+    gh_uid: Optional[str] = Field(None, max_length=100, description="Greenhouse UID (for multi-greenhouse zone resolution)")
 
 
 class TelemetrySampleModel(BaseModel):
@@ -178,6 +203,7 @@ class TelemetrySampleModel(BaseModel):
     node_uid: str
     zone_uid: Optional[str] = None
     zone_id: Optional[int] = None
+    gh_uid: Optional[str] = None  # Greenhouse UID для корректного резолва зоны в многотепличной конфигурации
     metric_type: str
     value: float
     ts: Optional[datetime] = None
@@ -187,6 +213,63 @@ class TelemetrySampleModel(BaseModel):
 
 # Максимальный размер MQTT payload (64KB) для защиты от DoS
 MAX_PAYLOAD_SIZE = 64 * 1024  # 64KB
+
+# Максимальное количество samples в HTTP ingest батче для защиты от DoS
+MAX_INGEST_SAMPLES = 1000  # Максимум 1000 samples за один запрос
+
+# Максимальный размер raw JSON для защиты от раздувания БД
+MAX_RAW_JSON_SIZE = 10 * 1024  # 10KB максимум для raw поля
+
+
+def _filter_raw_data(raw_data: Optional[dict]) -> Optional[dict]:
+    """
+    Фильтрует и ограничивает размер raw данных для сохранения в БД.
+    
+    Args:
+        raw_data: Исходные raw данные из payload
+        
+    Returns:
+        Отфильтрованные raw данные или None если данные слишком большие/невалидные
+    """
+    if not raw_data or not isinstance(raw_data, dict):
+        return raw_data
+    
+    # Whitelist разрешенных полей для raw (только телеметрические данные)
+    ALLOWED_RAW_FIELDS = {
+        'metric_type', 'value', 'ts', 'channel', 'node_id', 'raw', 'stub', 'stable',
+        'tds', 'error_code', 'temperature', 'state', 'event', 'health',
+        'zone_uid', 'node_uid', 'gh_uid'
+    }
+    
+    # Фильтруем только разрешенные поля
+    filtered = {
+        k: v for k, v in raw_data.items()
+        if k in ALLOWED_RAW_FIELDS
+    }
+    
+    # Проверяем размер после сериализации
+    try:
+        json_str = json.dumps(filtered, default=str)
+        if len(json_str.encode('utf-8')) > MAX_RAW_JSON_SIZE:
+            # Если слишком большой, оставляем только критичные поля
+            minimal = {
+                'metric_type': filtered.get('metric_type'),
+                'value': filtered.get('value'),
+                'ts': filtered.get('ts'),
+            }
+            json_str = json.dumps(minimal, default=str)
+            if len(json_str.encode('utf-8')) > MAX_RAW_JSON_SIZE:
+                # Даже минимальный набор слишком большой - возвращаем None
+                logger.warning(
+                    "Raw data too large even after filtering, dropping",
+                    extra={"original_size": len(json.dumps(raw_data, default=str).encode('utf-8'))}
+                )
+                return None
+            return minimal
+        return filtered
+    except Exception as e:
+        logger.warning(f"Failed to filter raw data: {e}")
+        return None
 
 # Конфигурация retry логики для Redis
 REDIS_PUSH_MAX_RETRIES = 3
@@ -287,21 +370,70 @@ async def handle_telemetry(topic: str, payload: bytes):
 
     # Извлекаем данные из топика и payload
     # Формат топика: hydro/{gh_uid}/{zone_uid}/{node_uid}/{channel}/telemetry
+    gh_uid = _extract_gh_uid(topic)  # Greenhouse UID для корректного резолва зоны в многотепличной конфигурации
     zone_uid = _extract_zone_uid(topic)  # expects zn-{id}
     node_uid = _extract_node_uid(topic)
     channel = _extract_channel_from_topic(topic)  # Извлекаем channel из топика
+    
+    # Fallback: используем zone_uid/node_uid из payload если не извлекается из топика
+    if not zone_uid and validated_data.zone_uid:
+        zone_uid = validated_data.zone_uid
+    if not node_uid and validated_data.node_uid:
+        node_uid = validated_data.node_uid
 
     # Создаём модель для очереди
+    # Проверка валидности ts: должен быть > 1_000_000_000 (примерно 2001-09-09)
+    # Если ts невалиден (аптайм несинхронизированной ноды), используем серверное время
+    MIN_VALID_TIMESTAMP = 1_000_000_000  # 2001-09-09 01:46:40 UTC
     ts = None
     if validated_data.ts:
         try:
+            ts_value = None
             if isinstance(validated_data.ts, (int, float)):
-                # ts в секундах (от прошивок: esp_timer_get_time() / 1000000)
-                ts = datetime.fromtimestamp(validated_data.ts)
+                ts_value = float(validated_data.ts)
+                # Проверяем что ts разумный (не аптайм несинхронизированной ноды)
+                if ts_value >= MIN_VALID_TIMESTAMP:
+                    ts = datetime.fromtimestamp(ts_value)
+                else:
+                    logger.warning(
+                        "Invalid timestamp from firmware (likely uptime), using server time",
+                        extra={
+                            "ts": ts_value,
+                            "topic": topic,
+                            "node_uid": node_uid,
+                            "zone_uid": zone_uid
+                        }
+                    )
             elif isinstance(validated_data.ts, str):
                 ts = datetime.fromisoformat(validated_data.ts.replace('Z', '+00:00'))
-        except Exception:
-            pass
+                # Проверяем что ts разумный
+                ts_timestamp = ts.timestamp()
+                if ts_timestamp < MIN_VALID_TIMESTAMP:
+                    logger.warning(
+                        "Invalid timestamp from firmware (likely uptime), using server time",
+                        extra={
+                            "ts": ts_timestamp,
+                            "topic": topic,
+                            "node_uid": node_uid,
+                            "zone_uid": zone_uid
+                        }
+                    )
+                    ts = None
+        except Exception as e:
+            logger.warning(
+                "Failed to parse timestamp, using server time",
+                extra={
+                    "ts": validated_data.ts,
+                    "error": str(e),
+                    "topic": topic,
+                    "node_uid": node_uid,
+                    "zone_uid": zone_uid
+                }
+            )
+    
+    # Если ts невалиден или отсутствует, используем серверное время
+    if ts is None:
+        ts = datetime.utcnow()
 
     # Используем metric_type (обязательное поле)
     metric_type = validated_data.metric_type
@@ -321,14 +453,19 @@ async def handle_telemetry(topic: str, payload: bytes):
     # Используем channel из топика, если не указан в payload
     channel_name = validated_data.channel or channel
     
+    # Фильтруем raw данные для защиты от раздувания БД
+    filtered_raw = _filter_raw_data(data)
+    
     queue_item = TelemetryQueueItem(
         node_uid=node_uid or "",
         zone_uid=zone_uid,
+        gh_uid=gh_uid,  # Greenhouse UID для корректного резолва зоны в многотепличной конфигурации
         metric_type=metric_type,
         value=validated_data.value,
         ts=ts,
-        raw=data,
-        channel=channel_name
+        raw=filtered_raw,  # Сохраняем отфильтрованные данные
+        channel=channel_name,
+        enqueued_at=datetime.utcnow()  # Время добавления в очередь для трекинга возраста
     )
 
     # Добавляем в Redis queue с retry логикой
@@ -372,34 +509,111 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
     start_time = time.time()
     s = get_settings()
     
-    # Получаем zone_id из zone_uid для каждого образца
-    zone_uid_to_id: dict[str, int] = {}
-    zone_uids = list(set(sample.zone_uid for sample in samples if sample.zone_uid))
+    # Получаем zone_id из zone_uid с учетом gh_uid для каждого образца
+    # Ключ: (zone_uid, gh_uid) -> zone_id
+    zone_uid_to_id: dict[tuple[str, Optional[str]], int] = {}
     
-    if zone_uids:
-        # Извлекаем zone_id из zone_uid (формат: zn-{id})
-        for zone_uid in zone_uids:
-            zone_id = extract_zone_id_from_uid(zone_uid)
-            if zone_id is not None:
-                zone_uid_to_id[zone_uid] = zone_id
-            else:
+    # Группируем samples по (zone_uid, gh_uid) для батчевого резолва
+    zone_gh_pairs = list(set(
+        (sample.zone_uid, sample.gh_uid) 
+        for sample in samples 
+        if sample.zone_uid
+    ))
+    
+    if zone_gh_pairs:
+        # Батчевый резолв зон с учетом gh_uid
+        for zone_uid, gh_uid in zone_gh_pairs:
+            zone_id_from_uid = extract_zone_id_from_uid(zone_uid)
+            if zone_id_from_uid is None:
                 logger.warning(f"Invalid zone_uid format: {zone_uid}")
+                continue
+            
+            # Ищем зону по zone_id И gh_uid (через JOIN с greenhouses)
+            if gh_uid:
+                # Резолв с учетом greenhouse
+                zone_rows = await fetch(
+                    """
+                    SELECT z.id
+                    FROM zones z
+                    JOIN greenhouses g ON g.id = z.greenhouse_id
+                    WHERE z.id = $1 AND g.uid = $2
+                    """,
+                    zone_id_from_uid,
+                    gh_uid
+                )
+                if zone_rows and len(zone_rows) > 0:
+                    zone_uid_to_id[(zone_uid, gh_uid)] = zone_rows[0]["id"]
+                else:
+                    logger.warning(
+                        f"Zone not found: zone_id={zone_id_from_uid}, gh_uid={gh_uid}",
+                        extra={"zone_uid": zone_uid, "gh_uid": gh_uid}
+                    )
+            else:
+                # Fallback: если gh_uid не указан, используем простое извлечение (для обратной совместимости)
+                # Но это может привести к проблемам в многотепличной конфигурации
+                logger.warning(
+                    f"gh_uid not provided for zone_uid={zone_uid}, using simple zone_id resolution (may cause conflicts in multi-greenhouse setup)",
+                    extra={"zone_uid": zone_uid}
+                )
+                zone_uid_to_id[(zone_uid, None)] = zone_id_from_uid
     
-    # Получаем node_id из node_uid для каждого образца
-    node_uid_to_id: dict[str, int] = {}
-    node_uids = list(set(s.node_uid for s in samples if s.node_uid))
+    # Получаем node_id из node_uid с учетом gh_uid для каждого образца
+    # Ключ: (node_uid, gh_uid) -> (node_id, zone_id) - сохраняем zone_id узла для проверки соответствия
+    node_uid_to_info: dict[tuple[str, Optional[str]], tuple[int, int]] = {}
     
-    if node_uids:
-        cmd_rows = await fetch(
-            """
-            SELECT id, uid
-            FROM nodes
-            WHERE uid = ANY($1::text[])
-            """,
-            node_uids,
-        )
-        for row in cmd_rows:
-            node_uid_to_id[row["uid"]] = row["id"]
+    # Группируем samples по (node_uid, gh_uid) для батчевого резолва
+    node_gh_pairs = list(set(
+        (s.node_uid, s.gh_uid)
+        for s in samples
+        if s.node_uid
+    ))
+    
+    if node_gh_pairs:
+        # Батчевый резолв узлов с учетом gh_uid (через zones и greenhouses)
+        # Важно: получаем и node_id, и zone_id узла для проверки соответствия
+        for node_uid, gh_uid in node_gh_pairs:
+            if gh_uid:
+                # Резолв с учетом greenhouse (через zones)
+                # Получаем node_id И zone_id узла для проверки соответствия
+                node_rows = await fetch(
+                    """
+                    SELECT n.id, n.uid, n.zone_id
+                    FROM nodes n
+                    JOIN zones z ON z.id = n.zone_id
+                    JOIN greenhouses g ON g.id = z.greenhouse_id
+                    WHERE n.uid = $1 AND g.uid = $2
+                    """,
+                    node_uid,
+                    gh_uid
+                )
+                if node_rows and len(node_rows) > 0:
+                    node_id = node_rows[0]["id"]
+                    node_zone_id = node_rows[0]["zone_id"]
+                    node_uid_to_info[(node_uid, gh_uid)] = (node_id, node_zone_id)
+                else:
+                    logger.warning(
+                        f"Node not found: node_uid={node_uid}, gh_uid={gh_uid}",
+                        extra={"node_uid": node_uid, "gh_uid": gh_uid}
+                    )
+            else:
+                # Fallback: если gh_uid не указан, используем простое извлечение (для обратной совместимости)
+                # Но это может привести к проблемам в многотепличной конфигурации
+                logger.warning(
+                    f"gh_uid not provided for node_uid={node_uid}, using simple node_id resolution (may cause conflicts in multi-greenhouse setup)",
+                    extra={"node_uid": node_uid}
+                )
+                node_rows = await fetch(
+                    """
+                    SELECT id, uid, zone_id
+                    FROM nodes
+                    WHERE uid = $1
+                    """,
+                    node_uid,
+                )
+                if node_rows and len(node_rows) > 0:
+                    node_id = node_rows[0]["id"]
+                    node_zone_id = node_rows[0]["zone_id"]
+                    node_uid_to_info[(node_uid, None)] = (node_id, node_zone_id)
     
     # Группируем по zone_id и metric_type для batch insert
     grouped: dict[tuple[int, str, Optional[int], Optional[str]], list[TelemetrySampleModel]] = {}
@@ -407,22 +621,67 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
     for sample in samples:
         zone_id = None
         if sample.zone_uid:
-            zone_id = zone_uid_to_id.get(sample.zone_uid)
+            # Ищем zone_id с учетом gh_uid
+            zone_id = zone_uid_to_id.get((sample.zone_uid, sample.gh_uid))
+            # Fallback: если не найдено с gh_uid, пробуем без него (для обратной совместимости)
+            if zone_id is None and sample.gh_uid:
+                zone_id = zone_uid_to_id.get((sample.zone_uid, None))
         
         node_id = None
+        node_zone_id = None  # zone_id, к которому привязан узел (для проверки соответствия)
         if sample.node_uid:
-            node_id = node_uid_to_id.get(sample.node_uid)
+            # Ищем node_id с учетом gh_uid
+            node_info = node_uid_to_info.get((sample.node_uid, sample.gh_uid))
+            # Fallback: если не найдено с gh_uid, пробуем без него (для обратной совместимости)
+            if node_info is None and sample.gh_uid:
+                node_info = node_uid_to_info.get((sample.node_uid, None))
+            
+            if node_info:
+                node_id, node_zone_id = node_info
         
         if not zone_id:
-            logger.warning(
-                "Skipping sample: zone_id not found",
-                extra={
-                    "zone_uid": sample.zone_uid,
-                    "node_uid": sample.node_uid,
-                    "metric_type": sample.metric_type
-                }
-            )
+            # Логируем более детально для диагностики
+            if not sample.zone_uid:
+                logger.warning(
+                    "Skipping sample: zone_uid missing",
+                    extra={
+                        "zone_uid": sample.zone_uid,
+                        "node_uid": sample.node_uid,
+                        "metric_type": sample.metric_type
+                    }
+                )
+            else:
+                # zone_uid есть, но zone_id не найден (возможно невалидный формат или не существует в БД)
+                logger.warning(
+                    "Skipping sample: zone_id not found for zone_uid",
+                    extra={
+                        "zone_uid": sample.zone_uid,
+                        "node_uid": sample.node_uid,
+                        "metric_type": sample.metric_type,
+                        "zone_uid_format_valid": sample.zone_uid.startswith("zn-") if sample.zone_uid else False
+                    }
+                )
+            TELEMETRY_DROPPED.labels(reason="zone_id_not_found").inc()
             continue
+        
+        # КРИТИЧЕСКАЯ ПРОВЕРКА БЕЗОПАСНОСТИ: проверяем соответствие node_id → zone_id
+        # Предотвращает подмену данных зон через HTTP ingest с неправильным zone_id
+        if node_id and node_zone_id is not None:
+            if node_zone_id != zone_id:
+                logger.warning(
+                    "Security: node_uid does not belong to zone_id, dropping sample",
+                    extra={
+                        "node_uid": sample.node_uid,
+                        "node_id": node_id,
+                        "node_zone_id": node_zone_id,  # Реальная зона узла
+                        "requested_zone_id": zone_id,  # Запрошенная зона из payload
+                        "zone_uid": sample.zone_uid,
+                        "gh_uid": sample.gh_uid,
+                        "metric_type": sample.metric_type
+                    }
+                )
+                TELEMETRY_DROPPED.labels(reason="node_zone_mismatch").inc()
+                continue
         
         key = (zone_id, sample.metric_type, node_id, sample.channel)
         if key not in grouped:
@@ -430,6 +689,9 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
         grouped[key].append(sample)
     
     # Batch insert в telemetry_samples
+    # Считаем реально вставленные сэмплы (не пропущенные из-за отсутствия zone_id)
+    processed_count = 0
+    
     for (zone_id, metric_type, node_id, channel), group_samples in grouped.items():
         # Используем TimescaleDB для эффективной вставки
         values_list = []
@@ -455,6 +717,8 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
             """
             try:
                 await execute(query, *params_list)
+                # Успешно вставлено - считаем все сэмплы из этой группы
+                processed_count += len(group_samples)
             except Exception as e:
                 error_type = type(e).__name__
                 DATABASE_ERRORS.labels(error_type=error_type).inc()
@@ -469,22 +733,30 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
                     },
                     exc_info=True
                 )
+                # При ошибке вставки сэмплы не считаются как обработанные
         
         # Обновляем telemetry_last
+        # Выбираем сэмпл с максимальным ts (самый свежий), а не просто последний в батче
+        # Это важно, так как телеметрия может приходить вне порядка (MQTT/очереди/ретраи)
         if group_samples:
-            last_sample = group_samples[-1]  # Последний образец
+            # Находим сэмпл с максимальным ts
+            latest_sample = max(
+                group_samples,
+                key=lambda s: s.ts if s.ts else datetime.min.replace(tzinfo=None)
+            )
             await upsert_telemetry_last(
                 zone_id,
                 metric_type,
                 node_id,
                 channel,
-                last_sample.value
+                latest_sample.value
             )
     
     processing_duration = time.time() - start_time
     TELEMETRY_PROCESSING_DURATION.observe(processing_duration)
-    TELEM_PROCESSED.inc(len(samples))
-    TELEM_BATCH_SIZE.observe(len(samples))
+    # Исправлено: считаем метрики по реально вставленным сэмплам, а не по входному списку
+    TELEM_PROCESSED.inc(processed_count)
+    TELEM_BATCH_SIZE.observe(processed_count)
 
 
 async def process_telemetry_queue():
@@ -510,6 +782,18 @@ async def process_telemetry_queue():
             # Обновляем метрики размера очереди
             TELEMETRY_QUEUE_SIZE.set(queue_size)
             
+            # Обновляем метрику возраста самого старого элемента в очереди
+            queue_age_start_time = time.time()
+            queue_age = await telemetry_queue.get_oldest_age_seconds()
+            queue_age_duration = time.time() - queue_age_start_time
+            REDIS_OPERATION_DURATION.observe(queue_age_duration)
+            
+            if queue_age is not None:
+                TELEMETRY_QUEUE_AGE.set(queue_age)
+            else:
+                # Если очередь пуста или элементы не имеют enqueued_at, устанавливаем 0
+                TELEMETRY_QUEUE_AGE.set(0.0)
+            
             time_since_flush = (datetime.utcnow() - last_flush).total_seconds() * 1000
 
             should_flush = (
@@ -526,13 +810,12 @@ async def process_telemetry_queue():
                     # Преобразуем в TelemetrySampleModel
                     samples = []
                     for item in queue_items:
-                        # Получаем zone_id из zone_uid
-                        zone_id = extract_zone_id_from_uid(item.zone_uid)
-
+                        # zone_id будет резолвлен в process_telemetry_batch с учетом gh_uid
                         sample = TelemetrySampleModel(
                             node_uid=item.node_uid,
                             zone_uid=item.zone_uid,
-                            zone_id=zone_id,
+                            zone_id=None,  # Будет резолвлен в process_telemetry_batch с учетом gh_uid
+                            gh_uid=getattr(item, 'gh_uid', None),  # Поддержка старых элементов без gh_uid
                             metric_type=item.metric_type,
                             value=item.value,
                             ts=item.ts,
@@ -558,12 +841,12 @@ async def process_telemetry_queue():
     if remaining_items:
         samples = []
         for item in remaining_items:
-            zone_id = extract_zone_id_from_uid(item.zone_uid)
-
+            # zone_id будет резолвлен в process_telemetry_batch с учетом gh_uid
             sample = TelemetrySampleModel(
                 node_uid=item.node_uid,
                 zone_uid=item.zone_uid,
-                zone_id=zone_id,
+                zone_id=None,  # Будет резолвлен в process_telemetry_batch с учетом gh_uid
+                gh_uid=getattr(item, 'gh_uid', None),  # Поддержка старых элементов без gh_uid
                 metric_type=item.metric_type,
                 value=item.value,
                 ts=item.ts,
@@ -800,12 +1083,18 @@ async def handle_heartbeat(topic: str, payload: bytes):
     
     if uptime is not None:
         try:
-            uptime_int = int(uptime)
+            # Прошивки отправляют uptime в миллисекундах (esp_timer_get_time() / 1000)
+            # Конвертируем в секунды для поля uptime_seconds
+            uptime_ms = float(uptime)
+            uptime_seconds = int(uptime_ms / 1000.0)
             updates.append(f"uptime_seconds=${param_index + 1}")
-            params.append(uptime_int)
+            params.append(uptime_seconds)
             param_index += 1
-        except (ValueError, TypeError):
-            logger.warning(f"Invalid uptime value: {uptime}")
+        except (ValueError, TypeError) as e:
+            logger.warning(
+                f"Invalid uptime value: {uptime}",
+                extra={"error": str(e), "node_uid": node_uid}
+            )
     
     if free_heap is not None:
         try:
@@ -843,11 +1132,21 @@ async def handle_heartbeat(topic: str, payload: bytes):
     
     HEARTBEAT_RECEIVED.labels(node_uid=node_uid).inc()
     
+    # Вычисляем uptime_seconds для логирования (если uptime был обработан)
+    logged_uptime = None
+    if uptime is not None:
+        try:
+            uptime_ms = float(uptime)
+            logged_uptime = int(uptime_ms / 1000.0)
+        except (ValueError, TypeError):
+            logged_uptime = uptime  # Оставляем оригинальное значение если не удалось конвертировать
+    
     logger.debug(
         "Node heartbeat received",
         extra={
             "node_uid": node_uid,
-            "uptime": uptime,
+            "uptime_ms": uptime,  # Оригинальное значение в миллисекундах
+            "uptime_seconds": logged_uptime,  # Конвертированное значение в секундах
             "free_heap": free_heap,
             "rssi": rssi,
         }
@@ -876,11 +1175,71 @@ async def handle_config_response(topic: str, payload: bytes):
         CONFIG_RESPONSE_RECEIVED.inc()
         
         status = data.get("status", "").upper()
+        cmd_id = data.get("cmd_id")  # ID команды для проверки соответствия
+        config_version = data.get("config_version")  # Версия конфига для проверки свежести
         
         # Ожидаем только "ACK" от прошивок
         if status == "ACK":
+            # КРИТИЧЕСКАЯ ПРОВЕРКА БЕЗОПАСНОСТИ: проверяем cmd_id и свежесть конфига
+            # Предотвращает подмену ACK от старых/чужих команд
+            validation_passed = True
+            validation_errors = []
+            
+            # Получаем информацию о ноде и последнем конфиге
+            try:
+                node_rows = await fetch(
+                    """
+                    SELECT id, uid, lifecycle_state, zone_id, config
+                    FROM nodes
+                    WHERE uid = $1
+                    """,
+                    node_uid
+                )
+                
+                if not node_rows or len(node_rows) == 0:
+                    logger.warning(f"[CONFIG_RESPONSE] Node {node_uid} not found in database, ignoring ACK")
+                    CONFIG_RESPONSE_ERROR.labels(node_uid=node_uid).inc()
+                    return
+                
+                node = node_rows[0]
+                node_config = node.get("config") or {}
+                
+                # Проверяем cmd_id если он указан в payload
+                if cmd_id:
+                    last_cmd_id = node_config.get("last_cmd_id")
+                    if last_cmd_id and last_cmd_id != cmd_id:
+                        validation_passed = False
+                        validation_errors.append(f"cmd_id mismatch: expected {last_cmd_id}, got {cmd_id}")
+                
+                # Проверяем версию конфига если она указана
+                if config_version is not None:
+                    stored_config_version = node_config.get("version")
+                    if stored_config_version is not None and stored_config_version != config_version:
+                        validation_passed = False
+                        validation_errors.append(f"config_version mismatch: expected {stored_config_version}, got {config_version}")
+                
+                if not validation_passed:
+                    logger.warning(
+                        f"[CONFIG_RESPONSE] ACK validation failed for node {node_uid}: {', '.join(validation_errors)}. "
+                        f"Ignoring potentially stale or mismatched ACK."
+                    )
+                    CONFIG_RESPONSE_ERROR.labels(node_uid=node_uid).inc()
+                    return
+                
+            except Exception as validation_e:
+                logger.error(
+                    f"[CONFIG_RESPONSE] Error validating ACK for node {node_uid}: {validation_e}",
+                    exc_info=True
+                )
+                # В случае ошибки валидации лучше не доверять ACK
+                CONFIG_RESPONSE_ERROR.labels(node_uid=node_uid).inc()
+                return
+            
             # Успешная установка конфига - переводим ноду в ASSIGNED_TO_ZONE
-            logger.info(f"[CONFIG_RESPONSE] Config successfully installed for node {node_uid}")
+            logger.info(
+                f"[CONFIG_RESPONSE] Config successfully installed for node {node_uid} "
+                f"(cmd_id={cmd_id}, config_version={config_version})"
+            )
             CONFIG_RESPONSE_SUCCESS.labels(node_uid=node_uid).inc()
             
             # Вызываем Laravel API для перевода ноды в ASSIGNED_TO_ZONE
@@ -901,22 +1260,8 @@ async def handle_config_response(topic: str, payload: bytes):
                 if laravel_token:
                     headers["Authorization"] = f"Bearer {laravel_token}"
                 
-                # Получаем информацию о ноде через БД напрямую
-                # (более эффективно, чем через API)
-                rows = await fetch(
-                    """
-                    SELECT id, uid, lifecycle_state, zone_id
-                    FROM nodes
-                    WHERE uid = $1
-                    """,
-                    node_uid
-                )
-                
-                if not rows or len(rows) == 0:
-                    logger.warning(f"[CONFIG_RESPONSE] Node {node_uid} not found in database")
-                    return
-                
-                node = rows[0]
+                # Получаем информацию о ноде через БД напрямую (уже получено при валидации)
+                # Используем данные из предыдущего запроса
                 node_id = node.get("id")
                 lifecycle_state = node.get("lifecycle_state")
                 zone_id = node.get("zone_id")
@@ -1070,6 +1415,15 @@ def _extract_node_uid(topic: str) -> Optional[str]:
     return None
 
 
+def _extract_gh_uid(topic: str) -> Optional[str]:
+    """Извлечь gh_uid (greenhouse UID) из топика."""
+    # Формат: hydro/{gh_uid}/{zone_uid}/{node_uid}/{channel}/telemetry
+    parts = topic.split("/")
+    if len(parts) >= 2:
+        return parts[1]
+    return None
+
+
 def _extract_channel_from_topic(topic: str) -> Optional[str]:
     """Извлечь channel из топика телеметрии."""
     # Формат: hydro/{gh_uid}/{zone_uid}/{node_uid}/{channel}/telemetry
@@ -1082,57 +1436,297 @@ def _extract_channel_from_topic(topic: str) -> Optional[str]:
 # Startup и shutdown события теперь обрабатываются через lifespan handler выше
 
 
+def _auth_ingest(request: Request):
+    """
+    Проверка токена аутентификации для HTTP ingest endpoint.
+    Токен обязателен, если настроен (даже для внутренних запросов).
+    """
+    s = get_settings()
+    
+    # Если токен настроен, он обязателен для всех запросов (включая внутренние)
+    if s.history_logger_api_token:
+        token = request.headers.get("Authorization", "")
+        expected_token = f"Bearer {s.history_logger_api_token}"
+        
+        if token != expected_token:
+            client_ip = request.client.host if request.client else "unknown"
+            logger.warning(
+                f"Invalid or missing token for HTTP ingest: token_present={bool(token)}, "
+                f"client_ip={client_ip}"
+            )
+            INGEST_AUTH_FAILED.inc()
+            raise HTTPException(status_code=401, detail="Unauthorized: invalid or missing token")
+        return
+    
+    # Если токен не настроен, разрешаем только для dev окружения (localhost)
+    # В production это должно быть запрещено через проверку в get_settings()
+    client_ip = request.client.host if request.client else ""
+    is_localhost = client_ip in ["127.0.0.1", "::1", "localhost"]
+    
+    if not is_localhost:
+        logger.warning(
+            f"Rejecting non-localhost request without token: client_ip={client_ip}. "
+            f"Token is required in production. Set HISTORY_LOGGER_API_TOKEN environment variable."
+        )
+        INGEST_AUTH_FAILED.inc()
+        raise HTTPException(
+            status_code=401,
+            detail="Unauthorized: token required. Set HISTORY_LOGGER_API_TOKEN environment variable."
+        )
+    
+    logger.debug(f"Allowing localhost request without token (dev mode): client_ip={client_ip}")
+
+
+def _check_rate_limit(client_id: str) -> bool:
+    """
+    Проверка rate limit для клиента.
+    
+    Args:
+        client_id: Идентификатор клиента (IP адрес)
+        
+    Returns:
+        True если запрос разрешен, False если превышен лимит
+    """
+    current_time = time.time()
+    
+    # Очищаем старые записи (старше окна)
+    window_start = current_time - INGEST_RATE_LIMIT_WINDOW_SEC
+    _ingest_rate_limiter[client_id] = [
+        ts for ts in _ingest_rate_limiter[client_id] if ts > window_start
+    ]
+    
+    # Проверяем лимит
+    if len(_ingest_rate_limiter[client_id]) >= INGEST_RATE_LIMIT_REQUESTS:
+        return False
+    
+    # Добавляем текущий запрос
+    _ingest_rate_limiter[client_id].append(current_time)
+    return True
+
+
 @app.post("/ingest/telemetry")
-async def ingest_telemetry(payload: dict):
+async def ingest_telemetry(request: Request):
     """
     HTTP endpoint для приема телеметрии.
     Принимает JSON с массивом samples и обрабатывает их батчем.
+    
+    Безопасность:
+    - Аутентификация через токен (обязательна для внешних запросов)
+    - Rate limiting (максимум INGEST_RATE_LIMIT_REQUESTS запросов за INGEST_RATE_LIMIT_WINDOW_SEC секунд)
+    - Проверка размера payload (максимум MAX_PAYLOAD_SIZE)
+    - Лимит на количество samples (максимум MAX_INGEST_SAMPLES)
+    - Валидация каждого sample через TelemetryPayloadModel
+    - Дроп некорректных записей с логированием
     """
+    # Аутентификация
+    _auth_ingest(request)
+    
+    # Rate limiting
+    client_ip = request.client.host if request.client else "unknown"
+    if not _check_rate_limit(client_ip):
+        logger.warning(
+            f"Rate limit exceeded for HTTP ingest: client_ip={client_ip}",
+            extra={"client_ip": client_ip}
+        )
+        INGEST_RATE_LIMITED.inc()
+        INGEST_REQUESTS.labels(status="rate_limited").inc()
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded: maximum {INGEST_RATE_LIMIT_REQUESTS} requests per {INGEST_RATE_LIMIT_WINDOW_SEC} seconds"
+        )
+    
+    # Проверка размера payload для защиты от DoS
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            size = int(content_length)
+            if size > MAX_PAYLOAD_SIZE:
+                logger.warning(
+                    f"HTTP ingest payload too large: {size} bytes (max: {MAX_PAYLOAD_SIZE})",
+                    extra={"content_length": size}
+                )
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"Payload too large: {size} bytes (max: {MAX_PAYLOAD_SIZE} bytes)"
+                )
+        except ValueError:
+            pass  # Игнорируем невалидный content-length
+    
+    # Парсим JSON payload
+    try:
+        body = await request.body()
+        # Дополнительная проверка размера после чтения
+        if len(body) > MAX_PAYLOAD_SIZE:
+            logger.warning(
+                f"HTTP ingest payload too large: {len(body)} bytes (max: {MAX_PAYLOAD_SIZE})",
+                extra={"payload_size": len(body)}
+            )
+            raise HTTPException(
+                status_code=413,
+                detail=f"Payload too large: {len(body)} bytes (max: {MAX_PAYLOAD_SIZE} bytes)"
+            )
+        
+        payload = json.loads(body.decode('utf-8'))
+    except json.JSONDecodeError as e:
+        logger.warning(f"Invalid JSON in HTTP ingest: {e}")
+        INGEST_REQUESTS.labels(status="invalid_json").inc()
+        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+    except Exception as e:
+        logger.error(f"Error parsing HTTP ingest payload: {e}", exc_info=True)
+        INGEST_REQUESTS.labels(status="parse_error").inc()
+        raise HTTPException(status_code=400, detail="Failed to parse payload")
+    
     samples_data = payload.get("samples", [])
     if not samples_data:
-        return {"status": "ok", "count": 0}
+        return {"status": "ok", "count": 0, "dropped": 0}
     
-    # Преобразуем в TelemetrySampleModel
+    # Проверка лимита на количество samples
+    if len(samples_data) > MAX_INGEST_SAMPLES:
+        logger.warning(
+            f"HTTP ingest too many samples: {len(samples_data)} (max: {MAX_INGEST_SAMPLES})",
+            extra={"samples_count": len(samples_data)}
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=f"Too many samples: {len(samples_data)} (max: {MAX_INGEST_SAMPLES})"
+        )
+    
+    # Преобразуем в TelemetrySampleModel с валидацией
     samples = []
-    for sample_data in samples_data:
-        # Преобразуем ts если есть (только формат от прошивок)
-        ts = None
-        if sample_data.get("ts"):
-            ts_value = sample_data.get("ts")
-            if isinstance(ts_value, str):
-                try:
-                    ts = datetime.fromisoformat(ts_value.replace('Z', '+00:00'))
-                except Exception:
-                    pass
-            elif isinstance(ts_value, (int, float)):
-                try:
-                    # ts в секундах (от прошивок: esp_timer_get_time() / 1000000)
-                    ts = datetime.fromtimestamp(ts_value)
-                except Exception:
-                    pass
+    dropped_count = 0
+    # Проверка валидности ts: должен быть > 1_000_000_000 (примерно 2001-09-09)
+    # Если ts невалиден (аптайм несинхронизированной ноды), используем серверное время
+    MIN_VALID_TIMESTAMP = 1_000_000_000  # 2001-09-09 01:46:40 UTC
+    
+    for idx, sample_data in enumerate(samples_data):
+        # Валидация через TelemetryPayloadModel (как в MQTT пути)
+        if not isinstance(sample_data, dict):
+            logger.warning(
+                f"Invalid sample type in HTTP ingest (not a dict), dropping",
+                extra={"sample_index": idx, "sample_type": type(sample_data).__name__}
+            )
+            TELEMETRY_DROPPED.labels(reason="invalid_sample_type").inc()
+            dropped_count += 1
+            continue
         
-        # Извлекаем zone_id из zone_uid если нужно
-        zone_id = sample_data.get("zone_id")
-        if not zone_id and sample_data.get("zone_uid"):
-            zone_uid = sample_data.get("zone_uid")
-            zone_id = extract_zone_id_from_uid(zone_uid)
+        try:
+            # Валидируем через TelemetryPayloadModel
+            validated_data = TelemetryPayloadModel(**sample_data)
+        except Exception as e:
+            logger.warning(
+                "Invalid telemetry sample in HTTP ingest, dropping",
+                extra={
+                    "error": str(e),
+                    "sample_index": idx,
+                    "sample_keys": list(sample_data.keys()) if isinstance(sample_data, dict) else None
+                }
+            )
+            TELEMETRY_DROPPED.labels(reason="validation_failed").inc()
+            dropped_count += 1
+            continue
+        
+        # Проверяем обязательные поля
+        if not validated_data.metric_type:
+            logger.warning(
+                "Missing metric_type in HTTP ingest sample, dropping",
+                extra={"sample_index": idx, "sample_keys": list(sample_data.keys())}
+            )
+            TELEMETRY_DROPPED.labels(reason="missing_metric_type").inc()
+            dropped_count += 1
+            continue
+        # Обрабатываем timestamp (используем validated_data)
+        ts = None
+        if validated_data.ts:
+            try:
+                ts_value = None
+                if isinstance(validated_data.ts, (int, float)):
+                    ts_value = float(validated_data.ts)
+                    # Проверяем что ts разумный (не аптайм несинхронизированной ноды)
+                    if ts_value >= MIN_VALID_TIMESTAMP:
+                        ts = datetime.fromtimestamp(ts_value)
+                    else:
+                        logger.warning(
+                            "Invalid timestamp in HTTP ingest (likely uptime), using server time",
+                            extra={
+                                "ts": ts_value,
+                                "node_uid": validated_data.node_uid,
+                                "zone_uid": validated_data.zone_uid,
+                                "sample_index": idx
+                            }
+                        )
+                elif isinstance(validated_data.ts, str):
+                    ts = datetime.fromisoformat(validated_data.ts.replace('Z', '+00:00'))
+                    # Проверяем что ts разумный
+                    ts_timestamp = ts.timestamp()
+                    if ts_timestamp < MIN_VALID_TIMESTAMP:
+                        logger.warning(
+                            "Invalid timestamp in HTTP ingest (likely uptime), using server time",
+                            extra={
+                                "ts": ts_timestamp,
+                                "node_uid": validated_data.node_uid,
+                                "zone_uid": validated_data.zone_uid,
+                                "sample_index": idx
+                            }
+                        )
+                        ts = None
+            except Exception as e:
+                logger.warning(
+                    "Failed to parse timestamp in HTTP ingest, using server time",
+                    extra={
+                        "ts": validated_data.ts,
+                        "error": str(e),
+                        "node_uid": validated_data.node_uid,
+                        "zone_uid": validated_data.zone_uid,
+                        "sample_index": idx
+                    }
+                )
+        
+        # Если ts невалиден или отсутствует, используем серверное время
+        if ts is None:
+            ts = datetime.utcnow()
+        
+        # Извлекаем zone_id из zone_uid если нужно (будет резолвлен в process_telemetry_batch с учетом gh_uid)
+        zone_uid = validated_data.zone_uid
+        zone_id = None  # Будет резолвлен в process_telemetry_batch с учетом gh_uid
+        
+        # Используем node_uid из validated_data (fallback из payload)
+        node_uid = validated_data.node_uid or ""
+        
+        # Используем gh_uid из validated_data (для корректного резолва зоны)
+        gh_uid = validated_data.gh_uid
+        
+        # Используем channel из validated_data
+        channel = validated_data.channel
+        
+        # Фильтруем raw данные для защиты от раздувания БД
+        filtered_raw = _filter_raw_data(sample_data)
         
         sample = TelemetrySampleModel(
-            node_uid=sample_data.get("node_uid", ""),
-            zone_uid=sample_data.get("zone_uid"),
-            zone_id=zone_id,
-            metric_type=sample_data.get("metric_type", ""),
-            value=sample_data.get("value", 0.0),
+            node_uid=node_uid,
+            zone_uid=zone_uid,
+            zone_id=zone_id,  # Будет резолвлен в process_telemetry_batch с учетом gh_uid
+            gh_uid=gh_uid,  # Greenhouse UID для корректного резолва зоны
+            metric_type=validated_data.metric_type,
+            value=validated_data.value,
             ts=ts,
-            raw=sample_data,
-            channel=sample_data.get("channel")
+            raw=filtered_raw,  # Сохраняем отфильтрованные данные
+            channel=channel
         )
         samples.append(sample)
     
     # Обрабатываем батч
-    await process_telemetry_batch(samples)
+    if samples:
+        await process_telemetry_batch(samples)
     
-    return {"status": "ok", "count": len(samples)}
+    # Метрики успешного запроса
+    INGEST_REQUESTS.labels(status="success").inc()
+    
+    return {
+        "status": "ok",
+        "count": len(samples),
+        "dropped": dropped_count,
+        "total": len(samples_data)
+    }
 
 
 def setup_signal_handlers():

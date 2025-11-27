@@ -12,10 +12,16 @@ class EventCreated implements ShouldBroadcast
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
+    public string $queue = 'broadcasts';
+
     public int $id;
+
     public string $kind;
+
     public string $message;
+
     public ?int $zoneId;
+
     public string $occurredAt;
 
     public function __construct(
@@ -62,4 +68,3 @@ class EventCreated implements ShouldBroadcast
         ];
     }
 }
-

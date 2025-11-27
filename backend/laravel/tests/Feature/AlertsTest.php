@@ -15,6 +15,8 @@ class AlertsTest extends TestCase
     private function token(): string
     {
         $user = User::factory()->create();
+        $this->actingAs($user);
+
         return $user->createToken('test')->plainTextToken;
     }
 
@@ -57,10 +59,10 @@ class AlertsTest extends TestCase
             ->patchJson("/api/alerts/{$alert->id}/ack");
 
         $resp->assertOk()
-            ->assertJsonPath('data.status', 'resolved');
+            ->assertJsonPath('data.status', 'RESOLVED');
         $this->assertDatabaseHas('alerts', [
             'id' => $alert->id,
-            'status' => 'resolved',
+            'status' => 'RESOLVED',
         ]);
     }
 

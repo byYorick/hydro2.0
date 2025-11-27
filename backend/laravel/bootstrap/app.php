@@ -21,21 +21,22 @@ return Application::configure(basePath: dirname(__DIR__))
             'admin' => \App\Http\Middleware\EnsureAdmin::class,
             'role' => \App\Http\Middleware\EnsureUserHasRole::class,
             'verify.python.service' => \App\Http\Middleware\VerifyPythonServiceToken::class,
+            'auth.token' => \App\Http\Middleware\AuthenticateWithApiToken::class,
         ]);
-        
+
         // Rate Limiting для API роутов
         // Стандартный лимит: 60 запросов в минуту для всех API роутов
         // Более строгие лимиты применяются на уровне отдельных роутов
         $middleware->api(prepend: [
             \Illuminate\Routing\Middleware\ThrottleRequests::class.':60,1',
         ]);
-        
+
         // Exclude API routes and broadcasting auth from CSRF verification
         $middleware->validateCsrfTokens(except: [
             'api/*',
             'broadcasting/auth',
         ]);
-        
+
         // Note: Session middleware is NOT added globally to API routes
         // because API routes use mixed authentication:
         // - Token-based (Sanctum) for /api/auth/* endpoints

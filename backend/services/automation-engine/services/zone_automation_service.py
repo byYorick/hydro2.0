@@ -17,6 +17,7 @@ from correction_controller import CorrectionController, CorrectionType
 from repositories import ZoneRepository, TelemetryRepository, NodeRepository, RecipeRepository
 from infrastructure.command_bus import CommandBus
 from prometheus_client import Histogram, Counter
+from services.pid_config_service import invalidate_cache
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,12 @@ class ZoneAutomationService:
         with CHECK_LAT.time():
             ZONE_CHECKS.inc()
             
+            # Проверка удаления зоны и очистка PID инстансов
+            await self._check_zone_deletion(zone_id)
+            
+            # Проверка обновлений PID конфигов
+            await self._check_pid_config_updates(zone_id)
+            
             # Проверка переходов фаз
             await self._check_phase_transitions(zone_id)
         
@@ -82,8 +89,12 @@ class ZoneAutomationService:
         
         # Получаем данные из batch запроса
         telemetry = zone_data.get("telemetry", {})
+        telemetry_timestamps = zone_data.get("telemetry_timestamps", {})  # Временные метки для проверки свежести
         nodes = zone_data.get("nodes", {})
         capabilities = zone_data.get("capabilities", {})
+        
+        # Сохраняем telemetry_timestamps для использования в _process_correction_controllers
+        self._current_telemetry_timestamps = telemetry_timestamps
         
         # Проверка уровня воды
         water_level_ok, water_level = await check_water_level(zone_id)
@@ -216,10 +227,13 @@ class ZoneAutomationService:
         water_level_ok: bool
     ) -> None:
         """Обработка контроллеров корректировки pH/EC."""
+        # Получаем telemetry_timestamps из zone_data (передается через process_zone)
+        telemetry_timestamps = getattr(self, '_current_telemetry_timestamps', {})
+        
         # pH Correction
         if capabilities.get("ph_control", False):
             ph_cmd = await self.ph_controller.check_and_correct(
-                zone_id, targets, telemetry, nodes, water_level_ok
+                zone_id, targets, telemetry, telemetry_timestamps, nodes, water_level_ok
             )
             if ph_cmd:
                 await self.ph_controller.apply_correction(ph_cmd, self.command_bus)
@@ -227,7 +241,7 @@ class ZoneAutomationService:
         # EC Correction
         if capabilities.get("ec_control", False):
             ec_cmd = await self.ec_controller.check_and_correct(
-                zone_id, targets, telemetry, nodes, water_level_ok
+                zone_id, targets, telemetry, telemetry_timestamps, nodes, water_level_ok
             )
             if ec_cmd:
                 await self.ec_controller.apply_correction(ec_cmd, self.command_bus)
@@ -236,4 +250,71 @@ class ZoneAutomationService:
         """Обновление health score зоны."""
         health_data = await calculate_zone_health(zone_id)
         await update_zone_health_in_db(zone_id, health_data)
+    
+    async def _check_zone_deletion(self, zone_id: int) -> None:
+        """Проверить, не была ли зона удалена, и очистить PID инстансы."""
+        try:
+            # Проверяем существование зоны через запрос к БД
+            from common.db import fetch
+            rows = await fetch(
+                """
+                SELECT id
+                FROM zones
+                WHERE id = $1
+                """,
+                zone_id
+            )
+            
+            if not rows:
+                # Зона удалена - очищаем PID инстансы
+                if zone_id in self.ph_controller._pid_by_zone:
+                    del self.ph_controller._pid_by_zone[zone_id]
+                    self.ph_controller._last_pid_tick.pop(zone_id, None)
+                    logger.info(f"Cleared PH PID instance for deleted zone {zone_id}")
+                if zone_id in self.ec_controller._pid_by_zone:
+                    del self.ec_controller._pid_by_zone[zone_id]
+                    self.ec_controller._last_pid_tick.pop(zone_id, None)
+                    logger.info(f"Cleared EC PID instance for deleted zone {zone_id}")
+                invalidate_cache(zone_id)
+                logger.info(f"Cleared PID cache for deleted zone {zone_id}")
+        except Exception as e:
+            logger.warning(f"Failed to check zone deletion for zone {zone_id}: {e}", exc_info=True)
+    
+    async def _check_pid_config_updates(self, zone_id: int) -> None:
+        """Проверить обновления PID конфигов и инвалидировать кеш при необходимости."""
+        from common.db import fetch
+        
+        try:
+            # Проверяем последние события PID_CONFIG_UPDATED за последние 2 минуты
+            rows = await fetch(
+                """
+                SELECT details
+                FROM zone_events
+                WHERE zone_id = $1
+                  AND type = 'PID_CONFIG_UPDATED'
+                  AND created_at > NOW() - INTERVAL '2 minutes'
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                zone_id
+            )
+            
+            if rows:
+                # Найдено обновление конфига - инвалидируем кеш
+                details = rows[0]['details']
+                if isinstance(details, dict):
+                    pid_type = details.get('type')
+                    if pid_type:
+                        invalidate_cache(zone_id, pid_type)
+                        logger.info(f"Invalidated PID config cache for zone {zone_id}, type {pid_type}")
+                        
+                        # Пересоздаем PID-инстанс в контроллерах
+                        if pid_type == 'ph' and zone_id in self.ph_controller._pid_by_zone:
+                            del self.ph_controller._pid_by_zone[zone_id]
+                            self.ph_controller._last_pid_tick.pop(zone_id, None)
+                        elif pid_type == 'ec' and zone_id in self.ec_controller._pid_by_zone:
+                            del self.ec_controller._pid_by_zone[zone_id]
+                            self.ec_controller._last_pid_tick.pop(zone_id, None)
+        except Exception as e:
+            logger.warning(f"Failed to check PID config updates for zone {zone_id}: {e}", exc_info=True)
 

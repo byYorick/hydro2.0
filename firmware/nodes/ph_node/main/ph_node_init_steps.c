@@ -327,18 +327,21 @@ esp_err_t ph_node_init_step_mqtt(ph_node_init_context_t *ctx,
     
     if (config_storage_get_mqtt(&mqtt_cfg) == ESP_OK) {
         strncpy(mqtt_host, mqtt_cfg.host, sizeof(mqtt_host) - 1);
+        mqtt_host[sizeof(mqtt_host) - 1] = '\0';  // Гарантируем null-termination
         mqtt_config.host = mqtt_host;
         mqtt_config.port = mqtt_cfg.port;
         mqtt_config.keepalive = mqtt_cfg.keepalive;
         mqtt_config.client_id = NULL;
         if (strlen(mqtt_cfg.username) > 0) {
             strncpy(mqtt_username, mqtt_cfg.username, sizeof(mqtt_username) - 1);
+            mqtt_username[sizeof(mqtt_username) - 1] = '\0';  // Гарантируем null-termination
             mqtt_config.username = mqtt_username;
         } else {
             mqtt_config.username = NULL;
         }
         if (strlen(mqtt_cfg.password) > 0) {
             strncpy(mqtt_password, mqtt_cfg.password, sizeof(mqtt_password) - 1);
+            mqtt_password[sizeof(mqtt_password) - 1] = '\0';  // Гарантируем null-termination
             mqtt_config.password = mqtt_password;
         } else {
             mqtt_config.password = NULL;
@@ -348,6 +351,7 @@ esp_err_t ph_node_init_step_mqtt(ph_node_init_context_t *ctx,
     } else {
         // Default values из ph_node_defaults.h
         strncpy(mqtt_host, PH_NODE_DEFAULT_MQTT_HOST, sizeof(mqtt_host) - 1);
+        mqtt_host[sizeof(mqtt_host) - 1] = '\0';  // Гарантируем null-termination
         mqtt_config.host = mqtt_host;
         mqtt_config.port = PH_NODE_DEFAULT_MQTT_PORT;
         mqtt_config.keepalive = PH_NODE_DEFAULT_MQTT_KEEPALIVE;
@@ -376,17 +380,8 @@ esp_err_t ph_node_init_step_mqtt(ph_node_init_context_t *ctx,
         return err;
     }
     
-    // Callbacks будут зарегистрированы в ph_node_init.c
-    // Здесь только инициализация
-    
-    err = mqtt_manager_start();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to start MQTT client: %s", esp_err_to_name(err));
-        if (result) {
-            result->err = err;
-        }
-        return err;
-    }
+    // Callbacks будут зарегистрированы в ph_node_init.c перед ph_node_init_step_finalize
+    // MQTT старт перенесен в ph_node_init_step_finalize, чтобы callbacks были зарегистрированы до старта
     
     if (result) {
         result->err = ESP_OK;
@@ -404,6 +399,18 @@ esp_err_t ph_node_init_step_finalize(ph_node_init_context_t *ctx,
         result->component_name = "finalize";
         result->component_initialized = true;
     }
+    
+    // Запускаем MQTT после регистрации callbacks (которые происходят в ph_node_init.c)
+    // Это гарантирует, что ранние входящие команды/config не будут дропнуты
+    esp_err_t err = mqtt_manager_start();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start MQTT client: %s", esp_err_to_name(err));
+        if (result) {
+            result->err = err;
+        }
+        return err;
+    }
+    ESP_LOGI(TAG, "MQTT client started (callbacks already registered)");
     
     // Останавливаем анимацию шагов инициализации
     if (ctx && ctx->show_oled_steps && oled_ui_is_initialized()) {

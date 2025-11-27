@@ -24,6 +24,15 @@ static EventGroupHandle_t s_wifi_event_group = NULL;
 static wifi_connection_cb_t s_connection_cb = NULL;
 static void *s_connection_user_ctx = NULL;
 static bool s_is_connected = false;
+static bool s_manual_disconnect = false;  // Флаг для ручного отключения
+static uint32_t s_reconnect_attempts = 0;  // Счетчик попыток переподключения
+static uint32_t s_max_reconnect_attempts = 5;  // Максимальное количество попыток перед установкой FAIL_BIT (дефолт)
+static bool s_auto_reconnect = true;  // Автоматическое переподключение (дефолт)
+
+// Handles для event handlers (нужны для удаления при deinit)
+static esp_event_handler_instance_t s_wifi_event_handler_instance = NULL;
+static esp_event_handler_instance_t s_ip_got_ip_handler_instance = NULL;
+static esp_event_handler_instance_t s_ip_lost_ip_handler_instance = NULL;
 
 /**
  * @brief Обработчик событий Wi-Fi
@@ -47,15 +56,41 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
                 wifi_event_sta_disconnected_t* event = (wifi_event_sta_disconnected_t*) event_data;
                 ESP_LOGW(TAG, "Disconnected from AP. Reason: %d", event->reason);
                 s_is_connected = false;
+                xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
                 
                 // Вызов callback отключения
                 if (s_connection_cb) {
                     s_connection_cb(false, s_connection_user_ctx);
                 }
                 
-                // Попытка переподключения
-                esp_wifi_connect();
-                xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+                // Если это ручное отключение, не пытаемся переподключаться
+                if (s_manual_disconnect) {
+                    ESP_LOGI(TAG, "Manual disconnect, not reconnecting");
+                    s_manual_disconnect = false;  // Сбрасываем флаг
+                    xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
+                    break;
+                }
+                
+                // Если auto_reconnect отключен, не пытаемся переподключаться
+                if (!s_auto_reconnect) {
+                    ESP_LOGI(TAG, "Auto-reconnect disabled, not reconnecting");
+                    xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
+                    break;
+                }
+                
+                // Увеличиваем счетчик попыток
+                s_reconnect_attempts++;
+                
+                // Если превышен лимит попыток, устанавливаем FAIL_BIT
+                if (s_reconnect_attempts >= s_max_reconnect_attempts) {
+                    ESP_LOGE(TAG, "Max reconnect attempts reached (%d), setting FAIL_BIT", s_max_reconnect_attempts);
+                    xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
+                    s_reconnect_attempts = 0;  // Сбрасываем счетчик
+                } else {
+                    // Попытка переподключения
+                    ESP_LOGI(TAG, "Reconnecting to Wi-Fi (attempt %d/%d)", s_reconnect_attempts, s_max_reconnect_attempts);
+                    esp_wifi_connect();
+                }
                 break;
             }
             
@@ -68,6 +103,8 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
                 ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
                 ESP_LOGI(TAG, "Got IP:" IPSTR, IP2STR(&event->ip_info.ip));
                 s_is_connected = true;
+                s_reconnect_attempts = 0;  // Сбрасываем счетчик при успешном подключении
+                xEventGroupClearBits(s_wifi_event_group, WIFI_FAIL_BIT);
                 xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
                 
                 // Вызов callback подключения
@@ -95,9 +132,26 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
 }
 
 esp_err_t wifi_manager_init(void) {
+    // Проверка на повторную инициализацию
     if (s_wifi_event_group != NULL) {
         ESP_LOGW(TAG, "Wi-Fi manager already initialized");
         return ESP_OK;
+    }
+    
+    // Дополнительная проверка: если handlers уже зарегистрированы, удаляем их перед повторной регистрацией
+    // (защита от случая, когда deinit не был вызван)
+    if (s_wifi_event_handler_instance != NULL) {
+        ESP_LOGW(TAG, "Found existing event handlers, cleaning up before reinit");
+        esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, s_wifi_event_handler_instance);
+        s_wifi_event_handler_instance = NULL;
+    }
+    if (s_ip_got_ip_handler_instance != NULL) {
+        esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, s_ip_got_ip_handler_instance);
+        s_ip_got_ip_handler_instance = NULL;
+    }
+    if (s_ip_lost_ip_handler_instance != NULL) {
+        esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_LOST_IP, s_ip_lost_ip_handler_instance);
+        s_ip_lost_ip_handler_instance = NULL;
     }
     
     s_wifi_event_group = xEventGroupCreate();
@@ -106,22 +160,22 @@ esp_err_t wifi_manager_init(void) {
         return ESP_ERR_NO_MEM;
     }
     
-    // Регистрация обработчиков событий
+    // Регистрация обработчиков событий с сохранением instance handles
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
                                                         ESP_EVENT_ANY_ID,
                                                         &wifi_event_handler,
                                                         NULL,
-                                                        NULL));
+                                                        &s_wifi_event_handler_instance));
     ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
                                                         IP_EVENT_STA_GOT_IP,
                                                         &wifi_event_handler,
                                                         NULL,
-                                                        NULL));
+                                                        &s_ip_got_ip_handler_instance));
     ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
                                                         IP_EVENT_STA_LOST_IP,
                                                         &wifi_event_handler,
                                                         NULL,
-                                                        NULL));
+                                                        &s_ip_lost_ip_handler_instance));
     
     ESP_LOGI(TAG, "Wi-Fi manager initialized");
     return ESP_OK;
@@ -138,10 +192,17 @@ esp_err_t wifi_manager_connect(const wifi_manager_config_t *config) {
         return ESP_ERR_INVALID_STATE;
     }
     
+    // Сбрасываем флаги и счетчики
+    s_manual_disconnect = false;
+    s_reconnect_attempts = 0;
+    xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
+    
     wifi_config_t wifi_config = {0};
     strncpy((char*)wifi_config.sta.ssid, config->ssid, sizeof(wifi_config.sta.ssid) - 1);
+    wifi_config.sta.ssid[sizeof(wifi_config.sta.ssid) - 1] = '\0';
     if (config->password) {
         strncpy((char*)wifi_config.sta.password, config->password, sizeof(wifi_config.sta.password) - 1);
+        wifi_config.sta.password[sizeof(wifi_config.sta.password) - 1] = '\0';
     }
     wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
     wifi_config.sta.pmf_cfg.capable = true;
@@ -167,6 +228,8 @@ esp_err_t wifi_manager_connect(const wifi_manager_config_t *config) {
         return ESP_FAIL;
     } else {
         ESP_LOGE(TAG, "Wi-Fi connection timeout");
+        // Устанавливаем FAIL_BIT при таймауте
+        xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
         return ESP_ERR_TIMEOUT;
     }
 }
@@ -176,11 +239,16 @@ esp_err_t wifi_manager_disconnect(void) {
         return ESP_ERR_INVALID_STATE;
     }
     
+    // Устанавливаем флаг ручного отключения
+    s_manual_disconnect = true;
+    s_reconnect_attempts = 0;
+    
     esp_wifi_disconnect();
     s_is_connected = false;
     xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+    xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
     
-    ESP_LOGI(TAG, "Disconnected from Wi-Fi");
+    ESP_LOGI(TAG, "Disconnected from Wi-Fi (manual)");
     return ESP_OK;
 }
 
@@ -215,13 +283,31 @@ void wifi_manager_register_connection_cb(wifi_connection_cb_t cb, void *user_ctx
 }
 
 void wifi_manager_deinit(void) {
+    // Удаление обработчиков событий
+    if (s_wifi_event_handler_instance != NULL) {
+        esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, s_wifi_event_handler_instance);
+        s_wifi_event_handler_instance = NULL;
+    }
+    if (s_ip_got_ip_handler_instance != NULL) {
+        esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, s_ip_got_ip_handler_instance);
+        s_ip_got_ip_handler_instance = NULL;
+    }
+    if (s_ip_lost_ip_handler_instance != NULL) {
+        esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_LOST_IP, s_ip_lost_ip_handler_instance);
+        s_ip_lost_ip_handler_instance = NULL;
+    }
+    
     if (s_wifi_event_group != NULL) {
         vEventGroupDelete(s_wifi_event_group);
         s_wifi_event_group = NULL;
     }
+    
+    // Сброс флагов
     s_connection_cb = NULL;
     s_connection_user_ctx = NULL;
     s_is_connected = false;
+    s_manual_disconnect = false;
+    s_reconnect_attempts = 0;
 }
 
 

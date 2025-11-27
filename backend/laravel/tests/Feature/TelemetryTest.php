@@ -19,6 +19,7 @@ class TelemetryTest extends TestCase
     public function test_zone_telemetry_history_validation(): void
     {
         $user = User::factory()->create();
+        $this->actingAs($user);
         $token = $user->createToken('test')->plainTextToken;
 
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)

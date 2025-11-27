@@ -94,7 +94,7 @@
           </span>
         </div>
         <div
-          class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-neutral-800 rounded text-xs text-neutral-200 opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-lg border border-neutral-700"
+          class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-neutral-800 rounded text-xs text-neutral-200 opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-lg border border-neutral-700 max-w-xs"
         >
           <div class="font-medium">WebSocket Connection</div>
           <div class="text-[10px] text-neutral-400 mt-0.5">
@@ -102,10 +102,26 @@
           </div>
           <div v-if="wsStatus === 'connected'" class="text-[10px] text-emerald-400 mt-1">
             ✓ Соединение активно
+            <div v-if="wsConnectionDetails?.socketId" class="text-neutral-500 mt-0.5 text-[9px]">
+              Socket ID: {{ wsConnectionDetails.socketId.substring(0, 8) }}...
+            </div>
           </div>
-          <div v-else-if="wsStatus === 'disconnected'" class="text-[10px] text-red-400 mt-1">
-            ✗ Соединение разорвано
-            <div class="text-[9px] text-neutral-500 mt-0.5">
+          <div v-else-if="wsStatus === 'disconnected' || wsStatus === 'connecting'" class="text-[10px] text-red-400 mt-1">
+            <div>✗ Соединение разорвано</div>
+            <div v-if="wsReconnectAttempts > 0" class="text-yellow-400 mt-1 text-[9px]">
+              Попыток переподключения: {{ wsReconnectAttempts }}
+            </div>
+            <div v-if="wsLastError" class="text-red-300 mt-1 text-[9px]">
+              <div class="font-medium">Последняя ошибка:</div>
+              <div class="break-words">{{ wsLastError.message }}</div>
+              <div v-if="wsLastError.code" class="text-neutral-500 mt-0.5">
+                Код: {{ wsLastError.code }}
+              </div>
+              <div v-if="wsLastError.timestamp" class="text-neutral-500 mt-0.5">
+                {{ formatTime(new Date(wsLastError.timestamp)) }}
+              </div>
+            </div>
+            <div class="text-neutral-500 mt-1 text-[9px]">
               Проверьте настройки WebSocket
             </div>
           </div>
@@ -113,6 +129,12 @@
             ? Инициализация...
             <div class="text-[9px] text-neutral-500 mt-0.5">
               Ожидание подключения
+            </div>
+            <div v-if="wsStatus === 'unknown'" class="text-[9px] text-amber-400 mt-1">
+              WebSocket клиент не инициализирован
+            </div>
+            <div v-if="wsStatus === 'unknown' && wsConnectionDetails?.reconnectAttempts > 0" class="text-[9px] text-yellow-400 mt-1">
+              Попыток переподключения: {{ wsConnectionDetails.reconnectAttempts }}
             </div>
           </div>
         </div>
@@ -277,7 +299,10 @@ const {
   mqttStatus, 
   historyLoggerStatus,
   automationEngineStatus,
-  lastUpdate 
+  lastUpdate,
+  wsReconnectAttempts,
+  wsLastError,
+  wsConnectionDetails
 } = useSystemStatus()
 
 const page = usePage()

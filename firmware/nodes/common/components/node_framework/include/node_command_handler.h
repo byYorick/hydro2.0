@@ -111,6 +111,13 @@ cJSON *node_command_handler_create_response(
  */
 bool node_command_handler_is_duplicate(const char *cmd_id);
 
+/**
+ * @brief Инициализация встроенных обработчиков команд
+ * 
+ * Регистрирует системные команды, такие как set_time
+ */
+void node_command_handler_init_builtin_handlers(void);
+
 #ifdef __cplusplus
 }
 #endif

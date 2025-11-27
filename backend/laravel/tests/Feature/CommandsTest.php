@@ -21,7 +21,10 @@ class CommandsTest extends TestCase
     public function test_zone_command_validation(): void
     {
         $zone = \App\Models\Zone::factory()->create();
-        $token = User::factory()->create()->createToken('t')->plainTextToken;
+        $user = User::factory()->create();
+        $this->actingAs($user);
+        $token = $user->createToken('t')->plainTextToken;
+
         $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/zones/{$zone->id}/commands", [])
             ->assertStatus(422);

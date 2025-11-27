@@ -36,6 +36,11 @@ esp_err_t config_apply_wifi(const cJSON *new_config,
                             const cJSON *previous_config,
                             config_apply_result_t *result);
 
+esp_err_t config_apply_wifi_with_mqtt_restart(const cJSON *new_config,
+                                                const cJSON *previous_config,
+                                                const config_apply_mqtt_params_t *mqtt_params,
+                                                config_apply_result_t *result);
+
 esp_err_t config_apply_mqtt(const cJSON *new_config,
                             const cJSON *previous_config,
                             const config_apply_mqtt_params_t *params,

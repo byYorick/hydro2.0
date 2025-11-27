@@ -2,6 +2,15 @@ import { mount } from '@vue/test-utils'
 import { describe, it, expect, vi } from 'vitest'
 import ZonesHeatmap from '../ZonesHeatmap.vue'
 
+// Mock Inertia router
+const mockRouter = {
+  visit: vi.fn()
+}
+
+vi.mock('@inertiajs/vue3', () => ({
+  router: mockRouter
+}))
+
 // Mock dependencies
 vi.mock('@/Components/Card.vue', () => ({
   default: {
@@ -133,8 +142,8 @@ describe('ZonesHeatmap', () => {
     const statusItem = wrapper.find('.cursor-pointer')
     await statusItem.trigger('click')
 
-    expect(wrapper.emitted('filter')).toBeTruthy()
-    expect(wrapper.emitted('filter')[0][0]).toBe('RUNNING')
+    // ZonesHeatmap использует router.visit вместо emit('filter')
+    expect(mockRouter.visit).toHaveBeenCalledWith('/zones?status=RUNNING', expect.any(Object))
   })
 
   it('displays legend with all status types', () => {

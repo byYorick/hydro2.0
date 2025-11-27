@@ -106,6 +106,7 @@ esp_err_t pwm_driver_init(const pwm_driver_channel_config_t *channels, size_t ch
         pwm_channel_t *channel = &s_channels[i];
         memset(channel, 0, sizeof(pwm_channel_t));
         strncpy(channel->channel_name, channels[i].channel_name, sizeof(channel->channel_name) - 1);
+        channel->channel_name[sizeof(channel->channel_name) - 1] = '\0';  // Гарантируем null-termination
         channel->ledc_channel = (ledc_channel_t)i;
         channel->speed_mode = s_timer_cfg.speed_mode;
         channel->timer = s_timer_cfg.timer_num;

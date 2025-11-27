@@ -7,6 +7,7 @@
 #include "mqtt_manager.h"
 #include "config_storage.h"
 #include "memory_pool.h"
+#include "node_utils.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -15,6 +16,7 @@
 #include "freertos/queue.h"
 #include <string.h>
 #include <stdlib.h>
+#include <math.h>
 
 static const char *TAG = "node_telemetry_engine";
 
@@ -31,6 +33,7 @@ typedef struct {
     bool stub;
     bool stable;
     uint64_t ts;
+    char unit[16];  // Единица измерения (например, "mA", "pH", "°C")
 } telemetry_item_t;
 
 // Структура батча
@@ -80,25 +83,36 @@ static void task_telemetry_flush(void *pvParameters) {
     }
 }
 
+// ВАЖНО: Эта функция должна вызываться ТОЛЬКО под mutex!
+// Она изменяет s_telemetry_engine.batch без защиты
 static esp_err_t flush_batch_internal(void) {
     if (s_telemetry_engine.batch.count == 0) {
         return ESP_OK;
     }
 
     if (!mqtt_manager_is_connected()) {
-        ESP_LOGW(TAG, "MQTT not connected, skipping telemetry batch");
+        ESP_LOGW(TAG, "MQTT not connected, clearing telemetry batch to prevent overflow");
+        // Очищаем батч при отключении MQTT, чтобы новые данные могли добавляться
+        s_telemetry_engine.batch.count = 0;
+        s_telemetry_engine.batch.last_flush_time = esp_timer_get_time() / 1000;
         return ESP_ERR_INVALID_STATE;
     }
 
     // Получаем node_id из конфига
     char node_id[64];
     if (config_storage_get_node_id(node_id, sizeof(node_id)) != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to get node_id, skipping telemetry");
+        ESP_LOGW(TAG, "Failed to get node_id, clearing telemetry batch");
+        // Очищаем батч при ошибке получения node_id
+        s_telemetry_engine.batch.count = 0;
+        s_telemetry_engine.batch.last_flush_time = esp_timer_get_time() / 1000;
         return ESP_ERR_INVALID_STATE;
     }
 
+    // Сохраняем count локально, так как мы будем изменять batch
+    size_t count = s_telemetry_engine.batch.count;
+    
     // Публикуем каждое сообщение из батча
-    for (size_t i = 0; i < s_telemetry_engine.batch.count; i++) {
+    for (size_t i = 0; i < count; i++) {
         telemetry_item_t *item = &s_telemetry_engine.batch.items[i];
         
         cJSON *telemetry = cJSON_CreateObject();
@@ -109,6 +123,13 @@ static esp_err_t flush_batch_internal(void) {
             cJSON_AddNumberToObject(telemetry, "value", item->value);
             cJSON_AddNumberToObject(telemetry, "ts", (double)item->ts);
             
+            // Добавляем unit, если он указан
+            if (item->unit[0] != '\0') {
+                cJSON_AddStringToObject(telemetry, "unit", item->unit);
+            }
+            
+            // Добавляем raw только если он не равен 0 (0 означает "не используется")
+            // Это позволяет передавать отрицательные значения
             if (item->raw != 0) {
                 cJSON_AddNumberToObject(telemetry, "raw", item->raw);
             }
@@ -149,9 +170,16 @@ static esp_err_t add_to_batch(
     float value,
     int32_t raw,
     bool stub,
-    bool stable
+    bool stable,
+    const char *unit
 ) {
     if (channel == NULL || metric_type_str == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    // Проверка на NaN и Inf
+    if (isnan(value) || isinf(value)) {
+        ESP_LOGW(TAG, "Invalid telemetry value (NaN/Inf) for channel %s, dropping", channel);
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -174,9 +202,11 @@ static esp_err_t add_to_batch(
         }
 
         if (should_flush && s_telemetry_engine.batch.count > 0) {
-            xSemaphoreGive(s_telemetry_engine.mutex);
-            flush_batch_internal();
-            xSemaphoreTake(s_telemetry_engine.mutex, pdMS_TO_TICKS(1000));
+            // Вызываем flush под тем же mutex, чтобы избежать race condition
+            esp_err_t flush_err = flush_batch_internal();
+            if (flush_err != ESP_OK) {
+                ESP_LOGW(TAG, "Failed to flush batch: %s", esp_err_to_name(flush_err));
+            }
         }
 
         // Добавляем в батч
@@ -190,7 +220,14 @@ static esp_err_t add_to_batch(
             item->raw = raw;
             item->stub = stub;
             item->stable = stable;
-            item->ts = esp_timer_get_time() / 1000000;
+            item->ts = node_utils_get_timestamp_seconds();
+            // Сохранение unit (если передан)
+            if (unit != NULL && strlen(unit) > 0) {
+                strncpy(item->unit, unit, sizeof(item->unit) - 1);
+                item->unit[sizeof(item->unit) - 1] = '\0';
+            } else {
+                item->unit[0] = '\0';
+            }
             s_telemetry_engine.batch.count++;
         } else {
             ESP_LOGW(TAG, "Telemetry batch is full, dropping message");
@@ -213,7 +250,7 @@ esp_err_t node_telemetry_publish_sensor(
     bool stable
 ) {
     const char *metric_type_str = metric_type_to_string(metric_type);
-    return add_to_batch(channel, metric_type_str, value, raw, stub, stable);
+    return add_to_batch(channel, metric_type_str, value, raw, stub, stable, unit);
 }
 
 esp_err_t node_telemetry_publish_actuator(
@@ -224,7 +261,7 @@ esp_err_t node_telemetry_publish_actuator(
 ) {
     // Для актуаторов используем значение как состояние
     const char *metric_type_str = metric_type_to_string(metric_type);
-    return add_to_batch(channel, metric_type_str, value, 0, false, true);
+    return add_to_batch(channel, metric_type_str, value, 0, false, true, NULL);
 }
 
 esp_err_t node_telemetry_publish_custom(
@@ -235,7 +272,7 @@ esp_err_t node_telemetry_publish_custom(
     bool stub,
     bool stable
 ) {
-    return add_to_batch(channel, metric_type_str, value, raw, stub, stable);
+    return add_to_batch(channel, metric_type_str, value, raw, stub, stable, NULL);
 }
 
 esp_err_t node_telemetry_flush(void) {

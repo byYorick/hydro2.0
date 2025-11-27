@@ -13,6 +13,7 @@ idf_component_register(
         config_storage
         config_apply
         node_framework
+        node_utils
         trema_ec
         i2c_bus
         setup_portal

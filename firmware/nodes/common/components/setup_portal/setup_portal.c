@@ -227,8 +227,11 @@ static esp_err_t wifi_post_handler(httpd_req_t *req) {
 
     setup_portal_credentials_t creds = {0};
     strncpy(creds.ssid, ssid->valuestring, sizeof(creds.ssid) - 1);
+    creds.ssid[sizeof(creds.ssid) - 1] = '\0';  // Гарантируем null-termination
     strncpy(creds.password, password->valuestring, sizeof(creds.password) - 1);
+    creds.password[sizeof(creds.password) - 1] = '\0';  // Гарантируем null-termination
     strncpy(creds.mqtt_host, mqtt_host->valuestring, sizeof(creds.mqtt_host) - 1);
+    creds.mqtt_host[sizeof(creds.mqtt_host) - 1] = '\0';  // Гарантируем null-termination
     creds.mqtt_port = (uint16_t)port_value;
     
     ESP_LOGI(TAG, "Данные WiFi: SSID='%s', пароль (%d символов)", creds.ssid, (int)strlen(creds.password));
@@ -563,8 +566,9 @@ esp_err_t setup_portal_run_full_setup(const setup_portal_full_config_t *config) 
     ESP_LOGI(TAG, "========================================");
     ESP_LOGI(TAG, "Connection data:");
     ESP_LOGI(TAG, "  WiFi SSID:    %s", ap_ssid);
-    ESP_LOGI(TAG, "  WiFi Pass:    %s", ap_password);
-    ESP_LOGI(TAG, "  PIN:          %s", setup_pin);
+    // Безопасность: не логируем пароль и PIN в открытом виде
+    ESP_LOGI(TAG, "  WiFi Pass:    [%d characters]", (int)strlen(ap_password));
+    ESP_LOGI(TAG, "  PIN:          [%d characters]", (int)strlen(setup_pin));
     ESP_LOGI(TAG, "  Open browser: http://192.168.4.1");
     ESP_LOGI(TAG, "========================================");
     

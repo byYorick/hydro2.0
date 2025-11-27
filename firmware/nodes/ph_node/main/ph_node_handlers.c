@@ -16,6 +16,7 @@
 #include "config_apply.h"
 #include "pump_driver.h"
 #include "trema_ph.h"
+#include "node_utils.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_err.h"
@@ -157,7 +158,7 @@ static void send_command_error_response(const char *channel, const char *cmd_id,
         cJSON_AddStringToObject(response, "status", "ERROR");
         cJSON_AddStringToObject(response, "error_code", error_code);
         cJSON_AddStringToObject(response, "error_message", error_message);
-        cJSON_AddNumberToObject(response, "ts", (double)(esp_timer_get_time() / 1000000));
+        cJSON_AddNumberToObject(response, "ts", (double)node_utils_get_timestamp_seconds());
         
         char *json_str = cJSON_PrintUnformatted(response);
         if (json_str) {
@@ -174,7 +175,7 @@ static void send_command_success_response(const char *channel, const char *cmd_i
     if (response) {
         cJSON_AddStringToObject(response, "cmd_id", cmd_id);
         cJSON_AddStringToObject(response, "status", "ACK");
-        cJSON_AddNumberToObject(response, "ts", (double)(esp_timer_get_time() / 1000000));
+        cJSON_AddNumberToObject(response, "ts", (double)node_utils_get_timestamp_seconds());
         
         if (extra_data) {
             // Copy extra fields from extra_data
@@ -204,7 +205,8 @@ void ph_node_config_handler(const char *topic, const char *data, int data_len, v
         return;
     }
     
-    ESP_LOGI(TAG, "Config received on %s: %.*s", topic ? topic : "NULL", data_len, data);
+    // Безопасность: не логируем полный JSON с секретами, только топик и длину
+    ESP_LOGI(TAG, "Config received on %s: [%d bytes]", topic ? topic : "NULL", data_len);
     
     // Parse NodeConfig
     cJSON *config = cJSON_ParseWithLength(data, data_len);
@@ -214,7 +216,7 @@ void ph_node_config_handler(const char *topic, const char *data, int data_len, v
         if (error_response) {
             cJSON_AddStringToObject(error_response, "status", "ERROR");
             cJSON_AddStringToObject(error_response, "error", "Invalid JSON");
-            cJSON_AddNumberToObject(error_response, "ts", (double)(esp_timer_get_time() / 1000000));
+            cJSON_AddNumberToObject(error_response, "ts", (double)node_utils_get_timestamp_seconds());
             char *json_str = cJSON_PrintUnformatted(error_response);
             if (json_str) {
                 mqtt_manager_publish_config_response(json_str);
@@ -250,7 +252,7 @@ void ph_node_config_handler(const char *topic, const char *data, int data_len, v
         if (error_response) {
             cJSON_AddStringToObject(error_response, "status", "ERROR");
             cJSON_AddStringToObject(error_response, "error", "Invalid config structure");
-            cJSON_AddNumberToObject(error_response, "ts", (double)(esp_timer_get_time() / 1000000));
+            cJSON_AddNumberToObject(error_response, "ts", (double)node_utils_get_timestamp_seconds());
             char *json_str = cJSON_PrintUnformatted(error_response);
             if (json_str) {
                 mqtt_manager_publish_config_response(json_str);
@@ -274,7 +276,7 @@ void ph_node_config_handler(const char *topic, const char *data, int data_len, v
         if (error_response) {
             cJSON_AddStringToObject(error_response, "status", "ERROR");
             cJSON_AddStringToObject(error_response, "error", error_msg);
-            cJSON_AddNumberToObject(error_response, "ts", (double)(esp_timer_get_time() / 1000000));
+            cJSON_AddNumberToObject(error_response, "ts", (double)node_utils_get_timestamp_seconds());
             char *json_str = cJSON_PrintUnformatted(error_response);
             if (json_str) {
                 mqtt_manager_publish_config_response(json_str);
@@ -297,7 +299,7 @@ void ph_node_config_handler(const char *topic, const char *data, int data_len, v
         if (error_response) {
             cJSON_AddStringToObject(error_response, "status", "ERROR");
             cJSON_AddStringToObject(error_response, "error", "Failed to save config");
-            cJSON_AddNumberToObject(error_response, "ts", (double)(esp_timer_get_time() / 1000000));
+            cJSON_AddNumberToObject(error_response, "ts", (double)node_utils_get_timestamp_seconds());
             char *json_str = cJSON_PrintUnformatted(error_response);
             if (json_str) {
                 mqtt_manager_publish_config_response(json_str);
@@ -467,22 +469,26 @@ void ph_node_command_handler(const char *topic, const char *channel, const char 
     command_queue_item_t item = {0};
     item.topic = topic ? strdup(topic) : NULL;
     item.channel = strdup(channel);
-    item.data = (char *)malloc(data_len + 1);
-    if (item.data) {
-        memcpy(item.data, data, data_len);
-        item.data[data_len] = '\0';
-    }
-    item.data_len = data_len;
-    item.user_ctx = user_ctx;
     
-    // Проверяем, что память выделена
-    if (!item.channel || !item.data) {
-        ESP_LOGE(TAG, "Failed to allocate memory for command queue item");
+    // Проверяем, что strdup успешно выполнился
+    if (!item.channel) {
+        ESP_LOGE(TAG, "Failed to allocate memory for channel string");
         if (item.topic) free(item.topic);
-        if (item.channel) free(item.channel);
-        if (item.data) free(item.data);
         return;
     }
+    
+    item.data = (char *)malloc(data_len + 1);
+    if (!item.data) {
+        ESP_LOGE(TAG, "Failed to allocate memory for data buffer");
+        if (item.topic) free(item.topic);
+        if (item.channel) free(item.channel);
+        return;
+    }
+    
+    memcpy(item.data, data, data_len);
+    item.data[data_len] = '\0';
+    item.data_len = data_len;
+    item.user_ctx = user_ctx;
     
     // Добавляем в очередь (неблокирующий режим)
     if (xQueueSend(s_command_queue, &item, 0) != pdTRUE) {
@@ -505,7 +511,7 @@ void ph_node_command_handler(const char *topic, const char *channel, const char 
             cJSON_AddStringToObject(response, "status", "ERROR");
             cJSON_AddStringToObject(response, "error_code", "queue_full");
             cJSON_AddStringToObject(response, "error_message", "Command queue is full, please retry later");
-            cJSON_AddNumberToObject(response, "ts", (double)(esp_timer_get_time() / 1000000));
+            cJSON_AddNumberToObject(response, "ts", (double)node_utils_get_timestamp_seconds());
             
             char *json_str = cJSON_PrintUnformatted(response);
             if (json_str) {
@@ -566,7 +572,7 @@ static void ph_node_command_handler_internal(const char *topic, const char *chan
             cJSON_AddStringToObject(response, "cmd_id", cmd_id);
             cJSON_AddStringToObject(response, "status", "NO_EFFECT");
             cJSON_AddStringToObject(response, "error_message", "Command already processed");
-            cJSON_AddNumberToObject(response, "ts", (double)(esp_timer_get_time() / 1000000));
+            cJSON_AddNumberToObject(response, "ts", (double)node_utils_get_timestamp_seconds());
             
             char *json_str = cJSON_PrintUnformatted(response);
             if (json_str) {

@@ -36,6 +36,15 @@ vi.mock('@/Components/MultiSeriesTelemetryChart.vue', () => ({
   }
 }))
 
+// Mock Inertia router
+const mockRouter = {
+  visit: vi.fn()
+}
+
+vi.mock('@inertiajs/vue3', () => ({
+  router: mockRouter
+}))
+
 // Моки composables
 vi.mock('@/composables/useTelemetry', () => ({
   useTelemetry: () => ({

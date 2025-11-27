@@ -13,6 +13,53 @@ if [ ! -f /app/.env ] || ! grep -q "APP_KEY=base64:" /app/.env 2>/dev/null; then
     php artisan key:generate --force || true
 fi
 
+# Wait for database to be ready (only in dev mode)
+if [ "${APP_ENV:-production}" = "local" ]; then
+    echo "Waiting for database connection..."
+    max_attempts=30
+    attempt=0
+    while [ $attempt -lt $max_attempts ]; do
+        if php artisan db:show >/dev/null 2>&1; then
+            echo "✓ Database connection established"
+            break
+        fi
+        attempt=$((attempt + 1))
+        if [ $attempt -eq $max_attempts ]; then
+            echo "⚠ Warning: Could not connect to database after $max_attempts attempts"
+            echo "  Migrations and seeders will be skipped"
+        else
+            echo "  Attempt $attempt/$max_attempts: Waiting for database..."
+            sleep 2
+        fi
+    done
+    
+    # Run migrations if database is available
+    if php artisan db:show >/dev/null 2>&1; then
+        echo "Running database migrations..."
+        if php artisan migrate --force 2>&1; then
+            echo "✓ Migrations completed successfully"
+            
+            # Check if seeders need to run (only if no users exist)
+            USER_COUNT=$(php artisan tinker --execute="echo \App\Models\User::count();" 2>/dev/null | tail -1 | tr -d '[:space:]' || echo "0")
+            if [ "$USER_COUNT" = "0" ] || [ -z "$USER_COUNT" ]; then
+                echo "No users found, running database seeders..."
+                if php artisan db:seed --force 2>&1; then
+                    echo "✓ Seeders completed successfully"
+                    echo "✓ Database setup completed"
+                else
+                    echo "⚠ Seeding failed (some data may have been created), continuing..."
+                fi
+            else
+                echo "✓ Database already seeded ($USER_COUNT users found), skipping seeders"
+            fi
+        else
+            echo "⚠ Migration failed, continuing..."
+        fi
+    else
+        echo "⚠ Skipping migrations and seeders (database not available)"
+    fi
+fi
+
 # Add VITE_* environment variables to .env file if they exist in environment
 # This ensures Vite can access them during build
 if [ -f /app/.env ]; then
@@ -37,18 +84,22 @@ if [ -f /app/.env ]; then
     if ! grep -q "^VITE_PUSHER_APP_KEY=" /app/.env 2>/dev/null; then
         echo "VITE_PUSHER_APP_KEY=${REVERB_APP_KEY:-local}" >> /app/.env
     fi
-    if ! grep -q "^VITE_REVERB_HOST=" /app/.env 2>/dev/null; then
-        # For dev mode, use localhost so browser can connect from host
-        echo "VITE_REVERB_HOST=localhost" >> /app/.env
-    fi
-    if ! grep -q "^VITE_WS_HOST=" /app/.env 2>/dev/null; then
-        echo "VITE_WS_HOST=localhost" >> /app/.env
-    fi
-    if ! grep -q "^VITE_REVERB_PORT=" /app/.env 2>/dev/null; then
-        echo "VITE_REVERB_PORT=${REVERB_PORT:-6001}" >> /app/.env
-    fi
-    if ! grep -q "^VITE_WS_PORT=" /app/.env 2>/dev/null; then
-        echo "VITE_WS_PORT=${REVERB_PORT:-6001}" >> /app/.env
+    # В dev режиме НЕ устанавливаем VITE_REVERB_HOST и VITE_REVERB_PORT
+    # чтобы клиент использовал window.location (nginx прокси на порту 8080)
+    # Nginx проксирует WebSocket на /app/ к Reverb на порту 6001
+    if [ "${APP_ENV:-production}" != "local" ]; then
+        if ! grep -q "^VITE_REVERB_HOST=" /app/.env 2>/dev/null; then
+            echo "VITE_REVERB_HOST=localhost" >> /app/.env
+        fi
+        if ! grep -q "^VITE_WS_HOST=" /app/.env 2>/dev/null; then
+            echo "VITE_WS_HOST=localhost" >> /app/.env
+        fi
+        if ! grep -q "^VITE_REVERB_PORT=" /app/.env 2>/dev/null; then
+            echo "VITE_REVERB_PORT=${REVERB_PORT:-6001}" >> /app/.env
+        fi
+        if ! grep -q "^VITE_WS_PORT=" /app/.env 2>/dev/null; then
+            echo "VITE_WS_PORT=${REVERB_PORT:-6001}" >> /app/.env
+        fi
     fi
     if ! grep -q "^VITE_REVERB_SCHEME=" /app/.env 2>/dev/null; then
         echo "VITE_REVERB_SCHEME=${REVERB_SCHEME:-http}" >> /app/.env
@@ -170,6 +221,9 @@ fi
 # Убеждаемся, что директории для supervisor существуют и имеют правильные права (Ubuntu совместимость)
 mkdir -p /var/log/supervisor /var/run 2>/dev/null || true
 chmod 755 /var/log/supervisor /var/run 2>/dev/null || true
+# Создаем директорию для логов Reverb
+mkdir -p /var/log/reverb 2>/dev/null || true
+chmod 755 /var/log/reverb 2>/dev/null || true
 # Исправляем права на сокет supervisor для Ubuntu
 if [ -S /var/run/supervisor.sock ]; then
     chmod 700 /var/run/supervisor.sock 2>/dev/null || true

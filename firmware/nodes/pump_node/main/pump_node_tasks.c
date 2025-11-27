@@ -17,6 +17,7 @@
 #include "pump_driver.h"
 #include "pump_node_framework_integration.h"
 #include "node_telemetry_engine.h"
+#include "node_utils.h"
 #include "node_watchdog.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -212,7 +213,7 @@ static void task_pump_health(void *pvParameters) {
             continue;
         }
 
-        cJSON_AddNumberToObject(health, "ts", (double)(esp_timer_get_time() / 1000000));
+        cJSON_AddNumberToObject(health, "ts", (double)node_utils_get_timestamp_seconds());
 
         cJSON *channels = cJSON_CreateArray();
         if (!channels) {

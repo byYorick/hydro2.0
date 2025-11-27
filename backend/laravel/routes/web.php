@@ -1,29 +1,33 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Facades\Broadcast;
-use Inertia\Inertia;
-use App\Models\Zone;
-use App\Models\DeviceNode;
-use App\Models\NodeChannel;
-use App\Models\Recipe;
 use App\Models\Alert;
+use App\Models\DeviceNode;
 use App\Models\Greenhouse;
+use App\Models\Recipe;
+use App\Models\SystemLog;
+use App\Models\TelemetryLast;
+use App\Models\Zone;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Route;
+use Inertia\Inertia;
 
 // Broadcasting authentication route
 // Поддерживает сессионную аутентификацию для Inertia.js
 Route::post('/broadcasting/auth', function () {
     // Проверяем, что пользователь аутентифицирован
-    if (!auth()->check()) {
+    if (! auth()->check()) {
         return response()->json(['message' => 'Unauthenticated.'], 403);
     }
+
     return Broadcast::auth(request());
 })->middleware(['web', 'auth']);
 
 Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function () {
     /**
      * Dashboard - главная страница
-     * 
+     *
      * Inertia Props:
      * - auth: { user: { role: 'viewer'|'operator'|'admin' } }
      * - dashboard: {
@@ -37,45 +41,42 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
      *     greenhouses: Array<{ id, uid, name, type, zones_count, zones_running }>,
      *     latestAlerts: Array<{ id, type, status, details, zone_id, created_at, zone }>
      *   }
-     * 
+     *
      * Кеширование: 30 секунд
      */
     Route::get('/', function () {
         // Используем кеш для статических данных (TTL 30 секунд)
-        $cacheKey = 'dashboard_data_' . auth()->id();
+        $cacheKey = 'dashboard_data_'.auth()->id();
         $dashboard = \Illuminate\Support\Facades\Cache::remember($cacheKey, 30, function () {
-            // Оптимизированные запросы - выполняем все параллельно через DB::select
-            $stats = \Illuminate\Support\Facades\DB::select("
+            $stats = DB::select("
                 SELECT 
                     (SELECT COUNT(*) FROM greenhouses) as greenhouses_count,
                     (SELECT COUNT(*) FROM zones) as zones_count,
                     (SELECT COUNT(*) FROM nodes) as devices_count,
                     (SELECT COUNT(*) FROM alerts WHERE status = 'active') as alerts_count
             ")[0];
-            
-            // Статистика по статусам зон и узлов одним запросом
+
             $zonesByStatus = Zone::query()
                 ->selectRaw('status, COUNT(*) as count')
                 ->groupBy('status')
                 ->pluck('count', 'status')
                 ->toArray();
-            
+
             $nodesByStatus = DeviceNode::query()
                 ->selectRaw('status, COUNT(*) as count')
                 ->groupBy('status')
                 ->pluck('count', 'status')
                 ->toArray();
-            
-            // Оптимизированный запрос проблемных зон - используем JOIN вместо whereHas
+
             $problematicZones = Zone::query()
                 ->select(['zones.id', 'zones.name', 'zones.status', 'zones.description', 'zones.greenhouse_id'])
                 ->leftJoin('alerts', function ($join) {
                     $join->on('alerts.zone_id', '=', 'zones.id')
-                         ->where('alerts.status', '=', 'active');
+                        ->where('alerts.status', '=', 'active');
                 })
                 ->where(function ($q) {
                     $q->whereIn('zones.status', ['ALARM', 'WARNING'])
-                      ->orWhereNotNull('alerts.id');
+                        ->orWhereNotNull('alerts.id');
                 })
                 ->selectRaw('COUNT(DISTINCT alerts.id) as alerts_count')
                 ->groupBy('zones.id', 'zones.name', 'zones.status', 'zones.description', 'zones.greenhouse_id')
@@ -84,16 +85,53 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
                 ->limit(5)
                 ->with('greenhouse:id,name')
                 ->get();
-            
-            // Теплицы с оптимизированным подсчетом
-            $greenhouses = Greenhouse::query()
-                ->select(['id', 'uid', 'name', 'type'])
-                ->withCount(['zones', 'zones as zones_running' => function ($q) {
-                    $q->where('status', 'RUNNING');
-                }])
+
+            $zoneStatusRows = Zone::query()
+                ->select('greenhouse_id', 'status', DB::raw('COUNT(*) as count'))
+                ->groupBy('greenhouse_id', 'status')
                 ->get();
-            
-            // Последние алерты
+
+            $zonesByGreenhouse = [];
+            foreach ($zoneStatusRows as $row) {
+                $zonesByGreenhouse[$row->greenhouse_id][$row->status] = (int) $row->count;
+            }
+
+            $nodesStatusRows = DeviceNode::query()
+                ->select('zones.greenhouse_id', 'nodes.status', DB::raw('COUNT(*) as count'))
+                ->join('zones', 'zones.id', '=', 'nodes.zone_id')
+                ->groupBy('zones.greenhouse_id', 'nodes.status')
+                ->get();
+
+            $nodesByGreenhouse = [];
+            foreach ($nodesStatusRows as $row) {
+                $nodesByGreenhouse[$row->greenhouse_id][$row->status] = (int) $row->count;
+            }
+
+            $alertsByGreenhouse = Alert::query()
+                ->select('zones.greenhouse_id', DB::raw('COUNT(*) as count'))
+                ->join('zones', 'zones.id', '=', 'alerts.zone_id')
+                ->where('alerts.status', 'active')
+                ->groupBy('zones.greenhouse_id')
+                ->pluck('count', 'greenhouse_id')
+                ->toArray();
+
+            $greenhouses = Greenhouse::query()
+                ->select(['id', 'uid', 'name', 'type', 'description'])
+                ->withCount([
+                    'zones',
+                    'zones as zones_running' => function ($q) {
+                        $q->where('status', 'RUNNING');
+                    },
+                ])
+                ->get()
+                ->map(function ($greenhouse) use ($zonesByGreenhouse, $nodesByGreenhouse, $alertsByGreenhouse) {
+                    $greenhouse->zone_status_summary = $zonesByGreenhouse[$greenhouse->id] ?? [];
+                    $greenhouse->node_status_summary = $nodesByGreenhouse[$greenhouse->id] ?? [];
+                    $greenhouse->alerts_count = $alertsByGreenhouse[$greenhouse->id] ?? 0;
+
+                    return $greenhouse;
+                });
+
             $latestAlerts = Alert::query()
                 ->select(['id', 'type', 'status', 'details', 'zone_id', 'created_at'])
                 ->with('zone:id,name')
@@ -101,12 +139,12 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
                 ->latest('id')
                 ->limit(10)
                 ->get();
-            
+
             return [
-                'greenhousesCount' => (int)$stats->greenhouses_count,
-                'zonesCount' => (int)$stats->zones_count,
-                'devicesCount' => (int)$stats->devices_count,
-                'alertsCount' => (int)$stats->alerts_count,
+                'greenhousesCount' => (int) $stats->greenhouses_count,
+                'zonesCount' => (int) $stats->zones_count,
+                'devicesCount' => (int) $stats->devices_count,
+                'alertsCount' => (int) $stats->alerts_count,
                 'zonesByStatus' => $zonesByStatus,
                 'nodesByStatus' => $nodesByStatus,
                 'problematicZones' => $problematicZones,
@@ -114,7 +152,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
                 'latestAlerts' => $latestAlerts,
             ];
         });
-        
+
         return Inertia::render('Dashboard/Index', [
             'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
             'dashboard' => $dashboard,
@@ -140,12 +178,102 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
     })->name('greenhouses.create');
 
     /**
+     * Greenhouse Show - детальная страница теплицы
+     */
+    Route::get('/greenhouses/{greenhouse}', function (Greenhouse $greenhouse) {
+        $zones = Zone::query()
+            ->where('greenhouse_id', $greenhouse->id)
+            ->with([
+                'recipeInstance.recipe:id,name,description,phases',
+            ])
+            ->withCount([
+                'alerts as alerts_count',
+                'nodes as nodes_total',
+                'nodes as nodes_online' => function ($query) {
+                    $query->where('status', 'online');
+                },
+                'nodes as nodes_offline' => function ($query) {
+                    $query->where('status', 'offline');
+                },
+            ])
+            ->orderBy('status')
+            ->get();
+
+        $zoneIds = $zones->pluck('id')->toArray();
+
+        $telemetryByZone = [];
+        if (! empty($zoneIds)) {
+            $telemetryAll = TelemetryLast::query()
+                ->whereIn('zone_id', $zoneIds)
+                ->get(['zone_id', 'metric_type', 'value']);
+
+            foreach ($telemetryAll as $metric) {
+                $key = strtolower($metric->metric_type ?? '');
+                if (! isset($telemetryByZone[$metric->zone_id])) {
+                    $telemetryByZone[$metric->zone_id] = [
+                        'ph' => null,
+                        'ec' => null,
+                        'temperature' => null,
+                        'humidity' => null,
+                    ];
+                }
+
+                if ($key === 'ph') {
+                    $telemetryByZone[$metric->zone_id]['ph'] = (float) $metric->value;
+                } elseif ($key === 'ec') {
+                    $telemetryByZone[$metric->zone_id]['ec'] = (float) $metric->value;
+                } elseif (in_array($key, ['temp', 'temperature', 'air_temperature'])) {
+                    $telemetryByZone[$metric->zone_id]['temperature'] = (float) $metric->value;
+                } elseif (in_array($key, ['humidity', 'rh'])) {
+                    $telemetryByZone[$metric->zone_id]['humidity'] = (float) $metric->value;
+                }
+            }
+        }
+
+        $zones->each(function (Zone $zone) use ($telemetryByZone) {
+            $zone->telemetry = $telemetryByZone[$zone->id] ?? null;
+        });
+
+        $nodes = DeviceNode::query()
+            ->whereIn('zone_id', $zoneIds)
+            ->with('zone:id,name')
+            ->orderByDesc('last_seen_at')
+            ->get();
+
+        $nodesTotals = DeviceNode::query()
+            ->whereIn('zone_id', $zoneIds)
+            ->select([
+                DB::raw('COUNT(*) as total'),
+                DB::raw("SUM(CASE WHEN status = 'online' THEN 1 ELSE 0 END) as online"),
+                DB::raw("SUM(CASE WHEN status = 'offline' THEN 1 ELSE 0 END) as offline"),
+            ])
+            ->first();
+
+        $nodeSummary = [
+            'total' => $nodesTotals->total ?? 0,
+            'online' => $nodesTotals->online ?? 0,
+            'offline' => $nodesTotals->offline ?? 0,
+        ];
+
+        $activeAlerts = $zones->sum('alerts_count');
+
+        return Inertia::render('Greenhouses/Show', [
+            'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
+            'greenhouse' => $greenhouse,
+            'zones' => $zones,
+            'nodes' => $nodes,
+            'nodeSummary' => $nodeSummary,
+            'activeAlerts' => $activeAlerts,
+        ]);
+    })->name('greenhouses.show');
+
+    /**
      * Zones routes
      */
     Route::prefix('zones')->group(function () {
         /**
          * Zones Index - список всех зон
-         * 
+         *
          * Inertia Props:
          * - auth: { user: { role: 'viewer'|'operator'|'admin' } }
          * - zones: Array<{
@@ -157,61 +285,68 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
          *     greenhouse: { id: int, name: string },
          *     telemetry: { ph: float|null, ec: float|null, temperature: float|null, humidity: float|null }
          *   }>
-         * 
+         *
          * Кеширование: 10 секунд
          * Telemetry: batch loading для всех зон
          */
         Route::get('/', function () {
             // Кешируем список зон на 10 секунд
-            $cacheKey = 'zones_list_' . auth()->id();
+            $cacheKey = 'zones_list_'.auth()->id();
             $zones = \Illuminate\Support\Facades\Cache::remember($cacheKey, 10, function () {
                 return Zone::query()
-                    ->select(['id','name','status','description','greenhouse_id'])
+                    ->select(['id', 'name', 'status', 'description', 'greenhouse_id'])
                     ->with([
                         'greenhouse:id,name',
-                        'recipeInstance.recipe:id,name' // Загружаем рецепт для отображения
+                        'recipeInstance.recipe:id,name', // Загружаем рецепт для отображения
                     ])
                     ->get();
             });
-            
+
             // Загружаем telemetry для всех зон (batch loading)
             $zoneIds = $zones->pluck('id')->toArray();
             $telemetryByZone = [];
-            
-            if (!empty($zoneIds)) {
+
+            if (! empty($zoneIds)) {
                 $telemetryAll = \App\Models\TelemetryLast::query()
                     ->whereIn('zone_id', $zoneIds)
                     ->get(['zone_id', 'metric_type', 'value']);
-                
+
                 // Группируем по zone_id и преобразуем в формат {ph, ec, temperature, humidity}
                 $telemetryByZone = $telemetryAll->groupBy('zone_id')->map(function ($metrics) {
                     $result = ['ph' => null, 'ec' => null, 'temperature' => null, 'humidity' => null];
                     foreach ($metrics as $metric) {
                         $key = strtolower($metric->metric_type ?? '');
-                        if ($key === 'ph') $result['ph'] = $metric->value;
-                        elseif ($key === 'ec') $result['ec'] = $metric->value;
-                        elseif (in_array($key, ['temp_air', 'temp', 'temperature'])) $result['temperature'] = $metric->value;
-                        elseif (in_array($key, ['humidity', 'rh'])) $result['humidity'] = $metric->value;
+                        if ($key === 'ph') {
+                            $result['ph'] = $metric->value;
+                        } elseif ($key === 'ec') {
+                            $result['ec'] = $metric->value;
+                        } elseif (in_array($key, ['temp_air', 'temp', 'temperature'])) {
+                            $result['temperature'] = $metric->value;
+                        } elseif (in_array($key, ['humidity', 'rh'])) {
+                            $result['humidity'] = $metric->value;
+                        }
                     }
+
                     return $result;
                 })->toArray();
             }
-            
+
             // Добавляем telemetry к каждой зоне
             $zonesWithTelemetry = $zones->map(function ($zone) use ($telemetryByZone) {
                 $zone->telemetry = $telemetryByZone[$zone->id] ?? null;
+
                 return $zone;
             });
-            
+
             return Inertia::render('Zones/Index', [
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
                 'zones' => $zonesWithTelemetry,
             ]);
         })->name('zones.web.index');
-        
+
         /**
          * Zone Show - детальная страница зоны
-         * 
+         *
          * Inertia Props:
          * - auth: { user: { role: 'viewer'|'operator'|'admin' } }
          * - zoneId: int
@@ -241,21 +376,21 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
          */
         Route::get('/{zoneId}', function (string $zoneId) {
             // Convert zoneId to integer
-            $zoneIdInt = (int)$zoneId;
-            
+            $zoneIdInt = (int) $zoneId;
+
             // Загружаем зону с recipeInstance и recipe
             // ВАЖНО: Используем fresh() чтобы получить свежие данные из БД
             $zone = Zone::query()
                 ->with([
                     'greenhouse:id,name',
-                    'recipeInstance.recipe:id,name,description'
+                    'recipeInstance.recipe:id,name,description',
                 ])
                 ->findOrFail($zoneIdInt);
-            
+
             // Обновляем зону, чтобы гарантировать загрузку свежих данных
             $zone->refresh();
             $zone->loadMissing(['recipeInstance.recipe']);
-            
+
             // Логируем для отладки
             \Log::info('Loading zone for web route', [
                 'zone_id' => $zoneIdInt,
@@ -265,21 +400,30 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
                 'recipe_name' => $zone->recipeInstance?->recipe?->name,
                 'recipe_instance_full' => $zone->recipeInstance ? $zone->recipeInstance->toArray() : null,
             ]);
-            
+
             // Загрузить телеметрию
             $telemetryLast = \App\Models\TelemetryLast::query()
                 ->where('zone_id', $zoneIdInt)
                 ->get(['metric_type', 'value'])
                 ->mapWithKeys(function ($item) {
                     $key = strtolower($item->metric_type ?? '');
-                    if ($key === 'ph') return ['ph' => $item->value];
-                    if ($key === 'ec') return ['ec' => $item->value];
-                    if (in_array($key, ['temp_air', 'temp', 'temperature'])) return ['temperature' => $item->value];
-                    if (in_array($key, ['humidity', 'rh'])) return ['humidity' => $item->value];
+                    if ($key === 'ph') {
+                        return ['ph' => $item->value];
+                    }
+                    if ($key === 'ec') {
+                        return ['ec' => $item->value];
+                    }
+                    if (in_array($key, ['temp_air', 'temp', 'temperature'])) {
+                        return ['temperature' => $item->value];
+                    }
+                    if (in_array($key, ['humidity', 'rh'])) {
+                        return ['humidity' => $item->value];
+                    }
+
                     return [];
                 })
                 ->toArray();
-            
+
             // Загрузить цели из текущей фазы рецепта
             $targets = [];
             if ($zone->recipeInstance?->recipe) {
@@ -292,14 +436,14 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
                     $targets = $currentPhase->targets;
                 }
             }
-            
+
             // Загрузить устройства зоны
             $devices = \App\Models\DeviceNode::query()
-                ->select(['id','uid','zone_id','name','type','status','fw_version','last_seen_at'])
+                ->select(['id', 'uid', 'zone_id', 'name', 'type', 'status', 'fw_version', 'last_seen_at'])
                 ->where('zone_id', $zoneIdInt)
                 ->with('zone:id,name')
                 ->get();
-            
+
             // Загрузить последние события зоны (если модель Event существует)
             $events = collect([]);
             if (class_exists(\App\Models\Event::class)) {
@@ -310,13 +454,13 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
                         ->latest('created_at')
                         ->limit(20)
                         ->get();
-                    
+
                     // Маппинг структуры Events для фронтенда
                     // type → kind, details.message → message, created_at → occurred_at
                     $events = $eventsRaw->map(function ($event) {
                         $details = $event->details ?? [];
                         $message = $details['message'] ?? $details['msg'] ?? $event->type ?? '';
-                        
+
                         return [
                             'id' => $event->id,
                             'kind' => $event->type ?? 'INFO',
@@ -329,7 +473,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
                     $events = collect([]);
                 }
             }
-            
+
             // Загрузить данные cycles для зоны
             $cycles = [];
             try {
@@ -346,7 +490,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
                     ->map(function ($group) {
                         return $group->first()->ack_at?->toIso8601String();
                     });
-                
+
                 // Определяем интервалы из settings или targets
                 $cycleConfigs = [
                     'PH_CONTROL' => [
@@ -370,17 +514,17 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
                         'interval' => $settings['climate']['interval_sec'] ?? 300,
                     ],
                 ];
-                
+
                 // Формируем ответ
                 foreach ($cycleConfigs as $type => $config) {
                     $lastRun = $lastCommands->get("FORCE_{$type}");
                     $interval = $config['interval'];
                     $nextRun = null;
-                    
+
                     if ($lastRun && $interval) {
                         $nextRun = \Carbon\Carbon::parse($lastRun)->addSeconds($interval)->toIso8601String();
                     }
-                    
+
                     $cycles[$type] = [
                         'type' => $type,
                         'strategy' => $config['strategy'],
@@ -393,19 +537,19 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
                 // Если ошибка при загрузке cycles, используем пустой массив
                 $cycles = [];
             }
-            
+
             // Формируем данные для отправки в Inertia
             // ВАЖНО: Используем оригинальную модель, так как Inertia правильно сериализует отношения
             // Но убеждаемся, что все отношения загружены
-            if (!$zone->relationLoaded('recipeInstance')) {
+            if (! $zone->relationLoaded('recipeInstance')) {
                 $zone->load('recipeInstance.recipe');
             }
-            
+
             // Дополнительная проверка: если recipeInstance есть, но recipe не загружен - загружаем
-            if ($zone->recipeInstance && !$zone->recipeInstance->relationLoaded('recipe')) {
+            if ($zone->recipeInstance && ! $zone->recipeInstance->relationLoaded('recipe')) {
                 $zone->recipeInstance->load('recipe');
             }
-            
+
             // Логируем данные перед отправкой в Inertia
             \Log::info('Sending zone data to Inertia', [
                 'zone_id' => $zone->id,
@@ -419,7 +563,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
                 ] : null,
                 'zone_data_has_recipe_instance' => isset($zoneData['recipe_instance']),
             ]);
-            
+
             return Inertia::render('Zones/Show', [
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
                 'zoneId' => $zoneIdInt,
@@ -439,7 +583,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
     Route::prefix('devices')->group(function () {
         /**
          * Devices Index - список всех устройств
-         * 
+         *
          * Inertia Props:
          * - auth: { user: { role: 'viewer'|'operator'|'admin' } }
          * - devices: Array<{
@@ -453,19 +597,19 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
          *     last_seen_at: datetime,
          *     zone: { id: int, name: string }
          *   }>
-         * 
+         *
          * Кеширование: 10 секунд
          */
         Route::get('/', function () {
             // Кешируем список устройств на 2 секунды для быстрого обновления
-            $cacheKey = 'devices_list_' . auth()->id();
+            $cacheKey = 'devices_list_'.auth()->id();
             $devices = null;
-            
+
             // Пытаемся использовать теги, если поддерживаются
             try {
                 $devices = \Illuminate\Support\Facades\Cache::tags(['devices_list'])->remember($cacheKey, 2, function () {
                     return DeviceNode::query()
-                        ->select(['id','uid','zone_id','name','type','status','fw_version','last_seen_at'])
+                        ->select(['id', 'uid', 'zone_id', 'name', 'type', 'status', 'fw_version', 'last_seen_at'])
                         ->with('zone:id,name')
                         ->latest('id') // Сортируем по ID, чтобы новые ноды были сверху
                         ->get();
@@ -474,21 +618,22 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
                 // Если теги не поддерживаются, используем обычный кеш
                 $devices = \Illuminate\Support\Facades\Cache::remember($cacheKey, 2, function () {
                     return DeviceNode::query()
-                        ->select(['id','uid','zone_id','name','type','status','fw_version','last_seen_at'])
+                        ->select(['id', 'uid', 'zone_id', 'name', 'type', 'status', 'fw_version', 'last_seen_at'])
                         ->with('zone:id,name')
                         ->latest('id') // Сортируем по ID, чтобы новые ноды были сверху
                         ->get();
                 });
             }
+
             return Inertia::render('Devices/Index', [
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
                 'devices' => $devices,
             ]);
         })->name('devices.index');
-        
+
         /**
          * Devices Add - форма добавления устройства
-         * 
+         *
          * Inertia Props:
          * - auth: { user: { role: 'viewer'|'operator'|'admin' } }
          */
@@ -497,10 +642,10 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
             ]);
         })->name('devices.add');
-        
+
         /**
          * Device Show - детальная страница устройства
-         * 
+         *
          * Inertia Props:
          * - auth: { user: { role: 'viewer'|'operator'|'admin' } }
          * - device: {
@@ -515,20 +660,21 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
          *     zone: { id: int, name: string },
          *     channels: Array<{ id, node_id, channel, type, metric, unit }>
          *   }
-         * 
+         *
          * Поддержка поиска по ID (int) или UID (string)
          */
         Route::get('/{nodeId}', function (string $nodeId) {
             // Support both ID (int) and UID (string) lookup
             $query = DeviceNode::query()
-                ->with(['channels:id,node_id,channel,type,metric,unit','zone:id,name']);
-            
+                ->with(['channels:id,node_id,channel,type,metric,unit', 'zone:id,name']);
+
             // Try to find by ID if nodeId is numeric, otherwise by UID
             if (is_numeric($nodeId)) {
-                $device = $query->findOrFail((int)$nodeId);
+                $device = $query->findOrFail((int) $nodeId);
             } else {
                 $device = $query->where('uid', $nodeId)->firstOrFail();
             }
+
             return Inertia::render('Devices/Show', [
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
                 'device' => $device,
@@ -546,10 +692,10 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
                 'recipe' => null,
             ]);
         })->name('recipes.create');
-        
+
         /**
          * Recipes Index - список всех рецептов
-         * 
+         *
          * Inertia Props:
          * - auth: { user: { role: 'viewer'|'operator'|'admin' } }
          * - recipes: Array<{
@@ -558,15 +704,15 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
          *     description: string,
          *     phases_count: int
          *   }>
-         * 
+         *
          * Кеширование: 10 секунд
          */
         Route::get('/', function () {
             // Кешируем список рецептов на 10 секунд
-            $cacheKey = 'recipes_list_' . auth()->id();
+            $cacheKey = 'recipes_list_'.auth()->id();
             $recipes = \Illuminate\Support\Facades\Cache::remember($cacheKey, 10, function () {
                 return Recipe::query()
-                    ->select(['id','name','description'])
+                    ->select(['id', 'name', 'description'])
                     ->withCount('phases')
                     ->get()
                     ->map(function ($recipe) {
@@ -578,15 +724,16 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
                         ];
                     });
             });
+
             return Inertia::render('Recipes/Index', [
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
                 'recipes' => $recipes,
             ]);
         })->name('recipes.index');
-        
+
         /**
          * Recipe Show - детальная страница рецепта
-         * 
+         *
          * Inertia Props:
          * - auth: { user: { role: 'viewer'|'operator'|'admin' } }
          * - recipe: {
@@ -600,15 +747,16 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
             $recipe = Recipe::query()
                 ->with('phases:id,recipe_id,phase_index,name,duration_hours,targets')
                 ->findOrFail($recipeId);
+
             return Inertia::render('Recipes/Show', [
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
                 'recipe' => $recipe,
             ]);
         })->name('recipes.show');
-        
+
         /**
          * Recipe Edit - форма редактирования рецепта
-         * 
+         *
          * Inertia Props:
          * - auth: { user: { role: 'viewer'|'operator'|'admin' } }
          * - recipe: {
@@ -619,17 +767,19 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
          *   }
          */
         Route::get('/create', function () {
-        $recipe = new \App\Models\Recipe();
-        $recipe->phases = [];
-        return Inertia::render('Recipes/Edit', [
-            'recipe' => $recipe,
-        ]);
-    })->name('recipes.create');
+            $recipe = new \App\Models\Recipe;
+            $recipe->phases = [];
 
-    Route::get('/{recipeId}/edit', function (int $recipeId) {
+            return Inertia::render('Recipes/Edit', [
+                'recipe' => $recipe,
+            ]);
+        })->name('recipes.create');
+
+        Route::get('/{recipeId}/edit', function (int $recipeId) {
             $recipe = Recipe::query()
                 ->with('phases:id,recipe_id,phase_index,name,duration_hours,targets')
                 ->findOrFail($recipeId);
+
             return Inertia::render('Recipes/Edit', [
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
                 'recipe' => $recipe,
@@ -639,7 +789,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
 
     /**
      * Alerts Index - список всех алертов
-     * 
+     *
      * Inertia Props:
      * - auth: { user: { role: 'viewer'|'operator'|'admin' } }
      * - alerts: Array<{
@@ -652,30 +802,31 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
      *     resolved_at: datetime|null,
      *     zone: { id: int, name: string }
      *   }>
-     * 
+     *
      * Кеширование: 5 секунд (более динамичные данные)
      */
     Route::get('/alerts', function () {
         // Кешируем список алертов на 5 секунд (более динамичные данные)
-            $cacheKey = 'alerts_list_' . auth()->id();
-            $alerts = \Illuminate\Support\Facades\Cache::remember($cacheKey, 5, function () {
-                return \App\Models\Alert::query()
-                    ->with(['zone' => function ($q) {
-                        $q->select('id', 'name');
-                    }])
-                    ->latest('id')
-                    ->limit(100)
-                    ->get(['id', 'type', 'status', 'details', 'zone_id', 'created_at', 'resolved_at']);
-            });
-            return Inertia::render('Alerts/Index', [
-                'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
-                'alerts' => $alerts,
-            ]);
+        $cacheKey = 'alerts_list_'.auth()->id();
+        $alerts = \Illuminate\Support\Facades\Cache::remember($cacheKey, 5, function () {
+            return \App\Models\Alert::query()
+                ->with(['zone' => function ($q) {
+                    $q->select('id', 'name');
+                }])
+                ->latest('id')
+                ->limit(100)
+                ->get(['id', 'type', 'status', 'details', 'zone_id', 'created_at', 'resolved_at']);
+        });
+
+        return Inertia::render('Alerts/Index', [
+            'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
+            'alerts' => $alerts,
+        ]);
     })->name('alerts.index');
 
     /**
      * Users Index - страница управления пользователями (только для admin)
-     * 
+     *
      * Inertia Props:
      * - auth: {
      *     user: {
@@ -693,7 +844,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
             ->select(['id', 'name', 'email', 'role', 'created_at'])
             ->orderBy('id')
             ->get();
-        
+
         return Inertia::render('Users/Index', [
             'auth' => [
                 'user' => [
@@ -709,7 +860,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
 
     /**
      * Audit Index - страница аудита (только для admin)
-     * 
+     *
      * Inertia Props:
      * - auth: {
      *     user: {
@@ -720,14 +871,14 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
      *     }
      *   }
      * - logs: Array<{ id, level, message, context, created_at }>
-     * 
+     *
      * Кеширование: 5 секунд (динамичные данные)
      */
     Route::middleware('role:admin')->get('/audit', function () {
         $user = auth()->user();
-        
+
         // Кешируем логи на 5 секунд для снижения нагрузки
-        $cacheKey = 'audit_logs_' . auth()->id();
+        $cacheKey = 'audit_logs_'.auth()->id();
         $logs = \Illuminate\Support\Facades\Cache::remember($cacheKey, 5, function () {
             try {
                 $result = \App\Models\SystemLog::query()
@@ -735,17 +886,18 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
                     ->orderBy('created_at', 'desc')
                     ->limit(1000)
                     ->get();
-                
+
                 // Логируем для отладки
                 \Log::info('Audit logs loaded', ['count' => $result->count()]);
-                
+
                 return $result;
             } catch (\Exception $e) {
                 \Log::error('Failed to load audit logs', ['error' => $e->getMessage()]);
+
                 return collect([]);
             }
         });
-        
+
         return Inertia::render('Audit/Index', [
             'auth' => [
                 'user' => [
@@ -760,8 +912,84 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
     })->name('audit.index');
 
     /**
+     * Logs Index - страница логов сервисов (admin/operator/engineer)
+     */
+    Route::middleware('role:admin,operator,engineer')->get('/logs', function (Request $request) {
+        $serviceCatalog = [
+            'automation-engine' => [
+                'label' => 'Automation Engine',
+                'description' => 'События ядра автоматики и командные переходы.',
+            ],
+            'history-locker' => [
+                'label' => 'History Locker',
+                'description' => 'Архив событий, восстановления и следов действия оператора.',
+            ],
+            'system' => [
+                'label' => 'System Services',
+                'description' => 'Системные сервисы, очередь, запуск крон-заданий.',
+            ],
+        ];
+
+        $levelFilter = $request->query('level');
+        $serviceFilter = $request->query('service');
+        if ($serviceFilter === 'all') {
+            $serviceFilter = null;
+        }
+
+        $logsByService = collect($serviceCatalog)
+            ->map(function ($meta, $serviceKey) use ($levelFilter) {
+                $query = SystemLog::query()
+                    ->select(['id', 'level', 'message', 'context', 'created_at'])
+                    ->orderBy('created_at', 'desc')
+                    ->when($serviceKey, fn ($q) => $q->where('context->service', $serviceKey));
+
+                if ($levelFilter) {
+                    $query->whereRaw('UPPER(level) = ?', [strtoupper($levelFilter)]);
+                }
+
+                return [
+                    'key' => $serviceKey,
+                    'label' => $meta['label'],
+                    'description' => $meta['description'],
+                    'entries' => $query->limit(75)->get()->map(function ($log) {
+                        return [
+                            'id' => $log->id,
+                            'level' => strtoupper($log->level ?? 'info'),
+                            'message' => $log->message,
+                            'context' => $log->context ?? [],
+                            'created_at' => (string) $log->created_at,
+                        ];
+                    }),
+                ];
+            })
+            ->filter(fn ($item) => ! $serviceFilter || $item['key'] === $serviceFilter)
+            ->values()
+            ->toArray();
+
+        $levelFilters = collect($logsByService)
+            ->flatMap(fn ($service) => collect($service['entries'])->pluck('level'))
+            ->unique()
+            ->values()
+            ->toArray();
+
+        $serviceOptions = collect($serviceCatalog)
+            ->map(fn ($meta, $key) => ['key' => $key, 'label' => $meta['label']])
+            ->values()
+            ->toArray();
+
+        return Inertia::render('Logs/Index', [
+            'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
+            'serviceLogs' => $logsByService,
+            'serviceOptions' => $serviceOptions,
+            'levelFilters' => $levelFilters,
+            'selectedService' => $serviceFilter ?? 'all',
+            'selectedLevel' => $levelFilter ?? '',
+        ]);
+    })->name('logs.index');
+
+    /**
      * Settings Index - страница настроек
-     * 
+     *
      * Inertia Props:
      * - auth: {
      *     user: {
@@ -776,7 +1004,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
     Route::get('/settings', function () {
         $user = auth()->user();
         $users = [];
-        
+
         // Загрузить пользователей только для админов
         if ($user->role === 'admin') {
             $users = \App\Models\User::query()
@@ -784,7 +1012,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
                 ->orderBy('id')
                 ->get();
         }
-        
+
         return Inertia::render('Settings/Index', [
             'auth' => [
                 'user' => [
@@ -797,7 +1025,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
             'users' => $users,
         ]);
     })->name('settings.index');
-    
+
     // User management routes (admin only, using web session auth)
     Route::middleware('role:admin')->prefix('settings/users')->group(function () {
         Route::post('/', function (\Illuminate\Http\Request $request) {
@@ -807,38 +1035,38 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
                 'password' => ['required', 'string', 'min:8'],
                 'role' => ['required', 'string', 'in:admin,operator,viewer'],
             ]);
-            
+
             $user = \App\Models\User::create([
                 'name' => $data['name'],
                 'email' => $data['email'],
                 'password' => \Illuminate\Support\Facades\Hash::make($data['password']),
                 'role' => $data['role'],
             ]);
-            
+
             return redirect()->route('users.index');
         })->name('settings.users.store');
-        
+
         Route::patch('/{id}', function (\Illuminate\Http\Request $request, int $id) {
             $user = \App\Models\User::findOrFail($id);
-            
+
             $data = $request->validate([
                 'name' => ['required', 'string', 'max:255'],
                 'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email,'.$id],
                 'password' => ['nullable', 'string', 'min:8'],
                 'role' => ['required', 'string', 'in:admin,operator,viewer'],
             ]);
-            
+
             $user->name = $data['name'];
             $user->email = $data['email'];
             $user->role = $data['role'];
-            if (!empty($data['password'])) {
+            if (! empty($data['password'])) {
                 $user->password = \Illuminate\Support\Facades\Hash::make($data['password']);
             }
             $user->save();
-            
+
             return redirect()->route('users.index');
         })->name('settings.users.update');
-        
+
         Route::delete('/{id}', function (int $id) {
             $user = \App\Models\User::findOrFail($id);
             // Нельзя удалить самого себя
@@ -846,6 +1074,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
                 return redirect()->route('users.index')->withErrors(['error' => 'Нельзя удалить самого себя']);
             }
             $user->delete();
+
             return redirect()->route('users.index');
         })->name('settings.users.destroy');
     });
@@ -856,44 +1085,46 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
     Route::middleware('role:admin')->prefix('admin')->group(function () {
         /**
          * Admin Index - главная страница админки
-         * 
+         *
          * Inertia Props:
          * - auth: { user: { role: 'admin' } }
          */
         Route::get('/', fn () => Inertia::render('Admin/Index', [
             'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
         ]))->name('admin.index');
-        
+
         /**
          * Admin Zones - управление зонами
-         * 
+         *
          * Inertia Props:
          * - auth: { user: { role: 'admin' } }
          * - zones: Array<{ id, name, status, description, greenhouse_id, greenhouse }>
          */
         Route::get('/zones', function () {
             $zones = Zone::query()
-                ->select(['id','name','status','description','greenhouse_id'])
+                ->select(['id', 'name', 'status', 'description', 'greenhouse_id'])
                 ->with('greenhouse:id,name')
                 ->get();
+
             return Inertia::render('Admin/Zones', [
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
                 'zones' => $zones,
             ]);
         })->name('admin.zones');
-        
+
         /**
          * Admin Recipes - управление рецептами
-         * 
+         *
          * Inertia Props:
          * - auth: { user: { role: 'admin' } }
          * - recipes: Array<{ id, name, description, phases_count }>
          */
         Route::get('/recipes', function () {
             $recipes = Recipe::query()
-                ->select(['id','name','description'])
+                ->select(['id', 'name', 'description'])
                 ->withCount('phases')
                 ->get();
+
             return Inertia::render('Admin/Recipes', [
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
                 'recipes' => $recipes,

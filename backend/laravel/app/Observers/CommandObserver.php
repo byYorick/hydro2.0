@@ -2,9 +2,9 @@
 
 namespace App\Observers;
 
-use App\Models\Command;
-use App\Events\CommandStatusUpdated;
 use App\Events\CommandFailed;
+use App\Events\CommandStatusUpdated;
+use App\Models\Command;
 use Illuminate\Support\Facades\Log;
 
 class CommandObserver
@@ -51,7 +51,7 @@ class CommandObserver
                     ));
                 } else {
                     // Отправляем событие об обновлении статуса
-                    $message = match($newStatus) {
+                    $message = match ($newStatus) {
                         'sent' => 'Command sent',
                         'ack' => 'Command acknowledged',
                         'completed' => 'Command completed',
@@ -76,4 +76,3 @@ class CommandObserver
         }
     }
 }
-

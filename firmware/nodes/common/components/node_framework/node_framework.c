@@ -169,6 +169,10 @@ esp_err_t node_framework_init(const node_framework_config_t *config) {
         // Не критично, продолжаем инициализацию
     }
     
+    // Инициализация встроенных обработчиков команд (set_time и другие)
+    extern void node_command_handler_init_builtin_handlers(void);
+    node_command_handler_init_builtin_handlers();
+    
     // Регистрация встроенной команды get_diagnostics (если diagnostics компонент доступен)
     #if DIAGNOSTICS_AVAILABLE
     if (diagnostics_is_initialized()) {
@@ -182,12 +186,7 @@ esp_err_t node_framework_init(const node_framework_config_t *config) {
     }
     #endif
 
-    // Инициализация пула памяти для оптимизации использования памяти
-    err = memory_pool_init(NULL);  // Используем конфигурацию по умолчанию
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to init memory pool: %s (continuing anyway)", esp_err_to_name(err));
-        // Не критично, продолжаем инициализацию
-    }
+    // Примечание: memory_pool уже инициализирован выше (строка 95), не инициализируем повторно
 
     ESP_LOGI(TAG, "Node framework initialized (node_type: %s)", config->node_type);
     return ESP_OK;
@@ -206,10 +205,27 @@ esp_err_t node_framework_deinit(void) {
         return ESP_ERR_INVALID_STATE;
     }
 
-    // Деинициализация подкомпонентов
+    // Деинициализация подкомпонентов в обратном порядке инициализации
     extern esp_err_t node_telemetry_engine_deinit(void);
     node_telemetry_engine_deinit();
     node_state_manager_deinit();
+    
+    // Деинициализация опциональных компонентов
+    extern esp_err_t memory_pool_deinit(void);
+    memory_pool_deinit();
+    
+    extern esp_err_t i2c_cache_deinit(void);
+    i2c_cache_deinit();
+    
+    #if DIAGNOSTICS_AVAILABLE
+    extern esp_err_t diagnostics_deinit(void);
+    if (diagnostics_is_initialized()) {
+        diagnostics_deinit();
+    }
+    #endif
+    
+    extern esp_err_t node_watchdog_deinit(void);
+    node_watchdog_deinit();
 
     if (s_framework.mutex) {
         vSemaphoreDelete(s_framework.mutex);

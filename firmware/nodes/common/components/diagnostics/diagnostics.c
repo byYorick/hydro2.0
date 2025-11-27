@@ -7,6 +7,7 @@
 #include "node_state_manager.h"
 #include "node_framework.h"
 #include "node_watchdog.h"
+#include "node_utils.h"
 #include "mqtt_manager.h"
 #include "wifi_manager.h"
 #include "memory_pool.h"
@@ -323,7 +324,10 @@ esp_err_t diagnostics_publish(void) {
         cJSON_Delete(diagnostics);
         return ESP_ERR_NO_MEM;
     }
+    // uptime_seconds - аптайм в секундах (диагностика)
     cJSON_AddNumberToObject(system, "uptime_seconds", (double)snapshot.uptime_seconds);
+    // ts - Unix timestamp в секундах (для синхронизации с сервером)
+    cJSON_AddNumberToObject(system, "ts", (double)node_utils_now_epoch());
     cJSON_AddNumberToObject(system, "free_heap", (double)snapshot.memory.free_heap);
     cJSON_AddNumberToObject(system, "min_free_heap", (double)snapshot.memory.min_free_heap);
     cJSON_AddNumberToObject(system, "largest_free_block", (double)snapshot.memory.largest_free_block);
@@ -426,7 +430,7 @@ esp_err_t diagnostics_publish(void) {
     }
     
     // Добавляем timestamp
-    cJSON_AddNumberToObject(diagnostics, "ts", (double)(esp_timer_get_time() / 1000000));
+    cJSON_AddNumberToObject(diagnostics, "ts", (double)node_utils_get_timestamp_seconds());
     
     // Публикация через MQTT
     char *json_str = cJSON_PrintUnformatted(diagnostics);

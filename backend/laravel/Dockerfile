@@ -47,6 +47,8 @@ RUN if [ -f composer.json ] && [ -f artisan ]; then \
 
 # Build frontend assets for production
 # VITE_* variables are passed as build args and used during build
+# В dev режиме эти переменные НЕ устанавливаются, чтобы клиент использовал window.location (nginx прокси)
+# Используем значения по умолчанию для production, но они будут переопределены в docker-compose
 ARG VITE_REVERB_HOST=localhost
 ARG VITE_WS_HOST=localhost
 ARG VITE_REVERB_PORT=6001
@@ -57,10 +59,12 @@ ARG VITE_ENABLE_WS=true
 ARG VITE_REVERB_APP_KEY
 ARG VITE_PUSHER_APP_KEY
 
-ENV VITE_REVERB_HOST=${VITE_REVERB_HOST}
-ENV VITE_WS_HOST=${VITE_WS_HOST}
-ENV VITE_REVERB_PORT=${VITE_REVERB_PORT}
-ENV VITE_WS_PORT=${VITE_WS_PORT}
+# Устанавливаем переменные окружения только если они заданы (не пустые)
+# В dev режиме они не заданы, чтобы клиент использовал window.location (nginx прокси)
+ENV VITE_REVERB_HOST=${VITE_REVERB_HOST:-}
+ENV VITE_WS_HOST=${VITE_WS_HOST:-}
+ENV VITE_REVERB_PORT=${VITE_REVERB_PORT:-}
+ENV VITE_WS_PORT=${VITE_WS_PORT:-}
 ENV VITE_REVERB_SCHEME=${VITE_REVERB_SCHEME}
 ENV VITE_WS_TLS=${VITE_WS_TLS}
 ENV VITE_ENABLE_WS=${VITE_ENABLE_WS}
@@ -76,10 +80,10 @@ RUN if [ -f package.json ]; then \
 COPY supervisord.conf /etc/supervisor/supervisord.conf
 COPY reverb-supervisor.conf /opt/docker/etc/supervisor.d/reverb.conf
 COPY vite-supervisor.conf /opt/docker/etc/supervisor.d/vite.conf
-RUN mkdir -p /var/log/supervisor /var/run /opt/docker/etc/supervisor.d && \
-    chmod 755 /var/log/supervisor /var/run /opt/docker/etc/supervisor.d && \
-    chown -R application:application /var/log/supervisor /var/run 2>/dev/null || \
-    chmod -R 777 /var/log/supervisor /var/run || true
+RUN mkdir -p /var/log/supervisor /var/log/reverb /var/run /opt/docker/etc/supervisor.d && \
+    chmod 755 /var/log/supervisor /var/log/reverb /var/run /opt/docker/etc/supervisor.d && \
+    chown -R application:application /var/log/supervisor /var/log/reverb /var/run 2>/dev/null || \
+    chmod -R 777 /var/log/supervisor /var/log/reverb /var/run || true
 COPY start-reverb.sh /usr/local/bin/start-reverb.sh
 RUN chmod +x /usr/local/bin/start-reverb.sh
 

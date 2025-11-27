@@ -397,8 +397,20 @@ static esp_err_t ph_node_disable_actuators_in_safe_mode(void *user_ctx) {
 void ph_node_framework_register_mqtt_handlers(void) {
     // Регистрация обработчика конфигов
     mqtt_manager_register_config_cb(node_config_handler_process, NULL);
-
+    
     // Регистрация обработчика команд
     mqtt_manager_register_command_cb(ph_node_command_handler_wrapper, NULL);
+    
+    // Регистрация MQTT callbacks в node_config_handler для config_apply_mqtt
+    // Это позволяет автоматически переподключать MQTT при изменении конфига
+    node_config_handler_set_mqtt_callbacks(
+        node_config_handler_process,
+        ph_node_command_handler_wrapper,
+        NULL,  // connection_cb - можно добавить позже если нужно
+        NULL,
+        PH_NODE_DEFAULT_NODE_ID,
+        PH_NODE_DEFAULT_GH_UID,
+        PH_NODE_DEFAULT_ZONE_UID
+    );
 }
 

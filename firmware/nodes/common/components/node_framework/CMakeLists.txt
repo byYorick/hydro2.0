@@ -12,6 +12,7 @@ idf_component_register(
         mqtt_manager
         config_storage
         config_apply
+        node_utils
         json
         esp_timer
         freertos

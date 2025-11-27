@@ -12,6 +12,8 @@ class AlertCreated implements ShouldBroadcast
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
+    public string $queue = 'broadcasts';
+
     public array $alert;
 
     public function __construct(array $alert)
@@ -24,4 +26,3 @@ class AlertCreated implements ShouldBroadcast
         return new Channel('hydro.alerts');
     }
 }
-

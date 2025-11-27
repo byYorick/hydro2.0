@@ -20,9 +20,10 @@ describe('useKeyboardShortcuts (P3-1)', () => {
   })
 
   it('should register keyboard shortcut', async () => {
+    const { useKeyboardShortcuts } = await import('../useKeyboardShortcuts')
+    
     const TestComponent = defineComponent({
       setup() {
-        const { useKeyboardShortcuts } = require('../useKeyboardShortcuts')
         const { registerShortcut } = useKeyboardShortcuts()
         
         const handler = vi.fn()
@@ -49,9 +50,10 @@ describe('useKeyboardShortcuts (P3-1)', () => {
   })
 
   it('should handle Ctrl+Z shortcut for Zones', async () => {
+    const { useKeyboardShortcuts } = await import('../useKeyboardShortcuts')
+    
     const TestComponent = defineComponent({
       setup() {
-        const { useKeyboardShortcuts } = require('../useKeyboardShortcuts')
         useKeyboardShortcuts()
         return {}
       },
@@ -73,9 +75,10 @@ describe('useKeyboardShortcuts (P3-1)', () => {
   })
 
   it('should handle Ctrl+D shortcut for Dashboard', async () => {
+    const { useKeyboardShortcuts } = await import('../useKeyboardShortcuts')
+    
     const TestComponent = defineComponent({
       setup() {
-        const { useKeyboardShortcuts } = require('../useKeyboardShortcuts')
         useKeyboardShortcuts()
         return {}
       },
@@ -97,9 +100,10 @@ describe('useKeyboardShortcuts (P3-1)', () => {
   })
 
   it('should handle Shift+D shortcut for Devices', async () => {
+    const { useKeyboardShortcuts } = await import('../useKeyboardShortcuts')
+    
     const TestComponent = defineComponent({
       setup() {
-        const { useKeyboardShortcuts } = require('../useKeyboardShortcuts')
         useKeyboardShortcuts()
         return {}
       },
@@ -121,9 +125,10 @@ describe('useKeyboardShortcuts (P3-1)', () => {
   })
 
   it('should ignore shortcuts when focus is in input', async () => {
+    const { useKeyboardShortcuts } = await import('../useKeyboardShortcuts')
+    
     const TestComponent = defineComponent({
       setup() {
-        const { useKeyboardShortcuts } = require('../useKeyboardShortcuts')
         const { registerShortcut } = useKeyboardShortcuts()
         
         const handler = vi.fn()
@@ -177,9 +182,10 @@ describe('useKeyboardShortcuts (P3-1)', () => {
   })
 
   it('should unregister keyboard shortcut', async () => {
+    const { useKeyboardShortcuts } = await import('../useKeyboardShortcuts')
+    
     const TestComponent = defineComponent({
       setup() {
-        const { useKeyboardShortcuts } = require('../useKeyboardShortcuts')
         const { registerShortcut, unregisterShortcut } = useKeyboardShortcuts()
         
         const handler = vi.fn()

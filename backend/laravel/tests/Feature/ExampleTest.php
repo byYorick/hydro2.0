@@ -18,7 +18,7 @@ class ExampleTest extends TestCase
         $user = User::factory()->create();
         $response = $this->actingAs($user)->get('/');
 
-        // Dashboard требует аутентификацию, поэтому может быть редирект или 200
-        $response->assertStatus([200, 302]);
+        // После аутентификации ожидаем успешный рендер дашборда
+        $response->assertOk();
     }
 }

@@ -174,7 +174,7 @@
   </AppLayout>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, reactive, ref, onMounted } from 'vue'
 import { Teleport } from 'vue'
 import { usePage, router } from '@inertiajs/vue3'

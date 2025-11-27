@@ -13,6 +13,8 @@ class NodeConfigUpdated implements ShouldBroadcast
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
+    public string $queue = 'broadcasts';
+
     /**
      * Create a new event instance.
      */

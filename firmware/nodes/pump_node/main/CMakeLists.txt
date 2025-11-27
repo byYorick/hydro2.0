@@ -15,6 +15,7 @@ idf_component_register(
         config_apply
         setup_portal
         node_framework
+        node_utils
         ina209
         esp_wifi
         nvs_flash

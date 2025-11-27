@@ -115,9 +115,8 @@ static esp_err_t handle_run_pump(const char *channel, const cJSON *params, cJSON
 esp_err_t pump_node_publish_telemetry_callback(void *user_ctx) {
     (void)user_ctx;
     
-    if (!mqtt_manager_is_connected()) {
-        return ESP_ERR_INVALID_STATE;
-    }
+    // Убрана проверка mqtt_manager_is_connected - батч телеметрии работает даже при оффлайне
+    // Данные будут сохранены в батч и отправлены после восстановления связи
     
     // Чтение тока из INA209
     ina209_reading_t reading;
@@ -125,14 +124,19 @@ esp_err_t pump_node_publish_telemetry_callback(void *user_ctx) {
     
     if (err == ESP_OK && reading.valid) {
         // Публикация телеметрии тока насоса
-        node_telemetry_publish_sensor("pump_bus_current", METRIC_TYPE_CURRENT, reading.bus_current_ma, "mA", 
+        // Используем батч телеметрии, который работает даже при оффлайне
+        // unit передается корректно, raw поддерживает отрицательные значения
+        // stable=true, так как reading.valid=true означает валидное значение
+        node_telemetry_publish_sensor("pump_bus_current", METRIC_TYPE_CURRENT, 
+                                      reading.bus_current_ma, "mA", 
                                       (int32_t)reading.bus_current_ma, false, true);
         
         // Дополнительные поля можно добавить через расширенный API, если нужно
         // Пока публикуем только основное значение
     } else {
         ESP_LOGW(TAG, "Failed to read INA209: %s", esp_err_to_name(err));
-        return err;
+        // Не возвращаем ошибку - продолжаем работу даже при ошибке чтения INA209
+        // Это позволяет не терять другие данные телеметрии
     }
     
     return ESP_OK;

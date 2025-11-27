@@ -1,23 +1,25 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\AuthController;
-use App\Http\Controllers\GreenhouseController;
-use App\Http\Controllers\ZoneController;
-use App\Http\Controllers\NodeController;
-use App\Http\Controllers\TelemetryController;
-use App\Http\Controllers\RecipeController;
-use App\Http\Controllers\RecipePhaseController;
-use App\Http\Controllers\PresetController;
-use App\Http\Controllers\ReportController;
-use App\Http\Controllers\ZoneCommandController;
-use App\Http\Controllers\NodeCommandController;
-use App\Http\Controllers\SystemController;
+use App\Http\Controllers\AiController;
 use App\Http\Controllers\AlertController;
 use App\Http\Controllers\AlertStreamController;
+use App\Http\Controllers\AuthController;
+use App\Http\Controllers\GreenhouseController;
+use App\Http\Controllers\NodeCommandController;
+use App\Http\Controllers\NodeController;
+use App\Http\Controllers\PresetController;
 use App\Http\Controllers\PythonIngestController;
-use App\Http\Controllers\AiController;
+use App\Http\Controllers\RecipeController;
+use App\Http\Controllers\RecipePhaseController;
+use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SimulationController;
+use App\Http\Controllers\SystemController;
+use App\Http\Controllers\TelemetryController;
+use App\Http\Controllers\ZoneCommandController;
+use App\Http\Controllers\ZoneController;
+use App\Http\Controllers\ZonePidConfigController;
+use App\Http\Controllers\ZonePidLogController;
+use Illuminate\Support\Facades\Route;
 
 // Auth роуты с более строгим rate limiting для предотвращения брутфорса
 Route::prefix('auth')->middleware('throttle:10,1')->group(function () {
@@ -43,6 +45,7 @@ Route::middleware('throttle:30,1')->group(function () {
 Route::middleware([
     \Illuminate\Cookie\Middleware\EncryptCookies::class,
     \Illuminate\Session\Middleware\StartSession::class,
+    \App\Http\Middleware\AuthenticateWithApiToken::class,
     'auth',
     'throttle:60,1', // Явно указываем rate limiting для этой группы
 ])->group(function () {
@@ -81,9 +84,16 @@ Route::middleware([
     Route::post('zones/{zone}/fill', [ZoneController::class, 'fill']);
     Route::post('zones/{zone}/drain', [ZoneController::class, 'drain']);
     Route::post('zones/{zone}/calibrate-flow', [ZoneController::class, 'calibrateFlow']);
-    
+
     // Digital Twin simulation
     Route::post('zones/{zone}/simulate', [SimulationController::class, 'simulateZone']);
+
+    // PID Config
+    Route::get('zones/{zone}/pid-configs', [ZonePidConfigController::class, 'index']);
+    Route::get('zones/{zone}/pid-configs/{type}', [ZonePidConfigController::class, 'show']);
+    Route::put('zones/{zone}/pid-configs/{type}', [ZonePidConfigController::class, 'update'])
+        ->middleware('throttle:10,1'); // rate limit: 10 запросов в минуту
+    Route::get('zones/{zone}/pid-logs', [ZonePidLogController::class, 'index']);
 
     // Commands
     Route::post('zones/{zone}/commands', [ZoneCommandController::class, 'store']);
@@ -91,11 +101,11 @@ Route::middleware([
     Route::get('nodes/{node}/config', [NodeController::class, 'getConfig']);
     Route::post('nodes/{node}/config/publish', [NodeController::class, 'publishConfig']);
     Route::post('nodes/{node}/swap', [NodeController::class, 'swap']);
-    
+
     // Node lifecycle transitions
     Route::post('nodes/{node}/lifecycle/transition', [NodeController::class, 'transitionLifecycle']);
     Route::get('nodes/{node}/lifecycle/allowed-transitions', [NodeController::class, 'getAllowedTransitions']);
-    
+
     Route::get('commands/{cmdId}/status', [\App\Http\Controllers\CommandStatusController::class, 'show']);
 
     // Alerts
@@ -133,9 +143,7 @@ Route::prefix('python')->middleware('throttle:120,1')->group(function () {
 // Node registration (token-based or public) - умеренный лимит
 Route::middleware('throttle:20,1')->group(function () {
     Route::post('nodes/register', [NodeController::class, 'register']);
-    
+
     // Alertmanager webhook (публичный, но можно добавить токен)
     Route::post('alerts/webhook', [\App\Http\Controllers\Api\AlertWebhookController::class, 'webhook']);
 });
-
-

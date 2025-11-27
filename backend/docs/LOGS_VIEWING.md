@@ -115,3 +115,7 @@ docker exec backend-laravel-1 truncate -s 0 /app/storage/logs/laravel.log
 
 _Обновлено: 2024-11-24_
 
+
+
+
+
