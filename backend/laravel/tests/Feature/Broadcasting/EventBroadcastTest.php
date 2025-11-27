@@ -54,7 +54,7 @@ class EventBroadcastTest extends TestCase
 
         $event = new AlertCreated($payload);
 
-        $this->assertSame('hydro.alerts', $event->broadcastOn()->name);
+        $this->assertSame('private-hydro.alerts', $event->broadcastOn()->name);
         $this->assertSame($payload, $event->alert);
     }
 
@@ -65,7 +65,7 @@ class EventBroadcastTest extends TestCase
 
         $event = new NodeConfigUpdated($node);
 
-        $this->assertSame('hydro.devices', $event->broadcastOn()->name);
+        $this->assertSame('private-hydro.devices', $event->broadcastOn()->name);
         $this->assertSame('device.updated', $event->broadcastAs());
 
         $payload = $event->broadcastWith();
@@ -165,7 +165,7 @@ class EventBroadcastTest extends TestCase
             message: 'Событие создано',
         );
 
-        $this->assertSame('events.global', $event->broadcastOn()->name);
+        $this->assertSame('private-events.global', $event->broadcastOn()->name);
         $this->assertSame('EventCreated', $event->broadcastAs());
 
         $payload = $event->broadcastWith();

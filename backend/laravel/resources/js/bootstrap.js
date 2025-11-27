@@ -135,10 +135,28 @@ export function subscribeZone(zoneId, handler) {
 }
 
 export function subscribeAlerts(handler) {
-  if (!window.Echo) return
-  window.Echo.channel('hydro.alerts').listen('.App\\Events\\AlertCreated', (e) => {
-    handler?.(e)
-  })
+  if (!window.Echo) {
+    logger.warn('[bootstrap.js] Echo not available, skip subscribeAlerts', {})
+    return () => {}
+  }
+
+  const channelName = 'hydro.alerts'
+  const eventName = '.App\\Events\\AlertCreated'
+  const channel = window.Echo.private(channelName)
+  const listener = (event) => handler?.(event)
+
+  channel.listen(eventName, listener)
+
+  return () => {
+    try {
+      channel.stopListening(eventName)
+      if (typeof window.Echo?.leave === 'function') {
+        window.Echo.leave(channelName)
+      }
+    } catch (error) {
+      logger.warn('[bootstrap.js] subscribeAlerts cleanup failed', { error })
+    }
+  }
 }
 
 // ИСПРАВЛЕНО: Обработка глобальных ошибок без перезагрузки страницы

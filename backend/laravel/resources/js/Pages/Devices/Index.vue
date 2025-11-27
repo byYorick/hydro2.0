@@ -125,6 +125,7 @@ const headers = ['UID', 'Зона', 'Имя', 'Тип', 'Статус', 'Вер�
 const page = usePage<{ devices?: Device[] }>()
 const devicesStore = useDevicesStore()
 const { subscribeWithCleanup } = useStoreEvents()
+let cleanupDevicesChannel: (() => void) | null = null
 
 onMounted(() => {
   devicesStore.initFromProps(page.props)
@@ -156,11 +157,13 @@ onMounted(() => {
   // Подписка на WebSocket события обновления устройств
   if (window.Echo) {
     try {
-      const channel = window.Echo.channel('hydro.devices')
+      const channelName = 'hydro.devices'
+      const eventName = '.device.updated'
+      const channel = window.Echo.private(channelName)
       
       // Слушаем события обновления устройств
       // Используем broadcastAs имя 'device.updated'
-      channel.listen('.device.updated', (event: any) => {
+      channel.listen(eventName, (event: any) => {
         logger.debug('[Devices/Index] Received device update via WebSocket', event)
         
         if (event.device) {
@@ -175,21 +178,30 @@ onMounted(() => {
         }
       })
       
+      cleanupDevicesChannel = () => {
+        try {
+          channel.stopListening(eventName)
+          if (typeof window.Echo?.leave === 'function') {
+            window.Echo.leave(channelName)
+          }
+        } catch (error) {
+          logger.warn('[Devices/Index] Failed to cleanup device channel', { error })
+        }
+      }
+      
       logger.debug('[Devices/Index] Subscribed to hydro.devices WebSocket channel')
       
-      // Очистка при размонтировании
-      onUnmounted(() => {
-        channel.stopListening('.device.updated')
-        if (typeof channel.leave === 'function') {
-          channel.leave()
-        }
-      })
     } catch (err) {
       logger.error('[Devices/Index] Failed to subscribe to devices WebSocket:', err)
     }
   } else {
     logger.warn('[Devices/Index] Echo not available, skipping WebSocket subscription')
   }
+})
+
+onUnmounted(() => {
+  cleanupDevicesChannel?.()
+  cleanupDevicesChannel = null
 })
 const type = ref<string>('')
 const query = ref<string>('')

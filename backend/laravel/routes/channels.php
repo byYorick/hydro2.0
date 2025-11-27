@@ -45,8 +45,19 @@ Broadcast::channel('commands.global', function ($user) {
     return $authorized; // viewer+ могут слушать статусы команд
 });
 
-// Канал для глобальных событий (публичный)
-Broadcast::channel('events.global', fn () => true);
+// Канал для глобальных событий (приватный)
+Broadcast::channel('events.global', function ($user) {
+    $authorized = $user !== null;
+    if (! $authorized) {
+        Log::info('WebSocket channel authorization denied', [
+            'channel' => 'events.global',
+            'user_id' => $user?->id,
+            'origin' => request()->header('Origin'),
+        ]);
+    }
+
+    return $authorized;
+});
 
 // Канал для обновлений устройств (публичный, но требует авторизации)
 Broadcast::channel('hydro.devices', function ($user) {

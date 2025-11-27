@@ -62,7 +62,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, onMounted } from 'vue'
+import { computed, reactive, ref, onMounted, onUnmounted } from 'vue'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Button from '@/Components/Button.vue'
 import Modal from '@/Components/Modal.vue'
@@ -113,12 +113,19 @@ const doResolve = (): void => {
 }
 
 // subscribe realtime
+let unsubscribeAlerts: (() => void) | null = null
+
 onMounted(() => {
-  subscribeAlerts((e) => {
+  unsubscribeAlerts = subscribeAlerts((e) => {
     if (e?.alert) {
       router.reload({ only: ['alerts'] })
     }
   })
+})
+
+onUnmounted(() => {
+  unsubscribeAlerts?.()
+  unsubscribeAlerts = null
 })
 
 // Виртуализация через RecycleScroller

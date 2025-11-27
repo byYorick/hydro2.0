@@ -4,13 +4,32 @@ import { useWebSocket } from '../useWebSocket'
 describe('useWebSocket', () => {
   let mockEcho: any
   let mockShowToast: vi.Mock
+  let mockZoneChannel: any
+  let mockGlobalChannel: any
 
   beforeEach(() => {
     mockShowToast = vi.fn()
     
     // Mock window.Echo
+    mockZoneChannel = {
+      listen: vi.fn(),
+      stopListening: vi.fn(),
+      leave: vi.fn()
+    }
+
+    mockGlobalChannel = {
+      listen: vi.fn(),
+      stopListening: vi.fn(),
+      leave: vi.fn()
+    }
+
     mockEcho = {
-      private: vi.fn(),
+      private: vi.fn((channelName: string) => {
+        if (channelName === 'events.global') {
+          return mockGlobalChannel
+        }
+        return mockZoneChannel
+      }),
       channel: vi.fn()
     }
     
@@ -27,19 +46,12 @@ describe('useWebSocket', () => {
   })
 
   it('should return unsubscribe function when Echo is available', () => {
-    const mockChannel = {
-      listen: vi.fn(),
-      stopListening: vi.fn(),
-      leave: vi.fn()
-    }
-    mockEcho.private.mockReturnValue(mockChannel)
-
     const { subscribeToZoneCommands } = useWebSocket(mockShowToast)
     const unsubscribe = subscribeToZoneCommands(1, vi.fn())
 
     expect(typeof unsubscribe).toBe('function')
     expect(mockEcho.private).toHaveBeenCalledWith('commands.1')
-    expect(mockChannel.listen).toHaveBeenCalled()
+    expect(mockZoneChannel.listen).toHaveBeenCalled()
   })
 
   it('should handle missing Echo gracefully', () => {
@@ -54,38 +66,24 @@ describe('useWebSocket', () => {
   })
 
   it('should subscribe to zone commands channel', () => {
-    const mockChannel = {
-      listen: vi.fn(),
-      stopListening: vi.fn(),
-      leave: vi.fn()
-    }
-    mockEcho.private.mockReturnValue(mockChannel)
-
     const onCommandUpdate = vi.fn()
     const { subscribeToZoneCommands } = useWebSocket()
     
     subscribeToZoneCommands(1, onCommandUpdate)
 
     expect(mockEcho.private).toHaveBeenCalledWith('commands.1')
-    expect(mockChannel.listen).toHaveBeenCalledWith('.App\\Events\\CommandStatusUpdated', expect.any(Function))
-    expect(mockChannel.listen).toHaveBeenCalledWith('.App\\Events\\CommandFailed', expect.any(Function))
+    expect(mockZoneChannel.listen).toHaveBeenCalledWith('.App\\Events\\CommandStatusUpdated', expect.any(Function))
+    expect(mockZoneChannel.listen).toHaveBeenCalledWith('.App\\Events\\CommandFailed', expect.any(Function))
   })
 
   it('should call onCommandUpdate when command status is updated', () => {
-    const mockChannel = {
-      listen: vi.fn(),
-      stopListening: vi.fn(),
-      leave: vi.fn()
-    }
-    mockEcho.private.mockReturnValue(mockChannel)
-
     const onCommandUpdate = vi.fn()
     const { subscribeToZoneCommands } = useWebSocket()
     
     subscribeToZoneCommands(1, onCommandUpdate)
 
     // Get the listener function
-    const statusListener = mockChannel.listen.mock.calls.find(
+    const statusListener = mockZoneChannel.listen.mock.calls.find(
       call => call[0] === '.App\\Events\\CommandStatusUpdated'
     )?.[1]
 
@@ -110,20 +108,13 @@ describe('useWebSocket', () => {
   })
 
   it('should show toast on command failure', () => {
-    const mockChannel = {
-      listen: vi.fn(),
-      stopListening: vi.fn(),
-      leave: vi.fn()
-    }
-    mockEcho.private.mockReturnValue(mockChannel)
-
     const onCommandUpdate = vi.fn()
     const { subscribeToZoneCommands } = useWebSocket(mockShowToast)
     
     subscribeToZoneCommands(1, onCommandUpdate)
 
     // Get the failure listener
-    const failureListener = mockChannel.listen.mock.calls.find(
+    const failureListener = mockZoneChannel.listen.mock.calls.find(
       call => call[0] === '.App\\Events\\CommandFailed'
     )?.[1]
 
@@ -143,55 +134,34 @@ describe('useWebSocket', () => {
   })
 
   it('should unsubscribe from zone commands', () => {
-    const mockChannel = {
-      listen: vi.fn(),
-      stopListening: vi.fn(),
-      leave: vi.fn()
-    }
-    mockEcho.private.mockReturnValue(mockChannel)
-
     const { subscribeToZoneCommands } = useWebSocket()
     const unsubscribe = subscribeToZoneCommands(1, vi.fn())
 
     unsubscribe()
 
-    expect(mockChannel.stopListening).toHaveBeenCalledWith('.App\\Events\\CommandStatusUpdated')
-    expect(mockChannel.stopListening).toHaveBeenCalledWith('.App\\Events\\CommandFailed')
-    expect(mockChannel.leave).toHaveBeenCalled()
+    expect(mockZoneChannel.stopListening).toHaveBeenCalledWith('.App\\Events\\CommandStatusUpdated')
+    expect(mockZoneChannel.stopListening).toHaveBeenCalledWith('.App\\Events\\CommandFailed')
+    expect(mockZoneChannel.leave).toHaveBeenCalled()
   })
 
   it('should subscribe to global events channel', () => {
-    const mockChannel = {
-      listen: vi.fn(),
-      stopListening: vi.fn(),
-      leave: vi.fn()
-    }
-    mockEcho.channel.mockReturnValue(mockChannel)
-
     const onEvent = vi.fn()
     const { subscribeToGlobalEvents } = useWebSocket()
     
     subscribeToGlobalEvents(onEvent)
 
-    expect(mockEcho.channel).toHaveBeenCalledWith('events.global')
-    expect(mockChannel.listen).toHaveBeenCalledWith('.App\\Events\\EventCreated', expect.any(Function))
+    expect(mockEcho.private).toHaveBeenCalledWith('events.global')
+    expect(mockGlobalChannel.listen).toHaveBeenCalledWith('.App\\Events\\EventCreated', expect.any(Function))
   })
 
   it('should call onEvent when global event occurs', () => {
-    const mockChannel = {
-      listen: vi.fn(),
-      stopListening: vi.fn(),
-      leave: vi.fn()
-    }
-    mockEcho.channel.mockReturnValue(mockChannel)
-
     const onEvent = vi.fn()
     const { subscribeToGlobalEvents } = useWebSocket()
     
     subscribeToGlobalEvents(onEvent)
 
     // Get the listener function
-    const eventListener = mockChannel.listen.mock.calls[0]?.[1]
+    const eventListener = mockGlobalChannel.listen.mock.calls[0]?.[1]
 
     expect(eventListener).toBeDefined()
 
@@ -215,36 +185,16 @@ describe('useWebSocket', () => {
   })
 
   it('should unsubscribe from global events', () => {
-    const mockChannel = {
-      listen: vi.fn(),
-      stopListening: vi.fn(),
-      leave: vi.fn()
-    }
-    mockEcho.channel.mockReturnValue(mockChannel)
-
     const { subscribeToGlobalEvents } = useWebSocket()
     const unsubscribe = subscribeToGlobalEvents(vi.fn())
 
     unsubscribe()
 
-    expect(mockChannel.stopListening).toHaveBeenCalledWith('.App\\Events\\EventCreated')
-    expect(mockChannel.leave).toHaveBeenCalled()
+    expect(mockGlobalChannel.stopListening).toHaveBeenCalledWith('.App\\Events\\EventCreated')
+    expect(mockGlobalChannel.leave).toHaveBeenCalled()
   })
 
   it('should handle unsubscribeAll', () => {
-    const mockChannel1 = {
-      listen: vi.fn(),
-      stopListening: vi.fn(),
-      leave: vi.fn()
-    }
-    const mockChannel2 = {
-      listen: vi.fn(),
-      stopListening: vi.fn(),
-      leave: vi.fn()
-    }
-    mockEcho.private.mockReturnValue(mockChannel1)
-    mockEcho.channel.mockReturnValue(mockChannel2)
-
     const { subscribeToZoneCommands, subscribeToGlobalEvents, unsubscribeAll } = useWebSocket()
     
     subscribeToZoneCommands(1, vi.fn())
@@ -252,8 +202,8 @@ describe('useWebSocket', () => {
     
     unsubscribeAll()
 
-    expect(mockChannel1.leave).toHaveBeenCalled()
-    expect(mockChannel2.leave).toHaveBeenCalled()
+    expect(mockZoneChannel.leave).toHaveBeenCalled()
+    expect(mockGlobalChannel.leave).toHaveBeenCalled()
   })
 })
 

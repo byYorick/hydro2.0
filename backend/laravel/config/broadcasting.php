@@ -1,9 +1,9 @@
 <?php
 
-$defaultConnection = env('BROADCAST_CONNECTION', 'null');
+$defaultConnection = env('BROADCAST_CONNECTION', env('BROADCAST_DRIVER', 'null'));
 
 if (env('APP_ENV') === 'testing') {
-    $defaultConnection = env('BROADCAST_CONNECTION_TESTING', 'log');
+    $defaultConnection = env('BROADCAST_CONNECTION_TESTING', env('BROADCAST_DRIVER_TESTING', 'log'));
 }
 
 $clientOptions = [];
