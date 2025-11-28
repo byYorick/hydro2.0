@@ -1064,22 +1064,23 @@ static void render_normal_screen(void) {
             case OLED_UI_NODE_TYPE_LIGHTING: {
                 char line[22];
                 // Строка 2: Освещенность - показываем прочерки при ошибках (как в ph_node)
-                // Используем поле co2 для хранения освещенности (временно)
-                if (!isnan(s_ui.model.co2) && isfinite(s_ui.model.co2) && s_ui.model.co2 >= 0.0f) {
-                    snprintf(line, sizeof(line), "Light: %.0f lux", s_ui.model.co2);
+                if (!isnan(s_ui.model.lux_value) && isfinite(s_ui.model.lux_value) && s_ui.model.lux_value >= 0.0f) {
+                    snprintf(line, sizeof(line), "Lux: %.0f", s_ui.model.lux_value);
                 } else {
                     // Показываем прочерки при ошибках или невалидных значениях
-                    strncpy(line, "Light: -- lux", sizeof(line) - 1);
+                    strncpy(line, "Lux: --", sizeof(line) - 1);
                     line[sizeof(line) - 1] = '\0';
                 }
                 frame_buffer_draw_line(2, line);
                 
                 // Строка 3: Статус I2C или ошибка
                 if (s_ui.model.sensor_status.i2c_connected) {
-                    if (s_ui.model.sensor_status.has_error) {
+                    if (s_ui.model.sensor_status.has_error && s_ui.model.sensor_status.error_msg[0] != '\0') {
+                        // Показываем сообщение об ошибке, если есть
                         strncpy(line, s_ui.model.sensor_status.error_msg, sizeof(line) - 1);
                         line[sizeof(line) - 1] = '\0';
                     } else {
+                        // Датчик подключен и работает
                         strncpy(line, "I2C: OK", sizeof(line) - 1);
                         line[sizeof(line) - 1] = '\0';
                     }
@@ -1435,6 +1436,12 @@ esp_err_t oled_ui_update_model(const oled_ui_model_t *model) {
     if (!isnan(model->co2) && isfinite(model->co2)) {
         s_ui.model.co2 = model->co2;
     }
+    if (!isnan(model->lux_value) && isfinite(model->lux_value)) {
+        s_ui.model.lux_value = model->lux_value;
+    }
+    
+    // Статус датчиков - всегда обновляем
+    s_ui.model.sensor_status = model->sensor_status;
     
     // Статус узла - всегда обновляем
     s_ui.model.alert = model->alert;

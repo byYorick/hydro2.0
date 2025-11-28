@@ -23,14 +23,12 @@ extern "C" {
 // Default I2C address for the light sensor
 #define TREMA_LIGHT_ADDR 0x21
 
-// Register addresses
-#define REG_LIGHT_LUX      0x1D  // Освещенность (2 bytes, люкс)
-#define REG_LIGHT_ERROR    0x1F  // Error flags
+// Register addresses (iarduino DSL protocol)
 #define REG_MODEL          0x04  // Model ID register
+#define REG_DSL_LUX_L      0x11  // Lux value (low byte) - 2 bytes starting here
 
-// Expected model ID for Trema light sensor
-// Примечание: некоторые датчики возвращают 0x06 вместо 0x1B
-#define TREMA_LIGHT_MODEL_ID 0x06
+// Expected model ID for Trema light sensor (iarduino DSL)
+#define TREMA_LIGHT_MODEL_ID 0x06  // DEF_MODEL_DSL
 
 /**
  * @brief Initialize the Trema light sensor

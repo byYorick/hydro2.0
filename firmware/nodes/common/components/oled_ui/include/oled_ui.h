@@ -72,6 +72,7 @@ typedef struct {
     float temperature_water;  // Для pH/EC узлов
     float humidity;           // Для climate узла
     float co2;                // Для climate узла (опционально)
+    float lux_value;          // Для light узла (освещенность в люксах)
     
     // Статус датчиков (для pH/EC узлов)
     struct {
