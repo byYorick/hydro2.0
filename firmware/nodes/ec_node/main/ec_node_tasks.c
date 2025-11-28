@@ -9,18 +9,20 @@
 
 #include "ec_node_app.h"
 #include "ec_node_framework_integration.h"
-#include "node_telemetry_engine.h"
 #include "node_watchdog.h"
 #include "mqtt_manager.h"
-#include "mqtt_client.h"  // Для обратной совместимости
+#include "oled_ui.h"
+#include "trema_ec.h"
+#include "connection_status.h"
+#include "i2c_bus.h"
 #include "esp_log.h"
 #include "esp_timer.h"
-#include "esp_system.h"
 #include "esp_wifi.h"
-#include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "cJSON.h"
 #include <string.h>
-#include <stdlib.h>
+#include <math.h>
+#include <stdbool.h>
 
 static const char *TAG = "ec_node_tasks";
 
@@ -43,21 +45,146 @@ static void task_sensors(void *pvParameters) {
     TickType_t last_wake_time = xTaskGetTickCount();
     const TickType_t interval = pdMS_TO_TICKS(SENSOR_POLL_INTERVAL_MS);
     
+    // Интервал для периодического сброса watchdog (каждые 2 секунды)
+    const TickType_t wdt_reset_interval = pdMS_TO_TICKS(2000);
+    TickType_t last_wdt_reset = xTaskGetTickCount();
+    
     while (1) {
-        vTaskDelayUntil(&last_wake_time, interval);
+        TickType_t current_time = xTaskGetTickCount();
+        TickType_t elapsed_since_wdt = current_time - last_wdt_reset;
         
-        // Сбрасываем watchdog
-        node_watchdog_reset();
-        
-        if (!mqtt_manager_is_connected()) {
-            ESP_LOGW(TAG, "MQTT not connected, skipping sensor poll");
-            continue;
+        // Периодически сбрасываем watchdog во время ожидания
+        if (elapsed_since_wdt >= wdt_reset_interval) {
+            node_watchdog_reset();
+            last_wdt_reset = current_time;
         }
         
-        // Публикация телеметрии EC через node_framework
-        // Используем callback из ec_node_framework_integration
-        extern esp_err_t ec_node_publish_telemetry_callback(void *);
-        ec_node_publish_telemetry_callback(NULL);
+        // Проверяем, наступило ли время для опроса сенсора
+        TickType_t elapsed_since_wake = current_time - last_wake_time;
+        if (elapsed_since_wake >= interval) {
+            // Сбрасываем watchdog перед выполнением работы
+            node_watchdog_reset();
+            
+            // Publish EC telemetry только если MQTT подключен
+            if (mqtt_manager_is_connected()) {
+                // Публикация телеметрии EC через node_framework
+                // Используем callback из ec_node_framework_integration
+                extern esp_err_t ec_node_publish_telemetry_callback(void *);
+                ec_node_publish_telemetry_callback(NULL);
+            } else {
+                ESP_LOGW(TAG, "MQTT not connected, skipping sensor poll");
+            }
+            
+            // Update OLED UI with current EC values (EC-специфичная логика)
+            // Обновляем OLED независимо от MQTT подключения
+            if (ec_node_is_oled_initialized()) {
+                // Получение статуса соединений через общий компонент
+                connection_status_t conn_status;
+                if (connection_status_get(&conn_status) == ESP_OK) {
+                    // Обновление модели OLED UI - обновляем только изменяемые поля
+                    oled_ui_model_t model = {0};
+                    // Инициализируем неиспользуемые поля как NaN, чтобы они не обновлялись
+                    model.ph_value = NAN;
+                    model.ec_value = NAN;
+                    model.temperature_air = NAN;
+                    model.temperature_water = NAN;
+                    model.humidity = NAN;
+                    model.co2 = NAN;
+                    
+                    // Обновляем соединения
+                    model.connections.wifi_connected = conn_status.wifi_connected;
+                    model.connections.mqtt_connected = conn_status.mqtt_connected;
+                    model.connections.wifi_rssi = conn_status.wifi_rssi;
+                    
+                    // Get current EC value and sensor status (EC-специфичная логика)
+                    // trema_ec использует дефолтную шину (I2C_BUS_0)
+                    bool sensor_initialized = ec_node_is_ec_sensor_initialized();
+                    bool i2c_bus_ok = i2c_bus_is_initialized_bus(I2C_BUS_0);
+                    
+                    // Инициализируем статус датчика
+                    model.sensor_status.i2c_connected = false;
+                    model.sensor_status.using_stub = false;
+                    model.sensor_status.has_error = false;
+                    model.sensor_status.error_msg[0] = '\0';
+                    // Инициализируем EC как NaN, чтобы не показывать 0.00
+                    model.ec_value = NAN;
+                    
+                    if (i2c_bus_ok) {
+                        // Проверяем подключение I2C - пытаемся прочитать model ID
+                        uint8_t reg_model = 0x04;  // REG_MODEL для Trema EC
+                        uint8_t model_id = 0;
+                        esp_err_t i2c_err = i2c_bus_read_bus(I2C_BUS_0, 0x08, &reg_model, 1, &model_id, 1, 200);  // TREMA_EC_ADDR = 0x08
+                        
+                        if (i2c_err == ESP_OK && model_id == 0x19) {  // EC sensor model ID = 0x19
+                            model.sensor_status.i2c_connected = true;
+                            
+                            // Если датчик подключен, пытаемся прочитать значение
+                            if (sensor_initialized) {
+                                float ec_value = 0.0f;
+                                bool read_success = trema_ec_read(&ec_value);
+                                bool using_stub = trema_ec_is_using_stub_values();
+                                
+                                // Проверяем валидность значения: EC должен быть в диапазоне 0-20 mS/cm
+                                if (read_success && !isnan(ec_value) && isfinite(ec_value) && 
+                                    ec_value >= 0.0f && ec_value <= 20.0f && ec_value != 0.0f) {
+                                    model.ec_value = ec_value;
+                                    model.sensor_status.using_stub = using_stub;
+                                    if (using_stub) {
+                                        model.sensor_status.has_error = true;
+                                        model.ec_value = NAN;  // Не показываем stub значение
+                                        strncpy(model.sensor_status.error_msg, "No sensor", sizeof(model.sensor_status.error_msg) - 1);
+                                    }
+                                } else {
+                                    // Невалидное значение или ошибка чтения
+                                    model.sensor_status.has_error = true;
+                                    model.sensor_status.using_stub = true;
+                                    model.ec_value = NAN;  // Устанавливаем NaN, чтобы не показывать 0.00
+                                    strncpy(model.sensor_status.error_msg, "Read failed", sizeof(model.sensor_status.error_msg) - 1);
+                                }
+                            } else {
+                                // Датчик подключен, но не инициализирован
+                                model.sensor_status.has_error = true;
+                                model.ec_value = NAN;
+                                strncpy(model.sensor_status.error_msg, "Not init", sizeof(model.sensor_status.error_msg) - 1);
+                            }
+                        } else {
+                            // I2C ошибка - датчик не отвечает
+                            model.sensor_status.i2c_connected = false;
+                            model.sensor_status.has_error = true;
+                            model.sensor_status.using_stub = true;
+                            model.ec_value = NAN;  // Устанавливаем NaN
+                            if (i2c_err == ESP_ERR_INVALID_STATE || i2c_err == ESP_ERR_TIMEOUT) {
+                                strncpy(model.sensor_status.error_msg, "I2C NACK", sizeof(model.sensor_status.error_msg) - 1);
+                            } else if (i2c_err == ESP_ERR_NOT_FOUND) {
+                                strncpy(model.sensor_status.error_msg, "No device", sizeof(model.sensor_status.error_msg) - 1);
+                            } else {
+                                strncpy(model.sensor_status.error_msg, "I2C Error", sizeof(model.sensor_status.error_msg) - 1);
+                            }
+                        }
+                    } else {
+                        // I2C шина не инициализирована
+                        model.sensor_status.i2c_connected = false;
+                        model.sensor_status.has_error = true;
+                        model.sensor_status.using_stub = true;
+                        model.ec_value = NAN;  // Устанавливаем NaN
+                        strncpy(model.sensor_status.error_msg, "I2C bus down", sizeof(model.sensor_status.error_msg) - 1);
+                    }
+                    
+                    // Статус узла
+                    model.alert = false;
+                    model.paused = false;
+                    
+                    oled_ui_update_model(&model);
+                }
+            }
+            
+            // Сбрасываем watchdog после выполнения работы
+            node_watchdog_reset();
+            last_wake_time = current_time;
+        }
+        
+        // Небольшая задержка, чтобы не нагружать CPU
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
@@ -76,37 +203,55 @@ static void task_heartbeat(void *pvParameters) {
     TickType_t last_wake_time = xTaskGetTickCount();
     const TickType_t interval = pdMS_TO_TICKS(HEARTBEAT_INTERVAL_MS);
     
+    // Сбрасываем watchdog каждую секунду, чтобы иметь запас к системному таймауту
+    const TickType_t wdt_reset_interval = pdMS_TO_TICKS(1000);
+    TickType_t last_wdt_reset = xTaskGetTickCount();
+    
     while (1) {
-        vTaskDelayUntil(&last_wake_time, interval);
+        TickType_t current_time = xTaskGetTickCount();
+        TickType_t elapsed_since_wdt = current_time - last_wdt_reset;
         
-        // Сбрасываем watchdog
-        node_watchdog_reset();
-        
-        if (!mqtt_manager_is_connected()) {
-            continue;
+        if (elapsed_since_wdt >= wdt_reset_interval) {
+            node_watchdog_reset();
+            last_wdt_reset = current_time;
         }
         
-        // Получение RSSI
-        wifi_ap_record_t ap_info;
-        int8_t rssi = -100;
-        if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
-            rssi = ap_info.rssi;
-        }
-        
-        // Формат согласно MQTT_SPEC_FULL.md раздел 9.1
-        cJSON *heartbeat = cJSON_CreateObject();
-        if (heartbeat) {
-            cJSON_AddNumberToObject(heartbeat, "uptime", (double)(esp_timer_get_time() / 1000));
-            cJSON_AddNumberToObject(heartbeat, "free_heap", (double)esp_get_free_heap_size());
-            cJSON_AddNumberToObject(heartbeat, "rssi", rssi);
+        TickType_t elapsed_since_wake = current_time - last_wake_time;
+        if (elapsed_since_wake >= interval) {
+            node_watchdog_reset();
             
-            char *json_str = cJSON_PrintUnformatted(heartbeat);
-            if (json_str) {
-                mqtt_manager_publish_heartbeat(json_str);
-                free(json_str);
+            if (!mqtt_manager_is_connected()) {
+                last_wake_time = current_time;
+                vTaskDelay(pdMS_TO_TICKS(100));
+                continue;
             }
-            cJSON_Delete(heartbeat);
+            
+            // Получение RSSI
+            wifi_ap_record_t ap_info;
+            int8_t rssi = -100;
+            if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+                rssi = ap_info.rssi;
+            }
+            
+            // Формат согласно MQTT_SPEC_FULL.md раздел 9.1
+            cJSON *heartbeat = cJSON_CreateObject();
+            if (heartbeat) {
+                cJSON_AddNumberToObject(heartbeat, "uptime", (double)(esp_timer_get_time() / 1000.0));
+                cJSON_AddNumberToObject(heartbeat, "free_heap", (double)esp_get_free_heap_size());
+                cJSON_AddNumberToObject(heartbeat, "rssi", rssi);
+                
+                char *json_str = cJSON_PrintUnformatted(heartbeat);
+                if (json_str) {
+                    mqtt_manager_publish_heartbeat(json_str);
+                    free(json_str);
+                }
+                cJSON_Delete(heartbeat);
+            }
+            
+            last_wake_time = current_time;
         }
+        
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 

@@ -7,6 +7,8 @@
  */
 
 #include "pump_node_framework_integration.h"
+#include "pump_node_defaults.h"
+#include "pump_node_init.h"
 #include "node_framework.h"
 #include "node_state_manager.h"
 #include "node_config_handler.h"
@@ -156,6 +158,7 @@ static void pump_node_command_handler_wrapper(const char *topic, const char *cha
     node_command_handler_process(topic, channel, data, data_len, user_ctx);
 }
 
+
 /**
  * @brief Инициализация интеграции pump_node с node_framework
  */
@@ -165,7 +168,11 @@ esp_err_t pump_node_framework_init_integration(void) {
     // Конфигурация node_framework
     node_framework_config_t config = {
         .node_type = "pump",
+        .default_node_id = PUMP_NODE_DEFAULT_NODE_ID,
+        .default_gh_uid = PUMP_NODE_DEFAULT_GH_UID,
+        .default_zone_uid = PUMP_NODE_DEFAULT_ZONE_UID,
         .channel_init_cb = pump_node_init_channel_callback,
+        .command_handler_cb = NULL,  // Регистрация через API
         .telemetry_cb = pump_node_publish_telemetry_callback,
         .user_ctx = NULL
     };
@@ -204,8 +211,24 @@ static esp_err_t pump_node_disable_actuators_in_safe_mode(void *user_ctx) {
  * @brief Регистрация MQTT обработчиков через node_framework
  */
 void pump_node_framework_register_mqtt_handlers(void) {
+    // Регистрация обработчика конфигов
     mqtt_manager_register_config_cb(pump_node_config_handler_wrapper, NULL);
+    
+    // Регистрация обработчика команд
     mqtt_manager_register_command_cb(pump_node_command_handler_wrapper, NULL);
+    
+    // Регистрация MQTT callbacks в node_config_handler для config_apply_mqtt
+    // Это позволяет автоматически переподключать MQTT при изменении конфига
+    node_config_handler_set_mqtt_callbacks(
+        pump_node_config_handler_wrapper,
+        pump_node_command_handler_wrapper,
+        pump_node_mqtt_connection_cb,  // connection_cb
+        NULL,
+        PUMP_NODE_DEFAULT_NODE_ID,
+        PUMP_NODE_DEFAULT_GH_UID,
+        PUMP_NODE_DEFAULT_ZONE_UID
+    );
+    
     ESP_LOGI(TAG, "MQTT handlers registered via node_framework");
 }
 

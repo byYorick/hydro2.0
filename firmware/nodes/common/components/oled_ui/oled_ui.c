@@ -1032,33 +1032,62 @@ static void render_normal_screen(void) {
             }
             case OLED_UI_NODE_TYPE_CLIMATE: {
                 char line[22];
-                // Строка 2: Температура и влажность
-                if (!isnan(s_ui.model.temperature_air) && !isnan(s_ui.model.humidity)) {
-                    snprintf(line, sizeof(line), "T: %.1fC H: %.0f%%", 
+                // Строка 2: Температура и влажность - показываем прочерки при ошибках (как в ph_node)
+                if (!isnan(s_ui.model.temperature_air) && isfinite(s_ui.model.temperature_air) &&
+                    !isnan(s_ui.model.humidity) && isfinite(s_ui.model.humidity) &&
+                    s_ui.model.temperature_air >= -40.0f && s_ui.model.temperature_air <= 125.0f &&
+                    s_ui.model.humidity >= 0.0f && s_ui.model.humidity <= 100.0f) {
+                    snprintf(line, sizeof(line), "T:%.1fC H:%.0f%%", 
                             s_ui.model.temperature_air, s_ui.model.humidity);
-                } else if (!isnan(s_ui.model.temperature_air)) {
-                    snprintf(line, sizeof(line), "T: %.1fC", s_ui.model.temperature_air);
-                } else if (!isnan(s_ui.model.humidity)) {
-                    snprintf(line, sizeof(line), "H: %.0f%%", s_ui.model.humidity);
                 } else {
-                    snprintf(line, sizeof(line), "Sensors: --");
+                    // Показываем прочерки при ошибках или невалидных значениях
+                    strncpy(line, "T:--.-C H:--%", sizeof(line) - 1);
+                    line[sizeof(line) - 1] = '\0';
                 }
                 frame_buffer_draw_line(2, line);
                 
-                // Строка 3: CO2 или статус соединений
-                if (!isnan(s_ui.model.co2)) {
-                    snprintf(line, sizeof(line), "CO2: %.0f ppm", s_ui.model.co2);
-                    frame_buffer_draw_line(3, line);
+                // Строка 3: CO2 или статус I2C
+                if (!isnan(s_ui.model.co2) && isfinite(s_ui.model.co2) && s_ui.model.co2 >= 0.0f) {
+                    snprintf(line, sizeof(line), "CO2: %d ppm", (int)s_ui.model.co2);
                 } else {
-                    // Показываем статус соединений, если нет CO2
-                    if (s_ui.model.connections.wifi_connected && s_ui.model.connections.mqtt_connected) {
-                        frame_buffer_draw_line(3, "WiFi/MQTT: OK");
-                    } else if (s_ui.model.connections.wifi_connected) {
-                        frame_buffer_draw_line(3, "WiFi: OK MQTT: --");
+                    // Если CO2 не доступен, показываем статус I2C
+                    if (s_ui.model.sensor_status.i2c_connected) {
+                        strncpy(line, "I2C: OK", sizeof(line) - 1);
                     } else {
-                        frame_buffer_draw_line(3, "WiFi: --");
+                        strncpy(line, "I2C: ERR", sizeof(line) - 1);
                     }
+                    line[sizeof(line) - 1] = '\0';
                 }
+                frame_buffer_draw_line(3, line);
+                break;
+            }
+            case OLED_UI_NODE_TYPE_LIGHTING: {
+                char line[22];
+                // Строка 2: Освещенность - показываем прочерки при ошибках (как в ph_node)
+                // Используем поле co2 для хранения освещенности (временно)
+                if (!isnan(s_ui.model.co2) && isfinite(s_ui.model.co2) && s_ui.model.co2 >= 0.0f) {
+                    snprintf(line, sizeof(line), "Light: %.0f lux", s_ui.model.co2);
+                } else {
+                    // Показываем прочерки при ошибках или невалидных значениях
+                    strncpy(line, "Light: -- lux", sizeof(line) - 1);
+                    line[sizeof(line) - 1] = '\0';
+                }
+                frame_buffer_draw_line(2, line);
+                
+                // Строка 3: Статус I2C или ошибка
+                if (s_ui.model.sensor_status.i2c_connected) {
+                    if (s_ui.model.sensor_status.has_error) {
+                        strncpy(line, s_ui.model.sensor_status.error_msg, sizeof(line) - 1);
+                        line[sizeof(line) - 1] = '\0';
+                    } else {
+                        strncpy(line, "I2C: OK", sizeof(line) - 1);
+                        line[sizeof(line) - 1] = '\0';
+                    }
+                } else {
+                    strncpy(line, "I2C: ERR", sizeof(line) - 1);
+                    line[sizeof(line) - 1] = '\0';
+                }
+                frame_buffer_draw_line(3, line);
                 break;
             }
             default:

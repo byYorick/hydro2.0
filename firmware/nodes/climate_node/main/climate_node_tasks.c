@@ -95,9 +95,13 @@ static void task_sensors(void *pvParameters) {
                 esp_err_t sht_err = sht3x_read(&sht_reading);
                 
                 if (sht_err == ESP_OK && sht_reading.valid) {
+                    ESP_LOGI(TAG, "SHT3x read: T=%.1f°C, H=%.1f%%", 
+                            sht_reading.temperature, sht_reading.humidity);
                     model.temperature_air = sht_reading.temperature;
                     model.humidity = sht_reading.humidity;
                 } else {
+                    ESP_LOGW(TAG, "SHT3x read failed: err=%s, valid=%d", 
+                            esp_err_to_name(sht_err), sht_reading.valid);
                     model.temperature_air = NAN;
                     model.humidity = NAN;
                 }
@@ -185,7 +189,7 @@ static void task_heartbeat(void *pvParameters) {
 
             cJSON *heartbeat = cJSON_CreateObject();
             if (heartbeat) {
-                cJSON_AddNumberToObject(heartbeat, "uptime", (double)(esp_timer_get_time() / 1000));
+                cJSON_AddNumberToObject(heartbeat, "uptime", (double)(esp_timer_get_time() / 1000.0));
                 cJSON_AddNumberToObject(heartbeat, "free_heap", (double)esp_get_free_heap_size());
                 cJSON_AddNumberToObject(heartbeat, "rssi", rssi);
                 

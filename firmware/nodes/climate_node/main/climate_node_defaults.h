@@ -24,8 +24,14 @@ extern "C" {
 #define CLIMATE_NODE_DEFAULT_MQTT_KEEPALIVE 30
 
 // I2C bus defaults
-#define CLIMATE_NODE_I2C_BUS_1_SDA        5   // SDA для датчиков (SHT3x, CCS811)
-#define CLIMATE_NODE_I2C_BUS_1_SCL        4   // SCL для датчиков
+// I2C_BUS_0 для OLED (используется в setup mode и normal mode)
+#define CLIMATE_NODE_I2C_BUS_0_SDA        5   // SDA для OLED
+#define CLIMATE_NODE_I2C_BUS_0_SCL        4   // SCL для OLED
+// I2C_BUS_1 для датчиков
+// GPIO 25 (DAC1) и GPIO 26 (DAC2) имеют встроенные ЦАП, но в проекте не используются
+// Можно использовать для I2C, если функции DAC не нужны
+#define CLIMATE_NODE_I2C_BUS_1_SDA        25  // SDA для SHT3x (GPIO 25)
+#define CLIMATE_NODE_I2C_BUS_1_SCL        26  // SCL для SHT3x (GPIO 26)
 #define CLIMATE_NODE_I2C_CLOCK_SPEED      100000
 
 // OLED defaults

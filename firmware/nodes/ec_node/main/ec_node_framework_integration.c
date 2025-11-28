@@ -12,7 +12,6 @@
 #include "node_command_handler.h"
 #include "node_telemetry_engine.h"
 #include "node_state_manager.h"
-#include "ec_node_app.h"
 #include "pump_driver.h"
 #include "trema_ec.h"
 #include "mqtt_manager.h"
@@ -274,7 +273,8 @@ esp_err_t ec_node_publish_telemetry_callback(void *user_ctx) {
     float temp_check = 0.0f;
     bool sensor_ready = trema_ec_get_temperature(&temp_check);
     
-    if (!sensor_ready && i2c_bus_is_initialized()) {
+    // trema_ec использует дефолтную шину (I2C_BUS_0)
+    if (!sensor_ready && i2c_bus_is_initialized_bus(I2C_BUS_0)) {
         if (trema_ec_init()) {
             ESP_LOGI(TAG, "Trema EC sensor initialized");
             sensor_ready = true;

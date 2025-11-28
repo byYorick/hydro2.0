@@ -134,13 +134,12 @@ esp_err_t climate_node_init_step_i2c(climate_node_init_context_t *ctx,
     
     esp_err_t err = ESP_OK;
     
-    // Инициализация I2C 0 для всех устройств (OLED, SHT3x, CCS811)
-    // Все устройства на одной физической шине, поэтому используем только I2C_BUS_0
+    // Инициализация I2C 0 для OLED
     if (!i2c_bus_is_initialized_bus(I2C_BUS_0)) {
-        ESP_LOGI(TAG, "Initializing I2C bus 0 (OLED + SHT3x + CCS811)...");
+        ESP_LOGI(TAG, "Initializing I2C bus 0 (OLED)...");
         i2c_bus_config_t i2c0_config = {
-            .sda_pin = CLIMATE_NODE_I2C_BUS_1_SDA,
-            .scl_pin = CLIMATE_NODE_I2C_BUS_1_SCL,
+            .sda_pin = CLIMATE_NODE_I2C_BUS_0_SDA,
+            .scl_pin = CLIMATE_NODE_I2C_BUS_0_SCL,
             .clock_speed = CLIMATE_NODE_I2C_CLOCK_SPEED,
             .pullup_enable = true
         };
@@ -152,6 +151,29 @@ esp_err_t climate_node_init_step_i2c(climate_node_init_context_t *ctx,
         }
         ESP_LOGI(TAG, "I2C bus 0 initialized: SDA=%d, SCL=%d", 
                  i2c0_config.sda_pin, i2c0_config.scl_pin);
+    }
+    
+    // Инициализация I2C 1 для SHT3x
+    if (!i2c_bus_is_initialized_bus(I2C_BUS_1)) {
+        ESP_LOGI(TAG, "Initializing I2C bus 1 for SHT3x (GPIO %d SDA, GPIO %d SCL)...", 
+                CLIMATE_NODE_I2C_BUS_1_SDA, CLIMATE_NODE_I2C_BUS_1_SCL);
+        i2c_bus_config_t i2c1_config = {
+            .sda_pin = CLIMATE_NODE_I2C_BUS_1_SDA,
+            .scl_pin = CLIMATE_NODE_I2C_BUS_1_SCL,
+            .clock_speed = CLIMATE_NODE_I2C_CLOCK_SPEED,
+            .pullup_enable = true
+        };
+        err = i2c_bus_init_bus(I2C_BUS_1, &i2c1_config);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to initialize I2C bus 1: %s", esp_err_to_name(err));
+            if (result) result->err = err;
+            // Не критично, продолжаем
+        } else {
+            ESP_LOGI(TAG, "I2C bus 1 initialized successfully: SDA=GPIO%d, SCL=GPIO%d", 
+                     i2c1_config.sda_pin, i2c1_config.scl_pin);
+        }
+    } else {
+        ESP_LOGI(TAG, "I2C bus 1 already initialized");
     }
     
     if (result) {
@@ -172,41 +194,43 @@ esp_err_t climate_node_init_step_sensors(climate_node_init_context_t *ctx,
         result->component_initialized = false;
     }
     
-    if (!i2c_bus_is_initialized_bus(I2C_BUS_0)) {
-        ESP_LOGW(TAG, "I2C bus 0 not available, sensor initialization skipped");
-        if (result) {
-            result->err = ESP_ERR_INVALID_STATE;
-        }
-        return ESP_ERR_INVALID_STATE;
-    }
-    
     esp_err_t err = ESP_OK;
     
-    // Инициализация SHT3x сенсора (температура/влажность)
-    ESP_LOGI(TAG, "Initializing SHT3x sensor...");
-    sht3x_config_t sht_config = {
-        .i2c_address = 0x44  // Адрес по умолчанию для SHT3x
-    };
-    err = sht3x_init(&sht_config);
-    if (err == ESP_OK) {
-        ESP_LOGI(TAG, "SHT3x sensor initialized successfully");
+    // Инициализация SHT3x сенсора (температура/влажность) на I2C_BUS_1
+    if (!i2c_bus_is_initialized_bus(I2C_BUS_1)) {
+        ESP_LOGW(TAG, "I2C bus 1 not available, SHT3x sensor initialization skipped");
     } else {
-        ESP_LOGW(TAG, "Failed to initialize SHT3x sensor: %s (will retry later)", esp_err_to_name(err));
+        ESP_LOGI(TAG, "Initializing SHT3x sensor on I2C_BUS_1...");
+        sht3x_config_t sht_config = {
+            .i2c_address = 0x44,  // Адрес по умолчанию для SHT3x
+            .i2c_bus = I2C_BUS_1  // Используем I2C_BUS_1 (GPIO 25 SDA, GPIO 26 SCL)
+        };
+        err = sht3x_init(&sht_config);
+        if (err == ESP_OK) {
+            ESP_LOGI(TAG, "SHT3x sensor initialized successfully on I2C_BUS_1 (GPIO 25 SDA, GPIO 26 SCL), address=0x%02X", 
+                    sht_config.i2c_address);
+        } else {
+            ESP_LOGE(TAG, "Failed to initialize SHT3x sensor: %s (will retry later)", esp_err_to_name(err));
+        }
     }
     
-    // Инициализация CCS811 сенсора (CO₂/TVOC)
-    ESP_LOGI(TAG, "Initializing CCS811 sensor...");
-    ccs811_config_t ccs_config = {
-        .i2c_address = CCS811_I2C_ADDR_DEFAULT,
-        .i2c_bus = I2C_BUS_0,  // Используем I2C_BUS_0, так как все устройства на одной шине
-        .measurement_mode = CCS811_MEAS_MODE_1SEC,
-        .measurement_interval_ms = 1000
-    };
-    err = ccs811_init(&ccs_config);
-    if (err == ESP_OK) {
-        ESP_LOGI(TAG, "CCS811 sensor initialized successfully");
+    // Инициализация CCS811 сенсора (CO₂/TVOC) на I2C_BUS_0
+    if (!i2c_bus_is_initialized_bus(I2C_BUS_0)) {
+        ESP_LOGW(TAG, "I2C bus 0 not available, CCS811 sensor initialization skipped");
     } else {
-        ESP_LOGW(TAG, "Failed to initialize CCS811 sensor: %s (will use stub values)", esp_err_to_name(err));
+        ESP_LOGI(TAG, "Initializing CCS811 sensor on I2C_BUS_0...");
+        ccs811_config_t ccs_config = {
+            .i2c_address = CCS811_I2C_ADDR_DEFAULT,
+            .i2c_bus = I2C_BUS_0,
+            .measurement_mode = CCS811_MEAS_MODE_1SEC,
+            .measurement_interval_ms = 1000
+        };
+        err = ccs811_init(&ccs_config);
+        if (err == ESP_OK) {
+            ESP_LOGI(TAG, "CCS811 sensor initialized successfully");
+        } else {
+            ESP_LOGW(TAG, "Failed to initialize CCS811 sensor: %s (will use stub values)", esp_err_to_name(err));
+        }
     }
     
     if (result) {

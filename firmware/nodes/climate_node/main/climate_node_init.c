@@ -39,13 +39,12 @@ void climate_node_run_setup_mode(void) {
     
     // Инициализируем I2C шину для OLED перед запуском setup mode
     // Это нужно, чтобы OLED мог работать в setup mode
-    // OLED UI использует I2C_BUS_0 по умолчанию
-    // Все устройства (OLED, SHT3x, CCS811) используют одну шину I2C_BUS_0
+    // OLED UI использует I2C_BUS_0
     if (!i2c_bus_is_initialized_bus(I2C_BUS_0)) {
         ESP_LOGI(TAG, "Initializing I2C bus 0 for OLED in setup mode...");
         i2c_bus_config_t i2c0_config = {
-            .sda_pin = CLIMATE_NODE_I2C_BUS_1_SDA,
-            .scl_pin = CLIMATE_NODE_I2C_BUS_1_SCL,
+            .sda_pin = CLIMATE_NODE_I2C_BUS_0_SDA,
+            .scl_pin = CLIMATE_NODE_I2C_BUS_0_SCL,
             .clock_speed = CLIMATE_NODE_I2C_CLOCK_SPEED,
             .pullup_enable = true
         };

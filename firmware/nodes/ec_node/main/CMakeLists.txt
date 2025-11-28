@@ -3,6 +3,8 @@ idf_component_register(
         "main.c"
         "ec_node_app.c"
         "ec_node_tasks.c"
+        "ec_node_init.c"
+        "ec_node_init_steps.c"
         "ec_node_framework_integration.c"
     INCLUDE_DIRS 
         "."
@@ -16,7 +18,9 @@ idf_component_register(
         node_utils
         trema_ec
         i2c_bus
+        oled_ui
         setup_portal
+        connection_status
         heartbeat_task
         pump_driver
         driver
