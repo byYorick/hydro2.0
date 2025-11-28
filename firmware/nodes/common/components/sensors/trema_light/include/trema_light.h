@@ -1,12 +1,23 @@
 /**
  * @file trema_light.h
- * @brief Драйвер Trema датчика освещенности (iarduino) для узлов ESP32
+ * @brief Драйвер Trema датчика освещенности (iarduino DSL) для узлов ESP32
  * 
  * Компонент реализует драйвер для Trema датчика освещенности через I²C:
- * - Чтение значения освещенности (люкс)
- * - Обработка ошибок
+ * - Чтение значения освещенности (люкс) из регистра 0x11
+ * - Автоматическая инициализация при первом чтении
+ * - Поддержка кэширования I2C запросов для оптимизации
+ * - Обработка ошибок и использование stub значений при отсутствии датчика
+ * 
+ * Протокол iarduino DSL:
+ * - I²C адрес: 0x21 (по умолчанию)
+ * - Model ID: 0x06 (DEF_MODEL_DSL) или 0x1B (альтернативная версия)
+ * - Регистр значения: 0x11 (REG_DSL_LUX_L) - 2 байта (LSB, MSB)
+ * - Формат: Little-endian, lux = (MSB << 8) | LSB
+ * - Диапазон: 0 - 65535 люкс
  * 
  * Адаптирован из trema_ph для новой архитектуры hydro2.0
+ * 
+ * @see README.md для подробной документации и примеров использования
  */
 
 #ifndef TREMA_LIGHT_H
@@ -20,39 +31,74 @@ extern "C" {
 #include <stdbool.h>
 #include "i2c_bus.h"
 
-// Default I2C address for the light sensor
+/**
+ * @brief I²C адрес датчика освещенности (iarduino DSL)
+ * 
+ * По умолчанию используется адрес 0x21. Адрес может быть изменен
+ * через регистр 0x06 (REG_ADDRESS), но это не поддерживается в текущей реализации.
+ */
 #define TREMA_LIGHT_ADDR 0x21
 
-// Register addresses (iarduino DSL protocol)
-#define REG_MODEL          0x04  // Model ID register
-#define REG_DSL_LUX_L      0x11  // Lux value (low byte) - 2 bytes starting here
-
-// Expected model ID for Trema light sensor (iarduino DSL)
-#define TREMA_LIGHT_MODEL_ID 0x06  // DEF_MODEL_DSL
+/**
+ * @brief Адреса регистров протокола iarduino DSL
+ */
+#define REG_MODEL          0x04  ///< Model ID регистр (1 байт) - используется для проверки наличия датчика
+#define REG_DSL_LUX_L      0x11  ///< Регистр значения освещенности (2 байта: LSB, MSB)
 
 /**
- * @brief Initialize the Trema light sensor
- * @param i2c_bus I2C bus ID (I2C_BUS_0 or I2C_BUS_1)
- * @return true on success, false on failure
+ * @brief Ожидаемый Model ID датчика освещенности
+ * 
+ * Стандартный Model ID для iarduino DSL датчика: 0x06 (DEF_MODEL_DSL)
+ * Некоторые версии датчика могут возвращать 0x1B - оба значения поддерживаются
+ */
+#define TREMA_LIGHT_MODEL_ID 0x06  ///< DEF_MODEL_DSL
+
+/**
+ * @brief Инициализация Trema датчика освещенности
+ * 
+ * Выполняет проверку наличия датчика на указанной I²C шине путем
+ * чтения Model ID регистра (0x04). Поддерживает Model ID 0x06 и 0x1B.
+ * 
+ * @param i2c_bus ID I²C шины (I2C_BUS_0 или I2C_BUS_1)
+ * @return true при успешной инициализации, false при ошибке
+ * 
+ * @note I²C шина должна быть инициализирована заранее через i2c_bus_init_bus()
+ * @note При ошибке инициализации функция автоматически вызывается при первом чтении
  */
 bool trema_light_init(i2c_bus_id_t i2c_bus);
 
 /**
- * @brief Read light value from the Trema light sensor
- * @param lux Pointer to store the light value (lux)
- * @return true on success, false on failure
+ * @brief Чтение значения освещенности с Trema датчика
+ * 
+ * Читает значение освещенности из регистра 0x11 (REG_DSL_LUX_L).
+ * Использует кэширование I2C запросов для оптимизации (TTL 500ms).
+ * При отсутствии датчика возвращает stub значение (500 lux).
+ * 
+ * @param lux Указатель на переменную для сохранения значения освещенности (люкс)
+ * @return true при успешном чтении, false при ошибке (в этом случае *lux содержит stub значение)
+ * 
+ * @note Если датчик не инициализирован, функция автоматически вызывает trema_light_init()
+ * @note При ошибке чтения возвращается stub значение 500 lux и устанавливается флаг use_stub_values
+ * @note Диапазон валидных значений: 0 - 65535 люкс
  */
 bool trema_light_read(float *lux);
 
 /**
- * @brief Check if we're using stub values (sensor not connected)
- * @return true if using stub values, false if sensor is connected
+ * @brief Проверка использования stub значений
+ * 
+ * Stub значения используются когда:
+ * - Датчик не подключен или не обнаружен
+ * - Произошла ошибка I²C при чтении
+ * - Прочитанное значение вне допустимого диапазона (0-65535 lux)
+ * 
+ * @return true если используются stub значения, false если датчик работает нормально
  */
 bool trema_light_is_using_stub_values(void);
 
 /**
- * @brief Check if light sensor is initialized
- * @return true if sensor is initialized, false otherwise
+ * @brief Проверка инициализации датчика
+ * 
+ * @return true если датчик успешно инициализирован, false в противном случае
  */
 bool trema_light_is_initialized(void);
 
