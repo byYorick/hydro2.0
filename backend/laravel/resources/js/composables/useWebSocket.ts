@@ -91,10 +91,10 @@ function ensureEchoAvailable(showToast?: ToastHandler): any | null {
   }
   const echo = window.Echo
   if (!echo) {
-    if (showToast) {
-      showToast(WS_UNAVAILABLE_MESSAGE, 'warning', 3000)
-    }
-    logger.warn('[useWebSocket] Echo instance is not available', {})
+    // ИСПРАВЛЕНО: Не показываем warning, если Echo просто еще не инициализирован
+    // Это нормально на начальной загрузке страницы
+    // Только логируем в debug режиме для отладки
+    logger.debug('[useWebSocket] Echo instance not yet initialized', {})
     return null
   }
   return echo

@@ -138,6 +138,16 @@ function resolvePort(scheme: 'http' | 'https'): number | undefined {
   if (typeof envPort === 'string' && envPort.trim().length > 0) {
     const parsed = Number(envPort)
     if (!Number.isNaN(parsed)) {
+      // ИСПРАВЛЕНО: Если порт указан явно через переменную окружения, но это порт Reverb (6001),
+      // игнорируем его в dev режиме и используем порт nginx
+      // В production это нормально, но в dev нужен nginx прокси
+      if (parsed === 6001 && isBrowser() && window.location.port) {
+        const nginxPort = Number(window.location.port)
+        if (!Number.isNaN(nginxPort) && nginxPort !== 6001) {
+          logger.debug('[echoClient] Overriding VITE_REVERB_PORT=6001 with nginx port', { nginxPort })
+          return nginxPort
+        }
+      }
       return parsed
     }
   }
@@ -167,10 +177,11 @@ function resolvePath(): string | undefined {
     return envPath.startsWith('/') ? envPath : `/${envPath}`
   }
 
-  // ИСПРАВЛЕНО: Для Laravel Reverb через nginx прокси путь должен быть пустым
-  // Pusher автоматически создаст путь /app/{app_key}, где app_key = 'local'
-  // nginx проксирует /app/* на Reverb, поэтому базовый путь пустой
-  return ''
+  // ИСПРАВЛЕНО: Для Laravel Reverb через nginx прокси путь должен быть '/app'
+  // Pusher использует путь '/app' как базовый, и добавляет к нему app_key
+  // Полный путь будет: /app/{app_key} = /app/local
+  // nginx проксирует /app/* на Reverb на порту 6001
+  return '/app'
 }
 
 function buildEchoConfig(): Record<string, unknown> {

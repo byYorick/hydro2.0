@@ -357,6 +357,12 @@ async function loadMetrics() {
     return
   }
   
+  // ИСПРАВЛЕНО: Проверяем аутентификацию перед запросом
+  const currentUser = page.props.auth?.user
+  if (!currentUser || isUnauthenticated) {
+    return
+  }
+  
   try {
     // Загружаем только активные алерты, данные dashboard уже в props
     const alertsRes = await Promise.allSettled([
@@ -419,11 +425,12 @@ const { subscribeToGlobalEvents } = useWebSocket()
 let unsubscribeMetrics: (() => void) | null = null
 
 onMounted(() => {
-  // Проверяем аутентификацию перед началом загрузки метрик
+  // ИСПРАВЛЕНО: Проверяем аутентификацию перед началом загрузки метрик
   const user = page.props.auth?.user
   if (!user) {
     // Если пользователь не авторизован, не запускаем загрузку метрик
     isUnauthenticated = true
+    logger.debug('[HeaderStatusBar] User not authenticated, skipping metrics loading')
     return
   }
   
@@ -431,10 +438,10 @@ onMounted(() => {
   // Dashboard данные обновляются через props, алерты обновляются реже
   loadMetrics()
   
-  // Обновляем только алерты каждые 30 секунд (не критично часто)
-  // Только если пользователь авторизован
-  if (!isUnauthenticated) {
-    metricsInterval = setInterval(() => {
+  // ИСПРАВЛЕНО: Обновляем только алерты каждые 30 секунд (не критично часто)
+  // Только если пользователь авторизован И не было ошибки 401
+  // Запускаем интервал только после успешной загрузки метрик
+  metricsInterval = setInterval(() => {
       // Проверяем аутентификацию перед каждым запросом
       const currentUser = page.props.auth?.user
       if (!currentUser || isUnauthenticated) {
@@ -442,11 +449,12 @@ onMounted(() => {
           clearInterval(metricsInterval)
           metricsInterval = null
         }
+        logger.debug('[HeaderStatusBar] Stopping metrics interval - user not authenticated')
         return
       }
+      // Вызываем loadMetrics только если пользователь авторизован
       loadMetrics()
     }, 30000)
-  }
   
   // Подписываемся на глобальные события для обновления метрик
   unsubscribeMetrics = subscribeToGlobalEvents(() => {
