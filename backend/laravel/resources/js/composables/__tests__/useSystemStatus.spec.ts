@@ -279,16 +279,29 @@ describe('useSystemStatus', () => {
       }
     })
 
-    const { startMonitoring } = useSystemStatus()
+    const { startMonitoring, checkHealth } = useSystemStatus()
+    
+    // Вызываем checkHealth вручную для первого вызова
+    await checkHealth()
+    const initialCalls = mockApiGet.mock.calls.length
+    expect(initialCalls).toBeGreaterThanOrEqual(1)
+    
+    // Очищаем мок, чтобы считать только новые вызовы
+    mockApiGet.mockClear()
+    
+    // Запускаем мониторинг (он установит интервал и вызовет checkHealth сразу)
     startMonitoring()
-
-    // Первый вызов сразу
+    
+    // Ждем, чтобы checkHealth был вызван
+    await vi.runAllTimersAsync()
     expect(mockApiGet).toHaveBeenCalledTimes(1)
 
     // Продвигаем время на 30 секунд (интервал опроса)
     vi.advanceTimersByTime(30000)
+    // Запускаем все таймеры, включая интервал
+    await vi.runAllTimersAsync()
     
-    // Должен быть второй вызов
+    // Должен быть второй вызов через интервал
     expect(mockApiGet).toHaveBeenCalledTimes(2)
   })
 

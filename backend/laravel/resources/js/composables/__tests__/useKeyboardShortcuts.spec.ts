@@ -144,14 +144,18 @@ describe('useKeyboardShortcuts (P3-1)', () => {
 
     const input = wrapper.find('input').element
     input.focus()
+    await wrapper.vm.$nextTick()
 
+    // Создаем событие и диспатчим его на элементе, чтобы target был установлен правильно
     const event = new KeyboardEvent('keydown', {
       key: 'x',
       ctrlKey: true,
-      target: input
+      bubbles: true,
+      cancelable: true
     })
     
-    window.dispatchEvent(event)
+    // Диспатчим событие на элементе, чтобы event.target был установлен
+    input.dispatchEvent(event)
     await wrapper.vm.$nextTick()
     
     // Handler не должен быть вызван, так как фокус в input

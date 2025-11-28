@@ -47,17 +47,21 @@ api.interceptors.response.use(
     }
 
     const message = error.response?.data?.message || error.message || 'Неизвестная ошибка'
+    const status = error.response?.status
     
-    // Логируем ошибку
-    logger.error('[API Error]', {
-      url: error.config?.url,
-      method: error.config?.method,
-      status: error.response?.status,
-      message,
-    })
+    // Логируем ошибку (но не логируем 401 постоянно, чтобы не засорять консоль)
+    if (status !== 401) {
+      logger.error('[API Error]', {
+        url: error.config?.url,
+        method: error.config?.method,
+        status,
+        message,
+      })
+    }
     
-    // 401 - не показываем Toast, обычно это обрабатывается на уровне auth
-    if (globalShowToast && error.response?.status !== 401) {
+    // 401 - не показываем Toast и не логируем постоянно, обычно это обрабатывается на уровне auth
+    // Множественные 401 могут происходить из-за интервалов обновления
+    if (globalShowToast && status !== 401) {
       globalShowToast(`Ошибка: ${message}`, 'error', 5000)
     }
     

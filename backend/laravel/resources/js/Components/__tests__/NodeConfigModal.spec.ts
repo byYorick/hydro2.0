@@ -151,7 +151,7 @@ describe('NodeConfigModal.vue', () => {
       
       // Проверяем, что количество каналов увеличилось
       const channelInputsAfter = wrapper.findAll('input[placeholder*="example_channel"]').length
-      expect(channelInputsAfter).toBeGreaterThan(channelsBefore)
+      expect(channelInputsAfter).toBeGreaterThan(channelInputsBefore)
     }
   })
 

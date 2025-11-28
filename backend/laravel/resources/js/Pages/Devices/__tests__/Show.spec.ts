@@ -27,11 +27,18 @@ vi.mock('@/Pages/Devices/DeviceChannelsTable.vue', () => ({
 }))
 
 const axiosPostMock = vi.fn()
+const mockShowToast = vi.fn()
 
 vi.mock('axios', () => ({
   default: {
     post: (url: string, data?: any, config?: any) => axiosPostMock(url, data, config),
   },
+}))
+
+vi.mock('@/composables/useToast', () => ({
+  useToast: () => ({
+    showToast: mockShowToast,
+  }),
 }))
 
 const sampleDevice = {
@@ -76,6 +83,7 @@ import DevicesShow from '../Show.vue'
 describe('Devices/Show.vue', () => {
   beforeEach(() => {
     axiosPostMock.mockClear()
+    mockShowToast.mockClear()
     axiosPostMock.mockResolvedValue({ data: { status: 'ok' } })
   })
 
@@ -170,22 +178,27 @@ describe('Devices/Show.vue', () => {
   })
 
   it('обрабатывает ошибку при перезагрузке', async () => {
-    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mockShowToast.mockClear()
     axiosPostMock.mockRejectedValue(new Error('Network error'))
     
     const wrapper = mount(DevicesShow)
+    await wrapper.vm.$nextTick()
     
     const buttons = wrapper.findAllComponents({ name: 'Button' })
-    const restartButton = buttons.find(btn => btn.text().includes('Restart'))
+    const restartButton = buttons.find(btn => btn.text().includes('Restart') || btn.text().includes('Перезапуск'))
     
     if (restartButton) {
       await restartButton.trigger('click')
-      await new Promise(resolve => setTimeout(resolve, 100))
+      await new Promise(resolve => setTimeout(resolve, 200))
+      await wrapper.vm.$nextTick()
       
-      expect(consoleErrorSpy).toHaveBeenCalled()
+      // Проверяем, что ошибка была обработана через showToast
+      expect(mockShowToast).toHaveBeenCalledWith(
+        expect.stringContaining('Ошибка перезапуска'),
+        'error',
+        5000
+      )
     }
-    
-    consoleErrorSpy.mockRestore()
   })
 
   it('эмитирует событие test при тестировании канала', async () => {

@@ -15,6 +15,23 @@ type WsStatus = 'connected' | 'disconnected' | 'connecting' | 'unknown'
 type MqttStatus = 'online' | 'offline' | 'degraded' | 'unknown'
 type ServiceStatus = 'ok' | 'fail' | 'unknown'
 
+// ИСПРАВЛЕНО: Singleton для предотвращения множественных интервалов
+let sharedState: {
+  coreStatus: ReturnType<typeof ref<CoreStatus>>
+  dbStatus: ReturnType<typeof ref<DbStatus>>
+  wsStatus: ReturnType<typeof ref<WsStatus>>
+  mqttStatus: ReturnType<typeof ref<MqttStatus>>
+  historyLoggerStatus: ReturnType<typeof ref<ServiceStatus>>
+  automationEngineStatus: ReturnType<typeof ref<ServiceStatus>>
+  lastUpdate: ReturnType<typeof ref<Date | null>>
+  healthInterval: ReturnType<typeof setInterval> | null
+  wsInterval: ReturnType<typeof setInterval> | null
+  isRateLimited: boolean
+  subscribers: number
+  connectedHandler: (() => void) | null
+  disconnectedHandler: (() => void) | null
+} | null = null
+
 declare global {
   interface Window {
     Echo?: {
@@ -42,37 +59,61 @@ interface StatusResponse {
 export function useSystemStatus(showToast?: ToastHandler) {
   const { api } = useApi(showToast || null)
 
-  const coreStatus = ref<CoreStatus>('unknown')
-  const dbStatus = ref<DbStatus>('unknown')
-  const wsStatus = ref<WsStatus>('unknown')
-  const mqttStatus = ref<MqttStatus>('unknown')
-  const historyLoggerStatus = ref<ServiceStatus>('unknown')
-  const automationEngineStatus = ref<ServiceStatus>('unknown')
-  const lastUpdate = ref<Date | null>(null)
+  // ИСПРАВЛЕНО: Используем singleton для предотвращения множественных интервалов
+  if (!sharedState) {
+    sharedState = {
+      coreStatus: ref<CoreStatus>('unknown'),
+      dbStatus: ref<DbStatus>('unknown'),
+      wsStatus: ref<WsStatus>('unknown'),
+      mqttStatus: ref<MqttStatus>('unknown'),
+      historyLoggerStatus: ref<ServiceStatus>('unknown'),
+      automationEngineStatus: ref<ServiceStatus>('unknown'),
+      lastUpdate: ref<Date | null>(null),
+      healthInterval: null,
+      wsInterval: null,
+      isRateLimited: false,
+      subscribers: 0,
+      connectedHandler: null,
+      disconnectedHandler: null,
+    }
+  }
+
+  // Увеличиваем счетчик подписчиков
+  sharedState.subscribers++
+
+  const coreStatus = sharedState.coreStatus
+  const dbStatus = sharedState.dbStatus
+  const wsStatus = sharedState.wsStatus
+  const mqttStatus = sharedState.mqttStatus
+  const historyLoggerStatus = sharedState.historyLoggerStatus
+  const automationEngineStatus = sharedState.automationEngineStatus
+  const lastUpdate = sharedState.lastUpdate
 
   const isCoreOk = computed(() => coreStatus.value === 'ok')
   const isDbOk = computed(() => dbStatus.value === 'ok')
 
-  let healthInterval: ReturnType<typeof setInterval> | null = null
-  let wsInterval: ReturnType<typeof setInterval> | null = null
-  let connectedHandler: (() => void) | null = null
-  let disconnectedHandler: (() => void) | null = null
-
   const resetWebSocketBindings = () => {
+    if (!sharedState) return
     const pusher = window?.Echo?.connector?.pusher
     if (pusher?.connection?.unbind) {
-      if (connectedHandler) {
-        pusher.connection.unbind('connected', connectedHandler)
-        connectedHandler = null
+      if (sharedState.connectedHandler) {
+        pusher.connection.unbind('connected', sharedState.connectedHandler)
+        sharedState.connectedHandler = null
       }
-      if (disconnectedHandler) {
-        pusher.connection.unbind('disconnected', disconnectedHandler)
-        disconnectedHandler = null
+      if (sharedState.disconnectedHandler) {
+        pusher.connection.unbind('disconnected', sharedState.disconnectedHandler)
+        sharedState.disconnectedHandler = null
       }
     }
   }
 
   async function checkHealth(): Promise<void> {
+    if (!sharedState) return
+    // Если уже была ошибка 429, пропускаем запрос
+    if (sharedState.isRateLimited) {
+      return
+    }
+    
     try {
       const response = await api.get<{ data?: StatusResponse; app?: string }>(
         '/api/system/health'
@@ -86,12 +127,27 @@ export function useSystemStatus(showToast?: ToastHandler) {
       automationEngineStatus.value = payload.automation_engine === 'ok' ? 'ok' : payload.automation_engine === 'fail' ? 'fail' : 'unknown'
 
       lastUpdate.value = new Date()
+      sharedState.isRateLimited = false // Сбрасываем флаг при успешном запросе
     } catch (error: any) {
+      // ИСПРАВЛЕНО: Обработка ошибки 429 (Too Many Requests)
+      if (error?.response?.status === 429) {
+        sharedState.isRateLimited = true
+        // Останавливаем интервал при rate limiting
+        if (sharedState.healthInterval) {
+          clearInterval(sharedState.healthInterval)
+          sharedState.healthInterval = null
+        }
+        logger.debug('[useSystemStatus] Rate limited, stopping health checks', {})
+        // Не показываем Toast для 429, это нормальное поведение rate limiting
+        return
+      }
+      
       logger.error('[useSystemStatus] Failed to check health', { error })
-      coreStatus.value = coreStatus.value === 'unknown' ? 'fail' : coreStatus.value
-      dbStatus.value = dbStatus.value === 'unknown' ? 'fail' : dbStatus.value
+      // При ошибке устанавливаем статусы в 'fail'
+      coreStatus.value = 'fail'
+      dbStatus.value = 'fail'
       lastUpdate.value = new Date()
-      if (showToast) {
+      if (showToast && error?.response?.status !== 429) {
         showToast(`Ошибка проверки статуса системы: ${error.message || 'Ошибка'}`, 'error', 5000)
       }
     }
@@ -153,15 +209,17 @@ export function useSystemStatus(showToast?: ToastHandler) {
   }
 
   function startMonitoring(): void {
-    if (!healthInterval) {
+    if (!sharedState) return
+    // ИСПРАВЛЕНО: Запускаем интервалы только один раз для всех подписчиков
+    if (!sharedState.healthInterval) {
       checkHealth()
-      healthInterval = setInterval(checkHealth, HEALTH_CHECK_INTERVAL)
+      sharedState.healthInterval = setInterval(checkHealth, HEALTH_CHECK_INTERVAL)
     }
 
-    if (!wsInterval) {
+    if (!sharedState.wsInterval) {
       checkWebSocketStatus()
       checkMqttStatus()
-      wsInterval = setInterval(() => {
+      sharedState.wsInterval = setInterval(() => {
         checkWebSocketStatus()
         checkMqttStatus()
       }, WS_CHECK_INTERVAL)
@@ -169,33 +227,40 @@ export function useSystemStatus(showToast?: ToastHandler) {
 
     const pusher = window?.Echo?.connector?.pusher
     if (pusher && pusher.connection && typeof pusher.connection.bind === 'function') {
-      if (!connectedHandler) {
-        connectedHandler = () => {
+      if (!sharedState.connectedHandler) {
+        sharedState.connectedHandler = () => {
           wsStatus.value = 'connected'
           checkMqttStatus()
         }
-        pusher.connection.bind('connected', connectedHandler)
+        pusher.connection.bind('connected', sharedState.connectedHandler)
       }
-      if (!disconnectedHandler) {
-        disconnectedHandler = () => {
+      if (!sharedState.disconnectedHandler) {
+        sharedState.disconnectedHandler = () => {
           wsStatus.value = 'disconnected'
           checkMqttStatus()
         }
-        pusher.connection.bind('disconnected', disconnectedHandler)
+        pusher.connection.bind('disconnected', sharedState.disconnectedHandler)
       }
     }
   }
 
   function stopMonitoring(): void {
-    if (healthInterval) {
-      clearInterval(healthInterval)
-      healthInterval = null
+    if (!sharedState) return
+    // ИСПРАВЛЕНО: Останавливаем интервалы только когда все подписчики отписались
+    sharedState.subscribers--
+    if (sharedState.subscribers <= 0) {
+      if (sharedState.healthInterval) {
+        clearInterval(sharedState.healthInterval)
+        sharedState.healthInterval = null
+      }
+      if (sharedState.wsInterval) {
+        clearInterval(sharedState.wsInterval)
+        sharedState.wsInterval = null
+      }
+      resetWebSocketBindings()
+      // Сбрасываем singleton только когда нет подписчиков
+      sharedState = null
     }
-    if (wsInterval) {
-      clearInterval(wsInterval)
-      wsInterval = null
-    }
-    resetWebSocketBindings()
   }
 
   onMounted(() => {

@@ -141,13 +141,17 @@ function resolvePort(scheme: 'http' | 'https'): number | undefined {
       return parsed
     }
   }
+  // ИСПРАВЛЕНО: В dev режиме используем порт nginx (8080) для проксирования WebSocket
+  // Если порт не указан явно через VITE_REVERB_PORT, используем порт текущего окна
+  // Это позволяет работать через nginx прокси вместо прямого подключения к Reverb
   if (isBrowser()) {
     if (window.location.port) {
       const parsed = Number(window.location.port)
       if (!Number.isNaN(parsed)) {
-        return parsed
+        return parsed // Используем порт nginx (8080), а не порт Reverb (6001)
       }
     }
+    // Если порт не указан, используем стандартные порты для схемы
     return scheme === 'https' ? 443 : 80
   }
   return undefined
@@ -163,8 +167,9 @@ function resolvePath(): string | undefined {
     return envPath.startsWith('/') ? envPath : `/${envPath}`
   }
 
-  // ИСПРАВЛЕНО: Возвращаем пустую строку вместо '/app', чтобы избежать дублирования пути
-  // Если путь не указан, Pusher будет использовать корневой путь
+  // ИСПРАВЛЕНО: Для Laravel Reverb через nginx прокси путь должен быть пустым
+  // Pusher автоматически создаст путь /app/{app_key}, где app_key = 'local'
+  // nginx проксирует /app/* на Reverb, поэтому базовый путь пустой
   return ''
 }
 

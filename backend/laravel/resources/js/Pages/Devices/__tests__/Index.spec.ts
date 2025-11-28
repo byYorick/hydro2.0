@@ -34,6 +34,7 @@ const sampleDevices = [
 vi.mock('@/stores/devices', () => ({
   useDevicesStore: () => ({
     items: sampleDevices,
+    allDevices: sampleDevices, // Добавляем геттер allDevices
     initFromProps: () => {},
   }),
 }))
@@ -50,8 +51,8 @@ describe('Devices/Index.vue', () => {
     const wrapper = mount(DevicesIndex)
     await wrapper.vm.$nextTick()
     
-    // Проверяем, что изначально есть устройства
-    expect(wrapper.vm.filteredRows.length).toBeGreaterThanOrEqual(3)
+    // Проверяем, что изначально есть устройства (используем filtered вместо filteredRows)
+    expect(wrapper.vm.filtered?.length ?? 0).toBeGreaterThanOrEqual(3)
     
     const select = wrapper.find('select')
     if (select.exists()) {
@@ -59,7 +60,7 @@ describe('Devices/Index.vue', () => {
       await wrapper.vm.$nextTick()
       
       // Проверяем, что фильтрация работает
-      expect(wrapper.vm.filteredRows.length).toBeGreaterThanOrEqual(1)
+      expect(wrapper.vm.filtered?.length ?? 0).toBeGreaterThanOrEqual(1)
       expect(wrapper.text()).toContain('dev-3')
     }
   })
@@ -73,8 +74,8 @@ describe('Devices/Index.vue', () => {
       await input.setValue('dev-3')
       await wrapper.vm.$nextTick()
       
-      // Проверяем, что фильтрация работает через computed
-      expect(wrapper.vm.filteredRows.length).toBeGreaterThanOrEqual(1)
+      // Проверяем, что фильтрация работает через computed (используем filtered вместо filteredRows)
+      expect(wrapper.vm.filtered?.length ?? 0).toBeGreaterThanOrEqual(1)
       expect(wrapper.text()).toContain('dev-3')
     }
   })
@@ -88,8 +89,8 @@ describe('Devices/Index.vue', () => {
       await input.setValue('no-match')
       await wrapper.vm.$nextTick()
       
-      // Проверяем, что filteredRows пустой
-      expect(wrapper.vm.filteredRows.length).toBe(0)
+      // Проверяем, что filtered пустой (используем filtered вместо filteredRows)
+      expect(wrapper.vm.filtered?.length ?? 0).toBe(0)
       expect(wrapper.text()).toContain('Нет устройств по текущим фильтрам')
     }
   })

@@ -328,6 +328,8 @@ const metrics = ref<{
 
 // Флаг для предотвращения повторных запросов при 401
 let isUnauthenticated = false
+// Объявляем metricsInterval до watch, чтобы он был доступен в immediate: true
+let metricsInterval: ReturnType<typeof setInterval> | null = null
 
 // Загрузка метрик (только алерты, данные dashboard приходят через props)
 async function loadMetrics() {
@@ -399,27 +401,60 @@ watch(dashboardData, (data) => {
     metrics.value.devicesCount = data.devicesCount || null
     metrics.value.devicesOnline = data.nodesByStatus?.online || null
     metrics.value.devicesOffline = data.nodesByStatus?.offline || null
-    metrics.value.alertsCount = data.alertsCount || null
+    // Если данные алертов доступны из props, используем их и не делаем API запросы
+    if (data.alertsCount !== undefined) {
+      metrics.value.alertsCount = data.alertsCount
+      // Останавливаем интервал, так как данные обновляются через props
+      if (metricsInterval) {
+        clearInterval(metricsInterval)
+        metricsInterval = null
+      }
+      isUnauthenticated = false // Сбрасываем флаг, так как данные есть
+    }
   }
 }, { immediate: true })
 
 // Подписка на WebSocket обновления
 const { subscribeToGlobalEvents } = useWebSocket()
 let unsubscribeMetrics: (() => void) | null = null
-let metricsInterval: ReturnType<typeof setInterval> | null = null
 
 onMounted(() => {
+  // Проверяем аутентификацию перед началом загрузки метрик
+  const user = page.props.auth?.user
+  if (!user) {
+    // Если пользователь не авторизован, не запускаем загрузку метрик
+    isUnauthenticated = true
+    return
+  }
+  
   // Загружаем метрики только один раз при монтировании
   // Dashboard данные обновляются через props, алерты обновляются реже
   loadMetrics()
   
   // Обновляем только алерты каждые 30 секунд (не критично часто)
-  metricsInterval = setInterval(loadMetrics, 30000)
+  // Только если пользователь авторизован
+  if (!isUnauthenticated) {
+    metricsInterval = setInterval(() => {
+      // Проверяем аутентификацию перед каждым запросом
+      const currentUser = page.props.auth?.user
+      if (!currentUser || isUnauthenticated) {
+        if (metricsInterval) {
+          clearInterval(metricsInterval)
+          metricsInterval = null
+        }
+        return
+      }
+      loadMetrics()
+    }, 30000)
+  }
   
   // Подписываемся на глобальные события для обновления метрик
   unsubscribeMetrics = subscribeToGlobalEvents(() => {
-    // Обновляем метрики при получении событий
-    loadMetrics()
+    // Обновляем метрики при получении событий только если авторизован
+    const currentUser = page.props.auth?.user
+    if (currentUser && !isUnauthenticated) {
+      loadMetrics()
+    }
   })
 })
 

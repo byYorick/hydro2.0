@@ -68,15 +68,16 @@ describe('useAnimations', () => {
       expect(isVisible.value).toBe(false)
     })
 
-    it('should show element', () => {
+    it('should show element', async () => {
       const show = ref(false)
       const { opacity, isVisible, showElement } = useFadeAnimation(() => show.value)
       
       showElement()
       
       expect(isVisible.value).toBe(true)
-      // Opacity should be set to 1 in next frame
-      vi.advanceTimersByTime(0)
+      // requestAnimationFrame требует правильной обработки с fake timers
+      // Используем runAllTimersAsync для обработки всех асинхронных операций
+      await vi.runAllTimersAsync()
       expect(opacity.value).toBe(1)
     })
 
