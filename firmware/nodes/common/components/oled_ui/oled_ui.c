@@ -989,10 +989,37 @@ static void render_normal_screen(void) {
         switch (s_ui.node_type) {
             case OLED_UI_NODE_TYPE_PH: {
                 char line[22];
-                snprintf(line, sizeof(line), "pH: %.2f", s_ui.model.ph_value);
+                // Отображаем pH значение с индикацией stub значений и ошибок
+                if (s_ui.model.sensor_status.using_stub || isnan(s_ui.model.ph_value) || 
+                    s_ui.model.ph_value == 0.0f || s_ui.model.sensor_status.has_error) {
+                    snprintf(line, sizeof(line), "pH: --.--");
+                } else {
+                    snprintf(line, sizeof(line), "pH: %.2f", s_ui.model.ph_value);
+                }
                 frame_buffer_draw_line(2, line);
-                snprintf(line, sizeof(line), "Temp: %.1fC", s_ui.model.temperature_water);
-                frame_buffer_draw_line(3, line);
+                
+                // Статус I2C подключения и ошибки
+                if (s_ui.model.sensor_status.has_error) {
+                    // Показываем ошибку или статус I2C
+                    if (s_ui.model.sensor_status.error_msg[0] != '\0') {
+                        char error_line[22];
+                        strncpy(error_line, s_ui.model.sensor_status.error_msg, sizeof(error_line) - 1);
+                        error_line[sizeof(error_line) - 1] = '\0';
+                        frame_buffer_draw_line(3, error_line);
+                    } else if (!s_ui.model.sensor_status.i2c_connected) {
+                        frame_buffer_draw_line(3, "I2C: Disconnected");
+                    } else {
+                        frame_buffer_draw_line(3, "Sensor error");
+                    }
+                } else {
+                    // Нормальный режим - показываем статус I2C и температуру
+                    if (!isnan(s_ui.model.temperature_water)) {
+                        snprintf(line, sizeof(line), "Temp: %.1fC", s_ui.model.temperature_water);
+                        frame_buffer_draw_line(3, line);
+                    } else {
+                        frame_buffer_draw_line(3, "I2C: OK");
+                    }
+                }
                 break;
             }
             case OLED_UI_NODE_TYPE_EC: {
@@ -1005,9 +1032,33 @@ static void render_normal_screen(void) {
             }
             case OLED_UI_NODE_TYPE_CLIMATE: {
                 char line[22];
-                snprintf(line, sizeof(line), "T: %.1fC H: %.0f%%", 
-                        s_ui.model.temperature_air, s_ui.model.humidity);
+                // Строка 2: Температура и влажность
+                if (!isnan(s_ui.model.temperature_air) && !isnan(s_ui.model.humidity)) {
+                    snprintf(line, sizeof(line), "T: %.1fC H: %.0f%%", 
+                            s_ui.model.temperature_air, s_ui.model.humidity);
+                } else if (!isnan(s_ui.model.temperature_air)) {
+                    snprintf(line, sizeof(line), "T: %.1fC", s_ui.model.temperature_air);
+                } else if (!isnan(s_ui.model.humidity)) {
+                    snprintf(line, sizeof(line), "H: %.0f%%", s_ui.model.humidity);
+                } else {
+                    snprintf(line, sizeof(line), "Sensors: --");
+                }
                 frame_buffer_draw_line(2, line);
+                
+                // Строка 3: CO2 или статус соединений
+                if (!isnan(s_ui.model.co2)) {
+                    snprintf(line, sizeof(line), "CO2: %.0f ppm", s_ui.model.co2);
+                    frame_buffer_draw_line(3, line);
+                } else {
+                    // Показываем статус соединений, если нет CO2
+                    if (s_ui.model.connections.wifi_connected && s_ui.model.connections.mqtt_connected) {
+                        frame_buffer_draw_line(3, "WiFi/MQTT: OK");
+                    } else if (s_ui.model.connections.wifi_connected) {
+                        frame_buffer_draw_line(3, "WiFi: OK MQTT: --");
+                    } else {
+                        frame_buffer_draw_line(3, "WiFi: --");
+                    }
+                }
                 break;
             }
             default:

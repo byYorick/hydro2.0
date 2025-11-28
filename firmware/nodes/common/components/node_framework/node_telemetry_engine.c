@@ -332,7 +332,7 @@ esp_err_t node_telemetry_engine_init(void) {
     BaseType_t ret = xTaskCreate(
         task_telemetry_flush,
         "telemetry_flush",
-        2048,
+        4096,  // Увеличено с 2048 до 4096 для предотвращения stack overflow при обработке JSON
         NULL,
         3,  // Низкий приоритет
         &s_telemetry_engine.flush_task

@@ -112,13 +112,77 @@ static void task_sensors(void *pvParameters) {
                     model.connections.mqtt_connected = conn_status.mqtt_connected;
                     model.connections.wifi_rssi = conn_status.wifi_rssi;
                     
-                    // Get current pH value (pH-специфичная логика)
-                    if (ph_node_is_ph_sensor_initialized()) {
-                        float ph_value = 0.0f;
-                        if (trema_ph_read(&ph_value) && !isnan(ph_value) && isfinite(ph_value)) {
-                            model.ph_value = ph_value;
+                    // Get current pH value and sensor status (pH-специфичная логика)
+                    bool sensor_initialized = ph_node_is_ph_sensor_initialized();
+                    bool i2c_bus_ok = i2c_bus_is_initialized_bus(I2C_BUS_1);
+                    
+                    // Инициализируем статус датчика
+                    model.sensor_status.i2c_connected = false;
+                    model.sensor_status.using_stub = false;
+                    model.sensor_status.has_error = false;
+                    model.sensor_status.error_msg[0] = '\0';
+                    // Инициализируем pH как NaN, чтобы не показывать 0.00
+                    model.ph_value = NAN;
+                    
+                    if (i2c_bus_ok) {
+                        // Проверяем подключение I2C - пытаемся прочитать model ID
+                        uint8_t reg_model = REG_MODEL;
+                        uint8_t model_id = 0;
+                        esp_err_t i2c_err = i2c_bus_read_bus(I2C_BUS_1, TREMA_PH_ADDR, &reg_model, 1, &model_id, 1, 200);
+                        
+                        if (i2c_err == ESP_OK && model_id == 0x1A) {
+                            model.sensor_status.i2c_connected = true;
+                            
+                            // Если датчик подключен, пытаемся прочитать значение
+                            if (sensor_initialized) {
+                                float ph_value = 0.0f;
+                                bool read_success = trema_ph_read(&ph_value);
+                                bool using_stub = trema_ph_is_using_stub_values();
+                                
+                                // Проверяем валидность значения: pH должен быть в диапазоне 0-14
+                                if (read_success && !isnan(ph_value) && isfinite(ph_value) && 
+                                    ph_value >= 0.0f && ph_value <= 14.0f && ph_value != 0.0f) {
+                                    model.ph_value = ph_value;
+                                    model.sensor_status.using_stub = using_stub;
+                                    if (using_stub) {
+                                        model.sensor_status.has_error = true;
+                                        model.ph_value = NAN;  // Не показываем stub значение
+                                        strncpy(model.sensor_status.error_msg, "No sensor", sizeof(model.sensor_status.error_msg) - 1);
+                                    }
+                                } else {
+                                    // Невалидное значение или ошибка чтения
+                                    model.sensor_status.has_error = true;
+                                    model.sensor_status.using_stub = true;
+                                    model.ph_value = NAN;  // Устанавливаем NaN, чтобы не показывать 0.00
+                                    strncpy(model.sensor_status.error_msg, "Read failed", sizeof(model.sensor_status.error_msg) - 1);
+                                }
+                            } else {
+                                // Датчик подключен, но не инициализирован
+                                model.sensor_status.has_error = true;
+                                model.ph_value = NAN;
+                                strncpy(model.sensor_status.error_msg, "Not init", sizeof(model.sensor_status.error_msg) - 1);
+                            }
+                        } else {
+                            // I2C ошибка - датчик не отвечает
+                            model.sensor_status.i2c_connected = false;
+                            model.sensor_status.has_error = true;
+                            model.sensor_status.using_stub = true;
+                            model.ph_value = NAN;  // Устанавливаем NaN
+                            if (i2c_err == ESP_ERR_INVALID_STATE || i2c_err == ESP_ERR_TIMEOUT) {
+                                strncpy(model.sensor_status.error_msg, "I2C NACK", sizeof(model.sensor_status.error_msg) - 1);
+                            } else if (i2c_err == ESP_ERR_NOT_FOUND) {
+                                strncpy(model.sensor_status.error_msg, "No device", sizeof(model.sensor_status.error_msg) - 1);
+                            } else {
+                                strncpy(model.sensor_status.error_msg, "I2C Error", sizeof(model.sensor_status.error_msg) - 1);
+                            }
                         }
-                        // Если не удалось прочитать, оставляем NaN - старое значение сохранится
+                    } else {
+                        // I2C шина не инициализирована
+                        model.sensor_status.i2c_connected = false;
+                        model.sensor_status.has_error = true;
+                        model.sensor_status.using_stub = true;
+                        model.ph_value = NAN;  // Устанавливаем NaN
+                        strncpy(model.sensor_status.error_msg, "I2C bus down", sizeof(model.sensor_status.error_msg) - 1);
                     }
                     
                     // Статус узла
