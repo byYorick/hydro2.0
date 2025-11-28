@@ -1,27 +1,5 @@
 <template>
   <AppLayout>
-    <!-- Toast notifications -->
-    <Teleport to="body">
-      <div 
-        class="fixed top-4 right-4 z-[10000] space-y-2 pointer-events-none"
-        style="position: fixed !important; top: 1rem !important; right: 1rem !important; z-index: 10000 !important; pointer-events: none;"
-      >
-        <div
-          v-for="toast in toasts"
-          :key="toast.id"
-          class="pointer-events-auto"
-          style="pointer-events: auto;"
-        >
-          <Toast
-            :message="toast.message"
-            :variant="toast.variant"
-            :duration="toast.duration"
-            @close="removeToast(toast.id)"
-          />
-        </div>
-      </div>
-    </Teleport>
-    
     <h1 class="text-lg font-semibold mb-4">Пользователи</h1>
 
     <div v-if="isAdmin" class="mb-6">
@@ -176,7 +154,6 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, onMounted } from 'vue'
-import { Teleport } from 'vue'
 import { usePage, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
@@ -185,30 +162,15 @@ import Badge from '@/Components/Badge.vue'
 import Modal from '@/Components/Modal.vue'
 import { translateRole } from '@/utils/i18n'
 import { logger } from '@/utils/logger'
-import Toast from '@/Components/Toast.vue'
 import { useApi } from '@/composables/useApi'
+import { useToast } from '@/composables/useToast'
 
 const page = usePage()
 const currentUser = computed(() => page.props.auth?.user)
 const currentUserId = computed(() => currentUser.value?.id)
 const isAdmin = computed(() => currentUser.value?.role === 'admin')
 
-// Toast notifications
-const toasts = ref([])
-let toastIdCounter = 0
-
-function showToast(message, variant = 'info', duration = 3000) {
-  const id = ++toastIdCounter
-  toasts.value.push({ id, message, variant, duration })
-  return id
-}
-
-function removeToast(id) {
-  const index = toasts.value.findIndex(t => t.id === id)
-  if (index > -1) {
-    toasts.value.splice(index, 1)
-  }
-}
+const { showToast } = useToast()
 
 // Инициализация API с Toast
 const { api } = useApi(showToast)

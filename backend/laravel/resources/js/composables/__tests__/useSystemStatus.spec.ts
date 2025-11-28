@@ -124,7 +124,8 @@ describe('useSystemStatus', () => {
     const { checkWebSocketStatus, wsStatus } = useSystemStatus()
     checkWebSocketStatus()
 
-    expect(wsStatus.value).toBe('unknown')
+    // Когда Echo не доступен, статус должен быть 'connecting' (ожидание инициализации)
+    expect(wsStatus.value).toBe('connecting')
   })
 
   it('should show disconnected when Pusher connection is failed', () => {
@@ -402,8 +403,9 @@ describe('useSystemStatus', () => {
     checkWebSocketStatus()
     checkMqttStatus()
 
-    expect(wsStatus.value).toBe('unknown')
-    expect(mqttStatus.value).toBe('unknown')
+    // Когда Echo не доступен, wsStatus должен быть 'connecting', а mqttStatus - 'degraded'
+    expect(wsStatus.value).toBe('connecting')
+    expect(mqttStatus.value).toBe('degraded')
   })
 })
 

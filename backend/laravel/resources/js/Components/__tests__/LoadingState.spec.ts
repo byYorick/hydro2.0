@@ -115,7 +115,9 @@ describe('LoadingState', () => {
     })
     
     const spinner = wrapper.find('.animate-spin')
-    expect(spinner.attributes('style')).toContain('border-color: rgb(255, 0, 0)')
+    const style = spinner.attributes('style') || ''
+    // Проверяем, что цвет присутствует в стиле (может быть в разных форматах)
+    expect(style).toMatch(/border-color.*rgb\(255,\s*0,\s*0\)|border-color.*#ff0000|border-color.*#f00/i)
   })
 })
 

@@ -1,27 +1,5 @@
 <template>
   <AppLayout>
-    <!-- Toast notifications -->
-    <Teleport to="body">
-      <div 
-        class="fixed top-4 right-4 z-[10000] space-y-2 pointer-events-none"
-        style="position: fixed !important; top: 1rem !important; right: 1rem !important; z-index: 10000 !important; pointer-events: none;"
-      >
-        <div
-          v-for="toast in toasts"
-          :key="toast.id"
-          class="pointer-events-auto"
-          style="pointer-events: auto;"
-        >
-          <Toast
-            :message="toast.message"
-            :variant="toast.variant"
-            :duration="toast.duration"
-            @close="removeToast(toast.id)"
-          />
-        </div>
-      </div>
-    </Teleport>
-    
     <div class="flex flex-col gap-3">
       <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div class="flex-1 min-w-0">
@@ -145,8 +123,11 @@
           <div v-else class="space-y-2">
             <div class="text-sm text-neutral-400">
               Рецепт не привязан
-              <span v-if="zone.recipeInstance && !zone.recipeInstance.recipe" class="text-red-400 text-xs block mt-1">
-                DEBUG: recipeInstance существует (id={{ zone.recipeInstance.id }}, recipe_id={{ zone.recipeInstance.recipe_id }}), но recipe не загружен!
+              <span
+                v-if="zone.recipeInstance && !zone.recipeInstance.recipe"
+                class="text-amber-400 text-xs block mt-1"
+              >
+                Данные рецепта пока не загружены. Обновите страницу или привяжите рецепт заново.
               </span>
             </div>
             <template v-if="page.props.auth?.user?.role === 'admin' || page.props.auth?.user?.role === 'operator'">
@@ -325,7 +306,6 @@ import { useHistory } from '@/composables/useHistory'
 import ZoneTargets from '@/Components/ZoneTargets.vue'
 import PhaseProgress from '@/Components/PhaseProgress.vue'
 import ZoneDevicesVisualization from '@/Components/ZoneDevicesVisualization.vue'
-import Toast from '@/Components/Toast.vue'
 import LoadingState from '@/Components/LoadingState.vue'
 import ZoneSimulationModal from '@/Components/ZoneSimulationModal.vue'
 import ZoneActionModal from '@/Components/ZoneActionModal.vue'
@@ -351,9 +331,9 @@ import { useErrorHandler } from '@/composables/useErrorHandler'
 import { useOptimisticUpdate, createOptimisticZoneUpdate } from '@/composables/useOptimisticUpdate'
 import { useZonesStore } from '@/stores/zones'
 import { useOptimizedUpdates, useTelemetryBatch } from '@/composables/useOptimizedUpdates'
+import { useToast } from '@/composables/useToast'
 import type { Zone, Device, ZoneTelemetry, ZoneTargets as ZoneTargetsType, Cycle, CommandType } from '@/types'
 import type { ZoneEvent } from '@/types/ZoneEvent'
-import type { ToastVariant } from '@/composables/useToast'
 
 const ZoneTelemetryChart = defineAsyncComponent(() => import('@/Pages/Zones/ZoneTelemetryChart.vue'))
 const MultiSeriesTelemetryChart = defineAsyncComponent(() => import('@/Components/MultiSeriesTelemetryChart.vue'))
@@ -374,17 +354,6 @@ interface PageProps {
 }
 
 const page = usePage<PageProps>()
-
-interface ToastItem {
-  id: number
-  message: string
-  variant: ToastVariant
-  duration: number
-}
-
-// Toast notifications
-const toasts = ref<ToastItem[]>([])
-let toastIdCounter = 0
 
 // Simulation modal
 const showSimulationModal = ref<boolean>(false)
@@ -417,13 +386,9 @@ const loading = ref<LoadingState>({
   },
 })
 
-function showToast(message: string, variant: ToastVariant = 'info', duration: number = 3000): number {
-  const id = ++toastIdCounter
-  toasts.value.push({ id, message, variant, duration })
-  return id
-}
+const { showToast } = useToast()
 
-// Инициализация composables с Toast (после определения showToast)
+// Инициализация composables с Toast
 const { sendZoneCommand, reloadZoneAfterCommand, updateCommandStatus, pendingCommands } = useCommands(showToast)
 const { fetchHistory } = useTelemetry(showToast)
 const { reloadZone } = useZones(showToast)
@@ -432,13 +397,6 @@ const { subscribeToZoneCommands } = useWebSocket(showToast)
 const { handleError } = useErrorHandler(showToast)
 const { performUpdate } = useOptimisticUpdate()
 const zonesStore = useZonesStore()
-
-function removeToast(id: number): void {
-  const index = toasts.value.findIndex(t => t.id === id)
-  if (index > -1) {
-    toasts.value.splice(index, 1)
-  }
-}
 const zone = computed(() => {
   const rawZoneData = (page.props.zone || {}) as any
   

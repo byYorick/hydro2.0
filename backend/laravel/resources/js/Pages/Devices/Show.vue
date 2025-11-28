@@ -1,27 +1,5 @@
 <template>
   <AppLayout>
-    <!-- Toast notifications -->
-    <Teleport to="body">
-      <div 
-        class="fixed top-4 right-4 z-[10000] space-y-2 pointer-events-none"
-        style="position: fixed !important; top: 1rem !important; right: 1rem !important; z-index: 10000 !important; pointer-events: none;"
-      >
-        <div
-          v-for="toast in toasts"
-          :key="toast.id"
-          class="pointer-events-auto"
-          style="pointer-events: auto;"
-        >
-          <Toast
-            :message="toast.message"
-            :variant="toast.variant"
-            :duration="toast.duration"
-            @close="removeToast(toast.id)"
-          />
-        </div>
-      </div>
-    </Teleport>
-    
     <div class="flex items-center justify-between mb-3">
       <div>
         <div class="text-lg font-semibold">{{ device.uid || device.name || device.id }}</div>
@@ -116,31 +94,22 @@ import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import NodeLifecycleBadge from '@/Components/NodeLifecycleBadge.vue'
 import DeviceChannelsTable from '@/Pages/Devices/DeviceChannelsTable.vue'
-import Toast from '@/Components/Toast.vue'
 import { logger } from '@/utils/logger'
 import axios from 'axios'
 import { useHistory } from '@/composables/useHistory'
+import { useToast } from '@/composables/useToast'
 import type { Device, DeviceChannel } from '@/types'
-import type { ToastVariant } from '@/composables/useToast'
 
 interface PageProps {
   device?: Device
-}
-
-interface ToastItem {
-  id: number
-  message: string
-  variant: ToastVariant
-  duration: number
 }
 
 const page = usePage<PageProps>()
 const device = computed(() => (page.props.device || {}) as Device)
 const channels = computed(() => (device.value.channels || []) as DeviceChannel[])
 const testingChannels = ref<Set<string>>(new Set())
-const toasts = ref<ToastItem[]>([])
 const detaching = ref(false)
-let toastIdCounter = 0
+const { showToast } = useToast()
 
 // История просмотров
 const { addToHistory } = useHistory()
@@ -174,19 +143,6 @@ const nodeConfig = computed(() => {
   }
   return JSON.stringify(config, null, 2)
 })
-
-function showToast(message: string, variant: ToastVariant = 'info', duration: number = 3000): number {
-  const id = ++toastIdCounter
-  toasts.value.push({ id, message, variant, duration })
-  return id
-}
-
-function removeToast(id: number): void {
-  const index = toasts.value.findIndex(t => t.id === id)
-  if (index > -1) {
-    toasts.value.splice(index, 1)
-  }
-}
 
 const onRestart = async (): Promise<void> => {
   try {

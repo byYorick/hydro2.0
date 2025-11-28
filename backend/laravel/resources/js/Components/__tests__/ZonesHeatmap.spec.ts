@@ -2,13 +2,13 @@ import { mount } from '@vue/test-utils'
 import { describe, it, expect, vi } from 'vitest'
 import ZonesHeatmap from '../ZonesHeatmap.vue'
 
-// Mock Inertia router
-const mockRouter = {
-  visit: vi.fn()
-}
+// Mock Inertia router (hoisted to avoid initialization errors)
+const mockRouter = vi.hoisted(() => ({
+  visit: vi.fn(),
+}))
 
 vi.mock('@inertiajs/vue3', () => ({
-  router: mockRouter
+  router: mockRouter,
 }))
 
 // Mock dependencies
@@ -32,6 +32,10 @@ vi.mock('@/utils/i18n', () => ({
 }))
 
 describe('ZonesHeatmap', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRouter.visit.mockReset()
+  })
   it('renders heatmap with zone statuses', () => {
     const zonesByStatus = {
       RUNNING: 5,

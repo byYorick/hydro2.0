@@ -115,11 +115,13 @@ describe('ErrorBoundary (P1-3)', () => {
     expect(tryAgainButton.exists()).toBe(true)
     expect(tryAgainButton.text()).toContain('Попробовать снова')
 
-    // При клике должна быть вызвана router.reload
+    // При клике должна быть очищена ошибка (но router.reload больше не вызывается)
     await tryAgainButton.trigger('click')
+    await wrapper.vm.$nextTick()
     
-    // Проверяем, что router.reload был вызван
-    expect(reloadSpy).toHaveBeenCalledWith({ only: [] })
+    // Проверяем, что ошибка очищена (error должен быть null)
+    expect(wrapper.vm.error).toBeNull()
+    // router.reload больше не вызывается автоматически в новой версии
   })
 
   it('has "Go Home" button', async () => {

@@ -11,6 +11,7 @@ use App\Http\Controllers\PresetController;
 use App\Http\Controllers\PythonIngestController;
 use App\Http\Controllers\RecipeController;
 use App\Http\Controllers\RecipePhaseController;
+use App\Http\Controllers\ProfitabilityController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SimulationController;
 use App\Http\Controllers\SystemController;
@@ -123,6 +124,10 @@ Route::middleware([
     // Simulations (Digital Twin)
     Route::post('simulations/zone/{zone}', [SimulationController::class, 'simulateZone']);
     Route::get('simulations/{simulation}', [SimulationController::class, 'show']);
+
+    // Profitability
+    Route::post('profitability/calculate', [ProfitabilityController::class, 'calculate']);
+    Route::get('profitability/plants/{plant}', [ProfitabilityController::class, 'plant']);
 
     // Admin (минимальный CRUD поверх ресурсов): зоны быстрый create, рецепт быстрый update
     Route::middleware('role:admin')->prefix('admin')->group(function () {

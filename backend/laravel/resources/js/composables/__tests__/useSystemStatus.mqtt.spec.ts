@@ -136,7 +136,8 @@ describe('useSystemStatus - MQTT Status Channel (P2-4)', () => {
     await new Promise(resolve => setTimeout(resolve, 600))
     
     expect(mockApiGet).toHaveBeenCalled()
-    expect(mockShowToast).toHaveBeenCalledWith('Ошибка проверки статуса MQTT', 'error', 3000)
+    // Ошибка показывается через useErrorHandler с общим сообщением
+    expect(mockShowToast).toHaveBeenCalledWith(expect.stringContaining('Ошибка проверки статуса системы'), 'error', 5000)
   })
 
   it('should use fallback logic when MQTT status is not in API response', async () => {

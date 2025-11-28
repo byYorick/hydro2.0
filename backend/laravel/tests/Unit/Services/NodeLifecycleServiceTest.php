@@ -1,64 +1,76 @@
 <?php
 
+namespace Tests\Unit\Services;
+
 use App\Enums\NodeLifecycleState;
 use App\Models\DeviceNode;
 use App\Services\NodeLifecycleService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
-uses(TestCase::class, RefreshDatabase::class);
+class NodeLifecycleServiceTest extends TestCase
+{
+    use RefreshDatabase;
 
-beforeEach(function () {
-    $this->service = app(NodeLifecycleService::class);
-});
+    private NodeLifecycleService $service;
 
-it('transitions node to active state and sets status online', function () {
-    $node = DeviceNode::factory()->create([
-        'uid' => 'nd-test-assign',
-        'lifecycle_state' => NodeLifecycleState::ASSIGNED_TO_ZONE,
-        'status' => 'offline',
-    ]);
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->service = app(NodeLifecycleService::class);
+    }
 
-    $result = $this->service->transitionToActive($node, 'commissioned');
+    public function test_transitions_node_to_active_state_and_sets_status_online(): void
+    {
+        $node = DeviceNode::factory()->create([
+            'uid' => 'nd-test-assign',
+            'lifecycle_state' => NodeLifecycleState::ASSIGNED_TO_ZONE,
+            'status' => 'offline',
+        ]);
 
-    expect($result)->toBeTrue();
+        $result = $this->service->transitionToActive($node, 'commissioned');
 
-    $node->refresh();
+        $this->assertTrue($result);
 
-    expect($node->lifecycle_state)->toBe(NodeLifecycleState::ACTIVE)
-        ->and($node->status)->toBe('online');
-});
+        $node->refresh();
 
-it('prevents invalid transitions and keeps state unchanged', function () {
-    $node = DeviceNode::factory()->create([
-        'uid' => 'nd-test-invalid',
-        'lifecycle_state' => NodeLifecycleState::MANUFACTURED,
-        'status' => 'offline',
-    ]);
+        $this->assertEquals(NodeLifecycleState::ACTIVE, $node->lifecycle_state);
+        $this->assertEquals('online', $node->status);
+    }
 
-    $result = $this->service->transitionToActive($node);
+    public function test_prevents_invalid_transitions_and_keeps_state_unchanged(): void
+    {
+        $node = DeviceNode::factory()->create([
+            'uid' => 'nd-test-invalid',
+            'lifecycle_state' => NodeLifecycleState::MANUFACTURED,
+            'status' => 'offline',
+        ]);
 
-    expect($result)->toBeFalse();
+        $result = $this->service->transitionToActive($node);
 
-    $node->refresh();
+        $this->assertFalse($result);
 
-    expect($node->lifecycle_state)->toBe(NodeLifecycleState::MANUFACTURED)
-        ->and($node->status)->toBe('offline');
-});
+        $node->refresh();
 
-it('sets node offline when transitioning to maintenance', function () {
-    $node = DeviceNode::factory()->create([
-        'uid' => 'nd-test-maint',
-        'lifecycle_state' => NodeLifecycleState::ACTIVE,
-        'status' => 'online',
-    ]);
+        $this->assertEquals(NodeLifecycleState::MANUFACTURED, $node->lifecycle_state);
+        $this->assertEquals('offline', $node->status);
+    }
 
-    $result = $this->service->transitionToMaintenance($node, 'manual-check');
+    public function test_sets_node_offline_when_transitioning_to_maintenance(): void
+    {
+        $node = DeviceNode::factory()->create([
+            'uid' => 'nd-test-maint',
+            'lifecycle_state' => NodeLifecycleState::ACTIVE,
+            'status' => 'online',
+        ]);
 
-    expect($result)->toBeTrue();
+        $result = $this->service->transitionToMaintenance($node, 'manual-check');
 
-    $node->refresh();
+        $this->assertTrue($result);
 
-    expect($node->lifecycle_state)->toBe(NodeLifecycleState::MAINTENANCE)
-        ->and($node->status)->toBe('offline');
-});
+        $node->refresh();
+
+        $this->assertEquals(NodeLifecycleState::MAINTENANCE, $node->lifecycle_state);
+        $this->assertEquals('offline', $node->status);
+    }
+}

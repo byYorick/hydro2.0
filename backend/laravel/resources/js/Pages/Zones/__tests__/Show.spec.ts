@@ -65,12 +65,29 @@ const sampleEvents = [
 const axiosGetMock = vi.hoisted(() => vi.fn())
 const axiosPostMock = vi.hoisted(() => vi.fn())
 
-vi.mock('axios', () => ({
-  default: {
+vi.mock('axios', () => {
+  const axiosInstance = {
     get: (url: string, config?: any) => axiosGetMock(url, config),
     post: (url: string, data?: any, config?: any) => axiosPostMock(url, data, config),
-  },
-}))
+    interceptors: {
+      request: {
+        use: vi.fn(),
+        eject: vi.fn(),
+      },
+      response: {
+        use: vi.fn(),
+        eject: vi.fn(),
+      },
+    },
+  }
+
+  return {
+    default: {
+      ...axiosInstance,
+      create: () => axiosInstance,
+    },
+  }
+})
 
 const usePageMock = vi.hoisted(() => vi.fn(() => ({
   props: {
@@ -90,6 +107,20 @@ const usePageMockInstance = usePageMock()
 vi.mock('@inertiajs/vue3', () => ({
   usePage: () => usePageMockInstance,
   Link: { name: 'Link', props: ['href'], template: '<a :href="href"><slot /></a>' },
+  router: {
+    reload: vi.fn(),
+  },
+}))
+
+vi.mock('@/stores/zones', () => ({
+  useZonesStore: () => ({
+    allZones: [],
+    cacheVersion: 0,
+    initFromProps: vi.fn(),
+    upsert: vi.fn(),
+    remove: vi.fn(),
+    invalidateCache: vi.fn(),
+  }),
 }))
 
 import ZonesShow from '../Show.vue'

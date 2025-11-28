@@ -67,9 +67,12 @@ export default defineConfig({
                 // Оптимизация для production
                 manualChunks: (id) => {
                     // Разделение vendor chunks для лучшего кеширования
+                    // ИСПРАВЛЕНО: Vue должен быть в основном bundle, а не в отдельном chunk
+                    // для правильной синхронной загрузки
                     if (id.includes('node_modules')) {
-                        if (id.includes('vue')) {
-                            return 'vue-vendor';
+                        // Vue и его зависимости не разделяем, они будут в основном bundle
+                        if (id.includes('vue') || id.includes('@vue')) {
+                            return null; // Возвращаем null, чтобы Vue был в основном bundle
                         }
                         if (id.includes('echarts')) {
                             return 'echarts-vendor';

@@ -1,27 +1,5 @@
 <template>
   <AppLayout>
-    <!-- Toast notifications -->
-    <Teleport to="body">
-      <div 
-        class="fixed top-4 right-4 z-[10000] space-y-2 pointer-events-none"
-        style="position: fixed !important; top: 1rem !important; right: 1rem !important; z-index: 10000 !important; pointer-events: none;"
-      >
-        <div
-          v-for="toast in toasts"
-          :key="toast.id"
-          class="pointer-events-auto"
-          style="pointer-events: auto;"
-        >
-          <Toast
-            :message="toast.message"
-            :variant="toast.variant"
-            :duration="toast.duration"
-            @close="removeToast(toast.id)"
-          />
-        </div>
-      </div>
-    </Teleport>
-    
     <div class="flex flex-col gap-4">
       <div class="flex items-center justify-between">
         <h1 class="text-lg font-semibold">Добавление новой ноды</h1>
@@ -148,29 +126,14 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
-import Toast from '@/Components/Toast.vue'
 import { logger } from '@/utils/logger'
 import axios from 'axios'
 import { useNodeLifecycle } from '@/composables/useNodeLifecycle'
 import { useErrorHandler } from '@/composables/useErrorHandler'
+import { useToast } from '@/composables/useToast'
 import type { Device } from '@/types'
 
-// Toast notifications
-const toasts = ref([])
-let toastIdCounter = 0
-
-function showToast(message, variant = 'info', duration = 3000) {
-  const id = ++toastIdCounter
-  toasts.value.push({ id, message, variant, duration })
-  return id
-}
-
-function removeToast(id) {
-  const index = toasts.value.findIndex(t => t.id === id)
-  if (index > -1) {
-    toasts.value.splice(index, 1)
-  }
-}
+const { showToast } = useToast()
 
 // Инициализация composables для lifecycle
 const { canAssignToZone, getStateLabel } = useNodeLifecycle(showToast)

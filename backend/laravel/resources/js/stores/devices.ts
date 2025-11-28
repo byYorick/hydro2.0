@@ -7,6 +7,8 @@ interface DevicesStoreState {
   items: Record<number | string, Device>
   // Массив идентификаторов для сохранения порядка
   ids: Array<number | string>
+  // Индекс соответствия UID → первичный ключ
+  uidIndex: Record<string, number | string>
   
   // Состояние загрузки
   loading: boolean
@@ -27,6 +29,7 @@ export const useDevicesStore = defineStore('devices', {
   state: (): DevicesStoreState => ({
     items: {} as Record<number | string, Device>,
     ids: [] as Array<number | string>,
+    uidIndex: {} as Record<string, number | string>,
     loading: false,
     error: null,
     lastFetch: null,
@@ -46,17 +49,22 @@ export const useDevicesStore = defineStore('devices', {
     setDevices(devices: Device[]): void {
       const normalized: Record<number | string, Device> = {}
       const ids: Array<number | string> = []
+      const uidIndex: Record<string, number | string> = {}
       
       devices.forEach(device => {
-        const identifier = device.id || device.uid
-        if (identifier) {
+        const identifier = device.id ?? device.uid
+        if (identifier !== null && identifier !== undefined) {
           normalized[identifier] = device
           ids.push(identifier)
+          if (device.uid) {
+            uidIndex[device.uid] = identifier
+          }
         }
       })
       
       this.items = normalized
       this.ids = ids
+      this.uidIndex = uidIndex
       this.lastFetch = new Date()
       this.cacheVersion++
     },
@@ -65,16 +73,20 @@ export const useDevicesStore = defineStore('devices', {
      * Добавить или обновить устройство
      */
     upsert(device: Device): void {
-      const identifier = device.id || device.uid
-      if (!identifier) return
+      const identifier = device.id ?? device.uid
+      if (identifier === null || identifier === undefined) return
       
-      const oldDevice = this.items[identifier]
+      const resolvedKey = this.resolveDeviceKey(identifier)
+      const oldDevice = this.items[resolvedKey]
       const exists = !!oldDevice
       
-      this.items[identifier] = device
+      this.items[resolvedKey] = device
+      if (device.uid) {
+        this.uidIndex[device.uid] = resolvedKey
+      }
       
       if (!exists) {
-        this.ids.push(identifier)
+        this.ids.push(resolvedKey)
         // Эмитим событие создания
         deviceEvents.created(device)
       } else {
@@ -84,7 +96,7 @@ export const useDevicesStore = defineStore('devices', {
         // Если изменилось lifecycle состояние, эмитим специальное событие
         if (oldDevice.lifecycle_state !== device.lifecycle_state && device.lifecycle_state) {
           deviceEvents.lifecycleTransitioned({
-            deviceId: typeof identifier === 'number' ? identifier : 0,
+            deviceId: typeof resolvedKey === 'number' ? resolvedKey : 0,
             fromState: oldDevice.lifecycle_state || 'UNKNOWN',
             toState: device.lifecycle_state,
           })
@@ -99,16 +111,24 @@ export const useDevicesStore = defineStore('devices', {
      * Удалить устройство
      */
     remove(deviceId: number | string): void {
-      if (this.items[deviceId]) {
-        delete this.items[deviceId]
-        this.ids = this.ids.filter(id => id !== deviceId)
+      const resolvedKey = this.resolveDeviceKey(deviceId)
+      const device = this.items[resolvedKey]
+      if (!device) {
+        return
+      }
+
+      if (device.uid) {
+        delete this.uidIndex[device.uid]
+      }
+
+      delete this.items[resolvedKey]
+      this.ids = this.ids.filter(id => id !== resolvedKey)
         
         // Эмитим событие удаления
         deviceEvents.deleted(deviceId)
         
         this.cacheVersion++
         this.cacheInvalidatedAt = new Date()
-      }
     },
     
     /**
@@ -117,9 +137,22 @@ export const useDevicesStore = defineStore('devices', {
     clear(): void {
       this.items = {}
       this.ids = []
+      this.uidIndex = {}
       this.cacheVersion++
       this.cacheInvalidatedAt = new Date()
     },
+    resolveDeviceKey(deviceId: number | string): number | string {
+      if (this.items[deviceId]) {
+        return deviceId
+      }
+
+      if (typeof deviceId === 'string' && this.uidIndex[deviceId] !== undefined) {
+        return this.uidIndex[deviceId]
+      }
+
+      return deviceId
+    },
+
     
     /**
      * Инвалидировать кеш (для принудительного обновления)
@@ -188,7 +221,15 @@ export const useDevicesStore = defineStore('devices', {
      */
     deviceById: (state) => {
       return (id: number | string): Device | undefined => {
+        if (state.items[id]) {
         return state.items[id]
+        }
+
+        if (typeof id === 'string' && state.uidIndex[id] !== undefined) {
+          return state.items[state.uidIndex[id]]
+        }
+
+        return undefined
       }
     },
     

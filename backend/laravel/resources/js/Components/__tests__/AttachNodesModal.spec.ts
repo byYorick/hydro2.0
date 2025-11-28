@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('@/Components/Modal.vue', () => ({
@@ -40,6 +40,8 @@ vi.mock('@/utils/logger', () => ({
     error: vi.fn(),
   },
 }))
+
+vi.stubGlobal('alert', vi.fn())
 
 import AttachNodesModal from '../AttachNodesModal.vue'
 
@@ -109,13 +111,12 @@ describe('AttachNodesModal.vue', () => {
       },
     })
     
-    await new Promise(resolve => setTimeout(resolve, 150))
-    await wrapper.vm.$nextTick()
+    await flushPromises()
     
     expect(wrapper.text()).toContain('node-1')
     expect(wrapper.text()).toContain('node-2')
-    expect(wrapper.text()).toContain('pH Sensor')
-    expect(wrapper.text()).toContain('EC Sensor')
+    expect(wrapper.text()).toContain('sensor — online')
+    expect(wrapper.text()).toContain('actuator — online')
   })
 
   it('позволяет выбрать несколько узлов', async () => {
@@ -125,18 +126,17 @@ describe('AttachNodesModal.vue', () => {
         zoneId: 1,
       },
     })
-    
-    await new Promise(resolve => setTimeout(resolve, 150))
-    await wrapper.vm.$nextTick()
+    await flushPromises()
     
     const checkboxes = wrapper.findAll('input[type="checkbox"]')
     expect(checkboxes.length).toBeGreaterThan(0)
     
     await checkboxes[0].setValue(true)
     await checkboxes[1].setValue(true)
-    await wrapper.vm.$nextTick()
+    await flushPromises()
     
-    expect(wrapper.vm.$data.selectedNodeIds.length).toBeGreaterThanOrEqual(1)
+    const attachButton = wrapper.findAll('button').find(btn => btn.text().includes('Привязать'))
+    expect(attachButton?.text()).toContain('(2)')
   })
 
   it('привязывает выбранные узлы к зоне', async () => {
@@ -146,18 +146,18 @@ describe('AttachNodesModal.vue', () => {
         zoneId: 1,
       },
     })
-    
-    await new Promise(resolve => setTimeout(resolve, 150))
-    await wrapper.vm.$nextTick()
-    
-    await wrapper.setData({ selectedNodeIds: [1, 2] })
-    await wrapper.vm.$nextTick()
+    await flushPromises()
+
+    const checkboxes = wrapper.findAll('input[type="checkbox"]')
+    await checkboxes[0].setValue(true)
+    await checkboxes[1].setValue(true)
+    await flushPromises()
     
     const attachButton = wrapper.findAll('button').find(btn => btn.text().includes('Привязать'))
     if (attachButton) {
       await attachButton.trigger('click')
       
-      await new Promise(resolve => setTimeout(resolve, 100))
+      await flushPromises()
       
       expect(axiosPatchMock).toHaveBeenCalledTimes(2)
       expect(axiosPatchMock.mock.calls[0][0]).toBe('/api/nodes/1')
@@ -191,12 +191,13 @@ describe('AttachNodesModal.vue', () => {
         zoneId: 1,
       },
     })
-    
-    await new Promise(resolve => setTimeout(resolve, 150))
-    await wrapper.vm.$nextTick()
-    
-    await wrapper.setData({ selectedNodeIds: [1, 2, 3] })
-    await wrapper.vm.$nextTick()
+    await flushPromises()
+
+    const checkboxes = wrapper.findAll('input[type="checkbox"]')
+    await checkboxes[0].setValue(true)
+    await checkboxes[1].setValue(true)
+    await checkboxes[2].setValue(true)
+    await flushPromises()
     
     const attachButton = wrapper.findAll('button').find(btn => btn.text().includes('Привязать'))
     if (attachButton) {
@@ -217,14 +218,17 @@ describe('AttachNodesModal.vue', () => {
         zoneId: 1,
       },
     })
-    
-    await new Promise(resolve => setTimeout(resolve, 150))
-    await wrapper.vm.$nextTick()
+    await flushPromises()
     
     expect(wrapper.text()).toContain('Нет доступных узлов')
   })
 
   it('показывает состояние загрузки', async () => {
+    let resolveRequest: ((value: unknown) => void) | null = null
+    axiosGetMock.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveRequest = resolve
+    }))
+    
     const wrapper = mount(AttachNodesModal, {
       props: {
         show: true,
@@ -232,7 +236,13 @@ describe('AttachNodesModal.vue', () => {
       },
     })
     
+    await wrapper.vm.$nextTick()
     expect(wrapper.text()).toContain('Загрузка')
+    
+    resolveRequest?.({
+      data: { data: sampleNodes },
+    })
+    await flushPromises()
   })
 
   it('эмитит событие attached после успешной привязки', async () => {
@@ -242,18 +252,17 @@ describe('AttachNodesModal.vue', () => {
         zoneId: 1,
       },
     })
-    
-    await new Promise(resolve => setTimeout(resolve, 150))
-    await wrapper.vm.$nextTick()
-    
-    await wrapper.setData({ selectedNodeIds: [1, 2] })
-    await wrapper.vm.$nextTick()
+    await flushPromises()
+
+    const checkboxes = wrapper.findAll('input[type="checkbox"]')
+    await checkboxes[0].setValue(true)
+    await checkboxes[1].setValue(true)
+    await flushPromises()
     
     const attachButton = wrapper.findAll('button').find(btn => btn.text().includes('Привязать'))
     if (attachButton) {
       await attachButton.trigger('click')
-      
-      await new Promise(resolve => setTimeout(resolve, 100))
+      await flushPromises()
       
       expect(wrapper.emitted('attached')).toBeTruthy()
       expect(wrapper.emitted('attached')?.[0]).toEqual([[1, 2]])
@@ -300,18 +309,16 @@ describe('AttachNodesModal.vue', () => {
         zoneId: 1,
       },
     })
-    
-    await new Promise(resolve => setTimeout(resolve, 150))
-    await wrapper.vm.$nextTick()
-    
-    await wrapper.setData({ selectedNodeIds: [1] })
-    await wrapper.vm.$nextTick()
+    await flushPromises()
+
+    const checkboxes = wrapper.findAll('input[type="checkbox"]')
+    await checkboxes[0].setValue(true)
+    await flushPromises()
     
     const attachButton = wrapper.findAll('button').find(btn => btn.text().includes('Привязать'))
     if (attachButton) {
       await attachButton.trigger('click')
-      
-      await new Promise(resolve => setTimeout(resolve, 100))
+      await flushPromises()
       
       expect(axiosPatchMock).toHaveBeenCalled()
     }

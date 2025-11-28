@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\PlantController;
 use App\Http\Controllers\ProfileController;
 use App\Models\Alert;
 use App\Models\DeviceNode;
@@ -9,6 +10,7 @@ use App\Models\SystemLog;
 use App\Models\TelemetryLast;
 use App\Models\Zone;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
@@ -25,7 +27,7 @@ Route::post('/broadcasting/auth', function () {
     return Broadcast::auth(request());
 })->middleware(['web', 'auth']);
 
-Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function () {
+Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->group(function () {
     /**
      * Dashboard - главная страница
      *
@@ -40,6 +42,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
      *     nodesByStatus: { 'online': int, 'offline': int },
      *     problematicZones: Array<{ id, name, status, description, greenhouse_id, greenhouse, alerts_count }>,
      *     greenhouses: Array<{ id, uid, name, type, zones_count, zones_running }>,
+     *     zones: Array<{ id, name, status, greenhouse: { id, name } }>,
      *     latestAlerts: Array<{ id, type, status, details, zone_id, created_at, zone }>
      *   }
      *
@@ -141,6 +144,22 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
                 ->limit(10)
                 ->get();
 
+            $zonesForTelemetry = Zone::query()
+                ->select(['id', 'name', 'status', 'greenhouse_id'])
+                ->with('greenhouse:id,name')
+                ->orderByRaw("
+                    CASE status
+                        WHEN 'ALARM' THEN 1
+                        WHEN 'WARNING' THEN 2
+                        WHEN 'RUNNING' THEN 3
+                        WHEN 'PAUSED' THEN 4
+                        ELSE 5
+                    END
+                ")
+                ->orderBy('name')
+                ->limit(20)
+                ->get();
+
             return [
                 'greenhousesCount' => (int) $stats->greenhouses_count,
                 'zonesCount' => (int) $stats->zones_count,
@@ -150,6 +169,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
                 'nodesByStatus' => $nodesByStatus,
                 'problematicZones' => $problematicZones,
                 'greenhouses' => $greenhouses,
+                'zones' => $zonesForTelemetry,
                 'latestAlerts' => $latestAlerts,
             ];
         });
@@ -177,6 +197,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin'])->group(function
             'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
         ]);
     })->name('greenhouses.create');
+
 
     /**
      * Greenhouse Show - детальная страница теплицы
@@ -1138,6 +1159,14 @@ Route::get('/swagger', function () {
     return redirect('/swagger.html');
 });
 
+Route::middleware(['web', 'auth', 'role:admin,operator,agronomist'])->group(function () {
+    Route::get('/plants', [PlantController::class, 'index'])->name('plants.index');
+    Route::post('/plants', [PlantController::class, 'store'])->name('plants.store');
+    Route::put('/plants/{plant}', [PlantController::class, 'update'])->name('plants.update');
+    Route::delete('/plants/{plant}', [PlantController::class, 'destroy'])->name('plants.destroy');
+    Route::post('/plants/{plant}/prices', [PlantController::class, 'storePriceVersion'])->name('plants.prices.store');
+});
+
 Route::middleware(['web', 'auth'])->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
@@ -1145,3 +1174,11 @@ Route::middleware(['web', 'auth'])->group(function () {
 });
 
 require __DIR__.'/auth.php';
+
+if (app()->environment(['local', 'testing'])) {
+    Route::get('/testing/login/{user}', function (\App\Models\User $user) {
+        \Illuminate\Support\Facades\Auth::login($user);
+
+        return redirect()->intended('/');
+    })->name('testing.login');
+}

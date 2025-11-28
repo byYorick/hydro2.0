@@ -5,6 +5,8 @@ import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
 import { Head, useForm } from '@inertiajs/vue3';
+// ИСПРАВЛЕНО: Импорт route из утилиты
+import { route } from '@/utils/route';
 
 const form = useForm({
     password: '',

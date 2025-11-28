@@ -15,11 +15,17 @@ describe('echoClient stub', () => {
     global.window = {}
   })
 
-  it('returns null from initEcho', () => {
+  it('returns null from initEcho when window is unavailable', () => {
+    // @ts-ignore
+    delete global.window
+
     const result = initEcho()
     expect(result).toBeNull()
     expect(getEcho()).toBeNull()
     expect(getEchoInstance()).toBeNull()
+
+    // @ts-ignore
+    global.window = {}
   })
 
   it('reports disconnected state', () => {

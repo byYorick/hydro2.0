@@ -163,7 +163,9 @@ function resolvePath(): string | undefined {
     return envPath.startsWith('/') ? envPath : `/${envPath}`
   }
 
-  return '/app'
+  // ИСПРАВЛЕНО: Возвращаем пустую строку вместо '/app', чтобы избежать дублирования пути
+  // Если путь не указан, Pusher будет использовать корневой путь
+  return ''
 }
 
 function buildEchoConfig(): Record<string, unknown> {

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { useTelemetry } from '../useTelemetry'
+type TelemetryModule = typeof import('../useTelemetry')
+let telemetryModule: TelemetryModule
 
 // Mock logger
 vi.mock('@/utils/logger', () => ({
@@ -45,10 +46,12 @@ vi.mock('../useErrorHandler', () => ({
 describe('useTelemetry - SessionStorage Cache (P2-2)', () => {
   const STORAGE_KEY = 'hydro_telemetry_cache'
 
-  beforeEach(() => {
-    // Очищаем sessionStorage перед каждым тестом
+  beforeEach(async () => {
     sessionStorage.clear()
     vi.clearAllMocks()
+    vi.resetModules()
+    telemetryModule = await import('../useTelemetry')
+    telemetryModule.clearTelemetryCache()
   })
 
   afterEach(() => {
@@ -71,7 +74,7 @@ describe('useTelemetry - SessionStorage Cache (P2-2)', () => {
       api: { get: mockApiGet }
     } as any)
 
-    const { fetchLastTelemetry } = useTelemetry()
+    const { fetchLastTelemetry } = telemetryModule.useTelemetry()
     await fetchLastTelemetry(1)
 
     // Проверяем, что данные сохранены в sessionStorage
@@ -101,9 +104,6 @@ describe('useTelemetry - SessionStorage Cache (P2-2)', () => {
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(testData))
 
     // Инициализируем useTelemetry
-    const { fetchLastTelemetry } = useTelemetry()
-
-    // Данные должны быть загружены из кеша (не из API)
     const { useApi } = await import('../useApi')
     const mockApi = {
       api: {
@@ -111,6 +111,10 @@ describe('useTelemetry - SessionStorage Cache (P2-2)', () => {
       }
     }
     vi.mocked(useApi).mockReturnValue(mockApi)
+
+    vi.resetModules()
+    telemetryModule = await import('../useTelemetry')
+    const { fetchLastTelemetry } = telemetryModule.useTelemetry()
 
     const result = await fetchLastTelemetry(1)
     
@@ -143,8 +147,8 @@ describe('useTelemetry - SessionStorage Cache (P2-2)', () => {
       api: { get: mockApiGet }
     } as any)
     
-    const { useTelemetry } = await import('../useTelemetry')
-    const { fetchLastTelemetry } = useTelemetry()
+    telemetryModule = await import('../useTelemetry')
+    const { fetchLastTelemetry } = telemetryModule.useTelemetry()
     
     await fetchLastTelemetry(3) // Вызов очистит кеш
 
@@ -185,7 +189,7 @@ describe('useTelemetry - SessionStorage Cache (P2-2)', () => {
     }
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(manyEntries))
 
-    const { fetchLastTelemetry } = useTelemetry()
+    const { fetchLastTelemetry } = telemetryModule.useTelemetry()
     await fetchLastTelemetry(1)
 
     // Проверяем, что старые записи были удалены при переполнении
@@ -207,7 +211,7 @@ describe('useTelemetry - SessionStorage Cache (P2-2)', () => {
     }
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(testData))
 
-    const { clearCache } = useTelemetry()
+    const { clearCache } = telemetryModule.useTelemetry()
     clearCache(null) // Очищаем весь кеш
 
     const cached = sessionStorage.getItem(STORAGE_KEY)
@@ -217,12 +221,14 @@ describe('useTelemetry - SessionStorage Cache (P2-2)', () => {
     expect(cached !== null).toBe(true) // Storage может остаться, но это OK
   })
 
-  it('should handle corrupted sessionStorage data gracefully', () => {
+  it('should handle corrupted sessionStorage data gracefully', async () => {
     // Сохраняем некорректные данные
     sessionStorage.setItem(STORAGE_KEY, 'invalid json')
 
-    // Не должно выбросить ошибку
-    expect(() => useTelemetry()).not.toThrow()
+    vi.resetModules()
+    telemetryModule = await import('../useTelemetry')
+
+    expect(() => telemetryModule.useTelemetry()).not.toThrow()
   })
 
   it('should save history data to sessionStorage', async () => {
@@ -241,7 +247,7 @@ describe('useTelemetry - SessionStorage Cache (P2-2)', () => {
     }
     vi.mocked(useApi).mockReturnValue(mockApi)
 
-    const { fetchHistory } = useTelemetry()
+    const { fetchHistory } = telemetryModule.useTelemetry()
     await fetchHistory(1, 'PH', { from: '2024-01-01', to: '2024-01-02' })
 
     const cached = sessionStorage.getItem(STORAGE_KEY)
