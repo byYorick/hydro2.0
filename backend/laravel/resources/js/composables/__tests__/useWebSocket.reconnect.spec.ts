@@ -17,13 +17,13 @@ describe('useWebSocket - Reconnect Logic', () => {
   let mockEcho: any
   let mockPusher: any
   let mockConnection: any
-  let mockChannel: any
-  let mockPrivateChannel: any
+  let mockZoneChannel: any
+  let mockGlobalChannel: any
 
   beforeEach(() => {
     vi.useFakeTimers()
     
-    mockChannel = {
+    mockZoneChannel = {
       listen: vi.fn(),
       stopListening: vi.fn(),
       leave: vi.fn(),
@@ -32,7 +32,7 @@ describe('useWebSocket - Reconnect Logic', () => {
       bindings: []
     }
 
-    mockPrivateChannel = {
+    mockGlobalChannel = {
       listen: vi.fn(),
       stopListening: vi.fn(),
       leave: vi.fn(),
@@ -59,8 +59,13 @@ describe('useWebSocket - Reconnect Logic', () => {
     }
 
     mockEcho = {
-      private: vi.fn(() => mockPrivateChannel),
-      channel: vi.fn(() => mockChannel),
+      private: vi.fn((channelName: string) => {
+        if (channelName === 'events.global') {
+          return mockGlobalChannel
+        }
+        return mockZoneChannel
+      }),
+      channel: vi.fn(() => mockZoneChannel),
       connector: {
         pusher: mockPusher
       }
@@ -88,7 +93,7 @@ describe('useWebSocket - Reconnect Logic', () => {
       subscribeToZoneCommands(1, handler)
       
       expect(mockEcho.private).toHaveBeenCalledWith('commands.1')
-      expect(mockPrivateChannel.listen).toHaveBeenCalled()
+      expect(mockZoneChannel.listen).toHaveBeenCalled()
       
       // Симулируем reconnect - вызываем resubscribeAllChannels
       mockConnection.state = 'connected'
@@ -109,7 +114,7 @@ describe('useWebSocket - Reconnect Logic', () => {
       subscribeToGlobalEvents(globalHandler)
       
       expect(mockEcho.private).toHaveBeenCalledTimes(2)
-      expect(mockEcho.channel).toHaveBeenCalledTimes(1)
+      expect(mockEcho.private).toHaveBeenCalledWith('events.global')
       
       // Симулируем reconnect
       mockConnection.state = 'connected'
@@ -117,7 +122,7 @@ describe('useWebSocket - Reconnect Logic', () => {
       
       // Все подписки должны быть восстановлены
       expect(mockEcho.private).toHaveBeenCalledTimes(4) // 2 первоначальных + 2 при resubscribe
-      expect(mockEcho.channel).toHaveBeenCalledTimes(2) // 1 первоначальный + 1 при resubscribe
+      expect(mockEcho.private).toHaveBeenCalledWith('events.global')
     })
   })
 
@@ -141,7 +146,7 @@ describe('useWebSocket - Reconnect Logic', () => {
       unsubscribe1()
       
       // Второй компонент все еще должен получать события
-      expect(mockPrivateChannel.stopListening).not.toHaveBeenCalled() // Не вызывается, пока есть другие подписчики
+      expect(mockZoneChannel.stopListening).not.toHaveBeenCalled() // Не вызывается, пока есть другие подписчики
     })
 
     it('should call stopListening only when last component unsubscribes', () => {
@@ -156,11 +161,11 @@ describe('useWebSocket - Reconnect Logic', () => {
       
       // Отписываемся от первого - stopListening не должен вызываться
       unsubscribe1()
-      expect(mockPrivateChannel.stopListening).not.toHaveBeenCalled()
+      expect(mockZoneChannel.stopListening).not.toHaveBeenCalled()
       
       // Отписываемся от второго - теперь stopListening должен вызваться
       unsubscribe2()
-      expect(mockPrivateChannel.stopListening).toHaveBeenCalled()
+      expect(mockZoneChannel.stopListening).toHaveBeenCalled()
     })
   })
 
@@ -180,7 +185,7 @@ describe('useWebSocket - Reconnect Logic', () => {
       
       // Канал должен быть пересоздан через Echo API
       expect(mockEcho.private).toHaveBeenCalledWith('commands.1')
-      expect(mockPrivateChannel.listen).toHaveBeenCalled()
+      expect(mockZoneChannel.listen).toHaveBeenCalled()
     })
 
     it('should detect dead channel by missing listeners', () => {
@@ -230,13 +235,13 @@ describe('useWebSocket - Reconnect Logic', () => {
       
       // Второй компонент все еще должен быть подписан
       // Проверяем, что stopListening не был вызван (так как есть другой подписчик)
-      expect(mockPrivateChannel.stopListening).not.toHaveBeenCalled()
+      expect(mockZoneChannel.stopListening).not.toHaveBeenCalled()
       
       // Отписываемся от второго
       unsubscribe2()
       
       // Теперь stopListening должен быть вызван
-      expect(mockPrivateChannel.stopListening).toHaveBeenCalled()
+      expect(mockZoneChannel.stopListening).toHaveBeenCalled()
     })
   })
 

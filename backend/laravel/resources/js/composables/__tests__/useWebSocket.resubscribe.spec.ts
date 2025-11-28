@@ -20,25 +20,30 @@ vi.mock('@/utils/logger', () => ({
 
 describe('useWebSocket - Resubscribe Logic', () => {
   let mockEcho: any
-  let mockChannel: any
-  let mockPrivateChannel: any
+  let mockZoneChannel: any
+  let mockGlobalChannel: any
 
   beforeEach(() => {
-    mockChannel = {
+    mockZoneChannel = {
       listen: vi.fn(),
       stopListening: vi.fn(),
       leave: vi.fn()
     }
 
-    mockPrivateChannel = {
+    mockGlobalChannel = {
       listen: vi.fn(),
       stopListening: vi.fn(),
       leave: vi.fn()
     }
 
     mockEcho = {
-      private: vi.fn(() => mockPrivateChannel),
-      channel: vi.fn(() => mockChannel),
+      private: vi.fn((channelName: string) => {
+        if (channelName === 'events.global') {
+          return mockGlobalChannel
+        }
+        return mockZoneChannel
+      }),
+      channel: vi.fn(),
       connector: {
         pusher: {
           connection: {
@@ -95,7 +100,7 @@ describe('useWebSocket - Resubscribe Logic', () => {
 
     // Проверяем, что канал был создан
     expect(mockEcho.private).toHaveBeenCalledWith('commands.1')
-    expect(mockPrivateChannel.listen).toHaveBeenCalled()
+    expect(mockZoneChannel.listen).toHaveBeenCalled()
   })
 
   it('should resubscribe to global events channel', async () => {
@@ -107,8 +112,8 @@ describe('useWebSocket - Resubscribe Logic', () => {
     
     resubscribeAllChannels()
 
-    expect(mockEcho.channel).toHaveBeenCalledWith('events.global')
-    expect(mockChannel.listen).toHaveBeenCalled()
+    expect(mockEcho.private).toHaveBeenCalledWith('events.global')
+    expect(mockGlobalChannel.listen).toHaveBeenCalled()
   })
 
   it('should handle missing Echo gracefully', async () => {
@@ -176,7 +181,7 @@ describe('useWebSocket - Resubscribe Logic', () => {
 
     // Проверяем, что все подписки восстановлены
     expect(mockEcho.private).toHaveBeenCalledWith('commands.1')
-    expect(mockEcho.channel).toHaveBeenCalledWith('events.global')
+    expect(mockEcho.private).toHaveBeenCalledWith('events.global')
   })
 
   it('should validate subscriptions before resubscribe', async () => {

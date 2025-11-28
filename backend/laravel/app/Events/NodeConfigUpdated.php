@@ -3,8 +3,8 @@
 namespace App\Events;
 
 use App\Models\DeviceNode;
-use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
+use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
@@ -27,10 +27,9 @@ class NodeConfigUpdated implements ShouldBroadcast
     /**
      * Get the channels the event should broadcast on.
      */
-    public function broadcastOn(): Channel
+    public function broadcastOn(): PrivateChannel
     {
-        // Публичный канал для всех устройств
-        return new Channel('hydro.devices');
+        return new PrivateChannel('hydro.devices');
     }
 
     /**

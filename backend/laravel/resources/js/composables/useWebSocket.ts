@@ -487,7 +487,7 @@ export function useWebSocket(showToast?: ToastHandler, componentTag?: string) {
       return () => undefined
     }
 
-    const control = ensureChannelControl(GLOBAL_EVENTS_CHANNEL, 'globalEvents', 'public')
+    const control = ensureChannelControl(GLOBAL_EVENTS_CHANNEL, 'globalEvents', 'private')
     if (!control) {
       logger.warn('[useWebSocket] Unable to create global events channel', {})
       return () => undefined

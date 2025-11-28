@@ -60,8 +60,10 @@ vi.mock('@inertiajs/vue3', () => ({
   Link: { name: 'Link', props: ['href'], template: '<a :href="href"><slot /></a>' },
 }))
 
+const subscribeAlertsMock = vi.hoisted(() => vi.fn(() => vi.fn()))
+
 vi.mock('@/bootstrap', () => ({
-  subscribeAlerts: vi.fn(),
+  subscribeAlerts: subscribeAlertsMock,
 }))
 
 import AlertsIndex from '../Index.vue'
@@ -70,6 +72,7 @@ describe('Alerts/Index.vue', () => {
   beforeEach(() => {
     axiosPatchMock.mockClear()
     routerReloadMock.mockClear()
+    subscribeAlertsMock.mockClear()
     axiosPatchMock.mockResolvedValue({ data: { status: 'ok' } })
   })
 
