@@ -5,6 +5,8 @@ idf_component_register(
         "climate_node_tasks.c"
         "pwm_driver.c"
         "climate_node_framework_integration.c"
+        "climate_node_init.c"
+        "climate_node_init_steps.c"
     INCLUDE_DIRS
         "."
     REQUIRES
@@ -19,6 +21,9 @@ idf_component_register(
         sht3x
         ccs811
         setup_portal
+        oled_ui
+        connection_status
+        node_utils
         esp_wifi
         esp_timer
         esp_system

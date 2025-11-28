@@ -11,6 +11,7 @@
  * телеметрия публикуется только при выполнении команд (ток насоса)
  */
 
+#include "pump_node_app.h"
 #include "mqtt_manager.h"
 #include "ina209.h"
 #include "config_storage.h"
@@ -23,6 +24,7 @@
 #include "esp_timer.h"
 #include "esp_system.h"
 #include "esp_wifi.h"
+#include "esp_netif.h"
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -37,6 +39,7 @@ static const char *TAG = "pump_node_tasks";
 #define HEARTBEAT_INTERVAL_MS      15000 // 15 секунд - heartbeat
 #define DEFAULT_CURRENT_POLL_MS   1000  // 1 секунда по умолчанию для тока насоса
 #define PUMP_HEALTH_INTERVAL_MS    10000 // 10 секунд - health отчеты
+#define STATUS_PUBLISH_INTERVAL_MS 60000  // 60 секунд - публикация STATUS согласно DEVICE_NODE_PROTOCOL.md
 
 // Глобальная переменная для интервала опроса тока (потокобезопасно)
 static uint32_t s_current_poll_interval_ms = DEFAULT_CURRENT_POLL_MS;
@@ -266,6 +269,111 @@ static void task_pump_health(void *pvParameters) {
 }
 
 /**
+ * @brief Задача публикации STATUS сообщений
+ * 
+ * Публикует status каждые 60 секунд согласно DEVICE_NODE_PROTOCOL.md раздел 4.2
+ * 
+ * Примечание: интервал 60 секунд больше watchdog таймаута (10 сек),
+ * поэтому используем периодический сброс watchdog во время ожидания
+ */
+static void task_status(void *pvParameters) {
+    ESP_LOGI(TAG, "Status task started");
+    
+    // Добавляем задачу в watchdog
+    esp_err_t wdt_err = node_watchdog_add_task();
+    if (wdt_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add status task to watchdog: %s", esp_err_to_name(wdt_err));
+    }
+    
+    TickType_t last_wake_time = xTaskGetTickCount();
+    const TickType_t interval = pdMS_TO_TICKS(STATUS_PUBLISH_INTERVAL_MS);
+    
+    // Сбрасываем watchdog каждую секунду, чтобы иметь запас к системному таймауту
+    const TickType_t wdt_reset_interval = pdMS_TO_TICKS(1000);
+    TickType_t last_wdt_reset = xTaskGetTickCount();
+    
+    while (1) {
+        // Периодически сбрасываем watchdog во время ожидания
+        // (интервал задачи 60 сек > watchdog таймаут 10 сек)
+        TickType_t current_time = xTaskGetTickCount();
+        TickType_t elapsed_since_wdt = current_time - last_wdt_reset;
+        
+        // TickType_t - беззнаковый тип, переполнение работает по модулю, поэтому
+        // разница всегда корректна и не может быть отрицательной
+        if (elapsed_since_wdt >= wdt_reset_interval) {
+            node_watchdog_reset();
+            last_wdt_reset = current_time;
+        }
+        
+        // Проверяем, наступило ли время для публикации STATUS
+        TickType_t elapsed_since_wake = current_time - last_wake_time;
+        if (elapsed_since_wake >= interval) {
+            // Сбрасываем watchdog перед выполнением работы
+            node_watchdog_reset();
+            
+            if (mqtt_manager_is_connected()) {
+                // Публикация STATUS
+                pump_node_publish_status();
+            }
+            
+            // Сбрасываем watchdog после выполнения работы
+            node_watchdog_reset();
+            last_wake_time = current_time;
+        }
+        
+        // Небольшая задержка, чтобы не нагружать CPU
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+/**
+ * @brief Publish STATUS message
+ * 
+ * Публикует статус узла согласно DEVICE_NODE_PROTOCOL.md раздел 4.2
+ */
+void pump_node_publish_status(void) {
+    if (!mqtt_manager_is_connected()) {
+        return;
+    }
+    
+    // Получение IP адреса
+    esp_netif_ip_info_t ip_info;
+    char ip_str[16] = "0.0.0.0";
+    esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    if (netif != NULL) {
+        if (esp_netif_get_ip_info(netif, &ip_info) == ESP_OK) {
+            snprintf(ip_str, sizeof(ip_str), IPSTR, IP2STR(&ip_info.ip));
+        }
+    }
+    
+    // Получение RSSI
+    wifi_ap_record_t ap_info;
+    int8_t rssi = -100;
+    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+        rssi = ap_info.rssi;
+    }
+    
+    // Версия прошивки (можно взять из IDF_VER или hardcode)
+    const char *fw_version = IDF_VER;
+    
+    // Формат согласно DEVICE_NODE_PROTOCOL.md раздел 4.2
+    cJSON *status = cJSON_CreateObject();
+    if (status) {
+        cJSON_AddBoolToObject(status, "online", true);
+        cJSON_AddStringToObject(status, "ip", ip_str);
+        cJSON_AddNumberToObject(status, "rssi", rssi);
+        cJSON_AddStringToObject(status, "fw", fw_version);
+        
+        char *json_str = cJSON_PrintUnformatted(status);
+        if (json_str) {
+            mqtt_manager_publish_status(json_str);
+            free(json_str);
+        }
+        cJSON_Delete(status);
+    }
+}
+
+/**
  * @brief Обновление интервала опроса тока из NodeConfig
  * 
  * Ищет канал "pump_bus_current" в NodeConfig и обновляет s_current_poll_interval_ms
@@ -320,6 +428,9 @@ void pump_node_start_tasks(void) {
 
     // Health отчеты по насосам и INA209
     xTaskCreate(task_pump_health, "pump_health_task", 4096, NULL, 4, NULL);
+
+    // Задача публикации STATUS
+    xTaskCreate(task_status, "status_task", 3072, NULL, 3, NULL);
 
     // Задача heartbeat
     xTaskCreate(task_heartbeat, "heartbeat_task", 3072, NULL, 3, NULL);

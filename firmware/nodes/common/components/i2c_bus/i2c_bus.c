@@ -267,7 +267,8 @@ esp_err_t i2c_bus_read_bus(i2c_bus_id_t bus_id, uint8_t device_addr, const uint8
     xSemaphoreGive(bus->mutex);
     
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "I²C read failed on bus %d: %s (addr=0x%02X)", bus_id, esp_err_to_name(err), device_addr);
+        // Понижаем уровень логирования - ошибки чтения могут быть ожидаемыми (датчик не подключен)
+        ESP_LOGD(TAG, "I²C read failed on bus %d: %s (addr=0x%02X)", bus_id, esp_err_to_name(err), device_addr);
     }
     
     return err;
@@ -348,7 +349,8 @@ esp_err_t i2c_bus_write_bus(i2c_bus_id_t bus_id, uint8_t device_addr, const uint
     xSemaphoreGive(bus->mutex);
     
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "I²C write failed on bus %d: %s (addr=0x%02X)", bus_id, esp_err_to_name(err), device_addr);
+        // Понижаем уровень логирования - ошибки записи могут быть ожидаемыми (датчик не подключен)
+        ESP_LOGD(TAG, "I²C write failed on bus %d: %s (addr=0x%02X)", bus_id, esp_err_to_name(err), device_addr);
     }
     
     return err;

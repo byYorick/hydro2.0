@@ -14,6 +14,8 @@
 extern "C" {
 #endif
 
+#include "i2c_bus.h"
+
 typedef struct {
     float temperature;
     float humidity;
@@ -22,6 +24,7 @@ typedef struct {
 
 typedef struct {
     uint8_t i2c_address;
+    i2c_bus_id_t i2c_bus;  // I2C bus для датчика (по умолчанию I2C_BUS_0)
 } sht3x_config_t;
 
 esp_err_t sht3x_init(const sht3x_config_t *config);

@@ -989,10 +989,37 @@ static void render_normal_screen(void) {
         switch (s_ui.node_type) {
             case OLED_UI_NODE_TYPE_PH: {
                 char line[22];
-                snprintf(line, sizeof(line), "pH: %.2f", s_ui.model.ph_value);
+                // Отображаем pH значение с индикацией stub значений и ошибок
+                if (s_ui.model.sensor_status.using_stub || isnan(s_ui.model.ph_value) || 
+                    s_ui.model.ph_value == 0.0f || s_ui.model.sensor_status.has_error) {
+                    snprintf(line, sizeof(line), "pH: --.--");
+                } else {
+                    snprintf(line, sizeof(line), "pH: %.2f", s_ui.model.ph_value);
+                }
                 frame_buffer_draw_line(2, line);
-                snprintf(line, sizeof(line), "Temp: %.1fC", s_ui.model.temperature_water);
-                frame_buffer_draw_line(3, line);
+                
+                // Статус I2C подключения и ошибки
+                if (s_ui.model.sensor_status.has_error) {
+                    // Показываем ошибку или статус I2C
+                    if (s_ui.model.sensor_status.error_msg[0] != '\0') {
+                        char error_line[22];
+                        strncpy(error_line, s_ui.model.sensor_status.error_msg, sizeof(error_line) - 1);
+                        error_line[sizeof(error_line) - 1] = '\0';
+                        frame_buffer_draw_line(3, error_line);
+                    } else if (!s_ui.model.sensor_status.i2c_connected) {
+                        frame_buffer_draw_line(3, "I2C: Disconnected");
+                    } else {
+                        frame_buffer_draw_line(3, "Sensor error");
+                    }
+                } else {
+                    // Нормальный режим - показываем статус I2C и температуру
+                    if (!isnan(s_ui.model.temperature_water)) {
+                        snprintf(line, sizeof(line), "Temp: %.1fC", s_ui.model.temperature_water);
+                        frame_buffer_draw_line(3, line);
+                    } else {
+                        frame_buffer_draw_line(3, "I2C: OK");
+                    }
+                }
                 break;
             }
             case OLED_UI_NODE_TYPE_EC: {
@@ -1005,9 +1032,63 @@ static void render_normal_screen(void) {
             }
             case OLED_UI_NODE_TYPE_CLIMATE: {
                 char line[22];
-                snprintf(line, sizeof(line), "T: %.1fC H: %.0f%%", 
-                        s_ui.model.temperature_air, s_ui.model.humidity);
+                // Строка 2: Температура и влажность - показываем прочерки при ошибках (как в ph_node)
+                if (!isnan(s_ui.model.temperature_air) && isfinite(s_ui.model.temperature_air) &&
+                    !isnan(s_ui.model.humidity) && isfinite(s_ui.model.humidity) &&
+                    s_ui.model.temperature_air >= -40.0f && s_ui.model.temperature_air <= 125.0f &&
+                    s_ui.model.humidity >= 0.0f && s_ui.model.humidity <= 100.0f) {
+                    snprintf(line, sizeof(line), "T:%.1fC H:%.0f%%", 
+                            s_ui.model.temperature_air, s_ui.model.humidity);
+                } else {
+                    // Показываем прочерки при ошибках или невалидных значениях
+                    strncpy(line, "T:--.-C H:--%", sizeof(line) - 1);
+                    line[sizeof(line) - 1] = '\0';
+                }
                 frame_buffer_draw_line(2, line);
+                
+                // Строка 3: CO2 или статус I2C
+                if (!isnan(s_ui.model.co2) && isfinite(s_ui.model.co2) && s_ui.model.co2 >= 0.0f) {
+                    snprintf(line, sizeof(line), "CO2: %d ppm", (int)s_ui.model.co2);
+                } else {
+                    // Если CO2 не доступен, показываем статус I2C
+                    if (s_ui.model.sensor_status.i2c_connected) {
+                        strncpy(line, "I2C: OK", sizeof(line) - 1);
+                    } else {
+                        strncpy(line, "I2C: ERR", sizeof(line) - 1);
+                    }
+                    line[sizeof(line) - 1] = '\0';
+                }
+                frame_buffer_draw_line(3, line);
+                break;
+            }
+            case OLED_UI_NODE_TYPE_LIGHTING: {
+                char line[22];
+                // Строка 2: Освещенность - показываем прочерки при ошибках (как в ph_node)
+                if (!isnan(s_ui.model.lux_value) && isfinite(s_ui.model.lux_value) && s_ui.model.lux_value >= 0.0f) {
+                    snprintf(line, sizeof(line), "Lux: %.0f", s_ui.model.lux_value);
+                } else {
+                    // Показываем прочерки при ошибках или невалидных значениях
+                    strncpy(line, "Lux: --", sizeof(line) - 1);
+                    line[sizeof(line) - 1] = '\0';
+                }
+                frame_buffer_draw_line(2, line);
+                
+                // Строка 3: Статус I2C или ошибка
+                if (s_ui.model.sensor_status.i2c_connected) {
+                    if (s_ui.model.sensor_status.has_error && s_ui.model.sensor_status.error_msg[0] != '\0') {
+                        // Показываем сообщение об ошибке, если есть
+                        strncpy(line, s_ui.model.sensor_status.error_msg, sizeof(line) - 1);
+                        line[sizeof(line) - 1] = '\0';
+                    } else {
+                        // Датчик подключен и работает
+                        strncpy(line, "I2C: OK", sizeof(line) - 1);
+                        line[sizeof(line) - 1] = '\0';
+                    }
+                } else {
+                    strncpy(line, "I2C: ERR", sizeof(line) - 1);
+                    line[sizeof(line) - 1] = '\0';
+                }
+                frame_buffer_draw_line(3, line);
                 break;
             }
             default:
@@ -1355,6 +1436,12 @@ esp_err_t oled_ui_update_model(const oled_ui_model_t *model) {
     if (!isnan(model->co2) && isfinite(model->co2)) {
         s_ui.model.co2 = model->co2;
     }
+    if (!isnan(model->lux_value) && isfinite(model->lux_value)) {
+        s_ui.model.lux_value = model->lux_value;
+    }
+    
+    // Статус датчиков - всегда обновляем
+    s_ui.model.sensor_status = model->sensor_status;
     
     // Статус узла - всегда обновляем
     s_ui.model.alert = model->alert;

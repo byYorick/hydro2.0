@@ -1,247 +1,134 @@
 /**
  * @file pump_node_app.c
- * @brief Основная логика pump_node
+ * @brief Main application logic for pump_node
  * 
- * Нода насосов для управления насосами и мониторинга тока через INA209
- * Согласно NODE_ARCH_FULL.md и MQTT_SPEC_FULL.md
+ * Pump node for controlling pumps and monitoring current via INA209
+ * According to NODE_ARCH_FULL.md and MQTT_SPEC_FULL.md
+ * 
+ * Тонкий слой координации - вся логика делегируется в компоненты
  */
 
-#include "mqtt_manager.h"
-#include "wifi_manager.h"
-#include "config_storage.h"
 #include "pump_node_app.h"
-#include "pump_node_framework_integration.h"
+#include "pump_node_init.h"
+#include "pump_node_defaults.h"
 #include "pump_driver.h"
-#include "setup_portal.h"
-#include "node_utils.h"
+#include "config_storage.h"
 #include "esp_log.h"
-#include "esp_err.h"
-
-// Объявление функции из pump_node_tasks.c
-extern void pump_node_start_tasks(void);
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include <string.h>
+#include <stdio.h>
 
 static const char *TAG = "pump_node";
 
-// Forward declaration
-static void on_wifi_connection_changed(bool connected, void *user_ctx);
-static void on_mqtt_connection_changed(bool connected, void *user_ctx);
+// Кеш для node_id (опционально, для быстрого доступа)
+static char s_node_id_cache[64] = {0};
+static bool s_node_id_cache_valid = false;
+static SemaphoreHandle_t s_node_id_cache_mutex = NULL;  // Mutex для защиты кеша node_id
 
-static void on_wifi_connection_changed(bool connected, void *user_ctx) {
-    if (connected) {
-        ESP_LOGI(TAG, "Wi-Fi connected");
-    } else {
-        ESP_LOGW(TAG, "Wi-Fi disconnected");
+// State getters/setters - делегируют в компоненты
+bool pump_node_is_pump_control_initialized(void) {
+    return pump_driver_is_initialized();
+}
+
+/**
+ * @brief Инициализация mutex для кеша node_id
+ */
+static void init_node_id_cache_mutex(void) {
+    if (s_node_id_cache_mutex == NULL) {
+        s_node_id_cache_mutex = xSemaphoreCreateMutex();
+        if (s_node_id_cache_mutex == NULL) {
+            ESP_LOGE(TAG, "Failed to create node_id cache mutex");
+        }
     }
 }
 
-static void on_mqtt_connection_changed(bool connected, void *user_ctx) {
-    if (connected) {
-        ESP_LOGI(TAG, "MQTT connected - pump_node is online");
+const char* pump_node_get_node_id(void) {
+    // Инициализация mutex при первом вызове
+    init_node_id_cache_mutex();
+    
+    // Захватываем mutex
+    if (s_node_id_cache_mutex != NULL && 
+        xSemaphoreTake(s_node_id_cache_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
         
-        // Публикуем node_hello при первом подключении для регистрации
-        // Проверяем, есть ли уже конфиг с правильными ID (не временные)
-        char node_id[CONFIG_STORAGE_MAX_STRING_LEN];
-        char gh_uid[CONFIG_STORAGE_MAX_STRING_LEN];
-        bool has_node_id = (config_storage_get_node_id(node_id, sizeof(node_id)) == ESP_OK);
-        bool has_gh_uid = (config_storage_get_gh_uid(gh_uid, sizeof(gh_uid)) == ESP_OK);
-        bool has_valid_config = has_node_id && 
-                                strcmp(node_id, "node-temp") != 0 &&
-                                has_gh_uid &&
-                                strcmp(gh_uid, "gh-temp") != 0;
-        
-        if (!has_valid_config) {
-            // Устройство еще не зарегистрировано - публикуем node_hello
-            const char *capabilities[] = {"pump", "current"};
-            node_utils_publish_node_hello("pump", capabilities, 2);
+        // Если кеш валиден, возвращаем его
+        if (s_node_id_cache_valid) {
+            xSemaphoreGive(s_node_id_cache_mutex);
+            return s_node_id_cache;
         }
         
-        // Запрашиваем время у сервера для синхронизации
-        node_utils_request_time();
+        // Иначе получаем из config_storage
+        if (config_storage_get_node_id(s_node_id_cache, sizeof(s_node_id_cache)) == ESP_OK) {
+            s_node_id_cache_valid = true;
+            xSemaphoreGive(s_node_id_cache_mutex);
+            return s_node_id_cache;
+        }
+        
+        // Если не найдено, возвращаем дефолтное значение
+        if (s_node_id_cache[0] == '\0') {
+            strncpy(s_node_id_cache, PUMP_NODE_DEFAULT_NODE_ID, sizeof(s_node_id_cache) - 1);
+            s_node_id_cache[sizeof(s_node_id_cache) - 1] = '\0';
+        }
+        
+        xSemaphoreGive(s_node_id_cache_mutex);
+        return s_node_id_cache;
     } else {
-        ESP_LOGW(TAG, "MQTT disconnected - pump_node is offline");
+        // Если mutex недоступен, используем без защиты (fallback)
+        ESP_LOGW(TAG, "Failed to take node_id cache mutex, using unsafe access");
+        if (!s_node_id_cache_valid) {
+            if (config_storage_get_node_id(s_node_id_cache, sizeof(s_node_id_cache)) == ESP_OK) {
+                s_node_id_cache_valid = true;
+            } else if (s_node_id_cache[0] == '\0') {
+                strncpy(s_node_id_cache, PUMP_NODE_DEFAULT_NODE_ID, sizeof(s_node_id_cache) - 1);
+                s_node_id_cache[sizeof(s_node_id_cache) - 1] = '\0';
+            }
+        }
+        return s_node_id_cache;
+    }
+}
+
+void pump_node_set_node_id(const char *node_id) {
+    if (node_id) {
+        // Инициализация mutex при первом вызове
+        init_node_id_cache_mutex();
+        
+        // Захватываем mutex
+        if (s_node_id_cache_mutex != NULL && 
+            xSemaphoreTake(s_node_id_cache_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+            strncpy(s_node_id_cache, node_id, sizeof(s_node_id_cache) - 1);
+            s_node_id_cache[sizeof(s_node_id_cache) - 1] = '\0';
+            s_node_id_cache_valid = true;
+            xSemaphoreGive(s_node_id_cache_mutex);
+        } else {
+            // Если mutex недоступен, используем без защиты (fallback)
+            ESP_LOGW(TAG, "Failed to take node_id cache mutex, using unsafe write");
+            strncpy(s_node_id_cache, node_id, sizeof(s_node_id_cache) - 1);
+            s_node_id_cache[sizeof(s_node_id_cache) - 1] = '\0';
+            s_node_id_cache_valid = true;
+        }
+        // Примечание: сохранение в config_storage должно происходить через config handler
     }
 }
 
 /**
- * @brief Инициализация pump_node
+ * @brief Initialize pump_node application
  */
 void pump_node_app_init(void) {
-    ESP_LOGI(TAG, "Initializing pump_node...");
+    ESP_LOGI(TAG, "Initializing pump_node application...");
     
-    // Инициализация config_storage
-    esp_err_t err = config_storage_init();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize config storage: %s", esp_err_to_name(err));
+    esp_err_t err = pump_node_init_components();
+    if (err != ESP_OK && err != ESP_ERR_NOT_FOUND) {
+        ESP_LOGE(TAG, "Failed to initialize components: %s", esp_err_to_name(err));
         return;
     }
     
-    // Попытка загрузить конфигурацию из NVS
-    err = config_storage_load();
+    // If setup mode was triggered, it will reboot the device
     if (err == ESP_ERR_NOT_FOUND) {
-        ESP_LOGW(TAG, "No config in NVS, using defaults. Waiting for config from MQTT...");
-    } else if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to load config from NVS: %s", esp_err_to_name(err));
-        ESP_LOGW(TAG, "Using default values, waiting for config from MQTT...");
-    }
-    
-    // Инициализация Wi-Fi менеджера
-    err = wifi_manager_init();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize Wi-Fi manager: %s", esp_err_to_name(err));
         return;
     }
     
-    // Проверка наличия Wi-Fi конфига
-    config_storage_wifi_t wifi_cfg;
-    bool wifi_configured = (config_storage_get_wifi(&wifi_cfg) == ESP_OK) && 
-                           (strlen(wifi_cfg.ssid) > 0);
+    ESP_LOGI(TAG, "pump_node application initialized");
     
-    if (!wifi_configured) {
-        ESP_LOGW(TAG, "WiFi config not found, starting setup mode...");
-        setup_portal_full_config_t setup_config = {
-            .node_type_prefix = "PUMP",
-            .ap_password = "hydro2025",
-            .enable_oled = false,
-            .oled_user_ctx = NULL
-        };
-        // Эта функция блокирует выполнение до получения credentials и перезагрузки устройства
-        setup_portal_run_full_setup(&setup_config);
-        return; // Не должно быть достигнуто, так как setup_portal перезагружает устройство
-    }
-    
-    wifi_manager_register_connection_cb(on_wifi_connection_changed, NULL);
-    
-    // Подключение к Wi-Fi
-    wifi_manager_config_t wifi_config;
-    static char wifi_ssid[CONFIG_STORAGE_MAX_STRING_LEN];
-    static char wifi_password[CONFIG_STORAGE_MAX_STRING_LEN];
-    
-    strncpy(wifi_ssid, wifi_cfg.ssid, sizeof(wifi_ssid) - 1);
-    wifi_ssid[sizeof(wifi_ssid) - 1] = '\0';  // Гарантируем null-termination
-    strncpy(wifi_password, wifi_cfg.password, sizeof(wifi_password) - 1);
-    wifi_password[sizeof(wifi_password) - 1] = '\0';  // Гарантируем null-termination
-    wifi_config.ssid = wifi_ssid;
-    wifi_config.password = wifi_password;
-    ESP_LOGI(TAG, "Connecting to Wi-Fi from config: %s", wifi_cfg.ssid);
-    
-    err = wifi_manager_connect(&wifi_config);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to connect to Wi-Fi: %s", esp_err_to_name(err));
-    }
-    
-    // Инициализация MQTT клиента
-    config_storage_mqtt_t mqtt_cfg;
-    mqtt_manager_config_t mqtt_config;
-    mqtt_node_info_t node_info;
-    static char mqtt_host[CONFIG_STORAGE_MAX_STRING_LEN];
-    static char mqtt_username[CONFIG_STORAGE_MAX_STRING_LEN];
-    static char mqtt_password[CONFIG_STORAGE_MAX_STRING_LEN];
-    static char node_id[64];
-    static const char *default_gh_uid = "gh-1";
-    static const char *default_zone_uid = "zn-3";
-    
-    if (config_storage_get_mqtt(&mqtt_cfg) == ESP_OK) {
-        strncpy(mqtt_host, mqtt_cfg.host, sizeof(mqtt_host) - 1);
-        mqtt_host[sizeof(mqtt_host) - 1] = '\0';  // Гарантируем null-termination
-        mqtt_config.host = mqtt_host;
-        mqtt_config.port = mqtt_cfg.port;
-        mqtt_config.keepalive = mqtt_cfg.keepalive;
-        mqtt_config.client_id = NULL;
-        if (strlen(mqtt_cfg.username) > 0) {
-            strncpy(mqtt_username, mqtt_cfg.username, sizeof(mqtt_username) - 1);
-            mqtt_username[sizeof(mqtt_username) - 1] = '\0';  // Гарантируем null-termination
-            mqtt_config.username = mqtt_username;
-        } else {
-            mqtt_config.username = NULL;
-        }
-        if (strlen(mqtt_cfg.password) > 0) {
-            strncpy(mqtt_password, mqtt_cfg.password, sizeof(mqtt_password) - 1);
-            mqtt_password[sizeof(mqtt_password) - 1] = '\0';  // Гарантируем null-termination
-            mqtt_config.password = mqtt_password;
-        } else {
-            mqtt_config.password = NULL;
-        }
-        mqtt_config.use_tls = mqtt_cfg.use_tls;
-        ESP_LOGI(TAG, "MQTT config from storage: %s:%d", mqtt_cfg.host, mqtt_cfg.port);
-    } else {
-        strncpy(mqtt_host, "192.168.1.10", sizeof(mqtt_host) - 1);
-        mqtt_host[sizeof(mqtt_host) - 1] = '\0';  // Гарантируем null-termination
-        mqtt_config.host = mqtt_host;
-        mqtt_config.port = 1883;
-        mqtt_config.keepalive = 30;
-        mqtt_config.client_id = NULL;
-        mqtt_config.username = NULL;
-        mqtt_config.password = NULL;
-        mqtt_config.use_tls = false;
-        ESP_LOGW(TAG, "Using default MQTT config");
-    }
-    
-    if (config_storage_get_node_id(node_id, sizeof(node_id)) == ESP_OK) {
-        node_info.node_uid = node_id;
-        ESP_LOGI(TAG, "Node ID from config: %s", node_id);
-    } else {
-        strncpy(node_id, "pump-001", sizeof(node_id) - 1);
-        node_id[sizeof(node_id) - 1] = '\0';  // Гарантируем null-termination
-        node_info.node_uid = node_id;
-        ESP_LOGW(TAG, "Using default node ID");
-    }
-    
-    // Get gh_uid and zone_uid from NodeConfig
-    static char gh_uid[CONFIG_STORAGE_MAX_STRING_LEN];
-    static char zone_uid[CONFIG_STORAGE_MAX_STRING_LEN];
-    if (config_storage_get_gh_uid(gh_uid, sizeof(gh_uid)) == ESP_OK) {
-        node_info.gh_uid = gh_uid;
-        ESP_LOGI(TAG, "GH UID from config: %s", gh_uid);
-    } else {
-        node_info.gh_uid = default_gh_uid;
-        ESP_LOGW(TAG, "GH UID not found in config, using default: %s", default_gh_uid);
-    }
-    
-    if (config_storage_get_zone_uid(zone_uid, sizeof(zone_uid)) == ESP_OK) {
-        node_info.zone_uid = zone_uid;
-        ESP_LOGI(TAG, "Zone UID from config: %s", zone_uid);
-    } else {
-        node_info.zone_uid = default_zone_uid;
-        ESP_LOGW(TAG, "Zone UID not found in config, using default: %s", default_zone_uid);
-    }
-    
-    err = mqtt_manager_init(&mqtt_config, &node_info);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize MQTT client: %s", esp_err_to_name(err));
-        return;
-    }
-    
-    // Инициализация node_framework и регистрация MQTT обработчиков
-    esp_err_t fw_err = pump_node_framework_init_integration();
-    if (fw_err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize node_framework: %s", esp_err_to_name(fw_err));
-        return;
-    }
-    
-    pump_node_framework_register_mqtt_handlers();
-    
-    // Регистрация callback для публикации node_hello при подключении MQTT
-    mqtt_manager_register_connection_cb(on_mqtt_connection_changed, NULL);
-    
-    // Запуск MQTT клиента
-    err = mqtt_manager_start();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to start MQTT client: %s", esp_err_to_name(err));
-        return;
-    }
-    
-    // Инициализация pump_driver из NodeConfig
-    err = pump_driver_init_from_config();
-    if (err == ESP_OK) {
-        ESP_LOGI(TAG, "Pump driver initialized from config");
-    } else if (err == ESP_ERR_NOT_FOUND) {
-        ESP_LOGW(TAG, "No pump channels found in config, pump driver not initialized");
-    } else {
-        ESP_LOGE(TAG, "Failed to initialize pump driver: %s", esp_err_to_name(err));
-    }
-
-    ESP_LOGI(TAG, "pump_node initialized");
-
-    // Запуск FreeRTOS задач для heartbeat и мониторинга тока
+    // Start FreeRTOS tasks for current polling and heartbeat
     pump_node_start_tasks();
 }
