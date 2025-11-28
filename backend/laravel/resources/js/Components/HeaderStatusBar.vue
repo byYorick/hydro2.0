@@ -326,8 +326,35 @@ const metrics = ref<{
   alertsCount: null,
 })
 
+// Флаг для предотвращения повторных запросов при 401
+let isUnauthenticated = false
+
 // Загрузка метрик (только алерты, данные dashboard приходят через props)
 async function loadMetrics() {
+  // Проверяем, авторизован ли пользователь
+  const user = page.props.auth?.user
+  if (!user) {
+    // Если пользователь не авторизован, не делаем запросы
+    isUnauthenticated = true
+    if (metricsInterval) {
+      clearInterval(metricsInterval)
+      metricsInterval = null
+    }
+    return
+  }
+  
+  // Если уже была ошибка 401, не повторяем запросы
+  if (isUnauthenticated) {
+    return
+  }
+  
+  // Используем данные из props, если они доступны (предпочтительно)
+  const dashboardData = page.props.dashboard as any
+  if (dashboardData?.alertsCount !== undefined) {
+    metrics.value.alertsCount = dashboardData.alertsCount
+    return
+  }
+  
   try {
     // Загружаем только активные алерты, данные dashboard уже в props
     const alertsRes = await Promise.allSettled([
@@ -337,9 +364,28 @@ async function loadMetrics() {
     if (alertsRes[0]?.status === 'fulfilled') {
       const alerts = alertsRes[0].value.data?.data || alertsRes[0].value.data || []
       metrics.value.alertsCount = Array.isArray(alerts) ? alerts.length : 0
+      isUnauthenticated = false // Сбрасываем флаг при успешном запросе
+    } else if (alertsRes[0]?.status === 'rejected') {
+      const error = alertsRes[0].reason
+      // Если ошибка 401, прекращаем повторные запросы
+      if (error?.response?.status === 401) {
+        isUnauthenticated = true
+        if (metricsInterval) {
+          clearInterval(metricsInterval)
+          metricsInterval = null
+        }
+      }
     }
-  } catch (err) {
-    // Игнорируем ошибки загрузки алертов, они не критичны
+  } catch (err: any) {
+    // Если ошибка 401, прекращаем повторные запросы
+    if (err?.response?.status === 401) {
+      isUnauthenticated = true
+      if (metricsInterval) {
+        clearInterval(metricsInterval)
+        metricsInterval = null
+      }
+    }
+    // Игнорируем другие ошибки загрузки алертов, они не критичны
     logger.debug('[HeaderStatusBar] Failed to load alerts:', err)
   }
 }
