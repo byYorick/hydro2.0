@@ -24,6 +24,7 @@ class SystemController extends Controller
                     'status' => 'ok',
                     'data' => [
                         'app' => 'ok',
+                        'db' => 'ok',
                     ],
                 ]);
             } catch (\Throwable $e) {
@@ -31,6 +32,7 @@ class SystemController extends Controller
                     'status' => 'fail',
                     'data' => [
                         'app' => 'fail',
+                        'db' => 'fail',
                     ],
                 ], 503);
             }

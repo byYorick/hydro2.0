@@ -182,6 +182,25 @@ function createActiveSubscription(
   }
 }
 
+function getPusherChannel(channelName: string): any | null {
+  if (!isBrowser()) {
+    return null
+  }
+
+  const channels = window.Echo?.connector?.pusher?.channels?.channels
+  if (!channels) {
+    return null
+  }
+
+  // Pusher хранит private/presence каналы с префиксом, поэтому проверяем оба варианта
+  return (
+    channels[channelName] ||
+    channels[`private-${channelName}`] ||
+    channels[`presence-${channelName}`] ||
+    null
+  )
+}
+
 function isChannelDead(channelName: string): boolean {
   if (!isBrowser()) {
     return true // Если не в браузере, канал мертв
@@ -192,7 +211,7 @@ function isChannelDead(channelName: string): boolean {
     return true
   }
   
-  const pusherChannel = window.Echo?.connector?.pusher?.channels?.channels?.[channelName]
+  const pusherChannel = getPusherChannel(channelName)
   
   // Если канала нет в текущем window.Echo, он мертв
   // Это важно после teardown/реинициализации, когда создается новый экземпляр Echo
@@ -331,7 +350,7 @@ function ensureChannelControl(
   
   // Дополнительная проверка: если control.echoChannel существует, но канала нет в window.Echo,
   // значит произошла реинициализация Echo и старый канал мертв
-  if (control.echoChannel && !window.Echo.connector?.pusher?.channels?.channels?.[channelName]) {
+  if (control.echoChannel && !getPusherChannel(channelName)) {
     logger.debug('[useWebSocket] Channel not found in current Echo instance, marking as dead', {
       channel: channelName,
     })
@@ -1032,4 +1051,3 @@ export function useWebSocket(showToast?: ToastHandler, componentTag?: string) {
     subscriptions,
   }
 }
-

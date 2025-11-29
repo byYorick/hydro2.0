@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { setActivePinia, createPinia } from 'pinia'
 
 // Моки для интеграционных тестов
 vi.mock('@/Layouts/AppLayout.vue', () => ({
@@ -104,6 +105,9 @@ import ZonesShow from '../Show.vue'
 
 describe('Zones/Show.vue - Интеграционные тесты', () => {
   beforeEach(() => {
+    // Инициализируем Pinia перед каждым тестом
+    setActivePinia(createPinia())
+    
     axiosGetMock.mockClear()
     axiosPostMock.mockClear()
     

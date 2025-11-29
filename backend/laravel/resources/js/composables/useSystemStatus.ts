@@ -167,8 +167,31 @@ export function useSystemStatus(showToast?: ToastHandler) {
 
       coreStatus.value = payload.app === 'ok' ? 'ok' : payload.app === 'fail' ? 'fail' : 'unknown'
       dbStatus.value = payload.db === 'ok' ? 'ok' : payload.db === 'fail' ? 'fail' : 'unknown'
-      historyLoggerStatus.value = payload.history_logger === 'ok' ? 'ok' : payload.history_logger === 'fail' ? 'fail' : 'unknown'
-      automationEngineStatus.value = payload.automation_engine === 'ok' ? 'ok' : payload.automation_engine === 'fail' ? 'fail' : 'unknown'
+      
+      // Обновляем статусы сервисов только если они присутствуют в ответе
+      // Если поля отсутствуют (например, при неаутентифицированном запросе),
+      // оставляем текущее значение (не перезаписываем 'unknown')
+      if ('history_logger' in payload) {
+        historyLoggerStatus.value = payload.history_logger === 'ok' ? 'ok' : payload.history_logger === 'fail' ? 'fail' : 'unknown'
+      } else {
+        // Если поле отсутствует, логируем для диагностики
+        logger.debug('[useSystemStatus] history_logger status not in health response', {
+          availableFields: Object.keys(payload),
+          isAuthenticated: true, // Если мы здесь, значит запрос прошел, но поля нет
+        })
+        // Оставляем текущее значение, не устанавливаем в 'unknown'
+      }
+      
+      if ('automation_engine' in payload) {
+        automationEngineStatus.value = payload.automation_engine === 'ok' ? 'ok' : payload.automation_engine === 'fail' ? 'fail' : 'unknown'
+      } else {
+        // Если поле отсутствует, логируем для диагностики
+        logger.debug('[useSystemStatus] automation_engine status not in health response', {
+          availableFields: Object.keys(payload),
+          isAuthenticated: true,
+        })
+        // Оставляем текущее значение, не устанавливаем в 'unknown'
+      }
 
       lastUpdate.value = new Date()
       // Сбрасываем флаг и backoff при успешном запросе
@@ -234,12 +257,33 @@ export function useSystemStatus(showToast?: ToastHandler) {
         return
       }
       
-      logger.error('[useSystemStatus] Failed to check health', { error })
-      // При ошибке устанавливаем статусы в 'fail'
+      // Обработка ошибки 401/403 (неаутентифицирован)
+      if (error?.response?.status === 401 || error?.response?.status === 403) {
+        logger.debug('[useSystemStatus] Health check failed: unauthenticated', {
+          status: error?.response?.status,
+        })
+        // При ошибке аутентификации не обновляем статусы - они остаются как есть
+        // Это нормально, если пользователь не залогинен или сессия истекла
+        // historyLoggerStatus и automationEngineStatus останутся 'unknown', что корректно
+        return
+      }
+      
+      logger.error('[useSystemStatus] Failed to check health', { 
+        error,
+        status: error?.response?.status,
+        message: error?.message,
+      })
+      
+      // При других ошибках устанавливаем только критичные статусы в 'fail'
+      // historyLoggerStatus и automationEngineStatus остаются как есть (не сбрасываем в fail)
+      // чтобы не показывать ложные предупреждения, если они были 'unknown'
       coreStatus.value = 'fail'
       dbStatus.value = 'fail'
+      // Не обновляем historyLoggerStatus и automationEngineStatus при ошибке,
+      // чтобы они остались в текущем состоянии (unknown или последнее известное значение)
       lastUpdate.value = new Date()
-      if (showToast && error?.response?.status !== 429) {
+      
+      if (showToast && error?.response?.status !== 429 && error?.response?.status !== 401 && error?.response?.status !== 403) {
         showToast(`Ошибка проверки статуса системы: ${error.message || 'Ошибка'}`, 'error', TOAST_TIMEOUT.LONG)
       }
     }

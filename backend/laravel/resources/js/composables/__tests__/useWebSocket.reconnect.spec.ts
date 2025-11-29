@@ -31,7 +31,8 @@ describe('useWebSocket - Reconnect Logic', () => {
   let mockGlobalChannel: any
 
   beforeEach(async () => {
-    vi.useFakeTimers()
+    // НЕ используем fake timers, так как они конфликтуют с моками setInterval
+    // vi.useFakeTimers()
     
     mockZoneChannel = {
       listen: vi.fn(),
@@ -91,16 +92,26 @@ describe('useWebSocket - Reconnect Logic', () => {
       }
     }
 
-    ;(globalThis as any).window = { Echo: mockEcho }
+    // Устанавливаем моки для setInterval перед импортом модуля
+    if (!(global as any).window) {
+      (global as any).window = {}
+    }
+    (global as any).window.Echo = mockEcho
+    (global as any).window.setInterval = (global.setInterval as any)
+    (global as any).window.clearInterval = (global.clearInterval as any)
 
     vi.resetModules()
     useWebSocketModule = await import('../useWebSocket')
   })
 
   afterEach(() => {
-    vi.useRealTimers()
+    // vi.useRealTimers() - не используем, так как не использовали fake timers
     vi.clearAllMocks()
-    delete (globalThis as any).window
+    if ((globalThis as any).window) {
+      delete (globalThis as any).window.Echo
+      delete (globalThis as any).window.setInterval
+      delete (globalThis as any).window.clearInterval
+    }
   })
 
   describe('automatic resubscribe after reconnect', () => {

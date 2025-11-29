@@ -62,6 +62,11 @@ class GreenhouseController extends Controller
             'coordinates' => ['nullable', 'array'],
             'description' => ['nullable', 'string'],
         ]);
+        
+        // Генерируем уникальный provisioning_token для регистрации нод
+        // Этот токен не должен быть доступен через API (скрыт в модели)
+        $data['provisioning_token'] = 'gh_' . \Illuminate\Support\Str::random(32);
+        
         $greenhouse = Greenhouse::create($data);
         return response()->json(['status' => 'ok', 'data' => $greenhouse], Response::HTTP_CREATED);
     }
