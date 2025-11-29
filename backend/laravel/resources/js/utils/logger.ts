@@ -42,7 +42,7 @@ export interface LogContext {
  * Проверяет, нужно ли логировать на данном уровне
  */
 function shouldLog(level: LogLevel): boolean {
-  // ИСПРАВЛЕНО: Включаем жесткое логирование для диагностики
+  // Включаем жесткое логирование для диагностики
   // Проверяем переменную окружения для принудительного включения логирования
   const forceDebug = String((import.meta.env.VITE_FORCE_DEBUG_LOGS || 'false')).toLowerCase() === 'true'
   

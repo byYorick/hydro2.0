@@ -769,7 +769,7 @@ async function loadTelemetryMetrics() {
   }
 }
 
-// ИСПРАВЛЕНО: Сохраняем функцию отписки для очистки при размонтировании
+// Сохраняем функцию отписки для очистки при размонтировании
 let unsubscribeGlobalEvents: (() => void) | null = null
 
 onMounted(async () => {
@@ -799,7 +799,7 @@ onMounted(async () => {
     { debounceMs: 200, maxBatchSize: 5, maxWaitMs: 1000 }
   )
   
-  // ИСПРАВЛЕНО: Сохраняем функцию отписки
+  // Сохраняем функцию отписки
   unsubscribeGlobalEvents = subscribeToGlobalEvents((event) => {
     // Используем batch updates для оптимизации
     addEvent({
@@ -812,7 +812,7 @@ onMounted(async () => {
   })
 })
 
-// ИСПРАВЛЕНО: Отписываемся при размонтировании
+// Отписываемся при размонтировании
 onUnmounted(() => {
   if (unsubscribeGlobalEvents) {
     unsubscribeGlobalEvents()

@@ -17,7 +17,7 @@ type WsStatus = 'connected' | 'disconnected' | 'connecting' | 'unknown'
 type MqttStatus = 'online' | 'offline' | 'degraded' | 'unknown'
 type ServiceStatus = 'ok' | 'fail' | 'unknown'
 
-// ИСПРАВЛЕНО: Singleton для предотвращения множественных интервалов
+// Singleton для предотвращения множественных интервалов
 let sharedState: {
   coreStatus: ReturnType<typeof ref<CoreStatus>>
   dbStatus: ReturnType<typeof ref<DbStatus>>
@@ -33,6 +33,63 @@ let sharedState: {
   connectedHandler: (() => void) | null
   disconnectedHandler: (() => void) | null
 } | null = null
+
+// Функция для сброса WebSocket bindings (определяем ДО использования в HMR обработчиках)
+function resetWebSocketBindings() {
+  if (!sharedState) return
+  const pusher = window?.Echo?.connector?.pusher
+  if (pusher?.connection?.unbind) {
+    if (sharedState.connectedHandler) {
+      pusher.connection.unbind('connected', sharedState.connectedHandler)
+      sharedState.connectedHandler = null
+    }
+    if (sharedState.disconnectedHandler) {
+      pusher.connection.unbind('disconnected', sharedState.disconnectedHandler)
+      sharedState.disconnectedHandler = null
+    }
+  }
+}
+
+// Очищаем интервалы при HMR для предотвращения дублирования
+// При HMR модуль перезагружается, но старые интервалы остаются висящими
+// Это приводит к множественным параллельным проверкам и лавине запросов к /broadcasting/auth
+if (import.meta.hot) {
+  import.meta.hot.on('vite:beforeUpdate', () => {
+    if (sharedState) {
+      if (sharedState.healthInterval) {
+        clearInterval(sharedState.healthInterval)
+        sharedState.healthInterval = null
+      }
+      if (sharedState.wsInterval) {
+        clearInterval(sharedState.wsInterval)
+        sharedState.wsInterval = null
+      }
+      resetWebSocketBindings()
+      logger.debug('[useSystemStatus] HMR: Cleared intervals before update', {})
+    }
+  })
+  
+  import.meta.hot.on('vite:afterUpdate', () => {
+    // После обновления модуль будет перезагружен, интервалы будут созданы заново при следующем вызове startMonitoring()
+    logger.debug('[useSystemStatus] HMR: Module updated, intervals will be recreated on next startMonitoring()', {})
+  })
+  
+  // Очищаем интервалы при dispose (когда модуль удаляется)
+  import.meta.hot.dispose(() => {
+    if (sharedState) {
+      if (sharedState.healthInterval) {
+        clearInterval(sharedState.healthInterval)
+        sharedState.healthInterval = null
+      }
+      if (sharedState.wsInterval) {
+        clearInterval(sharedState.wsInterval)
+        sharedState.wsInterval = null
+      }
+      resetWebSocketBindings()
+      logger.debug('[useSystemStatus] HMR: Disposed, cleared intervals', {})
+    }
+  })
+}
 
 declare global {
   interface Window {
@@ -61,7 +118,7 @@ interface StatusResponse {
 export function useSystemStatus(showToast?: ToastHandler) {
   const { api } = useApi(showToast || null)
 
-  // ИСПРАВЛЕНО: Используем singleton для предотвращения множественных интервалов
+  // Используем singleton для предотвращения множественных интервалов
   if (!sharedState) {
     sharedState = {
       coreStatus: ref<CoreStatus>('unknown'),
@@ -94,21 +151,6 @@ export function useSystemStatus(showToast?: ToastHandler) {
   const isCoreOk = computed(() => coreStatus.value === 'ok')
   const isDbOk = computed(() => dbStatus.value === 'ok')
 
-  const resetWebSocketBindings = () => {
-    if (!sharedState) return
-    const pusher = window?.Echo?.connector?.pusher
-    if (pusher?.connection?.unbind) {
-      if (sharedState.connectedHandler) {
-        pusher.connection.unbind('connected', sharedState.connectedHandler)
-        sharedState.connectedHandler = null
-      }
-      if (sharedState.disconnectedHandler) {
-        pusher.connection.unbind('disconnected', sharedState.disconnectedHandler)
-        sharedState.disconnectedHandler = null
-      }
-    }
-  }
-
   async function checkHealth(): Promise<void> {
     if (!sharedState) return
     // Если уже была ошибка 429, пропускаем запрос
@@ -131,7 +173,7 @@ export function useSystemStatus(showToast?: ToastHandler) {
       lastUpdate.value = new Date()
       sharedState.isRateLimited = false // Сбрасываем флаг при успешном запросе
     } catch (error: any) {
-      // ИСПРАВЛЕНО: Обработка ошибки 429 (Too Many Requests)
+      // Обработка ошибки 429 (Too Many Requests)
       if (error?.response?.status === 429) {
         sharedState.isRateLimited = true
         // Останавливаем интервал при rate limiting
@@ -158,7 +200,7 @@ export function useSystemStatus(showToast?: ToastHandler) {
   function checkWebSocketStatus(): void {
     const echo = window?.Echo
     if (!echo || !echo.connector || !echo.connector.pusher || !echo.connector.pusher.connection) {
-      // ИСПРАВЛЕНО: НЕ инициализируем Echo здесь, так как это может конфликтовать с bootstrap.js
+      // НЕ инициализируем Echo здесь, так как это может конфликтовать с bootstrap.js
       // bootstrap.js уже инициализирует Echo, и повторная инициализация может прервать соединение
       // Просто показываем состояние "connecting" и ждем, пока bootstrap.js завершит инициализацию
       const wsEnabled = String((import.meta as any).env.VITE_ENABLE_WS ?? 'true') === 'true'
@@ -170,7 +212,7 @@ export function useSystemStatus(showToast?: ToastHandler) {
         wsStatus.value = 'connecting'
         return
       }
-      // ИСПРАВЛЕНО: Если Echo не инициализирован и не удалось инициализировать, показываем "connecting" вместо "unknown"
+      // Если Echo не инициализирован и не удалось инициализировать, показываем "connecting" вместо "unknown"
       wsStatus.value = 'connecting'
       return
     }
@@ -186,13 +228,13 @@ export function useSystemStatus(showToast?: ToastHandler) {
     } else if (state === 'connecting') {
       wsStatus.value = 'connecting'
     } else if (state === 'unavailable') {
-      // ИСПРАВЛЕНО: unavailable означает, что сервер недоступен, но мы пытаемся подключиться
+      // unavailable означает, что сервер недоступен, но мы пытаемся подключиться
       wsStatus.value = 'connecting'
       logger.debug('[useSystemStatus] WebSocket unavailable, showing as connecting', { state })
     } else if (state === 'disconnected' || state === 'failed') {
       wsStatus.value = 'disconnected'
     } else {
-      // ИСПРАВЛЕНО: Для неизвестных состояний показываем "connecting" вместо "unknown"
+      // Для неизвестных состояний показываем "connecting" вместо "unknown"
       logger.warn('[useSystemStatus] Unknown WebSocket state', { state })
       wsStatus.value = 'connecting'
     }
@@ -212,7 +254,7 @@ export function useSystemStatus(showToast?: ToastHandler) {
 
   function startMonitoring(): void {
     if (!sharedState) return
-    // ИСПРАВЛЕНО: Запускаем интервалы только один раз для всех подписчиков
+    // Запускаем интервалы только один раз для всех подписчиков
     if (!sharedState.healthInterval) {
       checkHealth()
       sharedState.healthInterval = setInterval(checkHealth, HEALTH_CHECK_INTERVAL)
@@ -248,7 +290,7 @@ export function useSystemStatus(showToast?: ToastHandler) {
 
   function stopMonitoring(): void {
     if (!sharedState) return
-    // ИСПРАВЛЕНО: Останавливаем интервалы только когда все подписчики отписались
+    // Останавливаем интервалы только когда все подписчики отписались
     sharedState.subscribers--
     if (sharedState.subscribers <= 0) {
       if (sharedState.healthInterval) {

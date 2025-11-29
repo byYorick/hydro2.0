@@ -35,7 +35,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->validateCsrfTokens(except: [
             'api/*',
             'broadcasting/auth',
-            '_boost/browser-logs', // ИСПРАВЛЕНО: Исключаем browser-logs из CSRF проверки
+            '_boost/browser-logs',
         ]);
 
         // Note: Session middleware is NOT added globally to API routes

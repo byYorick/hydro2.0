@@ -5,31 +5,47 @@ import { createInertiaApp } from '@inertiajs/vue3';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createApp, h } from 'vue';
 import { createPinia } from 'pinia';
-// ИСПРАВЛЕНО: Безопасный импорт ZiggyVue для предотвращения ошибок
+// Безопасный импорт ZiggyVue для предотвращения ошибок
 // Используем условный импорт для обработки случая, когда Ziggy не установлен
 import { RecycleScroller, DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller';
 import { logger } from './utils/logger';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
-// ИСПРАВЛЕНО: Защита от циклических перезагрузок
+// Защита от циклических перезагрузок
+// Отслеживаем только reload() и visit() на тот же URL, не блокируем легитимную навигацию
 let reloadCount = 0;
 let lastReloadTime = 0;
+let lastReloadUrl = '';
 const MAX_RELOADS_PER_SECOND = 3;
 const RELOAD_WINDOW_MS = 1000;
 
-function shouldPreventReload() {
+function shouldPreventReload(url) {
   const now = Date.now();
+  const currentUrl = url || window.location.pathname;
+  
+  // Если URL изменился, это легитимная навигация, сбрасываем счетчик
+  if (currentUrl !== lastReloadUrl) {
+    reloadCount = 0;
+    lastReloadTime = now;
+    lastReloadUrl = currentUrl;
+    return false;
+  }
+  
+  // Проверяем только повторные запросы на тот же URL
   if (now - lastReloadTime > RELOAD_WINDOW_MS) {
     reloadCount = 0;
     lastReloadTime = now;
+    lastReloadUrl = currentUrl;
     return false;
   }
+  
   reloadCount++;
   if (reloadCount > MAX_RELOADS_PER_SECOND) {
-    logger.warn('[app.js] Too many reloads detected, preventing reload', {
+    logger.warn('[app.js] Too many reloads to same URL detected, preventing reload', {
       count: reloadCount,
       window: RELOAD_WINDOW_MS,
+      url: currentUrl,
     });
     return true;
   }
@@ -47,13 +63,13 @@ createInertiaApp({
     setup({ el, App, props, plugin }) {
         const vueApp = createApp({ render: () => h(App, props) });
         const pinia = createPinia();
-        // ИСПРАВЛЕНО: Обработка ошибок Vue без перезагрузки страницы
+        // Обработка ошибок Vue без перезагрузки страницы
         vueApp.config.errorHandler = (err, instance, info) => {
             // Игнорируем отмененные запросы Inertia.js
             if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError' || err?.message === 'canceled') {
                 return;
             }
-            // ИСПРАВЛЕНО: Логируем ошибку, но НЕ перезагружаем страницу
+            // Логируем ошибку, но НЕ перезагружаем страницу
             // eslint-disable-next-line no-console
             logger.error('[VUE ERROR]', { err, info, instance });
             // НЕ вызываем location.reload() или router.reload() здесь
@@ -72,13 +88,13 @@ createInertiaApp({
         vueApp.use(plugin);
         vueApp.use(pinia);
         
-        // ИСПРАВЛЕНО: Устанавливаем версию Vue СИНХРОННО перед любым использованием ZiggyVue
+        // Устанавливаем версию Vue СИНХРОННО перед любым использованием ZiggyVue
         // ZiggyVue проверяет версию Vue через parseInt(vueApp.version)
         // Если версия не установлена или undefined, parseInt вернет NaN, и ZiggyVue попытается использовать Vue 2 API (t.mixin)
         // Vue 3 не имеет метода mixin, что приводит к ошибке "can't access property 'extend' of undefined"
         // Устанавливаем версию явно в формате "3.x.x" для правильного определения версии
         if (!vueApp.version || typeof vueApp.version !== 'string') {
-            // ИСПРАВЛЕНО: Устанавливаем версию Vue явно в формате строки "3.x.x"
+            // Устанавливаем версию Vue явно в формате строки "3.x.x"
             // parseInt("3.4.0") вернет 3, что больше 2, и ZiggyVue будет использовать Vue 3 API
             Object.defineProperty(vueApp, 'version', {
                 value: '3.4.0',
@@ -88,15 +104,15 @@ createInertiaApp({
             });
         }
         
-        // ИСПРАВЛЕНО: Безопасный импорт ZiggyVue внутри setup
+        // Безопасный импорт ZiggyVue внутри setup
         // Используем динамический импорт для безопасной загрузки
-        // ИСПРАВЛЕНО: Убеждаемся, что Vue полностью инициализирован перед использованием ZiggyVue
+        // Убеждаемся, что Vue полностью инициализирован перед использованием ZiggyVue
         (async () => {
             try {
                 const ziggyModule = await import('../../vendor/tightenco/ziggy/dist/index.esm.js');
                 const ZiggyVue = ziggyModule.ZiggyVue || ziggyModule.default?.ZiggyVue || ziggyModule.default;
                 
-                // ИСПРАВЛЕНО: Проверяем версию Vue перед использованием ZiggyVue
+                // Проверяем версию Vue перед использованием ZiggyVue
                 const vueVersion = parseInt(vueApp.version || '0');
                 if (vueVersion <= 2) {
                     logger.error('[app.js] Vue version is too old for ZiggyVue', {
@@ -113,7 +129,7 @@ createInertiaApp({
                 }
                 
                 if (ZiggyVue && typeof ZiggyVue.install === 'function') {
-                    // ИСПРАВЛЕНО: Передаем vueApp и конфигурацию Ziggy в install()
+                    // Передаем vueApp и конфигурацию Ziggy в install()
                     // ZiggyVue.install принимает два параметра: app и config
                     // Если config не передан, ZiggyVue попытается найти Ziggy глобально
                     ZiggyVue.install(vueApp, typeof Ziggy !== 'undefined' ? Ziggy : undefined);
@@ -129,20 +145,22 @@ createInertiaApp({
             }
         })();
         
-        // ИСПРАВЛЕНО: Удален обработчик router.on('success') - он вызывал множественные переинициализации
+        // Удален обработчик router.on('success') - он вызывал множественные переинициализации
         // WebSocket соединение должно управляться только через bootstrap.js и echoClient.ts
         // Inertia.js обновления страницы не должны вызывать переинициализацию WebSocket
         
-        // ИСПРАВЛЕНО: Добавляем защиту от циклических перезагрузок через Inertia.js
+        // Добавляем защиту от циклических перезагрузок через Inertia.js
         import('@inertiajs/vue3').then(({ router }) => {
             // Перехватываем все вызовы router.reload() и router.visit() для предотвращения циклов
             const originalReload = router.reload.bind(router);
             const originalVisit = router.visit.bind(router);
             
             router.reload = function(options) {
-                if (shouldPreventReload()) {
+                // Проверяем только reload() на текущий URL
+                if (shouldPreventReload(window.location.pathname)) {
                     logger.warn('[app.js] Prevented router.reload() due to reload limit', {
                         options,
+                        currentUrl: window.location.pathname,
                     });
                     return Promise.resolve();
                 }
@@ -151,15 +169,24 @@ createInertiaApp({
             };
             
             router.visit = function(url, options) {
-                // Разрешаем visit, но логируем для отладки
-                if (shouldPreventReload() && url === window.location.pathname) {
+                // Блокируем только visit() на тот же URL, легитимная навигация разрешена
+                // Если URL отличается, это нормальная навигация, не блокируем
+                const targetUrl = typeof url === 'string' ? url : url?.url || window.location.pathname
+                if (shouldPreventReload(targetUrl) && targetUrl === window.location.pathname) {
                     logger.warn('[app.js] Prevented router.visit() to same URL due to reload limit', {
-                        url,
+                        url: targetUrl,
+                        currentUrl: window.location.pathname,
                         options,
                     });
                     return Promise.resolve();
                 }
-                logger.debug('[app.js] router.visit() called', { url, options });
+                // Легитимная навигация на другой URL разрешена, не логируем каждый вызов
+                if (targetUrl !== window.location.pathname) {
+                    logger.debug('[app.js] router.visit() to different URL (allowed)', { 
+                        from: window.location.pathname,
+                        to: targetUrl,
+                    });
+                }
                 return originalVisit(url, options);
             };
         });

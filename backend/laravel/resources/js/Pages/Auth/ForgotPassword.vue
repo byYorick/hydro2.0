@@ -5,7 +5,7 @@ import InputLabel from '@/Components/InputLabel.vue';
 import Button from '@/Components/Button.vue';
 import TextInput from '@/Components/TextInput.vue';
 import { Head } from '@inertiajs/vue3';
-// ИСПРАВЛЕНО: Импорт route из утилиты
+// Импорт route из утилиты
 import { route } from '@/utils/route';
 import { useInertiaForm } from '@/composables/useInertiaForm';
 

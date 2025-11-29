@@ -156,7 +156,7 @@ onMounted(() => {
     router.reload({ only: ['devices'], preserveScroll: true })
   })
   
-  // ИСПРАВЛЕНО: Подписка на WebSocket события обновления устройств с ресабскрайбом
+  // Подписка на WebSocket события обновления устройств с ресабскрайбом
       const channelName = 'hydro.devices'
       const eventName = '.device.updated'
   
@@ -217,7 +217,7 @@ onMounted(() => {
   // Пытаемся подписаться сразу, если Echo доступен
   subscribeToDevicesChannel()
   
-  // ИСПРАВЛЕНО: Ресабскрайб при подключении WebSocket
+  // Ресабскрайб при подключении WebSocket
   const unsubscribeWsState = onWsStateChange((state) => {
     if (state === 'connected') {
       logger.debug('[Devices/Index] WebSocket connected, resubscribing to devices channel')

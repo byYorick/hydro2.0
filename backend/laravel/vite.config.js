@@ -10,30 +10,43 @@ export default defineConfig({
         },
     },
     server: {
-        // Используем 0.0.0.0 для доступа из локальной сети
+        // ИСПРАВЛЕНО: Используем 0.0.0.0 для прослушивания (чтобы принимать соединения из сети)
+        // Но для HMR и клиентских подключений используем localhost (см. hmr.host)
         // nginx прокси будет работать с 127.0.0.1 внутри контейнера
         host: process.env.VITE_HOST || '0.0.0.0',
         port: 5173,
         strictPort: true,
         cors: {
-            origin: true, // Разрешить все источники
-            credentials: true,
+            // ИСПРАВЛЕНО: origin: true + credentials: true создает конфликт (Access-Control-Allow-Origin: * + Allow-Credentials: true)
+            // Браузер блокирует такие ответы как невалидные, что может ломать HMR/ресурсы
+            // Используем функцию для динамического определения origin или конкретный origin
+            origin: (origin, callback) => {
+                // В dev режиме разрешаем все origins, но без credentials для избежания конфликта
+                // Или можно использовать конкретный origin, если известен
+                callback(null, true);
+            },
+            // ИСПРАВЛЕНО: Убираем credentials для избежания конфликта с origin: true
+            // Credentials не нужны для статических ресурсов и HMR в dev режиме
+            credentials: false,
             methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
             allowedHeaders: ['*'],
         },
         hmr: {
-            // ИСПРАВЛЕНО: HMR должен использовать порт Vite (5173) напрямую, а не nginx (8080)
-            // Vite HMR WebSocket должен подключаться напрямую к Vite dev server на порту 5173
-            // nginx прокси используется только для HTTP запросов к ресурсам
-            // host: undefined означает автоматическое определение из window.location.hostname
-            host: undefined, // Автоматически определяется из window.location.hostname
-            // ИСПРАВЛЕНО: port должен быть портом Vite (5173) для HMR сервера
-            // Это порт, на котором Vite слушает HMR соединения
+            // ИСПРАВЛЕНО: HMR должен использовать правильный host для браузера
+            // server.host = '0.0.0.0' - это слушающий адрес для сервера, но браузер не может использовать 0.0.0.0
+            // Браузер должен подключаться к localhost или конкретному IP, а не к 0.0.0.0
+            // Если host не указан, Vite использует server.host (0.0.0.0), что вызывает CORS ошибки
+            // Используем localhost для HMR, так как браузер и Vite находятся на одной машине
+            host: 'localhost',
+            // port должен быть портом Vite (5173) для HMR сервера
             port: 5173,
             // ИСПРАВЛЕНО: clientPort должен быть портом Vite (5173) для прямого WebSocket подключения
-            // Браузер будет подключаться к Vite напрямую на порту 5173, минуя nginx
+            // Браузер будет подключаться к Vite напрямую на localhost:5173
             clientPort: 5173,
-            protocol: 'ws',
+            // ИСПРАВЛЕНО: Не задаем protocol жестко, чтобы Vite автоматически определял ws/wss
+            // При открытии через HTTPS жестко заданный 'ws' вызывает mixed-content ошибки
+            // Vite автоматически выберет правильный протокол на основе схемы страницы
+            // protocol: 'ws', // Убрано для автоматического определения
             // Путь для WebSocket HMR
             path: '/@vite/client',
         },
@@ -73,7 +86,7 @@ export default defineConfig({
                 // Оптимизация для production
                 manualChunks: (id) => {
                     // Разделение vendor chunks для лучшего кеширования
-                    // ИСПРАВЛЕНО: Vue должен быть в основном bundle, а не в отдельном chunk
+                    // Vue должен быть в основном bundle, а не в отдельном chunk
                     // для правильной синхронной загрузки
                     if (id.includes('node_modules')) {
                         // Vue и его зависимости не разделяем, они будут в основном bundle
@@ -118,7 +131,7 @@ export default defineConfig({
                 'routes/**',
             ], // Ограничиваем refresh только нужными файлами для снижения нагрузки
             detectTls: false, // Отключить автоматическое определение TLS
-            // ИСПРАВЛЕНО: Явно указываем devServerUrl для правильной генерации URL
+            // Явно указываем devServerUrl для правильной генерации URL
             // Используем localhost:8080 (через nginx прокси), а не 0.0.0.0
             // Браузер не может использовать 0.0.0.0 для запросов
             devServerUrl: process.env.VITE_DEV_SERVER_URL || 'http://localhost:8080',
@@ -148,6 +161,9 @@ export default defineConfig({
         force: false, // Не пересобирать принудительно
         esbuildOptions: {
             resolveExtensions: ['.mjs', '.js', '.mts', '.ts', '.jsx', '.tsx', '.json'],
+            // ИСПРАВЛЕНО: Отключаем source maps для оптимизированных зависимостей
+            // Это устраняет ошибки "No sources are declared in this source map"
+            sourcemap: false,
         },
     },
     // Кеш для оптимизированных зависимостей

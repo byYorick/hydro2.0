@@ -701,7 +701,7 @@ async function onChartTimeRangeChange(newRange: string): Promise<void> {
 //   logInfo('[Zones/Show] Zone props changed')
 // }, { deep: true, immediate: true })
 
-// ИСПРАВЛЕНО: Сохраняем функцию отписки для очистки при размонтировании
+// Сохраняем функцию отписки для очистки при размонтировании
 let unsubscribeZoneCommands: (() => void) | null = null
 
 onMounted(async () => {
@@ -711,7 +711,7 @@ onMounted(async () => {
   chartDataPh.value = await loadChartData('PH', chartTimeRange.value)
   chartDataEc.value = await loadChartData('EC', chartTimeRange.value)
   
-  // ИСПРАВЛЕНО: Подписаться на WebSocket канал команд зоны и сохранить функцию отписки
+  // Подписаться на WebSocket канал команд зоны и сохранить функцию отписки
   if (zoneId.value) {
     unsubscribeZoneCommands = subscribeToZoneCommands(zoneId.value, (commandEvent) => {
       // Обновляем статус команды через useCommands
@@ -763,7 +763,7 @@ onMounted(async () => {
   
   // При размонтировании применяем все накопленные обновления телеметрии
   onUnmounted(() => {
-    // ИСПРАВЛЕНО: Отписываемся от WebSocket канала при размонтировании
+    // Отписываемся от WebSocket канала при размонтировании
     if (unsubscribeZoneCommands) {
       unsubscribeZoneCommands()
       unsubscribeZoneCommands = null

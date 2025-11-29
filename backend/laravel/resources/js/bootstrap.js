@@ -14,7 +14,7 @@ if (csrfToken) {
 }
 
 import { logger } from './utils/logger';
-// ИСПРАВЛЕНО: Импортируем без расширения - Vite автоматически обработает TypeScript
+// Импортируем без расширения - Vite автоматически обработает TypeScript
 import { initEcho, isEchoInitializing, getEchoInstance } from './utils/echoClient';
 
 // Axios error logging to console
@@ -42,10 +42,10 @@ window.axios.interceptors.response.use(
   }
 );
 
-// ИСПРАВЛЕНО: Удалены локальные флаги - теперь используется единая точка входа в echoClient.ts
+// Удалены локальные флаги - теперь используется единая точка входа в echoClient.ts
 // Флаги isInitializing и initializationPromise управляются в echoClient.ts
 
-// ИСПРАВЛЕНО: ЕДИНАЯ ТОЧКА ВХОДА для инициализации WebSocket
+// ЕДИНАЯ ТОЧКА ВХОДА для инициализации WebSocket
 // Все инициализации проходят через initEcho() из echoClient.ts
 // Эта функция является оберткой для удобства использования в bootstrap.js
 function initializeEcho() {
@@ -70,7 +70,7 @@ function initializeEcho() {
   }
   
   try {
-    // ИСПРАВЛЕНО: Используем единую точку входа initEcho()
+    // Используем единую точку входа initEcho()
     // forceReinit = false при первой инициализации, true только если Echo уже существует
     const shouldForceReinit = !!existingEcho && !!window.Echo;
     const echo = initEcho(shouldForceReinit);
@@ -113,7 +113,7 @@ function initializeEcho() {
   }
 }
 
-// ИСПРАВЛЕНО: Инициализируем Echo только один раз при загрузке страницы
+// Инициализируем Echo только один раз при загрузке страницы
 // Добавляем защиту от множественных инициализаций
 let echoInitialized = false;
 let echoInitInProgress = false;
@@ -129,7 +129,7 @@ function initializeEchoOnce() {
   echoInitInProgress = true;
   try {
     const echo = initializeEcho();
-    // ИСПРАВЛЕНО: Ставим echoInitialized=true только если initEcho() вернул реальный экземпляр
+    // Ставим echoInitialized=true только если initEcho() вернул реальный экземпляр
     // Проверяем также, что window.Echo установлен и соединение активно
     if (echo && window.Echo) {
       const pusher = echo.connector?.pusher;
@@ -158,7 +158,7 @@ function initializeEchoOnce() {
   }
 }
 
-// ИСПРАВЛЕНО: Инициализируем Echo только один раз при загрузке страницы
+// Инициализируем Echo только один раз при загрузке страницы
 // Добавляем дополнительную защиту от множественных инициализаций
 let initializationScheduled = false;
 
@@ -178,7 +178,7 @@ function scheduleEchoInitialization() {
           initializeEchoOnce();
         }
       }, 100);
-    }, { once: true }); // ИСПРАВЛЕНО: once: true предотвращает множественные вызовы
+    }, { once: true }); // once: true предотвращает множественные вызовы
   } else {
     // DOM уже загружен, инициализируем сразу с небольшой задержкой
     setTimeout(() => {
@@ -232,35 +232,39 @@ export function subscribeAlerts(handler) {
   }
 }
 
-// ИСПРАВЛЕНО: Обработка глобальных ошибок без перезагрузки страницы
-// ИСПРАВЛЕНО: Сохраняем ссылки на обработчики для очистки при HMR
+// Обработка глобальных ошибок с логированием, но без блокировки стандартного поведения
+// Сохраняем ссылки на обработчики для очистки при HMR
+// НЕ вызываем event.preventDefault() - это глушит ошибки и мешает Vite/Sentry/консоли
 const errorHandler = (event) => {
-  // ИСПРАВЛЕНО: Логируем ошибку, но НЕ перезагружаем страницу
-  // eslint-disable-next-line no-console
+  // Логируем ошибку для нашего логгера, но позволяем стандартному поведению работать
+  // Это позволяет Vite HMR, Sentry и консоли браузера нормально обрабатывать ошибки
   import('./utils/logger').then(({ logger }) => {
       logger.error('[WINDOW ERROR]', { message: event?.message, error: event?.error });
+  }).catch(() => {
+      // Игнорируем ошибки при логировании, чтобы не создавать цикл
   });
-  // Предотвращаем стандартное поведение браузера (перезагрузку страницы)
-  event.preventDefault();
-  // НЕ вызываем location.reload() или router.reload() здесь
+  // НЕ вызываем event.preventDefault() - ошибки должны всплывать нормально
+  // Это критично для работы Vite HMR, Sentry и отладки в консоли браузера
 };
 
 const unhandledRejectionHandler = (event) => {
   // Игнорируем отмененные запросы Inertia.js
   const reason = event?.reason;
   if (reason?.code === 'ERR_CANCELED' || reason?.name === 'CanceledError' || reason?.message === 'canceled') {
-    // Не логируем отмененные запросы
-    event.preventDefault();
+    // Не логируем отмененные запросы - это нормальное поведение Inertia.js
+    // НЕ вызываем event.preventDefault() даже для отмененных запросов
+    // Это позволяет браузеру нормально обрабатывать все события
     return;
   }
-  // ИСПРАВЛЕНО: Логируем ошибку, но НЕ перезагружаем страницу
-  // eslint-disable-next-line no-console
+  // Логируем ошибку для нашего логгера, но позволяем стандартному поведению работать
+  // Это позволяет Vite HMR, Sentry и консоли браузера нормально обрабатывать ошибки
   import('./utils/logger').then(({ logger }) => {
       logger.error('[UNHANDLED REJECTION]', { reason: reason || event });
+  }).catch(() => {
+      // Игнорируем ошибки при логировании, чтобы не создавать цикл
   });
-  // Предотвращаем стандартное поведение браузера
-  event.preventDefault();
-  // НЕ вызываем location.reload() или router.reload() здесь
+  // НЕ вызываем event.preventDefault() - ошибки должны всплывать нормально
+  // Это критично для работы Vite HMR, Sentry и отладки в консоли браузера
 };
 
 const beforeUnloadHandler = () => {
@@ -298,24 +302,11 @@ const pagehideHandler = () => {
   }
 };
 
-// ИСПРАВЛЕНО: Очищаем старые обработчики перед добавлением новых (для HMR)
-if (import.meta.hot) {
-  // При HMR удаляем старые обработчики перед добавлением новых
-  window.removeEventListener('error', errorHandler);
-  window.removeEventListener('unhandledrejection', unhandledRejectionHandler);
-  window.removeEventListener('beforeunload', beforeUnloadHandler);
-  window.removeEventListener('pagehide', pagehideHandler);
-}
-
-window.addEventListener('error', errorHandler);
-window.addEventListener('unhandledrejection', unhandledRejectionHandler);
-window.addEventListener('beforeunload', beforeUnloadHandler);
-window.addEventListener('pagehide', pagehideHandler);
-
-// ИСПРАВЛЕНО: Переподключение только при восстановлении из back/forward cache
+// Переподключение только при восстановлении из back/forward cache
 // Обычная загрузка страницы обрабатывается через scheduleEchoInitialization()
+// Определяем pageshowHandler ДО использования в HMR обработчиках
 const pageshowHandler = (event) => {
-  // ИСПРАВЛЕНО: Обрабатываем только event.persisted === true (восстановление из bfcache)
+  // Обрабатываем только event.persisted === true (восстановление из bfcache)
   // При обычной загрузке страницы event.persisted === false, и мы не должны ничего делать
   if (!event.persisted) {
     // Обычная загрузка страницы - не делаем ничего, инициализация уже идет через scheduleEchoInitialization()
@@ -327,7 +318,7 @@ const pageshowHandler = (event) => {
     persisted: event.persisted,
   });
   
-  // ИСПРАВЛЕНО: Сбрасываем флаги при восстановлении из bfcache
+  // Сбрасываем флаги при восстановлении из bfcache
   echoInitialized = false;
   echoInitInProgress = false;
   initializationScheduled = false;
@@ -358,9 +349,48 @@ const pageshowHandler = (event) => {
   }, 200);
 };
 
-// ИСПРАВЛЕНО: Очищаем старый обработчик перед добавлением нового (для HMR)
+// Очищаем старые обработчики перед добавлением новых (для HMR)
+// При HMR Vite перезагружает модуль, но старые обработчики остаются, что приводит к дублированию
+// Используем Vite HMR API для правильной очистки
 if (import.meta.hot) {
-  window.removeEventListener('pageshow', pageshowHandler);
+  // Сохраняем ссылки на все обработчики для последующего удаления
+  const handlers = {
+    error: errorHandler,
+    unhandledrejection: unhandledRejectionHandler,
+    beforeunload: beforeUnloadHandler,
+    pagehide: pagehideHandler,
+    pageshow: pageshowHandler,
+  }
+  
+  // Удаляем старые обработчики перед добавлением новых
+  // Это предотвращает дублирование при HMR
+  window.removeEventListener('error', handlers.error);
+  window.removeEventListener('unhandledrejection', handlers.unhandledrejection);
+  window.removeEventListener('beforeunload', handlers.beforeunload);
+  window.removeEventListener('pagehide', handlers.pagehide);
+  window.removeEventListener('pageshow', handlers.pageshow);
+  
+  // Используем Vite HMR API для очистки при горячей перезагрузке
+  import.meta.hot.on('vite:beforeUpdate', () => {
+    // Перед обновлением модуля удаляем все обработчики
+    window.removeEventListener('error', handlers.error);
+    window.removeEventListener('unhandledrejection', handlers.unhandledrejection);
+    window.removeEventListener('beforeunload', handlers.beforeunload);
+    window.removeEventListener('pagehide', handlers.pagehide);
+    window.removeEventListener('pageshow', handlers.pageshow);
+    logger.debug('[bootstrap.js] HMR: Removed all event handlers before update', {});
+  })
+  
+  import.meta.hot.on('vite:afterUpdate', () => {
+    // После обновления модуль будет перезагружен, обработчики добавятся заново
+    logger.debug('[bootstrap.js] HMR: Module updated, handlers will be re-added', {});
+  })
 }
 
+// Добавляем все обработчики после проверки HMR
+// Это гарантирует, что обработчики добавлены только один раз
+window.addEventListener('error', errorHandler);
+window.addEventListener('unhandledrejection', unhandledRejectionHandler);
+window.addEventListener('beforeunload', beforeUnloadHandler);
+window.addEventListener('pagehide', pagehideHandler);
 window.addEventListener('pageshow', pageshowHandler);

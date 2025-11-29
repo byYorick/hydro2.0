@@ -52,7 +52,7 @@ const channelControls = new Map<string, ChannelControl>()
 const componentChannelCounts = new Map<number, Map<string, number>>()
 const instanceSubscriptionSets = new Map<number, Set<string>>()
 
-// ИСПРАВЛЕНО: Очередь отложенных подписок для компонентов, смонтированных до готовности Echo
+// Очередь отложенных подписок для компонентов, смонтированных до готовности Echo
 interface PendingSubscription {
   id: string
   channelName: string
@@ -91,7 +91,7 @@ function ensureEchoAvailable(showToast?: ToastHandler): any | null {
   }
   const echo = window.Echo
   if (!echo) {
-    // ИСПРАВЛЕНО: Не показываем warning, если Echo просто еще не инициализирован
+    // Не показываем warning, если Echo просто еще не инициализирован
     // Это нормально на начальной загрузке страницы
     // Только логируем в debug режиме для отладки
     logger.debug('[useWebSocket] Echo instance not yet initialized', {})
@@ -207,6 +207,16 @@ function ensureChannelControl(
     return null
   }
 
+  // Для events.global проверяем, есть ли уже активный канал
+  // Это предотвращает множественные запросы на /broadcasting/auth
+  if (channelName === GLOBAL_EVENTS_CHANNEL && control.echoChannel && !isChannelDead(channelName)) {
+    logger.debug('[useWebSocket] Reusing existing global events channel', {
+      channel: channelName,
+      existingSubscriptions: channelSubscribers.get(channelName)?.size ?? 0,
+    })
+    return control
+  }
+
   const shouldRecreate = !control.echoChannel || isChannelDead(channelName)
 
   if (shouldRecreate) {
@@ -263,7 +273,16 @@ function decrementComponentChannel(instanceId: number, channelName: string): voi
     if (channelMap.size === 0) {
       componentChannelCounts.delete(instanceId)
     }
-    instanceSubscriptionSets.get(instanceId)?.delete(channelName)
+    // Удаляем канал из instanceSubscriptionSets
+    const instanceSet = instanceSubscriptionSets.get(instanceId)
+    if (instanceSet) {
+      instanceSet.delete(channelName)
+      // Если Set пустой, удаляем запись из instanceSubscriptionSets
+      // Это предотвращает утечку памяти при длительной работе/навигации
+      if (instanceSet.size === 0) {
+        instanceSubscriptionSets.delete(instanceId)
+      }
+    }
   } else {
     channelMap.set(channelName, next)
   }
@@ -387,7 +406,7 @@ function scheduleResubscribe(delay = 500): void {
   }, delay)
 }
 
-// ИСПРАВЛЕНО: Обработка отложенных подписок при подключении Echo
+// Обработка отложенных подписок при подключении Echo
 function processPendingSubscriptions(): void {
   if (!isBrowser() || pendingSubscriptions.size === 0) {
     return
@@ -411,6 +430,33 @@ function processPendingSubscriptions(): void {
   
   toProcess.forEach(pending => {
     try {
+      // Для events.global проверяем, есть ли уже активная подписка
+      // Это предотвращает множественные запросы на /broadcasting/auth
+      if (pending.channelName === GLOBAL_EVENTS_CHANNEL) {
+        const existingControl = channelControls.get(GLOBAL_EVENTS_CHANNEL)
+        if (existingControl && existingControl.echoChannel) {
+          // Канал уже существует и авторизован, просто добавляем handler
+          const subscription: ActiveSubscription = {
+            id: pending.id,
+            channelName: pending.channelName,
+            kind: pending.kind,
+            handler: pending.handler,
+            componentTag: pending.componentTag,
+            showToast: pending.showToast,
+            instanceId: pending.instanceId,
+          }
+          
+          addSubscription(existingControl, subscription)
+          logger.debug('[useWebSocket] Processed pending subscription (reused channel)', {
+            channel: pending.channelName,
+            subscriptionId: pending.id,
+            componentTag: pending.componentTag,
+            existingSubscriptions: channelSubscribers.get(GLOBAL_EVENTS_CHANNEL)?.size ?? 0,
+          })
+          return
+        }
+      }
+      
       const control = ensureChannelControl(pending.channelName, pending.kind, pending.channelType)
       if (!control) {
         logger.warn('[useWebSocket] Failed to create channel for pending subscription', {
@@ -450,7 +496,7 @@ if (isBrowser()) {
     onWsStateChange(state => {
       if (state === 'connected') {
         scheduleResubscribe()
-        // ИСПРАВЛЕНО: Обрабатываем отложенные подписки при подключении
+        // Обрабатываем отложенные подписки при подключении
         processPendingSubscriptions()
       }
     })
@@ -458,7 +504,7 @@ if (isBrowser()) {
     // ignore registration errors
   }
   
-  // ИСПРАВЛЕНО: Периодически проверяем доступность Echo для обработки отложенных подписок
+  // Периодически проверяем доступность Echo для обработки отложенных подписок
   // Это нужно на случай, если компонент смонтировался до инициализации Echo
   let pendingCheckInterval: ReturnType<typeof setInterval> | null = null
   
@@ -540,7 +586,7 @@ export function useWebSocket(showToast?: ToastHandler, componentTag?: string) {
     const channelName = `commands.${zoneId}`
     const echo = ensureEchoAvailable(showToast)
     
-    // ИСПРАВЛЕНО: Если Echo не доступен, сохраняем подписку в очередь
+    // Если Echo не доступен, сохраняем подписку в очередь
     if (!echo) {
       const subscriptionId = createSubscriptionId()
       const pending: PendingSubscription = {
@@ -606,9 +652,41 @@ export function useWebSocket(showToast?: ToastHandler, componentTag?: string) {
       return () => undefined
     }
 
+    // Проверяем, есть ли уже активная подписка на events.global
+    // Если канал уже подписан и авторизован, переиспользуем существующую подписку
+    // Это предотвращает множественные запросы на /broadcasting/auth при навигации
+    const existingControl = channelControls.get(GLOBAL_EVENTS_CHANNEL)
+    if (existingControl && existingControl.echoChannel && !isChannelDead(GLOBAL_EVENTS_CHANNEL)) {
+      // Канал уже существует и активен, просто добавляем новый handler
+      // НЕ создаем новый канал и НЕ делаем новый запрос на /broadcasting/auth
+      const subscriptionId = createSubscriptionId()
+      const subscription: ActiveSubscription = {
+        id: subscriptionId,
+        channelName: GLOBAL_EVENTS_CHANNEL,
+        kind: 'globalEvents',
+        handler,
+        componentTag: resolvedComponentTag,
+        instanceId,
+      }
+
+      addSubscription(existingControl, subscription)
+      
+      logger.debug('[useWebSocket] Reusing existing global events channel (no auth request)', {
+        channel: GLOBAL_EVENTS_CHANNEL,
+        subscriptionId,
+        componentTag: resolvedComponentTag,
+        existingSubscriptions: channelSubscribers.get(GLOBAL_EVENTS_CHANNEL)?.size ?? 0,
+        instanceId,
+      })
+
+      return () => {
+        removeSubscription(subscriptionId)
+      }
+    }
+
     const echo = ensureEchoAvailable(showToast)
     
-    // ИСПРАВЛЕНО: Если Echo не доступен, сохраняем подписку в очередь
+    // Если Echo не доступен, сохраняем подписку в очередь
     if (!echo) {
       const subscriptionId = createSubscriptionId()
       const pending: PendingSubscription = {
@@ -659,6 +737,12 @@ export function useWebSocket(showToast?: ToastHandler, componentTag?: string) {
     }
 
     addSubscription(control, subscription)
+    
+    logger.debug('[useWebSocket] Created new global events channel subscription', {
+      channel: GLOBAL_EVENTS_CHANNEL,
+      subscriptionId,
+      componentTag: resolvedComponentTag,
+    })
 
     return () => {
       removeSubscription(subscriptionId)
@@ -666,7 +750,7 @@ export function useWebSocket(showToast?: ToastHandler, componentTag?: string) {
   }
 
   const unsubscribeAll = (): void => {
-    // ИСПРАВЛЕНО: Удаляем также отложенные подписки этого компонента
+    // Удаляем также отложенные подписки этого компонента
     const pendingToRemove: string[] = []
     pendingSubscriptions.forEach((pending, id) => {
       if (pending.instanceId === instanceId) {
@@ -677,6 +761,15 @@ export function useWebSocket(showToast?: ToastHandler, componentTag?: string) {
     
     removeSubscriptionsByInstance(instanceId)
     subscriptions.value.clear()
+    
+    // Удаляем запись из instanceSubscriptionSets после полного отписывания
+    // Это предотвращает утечку памяти при длительной работе/навигации по Inertia
+    // "Мёртвые" инстансы больше не будут накапливаться в памяти
+    instanceSubscriptionSets.delete(instanceId)
+    
+    // Также удаляем из componentChannelCounts, если остались записи
+    // (на случай, если unsubscribeAll вызван до полной очистки через removeSubscriptionsByInstance)
+    componentChannelCounts.delete(instanceId)
   }
 
   return {

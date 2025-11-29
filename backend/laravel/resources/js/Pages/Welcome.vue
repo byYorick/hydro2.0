@@ -1,6 +1,6 @@
 <script setup>
 import { Head, Link } from '@inertiajs/vue3';
-// ИСПРАВЛЕНО: Импорт route из утилиты
+// Импорт route из утилиты
 import { route } from '@/utils/route';
 
 defineProps({

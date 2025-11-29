@@ -3,7 +3,7 @@ import { computed } from 'vue';
 import GuestLayout from '@/Layouts/GuestLayout.vue';
 import Button from '@/Components/Button.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
-// ИСПРАВЛЕНО: Импорт route из утилиты
+// Импорт route из утилиты
 import { route } from '@/utils/route';
 
 const props = defineProps({

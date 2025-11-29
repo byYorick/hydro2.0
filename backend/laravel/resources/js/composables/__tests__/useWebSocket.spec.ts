@@ -118,7 +118,7 @@ describe('useWebSocket', () => {
     const unsubscribe = subscribeToZoneCommands(1, vi.fn())
 
     expect(typeof unsubscribe).toBe('function')
-    // ИСПРАВЛЕНО: В новой версии кода toast не показывается, если Echo просто еще не инициализирован
+    // В новой версии кода toast не показывается, если Echo просто еще не инициализирован
     // Это нормально на начальной загрузке страницы
     // Проверяем только, что функция очистки возвращается
     expect(unsubscribe).toBeDefined()

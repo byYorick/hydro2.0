@@ -16,21 +16,50 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
-// ИСПРАВЛЕНО: Роут для Laravel Boost browser-logs (если используется)
-// Отключаем отправку логов, если эндпоинт не нужен
+// Роут для Laravel Boost browser-logs
+// В проде отключен для предотвращения DoS и утечки данных
+// В dev режиме доступен только для авторизованных пользователей с throttle
 Route::post('/_boost/browser-logs', function (\Illuminate\Http\Request $request) {
-    // ИСПРАВЛЕНО: Просто возвращаем успешный ответ, чтобы не было ошибок в консоли
-    // В будущем можно добавить сохранение логов, если нужно
-    \Log::debug('Browser log received (ignored)', [
-        'data' => $request->all(),
+    // В проде полностью отключаем эндпоинт
+    if (app()->environment('production')) {
+        \Log::warning('Browser log endpoint accessed in production (blocked)', [
+            'ip' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+        return response()->json(['status' => 'disabled'], 404);
+    }
+
+    // В dev режиме требуем аутентификацию и валидацию
+    if (! auth()->check()) {
+        \Log::warning('Browser log endpoint: unauthenticated request', [
+            'ip' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+        return response()->json(['status' => 'unauthorized'], 403);
+    }
+
+    // Валидируем и ограничиваем размер данных
+    $validated = $request->validate([
+        'level' => ['nullable', 'string', 'in:log,info,warn,error'],
+        'message' => ['nullable', 'string', 'max:1000'],
+        'data' => ['nullable', 'array', 'max:10'], // Ограничиваем количество полей
     ]);
+
+    // Логируем только валидированные данные
+    \Log::debug('Browser log received (dev only)', [
+        'user_id' => auth()->id(),
+        'level' => $validated['level'] ?? 'log',
+        'message' => $validated['message'] ?? null,
+        'data_keys' => isset($validated['data']) ? array_keys($validated['data']) : [],
+    ]);
+
     return response()->json(['status' => 'ok'], 200);
-})->middleware(['web']);
+})->middleware(['web', 'auth', 'throttle:10,1']); // Добавлены auth и throttle
 
 // Broadcasting authentication route
 // Поддерживает сессионную аутентификацию для Inertia.js
-// ИСПРАВЛЕНО: Исключаем HandleInertiaRequests middleware, так как он не нужен для авторизации каналов
-// и может вызывать лишние запросы к БД
+// Исключаем HandleInertiaRequests middleware, так как он не нужен для авторизации каналов
+// ИСПРАВЛЕНО: Добавлен throttle для предотвращения лавины запросов при навигации
 Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
     // Проверяем, что пользователь аутентифицирован
     if (! auth()->check()) {
@@ -43,6 +72,11 @@ Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
     }
 
     try {
+        \Log::debug('Broadcasting auth: Starting authorization', [
+            'channel' => $request->input('channel_name'),
+            'user_authenticated' => auth()->check(),
+        ]);
+        
         $user = auth()->user();
         $channelName = $request->input('channel_name');
         
@@ -51,52 +85,77 @@ Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
             'channel' => $channelName,
         ]);
 
-        // ИСПРАВЛЕНО: Обрабатываем ошибки БД отдельно
-        // Broadcast::auth() может обращаться к БД для проверки каналов
-        // Если таблицы не существуют (миграции не выполнены), возвращаем понятную ошибку
+        // Обрабатываем ошибки БД отдельно
         try {
             $response = Broadcast::auth($request);
         } catch (\Illuminate\Database\QueryException $dbException) {
-            // Если ошибка БД (например, таблица не существует), логируем и возвращаем ошибку
+            $isDev = app()->environment(['local', 'testing', 'development']);
             $errorMessage = $dbException->getMessage();
             $isMissingTable = str_contains($errorMessage, 'no such table') || 
                              str_contains($errorMessage, "doesn't exist") ||
                              str_contains($errorMessage, 'relation does not exist');
             
-            \Log::error('Broadcasting auth: Database error', [
-                'user_id' => $user->id,
-                'channel' => $channelName,
-                'error' => $errorMessage,
-                'sql_state' => $dbException->getCode(),
-                'is_missing_table' => $isMissingTable,
-            ]);
-            
-            if ($isMissingTable) {
-                // Если таблица не существует, возвращаем понятное сообщение
-                return response()->json([
-                    'message' => 'Database schema not initialized. Please run migrations.',
-                    'error' => 'Missing database table',
-                    'hint' => 'Run: php artisan migrate',
-                ], 503);
+            if ($isDev) {
+                \Log::error('Broadcasting auth: Database error', [
+                    'user_id' => $user->id,
+                    'channel' => $channelName,
+                    'error' => $errorMessage,
+                    'sql_state' => $dbException->getCode(),
+                    'is_missing_table' => $isMissingTable,
+                ]);
+            } else {
+                \Log::error('Broadcasting auth: Database error', [
+                    'user_id' => $user->id,
+                    'channel' => $channelName,
+                    'error_type' => $isMissingTable ? 'missing_table' : 'connection_error',
+                ]);
             }
             
-            // Для других ошибок БД возвращаем общее сообщение
-            return response()->json([
-                'message' => 'Service temporarily unavailable. Please check database connection.',
-                'error' => 'Database connection error',
-            ], 503);
+            if ($isDev) {
+                if ($isMissingTable) {
+                    return response()->json([
+                        'message' => 'Database schema not initialized. Please run migrations.',
+                        'error' => 'Missing database table',
+                        'hint' => 'Run: php artisan migrate',
+                    ], 503);
+                }
+                return response()->json([
+                    'message' => 'Service temporarily unavailable. Please check database connection.',
+                    'error' => 'Database connection error',
+                ], 503);
+            } else {
+                return response()->json([
+                    'message' => 'Service temporarily unavailable.',
+                ], 503);
+            }
         } catch (\PDOException $pdoException) {
-            // Обрабатываем PDO исключения отдельно
-            \Log::error('Broadcasting auth: PDO error', [
-                'user_id' => $user->id,
-                'channel' => $channelName,
-                'error' => $pdoException->getMessage(),
-                'code' => $pdoException->getCode(),
-            ]);
-            return response()->json([
-                'message' => 'Database connection error. Please check database configuration.',
-                'error' => 'PDO error',
-            ], 503);
+            $isDev = app()->environment(['local', 'testing', 'development']);
+            
+            if ($isDev) {
+                \Log::error('Broadcasting auth: PDO error', [
+                    'user_id' => $user->id,
+                    'channel' => $channelName,
+                    'error' => $pdoException->getMessage(),
+                    'code' => $pdoException->getCode(),
+                ]);
+            } else {
+                \Log::error('Broadcasting auth: PDO error', [
+                    'user_id' => $user->id,
+                    'channel' => $channelName,
+                    'error_type' => 'pdo_connection_error',
+                ]);
+            }
+            
+            if ($isDev) {
+                return response()->json([
+                    'message' => 'Database connection error. Please check database configuration.',
+                    'error' => 'PDO error',
+                ], 503);
+            } else {
+                return response()->json([
+                    'message' => 'Service temporarily unavailable.',
+                ], 503);
+            }
         }
         
         \Log::debug('Broadcasting auth: Success', [
@@ -106,15 +165,33 @@ Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
         ]);
 
         return $response;
-    } catch (\Exception $e) {
-        \Log::error('Broadcasting auth: Error', [
+    } catch (\Illuminate\Broadcasting\BroadcastException $broadcastException) {
+        // Отказ в доступе к каналу - возвращаем 403, а не 500
+        \Log::warning('Broadcasting auth: Channel authorization denied', [
             'user_id' => auth()->id(),
-            'error' => $e->getMessage(),
-            'trace' => $e->getTraceAsString(),
+            'channel' => $request->input('channel_name'),
+            'error' => $broadcastException->getMessage(),
         ]);
+        return response()->json(['message' => 'Unauthorized.'], 403);
+    } catch (\Exception $e) {
+        $isDev = app()->environment(['local', 'testing', 'development']);
+        
+        if ($isDev) {
+            \Log::error('Broadcasting auth: Error', [
+                'user_id' => auth()->id(),
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+        } else {
+            \Log::error('Broadcasting auth: Error', [
+                'user_id' => auth()->id(),
+                'error' => $e->getMessage(),
+            ]);
+        }
+        
         return response()->json(['message' => 'Authorization failed.'], 500);
     }
-})->middleware(['web', 'auth'])->withoutMiddleware([\App\Http\Middleware\HandleInertiaRequests::class]);
+})->middleware(['web', 'auth', 'throttle:60,1'])->withoutMiddleware([\App\Http\Middleware\HandleInertiaRequests::class]);
 
 Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->group(function () {
     /**
@@ -138,130 +215,240 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
      * Кеширование: 30 секунд
      */
     Route::get('/', function () {
+        // Обрабатываем ошибки БД для предотвращения 500 и бесконечных перезагрузок
         // Используем кеш для статических данных (TTL 30 секунд)
         $cacheKey = 'dashboard_data_'.auth()->id();
-        $dashboard = \Illuminate\Support\Facades\Cache::remember($cacheKey, 30, function () {
-            $stats = DB::select("
-                SELECT 
-                    (SELECT COUNT(*) FROM greenhouses) as greenhouses_count,
-                    (SELECT COUNT(*) FROM zones) as zones_count,
-                    (SELECT COUNT(*) FROM nodes) as devices_count,
-                    (SELECT COUNT(*) FROM alerts WHERE status = 'active') as alerts_count
-            ")[0];
+        try {
+            $dashboard = \Illuminate\Support\Facades\Cache::remember($cacheKey, 30, function () {
+                // Обрабатываем ошибки БД внутри кеша
+                try {
+                    $stats = DB::select("
+                        SELECT 
+                            (SELECT COUNT(*) FROM greenhouses) as greenhouses_count,
+                            (SELECT COUNT(*) FROM zones) as zones_count,
+                            (SELECT COUNT(*) FROM nodes) as devices_count,
+                            (SELECT COUNT(*) FROM alerts WHERE status = 'active') as alerts_count
+                    ")[0];
+                } catch (\Illuminate\Database\QueryException $e) {
+                    // Если таблицы не существуют, возвращаем нулевые значения
+                    \Log::error('Dashboard: Database error in stats query', [
+                        'error' => $e->getMessage(),
+                        'user_id' => auth()->id(),
+                    ]);
+                    $stats = (object) [
+                        'greenhouses_count' => 0,
+                        'zones_count' => 0,
+                        'devices_count' => 0,
+                        'alerts_count' => 0,
+                    ];
+                }
 
-            $zonesByStatus = Zone::query()
-                ->selectRaw('status, COUNT(*) as count')
-                ->groupBy('status')
-                ->pluck('count', 'status')
-                ->toArray();
+                // Обрабатываем ошибки БД для всех запросов
+                // Если таблицы не существуют или БД недоступна, возвращаем пустые данные
+                try {
+                    $zonesByStatus = Zone::query()
+                        ->selectRaw('status, COUNT(*) as count')
+                        ->groupBy('status')
+                        ->pluck('count', 'status')
+                        ->toArray();
+                } catch (\Exception $e) {
+                    \Log::error('Dashboard: Database error in zonesByStatus query', [
+                        'error' => $e->getMessage(),
+                        'user_id' => auth()->id(),
+                    ]);
+                    $zonesByStatus = [];
+                }
 
-            $nodesByStatus = DeviceNode::query()
-                ->selectRaw('status, COUNT(*) as count')
-                ->groupBy('status')
-                ->pluck('count', 'status')
-                ->toArray();
+                try {
+                    $nodesByStatus = DeviceNode::query()
+                        ->selectRaw('status, COUNT(*) as count')
+                        ->groupBy('status')
+                        ->pluck('count', 'status')
+                        ->toArray();
+                } catch (\Exception $e) {
+                    \Log::error('Dashboard: Database error in nodesByStatus query', [
+                        'error' => $e->getMessage(),
+                        'user_id' => auth()->id(),
+                    ]);
+                    $nodesByStatus = [];
+                }
 
-            $problematicZones = Zone::query()
-                ->select(['zones.id', 'zones.name', 'zones.status', 'zones.description', 'zones.greenhouse_id'])
-                ->leftJoin('alerts', function ($join) {
-                    $join->on('alerts.zone_id', '=', 'zones.id')
-                        ->where('alerts.status', '=', 'active');
-                })
-                ->where(function ($q) {
-                    $q->whereIn('zones.status', ['ALARM', 'WARNING'])
-                        ->orWhereNotNull('alerts.id');
-                })
-                ->selectRaw('COUNT(DISTINCT alerts.id) as alerts_count')
-                ->groupBy('zones.id', 'zones.name', 'zones.status', 'zones.description', 'zones.greenhouse_id')
-                ->orderByRaw("CASE zones.status WHEN 'ALARM' THEN 1 WHEN 'WARNING' THEN 2 ELSE 3 END")
-                ->orderBy('alerts_count', 'desc')
-                ->limit(5)
-                ->with('greenhouse:id,name')
-                ->get();
+                try {
+                    $problematicZones = Zone::query()
+                        ->select(['zones.id', 'zones.name', 'zones.status', 'zones.description', 'zones.greenhouse_id'])
+                        ->leftJoin('alerts', function ($join) {
+                            $join->on('alerts.zone_id', '=', 'zones.id')
+                                ->where('alerts.status', '=', 'active');
+                        })
+                        ->where(function ($q) {
+                            $q->whereIn('zones.status', ['ALARM', 'WARNING'])
+                                ->orWhereNotNull('alerts.id');
+                        })
+                        ->selectRaw('COUNT(DISTINCT alerts.id) as alerts_count')
+                        ->groupBy('zones.id', 'zones.name', 'zones.status', 'zones.description', 'zones.greenhouse_id')
+                        ->orderByRaw("CASE zones.status WHEN 'ALARM' THEN 1 WHEN 'WARNING' THEN 2 ELSE 3 END")
+                        ->orderBy('alerts_count', 'desc')
+                        ->limit(5)
+                        ->with('greenhouse:id,name')
+                        ->get();
+                } catch (\Exception $e) {
+                    \Log::error('Dashboard: Database error in problematicZones query', [
+                        'error' => $e->getMessage(),
+                        'user_id' => auth()->id(),
+                    ]);
+                    $problematicZones = collect([]);
+                }
 
-            $zoneStatusRows = Zone::query()
-                ->select('greenhouse_id', 'status', DB::raw('COUNT(*) as count'))
-                ->groupBy('greenhouse_id', 'status')
-                ->get();
+                try {
+                    $zoneStatusRows = Zone::query()
+                        ->select('greenhouse_id', 'status', DB::raw('COUNT(*) as count'))
+                        ->groupBy('greenhouse_id', 'status')
+                        ->get();
 
-            $zonesByGreenhouse = [];
-            foreach ($zoneStatusRows as $row) {
-                $zonesByGreenhouse[$row->greenhouse_id][$row->status] = (int) $row->count;
-            }
+                    $zonesByGreenhouse = [];
+                    foreach ($zoneStatusRows as $row) {
+                        $zonesByGreenhouse[$row->greenhouse_id][$row->status] = (int) $row->count;
+                    }
+                } catch (\Exception $e) {
+                    \Log::error('Dashboard: Database error in zonesByGreenhouse query', [
+                        'error' => $e->getMessage(),
+                        'user_id' => auth()->id(),
+                    ]);
+                    $zonesByGreenhouse = [];
+                }
 
-            $nodesStatusRows = DeviceNode::query()
-                ->select('zones.greenhouse_id', 'nodes.status', DB::raw('COUNT(*) as count'))
-                ->join('zones', 'zones.id', '=', 'nodes.zone_id')
-                ->groupBy('zones.greenhouse_id', 'nodes.status')
-                ->get();
+                try {
+                    $nodesStatusRows = DeviceNode::query()
+                        ->select('zones.greenhouse_id', 'nodes.status', DB::raw('COUNT(*) as count'))
+                        ->join('zones', 'zones.id', '=', 'nodes.zone_id')
+                        ->groupBy('zones.greenhouse_id', 'nodes.status')
+                        ->get();
 
-            $nodesByGreenhouse = [];
-            foreach ($nodesStatusRows as $row) {
-                $nodesByGreenhouse[$row->greenhouse_id][$row->status] = (int) $row->count;
-            }
+                    $nodesByGreenhouse = [];
+                    foreach ($nodesStatusRows as $row) {
+                        $nodesByGreenhouse[$row->greenhouse_id][$row->status] = (int) $row->count;
+                    }
+                } catch (\Exception $e) {
+                    \Log::error('Dashboard: Database error in nodesByGreenhouse query', [
+                        'error' => $e->getMessage(),
+                        'user_id' => auth()->id(),
+                    ]);
+                    $nodesByGreenhouse = [];
+                }
 
-            $alertsByGreenhouse = Alert::query()
-                ->select('zones.greenhouse_id', DB::raw('COUNT(*) as count'))
-                ->join('zones', 'zones.id', '=', 'alerts.zone_id')
-                ->where('alerts.status', 'active')
-                ->groupBy('zones.greenhouse_id')
-                ->pluck('count', 'greenhouse_id')
-                ->toArray();
+                try {
+                    $alertsByGreenhouse = Alert::query()
+                        ->select('zones.greenhouse_id', DB::raw('COUNT(*) as count'))
+                        ->join('zones', 'zones.id', '=', 'alerts.zone_id')
+                        ->where('alerts.status', 'active')
+                        ->groupBy('zones.greenhouse_id')
+                        ->pluck('count', 'greenhouse_id')
+                        ->toArray();
+                } catch (\Exception $e) {
+                    \Log::error('Dashboard: Database error in alertsByGreenhouse query', [
+                        'error' => $e->getMessage(),
+                        'user_id' => auth()->id(),
+                    ]);
+                    $alertsByGreenhouse = [];
+                }
 
-            $greenhouses = Greenhouse::query()
-                ->select(['id', 'uid', 'name', 'type', 'description'])
-                ->withCount([
-                    'zones',
-                    'zones as zones_running' => function ($q) {
-                        $q->where('status', 'RUNNING');
-                    },
-                ])
-                ->get()
-                ->map(function ($greenhouse) use ($zonesByGreenhouse, $nodesByGreenhouse, $alertsByGreenhouse) {
-                    $greenhouse->zone_status_summary = $zonesByGreenhouse[$greenhouse->id] ?? [];
-                    $greenhouse->node_status_summary = $nodesByGreenhouse[$greenhouse->id] ?? [];
-                    $greenhouse->alerts_count = $alertsByGreenhouse[$greenhouse->id] ?? 0;
+                try {
+                    $greenhouses = Greenhouse::query()
+                        ->select(['id', 'uid', 'name', 'type', 'description'])
+                        ->withCount([
+                            'zones',
+                            'zones as zones_running' => function ($q) {
+                                $q->where('status', 'RUNNING');
+                            },
+                        ])
+                        ->get()
+                        ->map(function ($greenhouse) use ($zonesByGreenhouse, $nodesByGreenhouse, $alertsByGreenhouse) {
+                            $greenhouse->zone_status_summary = $zonesByGreenhouse[$greenhouse->id] ?? [];
+                            $greenhouse->node_status_summary = $nodesByGreenhouse[$greenhouse->id] ?? [];
+                            $greenhouse->alerts_count = $alertsByGreenhouse[$greenhouse->id] ?? 0;
 
-                    return $greenhouse;
-                });
+                            return $greenhouse;
+                        });
+                } catch (\Exception $e) {
+                    \Log::error('Dashboard: Database error in greenhouses query', [
+                        'error' => $e->getMessage(),
+                        'user_id' => auth()->id(),
+                    ]);
+                    $greenhouses = collect([]);
+                }
 
-            $latestAlerts = Alert::query()
-                ->select(['id', 'type', 'status', 'details', 'zone_id', 'created_at'])
-                ->with('zone:id,name')
-                ->where('status', 'active')
-                ->latest('id')
-                ->limit(10)
-                ->get();
+                try {
+                    $latestAlerts = Alert::query()
+                        ->select(['id', 'type', 'status', 'details', 'zone_id', 'created_at'])
+                        ->with('zone:id,name')
+                        ->where('status', 'active')
+                        ->latest('id')
+                        ->limit(10)
+                        ->get();
+                } catch (\Exception $e) {
+                    \Log::error('Dashboard: Database error in latestAlerts query', [
+                        'error' => $e->getMessage(),
+                        'user_id' => auth()->id(),
+                    ]);
+                    $latestAlerts = collect([]);
+                }
 
-            $zonesForTelemetry = Zone::query()
-                ->select(['id', 'name', 'status', 'greenhouse_id'])
-                ->with('greenhouse:id,name')
-                ->orderByRaw("
-                    CASE status
-                        WHEN 'ALARM' THEN 1
-                        WHEN 'WARNING' THEN 2
-                        WHEN 'RUNNING' THEN 3
-                        WHEN 'PAUSED' THEN 4
-                        ELSE 5
-                    END
-                ")
-                ->orderBy('name')
-                ->limit(20)
-                ->get();
+                try {
+                    $zonesForTelemetry = Zone::query()
+                        ->select(['id', 'name', 'status', 'greenhouse_id'])
+                        ->with('greenhouse:id,name')
+                        ->orderByRaw("
+                            CASE status
+                                WHEN 'ALARM' THEN 1
+                                WHEN 'WARNING' THEN 2
+                                WHEN 'RUNNING' THEN 3
+                                WHEN 'PAUSED' THEN 4
+                                ELSE 5
+                            END
+                        ")
+                        ->orderBy('name')
+                        ->limit(20)
+                        ->get();
+                } catch (\Exception $e) {
+                    \Log::error('Dashboard: Database error in zonesForTelemetry query', [
+                        'error' => $e->getMessage(),
+                        'user_id' => auth()->id(),
+                    ]);
+                    $zonesForTelemetry = collect([]);
+                }
 
-            return [
-                'greenhousesCount' => (int) $stats->greenhouses_count,
-                'zonesCount' => (int) $stats->zones_count,
-                'devicesCount' => (int) $stats->devices_count,
-                'alertsCount' => (int) $stats->alerts_count,
-                'zonesByStatus' => $zonesByStatus,
-                'nodesByStatus' => $nodesByStatus,
-                'problematicZones' => $problematicZones,
-                'greenhouses' => $greenhouses,
-                'zones' => $zonesForTelemetry,
-                'latestAlerts' => $latestAlerts,
+                return [
+                    'greenhousesCount' => (int) ($stats->greenhouses_count ?? 0),
+                    'zonesCount' => (int) ($stats->zones_count ?? 0),
+                    'devicesCount' => (int) ($stats->devices_count ?? 0),
+                    'alertsCount' => (int) ($stats->alerts_count ?? 0),
+                    'zonesByStatus' => $zonesByStatus,
+                    'nodesByStatus' => $nodesByStatus,
+                    'problematicZones' => $problematicZones,
+                    'greenhouses' => $greenhouses,
+                    'zones' => $zonesForTelemetry,
+                    'latestAlerts' => $latestAlerts,
+                ];
+            });
+        } catch (\Exception $e) {
+            // Если произошла критическая ошибка (например, проблема с кешем), возвращаем пустые данные
+            \Log::error('Dashboard: Critical error', [
+                'error' => $e->getMessage(),
+                'user_id' => auth()->id(),
+            ]);
+            $dashboard = [
+                'greenhousesCount' => 0,
+                'zonesCount' => 0,
+                'devicesCount' => 0,
+                'alertsCount' => 0,
+                'zonesByStatus' => [],
+                'nodesByStatus' => [],
+                'problematicZones' => [],
+                'greenhouses' => [],
+                'zones' => [],
+                'latestAlerts' => [],
             ];
-        });
+        }
 
         return Inertia::render('Dashboard/Index', [
             'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],

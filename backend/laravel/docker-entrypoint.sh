@@ -81,7 +81,7 @@ if [ -f /app/.env ]; then
     if ! grep -q "^VITE_REVERB_APP_KEY=" /app/.env 2>/dev/null; then
         echo "VITE_REVERB_APP_KEY=${REVERB_APP_KEY:-local}" >> /app/.env
     fi
-    # ИСПРАВЛЕНО: Устанавливаем VITE_DEV_SERVER_URL для правильной генерации URL Laravel Vite plugin
+    # Устанавливаем VITE_DEV_SERVER_URL для правильной генерации URL Laravel Vite plugin
     # Используем localhost:8080 (через nginx прокси), а не 0.0.0.0, так как браузер не может использовать 0.0.0.0
     if ! grep -q "^VITE_DEV_SERVER_URL=" /app/.env 2>/dev/null; then
         echo "VITE_DEV_SERVER_URL=${VITE_DEV_SERVER_URL:-http://localhost:8080}" >> /app/.env
@@ -174,7 +174,7 @@ fi
 mkdir -p /opt/docker/etc/supervisor.d /var/log/supervisor /var/run 2>/dev/null || true
 chmod 755 /opt/docker/etc/supervisor.d /var/log/supervisor /var/run 2>/dev/null || true
 
-# ИСПРАВЛЕНО: Всегда обновляем конфигурацию Reverb для применения изменений
+# Всегда обновляем конфигурацию Reverb для применения изменений
 if [ -f /app/reverb-supervisor.conf ]; then
     echo "Updating reverb supervisor config to base image directory..."
     cp /app/reverb-supervisor.conf /opt/docker/etc/supervisor.d/reverb.conf
