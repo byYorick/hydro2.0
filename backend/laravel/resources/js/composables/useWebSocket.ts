@@ -1,8 +1,9 @@
 import { ref } from 'vue'
 import { logger } from '@/utils/logger'
 import type { ToastHandler } from './useApi'
-import { onWsStateChange } from '@/utils/echoClient'
+import { onWsStateChange, getEchoInstance } from '@/utils/echoClient'
 import { readBooleanEnv } from '@/utils/env'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
 
 type ZoneCommandHandler = (event: {
   commandId: number | string
@@ -50,6 +51,20 @@ const channelSubscribers = new Map<string, Set<string>>()
 const channelControls = new Map<string, ChannelControl>()
 const componentChannelCounts = new Map<number, Map<string, number>>()
 const instanceSubscriptionSets = new Map<number, Set<string>>()
+
+// ИСПРАВЛЕНО: Очередь отложенных подписок для компонентов, смонтированных до готовности Echo
+interface PendingSubscription {
+  id: string
+  channelName: string
+  kind: ChannelKind
+  channelType: 'private' | 'public'
+  handler: ZoneCommandHandler | GlobalEventHandler
+  componentTag: string
+  instanceId: number
+  showToast?: ToastHandler
+}
+
+const pendingSubscriptions = new Map<string, PendingSubscription>()
 
 let subscriptionCounter = 0
 let componentCounter = 0
@@ -372,16 +387,107 @@ function scheduleResubscribe(delay = 500): void {
   }, delay)
 }
 
+// ИСПРАВЛЕНО: Обработка отложенных подписок при подключении Echo
+function processPendingSubscriptions(): void {
+  if (!isBrowser() || pendingSubscriptions.size === 0) {
+    return
+  }
+  
+  const echo = window.Echo || getEchoInstance()
+  if (!echo) {
+    logger.debug('[useWebSocket] Echo still not available, keeping subscriptions pending', {
+      pendingCount: pendingSubscriptions.size,
+    })
+    return
+  }
+  
+  logger.info('[useWebSocket] Processing pending subscriptions', {
+    count: pendingSubscriptions.size,
+  })
+  
+  // Обрабатываем все отложенные подписки
+  const toProcess = Array.from(pendingSubscriptions.values())
+  pendingSubscriptions.clear()
+  
+  toProcess.forEach(pending => {
+    try {
+      const control = ensureChannelControl(pending.channelName, pending.kind, pending.channelType)
+      if (!control) {
+        logger.warn('[useWebSocket] Failed to create channel for pending subscription', {
+          channel: pending.channelName,
+          subscriptionId: pending.id,
+        })
+        return
+      }
+      
+      const subscription: ActiveSubscription = {
+        id: pending.id,
+        channelName: pending.channelName,
+        kind: pending.kind,
+        handler: pending.handler,
+        componentTag: pending.componentTag,
+        showToast: pending.showToast,
+        instanceId: pending.instanceId,
+      }
+      
+      addSubscription(control, subscription)
+      logger.debug('[useWebSocket] Processed pending subscription', {
+        channel: pending.channelName,
+        subscriptionId: pending.id,
+        componentTag: pending.componentTag,
+      })
+    } catch (error) {
+      logger.error('[useWebSocket] Error processing pending subscription', {
+        channel: pending.channelName,
+        subscriptionId: pending.id,
+      }, error)
+    }
+  })
+}
+
 if (isBrowser()) {
   try {
     onWsStateChange(state => {
       if (state === 'connected') {
         scheduleResubscribe()
+        // ИСПРАВЛЕНО: Обрабатываем отложенные подписки при подключении
+        processPendingSubscriptions()
       }
     })
   } catch {
     // ignore registration errors
   }
+  
+  // ИСПРАВЛЕНО: Периодически проверяем доступность Echo для обработки отложенных подписок
+  // Это нужно на случай, если компонент смонтировался до инициализации Echo
+  let pendingCheckInterval: ReturnType<typeof setInterval> | null = null
+  
+  const startPendingCheck = () => {
+    if (pendingCheckInterval) {
+      return
+    }
+    
+    pendingCheckInterval = window.setInterval(() => {
+      if (pendingSubscriptions.size > 0) {
+        const echo = window.Echo || getEchoInstance()
+        if (echo) {
+          processPendingSubscriptions()
+          // Останавливаем проверку, если все подписки обработаны
+          if (pendingSubscriptions.size === 0 && pendingCheckInterval) {
+            clearInterval(pendingCheckInterval)
+            pendingCheckInterval = null
+          }
+        }
+      } else if (pendingCheckInterval) {
+        // Нет отложенных подписок, останавливаем проверку
+        clearInterval(pendingCheckInterval)
+        pendingCheckInterval = null
+      }
+    }, 1000) // Проверяем каждую секунду
+  }
+  
+  // Запускаем проверку при загрузке модуля
+  startPendingCheck()
 }
 
 export function resubscribeAllChannels(): void {
@@ -431,11 +537,43 @@ export function useWebSocket(showToast?: ToastHandler, componentTag?: string) {
       return () => undefined
     }
 
-    if (!ensureEchoAvailable(showToast)) {
-      return () => undefined
+    const channelName = `commands.${zoneId}`
+    const echo = ensureEchoAvailable(showToast)
+    
+    // ИСПРАВЛЕНО: Если Echo не доступен, сохраняем подписку в очередь
+    if (!echo) {
+      const subscriptionId = createSubscriptionId()
+      const pending: PendingSubscription = {
+        id: subscriptionId,
+        channelName,
+        kind: 'zoneCommands',
+        channelType: 'private',
+        handler,
+        componentTag: resolvedComponentTag,
+        instanceId,
+        showToast,
+      }
+      
+      pendingSubscriptions.set(subscriptionId, pending)
+      logger.debug('[useWebSocket] Echo not available, subscription queued', {
+        channel: channelName,
+        subscriptionId,
+        componentTag: resolvedComponentTag,
+      })
+      
+      // Пытаемся обработать сразу, если Echo появится
+      setTimeout(() => {
+        processPendingSubscriptions()
+      }, 100)
+      
+      return () => {
+        // Удаляем из очереди при отписке
+        pendingSubscriptions.delete(subscriptionId)
+        // Также удаляем из активных, если успели подписаться
+        removeSubscription(subscriptionId)
+      }
     }
 
-    const channelName = `commands.${zoneId}`
     const control = ensureChannelControl(channelName, 'zoneCommands', 'private')
     if (!control) {
       logger.warn('[useWebSocket] Unable to create zone command channel', { channel: channelName })
@@ -468,8 +606,40 @@ export function useWebSocket(showToast?: ToastHandler, componentTag?: string) {
       return () => undefined
     }
 
-    if (!ensureEchoAvailable(showToast)) {
-      return () => undefined
+    const echo = ensureEchoAvailable(showToast)
+    
+    // ИСПРАВЛЕНО: Если Echo не доступен, сохраняем подписку в очередь
+    if (!echo) {
+      const subscriptionId = createSubscriptionId()
+      const pending: PendingSubscription = {
+        id: subscriptionId,
+        channelName: GLOBAL_EVENTS_CHANNEL,
+        kind: 'globalEvents',
+        channelType: 'private',
+        handler,
+        componentTag: resolvedComponentTag,
+        instanceId,
+        showToast,
+      }
+      
+      pendingSubscriptions.set(subscriptionId, pending)
+      logger.debug('[useWebSocket] Echo not available, subscription queued', {
+        channel: GLOBAL_EVENTS_CHANNEL,
+        subscriptionId,
+        componentTag: resolvedComponentTag,
+      })
+      
+      // Пытаемся обработать сразу, если Echo появится
+      setTimeout(() => {
+        processPendingSubscriptions()
+      }, 100)
+      
+      return () => {
+        // Удаляем из очереди при отписке
+        pendingSubscriptions.delete(subscriptionId)
+        // Также удаляем из активных, если успели подписаться
+        removeSubscription(subscriptionId)
+      }
     }
 
     const control = ensureChannelControl(GLOBAL_EVENTS_CHANNEL, 'globalEvents', 'private')
@@ -496,6 +666,15 @@ export function useWebSocket(showToast?: ToastHandler, componentTag?: string) {
   }
 
   const unsubscribeAll = (): void => {
+    // ИСПРАВЛЕНО: Удаляем также отложенные подписки этого компонента
+    const pendingToRemove: string[] = []
+    pendingSubscriptions.forEach((pending, id) => {
+      if (pending.instanceId === instanceId) {
+        pendingToRemove.push(id)
+      }
+    })
+    pendingToRemove.forEach(id => pendingSubscriptions.delete(id))
+    
     removeSubscriptionsByInstance(instanceId)
     subscriptions.value.clear()
   }

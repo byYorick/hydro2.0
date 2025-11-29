@@ -120,12 +120,14 @@ import { useFavorites } from '@/composables/useFavorites'
 import { translateDeviceType, translateStatus } from '@/utils/i18n'
 import type { Device } from '@/types'
 import { logger } from '@/utils/logger'
+import { onWsStateChange } from '@/utils/echoClient'
 
 const headers = ['UID', 'Зона', 'Имя', 'Тип', 'Статус', 'Версия ПО', 'Последний раз видели']
 const page = usePage<{ devices?: Device[] }>()
 const devicesStore = useDevicesStore()
 const { subscribeWithCleanup } = useStoreEvents()
 let cleanupDevicesChannel: (() => void) | null = null
+let devicesChannel: any = null
 
 onMounted(() => {
   devicesStore.initFromProps(page.props)
@@ -154,16 +156,28 @@ onMounted(() => {
     router.reload({ only: ['devices'], preserveScroll: true })
   })
   
-  // Подписка на WebSocket события обновления устройств
-  if (window.Echo) {
-    try {
+  // ИСПРАВЛЕНО: Подписка на WebSocket события обновления устройств с ресабскрайбом
       const channelName = 'hydro.devices'
       const eventName = '.device.updated'
-      const channel = window.Echo.private(channelName)
+  
+  const subscribeToDevicesChannel = () => {
+    // Очищаем предыдущую подписку, если есть
+    if (cleanupDevicesChannel) {
+      cleanupDevicesChannel()
+      cleanupDevicesChannel = null
+    }
+    
+    if (!window.Echo) {
+      logger.debug('[Devices/Index] Echo not available, will retry on connection', {})
+      return
+    }
+    
+    try {
+      devicesChannel = window.Echo.private(channelName)
       
       // Слушаем события обновления устройств
       // Используем broadcastAs имя 'device.updated'
-      channel.listen(eventName, (event: any) => {
+      devicesChannel.listen(eventName, (event: any) => {
         logger.debug('[Devices/Index] Received device update via WebSocket', event)
         
         if (event.device) {
@@ -180,23 +194,44 @@ onMounted(() => {
       
       cleanupDevicesChannel = () => {
         try {
-          channel.stopListening(eventName)
+          if (devicesChannel) {
+            devicesChannel.stopListening(eventName)
+          }
           if (typeof window.Echo?.leave === 'function') {
             window.Echo.leave(channelName)
           }
         } catch (error) {
           logger.warn('[Devices/Index] Failed to cleanup device channel', { error })
         }
+        devicesChannel = null
       }
       
       logger.debug('[Devices/Index] Subscribed to hydro.devices WebSocket channel')
       
     } catch (err) {
       logger.error('[Devices/Index] Failed to subscribe to devices WebSocket:', err)
+      devicesChannel = null
     }
-  } else {
-    logger.warn('[Devices/Index] Echo not available, skipping WebSocket subscription')
   }
+  
+  // Пытаемся подписаться сразу, если Echo доступен
+  subscribeToDevicesChannel()
+  
+  // ИСПРАВЛЕНО: Ресабскрайб при подключении WebSocket
+  const unsubscribeWsState = onWsStateChange((state) => {
+    if (state === 'connected') {
+      logger.debug('[Devices/Index] WebSocket connected, resubscribing to devices channel')
+      // Небольшая задержка для гарантии, что Echo полностью готов
+      setTimeout(() => {
+        subscribeToDevicesChannel()
+      }, 100)
+    }
+  })
+  
+  // Очищаем подписку на состояние при размонтировании
+  onUnmounted(() => {
+    unsubscribeWsState()
+  })
 })
 
 onUnmounted(() => {

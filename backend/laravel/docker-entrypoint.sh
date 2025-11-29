@@ -81,6 +81,11 @@ if [ -f /app/.env ]; then
     if ! grep -q "^VITE_REVERB_APP_KEY=" /app/.env 2>/dev/null; then
         echo "VITE_REVERB_APP_KEY=${REVERB_APP_KEY:-local}" >> /app/.env
     fi
+    # ИСПРАВЛЕНО: Устанавливаем VITE_DEV_SERVER_URL для правильной генерации URL Laravel Vite plugin
+    # Используем localhost:8080 (через nginx прокси), а не 0.0.0.0, так как браузер не может использовать 0.0.0.0
+    if ! grep -q "^VITE_DEV_SERVER_URL=" /app/.env 2>/dev/null; then
+        echo "VITE_DEV_SERVER_URL=${VITE_DEV_SERVER_URL:-http://localhost:8080}" >> /app/.env
+    fi
     if ! grep -q "^VITE_PUSHER_APP_KEY=" /app/.env 2>/dev/null; then
         echo "VITE_PUSHER_APP_KEY=${REVERB_APP_KEY:-local}" >> /app/.env
     fi

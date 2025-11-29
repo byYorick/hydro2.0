@@ -32,6 +32,7 @@ let reconnectLockUntil = 0
 let lastError: ConnectionError | null = null
 let isReconnecting = false
 let connectionHandlers: ConnectionHandler[] = []
+let connectingStartTime = 0 // ИСПРАВЛЕНО: Отслеживание времени начала подключения (объявлено на уровне модуля)
 
 function isBrowser(): boolean {
   return typeof window !== 'undefined'
@@ -97,18 +98,35 @@ function teardownEcho(): void {
 }
 
 function resolveScheme(): 'http' | 'https' {
+  const isDev = (import.meta as any).env?.DEV === true
   const envScheme = (import.meta as any).env?.VITE_REVERB_SCHEME
+  
+  // Если схема явно указана в переменных окружения, используем её
   if (typeof envScheme === 'string' && envScheme.trim().length > 0) {
     const scheme = envScheme.toLowerCase().trim()
-    // ИСПРАВЛЕНО: В dev режиме всегда используем 'http', даже если указан 'https'
-    // Это предотвращает попытки использовать wss:// в dev окружении
-    if (scheme === 'https') {
-      logger.debug('[echoClient] HTTPS scheme detected, but forcing HTTP for dev mode')
+    if (scheme === 'https' || scheme === 'http') {
+      // В dev режиме с nginx прокси может быть https страница, но ws:// соединение
+      // В prod режиме уважаем указанную схему
+      if (isDev && scheme === 'https') {
+        logger.debug('[echoClient] HTTPS scheme detected in dev mode, but using HTTP for WebSocket', {
+          envScheme: scheme,
+        })
+        return 'http'
+      }
+      return scheme as 'http' | 'https'
     }
-    return 'http' // Всегда 'http' в dev режиме
   }
-  // ИСПРАВЛЕНО: В dev режиме всегда используем 'http'
-  // Не используем window.location.protocol, чтобы избежать wss:// в dev
+  
+  // Если схема не указана, определяем по текущей странице (только в браузере)
+  if (isBrowser()) {
+    const protocol = window.location.protocol
+    if (protocol === 'https:') {
+      // В prod режиме используем https, в dev - http (nginx прокси)
+      return isDev ? 'http' : 'https'
+    }
+  }
+  
+  // По умолчанию http
   return 'http'
 }
 
@@ -124,36 +142,52 @@ function resolveHost(): string | undefined {
 }
 
 function resolvePort(scheme: 'http' | 'https'): number | undefined {
+  const isDev = (import.meta as any).env?.DEV === true
   const envPort = (import.meta as any).env?.VITE_REVERB_PORT
+  
+  // Если порт явно указан в переменных окружения
   if (typeof envPort === 'string' && envPort.trim().length > 0) {
     const parsed = Number(envPort)
     if (!Number.isNaN(parsed)) {
-      // ИСПРАВЛЕНО: Если порт указан явно через переменную окружения, но это порт Reverb (6001),
-      // игнорируем его в dev режиме и используем порт nginx
-      // В production это нормально, но в dev нужен nginx прокси
-      if (parsed === 6001 && isBrowser() && window.location.port) {
+      // ИСПРАВЛЕНО: Override только при явном dev флаге И наличии window.location.port
+      // В проде БЕЗ ПРОКСИ всегда уважаем VITE_REVERB_PORT=6001, даже если есть window.location.port
+      if (isDev && parsed === 6001 && isBrowser() && window.location.port) {
         const nginxPort = Number(window.location.port)
         if (!Number.isNaN(nginxPort) && nginxPort !== 6001) {
-          logger.debug('[echoClient] Overriding VITE_REVERB_PORT=6001 with nginx port', { nginxPort })
+          logger.debug('[echoClient] Dev mode: overriding VITE_REVERB_PORT=6001 with nginx port', {
+            nginxPort,
+            reverbPort: parsed,
+            isDev,
+            hasWindowPort: !!window.location.port,
+          })
           return nginxPort
         }
       }
+      // В prod режиме ВСЕГДА используем указанный порт, даже если есть window.location.port
+      // Это критично для prod без nginx прокси
+      logger.debug('[echoClient] Using VITE_REVERB_PORT from env', {
+        port: parsed,
+        isDev,
+        hasWindowPort: isBrowser() ? !!window.location.port : false,
+      })
       return parsed
     }
   }
-  // ИСПРАВЛЕНО: В dev режиме используем порт nginx (8080) для проксирования WebSocket
-  // Если порт не указан явно через VITE_REVERB_PORT, используем порт текущего окна
-  // Это позволяет работать через nginx прокси вместо прямого подключения к Reverb
+  
+  // Если порт не указан, определяем по текущей странице (только в браузере)
   if (isBrowser()) {
     if (window.location.port) {
       const parsed = Number(window.location.port)
       if (!Number.isNaN(parsed)) {
-        return parsed // Используем порт nginx (8080), а не порт Reverb (6001)
+        // В dev режиме используем порт nginx для проксирования
+        // В prod режиме используем порт страницы (обычно 443 для https, 80 для http)
+        return parsed
       }
     }
     // Если порт не указан, используем стандартные порты для схемы
     return scheme === 'https' ? 443 : 80
   }
+  
   return undefined
 }
 
@@ -176,15 +210,33 @@ function resolvePath(): string | undefined {
 }
 
 function buildEchoConfig(): Record<string, unknown> {
+  const isDev = (import.meta as any).env?.DEV === true
   const scheme = resolveScheme()
   const host = resolveHost()
   const port = resolvePort(scheme)
   const path = resolvePath()
-  // ИСПРАВЛЕНО: В dev режиме всегда отключаем TLS (ws:// вместо wss://)
-  // forceTLS должен быть false для dev окружения
+  
+  // ИСПРАВЛЕНО: Определяем, нужно ли использовать TLS
+  // В prod режиме на https странице используем wss, в dev - ws (nginx прокси)
+  // Также проверяем window.location.protocol для надежности
+  let shouldUseTls = false
+  if (!isDev) {
+    // В prod режиме: если схема https или страница https, используем wss
+    if (scheme === 'https') {
+      shouldUseTls = true
+    } else if (isBrowser() && window.location.protocol === 'https:') {
+      // Дополнительная проверка: если страница https, но схема http (не должно быть, но на всякий случай)
+      shouldUseTls = true
+      logger.warn('[echoClient] Page is HTTPS but scheme is HTTP, forcing TLS', {
+        scheme,
+        protocol: window.location.protocol,
+      })
+    }
+  }
+  
   const forceTls = readBooleanEnv(
     (import.meta as any).env?.VITE_WS_TLS,
-    false // Всегда false в dev режиме
+    shouldUseTls // По умолчанию: true для https в prod, false в dev
   )
 
   const key =
@@ -196,6 +248,16 @@ function buildEchoConfig(): Record<string, unknown> {
     ? document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
     : undefined
 
+  logger.debug('[echoClient] Building Echo config', {
+    scheme,
+    host,
+    port,
+    path,
+    forceTls,
+    isDev,
+    enabledTransports: forceTls ? ['wss'] : ['ws'],
+  })
+
   return {
     broadcaster: 'reverb',
     key,
@@ -204,8 +266,6 @@ function buildEchoConfig(): Record<string, unknown> {
     wssPort: port,
     wsPath: path,
     forceTLS: forceTls,
-    // ИСПРАВЛЕНО: В dev режиме используем только 'ws' (небезопасный WebSocket)
-    // Это предотвращает попытки использовать wss:// в dev окружении
     enabledTransports: forceTls ? ['wss'] : ['ws'],
     disableStats: true,
     withCredentials: true,
@@ -396,7 +456,8 @@ function bindConnectionEvents(connection: any): void {
   // ИСПРАВЛЕНО: Отслеживание времени последнего события "unavailable"
   let lastUnavailableTime = 0
   const UNAVAILABLE_COOLDOWN = 10000 // ИСПРАВЛЕНО: Увеличено до 10 секунд для предотвращения преждевременных переподключений
-  let connectingStartTime = 0 // ИСПРАВЛЕНО: Отслеживание времени начала подключения
+  // ИСПРАВЛЕНО: connectingStartTime объявлена на уровне модуля для доступа из всех замыканий
+  connectingStartTime = 0 // Сбрасываем при привязке новых обработчиков
   const CONNECTING_TIMEOUT = 15000 // ИСПРАВЛЕНО: 15 секунд таймаут для установления соединения
 
   const handlers: ConnectionHandler[] = [
@@ -700,9 +761,8 @@ export function initEcho(forceReinit = false): Echo | null {
 
   if (forceReinit) {
     teardownEcho()
-    // ИСПРАВЛЕНО: Небольшая задержка после teardown для гарантии полной очистки
-    // Это особенно важно после перезагрузки страницы
-    await new Promise(resolve => setTimeout(resolve, 100))
+    // ИСПРАВЛЕНО: teardown выполнен синхронно, задержка не нужна
+    // Продолжаем инициализацию сразу
   }
 
   try {

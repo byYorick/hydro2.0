@@ -701,6 +701,9 @@ async function onChartTimeRangeChange(newRange: string): Promise<void> {
 //   logInfo('[Zones/Show] Zone props changed')
 // }, { deep: true, immediate: true })
 
+// ИСПРАВЛЕНО: Сохраняем функцию отписки для очистки при размонтировании
+let unsubscribeZoneCommands: (() => void) | null = null
+
 onMounted(async () => {
   logger.info('[Show.vue] Компонент смонтирован', { zoneId: zoneId.value })
   
@@ -708,9 +711,9 @@ onMounted(async () => {
   chartDataPh.value = await loadChartData('PH', chartTimeRange.value)
   chartDataEc.value = await loadChartData('EC', chartTimeRange.value)
   
-  // Подписаться на WebSocket канал команд зоны
+  // ИСПРАВЛЕНО: Подписаться на WebSocket канал команд зоны и сохранить функцию отписки
   if (zoneId.value) {
-    subscribeToZoneCommands(zoneId.value, (commandEvent) => {
+    unsubscribeZoneCommands = subscribeToZoneCommands(zoneId.value, (commandEvent) => {
       // Обновляем статус команды через useCommands
       updateCommandStatus(commandEvent.commandId, commandEvent.status, commandEvent.message)
       
@@ -760,6 +763,11 @@ onMounted(async () => {
   
   // При размонтировании применяем все накопленные обновления телеметрии
   onUnmounted(() => {
+    // ИСПРАВЛЕНО: Отписываемся от WebSocket канала при размонтировании
+    if (unsubscribeZoneCommands) {
+      unsubscribeZoneCommands()
+      unsubscribeZoneCommands = null
+    }
     flush()
   })
 })

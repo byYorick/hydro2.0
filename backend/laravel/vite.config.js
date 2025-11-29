@@ -22,13 +22,19 @@ export default defineConfig({
             allowedHeaders: ['*'],
         },
         hmr: {
-            // HMR через nginx прокси на порту 8080
-            // Используем тот же хост, что и основной запрос
-            host: 'localhost',
-            port: 8080,
-            clientPort: 8080,
+            // ИСПРАВЛЕНО: HMR должен использовать порт Vite (5173) напрямую, а не nginx (8080)
+            // Vite HMR WebSocket должен подключаться напрямую к Vite dev server на порту 5173
+            // nginx прокси используется только для HTTP запросов к ресурсам
+            // host: undefined означает автоматическое определение из window.location.hostname
+            host: undefined, // Автоматически определяется из window.location.hostname
+            // ИСПРАВЛЕНО: port должен быть портом Vite (5173) для HMR сервера
+            // Это порт, на котором Vite слушает HMR соединения
+            port: 5173,
+            // ИСПРАВЛЕНО: clientPort должен быть портом Vite (5173) для прямого WebSocket подключения
+            // Браузер будет подключаться к Vite напрямую на порту 5173, минуя nginx
+            clientPort: 5173,
             protocol: 'ws',
-            // Путь для WebSocket через прокси
+            // Путь для WebSocket HMR
             path: '/@vite/client',
         },
         watch: {
@@ -112,6 +118,10 @@ export default defineConfig({
                 'routes/**',
             ], // Ограничиваем refresh только нужными файлами для снижения нагрузки
             detectTls: false, // Отключить автоматическое определение TLS
+            // ИСПРАВЛЕНО: Явно указываем devServerUrl для правильной генерации URL
+            // Используем localhost:8080 (через nginx прокси), а не 0.0.0.0
+            // Браузер не может использовать 0.0.0.0 для запросов
+            devServerUrl: process.env.VITE_DEV_SERVER_URL || 'http://localhost:8080',
             // Использовать прокси через nginx вместо прямых ссылок на Vite
             buildDirectory: 'build',
             hotFile: 'public/hot',

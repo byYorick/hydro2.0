@@ -70,10 +70,11 @@ services:
       - REVERB_VERBOSE=true
       - LOG_LEVEL=debug
       - REVERB_ALLOWED_ORIGINS=http://localhost:8080,http://127.0.0.1:8080,http://localhost:5173,http://127.0.0.1:5173,http://localhost,http://127.0.0.1,*
-      # Для доступа с телефона установите VITE_DEV_SERVER_URL=http://YOUR_IP:5173
+      # ИСПРАВЛЕНО: Устанавливаем VITE_DEV_SERVER_URL для правильной генерации URL Laravel Vite plugin
+      # Используем localhost:8080 (через nginx прокси), а не 0.0.0.0, так как браузер не может использовать 0.0.0.0
+      # Для доступа с телефона установите VITE_DEV_SERVER_URL=http://YOUR_IP:8080
       # где YOUR_IP - IP адрес вашего компьютера в локальной сети
-      # В dev режиме используем относительный путь через nginx прокси (пустая строка)
-      - VITE_DEV_SERVER_URL=${VITE_DEV_SERVER_URL:-""}
+      - VITE_DEV_SERVER_URL=${VITE_DEV_SERVER_URL:-"http://localhost:8080"}
       # Vite environment variables for WebSocket
       - VITE_ENABLE_WS=true
       - VITE_REVERB_APP_KEY=local
@@ -102,6 +103,8 @@ services:
       - PHP_FPM_PM_MAX_REQUESTS=500
     volumes:
       - ./laravel:/app
+      # Монтируем конфигурацию nginx для Vite прокси, чтобы изменения применялись без пересборки
+      - ./laravel/nginx-vite-proxy.conf:/opt/docker/etc/nginx/vhost.common.d/vite-proxy.conf:ro
     ports:
       - "8080:80"
       - "5173:5173"

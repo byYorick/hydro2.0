@@ -410,7 +410,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, shallowRef, watch, reactive } from 'vue'
+import { computed, ref, onMounted, onUnmounted, shallowRef, watch, reactive } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
@@ -769,6 +769,9 @@ async function loadTelemetryMetrics() {
   }
 }
 
+// ИСПРАВЛЕНО: Сохраняем функцию отписки для очистки при размонтировании
+let unsubscribeGlobalEvents: (() => void) | null = null
+
 onMounted(async () => {
   restoreTelemetryPreferences()
   
@@ -796,7 +799,8 @@ onMounted(async () => {
     { debounceMs: 200, maxBatchSize: 5, maxWaitMs: 1000 }
   )
   
-  subscribeToGlobalEvents((event) => {
+  // ИСПРАВЛЕНО: Сохраняем функцию отписки
+  unsubscribeGlobalEvents = subscribeToGlobalEvents((event) => {
     // Используем batch updates для оптимизации
     addEvent({
       id: event.id,
@@ -806,6 +810,14 @@ onMounted(async () => {
       occurredAt: event.occurredAt
     })
   })
+})
+
+// ИСПРАВЛЕНО: Отписываемся при размонтировании
+onUnmounted(() => {
+  if (unsubscribeGlobalEvents) {
+    unsubscribeGlobalEvents()
+    unsubscribeGlobalEvents = null
+  }
 })
 
 </script>

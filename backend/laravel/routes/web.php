@@ -49,7 +49,53 @@ Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
             'channel' => $channelName,
         ]);
 
-        $response = Broadcast::auth($request);
+        // ИСПРАВЛЕНО: Обрабатываем ошибки БД отдельно
+        // Broadcast::auth() может обращаться к БД для проверки каналов
+        // Если таблицы не существуют (миграции не выполнены), возвращаем понятную ошибку
+        try {
+            $response = Broadcast::auth($request);
+        } catch (\Illuminate\Database\QueryException $dbException) {
+            // Если ошибка БД (например, таблица не существует), логируем и возвращаем ошибку
+            $errorMessage = $dbException->getMessage();
+            $isMissingTable = str_contains($errorMessage, 'no such table') || 
+                             str_contains($errorMessage, "doesn't exist") ||
+                             str_contains($errorMessage, 'relation does not exist');
+            
+            \Log::error('Broadcasting auth: Database error', [
+                'user_id' => $user->id,
+                'channel' => $channelName,
+                'error' => $errorMessage,
+                'sql_state' => $dbException->getCode(),
+                'is_missing_table' => $isMissingTable,
+            ]);
+            
+            if ($isMissingTable) {
+                // Если таблица не существует, возвращаем понятное сообщение
+                return response()->json([
+                    'message' => 'Database schema not initialized. Please run migrations.',
+                    'error' => 'Missing database table',
+                    'hint' => 'Run: php artisan migrate',
+                ], 503);
+            }
+            
+            // Для других ошибок БД возвращаем общее сообщение
+            return response()->json([
+                'message' => 'Service temporarily unavailable. Please check database connection.',
+                'error' => 'Database connection error',
+            ], 503);
+        } catch (\PDOException $pdoException) {
+            // Обрабатываем PDO исключения отдельно
+            \Log::error('Broadcasting auth: PDO error', [
+                'user_id' => $user->id,
+                'channel' => $channelName,
+                'error' => $pdoException->getMessage(),
+                'code' => $pdoException->getCode(),
+            ]);
+            return response()->json([
+                'message' => 'Database connection error. Please check database configuration.',
+                'error' => 'PDO error',
+            ], 503);
+        }
         
         \Log::debug('Broadcasting auth: Success', [
             'user_id' => $user->id,
