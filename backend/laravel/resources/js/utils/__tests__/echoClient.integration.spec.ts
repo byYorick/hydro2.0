@@ -1,30 +1,30 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
-// Mock Pusher
-const mockPusherConnection = {
+// Mock Pusher - используем vi.hoisted для правильного поднятия
+const mockPusherConnection = vi.hoisted(() => ({
   state: 'disconnected',
   socket_id: null as string | null,
   bind: vi.fn(),
   unbind: vi.fn(),
   connect: vi.fn(),
   disconnect: vi.fn(),
-}
+}))
 
-const mockPusher = {
+const mockPusher = vi.hoisted(() => ({
   connection: mockPusherConnection,
   channels: {
     channels: {},
   },
   disconnect: vi.fn(),
-}
+}))
 
-const MockPusher = vi.fn().mockImplementation(() => mockPusher)
-const MockEcho = vi.fn().mockImplementation(() => ({
+const MockPusher = vi.hoisted(() => vi.fn().mockImplementation(() => mockPusher))
+const MockEcho = vi.hoisted(() => vi.fn().mockImplementation(() => ({
   connector: {
     pusher: mockPusher,
   },
   disconnect: vi.fn(),
-}))
+})))
 
 // Mock laravel-echo and pusher-js modules
 vi.mock('laravel-echo', () => ({

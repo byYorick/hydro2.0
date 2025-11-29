@@ -99,6 +99,7 @@ import { useHistory } from '@/composables/useHistory'
 import { useToast } from '@/composables/useToast'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { useApi } from '@/composables/useApi'
+import { useDevicesStore } from '@/stores/devices'
 import type { Device, DeviceChannel } from '@/types'
 
 interface PageProps {
@@ -112,6 +113,7 @@ const testingChannels = ref<Set<string>>(new Set())
 const detaching = ref(false)
 const { showToast } = useToast()
 const { api } = useApi(showToast)
+const devicesStore = useDevicesStore()
 
 // История просмотров
 const { addToHistory } = useHistory()
@@ -178,7 +180,7 @@ const detachNode = async (): Promise<void> => {
 
   detaching.value = true
   try {
-    const response = await api.post<{ status: string }>(
+    const response = await api.post<{ status: string; data?: Device }>(
       `/nodes/${device.value.id}/detach`,
       {}
     )
@@ -187,8 +189,21 @@ const detachNode = async (): Promise<void> => {
       logger.debug('[Devices/Show] Node detached successfully', response.data)
       showToast(`Нода "${device.value.uid || device.value.name}" успешно отвязана от зоны`, 'success', TOAST_TIMEOUT.NORMAL)
       
-      // Перезагружаем страницу для обновления данных
-      router.reload({ only: ['device'], preserveScroll: false })
+      // Обновляем device локально, убирая zone_id, вместо полного reload
+      const updatedDevice = response.data?.data || {
+        ...device.value,
+        zone_id: null,
+        zone: null,
+      }
+      
+      // Обновляем device в store для мгновенного отображения
+      if (updatedDevice?.id) {
+        devicesStore.upsert(updatedDevice)
+        logger.debug('[Devices/Show] Device updated in store after detach', { deviceId: updatedDevice.id })
+      }
+      
+      // Опционально: можно перенаправить на список устройств, если нужно
+      // router.visit('/devices')
     }
   } catch (err) {
     // Ошибка уже обработана в useApi через showToast

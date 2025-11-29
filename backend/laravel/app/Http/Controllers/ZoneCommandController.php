@@ -17,6 +17,8 @@ class ZoneCommandController extends Controller
         $data = $request->validate([
             'type' => ['required', 'string', 'max:64'],
             'params' => ['nullable'],
+            'node_uid' => ['required', 'string', 'max:64'],
+            'channel' => ['required', 'string', 'max:64'],
         ]);
         
         // Ensure params is an associative array (object), not a list

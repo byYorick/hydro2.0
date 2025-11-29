@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Zone;
 use App\Services\ZoneService;
+use App\Helpers\ZoneAccessHelper;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
@@ -16,6 +17,17 @@ class ZoneController extends Controller
 
     public function index(Request $request)
     {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+        
+        // Получаем доступные зоны для пользователя
+        $accessibleZoneIds = ZoneAccessHelper::getAccessibleZoneIds($user);
+        
         // Валидация query параметров
         $validated = $request->validate([
             'greenhouse_id' => ['nullable', 'integer', 'exists:greenhouses,id'],
@@ -28,7 +40,19 @@ class ZoneController extends Controller
             ->withCount('nodes') // Счетчик узлов
             ->with(['greenhouse:id,name', 'preset:id,name']); // Загружаем только нужные поля
         
+        // Фильтруем зоны по доступным для пользователя
+        if (!$user->isAdmin()) {
+            $query->whereIn('id', $accessibleZoneIds);
+        }
+        
         if (isset($validated['greenhouse_id'])) {
+            // Дополнительно проверяем доступ к теплице
+            if (!$user->isAdmin() && !ZoneAccessHelper::canAccessGreenhouse($user, $validated['greenhouse_id'])) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Forbidden: Access denied to this greenhouse',
+                ], 403);
+            }
             $query->where('greenhouse_id', $validated['greenhouse_id']);
         }
         if (isset($validated['status'])) {
@@ -50,6 +74,14 @@ class ZoneController extends Controller
 
     public function store(Request $request)
     {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+        
         $data = $request->validate([
             'greenhouse_id' => ['nullable', 'integer', 'exists:greenhouses,id'],
             'preset_id' => ['nullable', 'integer', 'exists:presets,id'],
@@ -57,30 +89,100 @@ class ZoneController extends Controller
             'description' => ['nullable', 'string'],
             'status' => ['nullable', 'string', 'max:32'],
         ]);
+        
+        // Проверяем доступ к теплице, если указана
+        if (isset($data['greenhouse_id'])) {
+            if (!ZoneAccessHelper::canAccessGreenhouse($user, $data['greenhouse_id'])) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Forbidden: Access denied to this greenhouse',
+                ], 403);
+            }
+        }
+        
         $zone = $this->zoneService->create($data);
         return response()->json(['status' => 'ok', 'data' => $zone], Response::HTTP_CREATED);
     }
 
-    public function show(Zone $zone)
+    public function show(Request $request, Zone $zone)
     {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+        
+        // Проверяем доступ к зоне
+        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Access denied to this zone',
+            ], 403);
+        }
+        
         $zone->load(['greenhouse', 'preset', 'nodes', 'recipeInstance.recipe.phases']);
         return response()->json(['status' => 'ok', 'data' => $zone]);
     }
 
     public function update(Request $request, Zone $zone)
     {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+        
+        // Проверяем доступ к зоне
+        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Access denied to this zone',
+            ], 403);
+        }
+        
         $data = $request->validate([
             'greenhouse_id' => ['nullable', 'integer', 'exists:greenhouses,id'],
             'name' => ['sometimes', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
             'status' => ['nullable', 'string', 'max:32'],
         ]);
+        
+        // Проверяем доступ к новой теплице, если меняется
+        if (isset($data['greenhouse_id']) && $data['greenhouse_id'] !== $zone->greenhouse_id) {
+            if (!ZoneAccessHelper::canAccessGreenhouse($user, $data['greenhouse_id'])) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Forbidden: Access denied to target greenhouse',
+                ], 403);
+            }
+        }
+        
         $zone = $this->zoneService->update($zone, $data);
         return response()->json(['status' => 'ok', 'data' => $zone]);
     }
 
-    public function destroy(Zone $zone)
+    public function destroy(Request $request, Zone $zone)
     {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+        
+        // Проверяем доступ к зоне
+        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Access denied to this zone',
+            ], 403);
+        }
+        
         try {
             $this->zoneService->delete($zone);
             return response()->json(['status' => 'ok']);
@@ -94,6 +196,22 @@ class ZoneController extends Controller
 
     public function attachRecipe(Request $request, Zone $zone)
     {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+        
+        // Проверяем доступ к зоне
+        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Access denied to this zone',
+            ], 403);
+        }
+        
         try {
             $data = $request->validate([
                 'recipe_id' => ['required', 'integer', 'exists:recipes,id'],
@@ -134,6 +252,22 @@ class ZoneController extends Controller
 
     public function changePhase(Request $request, Zone $zone)
     {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+        
+        // Проверяем доступ к зоне
+        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Access denied to this zone',
+            ], 403);
+        }
+        
         $data = $request->validate([
             'phase_index' => ['required', 'integer', 'min:0'],
         ]);
@@ -148,8 +282,24 @@ class ZoneController extends Controller
         }
     }
 
-    public function nextPhase(Zone $zone)
+    public function nextPhase(Request $request, Zone $zone)
     {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+        
+        // Проверяем доступ к зоне
+        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Access denied to this zone',
+            ], 403);
+        }
+        
         try {
             $instance = $this->zoneService->nextPhase($zone);
             return response()->json(['status' => 'ok', 'data' => $instance]);
@@ -161,8 +311,24 @@ class ZoneController extends Controller
         }
     }
 
-    public function pause(Zone $zone)
+    public function pause(Request $request, Zone $zone)
     {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+        
+        // Проверяем доступ к зоне
+        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Access denied to this zone',
+            ], 403);
+        }
+        
         try {
             $zone = $this->zoneService->pause($zone);
             return response()->json(['status' => 'ok', 'data' => $zone]);
@@ -174,8 +340,24 @@ class ZoneController extends Controller
         }
     }
 
-    public function resume(Zone $zone)
+    public function resume(Request $request, Zone $zone)
     {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+        
+        // Проверяем доступ к зоне
+        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Access denied to this zone',
+            ], 403);
+        }
+        
         try {
             $zone = $this->zoneService->resume($zone);
             return response()->json(['status' => 'ok', 'data' => $zone]);
@@ -187,8 +369,24 @@ class ZoneController extends Controller
         }
     }
 
-    public function health(Zone $zone)
+    public function health(Request $request, Zone $zone)
     {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+        
+        // Проверяем доступ к зоне
+        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Access denied to this zone',
+            ], 403);
+        }
+        
         // Eager loading для предотвращения N+1 запросов
         $zone->load([
             'nodes' => function ($query) {
@@ -217,65 +415,138 @@ class ZoneController extends Controller
 
     public function fill(Request $request, Zone $zone)
     {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+        
+        // Проверяем доступ к зоне
+        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Access denied to this zone',
+            ], 403);
+        }
+        
         $data = $request->validate([
             'target_level' => ['required', 'numeric', 'min:0.1', 'max:1.0'],
             'max_duration_sec' => ['nullable', 'integer', 'min:10', 'max:600'],
         ]);
 
-        try {
-            $result = $this->zoneService->fill($zone, $data);
-            return response()->json(['status' => 'ok', 'data' => $result]);
-        } catch (\DomainException $e) {
-            return response()->json([
-                'status' => 'error',
-                'message' => $e->getMessage(),
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
-        }
+        // Выполняем операцию асинхронно через очередь для предотвращения блокировки PHP-FPM
+        $jobId = \Illuminate\Support\Str::uuid()->toString();
+        \App\Jobs\ZoneOperationJob::dispatch($zone->id, 'fill', $data, $jobId);
+        
+        return response()->json([
+            'status' => 'ok',
+            'message' => 'Fill operation queued',
+            'job_id' => $jobId,
+        ], Response::HTTP_ACCEPTED);
     }
 
     public function drain(Request $request, Zone $zone)
     {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+        
+        // Проверяем доступ к зоне
+        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Access denied to this zone',
+            ], 403);
+        }
+        
         $data = $request->validate([
             'target_level' => ['required', 'numeric', 'min:0.0', 'max:0.9'],
             'max_duration_sec' => ['nullable', 'integer', 'min:10', 'max:600'],
         ]);
 
-        try {
-            $result = $this->zoneService->drain($zone, $data);
-            return response()->json(['status' => 'ok', 'data' => $result]);
-        } catch (\DomainException $e) {
-            return response()->json([
-                'status' => 'error',
-                'message' => $e->getMessage(),
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
-        }
+        // Выполняем операцию асинхронно через очередь для предотвращения блокировки PHP-FPM
+        $jobId = \Illuminate\Support\Str::uuid()->toString();
+        \App\Jobs\ZoneOperationJob::dispatch($zone->id, 'drain', $data, $jobId);
+        
+        return response()->json([
+            'status' => 'ok',
+            'message' => 'Drain operation queued',
+            'job_id' => $jobId,
+        ], Response::HTTP_ACCEPTED);
     }
 
     public function calibrateFlow(Request $request, Zone $zone)
     {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+        
+        // Проверяем доступ к зоне
+        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Access denied to this zone',
+            ], 403);
+        }
+        
         $data = $request->validate([
             'node_id' => ['required', 'integer', 'exists:nodes,id'],
             'channel' => ['required', 'string', 'max:128'],
             'pump_duration_sec' => ['nullable', 'integer', 'min:5', 'max:60'],
         ]);
-
-        try {
-            $result = $this->zoneService->calibrateFlow($zone, $data);
-            return response()->json(['status' => 'ok', 'data' => $result]);
-        } catch (\DomainException $e) {
+        
+        // Проверяем доступ к ноде
+        $node = \App\Models\DeviceNode::find($data['node_id']);
+        if ($node && !ZoneAccessHelper::canAccessNode($user, $node)) {
             return response()->json([
                 'status' => 'error',
-                'message' => $e->getMessage(),
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+                'message' => 'Forbidden: Access denied to this node',
+            ], 403);
         }
+
+        // Выполняем операцию асинхронно через очередь для предотвращения блокировки PHP-FPM
+        $jobId = \Illuminate\Support\Str::uuid()->toString();
+        \App\Jobs\ZoneOperationJob::dispatch($zone->id, 'calibrateFlow', $data, $jobId);
+        
+        return response()->json([
+            'status' => 'ok',
+            'message' => 'Calibrate flow operation queued',
+            'job_id' => $jobId,
+        ], Response::HTTP_ACCEPTED);
     }
 
     /**
      * Получить информацию о циклах зоны
      * GET /api/zones/{id}/cycles
      */
-    public function cycles(Zone $zone)
+    public function cycles(Request $request, Zone $zone)
     {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+        
+        // Проверяем доступ к зоне
+        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Access denied to this zone',
+            ], 403);
+        }
+        
         $cycles = [];
         $settings = $zone->settings ?? [];
         $targets = [];

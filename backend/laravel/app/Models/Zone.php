@@ -13,6 +13,7 @@ class Zone extends Model
     use HasFactory;
 
     protected $fillable = [
+        'uid',
         'greenhouse_id',
         'preset_id',
         'name',

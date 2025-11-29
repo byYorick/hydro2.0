@@ -56,17 +56,42 @@ return Application::configure(basePath: dirname(__DIR__))
             return 'req_' . uniqid() . '_' . substr(md5(microtime(true)), 0, 8);
         };
 
-        // Централизованная обработка исключений для API роутов
+        // Централизованная обработка исключений для API и веб-маршрутов
         $exceptions->render(function (\Throwable $e, \Illuminate\Http\Request $request) use ($generateCorrelationId) {
             // Пропускаем обработку для broadcasting/auth (обрабатывается отдельно)
             if ($request->is('broadcasting/auth')) {
                 return null;
             }
 
-            // Обрабатываем только API роуты
-            if (!$request->is('api/*') && !$request->expectsJson()) {
-                return null;
+            $correlationId = $generateCorrelationId();
+            $isDev = app()->environment(['local', 'testing', 'development']);
+            $isApi = $request->is('api/*') || $request->expectsJson();
+            $isInertia = $request->header('X-Inertia') !== null;
+
+            // Логируем исключение с контекстом
+            $logContext = [
+                'correlation_id' => $correlationId,
+                'url' => $request->fullUrl(),
+                'method' => $request->method(),
+                'ip' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'user_id' => auth()->id(),
+                'exception' => get_class($e),
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'is_api' => $isApi,
+                'is_inertia' => $isInertia,
+            ];
+
+            if ($isDev) {
+                $logContext['trace'] = $e->getTraceAsString();
             }
+
+            \Log::error('Exception', $logContext);
+
+            // Обработка для API роутов
+            if ($isApi) {
 
             $correlationId = $generateCorrelationId();
             $isDev = app()->environment(['local', 'testing', 'development']);
@@ -156,6 +181,55 @@ return Application::configure(basePath: dirname(__DIR__))
             }
 
             return response()->json($response, 500);
+            }
+
+            // Обработка для веб/Inertia маршрутов
+            if ($isInertia || $request->is('*')) {
+                // Для Inertia запросов возвращаем Inertia-ответ с ошибкой
+                if ($isInertia) {
+                    return \Inertia\Inertia::render('Error', [
+                        'status' => 500,
+                        'message' => $isDev ? $e->getMessage() : 'Произошла ошибка. Пожалуйста, попробуйте позже.',
+                        'correlation_id' => $correlationId,
+                        'exception' => $isDev ? get_class($e) : null,
+                        'file' => $isDev ? $e->getFile() : null,
+                        'line' => $isDev ? $e->getLine() : null,
+                    ])->toResponse($request)->setStatusCode(500);
+                }
+
+                // Для обычных веб-запросов возвращаем дружелюбную страницу ошибки
+                if ($e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException) {
+                    return response()->view('errors.404', [
+                        'correlation_id' => $correlationId,
+                    ], 404);
+                }
+
+                if ($e instanceof \Illuminate\Auth\AuthenticationException) {
+                    return redirect()->route('login')->with('error', 'Требуется авторизация.');
+                }
+
+                if ($e instanceof \Illuminate\Auth\Access\AuthorizationException) {
+                    return response()->view('errors.403', [
+                        'correlation_id' => $correlationId,
+                        'message' => 'Доступ запрещен.',
+                    ], 403);
+                }
+
+                if ($e instanceof \Illuminate\Validation\ValidationException) {
+                    return back()->withErrors($e->errors())->withInput();
+                }
+
+                // Общая ошибка для веб-маршрутов
+                return response()->view('errors.500', [
+                    'correlation_id' => $correlationId,
+                    'message' => $isDev ? $e->getMessage() : 'Произошла ошибка. Пожалуйста, попробуйте позже.',
+                    'exception' => $isDev ? get_class($e) : null,
+                    'file' => $isDev ? $e->getFile() : null,
+                    'line' => $isDev ? $e->getLine() : null,
+                ], 500);
+            }
+
+            return null;
         });
 
         // Обрабатываем ThrottleRequestsException для broadcasting/auth (возвращаем 429 вместо 500)

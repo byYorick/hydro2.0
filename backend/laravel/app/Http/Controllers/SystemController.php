@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\Greenhouse;
+use App\Helpers\ZoneAccessHelper;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
 
 class SystemController extends Controller
 {
@@ -234,10 +236,63 @@ class SystemController extends Controller
     public function configFull()
     {
         try {
+            // Проверяем авторизацию через Sanctum или сессию
+            // Middleware verify.python.service уже проверил токен или Sanctum
+            // Здесь просто получаем пользователя, если он авторизован
+            $user = Auth::guard('sanctum')->user() ?? Auth::user();
+            
+            // Если пользователь не авторизован (ни через Sanctum, ни через сессию),
+            // значит middleware должен был отклонить запрос, но на всякий случай проверяем
+            if (!$user) {
+                return response()->json([
+                    'status' => 'error',
+                    'code' => 'UNAUTHENTICATED',
+                    'message' => 'Authentication required',
+                ], 401);
+            }
+            
+            // Получаем доступные зоны для пользователя
+            $accessibleZoneIds = ZoneAccessHelper::getAccessibleZoneIds($user);
+            
+            // Загружаем теплицы с зонами, фильтруя по доступным зонам
             $greenhouses = Greenhouse::with([
-                'zones.nodes.channels',
-                'zones.recipeInstance.recipe',
+                'zones' => function ($query) use ($accessibleZoneIds) {
+                    $query->whereIn('id', $accessibleZoneIds)
+                        ->select('id', 'uid', 'greenhouse_id', 'name', 'description', 'status', 'health_score', 'health_status', 'hardware_profile', 'capabilities', 'water_state', 'solution_started_at', 'settings', 'created_at', 'updated_at')
+                        ->with(['nodes' => function ($nodeQuery) {
+                            // Загружаем ноды без чувствительных данных конфига (Wi-Fi пароли, MQTT креды)
+                            // Поле config исключаем для предотвращения утечки креденшалов
+                            $nodeQuery->select('id', 'uid', 'name', 'type', 'zone_id', 'status', 'lifecycle_state', 'fw_version', 'hardware_revision', 'hardware_id', 'validated', 'first_seen_at', 'created_at', 'updated_at');
+                        }, 'nodes.channels' => function ($channelQuery) {
+                            // Загружаем каналы без чувствительных данных из config
+                            $channelQuery->select('id', 'node_id', 'channel', 'type', 'metric', 'unit');
+                            // Исключаем config из каналов для предотвращения утечки данных
+                        }, 'recipeInstance.recipe']);
+                },
             ])->get();
+            
+            // Убираем config из нод и каналов после загрузки (на случай если он был загружен через отношения)
+            foreach ($greenhouses as $greenhouse) {
+                foreach ($greenhouse->zones as $zone) {
+                    foreach ($zone->nodes as $node) {
+                        // Удаляем config для предотвращения утечки Wi-Fi паролей и MQTT кредов
+                        unset($node->config);
+                        
+                        // Удаляем config из каналов, если он был загружен
+                        foreach ($node->channels as $channel) {
+                            unset($channel->config);
+                        }
+                    }
+                }
+            }
+            
+            // Фильтруем теплицы, оставляя только те, у которых есть доступные зоны
+            // (или если пользователь админ - оставляем все)
+            if (!$user->isAdmin()) {
+                $greenhouses = $greenhouses->filter(function ($greenhouse) {
+                    return $greenhouse->zones->isNotEmpty();
+                })->values();
+            }
 
             return response()->json([
                 'status' => 'ok',

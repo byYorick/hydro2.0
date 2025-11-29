@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Command;
+use App\Helpers\ZoneAccessHelper;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
@@ -38,24 +39,18 @@ class CommandStatusController extends Controller
         }
 
         // Проверяем права доступа через zone_id или node_id
+        $user = auth()->user();
         $hasAccess = false;
         
         if ($command->zone_id) {
-            // Проверяем, что зона существует (базовая проверка)
-            // В будущем можно добавить проверку прав пользователя на конкретную зону
-            $hasAccess = \App\Models\Zone::where('id', $command->zone_id)->exists();
+            // Проверяем доступ к зоне через ZoneAccessHelper
+            $hasAccess = ZoneAccessHelper::canAccessZone($user, $command->zone_id);
         } elseif ($command->node_id) {
             // Если команда привязана к узлу, проверяем через узел
-            $node = \App\Models\DeviceNode::find($command->node_id);
-            if ($node && $node->zone_id) {
-                $hasAccess = \App\Models\Zone::where('id', $node->zone_id)->exists();
-            } else {
-                // Узел без зоны - разрешаем доступ только админам
-                $hasAccess = auth()->user()->role === 'admin';
-            }
+            $hasAccess = ZoneAccessHelper::canAccessNode($user, $command->node_id);
         } else {
             // Команда без zone_id и node_id - разрешаем только админам
-            $hasAccess = auth()->user()->role === 'admin';
+            $hasAccess = $user->isAdmin();
         }
 
         if (!$hasAccess) {

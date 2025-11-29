@@ -164,7 +164,8 @@ Route::middleware([
     // Alerts (viewer+)
     Route::get('alerts', [AlertController::class, 'index'])->middleware('throttle:120,1');
     Route::get('alerts/{alert}', [AlertController::class, 'show']);
-    Route::get('alerts/stream', [AlertStreamController::class, 'stream']);
+    // SSE stream с ограничением подключений для предотвращения DoS (максимум 5 подключений на пользователя в минуту)
+    Route::get('alerts/stream', [AlertStreamController::class, 'stream'])->middleware('throttle:5,1');
 
     // Simulations status (viewer+)
     Route::get('simulations/{jobId}', [SimulationController::class, 'show']);

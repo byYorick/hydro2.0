@@ -40,17 +40,39 @@ class DatabaseBackupCommand extends Command
             : storage_path('app/private/backups');
 
         if (! is_dir($backupDir)) {
-            mkdir($backupDir, 0755, true);
+            // Используем строгие права (0700) для предотвращения доступа через веб
+            mkdir($backupDir, 0700, true);
+        } else {
+            // Убеждаемся, что существующая директория имеет строгие права
+            chmod($backupDir, 0700);
         }
 
         $timestamp = Carbon::now()->format('Ymd_His');
         $filename = "postgres_{$database}_{$timestamp}.dump";
         $backupPath = $backupDir.'/'.$filename;
 
-        // Команда pg_dump
+        // Используем .pgpass файл вместо PGPASSWORD в командной строке для безопасности
+        // PGPASSWORD в командной строке виден в ps aux и может быть перехвачен
+        $pgpassPath = storage_path('app/.pgpass');
+        $pgpassContent = sprintf(
+            "%s:%s:%s:%s:%s\n",
+            $host,
+            $port,
+            $database,
+            $username,
+            $password
+        );
+        
+        // Создаем временный .pgpass файл с строгими правами (0600)
+        file_put_contents($pgpassPath, $pgpassContent);
+        chmod($pgpassPath, 0600);
+        
+        // Устанавливаем переменную окружения для использования .pgpass
+        putenv('PGPASSFILE=' . $pgpassPath);
+        
+        // Команда pg_dump БЕЗ PGPASSWORD в командной строке
         $command = sprintf(
-            'PGPASSWORD=%s pg_dump -h %s -p %s -U %s -d %s -Fc -f %s',
-            escapeshellarg($password),
+            'pg_dump -h %s -p %s -U %s -d %s -Fc -f %s',
             escapeshellarg($host),
             escapeshellarg($port),
             escapeshellarg($username),
@@ -62,6 +84,11 @@ class DatabaseBackupCommand extends Command
 
         // Выполнение команды
         exec($command.' 2>&1', $output, $returnCode);
+        
+        // Удаляем временный .pgpass файл после использования
+        if (file_exists($pgpassPath)) {
+            unlink($pgpassPath);
+        }
 
         if ($returnCode !== 0) {
             $this->error('Ошибка при создании бэкапа:');
@@ -77,6 +104,9 @@ class DatabaseBackupCommand extends Command
             return Command::FAILURE;
         }
 
+        // Устанавливаем строгие права на файл бэкапа (0600 - только владелец)
+        chmod($backupPath, 0600);
+
         $fileSize = filesize($backupPath);
         $this->info("✓ Бэкап создан: {$backupPath}");
         $this->info('  Размер: '.$this->formatBytes($fileSize));
@@ -88,6 +118,8 @@ class DatabaseBackupCommand extends Command
             exec("gzip {$backupPath}", $compressOutput, $compressReturnCode);
 
             if ($compressReturnCode === 0 && file_exists($compressedPath)) {
+                // Устанавливаем строгие права на сжатый файл
+                chmod($compressedPath, 0600);
                 $compressedSize = filesize($compressedPath);
                 $this->info("✓ Бэкап сжат: {$compressedPath}");
                 $this->info('  Размер после сжатия: '.$this->formatBytes($compressedSize));
@@ -96,13 +128,15 @@ class DatabaseBackupCommand extends Command
                 $this->warn('Не удалось сжать бэкап');
             }
         }
+        
+        // Ротация старых бэкапов (храним только последние 7 дней)
+        $this->rotateOldBackups($backupDir);
 
-        // Сохранение информации о бэкапе
+        // Сохранение информации о бэкапе БЕЗ учетных данных БД
         $manifest = [
             'timestamp' => $timestamp,
             'database' => $database,
-            'host' => $host,
-            'port' => $port,
+            // НЕ включаем host, port, username, password - это чувствительные данные
             'backup_file' => basename($backupPath),
             'size_bytes' => filesize($backupPath),
             'format' => $this->option('compress') ? 'custom-compressed' : 'custom',
@@ -111,11 +145,39 @@ class DatabaseBackupCommand extends Command
 
         $manifestPath = $backupDir.'/manifest_'.$timestamp.'.json';
         file_put_contents($manifestPath, json_encode($manifest, JSON_PRETTY_PRINT));
+        // Устанавливаем строгие права на manifest
+        chmod($manifestPath, 0600);
 
         $this->info("✓ Manifest создан: {$manifestPath}");
         $this->info('Бэкап базы данных завершен успешно');
 
         return Command::SUCCESS;
+    }
+
+    /**
+     * Ротация старых бэкапов - удаление бэкапов старше 7 дней
+     */
+    private function rotateOldBackups(string $backupDir): void
+    {
+        $maxAge = 7 * 24 * 60 * 60; // 7 дней в секундах
+        $now = time();
+        
+        $files = glob($backupDir . '/*');
+        $deletedCount = 0;
+        
+        foreach ($files as $file) {
+            if (is_file($file)) {
+                $fileAge = $now - filemtime($file);
+                if ($fileAge > $maxAge) {
+                    unlink($file);
+                    $deletedCount++;
+                }
+            }
+        }
+        
+        if ($deletedCount > 0) {
+            $this->info("✓ Удалено старых бэкапов: {$deletedCount}");
+        }
     }
 
     private function formatBytes($bytes, $precision = 2)

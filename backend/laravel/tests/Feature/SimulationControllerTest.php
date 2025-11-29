@@ -20,8 +20,8 @@ class SimulationControllerTest extends TestCase
     {
         parent::setUp();
         
-        // Создаём пользователя для аутентификации
-        $this->user = User::factory()->create();
+        // Создаём пользователя для аутентификации с ролью operator для мутационных операций
+        $this->user = User::factory()->create(['role' => 'operator']);
     }
 
     public function test_simulate_zone_requires_authentication(): void

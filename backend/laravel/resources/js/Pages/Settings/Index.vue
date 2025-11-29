@@ -233,7 +233,9 @@ const confirmDelete = (user) => {
       try {
         await api.delete(`/settings/users/${deletingUser.value.id}`)
         showToast('Пользователь успешно удален', 'success', TOAST_TIMEOUT.NORMAL)
-        router.reload({ only: ['users'], preserveScroll: true })
+        
+        // Обновляем локальный список пользователей без reload
+        users.value = users.value.filter(u => u.id !== deletingUser.value.id)
         deletingUser.value = null
       } catch (err) {
         logger.error('Failed to delete user:', err)
@@ -250,12 +252,29 @@ const confirmDelete = (user) => {
           if (!payload.password) {
             delete payload.password
           }
-          await api.patch(`/settings/users/${editingUser.value.id}`, payload)
+          const response = await api.patch(`/settings/users/${editingUser.value.id}`, payload)
+          const updatedUser = response.data?.data || response.data
+          
+          // Обновляем пользователя в локальном списке без reload
+          if (updatedUser?.id) {
+            const index = users.value.findIndex(u => u.id === updatedUser.id)
+            if (index !== -1) {
+              users.value[index] = { ...updatedUser, created_at: updatedUser.created_at || users.value[index].created_at }
+            } else {
+              users.value.push({ ...updatedUser, created_at: updatedUser.created_at })
+            }
+          }
         } else {
-          await api.post('/settings/users', payload)
+          const response = await api.post('/settings/users', payload)
+          const newUser = response.data?.data || response.data
+          
+          // Добавляем нового пользователя в локальный список без reload
+          if (newUser?.id) {
+            users.value.push({ ...newUser, created_at: newUser.created_at })
+          }
         }
         showToast(editingUser.value ? 'Пользователь успешно обновлен' : 'Пользователь успешно создан', 'success', TOAST_TIMEOUT.NORMAL)
-        router.reload({ only: ['users'], preserveScroll: true })
+        closeModal()
       } catch (err) {
         logger.error('Failed to save user:', err)
         const errorMsg = err.response?.data?.message || err.message || ERROR_MESSAGES.UNKNOWN

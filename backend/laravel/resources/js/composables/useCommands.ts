@@ -223,7 +223,8 @@ export function useCommands(showToast?: ToastHandler) {
   const RELOAD_DEBOUNCE_MS = 500
 
   /**
-   * Обновить зону после выполнения команды через Inertia partial reload
+   * Обновить зону после выполнения команды через API и store (вместо reload)
+   * Используется для сохранения состояния страницы и избежания лишних перерисовок
    */
   function reloadZoneAfterCommand(zoneId: number, only: string[] = ['zone', 'cycles'], preserveScroll: boolean = true): void {
     const key = `${zoneId}:${only.join(',')}`
@@ -232,10 +233,27 @@ export function useCommands(showToast?: ToastHandler) {
       clearTimeout(reloadTimers.get(key)!)
     }
     
-    reloadTimers.set(key, setTimeout(() => {
+    reloadTimers.set(key, setTimeout(async () => {
       reloadTimers.delete(key)
-      logger.debug('[useCommands] Reloading zone after command', { zoneId, only })
-      router.reload({ only, preserveScroll })
+      logger.debug('[useCommands] Updating zone after command via API', { zoneId, only })
+      
+      // Импортируем динамически для избежания циклических зависимостей
+      try {
+        const { useZones } = await import('./useZones')
+        const { useZonesStore } = await import('@/stores/zones')
+        const { fetchZone } = useZones(showToast)
+        const zonesStore = useZonesStore()
+        
+        const updatedZone = await fetchZone(zoneId, true) // forceRefresh = true
+        if (updatedZone?.id) {
+          zonesStore.upsert(updatedZone)
+          logger.debug('[useCommands] Zone updated in store after command', { zoneId })
+        }
+      } catch (error) {
+        logger.error('[useCommands] Failed to update zone after command, falling back to reload', { zoneId, error })
+        // Fallback к частичному reload при ошибке
+        router.reload({ only, preserveScroll })
+      }
     }, RELOAD_DEBOUNCE_MS))
   }
 

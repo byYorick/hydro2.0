@@ -16,29 +16,81 @@ class PythonIngestController extends Controller
     {
         $expected = Config::get('services.python_bridge.ingest_token') ?? Config::get('services.python_bridge.token');
         $given = $request->bearerToken();
-        abort_unless($expected && hash_equals($expected, (string) $given), 401);
+        
+        // Если токен не настроен, всегда требуем токен (даже в testing)
+        // Это обеспечивает безопасность по умолчанию
+        if (!$expected) {
+            throw new \Illuminate\Http\Exceptions\HttpResponseException(
+                response()->json([
+                    'status' => 'error',
+                    'message' => 'Unauthorized: service token not configured',
+                ], 401)
+            );
+        }
+        
+        if (!$given || !hash_equals($expected, (string) $given)) {
+            throw new \Illuminate\Http\Exceptions\HttpResponseException(
+                response()->json([
+                    'status' => 'error',
+                    'message' => 'Unauthorized: invalid or missing service token',
+                ], 401)
+            );
+        }
     }
 
     public function telemetry(Request $request)
     {
         $this->ensureToken($request);
         $data = $request->validate([
-            'zone_id' => ['required', 'integer'],
-            'node_id' => ['nullable', 'integer'],
+            'zone_id' => ['required', 'integer', 'exists:zones,id'],
+            'node_id' => ['nullable', 'integer', 'exists:nodes,id'],
             'metric_type' => ['required', 'string', 'max:64'],
             'value' => ['required', 'numeric'],
             'ts' => ['nullable', 'date'],
             'channel' => ['nullable', 'string', 'max:64'],
         ]);
 
-        // Получаем node_uid из БД
+        // Проверяем, что zone_id существует
+        $zone = \App\Models\Zone::find($data['zone_id']);
+        if (!$zone) {
+            \Illuminate\Support\Facades\Log::warning('PythonIngestController: Zone not found', [
+                'zone_id' => $data['zone_id'],
+            ]);
+            return \Illuminate\Support\Facades\Response::json([
+                'status' => 'error',
+                'message' => 'Zone not found',
+            ], 404);
+        }
+
+        // Получаем node_uid из БД и проверяем привязку node_id→zone_id
         $nodeUid = null;
         $nodeId = $data['node_id'] ?? null;
         if ($nodeId) {
             $node = DeviceNode::find($nodeId);
-            if ($node) {
-                $nodeUid = $node->uid;
+            if (!$node) {
+                \Illuminate\Support\Facades\Log::warning('PythonIngestController: Node not found', [
+                    'node_id' => $nodeId,
+                ]);
+                return \Illuminate\Support\Facades\Response::json([
+                    'status' => 'error',
+                    'message' => 'Node not found',
+                ], 404);
             }
+            
+            // Проверяем, что нода привязана к указанной зоне
+            if ($node->zone_id !== $data['zone_id']) {
+                \Illuminate\Support\Facades\Log::warning('PythonIngestController: Node zone mismatch', [
+                    'node_id' => $nodeId,
+                    'node_zone_id' => $node->zone_id,
+                    'requested_zone_id' => $data['zone_id'],
+                ]);
+                return \Illuminate\Support\Facades\Response::json([
+                    'status' => 'error',
+                    'message' => 'Node is not assigned to the specified zone',
+                ], 422);
+            }
+            
+            $nodeUid = $node->uid;
         }
         $tsValue = $data['ts'] ?? null;
         $timestamp = $tsValue ? Carbon::parse($tsValue) : now();

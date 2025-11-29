@@ -50,9 +50,9 @@ import { ref, watch, onMounted } from 'vue'
 import Modal from './Modal.vue'
 import Button from './Button.vue'
 import { logger } from '@/utils/logger'
-import { router } from '@inertiajs/vue3'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import type { Device } from '@/types'
 
 const { showToast } = useToast()
@@ -125,12 +125,28 @@ async function onAttach() {
       })
     )
     
-    await Promise.all(promises)
+    const responses = await Promise.all(promises)
+    
+    // Обновляем устройства в store из ответов API
+    try {
+      const { useDevicesStore } = await import('@/stores/devices')
+      const devicesStore = useDevicesStore()
+      
+      // Извлекаем обновленные устройства из ответов
+      for (const response of responses) {
+        const updatedDevice = response.data?.data || response.data
+        if (updatedDevice?.id) {
+          devicesStore.upsert(updatedDevice)
+          logger.debug('[AttachNodesModal] Device updated in store', { deviceId: updatedDevice.id })
+        }
+      }
+    } catch (storeError) {
+      logger.warn('[AttachNodesModal] Failed to update devices store', { error: storeError })
+    }
     
     showToast(`Успешно привязано узлов: ${selectedNodeIds.value.length}`, 'success', TOAST_TIMEOUT.NORMAL)
     emit('attached', selectedNodeIds.value)
     emit('close')
-    router.reload({ only: ['zone', 'devices'], preserveScroll: true })
   } catch (error) {
     // Ошибка уже обработана в useApi через showToast
     logger.error('Failed to attach nodes:', error)

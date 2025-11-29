@@ -182,11 +182,22 @@ onMounted(() => {
   })
   
   // Слушаем события присвоения рецептов к зонам
-  subscribeWithCleanup('zone:recipe:attached', ({ zoneId }: { zoneId: number; recipeId: number }) => {
-    // Инвалидируем кеш и обновляем зону
+  subscribeWithCleanup('zone:recipe:attached', async ({ zoneId }: { zoneId: number; recipeId: number }) => {
+    // Инвалидируем кеш
     zonesStore.invalidateCache()
-    // Можно выполнить частичный reload, если нужно
-    router.reload({ only: ['zones'], preserveScroll: true })
+    
+    // Обновляем зону через API и store вместо reload для сохранения фильтров и scroll
+    try {
+      const { useZones } = await import('@/composables/useZones')
+      const { fetchZone } = useZones()
+      const updatedZone = await fetchZone(zoneId, true) // forceRefresh = true
+      if (updatedZone?.id) {
+        zonesStore.upsert(updatedZone)
+      }
+    } catch (error) {
+      // Fallback к частичному reload при ошибке
+      router.reload({ only: ['zones'], preserveScroll: true })
+    }
   })
 })
 

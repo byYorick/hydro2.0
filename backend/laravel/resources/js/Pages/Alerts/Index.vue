@@ -62,11 +62,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, onMounted, onUnmounted } from 'vue'
+import { reactive, ref, watch, onMounted, onUnmounted } from 'vue'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Button from '@/Components/Button.vue'
 import Modal from '@/Components/Modal.vue'
-import { usePage, router } from '@inertiajs/vue3'
+import { usePage } from '@inertiajs/vue3'
 import { subscribeAlerts } from '@/bootstrap'
 import { translateStatus } from '@/utils/i18n'
 import { logger } from '@/utils/logger'
@@ -79,7 +79,37 @@ interface PageProps {
 }
 
 const page = usePage<PageProps>()
-const alerts = computed(() => (page.props.alerts || []) as Alert[])
+const alerts = ref<Alert[]>(Array.isArray(page.props.alerts) ? [...page.props.alerts] : [])
+
+// Синхронизируем локальный список с props без перезагрузок страницы
+watch(
+  () => page.props.alerts,
+  (newAlerts) => {
+    alerts.value = Array.isArray(newAlerts) ? [...newAlerts] : []
+  },
+  { deep: true }
+)
+
+const upsertAlert = (alert: Alert): void => {
+  if (!alert || !('id' in alert)) return
+  const idx = alerts.value.findIndex(a => a.id === alert.id)
+  if (idx >= 0) {
+    alerts.value[idx] = { ...alerts.value[idx], ...alert }
+  } else {
+    alerts.value.unshift(alert)
+  }
+}
+
+const markResolved = (id: number): void => {
+  const idx = alerts.value.findIndex(a => a.id === id)
+  if (idx >= 0) {
+    alerts.value[idx] = {
+      ...alerts.value[idx],
+      status: 'resolved',
+      resolved_at: new Date().toISOString(),
+    }
+  }
+}
 
 // Инициализация API без Toast (используем стандартную обработку ошибок)
 const { api } = useApi()
@@ -102,8 +132,14 @@ const onResolve = (a: Alert): void => {
 const doResolve = (): void => {
   const id = confirm.alertId
   if (!id) return
-  api.patch(`/api/alerts/${id}/ack`, {}).then(() => {
-    router.reload({ only: ['alerts'], preserveScroll: true })
+  api.patch(`/api/alerts/${id}/ack`, {}).then((res) => {
+    // Обновляем локальный список без перезагрузки страницы
+    const updated = (res?.data as { data?: Alert })?.data
+    if (updated) {
+      upsertAlert(updated)
+    } else {
+      markResolved(id)
+    }
     confirm.open = false
   }).catch((err) => {
     logger.error('Failed to resolve alert:', err)
@@ -117,7 +153,7 @@ let unsubscribeAlerts: (() => void) | null = null
 onMounted(() => {
   unsubscribeAlerts = subscribeAlerts((e) => {
     if (e?.alert) {
-      router.reload({ only: ['alerts'], preserveScroll: true })
+      upsertAlert(e.alert as Alert)
     }
   })
 })
@@ -130,4 +166,3 @@ onUnmounted(() => {
 // Виртуализация через RecycleScroller
 const rowHeight = 44
 </script>
-

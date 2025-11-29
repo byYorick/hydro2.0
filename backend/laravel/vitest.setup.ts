@@ -134,3 +134,21 @@ vi.mock('vue-virtual-scroller', () => {
     }
   }
 })
+
+// Моки для window.setInterval и window.clearInterval (нужны для WebSocket тестов)
+const mockSetInterval = vi.fn((callback: Function, delay?: number) => {
+  return 123 as any
+})
+
+const mockClearInterval = vi.fn((id?: number) => {
+  // Ничего не делаем в моке
+})
+
+global.setInterval = mockSetInterval
+global.clearInterval = mockClearInterval
+
+// Также добавляем в window, если он существует
+if (typeof window !== 'undefined') {
+  (window as any).setInterval = mockSetInterval
+  (window as any).clearInterval = mockClearInterval
+}

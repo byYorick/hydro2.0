@@ -55,7 +55,7 @@ vi.mock('axios', () => ({
   default: {
     get: (url: string, config?: any) => axiosGetMock(url, config),
     post: (url: string, data?: any, config?: any) => axiosPostMock(url, data, config),
-    create: vi.fn(() => mockAxiosInstance()),
+    create: vi.fn(() => mockAxiosInstance),
     interceptors: {
       request: { use: vi.fn(), eject: vi.fn() },
       response: { use: vi.fn(), eject: vi.fn() },

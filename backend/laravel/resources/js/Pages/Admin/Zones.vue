@@ -47,6 +47,7 @@ import { usePageProps } from '@/composables/usePageProps'
 import { router } from '@inertiajs/vue3'
 import { extractData } from '@/utils/apiHelpers'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
+import { useZonesStore } from '@/stores/zones'
 import type { Greenhouse, Zone } from '@/types'
 
 interface PageProps {
@@ -54,7 +55,13 @@ interface PageProps {
 }
 
 const { zones: zonesProp } = usePageProps<PageProps>(['zones'])
-const zones = computed(() => zonesProp.value || [])
+const zonesStore = useZonesStore()
+
+// Используем store для получения зон, с fallback на props
+const zones = computed(() => {
+  const storeZones = zonesStore.allZones
+  return storeZones.length > 0 ? storeZones : (zonesProp.value || [])
+})
 const { showToast } = useToast()
 const { api } = useApi(showToast)
 const greenhouses = ref<Greenhouse[]>([])
@@ -66,6 +73,12 @@ const form = reactive<{ name: string; description: string; status: string; green
 })
 
 onMounted(async () => {
+  // Инициализируем store из props
+  if (zonesProp.value) {
+    zonesStore.initFromProps({ zones: zonesProp.value })
+  }
+  
+  // Загружаем теплицы
   try {
     const response = await api.get<{ data?: Greenhouse[] } | Greenhouse[]>('/greenhouses')
     const data = extractData<Greenhouse[]>(response.data) || []
@@ -78,9 +91,16 @@ onMounted(async () => {
 
 async function onCreate(): Promise<void> {
   try {
-    await api.post('/zones', form)
+    const response = await api.post<{ data?: Zone } | Zone>('/zones', form)
+    const newZone = extractData<Zone>(response.data) || response.data as Zone
+    
+    // Добавляем новую зону в store вместо reload
+    if (newZone?.id) {
+      zonesStore.upsert(newZone)
+      logger.debug('[Admin/Zones] Zone added to store after creation', { zoneId: newZone.id })
+    }
+    
     showToast('Зона успешно создана', 'success', TOAST_TIMEOUT.NORMAL)
-    router.reload({ only: ['zones'], preserveScroll: true })
     form.name = ''
     form.description = ''
     form.greenhouse_id = null

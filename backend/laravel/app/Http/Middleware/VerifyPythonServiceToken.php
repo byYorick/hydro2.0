@@ -29,21 +29,12 @@ class VerifyPythonServiceToken
         // Если пользователь не авторизован, проверяем токен Python сервисов
         $expectedToken = Config::get('services.python_bridge.token');
         
-        // Если токен не настроен
+        // Если токен не настроен, всегда запрещаем доступ
         if (!$expectedToken) {
-            // В dev режиме разрешаем доступ без токена (только для локальной разработки)
-            if (config('app.env') === 'local' || config('app.debug')) {
-                Log::info('Python service token not configured, allowing access in dev mode', [
-                    'url' => $request->fullUrl(),
-                    'ip' => $request->ip(),
-                ]);
-                return $next($request);
-            }
-            
-            // В production режиме требуем токен
-            Log::warning('Python service token not configured in services.python_bridge.token', [
+            Log::error('Python service token not configured in services.python_bridge.token', [
                 'url' => $request->fullUrl(),
                 'ip' => $request->ip(),
+                'env' => config('app.env'),
             ]);
             return response()->json([
                 'status' => 'error',

@@ -130,8 +130,11 @@ export function useInertiaForm<T extends Record<string, unknown>>(
       }
     }
 
-    // Выполняем reload, если нужно
+    // Выполняем reload, если нужно (не рекомендуется - лучше обновлять store напрямую)
+    // TODO: Рассмотреть замену на опциональный callback для обновления store
     if (reloadOnSuccess) {
+      // eslint-disable-next-line no-console
+      console.warn('[useInertiaForm] reloadOnSuccess is deprecated. Consider updating store directly instead of using router.reload')
       if (Array.isArray(reloadOnSuccess)) {
         router.reload({ only: reloadOnSuccess, preserveScroll, preserveState })
       } else {

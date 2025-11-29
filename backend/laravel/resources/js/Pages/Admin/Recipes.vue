@@ -27,10 +27,13 @@
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
-import { reactive, ref } from 'vue'
+import { reactive, ref, computed } from 'vue'
 import { usePage, router } from '@inertiajs/vue3'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
+import { useRecipesStore } from '@/stores/recipes'
+import { extractData } from '@/utils/apiHelpers'
+import { logger } from '@/utils/logger'
 import type { Recipe } from '@/types/Recipe'
 
 interface PageProps {
@@ -40,8 +43,14 @@ interface PageProps {
 const page = usePage<PageProps>()
 const { showToast } = useToast()
 const { api } = useApi(showToast)
+const recipesStore = useRecipesStore()
 
-const recipes = page.props.recipes || []
+// Инициализируем store из props
+if (page.props.recipes) {
+  recipesStore.initFromProps({ recipes: page.props.recipes })
+}
+
+const recipes = computed(() => recipesStore.allRecipes)
 const selectedId = ref<number | null>(recipes[0]?.id || null)
 const form = reactive<{ name: string; description: string }>({ 
   name: '', 
@@ -52,8 +61,15 @@ async function onUpdate(): Promise<void> {
   if (!selectedId.value) return
   
   try {
-    await api.patch(`/recipes/${selectedId.value}`, form)
-    router.reload({ only: ['recipes'], preserveScroll: true })
+    const response = await api.patch<{ data?: Recipe } | Recipe>(`/recipes/${selectedId.value}`, form)
+    const updatedRecipe = extractData<Recipe>(response.data) || response.data as Recipe
+    
+    // Обновляем рецепт в store вместо reload
+    if (updatedRecipe?.id) {
+      recipesStore.upsert(updatedRecipe)
+      logger.debug('[Admin/Recipes] Recipe updated in store', { recipeId: updatedRecipe.id })
+    }
+    
     form.name = ''
     form.description = ''
     showToast('Recipe updated successfully', 'success', TOAST_TIMEOUT.NORMAL)

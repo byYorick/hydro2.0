@@ -67,6 +67,36 @@ function handleGlobalKeyDown(event: KeyboardEvent): void {
   }
 }
 
+// Debounce для предотвращения множественных вызовов router.visit
+const visitTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const VISIT_DEBOUNCE_MS = 300
+
+/**
+ * Безопасный переход с проверкой текущего URL и debounce
+ */
+function safeVisit(url: string, options: { preserveScroll?: boolean } = {}): void {
+  const currentUrl = router.page?.url || window.location.pathname
+  const targetUrl = url.startsWith('/') ? url : `/${url}`
+  
+  // Если уже на целевой странице, не делаем переход
+  if (currentUrl === targetUrl) {
+    return
+  }
+  
+  const key = targetUrl
+  
+  // Очищаем предыдущий таймер для этого URL
+  if (visitTimers.has(key)) {
+    clearTimeout(visitTimers.get(key)!)
+  }
+  
+  // Устанавливаем новый таймер с debounce
+  visitTimers.set(key, setTimeout(() => {
+    visitTimers.delete(key)
+    router.visit(targetUrl, { preserveScroll: options.preserveScroll ?? true })
+  }, VISIT_DEBOUNCE_MS))
+}
+
 /**
  * Инициализирует стандартные шорткаты (вызывается только один раз)
  */
@@ -76,21 +106,21 @@ function initializeDefaultShortcuts(): void {
     return // Уже инициализированы
   }
 
-  // Регистрируем стандартные shortcuts для навигации
+  // Регистрируем стандартные shortcuts для навигации с безопасным переходом
   // Ctrl+Shift+Z - Zones (изменено с Ctrl+Z, чтобы не конфликтовать с Undo)
-  globalShortcuts.set('ctrl+shift+z', () => router.visit('/zones', { preserveScroll: true }))
+  globalShortcuts.set('ctrl+shift+z', () => safeVisit('/zones', { preserveScroll: true }))
 
   // Ctrl+Shift+D - Dashboard (изменено с Alt+D, чтобы не конфликтовать с переходом в адресную строку)
-  globalShortcuts.set('ctrl+shift+d', () => router.visit('/', { preserveScroll: true }))
+  globalShortcuts.set('ctrl+shift+d', () => safeVisit('/', { preserveScroll: true }))
 
   // Ctrl+Shift+A - Alerts (изменено с Ctrl+A, чтобы не конфликтовать с "Выделить всё")
-  globalShortcuts.set('ctrl+shift+a', () => router.visit('/alerts', { preserveScroll: true }))
+  globalShortcuts.set('ctrl+shift+a', () => safeVisit('/alerts', { preserveScroll: true }))
 
   // Alt+R - Recipes (изменено с Ctrl+R, чтобы не конфликтовать с перезагрузкой страницы)
-  globalShortcuts.set('alt+r', () => router.visit('/recipes', { preserveScroll: true }))
+  globalShortcuts.set('alt+r', () => safeVisit('/recipes', { preserveScroll: true }))
 
   // Shift+D - Devices (чтобы не конфликтовать с Ctrl+D)
-  globalShortcuts.set('shift+d', () => router.visit('/devices', { preserveScroll: true }))
+  globalShortcuts.set('shift+d', () => safeVisit('/devices', { preserveScroll: true }))
 }
 
 /**

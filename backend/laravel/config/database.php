@@ -99,6 +99,26 @@ return [
             ],
         ],
 
+        'testing' => [
+            'driver' => 'pgsql',
+            'url' => env('DB_URL'),
+            'host' => env('DB_HOST', 'db'),
+            'port' => env('DB_PORT', '5432'),
+            'database' => env('DB_DATABASE', 'hydro_test'),
+            'username' => env('DB_USERNAME', 'hydro'),
+            'password' => env('DB_PASSWORD', 'hydro'),
+            'charset' => env('DB_CHARSET', 'utf8'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'search_path' => 'public',
+            'sslmode' => 'prefer',
+            'options' => [
+                // Оптимизация для быстрого подключения
+                PDO::ATTR_TIMEOUT => 2,
+                PDO::ATTR_EMULATE_PREPARES => false,
+            ],
+        ],
+
         'sqlsrv' => [
             'driver' => 'sqlsrv',
             'url' => env('DB_URL'),

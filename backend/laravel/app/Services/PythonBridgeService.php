@@ -31,26 +31,30 @@ class PythonBridgeService
         $nodeUid = $payload['node_uid'] ?? null;
         $channel = $payload['channel'] ?? null;
         
-        // Если не указаны, пытаемся найти подходящие из зоны
-        if (!$nodeUid || !$channel) {
-            // Пытаемся найти первый узел и канал из зоны
-            $firstNode = DeviceNode::where('zone_id', $zone->id)->first();
-            if ($firstNode) {
-                $nodeUid = $nodeUid ?? $firstNode->uid;
-                if (!$channel) {
-                    // Получаем первый канал из узла
-                    $firstChannel = $firstNode->channels()->first();
-                    $channel = $firstChannel ? $firstChannel->channel : null;
-                }
-            }
-        }
-        
-        // Если после всех попыток node_uid или channel не найдены, выбрасываем исключение
+        // Проверяем, что node_uid и channel указаны явно
         if (!$nodeUid || !$channel) {
             $this->markCommandFailed($command, 'node_uid and channel are required');
             throw new \InvalidArgumentException(
                 'node_uid and channel are required. ' .
                 'Please specify target device and channel explicitly to prevent accidental commands.'
+            );
+        }
+        
+        // Валидируем, что нода существует и привязана к зоне
+        $node = DeviceNode::where('uid', $nodeUid)->where('zone_id', $zone->id)->first();
+        if (!$node) {
+            $this->markCommandFailed($command, "Node {$nodeUid} not found or not assigned to zone {$zone->id}");
+            throw new \InvalidArgumentException(
+                "Node {$nodeUid} not found or not assigned to zone {$zone->id}"
+            );
+        }
+        
+        // Валидируем, что канал существует у ноды
+        $channelExists = $node->channels()->where('channel', $channel)->exists();
+        if (!$channelExists) {
+            $this->markCommandFailed($command, "Channel {$channel} not found on node {$nodeUid}");
+            throw new \InvalidArgumentException(
+                "Channel {$channel} not found on node {$nodeUid}"
             );
         }
         

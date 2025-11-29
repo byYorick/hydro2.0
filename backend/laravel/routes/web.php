@@ -240,18 +240,43 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
     Route::get('/', function () {
         // Обрабатываем ошибки БД для предотвращения 500 и бесконечных перезагрузок
         // Используем кеш для статических данных (TTL 30 секунд)
+        $user = auth()->user();
+        if (!$user) {
+            return redirect()->route('login');
+        }
+        
+        // Получаем доступные зоны для пользователя для tenant-изоляции
+        $accessibleZoneIds = \App\Helpers\ZoneAccessHelper::getAccessibleZoneIds($user);
+        $accessibleNodeIds = \App\Helpers\ZoneAccessHelper::getAccessibleNodeIds($user);
+        
         $cacheKey = 'dashboard_data_'.auth()->id();
         try {
-            $dashboard = \Illuminate\Support\Facades\Cache::remember($cacheKey, 30, function () {
+            $dashboard = \Illuminate\Support\Facades\Cache::remember($cacheKey, 30, function () use ($user, $accessibleZoneIds, $accessibleNodeIds) {
                 // Обрабатываем ошибки БД внутри кеша
                 try {
-                    $stats = DB::select("
-                        SELECT 
-                            (SELECT COUNT(*) FROM greenhouses) as greenhouses_count,
-                            (SELECT COUNT(*) FROM zones) as zones_count,
-                            (SELECT COUNT(*) FROM nodes) as devices_count,
-                            (SELECT COUNT(*) FROM alerts WHERE status = 'active') as alerts_count
-                    ")[0];
+                    // Фильтруем статистику по доступным зонам/нодам (кроме админов)
+                    if ($user->isAdmin()) {
+                        $stats = DB::select("
+                            SELECT 
+                                (SELECT COUNT(*) FROM greenhouses) as greenhouses_count,
+                                (SELECT COUNT(*) FROM zones) as zones_count,
+                                (SELECT COUNT(*) FROM nodes) as devices_count,
+                                (SELECT COUNT(*) FROM alerts WHERE status = 'ACTIVE') as alerts_count
+                        ")[0];
+                    } else {
+                        // Используем параметризованные запросы для безопасности
+                        $zoneIds = $accessibleZoneIds ?: [0];
+                        $nodeIds = $accessibleNodeIds ?: [0];
+                        $zonePlaceholders = implode(',', array_fill(0, count($zoneIds), '?'));
+                        $nodePlaceholders = implode(',', array_fill(0, count($nodeIds), '?'));
+                        $stats = DB::select("
+                            SELECT 
+                                (SELECT COUNT(DISTINCT greenhouse_id) FROM zones WHERE id IN ($zonePlaceholders)) as greenhouses_count,
+                                (SELECT COUNT(*) FROM zones WHERE id IN ($zonePlaceholders)) as zones_count,
+                                (SELECT COUNT(*) FROM nodes WHERE id IN ($nodePlaceholders)) as devices_count,
+                                (SELECT COUNT(*) FROM alerts WHERE status = 'ACTIVE' AND zone_id IN ($zonePlaceholders)) as alerts_count
+                        ", array_merge($zoneIds, $zoneIds, $nodeIds, $zoneIds))[0];
+                    }
                 } catch (\Illuminate\Database\QueryException $e) {
                     // Если таблицы не существуют, возвращаем нулевые значения
                     \Log::error('Dashboard: Database error in stats query', [
@@ -269,7 +294,11 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 // Обрабатываем ошибки БД для всех запросов
                 // Если таблицы не существуют или БД недоступна, возвращаем пустые данные
                 try {
-                    $zonesByStatus = Zone::query()
+                    $zonesByStatusQuery = Zone::query();
+                    if (!$user->isAdmin()) {
+                        $zonesByStatusQuery->whereIn('id', $accessibleZoneIds ?: [0]);
+                    }
+                    $zonesByStatus = $zonesByStatusQuery
                         ->selectRaw('status, COUNT(*) as count')
                         ->groupBy('status')
                         ->pluck('count', 'status')
@@ -283,7 +312,11 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 }
 
                 try {
-                    $nodesByStatus = DeviceNode::query()
+                    $nodesByStatusQuery = DeviceNode::query();
+                    if (!$user->isAdmin()) {
+                        $nodesByStatusQuery->whereIn('id', $accessibleNodeIds ?: [0]);
+                    }
+                    $nodesByStatus = $nodesByStatusQuery
                         ->selectRaw('status, COUNT(*) as count')
                         ->groupBy('status')
                         ->pluck('count', 'status')
@@ -297,16 +330,20 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 }
 
                 try {
-                    $problematicZones = Zone::query()
+                    $problematicZonesQuery = Zone::query()
                         ->select(['zones.id', 'zones.name', 'zones.status', 'zones.description', 'zones.greenhouse_id'])
                         ->leftJoin('alerts', function ($join) {
                             $join->on('alerts.zone_id', '=', 'zones.id')
-                                ->where('alerts.status', '=', 'active');
+                                ->where('alerts.status', '=', 'ACTIVE');
                         })
                         ->where(function ($q) {
                             $q->whereIn('zones.status', ['ALARM', 'WARNING'])
                                 ->orWhereNotNull('alerts.id');
-                        })
+                        });
+                    if (!$user->isAdmin()) {
+                        $problematicZonesQuery->whereIn('zones.id', $accessibleZoneIds ?: [0]);
+                    }
+                    $problematicZones = $problematicZonesQuery
                         ->selectRaw('COUNT(DISTINCT alerts.id) as alerts_count')
                         ->groupBy('zones.id', 'zones.name', 'zones.status', 'zones.description', 'zones.greenhouse_id')
                         ->orderByRaw("CASE zones.status WHEN 'ALARM' THEN 1 WHEN 'WARNING' THEN 2 ELSE 3 END")
@@ -323,8 +360,12 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 }
 
                 try {
-                    $zoneStatusRows = Zone::query()
-                        ->select('greenhouse_id', 'status', DB::raw('COUNT(*) as count'))
+                    $zoneStatusRowsQuery = Zone::query()
+                        ->select('greenhouse_id', 'status', DB::raw('COUNT(*) as count'));
+                    if (!$user->isAdmin()) {
+                        $zoneStatusRowsQuery->whereIn('id', $accessibleZoneIds ?: [0]);
+                    }
+                    $zoneStatusRows = $zoneStatusRowsQuery
                         ->groupBy('greenhouse_id', 'status')
                         ->get();
 
@@ -341,9 +382,13 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 }
 
                 try {
-                    $nodesStatusRows = DeviceNode::query()
+                    $nodesStatusRowsQuery = DeviceNode::query()
                         ->select('zones.greenhouse_id', 'nodes.status', DB::raw('COUNT(*) as count'))
-                        ->join('zones', 'zones.id', '=', 'nodes.zone_id')
+                        ->join('zones', 'zones.id', '=', 'nodes.zone_id');
+                    if (!$user->isAdmin()) {
+                        $nodesStatusRowsQuery->whereIn('nodes.id', $accessibleNodeIds ?: [0]);
+                    }
+                    $nodesStatusRows = $nodesStatusRowsQuery
                         ->groupBy('zones.greenhouse_id', 'nodes.status')
                         ->get();
 
@@ -360,10 +405,14 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 }
 
                 try {
-                    $alertsByGreenhouse = Alert::query()
+                    $alertsByGreenhouseQuery = Alert::query()
                         ->select('zones.greenhouse_id', DB::raw('COUNT(*) as count'))
                         ->join('zones', 'zones.id', '=', 'alerts.zone_id')
-                        ->where('alerts.status', 'active')
+                        ->where('alerts.status', 'ACTIVE');
+                    if (!$user->isAdmin()) {
+                        $alertsByGreenhouseQuery->whereIn('alerts.zone_id', $accessibleZoneIds ?: [0]);
+                    }
+                    $alertsByGreenhouse = $alertsByGreenhouseQuery
                         ->groupBy('zones.greenhouse_id')
                         ->pluck('count', 'greenhouse_id')
                         ->toArray();
@@ -376,12 +425,26 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 }
 
                 try {
-                    $greenhouses = Greenhouse::query()
-                        ->select(['id', 'uid', 'name', 'type', 'description'])
+                    $greenhousesQuery = Greenhouse::query()
+                        ->select(['id', 'uid', 'name', 'type', 'description']);
+                    if (!$user->isAdmin()) {
+                        // Фильтруем теплицы, у которых есть доступные зоны
+                        $greenhousesQuery->whereHas('zones', function ($q) use ($accessibleZoneIds) {
+                            $q->whereIn('id', $accessibleZoneIds ?: [0]);
+                        });
+                    }
+                    $greenhouses = $greenhousesQuery
                         ->withCount([
-                            'zones',
-                            'zones as zones_running' => function ($q) {
+                            'zones' => function ($q) use ($user, $accessibleZoneIds) {
+                                if (!$user->isAdmin()) {
+                                    $q->whereIn('id', $accessibleZoneIds ?: [0]);
+                                }
+                            },
+                            'zones as zones_running' => function ($q) use ($user, $accessibleZoneIds) {
                                 $q->where('status', 'RUNNING');
+                                if (!$user->isAdmin()) {
+                                    $q->whereIn('id', $accessibleZoneIds ?: [0]);
+                                }
                             },
                         ])
                         ->get()
@@ -401,10 +464,14 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 }
 
                 try {
-                    $latestAlerts = Alert::query()
+                    $latestAlertsQuery = Alert::query()
                         ->select(['id', 'type', 'status', 'details', 'zone_id', 'created_at'])
                         ->with('zone:id,name')
-                        ->where('status', 'active')
+                        ->where('status', 'ACTIVE');
+                    if (!$user->isAdmin()) {
+                        $latestAlertsQuery->whereIn('zone_id', $accessibleZoneIds ?: [0]);
+                    }
+                    $latestAlerts = $latestAlertsQuery
                         ->latest('id')
                         ->limit(10)
                         ->get();
@@ -417,9 +484,13 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 }
 
                 try {
-                    $zonesForTelemetry = Zone::query()
+                    $zonesForTelemetryQuery = Zone::query()
                         ->select(['id', 'name', 'status', 'greenhouse_id'])
-                        ->with('greenhouse:id,name')
+                        ->with('greenhouse:id,name');
+                    if (!$user->isAdmin()) {
+                        $zonesForTelemetryQuery->whereIn('id', $accessibleZoneIds ?: [0]);
+                    }
+                    $zonesForTelemetry = $zonesForTelemetryQuery
                         ->orderByRaw("
                             CASE status
                                 WHEN 'ALARM' THEN 1
@@ -481,12 +552,17 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
 
     /**
      * Setup Wizard - мастер настройки системы
+     * Доступен только для администраторов для предотвращения случайного/злонамеренного изменения конфигурации
      */
     Route::get('/setup/wizard', function () {
+        $user = auth()->user();
+        if (!$user || !$user->isAdmin()) {
+            abort(403, 'Only administrators can access the setup wizard');
+        }
         return Inertia::render('Setup/Wizard', [
-            'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
+            'auth' => ['user' => ['role' => $user->role ?? 'admin']],
         ]);
-    })->name('setup.wizard');
+    })->name('setup.wizard')->middleware('admin');
 
     /**
      * Create Greenhouse - создание теплицы
@@ -1454,9 +1530,17 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
     });
 });
 
+// Swagger доступен только для авторизованных пользователей в dev/testing окружениях
+// В production должен быть отключен или защищен дополнительной аутентификацией
 Route::get('/swagger', function () {
+    if (app()->environment(['production', 'staging'])) {
+        abort(404, 'Swagger documentation is not available in this environment');
+    }
+    if (!auth()->check()) {
+        return redirect()->route('login');
+    }
     return redirect('/swagger.html');
-});
+})->middleware('auth');
 
 Route::middleware(['web', 'auth', 'role:admin,operator,agronomist'])->group(function () {
     Route::get('/plants', [PlantController::class, 'index'])->name('plants.index');
@@ -1474,10 +1558,15 @@ Route::middleware(['web', 'auth'])->group(function () {
 
 require __DIR__.'/auth.php';
 
-if (app()->environment(['local', 'testing'])) {
+// Тестовый backdoor доступен ТОЛЬКО в testing окружении (не в local!)
+// Это предотвращает случайное включение в production при ошибочной конфигурации env
+if (app()->environment('testing')) {
     Route::get('/testing/login/{user}', function (\App\Models\User $user) {
         \Illuminate\Support\Facades\Auth::login($user);
-
+        \Log::warning('Testing backdoor used', [
+            'user_id' => $user->id,
+            'ip' => request()->ip(),
+        ]);
         return redirect()->intended('/');
     })->name('testing.login');
 }

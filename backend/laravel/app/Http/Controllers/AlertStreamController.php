@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\Alert;
+use App\Helpers\ZoneAccessHelper;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 
 class AlertStreamController extends Controller
@@ -12,9 +14,22 @@ class AlertStreamController extends Controller
      * SSE endpoint для стриминга алертов.
      * 
      * Включает проверку закрытия соединения и таймаут для предотвращения утечек PHP-FPM workers.
+     * Фильтрует алерты по доступным зонам пользователя для предотвращения утечки данных.
      */
     public function stream(Request $request)
     {
+        // Проверяем авторизацию
+        $user = Auth::user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+        
+        // Получаем список доступных зон для пользователя
+        $accessibleZoneIds = ZoneAccessHelper::getAccessibleZoneIds($user);
+        
         // Максимальное время работы стрима (30 минут)
         $maxExecutionTime = 1800;
         $startTime = time();
@@ -22,7 +37,7 @@ class AlertStreamController extends Controller
         // Таймаут для проверки соединения (2 секунды между проверками)
         $checkInterval = 2;
         
-        return response()->stream(function () use ($request, $maxExecutionTime, $startTime, $checkInterval) {
+        return response()->stream(function () use ($request, $maxExecutionTime, $startTime, $checkInterval, $accessibleZoneIds) {
             $lastId = (int)($request->query('last_id', 0));
             $iterations = 0;
             
@@ -68,6 +83,13 @@ class AlertStreamController extends Controller
                     if ($lastId > 0) {
                         $q->where('id', '>', $lastId);
                     }
+                    // Фильтруем алерты по доступным зонам пользователя
+                    if (!empty($accessibleZoneIds)) {
+                        $q->whereIn('zone_id', $accessibleZoneIds);
+                    } else {
+                        // Если у пользователя нет доступа ни к одной зоне, не возвращаем алерты
+                        $q->whereRaw('1 = 0');
+                    }
                     $items = $q->limit(50)->get();
                     
                     foreach ($items as $a) {
@@ -77,8 +99,23 @@ class AlertStreamController extends Controller
                         }
                         
                         $lastId = max($lastId, $a->id);
+                        
+                        // Фильтруем данные алерта - убираем чувствительную информацию
+                        $alertData = [
+                            'id' => $a->id,
+                            'zone_id' => $a->zone_id,
+                            'type' => $a->type,
+                            'status' => $a->status,
+                            'severity' => $a->severity ?? null,
+                            'message' => $a->message ?? null,
+                            'created_at' => $a->created_at?->toIso8601String(),
+                            'resolved_at' => $a->resolved_at?->toIso8601String(),
+                            // Исключаем details, так как там могут быть чувствительные данные
+                            // Если нужны details, их можно вернуть, но отфильтровав чувствительные поля
+                        ];
+                        
                         echo "event: alert\n";
-                        echo "data: " . json_encode($a) . "\n\n";
+                        echo "data: " . json_encode($alertData) . "\n\n";
                         @ob_flush();
                         @flush();
                     }

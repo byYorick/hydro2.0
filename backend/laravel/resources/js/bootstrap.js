@@ -14,7 +14,7 @@ if (csrfToken) {
 }
 
 import { logger } from './utils/logger';
-import { initEcho, isEchoInitializing, getEchoInstance } from './utils/echoClient';
+import { initEcho, isEchoInitializing, getEchoInstance, onWsStateChange } from './utils/echoClient';
 import Echo from 'laravel-echo';
 
 // Axios error logging to console
@@ -290,43 +290,151 @@ window.addEventListener('echo:teardown', () => {
 // Инициализируем Echo после полной загрузки DOM
 scheduleEchoInitialization();
 
-// Zones WS subscription helper (example)
+// Zones WS subscription helper с восстановлением подписки при reconnect
 export function subscribeZone(zoneId, handler) {
-  if (!window.Echo) return () => {}
-  const channel = window.Echo.private(`hydro.zones.${zoneId}`)
-  channel.listen('.App\\Events\\ZoneUpdated', (e) => {
-    handler?.(e)
-  })
-  // Возвращаем функцию для отписки
-  return () => {
-    if (channel) {
-      channel.stopListening('.App\\Events\\ZoneUpdated')
+  const channelName = `hydro.zones.${zoneId}`
+  const eventName = '.App\\Events\\ZoneUpdated'
+  let channel = null
+  let listener = null
+  let unsubscribeWsState = null
+  let stopped = false
+
+  const cleanupChannel = () => {
+    try {
+      if (channel && listener) {
+        channel.stopListening(eventName)
+      }
+      if (channel && typeof window.Echo?.leave === 'function') {
+        window.Echo.leave(channelName)
+      }
+    } catch (error) {
+      logger.warn('[bootstrap.js] subscribeZone cleanup failed', { error })
+    } finally {
+      channel = null
+      listener = null
     }
+  }
+
+  function doSubscribe() {
+    if (stopped || !window.Echo) {
+      return
+    }
+
+    try {
+      channel = window.Echo.private(channelName)
+      listener = (event) => handler?.(event)
+      channel.listen(eventName, listener)
+      logger.debug('[bootstrap.js] subscribeZone: subscribed to zone channel', {
+        channel: channelName,
+        zoneId,
+      })
+    } catch (error) {
+      logger.warn('[bootstrap.js] subscribeZone: failed to subscribe', { error })
+      cleanupChannel()
+    }
+  }
+
+  // Пытаемся подписаться сразу, если Echo доступен
+  doSubscribe()
+
+  // Подписываемся на изменения состояния WebSocket для автоматического восстановления
+  unsubscribeWsState = onWsStateChange((state) => {
+    if (stopped) return
+    if (state === 'connected') {
+      logger.debug('[bootstrap.js] subscribeZone: WebSocket connected, (re)subscribing to zone channel', { zoneId })
+      cleanupChannel()
+      doSubscribe()
+    } else if (state === 'disconnected') {
+      logger.debug('[bootstrap.js] subscribeZone: WebSocket disconnected, cleaning up zone channel', { zoneId })
+      cleanupChannel()
+    }
+  })
+
+  return () => {
+    stopped = true
+    // Отписываемся от изменений состояния WebSocket
+    if (unsubscribeWsState) {
+      unsubscribeWsState()
+      unsubscribeWsState = null
+    }
+    // Отписываемся от канала зоны
+    cleanupChannel()
   }
 }
 
 export function subscribeAlerts(handler) {
-  if (!window.Echo) {
-    logger.warn('[bootstrap.js] Echo not available, skip subscribeAlerts', {})
-    return () => {}
-  }
-
   const channelName = 'hydro.alerts'
   const eventName = '.App\\Events\\AlertCreated'
-  const channel = window.Echo.private(channelName)
-  const listener = (event) => handler?.(event)
+  let channel = null
+  let listener = null
+  let unsubscribeWsState = null
+  let stopped = false
 
-  channel.listen(eventName, listener)
-
-  return () => {
+  const cleanupChannel = () => {
     try {
-      channel.stopListening(eventName)
-      if (typeof window.Echo?.leave === 'function') {
+      if (channel && listener) {
+        channel.stopListening(eventName)
+      }
+      if (channel && typeof window.Echo?.leave === 'function') {
         window.Echo.leave(channelName)
       }
     } catch (error) {
       logger.warn('[bootstrap.js] subscribeAlerts cleanup failed', { error })
+    } finally {
+      channel = null
+      listener = null
     }
+  }
+
+  function doSubscribe() {
+    if (stopped || channel) {
+      return
+    }
+
+    try {
+      channel = window.Echo.private(channelName)
+      listener = (event) => handler?.(event)
+      channel.listen(eventName, listener)
+      logger.debug('[bootstrap.js] subscribeAlerts: subscribed to alerts channel', {
+        channel: channelName,
+        event: eventName,
+      })
+    } catch (error) {
+      logger.warn('[bootstrap.js] subscribeAlerts: failed to subscribe', { error })
+      cleanupChannel()
+    }
+  }
+
+  // Если Echo уже доступен, подписываемся сразу
+  if (window.Echo) {
+    doSubscribe()
+  } else {
+    logger.debug('[bootstrap.js] subscribeAlerts: Echo not available, will subscribe on connect', {})
+  }
+
+  // Подписываемся на изменения состояния WebSocket для автоматического восстановления
+  unsubscribeWsState = onWsStateChange((state) => {
+    if (stopped) return
+    if (state === 'connected') {
+      logger.debug('[bootstrap.js] subscribeAlerts: WebSocket connected, (re)subscribing to alerts', {})
+      cleanupChannel()
+      doSubscribe()
+    } else if (state === 'disconnected') {
+      logger.debug('[bootstrap.js] subscribeAlerts: WebSocket disconnected, cleaning up alerts channel', {})
+      cleanupChannel()
+    }
+  })
+
+  return () => {
+    stopped = true
+    // Отписываемся от изменений состояния WebSocket
+    if (unsubscribeWsState) {
+      unsubscribeWsState()
+      unsubscribeWsState = null
+    }
+
+    // Отписываемся от канала алертов
+    cleanupChannel()
   }
 }
 

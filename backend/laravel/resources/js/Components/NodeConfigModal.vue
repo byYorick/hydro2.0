@@ -246,7 +246,7 @@ async function onPublish() {
       max: channel.max ?? undefined,
     }))
 
-    await api.post(
+    const response = await api.post(
       `/nodes/${props.nodeId}/config/publish`,
       {
         config: {
@@ -255,10 +255,22 @@ async function onPublish() {
       }
     )
 
+    // Обновляем устройство в store из ответа API, если он содержит данные
+    try {
+      const responseData = response.data?.data || response.data
+      if (responseData?.id) {
+        const { useDevicesStore } = await import('@/stores/devices')
+        const devicesStore = useDevicesStore()
+        devicesStore.upsert(responseData)
+        logger.debug('[NodeConfigModal] Device updated in store after config publish', { deviceId: responseData.id })
+      }
+    } catch (storeError) {
+      logger.warn('[NodeConfigModal] Failed to update device store', { error: storeError })
+    }
+    
     showToast('Конфигурация успешно опубликована', 'success', TOAST_TIMEOUT.NORMAL)
     emit('published')
     emit('close')
-    router.reload({ only: ['devices'], preserveScroll: true })
   } catch (error) {
     // Ошибка уже обработана в useApi через showToast
     logger.error('Failed to publish node config:', error)

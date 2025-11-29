@@ -25,6 +25,14 @@ class NodeController extends Controller
 
     public function index(Request $request)
     {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+        
         // Валидация query параметров
         $validated = $request->validate([
             'zone_id' => ['nullable', 'integer', 'exists:zones,id'],
@@ -42,11 +50,31 @@ class NodeController extends Controller
             $validated['unassigned'] = filter_var($validated['unassigned'], FILTER_VALIDATE_BOOLEAN);
         }
         
+        // Получаем доступные ноды для пользователя
+        $accessibleNodeIds = \App\Helpers\ZoneAccessHelper::getAccessibleNodeIds($user);
+        
         // Eager loading для предотвращения N+1 запросов
+        // Исключаем config из выборки для предотвращения утечки Wi-Fi/MQTT кредов
         $query = DeviceNode::query()
-            ->with(['zone:id,name,status', 'channels']); // Загружаем связанные данные
+            ->select('id', 'uid', 'name', 'type', 'zone_id', 'status', 'lifecycle_state', 'fw_version', 'hardware_revision', 'hardware_id', 'validated', 'first_seen_at', 'created_at', 'updated_at')
+            ->with(['zone:id,name,status', 'channels' => function ($channelQuery) {
+                // Исключаем config из каналов
+                $channelQuery->select('id', 'node_id', 'channel', 'type', 'metric', 'unit');
+            }]);
+        
+        // Фильтруем по доступным нодам (кроме админов)
+        if (!$user->isAdmin()) {
+            $query->whereIn('id', $accessibleNodeIds);
+        }
         
         if (isset($validated['zone_id'])) {
+            // Дополнительно проверяем доступ к зоне
+            if (!$user->isAdmin() && !\App\Helpers\ZoneAccessHelper::canAccessZone($user, $validated['zone_id'])) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Forbidden: Access denied to this zone',
+                ], 403);
+            }
             $query->where('zone_id', $validated['zone_id']);
         }
         if (isset($validated['status'])) {
@@ -72,6 +100,16 @@ class NodeController extends Controller
         }
         
         $items = $query->latest('id')->paginate(25);
+        
+        // Убираем config из результатов (на случай если он был загружен через отношения)
+        $items->getCollection()->transform(function ($node) {
+            unset($node->config);
+            foreach ($node->channels as $channel) {
+                unset($channel->config);
+            }
+            return $node;
+        });
+        
         return response()->json(['status' => 'ok', 'data' => $items]);
     }
 
@@ -90,14 +128,56 @@ class NodeController extends Controller
         return response()->json(['status' => 'ok', 'data' => $node], Response::HTTP_CREATED);
     }
 
-    public function show(DeviceNode $node)
+    public function show(Request $request, DeviceNode $node)
     {
-        $node->load('channels');
+        $user = $request->user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+        
+        // Проверяем доступ к ноде
+        if (!\App\Helpers\ZoneAccessHelper::canAccessNode($user, $node)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Access denied to this node',
+            ], 403);
+        }
+        
+        // Загружаем связанные данные, исключая config для предотвращения утечки Wi-Fi/MQTT кредов
+        $node->load(['zone:id,name,status', 'channels' => function ($channelQuery) {
+            $channelQuery->select('id', 'node_id', 'channel', 'type', 'metric', 'unit');
+        }]);
+        
+        // Убираем config из ноды и каналов
+        unset($node->config);
+        foreach ($node->channels as $channel) {
+            unset($channel->config);
+        }
+        
         return response()->json(['status' => 'ok', 'data' => $node]);
     }
 
     public function update(Request $request, DeviceNode $node)
     {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+        
+        // Проверяем доступ к ноде
+        if (!\App\Helpers\ZoneAccessHelper::canAccessNode($user, $node)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Access denied to this node',
+            ], 403);
+        }
+        
         $data = $request->validate([
             'zone_id' => ['nullable', 'integer', 'exists:zones,id'],
             'uid' => ['sometimes', 'string', 'max:64', 'unique:nodes,uid,'.$node->id],
@@ -107,6 +187,17 @@ class NodeController extends Controller
             'status' => ['nullable', 'string', 'max:32'],
             'config' => ['nullable', 'array'],
         ]);
+        
+        // Проверяем доступ к новой зоне, если меняется
+        if (isset($data['zone_id']) && $data['zone_id'] !== $node->zone_id) {
+            if (!\App\Helpers\ZoneAccessHelper::canAccessZone($user, $data['zone_id'])) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Forbidden: Access denied to target zone',
+                ], 403);
+            }
+        }
+        
         $node = $this->nodeService->update($node, $data);
         return response()->json(['status' => 'ok', 'data' => $node]);
     }
@@ -115,8 +206,24 @@ class NodeController extends Controller
      * Отвязать узел от зоны.
      * При отвязке нода сбрасывается в REGISTERED_BACKEND и считается новой.
      */
-    public function detach(DeviceNode $node)
+    public function detach(Request $request, DeviceNode $node)
     {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+        
+        // Проверяем доступ к ноде
+        if (!\App\Helpers\ZoneAccessHelper::canAccessNode($user, $node)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Access denied to this node',
+            ], 403);
+        }
+        
         try {
             $node = $this->nodeService->detach($node);
             return response()->json([
@@ -139,8 +246,24 @@ class NodeController extends Controller
         }
     }
 
-    public function destroy(DeviceNode $node)
+    public function destroy(Request $request, DeviceNode $node)
     {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+        
+        // Проверяем доступ к ноде
+        if (!\App\Helpers\ZoneAccessHelper::canAccessNode($user, $node)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Access denied to this node',
+            ], 403);
+        }
+        
         try {
             $this->nodeService->delete($node);
             return response()->json(['status' => 'ok']);
@@ -186,88 +309,41 @@ class NodeController extends Controller
         $givenToken = $request->bearerToken();
         
         $clientIp = $request->ip();
-        $isNodeHello = $request->has('message_type') && $request->input('message_type') === 'node_hello';
         
-        // Проверяем, является ли IP доверенным (только если настроены доверенные прокси)
-        $trustedProxies = config('trustedproxy.proxies', []);
-        $isTrustedIp = false;
-        
-        // Проверяем, находится ли IP в списке доверенных
-        // В production всегда требуем токен, если он настроен
-        if (!empty($trustedProxies)) {
-            foreach ($trustedProxies as $trustedProxy) {
-                if ($clientIp === $trustedProxy || 
-                    (str_contains($trustedProxy, '/') && $this->ipInRange($clientIp, $trustedProxy))) {
-                    $isTrustedIp = true;
-                    break;
-                }
-            }
-        }
-        
-        // Проверяем внутренние IP только если это dev режим и IP действительно внутренний
-        $isInternalIp = false;
-        if (config('app.env') === 'local' || config('app.debug')) {
-            $isInternalIp = in_array($clientIp, ['127.0.0.1', '::1']) || 
-                           str_starts_with($clientIp, '172.') ||
-                           str_starts_with($clientIp, '10.') ||
-                           str_starts_with($clientIp, '192.168.');
-        }
-        
-        // Если токен настроен, он обязателен, кроме специальных случаев
+        // Если токен настроен, он обязателен всегда
         if (!empty($expectedToken)) {
-            $allowWithoutToken = false;
-            
-            // Разрешаем без токена только если:
-            // 1. Это node_hello от внутренних сервисов
-            // 2. И IP доверенный или внутренний
-            // 3. И только в dev режиме
-            if ($isNodeHello && ($isTrustedIp || $isInternalIp) && 
-                (config('app.env') === 'local' || config('app.debug'))) {
-                \Illuminate\Support\Facades\Log::info('Node registration: Allowing node_hello without token from trusted IP', [
+            if (empty($givenToken)) {
+                \Illuminate\Support\Facades\Log::warning('Node registration: Missing token', [
                     'ip' => $clientIp,
-                    'is_trusted' => $isTrustedIp,
-                    'is_internal' => $isInternalIp,
+                    'user_agent' => $request->userAgent(),
                 ]);
-                $allowWithoutToken = true;
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Unauthorized: token required',
+                ], 401);
             }
             
-            if (!$allowWithoutToken) {
-                if (empty($givenToken)) {
-                    \Illuminate\Support\Facades\Log::warning('Node registration: Missing token', [
-                        'ip' => $clientIp,
-                        'user_agent' => $request->userAgent(),
-                    ]);
-                    return response()->json([
-                        'status' => 'error',
-                        'message' => 'Unauthorized: token required',
-                    ], 401);
-                }
-                
-                if (!hash_equals($expectedToken, (string)$givenToken)) {
-                    \Illuminate\Support\Facades\Log::warning('Node registration: Invalid token', [
-                        'ip' => $clientIp,
-                        'user_agent' => $request->userAgent(),
-                    ]);
-                    return response()->json([
-                        'status' => 'error',
-                        'message' => 'Unauthorized: invalid token',
-                    ], 401);
-                }
+            if (!hash_equals($expectedToken, (string)$givenToken)) {
+                \Illuminate\Support\Facades\Log::warning('Node registration: Invalid token', [
+                    'ip' => $clientIp,
+                    'user_agent' => $request->userAgent(),
+                ]);
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Unauthorized: invalid token',
+                ], 401);
             }
         } else {
-            // Если токен не настроен, логируем предупреждение
-            \Illuminate\Support\Facades\Log::warning('Node registration: Token not configured', [
+            // Если токен не настроен, всегда запрещаем регистрацию
+            \Illuminate\Support\Facades\Log::error('Node registration: Token not configured', [
                 'ip' => $clientIp,
                 'env' => config('app.env'),
             ]);
             
-            // В production без токена запрещаем регистрацию
-            if (config('app.env') !== 'local' && !config('app.debug')) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Node registration token not configured',
-                ], 500);
-            }
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Node registration token not configured',
+            ], 500);
         }
         
         // Проверяем, это node_hello или обычная регистрация
@@ -308,11 +384,30 @@ class NodeController extends Controller
 
     /**
      * Получить NodeConfig для узла.
+     * Для безопасности не включает Wi-Fi пароли и MQTT креды.
+     * Для публикации конфига через MQTT используется publishConfig, который включает креды.
      */
-    public function getConfig(DeviceNode $node)
+    public function getConfig(Request $request, DeviceNode $node)
     {
+        // Проверяем доступ к ноде
+        $user = $request->user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+        
+        if (!\App\Helpers\ZoneAccessHelper::canAccessNode($user, $node)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Access denied to this node',
+            ], 403);
+        }
+        
         try {
-            $config = $this->configService->generateNodeConfig($node);
+            // Для API запросов не включаем креды (безопасность)
+            $config = $this->configService->generateNodeConfig($node, null, false);
             return response()->json(['status' => 'ok', 'data' => $config]);
         } catch (\InvalidArgumentException $e) {
             \Illuminate\Support\Facades\Log::warning('NodeController: Invalid argument on getConfig', [
@@ -345,8 +440,25 @@ class NodeController extends Controller
      */
     public function publishConfig(DeviceNode $node, Request $request)
     {
+        // Проверяем доступ к ноде
+        $user = $request->user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+        
+        if (!\App\Helpers\ZoneAccessHelper::canAccessNode($user, $node)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Access denied to this node',
+            ], 403);
+        }
+        
         try {
-            $config = $this->configService->generateNodeConfig($node);
+            // Для публикации через MQTT включаем креды (нужны для подключения ноды)
+            $config = $this->configService->generateNodeConfig($node, null, true);
             
             // Проверяем, что узел привязан к зоне
             if (!$node->zone_id) {
@@ -648,8 +760,42 @@ class NodeController extends Controller
         }
 
         if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
-            // Упрощенная проверка для IPv6
-            return inet_pton($ip) && inet_pton($subnet);
+            $ipBin = inet_pton($ip);
+            $subnetBin = inet_pton($subnet);
+            
+            if ($ipBin === false || $subnetBin === false) {
+                return false;
+            }
+            
+            $prefixLength = (int)$mask;
+            if ($prefixLength < 0 || $prefixLength > 128) {
+                return false;
+            }
+            
+            // Применяем маску к обоим адресам
+            $bytes = strlen($ipBin);
+            $fullBytes = intval($prefixLength / 8);
+            $remainingBits = $prefixLength % 8;
+            
+            // Сравниваем полные байты
+            for ($i = 0; $i < $fullBytes; $i++) {
+                if ($ipBin[$i] !== $subnetBin[$i]) {
+                    return false;
+                }
+            }
+            
+            // Если есть оставшиеся биты, сравниваем их
+            if ($remainingBits > 0 && $fullBytes < $bytes) {
+                $maskByte = 0xFF << (8 - $remainingBits);
+                $ipByte = ord($ipBin[$fullBytes]) & $maskByte;
+                $subnetByte = ord($subnetBin[$fullBytes]) & $maskByte;
+                
+                if ($ipByte !== $subnetByte) {
+                    return false;
+                }
+            }
+            
+            return true;
         }
 
         return false;

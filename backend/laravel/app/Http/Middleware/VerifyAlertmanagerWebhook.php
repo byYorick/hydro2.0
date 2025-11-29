@@ -23,9 +23,10 @@ class VerifyAlertmanagerWebhook
     {
         $expectedSecret = Config::get('services.alertmanager.webhook_secret');
         
-        // Если секрет не настроен, логируем предупреждение и разрешаем доступ только в dev
+        // Если секрет не настроен, разрешаем доступ только в dev/testing окружении
         if (!$expectedSecret) {
-            if (config('app.env') === 'local' || config('app.debug')) {
+            $env = config('app.env');
+            if (in_array($env, ['local', 'testing', 'dev'])) {
                 Log::warning('Alertmanager webhook secret not configured, allowing access in dev mode', [
                     'url' => $request->fullUrl(),
                     'ip' => $request->ip(),
@@ -33,10 +34,10 @@ class VerifyAlertmanagerWebhook
                 return $next($request);
             }
             
-            // В production требуем секрет
-            Log::error('Alertmanager webhook secret not configured in production', [
+            Log::error('Alertmanager webhook secret not configured', [
                 'url' => $request->fullUrl(),
                 'ip' => $request->ip(),
+                'env' => $env,
             ]);
             return response()->json([
                 'status' => 'error',

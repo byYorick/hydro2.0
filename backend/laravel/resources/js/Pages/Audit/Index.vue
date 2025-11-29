@@ -183,9 +183,16 @@ const getLevelVariant = (level?: string): string => {
 const loadLogs = async () => {
   loading.value = true
   try {
-    await router.reload({ only: ['logs'], preserveScroll: true })
+    // Используем router.reload с only для обновления только логов без сброса состояния
+    // Это лучше, чем полный reload, так как сохраняет фильтры и scroll
+    await router.reload({ 
+      only: ['logs'], 
+      preserveScroll: true,
+      preserveState: true 
+    })
   } catch (err) {
     logger.error('[Audit/Index] Failed to load logs:', err)
+    showToast('Ошибка загрузки логов', 'error', TOAST_TIMEOUT.LONG)
   } finally {
     loading.value = false
   }

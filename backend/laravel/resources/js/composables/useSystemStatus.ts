@@ -6,7 +6,7 @@ import { useApi, type ToastHandler } from './useApi'
 import { logger } from '@/utils/logger'
 import { extractData } from '@/utils/apiHelpers'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
-import { getReconnectAttempts, getLastError, getConnectionState, initEcho } from '@/utils/echoClient'
+import { getReconnectAttempts, getLastError, getConnectionState, initEcho, onWsStateChange } from '@/utils/echoClient'
 
 const HEALTH_CHECK_INTERVAL = 30000
 const WS_CHECK_INTERVAL = 10000
@@ -29,6 +29,8 @@ let sharedState: {
   healthInterval: ReturnType<typeof setInterval> | null
   wsInterval: ReturnType<typeof setInterval> | null
   isRateLimited: boolean
+  rateLimitBackoffMs: number
+  rateLimitTimeout: ReturnType<typeof setTimeout> | null
   subscribers: number
   connectedHandler: (() => void) | null
   disconnectedHandler: (() => void) | null
@@ -60,6 +62,10 @@ if (import.meta.hot) {
         clearInterval(sharedState.wsInterval)
         sharedState.wsInterval = null
       }
+      if (sharedState.rateLimitTimeout) {
+        clearTimeout(sharedState.rateLimitTimeout)
+        sharedState.rateLimitTimeout = null
+      }
       resetWebSocketBindings()
     }
   })
@@ -73,6 +79,10 @@ if (import.meta.hot) {
       if (sharedState.wsInterval) {
         clearInterval(sharedState.wsInterval)
         sharedState.wsInterval = null
+      }
+      if (sharedState.rateLimitTimeout) {
+        clearTimeout(sharedState.rateLimitTimeout)
+        sharedState.rateLimitTimeout = null
       }
       resetWebSocketBindings()
     }
@@ -119,6 +129,8 @@ export function useSystemStatus(showToast?: ToastHandler) {
       healthInterval: null,
       wsInterval: null,
       isRateLimited: false,
+      rateLimitBackoffMs: 30000, // Начальный backoff: 30 секунд
+      rateLimitTimeout: null,
       subscribers: 0,
       connectedHandler: null,
       disconnectedHandler: null,
@@ -159,7 +171,16 @@ export function useSystemStatus(showToast?: ToastHandler) {
       automationEngineStatus.value = payload.automation_engine === 'ok' ? 'ok' : payload.automation_engine === 'fail' ? 'fail' : 'unknown'
 
       lastUpdate.value = new Date()
-      sharedState.isRateLimited = false // Сбрасываем флаг при успешном запросе
+      // Сбрасываем флаг и backoff при успешном запросе
+      if (sharedState.isRateLimited) {
+        sharedState.isRateLimited = false
+        sharedState.rateLimitBackoffMs = 30000 // Сбрасываем backoff до начального значения
+        if (sharedState.rateLimitTimeout) {
+          clearTimeout(sharedState.rateLimitTimeout)
+          sharedState.rateLimitTimeout = null
+        }
+        logger.debug('[useSystemStatus] Rate limit cleared after successful health check', {})
+      }
     } catch (error: any) {
       // Игнорируем отмененные запросы (Inertia.js при навигации)
       if (error?.code === 'ERR_CANCELED' || 
@@ -173,12 +194,42 @@ export function useSystemStatus(showToast?: ToastHandler) {
       // Обработка ошибки 429 (Too Many Requests)
       if (error?.response?.status === 429) {
         sharedState.isRateLimited = true
-        // Останавливаем интервал при rate limiting
+        
+        // Останавливаем текущий интервал при rate limiting
         if (sharedState.healthInterval) {
           clearInterval(sharedState.healthInterval)
           sharedState.healthInterval = null
         }
-        logger.debug('[useSystemStatus] Rate limited, stopping health checks', {})
+        
+        // Очищаем предыдущий timeout, если он был
+        if (sharedState.rateLimitTimeout) {
+          clearTimeout(sharedState.rateLimitTimeout)
+          sharedState.rateLimitTimeout = null
+        }
+        
+        // Планируем возобновление с экспоненциальным backoff
+        const backoffMs = sharedState.rateLimitBackoffMs
+        logger.debug('[useSystemStatus] Rate limited, scheduling resume with backoff', {
+          backoffMs,
+          nextCheckIn: `${Math.round(backoffMs / 1000)}s`,
+        })
+        
+        sharedState.rateLimitTimeout = setTimeout(() => {
+          // Увеличиваем backoff экспоненциально (максимум 5 минут)
+          sharedState.rateLimitBackoffMs = Math.min(sharedState.rateLimitBackoffMs * 2, 300000)
+          sharedState.isRateLimited = false
+          sharedState.rateLimitTimeout = null
+          
+          // Возобновляем проверку здоровья
+          if (sharedState && !sharedState.healthInterval) {
+            checkHealth()
+            sharedState.healthInterval = setInterval(checkHealth, HEALTH_CHECK_INTERVAL)
+            logger.debug('[useSystemStatus] Health checks resumed after rate limit backoff', {
+              backoffMs: sharedState.rateLimitBackoffMs,
+            })
+          }
+        }, backoffMs)
+        
         // Не показываем Toast для 429, это нормальное поведение rate limiting
         return
       }
@@ -298,17 +349,48 @@ export function useSystemStatus(showToast?: ToastHandler) {
         clearInterval(sharedState.wsInterval)
         sharedState.wsInterval = null
       }
+      if (sharedState.rateLimitTimeout) {
+        clearTimeout(sharedState.rateLimitTimeout)
+        sharedState.rateLimitTimeout = null
+      }
       resetWebSocketBindings()
       // Сбрасываем singleton только когда нет подписчиков
       sharedState = null
     }
   }
 
+  // Подписка на изменения состояния WebSocket для мгновенного обновления статусов
+  let unsubscribeWsState: (() => void) | null = null
+
   onMounted(() => {
     startMonitoring()
+    
+    // Подписываемся на изменения состояния WebSocket для мгновенного обновления
+    unsubscribeWsState = onWsStateChange((state) => {
+      if (!sharedState) return
+      
+      // Мгновенно обновляем статусы WebSocket и MQTT при изменении состояния
+      if (state === 'connected') {
+        sharedState.wsStatus.value = 'connected'
+        checkMqttStatus()
+        logger.debug('[useSystemStatus] WebSocket state changed to connected, statuses updated immediately')
+      } else if (state === 'disconnected' || state === 'unavailable' || state === 'failed') {
+        sharedState.wsStatus.value = 'disconnected'
+        sharedState.mqttStatus.value = 'offline'
+        logger.debug('[useSystemStatus] WebSocket state changed to disconnected, statuses updated immediately')
+      } else if (state === 'connecting') {
+        sharedState.wsStatus.value = 'connecting'
+        logger.debug('[useSystemStatus] WebSocket state changed to connecting, statuses updated immediately')
+      }
+    })
   })
 
   onUnmounted(() => {
+    // Отписываемся от изменений состояния WebSocket
+    if (unsubscribeWsState) {
+      unsubscribeWsState()
+      unsubscribeWsState = null
+    }
     stopMonitoring()
   })
 

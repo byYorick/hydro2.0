@@ -282,9 +282,10 @@ const loadUsers = async () => {
   if (!isAdmin.value) return
   loading.value.load = true
   try {
-    await router.reload({ only: ['users'], preserveScroll: true })
-    const propsUsers = page.props.users || []
-    users.value = propsUsers.map((u) => ({
+    // Используем прямой API вызов вместо router.reload для сохранения состояния
+    const response = await api.get('/api/users')
+    const fetchedUsers = response.data?.data || response.data || []
+    users.value = fetchedUsers.map((u) => ({
       ...u,
       created_at: u.created_at,
     }))
@@ -316,8 +317,10 @@ const doDelete = async () => {
   try {
     await api.delete(`/settings/users/${deletingUser.value.id}`)
     showToast('Пользователь успешно удален', 'success', TOAST_TIMEOUT.NORMAL)
+    
+    // Обновляем локальный список пользователей без reload
+    users.value = users.value.filter(u => u.id !== deletingUser.value.id)
     deletingUser.value = null
-    await router.reload({ only: ['users'], preserveScroll: true })
   } catch (err) {
     logger.error('Failed to delete user:', err)
     const errorMsg = err.response?.data?.message || err.message || 'Неизвестная ошибка'
@@ -341,13 +344,29 @@ const saveUser = async () => {
       if (!payload.password) {
         delete payload.password
       }
-      await api.patch(`/settings/users/${editingUser.value.id}`, payload)
+      const response = await api.patch(`/settings/users/${editingUser.value.id}`, payload)
+      const updatedUser = response.data?.data || response.data
+      
+      // Обновляем пользователя в локальном списке без reload
+      if (updatedUser?.id) {
+        const index = users.value.findIndex(u => u.id === updatedUser.id)
+        if (index !== -1) {
+          users.value[index] = { ...updatedUser, created_at: updatedUser.created_at || users.value[index].created_at }
+        } else {
+          users.value.push({ ...updatedUser, created_at: updatedUser.created_at })
+        }
+      }
     } else {
-      await api.post('/settings/users', payload)
+      const response = await api.post('/settings/users', payload)
+      const newUser = response.data?.data || response.data
+      
+      // Добавляем нового пользователя в локальный список без reload
+      if (newUser?.id) {
+        users.value.push({ ...newUser, created_at: newUser.created_at })
+      }
     }
     showToast(editingUser.value ? 'Пользователь успешно обновлен' : 'Пользователь успешно создан', 'success', TOAST_TIMEOUT.NORMAL)
     closeModal()
-    await router.reload({ only: ['users'], preserveScroll: true })
   } catch (err) {
     logger.error('Failed to save user:', err)
     

@@ -47,7 +47,7 @@ const mockAxiosInstance = vi.hoisted(() => ({
 
 vi.mock('axios', () => ({
   default: {
-    create: vi.fn(() => mockAxiosInstance()),
+    create: vi.fn(() => mockAxiosInstance),
     get: (url: string, config?: any) => axiosGetMock(url, config),
     post: (url: string, data?: any, config?: any) => axiosPostMock(url, data, config),
     patch: (url: string, data?: any, config?: any) => axiosPatchMock(url, data, config),

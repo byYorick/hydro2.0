@@ -26,13 +26,19 @@ class NodeService
             Log::info('Node created', ['node_id' => $node->id, 'uid' => $node->uid]);
             
             // Очищаем кеш списка устройств для всех пользователей
-            // Используем паттерн для очистки всех ключей devices_list_*
+            // Используем точечную очистку вместо глобального flush для предотвращения DoS
             try {
                 \Illuminate\Support\Facades\Cache::tags(['devices_list'])->flush();
             } catch (\BadMethodCallException $e) {
-                // Если теги не поддерживаются, очищаем все ключи с паттерном
-                // В production лучше использовать Redis с тегами
-                \Illuminate\Support\Facades\Cache::flush();
+                // Если теги не поддерживаются, очищаем только конкретные ключи
+                $cacheKeys = [
+                    'devices_list_all',
+                    'devices_list_unassigned',
+                ];
+                foreach ($cacheKeys as $key) {
+                    \Illuminate\Support\Facades\Cache::forget($key);
+                }
+                // НЕ используем Cache::flush() - это может привести к DoS при массовых обновлениях
             }
             
             return $node;

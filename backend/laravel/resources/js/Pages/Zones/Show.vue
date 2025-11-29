@@ -990,10 +990,23 @@ async function onToggle(): Promise<void> {
           
           return updatedZone
         },
-        onSuccess: () => {
+        onSuccess: async () => {
           showToast(`Зона успешно ${actionText}`, 'success', TOAST_TIMEOUT.NORMAL)
-          // Обновляем зону через Inertia partial reload для синхронизации всех данных
-          reloadZone(zoneId.value, ['zone'])
+          // Обновляем зону через API и store вместо reload для сохранения состояния
+          if (zoneId.value) {
+            try {
+              // Используем уже инициализированный useZones composable
+              const { fetchZone } = useZones(showToast)
+              const updatedZone = await fetchZone(zoneId.value, true)
+              if (updatedZone?.id) {
+                zonesStore.upsert(updatedZone)
+              }
+            } catch (error) {
+              logger.error('[Zones/Show] Failed to fetch updated zone after toggle:', error)
+              // Fallback к частичному reload при ошибке
+              reloadZone(zoneId.value, ['zone'])
+            }
+          }
         },
         onError: (error) => {
           logger.error('Failed to toggle zone:', error)
@@ -1061,43 +1074,53 @@ async function onRecipeAttached(recipeId: number): Promise<void> {
   // Показываем уведомление
   showToast('Рецепт успешно привязан к зоне', 'success', TOAST_TIMEOUT.NORMAL)
   
-  // Даем время для отображения toast перед обновлением
-  await new Promise(resolve => setTimeout(resolve, 300))
+  if (!zoneId.value) return
   
-  // Делаем полный reload страницы через Inertia для получения обновленных данных
-  // Используем router.reload() для гарантированного обновления всех данных
-  // preserveState: false чтобы обновить все props, включая zone с recipeInstance
-  logger.info('[Zones/Show] Starting zone reload after recipe attachment')
-  
-  router.reload({ 
-    only: ['zone'],
-    preserveScroll: true,
-    preserveState: false, // Важно! Это гарантирует обновление всех props
-    onSuccess: (page) => {
-      logger.info('[Zones/Show] Zone reloaded successfully after recipe attachment', {
-        zone: page.props.zone,
-        hasRecipeInstance: !!page.props.zone?.recipeInstance,
-        recipeId: page.props.zone?.recipeInstance?.recipe_id,
-        recipeName: page.props.zone?.recipeInstance?.recipe?.name
+  try {
+    // Загружаем обновленную зону через API вместо полного reload
+    // Используем уже инициализированный useZones composable
+    const { fetchZone } = useZones(showToast)
+    const updatedZone = await fetchZone(zoneId.value, true) // forceRefresh = true
+    
+    // Обновляем зону в store для мгновенного отображения
+    if (updatedZone?.id) {
+      zonesStore.upsert(updatedZone)
+      logger.info('[Zones/Show] Zone updated in store after recipe attachment', {
+        zoneId: updatedZone.id,
+        hasRecipeInstance: !!updatedZone.recipeInstance,
+        recipeId: updatedZone.recipeInstance?.recipe_id,
       })
-    },
-    onError: (error) => {
-      logger.error('[Zones/Show] Failed to reload zone:', error)
-    },
-    onFinish: () => {
-      logger.info('[Zones/Show] Zone reload finished')
     }
-  })
+  } catch (error) {
+    logger.error('[Zones/Show] Failed to fetch updated zone after recipe attachment:', error)
+    // В случае ошибки делаем частичный reload как fallback
+    reloadZone(zoneId.value, ['zone'])
+  }
 }
 
-function onNodesAttached(nodeIds: number[]): void {
-  showToast(`Успешно привязано узлов: ${nodeIds.length}`, 'success', TOAST_TIMEOUT.NORMAL)
-  reloadZone(zoneId.value, ['zone', 'devices'])
+async function onNodesAttached(nodeIds: number[]): Promise<void> {
+  if (!zoneId.value) return
+  
+  try {
+    // Обновляем зону через API вместо reload
+    const { fetchZone } = useZones(showToast)
+    const updatedZone = await fetchZone(zoneId.value, true) // forceRefresh = true
+    
+    if (updatedZone?.id) {
+      zonesStore.upsert(updatedZone)
+      logger.debug('[Zones/Show] Zone updated in store after nodes attachment', { zoneId: updatedZone.id })
+    }
+  } catch (error) {
+    logger.error('[Zones/Show] Failed to update zone after nodes attachment, falling back to reload', { zoneId: zoneId.value, error })
+    // Fallback к частичному reload при ошибке
+    reloadZone(zoneId.value, ['zone', 'devices'])
+  }
 }
 
 function onNodeConfigPublished(): void {
-  showToast('Конфигурация узла успешно отправлена', 'success', TOAST_TIMEOUT.NORMAL)
-  reloadZone(zoneId.value, ['devices'])
+  // Конфигурация уже обновлена в store через NodeConfigModal
+  // Дополнительное обновление не требуется, так как данные приходят через WebSocket
+  logger.debug('[Zones/Show] Node config published, store already updated')
 }
 
 async function onNextPhase(): Promise<void> {
@@ -1142,10 +1165,23 @@ async function onNextPhase(): Promise<void> {
           
           return updatedZone
         },
-        onSuccess: () => {
+        onSuccess: async () => {
           showToast('Фаза успешно изменена', 'success', TOAST_TIMEOUT.NORMAL)
-          // Обновляем зону через Inertia partial reload для синхронизации всех данных
-          reloadZone(zoneId.value, ['zone'])
+          // Обновляем зону через API и store вместо reload для сохранения состояния
+          if (zoneId.value) {
+            try {
+              // Используем уже инициализированный useZones composable
+              const { fetchZone } = useZones(showToast)
+              const updatedZone = await fetchZone(zoneId.value, true)
+              if (updatedZone?.id) {
+                zonesStore.upsert(updatedZone)
+              }
+            } catch (error) {
+              logger.error('[Zones/Show] Failed to fetch updated zone after phase change:', error)
+              // Fallback к частичному reload при ошибке
+              reloadZone(zoneId.value, ['zone'])
+            }
+          }
         },
         onError: (error) => {
           logger.error('Failed to change phase:', error)
