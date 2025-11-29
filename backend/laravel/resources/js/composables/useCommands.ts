@@ -219,11 +219,24 @@ export function useCommands(showToast?: ToastHandler) {
     }
   }
 
+  const reloadTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  const RELOAD_DEBOUNCE_MS = 500
+
   /**
    * Обновить зону после выполнения команды через Inertia partial reload
    */
   function reloadZoneAfterCommand(zoneId: number, only: string[] = ['zone', 'cycles'], preserveScroll: boolean = true): void {
-    router.reload({ only, preserveScroll })
+    const key = `${zoneId}:${only.join(',')}`
+    
+    if (reloadTimers.has(key)) {
+      clearTimeout(reloadTimers.get(key)!)
+    }
+    
+    reloadTimers.set(key, setTimeout(() => {
+      reloadTimers.delete(key)
+      logger.debug('[useCommands] Reloading zone after command', { zoneId, only })
+      router.reload({ only, preserveScroll })
+    }, RELOAD_DEBOUNCE_MS))
   }
 
   return {

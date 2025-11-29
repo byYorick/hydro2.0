@@ -109,8 +109,8 @@ Route::middleware([
 
     Route::get('commands/{cmdId}/status', [\App\Http\Controllers\CommandStatusController::class, 'show']);
 
-    // Alerts
-    Route::get('alerts', [AlertController::class, 'index']);
+    // Alerts - увеличенный rate limit для частых запросов
+    Route::get('alerts', [AlertController::class, 'index'])->middleware('throttle:120,1');
     Route::get('alerts/{alert}', [AlertController::class, 'show']);
     Route::patch('alerts/{alert}/ack', [AlertController::class, 'ack']);
     Route::get('alerts/stream', [AlertStreamController::class, 'stream']);

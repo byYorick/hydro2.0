@@ -167,17 +167,62 @@ class SystemController extends Controller
 
     public function configFull()
     {
-        $greenhouses = Greenhouse::with([
-            'zones.nodes.channels',
-            'zones.recipeInstance.recipe',
-        ])->get();
+        try {
+            $greenhouses = Greenhouse::with([
+                'zones.nodes.channels',
+                'zones.recipeInstance.recipe',
+            ])->get();
 
-        return response()->json([
-            'status' => 'ok',
-            'data' => [
-                'greenhouses' => $greenhouses,
-            ],
-        ]);
+            return response()->json([
+                'status' => 'ok',
+                'data' => [
+                    'greenhouses' => $greenhouses,
+                ],
+            ]);
+        } catch (\Illuminate\Database\QueryException $e) {
+            $isDev = app()->environment(['local', 'testing', 'development']);
+            $errorMessage = $e->getMessage();
+            $isMissingTable = str_contains($errorMessage, 'no such table') || 
+                             str_contains($errorMessage, "doesn't exist") ||
+                             str_contains($errorMessage, 'relation does not exist');
+            
+            \Log::error('SystemController::configFull: Database error', [
+                'error' => $errorMessage,
+                'is_missing_table' => $isMissingTable,
+            ]);
+            
+            if ($isDev && $isMissingTable) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Database schema not initialized. Please run migrations.',
+                    'error' => 'Missing database table',
+                    'hint' => 'Run: php artisan migrate',
+                    'data' => [
+                        'greenhouses' => [],
+                    ],
+                ], 503);
+            }
+            
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Service temporarily unavailable. Please check database connection.',
+                'data' => [
+                    'greenhouses' => [],
+                ],
+            ], 503);
+        } catch (\Exception $e) {
+            \Log::error('SystemController::configFull: Error', [
+                'error' => $e->getMessage(),
+            ]);
+            
+            return response()->json([
+                'status' => 'error',
+                'message' => 'An error occurred while fetching configuration.',
+                'data' => [
+                    'greenhouses' => [],
+                ],
+            ], 500);
+        }
     }
 }
 

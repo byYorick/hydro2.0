@@ -52,6 +52,17 @@ const channelControls = new Map<string, ChannelControl>()
 const componentChannelCounts = new Map<number, Map<string, number>>()
 const instanceSubscriptionSets = new Map<number, Set<string>>()
 
+// Глобальный реестр для глобальных каналов (events.global, commands.global)
+// Используется для предотвращения множественных запросов на /broadcasting/auth
+interface GlobalChannelRegistry {
+  channelControl: ChannelControl | null
+  subscriptionRefCount: number
+  isAuthorized: boolean
+  handlers: Set<GlobalEventHandler>
+}
+
+const globalChannelRegistry = new Map<string, GlobalChannelRegistry>()
+
 // Очередь отложенных подписок для компонентов, смонтированных до готовности Echo
 interface PendingSubscription {
   id: string
@@ -71,7 +82,11 @@ let componentCounter = 0
 let resubscribeTimer: ReturnType<typeof setTimeout> | null = null
 
 const WS_DISABLED_MESSAGE = 'Realtime отключен в этой сборке'
-const WS_UNAVAILABLE_MESSAGE = 'WebSocket не доступен'
+
+// Вспомогательная функция для проверки, является ли канал глобальным
+function isGlobalChannel(channelName: string): boolean {
+  return channelName === GLOBAL_EVENTS_CHANNEL || channelName === 'commands.global'
+}
 
 function isBrowser(): boolean {
   return typeof window !== 'undefined'
@@ -105,15 +120,87 @@ function createSubscriptionId(): string {
   return `sub-${subscriptionCounter}`
 }
 
+// Вспомогательная функция для создания отложенной подписки
+function createPendingSubscription(
+  channelName: string,
+  kind: ChannelKind,
+  channelType: 'private' | 'public',
+  handler: ZoneCommandHandler | GlobalEventHandler,
+  componentTag: string,
+  instanceId: number,
+  showToast?: ToastHandler
+): (() => void) {
+  const subscriptionId = createSubscriptionId()
+  const pending: PendingSubscription = {
+    id: subscriptionId,
+    channelName,
+    kind,
+    channelType,
+    handler,
+    componentTag,
+    instanceId,
+    showToast,
+  }
+  
+  pendingSubscriptions.set(subscriptionId, pending)
+  logger.debug('[useWebSocket] Echo not available, subscription queued', {
+    channel: channelName,
+    subscriptionId,
+    componentTag,
+  })
+  
+  // Пытаемся обработать сразу, если Echo появится
+  setTimeout(() => {
+    processPendingSubscriptions()
+  }, 100)
+  
+  return () => {
+    // Удаляем из очереди при отписке
+    pendingSubscriptions.delete(subscriptionId)
+    // Также удаляем из активных, если успели подписаться
+    removeSubscription(subscriptionId)
+  }
+}
+
+// Вспомогательная функция для создания активной подписки
+function createActiveSubscription(
+  channelName: string,
+  kind: ChannelKind,
+  handler: ZoneCommandHandler | GlobalEventHandler,
+  componentTag: string,
+  instanceId: number,
+  showToast?: ToastHandler
+): ActiveSubscription {
+  return {
+    id: createSubscriptionId(),
+    channelName,
+    kind,
+    handler,
+    componentTag,
+    showToast,
+    instanceId,
+  }
+}
+
 function isChannelDead(channelName: string): boolean {
   if (!isBrowser()) {
-    return false
+    return true // Если не в браузере, канал мертв
   }
+  
+  // Если window.Echo не существует или изменился, все каналы мертвы
+  if (!window.Echo) {
+    return true
+  }
+  
   const pusherChannel = window.Echo?.connector?.pusher?.channels?.channels?.[channelName]
+  
+  // Если канала нет в текущем window.Echo, он мертв
+  // Это важно после teardown/реинициализации, когда создается новый экземпляр Echo
   if (!pusherChannel) {
-    return false
+    return true
   }
 
+  // Проверяем, есть ли активные подписки на канале
   const hasBindings = Array.isArray(pusherChannel.bindings) && pusherChannel.bindings.length > 0
   const hasCallbacks =
     pusherChannel._callbacks && Object.keys(pusherChannel._callbacks).length > 0
@@ -190,6 +277,33 @@ function ensureChannelControl(
   if (!isBrowser()) {
     return null
   }
+  
+  // Для глобальных каналов используем реестр для предотвращения множественных auth запросов
+  if (isGlobalChannel(channelName)) {
+    let registry = globalChannelRegistry.get(channelName)
+    if (registry && registry.channelControl) {
+      // Проверяем, что канал еще активен (не мертв)
+      const channelStillActive = registry.channelControl.echoChannel && !isChannelDead(channelName)
+      
+      if (channelStillActive) {
+        // Канал уже существует и авторизован, переиспользуем его
+        logger.debug('[useWebSocket] Reusing existing global channel from registry', {
+          channel: channelName,
+          refCount: registry.subscriptionRefCount,
+          isAuthorized: registry.isAuthorized,
+          hasActiveChannel: true,
+        })
+        return registry.channelControl
+      } else if (registry.channelControl.echoChannel === null) {
+        // Канал был удален, но реестр остался - очищаем реестр и создадим новый канал
+        logger.debug('[useWebSocket] Global channel was detached, clearing registry', {
+          channel: channelName,
+        })
+        globalChannelRegistry.delete(channelName)
+      }
+    }
+  }
+  
   let control = channelControls.get(channelName)
   if (!control) {
     control = {
@@ -204,28 +318,69 @@ function ensureChannelControl(
 
   const echo = window.Echo
   if (!echo) {
+    // Если window.Echo не существует, очищаем канал из control
+    if (control.echoChannel) {
+      control.echoChannel = null
+    }
     return null
   }
 
-  // Для events.global проверяем, есть ли уже активный канал
-  // Это предотвращает множественные запросы на /broadcasting/auth
-  if (channelName === GLOBAL_EVENTS_CHANNEL && control.echoChannel && !isChannelDead(channelName)) {
-    logger.debug('[useWebSocket] Reusing existing global events channel', {
+  // Проверяем, что канал существует в текущем window.Echo
+  // Если control.echoChannel существует, но канала нет в window.Echo, он мертв
+  const shouldRecreate = !control.echoChannel || isChannelDead(channelName)
+  
+  // Дополнительная проверка: если control.echoChannel существует, но канала нет в window.Echo,
+  // значит произошла реинициализация Echo и старый канал мертв
+  if (control.echoChannel && !window.Echo.connector?.pusher?.channels?.channels?.[channelName]) {
+    logger.debug('[useWebSocket] Channel not found in current Echo instance, marking as dead', {
       channel: channelName,
-      existingSubscriptions: channelSubscribers.get(channelName)?.size ?? 0,
     })
-    return control
+    control.echoChannel = null
   }
 
-  const shouldRecreate = !control.echoChannel || isChannelDead(channelName)
-
-  if (shouldRecreate) {
+  if (shouldRecreate || !control.echoChannel) {
+    // Для глобальных каналов проверяем реестр перед созданием нового канала
+    // Если канал уже есть в реестре и активен, переиспользуем его
+    if (isGlobalChannel(channelName)) {
+      const registry = globalChannelRegistry.get(channelName)
+      if (registry && registry.channelControl && registry.channelControl.echoChannel && !isChannelDead(channelName)) {
+        // Канал уже существует в реестре и активен - переиспользуем его
+        logger.debug('[useWebSocket] Reusing global channel from registry (ref-count was 0)', {
+          channel: channelName,
+          kind,
+          refCount: registry.subscriptionRefCount,
+        })
+        return registry.channelControl
+      }
+    }
+    
     control.echoChannel =
       channelType === 'private' ? echo.private(channelName) : echo.channel(channelName)
-    logger.debug('[useWebSocket] Created channel subscription', {
-      channel: channelName,
-      kind,
-    })
+    
+    // Для глобальных каналов регистрируем в реестре
+    if (isGlobalChannel(channelName)) {
+      if (!globalChannelRegistry.has(channelName)) {
+        globalChannelRegistry.set(channelName, {
+          channelControl: control,
+          subscriptionRefCount: 0,
+          isAuthorized: false,
+          handlers: new Set(),
+        })
+      }
+      const registry = globalChannelRegistry.get(channelName)!
+      registry.channelControl = control
+      registry.isAuthorized = true
+      
+      logger.debug('[useWebSocket] Created global channel (first auth request)', {
+        channel: channelName,
+        kind,
+      })
+    } else {
+      logger.debug('[useWebSocket] Created channel subscription', {
+        channel: channelName,
+        kind,
+      })
+    }
   }
 
   if (!Object.keys(control.listenerRefs).length || shouldRecreate) {
@@ -235,7 +390,8 @@ function ensureChannelControl(
   return control
 }
 
-function addSubscription(control: ChannelControl, subscription: ActiveSubscription): void {
+function addSubscription(_control: ChannelControl, subscription: ActiveSubscription): void {
+  // control передается для совместимости API, но не используется напрямую
   activeSubscriptions.set(subscription.id, subscription)
   let channelSet = channelSubscribers.get(subscription.channelName)
   if (!channelSet) {
@@ -294,6 +450,18 @@ function removeSubscription(subscriptionId: string): void {
     return
   }
 
+  // Для глобальных каналов обновляем реестр перед удалением
+  if (isGlobalChannel(subscription.channelName)) {
+    const registry = globalChannelRegistry.get(subscription.channelName)
+    if (registry) {
+      // Удаляем handler из реестра
+      if (subscription.handler && typeof subscription.handler === 'function') {
+        registry.handlers.delete(subscription.handler as GlobalEventHandler)
+      }
+      registry.subscriptionRefCount = Math.max(0, registry.subscriptionRefCount - 1)
+    }
+  }
+
   activeSubscriptions.delete(subscriptionId)
   const channelSet = channelSubscribers.get(subscription.channelName)
   if (channelSet) {
@@ -302,7 +470,24 @@ function removeSubscription(subscriptionId: string): void {
       channelSubscribers.delete(subscription.channelName)
       const control = channelControls.get(subscription.channelName)
       if (control) {
-        detachChannel(control, true)
+        if (!isGlobalChannel(subscription.channelName)) {
+          // Для не-глобальных каналов удаляем канал полностью
+          detachChannel(control, true)
+        } else {
+          // Для глобальных каналов НЕ удаляем канал из реестра, даже если ref-count = 0
+          // Это позволяет переиспользовать канал при следующей подписке без нового auth запроса
+          // Канал останется в реестре и будет переиспользован при следующей навигации
+          const registry = globalChannelRegistry.get(subscription.channelName)
+          if (registry && registry.subscriptionRefCount === 0) {
+            // Обнуляем handlers, но сохраняем канал в реестре для переиспользования
+            registry.handlers.clear()
+            logger.debug('[useWebSocket] Global channel kept in registry for reuse (ref-count=0)', {
+              channel: subscription.channelName,
+              hasActiveChannel: !!registry.channelControl?.echoChannel,
+            })
+            // Канал НЕ удаляется из реестра - он будет переиспользован при следующей подписке
+          }
+        }
       }
     }
   }
@@ -312,6 +497,7 @@ function removeSubscription(subscriptionId: string): void {
     channel: subscription.channelName,
     subscriptionId,
     componentTag: subscription.componentTag,
+    refCount: isGlobalChannel(subscription.channelName) ? globalChannelRegistry.get(subscription.channelName)?.subscriptionRefCount : undefined,
   })
 }
 
@@ -430,28 +616,30 @@ function processPendingSubscriptions(): void {
   
   toProcess.forEach(pending => {
     try {
-      // Для events.global проверяем, есть ли уже активная подписка
-      // Это предотвращает множественные запросы на /broadcasting/auth
-      if (pending.channelName === GLOBAL_EVENTS_CHANNEL) {
-        const existingControl = channelControls.get(GLOBAL_EVENTS_CHANNEL)
-        if (existingControl && existingControl.echoChannel) {
+      // Для глобальных каналов проверяем реестр
+      if (isGlobalChannel(pending.channelName)) {
+        let registry = globalChannelRegistry.get(pending.channelName)
+        if (registry && registry.channelControl && registry.channelControl.echoChannel && !isChannelDead(pending.channelName)) {
           // Канал уже существует и авторизован, просто добавляем handler
-          const subscription: ActiveSubscription = {
-            id: pending.id,
-            channelName: pending.channelName,
-            kind: pending.kind,
-            handler: pending.handler,
-            componentTag: pending.componentTag,
-            showToast: pending.showToast,
-            instanceId: pending.instanceId,
-          }
+          registry.handlers.add(pending.handler as GlobalEventHandler)
+          registry.subscriptionRefCount += 1
           
-          addSubscription(existingControl, subscription)
-          logger.debug('[useWebSocket] Processed pending subscription (reused channel)', {
+          const subscription = createActiveSubscription(
+            pending.channelName,
+            pending.kind,
+            pending.handler,
+            pending.componentTag,
+            pending.instanceId,
+            pending.showToast
+          )
+          subscription.id = pending.id // Используем ID из pending
+          
+          addSubscription(registry.channelControl, subscription)
+          logger.debug('[useWebSocket] Processed pending subscription (reused global channel)', {
             channel: pending.channelName,
             subscriptionId: pending.id,
             componentTag: pending.componentTag,
-            existingSubscriptions: channelSubscribers.get(GLOBAL_EVENTS_CHANNEL)?.size ?? 0,
+            refCount: registry.subscriptionRefCount,
           })
           return
         }
@@ -466,15 +654,24 @@ function processPendingSubscriptions(): void {
         return
       }
       
-      const subscription: ActiveSubscription = {
-        id: pending.id,
-        channelName: pending.channelName,
-        kind: pending.kind,
-        handler: pending.handler,
-        componentTag: pending.componentTag,
-        showToast: pending.showToast,
-        instanceId: pending.instanceId,
+      // Обновляем реестр для глобальных каналов
+      if (isGlobalChannel(pending.channelName)) {
+        let registry = globalChannelRegistry.get(pending.channelName)
+        if (registry) {
+          registry.handlers.add(pending.handler as GlobalEventHandler)
+          registry.subscriptionRefCount += 1
+        }
       }
+      
+      const subscription = createActiveSubscription(
+        pending.channelName,
+        pending.kind,
+        pending.handler,
+        pending.componentTag,
+        pending.instanceId,
+        pending.showToast
+      )
+      subscription.id = pending.id // Используем ID из pending
       
       addSubscription(control, subscription)
       logger.debug('[useWebSocket] Processed pending subscription', {
@@ -534,6 +731,56 @@ if (isBrowser()) {
   
   // Запускаем проверку при загрузке модуля
   startPendingCheck()
+  
+  // Очистка при HMR
+  if ((import.meta as any).hot) {
+    (import.meta as any).hot.dispose(() => {
+      if (pendingCheckInterval) {
+        clearInterval(pendingCheckInterval)
+        pendingCheckInterval = null
+      }
+    })
+  }
+}
+
+// Функция для очистки всех каналов и реестров при teardown Echo
+export function cleanupWebSocketChannels(): void {
+  logger.debug('[useWebSocket] Cleaning up all channels and registries', {})
+  
+  // Очищаем все каналы
+  channelControls.forEach(control => {
+    try {
+      removeChannelListeners(control)
+      if (isBrowser() && window.Echo) {
+        try {
+          window.Echo.leave?.(control.channelName)
+        } catch {
+          // ignore leave errors
+        }
+      }
+    } catch (error) {
+      logger.warn('[useWebSocket] Error cleaning up channel', {
+        channel: control.channelName,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  })
+  
+  // Очищаем все структуры данных
+  channelControls.clear()
+  channelSubscribers.clear()
+  componentChannelCounts.clear()
+  instanceSubscriptionSets.clear()
+  globalChannelRegistry.clear()
+  pendingSubscriptions.clear()
+  
+  // Очищаем таймеры
+  if (resubscribeTimer) {
+    clearTimeout(resubscribeTimer)
+    resubscribeTimer = null
+  }
+  
+  logger.debug('[useWebSocket] All channels and registries cleaned up', {})
 }
 
 export function resubscribeAllChannels(): void {
@@ -548,10 +795,28 @@ export function resubscribeAllChannels(): void {
 
   channelControls.forEach(control => {
     try {
+      // Очищаем старые слушатели перед пересозданием канала
+      removeChannelListeners(control)
+      
+      // Очищаем старый канал, если он существует
+      if (control.echoChannel) {
+        try {
+          if (isBrowser() && window.Echo) {
+            window.Echo.leave?.(control.channelName)
+          }
+        } catch {
+          // ignore leave errors
+        }
+        control.echoChannel = null
+      }
+      
+      // Создаем новый канал в текущем window.Echo
       control.echoChannel =
         control.channelType === 'private'
           ? echo.private(control.channelName)
           : echo.channel(control.channelName)
+      
+      // Прикрепляем слушатели к новому каналу
       attachChannelListeners(control)
       logger.debug('[useWebSocket] Resubscribed channel', { channel: control.channelName })
     } catch (error) {
@@ -588,36 +853,15 @@ export function useWebSocket(showToast?: ToastHandler, componentTag?: string) {
     
     // Если Echo не доступен, сохраняем подписку в очередь
     if (!echo) {
-      const subscriptionId = createSubscriptionId()
-      const pending: PendingSubscription = {
-        id: subscriptionId,
+      return createPendingSubscription(
         channelName,
-        kind: 'zoneCommands',
-        channelType: 'private',
+        'zoneCommands',
+        'private',
         handler,
-        componentTag: resolvedComponentTag,
+        resolvedComponentTag,
         instanceId,
-        showToast,
-      }
-      
-      pendingSubscriptions.set(subscriptionId, pending)
-      logger.debug('[useWebSocket] Echo not available, subscription queued', {
-        channel: channelName,
-        subscriptionId,
-        componentTag: resolvedComponentTag,
-      })
-      
-      // Пытаемся обработать сразу, если Echo появится
-      setTimeout(() => {
-        processPendingSubscriptions()
-      }, 100)
-      
-      return () => {
-        // Удаляем из очереди при отписке
-        pendingSubscriptions.delete(subscriptionId)
-        // Также удаляем из активных, если успели подписаться
-        removeSubscription(subscriptionId)
-      }
+        showToast
+      )
     }
 
     const control = ensureChannelControl(channelName, 'zoneCommands', 'private')
@@ -626,21 +870,19 @@ export function useWebSocket(showToast?: ToastHandler, componentTag?: string) {
       return () => undefined
     }
 
-    const subscriptionId = createSubscriptionId()
-    const subscription: ActiveSubscription = {
-      id: subscriptionId,
+    const subscription = createActiveSubscription(
       channelName,
-      kind: 'zoneCommands',
+      'zoneCommands',
       handler,
-      componentTag: resolvedComponentTag,
-      showToast,
+      resolvedComponentTag,
       instanceId,
-    }
+      showToast
+    )
 
     addSubscription(control, subscription)
 
     return () => {
-      removeSubscription(subscriptionId)
+      removeSubscription(subscription.id)
     }
   }
 
@@ -652,35 +894,37 @@ export function useWebSocket(showToast?: ToastHandler, componentTag?: string) {
       return () => undefined
     }
 
-    // Проверяем, есть ли уже активная подписка на events.global
-    // Если канал уже подписан и авторизован, переиспользуем существующую подписку
-    // Это предотвращает множественные запросы на /broadcasting/auth при навигации
-    const existingControl = channelControls.get(GLOBAL_EVENTS_CHANNEL)
-    if (existingControl && existingControl.echoChannel && !isChannelDead(GLOBAL_EVENTS_CHANNEL)) {
-      // Канал уже существует и активен, просто добавляем новый handler
-      // НЕ создаем новый канал и НЕ делаем новый запрос на /broadcasting/auth
-      const subscriptionId = createSubscriptionId()
-      const subscription: ActiveSubscription = {
-        id: subscriptionId,
-        channelName: GLOBAL_EVENTS_CHANNEL,
-        kind: 'globalEvents',
-        handler,
-        componentTag: resolvedComponentTag,
-        instanceId,
-      }
-
-      addSubscription(existingControl, subscription)
+    // Используем глобальный реестр для предотвращения множественных auth запросов
+    let registry = globalChannelRegistry.get(GLOBAL_EVENTS_CHANNEL)
+    
+    // Если канал уже существует и авторизован, просто добавляем handler без нового auth
+    if (registry && registry.channelControl && registry.channelControl.echoChannel && !isChannelDead(GLOBAL_EVENTS_CHANNEL)) {
+      // Канал уже существует и авторизован - переиспользуем его
+      registry.handlers.add(handler)
+      registry.subscriptionRefCount += 1
       
-      logger.debug('[useWebSocket] Reusing existing global events channel (no auth request)', {
+      const subscription = createActiveSubscription(
+        GLOBAL_EVENTS_CHANNEL,
+        'globalEvents',
+        handler,
+        resolvedComponentTag,
+        instanceId
+      )
+
+      addSubscription(registry.channelControl, subscription)
+      
+      logger.debug('[useWebSocket] Reusing global events channel (no auth, ref-count++)', {
         channel: GLOBAL_EVENTS_CHANNEL,
-        subscriptionId,
+        subscriptionId: subscription.id,
         componentTag: resolvedComponentTag,
-        existingSubscriptions: channelSubscribers.get(GLOBAL_EVENTS_CHANNEL)?.size ?? 0,
+        refCount: registry.subscriptionRefCount,
+        totalHandlers: registry.handlers.size,
         instanceId,
       })
 
       return () => {
-        removeSubscription(subscriptionId)
+        // removeSubscription автоматически обновит реестр
+        removeSubscription(subscription.id)
       }
     }
 
@@ -688,64 +932,59 @@ export function useWebSocket(showToast?: ToastHandler, componentTag?: string) {
     
     // Если Echo не доступен, сохраняем подписку в очередь
     if (!echo) {
-      const subscriptionId = createSubscriptionId()
-      const pending: PendingSubscription = {
-        id: subscriptionId,
-        channelName: GLOBAL_EVENTS_CHANNEL,
-        kind: 'globalEvents',
-        channelType: 'private',
+      return createPendingSubscription(
+        GLOBAL_EVENTS_CHANNEL,
+        'globalEvents',
+        'private',
         handler,
-        componentTag: resolvedComponentTag,
+        resolvedComponentTag,
         instanceId,
-        showToast,
-      }
-      
-      pendingSubscriptions.set(subscriptionId, pending)
-      logger.debug('[useWebSocket] Echo not available, subscription queued', {
-        channel: GLOBAL_EVENTS_CHANNEL,
-        subscriptionId,
-        componentTag: resolvedComponentTag,
-      })
-      
-      // Пытаемся обработать сразу, если Echo появится
-      setTimeout(() => {
-        processPendingSubscriptions()
-      }, 100)
-      
-      return () => {
-        // Удаляем из очереди при отписке
-        pendingSubscriptions.delete(subscriptionId)
-        // Также удаляем из активных, если успели подписаться
-        removeSubscription(subscriptionId)
-      }
+        showToast
+      )
     }
 
+    // Первая подписка - создаем канал и делаем auth запрос
     const control = ensureChannelControl(GLOBAL_EVENTS_CHANNEL, 'globalEvents', 'private')
     if (!control) {
       logger.warn('[useWebSocket] Unable to create global events channel', {})
       return () => undefined
     }
 
-    const subscriptionId = createSubscriptionId()
-    const subscription: ActiveSubscription = {
-      id: subscriptionId,
-      channelName: GLOBAL_EVENTS_CHANNEL,
-      kind: 'globalEvents',
-      handler,
-      componentTag: resolvedComponentTag,
-      instanceId,
+    // Обновляем реестр (ensureChannelControl уже создал запись в реестре)
+    registry = globalChannelRegistry.get(GLOBAL_EVENTS_CHANNEL)
+    if (!registry) {
+      // Если реестр не создан, создаем его
+      globalChannelRegistry.set(GLOBAL_EVENTS_CHANNEL, {
+        channelControl: control,
+        subscriptionRefCount: 0,
+        isAuthorized: true,
+        handlers: new Set(),
+      })
+      registry = globalChannelRegistry.get(GLOBAL_EVENTS_CHANNEL)!
     }
+    registry.handlers.add(handler)
+    registry.subscriptionRefCount += 1
+
+    const subscription = createActiveSubscription(
+      GLOBAL_EVENTS_CHANNEL,
+      'globalEvents',
+      handler,
+      resolvedComponentTag,
+      instanceId
+    )
 
     addSubscription(control, subscription)
     
-    logger.debug('[useWebSocket] Created new global events channel subscription', {
+    logger.debug('[useWebSocket] Created new global events channel (first auth request)', {
       channel: GLOBAL_EVENTS_CHANNEL,
-      subscriptionId,
+      subscriptionId: subscription.id,
       componentTag: resolvedComponentTag,
+      refCount: registry?.subscriptionRefCount ?? 1,
     })
 
     return () => {
-      removeSubscription(subscriptionId)
+      // removeSubscription автоматически обновит реестр
+      removeSubscription(subscription.id)
     }
   }
 

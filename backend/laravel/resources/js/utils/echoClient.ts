@@ -34,6 +34,13 @@ let isReconnecting = false
 let connectionHandlers: ConnectionHandler[] = []
 let connectingStartTime = 0 // Отслеживание времени начала подключения (объявлено на уровне модуля)
 
+// Хранилище активных таймеров для отмены при новом подключении/teardown
+interface ActiveTimer {
+  timeoutId: ReturnType<typeof setTimeout>
+  abortController?: AbortController
+}
+const activeTimers = new Set<ActiveTimer>()
+
 function isBrowser(): boolean {
   return typeof window !== 'undefined'
 }
@@ -81,6 +88,18 @@ function teardownEcho(): void {
     reconnectTimer = null
   }
   cleanupConnectionHandlers()
+  // Отменяем все активные таймеры
+  if (activeTimers) {
+    activeTimers.forEach(timer => {
+      if (timer.abortController) {
+        timer.abortController.abort()
+      }
+      if (timer.timeoutId) {
+        clearTimeout(timer.timeoutId)
+      }
+    })
+    activeTimers.clear()
+  }
   try {
     echoInstance?.disconnect?.()
   } catch {
@@ -95,64 +114,56 @@ function teardownEcho(): void {
   if (typeof window !== 'undefined') {
     window.Echo = undefined
   }
+  // Сбрасываем флаги состояния
+  initializing = false
+  reconnectAttempts = 0
+  reconnectLockUntil = 0
+  isReconnecting = false
+  connectingStartTime = 0
+  lastError = null
+  
+  // Устанавливаем состояние disconnected
+  emitState('disconnected')
+  
+  // Очищаем каналы useWebSocket при teardown
+  if (typeof window !== 'undefined') {
+    // Динамически импортируем cleanupWebSocketChannels, чтобы избежать циклических зависимостей
+    import('../composables/useWebSocket').then(({ cleanupWebSocketChannels }) => {
+      try {
+        cleanupWebSocketChannels()
+      } catch (error) {
+        logger.warn('[echoClient] Error cleaning up WebSocket channels', {
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }).catch(() => {
+      // Игнорируем ошибки импорта (может быть недоступен в некоторых контекстах)
+    })
+  }
+  
+  // Уведомляем bootstrap.js о сбросе состояния через событие
+  if (typeof window !== 'undefined' && window.dispatchEvent) {
+    window.dispatchEvent(new CustomEvent('echo:teardown'))
+  }
 }
 
 function resolveScheme(): 'http' | 'https' {
-  // Правильно определяем dev/prod режим
-  // import.meta.env.DEV может быть undefined в некоторых случаях, поэтому проверяем также PROD
-  const isDev = (import.meta as any).env?.DEV === true || (import.meta as any).env?.MODE === 'development'
-  const isProd = (import.meta as any).env?.PROD === true || (import.meta as any).env?.MODE === 'production'
   const envScheme = (import.meta as any).env?.VITE_REVERB_SCHEME
   
-  // Если схема явно указана в переменных окружения, используем её
-  // В prod режиме ВСЕГДА уважаем указанную схему, даже если isDev не определен
   if (typeof envScheme === 'string' && envScheme.trim().length > 0) {
     const scheme = envScheme.toLowerCase().trim()
     if (scheme === 'https' || scheme === 'http') {
-      // В dev режиме с nginx прокси может быть https страница, но ws:// соединение
-      // В prod режиме ВСЕГДА уважаем указанную схему
-      if (isDev && scheme === 'https') {
-        logger.debug('[echoClient] HTTPS scheme detected in dev mode, but using HTTP for WebSocket', {
-          envScheme: scheme,
-          isDev,
-        })
-        return 'http'
-      }
-      // В prod режиме возвращаем указанную схему
-      logger.debug('[echoClient] Using scheme from VITE_REVERB_SCHEME', {
-        scheme,
-        isDev,
-        isProd,
-      })
       return scheme as 'http' | 'https'
     }
   }
   
-  // Если схема не указана, определяем по текущей странице (только в браузере)
-  // В prod режиме на https странице используем https, в dev - http (nginx прокси)
   if (isBrowser()) {
     const protocol = window.location.protocol
     if (protocol === 'https:') {
-      // В prod режиме используем https, в dev - http (nginx прокси)
-      // Если isDev не определен, но isProd определен, используем https
-      if (isProd || (!isDev && isProd !== false)) {
-        logger.debug('[echoClient] HTTPS page detected, using HTTPS for WebSocket', {
-          protocol,
-          isDev,
-          isProd,
-        })
-        return 'https'
-      }
-      // В dev режиме используем http даже для https страницы (nginx прокси)
-      logger.debug('[echoClient] HTTPS page in dev mode, using HTTP for WebSocket', {
-        protocol,
-        isDev,
-      })
-      return 'http'
+      return 'https'
     }
   }
   
-  // По умолчанию http
   return 'http'
 }
 
@@ -171,50 +182,56 @@ function resolvePort(scheme: 'http' | 'https'): number | undefined {
   const isDev = (import.meta as any).env?.DEV === true
   const envPort = (import.meta as any).env?.VITE_REVERB_PORT
   
-  // Если порт явно указан в переменных окружения
   if (typeof envPort === 'string' && envPort.trim().length > 0) {
     const parsed = Number(envPort)
     if (!Number.isNaN(parsed)) {
-      // Override только при явном dev флаге И наличии window.location.port
-      // В проде БЕЗ ПРОКСИ всегда уважаем VITE_REVERB_PORT=6001, даже если есть window.location.port
+      // В dev с nginx: если VITE_REVERB_PORT=6001 и страница на другом порту (nginx прокси),
+      // используем порт страницы
       if (isDev && parsed === 6001 && isBrowser() && window.location.port) {
-        const nginxPort = Number(window.location.port)
-        if (!Number.isNaN(nginxPort) && nginxPort !== 6001) {
-          logger.debug('[echoClient] Dev mode: overriding VITE_REVERB_PORT=6001 with nginx port', {
-            nginxPort,
-            reverbPort: parsed,
-            isDev,
-            hasWindowPort: !!window.location.port,
-          })
-          return nginxPort
+        const pagePort = Number(window.location.port)
+        if (!Number.isNaN(pagePort) && pagePort !== 6001) {
+          // Проверяем, что это действительно nginx прокси (обычно 8080 или другой)
+          // Если порт страницы отличается от 6001, используем его
+          return pagePort
         }
       }
-      // В prod режиме ВСЕГДА используем указанный порт, даже если есть window.location.port
-      // Это критично для prod без nginx прокси
-      logger.debug('[echoClient] Using VITE_REVERB_PORT from env', {
-        port: parsed,
-        isDev,
-        hasWindowPort: isBrowser() ? !!window.location.port : false,
-      })
       return parsed
     }
   }
   
-  // Если порт не указан в переменных окружения
-  // В prod режиме используем стандартные порты для схемы (443 для https, 80 для http)
-  // В dev режиме используем порт страницы (nginx прокси)
-  if (isBrowser()) {
-    if (isDev && window.location.port) {
-      // В dev режиме используем порт nginx для проксирования
-      const parsed = Number(window.location.port)
-      if (!Number.isNaN(parsed)) {
-        return parsed
+  // В dev без nginx: если VITE_REVERB_PORT не задан, используем дефолт 6001
+  // (Reverb по умолчанию работает на 6001)
+  if (isDev) {
+    // Если есть window.location.port и он не 6001, возможно это nginx прокси
+    // В этом случае проверяем, проксируется ли /app
+    if (isBrowser() && window.location.port) {
+      const pagePort = Number(window.location.port)
+      // Если порт страницы 5173 (Vite) или другой dev порт, но не 6001,
+      // значит Vite запущен напрямую, а Reverb на 6001
+      if (!Number.isNaN(pagePort) && pagePort !== 6001) {
+        // Проверяем, есть ли nginx прокси через попытку определить это
+        // Если порт 5173 (Vite), то Reverb точно на 6001
+        if (pagePort === 5173) {
+          return 6001 // Reverb на дефолтном порту
+        }
+        // Для других портов (например, 8080) предполагаем nginx прокси
+        return pagePort
       }
     }
-    // В prod режиме или если порт не указан, используем стандартные порты для схемы
+    // Дефолт для dev: 6001 (порт Reverb)
+    return 6001
+  }
+  
+  // В prod: если VITE_REVERB_PORT не задан, используем стандартные порты
+  // Но если задан, используем его (для случаев без прокси)
+  if (isBrowser()) {
+    // В prod без прокси Reverb может быть на 6001
+    // Но по умолчанию используем стандартные порты
     return scheme === 'https' ? 443 : 80
   }
   
+  // Если не в браузере и порт не задан, возвращаем undefined
+  // Это позволит Pusher использовать дефолтные порты
   return undefined
 }
 
@@ -244,29 +261,33 @@ function buildEchoConfig(): Record<string, unknown> {
   const path = resolvePath()
   
   // Определяем, нужно ли использовать TLS
-  // В prod режиме на https странице используем wss, в dev - ws (nginx прокси)
+  // Если страница HTTPS (даже в dev), используем wss для избежания mixed content
   // Также проверяем window.location.protocol для надежности
   let shouldUseTls = false
-  if (!isDev) {
-    // В prod режиме: если схема https или страница https, используем wss
-    if (scheme === 'https') {
-      shouldUseTls = true
-    } else if (isBrowser() && window.location.protocol === 'https:') {
-      // Дополнительная проверка: если страница https, но схема http (не должно быть, но на всякий случай)
-      shouldUseTls = true
-      logger.warn('[echoClient] Page is HTTPS but scheme is HTTP, forcing TLS', {
-        scheme,
-        protocol: window.location.protocol,
-      })
-    }
+  if (scheme === 'https') {
+    shouldUseTls = true
+  } else if (isBrowser() && window.location.protocol === 'https:') {
+    // Если страница HTTPS, но схема http (например, через прокси), принудительно используем TLS
+    shouldUseTls = true
+    logger.warn('[echoClient] Page is HTTPS but scheme is HTTP, forcing TLS', {
+      scheme,
+      protocol: window.location.protocol,
+    })
   }
   
-  // readBooleanEnv принимает ключ (строку), а не значение
-  // Передаем строку 'VITE_WS_TLS' вместо значения из env
-  const forceTls = readBooleanEnv(
-    'VITE_WS_TLS',
-    shouldUseTls // По умолчанию: true для https в prod, false в dev
-  )
+  // В dev режиме: если страница HTTPS, обязательно используем wss (даже если isDev)
+  // Это предотвращает mixed content блокировку браузером
+  if (isDev && isBrowser() && window.location.protocol === 'https:') {
+    shouldUseTls = true
+    logger.debug('[echoClient] Dev mode with HTTPS page, forcing TLS to avoid mixed content', {
+      scheme,
+      protocol: window.location.protocol,
+    })
+  }
+  
+  // В dev режиме разрешаем оба транспорта для гибкости (ws через прокси, wss напрямую)
+  // В prod используем только wss для HTTPS
+  const forceTls = readBooleanEnv('VITE_WS_TLS', shouldUseTls)
 
   const key =
     (import.meta as any).env?.VITE_REVERB_APP_KEY ||
@@ -277,6 +298,14 @@ function buildEchoConfig(): Record<string, unknown> {
     ? document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
     : undefined
 
+  // В dev режиме разрешаем оба транспорта для гибкости (ws через прокси, wss напрямую)
+  // В prod используем только wss для HTTPS, ws для HTTP
+  const enabledTransports = isDev && forceTls 
+    ? ['ws', 'wss'] // В dev на HTTPS разрешаем оба транспорта
+    : forceTls 
+      ? ['wss'] 
+      : ['ws']
+
   logger.debug('[echoClient] Building Echo config', {
     scheme,
     host,
@@ -284,7 +313,8 @@ function buildEchoConfig(): Record<string, unknown> {
     path,
     forceTls,
     isDev,
-    enabledTransports: forceTls ? ['wss'] : ['ws'],
+    pageProtocol: isBrowser() ? window.location.protocol : 'unknown',
+    enabledTransports,
   })
 
   return {
@@ -295,7 +325,7 @@ function buildEchoConfig(): Record<string, unknown> {
     wssPort: port,
     wsPath: path,
     forceTLS: forceTls,
-    enabledTransports: forceTls ? ['wss'] : ['ws'],
+    enabledTransports,
     disableStats: true,
     withCredentials: true,
     authEndpoint: '/broadcasting/auth',
@@ -480,6 +510,17 @@ function bindConnectionEvents(connection: any): void {
     return
   }
 
+  // Отменяем все предыдущие таймеры перед привязкой новых обработчиков
+  activeTimers.forEach(timer => {
+    if (timer.abortController) {
+      timer.abortController.abort()
+    }
+    if (timer.timeoutId) {
+      clearTimeout(timer.timeoutId)
+    }
+  })
+  activeTimers.clear()
+
   cleanupConnectionHandlers()
 
   // Отслеживание времени последнего события "unavailable"
@@ -488,15 +529,17 @@ function bindConnectionEvents(connection: any): void {
   // connectingStartTime объявлена на уровне модуля для доступа из всех замыканий
   connectingStartTime = 0 // Сбрасываем при привязке новых обработчиков
   const CONNECTING_TIMEOUT = 15000 // 15 секунд таймаут для установления соединения
+  
+  // Создаем AbortController для отмены таймеров этого подключения
+  const abortController = new AbortController()
 
   const handlers: ConnectionHandler[] = [
     {
       event: 'connecting',
       handler: () => {
-        // Отслеживаем время начала подключения
-        if (connectingStartTime === 0) {
-          connectingStartTime = Date.now()
-        }
+        // Всегда сбрасываем и устанавливаем новое время начала подключения
+        // Это важно при переходе disconnected -> connecting, чтобы не считать старые попытки
+        connectingStartTime = Date.now()
         
         logger.debug('[echoClient] Connection state: connecting', {
           socketId: connection?.socket_id || 'not yet assigned',
@@ -510,11 +553,19 @@ function bindConnectionEvents(connection: any): void {
         // Иногда socketId присваивается с небольшой задержкой (может быть до 3-5 секунд)
         // Проверяем несколько раз с увеличивающимися интервалами
         const checkSocketId = (checkAttempt = 0) => {
+          if (abortController.signal.aborted) {
+            return // Таймер отменен
+          }
+          
           const maxChecks = 5
           const delays = [1000, 2000, 3000, 5000, 7000] // Проверяем через 1, 2, 3, 5, 7 секунд
           const delay = delays[Math.min(checkAttempt, delays.length - 1)]
           
-          setTimeout(() => {
+          const timeoutId = setTimeout(() => {
+            if (abortController.signal.aborted) {
+              return // Таймер отменен
+            }
+            
             const socketId = connection?.socket_id
             const elapsed = Date.now() - connectingStartTime
             const state = connection?.state
@@ -539,15 +590,20 @@ function bindConnectionEvents(connection: any): void {
               if (elapsed < CONNECTING_TIMEOUT && checkAttempt < maxChecks - 1) {
                 checkSocketId(checkAttempt + 1)
               } else if (elapsed > CONNECTING_TIMEOUT) {
-                logger.warn('[echoClient] Connecting timeout exceeded without socketId', {
+                logger.warn('[echoClient] Connecting timeout exceeded without socketId, initiating reconnect', {
                   elapsed,
                   timeout: CONNECTING_TIMEOUT,
                   state,
                   checkAttempt: checkAttempt + 1,
                 })
+                connectingStartTime = 0
+                scheduleReconnect('no_socket_id')
               }
             }
           }, delay)
+          
+          // Сохраняем таймер для возможной отмены
+          activeTimers.add({ timeoutId, abortController })
         }
         
         checkSocketId(0) // Начинаем первую проверку
@@ -597,6 +653,11 @@ function bindConnectionEvents(connection: any): void {
         logger.info('[echoClient] Connection state: disconnected', {
           socketId: connection.socket_id,
         })
+        
+        // Сбрасываем таймер подключения при отключении
+        // Это важно для правильного подсчета времени при следующем connecting
+        connectingStartTime = 0
+        
         emitState('disconnected')
         // Переподключаемся только если не в процессе подключения
         if (connection.state !== 'connecting') {
@@ -637,7 +698,11 @@ function bindConnectionEvents(connection: any): void {
           })
           
           // Ждем дольше, если соединение только начало устанавливаться
-          setTimeout(() => {
+          const timeoutId1 = setTimeout(() => {
+            if (abortController.signal.aborted) {
+              return // Таймер отменен
+            }
+            
             const currentState = connection?.state
             const currentSocketId = connection?.socket_id
             
@@ -654,7 +719,10 @@ function bindConnectionEvents(connection: any): void {
                 elapsed: Date.now() - connectingStartTime,
               })
               // Если все еще connecting, ждем еще немного
-              setTimeout(() => {
+              const timeoutId2 = setTimeout(() => {
+                if (abortController.signal.aborted) {
+                  return // Таймер отменен
+                }
                 if (connection.state !== 'connected' && connection.state !== 'connecting') {
                   logger.info('[echoClient] Connection still unavailable after extended wait, reconnecting', {
                     state: connection.state,
@@ -662,6 +730,7 @@ function bindConnectionEvents(connection: any): void {
                   scheduleReconnect('unavailable')
                 }
               }, 5000) // Еще 5 секунд ожидания
+              activeTimers.add({ timeoutId: timeoutId2, abortController })
             } else {
               logger.info('[echoClient] Connection not connecting anymore, reconnecting', {
                 state: currentState,
@@ -669,6 +738,7 @@ function bindConnectionEvents(connection: any): void {
               scheduleReconnect('unavailable')
             }
           }, waitTime)
+          activeTimers.add({ timeoutId: timeoutId1, abortController })
         } else if (timeSinceLastUnavailable > UNAVAILABLE_COOLDOWN) {
           // Если прошло достаточно времени с последнего "unavailable", переподключаемся
           logger.info('[echoClient] Unavailable cooldown passed, reconnecting', {
@@ -683,7 +753,10 @@ function bindConnectionEvents(connection: any): void {
             remaining,
             cooldown: UNAVAILABLE_COOLDOWN,
           })
-          setTimeout(() => {
+          const timeoutId = setTimeout(() => {
+            if (abortController.signal.aborted) {
+              return // Таймер отменен
+            }
             if (connection.state !== 'connected' && connection.state !== 'connecting') {
               scheduleReconnect('unavailable')
             } else {
@@ -692,6 +765,7 @@ function bindConnectionEvents(connection: any): void {
               })
             }
           }, remaining)
+          activeTimers.add({ timeoutId, abortController })
         }
       },
     },
@@ -774,6 +848,40 @@ export function initEcho(forceReinit = false): Echo | null {
   if (initializing) {
     logger.debug('[echoClient] Echo initialization already in progress', {})
     return echoInstance
+  }
+  
+  // HMR guard: проверяем window.Echo перед проверкой echoInstance
+  // При HMR модуль перезагружается, но window.Echo остается живым
+  if (typeof window !== 'undefined' && window.Echo && !echoInstance) {
+    const windowEcho = window.Echo
+    const pusher = windowEcho.connector?.pusher
+    const connection = pusher?.connection
+    const state = connection?.state
+    
+    if (state === 'connected' || state === 'connecting') {
+      // Активное соединение - синхронизируем echoInstance с window.Echo
+      logger.info('[echoClient] HMR detected: reusing existing active window.Echo', {
+        state: state,
+        socketId: connection?.socket_id,
+      })
+      echoInstance = windowEcho
+      // Сбрасываем флаги, так как соединение уже активно
+      initializing = false
+      reconnectAttempts = 0
+      reconnectLockUntil = 0
+      isReconnecting = false
+      connectingStartTime = 0
+      lastError = null
+      emitState('connected')
+      return echoInstance
+    } else if (!forceReinit) {
+      // Неактивное соединение, но не требуется принудительная переинициализация
+      // Синхронизируем echoInstance, но не переиспользуем
+      logger.debug('[echoClient] HMR detected: window.Echo exists but inactive', {
+        state: state,
+      })
+      echoInstance = windowEcho
+    }
   }
   
   // Дополнительная проверка - если соединение активно и не требуется принудительная переинициализация
@@ -884,9 +992,27 @@ export function initEcho(forceReinit = false): Echo | null {
       timestamp: Date.now(),
     }
     logger.error('[echoClient] Failed to initialize Echo', {}, error)
+    
+    // Сбрасываем флаги состояния при ошибке
+    initializing = false
+    reconnectAttempts = 0
+    reconnectLockUntil = 0
+    isReconnecting = false
+    connectingStartTime = 0
+    
+    // Устанавливаем состояние failed и disconnected
     emitState('failed')
+    emitState('disconnected')
+    
+    // Очищаем экземпляр
     window.Echo = undefined
     echoInstance = null
+    
+    // Уведомляем bootstrap.js о сбросе состояния
+    if (typeof window !== 'undefined' && window.dispatchEvent) {
+      window.dispatchEvent(new CustomEvent('echo:teardown'))
+    }
+    
     return null
   } finally {
     initializing = false
@@ -919,13 +1045,25 @@ export function getConnectionState(): {
   lastError: ConnectionError | null
   isReconnecting: boolean
   socketId?: string | null
+  protocol?: string
+  port?: number
+  host?: string
 } {
   // Более надежное получение socketId
   let socketId: string | null = null
+  let protocol: string | undefined
+  let port: number | undefined
+  let host: string | undefined
   
   try {
     if (echoInstance?.connector?.pusher?.connection) {
       socketId = echoInstance.connector.pusher.connection.socket_id || null
+      
+      // Получаем телеметрию подключения
+      const scheme = resolveScheme()
+      protocol = scheme === 'https' ? 'wss' : 'ws'
+      port = resolvePort(scheme)
+      host = resolveHost()
       
       // Если socketId undefined, но соединение в состоянии connected, ждем немного
       if (!socketId && echoInstance.connector.pusher.connection.state === 'connected') {
@@ -948,6 +1086,9 @@ export function getConnectionState(): {
     lastError,
     isReconnecting,
     socketId,
+    protocol,
+    port,
+    host,
   }
 }
 

@@ -14,8 +14,6 @@ Broadcast::channel('hydro.zones.{zoneId}', function ($user, $zoneId) {
         return false;
     }
 
-    // Проверяем роль пользователя
-    // Это предотвращает ненужные запросы к БД для пользователей с недопустимыми ролями
     $userRole = $user->role ?? 'viewer';
     $allowedRoles = ['viewer', 'operator', 'admin', 'agronomist', 'engineer'];
     
@@ -30,9 +28,6 @@ Broadcast::channel('hydro.zones.{zoneId}', function ($user, $zoneId) {
         return false;
     }
 
-    // Проверяем существование зоны с обработкой ошибок БД
-    // Если таблицы не существуют или БД недоступна, возвращаем false вместо исключения
-    // Это предотвращает 500 ошибки и возвращает 403 (unauthorized)
     try {
         $zone = Zone::find($zoneId);
         if (! $zone) {

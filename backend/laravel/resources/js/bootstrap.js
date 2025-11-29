@@ -14,8 +14,8 @@ if (csrfToken) {
 }
 
 import { logger } from './utils/logger';
-// Импортируем без расширения - Vite автоматически обработает TypeScript
 import { initEcho, isEchoInitializing, getEchoInstance } from './utils/echoClient';
+import Echo from 'laravel-echo';
 
 // Axios error logging to console
 window.axios.interceptors.response.use(
@@ -42,21 +42,62 @@ window.axios.interceptors.response.use(
   }
 );
 
-// Удалены локальные флаги - теперь используется единая точка входа в echoClient.ts
-// Флаги isInitializing и initializationPromise управляются в echoClient.ts
-
-// ЕДИНАЯ ТОЧКА ВХОДА для инициализации WebSocket
-// Все инициализации проходят через initEcho() из echoClient.ts
-// Эта функция является оберткой для удобства использования в bootstrap.js
 function initializeEcho() {
-  // Проверяем, не идет ли уже инициализация через echoClient
   if (isEchoInitializing()) {
     logger.debug('[bootstrap.js] Echo initialization already in progress via echoClient, skipping', {});
     return null;
   }
   
-  // Проверяем, есть ли уже активный экземпляр
-  const existingEcho = getEchoInstance();
+  // HMR guard: проверяем существующий window.Echo перед проверкой getEchoInstance()
+  // При HMR модуль перезагружается, но window.Echo остается живым
+  let existingWindowEcho = window.Echo;
+  let existingEcho = getEchoInstance();
+  
+  // Если window.Echo существует, но getEchoInstance() возвращает null (HMR case),
+  // проверяем состояние window.Echo и решаем, что делать
+  if (existingWindowEcho && !existingEcho) {
+    const pusher = existingWindowEcho.connector?.pusher;
+    const connection = pusher?.connection;
+    const state = connection?.state;
+    
+    if (state === 'connected' || state === 'connecting') {
+      // Активное соединение - переиспользуем window.Echo
+      logger.info('[bootstrap.js] HMR detected: reusing existing active window.Echo', {
+        state: state,
+        socketId: connection?.socket_id,
+      });
+      // Синхронизируем флаги с реальным состоянием
+      echoInitialized = true;
+      echoInitInProgress = false;
+      return existingWindowEcho;
+    } else {
+      // Неактивное соединение - нужно teardown перед новой инициализацией
+      logger.info('[bootstrap.js] HMR detected: existing window.Echo is inactive, tearing down', {
+        state: state,
+      });
+      try {
+        // Вызываем teardown для существующего Echo
+        if (pusher && typeof pusher.disconnect === 'function') {
+          pusher.disconnect();
+        }
+        if (connection && typeof connection.disconnect === 'function') {
+          connection.disconnect();
+        }
+        // Очищаем window.Echo
+        window.Echo = undefined;
+        existingWindowEcho = undefined;
+      } catch (err) {
+        logger.warn('[bootstrap.js] Error tearing down existing Echo during HMR', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        // Продолжаем с принудительной переинициализацией
+        window.Echo = undefined;
+        existingWindowEcho = undefined;
+      }
+    }
+  }
+  
+  // Проверяем существующий Echo из модуля (нормальный случай, не HMR)
   if (existingEcho && window.Echo) {
     const pusher = existingEcho.connector?.pusher;
     const connection = pusher?.connection;
@@ -70,9 +111,8 @@ function initializeEcho() {
   }
   
   try {
-    // Используем единую точку входа initEcho()
-    // forceReinit = false при первой инициализации, true только если Echo уже существует
-    const shouldForceReinit = !!existingEcho && !!window.Echo;
+    // Принудительная переинициализация нужна, если есть старый Echo (неактивный)
+    const shouldForceReinit = !!(existingEcho || existingWindowEcho) && !!window.Echo;
     const echo = initEcho(shouldForceReinit);
     if (echo) {
       logger.info('[bootstrap.js] Echo client initialized via single entry point', {
@@ -84,11 +124,11 @@ function initializeEcho() {
       logger.warn('[bootstrap.js] Echo client initialization returned null', {
         isInitializing: isEchoInitializing(),
         hasExistingInstance: !!getEchoInstance(),
+        hasWindowEcho: !!window.Echo,
       });
       return null;
     }
   } catch (e) {
-    // Обработка ошибок, которые могут быть не Error объектами
     let errorMessage = 'Unknown error';
     let errorType = typeof e;
     
@@ -124,70 +164,128 @@ function initializeEchoOnce() {
       initialized: echoInitialized,
       inProgress: echoInitInProgress,
     });
-    return;
+    return window.Echo || null;
   }
   echoInitInProgress = true;
   try {
     const echo = initializeEcho();
-    // Ставим echoInitialized=true только если initEcho() вернул реальный экземпляр
-    // Проверяем также, что window.Echo установлен и соединение активно
     if (echo && window.Echo) {
       const pusher = echo.connector?.pusher;
       const connection = pusher?.connection;
-      // Считаем успешной инициализацией только если есть экземпляр
-      // Соединение может быть еще в процессе подключения, это нормально
       echoInitialized = true;
       logger.debug('[bootstrap.js] Echo initialized successfully', {
         hasConnection: !!connection,
         connectionState: connection?.state,
       });
+      return echo;
     } else {
       logger.warn('[bootstrap.js] Echo initialization returned null or window.Echo not set', {
         echoReturned: !!echo,
         windowEcho: !!window.Echo,
       });
-      echoInitialized = false; // Разрешаем повторную попытку
+      echoInitialized = false;
+      return null;
     }
   } catch (error) {
     logger.error('[bootstrap.js] Error initializing Echo', {
       error: error instanceof Error ? error.message : String(error),
     });
-    echoInitialized = false; // Разрешаем повторную попытку при ошибке
+    echoInitialized = false;
+    return null;
   } finally {
     echoInitInProgress = false;
   }
 }
 
-// Инициализируем Echo только один раз при загрузке страницы
-// Добавляем дополнительную защиту от множественных инициализаций
 let initializationScheduled = false;
+let initializationAttempts = 0;
+const MAX_INIT_ATTEMPTS = 5;
+const INIT_RETRY_DELAYS = [1000, 2000, 5000, 10000, 30000];
 
-function scheduleEchoInitialization() {
-  if (initializationScheduled) {
+function scheduleEchoInitialization(force = false) {
+  if (initializationScheduled && !force) {
     logger.debug('[bootstrap.js] Echo initialization already scheduled, skipping', {});
     return;
   }
+  
+  if (force) {
+    initializationScheduled = false;
+    initializationAttempts = 0;
+  }
+  
+  if (initializationScheduled) {
+    return;
+  }
+  
   initializationScheduled = true;
   
-  if (document.readyState === 'loading') {
-    // DOM еще загружается, ждем события DOMContentLoaded
-    document.addEventListener('DOMContentLoaded', () => {
-      // Небольшая задержка для гарантии, что все скрипты загружены
-      setTimeout(() => {
-        if (!echoInitialized && !echoInitInProgress) {
-          initializeEchoOnce();
-        }
-      }, 100);
-    }, { once: true }); // once: true предотвращает множественные вызовы
-  } else {
-    // DOM уже загружен, инициализируем сразу с небольшой задержкой
-    setTimeout(() => {
-      if (!echoInitialized && !echoInitInProgress) {
-        initializeEchoOnce();
+  const attemptInit = () => {
+    // Проверяем реальное состояние соединения, а не только флаг
+    if (window.Echo) {
+      const pusher = window.Echo.connector?.pusher;
+      const connection = pusher?.connection;
+      if (connection && (connection.state === 'connected' || connection.state === 'connecting')) {
+        logger.debug('[bootstrap.js] Echo already connected or connecting, skipping initialization', {
+          state: connection.state,
+          socketId: connection.socket_id,
+        });
+        initializationScheduled = false;
+        echoInitialized = true;
+        return;
       }
-    }, 100);
+    }
+    
+    if (echoInitialized || echoInitInProgress) {
+      initializationScheduled = false;
+      return;
+    }
+    
+    const echo = initializeEchoOnce();
+    
+    if (!echo || !window.Echo) {
+      initializationAttempts++;
+      
+      if (initializationAttempts < MAX_INIT_ATTEMPTS) {
+        const delay = INIT_RETRY_DELAYS[initializationAttempts - 1] || 30000;
+        logger.debug('[bootstrap.js] Echo initialization failed, retrying', {
+          attempt: initializationAttempts,
+          maxAttempts: MAX_INIT_ATTEMPTS,
+          nextRetryIn: delay,
+        });
+        
+        initializationScheduled = false;
+        setTimeout(() => {
+          scheduleEchoInitialization();
+        }, delay);
+      } else {
+        logger.error('[bootstrap.js] Echo initialization failed after max attempts', {
+          attempts: initializationAttempts,
+        });
+        initializationScheduled = false;
+      }
+    } else {
+      initializationAttempts = 0;
+      initializationScheduled = false;
+    }
+  };
+  
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      setTimeout(attemptInit, 100);
+    }, { once: true });
+  } else {
+    setTimeout(attemptInit, 100);
   }
 }
+
+// Обработчик события teardown от echoClient.ts
+window.addEventListener('echo:teardown', () => {
+  logger.debug('[bootstrap.js] Echo teardown event received, resetting flags', {});
+  echoInitialized = false;
+  echoInitInProgress = false;
+  initializationScheduled = false;
+  initializationAttempts = 0;
+});
 
 // Инициализируем Echo после полной загрузки DOM
 scheduleEchoInitialization();
@@ -233,8 +331,22 @@ export function subscribeAlerts(handler) {
 }
 
 // Обработка глобальных ошибок с логированием, но без блокировки стандартного поведения
-// Сохраняем ссылки на обработчики для очистки при HMR
+// Сохраняем ссылки на обработчики в глобальной области для очистки при HMR
 // НЕ вызываем event.preventDefault() - это глушит ошибки и мешает Vite/Sentry/консоли
+
+// Глобальное хранилище обработчиков для HMR очистки
+if (typeof window !== 'undefined' && !window.__bootstrapHandlers) {
+  window.__bootstrapHandlers = {
+    error: null,
+    unhandledrejection: null,
+    beforeunload: null,
+    pagehide: null,
+    pageshow: null,
+    visibilitychange: null,
+    focus: null,
+  }
+}
+
 const errorHandler = (event) => {
   // Логируем ошибку для нашего логгера, но позволяем стандартному поведению работать
   // Это позволяет Vite HMR, Sentry и консоли браузера нормально обрабатывать ошибки
@@ -287,38 +399,36 @@ const beforeUnloadHandler = () => {
   }
 };
 
-const pagehideHandler = () => {
+const pagehideHandler = (event) => {
+  if (event.persisted) {
+    return;
+  }
+  
   if (window.Echo && window.Echo.connector?.pusher) {
     try {
       const pusher = window.Echo.connector.pusher;
-      if (typeof pusher.disconnect === 'function') {
-        pusher.disconnect();
-      } else if (pusher.connection && typeof pusher.connection.disconnect === 'function') {
-        pusher.connection.disconnect();
+      const connection = pusher.connection;
+      
+      if (connection && connection.state === 'connected') {
+        logger.debug('[bootstrap.js] Page hidden, keeping connection alive', {});
+        return;
       }
     } catch (err) {
-      // Игнорируем ошибки
+      logger.debug('[bootstrap.js] Error checking connection state on pagehide', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 };
 
-// Переподключение только при восстановлении из back/forward cache
-// Обычная загрузка страницы обрабатывается через scheduleEchoInitialization()
-// Определяем pageshowHandler ДО использования в HMR обработчиках
 const pageshowHandler = (event) => {
-  // Обрабатываем только event.persisted === true (восстановление из bfcache)
-  // При обычной загрузке страницы event.persisted === false, и мы не должны ничего делать
   if (!event.persisted) {
-    // Обычная загрузка страницы - не делаем ничего, инициализация уже идет через scheduleEchoInitialization()
     return;
   }
-  
-  // Страница восстановлена из back/forward cache - проверяем и переинициализируем WebSocket
   logger.info('[bootstrap.js] Page restored from back/forward cache, checking WebSocket connection', {
     persisted: event.persisted,
   });
   
-  // Сбрасываем флаги при восстановлении из bfcache
   echoInitialized = false;
   echoInitInProgress = false;
   initializationScheduled = false;
@@ -329,68 +439,169 @@ const pageshowHandler = (event) => {
       const connection = echo.connector.pusher.connection;
       const state = connection?.state;
       
-      logger.debug('[bootstrap.js] WebSocket state after page restore from cache', {
-        state,
-        socketId: connection?.socket_id,
-      });
-      
-      // Если соединение не активно, переинициализируем
       if (state !== 'connected' && state !== 'connecting') {
-        logger.info('[bootstrap.js] WebSocket not connected after page restore, reinitializing', {
-          state,
-        });
         initializeEchoOnce();
       }
     } else if (!echo) {
-      // Если Echo не инициализирован, инициализируем
-      logger.info('[bootstrap.js] Echo not initialized after page restore, initializing', {});
       initializeEchoOnce();
     }
   }, 200);
 };
 
-// Очищаем старые обработчики перед добавлением новых (для HMR)
-// При HMR Vite перезагружает модуль, но старые обработчики остаются, что приводит к дублированию
-// Используем Vite HMR API для правильной очистки
-if (import.meta.hot) {
-  // Сохраняем ссылки на все обработчики для последующего удаления
-  const handlers = {
-    error: errorHandler,
-    unhandledrejection: unhandledRejectionHandler,
-    beforeunload: beforeUnloadHandler,
-    pagehide: pagehideHandler,
-    pageshow: pageshowHandler,
+const visibilityChangeHandler = () => {
+  if (document.hidden) {
+    return;
   }
   
-  // Удаляем старые обработчики перед добавлением новых
-  // Это предотвращает дублирование при HMR
-  window.removeEventListener('error', handlers.error);
-  window.removeEventListener('unhandledrejection', handlers.unhandledrejection);
-  window.removeEventListener('beforeunload', handlers.beforeunload);
-  window.removeEventListener('pagehide', handlers.pagehide);
-  window.removeEventListener('pageshow', handlers.pageshow);
+  logger.debug('[bootstrap.js] Page visible, checking WebSocket connection', {});
   
-  // Используем Vite HMR API для очистки при горячей перезагрузке
-  import.meta.hot.on('vite:beforeUpdate', () => {
-    // Перед обновлением модуля удаляем все обработчики
-    window.removeEventListener('error', handlers.error);
-    window.removeEventListener('unhandledrejection', handlers.unhandledrejection);
-    window.removeEventListener('beforeunload', handlers.beforeunload);
-    window.removeEventListener('pagehide', handlers.pagehide);
-    window.removeEventListener('pageshow', handlers.pageshow);
-    logger.debug('[bootstrap.js] HMR: Removed all event handlers before update', {});
-  })
+  setTimeout(() => {
+    const echo = window.Echo;
+    if (!echo) {
+      logger.info('[bootstrap.js] Echo not initialized after visibility change, initializing', {});
+      scheduleEchoInitialization(true);
+      return;
+    }
+    
+    const pusher = echo.connector?.pusher;
+    const connection = pusher?.connection;
+    const state = connection?.state;
+    
+    if (state !== 'connected' && state !== 'connecting') {
+      logger.info('[bootstrap.js] WebSocket not connected after visibility change, reconnecting', {
+        state,
+      });
+      
+      try {
+        if (pusher && typeof pusher.connect === 'function') {
+          pusher.connect();
+        } else if (connection && typeof connection.connect === 'function') {
+          connection.connect();
+        } else {
+          scheduleEchoInitialization(true);
+        }
+      } catch (err) {
+        logger.warn('[bootstrap.js] Error reconnecting on visibility change', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        scheduleEchoInitialization(true);
+      }
+    }
+  }, 200);
+};
+
+const focusHandler = () => {
+  visibilityChangeHandler();
+};
+
+// Функция для очистки всех обработчиков
+function cleanupBootstrapHandlers() {
+  if (typeof window === 'undefined' || !window.__bootstrapHandlers) {
+    return
+  }
   
-  import.meta.hot.on('vite:afterUpdate', () => {
-    // После обновления модуль будет перезагружен, обработчики добавятся заново
-    logger.debug('[bootstrap.js] HMR: Module updated, handlers will be re-added', {});
-  })
+  const handlers = window.__bootstrapHandlers
+  
+  if (handlers.error) {
+    window.removeEventListener('error', handlers.error)
+    handlers.error = null
+  }
+  if (handlers.unhandledrejection) {
+    window.removeEventListener('unhandledrejection', handlers.unhandledrejection)
+    handlers.unhandledrejection = null
+  }
+  if (handlers.beforeunload) {
+    window.removeEventListener('beforeunload', handlers.beforeunload)
+    handlers.beforeunload = null
+  }
+  if (handlers.pagehide) {
+    window.removeEventListener('pagehide', handlers.pagehide)
+    handlers.pagehide = null
+  }
+  if (handlers.pageshow) {
+    window.removeEventListener('pageshow', handlers.pageshow)
+    handlers.pageshow = null
+  }
+  if (handlers.visibilitychange) {
+    document.removeEventListener('visibilitychange', handlers.visibilitychange)
+    handlers.visibilitychange = null
+  }
+  if (handlers.focus) {
+    window.removeEventListener('focus', handlers.focus)
+    handlers.focus = null
+  }
 }
 
-// Добавляем все обработчики после проверки HMR
-// Это гарантирует, что обработчики добавлены только один раз
-window.addEventListener('error', errorHandler);
-window.addEventListener('unhandledrejection', unhandledRejectionHandler);
-window.addEventListener('beforeunload', beforeUnloadHandler);
-window.addEventListener('pagehide', pagehideHandler);
-window.addEventListener('pageshow', pageshowHandler);
+// Очищаем старые обработчики перед добавлением новых
+cleanupBootstrapHandlers()
+
+// Сохраняем ссылки на обработчики в глобальном хранилище
+if (typeof window !== 'undefined' && window.__bootstrapHandlers) {
+  window.__bootstrapHandlers.error = errorHandler
+  window.__bootstrapHandlers.unhandledrejection = unhandledRejectionHandler
+  window.__bootstrapHandlers.beforeunload = beforeUnloadHandler
+  window.__bootstrapHandlers.pagehide = pagehideHandler
+  window.__bootstrapHandlers.pageshow = pageshowHandler
+  window.__bootstrapHandlers.visibilitychange = visibilityChangeHandler
+  window.__bootstrapHandlers.focus = focusHandler
+}
+
+// Добавляем обработчики
+window.addEventListener('error', errorHandler)
+window.addEventListener('unhandledrejection', unhandledRejectionHandler)
+window.addEventListener('beforeunload', beforeUnloadHandler)
+window.addEventListener('pagehide', pagehideHandler)
+window.addEventListener('pageshow', pageshowHandler)
+document.addEventListener('visibilitychange', visibilityChangeHandler)
+window.addEventListener('focus', focusHandler)
+
+// Очистка при HMR
+if (import.meta.hot) {
+  import.meta.hot.on('vite:beforeUpdate', () => {
+    cleanupBootstrapHandlers()
+    
+    // HMR guard: проверяем существующий window.Echo перед обновлением
+    if (window.Echo) {
+      const pusher = window.Echo.connector?.pusher;
+      const connection = pusher?.connection;
+      const state = connection?.state;
+      
+      if (state === 'connected' || state === 'connecting') {
+        // Активное соединение - сохраняем для переиспользования
+        logger.debug('[bootstrap.js] HMR: preserving active window.Echo', {
+          state: state,
+          socketId: connection?.socket_id,
+        });
+        // Сбрасываем только модульные флаги, window.Echo остается
+        echoInitialized = false;
+        echoInitInProgress = false;
+        initializationScheduled = false;
+      } else {
+        // Неактивное соединение - очищаем
+        logger.debug('[bootstrap.js] HMR: cleaning up inactive window.Echo', {
+          state: state,
+        });
+        try {
+          if (pusher && typeof pusher.disconnect === 'function') {
+            pusher.disconnect();
+          }
+          if (connection && typeof connection.disconnect === 'function') {
+            connection.disconnect();
+          }
+        } catch (err) {
+          logger.warn('[bootstrap.js] HMR: error disconnecting Echo', {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+        window.Echo = undefined;
+        echoInitialized = false;
+        echoInitInProgress = false;
+        initializationScheduled = false;
+      }
+    }
+  })
+  
+  import.meta.hot.dispose(() => {
+    cleanupBootstrapHandlers()
+  })
+}

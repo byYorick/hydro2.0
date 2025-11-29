@@ -46,7 +46,63 @@ return Application::configure(basePath: dirname(__DIR__))
         // If session middleware is needed, EncryptCookies must come before StartSession
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        //
+        // Обрабатываем ThrottleRequestsException для broadcasting/auth (возвращаем 429 вместо 500)
+        $exceptions->render(function (\Illuminate\Routing\Middleware\ThrottleRequestsException $e, \Illuminate\Http\Request $request) {
+            if ($request->is('broadcasting/auth')) {
+                $retryAfter = $e->getHeaders()['Retry-After'] ?? 60;
+                \Log::warning('Broadcasting auth: Rate limit exceeded', [
+                    'ip' => $request->ip(),
+                    'channel' => $request->input('channel_name'),
+                    'retry_after' => $retryAfter,
+                ]);
+                return response()->json([
+                    'message' => 'Too Many Attempts.',
+                ], 429)->withHeaders([
+                    'Retry-After' => $retryAfter,
+                ]);
+            }
+        });
+        
+        // Обрабатываем исключения для broadcasting/auth
+        $exceptions->render(function (\Illuminate\Auth\AuthenticationException $e, \Illuminate\Http\Request $request) {
+            if ($request->is('broadcasting/auth')) {
+                \Log::warning('Broadcasting auth: Authentication exception in middleware', [
+                    'ip' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                    'channel' => $request->input('channel_name'),
+                    'error' => $e->getMessage(),
+                ]);
+                return response()->json(['message' => 'Unauthenticated.'], 403);
+            }
+        });
+        
+        // Обрабатываем все остальные исключения для broadcasting/auth
+        $exceptions->render(function (\Exception $e, \Illuminate\Http\Request $request) {
+            if ($request->is('broadcasting/auth')) {
+                $isDev = app()->environment(['local', 'testing', 'development']);
+                
+                if ($isDev) {
+                    \Log::error('Broadcasting auth: Exception in middleware or route', [
+                        'ip' => $request->ip(),
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString(),
+                    ]);
+                } else {
+                    \Log::error('Broadcasting auth: Exception in middleware or route', [
+                        'ip' => $request->ip(),
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+                
+                // Возвращаем 403 вместо 500 для ошибок авторизации
+                if ($e instanceof \Illuminate\Auth\AuthenticationException) {
+                    return response()->json(['message' => 'Unauthenticated.'], 403);
+                }
+                
+                // Для остальных ошибок возвращаем 500, но с безопасным сообщением
+                return response()->json(['message' => 'Authorization failed.'], 500);
+            }
+        });
     })
     ->withEvents(discover: [
         'App\Listeners',

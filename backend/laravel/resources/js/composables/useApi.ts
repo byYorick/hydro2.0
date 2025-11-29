@@ -43,7 +43,12 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     // Игнорируем отмененные запросы (Inertia.js)
-    if (error?.code === 'ERR_CANCELED' || error?.name === 'CanceledError' || error?.message === 'canceled') {
+    // Это нормальное поведение при навигации - не логируем как ошибку
+    if (error?.code === 'ERR_CANCELED' || 
+        error?.name === 'CanceledError' || 
+        error?.message === 'canceled' ||
+        error?.message === 'Request aborted') {
+      // Не логируем отмененные запросы - это нормальное поведение Inertia.js
       return Promise.reject(error)
     }
 

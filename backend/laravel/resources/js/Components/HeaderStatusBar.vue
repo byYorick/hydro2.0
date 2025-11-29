@@ -378,6 +378,14 @@ async function loadMetrics() {
       isUnauthenticated = false // Сбрасываем флаг при успешном запросе
     } else if (alertsRes[0]?.status === 'rejected') {
       const error = alertsRes[0].reason
+      // Игнорируем отмененные запросы (Inertia.js при навигации)
+      if (error?.code === 'ERR_CANCELED' || 
+          error?.name === 'CanceledError' || 
+          error?.message === 'canceled' ||
+          error?.message === 'Request aborted') {
+        // Не логируем отмененные запросы - это нормальное поведение
+        return
+      }
       // Если ошибка 401, прекращаем повторные запросы
       if (error?.response?.status === 401) {
         isUnauthenticated = true
@@ -396,7 +404,14 @@ async function loadMetrics() {
         metricsInterval = null
       }
     }
-    // Игнорируем другие ошибки загрузки алертов, они не критичны
+    // Игнорируем отмененные запросы и другие некритичные ошибки
+    if (err?.code === 'ERR_CANCELED' || 
+        err?.name === 'CanceledError' || 
+        err?.message === 'canceled' ||
+        err?.message === 'Request aborted') {
+      // Не логируем отмененные запросы - это нормальное поведение Inertia.js
+      return
+    }
     logger.debug('[HeaderStatusBar] Failed to load alerts:', err)
   }
 }

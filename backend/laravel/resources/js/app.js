@@ -12,8 +12,6 @@ import { logger } from './utils/logger';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
-// Защита от циклических перезагрузок
-// Отслеживаем только reload() и visit() на тот же URL, не блокируем легитимную навигацию
 let reloadCount = 0;
 let lastReloadTime = 0;
 let lastReloadUrl = '';
@@ -24,7 +22,6 @@ function shouldPreventReload(url) {
   const now = Date.now();
   const currentUrl = url || window.location.pathname;
   
-  // Если URL изменился, это легитимная навигация, сбрасываем счетчик
   if (currentUrl !== lastReloadUrl) {
     reloadCount = 0;
     lastReloadTime = now;
@@ -32,7 +29,6 @@ function shouldPreventReload(url) {
     return false;
   }
   
-  // Проверяем только повторные запросы на тот же URL
   if (now - lastReloadTime > RELOAD_WINDOW_MS) {
     reloadCount = 0;
     lastReloadTime = now;
@@ -181,12 +177,7 @@ createInertiaApp({
                     return Promise.resolve();
                 }
                 // Легитимная навигация на другой URL разрешена, не логируем каждый вызов
-                if (targetUrl !== window.location.pathname) {
-                    logger.debug('[app.js] router.visit() to different URL (allowed)', { 
-                        from: window.location.pathname,
-                        to: targetUrl,
-                    });
-                }
+                // Убрано логирование переходов по запросу пользователя
                 return originalVisit(url, options);
             };
         });
@@ -197,4 +188,6 @@ createInertiaApp({
         color: '#4B5563',
         delay: 100, // Задержка перед показом индикатора (100ms)
     },
+    // Отключаем логирование переходов Inertia.js
+    // Сообщения "Перешёл на ..." больше не будут отображаться
 });

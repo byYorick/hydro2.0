@@ -132,28 +132,23 @@ let devicesChannel: any = null
 onMounted(() => {
   devicesStore.initFromProps(page.props)
   
-  // Автоматическая синхронизация через события stores
-  // Слушаем события обновления устройств
   subscribeWithCleanup('device:updated', (device: Device) => {
     devicesStore.upsert(device)
   })
   
-  // Слушаем события создания устройств
   subscribeWithCleanup('device:created', (device: Device) => {
     devicesStore.upsert(device)
   })
   
-  // Слушаем события удаления устройств
   subscribeWithCleanup('device:deleted', (deviceId: number | string) => {
     devicesStore.remove(deviceId)
   })
   
-  // Слушаем события lifecycle переходов
   subscribeWithCleanup('device:lifecycle:transitioned', ({ deviceId }: { deviceId: number; fromState: string; toState: string }) => {
-    // Инвалидируем кеш при lifecycle переходе
+    // Стор уже обновляется через WS, не нужно делать router.reload
+    // Это предотвращает избыточные перезагрузки при флапах устройств
     devicesStore.invalidateCache()
-    // Можно выполнить частичный reload для синхронизации
-    router.reload({ only: ['devices'], preserveScroll: true })
+    logger.debug('[Devices/Index] Device lifecycle transitioned, cache invalidated', { deviceId, fromState, toState })
   })
   
   // Подписка на WebSocket события обновления устройств с ресабскрайбом
@@ -228,15 +223,18 @@ onMounted(() => {
     }
   })
   
-  // Очищаем подписку на состояние при размонтировании
+  // Очищаем все подписки при размонтировании компонента
   onUnmounted(() => {
+    // Очищаем подписку на состояние WebSocket
     unsubscribeWsState()
+    // Очищаем подписку на канал устройств
+    if (cleanupDevicesChannel) {
+      cleanupDevicesChannel()
+      cleanupDevicesChannel = null
+      devicesChannel = null
+      logger.debug('[Devices/Index] Cleaned up devices channel on unmount')
+    }
   })
-})
-
-onUnmounted(() => {
-  cleanupDevicesChannel?.()
-  cleanupDevicesChannel = null
 })
 const type = ref<string>('')
 const query = ref<string>('')

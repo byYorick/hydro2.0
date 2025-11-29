@@ -19,21 +19,28 @@ use Inertia\Inertia;
 // Роут для Laravel Boost browser-logs
 // В проде отключен для предотвращения DoS и утечки данных
 // В dev режиме доступен только для авторизованных пользователей с throttle
-Route::post('/_boost/browser-logs', function (\Illuminate\Http\Request $request) {
+Route::match(['GET', 'POST'], '/_boost/browser-logs', function (\Illuminate\Http\Request $request) {
     // В проде полностью отключаем эндпоинт
     if (app()->environment('production')) {
         \Log::warning('Browser log endpoint accessed in production (blocked)', [
             'ip' => $request->ip(),
             'user_agent' => $request->userAgent(),
+            'method' => $request->method(),
         ]);
         return response()->json(['status' => 'disabled'], 404);
     }
 
-    // В dev режиме требуем аутентификацию и валидацию
+    // Для GET запросов просто возвращаем 200 (может использоваться для проверки доступности)
+    if ($request->isMethod('GET')) {
+        return response()->json(['status' => 'ok', 'method' => 'GET'], 200);
+    }
+
+    // В dev режиме требуем аутентификацию и валидацию для POST запросов
     if (! auth()->check()) {
         \Log::warning('Browser log endpoint: unauthenticated request', [
             'ip' => $request->ip(),
             'user_agent' => $request->userAgent(),
+            'method' => $request->method(),
         ]);
         return response()->json(['status' => 'unauthorized'], 403);
     }
@@ -54,30 +61,35 @@ Route::post('/_boost/browser-logs', function (\Illuminate\Http\Request $request)
     ]);
 
     return response()->json(['status' => 'ok'], 200);
-})->middleware(['web', 'auth', 'throttle:10,1']); // Добавлены auth и throttle
+})->middleware(['web', 'auth', 'throttle:120,1']); // 120 запросов в минуту для dev режима
 
 // Broadcasting authentication route
-// Поддерживает сессионную аутентификацию для Inertia.js
-// Исключаем HandleInertiaRequests middleware, так как он не нужен для авторизации каналов
-// ИСПРАВЛЕНО: Добавлен throttle для предотвращения лавины запросов при навигации
 Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
-    // Проверяем, что пользователь аутентифицирован
-    if (! auth()->check()) {
-        \Log::warning('Broadcasting auth: Unauthenticated request', [
-            'ip' => $request->ip(),
-            'user_agent' => $request->userAgent(),
-            'channel' => $request->input('channel_name'),
-        ]);
-        return response()->json(['message' => 'Unauthenticated.'], 403);
-    }
-
     try {
+        // Проверяем, что пользователь аутентифицирован
+        if (! auth()->check()) {
+            \Log::warning('Broadcasting auth: Unauthenticated request', [
+                'ip' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'channel' => $request->input('channel_name'),
+            ]);
+            return response()->json(['message' => 'Unauthenticated.'], 403);
+        }
+
         \Log::debug('Broadcasting auth: Starting authorization', [
             'channel' => $request->input('channel_name'),
             'user_authenticated' => auth()->check(),
         ]);
         
         $user = auth()->user();
+        if (! $user) {
+            \Log::error('Broadcasting auth: User is null after auth()->check()', [
+                'ip' => $request->ip(),
+                'channel' => $request->input('channel_name'),
+            ]);
+            return response()->json(['message' => 'Unauthenticated.'], 403);
+        }
+        
         $channelName = $request->input('channel_name');
         
         \Log::debug('Broadcasting auth: Authorizing channel', [
@@ -88,6 +100,17 @@ Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
         // Обрабатываем ошибки БД отдельно
         try {
             $response = Broadcast::auth($request);
+            
+            // Проверяем, что ответ валиден
+            if (! $response) {
+                \Log::warning('Broadcasting auth: Broadcast::auth returned null', [
+                    'user_id' => $user->id,
+                    'channel' => $channelName,
+                ]);
+                return response()->json(['message' => 'Authorization failed.'], 403);
+            }
+            
+            return $response;
         } catch (\Illuminate\Database\QueryException $dbException) {
             $isDev = app()->environment(['local', 'testing', 'development']);
             $errorMessage = $dbException->getMessage();
@@ -133,15 +156,15 @@ Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
             
             if ($isDev) {
                 \Log::error('Broadcasting auth: PDO error', [
-                    'user_id' => $user->id,
-                    'channel' => $channelName,
+                    'user_id' => $user->id ?? null,
+                    'channel' => $channelName ?? null,
                     'error' => $pdoException->getMessage(),
                     'code' => $pdoException->getCode(),
                 ]);
             } else {
                 \Log::error('Broadcasting auth: PDO error', [
-                    'user_id' => $user->id,
-                    'channel' => $channelName,
+                    'user_id' => $user->id ?? null,
+                    'channel' => $channelName ?? null,
                     'error_type' => 'pdo_connection_error',
                 ]);
             }
@@ -191,7 +214,7 @@ Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
         
         return response()->json(['message' => 'Authorization failed.'], 500);
     }
-})->middleware(['web', 'auth', 'throttle:60,1'])->withoutMiddleware([\App\Http\Middleware\HandleInertiaRequests::class]);
+})->middleware(['web', 'auth', 'throttle:120,1'])->withoutMiddleware([\App\Http\Middleware\HandleInertiaRequests::class]); // 120 запросов в минуту для dev режима
 
 Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->group(function () {
     /**

@@ -74,7 +74,7 @@ describe('useKeyboardShortcuts (P3-1)', () => {
     expect(mockRouter.visit).toHaveBeenCalledWith('/zones', { preserveScroll: true })
   })
 
-  it('should handle Ctrl+D shortcut for Dashboard', async () => {
+  it('should handle Alt+D shortcut for Dashboard', async () => {
     const { useKeyboardShortcuts } = await import('../useKeyboardShortcuts')
     
     const TestComponent = defineComponent({
@@ -90,13 +90,38 @@ describe('useKeyboardShortcuts (P3-1)', () => {
 
     const event = new KeyboardEvent('keydown', {
       key: 'd',
-      ctrlKey: true
+      altKey: true
     })
     
     window.dispatchEvent(event)
     await wrapper.vm.$nextTick()
     
     expect(mockRouter.visit).toHaveBeenCalledWith('/', { preserveScroll: true })
+  })
+
+  it('should handle Alt+R shortcut for Recipes', async () => {
+    const { useKeyboardShortcuts } = await import('../useKeyboardShortcuts')
+    
+    const TestComponent = defineComponent({
+      setup() {
+        useKeyboardShortcuts()
+        return {}
+      },
+      template: '<div>Test</div>'
+    })
+
+    const wrapper = mount(TestComponent)
+    await wrapper.vm.$nextTick()
+
+    const event = new KeyboardEvent('keydown', {
+      key: 'r',
+      altKey: true
+    })
+    
+    window.dispatchEvent(event)
+    await wrapper.vm.$nextTick()
+    
+    expect(mockRouter.visit).toHaveBeenCalledWith('/recipes', { preserveScroll: true })
   })
 
   it('should handle Shift+D shortcut for Devices', async () => {

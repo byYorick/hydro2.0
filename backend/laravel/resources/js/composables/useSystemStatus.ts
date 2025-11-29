@@ -34,7 +34,6 @@ let sharedState: {
   disconnectedHandler: (() => void) | null
 } | null = null
 
-// Функция для сброса WebSocket bindings (определяем ДО использования в HMR обработчиках)
 function resetWebSocketBindings() {
   if (!sharedState) return
   const pusher = window?.Echo?.connector?.pusher
@@ -50,9 +49,6 @@ function resetWebSocketBindings() {
   }
 }
 
-// Очищаем интервалы при HMR для предотвращения дублирования
-// При HMR модуль перезагружается, но старые интервалы остаются висящими
-// Это приводит к множественным параллельным проверкам и лавине запросов к /broadcasting/auth
 if (import.meta.hot) {
   import.meta.hot.on('vite:beforeUpdate', () => {
     if (sharedState) {
@@ -65,16 +61,9 @@ if (import.meta.hot) {
         sharedState.wsInterval = null
       }
       resetWebSocketBindings()
-      logger.debug('[useSystemStatus] HMR: Cleared intervals before update', {})
     }
   })
   
-  import.meta.hot.on('vite:afterUpdate', () => {
-    // После обновления модуль будет перезагружен, интервалы будут созданы заново при следующем вызове startMonitoring()
-    logger.debug('[useSystemStatus] HMR: Module updated, intervals will be recreated on next startMonitoring()', {})
-  })
-  
-  // Очищаем интервалы при dispose (когда модуль удаляется)
   import.meta.hot.dispose(() => {
     if (sharedState) {
       if (sharedState.healthInterval) {
@@ -86,7 +75,6 @@ if (import.meta.hot) {
         sharedState.wsInterval = null
       }
       resetWebSocketBindings()
-      logger.debug('[useSystemStatus] HMR: Disposed, cleared intervals', {})
     }
   })
 }
@@ -173,6 +161,15 @@ export function useSystemStatus(showToast?: ToastHandler) {
       lastUpdate.value = new Date()
       sharedState.isRateLimited = false // Сбрасываем флаг при успешном запросе
     } catch (error: any) {
+      // Игнорируем отмененные запросы (Inertia.js при навигации)
+      if (error?.code === 'ERR_CANCELED' || 
+          error?.name === 'CanceledError' || 
+          error?.message === 'canceled' ||
+          error?.message === 'Request aborted') {
+        // Не логируем отмененные запросы - это нормальное поведение
+        return
+      }
+      
       // Обработка ошибки 429 (Too Many Requests)
       if (error?.response?.status === 429) {
         sharedState.isRateLimited = true

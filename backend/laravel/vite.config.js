@@ -17,37 +17,17 @@ export default defineConfig({
         port: 5173,
         strictPort: true,
         cors: {
-            // ИСПРАВЛЕНО: origin: true + credentials: true создает конфликт (Access-Control-Allow-Origin: * + Allow-Credentials: true)
-            // Браузер блокирует такие ответы как невалидные, что может ломать HMR/ресурсы
-            // Используем функцию для динамического определения origin или конкретный origin
             origin: (origin, callback) => {
-                // В dev режиме разрешаем все origins, но без credentials для избежания конфликта
-                // Или можно использовать конкретный origin, если известен
                 callback(null, true);
             },
-            // ИСПРАВЛЕНО: Убираем credentials для избежания конфликта с origin: true
-            // Credentials не нужны для статических ресурсов и HMR в dev режиме
             credentials: false,
             methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
             allowedHeaders: ['*'],
         },
         hmr: {
-            // ИСПРАВЛЕНО: HMR должен использовать правильный host для браузера
-            // server.host = '0.0.0.0' - это слушающий адрес для сервера, но браузер не может использовать 0.0.0.0
-            // Браузер должен подключаться к localhost или конкретному IP, а не к 0.0.0.0
-            // Если host не указан, Vite использует server.host (0.0.0.0), что вызывает CORS ошибки
-            // Используем localhost для HMR, так как браузер и Vite находятся на одной машине
             host: 'localhost',
-            // port должен быть портом Vite (5173) для HMR сервера
             port: 5173,
-            // ИСПРАВЛЕНО: clientPort должен быть портом Vite (5173) для прямого WebSocket подключения
-            // Браузер будет подключаться к Vite напрямую на localhost:5173
             clientPort: 5173,
-            // ИСПРАВЛЕНО: Не задаем protocol жестко, чтобы Vite автоматически определял ws/wss
-            // При открытии через HTTPS жестко заданный 'ws' вызывает mixed-content ошибки
-            // Vite автоматически выберет правильный протокол на основе схемы страницы
-            // protocol: 'ws', // Убрано для автоматического определения
-            // Путь для WebSocket HMR
             path: '/@vite/client',
         },
         watch: {
