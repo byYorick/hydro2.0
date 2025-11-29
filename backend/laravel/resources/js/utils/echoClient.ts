@@ -174,17 +174,18 @@ function resolvePort(scheme: 'http' | 'https'): number | undefined {
     }
   }
   
-  // Если порт не указан, определяем по текущей странице (только в браузере)
+  // ИСПРАВЛЕНО: Если порт не указан в переменных окружения
+  // В prod режиме используем стандартные порты для схемы (443 для https, 80 для http)
+  // В dev режиме используем порт страницы (nginx прокси)
   if (isBrowser()) {
-    if (window.location.port) {
+    if (isDev && window.location.port) {
+      // В dev режиме используем порт nginx для проксирования
       const parsed = Number(window.location.port)
       if (!Number.isNaN(parsed)) {
-        // В dev режиме используем порт nginx для проксирования
-        // В prod режиме используем порт страницы (обычно 443 для https, 80 для http)
         return parsed
       }
     }
-    // Если порт не указан, используем стандартные порты для схемы
+    // В prod режиме или если порт не указан, используем стандартные порты для схемы
     return scheme === 'https' ? 443 : 80
   }
   

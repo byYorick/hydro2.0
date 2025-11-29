@@ -29,6 +29,8 @@ Route::post('/_boost/browser-logs', function (\Illuminate\Http\Request $request)
 
 // Broadcasting authentication route
 // Поддерживает сессионную аутентификацию для Inertia.js
+// ИСПРАВЛЕНО: Исключаем HandleInertiaRequests middleware, так как он не нужен для авторизации каналов
+// и может вызывать лишние запросы к БД
 Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
     // Проверяем, что пользователь аутентифицирован
     if (! auth()->check()) {
@@ -112,7 +114,7 @@ Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
         ]);
         return response()->json(['message' => 'Authorization failed.'], 500);
     }
-})->middleware(['web', 'auth']);
+})->middleware(['web', 'auth'])->withoutMiddleware([\App\Http\Middleware\HandleInertiaRequests::class]);
 
 Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->group(function () {
     /**
