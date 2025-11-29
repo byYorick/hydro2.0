@@ -22,6 +22,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => \App\Http\Middleware\EnsureUserHasRole::class,
             'verify.python.service' => \App\Http\Middleware\VerifyPythonServiceToken::class,
             'auth.token' => \App\Http\Middleware\AuthenticateWithApiToken::class,
+            'verify.alertmanager.webhook' => \App\Http\Middleware\VerifyAlertmanagerWebhook::class,
         ]);
 
         // Rate Limiting для API роутов
@@ -31,9 +32,13 @@ return Application::configure(basePath: dirname(__DIR__))
             \Illuminate\Routing\Middleware\ThrottleRequests::class.':60,1',
         ]);
 
-        // Exclude API routes and broadcasting auth from CSRF verification
+        // CSRF protection: исключаем только token-based API роуты и broadcasting
+        // Session-based API роуты должны быть защищены CSRF
         $middleware->validateCsrfTokens(except: [
-            'api/*',
+            'api/auth/*', // Token-based auth endpoints
+            'api/python/*', // Python service token-based endpoints
+            'api/nodes/register', // Node registration (token-based or public)
+            'api/alerts/webhook', // Alertmanager webhook (protected by secret)
             'broadcasting/auth',
             '_boost/browser-logs',
         ]);
@@ -46,6 +51,113 @@ return Application::configure(basePath: dirname(__DIR__))
         // If session middleware is needed, EncryptCookies must come before StartSession
     })
     ->withExceptions(function (Exceptions $exceptions) {
+        // Генерируем корреляционный ID для отслеживания запросов
+        $generateCorrelationId = function () {
+            return 'req_' . uniqid() . '_' . substr(md5(microtime(true)), 0, 8);
+        };
+
+        // Централизованная обработка исключений для API роутов
+        $exceptions->render(function (\Throwable $e, \Illuminate\Http\Request $request) use ($generateCorrelationId) {
+            // Пропускаем обработку для broadcasting/auth (обрабатывается отдельно)
+            if ($request->is('broadcasting/auth')) {
+                return null;
+            }
+
+            // Обрабатываем только API роуты
+            if (!$request->is('api/*') && !$request->expectsJson()) {
+                return null;
+            }
+
+            $correlationId = $generateCorrelationId();
+            $isDev = app()->environment(['local', 'testing', 'development']);
+
+            // Логируем исключение с контекстом
+            $logContext = [
+                'correlation_id' => $correlationId,
+                'url' => $request->fullUrl(),
+                'method' => $request->method(),
+                'ip' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'user_id' => auth()->id(),
+                'exception' => get_class($e),
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ];
+
+            if ($isDev) {
+                $logContext['trace'] = $e->getTraceAsString();
+            }
+
+            \Log::error('API Exception', $logContext);
+
+            // Обработка специфичных исключений
+            if ($e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException) {
+                return response()->json([
+                    'status' => 'error',
+                    'code' => 'MODEL_NOT_FOUND',
+                    'message' => 'Resource not found',
+                    'correlation_id' => $correlationId,
+                ], 404);
+            }
+
+            if ($e instanceof \Illuminate\Auth\AuthenticationException) {
+                return response()->json([
+                    'status' => 'error',
+                    'code' => 'UNAUTHENTICATED',
+                    'message' => 'Unauthenticated',
+                    'correlation_id' => $correlationId,
+                ], 401);
+            }
+
+            if ($e instanceof \Illuminate\Auth\Access\AuthorizationException) {
+                return response()->json([
+                    'status' => 'error',
+                    'code' => 'UNAUTHORIZED',
+                    'message' => 'This action is unauthorized',
+                    'correlation_id' => $correlationId,
+                ], 403);
+            }
+
+            if ($e instanceof \Illuminate\Validation\ValidationException) {
+                return response()->json([
+                    'status' => 'error',
+                    'code' => 'VALIDATION_ERROR',
+                    'message' => 'Validation failed',
+                    'errors' => $e->errors(),
+                    'correlation_id' => $correlationId,
+                ], 422);
+            }
+
+            if ($e instanceof \Illuminate\Http\Client\RequestException || 
+                $e instanceof \Illuminate\Http\Client\ConnectionException ||
+                $e instanceof \Illuminate\Http\Client\TimeoutException) {
+                return response()->json([
+                    'status' => 'error',
+                    'code' => 'SERVICE_UNAVAILABLE',
+                    'message' => 'External service unavailable',
+                    'correlation_id' => $correlationId,
+                ], 503);
+            }
+
+            // Общая обработка для всех остальных исключений
+            $response = [
+                'status' => 'error',
+                'code' => 'INTERNAL_ERROR',
+                'message' => $isDev ? $e->getMessage() : 'Internal server error',
+                'correlation_id' => $correlationId,
+            ];
+
+            if ($isDev) {
+                $response['exception'] = get_class($e);
+                $response['file'] = $e->getFile();
+                $response['line'] = $e->getLine();
+                $response['trace'] = $e->getTraceAsString();
+            }
+
+            return response()->json($response, 500);
+        });
+
         // Обрабатываем ThrottleRequestsException для broadcasting/auth (возвращаем 429 вместо 500)
         $exceptions->render(function (\Illuminate\Routing\Middleware\ThrottleRequestsException $e, \Illuminate\Http\Request $request) {
             if ($request->is('broadcasting/auth')) {

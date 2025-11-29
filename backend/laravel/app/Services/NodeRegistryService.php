@@ -157,7 +157,7 @@ class NodeRegistryService
                 $greenhouseToken = $provisioningMeta['greenhouse_token'];
                 $greenhouse = $this->findGreenhouseByToken($greenhouseToken);
                 if ($greenhouse) {
-                    // Если указана зона, привязываем к ней
+                    // Если указана зона, привязываем к ней только если она принадлежит этой теплице
                     $zoneId = $provisioningMeta['zone_id'] ?? null;
                     if ($zoneId) {
                         $zone = Zone::where('id', $zoneId)
@@ -165,18 +165,37 @@ class NodeRegistryService
                             ->first();
                         if ($zone) {
                             $node->zone_id = $zone->id;
+                            Log::info('Node bound to zone via greenhouse_token', [
+                                'node_id' => $node->id,
+                                'zone_id' => $zone->id,
+                                'greenhouse_id' => $greenhouse->id,
+                            ]);
+                        } else {
+                            Log::warning('Node registration: zone_id does not belong to greenhouse from token', [
+                                'node_id' => $node->id,
+                                'requested_zone_id' => $zoneId,
+                                'greenhouse_id' => $greenhouse->id,
+                            ]);
                         }
                     }
+                } else {
+                    Log::warning('Node registration: Invalid greenhouse_token', [
+                        'node_id' => $node->id,
+                        'token_prefix' => substr($greenhouseToken, 0, 4) . '...',
+                    ]);
                 }
             }
             
-            // Привязка к зоне напрямую (если zone_id указан без greenhouse_token)
+            // Прямая привязка к зоне БЕЗ greenhouse_token запрещена для безопасности
+            // Это предотвращает привязку устройств к любым зонам без проверки прав
+            // Если zone_id указан без greenhouse_token, игнорируем его
             $zoneId = $provisioningMeta['zone_id'] ?? null;
             if ($zoneId && !$node->zone_id) {
-                $zone = Zone::find($zoneId);
-                if ($zone) {
-                    $node->zone_id = $zone->id;
-                }
+                Log::warning('Node registration: zone_id provided without greenhouse_token - ignoring for security', [
+                    'node_id' => $node->id,
+                    'requested_zone_id' => $zoneId,
+                    'hardware_id' => $hardwareId,
+                ]);
             }
             
             // Устанавливаем lifecycle_state

@@ -36,6 +36,22 @@ function handleGlobalKeyDown(event: KeyboardEvent): void {
     return
   }
 
+  // Дополнительная защита: не перехватываем стандартные браузерные комбинации
+  // Ctrl+A (Выделить всё) - не перехватываем
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a' && !event.shiftKey) {
+    return // Позволяем браузеру обработать "Выделить всё"
+  }
+  
+  // Ctrl+Z (Undo) - не перехватываем, чтобы не конфликтовать с отменой действий в полях ввода
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z' && !event.shiftKey) {
+    return // Позволяем браузеру обработать "Отменить"
+  }
+  
+  // Alt+D (переход в адресную строку) - не перехватываем
+  if (event.altKey && event.key.toLowerCase() === 'd' && !event.ctrlKey && !event.shiftKey) {
+    return // Позволяем браузеру обработать переход в адресную строку
+  }
+
   const key = event.key.toLowerCase()
   const ctrl = event.ctrlKey
   const meta = event.metaKey
@@ -56,19 +72,19 @@ function handleGlobalKeyDown(event: KeyboardEvent): void {
  */
 function initializeDefaultShortcuts(): void {
   // Проверяем, не инициализированы ли уже стандартные шорткаты
-  if (globalShortcuts.has('ctrl+z') || globalShortcuts.has('alt+d')) {
+  if (globalShortcuts.has('ctrl+shift+z') || globalShortcuts.has('ctrl+shift+d')) {
     return // Уже инициализированы
   }
 
   // Регистрируем стандартные shortcuts для навигации
-  // Ctrl+Z - Zones
-  globalShortcuts.set('ctrl+z', () => router.visit('/zones', { preserveScroll: true }))
+  // Ctrl+Shift+Z - Zones (изменено с Ctrl+Z, чтобы не конфликтовать с Undo)
+  globalShortcuts.set('ctrl+shift+z', () => router.visit('/zones', { preserveScroll: true }))
 
-  // Alt+D - Dashboard (изменено с Ctrl+D, чтобы не конфликтовать с закладками браузера)
-  globalShortcuts.set('alt+d', () => router.visit('/', { preserveScroll: true }))
+  // Ctrl+Shift+D - Dashboard (изменено с Alt+D, чтобы не конфликтовать с переходом в адресную строку)
+  globalShortcuts.set('ctrl+shift+d', () => router.visit('/', { preserveScroll: true }))
 
-  // Ctrl+A - Alerts
-  globalShortcuts.set('ctrl+a', () => router.visit('/alerts', { preserveScroll: true }))
+  // Ctrl+Shift+A - Alerts (изменено с Ctrl+A, чтобы не конфликтовать с "Выделить всё")
+  globalShortcuts.set('ctrl+shift+a', () => router.visit('/alerts', { preserveScroll: true }))
 
   // Alt+R - Recipes (изменено с Ctrl+R, чтобы не конфликтовать с перезагрузкой страницы)
   globalShortcuts.set('alt+r', () => router.visit('/recipes', { preserveScroll: true }))
@@ -157,5 +173,20 @@ export function useKeyboardShortcuts() {
     registerShortcut,
     unregisterShortcut
   }
+}
+
+// HMR cleanup: удаляем глобальный слушатель при перезагрузке модуля
+if (typeof import.meta !== 'undefined' && import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    // Удаляем глобальный слушатель перед перезагрузкой модуля
+    if (globalKeyDownHandler) {
+      window.removeEventListener('keydown', globalKeyDownHandler)
+      globalKeyDownHandler = null
+    }
+    // Сбрасываем счетчик, чтобы новый модуль мог правильно инициализироваться
+    globalListenerCount = 0
+    // Очищаем шорткаты (они будут переинициализированы при следующем вызове)
+    globalShortcuts.clear()
+  })
 }
 

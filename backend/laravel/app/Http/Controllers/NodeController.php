@@ -125,6 +125,13 @@ class NodeController extends Controller
                 'message' => 'Node detached from zone successfully',
             ]);
         } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('NodeController: Failed to detach node', [
+                'node_id' => $node->id,
+                'node_uid' => $node->uid,
+                'error' => $e->getMessage(),
+                'exception' => get_class($e),
+                'trace' => $e->getTraceAsString(),
+            ]);
             return response()->json([
                 'status' => 'error',
                 'message' => $e->getMessage(),
@@ -138,10 +145,27 @@ class NodeController extends Controller
             $this->nodeService->delete($node);
             return response()->json(['status' => 'ok']);
         } catch (\DomainException $e) {
+            \Illuminate\Support\Facades\Log::warning('NodeController: Domain exception on node delete', [
+                'node_id' => $node->id,
+                'node_uid' => $node->uid,
+                'error' => $e->getMessage(),
+            ]);
             return response()->json([
                 'status' => 'error',
                 'message' => $e->getMessage(),
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('NodeController: Failed to delete node', [
+                'node_id' => $node->id,
+                'node_uid' => $node->uid,
+                'error' => $e->getMessage(),
+                'exception' => get_class($e),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to delete node',
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
 
@@ -149,6 +173,11 @@ class NodeController extends Controller
      * Регистрация узла в системе.
      * Используется для регистрации новых узлов при первом подключении.
      * Требует токен аутентификации для защиты от несанкционированной регистрации.
+     * 
+     * Безопасность: всегда требует токен, кроме случаев когда:
+     * 1. Запрос идет с доверенного IP (настраивается через TRUSTED_PROXIES)
+     * 2. И это node_hello от внутренних сервисов
+     * 3. И только в dev режиме
      */
     public function register(Request $request)
     {
@@ -156,27 +185,88 @@ class NodeController extends Controller
         $expectedToken = config('services.python_bridge.ingest_token') ?? config('services.python_bridge.token');
         $givenToken = $request->bearerToken();
         
-        // Если токен настроен и не пустой, он обязателен
-        // Для node_hello от внутренних сервисов (history-logger) разрешаем без токена,
-        // если запрос идет из Docker сети (127.0.0.1 или внутренний IP)
+        $clientIp = $request->ip();
+        $isNodeHello = $request->has('message_type') && $request->input('message_type') === 'node_hello';
+        
+        // Проверяем, является ли IP доверенным (только если настроены доверенные прокси)
+        $trustedProxies = config('trustedproxy.proxies', []);
+        $isTrustedIp = false;
+        
+        // Проверяем, находится ли IP в списке доверенных
+        // В production всегда требуем токен, если он настроен
+        if (!empty($trustedProxies)) {
+            foreach ($trustedProxies as $trustedProxy) {
+                if ($clientIp === $trustedProxy || 
+                    (str_contains($trustedProxy, '/') && $this->ipInRange($clientIp, $trustedProxy))) {
+                    $isTrustedIp = true;
+                    break;
+                }
+            }
+        }
+        
+        // Проверяем внутренние IP только если это dev режим и IP действительно внутренний
+        $isInternalIp = false;
+        if (config('app.env') === 'local' || config('app.debug')) {
+            $isInternalIp = in_array($clientIp, ['127.0.0.1', '::1']) || 
+                           str_starts_with($clientIp, '172.') ||
+                           str_starts_with($clientIp, '10.') ||
+                           str_starts_with($clientIp, '192.168.');
+        }
+        
+        // Если токен настроен, он обязателен, кроме специальных случаев
         if (!empty($expectedToken)) {
-            // Проверяем, идет ли запрос от внутреннего сервиса
-            $isInternalRequest = in_array($request->ip(), ['127.0.0.1', '::1']) || 
-                                 str_starts_with($request->ip(), '172.') ||
-                                 str_starts_with($request->ip(), '10.') ||
-                                 str_starts_with($request->ip(), '192.168.');
+            $allowWithoutToken = false;
             
-            // Для node_hello от внутренних сервисов токен опционален
-            $isNodeHello = $request->has('message_type') && $request->input('message_type') === 'node_hello';
+            // Разрешаем без токена только если:
+            // 1. Это node_hello от внутренних сервисов
+            // 2. И IP доверенный или внутренний
+            // 3. И только в dev режиме
+            if ($isNodeHello && ($isTrustedIp || $isInternalIp) && 
+                (config('app.env') === 'local' || config('app.debug'))) {
+                \Illuminate\Support\Facades\Log::info('Node registration: Allowing node_hello without token from trusted IP', [
+                    'ip' => $clientIp,
+                    'is_trusted' => $isTrustedIp,
+                    'is_internal' => $isInternalIp,
+                ]);
+                $allowWithoutToken = true;
+            }
             
-            if ($isNodeHello && $isInternalRequest) {
-                // Разрешаем node_hello от внутренних сервисов без токена
-                // (history-logger работает в той же Docker сети)
-            } elseif (!hash_equals($expectedToken, (string)$givenToken)) {
+            if (!$allowWithoutToken) {
+                if (empty($givenToken)) {
+                    \Illuminate\Support\Facades\Log::warning('Node registration: Missing token', [
+                        'ip' => $clientIp,
+                        'user_agent' => $request->userAgent(),
+                    ]);
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Unauthorized: token required',
+                    ], 401);
+                }
+                
+                if (!hash_equals($expectedToken, (string)$givenToken)) {
+                    \Illuminate\Support\Facades\Log::warning('Node registration: Invalid token', [
+                        'ip' => $clientIp,
+                        'user_agent' => $request->userAgent(),
+                    ]);
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Unauthorized: invalid token',
+                    ], 401);
+                }
+            }
+        } else {
+            // Если токен не настроен, логируем предупреждение
+            \Illuminate\Support\Facades\Log::warning('Node registration: Token not configured', [
+                'ip' => $clientIp,
+                'env' => config('app.env'),
+            ]);
+            
+            // В production без токена запрещаем регистрацию
+            if (config('app.env') !== 'local' && !config('app.debug')) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Unauthorized: token required',
-                ], 401);
+                    'message' => 'Node registration token not configured',
+                ], 500);
             }
         }
         
@@ -225,10 +315,27 @@ class NodeController extends Controller
             $config = $this->configService->generateNodeConfig($node);
             return response()->json(['status' => 'ok', 'data' => $config]);
         } catch (\InvalidArgumentException $e) {
+            \Illuminate\Support\Facades\Log::warning('NodeController: Invalid argument on getConfig', [
+                'node_id' => $node->id,
+                'node_uid' => $node->uid,
+                'error' => $e->getMessage(),
+            ]);
             return response()->json([
                 'status' => 'error',
                 'message' => $e->getMessage(),
             ], Response::HTTP_BAD_REQUEST);
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('NodeController: Failed to get node config', [
+                'node_id' => $node->id,
+                'node_uid' => $node->uid,
+                'error' => $e->getMessage(),
+                'exception' => get_class($e),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to get node config',
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
 
@@ -275,32 +382,91 @@ class NodeController extends Controller
                 $headers['Authorization'] = "Bearer {$token}";
             }
             
-            $response = \Illuminate\Support\Facades\Http::withHeaders($headers)
-                ->post("{$baseUrl}/bridge/nodes/{$node->uid}/config", [
+            // Используем короткий таймаут, чтобы не блокировать workers
+            $timeout = 10; // секунд
+            
+            try {
+                $response = \Illuminate\Support\Facades\Http::withHeaders($headers)
+                    ->timeout($timeout)
+                    ->post("{$baseUrl}/bridge/nodes/{$node->uid}/config", [
+                        'node_uid' => $node->uid,
+                        'zone_id' => $node->zone_id,
+                        'greenhouse_uid' => $greenhouseUid,
+                        'config' => $config,
+                    ]);
+                
+                if ($response->successful()) {
+                    return response()->json([
+                        'status' => 'ok',
+                        'data' => $response->json('data'),
+                    ]);
+                }
+                
+                \Illuminate\Support\Facades\Log::warning('NodeController: Failed to publish config - non-successful response', [
+                    'node_id' => $node->id,
                     'node_uid' => $node->uid,
-                    'zone_id' => $node->zone_id,
-                    'greenhouse_uid' => $greenhouseUid,
-                    'config' => $config,
+                    'status' => $response->status(),
+                    'response_preview' => substr($response->body(), 0, 500),
                 ]);
-            
-            if ($response->successful()) {
+                
                 return response()->json([
-                    'status' => 'ok',
-                    'data' => $response->json('data'),
+                    'status' => 'error',
+                    'message' => 'Failed to publish config via MQTT bridge',
+                    'details' => $response->json(),
+                ], $response->status());
+            } catch (\Illuminate\Http\Client\ConnectionException $e) {
+                \Illuminate\Support\Facades\Log::error('NodeController: Connection error on publishConfig', [
+                    'node_id' => $node->id,
+                    'node_uid' => $node->uid,
+                    'error' => $e->getMessage(),
                 ]);
+                return response()->json([
+                    'status' => 'error',
+                    'code' => 'SERVICE_UNAVAILABLE',
+                    'message' => 'MQTT bridge service is currently unavailable. Please try again later.',
+                ], 503);
+            } catch (\Illuminate\Http\Client\TimeoutException $e) {
+                \Illuminate\Support\Facades\Log::error('NodeController: Timeout error on publishConfig', [
+                    'node_id' => $node->id,
+                    'node_uid' => $node->uid,
+                    'timeout' => $timeout,
+                ]);
+                return response()->json([
+                    'status' => 'error',
+                    'code' => 'SERVICE_TIMEOUT',
+                    'message' => 'MQTT bridge service did not respond in time. Please try again later.',
+                ], 503);
+            } catch (\Illuminate\Http\Client\RequestException $e) {
+                \Illuminate\Support\Facades\Log::error('NodeController: Request error on publishConfig', [
+                    'node_id' => $node->id,
+                    'node_uid' => $node->uid,
+                    'error' => $e->getMessage(),
+                    'status' => $e->response?->status(),
+                ]);
+                return response()->json([
+                    'status' => 'error',
+                    'code' => 'PUBLISH_FAILED',
+                    'message' => 'Failed to publish config via MQTT bridge',
+                ], 500);
             }
-            
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Failed to publish config via MQTT bridge',
-                'details' => $response->json(),
-            ], $response->status());
         } catch (\InvalidArgumentException $e) {
+            \Illuminate\Support\Facades\Log::warning('NodeController: Invalid argument on publishConfig', [
+                'node_id' => $node->id,
+                'node_uid' => $node->uid,
+                'error' => $e->getMessage(),
+            ]);
             return response()->json([
                 'status' => 'error',
                 'message' => $e->getMessage(),
             ], Response::HTTP_BAD_REQUEST);
         } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('NodeController: Failed to publish config', [
+                'node_id' => $node->id,
+                'node_uid' => $node->uid,
+                'error' => $e->getMessage(),
+                'exception' => get_class($e),
+                'trace' => $e->getTraceAsString(),
+            ]);
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to publish config: ' . $e->getMessage(),
@@ -334,6 +500,14 @@ class NodeController extends Controller
                 'data' => $newNode,
             ]);
         } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('NodeController: Failed to swap node', [
+                'node_id' => $node->id,
+                'node_uid' => $node->uid,
+                'new_hardware_id' => $data['new_hardware_id'] ?? null,
+                'error' => $e->getMessage(),
+                'exception' => get_class($e),
+                'trace' => $e->getTraceAsString(),
+            ]);
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to swap node: ' . $e->getMessage(),
@@ -380,11 +554,25 @@ class NodeController extends Controller
                 ],
             ]);
         } catch (\ValueError $e) {
+            \Illuminate\Support\Facades\Log::warning('NodeController: Invalid lifecycle state', [
+                'node_id' => $node->id,
+                'node_uid' => $node->uid,
+                'target_state' => $validated['target_state'] ?? null,
+                'error' => $e->getMessage(),
+            ]);
             return response()->json([
                 'status' => 'error',
                 'message' => 'Invalid lifecycle state: ' . $e->getMessage(),
             ], Response::HTTP_BAD_REQUEST);
         } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('NodeController: Failed to transition lifecycle', [
+                'node_id' => $node->id,
+                'node_uid' => $node->uid,
+                'target_state' => $validated['target_state'] ?? null,
+                'error' => $e->getMessage(),
+                'exception' => get_class($e),
+                'trace' => $e->getTraceAsString(),
+            ]);
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to transition lifecycle: ' . $e->getMessage(),
@@ -427,11 +615,44 @@ class NodeController extends Controller
                 ],
             ]);
         } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('NodeController: Failed to get allowed transitions', [
+                'node_id' => $node->id,
+                'node_uid' => $node->uid,
+                'error' => $e->getMessage(),
+                'exception' => get_class($e),
+                'trace' => $e->getTraceAsString(),
+            ]);
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to get allowed transitions: ' . $e->getMessage(),
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
+    }
+
+    /**
+     * Проверяет, находится ли IP в указанном диапазоне (CIDR)
+     */
+    private function ipInRange(string $ip, string $range): bool
+    {
+        if (!str_contains($range, '/')) {
+            return $ip === $range;
+        }
+
+        [$subnet, $mask] = explode('/', $range, 2);
+        
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            $ipLong = ip2long($ip);
+            $subnetLong = ip2long($subnet);
+            $maskLong = -1 << (32 - (int)$mask);
+            return ($ipLong & $maskLong) === ($subnetLong & $maskLong);
+        }
+
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+            // Упрощенная проверка для IPv6
+            return inet_pton($ip) && inet_pton($subnet);
+        }
+
+        return false;
     }
 }
 

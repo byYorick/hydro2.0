@@ -182,57 +182,53 @@ function resolvePort(scheme: 'http' | 'https'): number | undefined {
   const isDev = (import.meta as any).env?.DEV === true
   const envPort = (import.meta as any).env?.VITE_REVERB_PORT
   
+  // Если порт явно задан через переменную окружения, используем его
   if (typeof envPort === 'string' && envPort.trim().length > 0) {
     const parsed = Number(envPort)
     if (!Number.isNaN(parsed)) {
-      // В dev с nginx: если VITE_REVERB_PORT=6001 и страница на другом порту (nginx прокси),
-      // используем порт страницы
-      if (isDev && parsed === 6001 && isBrowser() && window.location.port) {
+      // Проверяем флаг использования прокси
+      const useProxyPort = readBooleanEnv('VITE_REVERB_USE_PROXY_PORT', false)
+      
+      // Если включен режим прокси и страница на другом порту, используем порт страницы
+      if (useProxyPort && isDev && isBrowser() && window.location.port) {
         const pagePort = Number(window.location.port)
-        if (!Number.isNaN(pagePort) && pagePort !== 6001) {
-          // Проверяем, что это действительно nginx прокси (обычно 8080 или другой)
-          // Если порт страницы отличается от 6001, используем его
+        if (!Number.isNaN(pagePort) && pagePort !== parsed) {
+          logger.debug('[echoClient] Using proxy port from page location', {
+            envPort: parsed,
+            pagePort,
+            scheme,
+          })
           return pagePort
         }
       }
+      
       return parsed
     }
   }
   
-  // В dev без nginx: если VITE_REVERB_PORT не задан, используем дефолт 6001
-  // (Reverb по умолчанию работает на 6001)
-  if (isDev) {
-    // Если есть window.location.port и он не 6001, возможно это nginx прокси
-    // В этом случае проверяем, проксируется ли /app
-    if (isBrowser() && window.location.port) {
-      const pagePort = Number(window.location.port)
-      // Если порт страницы 5173 (Vite) или другой dev порт, но не 6001,
-      // значит Vite запущен напрямую, а Reverb на 6001
-      if (!Number.isNaN(pagePort) && pagePort !== 6001) {
-        // Проверяем, есть ли nginx прокси через попытку определить это
-        // Если порт 5173 (Vite), то Reverb точно на 6001
-        if (pagePort === 5173) {
-          return 6001 // Reverb на дефолтном порту
-        }
-        // Для других портов (например, 8080) предполагаем nginx прокси
-        return pagePort
-      }
+  // Если порт не задан, используем дефолт 6001 (порт Reverb по умолчанию)
+  // Не угадываем автоматически по порту страницы - это может привести к ошибкам
+  // В dev и prod по умолчанию Reverb работает на 6001, если не проксируется через nginx
+  const useProxyPort = readBooleanEnv('VITE_REVERB_USE_PROXY_PORT', false)
+  
+  if (useProxyPort && isBrowser() && window.location.port) {
+    const pagePort = Number(window.location.port)
+    if (!Number.isNaN(pagePort) && pagePort !== 6001) {
+      logger.debug('[echoClient] Using proxy port from page location', {
+        pagePort,
+        defaultPort: 6001,
+        isDev,
+        scheme,
+      })
+      return pagePort
     }
-    // Дефолт для dev: 6001 (порт Reverb)
-    return 6001
   }
   
-  // В prod: если VITE_REVERB_PORT не задан, используем стандартные порты
-  // Но если задан, используем его (для случаев без прокси)
-  if (isBrowser()) {
-    // В prod без прокси Reverb может быть на 6001
-    // Но по умолчанию используем стандартные порты
-    return scheme === 'https' ? 443 : 80
-  }
-  
-  // Если не в браузере и порт не задан, возвращаем undefined
-  // Это позволит Pusher использовать дефолтные порты
-  return undefined
+  // Дефолт для dev и prod: 6001 (порт Reverb)
+  // Используем стандартные порты 80/443 только если явно указан флаг прокси
+  // и порт страницы отличается от 6001
+  // В противном случае Reverb работает на 6001 напрямую
+  return 6001
 }
 
 function resolvePath(): string | undefined {
@@ -524,8 +520,12 @@ function bindConnectionEvents(connection: any): void {
   cleanupConnectionHandlers()
 
   // Отслеживание времени последнего события "unavailable"
-  let lastUnavailableTime = 0
+  // ИСПРАВЛЕНО: Инициализируем как Date.now() - UNAVAILABLE_COOLDOWN, чтобы первый "unavailable" событие
+  // также уважало cooldown. Если инициализировать как 0, то при первом событии timeSinceLastUnavailable
+  // будет очень большим числом (текущее время минус 0), что всегда больше UNAVAILABLE_COOLDOWN,
+  // обходя логику cooldown и вызывая немедленное переподключение
   const UNAVAILABLE_COOLDOWN = 10000 // Увеличено до 10 секунд для предотвращения преждевременных переподключений
+  let lastUnavailableTime = Date.now() - UNAVAILABLE_COOLDOWN
   // connectingStartTime объявлена на уровне модуля для доступа из всех замыканий
   connectingStartTime = 0 // Сбрасываем при привязке новых обработчиков
   const CONNECTING_TIMEOUT = 15000 // 15 секунд таймаут для установления соединения
@@ -616,7 +616,9 @@ function bindConnectionEvents(connection: any): void {
         reconnectLockUntil = 0
         isReconnecting = false
         lastError = null
-        lastUnavailableTime = 0 // Сбрасываем таймер при успешном подключении
+        // ИСПРАВЛЕНО: Сбрасываем lastUnavailableTime так, чтобы следующий "unavailable" уважал cooldown
+        // Используем Date.now() - UNAVAILABLE_COOLDOWN вместо 0, чтобы избежать проблемы с первым событием
+        lastUnavailableTime = Date.now() - UNAVAILABLE_COOLDOWN
         connectingStartTime = 0 // Сбрасываем таймер подключения
         
         // Проверяем, что socketId действительно получен

@@ -18,9 +18,21 @@ let lastReloadUrl = '';
 const MAX_RELOADS_PER_SECOND = 3;
 const RELOAD_WINDOW_MS = 1000;
 
+// Храним оригинальные методы router для предотвращения наложения обёрток при HMR
+let originalRouterMethods = {
+  reload: null,
+  visit: null,
+  isWrapped: false
+};
+
+// Маркер для определения обёрнутых методов
+const WRAPPER_MARKER = Symbol('routerWrapper');
+
 function shouldPreventReload(url) {
   const now = Date.now();
-  const currentUrl = url || window.location.pathname;
+  // Используем полный URL включая query параметры для корректного сравнения
+  // Это позволяет различать переходы на тот же путь с разными query (например, ?page=1 vs ?page=2)
+  const currentUrl = url || window.location.pathname + window.location.search;
   
   if (currentUrl !== lastReloadUrl) {
     reloadCount = 0;
@@ -147,39 +159,89 @@ createInertiaApp({
         
         // Добавляем защиту от циклических перезагрузок через Inertia.js
         import('@inertiajs/vue3').then(({ router }) => {
-            // Перехватываем все вызовы router.reload() и router.visit() для предотвращения циклов
-            const originalReload = router.reload.bind(router);
-            const originalVisit = router.visit.bind(router);
+            // Проверяем, не обёрнуты ли уже методы (защита от HMR наложения обёрток)
+            // Проверяем по наличию маркера на методах
+            const isReloadWrapped = router.reload && router.reload[WRAPPER_MARKER] === true;
+            const isVisitWrapped = router.visit && router.visit[WRAPPER_MARKER] === true;
             
-            router.reload = function(options) {
-                // Проверяем только reload() на текущий URL
-                if (shouldPreventReload(window.location.pathname)) {
+            if (isReloadWrapped || isVisitWrapped) {
+                // Методы уже обёрнуты, восстанавливаем оригинальные перед повторной обёрткой
+                logger.debug('[app.js] Router methods already wrapped, restoring originals before re-wrap', {
+                    isReloadWrapped,
+                    isVisitWrapped,
+                });
+                
+                if (originalRouterMethods.reload) {
+                    router.reload = originalRouterMethods.reload;
+                }
+                if (originalRouterMethods.visit) {
+                    router.visit = originalRouterMethods.visit;
+                }
+            }
+            
+            // Сохраняем оригинальные методы (если ещё не сохранены или были восстановлены)
+            if (!originalRouterMethods.reload || originalRouterMethods.reload[WRAPPER_MARKER] === true) {
+                originalRouterMethods.reload = router.reload.bind(router);
+            }
+            if (!originalRouterMethods.visit || originalRouterMethods.visit[WRAPPER_MARKER] === true) {
+                originalRouterMethods.visit = router.visit.bind(router);
+            }
+            
+            // Перехватываем все вызовы router.reload() и router.visit() для предотвращения циклов
+            const wrappedReload = function(options) {
+                // Проверяем только reload() на текущий URL (включая query параметры)
+                const currentUrl = window.location.pathname + window.location.search;
+                if (shouldPreventReload(currentUrl)) {
                     logger.warn('[app.js] Prevented router.reload() due to reload limit', {
                         options,
-                        currentUrl: window.location.pathname,
+                        currentUrl: currentUrl,
                     });
                     return Promise.resolve();
                 }
-                logger.debug('[app.js] router.reload() called', { options });
-                return originalReload(options);
+                logger.debug('[app.js] router.reload() called', { 
+                    options,
+                    currentUrl: currentUrl,
+                    stack: new Error().stack,
+                });
+                return originalRouterMethods.reload(options);
             };
             
-            router.visit = function(url, options) {
-                // Блокируем только visit() на тот же URL, легитимная навигация разрешена
+            // Помечаем обёрнутый метод маркером
+            wrappedReload[WRAPPER_MARKER] = true;
+            router.reload = wrappedReload;
+            
+            const wrappedVisit = function(url, options) {
+                // Блокируем только visit() на тот же URL (включая query параметры), легитимная навигация разрешена
                 // Если URL отличается, это нормальная навигация, не блокируем
                 const targetUrl = typeof url === 'string' ? url : url?.url || window.location.pathname
-                if (shouldPreventReload(targetUrl) && targetUrl === window.location.pathname) {
+                const currentUrl = window.location.pathname + window.location.search;
+                
+                // Логируем все вызовы router.visit() для отладки автоматических переходов
+                logger.debug('[app.js] router.visit() called', {
+                    url: targetUrl,
+                    currentUrl: currentUrl,
+                    options,
+                    stack: new Error().stack,
+                });
+                
+                // Сравниваем полные URL включая query параметры
+                if (shouldPreventReload(targetUrl) && targetUrl === currentUrl) {
                     logger.warn('[app.js] Prevented router.visit() to same URL due to reload limit', {
                         url: targetUrl,
-                        currentUrl: window.location.pathname,
+                        currentUrl: currentUrl,
                         options,
                     });
                     return Promise.resolve();
                 }
-                // Легитимная навигация на другой URL разрешена, не логируем каждый вызов
-                // Убрано логирование переходов по запросу пользователя
-                return originalVisit(url, options);
+                return originalRouterMethods.visit(url, options);
             };
+            
+            // Помечаем обёрнутый метод маркером
+            wrappedVisit[WRAPPER_MARKER] = true;
+            router.visit = wrappedVisit;
+            
+            // Помечаем, что методы обёрнуты
+            originalRouterMethods.isWrapped = true;
         });
         
         return vueApp.mount(el);
@@ -191,3 +253,29 @@ createInertiaApp({
     // Отключаем логирование переходов Inertia.js
     // Сообщения "Перешёл на ..." больше не будут отображаться
 });
+
+// HMR cleanup: восстанавливаем оригинальные методы router при перезагрузке модуля
+if (typeof import.meta !== 'undefined' && import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    // Восстанавливаем оригинальные методы router, если они были обёрнуты
+    import('@inertiajs/vue3').then(({ router }) => {
+      if (originalRouterMethods.reload && router.reload && router.reload[WRAPPER_MARKER] === true) {
+        router.reload = originalRouterMethods.reload;
+        logger.debug('[app.js] HMR: Restored original router.reload');
+      }
+      if (originalRouterMethods.visit && router.visit && router.visit[WRAPPER_MARKER] === true) {
+        router.visit = originalRouterMethods.visit;
+        logger.debug('[app.js] HMR: Restored original router.visit');
+      }
+    }).catch(() => {
+      // Игнорируем ошибки при импорте (модуль может быть недоступен)
+    });
+    
+    // Сбрасываем флаг обёртки, чтобы при следующей инициализации методы были восстановлены
+    originalRouterMethods.isWrapped = false;
+    // Очищаем счётчики reload для предотвращения ложных блокировок
+    reloadCount = 0;
+    lastReloadTime = 0;
+    lastReloadUrl = '';
+  });
+}

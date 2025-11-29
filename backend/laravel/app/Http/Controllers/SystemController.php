@@ -9,6 +9,32 @@ class SystemController extends Controller
 {
     public function health()
     {
+        $isAuthenticated = auth()->check();
+        $isAdmin = $isAuthenticated && auth()->user()->role === 'admin';
+        $isDev = config('app.debug');
+        
+        // Для неаутентифицированных пользователей возвращаем только базовый статус
+        if (!$isAuthenticated) {
+            try {
+                // Простая проверка БД без деталей
+                DB::connection()->selectOne('SELECT 1 as test');
+                return response()->json([
+                    'status' => 'ok',
+                    'data' => [
+                        'app' => 'ok',
+                    ],
+                ]);
+            } catch (\Throwable $e) {
+                return response()->json([
+                    'status' => 'fail',
+                    'data' => [
+                        'app' => 'fail',
+                    ],
+                ], 503);
+            }
+        }
+        
+        // Для аутентифицированных пользователей возвращаем детальную информацию
         // Быстрая проверка подключения к БД с таймаутом
         $dbOk = false;
         $dbError = null;
@@ -34,62 +60,86 @@ class SystemController extends Controller
             // Проверяем доступность mqtt-bridge сервиса через метрики
             // В dev окружении он доступен на mqtt-bridge:9000, в prod может быть другой адрес
             $mqttBridgeUrl = env('MQTT_BRIDGE_URL', 'http://mqtt-bridge:9000');
-            $context = stream_context_create([
-                'http' => [
-                    'timeout' => 2, // Таймаут 2 секунды
-                    'ignore_errors' => true,
-                ],
-            ]);
             
-            // Проверяем доступность через /metrics endpoint
-            $metrics = @file_get_contents($mqttBridgeUrl . '/metrics', false, $context);
-            if ($metrics !== false && strlen($metrics) > 0) {
+            // Используем Http-клиент для правильной проверки HTTP-кода
+            $response = \Illuminate\Support\Facades\Http::timeout(2)
+                ->get($mqttBridgeUrl . '/metrics');
+            
+            if ($response->successful() && $response->body()) {
                 $mqttOk = 'ok';
             } else {
                 $mqttOk = 'fail';
+                \Log::warning('MQTT bridge health check failed', [
+                    'url' => $mqttBridgeUrl . '/metrics',
+                    'status' => $response->status(),
+                    'has_body' => !empty($response->body()),
+                ]);
             }
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            $mqttOk = 'fail';
+            \Log::warning('MQTT bridge health check: connection failed', [
+                'url' => $mqttBridgeUrl ?? 'unknown',
+                'error' => $e->getMessage(),
+            ]);
+        } catch (\Illuminate\Http\Client\TimeoutException $e) {
+            $mqttOk = 'fail';
+            \Log::warning('MQTT bridge health check: timeout', [
+                'url' => $mqttBridgeUrl ?? 'unknown',
+            ]);
         } catch (\Throwable $e) {
             // Если не удалось проверить MQTT, считаем недоступным
             $mqttOk = 'fail';
+            \Log::error('MQTT bridge health check: exception', [
+                'url' => $mqttBridgeUrl ?? 'unknown',
+                'error' => $e->getMessage(),
+            ]);
         }
 
         // Проверка статуса history-logger сервиса
         $historyLoggerOk = 'unknown';
         try {
             $historyLoggerUrl = env('HISTORY_LOGGER_URL', 'http://history-logger:9300');
-            $context = stream_context_create([
-                'http' => [
-                    'timeout' => 3, // Увеличено с 2 до 3 секунд
-                    'ignore_errors' => true,
-                ],
-            ]);
             
-            $healthResponse = @file_get_contents($historyLoggerUrl . '/health', false, $context);
-            if ($healthResponse !== false) {
-                $healthData = json_decode($healthResponse, true);
+            // Используем Http-клиент для правильной проверки HTTP-кода
+            $response = \Illuminate\Support\Facades\Http::timeout(3)
+                ->get($historyLoggerUrl . '/health');
+            
+            if ($response->successful()) {
+                $healthData = $response->json();
                 if (isset($healthData['status']) && $healthData['status'] === 'ok') {
                     $historyLoggerOk = 'ok';
                 } else {
                     // Логируем проблему для отладки
                     \Log::warning('History Logger health check failed', [
                         'url' => $historyLoggerUrl . '/health',
-                        'response' => $healthResponse,
-                        'parsed' => $healthData,
+                        'status' => $response->status(),
+                        'response_status' => $healthData['status'] ?? 'unknown',
                     ]);
                     $historyLoggerOk = 'fail';
                 }
             } else {
-                // Логируем ошибку подключения
-                $error = error_get_last();
-                \Log::warning('History Logger health check connection failed', [
+                // Логируем ошибку HTTP-кода
+                \Log::warning('History Logger health check: non-successful response', [
                     'url' => $historyLoggerUrl . '/health',
-                    'error' => $error ? $error['message'] : 'Unknown error',
+                    'status' => $response->status(),
+                    'body_preview' => substr($response->body(), 0, 200),
                 ]);
                 $historyLoggerOk = 'fail';
             }
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            $historyLoggerOk = 'fail';
+            \Log::warning('History Logger health check: connection failed', [
+                'url' => $historyLoggerUrl ?? 'unknown',
+                'error' => $e->getMessage(),
+            ]);
+        } catch (\Illuminate\Http\Client\TimeoutException $e) {
+            $historyLoggerOk = 'fail';
+            \Log::warning('History Logger health check: timeout', [
+                'url' => $historyLoggerUrl ?? 'unknown',
+            ]);
         } catch (\Throwable $e) {
             // Логируем исключение
-            \Log::error('History Logger health check exception', [
+            \Log::error('History Logger health check: exception', [
                 'url' => $historyLoggerUrl ?? 'unknown',
                 'exception' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
@@ -101,22 +151,38 @@ class SystemController extends Controller
         $automationEngineOk = 'unknown';
         try {
             $automationEngineUrl = env('AUTOMATION_ENGINE_URL', 'http://automation-engine:9401');
-            $context = stream_context_create([
-                'http' => [
-                    'timeout' => 2,
-                    'ignore_errors' => true,
-                ],
-            ]);
             
-            // Проверяем доступность через /metrics endpoint
-            $metrics = @file_get_contents($automationEngineUrl . '/metrics', false, $context);
-            if ($metrics !== false && strlen($metrics) > 0) {
+            // Используем Http-клиент для правильной проверки HTTP-кода
+            $response = \Illuminate\Support\Facades\Http::timeout(2)
+                ->get($automationEngineUrl . '/metrics');
+            
+            if ($response->successful() && $response->body()) {
                 $automationEngineOk = 'ok';
             } else {
                 $automationEngineOk = 'fail';
+                \Log::warning('Automation engine health check failed', [
+                    'url' => $automationEngineUrl . '/metrics',
+                    'status' => $response->status(),
+                    'has_body' => !empty($response->body()),
+                ]);
             }
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            $automationEngineOk = 'fail';
+            \Log::warning('Automation engine health check: connection failed', [
+                'url' => $automationEngineUrl ?? 'unknown',
+                'error' => $e->getMessage(),
+            ]);
+        } catch (\Illuminate\Http\Client\TimeoutException $e) {
+            $automationEngineOk = 'fail';
+            \Log::warning('Automation engine health check: timeout', [
+                'url' => $automationEngineUrl ?? 'unknown',
+            ]);
         } catch (\Throwable $e) {
             $automationEngineOk = 'fail';
+            \Log::error('Automation engine health check: exception', [
+                'url' => $automationEngineUrl ?? 'unknown',
+                'error' => $e->getMessage(),
+            ]);
         }
 
         // Определяем общий статус системы
@@ -149,8 +215,8 @@ class SystemController extends Controller
                     'ui' => 'ok', // UI всегда доступен, если запрос получен
                 ],
             ],
-            // Добавляем метаданные для диагностики (только в dev режиме)
-            ...(config('app.debug') ? [
+            // Добавляем метаданные для диагностики (только для админов или в dev режиме)
+            ...(($isAdmin || $isDev) ? [
                 'meta' => [
                     'timestamp' => now()->toIso8601String(),
                     'db_error' => $dbError,

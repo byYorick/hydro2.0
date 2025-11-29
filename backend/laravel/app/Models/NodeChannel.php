@@ -37,20 +37,26 @@ class NodeChannel extends Model
         parent::boot();
 
         // Отправляем событие при сохранении канала (создании или обновлении)
+        // Используем afterCommit, чтобы событие срабатывало только после коммита транзакции
         static::saved(function (NodeChannel $channel) {
-            // Загружаем узел и отправляем событие обновления конфига
+            // Загружаем узел и отправляем событие обновления конфига после коммита
             $channel->load('node');
             if ($channel->node) {
-                event(new NodeConfigUpdated($channel->node));
+                \Illuminate\Support\Facades\DB::afterCommit(function () use ($channel) {
+                    event(new NodeConfigUpdated($channel->node));
+                });
             }
         });
 
         // Отправляем событие при удалении канала
+        // Используем afterCommit, чтобы событие срабатывало только после коммита транзакции
         static::deleted(function (NodeChannel $channel) {
-            // Загружаем узел и отправляем событие обновления конфига
+            // Загружаем узел и отправляем событие обновления конфига после коммита
             $channel->load('node');
             if ($channel->node) {
-                event(new NodeConfigUpdated($channel->node));
+                \Illuminate\Support\Facades\DB::afterCommit(function () use ($channel) {
+                    event(new NodeConfigUpdated($channel->node));
+                });
             }
         });
     }

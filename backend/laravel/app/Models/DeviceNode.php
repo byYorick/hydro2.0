@@ -57,11 +57,16 @@ class DeviceNode extends Model
         parent::boot();
 
         // Отправляем событие при обновлении узла (если изменились поля, влияющие на конфиг)
+        // Используем afterCommit, чтобы событие срабатывало только после коммита транзакции
+        // Это предотвращает публикацию конфига до коммита или при откате транзакции
         static::saved(function (DeviceNode $node) {
             // Проверяем, изменились ли поля, влияющие на конфиг
             if ($node->wasChanged(['zone_id', 'type', 'config', 'uid']) || 
                 $node->wasRecentlyCreated) {
-                event(new NodeConfigUpdated($node));
+                // Используем afterCommit, чтобы событие срабатывало только после коммита транзакции
+                \Illuminate\Support\Facades\DB::afterCommit(function () use ($node) {
+                    event(new NodeConfigUpdated($node));
+                });
             }
             
             // Очищаем кеш списка устройств при создании или обновлении ноды

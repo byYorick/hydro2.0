@@ -46,6 +46,8 @@ class AppServiceProvider extends ServiceProvider
             PublishZoneConfigUpdate::class
         );
         
+        // Регистрируем listener с afterCommit, чтобы он выполнялся после коммита транзакции
+        // Это предотвращает блокировку БД при зависании mqtt-bridge
         Event::listen(
             NodeConfigUpdated::class,
             PublishNodeConfigOnUpdate::class

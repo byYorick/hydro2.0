@@ -101,8 +101,15 @@ class NodeSwapService
             
             // Мигрируем историю телеметрии, если указано
             $migrateTelemetry = $options['migrate_telemetry'] ?? false;
+            $telemetryMigrationResult = null;
             if ($migrateTelemetry) {
-                $this->migrateTelemetryHistory($oldNode->id, $newNode->id);
+                $telemetryMigrationResult = $this->migrateTelemetryHistory($oldNode->id, $newNode->id);
+                // Если миграция критична и не удалась, прерываем транзакцию
+                if (!$telemetryMigrationResult['success']) {
+                    throw new \DomainException(
+                        'Telemetry migration failed: ' . ($telemetryMigrationResult['error'] ?? 'Unknown error')
+                    );
+                }
             }
             
             // Помечаем старый узел как DECOMMISSIONED
@@ -116,6 +123,15 @@ class NodeSwapService
                 'new_node_id' => $newNode->id,
                 'new_uid' => $newNode->uid,
                 'new_hardware_id' => $newHardwareId,
+                'telemetry_migrated' => $migrateTelemetry,
+                'telemetry_migration_success' => $telemetryMigrationResult['success'] ?? null,
+            ]);
+            
+            // Возвращаем результат с информацией о миграции
+            $newNode->setAttribute('_swap_metadata', [
+                'telemetry_migrated' => $migrateTelemetry,
+                'telemetry_migration_success' => $telemetryMigrationResult['success'] ?? null,
+                'telemetry_migration_warning' => $telemetryMigrationResult['warning'] ?? null,
             ]);
             
             return $newNode;
@@ -127,32 +143,82 @@ class NodeSwapService
      * 
      * @param int $oldNodeId
      * @param int $newNodeId
-     * @return void
+     * @return array ['success' => bool, 'error' => string|null, 'warning' => string|null]
      */
-    private function migrateTelemetryHistory(int $oldNodeId, int $newNodeId): void
+    private function migrateTelemetryHistory(int $oldNodeId, int $newNodeId): array
     {
         try {
+            // Подсчитываем количество записей для миграции
+            $samplesCount = DB::table('telemetry_samples')
+                ->where('node_id', $oldNodeId)
+                ->count();
+            
+            $lastCount = DB::table('telemetry_last')
+                ->where('node_id', $oldNodeId)
+                ->count();
+            
             // Обновляем telemetry_samples
-            DB::table('telemetry_samples')
+            $samplesUpdated = DB::table('telemetry_samples')
                 ->where('node_id', $oldNodeId)
                 ->update(['node_id' => $newNodeId]);
             
             // Обновляем telemetry_last
-            DB::table('telemetry_last')
+            $lastUpdated = DB::table('telemetry_last')
                 ->where('node_id', $oldNodeId)
                 ->update(['node_id' => $newNodeId]);
+            
+            // Проверяем, что все записи были обновлены
+            $warning = null;
+            if ($samplesUpdated !== $samplesCount) {
+                $warning = "Expected to migrate {$samplesCount} telemetry_samples, but only {$samplesUpdated} were updated.";
+                Log::warning('Telemetry migration: samples count mismatch', [
+                    'old_node_id' => $oldNodeId,
+                    'new_node_id' => $newNodeId,
+                    'expected' => $samplesCount,
+                    'updated' => $samplesUpdated,
+                ]);
+            }
+            
+            if ($lastUpdated !== $lastCount) {
+                $warning = ($warning ? $warning . ' ' : '') . 
+                    "Expected to migrate {$lastCount} telemetry_last records, but only {$lastUpdated} were updated.";
+                Log::warning('Telemetry migration: last records count mismatch', [
+                    'old_node_id' => $oldNodeId,
+                    'new_node_id' => $newNodeId,
+                    'expected' => $lastCount,
+                    'updated' => $lastUpdated,
+                ]);
+            }
             
             Log::info('Telemetry history migrated', [
                 'old_node_id' => $oldNodeId,
                 'new_node_id' => $newNodeId,
+                'samples_migrated' => $samplesUpdated,
+                'last_migrated' => $lastUpdated,
             ]);
+            
+            return [
+                'success' => true,
+                'error' => null,
+                'warning' => $warning,
+                'samples_migrated' => $samplesUpdated,
+                'last_migrated' => $lastUpdated,
+            ];
         } catch (\Exception $e) {
             Log::error('Failed to migrate telemetry history', [
                 'old_node_id' => $oldNodeId,
                 'new_node_id' => $newNodeId,
                 'error' => $e->getMessage(),
+                'exception' => get_class($e),
+                'trace' => $e->getTraceAsString(),
             ]);
-            // Не прерываем транзакцию, только логируем ошибку
+            
+            // Возвращаем информацию об ошибке для обработки вызывающим кодом
+            return [
+                'success' => false,
+                'error' => $e->getMessage(),
+                'warning' => null,
+            ];
         }
     }
     

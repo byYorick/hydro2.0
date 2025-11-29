@@ -611,10 +611,11 @@ function processPendingSubscriptions(): void {
   })
   
   // Обрабатываем все отложенные подписки
-  const toProcess = Array.from(pendingSubscriptions.values())
-  pendingSubscriptions.clear()
+  // ВАЖНО: НЕ очищаем очередь до успешного создания канала
+  // Если ensureChannelControl вернёт null, подписка останется в очереди для повторной попытки
+  const toProcess = Array.from(pendingSubscriptions.entries())
   
-  toProcess.forEach(pending => {
+  toProcess.forEach(([subscriptionId, pending]) => {
     try {
       // Для глобальных каналов проверяем реестр
       if (isGlobalChannel(pending.channelName)) {
@@ -635,6 +636,10 @@ function processPendingSubscriptions(): void {
           subscription.id = pending.id // Используем ID из pending
           
           addSubscription(registry.channelControl, subscription)
+          
+          // Удаляем из очереди только после успешного создания подписки
+          pendingSubscriptions.delete(subscriptionId)
+          
           logger.debug('[useWebSocket] Processed pending subscription (reused global channel)', {
             channel: pending.channelName,
             subscriptionId: pending.id,
@@ -646,10 +651,13 @@ function processPendingSubscriptions(): void {
       }
       
       const control = ensureChannelControl(pending.channelName, pending.kind, pending.channelType)
-      if (!control) {
-        logger.warn('[useWebSocket] Failed to create channel for pending subscription', {
+      if (!control || !control.echoChannel) {
+        // Канал не создан (Echo ещё не готов или ошибка авторизации)
+        // НЕ удаляем из очереди - оставляем для повторной попытки
+        logger.warn('[useWebSocket] Failed to create channel for pending subscription, will retry', {
           channel: pending.channelName,
           subscriptionId: pending.id,
+          reason: !control ? 'ensureChannelControl returned null' : 'echoChannel is null',
         })
         return
       }
@@ -674,16 +682,22 @@ function processPendingSubscriptions(): void {
       subscription.id = pending.id // Используем ID из pending
       
       addSubscription(control, subscription)
+      
+      // Удаляем из очереди только после успешного создания подписки
+      pendingSubscriptions.delete(subscriptionId)
+      
       logger.debug('[useWebSocket] Processed pending subscription', {
         channel: pending.channelName,
         subscriptionId: pending.id,
         componentTag: pending.componentTag,
       })
     } catch (error) {
-      logger.error('[useWebSocket] Error processing pending subscription', {
+      // При ошибке не удаляем из очереди - оставляем для повторной попытки
+      logger.error('[useWebSocket] Error processing pending subscription, will retry', {
         channel: pending.channelName,
         subscriptionId: pending.id,
-      }, error)
+        error: error instanceof Error ? error.message : String(error),
+      })
     }
   })
 }

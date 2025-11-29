@@ -120,7 +120,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
 import { router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
@@ -149,6 +149,7 @@ const greenhouses = ref<Greenhouse[]>([])
 const zones = ref<Zone[]>([])
 const assigning = reactive<Record<number, boolean>>({})
 const assignmentForms = reactive<Record<number, { greenhouse_id: number | null; zone_id: number | null; name: string }>>({})
+let refreshInterval: ReturnType<typeof setInterval> | null = null
 
 function formatDate(dateString) {
   if (!dateString) return '-'
@@ -369,9 +370,17 @@ onMounted(async () => {
   ])
   
   // Автоматическое обновление каждые 10 секунд
-  setInterval(() => {
+  refreshInterval = setInterval(() => {
     loadNewNodes()
   }, 10000)
+})
+
+onUnmounted(() => {
+  // Очищаем интервал при уходе со страницы, чтобы предотвратить накопление таймеров
+  if (refreshInterval) {
+    clearInterval(refreshInterval)
+    refreshInterval = null
+  }
 })
 </script>
 

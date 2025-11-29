@@ -65,13 +65,13 @@ class VerifyPythonServiceToken
         }
         
         if (!hash_equals($expectedToken, $providedToken)) {
+            // НЕ логируем части токена - это утечка секрета
+            // Логируем только факт ошибки и контекст запроса
             Log::warning('Python service request with invalid token', [
                 'url' => $request->fullUrl(),
                 'ip' => $request->ip(),
-                'expected_length' => strlen($expectedToken),
-                'provided_length' => strlen($providedToken),
-                'expected_prefix' => substr($expectedToken, 0, 10),
-                'provided_prefix' => substr($providedToken, 0, 10),
+                'user_agent' => $request->userAgent(),
+                'method' => $request->method(),
             ]);
             return response()->json([
                 'status' => 'error',
