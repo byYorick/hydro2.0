@@ -6,6 +6,7 @@ import { router } from '@inertiajs/vue3'
 import { useApi, type ToastHandler } from './useApi'
 import { useErrorHandler } from './useErrorHandler'
 import { logger } from '@/utils/logger'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import type { Command, CommandType, CommandStatus, CommandParams, PendingCommand } from '@/types'
 
 interface PendingCommandInternal {
@@ -61,7 +62,7 @@ export function useCommands(showToast?: ToastHandler) {
       }
 
       if (showToast) {
-        showToast(`Команда "${type}" отправлена успешно`, 'success', 3000)
+        showToast(`Команда "${type}" отправлена успешно`, 'success', TOAST_TIMEOUT.NORMAL)
       }
 
       return command
@@ -73,7 +74,7 @@ export function useCommands(showToast?: ToastHandler) {
         'Неизвестная ошибка'
       
       if (showToast) {
-        showToast(`Ошибка: ${errorMsg}`, 'error', 5000)
+        showToast(`Ошибка: ${errorMsg}`, 'error', TOAST_TIMEOUT.LONG)
       }
       
       throw err
@@ -115,7 +116,7 @@ export function useCommands(showToast?: ToastHandler) {
       }
 
       if (showToast) {
-        showToast(`Команда "${type}" отправлена успешно`, 'success', 3000)
+        showToast(`Команда "${type}" отправлена успешно`, 'success', TOAST_TIMEOUT.NORMAL)
       }
 
       return command
@@ -181,9 +182,9 @@ export function useCommands(showToast?: ToastHandler) {
       
       // Показываем уведомление при завершении
       if (status === 'completed' && showToast) {
-        showToast(`Команда "${command.type}" выполнена успешно`, 'success', 3000)
+        showToast(`Команда "${command.type}" выполнена успешно`, 'success', TOAST_TIMEOUT.NORMAL)
       } else if (status === 'failed' && showToast) {
-        showToast(`Команда "${command.type}" завершилась с ошибкой: ${message || 'Неизвестная ошибка'}`, 'error', 5000)
+        showToast(`Команда "${command.type}" завершилась с ошибкой: ${message || 'Неизвестная ошибка'}`, 'error', TOAST_TIMEOUT.LONG)
       }
     }
   }
@@ -221,8 +222,8 @@ export function useCommands(showToast?: ToastHandler) {
   /**
    * Обновить зону после выполнения команды через Inertia partial reload
    */
-  function reloadZoneAfterCommand(zoneId: number, only: string[] = ['zone', 'cycles']): void {
-    router.reload({ only })
+  function reloadZoneAfterCommand(zoneId: number, only: string[] = ['zone', 'cycles'], preserveScroll: boolean = true): void {
+    router.reload({ only, preserveScroll })
   }
 
   return {

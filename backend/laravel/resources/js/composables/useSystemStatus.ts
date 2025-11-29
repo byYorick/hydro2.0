@@ -4,6 +4,8 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useApi, type ToastHandler } from './useApi'
 import { logger } from '@/utils/logger'
+import { extractData } from '@/utils/apiHelpers'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { getReconnectAttempts, getLastError, getConnectionState, initEcho } from '@/utils/echoClient'
 
 const HEALTH_CHECK_INTERVAL = 30000
@@ -119,7 +121,7 @@ export function useSystemStatus(showToast?: ToastHandler) {
         '/api/system/health'
       )
 
-      const payload = response.data?.data || response.data || {}
+      const payload = extractData(response.data) || {}
 
       coreStatus.value = payload.app === 'ok' ? 'ok' : payload.app === 'fail' ? 'fail' : 'unknown'
       dbStatus.value = payload.db === 'ok' ? 'ok' : payload.db === 'fail' ? 'fail' : 'unknown'
@@ -148,7 +150,7 @@ export function useSystemStatus(showToast?: ToastHandler) {
       dbStatus.value = 'fail'
       lastUpdate.value = new Date()
       if (showToast && error?.response?.status !== 429) {
-        showToast(`Ошибка проверки статуса системы: ${error.message || 'Ошибка'}`, 'error', 5000)
+        showToast(`Ошибка проверки статуса системы: ${error.message || 'Ошибка'}`, 'error', TOAST_TIMEOUT.LONG)
       }
     }
   }
@@ -176,7 +178,7 @@ export function useSystemStatus(showToast?: ToastHandler) {
     const state = echo.connector.pusher.connection.state
     logger.debug('[useSystemStatus] WebSocket state', { 
       state,
-      socketId: echo.connector.pusher.connection.socket_id,
+      socketId: echo?.connector?.pusher?.connection?.socket_id || null,
       hasConnection: !!echo.connector.pusher.connection,
     })
     if (state === 'connected') {

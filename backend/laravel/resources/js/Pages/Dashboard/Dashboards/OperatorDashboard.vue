@@ -133,6 +133,7 @@ import GreenhouseStatusCard from '@/Components/GreenhouseStatusCard.vue'
 import { translateStatus } from '@/utils/i18n'
 import { formatTime } from '@/utils/formatTime'
 import { useApi } from '@/composables/useApi'
+import { useFilteredList } from '@/composables/useFilteredList'
 import type { Zone, Alert } from '@/types'
 
 interface DashboardProps {
@@ -191,7 +192,7 @@ async function irrigateZone(zoneId: number) {
     })
     // TODO: Показать уведомление
   } catch (error) {
-    console.error('Failed to irrigate zone:', error)
+    logger.error('Failed to irrigate zone:', { error })
   }
 }
 
@@ -200,12 +201,12 @@ async function resolveAlert(alertId: number) {
     await api.post(`/api/alerts/${alertId}/resolve`)
     // TODO: Обновить список и показать уведомление
   } catch (error) {
-    console.error('Failed to resolve alert:', error)
+    logger.error('Failed to resolve alert:', { error })
   }
 }
 
 function resolveIssues(zoneId?: number) {
   if (!zoneId) return
-  console.log('Resolve issues for zone:', zoneId)
+  logger.info('Resolve issues for zone:', { zoneId })
 }
 </script>

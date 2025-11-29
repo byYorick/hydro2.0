@@ -71,6 +71,7 @@ import { subscribeAlerts } from '@/bootstrap'
 import { translateStatus } from '@/utils/i18n'
 import { logger } from '@/utils/logger'
 import { useApi } from '@/composables/useApi'
+import { useFilteredList } from '@/composables/useFilteredList'
 import type { Alert } from '@/types'
 
 interface PageProps {
@@ -87,14 +88,12 @@ const headers = ['Тип', 'Зона', 'Время', 'Статус', 'Дейст
 const onlyActive = ref<boolean>(true)
 const zoneQuery = ref<string>('')
 
-const filtered = computed(() =>
-  alerts.value.filter(a => {
-    const activeOk = onlyActive.value ? a.status !== 'resolved' && a.status !== 'RESOLVED' : true
-    const zoneName = a.zone?.name || `Zone #${a.zone_id}` || ''
-    const zoneOk = zoneQuery.value ? zoneName.toLowerCase().includes(zoneQuery.value.toLowerCase()) : true
-    return activeOk && zoneOk
-  })
-)
+const filtered = useFilteredList(alerts, (alert) => {
+  const activeOk = onlyActive.value ? alert.status !== 'resolved' && alert.status !== 'RESOLVED' : true
+  const zoneName = alert.zone?.name || `Zone #${alert.zone_id}` || ''
+  const zoneOk = zoneQuery.value ? zoneName.toLowerCase().includes(zoneQuery.value.toLowerCase()) : true
+  return activeOk && zoneOk
+})
 const confirm = reactive<{ open: boolean; alertId: number | null }>({ open: false, alertId: null })
 const onResolve = (a: Alert): void => {
   confirm.open = true
@@ -104,7 +103,7 @@ const doResolve = (): void => {
   const id = confirm.alertId
   if (!id) return
   api.patch(`/api/alerts/${id}/ack`, {}).then(() => {
-    router.reload({ only: ['alerts'] })
+    router.reload({ only: ['alerts'], preserveScroll: true })
     confirm.open = false
   }).catch((err) => {
     logger.error('Failed to resolve alert:', err)
@@ -118,7 +117,7 @@ let unsubscribeAlerts: (() => void) | null = null
 onMounted(() => {
   unsubscribeAlerts = subscribeAlerts((e) => {
     if (e?.alert) {
-      router.reload({ only: ['alerts'] })
+      router.reload({ only: ['alerts'], preserveScroll: true })
     }
   })
 })

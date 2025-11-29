@@ -95,9 +95,10 @@ import Button from '@/Components/Button.vue'
 import NodeLifecycleBadge from '@/Components/NodeLifecycleBadge.vue'
 import DeviceChannelsTable from '@/Pages/Devices/DeviceChannelsTable.vue'
 import { logger } from '@/utils/logger'
-import axios from 'axios'
 import { useHistory } from '@/composables/useHistory'
 import { useToast } from '@/composables/useToast'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
+import { useApi } from '@/composables/useApi'
 import type { Device, DeviceChannel } from '@/types'
 
 interface PageProps {
@@ -110,6 +111,7 @@ const channels = computed(() => (device.value.channels || []) as DeviceChannel[]
 const testingChannels = ref<Set<string>>(new Set())
 const detaching = ref(false)
 const { showToast } = useToast()
+const { api } = useApi(showToast)
 
 // История просмотров
 const { addToHistory } = useHistory()
@@ -146,29 +148,27 @@ const nodeConfig = computed(() => {
 
 const onRestart = async (): Promise<void> => {
   try {
-    const response = await axios.post(`/api/nodes/${device.value.id}/commands`, {
-      type: 'restart',
-      params: {},
-    }, {
-      headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-    })
+    const response = await api.post<{ status: string }>(
+      `/nodes/${device.value.id}/commands`,
+      {
+        type: 'restart',
+        params: {},
+      }
+    )
     
     if (response.data?.status === 'ok') {
       logger.debug('[Devices/Show] Device restart command sent successfully', response.data)
-      showToast('Команда перезапуска отправлена', 'success', 3000)
+      showToast('Команда перезапуска отправлена', 'success', TOAST_TIMEOUT.NORMAL)
     }
   } catch (err) {
+    // Ошибка уже обработана в useApi через showToast
     logger.error('[Devices/Show] Failed to restart device:', err)
-    let errorMsg = 'Неизвестная ошибка'
-    if (err && err.response && err.response.data && err.response.data.message) errorMsg = err.response.data.message
-    else if (err && err.message) errorMsg = err.message
-    showToast(`Ошибка перезапуска: ${errorMsg}`, 'error', 5000)
   }
 }
 
 const detachNode = async (): Promise<void> => {
   if (!device.value.zone_id) {
-    showToast('Нода уже отвязана от зоны', 'warning', 3000)
+    showToast('Нода уже отвязана от зоны', 'warning', TOAST_TIMEOUT.NORMAL)
     return
   }
 
@@ -178,26 +178,21 @@ const detachNode = async (): Promise<void> => {
 
   detaching.value = true
   try {
-    const response = await axios.post(`/api/nodes/${device.value.id}/detach`, {}, {
-      headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-    })
+    const response = await api.post<{ status: string }>(
+      `/nodes/${device.value.id}/detach`,
+      {}
+    )
     
     if (response.data?.status === 'ok') {
       logger.debug('[Devices/Show] Node detached successfully', response.data)
-      showToast(`Нода "${device.value.uid || device.value.name}" успешно отвязана от зоны`, 'success', 3000)
+      showToast(`Нода "${device.value.uid || device.value.name}" успешно отвязана от зоны`, 'success', TOAST_TIMEOUT.NORMAL)
       
       // Перезагружаем страницу для обновления данных
       router.reload({ only: ['device'], preserveScroll: false })
     }
-  } catch (err: any) {
+  } catch (err) {
+    // Ошибка уже обработана в useApi через showToast
     logger.error('[Devices/Show] Failed to detach node:', err)
-    let errorMsg = 'Неизвестная ошибка'
-    if (err?.response?.data?.message) {
-      errorMsg = err.response.data.message
-    } else if (err?.message) {
-      errorMsg = err.message
-    }
-    showToast(`Ошибка отвязки: ${errorMsg}`, 'error', 5000)
   } finally {
     detaching.value = false
   }
@@ -209,7 +204,7 @@ const onTestPump = async (channelName: string, channelType: string): Promise<voi
   
   testingChannels.value.add(channelName)
   const channelLabel = getChannelLabel(channelName, channelType)
-  showToast(`Запуск теста: ${channelLabel}...`, 'info', 2000)
+  showToast(`Запуск теста: ${channelLabel}...`, 'info', TOAST_TIMEOUT.SHORT)
   
   try {
     // Определяем команду в зависимости от типа канала
@@ -222,33 +217,31 @@ const onTestPump = async (channelName: string, channelType: string): Promise<voi
       params = { state: true, duration_ms: 3000 }
     }
     
-    const response = await axios.post(`/api/nodes/${device.value.id}/commands`, {
-      type: commandType,
-      channel: channelName,
-      params: params,
-    }, {
-      headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-    })
+    const response = await api.post<{ status: string; data?: { command_id: number } }>(
+      `/nodes/${device.value.id}/commands`,
+      {
+        type: commandType,
+        channel: channelName,
+        params: params,
+      }
+    )
     
     if (response.data?.status === 'ok' && response.data?.data?.command_id) {
       const cmdId = response.data.data.command_id
       // Ожидаем ответа от ноды
-      const result = await checkCommandStatus(cmdId, 30) // Максимум 15 секунд
+      const result = await checkCommandStatus(cmdId, 30) // Максимум 30 секунд
       
       if (result.success) {
-        showToast(`Тест ${channelLabel} выполнен успешно!`, 'success', 5000)
+        showToast(`Тест ${channelLabel} выполнен успешно!`, 'success', TOAST_TIMEOUT.LONG)
       } else {
-        showToast(`Ошибка теста ${channelLabel}: ${result.status}`, 'error', 5000)
+        showToast(`Ошибка теста ${channelLabel}: ${result.status}`, 'error', TOAST_TIMEOUT.LONG)
       }
     } else {
-      showToast(`Не удалось отправить команду для ${channelLabel}`, 'error', 5000)
+      showToast(`Не удалось отправить команду для ${channelLabel}`, 'error', TOAST_TIMEOUT.LONG)
     }
   } catch (err) {
+    // Ошибка уже обработана в useApi через showToast
     logger.error(`[Devices/Show] Failed to test ${channelName}:`, err)
-    let errorMsg = 'Неизвестная ошибка'
-    if (err && err.response && err.response.data && err.response.data.message) errorMsg = err.response.data.message
-    else if (err && err.message) errorMsg = err.message
-    showToast(`Ошибка теста ${channelLabel}: ${errorMsg}`, 'error', 5000)
   } finally {
     testingChannels.value.delete(channelName)
   }
@@ -286,14 +279,14 @@ function getChannelLabel(channelName, channelType) {
 }
 
 // Функция для проверки статуса команды
-async function checkCommandStatus(cmdId, maxAttempts = 30) {
+async function checkCommandStatus(cmdId: number, maxAttempts = 30): Promise<{ success: boolean; status: string; error?: string }> {
   for (let i = 0; i < maxAttempts; i++) {
     try {
-      const response = await axios.get(`/api/commands/${cmdId}/status`, {
-        headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-      })
+      const response = await api.get<{ status: string; data?: { status: string } }>(
+        `/commands/${cmdId}/status`
+      )
       
-      if (response.data?.status === 'ok') {
+      if (response.data?.status === 'ok' && response.data?.data) {
         const cmdStatus = response.data.data.status
         if (cmdStatus === 'ack') {
           return { success: true, status: 'ack' }
@@ -308,11 +301,13 @@ async function checkCommandStatus(cmdId, maxAttempts = 30) {
     } catch (err) {
       logger.error('[Devices/Show] Failed to check command status:', err)
       // Если команда не найдена, возможно она еще не создана, продолжаем ожидание
-      if ((err as { response?: { status?: number } })?.response?.status === 404 && i < maxAttempts - 1) {
+      const errorStatus = (err as { response?: { status?: number } })?.response?.status
+      if (errorStatus === 404 && i < maxAttempts - 1) {
         await new Promise(resolve => setTimeout(resolve, 500))
         continue
       }
-      return { success: false, status: 'error', error: err.message }
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+      return { success: false, status: 'error', error: errorMessage }
     }
   }
   return { success: false, status: 'timeout' }

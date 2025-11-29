@@ -2,6 +2,7 @@
  * Composable для работы с историей просмотров зон и устройств
  */
 import { ref, computed, watch } from 'vue'
+import { logger } from '@/utils/logger'
 
 interface HistoryItem {
   id: number
@@ -24,7 +25,7 @@ function loadFromStorage(): HistoryItem[] {
       return JSON.parse(stored)
     }
   } catch (err) {
-    console.error('[useHistory] Failed to load from localStorage:', err)
+    logger.error('[useHistory] Failed to load from localStorage:', err)
   }
   return []
 }
@@ -36,7 +37,7 @@ function saveToStorage(items: HistoryItem[]): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(items))
   } catch (err) {
-    console.error('[useHistory] Failed to save to localStorage:', err)
+    logger.error('[useHistory] Failed to save to localStorage:', err)
   }
 }
 

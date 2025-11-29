@@ -1,5 +1,6 @@
 import { ref, watch, computed, type Ref } from 'vue'
 import { logger } from '@/utils/logger'
+import { DEBOUNCE_DELAY } from '@/constants/timeouts'
 
 /**
  * Composable для оптимизации частых обновлений
@@ -205,7 +206,7 @@ export function useVirtualList<T>(
  */
 export function useTelemetryBatch(
   updateFn: (updates: Map<string, Map<string, number>>) => void,
-  debounceMs: number = 200
+  debounceMs: number = DEBOUNCE_DELAY.NORMAL
 ) {
   const updates = new Map<string, Map<string, number>>()
   let timeoutId: ReturnType<typeof setTimeout> | null = null

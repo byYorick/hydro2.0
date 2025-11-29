@@ -118,22 +118,61 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, reactive, computed } from 'vue'
 import { logger } from '@/utils/logger'
 import Button from '@/Components/Button.vue'
 import ChartBase from '@/Components/ChartBase.vue'
-import axios from 'axios'
+import { useApi } from '@/composables/useApi'
+import { useToast } from '@/composables/useToast'
+import { useLoading } from '@/composables/useLoading'
+import type { EChartsOption } from 'echarts'
 
-const props = defineProps({
-  show: { type: Boolean, default: false },
-  zoneId: { type: Number, required: true },
-  defaultRecipeId: { type: Number, default: null },
+interface Props {
+  show?: boolean
+  zoneId: number
+  defaultRecipeId?: number | null
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  show: false,
+  defaultRecipeId: null,
 })
 
-const emit = defineEmits(['close'])
+const emit = defineEmits<{
+  close: []
+}>()
 
-const form = reactive({
+const { showToast } = useToast()
+const { api } = useApi(showToast)
+
+interface SimulationForm {
+  duration_hours: number
+  step_minutes: number
+  recipe_id: number | null
+  initial_state: {
+    ph: number | null
+    ec: number | null
+    temp_air: number | null
+    temp_water: number | null
+    humidity_air: number | null
+  }
+}
+
+interface SimulationPoint {
+  t: number
+  ph: number
+  ec: number
+  temp_air: number
+}
+
+interface SimulationResults {
+  duration_hours: number
+  step_minutes: number
+  points: SimulationPoint[]
+}
+
+const form = reactive<SimulationForm>({
   duration_hours: 72,
   step_minutes: 10,
   recipe_id: props.defaultRecipeId || null,
@@ -146,11 +185,11 @@ const form = reactive({
   },
 })
 
-const loading = ref(false)
-const error = ref(null)
-const results = ref(null)
+const { loading, startLoading, stopLoading } = useLoading<boolean>(false)
+const error = ref<string | null>(null)
+const results = ref<SimulationResults | null>(null)
 
-const chartOption = computed(() => {
+const chartOption = computed<EChartsOption | null>(() => {
   if (!results.value?.points) return null
   
   const points = results.value.points
@@ -226,13 +265,20 @@ const chartOption = computed(() => {
   }
 })
 
-async function onSubmit() {
-  loading.value = true
+async function onSubmit(): Promise<void> {
+  startLoading()
   error.value = null
   results.value = null
   
   try {
-    const payload = {
+    interface SimulationPayload {
+      duration_hours: number
+      step_minutes: number
+      recipe_id?: number
+      initial_state?: Partial<SimulationForm['initial_state']>
+    }
+    
+    const payload: SimulationPayload = {
       duration_hours: form.duration_hours,
       step_minutes: form.step_minutes,
     }
@@ -242,7 +288,7 @@ async function onSubmit() {
     }
     
     // Фильтруем initial_state, убирая null значения
-    const initialState = {}
+    const initialState: Partial<SimulationForm['initial_state']> = {}
     if (form.initial_state.ph !== null) initialState.ph = form.initial_state.ph
     if (form.initial_state.ec !== null) initialState.ec = form.initial_state.ec
     if (form.initial_state.temp_air !== null) initialState.temp_air = form.initial_state.temp_air
@@ -253,33 +299,23 @@ async function onSubmit() {
       payload.initial_state = initialState
     }
     
-    const response = await axios.post(
-      `/api/zones/${props.zoneId}/simulate`,
-      payload,
-      {
-        headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-      }
+    const response = await api.post<{ status: string; data?: SimulationResults }>(
+      `/zones/${props.zoneId}/simulate`,
+      payload
     )
     
     if (response.data?.status === 'ok' && response.data?.data) {
       results.value = response.data.data
+      showToast('Simulation completed successfully', 'success', TOAST_TIMEOUT.NORMAL)
     } else {
       error.value = 'Unexpected response format'
     }
   } catch (err) {
     logger.error('[ZoneSimulationModal] Simulation error:', err)
-    let errorMsg = 'Failed to run simulation'
-    if (err && typeof err === 'object') {
-      const errorObj = err
-      if (errorObj.response && errorObj.response.data && errorObj.response.data.message) {
-        errorMsg = errorObj.response.data.message
-      } else if (errorObj.message) {
-        errorMsg = errorObj.message
-      }
-    }
+    const errorMsg = err instanceof Error ? err.message : 'Failed to run simulation'
     error.value = errorMsg
   } finally {
-    loading.value = false
+    stopLoading()
   }
 }
 </script>

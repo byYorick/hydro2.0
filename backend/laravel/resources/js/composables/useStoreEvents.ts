@@ -3,6 +3,8 @@
  * Используется для синхронизации состояния между экранами
  */
 
+import { logger } from '@/utils/logger'
+
 // Простая реализация EventEmitter для браузера
 class EventEmitter {
   private events: Map<string, Array<(...args: any[]) => void>> = new Map()
@@ -33,7 +35,7 @@ class EventEmitter {
       try {
         listener(...args)
       } catch (err) {
-        console.error(`[StoreEvents] Error in listener for "${event}":`, err)
+        logger.error(`[StoreEvents] Error in listener for "${event}":`, err)
       }
     })
   }

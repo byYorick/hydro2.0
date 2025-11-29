@@ -36,7 +36,7 @@ window.axios.interceptors.response.use(
     
     // Логируем только реальные ошибки
     // eslint-disable-next-line no-console
-    console.error('[HTTP ERROR]', method, url, { status, data, error });
+    logger.error('[HTTP ERROR]', { method, url, status, data, error });
     return Promise.reject(error);
   }
 );
@@ -70,11 +70,14 @@ function initializeEcho() {
   
   try {
     // ИСПРАВЛЕНО: Используем единую точку входа initEcho()
-    // forceReinit = true для гарантии чистой инициализации при загрузке страницы
-    const echo = initEcho(true);
+    // forceReinit = false при первой инициализации, true только если Echo уже существует
+    const existingEcho = getEchoInstance();
+    const shouldForceReinit = !!existingEcho && !!window.Echo;
+    const echo = initEcho(shouldForceReinit);
     if (echo) {
       logger.info('[bootstrap.js] Echo client initialized via single entry point', {
         socketId: echo.connector?.pusher?.connection?.socket_id,
+        forceReinit: shouldForceReinit,
       });
     } else {
       logger.warn('[bootstrap.js] Echo client initialization returned null', {
@@ -107,17 +110,66 @@ function initializeEcho() {
   }
 }
 
-// Инициализируем Echo после полной загрузки DOM
-if (document.readyState === 'loading') {
-  // DOM еще загружается, ждем события DOMContentLoaded
-  document.addEventListener('DOMContentLoaded', () => {
-    // Небольшая задержка для гарантии, что все скрипты загружены
-    setTimeout(initializeEcho, 100);
-  });
-} else {
-  // DOM уже загружен, инициализируем сразу с небольшой задержкой
-  setTimeout(initializeEcho, 100);
+// ИСПРАВЛЕНО: Инициализируем Echo только один раз при загрузке страницы
+// Добавляем защиту от множественных инициализаций
+let echoInitialized = false;
+let echoInitInProgress = false;
+
+function initializeEchoOnce() {
+  if (echoInitialized || echoInitInProgress) {
+    logger.debug('[bootstrap.js] Echo already initialized or in progress, skipping', {
+      initialized: echoInitialized,
+      inProgress: echoInitInProgress,
+    });
+    return;
+  }
+  echoInitInProgress = true;
+  try {
+    initializeEcho();
+    echoInitialized = true;
+  } catch (error) {
+    logger.error('[bootstrap.js] Error initializing Echo', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    echoInitialized = false; // Разрешаем повторную попытку при ошибке
+  } finally {
+    echoInitInProgress = false;
+  }
 }
+
+// ИСПРАВЛЕНО: Инициализируем Echo только один раз при загрузке страницы
+// Добавляем дополнительную защиту от множественных инициализаций
+let initializationScheduled = false;
+
+function scheduleEchoInitialization() {
+  if (initializationScheduled) {
+    logger.debug('[bootstrap.js] Echo initialization already scheduled, skipping', {});
+    return;
+  }
+  initializationScheduled = true;
+  
+  if (document.readyState === 'loading') {
+    // DOM еще загружается, ждем события DOMContentLoaded
+    document.addEventListener('DOMContentLoaded', () => {
+      // Небольшая задержка для гарантии, что все скрипты загружены
+      setTimeout(() => {
+        if (!echoInitialized && !echoInitInProgress) {
+          initializeEchoOnce();
+        }
+      }, 100);
+    }, { once: true }); // ИСПРАВЛЕНО: once: true предотвращает множественные вызовы
+  } else {
+    // DOM уже загружен, инициализируем сразу с небольшой задержкой
+    setTimeout(() => {
+      if (!echoInitialized && !echoInitInProgress) {
+        initializeEchoOnce();
+      }
+    }, 100);
+  }
+}
+
+// Инициализируем Echo после полной загрузки DOM
+scheduleEchoInitialization();
 
 // Zones WS subscription helper (example)
 export function subscribeZone(zoneId, handler) {
@@ -163,7 +215,9 @@ export function subscribeAlerts(handler) {
 window.addEventListener('error', (event) => {
   // ИСПРАВЛЕНО: Логируем ошибку, но НЕ перезагружаем страницу
   // eslint-disable-next-line no-console
-  console.error('[WINDOW ERROR]', event?.message, event?.error);
+  import('./utils/logger').then(({ logger }) => {
+      logger.error('[WINDOW ERROR]', { message: event?.message, error: event?.error });
+  });
   // Предотвращаем стандартное поведение браузера (перезагрузку страницы)
   event.preventDefault();
   // НЕ вызываем location.reload() или router.reload() здесь
@@ -179,7 +233,9 @@ window.addEventListener('unhandledrejection', (event) => {
   }
   // ИСПРАВЛЕНО: Логируем ошибку, но НЕ перезагружаем страницу
   // eslint-disable-next-line no-console
-  console.error('[UNHANDLED REJECTION]', reason || event);
+  import('./utils/logger').then(({ logger }) => {
+      logger.error('[UNHANDLED REJECTION]', { reason: reason || event });
+  });
   // Предотвращаем стандартное поведение браузера
   event.preventDefault();
   // НЕ вызываем location.reload() или router.reload() здесь
@@ -223,9 +279,8 @@ window.addEventListener('pagehide', () => {
   }
 });
 
-// ИСПРАВЛЕНО: Переподключение при возврате на страницу из back/forward cache и жесткой перезагрузке
-// При жесткой перезагрузке страница может быть восстановлена из кеша браузера
-// В этом случае нужно проверить состояние соединения и переподключиться, если необходимо
+// ИСПРАВЛЕНО: Переподключение при возврате на страницу из back/forward cache и при перезагрузке
+// При перезагрузке страницы флаги инициализации могут остаться установленными, что блокирует переподключение
 window.addEventListener('pageshow', (event) => {
   // event.persisted = true означает, что страница была восстановлена из bfcache
   if (event.persisted) {
@@ -233,7 +288,11 @@ window.addEventListener('pageshow', (event) => {
       persisted: event.persisted,
     });
     
-    // Проверяем состояние соединения и переподключаемся, если необходимо
+    // ИСПРАВЛЕНО: Сбрасываем флаги при восстановлении из bfcache
+    echoInitialized = false;
+    echoInitInProgress = false;
+    initializationScheduled = false;
+    
     setTimeout(() => {
       const echo = window.Echo;
       if (echo && echo.connector?.pusher) {
@@ -250,84 +309,116 @@ window.addEventListener('pageshow', (event) => {
           logger.info('[bootstrap.js] WebSocket not connected after page restore, reinitializing', {
             state,
           });
-          initializeEcho();
+          initializeEchoOnce();
         }
-      } else {
+      } else if (!echo) {
         // Если Echo не инициализирован, инициализируем
         logger.info('[bootstrap.js] Echo not initialized after page restore, initializing', {});
-        initializeEcho();
+        initializeEchoOnce();
       }
-    }, 200); // Небольшая задержка для стабилизации
+    }, 200);
   } else {
-    // Обычная загрузка страницы или жесткая перезагрузка
-    // ИСПРАВЛЕНО: Улучшена проверка состояния после загрузки с несколькими попытками
-    // Это критично для жесткой перезагрузки, когда соединение может не успеть установиться
-    const checkConnection = (attempt = 0) => {
-      const maxAttempts = 5 // 5 попыток проверки
-      const delays = [500, 1000, 2000, 3000, 5000] // Увеличивающиеся задержки
-      const delay = delays[Math.min(attempt, delays.length - 1)]
-      
-      setTimeout(() => {
-        const echo = window.Echo;
-        if (echo && echo.connector?.pusher) {
-          const connection = echo.connector.pusher.connection;
-          const state = connection?.state;
-          
-          logger.debug('[bootstrap.js] Checking WebSocket connection state after page load', {
-            attempt: attempt + 1,
-            maxAttempts,
-            state,
-            socketId: connection?.socket_id,
-          });
-          
-          if (state === 'connected' || state === 'connecting') {
-            logger.info('[bootstrap.js] WebSocket connection established', {
-              state,
-              socketId: connection?.socket_id,
-              attempts: attempt + 1,
-            });
-            return // Соединение установлено, выходим
-          }
-          
-          // Если соединение не установлено и не в процессе подключения
-          if (state !== 'connected' && state !== 'connecting') {
-            if (attempt < maxAttempts - 1) {
-              // Продолжаем проверку
-              logger.debug('[bootstrap.js] Connection not ready, will retry', {
-                state,
-                attempt: attempt + 1,
-                nextDelay: delays[Math.min(attempt + 1, delays.length - 1)],
-              });
-              checkConnection(attempt + 1)
-            } else {
-              // Все попытки исчерпаны, переинициализируем
-              logger.warn('[bootstrap.js] WebSocket not connected after all checks, reinitializing', {
-                state,
-                socketId: connection?.socket_id,
-                attempts: maxAttempts,
-              });
-              initializeEcho();
-            }
-          }
-        } else {
-          // Echo не инициализирован
-          if (attempt < maxAttempts - 1) {
-            logger.debug('[bootstrap.js] Echo not initialized yet, will retry', {
-              attempt: attempt + 1,
-              nextDelay: delays[Math.min(attempt + 1, delays.length - 1)],
-            });
-            checkConnection(attempt + 1)
-          } else {
-            logger.warn('[bootstrap.js] Echo not initialized after all checks, initializing', {
-              attempts: maxAttempts,
-            });
-            initializeEcho();
-          }
+    // ИСПРАВЛЕНО: Обычная перезагрузка страницы - сбрасываем флаги для возможности переинициализации
+    // Это критично, так как при перезагрузке флаги могут остаться установленными
+    logger.info('[bootstrap.js] Page reload detected, resetting initialization flags', {
+      wasInitialized: echoInitialized,
+      wasInProgress: echoInitInProgress,
+    });
+    
+    // Сбрасываем флаги при перезагрузке страницы
+    echoInitialized = false;
+    echoInitInProgress = false;
+    initializationScheduled = false;
+    
+    // ИСПРАВЛЕНО: Принудительно очищаем старое соединение и переинициализируем
+    // После перезагрузки старое соединение может быть невалидным
+    if (window.Echo) {
+      try {
+        const pusher = window.Echo.connector?.pusher;
+        if (pusher && typeof pusher.disconnect === 'function') {
+          pusher.disconnect();
         }
-      }, delay)
+      } catch (err) {
+        logger.debug('[bootstrap.js] Error disconnecting old Echo instance (ignored)', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      window.Echo = undefined;
     }
     
-    // Начинаем проверку с первой попытки
-    checkConnection(0)
+    // ИСПРАВЛЕНО: Переинициализируем Echo после перезагрузки с задержкой
+    // Это гарантирует, что старое соединение полностью очищено
+    // ИСПРАВЛЕНО: Увеличена задержка для гарантии полной очистки старого соединения
+    setTimeout(() => {
+      logger.info('[bootstrap.js] Reinitializing Echo after page reload', {});
+      
+      // ИСПРАВЛЕНО: Сбрасываем флаги перед переинициализацией
+      echoInitialized = false;
+      echoInitInProgress = false;
+      initializationScheduled = false;
+      
+      initializeEchoOnce();
+      
+      // ИСПРАВЛЕНО: Проверяем получение socketId несколько раз с увеличивающимися интервалами
+      const checkSocketId = (checkAttempt = 0) => {
+        const maxChecks = 6
+        const delays = [2000, 3000, 5000, 7000, 10000, 15000] // Проверяем через 2, 3, 5, 7, 10, 15 секунд
+        
+        if (checkAttempt >= maxChecks) {
+          logger.warn('[bootstrap.js] socketId not received after all checks, forcing reinit', {
+            attempts: maxChecks,
+          });
+          // Принудительно переинициализируем
+          echoInitialized = false;
+          echoInitInProgress = false;
+          initializeEchoOnce();
+          return;
+        }
+        
+        setTimeout(() => {
+          const echo = window.Echo;
+          if (echo && echo.connector?.pusher?.connection) {
+            const connection = echo.connector.pusher.connection;
+            const socketId = connection.socket_id;
+            const state = connection.state;
+            
+            if (socketId) {
+              logger.info('[bootstrap.js] socketId received after reload', {
+                socketId,
+                state,
+                checkAttempt: checkAttempt + 1,
+              });
+              return; // socketId получен, выходим
+            } else if (state === 'connected' || state === 'connecting') {
+              logger.debug('[bootstrap.js] Still waiting for socketId after reload', {
+                state,
+                checkAttempt: checkAttempt + 1,
+                nextCheck: delays[Math.min(checkAttempt + 1, delays.length - 1)],
+              });
+              // Продолжаем проверку
+              checkSocketId(checkAttempt + 1);
+            } else {
+              logger.warn('[bootstrap.js] Connection not in expected state after reload', {
+                state,
+                socketId,
+                checkAttempt: checkAttempt + 1,
+              });
+              // Переинициализируем, если соединение не в ожидаемом состоянии
+              echoInitialized = false;
+              echoInitInProgress = false;
+              initializeEchoOnce();
+            }
+          } else {
+            logger.warn('[bootstrap.js] Echo not available after reload check', {
+              checkAttempt: checkAttempt + 1,
+            });
+            // Продолжаем проверку
+            checkSocketId(checkAttempt + 1);
+          }
+        }, delays[Math.min(checkAttempt, delays.length - 1)]);
+      }
+      
+      checkSocketId(0); // Начинаем первую проверку через 2 секунды
+    }, 1500); // ИСПРАВЛЕНО: Увеличена задержка до 1.5 секунды для полной очистки
   }
 });

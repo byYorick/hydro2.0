@@ -8,8 +8,34 @@ import { createPinia } from 'pinia';
 // ИСПРАВЛЕНО: Безопасный импорт ZiggyVue для предотвращения ошибок
 // Используем условный импорт для обработки случая, когда Ziggy не установлен
 import { RecycleScroller, DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller';
+import { logger } from './utils/logger';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
+
+// ИСПРАВЛЕНО: Защита от циклических перезагрузок
+let reloadCount = 0;
+let lastReloadTime = 0;
+const MAX_RELOADS_PER_SECOND = 3;
+const RELOAD_WINDOW_MS = 1000;
+
+function shouldPreventReload() {
+  const now = Date.now();
+  if (now - lastReloadTime > RELOAD_WINDOW_MS) {
+    reloadCount = 0;
+    lastReloadTime = now;
+    return false;
+  }
+  reloadCount++;
+  if (reloadCount > MAX_RELOADS_PER_SECOND) {
+    logger.warn('[app.js] Too many reloads detected, preventing reload', {
+      count: reloadCount,
+      window: RELOAD_WINDOW_MS,
+    });
+    return true;
+  }
+  lastReloadTime = now;
+  return false;
+}
 
 createInertiaApp({
     title: (title) => `${title} - ${appName}`,
@@ -29,13 +55,14 @@ createInertiaApp({
             }
             // ИСПРАВЛЕНО: Логируем ошибку, но НЕ перезагружаем страницу
             // eslint-disable-next-line no-console
-            console.error('[VUE ERROR]', err, { info, instance });
+            logger.error('[VUE ERROR]', { err, info, instance });
             // НЕ вызываем location.reload() или router.reload() здесь
             // Ошибки должны обрабатываться через ErrorBoundary компонент
         };
         vueApp.config.warnHandler = (msg, instance, trace) => {
-            // eslint-disable-next-line no-console
-            console.warn('[VUE WARN]', msg, { trace, instance });
+            import('./utils/logger').then(({ logger }) => {
+                logger.warn('[VUE WARN]', msg, { trace, instance });
+            });
         };
         // Регистрируем компоненты виртуализации глобально
         vueApp.component('RecycleScroller', RecycleScroller);
@@ -72,7 +99,7 @@ createInertiaApp({
                 // ИСПРАВЛЕНО: Проверяем версию Vue перед использованием ZiggyVue
                 const vueVersion = parseInt(vueApp.version || '0');
                 if (vueVersion <= 2) {
-                    console.error('[app.js] Vue version is too old for ZiggyVue', {
+                    logger.error('[app.js] Vue version is too old for ZiggyVue', {
                         version: vueApp.version,
                         parsed: vueVersion,
                         note: 'ZiggyVue requires Vue 3. Setting version to 3.4.0',
@@ -94,13 +121,48 @@ createInertiaApp({
                     // Если ZiggyVue - это функция, используем её как плагин
                     vueApp.use(ZiggyVue);
                 } else {
-                    console.warn('[app.js] ZiggyVue is not a valid Vue plugin', { ZiggyVue });
+                    logger.warn('[app.js] ZiggyVue is not a valid Vue plugin', { ZiggyVue });
                 }
             } catch (err) {
                 // Если Ziggy не установлен или не доступен, продолжаем без него
-                console.warn('[app.js] ZiggyVue not available, continuing without it', err);
+                logger.warn('[app.js] ZiggyVue not available, continuing without it', { err });
             }
         })();
+        
+        // ИСПРАВЛЕНО: Удален обработчик router.on('success') - он вызывал множественные переинициализации
+        // WebSocket соединение должно управляться только через bootstrap.js и echoClient.ts
+        // Inertia.js обновления страницы не должны вызывать переинициализацию WebSocket
+        
+        // ИСПРАВЛЕНО: Добавляем защиту от циклических перезагрузок через Inertia.js
+        import('@inertiajs/vue3').then(({ router }) => {
+            // Перехватываем все вызовы router.reload() и router.visit() для предотвращения циклов
+            const originalReload = router.reload.bind(router);
+            const originalVisit = router.visit.bind(router);
+            
+            router.reload = function(options) {
+                if (shouldPreventReload()) {
+                    logger.warn('[app.js] Prevented router.reload() due to reload limit', {
+                        options,
+                    });
+                    return Promise.resolve();
+                }
+                logger.debug('[app.js] router.reload() called', { options });
+                return originalReload(options);
+            };
+            
+            router.visit = function(url, options) {
+                // Разрешаем visit, но логируем для отладки
+                if (shouldPreventReload() && url === window.location.pathname) {
+                    logger.warn('[app.js] Prevented router.visit() to same URL due to reload limit', {
+                        url,
+                        options,
+                    });
+                    return Promise.resolve();
+                }
+                logger.debug('[app.js] router.visit() called', { url, options });
+                return originalVisit(url, options);
+            };
+        });
         
         return vueApp.mount(el);
     },

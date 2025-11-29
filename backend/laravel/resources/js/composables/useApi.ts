@@ -3,6 +3,7 @@
  */
 import axios, { type AxiosInstance, type AxiosRequestConfig } from 'axios'
 import { logger } from '@/utils/logger'
+import { ERROR_MESSAGES } from '@/constants/messages'
 
 // Тип функции для показа Toast
 export type ToastHandler = (message: string, variant?: string, duration?: number) => void
@@ -46,7 +47,7 @@ api.interceptors.response.use(
       return Promise.reject(error)
     }
 
-    const message = error.response?.data?.message || error.message || 'Неизвестная ошибка'
+    const message = error.response?.data?.message || error.message || ERROR_MESSAGES.UNKNOWN
     const status = error.response?.status
     
     // Логируем ошибку (но не логируем 401 постоянно, чтобы не засорять консоль)

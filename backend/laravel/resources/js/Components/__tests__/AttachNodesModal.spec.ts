@@ -20,12 +20,29 @@ vi.mock('@/Components/Button.vue', () => ({
 
 const axiosGetMock = vi.hoisted(() => vi.fn())
 const axiosPatchMock = vi.hoisted(() => vi.fn())
+const axiosPostMock = vi.hoisted(() => vi.fn())
+const axiosDeleteMock = vi.hoisted(() => vi.fn())
 const routerReloadMock = vi.hoisted(() => vi.fn())
+
+const mockAxiosInstance = vi.hoisted(() => ({
+  get: axiosGetMock,
+  post: axiosPostMock,
+  patch: axiosPatchMock,
+  delete: axiosDeleteMock,
+  put: vi.fn(),
+  interceptors: {
+    request: { use: vi.fn(), eject: vi.fn() },
+    response: { use: vi.fn(), eject: vi.fn() },
+  },
+}))
 
 vi.mock('axios', () => ({
   default: {
+    create: vi.fn(() => mockAxiosInstance()),
     get: (url: string, config?: any) => axiosGetMock(url, config),
+    post: (url: string, data?: any, config?: any) => axiosPostMock(url, data, config),
     patch: (url: string, data?: any, config?: any) => axiosPatchMock(url, data, config),
+    delete: (url: string, config?: any) => axiosDeleteMock(url, config),
   },
 }))
 

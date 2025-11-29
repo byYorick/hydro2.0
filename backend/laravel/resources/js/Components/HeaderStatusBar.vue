@@ -265,7 +265,7 @@
         
         <!-- Кнопка мониторинга сервисов -->
         <button
-          @click="showMonitoringModal = true"
+          @click="openMonitoringModal()"
           class="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-neutral-800 transition-colors text-xs text-neutral-400 hover:text-neutral-200"
           title="Мониторинг сервисов"
         >
@@ -278,7 +278,7 @@
     <!-- Модальное окно мониторинга сервисов -->
     <SystemMonitoringModal
       :show="showMonitoringModal"
-      @close="showMonitoringModal = false"
+      @close="closeMonitoringModal()"
     />
   </div>
 </template>
@@ -291,6 +291,10 @@ import { useWebSocket } from '@/composables/useWebSocket'
 import { formatTime } from '@/utils/formatTime'
 import SystemMonitoringModal from '@/Components/SystemMonitoringModal.vue'
 import { useApi } from '@/composables/useApi'
+import { useModal } from '@/composables/useModal'
+import { logger } from '@/utils/logger'
+
+const { isOpen: showMonitoringModal, open: openMonitoringModal, close: closeMonitoringModal } = useModal<boolean>(false)
 
 const { 
   coreStatus, 
@@ -307,7 +311,6 @@ const {
 
 const page = usePage()
 const { api } = useApi()
-const showMonitoringModal = ref(false)
 
 // Real-time метрики
 const metrics = ref<{

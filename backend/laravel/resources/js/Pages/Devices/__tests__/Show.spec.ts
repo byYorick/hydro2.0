@@ -29,8 +29,21 @@ vi.mock('@/Pages/Devices/DeviceChannelsTable.vue', () => ({
 const axiosPostMock = vi.fn()
 const mockShowToast = vi.fn()
 
+const mockAxiosInstance = vi.hoisted(() => ({
+  get: vi.fn(),
+  post: axiosPostMock,
+  patch: vi.fn(),
+  delete: vi.fn(),
+  put: vi.fn(),
+  interceptors: {
+    request: { use: vi.fn(), eject: vi.fn() },
+    response: { use: vi.fn(), eject: vi.fn() },
+  },
+}))
+
 vi.mock('axios', () => ({
   default: {
+    create: vi.fn(() => mockAxiosInstance()),
     post: (url: string, data?: any, config?: any) => axiosPostMock(url, data, config),
   },
 }))

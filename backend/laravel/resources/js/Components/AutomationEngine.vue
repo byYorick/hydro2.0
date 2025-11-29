@@ -50,7 +50,7 @@ const tabs = [
 
 function onConfigSaved(config: PidConfigWithMeta) {
   // Можно добавить уведомление об успешном сохранении
-  console.log('PID config saved:', config)
+  logger.info('PID config saved:', { config })
 }
 </script>
 

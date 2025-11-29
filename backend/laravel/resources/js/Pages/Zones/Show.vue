@@ -40,7 +40,7 @@
               <span class="sm:hidden">⏭</span>
             </Button>
           </template>
-          <Button size="sm" variant="outline" @click="showSimulationModal = true" class="flex-1 sm:flex-none">
+          <Button size="sm" variant="outline" @click="modals.open('simulation')" class="flex-1 sm:flex-none">
             <span class="hidden sm:inline">Симуляция</span>
             <span class="sm:hidden">🧪</span>
           </Button>
@@ -105,7 +105,7 @@
               <Button
                 size="sm"
                 :variant="zone.recipeInstance?.recipe ? 'secondary' : 'primary'"
-                @click="showAttachRecipeModal = true"
+                @click="modals.open('attachRecipe')"
               >
                 {{ zone.recipeInstance?.recipe ? 'Изменить рецепт' : 'Привязать рецепт' }}
               </Button>
@@ -252,7 +252,7 @@
       :show="showSimulationModal"
       :zone-id="zoneId"
       :default-recipe-id="zone.recipeInstance?.recipe_id"
-      @close="showSimulationModal = false"
+      @close="modals.close('simulation')"
     />
     
     <!-- Модальное окно для действий с параметрами -->
@@ -261,7 +261,7 @@
       :show="showActionModal"
       :action-type="currentActionType"
       :zone-id="zoneId"
-      @close="showActionModal = false"
+      @close="modals.close('action')"
       @submit="onActionSubmit"
     />
     
@@ -270,7 +270,7 @@
       v-if="showAttachRecipeModal"
       :show="showAttachRecipeModal"
       :zone-id="zoneId"
-      @close="showAttachRecipeModal = false"
+      @close="modals.close('attachRecipe')"
       @attached="onRecipeAttached"
     />
     
@@ -289,7 +289,7 @@
       :show="showNodeConfigModal"
       :node-id="selectedNodeId"
       :node="selectedNode"
-      @close="showNodeConfigModal = false"
+      @close="modals.close('nodeConfig')"
       @published="onNodeConfigPublished"
     />
   </AppLayout>
@@ -317,11 +317,7 @@ import { translateStatus, translateEventKind, translateCycleType, translateStrat
 import { formatTimeShort, formatInterval } from '@/utils/formatTime'
 import { logger } from '@/utils/logger'
 
-// Безопасные обёртки для логирования
-const logInfo = logger?.info || ((...args: unknown[]) => console.log('[INFO]', ...args))
-const logError = logger?.error || ((...args: unknown[]) => console.error('[ERROR]', ...args))
-const logWarn = logger?.warn || ((...args: unknown[]) => console.warn('[WARN]', ...args))
-const logLog = logger?.log || ((...args: unknown[]) => console.log('[LOG]', ...args))
+// Используем logger напрямую (logger уже проверен и доступен)
 import { useCommands } from '@/composables/useCommands'
 import { useTelemetry } from '@/composables/useTelemetry'
 import { useZones } from '@/composables/useZones'
@@ -332,6 +328,11 @@ import { useOptimisticUpdate, createOptimisticZoneUpdate } from '@/composables/u
 import { useZonesStore } from '@/stores/zones'
 import { useOptimizedUpdates, useTelemetryBatch } from '@/composables/useOptimizedUpdates'
 import { useToast } from '@/composables/useToast'
+import { useModal } from '@/composables/useModal'
+import { useLoading } from '@/composables/useLoading'
+import { extractData } from '@/utils/apiHelpers'
+import { usePageProps } from '@/composables/usePageProps'
+import { DEBOUNCE_DELAY, ANIMATION_DELAY, TOAST_TIMEOUT } from '@/constants/timeouts'
 import type { Zone, Device, ZoneTelemetry, ZoneTargets as ZoneTargetsType, Cycle, CommandType } from '@/types'
 import type { ZoneEvent } from '@/types/ZoneEvent'
 
@@ -355,17 +356,32 @@ interface PageProps {
 
 const page = usePage<PageProps>()
 
-// Simulation modal
-const showSimulationModal = ref<boolean>(false)
-const showActionModal = ref<boolean>(false)
+// Modal states using useModal composable
+const modals = useModal<{
+  simulation: boolean
+  action: boolean
+  attachRecipe: boolean
+  attachNodes: boolean
+  nodeConfig: boolean
+}>({
+  simulation: false,
+  action: false,
+  attachRecipe: false,
+  attachNodes: false,
+  nodeConfig: false,
+})
+
+const showSimulationModal = computed(() => modals.isModalOpen('simulation'))
+const showActionModal = computed(() => modals.isModalOpen('action'))
+const showAttachRecipeModal = computed(() => modals.isModalOpen('attachRecipe'))
+const showAttachNodesModal = computed(() => modals.isModalOpen('attachNodes'))
+const showNodeConfigModal = computed(() => modals.isModalOpen('nodeConfig'))
+
 const currentActionType = ref<CommandType>('FORCE_IRRIGATION')
-const showAttachRecipeModal = ref<boolean>(false)
-const showAttachNodesModal = ref<boolean>(false)
-const showNodeConfigModal = ref<boolean>(false)
 const selectedNodeId = ref<number | null>(null)
 const selectedNode = ref<any>(null)
 
-// Loading states
+// Loading states using useLoading composable
 interface LoadingState {
   toggle: boolean
   irrigate: boolean
@@ -373,7 +389,7 @@ interface LoadingState {
   cycles: Record<string, boolean>
 }
 
-const loading = ref<LoadingState>({
+const { loading, setLoading, startLoading, stopLoading } = useLoading<LoadingState>({
   toggle: false,
   irrigate: false,
   nextPhase: false,
@@ -459,13 +475,14 @@ const { addUpdate, flush } = useTelemetryBatch((updates) => {
       telemetryRef.value = current
     }
   })
-}, 200) // Debounce 200ms для телеметрии
+}) // Использует DEBOUNCE_DELAY.NORMAL по умолчанию
 
 const telemetry = computed(() => telemetryRef.value)
-const targets = computed(() => (page.props.targets || {}) as ZoneTargetsType)
-const devices = computed(() => (page.props.devices || []) as Device[])
-const events = computed(() => (page.props.events || []) as ZoneEvent[])
-const cycles = computed(() => (page.props.cycles || {}) as Record<string, Cycle>)
+const { targets: targetsProp, devices: devicesProp, events: eventsProp, cycles: cyclesProp } = usePageProps<PageProps>(['targets', 'devices', 'events', 'cycles'])
+const targets = computed(() => (targetsProp.value || {}) as ZoneTargetsType)
+const devices = computed(() => (devicesProp.value || []) as Device[])
+const events = computed(() => (eventsProp.value || []) as ZoneEvent[])
+const cycles = computed(() => (cyclesProp.value || {}) as Record<string, Cycle>)
 
 // Вычисление прогресса фазы рецепта
 const computedPhaseProgress = computed(() => {
@@ -668,7 +685,7 @@ async function loadChartData(metric: 'PH' | 'EC', timeRange: string): Promise<Ar
     
     return await fetchHistory(zoneId.value, metric, params)
   } catch (err) {
-    logError(`Failed to load ${metric} history:`, err)
+    logger.error(`Failed to load ${metric} history:`, err)
     return []
   }
 }
@@ -685,7 +702,7 @@ async function onChartTimeRangeChange(newRange: string): Promise<void> {
 // }, { deep: true, immediate: true })
 
 onMounted(async () => {
-  logLog('[Show.vue] Компонент смонтирован', { zoneId: zoneId.value })
+  logger.info('[Show.vue] Компонент смонтирован', { zoneId: zoneId.value })
   
   // Загрузить данные для графиков
   chartDataPh.value = await loadChartData('PH', chartTimeRange.value)
@@ -883,28 +900,29 @@ function getDefaultCycleParams(cycleType: string): Record<string, unknown> {
 
 async function onRunCycle(cycleType: string): Promise<void> {
   if (!zoneId.value) {
-    logWarn('[onRunCycle] zoneId is missing')
-    showToast('Ошибка: зона не найдена', 'error', 3000)
+    logger.warn('[onRunCycle] zoneId is missing')
+    showToast('Ошибка: зона не найдена', 'error', TOAST_TIMEOUT.NORMAL)
     return
   }
   
-  loading.value.cycles[cycleType] = true
+  const cycles = (loading.value as LoadingState).cycles
+  cycles[cycleType] = true
   const cycleName = translateCycleType(cycleType)
   const commandType = `FORCE_${cycleType}` as CommandType
   
   // Получаем параметры по умолчанию из targets/recipe
   const defaultParams = getDefaultCycleParams(cycleType)
   
-  logInfo(`[onRunCycle] Отправка команды ${commandType} для зоны ${zoneId.value} с параметрами:`, defaultParams)
+  logger.info(`[onRunCycle] Отправка команды ${commandType} для зоны ${zoneId.value} с параметрами:`, defaultParams)
   
   try {
     await sendZoneCommand(zoneId.value, commandType, defaultParams)
-    logInfo(`✓ [onRunCycle] Команда "${cycleName}" отправлена успешно`)
-    showToast(`Команда "${cycleName}" отправлена успешно`, 'success', 3000)
+    logger.info(`✓ [onRunCycle] Команда "${cycleName}" отправлена успешно`)
+    showToast(`Команда "${cycleName}" отправлена успешно`, 'success', TOAST_TIMEOUT.NORMAL)
     // Обновляем зону и cycles через Inertia partial reload (не window.location.reload!)
     reloadZoneAfterCommand(zoneId.value, ['zone', 'cycles'])
   } catch (err) {
-    logError(`✗ [onRunCycle] Ошибка при отправке команды ${cycleType}:`, err)
+    logger.error(`✗ [onRunCycle] Ошибка при отправке команды ${cycleType}:`, err)
     handleError(err, {
       component: 'Zones/Show',
       action: 'onRunCycle',
@@ -912,7 +930,8 @@ async function onRunCycle(cycleType: string): Promise<void> {
       zoneId: zoneId.value,
     })
   } finally {
-    loading.value.cycles[cycleType] = false
+    const cycles = (loading.value as LoadingState).cycles
+    cycles[cycleType] = false
   }
 }
 
@@ -929,7 +948,7 @@ const variant = computed<'success' | 'neutral' | 'warning' | 'danger'>(() => {
 async function onToggle(): Promise<void> {
   if (!zoneId.value) return
   
-  loading.value.toggle = true
+  setLoading('toggle', true)
   
   // Оптимистично обновляем статус зоны в store
   const newStatus = zone.value.status === 'PAUSED' ? 'RUNNING' : 'PAUSED'
@@ -955,9 +974,7 @@ async function onToggle(): Promise<void> {
           const response = await api.post(`/api/zones/${zoneId.value}/${action}`, {})
           
           // Обновляем зону в store с данными с сервера
-          const updatedZone = (response.data as { data?: Zone })?.data || 
-                            (response.data as Zone) || 
-                            zone.value
+          const updatedZone = extractData<Zone>(response.data) || zone.value
           
           if (updatedZone.id) {
             zonesStore.upsert(updatedZone)
@@ -966,17 +983,17 @@ async function onToggle(): Promise<void> {
           return updatedZone
         },
         onSuccess: () => {
-          showToast(`Зона успешно ${actionText}`, 'success', 3000)
+          showToast(`Зона успешно ${actionText}`, 'success', TOAST_TIMEOUT.NORMAL)
           // Обновляем зону через Inertia partial reload для синхронизации всех данных
           reloadZone(zoneId.value, ['zone'])
         },
         onError: (error) => {
-          logError('Failed to toggle zone:', error)
-          let errorMessage = 'Неизвестная ошибка'
+          logger.error('Failed to toggle zone:', error)
+          let errorMessage = ERROR_MESSAGES.UNKNOWN
           if (error && typeof error === 'object' && 'message' in error) {
             errorMessage = String(error.message)
           }
-          showToast(`Ошибка при изменении статуса зоны: ${errorMessage}`, 'error', 5000)
+          showToast(`Ошибка при изменении статуса зоны: ${errorMessage}`, 'error', TOAST_TIMEOUT.LONG)
         },
         showLoading: false, // Управляем loading вручную
         timeout: 10000, // 10 секунд таймаут
@@ -984,9 +1001,9 @@ async function onToggle(): Promise<void> {
     )
   } catch (err) {
     // Ошибка уже обработана в onError callback
-    logError('Failed to toggle zone (unhandled):', err)
+    logger.error('Failed to toggle zone (unhandled):', err)
   } finally {
-    loading.value.toggle = false
+    setLoading('toggle', false)
   }
 }
 
@@ -998,7 +1015,7 @@ function openActionModal(actionType: CommandType): void {
 async function onActionSubmit({ actionType, params }: { actionType: CommandType; params: Record<string, unknown> }): Promise<void> {
   if (!zoneId.value) return
   
-  loading.value.irrigate = true
+  setLoading('irrigate', true)
   
   try {
     await sendZoneCommand(zoneId.value, actionType, params)
@@ -1010,31 +1027,31 @@ async function onActionSubmit({ actionType, params }: { actionType: CommandType;
       'FORCE_LIGHTING': 'Управление освещением'
     } as Record<CommandType, string>
     const actionName = actionNames[actionType] || 'Действие'
-    showToast(`${actionName} запущено успешно`, 'success', 3000)
+    showToast(`${actionName} запущено успешно`, 'success', TOAST_TIMEOUT.NORMAL)
     // Обновляем зону и cycles через Inertia partial reload
     reloadZoneAfterCommand(zoneId.value, ['zone', 'cycles'])
   } catch (err) {
-    logError(`Failed to execute ${actionType}:`, err)
-    let errorMessage = 'Неизвестная ошибка'
+    logger.error(`Failed to execute ${actionType}:`, err)
+    let errorMessage = ERROR_MESSAGES.UNKNOWN
     if (err && typeof err === 'object' && 'message' in err) errorMessage = String(err.message)
     const actionName = actionNames[actionType] || 'Действие'
-    showToast(`Ошибка при выполнении "${actionName}": ${errorMessage}`, 'error', 5000)
+    showToast(`Ошибка при выполнении "${actionName}": ${errorMessage}`, 'error', TOAST_TIMEOUT.LONG)
   } finally {
-    loading.value.irrigate = false
+    setLoading('irrigate', false)
   }
 }
 
 function openNodeConfig(nodeId: number, node: any): void {
   selectedNodeId.value = nodeId
   selectedNode.value = node
-  showNodeConfigModal.value = true
+  modals.open('nodeConfig')
 }
 
 async function onRecipeAttached(recipeId: number): Promise<void> {
-  logInfo('[Zones/Show] Recipe attached event received:', recipeId)
+  logger.info('[Zones/Show] Recipe attached event received:', recipeId)
   
   // Показываем уведомление
-  showToast('Рецепт успешно привязан к зоне', 'success', 3000)
+  showToast('Рецепт успешно привязан к зоне', 'success', TOAST_TIMEOUT.NORMAL)
   
   // Даем время для отображения toast перед обновлением
   await new Promise(resolve => setTimeout(resolve, 300))
@@ -1042,14 +1059,14 @@ async function onRecipeAttached(recipeId: number): Promise<void> {
   // Делаем полный reload страницы через Inertia для получения обновленных данных
   // Используем router.reload() для гарантированного обновления всех данных
   // preserveState: false чтобы обновить все props, включая zone с recipeInstance
-  logInfo('[Zones/Show] Starting zone reload after recipe attachment')
+  logger.info('[Zones/Show] Starting zone reload after recipe attachment')
   
   router.reload({ 
     only: ['zone'],
     preserveScroll: true,
     preserveState: false, // Важно! Это гарантирует обновление всех props
     onSuccess: (page) => {
-      logInfo('[Zones/Show] Zone reloaded successfully after recipe attachment', {
+      logger.info('[Zones/Show] Zone reloaded successfully after recipe attachment', {
         zone: page.props.zone,
         hasRecipeInstance: !!page.props.zone?.recipeInstance,
         recipeId: page.props.zone?.recipeInstance?.recipe_id,
@@ -1057,28 +1074,28 @@ async function onRecipeAttached(recipeId: number): Promise<void> {
       })
     },
     onError: (error) => {
-      logError('[Zones/Show] Failed to reload zone:', error)
+      logger.error('[Zones/Show] Failed to reload zone:', error)
     },
     onFinish: () => {
-      logInfo('[Zones/Show] Zone reload finished')
+      logger.info('[Zones/Show] Zone reload finished')
     }
   })
 }
 
 function onNodesAttached(nodeIds: number[]): void {
-  showToast(`Успешно привязано узлов: ${nodeIds.length}`, 'success', 3000)
+  showToast(`Успешно привязано узлов: ${nodeIds.length}`, 'success', TOAST_TIMEOUT.NORMAL)
   reloadZone(zoneId.value, ['zone', 'devices'])
 }
 
 function onNodeConfigPublished(): void {
-  showToast('Конфигурация узла успешно отправлена', 'success', 3000)
+  showToast('Конфигурация узла успешно отправлена', 'success', TOAST_TIMEOUT.NORMAL)
   reloadZone(zoneId.value, ['devices'])
 }
 
 async function onNextPhase(): Promise<void> {
   if (!zoneId.value || !zone.value.recipeInstance) return
   
-  loading.value.nextPhase = true
+  setLoading('nextPhase', true)
   
   // Оптимистично обновляем фазу в store
   const nextPhaseIndex = (zone.value.recipeInstance.current_phase_index || 0) + 1
@@ -1109,9 +1126,7 @@ async function onNextPhase(): Promise<void> {
           })
           
           // Обновляем зону в store с данными с сервера
-          const updatedZone = (response.data as { data?: Zone })?.data || 
-                            (response.data as Zone) || 
-                            zone.value
+          const updatedZone = extractData<Zone>(response.data) || zone.value
           
           if (updatedZone.id) {
             zonesStore.upsert(updatedZone)
@@ -1120,17 +1135,17 @@ async function onNextPhase(): Promise<void> {
           return updatedZone
         },
         onSuccess: () => {
-          showToast('Фаза успешно изменена', 'success', 3000)
+          showToast('Фаза успешно изменена', 'success', TOAST_TIMEOUT.NORMAL)
           // Обновляем зону через Inertia partial reload для синхронизации всех данных
           reloadZone(zoneId.value, ['zone'])
         },
         onError: (error) => {
-          logError('Failed to change phase:', error)
-          let errorMessage = 'Неизвестная ошибка'
+          logger.error('Failed to change phase:', error)
+          let errorMessage = ERROR_MESSAGES.UNKNOWN
           if (error && typeof error === 'object' && 'message' in error) {
             errorMessage = String(error.message)
           }
-          showToast(`Ошибка при изменении фазы: ${errorMessage}`, 'error', 5000)
+          showToast(`Ошибка при изменении фазы: ${errorMessage}`, 'error', TOAST_TIMEOUT.LONG)
         },
         showLoading: false, // Управляем loading вручную
         timeout: 10000, // 10 секунд таймаут
@@ -1138,9 +1153,9 @@ async function onNextPhase(): Promise<void> {
     )
   } catch (err) {
     // Ошибка уже обработана в onError callback
-    logError('Failed to change phase (unhandled):', err)
+    logger.error('Failed to change phase (unhandled):', err)
   } finally {
-    loading.value.nextPhase = false
+    setLoading('nextPhase', false)
   }
 }
 </script>

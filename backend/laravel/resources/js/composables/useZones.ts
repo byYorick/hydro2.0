@@ -5,6 +5,7 @@ import { ref, computed, type Ref, type ComputedRef } from 'vue'
 import { router } from '@inertiajs/vue3'
 import { useApi, type ToastHandler } from './useApi'
 import { useErrorHandler } from './useErrorHandler'
+import { extractData } from '@/utils/apiHelpers'
 import type { Zone } from '@/types'
 
 // Кеш в памяти (TTL 10-30 секунд)
@@ -56,9 +57,7 @@ export function useZones(showToast?: ToastHandler) {
 
     try {
       const response = await api.get<{ data?: Zone[] } | Zone[]>('/api/zones')
-      const zones = ((response.data as { data?: Zone[] })?.data || 
-                    (response.data as Zone[]) || 
-                    []) as Zone[]
+      const zones = extractData<Zone[]>(response.data) || []
       
       // Сохраняем в кеш
       zonesCache.set(cacheKey, {
@@ -99,8 +98,7 @@ export function useZones(showToast?: ToastHandler) {
 
     try {
       const response = await api.get<{ data?: Zone } | Zone>(`/api/zones/${zoneId}`)
-      const zone = ((response.data as { data?: Zone })?.data || 
-                   (response.data as Zone)) as Zone
+      const zone = extractData<Zone>(response.data) as Zone
       
       // Сохраняем в кеш
       zonesCache.set(cacheKey, {
@@ -126,15 +124,15 @@ export function useZones(showToast?: ToastHandler) {
   /**
    * Обновить зону через Inertia partial reload
    */
-  function reloadZone(zoneId: number, only: string[] = ['zone']): void {
-    router.reload({ only })
+  function reloadZone(zoneId: number, only: string[] = ['zone'], preserveScroll: boolean = true): void {
+    router.reload({ only, preserveScroll })
   }
 
   /**
    * Обновить список зон через Inertia partial reload
    */
-  function reloadZones(only: string[] = ['zones']): void {
-    router.reload({ only })
+  function reloadZones(only: string[] = ['zones'], preserveScroll: boolean = true): void {
+    router.reload({ only, preserveScroll })
   }
 
   /**

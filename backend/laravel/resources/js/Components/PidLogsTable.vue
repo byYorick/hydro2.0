@@ -177,7 +177,7 @@ async function loadLogs(newOffset: number = 0) {
     logs.value = result.logs
     total.value = result.total
   } catch (error) {
-    console.error('Failed to load PID logs:', error)
+    logger.error('Failed to load PID logs:', { error })
   } finally {
     loading.value = false
   }

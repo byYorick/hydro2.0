@@ -71,7 +71,7 @@ describe('useKeyboardShortcuts (P3-1)', () => {
     window.dispatchEvent(event)
     await wrapper.vm.$nextTick()
     
-    expect(mockRouter.visit).toHaveBeenCalledWith('/zones')
+    expect(mockRouter.visit).toHaveBeenCalledWith('/zones', { preserveScroll: true })
   })
 
   it('should handle Ctrl+D shortcut for Dashboard', async () => {
@@ -96,7 +96,7 @@ describe('useKeyboardShortcuts (P3-1)', () => {
     window.dispatchEvent(event)
     await wrapper.vm.$nextTick()
     
-    expect(mockRouter.visit).toHaveBeenCalledWith('/')
+    expect(mockRouter.visit).toHaveBeenCalledWith('/', { preserveScroll: true })
   })
 
   it('should handle Shift+D shortcut for Devices', async () => {
@@ -121,7 +121,7 @@ describe('useKeyboardShortcuts (P3-1)', () => {
     window.dispatchEvent(event)
     await wrapper.vm.$nextTick()
     
-    expect(mockRouter.visit).toHaveBeenCalledWith('/devices')
+    expect(mockRouter.visit).toHaveBeenCalledWith('/devices', { preserveScroll: true })
   })
 
   it('should ignore shortcuts when focus is in input', async () => {

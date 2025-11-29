@@ -138,6 +138,7 @@ import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
 import Modal from '@/Components/Modal.vue'
+import { logger } from '@/utils/logger'
 
 interface SystemLog {
   id: number
@@ -182,9 +183,9 @@ const getLevelVariant = (level?: string): string => {
 const loadLogs = async () => {
   loading.value = true
   try {
-    await router.reload({ only: ['logs'] })
+    await router.reload({ only: ['logs'], preserveScroll: true })
   } catch (err) {
-    console.error('Failed to load logs:', err)
+    logger.error('[Audit/Index] Failed to load logs:', err)
   } finally {
     loading.value = false
   }

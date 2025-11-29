@@ -53,12 +53,12 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import Modal from './Modal.vue'
 import Button from './Button.vue'
-import axios from 'axios'
 import { logger } from '@/utils/logger'
+import { useApi } from '@/composables/useApi'
+import { useToast } from '@/composables/useToast'
 
-// Безопасные обёртки для логирования
-const logInfo = logger?.info || ((...args: unknown[]) => console.log('[INFO]', ...args))
-const logError = logger?.error || ((...args: unknown[]) => console.error('[ERROR]', ...args))
+const { showToast } = useToast()
+const { api } = useApi(showToast)
 
 interface Props {
   show: boolean
@@ -105,27 +105,21 @@ onMounted(() => {
   }
 })
 
-async function loadRecipes() {
+async function loadRecipes(): Promise<void> {
   loading.value = true
   try {
-    const response = await axios.get('/api/recipes', {
-      headers: {
-        'Accept': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
-      }
-    })
+    const response = await api.get<{ data?: Recipe[] } | Recipe[]>('/recipes')
     
-    const data = response.data?.data
+    const data = (response.data as { data?: Recipe[] })?.data || (response.data as Recipe[])
     // Обрабатываем pagination response
-    if (data?.data && Array.isArray(data.data)) {
-      recipes.value = data.data
-    } else if (Array.isArray(data)) {
+    if (Array.isArray(data)) {
       recipes.value = data
     } else {
       recipes.value = []
     }
   } catch (error) {
-    logError('Failed to load recipes:', error)
+    // Ошибка уже обработана в useApi через showToast
+    logger.error('Failed to load recipes:', error)
   } finally {
     loading.value = false
   }
@@ -141,22 +135,19 @@ async function onAttach() {
       payload.start_at = new Date(startAt.value).toISOString()
     }
     
-    const response = await axios.post(`/api/zones/${props.zoneId}/attach-recipe`, payload, {
-      headers: {
-        'Accept': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
-      }
-    })
+    const response = await api.post(
+      `/zones/${props.zoneId}/attach-recipe`,
+      payload
+    )
     
     // Проверяем успешный ответ
-    logInfo('[AttachRecipeModal] Response received:', {
-      status: response.status,
+    logger.info('[AttachRecipeModal] Response received:', {
       data: response.data,
       recipeId: selectedRecipeId.value
     })
     
     if (response.data?.status === 'ok' || response.status === 200 || response.status === 201) {
-      logInfo('[AttachRecipeModal] Recipe attached successfully, emitting event')
+      logger.info('[AttachRecipeModal] Recipe attached successfully, emitting event')
       
       // Эмитим событие для обновления UI и показа уведомления ПЕРЕД закрытием
       emit('attached', selectedRecipeId.value)
@@ -169,12 +160,7 @@ async function onAttach() {
       throw new Error('Неожиданный ответ от сервера')
     }
   } catch (error: any) {
-    logError('Failed to attach recipe:', error)
-    const errorMessage = error.response?.data?.message || 
-                        error.response?.data?.error || 
-                        error.message || 
-                        'Ошибка при привязке рецепта'
-    alert(errorMessage)
+    logger.error('Failed to attach recipe:', error)
     // Не закрываем модальное окно при ошибке
     // emit('close') - убираем, чтобы пользователь мог попробовать снова
   } finally {

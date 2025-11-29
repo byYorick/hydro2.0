@@ -363,13 +363,16 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
-import axios from 'axios'
+import { useApi } from '@/composables/useApi'
+import { useToast } from '@/composables/useToast'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
+import { extractData } from '@/utils/apiHelpers'
 import { logger } from '@/utils/logger'
 
-// Проверяем, что logger доступен
-const logInfo = logger?.info || logger?.log || console.log
-const logError = logger?.error || console.error
 import { router } from '@inertiajs/vue3'
+
+const { showToast } = useToast()
+const { api } = useApi(showToast)
 
 interface Greenhouse {
   id: number
@@ -497,26 +500,20 @@ watch(() => createdGreenhouse.value?.id, (greenhouseId) => {
   }
 })
 
-async function loadAvailableGreenhouses() {
+async function loadAvailableGreenhouses(): Promise<void> {
   loading.greenhouses = true
   try {
-    const response = await axios.get('/api/greenhouses', {
-      headers: {
-        'Accept': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
-      }
-    })
+    const response = await api.get<{ data?: Greenhouse[] } | Greenhouse[]>('/greenhouses')
     
-    const data = response.data?.data
-    if (data?.data && Array.isArray(data.data)) {
-      availableGreenhouses.value = data.data
-    } else if (Array.isArray(data)) {
+    const data = extractData<Greenhouse[]>(response.data) || []
+    if (Array.isArray(data)) {
       availableGreenhouses.value = data
     } else {
       availableGreenhouses.value = []
     }
   } catch (error) {
-    logError('Failed to load greenhouses:', error)
+    // Ошибка уже обработана в useApi через showToast
+    logger.error('Failed to load greenhouses:', error)
     availableGreenhouses.value = []
   } finally {
     loading.greenhouses = false
@@ -529,12 +526,10 @@ async function loadAvailableZones(greenhouseId?: number) {
   loading.zones = true
   try {
     const ghId = greenhouseId || createdGreenhouse.value!.id
-    const response = await axios.get(`/api/zones?greenhouse_id=${ghId}`, {
-      headers: {
-        'Accept': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
-      }
-    })
+    const response = await api.get<{ data?: Zone[] } | Zone[]>(
+      '/zones',
+      { params: { greenhouse_id: ghId } }
+    )
     
     const data = response.data?.data
     if (data?.data && Array.isArray(data.data)) {
@@ -545,33 +540,29 @@ async function loadAvailableZones(greenhouseId?: number) {
       availableZones.value = []
     }
   } catch (error) {
-    logError('Failed to load zones:', error)
+    logger.error('Failed to load zones:', error)
     availableZones.value = []
   } finally {
     loading.zones = false
   }
 }
 
-async function selectGreenhouse() {
+async function selectGreenhouse(): Promise<void> {
   if (!selectedGreenhouseId.value) return
   
   loading.step1 = true
   try {
-    const response = await axios.get(`/api/greenhouses/${selectedGreenhouseId.value}`, {
-      headers: {
-        'Accept': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
-      }
-    })
+    const response = await api.get<{ data?: Greenhouse } | Greenhouse>(
+      `/greenhouses/${selectedGreenhouseId.value}`
+    )
     
-    createdGreenhouse.value = response.data.data
-    logInfo('Greenhouse selected:', createdGreenhouse.value)
+    createdGreenhouse.value = extractData<Greenhouse>(response.data) || createdGreenhouse.value
+    logger.info('Greenhouse selected:', createdGreenhouse.value)
     
     // Загружаем зоны для выбранной теплицы
     await loadAvailableZones(createdGreenhouse.value.id)
   } catch (error: any) {
-    logError('Failed to select greenhouse:', error)
-    alert(error.response?.data?.message || 'Ошибка при выборе теплицы')
+    logger.error('Failed to select greenhouse:', error)
   } finally {
     loading.step1 = false
   }
@@ -582,37 +573,34 @@ async function selectZone() {
   
   loading.step3 = true
   try {
-    const response = await axios.get(`/api/zones/${selectedZoneId.value}`, {
-      headers: {
-        'Accept': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
-      }
-    })
+    const response = await api.get<{ data?: Zone } | Zone>(
+      `/zones/${selectedZoneId.value}`
+    )
     
-    createdZone.value = response.data.data
-    logInfo('Zone selected:', createdZone.value)
-  } catch (error: any) {
-    logError('Failed to select zone:', error)
-    alert(error.response?.data?.message || 'Ошибка при выборе зоны')
+    createdZone.value = extractData<Zone>(response.data) || createdZone.value
+    logger.info('Zone selected:', createdZone.value)
+  } catch (error) {
+    // Ошибка уже обработана в useApi через showToast
+    logger.error('Failed to select zone:', error)
   } finally {
     loading.step3 = false
   }
 }
 
-async function createGreenhouse() {
+async function createGreenhouse(): Promise<void> {
   loading.step1 = true
   try {
-    const response = await axios.post('/api/greenhouses', greenhouseForm, {
-      headers: {
-        'Accept': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
-      }
-    })
-    createdGreenhouse.value = response.data.data
-    logInfo('Greenhouse created:', createdGreenhouse.value)
-  } catch (error: any) {
-    logError('Failed to create greenhouse:', error)
-    alert(error.response?.data?.message || 'Ошибка при создании теплицы')
+    const response = await api.post<{ data?: Greenhouse } | Greenhouse>(
+      '/greenhouses',
+      greenhouseForm
+    )
+    
+    createdGreenhouse.value = extractData<Greenhouse>(response.data) || createdGreenhouse.value
+    logger.info('Greenhouse created:', createdGreenhouse.value)
+    showToast('Теплица успешно создана', 'success', TOAST_TIMEOUT.NORMAL)
+  } catch (error) {
+    // Ошибка уже обработана в useApi через showToast
+    logger.error('Failed to create greenhouse:', error)
   } finally {
     loading.step1 = false
   }
@@ -638,63 +626,61 @@ function addPhase() {
   })
 }
 
-async function createRecipe() {
+async function createRecipe(): Promise<void> {
   if (!createdGreenhouse.value) return
   
   loading.step2 = true
   try {
     // 1. Создать рецепт
-    const recipeResponse = await axios.post('/api/recipes', {
-      name: recipeForm.name,
-      description: recipeForm.description
-    }, {
-      headers: {
-        'Accept': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
+    const recipeResponse = await api.post<{ data?: Recipe } | Recipe>(
+      '/recipes',
+      {
+        name: recipeForm.name,
+        description: recipeForm.description
       }
-    })
+    )
     
-    const recipeId = recipeResponse.data.data.id
+    const recipe = (recipeResponse.data as { data?: Recipe })?.data || (recipeResponse.data as Recipe)
+    const recipeId = recipe.id
+    
+    if (!recipeId) {
+      throw new Error('Recipe ID not found in response')
+    }
     
     // 2. Создать фазы
     for (const phase of recipeForm.phases) {
-      await axios.post(`/api/recipes/${recipeId}/phases`, {
+      await api.post(`/recipes/${recipeId}/phases`, {
         phase_index: phase.phase_index,
         name: phase.name,
         duration_hours: phase.duration_hours,
         targets: phase.targets
-      }, {
-        headers: {
-          'Accept': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest'
-        }
       })
     }
     
     // 3. Загрузить полный рецепт с фазами
-    const fullRecipeResponse = await axios.get(`/api/recipes/${recipeId}`, {
-      headers: {
-        'Accept': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
-      }
-    })
+    const fullRecipeResponse = await api.get<{ data?: Recipe } | Recipe>(
+      `/recipes/${recipeId}`
+    )
     
-    createdRecipe.value = fullRecipeResponse.data.data
-    logInfo('Recipe created:', createdRecipe.value)
-  } catch (error: any) {
-    logError('Failed to create recipe:', error)
-    alert(error.response?.data?.message || 'Ошибка при создании рецепта')
+    createdRecipe.value = (fullRecipeResponse.data as { data?: Recipe })?.data || (fullRecipeResponse.data as Recipe)
+    logger.info('Recipe created:', createdRecipe.value)
+    showToast('Рецепт успешно создан', 'success', TOAST_TIMEOUT.NORMAL)
+  } catch (error) {
+    // Ошибка уже обработана в useApi через showToast
+    logger.error('Failed to create recipe:', error)
   } finally {
     loading.step2 = false
   }
 }
 
-async function createZone() {
+async function createZone(): Promise<void> {
   if (!createdGreenhouse.value) return
   
   loading.step3 = true
   try {
-    const response = await axios.post('/api/zones', {
+    const response = await api.post<{ data?: Zone } | Zone>(
+      '/zones',
+      {
       ...zoneForm,
       greenhouse_id: createdGreenhouse.value.id
     }, {
@@ -705,39 +691,37 @@ async function createZone() {
     })
     
     createdZone.value = response.data.data
-    logInfo('Zone created:', createdZone.value)
+    logger.info('Zone created:', createdZone.value)
     
     // Обновляем список зон
     await loadAvailableZones(createdGreenhouse.value.id)
   } catch (error: any) {
-    logError('Failed to create zone:', error)
-    alert(error.response?.data?.message || 'Ошибка при создании зоны')
+    logger.error('Failed to create zone:', error)
   } finally {
     loading.step3 = false
   }
 }
 
-async function attachRecipeToZone() {
+async function attachRecipeToZone(): Promise<void> {
   if (!createdZone.value || !createdRecipe.value) return
   
   loading.step4 = true
   try {
-    await axios.post(`/api/zones/${createdZone.value.id}/attach-recipe`, {
-      recipe_id: createdRecipe.value.id,
-      start_at: new Date().toISOString()
-    }, {
-      headers: {
-        'Accept': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
+    await api.post(
+      `/zones/${createdZone.value.id}/attach-recipe`,
+      {
+        recipe_id: createdRecipe.value.id,
+        start_at: new Date().toISOString()
       }
-    })
+    )
     
-    logInfo('Recipe attached to zone')
+    logger.info('Recipe attached to zone')
+    showToast('Рецепт успешно привязан к зоне', 'success', TOAST_TIMEOUT.NORMAL)
     // Обновляем список узлов после привязки рецепта
     await loadAvailableNodes()
-  } catch (error: any) {
-    logError('Failed to attach recipe:', error)
-    alert(error.response?.data?.message || 'Ошибка при привязке рецепта')
+  } catch (error) {
+    // Ошибка уже обработана в useApi через showToast
+    logger.error('Failed to attach recipe:', error)
   } finally {
     loading.step4 = false
   }
@@ -746,51 +730,44 @@ async function attachRecipeToZone() {
 async function loadAvailableNodes() {
   loading.nodes = true
   try {
-    const response = await axios.get('/api/nodes?unassigned=true', {
-      headers: {
-        'Accept': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
-      }
-    })
+    const response = await api.get<{ data?: Node[] } | Node[]>(
+      '/nodes',
+      { params: { unassigned: true } }
+    )
     
-    const data = response.data?.data
+    const data = extractData<Node[]>(response.data) || []
     // Обрабатываем pagination response
-    if (data?.data && Array.isArray(data.data)) {
-      availableNodes.value = data.data
-    } else if (Array.isArray(data)) {
+    if (Array.isArray(data)) {
       availableNodes.value = data
     } else {
       availableNodes.value = []
     }
   } catch (error) {
-    logError('Failed to load nodes:', error)
+    // Ошибка уже обработана в useApi через showToast
+    logger.error('Failed to load nodes:', error)
   } finally {
     loading.nodes = false
   }
 }
 
-async function attachNodesToZone() {
+async function attachNodesToZone(): Promise<void> {
   if (!createdZone.value || selectedNodeIds.value.length === 0) return
   
   loading.step5 = true
   try {
     const promises = selectedNodeIds.value.map(nodeId =>
-      axios.patch(`/api/nodes/${nodeId}`, {
+      api.patch(`/nodes/${nodeId}`, {
         zone_id: createdZone.value!.id
-      }, {
-        headers: {
-          'Accept': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest'
-        }
       })
     )
     
     await Promise.all(promises)
     attachedNodesCount.value = selectedNodeIds.value.length
-    logInfo(`Attached ${attachedNodesCount.value} nodes to zone`)
-  } catch (error: any) {
-    logError('Failed to attach nodes:', error)
-    alert(error.response?.data?.message || 'Ошибка при привязке узлов')
+    logger.info(`Attached ${attachedNodesCount.value} nodes to zone`)
+    showToast(`Успешно привязано узлов: ${attachedNodesCount.value}`, 'success', TOAST_TIMEOUT.NORMAL)
+  } catch (error) {
+    // Ошибка уже обработана в useApi через showToast
+    logger.error('Failed to attach nodes:', error)
   } finally {
     loading.step5 = false
   }

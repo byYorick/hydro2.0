@@ -16,15 +16,56 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
+// ИСПРАВЛЕНО: Роут для Laravel Boost browser-logs (если используется)
+// Отключаем отправку логов, если эндпоинт не нужен
+Route::post('/_boost/browser-logs', function (\Illuminate\Http\Request $request) {
+    // ИСПРАВЛЕНО: Просто возвращаем успешный ответ, чтобы не было ошибок в консоли
+    // В будущем можно добавить сохранение логов, если нужно
+    \Log::debug('Browser log received (ignored)', [
+        'data' => $request->all(),
+    ]);
+    return response()->json(['status' => 'ok'], 200);
+})->middleware(['web']);
+
 // Broadcasting authentication route
 // Поддерживает сессионную аутентификацию для Inertia.js
-Route::post('/broadcasting/auth', function () {
+Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
     // Проверяем, что пользователь аутентифицирован
     if (! auth()->check()) {
+        \Log::warning('Broadcasting auth: Unauthenticated request', [
+            'ip' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'channel' => $request->input('channel_name'),
+        ]);
         return response()->json(['message' => 'Unauthenticated.'], 403);
     }
 
-    return Broadcast::auth(request());
+    try {
+        $user = auth()->user();
+        $channelName = $request->input('channel_name');
+        
+        \Log::debug('Broadcasting auth: Authorizing channel', [
+            'user_id' => $user->id,
+            'channel' => $channelName,
+        ]);
+
+        $response = Broadcast::auth($request);
+        
+        \Log::debug('Broadcasting auth: Success', [
+            'user_id' => $user->id,
+            'channel' => $channelName,
+            'status' => $response->getStatusCode(),
+        ]);
+
+        return $response;
+    } catch (\Exception $e) {
+        \Log::error('Broadcasting auth: Error', [
+            'user_id' => auth()->id(),
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString(),
+        ]);
+        return response()->json(['message' => 'Authorization failed.'], 500);
+    }
 })->middleware(['web', 'auth']);
 
 Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->group(function () {

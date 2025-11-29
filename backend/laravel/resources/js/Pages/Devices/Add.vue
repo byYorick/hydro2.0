@@ -127,24 +127,28 @@ import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
 import { logger } from '@/utils/logger'
-import axios from 'axios'
 import { useNodeLifecycle } from '@/composables/useNodeLifecycle'
 import { useErrorHandler } from '@/composables/useErrorHandler'
 import { useToast } from '@/composables/useToast'
-import type { Device } from '@/types'
+import { useApi } from '@/composables/useApi'
+import { useLoading } from '@/composables/useLoading'
+import { extractData } from '@/utils/apiHelpers'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
+import type { Device, Greenhouse, Zone } from '@/types'
 
 const { showToast } = useToast()
+const { api } = useApi(showToast)
+const { loading, startLoading, stopLoading } = useLoading<boolean>(false)
 
 // Инициализация composables для lifecycle
 const { canAssignToZone, getStateLabel } = useNodeLifecycle(showToast)
 const { handleError } = useErrorHandler(showToast)
 
-const loading = ref(false)
-const newNodes = ref([])
-const greenhouses = ref([])
-const zones = ref([])
-const assigning = reactive({})
-const assignmentForms = reactive({})
+const newNodes = ref<Device[]>([])
+const greenhouses = ref<Greenhouse[]>([])
+const zones = ref<Zone[]>([])
+const assigning = reactive<Record<number, boolean>>({})
+const assignmentForms = reactive<Record<number, { greenhouse_id: number | null; zone_id: number | null; name: string }>>({})
 
 function formatDate(dateString) {
   if (!dateString) return '-'
@@ -185,18 +189,17 @@ function onGreenhouseChange(nodeId) {
   }
 }
 
-async function loadNewNodes() {
-  loading.value = true
+async function loadNewNodes(): Promise<void> {
+  startLoading()
   try {
-    const response = await axios.get('/api/nodes', {
-      params: { unassigned: true },
-      headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-    })
-    const data = response.data?.data
+    const response = await api.get<{ data?: Device[] } | Device[]>(
+      '/nodes',
+      { params: { unassigned: true } }
+    )
+    
+    const data = extractData<Device[]>(response.data) || []
     // Обработка пагинации или прямого массива
-    if (data?.data && Array.isArray(data.data)) {
-      newNodes.value = data.data
-    } else if (Array.isArray(data)) {
+    if (Array.isArray(data)) {
       newNodes.value = data
     } else {
       newNodes.value = []
@@ -204,7 +207,7 @@ async function loadNewNodes() {
     
     // Инициализировать формы для каждой ноды
     newNodes.value.forEach(node => {
-      if (!assignmentForms[node.id]) {
+      if (node.id && !assignmentForms[node.id]) {
         assignmentForms[node.id] = {
           greenhouse_id: null,
           zone_id: null,
@@ -213,47 +216,43 @@ async function loadNewNodes() {
       }
     })
   } catch (err) {
+    // Ошибка уже обработана в useApi через showToast
     logger.error('[Devices/Add] Failed to load new nodes:', err)
-    showToast('Ошибка при загрузке новых нод', 'error', 5000)
   } finally {
-    loading.value = false
+    stopLoading()
   }
 }
 
-async function loadGreenhouses() {
+async function loadGreenhouses(): Promise<void> {
   try {
-    const response = await axios.get('/api/greenhouses', {
-      headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-    })
-    const data = response.data?.data
+    const response = await api.get<{ data?: Greenhouse[] } | Greenhouse[]>('/greenhouses')
+    
+    const data = extractData<Greenhouse[]>(response.data) || []
     // Обработка пагинации или прямого массива
-    if (data?.data && Array.isArray(data.data)) {
-      greenhouses.value = data.data
-    } else if (Array.isArray(data)) {
+    if (Array.isArray(data)) {
       greenhouses.value = data
     } else {
       greenhouses.value = []
     }
   } catch (err) {
+    // Ошибка уже обработана в useApi через showToast
     logger.error('[Devices/Add] Failed to load greenhouses:', err)
   }
 }
 
-async function loadZones() {
+async function loadZones(): Promise<void> {
   try {
-    const response = await axios.get('/api/zones', {
-      headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-    })
-    const data = response.data?.data
+    const response = await api.get<{ data?: Zone[] } | Zone[]>('/zones')
+    
+    const data = extractData<Zone[]>(response.data) || []
     // Обработка пагинации или прямого массива
-    if (data?.data && Array.isArray(data.data)) {
-      zones.value = data.data
-    } else if (Array.isArray(data)) {
+    if (Array.isArray(data)) {
       zones.value = data
     } else {
       zones.value = []
     }
   } catch (err) {
+    // Ошибка уже обработана в useApi через showToast
     logger.error('[Devices/Add] Failed to load zones:', err)
   }
 }
@@ -261,7 +260,7 @@ async function loadZones() {
 async function assignNode(node) {
   const form = assignmentForms[node.id]
   if (!form.zone_id) {
-    showToast('Выберите зону для привязки', 'error', 3000)
+    showToast('Выберите зону для привязки', 'error', TOAST_TIMEOUT.NORMAL)
     return
   }
 
@@ -301,17 +300,18 @@ async function assignNode(node) {
       name: form.name || node.name || node.uid,
     }
     
-    const response = await axios.patch(`/api/nodes/${node.id}`, updateData, {
-      headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-    })
+    const response = await api.patch<{ status: string; data?: Device }>(
+      `/nodes/${node.id}`,
+      updateData
+    )
     
-    if (response.data?.status === 'ok') {
+    if (response.data?.status === 'ok' && response.data?.data) {
       const updatedNode = response.data.data
       
       // Проверяем, что конфиг был успешно опубликован (lifecycle_state = ASSIGNED_TO_ZONE)
       // Если lifecycle_state все еще REGISTERED_BACKEND, значит публикация конфига не удалась
       if (updatedNode?.lifecycle_state === 'ASSIGNED_TO_ZONE') {
-        showToast(`Нода "${node.uid}" успешно привязана к зоне и получила конфиг`, 'success', 3000)
+        showToast(`Нода "${node.uid}" успешно привязана к зоне и получила конфиг`, 'success', TOAST_TIMEOUT.NORMAL)
         
         // Удалить ноду из списка новых (так как она теперь привязана)
         newNodes.value = newNodes.value.filter(n => n.id !== node.id)
@@ -319,7 +319,7 @@ async function assignNode(node) {
       } else if (updatedNode?.lifecycle_state === 'REGISTERED_BACKEND' && updatedNode?.zone_id) {
         // Конфиг еще не опубликован, но zone_id установлен
         // Показываем предупреждение, что нужно подождать публикации конфига
-        showToast(`Нода "${node.uid}" привязана к зоне, ожидание публикации конфига...`, 'info', 5000)
+        showToast(`Нода "${node.uid}" привязана к зоне, ожидание публикации конфига...`, 'info', TOAST_TIMEOUT.LONG)
         
         // Обновляем данные ноды, но не удаляем из списка
         const nodeIndex = newNodes.value.findIndex(n => n.id === node.id)
@@ -328,7 +328,7 @@ async function assignNode(node) {
         }
       } else {
         // Что-то пошло не так
-        showToast(`Нода "${node.uid}" обновлена, но привязка может быть не завершена`, 'warning', 5000)
+        showToast(`Нода "${node.uid}" обновлена, но привязка может быть не завершена`, 'warning', TOAST_TIMEOUT.LONG)
       }
     }
   } catch (err) {
@@ -357,7 +357,7 @@ async function assignNode(node) {
 }
 
 async function refreshNodes() {
-  showToast('Обновление списка нод...', 'info', 2000)
+  showToast('Обновление списка нод...', 'info', TOAST_TIMEOUT.SHORT)
   await loadNewNodes()
 }
 

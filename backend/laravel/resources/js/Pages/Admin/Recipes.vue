@@ -23,31 +23,43 @@
   </AppLayout>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import { reactive, ref } from 'vue'
-import { logger } from '@/utils/logger'
-import axios from 'axios'
 import { usePage, router } from '@inertiajs/vue3'
+import { useApi } from '@/composables/useApi'
+import { useToast } from '@/composables/useToast'
+import type { Recipe } from '@/types/Recipe'
 
-const page = usePage()
+interface PageProps {
+  recipes?: Recipe[]
+}
+
+const page = usePage<PageProps>()
+const { showToast } = useToast()
+const { api } = useApi(showToast)
+
 const recipes = page.props.recipes || []
-const selectedId = ref(recipes[0]?.id || null)
-const form = reactive({ name: '', description: '' })
+const selectedId = ref<number | null>(recipes[0]?.id || null)
+const form = reactive<{ name: string; description: string }>({ 
+  name: '', 
+  description: '' 
+})
 
-async function onUpdate() {
+async function onUpdate(): Promise<void> {
   if (!selectedId.value) return
-  await axios.patch(`/api/recipes/${selectedId.value}`, form, {
-    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-  }).then(() => {
-    router.reload({ only: ['recipes'] })
+  
+  try {
+    await api.patch(`/recipes/${selectedId.value}`, form)
+    router.reload({ only: ['recipes'], preserveScroll: true })
     form.name = ''
     form.description = ''
-  }).catch(err => {
-    logger.error('[Admin/Recipes] Failed to update recipe:', err)
-  })
+    showToast('Recipe updated successfully', 'success', TOAST_TIMEOUT.NORMAL)
+  } catch (err) {
+    // Ошибка уже обработана в useApi через showToast
+  }
 }
 </script>
 

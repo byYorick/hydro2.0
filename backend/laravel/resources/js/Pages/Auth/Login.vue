@@ -3,11 +3,12 @@ import Checkbox from '@/Components/Checkbox.vue';
 import GuestLayout from '@/Layouts/GuestLayout.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
-import PrimaryButton from '@/Components/PrimaryButton.vue';
+import Button from '@/Components/Button.vue';
 import TextInput from '@/Components/TextInput.vue';
-import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Head, Link } from '@inertiajs/vue3';
 // ИСПРАВЛЕНО: Импорт route из утилиты
 import { route } from '@/utils/route';
+import { useInertiaForm } from '@/composables/useInertiaForm';
 
 interface Props {
     canResetPassword?: boolean
@@ -22,16 +23,21 @@ interface LoginFormData {
     remember: boolean
 }
 
-const form = useForm<LoginFormData>({
-    email: '',
-    password: '',
-    remember: false,
-});
+const { form, submit: submitForm } = useInertiaForm<LoginFormData>(
+    {
+        email: '',
+        password: '',
+        remember: false,
+    },
+    {
+        resetFieldsOnSuccess: ['password'],
+        showSuccessToast: false, // Auth формы обычно не показывают Toast
+        showErrorToast: false,
+    }
+);
 
 const submit = (): void => {
-    form.post(route('login'), {
-        onFinish: () => form.reset('password'),
-    });
+    submitForm('post', route('login'));
 };
 </script>
 
@@ -101,13 +107,13 @@ const submit = (): void => {
                         Забыли пароль?
                     </Link>
 
-                    <PrimaryButton
+                    <Button variant="primary"
                         class="ms-4"
                         :class="{ 'opacity-25': form.processing }"
                         :disabled="form.processing"
                     >
                         Войти
-                    </PrimaryButton>
+                    </Button>
                 </div>
             </div>
         </form>

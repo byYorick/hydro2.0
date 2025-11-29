@@ -52,8 +52,7 @@ import type { NodeLifecycleState } from '@/types/Device'
 
 // Простая обертка для toast (если useToast недоступен)
 function showToast(message: string, variant: string = 'info', duration: number = 3000): void {
-  // eslint-disable-next-line no-console
-  console.log(`[Toast ${variant}]:`, message)
+  logger.debug(`[Toast ${variant}]:`, message)
 }
 
 interface Props {

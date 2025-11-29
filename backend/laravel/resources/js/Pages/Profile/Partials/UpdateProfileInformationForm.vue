@@ -1,9 +1,11 @@
-<script setup>
+<script setup lang="ts">
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
-import PrimaryButton from '@/Components/PrimaryButton.vue';
+import Button from '@/Components/Button.vue';
 import TextInput from '@/Components/TextInput.vue';
-import { Link, useForm, usePage } from '@inertiajs/vue3';
+import { Link, usePage } from '@inertiajs/vue3';
+import { useInertiaForm } from '@/composables/useInertiaForm';
+import { route } from '@/utils/route';
 
 defineProps({
     mustVerifyEmail: {
@@ -16,10 +18,25 @@ defineProps({
 
 const user = usePage().props.auth.user;
 
-const form = useForm({
-    name: user.name,
-    email: user.email,
-});
+interface UpdateProfileInformationFormData {
+    name: string;
+    email: string;
+}
+
+const { form, submit: submitForm } = useInertiaForm<UpdateProfileInformationFormData>(
+    {
+        name: user.name,
+        email: user.email,
+    },
+    {
+        successMessage: 'Профиль успешно обновлен',
+        preserveScroll: true,
+    }
+);
+
+const submit = () => {
+    submitForm('patch', route('profile.update'));
+};
 </script>
 
 <template>
@@ -35,7 +52,7 @@ const form = useForm({
         </header>
 
         <form
-            @submit.prevent="form.patch(route('profile.update'))"
+            @submit.prevent="submit"
             class="mt-6 space-y-6"
         >
             <div>
@@ -91,7 +108,7 @@ const form = useForm({
             </div>
 
             <div class="flex items-center gap-4">
-                <PrimaryButton :disabled="form.processing">Save</PrimaryButton>
+                    <Button variant="primary" :disabled="form.processing">Save</Button>
 
                 <Transition
                     enter-active-class="transition ease-in-out"

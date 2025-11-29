@@ -20,7 +20,7 @@
             <option value="viewer">Наблюдатель</option>
           </select>
           <Button size="sm" @click="loadUsers" :disabled="loading.load">Обновить</Button>
-          <Button size="sm" variant="secondary" @click="showCreateModal = true">Создать пользователя</Button>
+          <Button size="sm" variant="secondary" @click="openCreateModal()">Создать пользователя</Button>
         </div>
 
         <div class="rounded-xl border border-neutral-800 overflow-hidden max-h-[720px] flex flex-col">
@@ -162,8 +162,11 @@ import Badge from '@/Components/Badge.vue'
 import Modal from '@/Components/Modal.vue'
 import { translateRole } from '@/utils/i18n'
 import { logger } from '@/utils/logger'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
+import { useModal } from '@/composables/useModal'
+import { ERROR_MESSAGES } from '@/constants/messages'
 
 const page = usePage()
 const currentUser = computed(() => page.props.auth?.user)
@@ -178,7 +181,7 @@ const { api } = useApi(showToast)
 const users = ref([])
 const searchQuery = ref('')
 const roleFilter = ref('')
-const showCreateModal = ref(false)
+const { isOpen: showCreateModal, open: openCreateModal, close: closeCreateModal } = useModal<boolean>(false)
 const editingUser = ref(null)
 const deletingUser = ref(null)
 
@@ -279,7 +282,7 @@ const loadUsers = async () => {
   if (!isAdmin.value) return
   loading.value.load = true
   try {
-    await router.reload({ only: ['users'] })
+    await router.reload({ only: ['users'], preserveScroll: true })
     const propsUsers = page.props.users || []
     users.value = propsUsers.map((u) => ({
       ...u,
@@ -287,7 +290,7 @@ const loadUsers = async () => {
     }))
   } catch (err) {
     logger.error('Failed to load users:', err)
-    showToast('Ошибка загрузки пользователей', 'error', 5000)
+    showToast('Ошибка загрузки пользователей', 'error', TOAST_TIMEOUT.LONG)
   } finally {
     loading.value.load = false
   }
@@ -312,13 +315,13 @@ const doDelete = async () => {
   loading.value.delete = true
   try {
     await api.delete(`/settings/users/${deletingUser.value.id}`)
-    showToast('Пользователь успешно удален', 'success', 3000)
+    showToast('Пользователь успешно удален', 'success', TOAST_TIMEOUT.NORMAL)
     deletingUser.value = null
-    await router.reload({ only: ['users'] })
+    await router.reload({ only: ['users'], preserveScroll: true })
   } catch (err) {
     logger.error('Failed to delete user:', err)
     const errorMsg = err.response?.data?.message || err.message || 'Неизвестная ошибка'
-    showToast(`Ошибка: ${errorMsg}`, 'error', 5000)
+    showToast(`Ошибка: ${errorMsg}`, 'error', TOAST_TIMEOUT.LONG)
     deletingUser.value = null
   } finally {
     loading.value.delete = false
@@ -327,7 +330,7 @@ const doDelete = async () => {
 
 const saveUser = async () => {
   if (!validateForm()) {
-    showToast('Пожалуйста, исправьте ошибки в форме', 'error', 5000)
+    showToast('Пожалуйста, исправьте ошибки в форме', 'error', TOAST_TIMEOUT.LONG)
     return
   }
   
@@ -342,9 +345,9 @@ const saveUser = async () => {
     } else {
       await api.post('/settings/users', payload)
     }
-    showToast(editingUser.value ? 'Пользователь успешно обновлен' : 'Пользователь успешно создан', 'success', 3000)
+    showToast(editingUser.value ? 'Пользователь успешно обновлен' : 'Пользователь успешно создан', 'success', TOAST_TIMEOUT.NORMAL)
     closeModal()
-    await router.reload({ only: ['users'] })
+    await router.reload({ only: ['users'], preserveScroll: true })
   } catch (err) {
     logger.error('Failed to save user:', err)
     
@@ -355,10 +358,10 @@ const saveUser = async () => {
       if (errors.email) formErrors.email = errors.email[0]
       if (errors.password) formErrors.password = errors.password[0]
       if (errors.role) formErrors.role = errors.role[0]
-      showToast('Ошибки валидации', 'error', 5000)
+      showToast('Ошибки валидации', 'error', TOAST_TIMEOUT.LONG)
     } else {
       const errorMsg = err.response?.data?.message || err.message || 'Неизвестная ошибка'
-      showToast(`Ошибка: ${errorMsg}`, 'error', 5000)
+      showToast(`Ошибка: ${errorMsg}`, 'error', TOAST_TIMEOUT.LONG)
     }
   } finally {
     loading.value.save = false
@@ -366,7 +369,7 @@ const saveUser = async () => {
 }
 
 const closeModal = () => {
-  showCreateModal.value = false
+  closeCreateModal()
   editingUser.value = null
   userForm.name = ''
   userForm.email = ''

@@ -49,9 +49,14 @@
 import { ref, watch, onMounted } from 'vue'
 import Modal from './Modal.vue'
 import Button from './Button.vue'
-import axios from 'axios'
 import { logger } from '@/utils/logger'
 import { router } from '@inertiajs/vue3'
+import { useApi } from '@/composables/useApi'
+import { useToast } from '@/composables/useToast'
+import type { Device } from '@/types'
+
+const { showToast } = useToast()
+const { api } = useApi(showToast)
 
 interface Props {
   show: boolean
@@ -73,9 +78,9 @@ const emit = defineEmits<{
   attached: [nodeIds: number[]]
 }>()
 
-const loading = ref(false)
-const attaching = ref(false)
-const availableNodes = ref<Node[]>([])
+const loading = ref<boolean>(false)
+const attaching = ref<boolean>(false)
+const availableNodes = ref<Device[]>([])
 const selectedNodeIds = ref<number[]>([])
 
 watch(() => props.show, (show) => {
@@ -90,19 +95,18 @@ onMounted(() => {
   }
 })
 
-async function loadAvailableNodes() {
+async function loadAvailableNodes(): Promise<void> {
   loading.value = true
   try {
-    const response = await axios.get('/api/nodes?unassigned=true', {
-      headers: {
-        'Accept': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
-      }
-    })
+    const response = await api.get<{ data?: Device[] } | Device[]>(
+      '/nodes',
+      { params: { unassigned: true } }
+    )
     
-    const data = response.data?.data
-    availableNodes.value = (data?.data || (Array.isArray(data) ? data : [])) || []
+    const data = (response.data as { data?: Device[] })?.data || (response.data as Device[])
+    availableNodes.value = Array.isArray(data) ? data : []
   } catch (error) {
+    // Ошибка уже обработана в useApi через showToast
     logger.error('Failed to load available nodes:', error)
   } finally {
     loading.value = false
@@ -116,24 +120,20 @@ async function onAttach() {
   try {
     // Привязываем каждый узел к зоне
     const promises = selectedNodeIds.value.map(nodeId =>
-      axios.patch(`/api/nodes/${nodeId}`, {
+      api.patch(`/nodes/${nodeId}`, {
         zone_id: props.zoneId
-      }, {
-        headers: {
-          'Accept': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest'
-        }
       })
     )
     
     await Promise.all(promises)
     
+    showToast(`Успешно привязано узлов: ${selectedNodeIds.value.length}`, 'success', TOAST_TIMEOUT.NORMAL)
     emit('attached', selectedNodeIds.value)
     emit('close')
-    router.reload({ only: ['zone', 'devices'] })
-  } catch (error: any) {
+    router.reload({ only: ['zone', 'devices'], preserveScroll: true })
+  } catch (error) {
+    // Ошибка уже обработана в useApi через showToast
     logger.error('Failed to attach nodes:', error)
-    alert(error.response?.data?.message || 'Ошибка при привязке узлов')
   } finally {
     attaching.value = false
   }

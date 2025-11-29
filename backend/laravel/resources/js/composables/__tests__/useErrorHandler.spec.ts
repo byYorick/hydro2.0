@@ -89,7 +89,7 @@ describe('useErrorHandler', () => {
 
       const error = handleError(unknownError)
       expect(error).toBeInstanceOf(Error)
-      expect(error.message).toBe('Неизвестная ошибка')
+      expect(error.message).toBe('Произошла неизвестная ошибка.')
     })
   })
 
@@ -113,7 +113,7 @@ describe('useErrorHandler', () => {
       )
     })
 
-    it('should handle 401 errors without toast', () => {
+    it('should handle 401 errors', () => {
       const { handleError } = useErrorHandler(mockShowToast)
       const axiosError = {
         response: {
@@ -125,7 +125,7 @@ describe('useErrorHandler', () => {
       handleError(axiosError)
 
       expect(mockShowToast).toHaveBeenCalledWith(
-        'Требуется авторизация',
+        'Требуется авторизация. Пожалуйста, войдите в систему.',
         'error',
         5000
       )
@@ -143,7 +143,7 @@ describe('useErrorHandler', () => {
       handleError(axiosError)
 
       expect(mockShowToast).toHaveBeenCalledWith(
-        'Доступ запрещен',
+        'Доступ запрещен. У вас нет прав для выполнения этого действия.',
         'error',
         5000
       )
@@ -161,7 +161,7 @@ describe('useErrorHandler', () => {
       handleError(axiosError)
 
       expect(mockShowToast).toHaveBeenCalledWith(
-        'Ресурс не найден',
+        'Ресурс не найден.',
         'error',
         5000
       )

@@ -1,12 +1,13 @@
-<script setup>
+<script setup lang="ts">
 import GuestLayout from '@/Layouts/GuestLayout.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
-import PrimaryButton from '@/Components/PrimaryButton.vue';
+import Button from '@/Components/Button.vue';
 import TextInput from '@/Components/TextInput.vue';
-import { Head, useForm } from '@inertiajs/vue3';
+import { Head } from '@inertiajs/vue3';
 // ИСПРАВЛЕНО: Импорт route из утилиты
 import { route } from '@/utils/route';
+import { useInertiaForm } from '@/composables/useInertiaForm';
 
 defineProps({
     status: {
@@ -14,12 +15,22 @@ defineProps({
     },
 });
 
-const form = useForm({
-    email: '',
-});
+interface ForgotPasswordFormData {
+    email: string;
+}
+
+const { form, submit: submitForm } = useInertiaForm<ForgotPasswordFormData>(
+    {
+        email: '',
+    },
+    {
+        showSuccessToast: false,
+        showErrorToast: false,
+    }
+);
 
 const submit = () => {
-    form.post(route('password.email'));
+    submitForm('post', route('password.email'));
 };
 </script>
 
@@ -58,12 +69,12 @@ const submit = () => {
             </div>
 
             <div class="mt-4 flex items-center justify-end">
-                <PrimaryButton
+                    <Button variant="primary"
                     :class="{ 'opacity-25': form.processing }"
                     :disabled="form.processing"
                 >
                     Email Password Reset Link
-                </PrimaryButton>
+                    </Button>
             </div>
         </form>
     </GuestLayout>

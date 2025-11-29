@@ -19,8 +19,21 @@ const routerVisitMock = vi.hoisted(() => vi.fn())
 const mockLoggerError = vi.hoisted(() => vi.fn())
 const mockLoggerInfo = vi.hoisted(() => vi.fn())
 
+const mockAxiosInstance = vi.hoisted(() => ({
+  get: vi.fn(),
+  post: axiosPostMock,
+  patch: axiosPatchMock,
+  delete: vi.fn(),
+  put: vi.fn(),
+  interceptors: {
+    request: { use: vi.fn(), eject: vi.fn() },
+    response: { use: vi.fn(), eject: vi.fn() },
+  },
+}))
+
 vi.mock('axios', () => ({
   default: {
+    create: vi.fn(() => mockAxiosInstance()),
     patch: (url: string, data?: any, config?: any) => axiosPatchMock(url, data, config),
     post: (url: string, data?: any, config?: any) => axiosPostMock(url, data, config),
   },
@@ -68,9 +81,11 @@ const useFormMock = vi.hoisted(() => {
         }
       }),
       patch: vi.fn(async (url: string, options?: any) => {
+        // Устанавливаем processing синхронно перед await
         form.processing = true
+        // Используем Promise.resolve для обеспечения асинхронности, но processing уже установлен
         try {
-          const result = await axiosPatchMock(url, formData, options)
+          const result = await Promise.resolve(axiosPatchMock(url, formData, options))
           if (options?.onSuccess) {
             options.onSuccess()
           }
@@ -241,34 +256,61 @@ describe('Recipes/Edit.vue', () => {
   })
 
   it('показывает состояние сохранения', async () => {
-    axiosPatchMock.mockImplementation(() => new Promise(resolve => setTimeout(resolve, 100)))
+    // Создаем промис, который можно контролировать
+    let resolvePatch: (value?: any) => void
+    const patchPromise = new Promise<any>((resolve) => {
+      resolvePatch = resolve
+    })
+    
+    axiosPatchMock.mockImplementation(() => patchPromise)
     
     const wrapper = mount(RecipesEdit)
     await wrapper.vm.$nextTick()
     
     const form = wrapper.find('form')
     if (form.exists()) {
+      // Получаем экземпляр формы до submit
+      const formInstance = useFormMock.mock.results[0]?.value
+      
+      // Запускаем submit асинхронно
       const submitPromise = form.trigger('submit.prevent')
       
-      // Ждем немного, чтобы form.patch был вызван и form.processing установился
-      await new Promise(resolve => setTimeout(resolve, 50))
-      await wrapper.vm.$nextTick()
+      // Ждем, чтобы onSave был вызван и form.patch начал выполняться
+      // Используем несколько итераций, чтобы дать время промису начать выполняться
+      for (let i = 0; i < 10; i++) {
+        await new Promise(resolve => setTimeout(resolve, 10))
+        await wrapper.vm.$nextTick()
+        
+        // Проверяем, что form.patch был вызван
+        if (axiosPatchMock.mock.calls.length > 0) {
+          // Если patch был вызван, processing должен быть true
+          if (formInstance) {
+            expect(formInstance.processing).toBe(true)
+            break
+          }
+        }
+      }
+      
+      // Проверяем, что form.patch был вызван
+      expect(axiosPatchMock).toHaveBeenCalled()
       
       // Проверяем, что form.processing = true через форму
-      const formInstance = useFormMock.mock.results[0]?.value
       if (formInstance) {
-        // form.processing должен быть true во время сохранения (если patch был вызван)
-        // Но так как это асинхронно, проверяем, что кнопка показывает "Сохранение..." или disabled
+        // form.processing должен быть true во время сохранения
+        expect(formInstance.processing).toBe(true)
+        
+        // Проверяем, что кнопка показывает "Сохранение..." или disabled
         const saveButton = wrapper.findAll('button')
           .find(btn => btn.text().includes('Сохранить') || btn.text().includes('Сохранение'))
         if (saveButton) {
-          // Проверяем текст кнопки или disabled состояние
           const buttonText = saveButton.text()
           const isDisabled = saveButton.element?.hasAttribute('disabled') || (saveButton.element as any)?.disabled
           expect(buttonText.includes('Сохранение') || isDisabled).toBe(true)
         }
       }
       
+      // Разрешаем промис, чтобы завершить сохранение
+      resolvePatch!({ data: { data: { id: 1 } } })
       await submitPromise
     }
   })

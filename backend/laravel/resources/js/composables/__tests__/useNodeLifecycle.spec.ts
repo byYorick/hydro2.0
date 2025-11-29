@@ -11,14 +11,29 @@ vi.mock('@/utils/logger', () => ({
   },
 }))
 
+const mockApiPost = vi.fn()
+const mockApiGet = vi.fn()
+
 const mockApi = {
-  post: vi.fn(),
-  get: vi.fn(),
+  post: mockApiPost,
+  get: mockApiGet,
+  patch: vi.fn(),
+  put: vi.fn(),
+  delete: vi.fn(),
+  interceptors: {
+    request: { use: vi.fn(), eject: vi.fn() },
+    response: { use: vi.fn(), eject: vi.fn() },
+  },
 }
 
 vi.mock('../useApi', () => ({
   useApi: () => ({
     api: mockApi,
+    post: mockApiPost,
+    get: mockApiGet,
+    patch: vi.fn(),
+    put: vi.fn(),
+    delete: vi.fn(),
   }),
 }))
 
@@ -39,14 +54,12 @@ describe('useNodeLifecycle', () => {
   it('should transition node to new state', async () => {
     const { transitionNode } = useNodeLifecycle(mockShowToast)
     
-    mockApi.post.mockResolvedValue({
-      data: {
-        data: { 
-          id: 1, 
-          lifecycle_state: 'ACTIVE',
-          previous_state: 'REGISTERED_BACKEND',
-          current_state: 'ACTIVE',
-        },
+    mockApiPost.mockResolvedValue({
+      data: { 
+        id: 1, 
+        lifecycle_state: 'ACTIVE',
+        previous_state: 'REGISTERED_BACKEND',
+        current_state: 'ACTIVE',
       },
     })
 
@@ -54,7 +67,7 @@ describe('useNodeLifecycle', () => {
 
     expect(result).not.toBeNull()
     expect(result?.current_state).toBe('ACTIVE')
-    expect(mockApi.post).toHaveBeenCalledWith(
+    expect(mockApiPost).toHaveBeenCalledWith(
       '/api/nodes/1/lifecycle/transition',
       {
         target_state: 'ACTIVE',
@@ -71,7 +84,7 @@ describe('useNodeLifecycle', () => {
   it('should handle transition error', async () => {
     const { transitionNode } = useNodeLifecycle(mockShowToast)
     
-    mockApi.post.mockRejectedValue(new Error('Transition failed'))
+    mockApiPost.mockRejectedValue(new Error('Transition failed'))
 
     const result = await transitionNode(1, 'ACTIVE', 'Test reason')
 
@@ -81,7 +94,7 @@ describe('useNodeLifecycle', () => {
   it('should get allowed transitions', async () => {
     const { getAllowedTransitions } = useNodeLifecycle(mockShowToast)
     
-    mockApi.get.mockResolvedValue({
+    mockApiGet.mockResolvedValue({
       data: {
         data: {
           current_state: {
@@ -113,7 +126,7 @@ describe('useNodeLifecycle', () => {
     expect(transitions).not.toBeNull()
     expect(transitions?.allowed_transitions.length).toBe(2)
     expect(transitions?.current_state.value).toBe('REGISTERED_BACKEND')
-    expect(mockApi.get).toHaveBeenCalledWith(
+    expect(mockApiGet).toHaveBeenCalledWith(
       '/api/nodes/1/lifecycle/allowed-transitions'
     )
   })
@@ -121,7 +134,7 @@ describe('useNodeLifecycle', () => {
   it('should check if node can be assigned to zone', async () => {
     const { canAssignToZone } = useNodeLifecycle(mockShowToast)
     
-    mockApi.get.mockResolvedValue({
+    mockApiGet.mockResolvedValue({
       data: {
         data: {
           current_state: {
@@ -150,7 +163,7 @@ describe('useNodeLifecycle', () => {
   it('should return false if node cannot be assigned to zone', async () => {
     const { canAssignToZone } = useNodeLifecycle(mockShowToast)
     
-    mockApi.get.mockResolvedValue({
+    mockApiGet.mockResolvedValue({
       data: {
         data: {
           current_state: {
@@ -192,7 +205,7 @@ describe('useNodeLifecycle', () => {
   it('should track loading state', async () => {
     const { loading, transitionNode } = useNodeLifecycle(mockShowToast)
     
-    mockApi.post.mockImplementation(() => new Promise(resolve => setTimeout(resolve, 100)))
+    mockApiPost.mockImplementation(() => new Promise(resolve => setTimeout(resolve, 100)))
 
     const promise = transitionNode(1, 'ACTIVE')
     

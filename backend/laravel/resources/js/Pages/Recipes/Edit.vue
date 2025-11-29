@@ -81,9 +81,13 @@ import { Link, usePage, router, useForm } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
-import axios from 'axios'
 import { logger } from '@/utils/logger'
+import { useApi } from '@/composables/useApi'
+import { useToast } from '@/composables/useToast'
 import type { Recipe, RecipePhase } from '@/types'
+
+const { showToast } = useToast()
+const { api } = useApi(showToast)
 
 interface RecipePhaseForm {
   id?: number
@@ -189,21 +193,23 @@ const onSave = async (): Promise<void> => {
       })
     } else {
       // Создание нового рецепта - сначала создаем рецепт, потом фазы
-      const recipeResponse = await axios.post('/api/recipes', {
-        name: form.name,
-        description: form.description
-      }, {
-        headers: {
-          'Accept': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest'
+      const recipeResponse = await api.post<{ data?: { id: number } }>(
+        '/recipes',
+        {
+          name: form.name,
+          description: form.description
         }
-      })
+      )
       
-      const recipeId = recipeResponse.data.data.id
+      const recipeId = (recipeResponse.data as { data?: { id: number } })?.data?.id
+      
+      if (!recipeId) {
+        throw new Error('Recipe ID not found in response')
+      }
       
       // Создаем фазы
       for (const phase of form.phases) {
-        await axios.post(`/api/recipes/${recipeId}/phases`, {
+        await api.post(`/recipes/${recipeId}/phases`, {
           phase_index: phase.phase_index,
           name: phase.name,
           duration_hours: phase.duration_hours,
@@ -216,14 +222,10 @@ const onSave = async (): Promise<void> => {
             irrigation_interval_sec: phase.targets.irrigation_interval_sec || null,
             irrigation_duration_sec: phase.targets.irrigation_duration_sec || null,
           }
-        }, {
-          headers: {
-            'Accept': 'application/json',
-            'X-Requested-With': 'XMLHttpRequest'
-          }
         })
       }
       
+      showToast('Рецепт успешно создан', 'success', TOAST_TIMEOUT.NORMAL)
       router.visit(`/recipes/${recipeId}`)
     }
   } catch (error) {

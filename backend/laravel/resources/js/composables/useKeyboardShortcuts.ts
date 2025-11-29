@@ -89,31 +89,31 @@ export function useKeyboardShortcuts() {
   // Ctrl+Z - Zones
   registerShortcut('z', {
     ctrl: true,
-    handler: () => router.visit('/zones')
+    handler: () => router.visit('/zones', { preserveScroll: true })
   })
 
   // Ctrl+D - Dashboard
   registerShortcut('d', {
     ctrl: true,
-    handler: () => router.visit('/')
+    handler: () => router.visit('/', { preserveScroll: true })
   })
 
   // Ctrl+A - Alerts
   registerShortcut('a', {
     ctrl: true,
-    handler: () => router.visit('/alerts')
+    handler: () => router.visit('/alerts', { preserveScroll: true })
   })
 
   // Ctrl+R - Recipes
   registerShortcut('r', {
     ctrl: true,
-    handler: () => router.visit('/recipes')
+    handler: () => router.visit('/recipes', { preserveScroll: true })
   })
 
   // Shift+D - Devices (чтобы не конфликтовать с Ctrl+D)
   registerShortcut('d', {
     shift: true,
-    handler: () => router.visit('/devices')
+    handler: () => router.visit('/devices', { preserveScroll: true })
   })
 
   onMounted(() => {

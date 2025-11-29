@@ -44,13 +44,17 @@ return [
     'servers' => [
 
         'reverb' => [
+            // ИСПРАВЛЕНО: host - адрес для прослушивания сервера (0.0.0.0 для всех интерфейсов)
             'host' => env('REVERB_SERVER_HOST', env('REVERB_HOST', '0.0.0.0')),
             'port' => env('REVERB_SERVER_PORT', env('REVERB_PORT', 6001)),
             'path' => env('REVERB_SERVER_PATH', ''),
-            'hostname' => env('REVERB_HOST', '0.0.0.0'),
+            // ИСПРАВЛЕНО: hostname - адрес для клиентских подключений (localhost, не 0.0.0.0)
+            // Используется для генерации URL для клиентов
+            'hostname' => env('REVERB_CLIENT_HOST', env('REVERB_HOST', 'localhost')),
             'options' => [
                 'tls' => [],
                 'debug' => env('REVERB_DEBUG', false),
+                'verbose' => env('REVERB_VERBOSE', env('REVERB_DEBUG', false)),
             ],
             'max_request_size' => env('REVERB_MAX_REQUEST_SIZE', 10_000),
             'scaling' => [
@@ -88,7 +92,9 @@ return [
                 'secret' => env('REVERB_APP_SECRET'),
                 'app_id' => env('REVERB_APP_ID'),
                 'options' => array_filter([
-                    'host' => env('REVERB_HOST', '127.0.0.1'),
+                    // ИСПРАВЛЕНО: host для клиента должен быть localhost (не 0.0.0.0 или 127.0.0.1)
+                    // В dev режиме через nginx прокси используется localhost:8080
+                    'host' => env('REVERB_CLIENT_HOST', env('REVERB_HOST', 'localhost')),
                     'port' => env('REVERB_PORT', 6001),
                     'scheme' => env('REVERB_SCHEME', 'http'),
                     'useTLS' => env('REVERB_SCHEME', 'http') === 'https',

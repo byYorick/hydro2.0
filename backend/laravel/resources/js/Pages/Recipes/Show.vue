@@ -43,6 +43,7 @@ import { Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
+import { usePageProps } from '@/composables/usePageProps'
 import type { Recipe } from '@/types'
 
 interface PageProps {
@@ -50,7 +51,8 @@ interface PageProps {
 }
 
 const page = usePage<PageProps>()
-const recipe = computed(() => (page.props.recipe || {}) as Recipe)
+const { recipe: recipeProp } = usePageProps<PageProps>(['recipe'])
+const recipe = computed(() => (recipeProp.value || {}) as Recipe)
 
 const sortedPhases = computed(() => {
   const phases = recipe.value.phases || []

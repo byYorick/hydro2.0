@@ -21,7 +21,7 @@
             <option value="viewer">Наблюдатель</option>
           </select>
           <Button size="sm" @click="loadUsers">Обновить</Button>
-          <Button size="sm" variant="secondary" @click="showCreateModal = true">Создать пользователя</Button>
+          <Button size="sm" variant="secondary" @click="openCreateModal()">Создать пользователя</Button>
         </div>
 
         <div class="rounded-xl border border-neutral-800 overflow-hidden max-h-[600px] overflow-y-auto">
@@ -168,6 +168,9 @@ import { translateRole } from '@/utils/i18n'
 import { logger } from '@/utils/logger'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
+import { useModal } from '@/composables/useModal'
+import { ERROR_MESSAGES } from '@/constants/messages'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
 
 const page = usePage()
 const currentUser = computed(() => page.props.auth?.user)
@@ -182,7 +185,7 @@ const { api } = useApi(showToast)
 const users = ref([])
 const searchQuery = ref('')
 const roleFilter = ref('')
-const showCreateModal = ref(false)
+const { isOpen: showCreateModal, open: openCreateModal, close: closeCreateModal } = useModal<boolean>(false)
 const editingUser = ref(null)
 const deletingUser = ref(null)
 
@@ -229,13 +232,13 @@ const confirmDelete = (user) => {
       if (!deletingUser.value) return
       try {
         await api.delete(`/settings/users/${deletingUser.value.id}`)
-        showToast('Пользователь успешно удален', 'success', 3000)
-        router.reload({ only: ['users'] })
+        showToast('Пользователь успешно удален', 'success', TOAST_TIMEOUT.NORMAL)
+        router.reload({ only: ['users'], preserveScroll: true })
         deletingUser.value = null
       } catch (err) {
         logger.error('Failed to delete user:', err)
-        const errorMsg = err.response?.data?.message || err.message || 'Неизвестная ошибка'
-        showToast(`Ошибка: ${errorMsg}`, 'error', 5000)
+        const errorMsg = err.response?.data?.message || err.message || ERROR_MESSAGES.UNKNOWN
+        showToast(`Ошибка: ${errorMsg}`, 'error', TOAST_TIMEOUT.LONG)
         deletingUser.value = null
       }
     }
@@ -251,17 +254,17 @@ const confirmDelete = (user) => {
         } else {
           await api.post('/settings/users', payload)
         }
-        showToast(editingUser.value ? 'Пользователь успешно обновлен' : 'Пользователь успешно создан', 'success', 3000)
-        router.reload({ only: ['users'] })
+        showToast(editingUser.value ? 'Пользователь успешно обновлен' : 'Пользователь успешно создан', 'success', TOAST_TIMEOUT.NORMAL)
+        router.reload({ only: ['users'], preserveScroll: true })
       } catch (err) {
         logger.error('Failed to save user:', err)
-        const errorMsg = err.response?.data?.message || err.message || 'Неизвестная ошибка'
-        showToast(`Ошибка: ${errorMsg}`, 'error', 5000)
+        const errorMsg = err.response?.data?.message || err.message || ERROR_MESSAGES.UNKNOWN
+        showToast(`Ошибка: ${errorMsg}`, 'error', TOAST_TIMEOUT.LONG)
       }
     }
 
 const closeModal = () => {
-  showCreateModal.value = false
+  closeCreateModal()
   editingUser.value = null
   userForm.name = ''
   userForm.email = ''

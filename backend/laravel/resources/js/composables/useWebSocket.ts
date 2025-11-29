@@ -2,6 +2,7 @@ import { ref } from 'vue'
 import { logger } from '@/utils/logger'
 import type { ToastHandler } from './useApi'
 import { onWsStateChange } from '@/utils/echoClient'
+import { readBooleanEnv } from '@/utils/env'
 
 type ZoneCommandHandler = (event: {
   commandId: number | string
@@ -61,30 +62,14 @@ function isBrowser(): boolean {
   return typeof window !== 'undefined'
 }
 
-function readBooleanEnv(value: unknown, defaultValue: boolean): boolean {
-  if (typeof value === 'string') {
-    const normalized = value.toLowerCase().trim()
-    if (['true', '1', 'yes', 'on'].includes(normalized)) {
-      return true
-    }
-    if (['false', '0', 'no', 'off'].includes(normalized)) {
-      return false
-    }
-  }
-  if (typeof value === 'boolean') {
-    return value
-  }
-  return defaultValue
-}
-
 function ensureEchoAvailable(showToast?: ToastHandler): any | null {
   if (!isBrowser()) {
     return null
   }
-  const wsEnabled = readBooleanEnv((import.meta as any).env?.VITE_ENABLE_WS, true)
+  const wsEnabled = readBooleanEnv('VITE_ENABLE_WS', true)
   if (!wsEnabled) {
     if (showToast) {
-      showToast(WS_DISABLED_MESSAGE, 'warning', 4000)
+      showToast(WS_DISABLED_MESSAGE, 'warning', TOAST_TIMEOUT.NORMAL)
     }
     logger.warn('[useWebSocket] WebSocket disabled via env flag', {})
     return null

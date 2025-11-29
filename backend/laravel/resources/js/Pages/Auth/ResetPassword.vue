@@ -1,12 +1,13 @@
-<script setup>
+<script setup lang="ts">
 import GuestLayout from '@/Layouts/GuestLayout.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
-import PrimaryButton from '@/Components/PrimaryButton.vue';
+import Button from '@/Components/Button.vue';
 import TextInput from '@/Components/TextInput.vue';
-import { Head, useForm } from '@inertiajs/vue3';
+import { Head } from '@inertiajs/vue3';
 // ИСПРАВЛЕНО: Импорт route из утилиты
 import { route } from '@/utils/route';
+import { useInertiaForm } from '@/composables/useInertiaForm';
 
 const props = defineProps({
     email: {
@@ -19,17 +20,29 @@ const props = defineProps({
     },
 });
 
-const form = useForm({
-    token: props.token,
-    email: props.email,
-    password: '',
-    password_confirmation: '',
-});
+interface ResetPasswordFormData {
+    token: string;
+    email: string;
+    password: string;
+    password_confirmation: string;
+}
+
+const { form, submit: submitForm } = useInertiaForm<ResetPasswordFormData>(
+    {
+        token: props.token,
+        email: props.email,
+        password: '',
+        password_confirmation: '',
+    },
+    {
+        resetFieldsOnSuccess: ['password', 'password_confirmation'],
+        showSuccessToast: false,
+        showErrorToast: false,
+    }
+);
 
 const submit = () => {
-    form.post(route('password.store'), {
-        onFinish: () => form.reset('password', 'password_confirmation'),
-    });
+    submitForm('post', route('password.store'));
 };
 </script>
 
@@ -91,12 +104,12 @@ const submit = () => {
             </div>
 
             <div class="mt-4 flex items-center justify-end">
-                <PrimaryButton
+                    <Button variant="primary"
                     :class="{ 'opacity-25': form.processing }"
                     :disabled="form.processing"
                 >
                     Reset Password
-                </PrimaryButton>
+                    </Button>
             </div>
         </form>
     </GuestLayout>

@@ -1,33 +1,42 @@
-<script setup>
-import DangerButton from '@/Components/DangerButton.vue';
+<script setup lang="ts">
+import Button from '@/Components/Button.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import Modal from '@/Components/Modal.vue';
-import SecondaryButton from '@/Components/SecondaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
-import { useForm } from '@inertiajs/vue3';
+import { useInertiaForm } from '@/composables/useInertiaForm';
+import { route } from '@/utils/route';
 import { nextTick, ref } from 'vue';
 
 const confirmingUserDeletion = ref(false);
 const passwordInput = ref(null);
 
-const form = useForm({
-    password: '',
-});
+interface DeleteUserFormData {
+    password: string;
+}
+
+const { form, submit: submitForm } = useInertiaForm<DeleteUserFormData>(
+    {
+        password: '',
+    },
+    {
+        preserveScroll: true,
+        showSuccessToast: false, // Удаление аккаунта редиректит, Toast не нужен
+        showErrorToast: false,
+        onSuccess: () => closeModal(),
+        onError: () => passwordInput.value?.focus(),
+        resetOnSuccess: true,
+    }
+);
 
 const confirmUserDeletion = () => {
     confirmingUserDeletion.value = true;
 
-    nextTick(() => passwordInput.value.focus());
+    nextTick(() => passwordInput.value?.focus());
 };
 
 const deleteUser = () => {
-    form.delete(route('profile.destroy'), {
-        preserveScroll: true,
-        onSuccess: () => closeModal(),
-        onError: () => passwordInput.value.focus(),
-        onFinish: () => form.reset(),
-    });
+    submitForm('delete', route('profile.destroy'));
 };
 
 const closeModal = () => {
@@ -52,7 +61,7 @@ const closeModal = () => {
             </p>
         </header>
 
-        <DangerButton @click="confirmUserDeletion">Delete Account</DangerButton>
+        <Button variant="danger" @click="confirmUserDeletion">Delete Account</Button>
 
         <Modal :show="confirmingUserDeletion" @close="closeModal">
             <div class="p-6">
@@ -89,18 +98,18 @@ const closeModal = () => {
                 </div>
 
                 <div class="mt-6 flex justify-end">
-                    <SecondaryButton @click="closeModal">
+                    <Button variant="secondary" @click="closeModal">
                         Cancel
-                    </SecondaryButton>
+                    </Button>
 
-                    <DangerButton
+                    <Button variant="danger"
                         class="ms-3"
                         :class="{ 'opacity-25': form.processing }"
                         :disabled="form.processing"
                         @click="deleteUser"
                     >
                         Delete Account
-                    </DangerButton>
+                    </Button>
                 </div>
             </div>
         </Modal>

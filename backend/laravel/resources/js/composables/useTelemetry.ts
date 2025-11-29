@@ -6,6 +6,7 @@ import { useApi, type ToastHandler } from './useApi'
 import { useRateLimitedApi } from './useRateLimitedApi'
 import { useErrorHandler } from './useErrorHandler'
 import { logger } from '@/utils/logger'
+import { extractData } from '@/utils/apiHelpers'
 import type { ZoneTelemetry, TelemetrySample, TelemetryMetric } from '@/types'
 
 // Кеш в памяти (TTL 30-60 секунд для телеметрии)
@@ -163,9 +164,7 @@ export function useTelemetry(showToast?: ToastHandler) {
       
       // rateLimitedGet возвращает axios response, нужно обращаться к response.data
       const responseData = (response as any)?.data || response
-      const telemetry: ZoneTelemetry = (responseData as { data?: ZoneTelemetry })?.data || 
-                                       (responseData as ZoneTelemetry) || 
-                                       {} as ZoneTelemetry
+      const telemetry: ZoneTelemetry = extractData<ZoneTelemetry>(responseData) || {} as ZoneTelemetry
       
       // Сохраняем в кеш
       telemetryCache.set(cacheKey, {

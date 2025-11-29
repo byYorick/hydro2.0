@@ -169,8 +169,9 @@ fi
 mkdir -p /opt/docker/etc/supervisor.d /var/log/supervisor /var/run 2>/dev/null || true
 chmod 755 /opt/docker/etc/supervisor.d /var/log/supervisor /var/run 2>/dev/null || true
 
-if [ -f /app/reverb-supervisor.conf ] && [ ! -f /opt/docker/etc/supervisor.d/reverb.conf ]; then
-    echo "Copying reverb supervisor config to base image directory..."
+# ИСПРАВЛЕНО: Всегда обновляем конфигурацию Reverb для применения изменений
+if [ -f /app/reverb-supervisor.conf ]; then
+    echo "Updating reverb supervisor config to base image directory..."
     cp /app/reverb-supervisor.conf /opt/docker/etc/supervisor.d/reverb.conf
     chmod 644 /opt/docker/etc/supervisor.d/reverb.conf 2>/dev/null || true
 fi

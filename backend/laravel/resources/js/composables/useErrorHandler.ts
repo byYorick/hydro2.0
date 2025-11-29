@@ -3,6 +3,8 @@
  */
 import { ref, type Ref } from 'vue'
 import { logger } from '@/utils/logger'
+import { ERROR_MESSAGES, getErrorMessageByStatus } from '@/constants/messages'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import type { ToastHandler } from './useApi'
 
 /**
@@ -78,7 +80,7 @@ export function useErrorHandler(showToast?: ToastHandler) {
 
       const status = axiosError.response?.status || 500
       const responseData = axiosError.response?.data
-      const message = responseData?.message || axiosError.message || 'Неизвестная ошибка'
+      const message = responseData?.message || axiosError.message || ERROR_MESSAGES.UNKNOWN
 
       // Ошибки валидации (422)
       if (status === 422 && responseData?.errors) {
@@ -98,7 +100,7 @@ export function useErrorHandler(showToast?: ToastHandler) {
       const code = (error as { code?: string }).code
       if (code === 'ERR_NETWORK' || code === 'ECONNABORTED') {
         return new NetworkError(
-          'Ошибка сети. Проверьте подключение к интернету.',
+          ERROR_MESSAGES.NETWORK,
           error
         )
       }
@@ -115,7 +117,7 @@ export function useErrorHandler(showToast?: ToastHandler) {
     }
 
     // Остальное
-    return new Error('Неизвестная ошибка')
+    return new Error(ERROR_MESSAGES.UNKNOWN)
   }
 
   /**
@@ -166,15 +168,15 @@ export function useErrorHandler(showToast?: ToastHandler) {
         toastMessage = 'Ошибка сети. Проверьте подключение.'
         toastVariant = 'error'
       } else if (normalizedError instanceof ValidationError) {
-        toastMessage = 'Ошибка валидации. Проверьте введенные данные.'
+        toastMessage = ERROR_MESSAGES.VALIDATION
         toastVariant = 'warning'
       } else if (normalizedError instanceof ApiError) {
         if (normalizedError.status === 401) {
-          toastMessage = 'Требуется авторизация'
+          toastMessage = ERROR_MESSAGES.UNAUTHORIZED
         } else if (normalizedError.status === 403) {
-          toastMessage = 'Доступ запрещен'
+          toastMessage = ERROR_MESSAGES.FORBIDDEN
         } else if (normalizedError.status === 404) {
-          toastMessage = 'Ресурс не найден'
+          toastMessage = ERROR_MESSAGES.NOT_FOUND
         } else if (normalizedError.status >= 500) {
           toastMessage = 'Ошибка сервера. Попробуйте позже.'
         } else {
@@ -183,7 +185,7 @@ export function useErrorHandler(showToast?: ToastHandler) {
         toastVariant = 'error'
       }
 
-      showToast(toastMessage, toastVariant, 5000)
+      showToast(toastMessage, toastVariant, TOAST_TIMEOUT.LONG)
     }
 
     return normalizedError
