@@ -28,7 +28,7 @@
             v-for="greenhouse in greenhouses"
             :key="greenhouse.id"
             class="hover:shadow-2xl transition-all duration-200 cursor-pointer"
-            @click="$router.visit(`/greenhouses/${greenhouse.id}`)"
+            @click="router.visit(`/greenhouses/${greenhouse.id}`)"
           >
             <div class="flex justify-between gap-4 items-start">
               <div class="flex-1 min-w-0">
