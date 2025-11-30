@@ -8,7 +8,6 @@
         </p>
       </div>
       <div class="flex flex-wrap gap-2">
-        <Button size="sm" variant="primary" @click="showCreateModal = true">Новая теплица</Button>
         <Link href="/logs">
           <Button size="sm" variant="secondary">Служебные логи</Button>
         </Link>
@@ -49,12 +48,6 @@
       </div>
     </div>
 
-    <!-- Мастер настройки -->
-    <SetupWizardModal
-      :show="showCreateModal"
-      @close="showCreateModal = false"
-      @created="handleGreenhouseCreated"
-    />
   </div>
 </template>
 
@@ -65,7 +58,6 @@ import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
 import GreenhouseStatusCard from '@/Components/GreenhouseStatusCard.vue'
-import SetupWizardModal from '@/Components/SetupWizardModal.vue'
 import { translateStatus } from '@/utils/i18n'
 import { logger } from '@/utils/logger'
 import type { Zone } from '@/types'
@@ -79,8 +71,6 @@ interface DashboardProps {
 }
 
 const props = defineProps<DashboardProps>()
-
-const showCreateModal = ref(false)
 
 const enrichedGreenhouses = computed(() => {
   return (props.dashboard.greenhouses || []).map((gh) => ({
@@ -112,10 +102,5 @@ const zonesNeedingAttention = computed(() => {
 function resolveIssues(zoneId?: number) {
   if (!zoneId) return
   logger.info('Resolve issues for zone:', { zoneId })
-}
-
-function handleGreenhouseCreated(greenhouse: any) {
-  logger.info('Greenhouse created from modal:', greenhouse)
-  // Модальное окно уже обновит страницу через router.reload()
 }
 </script>

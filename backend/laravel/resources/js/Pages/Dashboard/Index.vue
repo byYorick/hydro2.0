@@ -28,7 +28,7 @@
           <h1 class="text-lg font-semibold">Панель управления</h1>
         <div class="flex gap-2">
           <Link href="/greenhouses">
-            <Button size="sm" variant="secondary">Мастер настройки</Button>
+            <Button size="sm" variant="secondary">Теплицы</Button>
           </Link>
         </div>
       </div>
@@ -117,7 +117,7 @@
             </div>
             <div class="flex gap-2">
               <Link href="/greenhouses">
-                <Button size="sm">Мастер настройки</Button>
+                <Button size="sm">Создать теплицу</Button>
               </Link>
             </div>
           </div>

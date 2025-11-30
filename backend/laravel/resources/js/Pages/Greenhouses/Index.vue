@@ -10,19 +10,16 @@
             </p>
           </div>
           <div class="flex flex-wrap gap-2">
-            <Button size="sm" variant="primary" @click="openWizard">
-              Мастер настройки
+            <Button size="sm" variant="primary" @click="openCreateModal">
+              Новая теплица
             </Button>
-            <Link href="/dashboard">
-              <Button size="sm" variant="outline">На дашборд</Button>
-            </Link>
           </div>
         </div>
 
         <div v-if="greenhouses.length === 0" class="text-center py-12">
           <div class="text-neutral-400 mb-4">Нет теплиц</div>
-          <Button size="sm" variant="primary" @click="openWizard">
-            Мастер настройки
+          <Button size="sm" variant="primary" @click="openCreateModal">
+            Создать первую теплицу
           </Button>
         </div>
 
@@ -61,15 +58,15 @@
             </div>
           </Card>
         </div>
+
+        <!-- Создание теплицы -->
+        <GreenhouseCreateModal
+          :show="showCreateModal"
+          @close="closeCreateModal"
+          @created="onGreenhouseCreated"
+        />
       </div>
     </template>
-
-    <!-- Мастер настройки -->
-    <SetupWizardModal
-      :show="showWizard"
-      @close="closeWizard"
-      @created="onGreenhouseCreated"
-    />
   </AppLayout>
 </template>
 
@@ -78,7 +75,7 @@ import { Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
-import SetupWizardModal from '@/Components/SetupWizardModal.vue'
+import GreenhouseCreateModal from '@/Components/GreenhouseCreateModal.vue'
 import { useSimpleModal } from '@/composables/useModal'
 
 interface Greenhouse {
@@ -99,7 +96,7 @@ interface Props {
 
 const props = defineProps<Props>()
 
-const { isOpen: showWizard, open: openWizard, close: closeWizard } = useSimpleModal()
+const { isOpen: showCreateModal, open: openCreateModal, close: closeCreateModal } = useSimpleModal()
 
 function onGreenhouseCreated(greenhouse: Greenhouse): void {
   // Обновляем страницу для отображения новой теплицы

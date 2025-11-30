@@ -256,7 +256,7 @@ const roleBasedCommands = computed<CommandItem[]>(() => {
   // Команды для оператора и админа
   if (isOperator.value || isAdmin.value) {
     commands.push(
-      { type: 'nav', label: 'Мастер настройки системы', icon: '⚙️', category: 'Настройка', action: () => safeVisit('/greenhouses') },
+      { type: 'nav', label: 'Теплицы', icon: '🏠', category: 'Управление', action: () => safeVisit('/greenhouses') },
     )
   }
   
