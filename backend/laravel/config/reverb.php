@@ -1,19 +1,38 @@
 <?php
 
+// Парсим allowed origins с учетом окружения
+// В production REVERB_ALLOWED_ORIGINS обязателен и не должен содержать *
 $allowedOrigins = env('REVERB_ALLOWED_ORIGINS');
-$parsedAllowedOrigins = $allowedOrigins
-    ? array_values(array_filter(array_map('trim', explode(',', $allowedOrigins))))
-    : [
-        env('APP_URL', 'http://localhost'),
-        env('FRONTEND_URL', 'http://localhost:5173'),
-        'http://localhost:8080',
-        'http://127.0.0.1:8080',
-        'http://127.0.0.1:5173',
-        'http://localhost',
-        'http://127.0.0.1',
-        'null',
-        '*',
-    ];
+
+// Определяем окружение безопасным способом (без вызова app() на верхнем уровне)
+$appEnv = env('APP_ENV', 'local');
+$isProduction = in_array(strtolower($appEnv), ['production', 'prod']);
+
+if ($isProduction) {
+    if (! $allowedOrigins) {
+        throw new \RuntimeException('REVERB_ALLOWED_ORIGINS must be set in production environment');
+    }
+    $parsedAllowedOrigins = array_values(array_filter(array_map('trim', explode(',', $allowedOrigins))));
+    // Проверяем, что нет wildcard в production
+    if (in_array('*', $parsedAllowedOrigins)) {
+        throw new \RuntimeException('REVERB_ALLOWED_ORIGINS cannot contain "*" in production environment. Set explicit origins.');
+    }
+} else {
+    // В dev окружении используем дефолтные значения с wildcard для удобства разработки
+    $parsedAllowedOrigins = $allowedOrigins
+        ? array_values(array_filter(array_map('trim', explode(',', $allowedOrigins))))
+        : [
+            env('APP_URL', 'http://localhost'),
+            env('FRONTEND_URL', 'http://localhost:5173'),
+            'http://localhost:8080',
+            'http://127.0.0.1:8080',
+            'http://127.0.0.1:5173',
+            'http://localhost',
+            'http://127.0.0.1',
+            'null',
+            '*',
+        ];
+}
 
 $clientOptions = [];
 

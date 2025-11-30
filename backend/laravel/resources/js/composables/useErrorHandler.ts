@@ -121,6 +121,37 @@ export function useErrorHandler(showToast?: ToastHandler) {
   }
 
   /**
+   * Очищает контекст от потенциальных циклических ссылок
+   */
+  function sanitizeContext(context?: ErrorContext): ErrorContext | undefined {
+    if (!context) return undefined
+    
+    const sanitized: ErrorContext = {}
+    for (const key in context) {
+      if (Object.prototype.hasOwnProperty.call(context, key)) {
+        const value = context[key]
+        // Пропускаем сложные объекты, которые могут содержать циклические ссылки
+        if (value === null || value === undefined) {
+          sanitized[key] = value
+        } else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+          sanitized[key] = value
+        } else if (Array.isArray(value)) {
+          // Для массивов конвертируем в строку, если содержит сложные объекты
+          sanitized[key] = value.map(item => 
+            typeof item === 'object' && item !== null ? '[Object]' : item
+          )
+        } else if (typeof value === 'object') {
+          // Для объектов сохраняем только простые свойства
+          sanitized[key] = '[Object]'
+        } else {
+          sanitized[key] = String(value)
+        }
+      }
+    }
+    return sanitized
+  }
+
+  /**
    * Обрабатывает ошибку с контекстом
    */
   function handleError(
@@ -131,32 +162,39 @@ export function useErrorHandler(showToast?: ToastHandler) {
     lastError.value = normalizedError
     errorContext.value = context || null
 
+    // Очищаем контекст от циклических ссылок
+    const safeContext = sanitizeContext(context)
+
     // Логирование
     if (normalizedError instanceof ApiError) {
       logger.error('[ApiError]', {
         message: normalizedError.message,
         status: normalizedError.status,
         code: normalizedError.code,
-        context,
+        context: safeContext,
       })
     } else if (normalizedError instanceof NetworkError) {
       logger.error('[NetworkError]', {
         message: normalizedError.message,
-        context,
-        originalError: normalizedError.originalError,
+        context: safeContext,
+        originalError: normalizedError.originalError instanceof Error ? {
+          message: normalizedError.originalError.message,
+          name: normalizedError.originalError.name,
+        } : normalizedError.originalError,
       })
     } else if (normalizedError instanceof ValidationError) {
       logger.warn('[ValidationError]', {
         message: normalizedError.message,
         errors: normalizedError.errors,
-        context,
+        context: safeContext,
       })
     } else {
       logger.error('[Error]', {
         message: normalizedError.message,
-        error: normalizedError,
-        context,
-      })
+        errorName: normalizedError.name,
+        errorStack: normalizedError.stack?.split('\n').slice(0, 5).join('\n'),
+        context: safeContext,
+      }, normalizedError)
     }
 
     // Показ Toast уведомления

@@ -14,15 +14,60 @@ const api: AxiosInstance = axios.create({
     'Accept': 'application/json',
     'X-Requested-With': 'XMLHttpRequest',
   },
+  // Включаем отправку cookies для работы с Laravel сессиями
+  withCredentials: true,
 })
 
-// Request interceptor для добавления префикса /api к запросам, которые его не имеют
+// Функция для получения CSRF токена
+function getCsrfToken(): string | null {
+  if (typeof document === 'undefined') {
+    return null
+  }
+  // Пытаемся получить из meta тега
+  const metaToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
+  if (metaToken) {
+    return metaToken
+  }
+  // Если нет в meta, пытаемся получить из cookie (Laravel использует XSRF-TOKEN)
+  const cookies = document.cookie.split(';')
+  for (const cookie of cookies) {
+    const [name, value] = cookie.trim().split('=')
+    if (name === 'XSRF-TOKEN') {
+      return decodeURIComponent(value)
+    }
+  }
+  return null
+}
+
+// Request interceptor для добавления префикса /api и CSRF токена
 api.interceptors.request.use(
   (config) => {
     // Если URL не начинается с /api/ или /settings/, и не является абсолютным URL, добавляем /api
     if (config.url && !config.url.startsWith('/api/') && !config.url.startsWith('/settings/') && !config.url.startsWith('http')) {
       config.url = `/api${config.url}`
     }
+    
+    // Добавляем CSRF токен для всех запросов (кроме GET)
+    // Laravel требует CSRF токен для POST, PUT, PATCH, DELETE запросов
+    const method = config.method?.toUpperCase()
+    if (method && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+      const csrfToken = getCsrfToken()
+      if (csrfToken) {
+        config.headers = config.headers || {}
+        config.headers['X-CSRF-TOKEN'] = csrfToken
+      }
+    }
+    
+    // Также добавляем CSRF токен для GET запросов, если он нужен для аутентификации
+    // (некоторые API endpoints могут требовать его для проверки сессии)
+    if (method === 'GET') {
+      const csrfToken = getCsrfToken()
+      if (csrfToken && !config.headers?.['X-CSRF-TOKEN']) {
+        config.headers = config.headers || {}
+        config.headers['X-CSRF-TOKEN'] = csrfToken
+      }
+    }
+    
     return config
   },
   (error) => Promise.reject(error)

@@ -62,20 +62,38 @@ export const useZonesStore = defineStore('zones', {
     
     /**
      * Добавить или обновить зону
+     * @param zone - зона для добавления/обновления
+     * @param silent - если true, не эмитит события (для предотвращения рекурсии)
      */
-    upsert(zone: Zone): void {
+    upsert(zone: Zone, silent: boolean = false): void {
       if (!zone.id) return
       
       const exists = this.items[zone.id]
+      
+      // Проверяем, изменилась ли зона (простое сравнение по JSON)
+      // Это предотвращает рекурсию при обновлении с теми же данными
+      if (exists) {
+        const existingJson = JSON.stringify(exists)
+        const newJson = JSON.stringify(zone)
+        if (existingJson === newJson) {
+          // Данные не изменились, не обновляем и не эмитим события
+          return
+        }
+      }
+      
       this.items[zone.id] = zone
       
       if (!exists) {
         this.ids.push(zone.id)
-        // Эмитим событие создания
-        zoneEvents.created(zone)
+        // Эмитим событие создания только если не silent
+        if (!silent) {
+          zoneEvents.created(zone)
+        }
       } else {
-        // Эмитим событие обновления
-        zoneEvents.updated(zone)
+        // Эмитим событие обновления только если не silent
+        if (!silent) {
+          zoneEvents.updated(zone)
+        }
       }
       
       this.cacheVersion++

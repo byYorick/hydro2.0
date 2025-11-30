@@ -5,8 +5,10 @@
       <form @submit.prevent="onSubmit" class="space-y-4">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label class="block text-xs text-neutral-400 mb-1">UID <span class="text-red-400">*</span></label>
+            <label for="greenhouse-uid" class="block text-xs text-neutral-400 mb-1">UID <span class="text-red-400">*</span></label>
             <input
+              id="greenhouse-uid"
+              name="uid"
               v-model="form.uid"
               type="text"
               required
@@ -18,8 +20,10 @@
           </div>
           
           <div>
-            <label class="block text-xs text-neutral-400 mb-1">Название <span class="text-red-400">*</span></label>
+            <label for="greenhouse-name" class="block text-xs text-neutral-400 mb-1">Название <span class="text-red-400">*</span></label>
             <input
+              id="greenhouse-name"
+              name="name"
               v-model="form.name"
               type="text"
               required
@@ -31,8 +35,10 @@
           </div>
           
           <div>
-            <label class="block text-xs text-neutral-400 mb-1">Часовой пояс</label>
+            <label for="greenhouse-timezone" class="block text-xs text-neutral-400 mb-1">Часовой пояс</label>
             <input
+              id="greenhouse-timezone"
+              name="timezone"
               v-model="form.timezone"
               type="text"
               placeholder="Europe/Moscow"
@@ -41,8 +47,10 @@
           </div>
           
           <div>
-            <label class="block text-xs text-neutral-400 mb-1">Тип</label>
+            <label for="greenhouse-type" class="block text-xs text-neutral-400 mb-1">Тип</label>
             <select
+              id="greenhouse-type"
+              name="type"
               v-model="form.type"
               class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
             >
@@ -54,8 +62,10 @@
           </div>
           
           <div class="md:col-span-2">
-            <label class="block text-xs text-neutral-400 mb-1">Описание</label>
+            <label for="greenhouse-description" class="block text-xs text-neutral-400 mb-1">Описание</label>
             <textarea
+              id="greenhouse-description"
+              name="description"
               v-model="form.description"
               rows="3"
               placeholder="Описание теплицы..."

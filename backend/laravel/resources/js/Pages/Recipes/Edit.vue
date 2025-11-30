@@ -5,13 +5,13 @@
       <form class="space-y-3" @submit.prevent="onSave">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
-            <label class="block text-xs text-neutral-400 mb-1">Название</label>
-            <input v-model="form.name" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors.name ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
+            <label for="recipe-name" class="block text-xs text-neutral-400 mb-1">Название</label>
+            <input id="recipe-name" name="name" v-model="form.name" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors.name ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
             <div v-if="form.errors.name" class="text-xs text-red-400 mt-1">{{ form.errors.name }}</div>
           </div>
           <div>
-            <label class="block text-xs text-neutral-400 mb-1">Описание</label>
-            <input v-model="form.description" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors.description ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
+            <label for="recipe-description" class="block text-xs text-neutral-400 mb-1">Описание</label>
+            <input id="recipe-description" name="description" v-model="form.description" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors.description ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
             <div v-if="form.errors.description" class="text-xs text-red-400 mt-1">{{ form.errors.description }}</div>
           </div>
         </div>
@@ -21,43 +21,50 @@
           <div v-for="(p, i) in sortedPhases" :key="p.id || i" class="rounded-lg border border-neutral-800 p-3 mb-2">
             <div class="grid grid-cols-1 md:grid-cols-6 gap-2">
               <div>
-                <input v-model.number="p.phase_index" type="number" min="0" placeholder="Индекс" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors[`phases.${i}.phase_index`] ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
+                <label :for="`phase-${i}-index`" class="sr-only">Индекс фазы</label>
+                <input :id="`phase-${i}-index`" :name="`phases[${i}][phase_index]`" v-model.number="p.phase_index" type="number" min="0" placeholder="Индекс" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors[`phases.${i}.phase_index`] ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
                 <div v-if="form.errors[`phases.${i}.phase_index`]" class="text-xs text-red-400 mt-1">{{ form.errors[`phases.${i}.phase_index`] }}</div>
               </div>
               <div>
-                <input v-model="p.name" placeholder="Имя фазы" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors[`phases.${i}.name`] ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
+                <label :for="`phase-${i}-name`" class="sr-only">Имя фазы</label>
+                <input :id="`phase-${i}-name`" :name="`phases[${i}][name]`" v-model="p.name" placeholder="Имя фазы" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors[`phases.${i}.name`] ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
                 <div v-if="form.errors[`phases.${i}.name`]" class="text-xs text-red-400 mt-1">{{ form.errors[`phases.${i}.name`] }}</div>
               </div>
               <div>
-                <input v-model.number="p.duration_hours" type="number" min="1" placeholder="часов" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors[`phases.${i}.duration_hours`] ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
+                <label :for="`phase-${i}-duration`" class="sr-only">Длительность (часов)</label>
+                <input :id="`phase-${i}-duration`" :name="`phases[${i}][duration_hours]`" v-model.number="p.duration_hours" type="number" min="1" placeholder="часов" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors[`phases.${i}.duration_hours`] ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
                 <div v-if="form.errors[`phases.${i}.duration_hours`]" class="text-xs text-red-400 mt-1">{{ form.errors[`phases.${i}.duration_hours`] }}</div>
               </div>
               <div>
-                <input v-model.number="p.targets.ph.min" type="number" step="0.1" placeholder="pH min" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors[`phases.${i}.targets.ph.min`] ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
+                <label :for="`phase-${i}-ph-min`" class="sr-only">pH минимум</label>
+                <input :id="`phase-${i}-ph-min`" :name="`phases[${i}][targets][ph][min]`" v-model.number="p.targets.ph.min" type="number" step="0.1" placeholder="pH min" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors[`phases.${i}.targets.ph.min`] ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
                 <div v-if="form.errors[`phases.${i}.targets.ph.min`]" class="text-xs text-red-400 mt-1">{{ form.errors[`phases.${i}.targets.ph.min`] }}</div>
               </div>
               <div>
-                <input v-model.number="p.targets.ph.max" type="number" step="0.1" placeholder="pH max" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors[`phases.${i}.targets.ph.max`] ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
+                <label :for="`phase-${i}-ph-max`" class="sr-only">pH максимум</label>
+                <input :id="`phase-${i}-ph-max`" :name="`phases[${i}][targets][ph][max]`" v-model.number="p.targets.ph.max" type="number" step="0.1" placeholder="pH max" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors[`phases.${i}.targets.ph.max`] ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
                 <div v-if="form.errors[`phases.${i}.targets.ph.max`]" class="text-xs text-red-400 mt-1">{{ form.errors[`phases.${i}.targets.ph.max`] }}</div>
               </div>
               <div class="md:col-span-2 grid grid-cols-2 gap-2">
                 <div>
-                  <input v-model.number="p.targets.ec.min" type="number" step="0.1" placeholder="EC min" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors[`phases.${i}.targets.ec.min`] ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
+                  <label :for="`phase-${i}-ec-min`" class="sr-only">EC минимум</label>
+                  <input :id="`phase-${i}-ec-min`" :name="`phases[${i}][targets][ec][min]`" v-model.number="p.targets.ec.min" type="number" step="0.1" placeholder="EC min" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors[`phases.${i}.targets.ec.min`] ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
                   <div v-if="form.errors[`phases.${i}.targets.ec.min`]" class="text-xs text-red-400 mt-1">{{ form.errors[`phases.${i}.targets.ec.min`] }}</div>
                 </div>
                 <div>
-                  <input v-model.number="p.targets.ec.max" type="number" step="0.1" placeholder="EC max" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors[`phases.${i}.targets.ec.max`] ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
+                  <label :for="`phase-${i}-ec-max`" class="sr-only">EC максимум</label>
+                  <input :id="`phase-${i}-ec-max`" :name="`phases[${i}][targets][ec][max]`" v-model.number="p.targets.ec.max" type="number" step="0.1" placeholder="EC max" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors[`phases.${i}.targets.ec.max`] ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
                   <div v-if="form.errors[`phases.${i}.targets.ec.max`]" class="text-xs text-red-400 mt-1">{{ form.errors[`phases.${i}.targets.ec.max`] }}</div>
                 </div>
               </div>
               <div class="md:col-span-6 grid grid-cols-3 gap-2 mt-2">
-                <input v-model.number="p.targets.temp_air" type="number" step="0.1" placeholder="Температура" class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900" />
-                <input v-model.number="p.targets.humidity_air" type="number" step="0.1" placeholder="Влажность" class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900" />
-                <input v-model.number="p.targets.light_hours" type="number" placeholder="Свет (часов)" class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900" />
+                <input :id="`phase-${i}-temp-air`" :name="`phases[${i}][targets][temp_air]`" v-model.number="p.targets.temp_air" type="number" step="0.1" placeholder="Температура" class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900" />
+                <input :id="`phase-${i}-humidity-air`" :name="`phases[${i}][targets][humidity_air]`" v-model.number="p.targets.humidity_air" type="number" step="0.1" placeholder="Влажность" class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900" />
+                <input :id="`phase-${i}-light-hours`" :name="`phases[${i}][targets][light_hours]`" v-model.number="p.targets.light_hours" type="number" placeholder="Свет (часов)" class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900" />
               </div>
               <div class="md:col-span-6 grid grid-cols-2 gap-2 mt-2">
-                <input v-model.number="p.targets.irrigation_interval_sec" type="number" placeholder="Интервал полива (сек)" class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900" />
-                <input v-model.number="p.targets.irrigation_duration_sec" type="number" placeholder="Длительность полива (сек)" class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900" />
+                <input :id="`phase-${i}-irrigation-interval`" :name="`phases[${i}][targets][irrigation_interval_sec]`" v-model.number="p.targets.irrigation_interval_sec" type="number" placeholder="Интервал полива (сек)" class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900" />
+                <input :id="`phase-${i}-irrigation-duration`" :name="`phases[${i}][targets][irrigation_duration_sec]`" v-model.number="p.targets.irrigation_duration_sec" type="number" placeholder="Длительность полива (сек)" class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900" />
               </div>
             </div>
           </div>

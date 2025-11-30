@@ -151,11 +151,12 @@ zonesStore.initFromProps(page.props)
 const zones = computed(() => zonesStore.allZones)
 
 // Оптимизированные batch updates для обновлений зон
+// Используем silent: true чтобы предотвратить рекурсию (события уже были эмитнуты извне)
 const { add: addZoneUpdate, flush: flushZoneUpdates } = useBatchUpdates<Zone>(
   (zones) => {
-    // Применяем обновления пакетом
+    // Применяем обновления пакетом с silent: true чтобы не создавать новый цикл событий
     zones.forEach(zone => {
-      zonesStore.upsert(zone)
+      zonesStore.upsert(zone, true)
     })
   },
   { debounceMs: 150, maxBatchSize: 10, maxWaitMs: 500 }
@@ -164,15 +165,17 @@ const { add: addZoneUpdate, flush: flushZoneUpdates } = useBatchUpdates<Zone>(
 // Автоматическая синхронизация через события stores
 onMounted(() => {
   // Слушаем события обновления зон для автоматического обновления списка
+  // Используем silent: true чтобы предотвратить рекурсию (события уже были эмитнуты)
   subscribeWithCleanup('zone:updated', (zone: Zone) => {
     // Используем batch updates для оптимизации
+    // В обработчике событий используем silent: true чтобы не создавать новый цикл событий
     addZoneUpdate(zone)
   })
   
   // Слушаем события создания зон
   subscribeWithCleanup('zone:created', (zone: Zone) => {
-    // Создание зон применяем сразу
-    zonesStore.upsert(zone)
+    // Создание зон применяем сразу с silent: true
+    zonesStore.upsert(zone, true)
   })
   
   // Слушаем события удаления зон
@@ -186,14 +189,15 @@ onMounted(() => {
     // Инвалидируем кеш
     zonesStore.invalidateCache()
     
-    // Обновляем зону через API и store вместо reload для сохранения фильтров и scroll
-    try {
-      const { useZones } = await import('@/composables/useZones')
-      const { fetchZone } = useZones()
-      const updatedZone = await fetchZone(zoneId, true) // forceRefresh = true
-      if (updatedZone?.id) {
-        zonesStore.upsert(updatedZone)
-      }
+      // Обновляем зону через API и store вместо reload для сохранения фильтров и scroll
+      try {
+        const { useZones } = await import('@/composables/useZones')
+        const { fetchZone } = useZones()
+        const updatedZone = await fetchZone(zoneId, true) // forceRefresh = true
+        if (updatedZone?.id) {
+          // Используем silent: false здесь, так как это прямое обновление из API, не из события
+          zonesStore.upsert(updatedZone, false)
+        }
     } catch (error) {
       // Fallback к частичному reload при ошибке
       router.reload({ only: ['zones'], preserveScroll: true })

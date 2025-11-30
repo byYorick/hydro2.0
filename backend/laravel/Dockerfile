@@ -98,6 +98,9 @@ COPY php-prod.ini /usr/local/etc/php/conf.d/99-prod.ini
 # Copy nginx Vite proxy configuration
 COPY nginx-vite-proxy.conf /opt/docker/etc/nginx/vhost.common.d/vite-proxy.conf
 
+# Copy nginx FastCGI buffers configuration
+COPY nginx-fastcgi-buffers.conf /opt/docker/etc/nginx/vhost.common.d/20-fastcgi-buffers.conf
+
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 
 

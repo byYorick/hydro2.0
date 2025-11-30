@@ -5,13 +5,13 @@ namespace App\Services;
 use App\Models\Command;
 use App\Models\DeviceNode;
 use App\Models\Zone;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
+use Illuminate\Http\Client\TimeoutException;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
-use Illuminate\Http\Client\RequestException;
-use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Http\Client\TimeoutException;
 
 class PythonBridgeService
 {
@@ -26,64 +26,76 @@ class PythonBridgeService
             'cmd_id' => $cmdId,
         ]);
         $ghUid = optional($zone->greenhouse)->uid ?? 'gh-1';
-        
-        // Получаем node_uid и channel из payload - они обязательны
+
+        // Получаем node_uid и channel из payload или определяем автоматически
         $nodeUid = $payload['node_uid'] ?? null;
         $channel = $payload['channel'] ?? null;
-        
-        // Проверяем, что node_uid и channel указаны явно
-        if (!$nodeUid || !$channel) {
-            $this->markCommandFailed($command, 'node_uid and channel are required');
-            throw new \InvalidArgumentException(
-                'node_uid and channel are required. ' .
-                'Please specify target device and channel explicitly to prevent accidental commands.'
-            );
+
+        // Если node_uid и channel не указаны, пытаемся определить их автоматически
+        if (! $nodeUid || ! $channel) {
+            $resolved = $this->resolveNodeAndChannel($zone, $payload['type'] ?? 'unknown', $payload['params'] ?? []);
+            if ($resolved) {
+                $nodeUid = $resolved['node_uid'];
+                $channel = $resolved['channel'];
+                Log::info('PythonBridgeService: Auto-resolved node and channel for zone command', [
+                    'zone_id' => $zone->id,
+                    'command_type' => $payload['type'] ?? 'unknown',
+                    'node_uid' => $nodeUid,
+                    'channel' => $channel,
+                ]);
+            } else {
+                $this->markCommandFailed($command, 'Unable to auto-resolve node_uid and channel. Please specify them explicitly.');
+                throw new \InvalidArgumentException(
+                    'Unable to auto-resolve node_uid and channel for command type "'.($payload['type'] ?? 'unknown').'". '.
+                    'Please specify target device and channel explicitly.'
+                );
+            }
         }
-        
+
         // Валидируем, что нода существует и привязана к зоне
         $node = DeviceNode::where('uid', $nodeUid)->where('zone_id', $zone->id)->first();
-        if (!$node) {
+        if (! $node) {
             $this->markCommandFailed($command, "Node {$nodeUid} not found or not assigned to zone {$zone->id}");
             throw new \InvalidArgumentException(
                 "Node {$nodeUid} not found or not assigned to zone {$zone->id}"
             );
         }
-        
+
         // Валидируем, что канал существует у ноды
         $channelExists = $node->channels()->where('channel', $channel)->exists();
-        if (!$channelExists) {
+        if (! $channelExists) {
             $this->markCommandFailed($command, "Channel {$channel} not found on node {$nodeUid}");
             throw new \InvalidArgumentException(
                 "Channel {$channel} not found on node {$nodeUid}"
             );
         }
-        
+
         $baseUrl = Config::get('services.python_bridge.base_url');
-        if (!$baseUrl) {
+        if (! $baseUrl) {
             $error = 'Python bridge base_url not configured';
-            Log::error('PythonBridgeService: ' . $error, [
+            Log::error('PythonBridgeService: '.$error, [
                 'zone_id' => $zone->id,
                 'cmd_id' => $cmdId,
             ]);
             $this->markCommandFailed($command, $error);
             throw new \RuntimeException($error);
         }
-        
+
         $token = Config::get('services.python_bridge.token');
         $headers = $token ? ['Authorization' => "Bearer {$token}"] : [];
-        
+
         // Ensure params is an associative array (dict), not a list
         // Python service expects Dict[str, Any], not a list
         // Empty array [] serializes to [] in JSON, but we need {} for Python
         $params = $command->params ?? [];
         if (is_array($params) && array_is_list($params)) {
             // Convert indexed array to empty object (will serialize as {} in JSON)
-            $params = new \stdClass();
+            $params = new \stdClass;
         } elseif (empty($params) && is_array($params)) {
             // Empty associative array - convert to object to ensure {} in JSON
-            $params = new \stdClass();
+            $params = new \stdClass;
         }
-        
+
         $requestData = [
             'type' => $command->cmd,
             'params' => $params,
@@ -92,7 +104,7 @@ class PythonBridgeService
             'channel' => $channel,
             'cmd_id' => $cmdId, // Pass Laravel's cmd_id to Python service
         ];
-        
+
         try {
             $this->sendWithRetry(
                 "{$baseUrl}/bridge/zones/{$zone->id}/commands",
@@ -111,7 +123,7 @@ class PythonBridgeService
             $this->markCommandFailed($command, $error);
             throw $e;
         }
-        
+
         return $cmdId;
     }
 
@@ -129,11 +141,11 @@ class PythonBridgeService
         ]);
         $zoneId = $node->zone_id ?? ($payload['zone_id'] ?? null);
         $ghUid = optional(optional($node->zone)->greenhouse)->uid ?? 'gh-1';
-        
+
         $baseUrl = Config::get('services.python_bridge.base_url');
-        if (!$baseUrl) {
+        if (! $baseUrl) {
             $error = 'Python bridge base_url not configured';
-            Log::error('PythonBridgeService: ' . $error, [
+            Log::error('PythonBridgeService: '.$error, [
                 'node_id' => $node->id,
                 'node_uid' => $node->uid,
                 'cmd_id' => $cmdId,
@@ -141,22 +153,22 @@ class PythonBridgeService
             $this->markCommandFailed($command, $error);
             throw new \RuntimeException($error);
         }
-        
+
         $token = Config::get('services.python_bridge.token');
         $headers = $token ? ['Authorization' => "Bearer {$token}"] : [];
-        
+
         // Ensure params is an associative array (dict), not a list
         // Python service expects Dict[str, Any], not a list
         // Empty array [] serializes to [] in JSON, but we need {} for Python
         $params = $command->params ?? [];
         if (is_array($params) && array_is_list($params)) {
             // Convert indexed array to empty object (will serialize as {} in JSON)
-            $params = new \stdClass();
+            $params = new \stdClass;
         } elseif (empty($params) && is_array($params)) {
             // Empty associative array - convert to object to ensure {} in JSON
-            $params = new \stdClass();
+            $params = new \stdClass;
         }
-        
+
         $requestData = [
             'type' => $command->cmd,
             'params' => $params,
@@ -165,7 +177,7 @@ class PythonBridgeService
             'channel' => $payload['channel'] ?? null,
             'cmd_id' => $cmdId, // Pass Laravel's cmd_id to Python service
         ];
-        
+
         try {
             $this->sendWithRetry(
                 "{$baseUrl}/bridge/nodes/{$node->uid}/commands",
@@ -185,7 +197,7 @@ class PythonBridgeService
             $this->markCommandFailed($command, $error);
             throw $e;
         }
-        
+
         return $cmdId;
     }
 
@@ -196,16 +208,17 @@ class PythonBridgeService
     {
         $baseUrl = Config::get('services.python_bridge.base_url');
         $token = Config::get('services.python_bridge.token');
-        
-        if (!$baseUrl) {
+
+        if (! $baseUrl) {
             // Если URL не настроен, просто логируем
             \Illuminate\Support\Facades\Log::info('Python bridge URL not configured, skipping config update notification');
+
             return;
         }
 
         try {
             $headers = $token ? ['Authorization' => "Bearer {$token}"] : [];
-            
+
             // Отправляем уведомление о необходимости перезагрузить конфигурацию
             // Python-сервис должен сделать запрос к /api/system/config/full
             Http::withHeaders($headers)
@@ -214,7 +227,7 @@ class PythonBridgeService
                     'zone_id' => $zone->id,
                     'greenhouse_uid' => optional($zone->greenhouse)->uid,
                 ]);
-                
+
             \Illuminate\Support\Facades\Log::info('Python service notified about zone config update', [
                 'zone_id' => $zone->id,
             ]);
@@ -235,15 +248,15 @@ class PythonBridgeService
         $timeout = Config::get('services.python_bridge.timeout', 10);
         $maxAttempts = Config::get('services.python_bridge.retry_attempts', 2);
         $retryDelay = Config::get('services.python_bridge.retry_delay', 1);
-        
+
         $lastException = null;
-        
+
         for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
             try {
                 $response = Http::withHeaders($headers)
                     ->timeout($timeout)
                     ->post($url, $data);
-                
+
                 // Проверяем успешность ответа
                 if ($response->successful()) {
                     Log::debug('PythonBridgeService: Command sent successfully', [
@@ -251,9 +264,10 @@ class PythonBridgeService
                         'url' => $url,
                         'attempt' => $attempt,
                     ]);
+
                     return;
                 }
-                
+
                 // Если ответ неуспешный, но не критическая ошибка сети
                 $status = $response->status();
                 $body = $response->body();
@@ -261,7 +275,7 @@ class PythonBridgeService
                     "HTTP {$status}: {$body}",
                     $response->toPsrResponse()
                 );
-                
+
                 Log::warning('PythonBridgeService: Non-successful response', [
                     'cmd_id' => $command->cmd_id,
                     'url' => $url,
@@ -269,7 +283,7 @@ class PythonBridgeService
                     'body' => substr($body, 0, 500), // Ограничиваем длину лога
                     'attempt' => $attempt,
                 ]);
-                
+
             } catch (ConnectionException $e) {
                 $lastException = $e;
                 Log::warning('PythonBridgeService: Connection error', [
@@ -304,15 +318,114 @@ class PythonBridgeService
                     'attempt' => $attempt,
                 ]);
             }
-            
+
             // Если это не последняя попытка, ждем перед повтором
             if ($attempt < $maxAttempts) {
                 sleep($retryDelay);
             }
         }
-        
+
         // Все попытки исчерпаны
         throw $lastException ?? new \RuntimeException('Failed to send command: unknown error');
+    }
+
+    /**
+     * Автоматически определяет node_uid и channel для команды зоны на основе типа команды
+     */
+    private function resolveNodeAndChannel(Zone $zone, string $commandType, array $params = []): ?array
+    {
+        // Маппинг типов команд к типам нод и каналам
+        $commandMapping = [
+            'FORCE_PH_CONTROL' => [
+                'node_type' => 'ph',
+                'channels' => ['pump_acid', 'pump_base'], // Пробуем оба, выбираем первый доступный
+            ],
+            'FORCE_EC_CONTROL' => [
+                'node_type' => 'ec',
+                'channels' => ['pump_nutrient'],
+            ],
+            'FORCE_IRRIGATION' => [
+                'node_type' => 'irrig',
+                'channels' => ['pump_irrigation', 'valve_irrigation'],
+            ],
+            'FORCE_LIGHTING' => [
+                'node_type' => 'light',
+                'channels' => ['white_light', 'uv_light'],
+            ],
+            'FORCE_CLIMATE' => [
+                'node_type' => 'climate',
+                'channels' => ['fan_air', 'heater_air'],
+            ],
+        ];
+
+        if (! isset($commandMapping[$commandType])) {
+            Log::warning('PythonBridgeService: Unknown command type for auto-resolution', [
+                'command_type' => $commandType,
+                'zone_id' => $zone->id,
+            ]);
+
+            return null;
+        }
+
+        $mapping = $commandMapping[$commandType];
+        $nodeType = $mapping['node_type'];
+        $channels = $mapping['channels'];
+
+        // Ищем первую доступную ноду нужного типа в зоне
+        $node = DeviceNode::where('zone_id', $zone->id)
+            ->where('type', $nodeType)
+            ->where('status', 'online')
+            ->first();
+
+        if (! $node) {
+            Log::warning('PythonBridgeService: No online node found for command type', [
+                'command_type' => $commandType,
+                'node_type' => $nodeType,
+                'zone_id' => $zone->id,
+            ]);
+
+            return null;
+        }
+
+        // Ищем первый доступный канал из списка
+        foreach ($channels as $channelName) {
+            $channelExists = $node->channels()->where('channel', $channelName)->exists();
+            if ($channelExists) {
+                return [
+                    'node_uid' => $node->uid,
+                    'channel' => $channelName,
+                ];
+            }
+        }
+
+        // Если ни один канал не найден, пробуем любой канал типа ACTUATOR для этой ноды
+        $anyActuatorChannel = $node->channels()
+            ->where('type', 'ACTUATOR')
+            ->first();
+
+        if ($anyActuatorChannel) {
+            Log::info('PythonBridgeService: Using fallback actuator channel', [
+                'command_type' => $commandType,
+                'node_uid' => $node->uid,
+                'channel' => $anyActuatorChannel->channel,
+                'zone_id' => $zone->id,
+            ]);
+
+            return [
+                'node_uid' => $node->uid,
+                'channel' => $anyActuatorChannel->channel,
+            ];
+        }
+
+        Log::warning('PythonBridgeService: No suitable channel found for command type', [
+            'command_type' => $commandType,
+            'node_uid' => $node->uid,
+            'node_type' => $nodeType,
+            'zone_id' => $zone->id,
+            'expected_channels' => $channels,
+        ]);
+
+        return null;
     }
 
     /**
@@ -325,7 +438,7 @@ class PythonBridgeService
                 'status' => 'failed',
                 'failed_at' => now(),
             ]);
-            
+
             Log::info('PythonBridgeService: Command marked as failed', [
                 'cmd_id' => $command->cmd_id,
                 'error' => $error,
@@ -339,5 +452,3 @@ class PythonBridgeService
         }
     }
 }
-
-

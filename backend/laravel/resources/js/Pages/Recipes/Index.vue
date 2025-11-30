@@ -2,14 +2,12 @@
   <AppLayout>
     <div class="flex items-center justify-between mb-4">
       <h1 class="text-lg font-semibold">Рецепты</h1>
-      <Link href="/recipes/create">
-        <Button size="sm" variant="primary">
-          <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-          </svg>
-          Создать рецепт
-        </Button>
-      </Link>
+      <Button size="sm" variant="primary" @click="openRecipeWizard">
+        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+        </svg>
+        Новый цикл
+      </Button>
     </div>
     <div class="mb-3 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
       <div class="flex items-center gap-2 flex-1 sm:flex-none">
@@ -55,20 +53,36 @@
         </div>
       </div>
     </div>
+
+    <!-- Мастер создания рецепта -->
+    <RecipeCreateWizard
+      :show="showRecipeWizard"
+      @close="closeRecipeWizard"
+      @created="onRecipeCreated"
+    />
   </AppLayout>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Link, usePage } from '@inertiajs/vue3'
+import { Link, usePage, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Button from '@/Components/Button.vue'
+import RecipeCreateWizard from '@/Components/RecipeCreateWizard.vue'
+import { useSimpleModal } from '@/composables/useModal'
 import type { Recipe } from '@/types'
 
 const headers = ['Название', 'Описание', 'Фаз', 'Действия']
 const page = usePage<{ recipes?: Recipe[] }>()
 const all = computed(() => (page.props.recipes || []) as Recipe[])
 const query = ref<string>('')
+
+const { isOpen: showRecipeWizard, open: openRecipeWizard, close: closeRecipeWizard } = useSimpleModal()
+
+function onRecipeCreated(recipe: Recipe): void {
+  // Обновляем страницу для отображения нового рецепта
+  router.reload({ only: ['recipes'] })
+}
 
 // Оптимизируем фильтрацию: мемоизируем нижний регистр запроса
 const queryLower = computed(() => query.value.toLowerCase())

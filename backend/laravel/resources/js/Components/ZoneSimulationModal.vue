@@ -6,8 +6,10 @@
       
       <form @submit.prevent="onSubmit" class="space-y-4" @click.stop>
         <div>
-          <label class="block text-sm font-medium mb-1">Duration (hours)</label>
+          <label for="simulation-duration-hours" class="block text-sm font-medium mb-1">Duration (hours)</label>
           <input
+            id="simulation-duration-hours"
+            name="duration_hours"
             v-model.number="form.duration_hours"
             type="number"
             min="1"
@@ -18,8 +20,10 @@
         </div>
         
         <div>
-          <label class="block text-sm font-medium mb-1">Step (minutes)</label>
+          <label for="simulation-step-minutes" class="block text-sm font-medium mb-1">Step (minutes)</label>
           <input
+            id="simulation-step-minutes"
+            name="step_minutes"
             v-model.number="form.step_minutes"
             type="number"
             min="1"
@@ -30,8 +34,10 @@
         </div>
         
         <div>
-          <label class="block text-sm font-medium mb-1">Recipe ID (optional)</label>
+          <label for="simulation-recipe-id" class="block text-sm font-medium mb-1">Recipe ID (optional)</label>
           <input
+            id="simulation-recipe-id"
+            name="recipe_id"
             v-model.number="form.recipe_id"
             type="number"
             class="w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-sm"
@@ -42,8 +48,10 @@
           <div class="text-sm font-medium mb-2">Initial State (optional)</div>
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label class="block text-xs text-neutral-400 mb-1">pH</label>
+              <label for="simulation-initial-ph" class="block text-xs text-neutral-400 mb-1">pH</label>
               <input
+                id="simulation-initial-ph"
+                name="initial_state_ph"
                 v-model.number="form.initial_state.ph"
                 type="number"
                 step="0.1"
@@ -51,8 +59,10 @@
               />
             </div>
             <div>
-              <label class="block text-xs text-neutral-400 mb-1">EC</label>
+              <label for="simulation-initial-ec" class="block text-xs text-neutral-400 mb-1">EC</label>
               <input
+                id="simulation-initial-ec"
+                name="initial_state_ec"
                 v-model.number="form.initial_state.ec"
                 type="number"
                 step="0.1"
@@ -60,8 +70,10 @@
               />
             </div>
             <div>
-              <label class="block text-xs text-neutral-400 mb-1">Temp Air (°C)</label>
+              <label for="simulation-initial-temp-air" class="block text-xs text-neutral-400 mb-1">Temp Air (°C)</label>
               <input
+                id="simulation-initial-temp-air"
+                name="initial_state_temp_air"
                 v-model.number="form.initial_state.temp_air"
                 type="number"
                 step="0.1"
@@ -69,8 +81,10 @@
               />
             </div>
             <div>
-              <label class="block text-xs text-neutral-400 mb-1">Temp Water (°C)</label>
+              <label for="simulation-initial-temp-water" class="block text-xs text-neutral-400 mb-1">Temp Water (°C)</label>
               <input
+                id="simulation-initial-temp-water"
+                name="initial_state_temp_water"
                 v-model.number="form.initial_state.temp_water"
                 type="number"
                 step="0.1"
@@ -78,8 +92,10 @@
               />
             </div>
             <div class="col-span-2">
-              <label class="block text-xs text-neutral-400 mb-1">Влажность (%)</label>
+              <label for="simulation-initial-humidity" class="block text-xs text-neutral-400 mb-1">Влажность (%)</label>
               <input
+                id="simulation-initial-humidity"
+                name="initial_state_humidity_air"
                 v-model.number="form.initial_state.humidity_air"
                 type="number"
                 step="0.1"

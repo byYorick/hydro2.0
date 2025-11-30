@@ -291,10 +291,10 @@ import { useWebSocket } from '@/composables/useWebSocket'
 import { formatTime } from '@/utils/formatTime'
 import SystemMonitoringModal from '@/Components/SystemMonitoringModal.vue'
 import { useApi } from '@/composables/useApi'
-import { useModal } from '@/composables/useModal'
+import { useSimpleModal } from '@/composables/useModal'
 import { logger } from '@/utils/logger'
 
-const { isOpen: showMonitoringModal, open: openMonitoringModal, close: closeMonitoringModal } = useModal<boolean>(false)
+const { isOpen: showMonitoringModal, open: openMonitoringModal, close: closeMonitoringModal } = useSimpleModal()
 
 const { 
   coreStatus, 

@@ -27,11 +27,8 @@
         <div class="flex items-center justify-between mb-4">
           <h1 class="text-lg font-semibold">Панель управления</h1>
         <div class="flex gap-2">
-          <Link href="/setup/wizard">
+          <Link href="/greenhouses">
             <Button size="sm" variant="secondary">Мастер настройки</Button>
-          </Link>
-          <Link href="/greenhouses/create">
-            <Button size="sm" variant="outline">Создать теплицу</Button>
           </Link>
         </div>
       </div>
@@ -119,11 +116,8 @@
               </div>
             </div>
             <div class="flex gap-2">
-              <Link href="/setup/wizard">
+              <Link href="/greenhouses">
                 <Button size="sm">Мастер настройки</Button>
-              </Link>
-              <Link href="/greenhouses/create">
-                <Button size="sm" variant="secondary">Создать теплицу</Button>
               </Link>
             </div>
           </div>
@@ -134,8 +128,8 @@
       <div v-if="hasGreenhouses" class="mb-6">
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-base font-semibold text-neutral-100">Теплицы</h2>
-          <Link href="/greenhouses/create">
-            <Button size="sm" variant="outline">Создать теплицу</Button>
+          <Link href="/greenhouses">
+            <Button size="sm" variant="outline">Все теплицы</Button>
           </Link>
         </div>
         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
@@ -348,8 +342,8 @@
       </div>
     </template>
     <template #context>
-      <div class="h-full flex flex-col">
-        <div class="flex items-center justify-between mb-3">
+      <div class="flex flex-col flex-1 min-h-0">
+        <div class="flex items-center justify-between mb-3 shrink-0">
           <div class="text-neutral-300 font-medium">Последние события</div>
           <div class="flex items-center gap-1.5 text-xs text-neutral-500">
             <div class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></div>
@@ -358,7 +352,7 @@
         </div>
         
         <!-- Фильтр по типу событий -->
-        <div class="mb-3 flex gap-1 flex-wrap">
+        <div class="mb-3 flex gap-1 flex-wrap shrink-0">
           <button
             v-for="kind in ['ALL', 'ALERT', 'WARNING', 'INFO']"
             :key="kind"
@@ -372,7 +366,7 @@
           </button>
         </div>
         
-        <div v-if="filteredEvents.length > 0" class="space-y-2 flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-800 scrollbar-track-transparent">
+        <div v-if="filteredEvents.length > 0" class="space-y-2 flex-1 min-h-0 overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-800 scrollbar-track-transparent pr-1">
           <div 
             v-for="e in filteredEvents" 
             :key="e.id" 

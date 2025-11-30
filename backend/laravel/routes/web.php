@@ -27,6 +27,7 @@ Route::match(['GET', 'POST'], '/_boost/browser-logs', function (\Illuminate\Http
             'user_agent' => $request->userAgent(),
             'method' => $request->method(),
         ]);
+
         return response()->json(['status' => 'disabled'], 404);
     }
 
@@ -42,6 +43,7 @@ Route::match(['GET', 'POST'], '/_boost/browser-logs', function (\Illuminate\Http
             'user_agent' => $request->userAgent(),
             'method' => $request->method(),
         ]);
+
         return response()->json(['status' => 'unauthorized'], 403);
     }
 
@@ -64,34 +66,76 @@ Route::match(['GET', 'POST'], '/_boost/browser-logs', function (\Illuminate\Http
 })->middleware(['web', 'auth', 'throttle:120,1']); // 120 запросов в минуту для dev режима
 
 // Broadcasting authentication route
+// Rate limiting: 300 запросов в минуту для поддержки множественных каналов и переподключений
+// Поддерживает как сессионную авторизацию (web guard), так и токеновую (Sanctum PAT)
 Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
     try {
-        // Проверяем, что пользователь аутентифицирован
-        if (! auth()->check()) {
-            \Log::warning('Broadcasting auth: Unauthenticated request', [
-                'ip' => $request->ip(),
-                'user_agent' => $request->userAgent(),
-                'channel' => $request->input('channel_name'),
-            ]);
-            return response()->json(['message' => 'Unauthenticated.'], 403);
+        // Сначала пытаемся аутентифицировать через Sanctum PAT (для мобильных/SPA клиентов)
+        // Это позволяет использовать токен из /api/auth/login для WebSocket авторизации
+        $user = null;
+
+        // Проверяем Sanctum токен из заголовка Authorization
+        if ($request->bearerToken()) {
+            $token = \Laravel\Sanctum\PersonalAccessToken::findToken($request->bearerToken());
+            if ($token && $token->tokenable) {
+                // Проверяем срок действия токена
+                if ($token->expires_at && $token->expires_at->isPast()) {
+                    \Log::warning('Broadcasting auth: Sanctum token expired', [
+                        'ip' => $request->ip(),
+                        'token_id' => $token->id,
+                    ]);
+
+                    return response()->json(['message' => 'Token expired.'], 403);
+                }
+
+                $user = $token->tokenable;
+                // Устанавливаем пользователя для обоих guard'ов
+                \Illuminate\Support\Facades\Auth::guard('sanctum')->setUser($user);
+                \Illuminate\Support\Facades\Auth::guard('web')->setUser($user);
+                $request->setUserResolver(static fn () => $user);
+
+                // Обновляем last_used_at для отслеживания активности токена
+                $token->forceFill(['last_used_at' => now()])->save();
+
+                \Log::debug('Broadcasting auth: Authenticated via Sanctum PAT', [
+                    'user_id' => $user->id,
+                    'channel' => $request->input('channel_name'),
+                ]);
+            }
+        }
+
+        // Если не удалось аутентифицировать через токен, проверяем сессию (web guard)
+        if (! $user) {
+            if (! auth()->check() && ! auth('web')->check()) {
+                \Log::warning('Broadcasting auth: Unauthenticated request', [
+                    'ip' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                    'channel' => $request->input('channel_name'),
+                    'has_bearer_token' => $request->bearerToken() !== null,
+                ]);
+
+                return response()->json(['message' => 'Unauthenticated.'], 403);
+            }
+            $user = auth()->user() ?? auth('web')->user();
         }
 
         \Log::debug('Broadcasting auth: Starting authorization', [
             'channel' => $request->input('channel_name'),
-            'user_authenticated' => auth()->check(),
+            'user_authenticated' => $user !== null,
+            'auth_method' => $request->bearerToken() ? 'sanctum_token' : 'session',
         ]);
-        
-        $user = auth()->user();
+
         if (! $user) {
-            \Log::error('Broadcasting auth: User is null after auth()->check()', [
+            \Log::error('Broadcasting auth: User is null after authentication attempts', [
                 'ip' => $request->ip(),
                 'channel' => $request->input('channel_name'),
             ]);
+
             return response()->json(['message' => 'Unauthenticated.'], 403);
         }
-        
+
         $channelName = $request->input('channel_name');
-        
+
         \Log::debug('Broadcasting auth: Authorizing channel', [
             'user_id' => $user->id,
             'channel' => $channelName,
@@ -100,24 +144,25 @@ Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
         // Обрабатываем ошибки БД отдельно
         try {
             $response = Broadcast::auth($request);
-            
+
             // Проверяем, что ответ валиден
             if (! $response) {
                 \Log::warning('Broadcasting auth: Broadcast::auth returned null', [
                     'user_id' => $user->id,
                     'channel' => $channelName,
                 ]);
+
                 return response()->json(['message' => 'Authorization failed.'], 403);
             }
-            
+
             return $response;
         } catch (\Illuminate\Database\QueryException $dbException) {
             $isDev = app()->environment(['local', 'testing', 'development']);
             $errorMessage = $dbException->getMessage();
-            $isMissingTable = str_contains($errorMessage, 'no such table') || 
+            $isMissingTable = str_contains($errorMessage, 'no such table') ||
                              str_contains($errorMessage, "doesn't exist") ||
                              str_contains($errorMessage, 'relation does not exist');
-            
+
             if ($isDev) {
                 \Log::error('Broadcasting auth: Database error', [
                     'user_id' => $user->id,
@@ -133,7 +178,7 @@ Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
                     'error_type' => $isMissingTable ? 'missing_table' : 'connection_error',
                 ]);
             }
-            
+
             if ($isDev) {
                 if ($isMissingTable) {
                     return response()->json([
@@ -142,6 +187,7 @@ Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
                         'hint' => 'Run: php artisan migrate',
                     ], 503);
                 }
+
                 return response()->json([
                     'message' => 'Service temporarily unavailable. Please check database connection.',
                     'error' => 'Database connection error',
@@ -153,7 +199,7 @@ Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
             }
         } catch (\PDOException $pdoException) {
             $isDev = app()->environment(['local', 'testing', 'development']);
-            
+
             if ($isDev) {
                 \Log::error('Broadcasting auth: PDO error', [
                     'user_id' => $user->id ?? null,
@@ -168,7 +214,7 @@ Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
                     'error_type' => 'pdo_connection_error',
                 ]);
             }
-            
+
             if ($isDev) {
                 return response()->json([
                     'message' => 'Database connection error. Please check database configuration.',
@@ -180,7 +226,7 @@ Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
                 ], 503);
             }
         }
-        
+
         \Log::debug('Broadcasting auth: Success', [
             'user_id' => $user->id,
             'channel' => $channelName,
@@ -195,10 +241,11 @@ Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
             'channel' => $request->input('channel_name'),
             'error' => $broadcastException->getMessage(),
         ]);
+
         return response()->json(['message' => 'Unauthorized.'], 403);
     } catch (\Exception $e) {
         $isDev = app()->environment(['local', 'testing', 'development']);
-        
+
         if ($isDev) {
             \Log::error('Broadcasting auth: Error', [
                 'user_id' => auth()->id(),
@@ -211,10 +258,10 @@ Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
                 'error' => $e->getMessage(),
             ]);
         }
-        
+
         return response()->json(['message' => 'Authorization failed.'], 500);
     }
-})->middleware(['web', 'auth', 'throttle:120,1'])->withoutMiddleware([\App\Http\Middleware\HandleInertiaRequests::class]); // 120 запросов в минуту для dev режима
+})->middleware(['web', 'auth', 'throttle:300,1'])->withoutMiddleware([\App\Http\Middleware\HandleInertiaRequests::class]); // Rate limiting: 300 запросов в минуту для поддержки множественных каналов и переподключений
 
 Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->group(function () {
     /**
@@ -240,15 +287,13 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
     Route::get('/', function () {
         // Обрабатываем ошибки БД для предотвращения 500 и бесконечных перезагрузок
         // Используем кеш для статических данных (TTL 30 секунд)
+        // Пользователь уже проверен middleware 'auth'
         $user = auth()->user();
-        if (!$user) {
-            return redirect()->route('login');
-        }
-        
+
         // Получаем доступные зоны для пользователя для tenant-изоляции
         $accessibleZoneIds = \App\Helpers\ZoneAccessHelper::getAccessibleZoneIds($user);
         $accessibleNodeIds = \App\Helpers\ZoneAccessHelper::getAccessibleNodeIds($user);
-        
+
         $cacheKey = 'dashboard_data_'.auth()->id();
         try {
             $dashboard = \Illuminate\Support\Facades\Cache::remember($cacheKey, 30, function () use ($user, $accessibleZoneIds, $accessibleNodeIds) {
@@ -295,7 +340,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 // Если таблицы не существуют или БД недоступна, возвращаем пустые данные
                 try {
                     $zonesByStatusQuery = Zone::query();
-                    if (!$user->isAdmin()) {
+                    if (! $user->isAdmin()) {
                         $zonesByStatusQuery->whereIn('id', $accessibleZoneIds ?: [0]);
                     }
                     $zonesByStatus = $zonesByStatusQuery
@@ -313,7 +358,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
 
                 try {
                     $nodesByStatusQuery = DeviceNode::query();
-                    if (!$user->isAdmin()) {
+                    if (! $user->isAdmin()) {
                         $nodesByStatusQuery->whereIn('id', $accessibleNodeIds ?: [0]);
                     }
                     $nodesByStatus = $nodesByStatusQuery
@@ -340,7 +385,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                             $q->whereIn('zones.status', ['ALARM', 'WARNING'])
                                 ->orWhereNotNull('alerts.id');
                         });
-                    if (!$user->isAdmin()) {
+                    if (! $user->isAdmin()) {
                         $problematicZonesQuery->whereIn('zones.id', $accessibleZoneIds ?: [0]);
                     }
                     $problematicZones = $problematicZonesQuery
@@ -362,7 +407,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 try {
                     $zoneStatusRowsQuery = Zone::query()
                         ->select('greenhouse_id', 'status', DB::raw('COUNT(*) as count'));
-                    if (!$user->isAdmin()) {
+                    if (! $user->isAdmin()) {
                         $zoneStatusRowsQuery->whereIn('id', $accessibleZoneIds ?: [0]);
                     }
                     $zoneStatusRows = $zoneStatusRowsQuery
@@ -385,7 +430,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                     $nodesStatusRowsQuery = DeviceNode::query()
                         ->select('zones.greenhouse_id', 'nodes.status', DB::raw('COUNT(*) as count'))
                         ->join('zones', 'zones.id', '=', 'nodes.zone_id');
-                    if (!$user->isAdmin()) {
+                    if (! $user->isAdmin()) {
                         $nodesStatusRowsQuery->whereIn('nodes.id', $accessibleNodeIds ?: [0]);
                     }
                     $nodesStatusRows = $nodesStatusRowsQuery
@@ -409,7 +454,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                         ->select('zones.greenhouse_id', DB::raw('COUNT(*) as count'))
                         ->join('zones', 'zones.id', '=', 'alerts.zone_id')
                         ->where('alerts.status', 'ACTIVE');
-                    if (!$user->isAdmin()) {
+                    if (! $user->isAdmin()) {
                         $alertsByGreenhouseQuery->whereIn('alerts.zone_id', $accessibleZoneIds ?: [0]);
                     }
                     $alertsByGreenhouse = $alertsByGreenhouseQuery
@@ -427,22 +472,29 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 try {
                     $greenhousesQuery = Greenhouse::query()
                         ->select(['id', 'uid', 'name', 'type', 'description']);
-                    if (!$user->isAdmin()) {
-                        // Фильтруем теплицы, у которых есть доступные зоны
-                        $greenhousesQuery->whereHas('zones', function ($q) use ($accessibleZoneIds) {
-                            $q->whereIn('id', $accessibleZoneIds ?: [0]);
+                    if (! $user->isAdmin()) {
+                        // Согласно ZoneAccessHelper, все пользователи имеют доступ ко всем зонам/теплицам
+                        // Показываем все теплицы, включая те, у которых ещё нет зон
+                        // В будущем, при реализации мульти-тенантности, здесь будет фильтрация через user_greenhouses
+                        $greenhousesQuery->where(function ($q) use ($accessibleZoneIds) {
+                            // Теплицы с доступными зонами
+                            $q->whereHas('zones', function ($zoneQuery) use ($accessibleZoneIds) {
+                                $zoneQuery->whereIn('id', $accessibleZoneIds ?: [0]);
+                            })
+                            // ИЛИ теплицы без зон (чтобы новые теплицы тоже отображались)
+                            ->orWhereDoesntHave('zones');
                         });
                     }
                     $greenhouses = $greenhousesQuery
                         ->withCount([
                             'zones' => function ($q) use ($user, $accessibleZoneIds) {
-                                if (!$user->isAdmin()) {
+                                if (! $user->isAdmin()) {
                                     $q->whereIn('id', $accessibleZoneIds ?: [0]);
                                 }
                             },
                             'zones as zones_running' => function ($q) use ($user, $accessibleZoneIds) {
                                 $q->where('status', 'RUNNING');
-                                if (!$user->isAdmin()) {
+                                if (! $user->isAdmin()) {
                                     $q->whereIn('id', $accessibleZoneIds ?: [0]);
                                 }
                             },
@@ -468,7 +520,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                         ->select(['id', 'type', 'status', 'details', 'zone_id', 'created_at'])
                         ->with('zone:id,name')
                         ->where('status', 'ACTIVE');
-                    if (!$user->isAdmin()) {
+                    if (! $user->isAdmin()) {
                         $latestAlertsQuery->whereIn('zone_id', $accessibleZoneIds ?: [0]);
                     }
                     $latestAlerts = $latestAlertsQuery
@@ -487,7 +539,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                     $zonesForTelemetryQuery = Zone::query()
                         ->select(['id', 'name', 'status', 'greenhouse_id'])
                         ->with('greenhouse:id,name');
-                    if (!$user->isAdmin()) {
+                    if (! $user->isAdmin()) {
                         $zonesForTelemetryQuery->whereIn('id', $accessibleZoneIds ?: [0]);
                     }
                     $zonesForTelemetry = $zonesForTelemetryQuery
@@ -556,13 +608,65 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
      */
     Route::get('/setup/wizard', function () {
         $user = auth()->user();
-        if (!$user || !$user->isAdmin()) {
+        if (! $user || ! $user->isAdmin()) {
             abort(403, 'Only administrators can access the setup wizard');
         }
+
         return Inertia::render('Setup/Wizard', [
             'auth' => ['user' => ['role' => $user->role ?? 'admin']],
         ]);
     })->name('setup.wizard')->middleware('admin');
+
+    /**
+     * Greenhouses Index - список всех теплиц
+     */
+    Route::get('/greenhouses', function () {
+        $user = auth()->user();
+        $accessibleZoneIds = \App\Helpers\ZoneAccessHelper::getAccessibleZoneIds($user);
+        
+        try {
+            $greenhousesQuery = Greenhouse::query()
+                ->select(['id', 'uid', 'name', 'type', 'description', 'timezone', 'created_at']);
+            
+            if (! $user->isAdmin()) {
+                // Показываем все теплицы, включая те, у которых ещё нет зон
+                $greenhousesQuery->where(function ($q) use ($accessibleZoneIds) {
+                    $q->whereHas('zones', function ($zoneQuery) use ($accessibleZoneIds) {
+                        $zoneQuery->whereIn('id', $accessibleZoneIds ?: [0]);
+                    })
+                    ->orWhereDoesntHave('zones');
+                });
+            }
+            
+            $greenhouses = $greenhousesQuery
+                ->withCount([
+                    'zones' => function ($q) use ($user, $accessibleZoneIds) {
+                        if (! $user->isAdmin()) {
+                            $q->whereIn('id', $accessibleZoneIds ?: [0]);
+                        }
+                    },
+                    'zones as zones_running' => function ($q) use ($user, $accessibleZoneIds) {
+                        $q->where('status', 'RUNNING');
+                        if (! $user->isAdmin()) {
+                            $q->whereIn('id', $accessibleZoneIds ?: [0]);
+                        }
+                    },
+                ])
+                ->orderBy('created_at', 'desc')
+                ->get();
+        } catch (\Exception $e) {
+            \Log::error('Greenhouses index: Database error', [
+                'error' => $e->getMessage(),
+                'user_id' => auth()->id(),
+            ]);
+            $greenhouses = collect([]);
+        }
+        
+        return Inertia::render('Greenhouses/Index', [
+            'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
+            'greenhouses' => $greenhouses,
+        ]);
+    })->name('greenhouses.index');
 
     /**
      * Create Greenhouse - создание теплицы
@@ -573,7 +677,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
         ]);
     })->name('greenhouses.create');
 
-
     /**
      * Greenhouse Show - детальная страница теплицы
      */
@@ -581,7 +684,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
         $zones = Zone::query()
             ->where('greenhouse_id', $greenhouse->id)
             ->with([
-                'recipeInstance.recipe:id,name,description,phases',
+                'recipeInstance.recipe:id,name,description',
             ])
             ->withCount([
                 'alerts as alerts_count',
@@ -1536,9 +1639,10 @@ Route::get('/swagger', function () {
     if (app()->environment(['production', 'staging'])) {
         abort(404, 'Swagger documentation is not available in this environment');
     }
-    if (!auth()->check()) {
+    if (! auth()->check()) {
         return redirect()->route('login');
     }
+
     return redirect('/swagger.html');
 })->middleware('auth');
 
@@ -1554,6 +1658,16 @@ Route::middleware(['web', 'auth'])->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+    
+    /**
+     * Monitoring - страница мониторинга системы
+     *
+     * Inertia Props:
+     * - auth: { user: { role: string } }
+     */
+    Route::get('/monitoring', fn () => Inertia::render('Monitoring/Index', [
+        'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
+    ]))->name('monitoring.index');
 });
 
 require __DIR__.'/auth.php';
@@ -1567,6 +1681,7 @@ if (app()->environment('testing')) {
             'user_id' => $user->id,
             'ip' => request()->ip(),
         ]);
+
         return redirect()->intended('/');
     })->name('testing.login');
 }

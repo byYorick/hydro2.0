@@ -15,7 +15,9 @@ class AuthenticateWithApiToken
      */
     public function handle(Request $request, Closure $next)
     {
-        if (! Auth::check()) {
+        // Сначала проверяем сессионную аутентификацию (web guard)
+        // Это работает для веб-запросов, где пользователь залогинен через сессию
+        if (! Auth::guard('web')->check() && ! Auth::guard('sanctum')->check()) {
             $token = $request->bearerToken();
 
             if ($token) {
@@ -28,6 +30,7 @@ class AuthenticateWithApiToken
                             'token_id' => $accessToken->id,
                             'expires_at' => $accessToken->expires_at,
                         ]);
+
                         return response()->json([
                             'status' => 'error',
                             'code' => 'TOKEN_EXPIRED',
@@ -42,9 +45,11 @@ class AuthenticateWithApiToken
                     // }
 
                     $user = $accessToken->tokenable;
-                    Auth::guard()->setUser($user);
+                    // Устанавливаем пользователя для обоих guard'ов
+                    Auth::guard('web')->setUser($user);
+                    Auth::guard('sanctum')->setUser($user);
                     $request->setUserResolver(static fn () => $user);
-                    
+
                     // Обновляем last_used_at для отслеживания активности токена
                     $accessToken->forceFill(['last_used_at' => now()])->save();
                 }

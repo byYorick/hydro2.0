@@ -46,13 +46,7 @@ class GreenhouseController extends Controller
             ], 401);
         }
         
-        // Только админы могут создавать теплицы
-        if (!$user->isAdmin()) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Forbidden: Only administrators can create greenhouses',
-            ], 403);
-        }
+        // Права доступа проверяются на уровне маршрута (middleware role:operator,admin,agronomist,engineer)
         
         $data = $request->validate([
             'uid' => ['required', 'string', 'max:64', 'unique:greenhouses,uid'],

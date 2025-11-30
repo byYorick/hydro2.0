@@ -165,7 +165,7 @@ import { logger } from '@/utils/logger'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
-import { useModal } from '@/composables/useModal'
+import { useSimpleModal } from '@/composables/useModal'
 import { ERROR_MESSAGES } from '@/constants/messages'
 
 const page = usePage()
@@ -181,7 +181,7 @@ const { api } = useApi(showToast)
 const users = ref([])
 const searchQuery = ref('')
 const roleFilter = ref('')
-const { isOpen: showCreateModal, open: openCreateModal, close: closeCreateModal } = useModal<boolean>(false)
+const { isOpen: showCreateModal, open: openCreateModal, close: closeCreateModal } = useSimpleModal()
 const editingUser = ref(null)
 const deletingUser = ref(null)
 

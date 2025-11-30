@@ -109,7 +109,23 @@ function ensureEchoAvailable(showToast?: ToastHandler): any | null {
     // Не показываем warning, если Echo просто еще не инициализирован
     // Это нормально на начальной загрузке страницы
     // Только логируем в debug режиме для отладки
-    logger.debug('[useWebSocket] Echo instance not yet initialized', {})
+    // bootstrap.js должен инициализировать Echo автоматически
+    // Проверяем, не инициализируется ли Echo прямо сейчас
+    const isInitializing = typeof window !== 'undefined' && 
+      (window.Echo !== undefined || document.readyState === 'loading')
+    
+    if (!isInitializing) {
+      // Если страница уже загружена и Echo все еще не инициализирован, это может быть проблемой
+      // Но не показываем warning, так как это может быть нормальным поведением при отключенном WebSocket
+      logger.debug('[useWebSocket] Echo instance not yet initialized', {
+        readyState: document.readyState,
+        hasWindowEcho: typeof window !== 'undefined' && window.Echo !== undefined,
+      })
+    } else {
+      logger.debug('[useWebSocket] Echo instance not yet initialized, waiting for bootstrap.js', {
+        readyState: document.readyState,
+      })
+    }
     return null
   }
   return echo
@@ -822,7 +838,11 @@ export function resubscribeAllChannels(): void {
   }
   const echo = window.Echo
   if (!echo) {
-    logger.warn('[useWebSocket] resubscribe skipped: Echo unavailable', {})
+    // Это нормально на начальной загрузке страницы, когда Echo еще не инициализирован
+    // Логируем в debug режиме, а не warning, чтобы не путать пользователя
+    logger.debug('[useWebSocket] resubscribe skipped: Echo not yet initialized', {
+      readyState: document.readyState,
+    })
     return
   }
 

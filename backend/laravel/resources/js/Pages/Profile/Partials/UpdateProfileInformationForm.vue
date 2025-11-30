@@ -42,12 +42,12 @@ const submit = () => {
 <template>
     <section>
         <header>
-            <h2 class="text-lg font-medium text-gray-900">
-                Profile Information
+            <h2 class="text-lg font-medium text-neutral-100">
+                Информация профиля
             </h2>
 
-            <p class="mt-1 text-sm text-gray-600">
-                Update your account's profile information and email address.
+            <p class="mt-1 text-sm text-neutral-400">
+                Обновите информацию о вашем профиле и адрес электронной почты.
             </p>
         </header>
 
@@ -56,7 +56,7 @@ const submit = () => {
             class="mt-6 space-y-6"
         >
             <div>
-                <InputLabel for="name" value="Name" />
+                <InputLabel for="name" value="Имя" />
 
                 <TextInput
                     id="name"
@@ -87,28 +87,28 @@ const submit = () => {
             </div>
 
             <div v-if="mustVerifyEmail && user.email_verified_at === null">
-                <p class="mt-2 text-sm text-gray-800">
-                    Your email address is unverified.
+                <p class="mt-2 text-sm text-neutral-400">
+                    Ваш адрес электронной почты не подтвержден.
                     <Link
                         :href="route('verification.send')"
                         method="post"
                         as="button"
-                        class="rounded-md text-sm text-gray-600 underline hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                        class="rounded-md text-sm text-neutral-300 underline hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
                     >
-                        Click here to re-send the verification email.
+                        Нажмите здесь, чтобы повторно отправить письмо с подтверждением.
                     </Link>
                 </p>
 
                 <div
                     v-show="status === 'verification-link-sent'"
-                    class="mt-2 text-sm font-medium text-green-600"
+                    class="mt-2 text-sm font-medium text-emerald-400"
                 >
-                    A new verification link has been sent to your email address.
+                    Новое письмо с подтверждением отправлено на ваш адрес электронной почты.
                 </div>
             </div>
 
             <div class="flex items-center gap-4">
-                    <Button variant="primary" :disabled="form.processing">Save</Button>
+                <Button variant="primary" :disabled="form.processing">Сохранить</Button>
 
                 <Transition
                     enter-active-class="transition ease-in-out"
@@ -118,9 +118,9 @@ const submit = () => {
                 >
                     <p
                         v-if="form.recentlySuccessful"
-                        class="text-sm text-gray-600"
+                        class="text-sm text-neutral-400"
                     >
-                        Saved.
+                        Сохранено.
                     </p>
                 </Transition>
             </div>

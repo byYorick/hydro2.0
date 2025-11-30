@@ -35,7 +35,15 @@
             <h2 class="text-base font-semibold">Зоны теплицы</h2>
             <p class="text-xs text-neutral-500">Панель наблюдения и управления.</p>
           </div>
-          <span class="text-xs text-neutral-500">{{ zones.length }} зон</span>
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-neutral-500">{{ zones.length }} зон</span>
+            <Button size="sm" @click="openZoneWizard()">
+              <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+              </svg>
+              Новая зона
+            </Button>
+          </div>
         </div>
         <div class="grid gap-3 md:grid-cols-2">
           <ZoneCard
@@ -106,19 +114,29 @@
         </div>
       </section>
     </div>
+
+    <!-- Мастер создания зоны -->
+    <ZoneCreateWizard
+      :show="showZoneWizard"
+      :greenhouse-id="greenhouse.id"
+      @close="closeZoneWizard"
+      @created="onZoneCreated"
+    />
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import { Link } from '@inertiajs/vue3'
+import { computed, ref } from 'vue'
+import { Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
 import MetricCard from '@/Components/MetricCard.vue'
 import ZoneCard from '@/Pages/Zones/ZoneCard.vue'
+import ZoneCreateWizard from '@/Components/ZoneCreateWizard.vue'
 import { formatTime } from '@/utils/formatTime'
+import { useSimpleModal } from '@/composables/useModal'
 import type { Zone } from '@/types'
 import type { Device } from '@/types'
 import type { ZoneTelemetry } from '@/types'
@@ -149,9 +167,28 @@ interface Props {
   activeAlerts: number
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  zones: () => [],
+  nodes: () => [],
+  nodeSummary: () => ({
+    online: 0,
+    offline: 0,
+    total: 0,
+  }),
+  activeAlerts: 0,
+})
+
+const { isOpen: showZoneWizard, open: openZoneWizard, close: closeZoneWizard } = useSimpleModal()
+
+function onZoneCreated(zone: Zone): void {
+  // Обновляем страницу для отображения новой зоны
+  router.reload({ only: ['zones'] })
+}
 
 const cycles = computed(() => {
+  if (!props.zones || !Array.isArray(props.zones)) {
+    return []
+  }
   return props.zones
     .filter((zone) => zone.recipe_instance && zone.recipe_instance.recipe)
     .map((zone) => ({
@@ -168,9 +205,13 @@ const cycles = computed(() => {
 
 const activeCyclesCount = computed(() => cycles.value.length)
 
-const nodes = computed(() => props.nodes)
-const zones = computed(() => props.zones)
-const nodeSummary = computed(() => props.nodeSummary)
+const nodes = computed(() => props.nodes || [])
+const zones = computed(() => props.zones || [])
+const nodeSummary = computed(() => props.nodeSummary || {
+  online: 0,
+  offline: 0,
+  total: 0,
+})
 
 const activeAlerts = computed(() => props.activeAlerts ?? 0)
 </script>

@@ -7,6 +7,7 @@ use App\Models\ZoneRecipeInstance;
 use App\Events\ZoneUpdated;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class ZoneService
 {
@@ -16,14 +17,72 @@ class ZoneService
     public function create(array $data): Zone
     {
         return DB::transaction(function () use ($data) {
+            // Генерируем UID, если не указан
+            if (empty($data['uid'])) {
+                $data['uid'] = $this->generateZoneUid($data['name'] ?? 'untitled');
+            }
+            
             $zone = Zone::create($data);
-            Log::info('Zone created', ['zone_id' => $zone->id, 'name' => $zone->name]);
+            Log::info('Zone created', ['zone_id' => $zone->id, 'uid' => $zone->uid, 'name' => $zone->name]);
             
             // Dispatch event для уведомления Python-сервиса
             event(new ZoneUpdated($zone));
             
             return $zone;
         });
+    }
+
+    /**
+     * Генерирует UID для зоны на основе названия
+     * 
+     * @param string $name Название зоны (может быть на русском)
+     * @return string Сгенерированный UID в формате zn-{transliterated-name}
+     */
+    private function generateZoneUid(string $name): string
+    {
+        $prefix = 'zn-';
+        
+        if (empty($name) || trim($name) === '') {
+            return $prefix . 'untitled-' . strtolower(Str::random(6));
+        }
+
+        // Используем Str::slug для транслитерации и нормализации
+        // Str::slug автоматически транслитерирует русские буквы
+        $transliterated = Str::slug(trim($name), '-');
+        
+        // Если после обработки ничего не осталось, используем значение по умолчанию
+        if (empty($transliterated)) {
+            $transliterated = 'untitled-' . strtolower(Str::random(6));
+        }
+
+        // Ограничиваем длину (оставляем место для префикса и суффикса)
+        $maxLength = 50 - strlen($prefix);
+        if (strlen($transliterated) > $maxLength) {
+            $transliterated = substr($transliterated, 0, $maxLength);
+            // Убираем возможный дефис в конце после обрезки
+            $transliterated = rtrim($transliterated, '-');
+        }
+
+        $uid = $prefix . $transliterated;
+        
+        // Проверяем уникальность UID и добавляем суффикс, если нужно
+        $counter = 0;
+        $originalUid = $uid;
+        while (Zone::where('uid', $uid)->exists()) {
+            $counter++;
+            $suffix = '-' . $counter;
+            $maxLengthWithSuffix = $maxLength - strlen($suffix);
+            $base = substr($transliterated, 0, $maxLengthWithSuffix);
+            $uid = $prefix . rtrim($base, '-') . $suffix;
+            
+            // Защита от бесконечного цикла
+            if ($counter > 1000) {
+                $uid = $originalUid . '-' . time();
+                break;
+            }
+        }
+
+        return $uid;
     }
 
     /**

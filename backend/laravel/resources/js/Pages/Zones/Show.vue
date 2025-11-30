@@ -413,7 +413,43 @@ const { subscribeToZoneCommands } = useWebSocket(showToast)
 const { handleError } = useErrorHandler(showToast)
 const { performUpdate } = useOptimisticUpdate()
 const zonesStore = useZonesStore()
-const zone = computed(() => {
+
+// zoneId должен определяться из URL или props напрямую, без зависимости от zone
+// Извлекаем ID из URL (например, /zones/25 -> 25)
+const zoneId = computed(() => {
+  // Сначала пробуем из props
+  if (page.props.zoneId) {
+    const id = page.props.zoneId
+    return typeof id === 'string' ? parseInt(id) : id
+  }
+  
+  // Пробуем из zone props
+  if (page.props.zone?.id) {
+    const id = page.props.zone.id
+    return typeof id === 'string' ? parseInt(id) : id
+  }
+  
+  // Извлекаем из URL как fallback
+  const pathMatch = window.location.pathname.match(/\/zones\/(\d+)/)
+  if (pathMatch && pathMatch[1]) {
+    return parseInt(pathMatch[1])
+  }
+  
+  return null
+})
+
+const zone = computed<Zone>(() => {
+  const zoneIdValue = zoneId.value
+  
+  // Сначала проверяем store - там может быть более актуальное состояние
+  if (zoneIdValue) {
+    const storeZone = zonesStore.zoneById(zoneIdValue)
+    if (storeZone && storeZone.id) {
+      return storeZone
+    }
+  }
+  
+  // Если в store нет, используем props
   const rawZoneData = (page.props.zone || {}) as any
   
   // Нормализуем snake_case в camelCase для recipe_instance
@@ -423,11 +459,19 @@ const zone = computed(() => {
     zoneData.recipeInstance = zoneData.recipe_instance
   }
   
+  // Убеждаемся, что у объекта есть id
+  if (!zoneData.id && zoneIdValue) {
+    zoneData.id = zoneIdValue
+  }
+  
+  // Если zoneData все еще пустой, возвращаем минимальный объект
+  if (!zoneData.id) {
+    return {
+      id: zoneIdValue || undefined,
+    } as Zone
+  }
+  
   return zoneData as Zone
-})
-const zoneId = computed(() => {
-  const id = zone.value.id || page.props.zoneId
-  return typeof id === 'string' ? parseInt(id) : id
 })
 
 // История просмотров
@@ -707,6 +751,12 @@ let unsubscribeZoneCommands: (() => void) | null = null
 onMounted(async () => {
   logger.info('[Show.vue] Компонент смонтирован', { zoneId: zoneId.value })
   
+  // Инициализируем зону в store из props для синхронизации
+  if (zoneId.value && zone.value?.id) {
+    zonesStore.upsert(zone.value, true) // silent: true, так как это начальная инициализация
+    logger.debug('[Zones/Show] Zone initialized in store from props', { zoneId: zoneId.value })
+  }
+  
   // Загрузить данные для графиков
   chartDataPh.value = await loadChartData('PH', chartTimeRange.value)
   chartDataEc.value = await loadChartData('EC', chartTimeRange.value)
@@ -956,12 +1006,17 @@ const variant = computed<'success' | 'neutral' | 'warning' | 'danger'>(() => {
 async function onToggle(): Promise<void> {
   if (!zoneId.value) return
   
-  setLoading('toggle', true)
+  // Получаем актуальное состояние зоны из store или props
+  const currentZone = zone.value
+  const currentStatus = currentZone?.status
   
-  // Оптимистично обновляем статус зоны в store
-  const newStatus = zone.value.status === 'PAUSED' ? 'RUNNING' : 'PAUSED'
-  const action = zone.value.status === 'PAUSED' ? 'resume' : 'pause'
-  const actionText = zone.value.status === 'PAUSED' ? 'возобновлена' : 'приостановлена'
+  // Определяем действие на основе актуального статуса
+  const isPaused = currentStatus === 'PAUSED'
+  const newStatus = isPaused ? 'RUNNING' : 'PAUSED'
+  const action = isPaused ? 'resume' : 'pause'
+  const actionText = isPaused ? 'возобновлена' : 'приостановлена'
+  
+  setLoading('toggle', true)
   
   // Создаем оптимистичное обновление
   const optimisticUpdate = createOptimisticZoneUpdate(
@@ -982,10 +1037,10 @@ async function onToggle(): Promise<void> {
           const response = await api.post(`/api/zones/${zoneId.value}/${action}`, {})
           
           // Обновляем зону в store с данными с сервера
-          const updatedZone = extractData<Zone>(response.data) || zone.value
+          const updatedZone = extractData<Zone>(response.data) || currentZone
           
           if (updatedZone.id) {
-            zonesStore.upsert(updatedZone)
+            zonesStore.upsert(updatedZone, false)
           }
           
           return updatedZone
@@ -999,7 +1054,7 @@ async function onToggle(): Promise<void> {
               const { fetchZone } = useZones(showToast)
               const updatedZone = await fetchZone(zoneId.value, true)
               if (updatedZone?.id) {
-                zonesStore.upsert(updatedZone)
+                zonesStore.upsert(updatedZone, false)
               }
             } catch (error) {
               logger.error('[Zones/Show] Failed to fetch updated zone after toggle:', error)
@@ -1008,13 +1063,49 @@ async function onToggle(): Promise<void> {
             }
           }
         },
-        onError: (error) => {
+        onError: async (error) => {
           logger.error('Failed to toggle zone:', error)
           let errorMessage = ERROR_MESSAGES.UNKNOWN
+          
+          // Проверяем, если это ошибка 422 (Zone is not paused/paused), синхронизируем статус
+          const is422Error = error && typeof error === 'object' && 'response' in error && 
+                           (error as any).response?.status === 422
+          
           if (error && typeof error === 'object' && 'message' in error) {
             errorMessage = String(error.message)
+          } else if (is422Error && error && typeof error === 'object' && 'response' in error) {
+            const response = (error as any).response
+            if (response?.data?.message) {
+              errorMessage = String(response.data.message)
+            }
           }
+          
           showToast(`Ошибка при изменении статуса зоны: ${errorMessage}`, 'error', TOAST_TIMEOUT.LONG)
+          
+          // При ошибке 422 откладываем синхронизацию, чтобы избежать rate limiting
+          // Используем setTimeout с задержкой и reloadZone, который делает fallback к Inertia reload
+          if (is422Error) {
+            logger.info('[Zones/Show] Status mismatch detected, will sync zone from server with delay', {
+              zoneId: zoneId.value,
+              currentStatus,
+              action,
+            })
+            
+            // Откладываем синхронизацию на 2 секунды, чтобы избежать rate limiting
+            setTimeout(() => {
+              if (zoneId.value) {
+                logger.info('[Zones/Show] Syncing zone status from server after delay', {
+                  zoneId: zoneId.value,
+                })
+                // Используем reloadZone вместо fetchZone - он делает fallback к Inertia reload при ошибке
+                reloadZone(zoneId.value, ['zone']).catch((syncError) => {
+                  logger.error('[Zones/Show] Failed to sync zone status after validation error:', syncError)
+                  // Если и reloadZone не помог, просто логируем ошибку
+                  // Пользователь может обновить страницу вручную
+                })
+              }
+            }, 2000)
+          }
         },
         showLoading: false, // Управляем loading вручную
         timeout: 10000, // 10 секунд таймаут

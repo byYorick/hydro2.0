@@ -2,13 +2,13 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\DeviceNode;
-use App\Services\NodeService;
-use App\Services\NodeRegistryService;
-use App\Services\NodeConfigService;
-use App\Services\NodeSwapService;
-use App\Services\NodeLifecycleService;
 use App\Enums\NodeLifecycleState;
+use App\Models\DeviceNode;
+use App\Services\NodeConfigService;
+use App\Services\NodeLifecycleService;
+use App\Services\NodeRegistryService;
+use App\Services\NodeService;
+use App\Services\NodeSwapService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
@@ -20,19 +20,18 @@ class NodeController extends Controller
         private NodeConfigService $configService,
         private NodeSwapService $swapService,
         private NodeLifecycleService $lifecycleService
-    ) {
-    }
+    ) {}
 
     public function index(Request $request)
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
             ], 401);
         }
-        
+
         // Валидация query параметров
         $validated = $request->validate([
             'zone_id' => ['nullable', 'integer', 'exists:zones,id'],
@@ -41,7 +40,7 @@ class NodeController extends Controller
             'new_only' => ['nullable', 'string', 'in:true,false,1,0'],
             'unassigned' => ['nullable', 'string', 'in:true,false,1,0'],
         ]);
-        
+
         // Преобразуем строковые boolean значения
         if (isset($validated['new_only'])) {
             $validated['new_only'] = filter_var($validated['new_only'], FILTER_VALIDATE_BOOLEAN);
@@ -49,10 +48,10 @@ class NodeController extends Controller
         if (isset($validated['unassigned'])) {
             $validated['unassigned'] = filter_var($validated['unassigned'], FILTER_VALIDATE_BOOLEAN);
         }
-        
+
         // Получаем доступные ноды для пользователя
         $accessibleNodeIds = \App\Helpers\ZoneAccessHelper::getAccessibleNodeIds($user);
-        
+
         // Eager loading для предотвращения N+1 запросов
         // Исключаем config из выборки для предотвращения утечки Wi-Fi/MQTT кредов
         $query = DeviceNode::query()
@@ -61,15 +60,15 @@ class NodeController extends Controller
                 // Исключаем config из каналов
                 $channelQuery->select('id', 'node_id', 'channel', 'type', 'metric', 'unit');
             }]);
-        
+
         // Фильтруем по доступным нодам (кроме админов)
-        if (!$user->isAdmin()) {
+        if (! $user->isAdmin()) {
             $query->whereIn('id', $accessibleNodeIds);
         }
-        
+
         if (isset($validated['zone_id'])) {
             // Дополнительно проверяем доступ к зоне
-            if (!$user->isAdmin() && !\App\Helpers\ZoneAccessHelper::canAccessZone($user, $validated['zone_id'])) {
+            if (! $user->isAdmin() && ! \App\Helpers\ZoneAccessHelper::canAccessZone($user, $validated['zone_id'])) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Forbidden: Access denied to this zone',
@@ -88,28 +87,29 @@ class NodeController extends Controller
         if (isset($validated['unassigned']) && $validated['unassigned']) {
             $query->whereNull('zone_id');
         }
-        
+
         // Поиск по имени, UID или типу
         if (isset($validated['search']) && $validated['search']) {
-            $searchTerm = '%' . strtolower($validated['search']) . '%';
+            $searchTerm = '%'.strtolower($validated['search']).'%';
             $query->where(function ($q) use ($searchTerm) {
                 $q->whereRaw('LOWER(name) LIKE ?', [$searchTerm])
-                  ->orWhereRaw('LOWER(uid) LIKE ?', [$searchTerm])
-                  ->orWhereRaw('LOWER(type) LIKE ?', [$searchTerm]);
+                    ->orWhereRaw('LOWER(uid) LIKE ?', [$searchTerm])
+                    ->orWhereRaw('LOWER(type) LIKE ?', [$searchTerm]);
             });
         }
-        
+
         $items = $query->latest('id')->paginate(25);
-        
+
         // Убираем config из результатов (на случай если он был загружен через отношения)
         $items->getCollection()->transform(function ($node) {
             unset($node->config);
             foreach ($node->channels as $channel) {
                 unset($channel->config);
             }
+
             return $node;
         });
-        
+
         return response()->json(['status' => 'ok', 'data' => $items]);
     }
 
@@ -125,59 +125,60 @@ class NodeController extends Controller
             'config' => ['nullable', 'array'],
         ]);
         $node = $this->nodeService->create($data);
+
         return response()->json(['status' => 'ok', 'data' => $node], Response::HTTP_CREATED);
     }
 
     public function show(Request $request, DeviceNode $node)
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
             ], 401);
         }
-        
+
         // Проверяем доступ к ноде
-        if (!\App\Helpers\ZoneAccessHelper::canAccessNode($user, $node)) {
+        if (! \App\Helpers\ZoneAccessHelper::canAccessNode($user, $node)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this node',
             ], 403);
         }
-        
+
         // Загружаем связанные данные, исключая config для предотвращения утечки Wi-Fi/MQTT кредов
         $node->load(['zone:id,name,status', 'channels' => function ($channelQuery) {
             $channelQuery->select('id', 'node_id', 'channel', 'type', 'metric', 'unit');
         }]);
-        
+
         // Убираем config из ноды и каналов
         unset($node->config);
         foreach ($node->channels as $channel) {
             unset($channel->config);
         }
-        
+
         return response()->json(['status' => 'ok', 'data' => $node]);
     }
 
     public function update(Request $request, DeviceNode $node)
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
             ], 401);
         }
-        
+
         // Проверяем доступ к ноде
-        if (!\App\Helpers\ZoneAccessHelper::canAccessNode($user, $node)) {
+        if (! \App\Helpers\ZoneAccessHelper::canAccessNode($user, $node)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this node',
             ], 403);
         }
-        
+
         $data = $request->validate([
             'zone_id' => ['nullable', 'integer', 'exists:zones,id'],
             'uid' => ['sometimes', 'string', 'max:64', 'unique:nodes,uid,'.$node->id],
@@ -187,18 +188,19 @@ class NodeController extends Controller
             'status' => ['nullable', 'string', 'max:32'],
             'config' => ['nullable', 'array'],
         ]);
-        
+
         // Проверяем доступ к новой зоне, если меняется
         if (isset($data['zone_id']) && $data['zone_id'] !== $node->zone_id) {
-            if (!\App\Helpers\ZoneAccessHelper::canAccessZone($user, $data['zone_id'])) {
+            if (! \App\Helpers\ZoneAccessHelper::canAccessZone($user, $data['zone_id'])) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Forbidden: Access denied to target zone',
                 ], 403);
             }
         }
-        
+
         $node = $this->nodeService->update($node, $data);
+
         return response()->json(['status' => 'ok', 'data' => $node]);
     }
 
@@ -209,23 +211,24 @@ class NodeController extends Controller
     public function detach(Request $request, DeviceNode $node)
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
             ], 401);
         }
-        
+
         // Проверяем доступ к ноде
-        if (!\App\Helpers\ZoneAccessHelper::canAccessNode($user, $node)) {
+        if (! \App\Helpers\ZoneAccessHelper::canAccessNode($user, $node)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this node',
             ], 403);
         }
-        
+
         try {
             $node = $this->nodeService->detach($node);
+
             return response()->json([
                 'status' => 'ok',
                 'data' => $node,
@@ -239,6 +242,7 @@ class NodeController extends Controller
                 'exception' => get_class($e),
                 'trace' => $e->getTraceAsString(),
             ]);
+
             return response()->json([
                 'status' => 'error',
                 'message' => $e->getMessage(),
@@ -249,23 +253,24 @@ class NodeController extends Controller
     public function destroy(Request $request, DeviceNode $node)
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
             ], 401);
         }
-        
+
         // Проверяем доступ к ноде
-        if (!\App\Helpers\ZoneAccessHelper::canAccessNode($user, $node)) {
+        if (! \App\Helpers\ZoneAccessHelper::canAccessNode($user, $node)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this node',
             ], 403);
         }
-        
+
         try {
             $this->nodeService->delete($node);
+
             return response()->json(['status' => 'ok']);
         } catch (\DomainException $e) {
             \Illuminate\Support\Facades\Log::warning('NodeController: Domain exception on node delete', [
@@ -273,6 +278,7 @@ class NodeController extends Controller
                 'node_uid' => $node->uid,
                 'error' => $e->getMessage(),
             ]);
+
             return response()->json([
                 'status' => 'error',
                 'message' => $e->getMessage(),
@@ -285,6 +291,7 @@ class NodeController extends Controller
                 'exception' => get_class($e),
                 'trace' => $e->getTraceAsString(),
             ]);
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to delete node',
@@ -296,7 +303,7 @@ class NodeController extends Controller
      * Регистрация узла в системе.
      * Используется для регистрации новых узлов при первом подключении.
      * Требует токен аутентификации для защиты от несанкционированной регистрации.
-     * 
+     *
      * Безопасность: всегда требует токен, кроме случаев когда:
      * 1. Запрос идет с доверенного IP (настраивается через TRUSTED_PROXIES)
      * 2. И это node_hello от внутренних сервисов
@@ -305,29 +312,32 @@ class NodeController extends Controller
     public function register(Request $request)
     {
         // Проверка токена для защиты от несанкционированной регистрации
+        // Используем PY_INGEST_TOKEN как основной токен для ingest операций
         $expectedToken = config('services.python_bridge.ingest_token') ?? config('services.python_bridge.token');
         $givenToken = $request->bearerToken();
-        
+
         $clientIp = $request->ip();
-        
+
         // Если токен настроен, он обязателен всегда
-        if (!empty($expectedToken)) {
+        if (! empty($expectedToken)) {
             if (empty($givenToken)) {
                 \Illuminate\Support\Facades\Log::warning('Node registration: Missing token', [
                     'ip' => $clientIp,
                     'user_agent' => $request->userAgent(),
                 ]);
+
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Unauthorized: token required',
                 ], 401);
             }
-            
-            if (!hash_equals($expectedToken, (string)$givenToken)) {
+
+            if (! hash_equals($expectedToken, (string) $givenToken)) {
                 \Illuminate\Support\Facades\Log::warning('Node registration: Invalid token', [
                     'ip' => $clientIp,
                     'user_agent' => $request->userAgent(),
                 ]);
+
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Unauthorized: invalid token',
@@ -339,13 +349,13 @@ class NodeController extends Controller
                 'ip' => $clientIp,
                 'env' => config('app.env'),
             ]);
-            
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Node registration token not configured',
+                'message' => 'Node registration token not configured. Set PY_INGEST_TOKEN or PY_API_TOKEN.',
             ], 500);
         }
-        
+
         // Проверяем, это node_hello или обычная регистрация
         if ($request->has('message_type') && $request->input('message_type') === 'node_hello') {
             // Обработка node_hello из MQTT
@@ -358,7 +368,7 @@ class NodeController extends Controller
                 'capabilities' => ['nullable', 'array'],
                 'provisioning_meta' => ['nullable', 'array'],
             ]);
-            
+
             $node = $this->registryService->registerNodeFromHello($data);
         } else {
             // Обычная регистрация через API
@@ -371,14 +381,14 @@ class NodeController extends Controller
                 'name' => ['nullable', 'string', 'max:255'],
                 'type' => ['nullable', 'string', 'max:64'],
             ]);
-            
+
             $node = $this->registryService->registerNode(
                 $data['node_uid'],
                 $data['zone_uid'] ?? null,
                 $data
             );
         }
-        
+
         return response()->json(['status' => 'ok', 'data' => $node], Response::HTTP_CREATED);
     }
 
@@ -391,23 +401,24 @@ class NodeController extends Controller
     {
         // Проверяем доступ к ноде
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
             ], 401);
         }
-        
-        if (!\App\Helpers\ZoneAccessHelper::canAccessNode($user, $node)) {
+
+        if (! \App\Helpers\ZoneAccessHelper::canAccessNode($user, $node)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this node',
             ], 403);
         }
-        
+
         try {
             // Для API запросов не включаем креды (безопасность)
             $config = $this->configService->generateNodeConfig($node, null, false);
+
             return response()->json(['status' => 'ok', 'data' => $config]);
         } catch (\InvalidArgumentException $e) {
             \Illuminate\Support\Facades\Log::warning('NodeController: Invalid argument on getConfig', [
@@ -415,6 +426,7 @@ class NodeController extends Controller
                 'node_uid' => $node->uid,
                 'error' => $e->getMessage(),
             ]);
+
             return response()->json([
                 'status' => 'error',
                 'message' => $e->getMessage(),
@@ -427,6 +439,7 @@ class NodeController extends Controller
                 'exception' => get_class($e),
                 'trace' => $e->getTraceAsString(),
             ]);
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to get node config',
@@ -442,61 +455,61 @@ class NodeController extends Controller
     {
         // Проверяем доступ к ноде
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
             ], 401);
         }
-        
-        if (!\App\Helpers\ZoneAccessHelper::canAccessNode($user, $node)) {
+
+        if (! \App\Helpers\ZoneAccessHelper::canAccessNode($user, $node)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this node',
             ], 403);
         }
-        
+
         try {
             // Для публикации через MQTT включаем креды (нужны для подключения ноды)
             $config = $this->configService->generateNodeConfig($node, null, true);
-            
+
             // Проверяем, что узел привязан к зоне
-            if (!$node->zone_id) {
+            if (! $node->zone_id) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Node must be assigned to a zone before publishing config',
                 ], Response::HTTP_BAD_REQUEST);
             }
-            
+
             // Получаем greenhouse_uid
             $node->load('zone.greenhouse');
             $greenhouseUid = $node->zone?->greenhouse?->uid;
-            if (!$greenhouseUid) {
+            if (! $greenhouseUid) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Zone must have a greenhouse before publishing config',
                 ], Response::HTTP_BAD_REQUEST);
             }
-            
+
             // Вызываем mqtt-bridge API для публикации
             $baseUrl = config('services.python_bridge.base_url');
             $token = config('services.python_bridge.token');
-            
-            if (!$baseUrl) {
+
+            if (! $baseUrl) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'MQTT bridge URL not configured',
                 ], Response::HTTP_INTERNAL_SERVER_ERROR);
             }
-            
+
             $headers = [];
             if ($token) {
                 $headers['Authorization'] = "Bearer {$token}";
             }
-            
+
             // Используем короткий таймаут, чтобы не блокировать workers
             $timeout = 10; // секунд
-            
+
             try {
                 $response = \Illuminate\Support\Facades\Http::withHeaders($headers)
                     ->timeout($timeout)
@@ -506,21 +519,21 @@ class NodeController extends Controller
                         'greenhouse_uid' => $greenhouseUid,
                         'config' => $config,
                     ]);
-                
+
                 if ($response->successful()) {
                     return response()->json([
                         'status' => 'ok',
                         'data' => $response->json('data'),
                     ]);
                 }
-                
+
                 \Illuminate\Support\Facades\Log::warning('NodeController: Failed to publish config - non-successful response', [
                     'node_id' => $node->id,
                     'node_uid' => $node->uid,
                     'status' => $response->status(),
                     'response_preview' => substr($response->body(), 0, 500),
                 ]);
-                
+
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Failed to publish config via MQTT bridge',
@@ -532,6 +545,7 @@ class NodeController extends Controller
                     'node_uid' => $node->uid,
                     'error' => $e->getMessage(),
                 ]);
+
                 return response()->json([
                     'status' => 'error',
                     'code' => 'SERVICE_UNAVAILABLE',
@@ -543,6 +557,7 @@ class NodeController extends Controller
                     'node_uid' => $node->uid,
                     'timeout' => $timeout,
                 ]);
+
                 return response()->json([
                     'status' => 'error',
                     'code' => 'SERVICE_TIMEOUT',
@@ -555,6 +570,7 @@ class NodeController extends Controller
                     'error' => $e->getMessage(),
                     'status' => $e->response?->status(),
                 ]);
+
                 return response()->json([
                     'status' => 'error',
                     'code' => 'PUBLISH_FAILED',
@@ -567,6 +583,7 @@ class NodeController extends Controller
                 'node_uid' => $node->uid,
                 'error' => $e->getMessage(),
             ]);
+
             return response()->json([
                 'status' => 'error',
                 'message' => $e->getMessage(),
@@ -579,10 +596,11 @@ class NodeController extends Controller
                 'exception' => get_class($e),
                 'trace' => $e->getTraceAsString(),
             ]);
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to publish config: ' . $e->getMessage(),
-                ], Response::HTTP_INTERNAL_SERVER_ERROR);
+                'message' => 'Failed to publish config: '.$e->getMessage(),
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
 
@@ -596,7 +614,7 @@ class NodeController extends Controller
             'migrate_telemetry' => ['nullable', 'boolean'],
             'migrate_channels' => ['nullable', 'boolean'],
         ]);
-        
+
         try {
             $newNode = $this->swapService->swapNode(
                 $node->id,
@@ -606,7 +624,7 @@ class NodeController extends Controller
                     'migrate_channels' => $data['migrate_channels'] ?? true,
                 ]
             );
-            
+
             return response()->json([
                 'status' => 'ok',
                 'data' => $newNode,
@@ -620,9 +638,10 @@ class NodeController extends Controller
                 'exception' => get_class($e),
                 'trace' => $e->getTraceAsString(),
             ]);
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to swap node: ' . $e->getMessage(),
+                'message' => 'Failed to swap node: '.$e->getMessage(),
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
@@ -634,7 +653,7 @@ class NodeController extends Controller
     public function transitionLifecycle(DeviceNode $node, Request $request)
     {
         $validated = $request->validate([
-            'target_state' => ['required', 'string', 'in:' . implode(',', NodeLifecycleState::values())],
+            'target_state' => ['required', 'string', 'in:'.implode(',', NodeLifecycleState::values())],
             'reason' => ['nullable', 'string', 'max:255'],
         ]);
 
@@ -644,8 +663,9 @@ class NodeController extends Controller
 
             $success = $this->lifecycleService->transition($node, $targetState, $reason);
 
-            if (!$success) {
+            if (! $success) {
                 $currentState = $node->lifecycleState();
+
                 return response()->json([
                     'status' => 'error',
                     'message' => "Transition from {$currentState->value} to {$targetState->value} is not allowed",
@@ -672,9 +692,10 @@ class NodeController extends Controller
                 'target_state' => $validated['target_state'] ?? null,
                 'error' => $e->getMessage(),
             ]);
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Invalid lifecycle state: ' . $e->getMessage(),
+                'message' => 'Invalid lifecycle state: '.$e->getMessage(),
             ], Response::HTTP_BAD_REQUEST);
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::error('NodeController: Failed to transition lifecycle', [
@@ -685,9 +706,10 @@ class NodeController extends Controller
                 'exception' => get_class($e),
                 'trace' => $e->getTraceAsString(),
             ]);
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to transition lifecycle: ' . $e->getMessage(),
+                'message' => 'Failed to transition lifecycle: '.$e->getMessage(),
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
@@ -734,9 +756,10 @@ class NodeController extends Controller
                 'exception' => get_class($e),
                 'trace' => $e->getTraceAsString(),
             ]);
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to get allowed transitions: ' . $e->getMessage(),
+                'message' => 'Failed to get allowed transitions: '.$e->getMessage(),
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
@@ -746,60 +769,59 @@ class NodeController extends Controller
      */
     private function ipInRange(string $ip, string $range): bool
     {
-        if (!str_contains($range, '/')) {
+        if (! str_contains($range, '/')) {
             return $ip === $range;
         }
 
         [$subnet, $mask] = explode('/', $range, 2);
-        
+
         if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
             $ipLong = ip2long($ip);
             $subnetLong = ip2long($subnet);
-            $maskLong = -1 << (32 - (int)$mask);
+            $maskLong = -1 << (32 - (int) $mask);
+
             return ($ipLong & $maskLong) === ($subnetLong & $maskLong);
         }
 
         if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
             $ipBin = inet_pton($ip);
             $subnetBin = inet_pton($subnet);
-            
+
             if ($ipBin === false || $subnetBin === false) {
                 return false;
             }
-            
-            $prefixLength = (int)$mask;
+
+            $prefixLength = (int) $mask;
             if ($prefixLength < 0 || $prefixLength > 128) {
                 return false;
             }
-            
+
             // Применяем маску к обоим адресам
             $bytes = strlen($ipBin);
             $fullBytes = intval($prefixLength / 8);
             $remainingBits = $prefixLength % 8;
-            
+
             // Сравниваем полные байты
             for ($i = 0; $i < $fullBytes; $i++) {
                 if ($ipBin[$i] !== $subnetBin[$i]) {
                     return false;
                 }
             }
-            
+
             // Если есть оставшиеся биты, сравниваем их
             if ($remainingBits > 0 && $fullBytes < $bytes) {
                 $maskByte = 0xFF << (8 - $remainingBits);
                 $ipByte = ord($ipBin[$fullBytes]) & $maskByte;
                 $subnetByte = ord($subnetBin[$fullBytes]) & $maskByte;
-                
+
                 if ($ipByte !== $subnetByte) {
                     return false;
                 }
             }
-            
+
             return true;
         }
 
         return false;
     }
 }
-
-

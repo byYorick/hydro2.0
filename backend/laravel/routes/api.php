@@ -8,10 +8,10 @@ use App\Http\Controllers\GreenhouseController;
 use App\Http\Controllers\NodeCommandController;
 use App\Http\Controllers\NodeController;
 use App\Http\Controllers\PresetController;
+use App\Http\Controllers\ProfitabilityController;
 use App\Http\Controllers\PythonIngestController;
 use App\Http\Controllers\RecipeController;
 use App\Http\Controllers\RecipePhaseController;
-use App\Http\Controllers\ProfitabilityController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SimulationController;
 use App\Http\Controllers\SystemController;
@@ -31,7 +31,15 @@ Route::prefix('auth')->middleware('throttle:10,1')->group(function () {
 
 // Публичные системные эндпоинты
 // Health check имеет более высокий лимит для мониторинга (300 запросов в минуту для поддержки множественных компонентов)
-Route::get('system/health', [SystemController::class, 'health'])->middleware('throttle:300,1');
+// Добавляем middleware сессий и аутентификации, чтобы определить, залогинен ли пользователь
+// (но не требуем аутентификацию - роут остается публичным)
+Route::get('system/health', [SystemController::class, 'health'])
+    ->middleware([
+        \Illuminate\Cookie\Middleware\EncryptCookies::class,
+        \Illuminate\Session\Middleware\StartSession::class,
+        \App\Http\Middleware\AuthenticateWithApiToken::class, // Попытка аутентификации через токен (необязательно)
+        'throttle:300,1',
+    ]);
 // configFull доступен для Python сервисов через токен или для авторизованных пользователей через Sanctum
 Route::middleware('throttle:30,1')->group(function () {
     // Используем middleware, который проверяет либо Sanctum токен, либо Python service token
@@ -42,15 +50,14 @@ Route::middleware('throttle:30,1')->group(function () {
 // API routes for Inertia (using session authentication)
 // Note: Session middleware is added here for routes that use session-based auth
 // EncryptCookies must come before StartSession
-// CSRF protection is enabled for session-based routes (excluded only token-based routes)
+// CSRF protection is handled globally in bootstrap/app.php with exceptions for token-based routes
 // Rate limiting: 60 requests per minute (default from bootstrap/app.php)
 Route::middleware([
     \Illuminate\Cookie\Middleware\EncryptCookies::class,
     \Illuminate\Session\Middleware\StartSession::class,
-    \Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class, // CSRF protection for session-based routes
     \App\Http\Middleware\AuthenticateWithApiToken::class,
     'auth',
-    'throttle:60,1', // Явно указываем rate limiting для этой группы
+    'throttle:120,1', // Увеличен лимит до 120 запросов в минуту для поддержки множественных компонентов
 ])->group(function () {
     // Read-only endpoints (viewer+)
     Route::get('greenhouses', [GreenhouseController::class, 'index']);
@@ -75,7 +82,7 @@ Route::middleware([
         Route::put('greenhouses/{greenhouse}', [GreenhouseController::class, 'update']);
         Route::patch('greenhouses/{greenhouse}', [GreenhouseController::class, 'update']);
         Route::delete('greenhouses/{greenhouse}', [GreenhouseController::class, 'destroy']);
-        
+
         // Zones
         Route::post('zones', [ZoneController::class, 'store']);
         Route::put('zones/{zone}', [ZoneController::class, 'update']);
@@ -89,7 +96,7 @@ Route::middleware([
         Route::post('zones/{zone}/fill', [ZoneController::class, 'fill']);
         Route::post('zones/{zone}/drain', [ZoneController::class, 'drain']);
         Route::post('zones/{zone}/calibrate-flow', [ZoneController::class, 'calibrateFlow']);
-        
+
         // Nodes
         Route::post('nodes', [NodeController::class, 'store']);
         Route::put('nodes/{node}', [NodeController::class, 'update']);
@@ -99,7 +106,7 @@ Route::middleware([
         Route::post('nodes/{node}/config/publish', [NodeController::class, 'publishConfig']);
         Route::post('nodes/{node}/swap', [NodeController::class, 'swap']);
         Route::post('nodes/{node}/lifecycle/transition', [NodeController::class, 'transitionLifecycle']);
-        
+
         // Recipes
         Route::post('recipes', [RecipeController::class, 'store']);
         Route::put('recipes/{recipe}', [RecipeController::class, 'update']);
@@ -108,36 +115,37 @@ Route::middleware([
         Route::post('recipes/{recipe}/phases', [RecipePhaseController::class, 'store']);
         Route::patch('recipe-phases/{recipePhase}', [RecipePhaseController::class, 'update']);
         Route::delete('recipe-phases/{recipePhase}', [RecipePhaseController::class, 'destroy']);
-        
+
         // Presets
         Route::post('presets', [PresetController::class, 'store']);
         Route::put('presets/{preset}', [PresetController::class, 'update']);
         Route::patch('presets/{preset}', [PresetController::class, 'update']);
         Route::delete('presets/{preset}', [PresetController::class, 'destroy']);
-        
+
         // Commands (operator+)
         Route::post('zones/{zone}/commands', [ZoneCommandController::class, 'store']);
         Route::post('nodes/{node}/commands', [NodeCommandController::class, 'store']);
-        
+
         // PID Config (operator+)
         Route::put('zones/{zone}/pid-configs/{type}', [ZonePidConfigController::class, 'update']);
-        
+
         // Alerts (operator+)
         Route::patch('alerts/{alert}/ack', [AlertController::class, 'ack']);
-        
+
         // AI endpoints (operator+)
         Route::post('ai/predict', [AiController::class, 'predict']);
         Route::post('ai/explain_zone', [AiController::class, 'explainZone']);
         Route::post('ai/recommend', [AiController::class, 'recommend']);
         Route::post('ai/diagnostics', [AiController::class, 'diagnostics']);
-        
+
         // Simulations (operator+)
         Route::post('simulations/zone/{zone}', [SimulationController::class, 'simulateZone']);
-        
+        Route::post('zones/{zone}/simulate', [SimulationController::class, 'simulateZone']); // Alias for frontend compatibility
+
         // Profitability (operator+)
         Route::post('profitability/calculate', [ProfitabilityController::class, 'calculate']);
     });
-    
+
     // PID Config read-only
     Route::get('zones/{zone}/pid-configs', [ZonePidConfigController::class, 'index']);
     Route::get('zones/{zone}/pid-configs/{type}', [ZonePidConfigController::class, 'show']);

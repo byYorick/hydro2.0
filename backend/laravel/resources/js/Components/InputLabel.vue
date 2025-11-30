@@ -4,11 +4,11 @@ interface Props {
     for?: string
 }
 
-defineProps<Props>()
+const props = defineProps<Props>()
 </script>
 
 <template>
-    <label class="block text-sm font-medium text-gray-700">
+    <label :for="props.for" class="block text-sm font-medium text-gray-700">
         <span v-if="value">{{ value }}</span>
         <span v-else><slot /></span>
     </label>

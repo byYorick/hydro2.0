@@ -75,7 +75,10 @@
             <div class="mt-3 pt-3 border-t border-neutral-800">
               <div class="text-xs font-semibold mb-2 text-neutral-300">Привязать к зоне:</div>
               <form @submit.prevent="assignNode(node)" class="grid grid-cols-1 md:grid-cols-4 gap-2">
+                <label :for="`node-${node.id}-greenhouse`" class="sr-only">Теплица</label>
                 <select
+                  :id="`node-${node.id}-greenhouse`"
+                  :name="`node_${node.id}_greenhouse_id`"
                   v-model="assignmentForms[node.id].greenhouse_id"
                   @change="onGreenhouseChange(node.id)"
                   class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
@@ -86,7 +89,10 @@
                     {{ gh.name }}
                   </option>
                 </select>
+                <label :for="`node-${node.id}-zone`" class="sr-only">Зона</label>
                 <select
+                  :id="`node-${node.id}-zone`"
+                  :name="`node_${node.id}_zone_id`"
                   v-model="assignmentForms[node.id].zone_id"
                   class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
                   :disabled="!assignmentForms[node.id].greenhouse_id"
@@ -97,7 +103,10 @@
                     {{ zone.name }}
                   </option>
                 </select>
+                <label :for="`node-${node.id}-name`" class="sr-only">Имя ноды</label>
                 <input
+                  :id="`node-${node.id}-name`"
+                  :name="`node_${node.id}_name`"
                   v-model="assignmentForms[node.id].name"
                   placeholder="Имя ноды (опционально)"
                   class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"

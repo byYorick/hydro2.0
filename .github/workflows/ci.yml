@@ -51,7 +51,6 @@ jobs:
           cp .env.example .env
           php artisan key:generate
           php -r "file_put_contents('.env', str_replace(['DB_CONNECTION=mysql','DB_DATABASE=laravel','DB_USERNAME=root','DB_PASSWORD='], ['DB_CONNECTION=pgsql','DB_DATABASE=hydro','DB_USERNAME=hydro','DB_PASSWORD=hydro'], file_get_contents('.env')));"
-          php -r "file_put_contents('.env', str_replace(['BROADCAST_DRIVER=log'], ['BROADCAST_DRIVER=log'], file_get_contents('.env')));"
       - name: PHP configs cache
         run: |
           php artisan config:clear
@@ -163,11 +162,11 @@ jobs:
           max_attempts=30
           attempt=0
           while [ $attempt -lt $max_attempts ]; do
+            attempt=$((attempt + 1))
             if curl -f -s http://127.0.0.1:8000 > /dev/null 2>&1; then
               echo "Server is ready!"
               break
             fi
-            attempt=$((attempt + 1))
             echo "Attempt $attempt/$max_attempts: Server not ready, waiting..."
             sleep 1
           done

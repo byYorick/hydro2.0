@@ -174,6 +174,17 @@ fi
 mkdir -p /opt/docker/etc/supervisor.d /var/log/supervisor /var/run 2>/dev/null || true
 chmod 755 /opt/docker/etc/supervisor.d /var/log/supervisor /var/run 2>/dev/null || true
 
+# Добавляем настройки fastcgi_buffers в конфигурацию PHP-FPM для решения проблемы 502 Bad Gateway
+# "upstream sent too big header while reading response header from upstream"
+if [ -f /opt/docker/etc/nginx/vhost.common.d/10-php.conf ]; then
+    if ! grep -q "fastcgi_buffers" /opt/docker/etc/nginx/vhost.common.d/10-php.conf; then
+        echo "Adding fastcgi_buffers configuration to 10-php.conf..."
+        # Добавляем настройки перед закрывающей скобкой location блока
+        sed -i '/^}$/i\    # FastCGI buffers для больших заголовков (решение 502 Bad Gateway)\n    fastcgi_buffers 16 16k;\n    fastcgi_buffer_size 32k;\n    fastcgi_busy_buffers_size 64k;\n    fastcgi_temp_file_write_size 64k;' /opt/docker/etc/nginx/vhost.common.d/10-php.conf
+        echo "✓ FastCGI buffers configuration added"
+    fi
+fi
+
 # Всегда обновляем конфигурацию Reverb для применения изменений
 if [ -f /app/reverb-supervisor.conf ]; then
     echo "Updating reverb supervisor config to base image directory..."

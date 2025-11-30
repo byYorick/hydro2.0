@@ -25,4 +25,20 @@ class AlertCreated implements ShouldBroadcast
     {
         return new PrivateChannel('hydro.alerts');
     }
+
+    /**
+     * The event's broadcast name.
+     */
+    public function broadcastAs(): string
+    {
+        return 'AlertCreated';
+    }
+
+    /**
+     * Get the data to broadcast.
+     */
+    public function broadcastWith(): array
+    {
+        return $this->alert;
+    }
 }

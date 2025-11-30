@@ -54,7 +54,7 @@ export function useModal<T extends boolean | Record<string, boolean>>(
    * Проверить, открыто ли модальное окно
    * @param key - Опциональный ключ для проверки конкретного модального окна
    */
-  function isModalOpen(key?: keyof T extends string ? keyof T : never): boolean {
+  function isModalOpen(key?: keyof T extends string ? keyof T : never) {
     if (typeof isOpen.value === 'boolean') {
       return isOpen.value
     } else if (key && typeof isOpen.value === 'object') {
@@ -90,6 +90,35 @@ export function useModal<T extends boolean | Record<string, boolean>>(
  * Создает простое boolean состояние модального окна
  */
 export function useSimpleModal() {
-  return useModal<boolean>(false)
+  const isOpen = ref(false)
+  
+  function open() {
+    isOpen.value = true
+  }
+  
+  function close() {
+    isOpen.value = false
+  }
+  
+  function toggle() {
+    isOpen.value = !isOpen.value
+  }
+  
+  function isModalOpen() {
+    return isOpen.value
+  }
+  
+  function closeAll() {
+    isOpen.value = false
+  }
+  
+  return {
+    isOpen,
+    open,
+    close,
+    toggle,
+    isModalOpen,
+    closeAll,
+  }
 }
 

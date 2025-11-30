@@ -1,6 +1,6 @@
 import Echo from 'laravel-echo'
 import Pusher from 'pusher-js'
-import { logger, type LogContext } from './logger'
+import { logger } from './logger'
 import { readBooleanEnv } from './env'
 
 type WsState = 'connecting' | 'connected' | 'disconnected' | 'unavailable' | 'failed'
@@ -24,7 +24,7 @@ const MAX_RECONNECT_DELAY = 60000
 const listeners = new Set<StateListener>()
 
 let currentState: WsState = 'disconnected'
-let echoInstance: Echo | null = null
+let echoInstance: Echo<any> | null = null
 let initializing = false
 let reconnectAttempts = 0
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -179,74 +179,67 @@ function resolveHost(): string | undefined {
 }
 
 function resolvePort(scheme: 'http' | 'https'): number | undefined {
-  const isDev = (import.meta as any).env?.DEV === true
+  // Определяем dev режим несколькими способами для надежности
+  const isDev = (import.meta as any).env?.DEV === true || 
+                (import.meta as any).env?.MODE === 'development' ||
+                (typeof (import.meta as any).env?.DEV !== 'undefined' && (import.meta as any).env?.DEV)
   const envPort = (import.meta as any).env?.VITE_REVERB_PORT
+  
+
+  if (isBrowser() && window.location.port) {
+    const pagePort = Number(window.location.port)
+    if (!Number.isNaN(pagePort) && pagePort !== 6001) {
+      // В dev режиме или если явно включен флаг прокси - используем порт страницы
+      const useProxyPort = readBooleanEnv('VITE_REVERB_USE_PROXY_PORT', isDev)
+      
+      if (useProxyPort) {
+        logger.info('[echoClient] Using page port for nginx proxy', {
+          pagePort,
+          isDev,
+          envPort: typeof envPort === 'string' ? envPort : 'not set',
+          scheme,
+          reason: isDev ? 'dev mode (auto)' : 'VITE_REVERB_USE_PROXY_PORT enabled',
+          windowPort: window.location.port,
+          windowHost: window.location.hostname,
+        })
+        return pagePort
+      }
+    }
+  }
   
   // Если порт явно задан через переменную окружения, используем его
   if (typeof envPort === 'string' && envPort.trim().length > 0) {
     const parsed = Number(envPort)
     if (!Number.isNaN(parsed)) {
-      // Проверяем флаг использования прокси
-      const useProxyPort = readBooleanEnv('VITE_REVERB_USE_PROXY_PORT', false)
-      
-      // Если включен режим прокси и страница на другом порту, используем порт страницы
-      if (useProxyPort && isDev && isBrowser() && window.location.port) {
-        const pagePort = Number(window.location.port)
-        if (!Number.isNaN(pagePort) && pagePort !== parsed) {
-          logger.debug('[echoClient] Using proxy port from page location', {
-            envPort: parsed,
-            pagePort,
-            scheme,
-          })
-          return pagePort
-        }
-      }
-      
+      logger.debug('[echoClient] Using port from VITE_REVERB_PORT env', {
+        port: parsed,
+        scheme,
+      })
       return parsed
     }
   }
   
-  // Если порт не задан, используем дефолт 6001 (порт Reverb по умолчанию)
-  // Не угадываем автоматически по порту страницы - это может привести к ошибкам
-  // В dev и prod по умолчанию Reverb работает на 6001, если не проксируется через nginx
-  const useProxyPort = readBooleanEnv('VITE_REVERB_USE_PROXY_PORT', false)
-  
-  if (useProxyPort && isBrowser() && window.location.port) {
-    const pagePort = Number(window.location.port)
-    if (!Number.isNaN(pagePort) && pagePort !== 6001) {
-      logger.debug('[echoClient] Using proxy port from page location', {
-        pagePort,
-        defaultPort: 6001,
-        isDev,
-        scheme,
-      })
-      return pagePort
-    }
-  }
-  
-  // Дефолт для dev и prod: 6001 (порт Reverb)
-  // Используем стандартные порты 80/443 только если явно указан флаг прокси
-  // и порт страницы отличается от 6001
-  // В противном случае Reverb работает на 6001 напрямую
+  // Дефолт: 6001 (порт Reverb)
+  logger.debug('[echoClient] Using default port 6001', {
+    scheme,
+    isDev,
+  })
   return 6001
 }
 
 function resolvePath(): string | undefined {
   const envPath =
     (import.meta as any).env?.VITE_REVERB_SERVER_PATH ??
-    (import.meta as any).env?.VITE_REVERB_PATH ??
-    ''
+    (import.meta as any).env?.VITE_REVERB_PATH
 
   if (typeof envPath === 'string' && envPath.trim().length > 0) {
-    return envPath.startsWith('/') ? envPath : `/${envPath}`
+    const trimmed = envPath.trim()
+    return trimmed.startsWith('/') ? trimmed : `/${trimmed}`
   }
 
-  // Для Laravel Reverb, если REVERB_SERVER_PATH пустой,
-  // Pusher автоматически создаст путь /app/{app_key}
-  // НЕ указываем '/app' здесь, чтобы избежать дублирования пути
-  // nginx проксирует /app/* на Reverb на порту 6001
-  // Если указать пустую строку, Pusher создаст правильный путь: /app/local
-  return ''
+  // Для Reverb по умолчанию не указываем путь
+  // pusher-js использует '/app' автоматически (что соответствует Reverb)
+  return undefined
 }
 
 function buildEchoConfig(): Record<string, unknown> {
@@ -256,9 +249,7 @@ function buildEchoConfig(): Record<string, unknown> {
   const port = resolvePort(scheme)
   const path = resolvePath()
   
-  // Определяем, нужно ли использовать TLS
-  // Если страница HTTPS (даже в dev), используем wss для избежания mixed content
-  // Также проверяем window.location.protocol для надежности
+
   let shouldUseTls = false
   if (scheme === 'https') {
     shouldUseTls = true
@@ -271,8 +262,7 @@ function buildEchoConfig(): Record<string, unknown> {
     })
   }
   
-  // В dev режиме: если страница HTTPS, обязательно используем wss (даже если isDev)
-  // Это предотвращает mixed content блокировку браузером
+
   if (isDev && isBrowser() && window.location.protocol === 'https:') {
     shouldUseTls = true
     logger.debug('[echoClient] Dev mode with HTTPS page, forcing TLS to avoid mixed content', {
@@ -281,8 +271,7 @@ function buildEchoConfig(): Record<string, unknown> {
     })
   }
   
-  // В dev режиме разрешаем оба транспорта для гибкости (ws через прокси, wss напрямую)
-  // В prod используем только wss для HTTPS
+
   const forceTls = readBooleanEnv('VITE_WS_TLS', shouldUseTls)
 
   const key =
@@ -294,8 +283,7 @@ function buildEchoConfig(): Record<string, unknown> {
     ? document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
     : undefined
 
-  // В dev режиме разрешаем оба транспорта для гибкости (ws через прокси, wss напрямую)
-  // В prod используем только wss для HTTPS, ws для HTTP
+
   const enabledTransports = isDev && forceTls 
     ? ['ws', 'wss'] // В dev на HTTPS разрешаем оба транспорта
     : forceTls 
@@ -307,19 +295,22 @@ function buildEchoConfig(): Record<string, unknown> {
     host,
     port,
     path,
+    pathType: typeof path,
+    pathIsUndefined: path === undefined,
     forceTls,
     isDev,
     pageProtocol: isBrowser() ? window.location.protocol : 'unknown',
     enabledTransports,
   })
 
-  return {
+  // Конфигурация Echo
+  // Для Reverb: если path не указан, не устанавливаем wsPath - pusher-js использует '/app' по умолчанию
+  const echoConfig: Record<string, unknown> = {
     broadcaster: 'reverb',
     key,
     wsHost: host,
     wsPort: port,
     wssPort: port,
-    wsPath: path,
     forceTLS: forceTls,
     enabledTransports,
     disableStats: true,
@@ -334,6 +325,34 @@ function buildEchoConfig(): Record<string, unknown> {
     },
     encrypted: forceTls,
   }
+
+  // Указываем wsPath только если путь явно задан через переменную окружения
+  // Если не указан, pusher-js использует '/app' по умолчанию (что соответствует Reverb)
+  if (path) {
+    // Валидация: предупреждение, если путь содержит двойной /app/app
+    if (path.includes('/app/app') || path.startsWith('/app/app/')) {
+      logger.warn('[echoClient] wsPath contains double /app/app pattern', {
+        wsPath: path,
+        suggestion: 'Remove duplicate /app from path. Reverb listens on /app/{app_key}',
+      })
+    }
+    echoConfig.wsPath = path
+    logger.debug('[echoClient] wsPath set in config from environment', { wsPath: path })
+  } else {
+    logger.debug('[echoClient] wsPath not set, pusher-js will use default /app', {
+      note: 'Reverb listens on /app/{app_key}, pusher-js defaults to /app',
+    })
+  }
+  
+  logger.debug('[echoClient] Final Echo config', {
+    hasWsPath: 'wsPath' in echoConfig,
+    wsPath: echoConfig.wsPath,
+    key,
+    wsHost: host,
+    wsPort: port,
+  })
+  
+  return echoConfig
 }
 
 function scheduleReconnect(reason: string): void {
@@ -519,14 +538,10 @@ function bindConnectionEvents(connection: any): void {
 
   cleanupConnectionHandlers()
 
-  // Отслеживание времени последнего события "unavailable"
-  // ИСПРАВЛЕНО: Инициализируем как Date.now() - UNAVAILABLE_COOLDOWN, чтобы первый "unavailable" событие
-  // также уважало cooldown. Если инициализировать как 0, то при первом событии timeSinceLastUnavailable
-  // будет очень большим числом (текущее время минус 0), что всегда больше UNAVAILABLE_COOLDOWN,
-  // обходя логику cooldown и вызывая немедленное переподключение
+ 
   const UNAVAILABLE_COOLDOWN = 10000 // Увеличено до 10 секунд для предотвращения преждевременных переподключений
   let lastUnavailableTime = Date.now() - UNAVAILABLE_COOLDOWN
-  // connectingStartTime объявлена на уровне модуля для доступа из всех замыканий
+
   connectingStartTime = 0 // Сбрасываем при привязке новых обработчиков
   const CONNECTING_TIMEOUT = 15000 // 15 секунд таймаут для установления соединения
   
@@ -537,8 +552,7 @@ function bindConnectionEvents(connection: any): void {
     {
       event: 'connecting',
       handler: () => {
-        // Всегда сбрасываем и устанавливаем новое время начала подключения
-        // Это важно при переходе disconnected -> connecting, чтобы не считать старые попытки
+    
         connectingStartTime = Date.now()
         
         logger.debug('[echoClient] Connection state: connecting', {
@@ -547,11 +561,7 @@ function bindConnectionEvents(connection: any): void {
           timeSinceStart: Date.now() - connectingStartTime,
         })
         emitState('connecting')
-        // НЕ переподключаемся при переходе в "connecting" - это нормальное состояние
-        
-        // Проверяем socketId через некоторое время после начала подключения
-        // Иногда socketId присваивается с небольшой задержкой (может быть до 3-5 секунд)
-        // Проверяем несколько раз с увеличивающимися интервалами
+
         const checkSocketId = (checkAttempt = 0) => {
           if (abortController.signal.aborted) {
             return // Таймер отменен
@@ -616,8 +626,7 @@ function bindConnectionEvents(connection: any): void {
         reconnectLockUntil = 0
         isReconnecting = false
         lastError = null
-        // ИСПРАВЛЕНО: Сбрасываем lastUnavailableTime так, чтобы следующий "unavailable" уважал cooldown
-        // Используем Date.now() - UNAVAILABLE_COOLDOWN вместо 0, чтобы избежать проблемы с первым событием
+      
         lastUnavailableTime = Date.now() - UNAVAILABLE_COOLDOWN
         connectingStartTime = 0 // Сбрасываем таймер подключения
         
@@ -656,8 +665,7 @@ function bindConnectionEvents(connection: any): void {
           socketId: connection.socket_id,
         })
         
-        // Сбрасываем таймер подключения при отключении
-        // Это важно для правильного подсчета времени при следующем connecting
+    
         connectingStartTime = 0
         
         emitState('disconnected')
@@ -685,8 +693,7 @@ function bindConnectionEvents(connection: any): void {
         emitState('unavailable')
         lastUnavailableTime = now
         
-        // Улучшенная логика обработки "unavailable"
-        // Если соединение в процессе подключения, даем больше времени
+      
         if (connection.state === 'connecting' || timeSinceConnectingStart > 0) {
           const waitTime = timeSinceConnectingStart < CONNECTING_TIMEOUT 
             ? CONNECTING_TIMEOUT - timeSinceConnectingStart 
@@ -834,7 +841,7 @@ function bindConnectionEvents(connection: any): void {
   connectionHandlers = handlers
 }
 
-export function initEcho(forceReinit = false): Echo | null {
+export function initEcho(forceReinit = false): Echo<any> | null {
   if (!isBrowser()) {
     return null
   }
@@ -852,8 +859,7 @@ export function initEcho(forceReinit = false): Echo | null {
     return echoInstance
   }
   
-  // HMR guard: проверяем window.Echo перед проверкой echoInstance
-  // При HMR модуль перезагружается, но window.Echo остается живым
+
   if (typeof window !== 'undefined' && window.Echo && !echoInstance) {
     const windowEcho = window.Echo
     const pusher = windowEcho.connector?.pusher
@@ -877,8 +883,7 @@ export function initEcho(forceReinit = false): Echo | null {
       emitState('connected')
       return echoInstance
     } else if (!forceReinit) {
-      // Неактивное соединение, но не требуется принудительная переинициализация
-      // Синхронизируем echoInstance, но не переиспользуем
+   
       logger.debug('[echoClient] HMR detected: window.Echo exists but inactive', {
         state: state,
       })
@@ -911,11 +916,27 @@ export function initEcho(forceReinit = false): Echo | null {
     }
 
     const config = buildEchoConfig()
-    // @ts-expect-error - constructor typing from laravel-echo
+    
+    logger.info('[echoClient] Creating Echo instance with config', {
+      hasWsPath: 'wsPath' in config,
+      wsPath: config.wsPath,
+      key: config.key,
+      wsHost: config.wsHost,
+      wsPort: config.wsPort,
+    })
+    
     echoInstance = new Echo(config)
     window.Echo = echoInstance
 
-    const connection = echoInstance.connector?.pusher?.connection
+    const pusher = echoInstance?.connector?.pusher
+    const connection = pusher?.connection
+
+    if (!pusher) {
+      logger.warn('[echoClient] Pusher not found after Echo creation', {
+        hasEcho: !!echoInstance,
+        hasConnector: !!echoInstance?.connector,
+      })
+    }
     bindConnectionEvents(connection)
     emitState('connecting')
     
@@ -1021,11 +1042,11 @@ export function initEcho(forceReinit = false): Echo | null {
   }
 }
 
-export function getEchoInstance(): Echo | null {
+export function getEchoInstance(): Echo<any> | null {
   return echoInstance
 }
 
-export function getEcho(): Echo | null {
+export function getEcho(): Echo<any> | null {
   return echoInstance
 }
 
@@ -1103,7 +1124,7 @@ export { emitState as __emitWsState }
 
 declare global {
   interface Window {
-    Echo?: Echo
+    Echo?: Echo<any>
     Pusher?: typeof Pusher
   }
 }

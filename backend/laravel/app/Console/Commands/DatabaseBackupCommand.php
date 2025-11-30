@@ -53,7 +53,9 @@ class DatabaseBackupCommand extends Command
 
         // Используем .pgpass файл вместо PGPASSWORD в командной строке для безопасности
         // PGPASSWORD в командной строке виден в ps aux и может быть перехвачен
-        $pgpassPath = storage_path('app/.pgpass');
+        // Создаем временный файл в системной временной директории (недоступной через веб-сервер)
+        $tempDir = sys_get_temp_dir();
+        $pgpassPath = $tempDir.'/.pgpass_'.uniqid('', true);
         $pgpassContent = sprintf(
             "%s:%s:%s:%s:%s\n",
             $host,
@@ -62,17 +64,16 @@ class DatabaseBackupCommand extends Command
             $username,
             $password
         );
-        
+
         // Создаем временный .pgpass файл с строгими правами (0600)
         file_put_contents($pgpassPath, $pgpassContent);
         chmod($pgpassPath, 0600);
-        
-        // Устанавливаем переменную окружения для использования .pgpass
-        putenv('PGPASSFILE=' . $pgpassPath);
-        
+
         // Команда pg_dump БЕЗ PGPASSWORD в командной строке
+        // Передаем PGPASSFILE через переменные окружения в exec()
         $command = sprintf(
-            'pg_dump -h %s -p %s -U %s -d %s -Fc -f %s',
+            'PGPASSFILE=%s pg_dump -h %s -p %s -U %s -d %s -Fc -f %s',
+            escapeshellarg($pgpassPath),
             escapeshellarg($host),
             escapeshellarg($port),
             escapeshellarg($username),
@@ -84,7 +85,7 @@ class DatabaseBackupCommand extends Command
 
         // Выполнение команды
         exec($command.' 2>&1', $output, $returnCode);
-        
+
         // Удаляем временный .pgpass файл после использования
         if (file_exists($pgpassPath)) {
             unlink($pgpassPath);
@@ -128,7 +129,7 @@ class DatabaseBackupCommand extends Command
                 $this->warn('Не удалось сжать бэкап');
             }
         }
-        
+
         // Ротация старых бэкапов (храним только последние 7 дней)
         $this->rotateOldBackups($backupDir);
 
@@ -161,10 +162,10 @@ class DatabaseBackupCommand extends Command
     {
         $maxAge = 7 * 24 * 60 * 60; // 7 дней в секундах
         $now = time();
-        
-        $files = glob($backupDir . '/*');
+
+        $files = glob($backupDir.'/*');
         $deletedCount = 0;
-        
+
         foreach ($files as $file) {
             if (is_file($file)) {
                 $fileAge = $now - filemtime($file);
@@ -174,7 +175,7 @@ class DatabaseBackupCommand extends Command
                 }
             }
         }
-        
+
         if ($deletedCount > 0) {
             $this->info("✓ Удалено старых бэкапов: {$deletedCount}");
         }

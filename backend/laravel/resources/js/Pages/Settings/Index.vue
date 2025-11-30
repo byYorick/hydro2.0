@@ -10,6 +10,7 @@
             v-model="searchQuery"
             placeholder="Поиск по имени/email..."
             class="h-9 w-64 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
+            autocomplete="off"
           />
           <select
             v-model="roleFilter"
@@ -106,6 +107,7 @@
           <input
             v-model="userForm.name"
             class="mt-1 w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
+            autocomplete="name"
           />
         </div>
         <div>
@@ -114,20 +116,26 @@
             v-model="userForm.email"
             type="email"
             class="mt-1 w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
+            autocomplete="email"
           />
         </div>
         <div>
-          <label class="text-sm text-neutral-300">Пароль</label>
+          <label for="user-form-password" class="text-sm text-neutral-300">Пароль</label>
           <input
+            id="user-form-password"
+            name="password"
             v-model="userForm.password"
             type="password"
             class="mt-1 w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
             :placeholder="editingUser ? 'Оставьте пустым, чтобы не менять' : ''"
+            :autocomplete="editingUser ? 'new-password' : 'new-password'"
           />
         </div>
         <div>
-          <label class="text-sm text-neutral-300">Роль</label>
+          <label for="user-form-role" class="text-sm text-neutral-300">Роль</label>
           <select
+            id="user-form-role"
+            name="role"
             v-model="userForm.role"
             class="mt-1 w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
           >
@@ -168,7 +176,7 @@ import { translateRole } from '@/utils/i18n'
 import { logger } from '@/utils/logger'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
-import { useModal } from '@/composables/useModal'
+import { useSimpleModal } from '@/composables/useModal'
 import { ERROR_MESSAGES } from '@/constants/messages'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 
@@ -185,7 +193,7 @@ const { api } = useApi(showToast)
 const users = ref([])
 const searchQuery = ref('')
 const roleFilter = ref('')
-const { isOpen: showCreateModal, open: openCreateModal, close: closeCreateModal } = useModal<boolean>(false)
+const { isOpen: showCreateModal, open: openCreateModal, close: closeCreateModal } = useSimpleModal()
 const editingUser = ref(null)
 const deletingUser = ref(null)
 

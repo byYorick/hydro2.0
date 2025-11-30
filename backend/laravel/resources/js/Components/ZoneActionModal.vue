@@ -5,8 +5,10 @@
       <!-- Динамические поля на основе actionType -->
       <div v-if="actionType === 'FORCE_IRRIGATION'" class="space-y-3">
         <div>
-          <label class="block text-sm font-medium mb-1">Длительность полива (секунды)</label>
+          <label for="zone-action-duration-sec" class="block text-sm font-medium mb-1">Длительность полива (секунды)</label>
           <input
+            id="zone-action-duration-sec"
+            name="duration_sec"
             v-model.number="form.duration_sec"
             type="number"
             min="1"
@@ -22,8 +24,10 @@
 
       <div v-else-if="actionType === 'FORCE_PH_CONTROL'" class="space-y-3">
         <div>
-          <label class="block text-sm font-medium mb-1">Целевой pH</label>
+          <label for="zone-action-target-ph" class="block text-sm font-medium mb-1">Целевой pH</label>
           <input
+            id="zone-action-target-ph"
+            name="target_ph"
             v-model.number="form.target_ph"
             type="number"
             min="4.0"
@@ -39,8 +43,10 @@
 
       <div v-else-if="actionType === 'FORCE_EC_CONTROL'" class="space-y-3">
         <div>
-          <label class="block text-sm font-medium mb-1">Целевой EC</label>
+          <label for="zone-action-target-ec" class="block text-sm font-medium mb-1">Целевой EC</label>
           <input
+            id="zone-action-target-ec"
+            name="target_ec"
             v-model.number="form.target_ec"
             type="number"
             min="0.1"
@@ -56,8 +62,10 @@
 
       <div v-else-if="actionType === 'FORCE_CLIMATE'" class="space-y-3">
         <div>
-          <label class="block text-sm font-medium mb-1">Целевая температура (°C)</label>
+          <label for="zone-action-target-temp" class="block text-sm font-medium mb-1">Целевая температура (°C)</label>
           <input
+            id="zone-action-target-temp"
+            name="target_temp"
             v-model.number="form.target_temp"
             type="number"
             min="10"
@@ -70,8 +78,10 @@
           <div class="text-xs text-neutral-400 mt-1">От 10 до 35°C</div>
         </div>
         <div>
-          <label class="block text-sm font-medium mb-1">Целевая влажность (%)</label>
+          <label for="zone-action-target-humidity" class="block text-sm font-medium mb-1">Целевая влажность (%)</label>
           <input
+            id="zone-action-target-humidity"
+            name="target_humidity"
             v-model.number="form.target_humidity"
             type="number"
             min="30"
@@ -87,8 +97,10 @@
 
       <div v-else-if="actionType === 'FORCE_LIGHTING'" class="space-y-3">
         <div>
-          <label class="block text-sm font-medium mb-1">Интенсивность (%)</label>
+          <label for="zone-action-intensity" class="block text-sm font-medium mb-1">Интенсивность (%)</label>
           <input
+            id="zone-action-intensity"
+            name="intensity"
             v-model.number="form.intensity"
             type="number"
             min="0"
@@ -101,8 +113,10 @@
           <div class="text-xs text-neutral-400 mt-1">От 0 до 100%</div>
         </div>
         <div>
-          <label class="block text-sm font-medium mb-1">Длительность (часы)</label>
+          <label for="zone-action-duration-hours" class="block text-sm font-medium mb-1">Длительность (часы)</label>
           <input
+            id="zone-action-duration-hours"
+            name="duration_hours"
             v-model.number="form.duration_hours"
             type="number"
             min="0.5"

@@ -2,24 +2,29 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Greenhouse;
 use App\Helpers\ZoneAccessHelper;
-use Illuminate\Support\Facades\DB;
+use App\Models\Greenhouse;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class SystemController extends Controller
 {
     public function health()
     {
-        $isAuthenticated = auth()->check();
-        $isAdmin = $isAuthenticated && auth()->user()->role === 'admin';
+        // Проверяем аутентификацию через web guard (сессии) или через Sanctum (токены)
+        // Используем auth()->check() для проверки default guard, который может быть настроен как web
+        // Также проверяем web guard явно для сессионной аутентификации
+        $isAuthenticated = auth()->check() || auth('web')->check();
+        $user = auth()->user() ?? auth('web')->user();
+        $isAdmin = $isAuthenticated && $user && $user->role === 'admin';
         $isDev = config('app.debug');
-        
+
         // Для неаутентифицированных пользователей возвращаем только базовый статус
-        if (!$isAuthenticated) {
+        if (! $isAuthenticated) {
             try {
                 // Простая проверка БД без деталей
                 DB::connection()->selectOne('SELECT 1 as test');
+
                 return response()->json([
                     'status' => 'ok',
                     'data' => [
@@ -37,7 +42,7 @@ class SystemController extends Controller
                 ], 503);
             }
         }
-        
+
         // Для аутентифицированных пользователей возвращаем детальную информацию
         // Быстрая проверка подключения к БД с таймаутом
         $dbOk = false;
@@ -64,19 +69,19 @@ class SystemController extends Controller
             // Проверяем доступность mqtt-bridge сервиса через метрики
             // В dev окружении он доступен на mqtt-bridge:9000, в prod может быть другой адрес
             $mqttBridgeUrl = env('MQTT_BRIDGE_URL', 'http://mqtt-bridge:9000');
-            
+
             // Используем Http-клиент для правильной проверки HTTP-кода
             $response = \Illuminate\Support\Facades\Http::timeout(2)
-                ->get($mqttBridgeUrl . '/metrics');
-            
+                ->get($mqttBridgeUrl.'/metrics');
+
             if ($response->successful() && $response->body()) {
                 $mqttOk = 'ok';
             } else {
                 $mqttOk = 'fail';
                 \Log::warning('MQTT bridge health check failed', [
-                    'url' => $mqttBridgeUrl . '/metrics',
+                    'url' => $mqttBridgeUrl.'/metrics',
                     'status' => $response->status(),
-                    'has_body' => !empty($response->body()),
+                    'has_body' => ! empty($response->body()),
                 ]);
             }
         } catch (\Illuminate\Http\Client\ConnectionException $e) {
@@ -103,11 +108,11 @@ class SystemController extends Controller
         $historyLoggerOk = 'unknown';
         try {
             $historyLoggerUrl = env('HISTORY_LOGGER_URL', 'http://history-logger:9300');
-            
+
             // Используем Http-клиент для правильной проверки HTTP-кода
             $response = \Illuminate\Support\Facades\Http::timeout(3)
-                ->get($historyLoggerUrl . '/health');
-            
+                ->get($historyLoggerUrl.'/health');
+
             if ($response->successful()) {
                 $healthData = $response->json();
                 if (isset($healthData['status']) && $healthData['status'] === 'ok') {
@@ -115,7 +120,7 @@ class SystemController extends Controller
                 } else {
                     // Логируем проблему для отладки
                     \Log::warning('History Logger health check failed', [
-                        'url' => $historyLoggerUrl . '/health',
+                        'url' => $historyLoggerUrl.'/health',
                         'status' => $response->status(),
                         'response_status' => $healthData['status'] ?? 'unknown',
                     ]);
@@ -124,7 +129,7 @@ class SystemController extends Controller
             } else {
                 // Логируем ошибку HTTP-кода
                 \Log::warning('History Logger health check: non-successful response', [
-                    'url' => $historyLoggerUrl . '/health',
+                    'url' => $historyLoggerUrl.'/health',
                     'status' => $response->status(),
                     'body_preview' => substr($response->body(), 0, 200),
                 ]);
@@ -155,19 +160,19 @@ class SystemController extends Controller
         $automationEngineOk = 'unknown';
         try {
             $automationEngineUrl = env('AUTOMATION_ENGINE_URL', 'http://automation-engine:9401');
-            
+
             // Используем Http-клиент для правильной проверки HTTP-кода
             $response = \Illuminate\Support\Facades\Http::timeout(2)
-                ->get($automationEngineUrl . '/metrics');
-            
+                ->get($automationEngineUrl.'/metrics');
+
             if ($response->successful() && $response->body()) {
                 $automationEngineOk = 'ok';
             } else {
                 $automationEngineOk = 'fail';
                 \Log::warning('Automation engine health check failed', [
-                    'url' => $automationEngineUrl . '/metrics',
+                    'url' => $automationEngineUrl.'/metrics',
                     'status' => $response->status(),
-                    'has_body' => !empty($response->body()),
+                    'has_body' => ! empty($response->body()),
                 ]);
             }
         } catch (\Illuminate\Http\Client\ConnectionException $e) {
@@ -192,18 +197,18 @@ class SystemController extends Controller
         // Определяем общий статус системы
         $overallStatus = 'ok';
         $hasCriticalIssues = false;
-        
+
         // Проверяем критические компоненты
-        if (!$dbOk || $mqttOk === 'fail') {
+        if (! $dbOk || $mqttOk === 'fail') {
             $overallStatus = 'degraded';
             $hasCriticalIssues = true;
         }
-        
+
         // Если есть проблемы с сервисами, статус degraded, но не fail
-        if (!$hasCriticalIssues && ($historyLoggerOk === 'fail' || $automationEngineOk === 'fail')) {
+        if (! $hasCriticalIssues && ($historyLoggerOk === 'fail' || $automationEngineOk === 'fail')) {
             $overallStatus = 'degraded';
         }
-        
+
         return response()->json([
             'status' => $overallStatus,
             'data' => [
@@ -242,20 +247,20 @@ class SystemController extends Controller
             // Middleware verify.python.service уже проверил токен или Sanctum
             // Здесь просто получаем пользователя, если он авторизован
             $user = Auth::guard('sanctum')->user() ?? Auth::user();
-            
+
             // Если пользователь не авторизован (ни через Sanctum, ни через сессию),
             // значит middleware должен был отклонить запрос, но на всякий случай проверяем
-            if (!$user) {
+            if (! $user) {
                 return response()->json([
                     'status' => 'error',
                     'code' => 'UNAUTHENTICATED',
                     'message' => 'Authentication required',
                 ], 401);
             }
-            
+
             // Получаем доступные зоны для пользователя
             $accessibleZoneIds = ZoneAccessHelper::getAccessibleZoneIds($user);
-            
+
             // Загружаем теплицы с зонами, фильтруя по доступным зонам
             $greenhouses = Greenhouse::with([
                 'zones' => function ($query) use ($accessibleZoneIds) {
@@ -272,14 +277,14 @@ class SystemController extends Controller
                         }, 'recipeInstance.recipe']);
                 },
             ])->get();
-            
+
             // Убираем config из нод и каналов после загрузки (на случай если он был загружен через отношения)
             foreach ($greenhouses as $greenhouse) {
                 foreach ($greenhouse->zones as $zone) {
                     foreach ($zone->nodes as $node) {
                         // Удаляем config для предотвращения утечки Wi-Fi паролей и MQTT кредов
                         unset($node->config);
-                        
+
                         // Удаляем config из каналов, если он был загружен
                         foreach ($node->channels as $channel) {
                             unset($channel->config);
@@ -287,10 +292,10 @@ class SystemController extends Controller
                     }
                 }
             }
-            
+
             // Фильтруем теплицы, оставляя только те, у которых есть доступные зоны
             // (или если пользователь админ - оставляем все)
-            if (!$user->isAdmin()) {
+            if (! $user->isAdmin()) {
                 $greenhouses = $greenhouses->filter(function ($greenhouse) {
                     return $greenhouse->zones->isNotEmpty();
                 })->values();
@@ -305,15 +310,15 @@ class SystemController extends Controller
         } catch (\Illuminate\Database\QueryException $e) {
             $isDev = app()->environment(['local', 'testing', 'development']);
             $errorMessage = $e->getMessage();
-            $isMissingTable = str_contains($errorMessage, 'no such table') || 
+            $isMissingTable = str_contains($errorMessage, 'no such table') ||
                              str_contains($errorMessage, "doesn't exist") ||
                              str_contains($errorMessage, 'relation does not exist');
-            
+
             \Log::error('SystemController::configFull: Database error', [
                 'error' => $errorMessage,
                 'is_missing_table' => $isMissingTable,
             ]);
-            
+
             if ($isDev && $isMissingTable) {
                 return response()->json([
                     'status' => 'error',
@@ -325,7 +330,7 @@ class SystemController extends Controller
                     ],
                 ], 503);
             }
-            
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'Service temporarily unavailable. Please check database connection.',
@@ -337,7 +342,7 @@ class SystemController extends Controller
             \Log::error('SystemController::configFull: Error', [
                 'error' => $e->getMessage(),
             ]);
-            
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'An error occurred while fetching configuration.',
@@ -348,5 +353,3 @@ class SystemController extends Controller
         }
     }
 }
-
-

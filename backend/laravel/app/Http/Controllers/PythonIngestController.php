@@ -14,21 +14,23 @@ class PythonIngestController extends Controller
 {
     private function ensureToken(Request $request): void
     {
+        // Используем PY_INGEST_TOKEN как основной токен для ingest
+        // Fallback на PY_API_TOKEN для обратной совместимости
         $expected = Config::get('services.python_bridge.ingest_token') ?? Config::get('services.python_bridge.token');
         $given = $request->bearerToken();
-        
+
         // Если токен не настроен, всегда требуем токен (даже в testing)
         // Это обеспечивает безопасность по умолчанию
-        if (!$expected) {
+        if (! $expected) {
             throw new \Illuminate\Http\Exceptions\HttpResponseException(
                 response()->json([
                     'status' => 'error',
-                    'message' => 'Unauthorized: service token not configured',
+                    'message' => 'Unauthorized: service token not configured. Set PY_INGEST_TOKEN or PY_API_TOKEN.',
                 ], 401)
             );
         }
-        
-        if (!$given || !hash_equals($expected, (string) $given)) {
+
+        if (! $given || ! hash_equals($expected, (string) $given)) {
             throw new \Illuminate\Http\Exceptions\HttpResponseException(
                 response()->json([
                     'status' => 'error',
@@ -52,10 +54,11 @@ class PythonIngestController extends Controller
 
         // Проверяем, что zone_id существует
         $zone = \App\Models\Zone::find($data['zone_id']);
-        if (!$zone) {
+        if (! $zone) {
             \Illuminate\Support\Facades\Log::warning('PythonIngestController: Zone not found', [
                 'zone_id' => $data['zone_id'],
             ]);
+
             return \Illuminate\Support\Facades\Response::json([
                 'status' => 'error',
                 'message' => 'Zone not found',
@@ -67,16 +70,17 @@ class PythonIngestController extends Controller
         $nodeId = $data['node_id'] ?? null;
         if ($nodeId) {
             $node = DeviceNode::find($nodeId);
-            if (!$node) {
+            if (! $node) {
                 \Illuminate\Support\Facades\Log::warning('PythonIngestController: Node not found', [
                     'node_id' => $nodeId,
                 ]);
+
                 return \Illuminate\Support\Facades\Response::json([
                     'status' => 'error',
                     'message' => 'Node not found',
                 ], 404);
             }
-            
+
             // Проверяем, что нода привязана к указанной зоне
             if ($node->zone_id !== $data['zone_id']) {
                 \Illuminate\Support\Facades\Log::warning('PythonIngestController: Node zone mismatch', [
@@ -84,12 +88,13 @@ class PythonIngestController extends Controller
                     'node_zone_id' => $node->zone_id,
                     'requested_zone_id' => $data['zone_id'],
                 ]);
+
                 return \Illuminate\Support\Facades\Response::json([
                     'status' => 'error',
                     'message' => 'Node is not assigned to the specified zone',
                 ], 422);
             }
-            
+
             $nodeUid = $node->uid;
         }
         $tsValue = $data['ts'] ?? null;

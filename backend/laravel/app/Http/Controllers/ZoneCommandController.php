@@ -4,10 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Models\Zone;
 use App\Services\PythonBridgeService;
-use Illuminate\Http\Request;
 use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Http\Client\TimeoutException;
 use Illuminate\Http\Client\RequestException;
+use Illuminate\Http\Client\TimeoutException;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class ZoneCommandController extends Controller
@@ -17,13 +17,13 @@ class ZoneCommandController extends Controller
         $data = $request->validate([
             'type' => ['required', 'string', 'max:64'],
             'params' => ['nullable'],
-            'node_uid' => ['required', 'string', 'max:64'],
-            'channel' => ['required', 'string', 'max:64'],
+            'node_uid' => ['nullable', 'string', 'max:64'],
+            'channel' => ['nullable', 'string', 'max:64'],
         ]);
-        
+
         // Ensure params is an associative array (object), not a list
         // Python service expects Dict[str, Any], not a list
-        if (!isset($data['params']) || $data['params'] === null) {
+        if (! isset($data['params']) || $data['params'] === null) {
             $data['params'] = [];
         } elseif (is_array($data['params']) && array_is_list($data['params'])) {
             // Convert indexed array to empty object
@@ -45,6 +45,7 @@ class ZoneCommandController extends Controller
                 'command_type' => $data['type'] ?? null,
                 'error' => $e->getMessage(),
             ]);
+
             return response()->json([
                 'status' => 'error',
                 'code' => 'SERVICE_UNAVAILABLE',
@@ -56,6 +57,7 @@ class ZoneCommandController extends Controller
                 'command_type' => $data['type'] ?? null,
                 'error' => $e->getMessage(),
             ]);
+
             return response()->json([
                 'status' => 'error',
                 'code' => 'SERVICE_TIMEOUT',
@@ -68,6 +70,7 @@ class ZoneCommandController extends Controller
                 'error' => $e->getMessage(),
                 'status' => $e->response?->status(),
             ]);
+
             return response()->json([
                 'status' => 'error',
                 'code' => 'COMMAND_FAILED',
@@ -79,6 +82,7 @@ class ZoneCommandController extends Controller
                 'command_type' => $data['type'] ?? null,
                 'error' => $e->getMessage(),
             ]);
+
             return response()->json([
                 'status' => 'error',
                 'code' => 'INVALID_ARGUMENT',
@@ -92,6 +96,7 @@ class ZoneCommandController extends Controller
                 'exception' => get_class($e),
                 'trace' => $e->getTraceAsString(),
             ]);
+
             return response()->json([
                 'status' => 'error',
                 'code' => 'INTERNAL_ERROR',
@@ -100,5 +105,3 @@ class ZoneCommandController extends Controller
         }
     }
 }
-
-

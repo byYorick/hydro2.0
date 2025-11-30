@@ -3,8 +3,10 @@
     <div v-if="loading" class="text-sm text-neutral-400">Загрузка...</div>
     <div v-else class="space-y-4">
       <div>
-        <label class="block text-xs text-neutral-400 mb-1">Выберите рецепт</label>
+        <label for="attach-recipe-select" class="block text-xs text-neutral-400 mb-1">Выберите рецепт</label>
         <select
+          id="attach-recipe-select"
+          name="recipe_id"
           v-model="selectedRecipeId"
           class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
         >
@@ -20,11 +22,14 @@
       </div>
       
       <div v-if="selectedRecipeId">
-        <label class="block text-xs text-neutral-400 mb-1">Дата начала (опционально)</label>
+        <label for="attach-recipe-start-at" class="block text-xs text-neutral-400 mb-1">Дата начала (опционально)</label>
         <input
+          id="attach-recipe-start-at"
+          name="start_at"
           v-model="startAt"
           type="datetime-local"
           class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+          autocomplete="off"
         />
       </div>
       

@@ -15,7 +15,6 @@
             <div class="flex gap-2 mb-2">
               <Button
                 size="sm"
-                variant="selected"
                 :variant="greenhouseMode === 'select' ? 'primary' : 'secondary'"
                 @click="greenhouseMode = 'select'"
               >
@@ -61,21 +60,18 @@
 
             <!-- Создание новой теплицы -->
             <div v-else class="space-y-3">
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <input
-                  v-model="greenhouseForm.uid"
-                  type="text"
-                  placeholder="UID (gh-main)"
-                  class="h-9 rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
-                />
+              <div>
                 <input
                   v-model="greenhouseForm.name"
                   type="text"
                   placeholder="Название теплицы"
-                  class="h-9 rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+                  class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
                 />
+                <div class="text-xs text-neutral-500 mt-1">
+                  UID будет сгенерирован автоматически: <span class="text-neutral-400">{{ generatedUid }}</span>
+                </div>
               </div>
-              <Button size="sm" @click="createGreenhouse" :disabled="loading.step1">
+              <Button size="sm" @click="createGreenhouse" :disabled="loading.step1 || !greenhouseForm.name.trim()">
                 {{ loading.step1 ? 'Создание...' : 'Создать теплицу' }}
               </Button>
             </div>
@@ -345,9 +341,6 @@
               <Link :href="`/zones/${createdZone?.id}`">
                 <Button size="sm">Открыть зону</Button>
               </Link>
-              <Link href="/">
-                <Button size="sm" variant="secondary">На главную</Button>
-              </Link>
             </div>
           </div>
         </div>
@@ -368,7 +361,7 @@ import { useToast } from '@/composables/useToast'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { extractData } from '@/utils/apiHelpers'
 import { logger } from '@/utils/logger'
-
+import { generateUid } from '@/utils/transliterate'
 import { router } from '@inertiajs/vue3'
 
 const { showToast } = useToast()
@@ -410,8 +403,7 @@ interface Node {
 }
 
 const greenhouseForm = reactive({
-  uid: 'gh-main',
-  name: 'Main Greenhouse',
+  name: '',
   timezone: 'Europe/Moscow',
   type: 'indoor',
   description: ''
@@ -488,6 +480,14 @@ const step2Complete = computed(() => createdRecipe.value !== null)
 const step3Complete = computed(() => createdZone.value !== null)
 const step4Complete = computed(() => createdZone.value !== null && createdRecipe.value !== null)
 const step5Complete = computed(() => attachedNodesCount.value > 0)
+
+// Вычисляемый UID на основе названия
+const generatedUid = computed(() => {
+  if (!greenhouseForm.name || !greenhouseForm.name.trim()) {
+    return 'gh-...'
+  }
+  return generateUid(greenhouseForm.name, 'gh-')
+})
 
 onMounted(() => {
   loadAvailableNodes()
@@ -588,11 +588,22 @@ async function selectZone() {
 }
 
 async function createGreenhouse(): Promise<void> {
+  if (!greenhouseForm.name || !greenhouseForm.name.trim()) {
+    showToast('Введите название теплицы', 'error', TOAST_TIMEOUT.NORMAL)
+    return
+  }
+
   loading.step1 = true
   try {
+    // Генерируем UID автоматически на основе названия
+    const uid = generateUid(greenhouseForm.name, 'gh-')
+    
     const response = await api.post<{ data?: Greenhouse } | Greenhouse>(
       '/greenhouses',
-      greenhouseForm
+      {
+        ...greenhouseForm,
+        uid: uid
+      }
     )
     
     createdGreenhouse.value = extractData<Greenhouse>(response.data) || createdGreenhouse.value

@@ -1,7 +1,7 @@
 <template>
   <ErrorBoundary>
     <div class="min-h-screen bg-neutral-950 text-neutral-100">
-      <div class="flex">
+      <div class="flex h-screen overflow-hidden">
       <aside class="hidden lg:block w-64 shrink-0 border-r border-neutral-800 bg-neutral-925">
         <div class="h-16 flex items-center px-4 border-b border-neutral-800">
           <span class="text-base font-semibold">hydro 2.0</span>
@@ -39,11 +39,13 @@
         </div>
       </div>
       
-      <main class="flex-1">
+      <main class="flex-1 flex flex-col min-h-0 overflow-hidden">
         <!-- Header Status Bar (всегда видимый) -->
-        <HeaderStatusBar />
+        <div class="shrink-0">
+          <HeaderStatusBar />
+        </div>
         
-        <header class="h-16 flex items-center justify-between px-4 border-b border-neutral-800 bg-neutral-925 lg:hidden">
+        <header class="h-16 flex items-center justify-between px-4 border-b border-neutral-800 bg-neutral-925 lg:hidden shrink-0">
           <div class="flex items-center gap-3">
             <button
               @click="showMobileMenu = !showMobileMenu"
@@ -57,7 +59,7 @@
           </div>
           <span class="text-xs text-neutral-400 hidden sm:inline">Ctrl+K — Командная палитра</span>
         </header>
-        <div class="px-4 py-4 pb-20 lg:pb-4 relative">
+        <div class="flex-1 min-h-0 overflow-y-auto px-4 py-4 pb-20 lg:pb-4">
           <Breadcrumbs />
           <Transition
             name="page"
@@ -71,15 +73,23 @@
         <CommandPalette />
         <ToastContainer />
         <MobileNavigation />
+        
+        <!-- Меню пользователя в нижнем левом углу -->
+        <!-- На мобильных устройствах выше MobileNavigation (h-16 = 4rem = 64px), на десктопе просто bottom-4 -->
+        <div class="fixed bottom-20 left-4 lg:bottom-4 z-50">
+          <UserMenu />
+        </div>
       </main>
-      <aside class="hidden xl:block w-80 shrink-0 border-l border-neutral-800 bg-neutral-925">
-        <div class="h-16 flex items-center px-4 border-b border-neutral-800">
+      <aside class="hidden xl:block w-80 shrink-0 border-l border-neutral-800 bg-neutral-925 flex flex-col h-screen">
+        <div class="h-16 flex items-center px-4 border-b border-neutral-800 shrink-0">
           <span class="text-sm text-neutral-400">События</span>
         </div>
-        <div class="p-4 space-y-4">
-          <FavoritesWidget />
-          <HistoryWidget />
-          <div class="text-neutral-400 text-sm">
+        <div class="flex-1 min-h-0 flex flex-col overflow-hidden">
+          <div class="p-4 space-y-4 shrink-0">
+            <FavoritesWidget />
+            <HistoryWidget />
+          </div>
+          <div class="flex-1 min-h-0 px-4 pb-4 overflow-hidden">
             <slot name="context" />
           </div>
         </div>
@@ -102,6 +112,7 @@ import ToastContainer from '@/Components/ToastContainer.vue'
 import MobileNavigation from '@/Components/MobileNavigation.vue'
 import FavoritesWidget from '@/Components/FavoritesWidget.vue'
 import HistoryWidget from '@/Components/HistoryWidget.vue'
+import UserMenu from '@/Components/UserMenu.vue'
 import { useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts'
   
 const showMobileMenu = ref(false)
@@ -147,6 +158,24 @@ onMounted(() => {
 .page-leave-to {
   opacity: 0;
   transform: translateY(-4px);
+}
+
+/* Стили для прокрутки */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: rgba(38, 38, 38, 0.8);
+  border-radius: 3px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(38, 38, 38, 1);
 }
 </style>
 

@@ -26,10 +26,11 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         // Rate Limiting для API роутов
-        // Стандартный лимит: 60 запросов в минуту для всех API роутов
+        // Стандартный лимит: 120 запросов в минуту для всех API роутов
         // Более строгие лимиты применяются на уровне отдельных роутов
+        // Увеличен для поддержки множественных компонентов на одной странице
         $middleware->api(prepend: [
-            \Illuminate\Routing\Middleware\ThrottleRequests::class.':60,1',
+            \Illuminate\Routing\Middleware\ThrottleRequests::class.':120,1',
         ]);
 
         // CSRF protection: исключаем только token-based API роуты и broadcasting
@@ -53,7 +54,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withExceptions(function (Exceptions $exceptions) {
         // Генерируем корреляционный ID для отслеживания запросов
         $generateCorrelationId = function () {
-            return 'req_' . uniqid() . '_' . substr(md5(microtime(true)), 0, 8);
+            return 'req_'.uniqid().'_'.substr(md5(microtime(true)), 0, 8);
         };
 
         // Централизованная обработка исключений для API и веб-маршрутов
@@ -93,94 +94,94 @@ return Application::configure(basePath: dirname(__DIR__))
             // Обработка для API роутов
             if ($isApi) {
 
-            $correlationId = $generateCorrelationId();
-            $isDev = app()->environment(['local', 'testing', 'development']);
+                $correlationId = $generateCorrelationId();
+                $isDev = app()->environment(['local', 'testing', 'development']);
 
-            // Логируем исключение с контекстом
-            $logContext = [
-                'correlation_id' => $correlationId,
-                'url' => $request->fullUrl(),
-                'method' => $request->method(),
-                'ip' => $request->ip(),
-                'user_agent' => $request->userAgent(),
-                'user_id' => auth()->id(),
-                'exception' => get_class($e),
-                'message' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-            ];
-
-            if ($isDev) {
-                $logContext['trace'] = $e->getTraceAsString();
-            }
-
-            \Log::error('API Exception', $logContext);
-
-            // Обработка специфичных исключений
-            if ($e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException) {
-                return response()->json([
-                    'status' => 'error',
-                    'code' => 'MODEL_NOT_FOUND',
-                    'message' => 'Resource not found',
+                // Логируем исключение с контекстом
+                $logContext = [
                     'correlation_id' => $correlationId,
-                ], 404);
-            }
+                    'url' => $request->fullUrl(),
+                    'method' => $request->method(),
+                    'ip' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                    'user_id' => auth()->id(),
+                    'exception' => get_class($e),
+                    'message' => $e->getMessage(),
+                    'file' => $e->getFile(),
+                    'line' => $e->getLine(),
+                ];
 
-            if ($e instanceof \Illuminate\Auth\AuthenticationException) {
-                return response()->json([
+                if ($isDev) {
+                    $logContext['trace'] = $e->getTraceAsString();
+                }
+
+                \Log::error('API Exception', $logContext);
+
+                // Обработка специфичных исключений
+                if ($e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException) {
+                    return response()->json([
+                        'status' => 'error',
+                        'code' => 'MODEL_NOT_FOUND',
+                        'message' => 'Resource not found',
+                        'correlation_id' => $correlationId,
+                    ], 404);
+                }
+
+                if ($e instanceof \Illuminate\Auth\AuthenticationException) {
+                    return response()->json([
+                        'status' => 'error',
+                        'code' => 'UNAUTHENTICATED',
+                        'message' => 'Unauthenticated',
+                        'correlation_id' => $correlationId,
+                    ], 401);
+                }
+
+                if ($e instanceof \Illuminate\Auth\Access\AuthorizationException) {
+                    return response()->json([
+                        'status' => 'error',
+                        'code' => 'UNAUTHORIZED',
+                        'message' => 'This action is unauthorized',
+                        'correlation_id' => $correlationId,
+                    ], 403);
+                }
+
+                if ($e instanceof \Illuminate\Validation\ValidationException) {
+                    return response()->json([
+                        'status' => 'error',
+                        'code' => 'VALIDATION_ERROR',
+                        'message' => 'Validation failed',
+                        'errors' => $e->errors(),
+                        'correlation_id' => $correlationId,
+                    ], 422);
+                }
+
+                if ($e instanceof \Illuminate\Http\Client\RequestException ||
+                    $e instanceof \Illuminate\Http\Client\ConnectionException ||
+                    $e instanceof \Illuminate\Http\Client\TimeoutException) {
+                    return response()->json([
+                        'status' => 'error',
+                        'code' => 'SERVICE_UNAVAILABLE',
+                        'message' => 'External service unavailable',
+                        'correlation_id' => $correlationId,
+                    ], 503);
+                }
+
+                // Общая обработка для всех остальных исключений
+                $response = [
                     'status' => 'error',
-                    'code' => 'UNAUTHENTICATED',
-                    'message' => 'Unauthenticated',
+                    'code' => 'INTERNAL_ERROR',
+                    'message' => $isDev ? $e->getMessage() : 'Internal server error',
                     'correlation_id' => $correlationId,
-                ], 401);
-            }
+                ];
 
-            if ($e instanceof \Illuminate\Auth\Access\AuthorizationException) {
-                return response()->json([
-                    'status' => 'error',
-                    'code' => 'UNAUTHORIZED',
-                    'message' => 'This action is unauthorized',
-                    'correlation_id' => $correlationId,
-                ], 403);
-            }
+                if ($isDev) {
+                    $response['exception'] = get_class($e);
+                    $response['file'] = $e->getFile();
+                    $response['line'] = $e->getLine();
+                    $response['trace'] = $e->getTraceAsString();
+                }
 
-            if ($e instanceof \Illuminate\Validation\ValidationException) {
-                return response()->json([
-                    'status' => 'error',
-                    'code' => 'VALIDATION_ERROR',
-                    'message' => 'Validation failed',
-                    'errors' => $e->errors(),
-                    'correlation_id' => $correlationId,
-                ], 422);
-            }
-
-            if ($e instanceof \Illuminate\Http\Client\RequestException || 
-                $e instanceof \Illuminate\Http\Client\ConnectionException ||
-                $e instanceof \Illuminate\Http\Client\TimeoutException) {
-                return response()->json([
-                    'status' => 'error',
-                    'code' => 'SERVICE_UNAVAILABLE',
-                    'message' => 'External service unavailable',
-                    'correlation_id' => $correlationId,
-                ], 503);
-            }
-
-            // Общая обработка для всех остальных исключений
-            $response = [
-                'status' => 'error',
-                'code' => 'INTERNAL_ERROR',
-                'message' => $isDev ? $e->getMessage() : 'Internal server error',
-                'correlation_id' => $correlationId,
-            ];
-
-            if ($isDev) {
-                $response['exception'] = get_class($e);
-                $response['file'] = $e->getFile();
-                $response['line'] = $e->getLine();
-                $response['trace'] = $e->getTraceAsString();
-            }
-
-            return response()->json($response, 500);
+                return response()->json($response, 500);
             }
 
             // Обработка для веб/Inertia маршрутов
@@ -241,6 +242,7 @@ return Application::configure(basePath: dirname(__DIR__))
                     'channel' => $request->input('channel_name'),
                     'retry_after' => $retryAfter,
                 ]);
+
                 return response()->json([
                     'message' => 'Too Many Attempts.',
                 ], 429)->withHeaders([
@@ -248,7 +250,7 @@ return Application::configure(basePath: dirname(__DIR__))
                 ]);
             }
         });
-        
+
         // Обрабатываем исключения для broadcasting/auth
         $exceptions->render(function (\Illuminate\Auth\AuthenticationException $e, \Illuminate\Http\Request $request) {
             if ($request->is('broadcasting/auth')) {
@@ -258,15 +260,16 @@ return Application::configure(basePath: dirname(__DIR__))
                     'channel' => $request->input('channel_name'),
                     'error' => $e->getMessage(),
                 ]);
+
                 return response()->json(['message' => 'Unauthenticated.'], 403);
             }
         });
-        
+
         // Обрабатываем все остальные исключения для broadcasting/auth
         $exceptions->render(function (\Exception $e, \Illuminate\Http\Request $request) {
             if ($request->is('broadcasting/auth')) {
                 $isDev = app()->environment(['local', 'testing', 'development']);
-                
+
                 if ($isDev) {
                     \Log::error('Broadcasting auth: Exception in middleware or route', [
                         'ip' => $request->ip(),
@@ -279,12 +282,12 @@ return Application::configure(basePath: dirname(__DIR__))
                         'error' => $e->getMessage(),
                     ]);
                 }
-                
+
                 // Возвращаем 403 вместо 500 для ошибок авторизации
                 if ($e instanceof \Illuminate\Auth\AuthenticationException) {
                     return response()->json(['message' => 'Unauthenticated.'], 403);
                 }
-                
+
                 // Для остальных ошибок возвращаем 500, но с безопасным сообщением
                 return response()->json(['message' => 'Authorization failed.'], 500);
             }

@@ -1,5 +1,6 @@
 <?php
 
+use App\Helpers\ZoneAccessHelper;
 use App\Models\Zone;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Log;
@@ -11,13 +12,14 @@ Broadcast::channel('hydro.zones.{zoneId}', function ($user, $zoneId) {
             'channel' => "hydro.zones.{$zoneId}",
             'origin' => request()->header('Origin'),
         ]);
+
         return false;
     }
 
     $userRole = $user->role ?? 'viewer';
     $allowedRoles = ['viewer', 'operator', 'admin', 'agronomist', 'engineer'];
-    
-    if (!in_array($userRole, $allowedRoles)) {
+
+    if (! in_array($userRole, $allowedRoles)) {
         Log::warning('WebSocket channel authorization denied: invalid role', [
             'channel' => "hydro.zones.{$zoneId}",
             'user_id' => $user->id,
@@ -25,6 +27,7 @@ Broadcast::channel('hydro.zones.{zoneId}', function ($user, $zoneId) {
             'zone_id' => $zoneId,
             'origin' => request()->header('Origin'),
         ]);
+
         return false;
     }
 
@@ -37,6 +40,21 @@ Broadcast::channel('hydro.zones.{zoneId}', function ($user, $zoneId) {
                 'user_role' => $userRole,
                 'origin' => request()->header('Origin'),
             ]);
+
+            return false;
+        }
+
+        // ВАЖНО: Проверяем доступ к конкретной зоне через ZoneAccessHelper
+        // Это предотвращает подписку на события чужой зоны
+        if (! ZoneAccessHelper::canAccessZone($user, $zone)) {
+            Log::warning('WebSocket channel authorization denied: no access to zone', [
+                'channel' => "hydro.zones.{$zoneId}",
+                'user_id' => $user->id,
+                'user_role' => $userRole,
+                'zone_id' => $zoneId,
+                'origin' => request()->header('Origin'),
+            ]);
+
             return false;
         }
     } catch (\Exception $e) {
@@ -48,6 +66,7 @@ Broadcast::channel('hydro.zones.{zoneId}', function ($user, $zoneId) {
             'user_role' => $userRole,
             'error' => $e->getMessage(),
         ]);
+
         return false;
     }
 
@@ -68,14 +87,15 @@ Broadcast::channel('commands.{zoneId}', function ($user, $zoneId) {
             'channel' => "commands.{$zoneId}",
             'origin' => request()->header('Origin'),
         ]);
+
         return false;
     }
 
     // Проверяем роль пользователя
     $userRole = $user->role ?? 'viewer';
     $allowedRoles = ['viewer', 'operator', 'admin', 'agronomist', 'engineer'];
-    
-    if (!in_array($userRole, $allowedRoles)) {
+
+    if (! in_array($userRole, $allowedRoles)) {
         Log::warning('WebSocket channel authorization denied: invalid role', [
             'channel' => "commands.{$zoneId}",
             'user_id' => $user->id,
@@ -83,6 +103,7 @@ Broadcast::channel('commands.{zoneId}', function ($user, $zoneId) {
             'zone_id' => $zoneId,
             'origin' => request()->header('Origin'),
         ]);
+
         return false;
     }
 
@@ -96,6 +117,21 @@ Broadcast::channel('commands.{zoneId}', function ($user, $zoneId) {
                 'user_role' => $userRole,
                 'origin' => request()->header('Origin'),
             ]);
+
+            return false;
+        }
+
+        // ВАЖНО: Проверяем доступ к конкретной зоне через ZoneAccessHelper
+        // Это предотвращает подписку на команды чужой зоны
+        if (! ZoneAccessHelper::canAccessZone($user, $zone)) {
+            Log::warning('WebSocket channel authorization denied: no access to zone', [
+                'channel' => "commands.{$zoneId}",
+                'user_id' => $user->id,
+                'user_role' => $userRole,
+                'zone_id' => $zoneId,
+                'origin' => request()->header('Origin'),
+            ]);
+
             return false;
         }
     } catch (\Exception $e) {
@@ -106,6 +142,7 @@ Broadcast::channel('commands.{zoneId}', function ($user, $zoneId) {
             'user_role' => $userRole,
             'error' => $e->getMessage(),
         ]);
+
         return false;
     }
 
@@ -126,20 +163,22 @@ Broadcast::channel('commands.global', function ($user) {
             'channel' => 'commands.global',
             'origin' => request()->header('Origin'),
         ]);
+
         return false;
     }
 
     // Проверяем роль пользователя
     $userRole = $user->role ?? 'viewer';
     $allowedRoles = ['viewer', 'operator', 'admin', 'agronomist', 'engineer'];
-    
-    if (!in_array($userRole, $allowedRoles)) {
+
+    if (! in_array($userRole, $allowedRoles)) {
         Log::warning('WebSocket channel authorization denied: invalid role', [
             'channel' => 'commands.global',
             'user_id' => $user->id,
             'user_role' => $userRole,
             'origin' => request()->header('Origin'),
         ]);
+
         return false;
     }
 
@@ -159,20 +198,22 @@ Broadcast::channel('events.global', function ($user) {
             'channel' => 'events.global',
             'origin' => request()->header('Origin'),
         ]);
+
         return false;
     }
 
     // Проверяем роль пользователя
     $userRole = $user->role ?? 'viewer';
     $allowedRoles = ['viewer', 'operator', 'admin', 'agronomist', 'engineer'];
-    
-    if (!in_array($userRole, $allowedRoles)) {
+
+    if (! in_array($userRole, $allowedRoles)) {
         Log::warning('WebSocket channel authorization denied: invalid role', [
             'channel' => 'events.global',
             'user_id' => $user->id,
             'user_role' => $userRole,
             'origin' => request()->header('Origin'),
         ]);
+
         return false;
     }
 
@@ -192,20 +233,22 @@ Broadcast::channel('hydro.devices', function ($user) {
             'channel' => 'hydro.devices',
             'origin' => request()->header('Origin'),
         ]);
+
         return false;
     }
 
     // Проверяем роль пользователя
     $userRole = $user->role ?? 'viewer';
     $allowedRoles = ['viewer', 'operator', 'admin', 'agronomist', 'engineer'];
-    
-    if (!in_array($userRole, $allowedRoles)) {
+
+    if (! in_array($userRole, $allowedRoles)) {
         Log::warning('WebSocket channel authorization denied: invalid role', [
             'channel' => 'hydro.devices',
             'user_id' => $user->id,
             'user_role' => $userRole,
             'origin' => request()->header('Origin'),
         ]);
+
         return false;
     }
 
@@ -225,20 +268,22 @@ Broadcast::channel('hydro.alerts', function ($user) {
             'channel' => 'hydro.alerts',
             'origin' => request()->header('Origin'),
         ]);
+
         return false;
     }
 
     // Проверяем роль пользователя
     $userRole = $user->role ?? 'viewer';
     $allowedRoles = ['viewer', 'operator', 'admin', 'agronomist', 'engineer'];
-    
-    if (!in_array($userRole, $allowedRoles)) {
+
+    if (! in_array($userRole, $allowedRoles)) {
         Log::warning('WebSocket channel authorization denied: invalid role', [
             'channel' => 'hydro.alerts',
             'user_id' => $user->id,
             'user_role' => $userRole,
             'origin' => request()->header('Origin'),
         ]);
+
         return false;
     }
 

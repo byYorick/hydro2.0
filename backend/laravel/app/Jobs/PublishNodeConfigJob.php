@@ -7,21 +7,22 @@ use App\Services\NodeConfigService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
+use Illuminate\Http\Client\TimeoutException;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Config;
-use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Http\Client\TimeoutException;
-use Illuminate\Http\Client\RequestException;
 
 class PublishNodeConfigJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $timeout = 30; // 30 секунд на публикацию конфига
+
     public int $tries = 2; // Максимум 2 попытки
 
     /**
@@ -29,10 +30,10 @@ class PublishNodeConfigJob implements ShouldQueue
      */
     public function __construct(
         public int $nodeId,
-        public string $dedupeKey = null
+        public ?string $dedupeKey = null
     ) {
         // Генерируем ключ дедупликации, если не передан
-        if (!$dedupeKey) {
+        if (! $dedupeKey) {
             $this->dedupeKey = "publish_config:node:{$nodeId}";
         }
     }
@@ -46,39 +47,43 @@ class PublishNodeConfigJob implements ShouldQueue
         $lockKey = "lock:{$this->dedupeKey}";
         $lock = Cache::lock($lockKey, 60); // Блокировка на 60 секунд
 
-        if (!$lock->get()) {
+        if (! $lock->get()) {
             Log::debug('PublishNodeConfigJob: Skipping duplicate job', [
                 'node_id' => $this->nodeId,
                 'dedupe_key' => $this->dedupeKey,
             ]);
+
             return; // Уже выполняется, пропускаем
         }
 
         try {
             $node = DeviceNode::find($this->nodeId);
-            if (!$node) {
+            if (! $node) {
                 Log::warning('PublishNodeConfigJob: Node not found', [
                     'node_id' => $this->nodeId,
                 ]);
+
                 return;
             }
 
             // Проверяем, что узел в состоянии, когда можно публиковать конфиг
-            if (!$node->lifecycleState()->canReceiveTelemetry()) {
+            if (! $node->lifecycleState()->canReceiveTelemetry()) {
                 Log::debug('PublishNodeConfigJob: Skipping config publish for node', [
                     'node_id' => $node->id,
                     'uid' => $node->uid,
                     'lifecycle_state' => $node->lifecycle_state?->value,
                 ]);
+
                 return;
             }
 
             // Проверяем, что узел привязан к зоне
-            if (!$node->zone_id) {
+            if (! $node->zone_id) {
                 Log::debug('PublishNodeConfigJob: Skipping config publish for unassigned node', [
                     'node_id' => $node->id,
                     'uid' => $node->uid,
                 ]);
+
                 return;
             }
 
@@ -89,11 +94,12 @@ class PublishNodeConfigJob implements ShouldQueue
             $node->load('zone.greenhouse');
             $greenhouseUid = $node->zone?->greenhouse?->uid;
 
-            if (!$greenhouseUid) {
+            if (! $greenhouseUid) {
                 Log::warning('PublishNodeConfigJob: Cannot publish config: zone has no greenhouse', [
                     'node_id' => $node->id,
                     'zone_id' => $node->zone_id,
                 ]);
+
                 return;
             }
 
@@ -101,8 +107,9 @@ class PublishNodeConfigJob implements ShouldQueue
             $baseUrl = Config::get('services.python_bridge.base_url');
             $token = Config::get('services.python_bridge.token');
 
-            if (!$baseUrl) {
+            if (! $baseUrl) {
                 Log::warning('PublishNodeConfigJob: Cannot publish config: MQTT bridge URL not configured');
+
                 return;
             }
 
@@ -141,7 +148,7 @@ class PublishNodeConfigJob implements ShouldQueue
                     $response->toPsrResponse()
                 );
             }
-        } catch (ConnectionException | TimeoutException | RequestException $e) {
+        } catch (ConnectionException|TimeoutException|RequestException $e) {
             Log::warning('PublishNodeConfigJob: Network error', [
                 'node_id' => $this->nodeId,
                 'error' => $e->getMessage(),

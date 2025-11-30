@@ -14,9 +14,12 @@
         <label
           v-for="node in availableNodes"
           :key="node.id"
+          :for="`attach-node-${node.id}`"
           class="flex items-center gap-2 p-2 rounded border border-neutral-700 hover:border-neutral-600 cursor-pointer"
         >
           <input
+            :id="`attach-node-${node.id}`"
+            :name="`node_${node.id}`"
             type="checkbox"
             :value="node.id"
             v-model="selectedNodeIds"

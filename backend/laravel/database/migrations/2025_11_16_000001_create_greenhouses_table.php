@@ -14,7 +14,7 @@ return new class extends Migration
             $table->string('name');
             $table->string('timezone')->nullable();
             $table->string('type')->nullable(); // GREENHOUSE | ROOM | FARM
-            $table->jsonb('coordinates')->nullable();
+            $table->json('coordinates')->nullable();
             $table->text('description')->nullable();
             $table->timestamps();
         });

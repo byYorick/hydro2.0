@@ -88,8 +88,12 @@ services:
       - VITE_WS_TLS=false
       # Python services token (must be set via environment variable or .env file)
       # Never commit actual tokens to version control
-      # For dev environment, using default token
+      # ⚠️ ВАЖНО: dev-token-12345 - это известный dev-токен для разработки
+      # ⚠️ ОБЯЗАТЕЛЬНО переопределите все токены в production!
+      # ⚠️ Использование этого токена в production создает критическую уязвимость безопасности
       - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
+      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:-dev-token-12345}
+      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
       # PHP opcache settings for development (disable caching)
       - PHP_OPCACHE_ENABLE=0
       - PHP_OPCACHE_VALIDATE_TIMESTAMPS=1
@@ -117,6 +121,7 @@ services:
       context: ./services
       dockerfile: mqtt-bridge/Dockerfile
     environment:
+      - APP_ENV=local
       - MQTT_HOST=mqtt
       - MQTT_PORT=1883
       - MQTT_TLS=0
@@ -127,6 +132,10 @@ services:
       - PG_USER=hydro
       - PG_PASS=hydro
       - LARAVEL_API_URL=http://laravel
+      # ⚠️ ВАЖНО: dev-token-12345 - это известный dev-токен для разработки
+      # ⚠️ ОБЯЗАТЕЛЬНО переопределите в production!
+      - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
+      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
     depends_on:
       - mqtt
       - db
@@ -139,11 +148,13 @@ services:
       timeout: 3s
       retries: 5
       start_period: 10s
+    restart: unless-stopped
   history-logger:
     build:
       context: ./services
       dockerfile: history-logger/Dockerfile
     environment:
+      - APP_ENV=local
       - MQTT_HOST=mqtt
       - MQTT_PORT=1883
       - MQTT_TLS=0
@@ -154,21 +165,28 @@ services:
       - PG_USER=hydro
       - PG_PASS=hydro
       - LARAVEL_API_URL=http://laravel
-      - LARAVEL_API_TOKEN=${PY_INGEST_TOKEN:-${PY_API_TOKEN:-dev-token-12345}}
+      # ⚠️ ВАЖНО: dev-токены для разработки, ОБЯЗАТЕЛЬНО переопределите в production!
+      - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
+      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:-dev-token-12345}
+      - HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:-dev-token-12345}}
+      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
     depends_on:
       - mqtt
       - db
       - laravel
+      - redis
     ports:
       - "9300:9300"
       - "9301:9301"  # Prometheus metrics
+    restart: unless-stopped
   automation-engine:
     build:
       context: ./services
       dockerfile: automation-engine/Dockerfile
     environment:
+      - APP_ENV=local
       - MQTT_HOST=mqtt
       - MQTT_PORT=1883
       - MQTT_TLS=0
@@ -179,9 +197,8 @@ services:
       - PG_USER=hydro
       - PG_PASS=hydro
       - LARAVEL_API_URL=http://laravel
-      # LARAVEL_API_TOKEN must be set via environment variable or .env file
-      # Never commit actual tokens to version control
-      # For dev environment, using default token
+      # ⚠️ ВАЖНО: dev-токены для разработки, ОБЯЗАТЕЛЬНО переопределите в production!
+      - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
       - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
     depends_on:
       - mqtt
@@ -195,11 +212,13 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
+    restart: unless-stopped
   scheduler:
     build:
       context: ./services
       dockerfile: scheduler/Dockerfile
     environment:
+      - APP_ENV=local
       - MQTT_HOST=mqtt
       - MQTT_PORT=1883
       - MQTT_TLS=0
@@ -220,6 +239,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
+    restart: unless-stopped
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
@@ -283,6 +303,7 @@ services:
       context: ./services
       dockerfile: digital-twin/Dockerfile
     environment:
+      - APP_ENV=local
       - PG_HOST=db
       - PG_PORT=5432
       - PG_DB=hydro_dev
@@ -301,6 +322,7 @@ services:
       context: ./services
       dockerfile: telemetry-aggregator/Dockerfile
     environment:
+      - APP_ENV=local
       - PG_HOST=db
       - PG_PORT=5432
       - PG_DB=hydro_dev

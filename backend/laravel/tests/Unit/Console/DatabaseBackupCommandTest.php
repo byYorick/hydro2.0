@@ -73,7 +73,7 @@ class DatabaseBackupCommandTest extends TestCase
     public function test_command_handles_database_connection_error(): void
     {
         // Проверяем, что команда корректно обрабатывает ошибки подключения
-        // В тестовом окружении с SQLite это не сработает, но проверим структуру
+        // Проверяем структуру команды
         $commands = Artisan::all();
         $this->assertArrayHasKey('backup:database', $commands);
         

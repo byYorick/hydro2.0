@@ -77,15 +77,47 @@ createInertiaApp({
             if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError' || err?.message === 'canceled') {
                 return;
             }
-            // Логируем ошибку, но НЕ перезагружаем страницу
-            // eslint-disable-next-line no-console
-            logger.error('[VUE ERROR]', { err, info, instance });
+            
+            // Извлекаем только безопасные свойства для избежания циклических ссылок
+            const safeError = err instanceof Error ? {
+                message: err.message || String(err),
+                name: err.name,
+                stack: err.stack ? err.stack.split('\n').slice(0, 10).join('\n') : undefined, // Ограничиваем stack
+                code: err.code,
+            } : {
+                message: String(err),
+                type: typeof err,
+            };
+            
+            const safeInstance = instance ? {
+                componentName: instance.$options?.name || instance.$options?.__name || 'Unknown',
+                tag: instance.$vnode?.tag || instance.$el?.tagName || undefined,
+            } : undefined;
+            
+            // Логируем только безопасные данные
+            logger.error('[VUE ERROR]', { 
+                error: safeError,
+                info: typeof info === 'string' ? info : undefined,
+                instance: safeInstance,
+            });
             // НЕ вызываем location.reload() или router.reload() здесь
             // Ошибки должны обрабатываться через ErrorBoundary компонент
         };
         vueApp.config.warnHandler = (msg, instance, trace) => {
             import('./utils/logger').then(({ logger }) => {
-                logger.warn('[VUE WARN]', msg, { trace, instance });
+                // Извлекаем только безопасные свойства для избежания циклических ссылок
+                const safeInstance = instance ? {
+                    $options: instance.$options ? {
+                        name: instance.$options.name,
+                        __name: instance.$options.__name,
+                    } : undefined,
+                } : undefined;
+                
+                logger.warn('[VUE WARN]', { 
+                    message: msg,
+                    trace: trace || undefined,
+                    instance: safeInstance,
+                });
             });
         };
         // Регистрируем компоненты виртуализации глобально

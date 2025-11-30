@@ -105,11 +105,20 @@ export function useStoreEvents() {
     event: StoreEventType,
     listener: (data: T) => void
   ): () => void {
-    storeEvents.on(event, listener)
+    // Обёртка для обработки ошибок в listeners
+    const wrappedListener = (data: T) => {
+      try {
+        listener(data)
+      } catch (error) {
+        console.error(`[StoreEvents] Error in listener for "${event}":`, error)
+      }
+    }
+    
+    storeEvents.on(event, wrappedListener)
     
     // Возвращаем функцию для отписки
     return () => {
-      storeEvents.off(event, listener)
+      storeEvents.off(event, wrappedListener)
     }
   }
   
