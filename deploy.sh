@@ -1,5 +1,7 @@
 #!/bin/bash
 set -e
+# Включаем режим отладки для лучшего логирования
+set -o pipefail
 
 # Скрипт развертывания проекта Hydro 2.0 на сервере без Docker
 # Использование: sudo ./deploy.sh [production|development]
@@ -1234,19 +1236,102 @@ for attempt in $(seq 1 $MIGRATION_ATTEMPTS); do
         log_info "Подключение восстановлено"
     fi
     
-    # Выполняем миграции
-    MIGRATION_OUTPUT=$(sudo -u "$APP_USER" php artisan migrate --force 2>&1)
+    # Выполняем миграции с детальным логированием
+    log_info "  → Выполнение команды: php artisan migrate --force"
+    log_info "  → Рабочая директория: $LARAVEL_DIR"
+    log_info "  → Пользователь: $APP_USER"
+    
+    # Проверяем, что директория Laravel существует
+    if [ ! -d "$LARAVEL_DIR" ]; then
+        log_error "Директория Laravel не существует: $LARAVEL_DIR"
+        exit 1
+    fi
+    
+    # Проверяем, что artisan файл существует
+    if [ ! -f "$LARAVEL_DIR/artisan" ]; then
+        log_error "Файл artisan не найден в $LARAVEL_DIR"
+        exit 1
+    fi
+    
+    # Переходим в директорию Laravel и выполняем миграции
+    cd "$LARAVEL_DIR" || {
+        log_error "Не удалось перейти в директорию Laravel: $LARAVEL_DIR"
+        exit 1
+    }
+    
+    log_info "  → Текущая директория: $(pwd)"
+    log_info "  → Проверка доступности artisan..."
+    if ! sudo -u "$APP_USER" php artisan --version >/dev/null 2>&1; then
+        log_error "Команда artisan не работает"
+        log_error "Проверьте установку Laravel и права доступа"
+        cd - >/dev/null
+        exit 1
+    fi
+    log_info "  ✓ Artisan доступен"
+    
+    # Выполняем миграции с таймаутом и логированием
+    log_info "  → Запуск миграций (может занять некоторое время)..."
+    
+    # Используем timeout для предотвращения зависания
+    MIGRATION_OUTPUT=$(timeout 300 sudo -u "$APP_USER" php artisan migrate --force 2>&1) || {
+        MIGRATION_EXIT=$?
+        if [ $MIGRATION_EXIT -eq 124 ]; then
+            log_error "Команда миграций превысила таймаут (5 минут)"
+            cd - >/dev/null
+            exit 1
+        fi
+    }
     MIGRATION_EXIT=$?
+    
+    # Возвращаемся в исходную директорию
+    cd - >/dev/null
+    
+    log_info "  → Команда завершена с кодом: $MIGRATION_EXIT"
     
     if [ $MIGRATION_EXIT -eq 0 ]; then
         MIGRATION_SUCCESS=true
-        log_info "Миграции выполнены успешно"
-        echo "$MIGRATION_OUTPUT" | tail -5
-        break
-    else
-        log_warn "Ошибка при выполнении миграций (попытка $attempt/$MIGRATION_ATTEMPTS)"
+        log_info "  ✓ Миграции выполнены успешно (код выхода: 0)"
         
-        # Анализируем ошибку
+        # Выводим последние строки успешного вывода
+        if [ -n "$MIGRATION_OUTPUT" ]; then
+            log_info "  Последние строки вывода миграций:"
+            echo "$MIGRATION_OUTPUT" | tail -15 | while read line; do
+                if echo "$line" | grep -qi "migrated\|migrating\|done\|success"; then
+                    log_info "    ✓ $line"
+                elif echo "$line" | grep -qi "error\|exception\|failed"; then
+                    log_warn "    ⚠ $line"
+                else
+                    log_info "    $line"
+                fi
+            done
+        else
+            log_warn "  ⚠ Нет вывода от команды миграций (возможно, все миграции уже выполнены)"
+        fi
+        break
+        else
+            log_warn "  ✗ Ошибка при выполнении миграций (попытка $attempt/$MIGRATION_ATTEMPTS)"
+            log_warn "  Код выхода: $MIGRATION_EXIT"
+            
+            # Выводим полный вывод для диагностики
+            if [ -n "$MIGRATION_OUTPUT" ]; then
+                log_info "  Полный вывод команды миграций:"
+                echo "$MIGRATION_OUTPUT" | while IFS= read -r line || [ -n "$line" ]; do
+                    if echo "$line" | grep -qi "error\|exception\|failed\|fatal"; then
+                        log_error "    ✗ $line"
+                    elif echo "$line" | grep -qi "warning\|warn"; then
+                        log_warn "    ⚠ $line"
+                    elif echo "$line" | grep -qi "migrated\|migrating\|done"; then
+                        log_info "    ✓ $line"
+                    else
+                        log_info "    $line"
+                    fi
+                done
+            else
+                log_warn "  ⚠ Нет вывода от команды миграций"
+                log_warn "  Это может означать, что команда зависла или завершилась неожиданно"
+            fi
+            
+            # Анализируем ошибку
         if echo "$MIGRATION_OUTPUT" | grep -qi "no connection to the server\|connection.*lost\|connection.*closed"; then
             log_warn "Обнаружена ошибка разрыва соединения"
             log_warn "Проверяем состояние базы данных..."
@@ -1287,11 +1372,14 @@ for attempt in $(seq 1 $MIGRATION_ATTEMPTS); do
             fi
         fi
         
-        # Выводим последние строки ошибки
-        log_error "Детали ошибки:"
-        echo "$MIGRATION_OUTPUT" | grep -i "error\|exception\|failed" | tail -5 | while read line; do
-            log_error "  $line"
-        done
+        # Дополнительная диагностика
+        log_info "  → Проверка состояния базы данных..."
+        if PGPASSWORD="${DB_PASSWORD}" psql -h 127.0.0.1 -p 5432 -U "${DB_USER}" -d "${DB_NAME}" -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';" >/dev/null 2>&1; then
+            TABLE_COUNT=$(PGPASSWORD="${DB_PASSWORD}" psql -h 127.0.0.1 -p 5432 -U "${DB_USER}" -d "${DB_NAME}" -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';" 2>/dev/null | tr -d ' ')
+            log_info "  → Количество таблиц в базе данных: $TABLE_COUNT"
+        else
+            log_warn "  ✗ Не удалось проверить состояние базы данных"
+        fi
         
         if [ $attempt -lt $MIGRATION_ATTEMPTS ]; then
             log_info "Повторная попытка через 5 секунд..."
