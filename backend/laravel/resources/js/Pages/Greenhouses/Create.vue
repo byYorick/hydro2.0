@@ -5,21 +5,6 @@
       <form @submit.prevent="onSubmit" class="space-y-4">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label for="greenhouse-uid" class="block text-xs text-neutral-400 mb-1">UID <span class="text-red-400">*</span></label>
-            <input
-              id="greenhouse-uid"
-              name="uid"
-              v-model="form.uid"
-              type="text"
-              required
-              placeholder="gh-main"
-              class="h-9 w-full rounded-md border px-2 text-sm"
-              :class="errors.uid ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'"
-            />
-            <div v-if="errors.uid" class="text-xs text-red-400 mt-1">{{ errors.uid }}</div>
-          </div>
-          
-          <div>
             <label for="greenhouse-name" class="block text-xs text-neutral-400 mb-1">Название <span class="text-red-400">*</span></label>
             <input
               id="greenhouse-name"
@@ -32,6 +17,9 @@
               :class="errors.name ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'"
             />
             <div v-if="errors.name" class="text-xs text-red-400 mt-1">{{ errors.name }}</div>
+            <div class="text-xs text-neutral-500 mt-1">
+              UID будет сгенерирован автоматически: <span class="text-neutral-400">{{ generatedUid }}</span>
+            </div>
           </div>
           
           <div>
@@ -88,7 +76,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { reactive, ref, computed } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
@@ -96,6 +84,8 @@ import Button from '@/Components/Button.vue'
 import { logger } from '@/utils/logger'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
+import { generateUid } from '@/utils/transliterate'
 
 const { showToast } = useToast()
 const { api } = useApi(showToast)
@@ -104,7 +94,6 @@ const loading = ref<boolean>(false)
 const errors = reactive<Record<string, string>>({})
 
 const form = reactive({
-  uid: '',
   name: '',
   timezone: 'Europe/Moscow',
   type: '',
@@ -112,13 +101,29 @@ const form = reactive({
   description: ''
 })
 
+const generatedUid = computed(() => {
+  if (!form.name || !form.name.trim()) {
+    return 'gh-...'
+  }
+  return generateUid(form.name, 'gh-')
+})
+
 async function onSubmit() {
+  if (!form.name || !form.name.trim()) {
+    showToast('Введите название теплицы', 'error', TOAST_TIMEOUT.NORMAL)
+    return
+  }
+
   loading.value = true
-  errors.uid = ''
   errors.name = ''
   
   try {
-    const response = await api.post('/greenhouses', form)
+    const uid = generatedUid.value
+    
+    const response = await api.post('/greenhouses', {
+      ...form,
+      uid: uid
+    })
     
     logger.info('Greenhouse created:', response.data)
     showToast('Теплица успешно создана', 'success', TOAST_TIMEOUT.NORMAL)

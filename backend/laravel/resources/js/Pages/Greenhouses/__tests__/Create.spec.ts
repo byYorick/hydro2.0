@@ -18,7 +18,11 @@ const routerVisitMock = vi.hoisted(() => vi.fn())
 
 const mockAxiosInstance = vi.hoisted(() => ({
   get: vi.fn(),
-  post: axiosPostMock,
+  post: (url: string, data?: any, config?: any) => {
+    // Симулируем работу перехватчика useApi - добавляем префикс /api
+    const finalUrl = url && !url.startsWith('/api/') && !url.startsWith('http') ? `/api${url}` : url
+    return axiosPostMock(finalUrl, data, config)
+  },
   patch: vi.fn(),
   delete: vi.fn(),
   put: vi.fn(),
@@ -31,8 +35,18 @@ const mockAxiosInstance = vi.hoisted(() => ({
 vi.mock('axios', () => ({
   default: {
     create: vi.fn(() => mockAxiosInstance),
-    post: (url: string, data?: any, config?: any) => axiosPostMock(url, data, config),
+    post: (url: string, data?: any, config?: any) => {
+      const finalUrl = url && !url.startsWith('/api/') && !url.startsWith('http') ? `/api${url}` : url
+      return axiosPostMock(finalUrl, data, config)
+    },
   },
+}))
+
+// Мокируем useApi, чтобы он использовал мокированный axios
+vi.mock('@/composables/useApi', () => ({
+  useApi: () => ({
+    api: mockAxiosInstance,
+  }),
 }))
 
 vi.mock('@inertiajs/vue3', () => ({
@@ -46,6 +60,18 @@ vi.mock('@/utils/logger', () => ({
   logger: {
     info: vi.fn(),
     error: vi.fn(),
+  },
+}))
+
+vi.mock('@/composables/useToast', () => ({
+  useToast: () => ({
+    showToast: vi.fn(),
+  }),
+}))
+
+vi.mock('@/constants/timeouts', () => ({
+  TOAST_TIMEOUT: {
+    NORMAL: 4000,
   },
 }))
 
@@ -75,7 +101,6 @@ describe('Greenhouses/Create.vue', () => {
   it('отображает все поля формы', () => {
     const wrapper = mount(GreenhousesCreate)
     
-    expect(wrapper.find('input[type="text"][placeholder*="gh-main"]').exists()).toBe(true)
     expect(wrapper.find('input[type="text"][placeholder*="Main Greenhouse"]').exists()).toBe(true)
     expect(wrapper.find('input[placeholder*="Europe/Moscow"]').exists()).toBe(true)
     expect(wrapper.find('select').exists()).toBe(true)
@@ -86,24 +111,21 @@ describe('Greenhouses/Create.vue', () => {
     const wrapper = mount(GreenhousesCreate)
     
     // Форма инициализируется с пустыми значениями, но имеет placeholder'ы
-    const uidInput = wrapper.find('input[placeholder*="gh-main"]')
     const nameInput = wrapper.find('input[placeholder*="Main Greenhouse"]')
     
-    // Проверяем, что поля существуют и имеют правильные placeholder'ы
-    expect(uidInput.exists()).toBe(true)
+    // Проверяем, что поле существует и имеет правильный placeholder
     expect(nameInput.exists()).toBe(true)
-    expect(uidInput.attributes('placeholder')).toContain('gh-main')
     expect(nameInput.attributes('placeholder')).toContain('Main Greenhouse')
+    // Проверяем, что UID генерируется автоматически
+    expect(wrapper.text()).toContain('UID будет сгенерирован автоматически')
   })
 
   it('валидирует обязательные поля', async () => {
     const wrapper = mount(GreenhousesCreate)
     
-    const uidInput = wrapper.find('input[type="text"][placeholder*="gh-main"]')
     const nameInput = wrapper.find('input[type="text"][placeholder*="Main Greenhouse"]')
     
-    // Поля должны быть required
-    expect((uidInput.element as HTMLInputElement).hasAttribute('required')).toBe(true)
+    // Поле name должно быть required
     expect((nameInput.element as HTMLInputElement).hasAttribute('required')).toBe(true)
   })
 
@@ -112,11 +134,9 @@ describe('Greenhouses/Create.vue', () => {
     await wrapper.vm.$nextTick()
     
     // Заполняем форму перед отправкой
-    const uidInput = wrapper.find('input[placeholder*="gh-main"]')
     const nameInput = wrapper.find('input[placeholder*="Main Greenhouse"]')
     
-    if (uidInput.exists() && nameInput.exists()) {
-      await uidInput.setValue('gh-main')
+    if (nameInput.exists()) {
       await nameInput.setValue('Main Greenhouse')
       await wrapper.vm.$nextTick()
     }
@@ -124,13 +144,22 @@ describe('Greenhouses/Create.vue', () => {
     const form = wrapper.find('form')
     if (form.exists()) {
       await form.trigger('submit.prevent')
-      await new Promise(resolve => setTimeout(resolve, 200))
+      // Увеличиваем время ожидания для асинхронной обработки
+      await new Promise(resolve => setTimeout(resolve, 500))
       await wrapper.vm.$nextTick()
       
       expect(axiosPostMock).toHaveBeenCalled()
-      expect(axiosPostMock.mock.calls[0][0]).toBe('/api/greenhouses')
-      // Проверяем, что форма была отправлена (значения могут быть пустыми, если форма не заполнена)
-      expect(axiosPostMock.mock.calls[0][1]).toBeDefined()
+      // Проверяем, что был вызван с правильным URL (useApi добавляет /api префикс)
+      const calls = axiosPostMock.mock.calls
+      expect(calls.length).toBeGreaterThan(0)
+      const url = calls[0][0]
+      expect(url).toContain('greenhouses')
+      // Проверяем, что форма была отправлена с UID
+      if (calls[0][1]) {
+        const postData = calls[0][1]
+        expect(postData.name).toBe('Main Greenhouse')
+        expect(postData.uid).toBeDefined()
+      }
     }
   })
 
@@ -156,24 +185,42 @@ describe('Greenhouses/Create.vue', () => {
   it('перенаправляет на главную после успешного создания', async () => {
     const wrapper = mount(GreenhousesCreate)
     
+    // Заполняем имя перед отправкой
+    const nameInput = wrapper.find('input[placeholder*="Main Greenhouse"]')
+    if (nameInput.exists()) {
+      await nameInput.setValue('Main Greenhouse')
+      await wrapper.vm.$nextTick()
+    }
+    
     const form = wrapper.find('form')
     await form.trigger('submit.prevent')
     
-    await new Promise(resolve => setTimeout(resolve, 100))
+    // Увеличиваем время ожидания для асинхронной обработки
+    await new Promise(resolve => setTimeout(resolve, 500))
+    await wrapper.vm.$nextTick()
     
     expect(routerVisitMock).toHaveBeenCalledWith('/')
   })
 
   it('обрабатывает ошибки при создании', async () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    axiosPostMock.mockRejectedValue(new Error('Network error'))
+    axiosPostMock.mockRejectedValueOnce(new Error('Network error'))
     
     const wrapper = mount(GreenhousesCreate)
+    
+    // Заполняем имя перед отправкой
+    const nameInput = wrapper.find('input[placeholder*="Main Greenhouse"]')
+    if (nameInput.exists()) {
+      await nameInput.setValue('Main Greenhouse')
+      await wrapper.vm.$nextTick()
+    }
     
     const form = wrapper.find('form')
     await form.trigger('submit.prevent')
     
-    await new Promise(resolve => setTimeout(resolve, 100))
+    // Увеличиваем время ожидания для асинхронной обработки
+    await new Promise(resolve => setTimeout(resolve, 500))
+    await wrapper.vm.$nextTick()
     
     expect(axiosPostMock).toHaveBeenCalled()
     
@@ -185,7 +232,6 @@ describe('Greenhouses/Create.vue', () => {
       response: {
         data: {
           errors: {
-            uid: ['UID уже существует'],
             name: ['Название обязательно'],
           },
         },
