@@ -5,7 +5,7 @@ set -e
 # Использование: sudo ./deploy.sh [production|development]
 
 ENVIRONMENT="${1:-production}"
-PROJECT_DIR="/opt/hydro"
+PROJECT_DIR="/opt/hydro/hydro2.0"
 APP_USER="hydro"
 APP_GROUP="hydro"
 LARAVEL_DIR="${PROJECT_DIR}/backend/laravel"
@@ -59,13 +59,40 @@ apt-get install -y -qq \
     nginx \
     postgresql-client \
     libpq-dev \
-    python3.11 \
-    python3.11-dev \
-    python3.11-venv \
     python3-pip \
     gcc \
     gettext \
     unzip
+
+# Установка Python 3.11 (требуется репозиторий deadsnakes для старых версий Ubuntu)
+log_info "Установка Python 3.11..."
+PYTHON_VERSION="3.11"
+if ! apt-cache show python${PYTHON_VERSION} &>/dev/null; then
+    log_info "Python ${PYTHON_VERSION} не найден в стандартных репозиториях, добавляем deadsnakes PPA..."
+    add-apt-repository -y ppa:deadsnakes/ppa
+    apt-get update -qq
+fi
+
+# Проверяем доступность Python 3.11, если нет - используем доступную версию
+if apt-cache show python${PYTHON_VERSION} &>/dev/null; then
+    apt-get install -y -qq \
+        python${PYTHON_VERSION} \
+        python${PYTHON_VERSION}-dev \
+        python${PYTHON_VERSION}-venv
+    PYTHON_CMD="python${PYTHON_VERSION}"
+    log_info "Python ${PYTHON_VERSION} установлен"
+else
+    log_warn "Python ${PYTHON_VERSION} недоступен, используем системную версию Python 3"
+    # Устанавливаем системный Python 3 и его зависимости
+    apt-get install -y -qq \
+        python3 \
+        python3-dev \
+        python3-venv
+    PYTHON_CMD="python3"
+    # Определяем версию установленного Python
+    PYTHON_VERSION=$(python3 --version 2>&1 | awk '{print $2}' | cut -d. -f1,2)
+    log_warn "Используется Python ${PYTHON_VERSION} (требуется Python 3.11+, возможны проблемы совместимости)"
+fi
 
 # ============================================================================
 # 2. Установка PHP 8.2
@@ -399,7 +426,7 @@ for service in "${SERVICES[@]}"; do
         venv_dir="$service_dir/venv"
         
         if [ ! -d "$venv_dir" ]; then
-            sudo -u "$APP_USER" python3.11 -m venv "$venv_dir"
+            sudo -u "$APP_USER" $PYTHON_CMD -m venv "$venv_dir"
         fi
         
         sudo -u "$APP_USER" "$venv_dir/bin/pip" install --upgrade pip
