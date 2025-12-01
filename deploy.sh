@@ -186,8 +186,36 @@ fi
 
 # Настройка PostgreSQL
 log_info "Настройка PostgreSQL..."
-systemctl enable postgresql
-systemctl start postgresql
+# Определяем имя сервиса PostgreSQL (может быть postgresql, postgresql@16-main и т.д.)
+POSTGRES_SERVICE=""
+if systemctl list-unit-files | grep -q "^postgresql.service"; then
+    POSTGRES_SERVICE="postgresql"
+elif systemctl list-unit-files | grep -q "^postgresql@"; then
+    # Находим первый доступный сервис postgresql@
+    POSTGRES_SERVICE=$(systemctl list-unit-files | grep "^postgresql@" | head -1 | awk '{print $1}' | sed 's/\.service$//')
+elif systemctl list-unit-files | grep -q "postgresql"; then
+    # Пробуем найти любой сервис с postgresql в имени
+    POSTGRES_SERVICE=$(systemctl list-unit-files | grep "postgresql" | grep -v "@" | head -1 | awk '{print $1}' | sed 's/\.service$//')
+fi
+
+if [ -n "$POSTGRES_SERVICE" ]; then
+    log_info "Используется сервис PostgreSQL: $POSTGRES_SERVICE"
+    systemctl enable "$POSTGRES_SERVICE" 2>/dev/null || log_warn "Не удалось включить сервис $POSTGRES_SERVICE (возможно, уже включен)"
+    systemctl start "$POSTGRES_SERVICE" 2>/dev/null || log_warn "Не удалось запустить сервис $POSTGRES_SERVICE (возможно, уже запущен)"
+    
+    # Ждем, пока PostgreSQL запустится
+    log_info "Ожидание запуска PostgreSQL..."
+    sleep 3
+    if systemctl is-active --quiet "$POSTGRES_SERVICE"; then
+        log_info "PostgreSQL запущен успешно"
+    else
+        log_warn "PostgreSQL может быть не запущен, проверьте вручную: systemctl status $POSTGRES_SERVICE"
+    fi
+else
+    log_warn "Не удалось определить имя сервиса PostgreSQL"
+    log_warn "Попробуйте запустить вручную: sudo systemctl start postgresql"
+    log_warn "Или проверьте доступные сервисы: systemctl list-unit-files | grep postgresql"
+fi
 
 # Создание базы данных и пользователя
 if [ "$ENVIRONMENT" = "production" ]; then
