@@ -193,9 +193,19 @@ else
 fi
 
 # Настройка Redis
-sed -i 's/^supervised no/supervised systemd/' /etc/redis/redis.conf
-sed -i 's/^# maxmemory <bytes>/maxmemory 512mb/' /etc/redis/redis.conf
-sed -i 's/^# maxmemory-policy noeviction/maxmemory-policy allkeys-lru/' /etc/redis/redis.conf
+if grep -q "^supervised no" /etc/redis/redis.conf; then
+    sed -i 's/^supervised no/supervised systemd/' /etc/redis/redis.conf
+fi
+if grep -q "^# maxmemory <bytes>" /etc/redis/redis.conf; then
+    sed -i 's/^# maxmemory <bytes>/maxmemory 512mb/' /etc/redis/redis.conf
+elif ! grep -q "^maxmemory" /etc/redis/redis.conf; then
+    echo "maxmemory 512mb" >> /etc/redis/redis.conf
+fi
+if grep -q "^# maxmemory-policy noeviction" /etc/redis/redis.conf; then
+    sed -i 's/^# maxmemory-policy noeviction/maxmemory-policy allkeys-lru/' /etc/redis/redis.conf
+elif ! grep -q "^maxmemory-policy" /etc/redis/redis.conf; then
+    echo "maxmemory-policy allkeys-lru" >> /etc/redis/redis.conf
+fi
 
 systemctl enable redis-server
 systemctl restart redis-server
@@ -279,23 +289,38 @@ if [ ! -f "$LARAVEL_DIR/.env" ]; then
 fi
 
 # Обновление .env с правильными значениями
-sed -i "s/^DB_CONNECTION=.*/DB_CONNECTION=pgsql/" "$LARAVEL_DIR/.env"
-sed -i "s/^DB_HOST=.*/DB_HOST=127.0.0.1/" "$LARAVEL_DIR/.env"
-sed -i "s/^DB_PORT=.*/DB_PORT=5432/" "$LARAVEL_DIR/.env"
-sed -i "s/^DB_DATABASE=.*/DB_DATABASE=${DB_NAME}/" "$LARAVEL_DIR/.env"
-sed -i "s/^DB_USERNAME=.*/DB_USERNAME=${DB_USER}/" "$LARAVEL_DIR/.env"
-sed -i "s/^DB_PASSWORD=.*/DB_PASSWORD=${DB_PASSWORD}/" "$LARAVEL_DIR/.env"
-sed -i "s/^REDIS_HOST=.*/REDIS_HOST=127.0.0.1/" "$LARAVEL_DIR/.env"
-sed -i "s/^REDIS_PORT=.*/REDIS_PORT=6379/" "$LARAVEL_DIR/.env"
+# Используем более надежный метод: добавляем или обновляем строки
+update_env_var() {
+    local file="$1"
+    local key="$2"
+    local value="$3"
+    if grep -q "^${key}=" "$file"; then
+        # Экранируем специальные символы для sed
+        local escaped_value=$(echo "$value" | sed 's/[[\.*^$()+?{|]/\\&/g')
+        sed -i "s|^${key}=.*|${key}=${value}|" "$file"
+    else
+        # Добавляем новую строку
+        echo "${key}=${value}" >> "$file"
+    fi
+}
+
+update_env_var "$LARAVEL_DIR/.env" "DB_CONNECTION" "pgsql"
+update_env_var "$LARAVEL_DIR/.env" "DB_HOST" "127.0.0.1"
+update_env_var "$LARAVEL_DIR/.env" "DB_PORT" "5432"
+update_env_var "$LARAVEL_DIR/.env" "DB_DATABASE" "$DB_NAME"
+update_env_var "$LARAVEL_DIR/.env" "DB_USERNAME" "$DB_USER"
+update_env_var "$LARAVEL_DIR/.env" "DB_PASSWORD" "$DB_PASSWORD"
+update_env_var "$LARAVEL_DIR/.env" "REDIS_HOST" "127.0.0.1"
+update_env_var "$LARAVEL_DIR/.env" "REDIS_PORT" "6379"
 
 if [ "$ENVIRONMENT" = "production" ]; then
-    sed -i "s/^APP_ENV=.*/APP_ENV=production/" "$LARAVEL_DIR/.env"
-    sed -i "s/^APP_DEBUG=.*/APP_DEBUG=false/" "$LARAVEL_DIR/.env"
-    sed -i "s/^LOG_LEVEL=.*/LOG_LEVEL=info/" "$LARAVEL_DIR/.env"
+    update_env_var "$LARAVEL_DIR/.env" "APP_ENV" "production"
+    update_env_var "$LARAVEL_DIR/.env" "APP_DEBUG" "false"
+    update_env_var "$LARAVEL_DIR/.env" "LOG_LEVEL" "info"
 else
-    sed -i "s/^APP_ENV=.*/APP_ENV=local/" "$LARAVEL_DIR/.env"
-    sed -i "s/^APP_DEBUG=.*/APP_DEBUG=true/" "$LARAVEL_DIR/.env"
-    sed -i "s/^LOG_LEVEL=.*/LOG_LEVEL=debug/" "$LARAVEL_DIR/.env"
+    update_env_var "$LARAVEL_DIR/.env" "APP_ENV" "local"
+    update_env_var "$LARAVEL_DIR/.env" "APP_DEBUG" "true"
+    update_env_var "$LARAVEL_DIR/.env" "LOG_LEVEL" "debug"
 fi
 
 # Генерация ключа приложения
@@ -473,12 +498,12 @@ EOF
 
 log_info "Настройка Supervisor для Python сервисов..."
 
-# MQTT Bridge
+# MQTT Bridge (FastAPI - запускается через uvicorn)
 if [ -d "$SERVICES_DIR/mqtt-bridge" ]; then
     cat > /etc/supervisor/conf.d/hydro-mqtt-bridge.conf <<EOF
 [program:hydro-mqtt-bridge]
 process_name=%(program_name)s
-command=$SERVICES_DIR/mqtt-bridge/venv/bin/python $SERVICES_DIR/mqtt-bridge/main.py
+command=$SERVICES_DIR/mqtt-bridge/venv/bin/uvicorn main:app --host 0.0.0.0 --port 9000
 directory=$SERVICES_DIR/mqtt-bridge
 autostart=true
 autorestart=true
@@ -488,6 +513,7 @@ redirect_stderr=true
 stdout_logfile=/var/log/hydro/mqtt-bridge.log
 stdout_logfile_maxbytes=10MB
 stdout_logfile_backups=5
+stopwaitsecs=10
 EOF
 fi
 
@@ -509,7 +535,7 @@ stdout_logfile_backups=5
 EOF
 fi
 
-# History Logger
+# History Logger (FastAPI - запускается через uvicorn)
 if [ -d "$SERVICES_DIR/history-logger" ]; then
     cat > /etc/supervisor/conf.d/hydro-history-logger.conf <<EOF
 [program:hydro-history-logger]
@@ -524,6 +550,7 @@ redirect_stderr=true
 stdout_logfile=/var/log/hydro/history-logger.log
 stdout_logfile_maxbytes=10MB
 stdout_logfile_backups=5
+stopwaitsecs=10
 EOF
 fi
 
@@ -545,7 +572,7 @@ stdout_logfile_backups=5
 EOF
 fi
 
-# Digital Twin
+# Digital Twin (FastAPI - запускается через uvicorn)
 if [ -d "$SERVICES_DIR/digital-twin" ]; then
     cat > /etc/supervisor/conf.d/hydro-digital-twin.conf <<EOF
 [program:hydro-digital-twin]
@@ -560,6 +587,7 @@ redirect_stderr=true
 stdout_logfile=/var/log/hydro/digital-twin.log
 stdout_logfile_maxbytes=10MB
 stdout_logfile_backups=5
+stopwaitsecs=10
 EOF
 fi
 
@@ -664,8 +692,12 @@ fi
 # ============================================================================
 
 log_info "Настройка PHP-FPM..."
-sed -i 's/^user = www-data/user = hydro/' /etc/php/8.2/fpm/pool.d/www.conf
-sed -i 's/^group = www-data/group = hydro/' /etc/php/8.2/fpm/pool.d/www.conf
+if grep -q "^user = www-data" /etc/php/8.2/fpm/pool.d/www.conf; then
+    sed -i 's/^user = www-data/user = hydro/' /etc/php/8.2/fpm/pool.d/www.conf
+fi
+if grep -q "^group = www-data" /etc/php/8.2/fpm/pool.d/www.conf; then
+    sed -i 's/^group = www-data/group = hydro/' /etc/php/8.2/fpm/pool.d/www.conf
+fi
 
 # ============================================================================
 # 22. Запуск сервисов
