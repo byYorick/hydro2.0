@@ -197,13 +197,17 @@ elif systemctl list-unit-files 2>/dev/null | grep -q "^postgresql@"; then
 elif systemctl list-units 2>/dev/null | grep -q "postgresql"; then
     # Пробуем найти запущенный сервис
     POSTGRES_SERVICE=$(systemctl list-units 2>/dev/null | grep "postgresql" | grep -v "@" | head -1 | awk '{print $1}' | sed 's/\.service$//')
-elif command -v pg_ctlcluster &> /dev/null; then
-    # Если используется pg_ctlcluster, пробуем найти кластер
-    PG_CLUSTER=$(pg_lsclusters 2>/dev/null | awk 'NR==2 {print $1 "-" $2}' || echo "")
-    if [ -n "$PG_CLUSTER" ]; then
-        POSTGRES_SERVICE="postgresql@${PG_CLUSTER}"
-        log_info "Найден кластер PostgreSQL: $PG_CLUSTER"
+fi
+
+# Проверяем, запущен ли PostgreSQL процесс
+if pgrep -x postgres >/dev/null 2>&1; then
+    log_info "Процесс PostgreSQL обнаружен (PID: $(pgrep -x postgres | head -1))"
+    if [ -z "$POSTGRES_SERVICE" ]; then
+        log_warn "PostgreSQL запущен, но сервис systemd не найден"
+        log_warn "PostgreSQL может быть запущен вручную или через другой менеджер процессов"
     fi
+else
+    log_warn "Процесс PostgreSQL не запущен"
 fi
 
 if [ -n "$POSTGRES_SERVICE" ]; then
@@ -220,9 +224,17 @@ if [ -n "$POSTGRES_SERVICE" ]; then
         log_warn "PostgreSQL может быть не запущен, проверьте вручную: systemctl status $POSTGRES_SERVICE"
     fi
 else
-    log_warn "Не удалось определить имя сервиса PostgreSQL"
-    log_warn "Попробуйте запустить вручную: sudo systemctl start postgresql"
-    log_warn "Или проверьте доступные сервисы: systemctl list-unit-files | grep postgresql"
+    # Проверяем, запущен ли PostgreSQL процесс
+    if pgrep -x postgres >/dev/null 2>&1; then
+        log_info "PostgreSQL запущен (процесс найден), но сервис systemd не определен"
+        log_info "Продолжаем работу с существующим процессом PostgreSQL"
+    else
+        log_warn "Не удалось определить имя сервиса PostgreSQL и процесс не запущен"
+        log_warn "Попробуйте запустить вручную:"
+        log_warn "  - sudo systemctl start postgresql"
+        log_warn "  - Или проверьте доступные сервисы: systemctl list-unit-files | grep postgresql"
+        log_warn "  - Или запустите PostgreSQL вручную, если он установлен нестандартно"
+    fi
 fi
 
 # Настройка PostgreSQL для приема TCP/IP подключений
@@ -231,8 +243,15 @@ log_info "Настройка PostgreSQL для TCP/IP подключений..."
 PG_CONF=""
 PG_HBA=""
 
-# Пробуем найти конфигурационные файлы разными способами
-if command -v psql &> /dev/null; then
+# Сначала пробуем найти через find (самый надежный способ)
+PG_CONF=$(find /etc/postgresql -name "postgresql.conf" -type f 2>/dev/null | head -1)
+if [ -n "$PG_CONF" ]; then
+    PG_HBA=$(dirname "$PG_CONF")/pg_hba.conf
+    log_info "Найден конфигурационный файл через find: $PG_CONF"
+fi
+
+# Если не нашли через find, пробуем через psql
+if [ -z "$PG_CONF" ] && command -v psql &> /dev/null; then
     # Получаем полную версию PostgreSQL
     PG_FULL_VERSION=$(psql --version 2>/dev/null | awk '{print $3}' || echo "")
     if [ -n "$PG_FULL_VERSION" ]; then
@@ -248,12 +267,6 @@ if command -v psql &> /dev/null; then
         elif [ -f "/etc/postgresql/${PG_FULL_VERSION}/main/postgresql.conf" ]; then
             PG_CONF="/etc/postgresql/${PG_FULL_VERSION}/main/postgresql.conf"
             PG_HBA="/etc/postgresql/${PG_FULL_VERSION}/main/pg_hba.conf"
-        # Вариант 3: поиск по всем версиям
-        else
-            PG_CONF=$(find /etc/postgresql -name "postgresql.conf" -type f 2>/dev/null | head -1)
-            if [ -n "$PG_CONF" ]; then
-                PG_HBA=$(dirname "$PG_CONF")/pg_hba.conf
-            fi
         fi
     fi
 fi
@@ -264,6 +277,17 @@ if [ -z "$PG_CONF" ] && command -v pg_config &> /dev/null; then
     if [ -n "$PG_DATA" ] && [ -f "$PG_DATA/postgresql.conf" ]; then
         PG_CONF="$PG_DATA/postgresql.conf"
         PG_HBA="$PG_DATA/pg_hba.conf"
+    fi
+fi
+
+# Если все еще не нашли, пробуем найти через переменные окружения процесса postgres
+if [ -z "$PG_CONF" ] && pgrep -x postgres >/dev/null 2>&1; then
+    # Пробуем найти через ps aux
+    PG_DATA_DIR=$(ps aux | grep "[p]ostgres:" | head -1 | grep -oP '\-D\s+\K[^\s]+' || ps aux | grep "[p]ostgres:" | head -1 | awk '{for(i=1;i<=NF;i++) if($i=="-D" && i<NF) print $(i+1)}' || echo "")
+    if [ -n "$PG_DATA_DIR" ] && [ -f "$PG_DATA_DIR/postgresql.conf" ]; then
+        PG_CONF="$PG_DATA_DIR/postgresql.conf"
+        PG_HBA="$PG_DATA_DIR/pg_hba.conf"
+        log_info "Найден конфигурационный файл через процесс postgres: $PG_CONF"
     fi
 fi
 
@@ -285,17 +309,15 @@ if [ -f "$PG_CONF" ]; then
     if [ -n "$POSTGRES_SERVICE" ]; then
         log_info "Перезапуск PostgreSQL для применения изменений..."
         systemctl restart "$POSTGRES_SERVICE" 2>/dev/null || {
-            # Пробуем найти и запустить сервис вручную
-            log_warn "Не удалось перезапустить через systemctl, пробуем альтернативные методы..."
-            # Пробуем найти процесс postgres и перезапустить через pg_ctl
-            if command -v pg_ctlcluster &> /dev/null; then
-                PG_CLUSTER=$(pg_lsclusters 2>/dev/null | awk 'NR==2 {print $1 " " $2}' || echo "")
-                if [ -n "$PG_CLUSTER" ]; then
-                    pg_ctlcluster $PG_CLUSTER restart 2>/dev/null || true
-                fi
-            fi
+            log_warn "Не удалось перезапустить через systemctl"
+            log_warn "Изменения в конфигурации применены, но требуется перезапуск PostgreSQL вручную"
+            log_warn "Выполните: sudo systemctl restart $POSTGRES_SERVICE"
         }
         sleep 5
+    else
+        log_warn "Сервис PostgreSQL не определен, изменения в конфигурации применены"
+        log_warn "Требуется перезапуск PostgreSQL вручную для применения изменений"
+        log_warn "Найдите способ перезапуска PostgreSQL на вашей системе"
     fi
 else
     log_warn "Конфигурационный файл PostgreSQL не найден"
@@ -314,14 +336,14 @@ if [ -f "$PG_HBA" ]; then
         if [ -n "$POSTGRES_SERVICE" ]; then
             log_info "Перезапуск PostgreSQL для применения изменений pg_hba.conf..."
             systemctl restart "$POSTGRES_SERVICE" 2>/dev/null || {
-                if command -v pg_ctlcluster &> /dev/null; then
-                    PG_CLUSTER=$(pg_lsclusters 2>/dev/null | awk 'NR==2 {print $1 " " $2}' || echo "")
-                    if [ -n "$PG_CLUSTER" ]; then
-                        pg_ctlcluster $PG_CLUSTER restart 2>/dev/null || true
-                    fi
-                fi
+                log_warn "Не удалось перезапустить через systemctl"
+                log_warn "Изменения в pg_hba.conf применены, но требуется перезапуск PostgreSQL вручную"
             }
             sleep 5
+        else
+            log_warn "Сервис PostgreSQL не определен, изменения в pg_hba.conf применены"
+            log_warn "Требуется перезапуск PostgreSQL вручную для применения изменений"
+            log_warn "Найдите способ перезапуска PostgreSQL на вашей системе"
         fi
     else
         log_info "Правило для localhost уже существует в pg_hba.conf"
@@ -518,57 +540,52 @@ chmod -R 775 "$LARAVEL_DIR/bootstrap/cache"
 # ============================================================================
 
 log_info "Проверка подключения к базе данных..."
-# Сначала проверяем, запущен ли PostgreSQL процесс
+
+# Проверяем, запущен ли PostgreSQL процесс и слушает ли на порту 5432
 if ! pgrep -x postgres >/dev/null 2>&1; then
     log_warn "Процесс PostgreSQL не запущен, пытаемся запустить..."
-    # Пробуем запустить через pg_ctlcluster
-    if command -v pg_ctlcluster &> /dev/null; then
-        PG_CLUSTER=$(pg_lsclusters 2>/dev/null | awk 'NR==2 {print $1 " " $2}' || echo "")
-        if [ -n "$PG_CLUSTER" ]; then
-            pg_ctlcluster $PG_CLUSTER start 2>/dev/null || true
-            sleep 3
-        fi
-    fi
     # Пробуем запустить через systemctl, если сервис определен
     if [ -n "$POSTGRES_SERVICE" ]; then
         systemctl start "$POSTGRES_SERVICE" 2>/dev/null || true
         sleep 3
+    else
+        log_warn "Не удалось определить способ запуска PostgreSQL"
+        log_warn "Попробуйте запустить PostgreSQL вручную перед продолжением"
     fi
+else
+    log_info "Процесс PostgreSQL запущен (PID: $(pgrep -x postgres | head -1))"
 fi
 
-# Ждем, пока PostgreSQL будет готов принимать подключения
+# Проверяем, слушает ли PostgreSQL на порту 5432
+if netstat -tlnp 2>/dev/null | grep -q ":5432" || ss -tlnp 2>/dev/null | grep -q ":5432"; then
+    log_info "PostgreSQL слушает на порту 5432"
+else
+    log_warn "PostgreSQL не слушает на порту 5432"
+    log_warn "Возможно, PostgreSQL настроен только на socket подключения"
+fi
+
+# Проверяем подключение через Laravel (более надежный способ на сервере)
+log_info "Проверка подключения через Laravel..."
 max_attempts=30
 attempt=0
 DB_READY=false
 
 while [ $attempt -lt $max_attempts ]; do
     attempt=$((attempt + 1))
-    # Сначала проверяем через socket (локальное подключение)
-    if sudo -u postgres psql -c "SELECT 1;" >/dev/null 2>&1; then
-        # Затем проверяем TCP/IP подключение от имени пользователя БД
-        if PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -p 5432 -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1;" >/dev/null 2>&1; then
-            DB_READY=true
-            log_info "Подключение к базе данных установлено"
-            break
-        else
-            # Пробуем через socket с указанием пользователя
-            if sudo -u postgres psql -d "$DB_NAME" -c "SELECT 1;" >/dev/null 2>&1; then
-                log_info "Подключение через socket работает, но TCP/IP не работает"
-                log_info "Попытка $attempt/$max_attempts: Настраиваем TCP/IP подключение..."
-            else
-                log_info "Попытка $attempt/$max_attempts: PostgreSQL запущен, но подключение не установлено, ожидание..."
-            fi
-        fi
+    
+    # Проверяем подключение через Laravel artisan db:show
+    if sudo -u "$APP_USER" php artisan db:show >/dev/null 2>&1; then
+        DB_READY=true
+        log_info "Подключение к базе данных установлено через Laravel"
+        break
     else
-        log_info "Попытка $attempt/$max_attempts: PostgreSQL не готов, ожидание..."
+        log_info "Попытка $attempt/$max_attempts: Ожидание готовности PostgreSQL..."
         # Пробуем запустить PostgreSQL, если он не запущен
         if [ $attempt -eq 5 ] || [ $attempt -eq 15 ]; then
-            if command -v pg_ctlcluster &> /dev/null; then
-                PG_CLUSTER=$(pg_lsclusters 2>/dev/null | awk 'NR==2 {print $1 " " $2}' || echo "")
-                if [ -n "$PG_CLUSTER" ]; then
-                    log_info "Попытка запуска PostgreSQL через pg_ctlcluster..."
-                    pg_ctlcluster $PG_CLUSTER start 2>/dev/null || true
-                fi
+            if [ -n "$POSTGRES_SERVICE" ]; then
+                log_info "Попытка запуска PostgreSQL через systemctl..."
+                systemctl start "$POSTGRES_SERVICE" 2>/dev/null || true
+                sleep 2
             fi
         fi
     fi
