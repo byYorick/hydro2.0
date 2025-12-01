@@ -566,28 +566,118 @@ log_warn "Сохраните этот пароль! Он понадобится 
 
 log_info "Установка Redis..."
 if ! command -v redis-server &> /dev/null; then
-    apt-get install -y -qq redis-server
+    log_info "Установка Redis..."
+    if ! apt-get install -y redis-server; then
+        log_error "Ошибка при установке Redis"
+        exit 1
+    fi
+    log_info "Redis установлен успешно"
 else
     log_info "Redis уже установлен"
 fi
 
 # Настройка Redis
-if grep -q "^supervised no" /etc/redis/redis.conf; then
-    sed -i 's/^supervised no/supervised systemd/' /etc/redis/redis.conf
-fi
-if grep -q "^# maxmemory <bytes>" /etc/redis/redis.conf; then
-    sed -i 's/^# maxmemory <bytes>/maxmemory 512mb/' /etc/redis/redis.conf
-elif ! grep -q "^maxmemory" /etc/redis/redis.conf; then
-    echo "maxmemory 512mb" >> /etc/redis/redis.conf
-fi
-if grep -q "^# maxmemory-policy noeviction" /etc/redis/redis.conf; then
-    sed -i 's/^# maxmemory-policy noeviction/maxmemory-policy allkeys-lru/' /etc/redis/redis.conf
-elif ! grep -q "^maxmemory-policy" /etc/redis/redis.conf; then
-    echo "maxmemory-policy allkeys-lru" >> /etc/redis/redis.conf
+log_info "Настройка Redis..."
+if [ -f "/etc/redis/redis.conf" ]; then
+    # Настройка supervised для systemd
+    if grep -q "^supervised no" /etc/redis/redis.conf; then
+        sed -i 's/^supervised no/supervised systemd/' /etc/redis/redis.conf
+        log_info "Настроен supervised для systemd"
+    fi
+    
+    # Настройка maxmemory
+    if grep -q "^# maxmemory <bytes>" /etc/redis/redis.conf; then
+        sed -i 's/^# maxmemory <bytes>/maxmemory 512mb/' /etc/redis/redis.conf
+        log_info "Настроен maxmemory: 512mb"
+    elif ! grep -q "^maxmemory" /etc/redis/redis.conf; then
+        echo "maxmemory 512mb" >> /etc/redis/redis.conf
+        log_info "Добавлен maxmemory: 512mb"
+    fi
+    
+    # Настройка maxmemory-policy
+    if grep -q "^# maxmemory-policy noeviction" /etc/redis/redis.conf; then
+        sed -i 's/^# maxmemory-policy noeviction/maxmemory-policy allkeys-lru/' /etc/redis/redis.conf
+        log_info "Настроен maxmemory-policy: allkeys-lru"
+    elif ! grep -q "^maxmemory-policy" /etc/redis/redis.conf; then
+        echo "maxmemory-policy allkeys-lru" >> /etc/redis/redis.conf
+        log_info "Добавлен maxmemory-policy: allkeys-lru"
+    fi
+    
+    # Проверяем права доступа к конфигурации
+    chown redis:redis /etc/redis/redis.conf 2>/dev/null || true
+    chmod 640 /etc/redis/redis.conf 2>/dev/null || true
+else
+    log_warn "Файл конфигурации Redis не найден: /etc/redis/redis.conf"
 fi
 
-systemctl enable redis-server
-systemctl restart redis-server
+# Проверяем директорию для данных Redis
+REDIS_DIR="/var/lib/redis"
+if [ -f "/etc/redis/redis.conf" ]; then
+    REDIS_DIR=$(grep "^dir " /etc/redis/redis.conf 2>/dev/null | awk '{print $2}' | head -1 || echo "/var/lib/redis")
+fi
+
+if [ ! -d "$REDIS_DIR" ]; then
+    log_info "Создание директории для данных Redis: $REDIS_DIR"
+    mkdir -p "$REDIS_DIR"
+    chown redis:redis "$REDIS_DIR" 2>/dev/null || true
+    chmod 755 "$REDIS_DIR" 2>/dev/null || true
+fi
+
+# Включаем автозапуск Redis
+log_info "Включение автозапуска Redis..."
+if ! systemctl enable redis-server 2>/dev/null; then
+    log_warn "Не удалось включить автозапуск Redis (возможно, уже включен или используется SysV)"
+    # Пробуем через update-rc.d для SysV
+    if command -v update-rc.d &> /dev/null; then
+        update-rc.d redis-server enable 2>/dev/null || true
+    fi
+fi
+
+# Запускаем Redis
+log_info "Запуск Redis..."
+if ! systemctl start redis-server; then
+    log_error "Не удалось запустить Redis через systemctl"
+    log_error "Проверьте статус: systemctl status redis-server.service"
+    log_error "Проверьте логи: journalctl -xeu redis-server.service"
+    
+    # Пробуем запустить через service (для SysV)
+    if command -v service &> /dev/null; then
+        log_info "Попытка запуска через service..."
+        if service redis-server start 2>/dev/null; then
+            log_info "Redis запущен через service"
+        else
+            log_error "Redis не удалось запустить"
+            log_error "Выполните диагностику вручную:"
+            log_error "  sudo systemctl status redis-server"
+            log_error "  sudo journalctl -xeu redis-server"
+            log_error "  sudo redis-server /etc/redis/redis.conf --test-memory 1"
+            exit 1
+        fi
+    else
+        log_error "Redis не удалось запустить"
+        exit 1
+    fi
+fi
+
+# Проверяем, что Redis запущен
+log_info "Проверка статуса Redis..."
+sleep 2
+if systemctl is-active --quiet redis-server || pgrep -x redis-server >/dev/null 2>&1; then
+    log_info "Redis запущен успешно"
+    
+    # Проверяем подключение
+    if command -v redis-cli &> /dev/null; then
+        if redis-cli ping &>/dev/null; then
+            log_info "Redis отвечает на команды (PING)"
+        else
+            log_warn "Redis запущен, но не отвечает на команды"
+        fi
+    fi
+else
+    log_error "Redis не запущен, хотя команда start выполнена успешно"
+    log_error "Проверьте: systemctl status redis-server"
+    exit 1
+fi
 
 # ============================================================================
 # 7. Установка Mosquitto MQTT Broker
