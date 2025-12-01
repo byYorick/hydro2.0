@@ -603,11 +603,42 @@ if [ -f "/etc/redis/redis.conf" ]; then
         log_info "Добавлен maxmemory-policy: allkeys-lru"
     fi
     
+    # КРИТИЧНО: Создаем директорию для логов Redis
+    REDIS_LOG_DIR=""
+    REDIS_LOG_FILE=$(grep "^logfile " /etc/redis/redis.conf 2>/dev/null | awk '{print $2}' | head -1 || echo "")
+    if [ -n "$REDIS_LOG_FILE" ]; then
+        REDIS_LOG_DIR=$(dirname "$REDIS_LOG_FILE")
+        # Если путь относительный, используем стандартную директорию
+        if [ "$REDIS_LOG_DIR" = "." ] || [ -z "$REDIS_LOG_DIR" ]; then
+            REDIS_LOG_DIR="/var/log/redis"
+        fi
+    else
+        # Если logfile не указан, используем стандартную директорию
+        REDIS_LOG_DIR="/var/log/redis"
+    fi
+    
+    log_info "Создание директории для логов Redis: $REDIS_LOG_DIR"
+    mkdir -p "$REDIS_LOG_DIR"
+    chown redis:redis "$REDIS_LOG_DIR" 2>/dev/null || true
+    chmod 755 "$REDIS_LOG_DIR" 2>/dev/null || true
+    
+    # Если logfile не указан или указан неправильно, добавляем его
+    if [ -z "$REDIS_LOG_FILE" ] || [ "$REDIS_LOG_FILE" = "" ]; then
+        if ! grep -q "^logfile " /etc/redis/redis.conf; then
+            echo "logfile $REDIS_LOG_DIR/redis-server.log" >> /etc/redis/redis.conf
+            log_info "Добавлен logfile: $REDIS_LOG_DIR/redis-server.log"
+        fi
+    fi
+    
     # Проверяем права доступа к конфигурации
     chown redis:redis /etc/redis/redis.conf 2>/dev/null || true
     chmod 640 /etc/redis/redis.conf 2>/dev/null || true
 else
     log_warn "Файл конфигурации Redis не найден: /etc/redis/redis.conf"
+    # Создаем стандартную директорию для логов на всякий случай
+    mkdir -p /var/log/redis
+    chown redis:redis /var/log/redis 2>/dev/null || true
+    chmod 755 /var/log/redis 2>/dev/null || true
 fi
 
 # Проверяем директорию для данных Redis
@@ -723,8 +754,43 @@ if ! systemctl start redis-server; then
                 # Последняя попытка - запуск напрямую для диагностики
                 log_warn "Попытка запуска Redis напрямую для диагностики..."
                 if command -v redis-server &> /dev/null && [ -f "/etc/redis/redis.conf" ]; then
-                    if sudo -u redis redis-server /etc/redis/redis.conf --daemonize yes 2>&1 | head -5; then
-                        log_info "Redis запущен напрямую"
+                    # Проверяем конфигурацию перед запуском
+                    REDIS_TEST_OUTPUT=$(sudo -u redis redis-server /etc/redis/redis.conf --test-memory 1 2>&1)
+                    if echo "$REDIS_TEST_OUTPUT" | grep -qi "error\|fatal"; then
+                        log_error "Ошибка в конфигурации Redis:"
+                        echo "$REDIS_TEST_OUTPUT" | grep -i "error\|fatal" | head -3 | while read line; do
+                            log_error "  $line"
+                        done
+                        
+                        # Пробуем исправить проблему с логом
+                        if echo "$REDIS_TEST_OUTPUT" | grep -qi "log file"; then
+                            log_info "Исправление проблемы с файлом лога..."
+                            REDIS_LOG_DIR="/var/log/redis"
+                            mkdir -p "$REDIS_LOG_DIR"
+                            chown redis:redis "$REDIS_LOG_DIR" 2>/dev/null || true
+                            chmod 755 "$REDIS_LOG_DIR" 2>/dev/null || true
+                            
+                            # Обновляем logfile в конфигурации
+                            if grep -q "^logfile " /etc/redis/redis.conf; then
+                                sed -i "s|^logfile .*|logfile $REDIS_LOG_DIR/redis-server.log|" /etc/redis/redis.conf
+                            else
+                                echo "logfile $REDIS_LOG_DIR/redis-server.log" >> /etc/redis/redis.conf
+                            fi
+                            
+                            log_info "Повторная попытка запуска после исправления лога..."
+                            sleep 1
+                        fi
+                    fi
+                    
+                    # Пробуем запустить
+                    if sudo -u redis redis-server /etc/redis/redis.conf --daemonize yes 2>&1; then
+                        sleep 2
+                        if pgrep -x redis-server >/dev/null 2>&1; then
+                            log_info "Redis запущен напрямую"
+                        else
+                            log_error "Redis не запустился, проверьте конфигурацию"
+                            exit 1
+                        fi
                     else
                         log_error "Redis не удалось запустить даже напрямую"
                         log_error "Выполните диагностику вручную:"
