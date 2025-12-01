@@ -188,14 +188,22 @@ fi
 log_info "Настройка PostgreSQL..."
 # Определяем имя сервиса PostgreSQL (может быть postgresql, postgresql@16-main и т.д.)
 POSTGRES_SERVICE=""
-if systemctl list-unit-files | grep -q "^postgresql.service"; then
+# Пробуем разные варианты поиска сервиса
+if systemctl list-unit-files 2>/dev/null | grep -q "^postgresql.service"; then
     POSTGRES_SERVICE="postgresql"
-elif systemctl list-unit-files | grep -q "^postgresql@"; then
+elif systemctl list-unit-files 2>/dev/null | grep -q "^postgresql@"; then
     # Находим первый доступный сервис postgresql@
-    POSTGRES_SERVICE=$(systemctl list-unit-files | grep "^postgresql@" | head -1 | awk '{print $1}' | sed 's/\.service$//')
-elif systemctl list-unit-files | grep -q "postgresql"; then
-    # Пробуем найти любой сервис с postgresql в имени
-    POSTGRES_SERVICE=$(systemctl list-unit-files | grep "postgresql" | grep -v "@" | head -1 | awk '{print $1}' | sed 's/\.service$//')
+    POSTGRES_SERVICE=$(systemctl list-unit-files 2>/dev/null | grep "^postgresql@" | head -1 | awk '{print $1}' | sed 's/\.service$//')
+elif systemctl list-units 2>/dev/null | grep -q "postgresql"; then
+    # Пробуем найти запущенный сервис
+    POSTGRES_SERVICE=$(systemctl list-units 2>/dev/null | grep "postgresql" | grep -v "@" | head -1 | awk '{print $1}' | sed 's/\.service$//')
+elif command -v pg_ctlcluster &> /dev/null; then
+    # Если используется pg_ctlcluster, пробуем найти кластер
+    PG_CLUSTER=$(pg_lsclusters 2>/dev/null | awk 'NR==2 {print $1 "-" $2}' || echo "")
+    if [ -n "$PG_CLUSTER" ]; then
+        POSTGRES_SERVICE="postgresql@${PG_CLUSTER}"
+        log_info "Найден кластер PostgreSQL: $PG_CLUSTER"
+    fi
 fi
 
 if [ -n "$POSTGRES_SERVICE" ]; then
@@ -219,46 +227,107 @@ fi
 
 # Настройка PostgreSQL для приема TCP/IP подключений
 log_info "Настройка PostgreSQL для TCP/IP подключений..."
-# Находим конфигурационный файл PostgreSQL
-PG_VERSION=$(psql --version 2>/dev/null | awk '{print $3}' | cut -d. -f1,2 || echo "16")
-PG_CONF="/etc/postgresql/${PG_VERSION}/main/postgresql.conf"
-PG_HBA="/etc/postgresql/${PG_VERSION}/main/pg_hba.conf"
+# Находим конфигурационный файл PostgreSQL (проверяем все возможные пути)
+PG_CONF=""
+PG_HBA=""
+
+# Пробуем найти конфигурационные файлы разными способами
+if command -v psql &> /dev/null; then
+    # Получаем полную версию PostgreSQL
+    PG_FULL_VERSION=$(psql --version 2>/dev/null | awk '{print $3}' || echo "")
+    if [ -n "$PG_FULL_VERSION" ]; then
+        # Пробуем разные варианты путей
+        PG_MAJOR=$(echo "$PG_FULL_VERSION" | cut -d. -f1)
+        PG_MINOR=$(echo "$PG_FULL_VERSION" | cut -d. -f2)
+        
+        # Вариант 1: /etc/postgresql/16/main/
+        if [ -f "/etc/postgresql/${PG_MAJOR}/main/postgresql.conf" ]; then
+            PG_CONF="/etc/postgresql/${PG_MAJOR}/main/postgresql.conf"
+            PG_HBA="/etc/postgresql/${PG_MAJOR}/main/pg_hba.conf"
+        # Вариант 2: /etc/postgresql/16.10/main/
+        elif [ -f "/etc/postgresql/${PG_FULL_VERSION}/main/postgresql.conf" ]; then
+            PG_CONF="/etc/postgresql/${PG_FULL_VERSION}/main/postgresql.conf"
+            PG_HBA="/etc/postgresql/${PG_FULL_VERSION}/main/pg_hba.conf"
+        # Вариант 3: поиск по всем версиям
+        else
+            PG_CONF=$(find /etc/postgresql -name "postgresql.conf" -type f 2>/dev/null | head -1)
+            if [ -n "$PG_CONF" ]; then
+                PG_HBA=$(dirname "$PG_CONF")/pg_hba.conf
+            fi
+        fi
+    fi
+fi
+
+# Если не нашли, пробуем найти через pg_config
+if [ -z "$PG_CONF" ] && command -v pg_config &> /dev/null; then
+    PG_DATA=$(pg_config --sysconfdir 2>/dev/null || echo "")
+    if [ -n "$PG_DATA" ] && [ -f "$PG_DATA/postgresql.conf" ]; then
+        PG_CONF="$PG_DATA/postgresql.conf"
+        PG_HBA="$PG_DATA/pg_hba.conf"
+    fi
+fi
 
 if [ -f "$PG_CONF" ]; then
+    log_info "Найден конфигурационный файл: $PG_CONF"
+    
     # Настраиваем listen_addresses для приема подключений на localhost
     if ! grep -q "^listen_addresses" "$PG_CONF"; then
         echo "listen_addresses = 'localhost'" >> "$PG_CONF"
         log_info "Добавлен listen_addresses в $PG_CONF"
-    elif ! grep -q "^listen_addresses.*localhost" "$PG_CONF"; then
+    elif ! grep -q "^listen_addresses.*localhost" "$PG_CONF" && ! grep -q "^listen_addresses.*'\*'" "$PG_CONF"; then
+        # Комментируем старую строку и добавляем новую
         sed -i "s/^#listen_addresses.*/listen_addresses = 'localhost'/" "$PG_CONF"
         sed -i "s/^listen_addresses.*/listen_addresses = 'localhost'/" "$PG_CONF"
         log_info "Обновлен listen_addresses в $PG_CONF"
     fi
     
     # Перезапускаем PostgreSQL для применения изменений
-    if [ -n "$POSTGRES_SERVICE" ] && systemctl is-active --quiet "$POSTGRES_SERVICE"; then
+    if [ -n "$POSTGRES_SERVICE" ]; then
         log_info "Перезапуск PostgreSQL для применения изменений..."
-        systemctl restart "$POSTGRES_SERVICE" 2>/dev/null || true
-        sleep 3
+        systemctl restart "$POSTGRES_SERVICE" 2>/dev/null || {
+            # Пробуем найти и запустить сервис вручную
+            log_warn "Не удалось перезапустить через systemctl, пробуем альтернативные методы..."
+            # Пробуем найти процесс postgres и перезапустить через pg_ctl
+            if command -v pg_ctlcluster &> /dev/null; then
+                PG_CLUSTER=$(pg_lsclusters 2>/dev/null | awk 'NR==2 {print $1 " " $2}' || echo "")
+                if [ -n "$PG_CLUSTER" ]; then
+                    pg_ctlcluster $PG_CLUSTER restart 2>/dev/null || true
+                fi
+            fi
+        }
+        sleep 5
     fi
 else
-    log_warn "Конфигурационный файл PostgreSQL не найден: $PG_CONF"
-    log_warn "Убедитесь, что PostgreSQL настроен на прослушивание localhost"
+    log_warn "Конфигурационный файл PostgreSQL не найден"
+    log_warn "Попробуйте найти вручную: find /etc/postgresql -name postgresql.conf"
+    log_warn "Или проверьте: psql --version и pg_config --sysconfdir"
 fi
 
 # Проверяем pg_hba.conf для разрешения подключений
 if [ -f "$PG_HBA" ]; then
-    if ! grep -q "^host.*all.*all.*127.0.0.1/32.*md5" "$PG_HBA" && ! grep -q "^host.*all.*all.*127.0.0.1/32.*password" "$PG_HBA"; then
+    log_info "Найден файл pg_hba.conf: $PG_HBA"
+    if ! grep -q "^host.*all.*all.*127.0.0.1/32.*md5" "$PG_HBA" && ! grep -q "^host.*all.*all.*127.0.0.1/32.*password" "$PG_HBA" && ! grep -q "^host.*all.*all.*127.0.0.1/32.*trust" "$PG_HBA"; then
         echo "host    all             all             127.0.0.1/32            md5" >> "$PG_HBA"
         log_info "Добавлено правило в pg_hba.conf для подключений с localhost"
         
         # Перезапускаем PostgreSQL для применения изменений
-        if [ -n "$POSTGRES_SERVICE" ] && systemctl is-active --quiet "$POSTGRES_SERVICE"; then
+        if [ -n "$POSTGRES_SERVICE" ]; then
             log_info "Перезапуск PostgreSQL для применения изменений pg_hba.conf..."
-            systemctl restart "$POSTGRES_SERVICE" 2>/dev/null || true
-            sleep 3
+            systemctl restart "$POSTGRES_SERVICE" 2>/dev/null || {
+                if command -v pg_ctlcluster &> /dev/null; then
+                    PG_CLUSTER=$(pg_lsclusters 2>/dev/null | awk 'NR==2 {print $1 " " $2}' || echo "")
+                    if [ -n "$PG_CLUSTER" ]; then
+                        pg_ctlcluster $PG_CLUSTER restart 2>/dev/null || true
+                    fi
+                fi
+            }
+            sleep 5
         fi
+    else
+        log_info "Правило для localhost уже существует в pg_hba.conf"
     fi
+else
+    log_warn "Файл pg_hba.conf не найден: $PG_HBA"
 fi
 
 # Создание базы данных и пользователя
@@ -449,6 +518,24 @@ chmod -R 775 "$LARAVEL_DIR/bootstrap/cache"
 # ============================================================================
 
 log_info "Проверка подключения к базе данных..."
+# Сначала проверяем, запущен ли PostgreSQL процесс
+if ! pgrep -x postgres >/dev/null 2>&1; then
+    log_warn "Процесс PostgreSQL не запущен, пытаемся запустить..."
+    # Пробуем запустить через pg_ctlcluster
+    if command -v pg_ctlcluster &> /dev/null; then
+        PG_CLUSTER=$(pg_lsclusters 2>/dev/null | awk 'NR==2 {print $1 " " $2}' || echo "")
+        if [ -n "$PG_CLUSTER" ]; then
+            pg_ctlcluster $PG_CLUSTER start 2>/dev/null || true
+            sleep 3
+        fi
+    fi
+    # Пробуем запустить через systemctl, если сервис определен
+    if [ -n "$POSTGRES_SERVICE" ]; then
+        systemctl start "$POSTGRES_SERVICE" 2>/dev/null || true
+        sleep 3
+    fi
+fi
+
 # Ждем, пока PostgreSQL будет готов принимать подключения
 max_attempts=30
 attempt=0
@@ -456,17 +543,34 @@ DB_READY=false
 
 while [ $attempt -lt $max_attempts ]; do
     attempt=$((attempt + 1))
+    # Сначала проверяем через socket (локальное подключение)
     if sudo -u postgres psql -c "SELECT 1;" >/dev/null 2>&1; then
-        # Проверяем подключение от имени пользователя БД
-        if PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1;" >/dev/null 2>&1; then
+        # Затем проверяем TCP/IP подключение от имени пользователя БД
+        if PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -p 5432 -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1;" >/dev/null 2>&1; then
             DB_READY=true
             log_info "Подключение к базе данных установлено"
             break
         else
-            log_info "Попытка $attempt/$max_attempts: PostgreSQL запущен, но подключение не установлено, ожидание..."
+            # Пробуем через socket с указанием пользователя
+            if sudo -u postgres psql -d "$DB_NAME" -c "SELECT 1;" >/dev/null 2>&1; then
+                log_info "Подключение через socket работает, но TCP/IP не работает"
+                log_info "Попытка $attempt/$max_attempts: Настраиваем TCP/IP подключение..."
+            else
+                log_info "Попытка $attempt/$max_attempts: PostgreSQL запущен, но подключение не установлено, ожидание..."
+            fi
         fi
     else
         log_info "Попытка $attempt/$max_attempts: PostgreSQL не готов, ожидание..."
+        # Пробуем запустить PostgreSQL, если он не запущен
+        if [ $attempt -eq 5 ] || [ $attempt -eq 15 ]; then
+            if command -v pg_ctlcluster &> /dev/null; then
+                PG_CLUSTER=$(pg_lsclusters 2>/dev/null | awk 'NR==2 {print $1 " " $2}' || echo "")
+                if [ -n "$PG_CLUSTER" ]; then
+                    log_info "Попытка запуска PostgreSQL через pg_ctlcluster..."
+                    pg_ctlcluster $PG_CLUSTER start 2>/dev/null || true
+                fi
+            fi
+        fi
     fi
     sleep 2
 done
