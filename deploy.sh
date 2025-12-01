@@ -164,30 +164,53 @@ fi
 log_info "Установка PostgreSQL 16 с TimescaleDB..."
 if ! command -v psql &> /dev/null; then
     # Установка PostgreSQL (используем современный метод без apt-key)
+    log_info "Добавление репозитория PostgreSQL..."
     mkdir -p /etc/apt/keyrings
+    
+    # Удаляем старые файлы, если они есть
+    rm -f /etc/apt/sources.list.d/pgdg.list /etc/apt/keyrings/postgresql.gpg
+    
+    # Добавляем репозиторий PostgreSQL
     sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
     wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/keyrings/postgresql.gpg
     chmod 644 /etc/apt/keyrings/postgresql.gpg
     sh -c 'echo "deb [signed-by=/etc/apt/keyrings/postgresql.gpg] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+    
+    log_info "Обновление списка пакетов..."
     apt-get update -qq
+    
+    log_info "Установка PostgreSQL 16..."
     apt-get install -y -qq postgresql-16 postgresql-contrib-16
-
+    
     # Установка TimescaleDB (используем современный метод)
+    log_info "Добавление репозитория TimescaleDB..."
+    rm -f /etc/apt/sources.list.d/timescaledb.list /etc/apt/keyrings/timescaledb.gpg
+    
     sh -c 'echo "deb https://packagecloud.io/timescale/timescaledb/ubuntu/ $(lsb_release -c -s) main" > /etc/apt/sources.list.d/timescaledb.list'
     wget --quiet -O - https://packagecloud.io/timescale/timescaledb/gpgkey | gpg --dearmor -o /etc/apt/keyrings/timescaledb.gpg
     chmod 644 /etc/apt/keyrings/timescaledb.gpg
     sh -c 'echo "deb [signed-by=/etc/apt/keyrings/timescaledb.gpg] https://packagecloud.io/timescale/timescaledb/ubuntu/ $(lsb_release -c -s) main" > /etc/apt/sources.list.d/timescaledb.list'
+    
+    log_info "Обновление списка пакетов для TimescaleDB..."
     apt-get update -qq
+    
+    log_info "Установка TimescaleDB..."
     apt-get install -y -qq timescaledb-2-postgresql-16
+    
+    log_info "Настройка TimescaleDB..."
     timescaledb-tune --quiet --yes
+    
+    log_info "PostgreSQL 16 и TimescaleDB установлены успешно"
 else
     log_info "PostgreSQL уже установлен"
 fi
 
-# Настройка PostgreSQL
-log_info "Настройка PostgreSQL..."
+# Настройка и запуск PostgreSQL
+log_info "Настройка и запуск PostgreSQL..."
+
 # Определяем имя сервиса PostgreSQL (может быть postgresql, postgresql@16-main и т.д.)
 POSTGRES_SERVICE=""
+
 # Пробуем разные варианты поиска сервиса
 if systemctl list-unit-files 2>/dev/null | grep -q "^postgresql.service"; then
     POSTGRES_SERVICE="postgresql"
@@ -199,41 +222,72 @@ elif systemctl list-units 2>/dev/null | grep -q "postgresql"; then
     POSTGRES_SERVICE=$(systemctl list-units 2>/dev/null | grep "postgresql" | grep -v "@" | head -1 | awk '{print $1}' | sed 's/\.service$//')
 fi
 
-# Проверяем, запущен ли PostgreSQL процесс
-if pgrep -x postgres >/dev/null 2>&1; then
-    log_info "Процесс PostgreSQL обнаружен (PID: $(pgrep -x postgres | head -1))"
-    if [ -z "$POSTGRES_SERVICE" ]; then
-        log_warn "PostgreSQL запущен, но сервис systemd не найден"
-        log_warn "PostgreSQL может быть запущен вручную или через другой менеджер процессов"
+# Если не нашли через systemctl, пробуем найти через установленные пакеты
+if [ -z "$POSTGRES_SERVICE" ]; then
+    # Проверяем, установлен ли postgresql-16
+    if dpkg -l | grep -q "postgresql-16"; then
+        # В Debian/Ubuntu с postgresql-16 обычно используется postgresql@16-main
+        if systemctl list-unit-files 2>/dev/null | grep -q "postgresql@16-main"; then
+            POSTGRES_SERVICE="postgresql@16-main"
+        elif systemctl list-unit-files 2>/dev/null | grep -q "postgresql@16"; then
+            POSTGRES_SERVICE=$(systemctl list-unit-files 2>/dev/null | grep "postgresql@16" | head -1 | awk '{print $1}' | sed 's/\.service$//')
+        fi
     fi
-else
-    log_warn "Процесс PostgreSQL не запущен"
 fi
 
+# Запускаем PostgreSQL
 if [ -n "$POSTGRES_SERVICE" ]; then
-    log_info "Используется сервис PostgreSQL: $POSTGRES_SERVICE"
+    log_info "Найден сервис PostgreSQL: $POSTGRES_SERVICE"
+    log_info "Включение автозапуска PostgreSQL..."
     systemctl enable "$POSTGRES_SERVICE" 2>/dev/null || log_warn "Не удалось включить сервис $POSTGRES_SERVICE (возможно, уже включен)"
-    systemctl start "$POSTGRES_SERVICE" 2>/dev/null || log_warn "Не удалось запустить сервис $POSTGRES_SERVICE (возможно, уже запущен)"
+    
+    log_info "Запуск PostgreSQL..."
+    systemctl start "$POSTGRES_SERVICE" 2>/dev/null || {
+        log_error "Не удалось запустить сервис $POSTGRES_SERVICE"
+        log_error "Проверьте статус: systemctl status $POSTGRES_SERVICE"
+        log_error "Проверьте логи: journalctl -u $POSTGRES_SERVICE -n 50"
+        exit 1
+    }
     
     # Ждем, пока PostgreSQL запустится
     log_info "Ожидание запуска PostgreSQL..."
-    sleep 3
-    if systemctl is-active --quiet "$POSTGRES_SERVICE"; then
-        log_info "PostgreSQL запущен успешно"
-    else
-        log_warn "PostgreSQL может быть не запущен, проверьте вручную: systemctl status $POSTGRES_SERVICE"
+    max_wait=30
+    waited=0
+    while [ $waited -lt $max_wait ]; do
+        if systemctl is-active --quiet "$POSTGRES_SERVICE"; then
+            log_info "PostgreSQL запущен успешно"
+            break
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    
+    if ! systemctl is-active --quiet "$POSTGRES_SERVICE"; then
+        log_error "PostgreSQL не запустился за $max_wait секунд"
+        log_error "Проверьте статус: systemctl status $POSTGRES_SERVICE"
+        exit 1
     fi
+    
+    # Дополнительная проверка - процесс должен быть запущен
+    if ! pgrep -x postgres >/dev/null 2>&1; then
+        log_error "Процесс PostgreSQL не запущен, хотя сервис активен"
+        exit 1
+    fi
+    
+    log_info "Процесс PostgreSQL запущен (PID: $(pgrep -x postgres | head -1))"
 else
-    # Проверяем, запущен ли PostgreSQL процесс
+    log_warn "Не удалось определить имя сервиса PostgreSQL"
+    
+    # Проверяем, запущен ли процесс
     if pgrep -x postgres >/dev/null 2>&1; then
-        log_info "PostgreSQL запущен (процесс найден), но сервис systemd не определен"
+        log_info "Процесс PostgreSQL запущен (PID: $(pgrep -x postgres | head -1))"
         log_info "Продолжаем работу с существующим процессом PostgreSQL"
     else
-        log_warn "Не удалось определить имя сервиса PostgreSQL и процесс не запущен"
-        log_warn "Попробуйте запустить вручную:"
-        log_warn "  - sudo systemctl start postgresql"
-        log_warn "  - Или проверьте доступные сервисы: systemctl list-unit-files | grep postgresql"
-        log_warn "  - Или запустите PostgreSQL вручную, если он установлен нестандартно"
+        log_error "PostgreSQL не запущен и не удалось определить способ запуска"
+        log_error "Попробуйте запустить вручную:"
+        log_error "  - sudo systemctl start postgresql"
+        log_error "  - Или проверьте доступные сервисы: systemctl list-unit-files | grep postgresql"
+        exit 1
     fi
 fi
 
