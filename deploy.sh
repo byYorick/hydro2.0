@@ -343,19 +343,24 @@ if [ ! -f "$LARAVEL_DIR/.env" ]; then
     fi
 fi
 
+# Устанавливаем права доступа на .env файл ДО его редактирования
+chown "$APP_USER:$APP_GROUP" "$LARAVEL_DIR/.env"
+chmod 640 "$LARAVEL_DIR/.env"
+
 # Обновление .env с правильными значениями
 # Используем более надежный метод: добавляем или обновляем строки
 update_env_var() {
     local file="$1"
     local key="$2"
     local value="$3"
-    if grep -q "^${key}=" "$file"; then
+    # Выполняем от имени пользователя hydro, чтобы избежать проблем с правами
+    if sudo -u "$APP_USER" grep -q "^${key}=" "$file" 2>/dev/null; then
         # Экранируем специальные символы для sed
         local escaped_value=$(echo "$value" | sed 's/[[\.*^$()+?{|]/\\&/g')
-        sed -i "s|^${key}=.*|${key}=${value}|" "$file"
+        sudo -u "$APP_USER" sed -i "s|^${key}=.*|${key}=${value}|" "$file"
     else
         # Добавляем новую строку
-        echo "${key}=${value}" >> "$file"
+        echo "${key}=${value}" | sudo -u "$APP_USER" tee -a "$file" > /dev/null
     fi
 }
 
@@ -377,6 +382,10 @@ else
     update_env_var "$LARAVEL_DIR/.env" "APP_DEBUG" "true"
     update_env_var "$LARAVEL_DIR/.env" "LOG_LEVEL" "debug"
 fi
+
+# Убеждаемся, что права доступа установлены правильно перед генерацией ключа
+chown "$APP_USER:$APP_GROUP" "$LARAVEL_DIR/.env"
+chmod 640 "$LARAVEL_DIR/.env"
 
 # Генерация ключа приложения
 sudo -u "$APP_USER" php artisan key:generate --force
