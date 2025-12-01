@@ -14,9 +14,10 @@ class NodeConfigService
      * 
      * @param DeviceNode $node
      * @param int|null $version Версия конфига (если не указана, используется текущая версия из БД или 1)
+     * @param bool $includeCredentials Включать ли Wi-Fi пароли и MQTT креды (по умолчанию false для безопасности)
      * @return array
      */
-    public function generateNodeConfig(DeviceNode $node, ?int $version = null): array
+    public function generateNodeConfig(DeviceNode $node, ?int $version = null, bool $includeCredentials = false): array
     {
         // Загружаем каналы узла и связанные данные
         $node->load(['channels', 'zone.greenhouse']);
@@ -76,10 +77,10 @@ class NodeConfigService
         }
         
         // Формируем wifi конфигурацию
-        $wifi = $this->getWifiConfig($node);
+        $wifi = $this->getWifiConfig($node, $includeCredentials);
         
         // Формируем mqtt конфигурацию
-        $mqtt = $this->getMqttConfig($node);
+        $mqtt = $this->getMqttConfig($node, $includeCredentials);
         
         $nodeConfig = [
             'node_id' => $node->uid,
@@ -156,11 +157,21 @@ class NodeConfigService
      * Получить WiFi конфигурацию для узла.
      * 
      * @param DeviceNode $node
+     * @param bool $includeCredentials Включать ли пароль (по умолчанию false для безопасности)
      * @return array
      */
-    private function getWifiConfig(DeviceNode $node): array
+    private function getWifiConfig(DeviceNode $node, bool $includeCredentials = false): array
     {
-        // Проверяем config узла
+        // Для API запросов (includeCredentials = false) не возвращаем Wi-Fi конфигурацию
+        // Это предотвращает утечку SSID и паролей через API
+        if (!$includeCredentials) {
+            // Возвращаем минимальную информацию для API
+            return [
+                'configured' => true, // Указываем, что Wi-Fi настроен, но не раскрываем детали
+            ];
+        }
+        
+        // Для публикации конфига через MQTT (includeCredentials = true) возвращаем полную конфигурацию
         $nodeConfig = $node->config ?? [];
         if (isset($nodeConfig['wifi'])) {
             return $nodeConfig['wifi'];
@@ -177,22 +188,41 @@ class NodeConfigService
      * Получить MQTT конфигурацию для узла.
      * 
      * @param DeviceNode $node
+     * @param bool $includeCredentials Включать ли чувствительные параметры (по умолчанию false для безопасности)
      * @return array
      */
-    private function getMqttConfig(DeviceNode $node): array
+    private function getMqttConfig(DeviceNode $node, bool $includeCredentials = false): array
     {
-        // Проверяем config узла
+        // Для API запросов (includeCredentials = false) не возвращаем MQTT конфигурацию
+        // Это предотвращает утечку MQTT креденшалов через API
+        if (!$includeCredentials) {
+            // Возвращаем минимальную информацию для API
+            return [
+                'configured' => true, // Указываем, что MQTT настроен, но не раскрываем детали
+            ];
+        }
+        
+        // Для публикации конфига через MQTT (includeCredentials = true) возвращаем полную конфигурацию
         $nodeConfig = $node->config ?? [];
         if (isset($nodeConfig['mqtt'])) {
             return $nodeConfig['mqtt'];
         }
         
         // Используем глобальные настройки MQTT
-        return [
+        $mqtt = [
             'host' => Config::get('services.mqtt.host', 'mqtt'),
             'port' => Config::get('services.mqtt.port', 1883),
             'keepalive' => Config::get('services.mqtt.keepalive', 30),
         ];
+        
+        // Включаем чувствительные параметры только если явно запрошено
+        if ($includeCredentials) {
+            $mqtt['username'] = Config::get('services.mqtt.username');
+            $mqtt['password'] = Config::get('services.mqtt.password');
+            $mqtt['client_id'] = Config::get('services.mqtt.client_id');
+        }
+        
+        return $mqtt;
     }
     
     /**

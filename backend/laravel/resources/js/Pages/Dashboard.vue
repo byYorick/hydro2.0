@@ -1,30 +1,19 @@
 <script setup>
-import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head } from '@inertiajs/vue3';
+import AppLayout from '@/Layouts/AppLayout.vue'
+import { Head } from '@inertiajs/vue3'
 </script>
 
 <template>
     <Head title="Панель управления" />
 
-    <AuthenticatedLayout>
-        <template #header>
-            <h2
-                class="text-xl font-semibold leading-tight text-gray-800"
-            >
-                Панель управления
-            </h2>
-        </template>
-
-        <div class="py-12">
-            <div class="mx-auto max-w-7xl sm:px-6 lg:px-8">
-                <div
-                    class="overflow-hidden bg-white shadow-sm sm:rounded-lg"
-                >
-                    <div class="p-6 text-gray-900">
-                        Вы успешно вошли в систему!
+  <AppLayout>
+    <div class="max-w-4xl mx-auto space-y-4">
+      <div class="rounded-xl border border-neutral-800 bg-neutral-925 p-6">
+        <h2 class="text-lg font-semibold text-neutral-100 mb-2">Панель управления</h2>
+        <p class="text-sm text-neutral-400">
+          Вы успешно вошли в систему. Используйте основное меню для перехода к роли-ориентированному дашборду.
+        </p>
                     </div>
                 </div>
-            </div>
-        </div>
-    </AuthenticatedLayout>
+  </AppLayout>
 </template>

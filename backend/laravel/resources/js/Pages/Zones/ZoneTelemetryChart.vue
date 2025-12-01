@@ -2,7 +2,21 @@
   <Card class="relative">
     <div class="flex items-center justify-between mb-2">
       <div class="text-sm font-semibold">{{ title }}</div>
-      <div class="flex gap-1">
+      <div class="flex items-center gap-2">
+        <div class="text-xs text-neutral-500 hidden sm:inline">
+          <span class="mr-2">🖱️ Колесо мыши — zoom</span>
+          <span>Перетаскивание — pan</span>
+        </div>
+        <Button 
+          size="sm" 
+          variant="outline" 
+          @click="exportData"
+          class="text-xs"
+          title="Экспорт данных"
+        >
+          📥 Экспорт
+        </Button>
+        <div class="flex gap-1">
         <Button 
           size="sm" 
           :variant="timeRange === '1H' ? 'default' : 'secondary'" 
@@ -38,6 +52,7 @@
         >
           ALL
         </Button>
+        </div>
       </div>
     </div>
     <ChartBase :option="option" />
@@ -74,9 +89,42 @@ const setRange = (r: TimeRange): void => {
   emit('time-range-change', r)
 }
 
+// Экспорт данных в CSV
+function exportData(): void {
+  if (!props.data || props.data.length === 0) {
+    alert('Нет данных для экспорта')
+    return
+  }
+  
+  // Формируем CSV
+  const headers = ['Время', props.seriesName]
+  const rows = props.data.map(item => {
+    const date = new Date(item.ts)
+    const timeStr = date.toISOString()
+    return [timeStr, item.value.toString()]
+  })
+  
+  const csvContent = [
+    headers.join(','),
+    ...rows.map(row => row.join(','))
+  ].join('\n')
+  
+  // Создаем blob и скачиваем
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+  const link = document.createElement('a')
+  const url = URL.createObjectURL(blob)
+  link.setAttribute('href', url)
+  link.setAttribute('download', `${props.title.toLowerCase().replace(/\s+/g, '_')}_${props.timeRange}_${new Date().toISOString().split('T')[0]}.csv`)
+  link.style.visibility = 'hidden'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
 const option = computed(() => {
   const dataLength = props.data?.length || 0
-  const hasLargeDataset = dataLength > 100 // Показываем DataZoom для больших наборов данных
+  const hasLargeDataset = dataLength > 50 // Показываем DataZoom для наборов данных > 50 точек
   
   return {
     tooltip: { 
@@ -156,19 +204,21 @@ const option = computed(() => {
       splitLine: { lineStyle: { color: '#1f2937' } },
       scale: false, // Не масштабируем ось автоматически
     },
-    // DataZoom для навигации по большим наборам данных
-    dataZoom: hasLargeDataset ? [
+    // DataZoom для навигации по данным (zoom и pan)
+    dataZoom: [
       {
-        type: 'inside', // Внутренний DataZoom (скролл мышью)
+        type: 'inside', // Внутренний DataZoom (скролл колесом мыши, перетаскивание для pan)
         start: 0,
         end: 100,
-        minValueSpan: 3600000, // Минимум 1 час
+        minValueSpan: dataLength > 0 ? Math.min(3600000, (props.data[props.data.length - 1]?.ts || 0) - (props.data[0]?.ts || 0) || 3600000) : 3600000, // Минимум 1 час или весь диапазон если меньше
+        maxValueSpan: dataLength > 0 ? (props.data[props.data.length - 1]?.ts || 0) - (props.data[0]?.ts || 0) || 86400000 : 86400000, // Максимум весь диапазон
+        filterMode: 'none', // Не фильтруем данные при zoom
       },
-      {
-        type: 'slider', // Внешний DataZoom (ползунок внизу)
+      ...(hasLargeDataset ? [{
+        type: 'slider', // Внешний DataZoom (ползунок внизу) - только для больших наборов
         start: 0,
         end: 100,
-        height: 20,
+        height: 24,
         bottom: 10,
         handleIcon: 'path://M30.9,53.2C16.8,53.2,5.3,41.7,5.3,27.6S16.8,2,30.9,2C45,2,56.4,13.5,56.4,27.6S45,53.2,30.9,53.2z M30.9,3.5C17.6,3.5,6.8,14.4,6.8,27.6c0,13.3,10.8,24.1,24.1,24.1C44.2,51.7,55,40.9,55,27.6C54.9,14.4,44.1,3.5,30.9,3.5z M36.9,35.8c0,0.6-0.4,1-1,1H26.5c-0.6,0-1-0.4-1-1V19.4c0-0.6,0.4-1,1-1h9.4c0.6,0,1,0.4,1,1V35.8z',
         handleSize: '80%',
@@ -178,6 +228,7 @@ const option = computed(() => {
         },
         textStyle: {
           color: '#9ca3af',
+          fontSize: 10,
         },
         borderColor: '#374151',
         fillerColor: 'rgba(75, 85, 99, 0.2)',
@@ -189,9 +240,9 @@ const option = computed(() => {
           lineStyle: { color: '#60a5fa' },
           areaStyle: { color: 'rgba(96, 165, 250, 0.2)' },
         },
-        minValueSpan: 3600000, // Минимум 1 час
-      },
-    ] : undefined,
+        minValueSpan: dataLength > 0 ? Math.min(3600000, (props.data[props.data.length - 1]?.ts || 0) - (props.data[0]?.ts || 0) || 3600000) : 3600000,
+      }] : []),
+    ],
     series: [
       {
         name: props.seriesName,

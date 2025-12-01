@@ -3,6 +3,7 @@ idf_component_register(
         "main.c"
         "pump_node_app.c"
         "pump_node_tasks.c"
+        "pump_node_framework_integration.c"
     INCLUDE_DIRS 
         "."
     REQUIRES 
@@ -13,6 +14,9 @@ idf_component_register(
         pump_driver
         config_apply
         setup_portal
+        node_framework
+        node_utils
+        ina209
         esp_wifi
         nvs_flash
         esp_netif

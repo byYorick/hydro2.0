@@ -21,23 +21,33 @@ class AlertWebhookController extends Controller
     {
         // Валидация webhook данных от Alertmanager
         // Формат: https://prometheus.io/docs/alerting/latest/configuration/#webhook_config
-        $data = $request->validate([
+        // Поле alerts может быть пустым массивом или отсутствовать (для совместимости)
+        
+        // Базовые правила валидации
+        $rules = [
             'version' => ['nullable', 'string'],
             'groupKey' => ['nullable', 'string'],
             'status' => ['nullable', 'string', 'in:firing,resolved'],
             'receiver' => ['nullable', 'string'],
-            'alerts' => ['required', 'array'],
-            'alerts.*.status' => ['required', 'string', 'in:firing,resolved'],
-            'alerts.*.labels' => ['required', 'array'],
-            'alerts.*.annotations' => ['nullable', 'array'],
-            'alerts.*.startsAt' => ['nullable', 'date'],
-            'alerts.*.endsAt' => ['nullable', 'date'],
-        ]);
+            'alerts' => ['nullable', 'array'],
+        ];
+        
+        // Добавляем вложенные правила для alerts только если alerts присутствует и не пустое
+        if ($request->has('alerts') && !empty($request->input('alerts'))) {
+            $rules['alerts.*.status'] = ['required', 'string', 'in:firing,resolved'];
+            $rules['alerts.*.labels'] = ['required', 'array'];
+            $rules['alerts.*.annotations'] = ['nullable', 'array'];
+            $rules['alerts.*.startsAt'] = ['nullable', 'date'];
+            $rules['alerts.*.endsAt'] = ['nullable', 'date'];
+        }
+        
+        $data = $request->validate($rules);
         
         Log::info('Alertmanager webhook received', ['data' => $data]);
 
         // Alertmanager отправляет массив алертов
-        if (isset($data['alerts']) && is_array($data['alerts'])) {
+        // Обрабатываем только если массив не пустой
+        if (!empty($data['alerts']) && is_array($data['alerts'])) {
             foreach ($data['alerts'] as $alertData) {
                 $this->processAlert($alertData);
             }

@@ -11,17 +11,24 @@
  * телеметрия публикуется только при выполнении команд (ток насоса)
  */
 
+#include "pump_node_app.h"
 #include "mqtt_manager.h"
 #include "ina209.h"
 #include "config_storage.h"
 #include "pump_driver.h"
+#include "pump_node_framework_integration.h"
+#include "node_telemetry_engine.h"
+#include "node_utils.h"
+#include "node_watchdog.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_system.h"
 #include "esp_wifi.h"
+#include "esp_netif.h"
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "cJSON.h"
 #include <string.h>
 #include <stdlib.h>
@@ -32,9 +39,49 @@ static const char *TAG = "pump_node_tasks";
 #define HEARTBEAT_INTERVAL_MS      15000 // 15 секунд - heartbeat
 #define DEFAULT_CURRENT_POLL_MS   1000  // 1 секунда по умолчанию для тока насоса
 #define PUMP_HEALTH_INTERVAL_MS    10000 // 10 секунд - health отчеты
+#define STATUS_PUBLISH_INTERVAL_MS 60000  // 60 секунд - публикация STATUS согласно DEVICE_NODE_PROTOCOL.md
 
-// Глобальная переменная для интервала опроса тока
+// Глобальная переменная для интервала опроса тока (потокобезопасно)
 static uint32_t s_current_poll_interval_ms = DEFAULT_CURRENT_POLL_MS;
+static SemaphoreHandle_t s_current_poll_interval_mutex = NULL;
+
+/**
+ * @brief Инициализация mutex для s_current_poll_interval_ms
+ */
+static void init_current_poll_interval_mutex(void) {
+    if (s_current_poll_interval_mutex == NULL) {
+        s_current_poll_interval_mutex = xSemaphoreCreateMutex();
+        if (s_current_poll_interval_mutex == NULL) {
+            ESP_LOGE(TAG, "Failed to create current poll interval mutex");
+        }
+    }
+}
+
+/**
+ * @brief Потокобезопасное получение интервала опроса
+ */
+static uint32_t get_current_poll_interval(void) {
+    init_current_poll_interval_mutex();
+    uint32_t result = DEFAULT_CURRENT_POLL_MS;
+    if (s_current_poll_interval_mutex != NULL && 
+        xSemaphoreTake(s_current_poll_interval_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        result = s_current_poll_interval_ms;
+        xSemaphoreGive(s_current_poll_interval_mutex);
+    }
+    return result;
+}
+
+/**
+ * @brief Потокобезопасная установка интервала опроса
+ */
+static void set_current_poll_interval(uint32_t interval_ms) {
+    init_current_poll_interval_mutex();
+    if (s_current_poll_interval_mutex != NULL && 
+        xSemaphoreTake(s_current_poll_interval_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        s_current_poll_interval_ms = interval_ms;
+        xSemaphoreGive(s_current_poll_interval_mutex);
+    }
+}
 
 /**
  * @brief Задача публикации heartbeat
@@ -44,11 +91,20 @@ static uint32_t s_current_poll_interval_ms = DEFAULT_CURRENT_POLL_MS;
 static void task_heartbeat(void *pvParameters) {
     ESP_LOGI(TAG, "Heartbeat task started");
     
+    // Добавляем задачу в watchdog
+    esp_err_t wdt_err = node_watchdog_add_task();
+    if (wdt_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add heartbeat task to watchdog: %s", esp_err_to_name(wdt_err));
+    }
+    
     TickType_t last_wake_time = xTaskGetTickCount();
     const TickType_t interval = pdMS_TO_TICKS(HEARTBEAT_INTERVAL_MS);
     
     while (1) {
         vTaskDelayUntil(&last_wake_time, interval);
+        
+        // Сбрасываем watchdog
+        node_watchdog_reset();
         
         if (!mqtt_manager_is_connected()) {
             continue;
@@ -87,14 +143,23 @@ static void task_heartbeat(void *pvParameters) {
 static void task_current_poll(void *pvParameters) {
     ESP_LOGI(TAG, "Current poll task started");
     
+    // Добавляем задачу в watchdog
+    esp_err_t wdt_err = node_watchdog_add_task();
+    if (wdt_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add current poll task to watchdog: %s", esp_err_to_name(wdt_err));
+    }
+    
     TickType_t last_wake_time = xTaskGetTickCount();
     
     while (1) {
-        // Получаем актуальный интервал из конфигурации
-        uint32_t poll_interval = s_current_poll_interval_ms;
+        // Получаем актуальный интервал из конфигурации (потокобезопасно)
+        uint32_t poll_interval = get_current_poll_interval();
         const TickType_t interval = pdMS_TO_TICKS(poll_interval);
         
         vTaskDelayUntil(&last_wake_time, interval);
+        
+        // Сбрасываем watchdog
+        node_watchdog_reset();
         
         if (!mqtt_manager_is_connected()) {
             ESP_LOGW(TAG, "MQTT not connected, skipping current poll");
@@ -106,35 +171,8 @@ static void task_current_poll(void *pvParameters) {
         esp_err_t err = ina209_read(&reading);
         
         if (err == ESP_OK && reading.valid) {
-            // Получение node_id из config_storage
-            static char node_id[64] = {0};
-            if (node_id[0] == '\0') {
-                if (config_storage_get_node_id(node_id, sizeof(node_id)) != ESP_OK) {
-                    strncpy(node_id, "pump-001", sizeof(node_id) - 1);
-                }
-            }
-            
-            // Публикация телеметрии согласно MQTT_SPEC_FULL.md
-            cJSON *telemetry = cJSON_CreateObject();
-            if (telemetry) {
-                cJSON_AddStringToObject(telemetry, "node_id", node_id);
-                cJSON_AddStringToObject(telemetry, "channel", "pump_bus_current");
-                cJSON_AddStringToObject(telemetry, "metric_type", "CURRENT");
-                cJSON_AddNumberToObject(telemetry, "value", reading.bus_current_ma);
-                cJSON_AddNumberToObject(telemetry, "raw", (double)reading.bus_current_ma);
-                cJSON_AddNumberToObject(telemetry, "timestamp", (double)(esp_timer_get_time() / 1000000));
-                
-                // Дополнительные поля для диагностики
-                cJSON_AddNumberToObject(telemetry, "voltage", reading.bus_voltage_v);
-                cJSON_AddNumberToObject(telemetry, "power", reading.power_mw);
-                
-                char *json_str = cJSON_PrintUnformatted(telemetry);
-                if (json_str) {
-                    mqtt_manager_publish_telemetry("pump_bus_current", json_str);
-                    free(json_str);
-                }
-                cJSON_Delete(telemetry);
-            }
+            // Публикация телеметрии через node_framework
+            pump_node_publish_telemetry_callback(NULL);
         } else {
             ESP_LOGW(TAG, "Failed to read INA209: %s", esp_err_to_name(err));
         }
@@ -147,12 +185,21 @@ static void task_current_poll(void *pvParameters) {
 static void task_pump_health(void *pvParameters) {
     ESP_LOGI(TAG, "Pump health task started");
 
+    // Добавляем задачу в watchdog
+    esp_err_t wdt_err = node_watchdog_add_task();
+    if (wdt_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add pump health task to watchdog: %s", esp_err_to_name(wdt_err));
+    }
+
     TickType_t last_wake_time = xTaskGetTickCount();
     const TickType_t interval = pdMS_TO_TICKS(PUMP_HEALTH_INTERVAL_MS);
     pump_driver_health_snapshot_t snapshot;
 
     while (1) {
         vTaskDelayUntil(&last_wake_time, interval);
+
+        // Сбрасываем watchdog
+        node_watchdog_reset();
 
         if (!mqtt_manager_is_connected()) {
             continue;
@@ -169,7 +216,7 @@ static void task_pump_health(void *pvParameters) {
             continue;
         }
 
-        cJSON_AddNumberToObject(health, "timestamp", (double)(esp_timer_get_time() / 1000000));
+        cJSON_AddNumberToObject(health, "ts", (double)node_utils_get_timestamp_seconds());
 
         cJSON *channels = cJSON_CreateArray();
         if (!channels) {
@@ -222,6 +269,111 @@ static void task_pump_health(void *pvParameters) {
 }
 
 /**
+ * @brief Задача публикации STATUS сообщений
+ * 
+ * Публикует status каждые 60 секунд согласно DEVICE_NODE_PROTOCOL.md раздел 4.2
+ * 
+ * Примечание: интервал 60 секунд больше watchdog таймаута (10 сек),
+ * поэтому используем периодический сброс watchdog во время ожидания
+ */
+static void task_status(void *pvParameters) {
+    ESP_LOGI(TAG, "Status task started");
+    
+    // Добавляем задачу в watchdog
+    esp_err_t wdt_err = node_watchdog_add_task();
+    if (wdt_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add status task to watchdog: %s", esp_err_to_name(wdt_err));
+    }
+    
+    TickType_t last_wake_time = xTaskGetTickCount();
+    const TickType_t interval = pdMS_TO_TICKS(STATUS_PUBLISH_INTERVAL_MS);
+    
+    // Сбрасываем watchdog каждую секунду, чтобы иметь запас к системному таймауту
+    const TickType_t wdt_reset_interval = pdMS_TO_TICKS(1000);
+    TickType_t last_wdt_reset = xTaskGetTickCount();
+    
+    while (1) {
+        // Периодически сбрасываем watchdog во время ожидания
+        // (интервал задачи 60 сек > watchdog таймаут 10 сек)
+        TickType_t current_time = xTaskGetTickCount();
+        TickType_t elapsed_since_wdt = current_time - last_wdt_reset;
+        
+        // TickType_t - беззнаковый тип, переполнение работает по модулю, поэтому
+        // разница всегда корректна и не может быть отрицательной
+        if (elapsed_since_wdt >= wdt_reset_interval) {
+            node_watchdog_reset();
+            last_wdt_reset = current_time;
+        }
+        
+        // Проверяем, наступило ли время для публикации STATUS
+        TickType_t elapsed_since_wake = current_time - last_wake_time;
+        if (elapsed_since_wake >= interval) {
+            // Сбрасываем watchdog перед выполнением работы
+            node_watchdog_reset();
+            
+            if (mqtt_manager_is_connected()) {
+                // Публикация STATUS
+                pump_node_publish_status();
+            }
+            
+            // Сбрасываем watchdog после выполнения работы
+            node_watchdog_reset();
+            last_wake_time = current_time;
+        }
+        
+        // Небольшая задержка, чтобы не нагружать CPU
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+/**
+ * @brief Publish STATUS message
+ * 
+ * Публикует статус узла согласно DEVICE_NODE_PROTOCOL.md раздел 4.2
+ */
+void pump_node_publish_status(void) {
+    if (!mqtt_manager_is_connected()) {
+        return;
+    }
+    
+    // Получение IP адреса
+    esp_netif_ip_info_t ip_info;
+    char ip_str[16] = "0.0.0.0";
+    esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    if (netif != NULL) {
+        if (esp_netif_get_ip_info(netif, &ip_info) == ESP_OK) {
+            snprintf(ip_str, sizeof(ip_str), IPSTR, IP2STR(&ip_info.ip));
+        }
+    }
+    
+    // Получение RSSI
+    wifi_ap_record_t ap_info;
+    int8_t rssi = -100;
+    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+        rssi = ap_info.rssi;
+    }
+    
+    // Версия прошивки (можно взять из IDF_VER или hardcode)
+    const char *fw_version = IDF_VER;
+    
+    // Формат согласно DEVICE_NODE_PROTOCOL.md раздел 4.2
+    cJSON *status = cJSON_CreateObject();
+    if (status) {
+        cJSON_AddBoolToObject(status, "online", true);
+        cJSON_AddStringToObject(status, "ip", ip_str);
+        cJSON_AddNumberToObject(status, "rssi", rssi);
+        cJSON_AddStringToObject(status, "fw", fw_version);
+        
+        char *json_str = cJSON_PrintUnformatted(status);
+        if (json_str) {
+            mqtt_manager_publish_status(json_str);
+            free(json_str);
+        }
+        cJSON_Delete(status);
+    }
+}
+
+/**
  * @brief Обновление интервала опроса тока из NodeConfig
  * 
  * Ищет канал "pump_bus_current" в NodeConfig и обновляет s_current_poll_interval_ms
@@ -250,8 +402,9 @@ void pump_node_update_current_poll_interval(void) {
                     strcmp(name->valuestring, "pump_bus_current") == 0) {
                     cJSON *poll_interval = cJSON_GetObjectItem(ch, "poll_interval_ms");
                     if (poll_interval != NULL && cJSON_IsNumber(poll_interval)) {
-                        s_current_poll_interval_ms = (uint32_t)cJSON_GetNumberValue(poll_interval);
-                        ESP_LOGI(TAG, "Updated current poll interval to %lu ms", s_current_poll_interval_ms);
+                        uint32_t new_interval = (uint32_t)cJSON_GetNumberValue(poll_interval);
+                        set_current_poll_interval(new_interval);
+                        ESP_LOGI(TAG, "Updated current poll interval to %lu ms", new_interval);
                     }
                     break;
                 }
@@ -275,6 +428,9 @@ void pump_node_start_tasks(void) {
 
     // Health отчеты по насосам и INA209
     xTaskCreate(task_pump_health, "pump_health_task", 4096, NULL, 4, NULL);
+
+    // Задача публикации STATUS
+    xTaskCreate(task_status, "status_task", 3072, NULL, 3, NULL);
 
     // Задача heartbeat
     xTaskCreate(task_heartbeat, "heartbeat_task", 3072, NULL, 3, NULL);

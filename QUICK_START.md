@@ -102,7 +102,7 @@ hydro2.0/
 
 - **Синхронизация:** ✅ Завершена (2025-01-27)
 - **План синхронизации:** `doc_ai/SYNC_PLAN.md`
-- **Отчет о несоответствиях:** `doc_ai/INCONSISTENCIES_REPORT.md`
+- **Отчет о несоответствиях:** `doc_ai/GAPS_AND_INCONSISTENCIES_REPORT.md`
 
 ---
 

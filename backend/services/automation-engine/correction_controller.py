@@ -4,9 +4,14 @@ Correction Controller - универсальный контроллер для �
 """
 from typing import Optional, Dict, Any
 from enum import Enum
+from datetime import datetime, timedelta
+import time
 import logging
 from common.db import create_zone_event, create_ai_log
 from correction_cooldown import should_apply_correction, record_correction
+from config.settings import get_settings
+from utils.adaptive_pid import AdaptivePid, AdaptivePidConfig, PidZone, PidZoneCoeffs
+from services.pid_config_service import get_config, invalidate_cache
 
 logger = logging.getLogger(__name__)
 
@@ -30,14 +35,17 @@ class CorrectionController:
         self.correction_type = correction_type
         self.metric_name = correction_type.value.upper()
         self.event_prefix = correction_type.value.upper()
+        self._pid_by_zone: Dict[int, AdaptivePid] = {}
+        self._last_pid_tick: Dict[int, float] = {}
     
     async def check_and_correct(
         self,
         zone_id: int,
         targets: Dict[str, Any],
         telemetry: Dict[str, Optional[float]],
-        nodes: Dict[str, Dict[str, Any]],
-        water_level_ok: bool
+        telemetry_timestamps: Optional[Dict[str, Any]] = None,
+        nodes: Dict[str, Dict[str, Any]] = None,
+        water_level_ok: bool = True
     ) -> Optional[Dict[str, Any]]:
         """
         Проверка и корректировка параметра (pH или EC).
@@ -46,6 +54,7 @@ class CorrectionController:
             zone_id: ID зоны
             targets: Целевые значения из рецепта
             telemetry: Текущие значения телеметрии
+            telemetry_timestamps: Временные метки обновления телеметрии (для проверки свежести)
             nodes: Узлы зоны
             water_level_ok: Флаг, что уровень воды в норме
         
@@ -59,6 +68,50 @@ class CorrectionController:
         if target is None or current is None:
             return None
         
+        # КРИТИЧЕСКАЯ ПРОВЕРКА: проверяем свежесть данных телеметрии
+        # Предотвращает дозирование на основе устаревших данных
+        if telemetry_timestamps:
+            metric_timestamp = telemetry_timestamps.get(self.metric_name) or telemetry_timestamps.get(target_key)
+            if metric_timestamp:
+                try:
+                    # Парсим timestamp (может быть datetime или строка)
+                    if isinstance(metric_timestamp, str):
+                        updated_at = datetime.fromisoformat(metric_timestamp.replace('Z', '+00:00'))
+                    elif isinstance(metric_timestamp, datetime):
+                        updated_at = metric_timestamp
+                    else:
+                        updated_at = None
+                    
+                    if updated_at:
+                        settings = get_settings()
+                        max_age = timedelta(minutes=settings.TELEMETRY_MAX_AGE_MINUTES)
+                        age = datetime.utcnow() - updated_at.replace(tzinfo=None) if updated_at.tzinfo else datetime.utcnow() - updated_at
+                        
+                        if age > max_age:
+                            logger.warning(
+                                f"Zone {zone_id}: {self.metric_name} data is too old ({age.total_seconds() / 60:.1f} minutes, "
+                                f"max: {settings.TELEMETRY_MAX_AGE_MINUTES} minutes). Skipping correction to prevent blind dosing."
+                            )
+                            # Создаем событие о пропуске корректировки из-за устаревших данных
+                            await create_zone_event(
+                                zone_id,
+                                f'{self.event_prefix}_CORRECTION_SKIPPED_STALE_DATA',
+                                {
+                                    f'current_{target_key}': current,
+                                    f'target_{target_key}': target,
+                                    'data_age_minutes': age.total_seconds() / 60,
+                                    'max_age_minutes': settings.TELEMETRY_MAX_AGE_MINUTES,
+                                    'updated_at': metric_timestamp.isoformat() if isinstance(metric_timestamp, datetime) else str(metric_timestamp),
+                                    'reason': 'telemetry_data_too_old'
+                                }
+                            )
+                            return None
+                except Exception as e:
+                    logger.warning(
+                        f"Zone {zone_id}: Failed to check {target_key} data freshness: {e}. "
+                        f"Proceeding with correction (may be risky)."
+                    )
+        
         try:
             target_val = float(target)
             current_val = float(current)
@@ -67,9 +120,12 @@ class CorrectionController:
             return None
         
         diff = current_val - target_val
+
+        # Подготавливаем PID для зоны и типа коррекции
+        pid = await self._get_pid(zone_id, target_val)
         
         # Проверяем, превышает ли отклонение порог
-        if abs(diff) <= 0.2:
+        if abs(diff) <= pid.config.dead_zone:
             return None
         
         # Проверяем cooldown и анализ тренда
@@ -97,13 +153,39 @@ class CorrectionController:
             return None
         
         # Находим узел для корректировки
+        if not nodes:
+            return None
         irrig_node = self._find_irrigation_node(nodes)
         if not irrig_node:
             return None
         
         # Определяем тип корректировки и количество
         correction_type = self._determine_correction_type(diff)
-        amount = self._calculate_amount(abs(diff))
+        dt_seconds = self._get_dt_seconds(zone_id)
+        amount = pid.compute(current_val, dt_seconds)
+
+        # Логируем PID_OUTPUT событие только если output > 0
+        if amount > 0:
+            await create_zone_event(
+                zone_id,
+                'PID_OUTPUT',
+                {
+                    'type': self.correction_type.value,
+                    'zone_state': pid.get_zone().value,
+                    'output': amount,
+                    'error': diff,
+                    'dt_seconds': dt_seconds,
+                    'current': current_val,
+                    'target': target_val,
+                    'safety_skip_reason': None,
+                }
+            )
+        else:
+            logger.info(
+                f"Zone {zone_id}: {self.metric_name} PID output is zero "
+                f"(zone={pid.get_zone().value}, dt={dt_seconds:.2f}s); skipping correction."
+            )
+            return None
         
         # Формируем команду
         command = {
@@ -120,7 +202,9 @@ class CorrectionController:
                 f'current_{target_key}': current_val,
                 f'target_{target_key}': target_val,
                 'diff': diff,
-                'dose_ml': amount
+                'dose_ml': amount,
+                'pid_zone': pid.get_zone().value,
+                'pid_dt_seconds': dt_seconds
             },
             'zone_id': zone_id,
             'correction_type_str': target_key,
@@ -221,6 +305,76 @@ class CorrectionController:
                 'correction': correction_type
             }
         )
+
+    async def _get_pid(self, zone_id: int, setpoint: float) -> AdaptivePid:
+        """Получить/инициализировать PID для зоны."""
+        pid = self._pid_by_zone.get(zone_id)
+
+        if pid is None:
+            # Загружаем конфиг из БД или используем дефолты
+            pid_config = await get_config(zone_id, self.correction_type.value, setpoint)
+            if pid_config is None:
+                # Fallback на дефолты (не должно произойти, но на всякий случай)
+                settings = get_settings()
+                pid_config = self._build_pid_config(settings, setpoint)
+            pid = AdaptivePid(pid_config)
+            self._pid_by_zone[zone_id] = pid
+            self._last_pid_tick[zone_id] = time.monotonic()
+        else:
+            pid.update_setpoint(setpoint)
+
+        return pid
+
+    def _get_dt_seconds(self, zone_id: int) -> float:
+        """Рассчитать dt между вызовами PID для зоны."""
+        now = time.monotonic()
+        last_tick = self._last_pid_tick.get(zone_id)
+        self._last_pid_tick[zone_id] = now
+
+        if last_tick is None:
+            return float(get_settings().MAIN_LOOP_SLEEP_SECONDS)
+
+        # Минимальный dt чтобы не делить на 0 и не дёргать производную
+        return max(1.0, now - last_tick)
+
+    def _build_pid_config(self, settings, setpoint: float) -> AdaptivePidConfig:
+        """Сконфигурировать PID под тип коррекции."""
+        if self.correction_type == CorrectionType.PH:
+            return AdaptivePidConfig(
+                setpoint=setpoint,
+                dead_zone=settings.PH_PID_DEAD_ZONE,
+                close_zone=settings.PH_PID_CLOSE_ZONE,
+                far_zone=settings.PH_PID_FAR_ZONE,
+                zone_coeffs={
+                    PidZone.DEAD: PidZoneCoeffs(0.0, 0.0, 0.0),
+                    PidZone.CLOSE: PidZoneCoeffs(settings.PH_PID_KP_CLOSE, settings.PH_PID_KI_CLOSE, settings.PH_PID_KD_CLOSE),
+                    PidZone.FAR: PidZoneCoeffs(settings.PH_PID_KP_FAR, settings.PH_PID_KI_FAR, settings.PH_PID_KD_FAR),
+                },
+                max_output=settings.PH_PID_MAX_OUTPUT,
+                min_output=0.0,
+                max_integral=100.0,
+                min_interval_ms=settings.PH_PID_MIN_INTERVAL_MS,
+                enable_autotune=settings.PH_PID_ENABLE_AUTOTUNE,
+                adaptation_rate=settings.PH_PID_ADAPTATION_RATE,
+            )
+
+        return AdaptivePidConfig(
+            setpoint=setpoint,
+            dead_zone=settings.EC_PID_DEAD_ZONE,
+            close_zone=settings.EC_PID_CLOSE_ZONE,
+            far_zone=settings.EC_PID_FAR_ZONE,
+            zone_coeffs={
+                PidZone.DEAD: PidZoneCoeffs(0.0, 0.0, 0.0),
+                PidZone.CLOSE: PidZoneCoeffs(settings.EC_PID_KP_CLOSE, settings.EC_PID_KI_CLOSE, settings.EC_PID_KD_CLOSE),
+                PidZone.FAR: PidZoneCoeffs(settings.EC_PID_KP_FAR, settings.EC_PID_KI_FAR, settings.EC_PID_KD_FAR),
+            },
+            max_output=settings.EC_PID_MAX_OUTPUT,
+            min_output=0.0,
+            max_integral=100.0,
+            min_interval_ms=settings.EC_PID_MIN_INTERVAL_MS,
+            enable_autotune=settings.EC_PID_ENABLE_AUTOTUNE,
+            adaptation_rate=settings.EC_PID_ADAPTATION_RATE,
+        )
     
     def _find_irrigation_node(self, nodes: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """Найти узел для полива/дозирования."""
@@ -257,4 +411,3 @@ class CorrectionController:
             return 'PH_CORRECTED'
         else:  # EC
             return 'EC_DOSING'
-

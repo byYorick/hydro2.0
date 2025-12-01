@@ -51,3 +51,25 @@ export function formatInterval(seconds) {
   return `${Math.floor(seconds / 3600)} ч`
 }
 
+/**
+ * Форматирует timestamp в относительное время (например, "5 мин назад", "2 ч назад")
+ * @param {number|string|Date} timestamp - Timestamp в миллисекундах, строке или Date
+ * @returns {string} Отформатированное относительное время
+ */
+export function formatTimeAgo(timestamp) {
+  if (!timestamp) return ''
+  
+  const date = typeof timestamp === 'number' ? new Date(timestamp) : new Date(timestamp)
+  const now = new Date()
+  const diffMs = now - date
+  const diffMins = Math.floor(diffMs / 60000)
+  const diffHours = Math.floor(diffMs / 3600000)
+  const diffDays = Math.floor(diffMs / 86400000)
+  
+  if (diffMins < 1) return 'только что'
+  if (diffMins < 60) return `${diffMins} мин назад`
+  if (diffHours < 24) return `${diffHours} ч назад`
+  if (diffDays < 7) return `${diffDays} дн назад`
+  return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+

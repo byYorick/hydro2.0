@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\RecipePhase;
 use App\Models\Recipe;
+use App\Models\RecipePhase;
 use App\Services\RecipeService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -12,8 +12,7 @@ class RecipePhaseController extends Controller
 {
     public function __construct(
         private RecipeService $recipeService
-    ) {
-    }
+    ) {}
 
     public function store(Request $request, Recipe $recipe)
     {
@@ -22,7 +21,9 @@ class RecipePhaseController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'duration_hours' => ['required', 'integer', 'min:1'],
             'targets' => ['required', 'array'],
-            'targets.ph' => ['nullable', 'numeric', 'between:0,14'],
+            'targets.ph' => ['nullable'],
+            'targets.ph.min' => ['nullable', 'numeric', 'between:0,14'],
+            'targets.ph.max' => ['nullable', 'numeric', 'between:0,14'],
             'targets.ec' => ['nullable', 'numeric', 'min:0'],
             'targets.temp_air' => ['nullable', 'numeric'],
             'targets.humidity_air' => ['nullable', 'numeric', 'between:0,100'],
@@ -31,6 +32,7 @@ class RecipePhaseController extends Controller
             'targets.irrigation_duration_sec' => ['nullable', 'integer', 'min:1'],
         ]);
         $phase = $this->recipeService->addPhase($recipe, $data);
+
         return response()->json(['status' => 'ok', 'data' => $phase], Response::HTTP_CREATED);
     }
 
@@ -41,7 +43,9 @@ class RecipePhaseController extends Controller
             'name' => ['sometimes', 'string', 'max:255'],
             'duration_hours' => ['sometimes', 'integer', 'min:1'],
             'targets' => ['sometimes', 'array'],
-            'targets.ph' => ['nullable', 'numeric', 'between:0,14'],
+            'targets.ph' => ['nullable'],
+            'targets.ph.min' => ['nullable', 'numeric', 'between:0,14'],
+            'targets.ph.max' => ['nullable', 'numeric', 'between:0,14'],
             'targets.ec' => ['nullable', 'numeric', 'min:0'],
             'targets.temp_air' => ['nullable', 'numeric'],
             'targets.humidity_air' => ['nullable', 'numeric', 'between:0,100'],
@@ -50,14 +54,14 @@ class RecipePhaseController extends Controller
             'targets.irrigation_duration_sec' => ['nullable', 'integer', 'min:1'],
         ]);
         $phase = $this->recipeService->updatePhase($recipePhase, $data);
+
         return response()->json(['status' => 'ok', 'data' => $phase]);
     }
 
     public function destroy(RecipePhase $recipePhase)
     {
         $this->recipeService->deletePhase($recipePhase);
+
         return response()->json(['status' => 'ok']);
     }
 }
-
-

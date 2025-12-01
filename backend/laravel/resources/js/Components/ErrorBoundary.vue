@@ -37,9 +37,12 @@ onErrorCaptured((err: Error) => {
 })
 
 function retry(): void {
+  // Не перезагружаем страницу автоматически
+  // Просто очищаем ошибку и позволяем пользователю продолжить работу
   error.value = null
-  // Используем Inertia для повторной загрузки вместо жесткой перезагрузки страницы
-  router.reload({ only: [] })
+  // НЕ вызываем router.reload() автоматически - это может вызвать бесконечный цикл
+  // Если нужно обновить данные, это должно быть явным действием пользователя
+  logger.info('[ErrorBoundary] Error cleared, user can continue working', {})
 }
 
 function goHome(): void {

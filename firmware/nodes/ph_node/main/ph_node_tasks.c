@@ -19,10 +19,13 @@
 #include "i2c_bus.h"
 #include "ina209.h"
 #include "pump_driver.h"
+#include "node_telemetry_engine.h"
+#include "node_utils.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
+#include "node_watchdog.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "cJSON.h"
@@ -48,56 +51,155 @@ static const char *TAG = "ph_node_tasks";
 static void task_sensors(void *pvParameters) {
     ESP_LOGI(TAG, "Sensor task started");
     
+    // Добавляем задачу в watchdog
+    esp_err_t wdt_err = node_watchdog_add_task();
+    if (wdt_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add sensor task to watchdog: %s", esp_err_to_name(wdt_err));
+    }
+    
     TickType_t last_wake_time = xTaskGetTickCount();
     const TickType_t interval = pdMS_TO_TICKS(SENSOR_POLL_INTERVAL_MS);
     
+    // Интервал для периодического сброса watchdog (каждые 2 секунды)
+    // Это гарантирует, что watchdog будет сброшен даже если задача зависнет
+    const TickType_t wdt_reset_interval = pdMS_TO_TICKS(2000);
+    TickType_t last_wdt_reset = xTaskGetTickCount();
+    
     while (1) {
-        vTaskDelayUntil(&last_wake_time, interval);
+        TickType_t current_time = xTaskGetTickCount();
+        TickType_t elapsed_since_wdt = current_time - last_wdt_reset;
         
-        // Publish pH telemetry только если MQTT подключен
-        if (mqtt_manager_is_connected()) {
-            ph_node_publish_telemetry();
-        } else {
-            ESP_LOGW(TAG, "MQTT not connected, skipping sensor poll");
+        // Периодически сбрасываем watchdog во время ожидания
+        // TickType_t - беззнаковый тип, переполнение работает по модулю, поэтому
+        // разница всегда корректна и не может быть отрицательной
+        if (elapsed_since_wdt >= wdt_reset_interval) {
+            node_watchdog_reset();
+            last_wdt_reset = current_time;
         }
         
-        // Update OLED UI with current pH values (pH-специфичная логика)
-        // Обновляем OLED независимо от MQTT подключения
-        if (ph_node_is_oled_initialized()) {
-            // Получение статуса соединений через общий компонент
-            connection_status_t conn_status;
-            if (connection_status_get(&conn_status) == ESP_OK) {
-                // Обновление модели OLED UI - обновляем только изменяемые поля
-                oled_ui_model_t model = {0};
-                // Инициализируем неиспользуемые поля как NaN, чтобы они не обновлялись
-                model.ph_value = NAN;
-                model.ec_value = NAN;
-                model.temperature_air = NAN;
-                model.temperature_water = NAN;
-                model.humidity = NAN;
-                model.co2 = NAN;
-                
-                // Обновляем соединения
-                model.connections.wifi_connected = conn_status.wifi_connected;
-                model.connections.mqtt_connected = conn_status.mqtt_connected;
-                model.connections.wifi_rssi = conn_status.wifi_rssi;
-                
-                // Get current pH value (pH-специфичная логика)
-                if (ph_node_is_ph_sensor_initialized()) {
-                    float ph_value = 0.0f;
-                    if (trema_ph_read(&ph_value) && !isnan(ph_value) && isfinite(ph_value)) {
-                        model.ph_value = ph_value;
-                    }
-                    // Если не удалось прочитать, оставляем NaN - старое значение сохранится
-                }
-                
-                // Статус узла
-                model.alert = false;
-                model.paused = false;
-                
-                oled_ui_update_model(&model);
+        // Проверяем, наступило ли время для опроса сенсора
+        TickType_t elapsed_since_wake = current_time - last_wake_time;
+        if (elapsed_since_wake >= interval) {
+            // Сбрасываем watchdog перед выполнением работы
+            node_watchdog_reset();
+            
+            // Publish pH telemetry только если MQTT подключен
+            if (mqtt_manager_is_connected()) {
+                ph_node_publish_telemetry();
+            } else {
+                ESP_LOGW(TAG, "MQTT not connected, skipping sensor poll");
+                trema_ph_log_connection_status();
             }
+            
+            // Update OLED UI with current pH values (pH-специфичная логика)
+            // Обновляем OLED независимо от MQTT подключения
+            if (ph_node_is_oled_initialized()) {
+                // Получение статуса соединений через общий компонент
+                connection_status_t conn_status;
+                if (connection_status_get(&conn_status) == ESP_OK) {
+                    // Обновление модели OLED UI - обновляем только изменяемые поля
+                    oled_ui_model_t model = {0};
+                    // Инициализируем неиспользуемые поля как NaN, чтобы они не обновлялись
+                    model.ph_value = NAN;
+                    model.ec_value = NAN;
+                    model.temperature_air = NAN;
+                    model.temperature_water = NAN;
+                    model.humidity = NAN;
+                    model.co2 = NAN;
+                    
+                    // Обновляем соединения
+                    model.connections.wifi_connected = conn_status.wifi_connected;
+                    model.connections.mqtt_connected = conn_status.mqtt_connected;
+                    model.connections.wifi_rssi = conn_status.wifi_rssi;
+                    
+                    // Get current pH value and sensor status (pH-специфичная логика)
+                    bool sensor_initialized = ph_node_is_ph_sensor_initialized();
+                    bool i2c_bus_ok = i2c_bus_is_initialized_bus(I2C_BUS_1);
+                    
+                    // Инициализируем статус датчика
+                    model.sensor_status.i2c_connected = false;
+                    model.sensor_status.using_stub = false;
+                    model.sensor_status.has_error = false;
+                    model.sensor_status.error_msg[0] = '\0';
+                    // Инициализируем pH как NaN, чтобы не показывать 0.00
+                    model.ph_value = NAN;
+                    
+                    if (i2c_bus_ok) {
+                        // Проверяем подключение I2C - пытаемся прочитать model ID
+                        uint8_t reg_model = REG_MODEL;
+                        uint8_t model_id = 0;
+                        esp_err_t i2c_err = i2c_bus_read_bus(I2C_BUS_1, TREMA_PH_ADDR, &reg_model, 1, &model_id, 1, 200);
+                        
+                        if (i2c_err == ESP_OK && model_id == 0x1A) {
+                            model.sensor_status.i2c_connected = true;
+                            
+                            // Если датчик подключен, пытаемся прочитать значение
+                            if (sensor_initialized) {
+                                float ph_value = 0.0f;
+                                bool read_success = trema_ph_read(&ph_value);
+                                bool using_stub = trema_ph_is_using_stub_values();
+                                
+                                // Проверяем валидность значения: pH должен быть в диапазоне 0-14
+                                if (read_success && !isnan(ph_value) && isfinite(ph_value) && 
+                                    ph_value >= 0.0f && ph_value <= 14.0f && ph_value != 0.0f) {
+                                    model.ph_value = ph_value;
+                                    model.sensor_status.using_stub = using_stub;
+                                    if (using_stub) {
+                                        model.sensor_status.has_error = true;
+                                        model.ph_value = NAN;  // Не показываем stub значение
+                                        strncpy(model.sensor_status.error_msg, "No sensor", sizeof(model.sensor_status.error_msg) - 1);
+                                    }
+                                } else {
+                                    // Невалидное значение или ошибка чтения
+                                    model.sensor_status.has_error = true;
+                                    model.sensor_status.using_stub = true;
+                                    model.ph_value = NAN;  // Устанавливаем NaN, чтобы не показывать 0.00
+                                    strncpy(model.sensor_status.error_msg, "Read failed", sizeof(model.sensor_status.error_msg) - 1);
+                                }
+                            } else {
+                                // Датчик подключен, но не инициализирован
+                                model.sensor_status.has_error = true;
+                                model.ph_value = NAN;
+                                strncpy(model.sensor_status.error_msg, "Not init", sizeof(model.sensor_status.error_msg) - 1);
+                            }
+                        } else {
+                            // I2C ошибка - датчик не отвечает
+                            model.sensor_status.i2c_connected = false;
+                            model.sensor_status.has_error = true;
+                            model.sensor_status.using_stub = true;
+                            model.ph_value = NAN;  // Устанавливаем NaN
+                            if (i2c_err == ESP_ERR_INVALID_STATE || i2c_err == ESP_ERR_TIMEOUT) {
+                                strncpy(model.sensor_status.error_msg, "I2C NACK", sizeof(model.sensor_status.error_msg) - 1);
+                            } else if (i2c_err == ESP_ERR_NOT_FOUND) {
+                                strncpy(model.sensor_status.error_msg, "No device", sizeof(model.sensor_status.error_msg) - 1);
+                            } else {
+                                strncpy(model.sensor_status.error_msg, "I2C Error", sizeof(model.sensor_status.error_msg) - 1);
+                            }
+                        }
+                    } else {
+                        // I2C шина не инициализирована
+                        model.sensor_status.i2c_connected = false;
+                        model.sensor_status.has_error = true;
+                        model.sensor_status.using_stub = true;
+                        model.ph_value = NAN;  // Устанавливаем NaN
+                        strncpy(model.sensor_status.error_msg, "I2C bus down", sizeof(model.sensor_status.error_msg) - 1);
+                    }
+                    
+                    // Статус узла
+                    model.alert = false;
+                    model.paused = false;
+                    
+                    oled_ui_update_model(&model);
+                }
+            }
+            
+            // Сбрасываем watchdog после выполнения работы
+            node_watchdog_reset();
+            last_wake_time = current_time;
         }
+        
+        // Небольшая задержка, чтобы не нагружать CPU
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
@@ -110,18 +212,50 @@ static void task_sensors(void *pvParameters) {
 static void task_pump_current(void *pvParameters) {
     ESP_LOGI(TAG, "Pump current task started");
     
+    // Добавляем задачу в watchdog
+    esp_err_t wdt_err = node_watchdog_add_task();
+    if (wdt_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add pump current task to watchdog: %s", esp_err_to_name(wdt_err));
+    }
+    
     TickType_t last_wake_time = xTaskGetTickCount();
     const TickType_t interval = pdMS_TO_TICKS(PUMP_CURRENT_POLL_INTERVAL_MS);
     
+    // Интервал для периодического сброса watchdog (каждые 3 секунды)
+    // Это гарантирует, что watchdog будет сброшен даже если задача зависнет
+    const TickType_t wdt_reset_interval = pdMS_TO_TICKS(3000);
+    TickType_t last_wdt_reset = xTaskGetTickCount();
+    
     while (1) {
-        vTaskDelayUntil(&last_wake_time, interval);
+        TickType_t current_time = xTaskGetTickCount();
+        TickType_t elapsed_since_wdt = current_time - last_wdt_reset;
         
-        if (!mqtt_manager_is_connected()) {
-            continue;
+        // Периодически сбрасываем watchdog во время ожидания
+        // TickType_t - беззнаковый тип, переполнение работает по модулю, поэтому
+        // разница всегда корректна и не может быть отрицательной
+        if (elapsed_since_wdt >= wdt_reset_interval) {
+            node_watchdog_reset();
+            last_wdt_reset = current_time;
         }
         
-        // Публикация telemetry тока насосов
-        ph_node_publish_pump_current_telemetry();
+        // Проверяем, наступило ли время для опроса тока
+        TickType_t elapsed_since_wake = current_time - last_wake_time;
+        if (elapsed_since_wake >= interval) {
+            // Сбрасываем watchdog перед выполнением работы
+            node_watchdog_reset();
+            
+            if (mqtt_manager_is_connected()) {
+                // Публикация telemetry тока насосов
+                ph_node_publish_pump_current_telemetry();
+            }
+            
+            // Сбрасываем watchdog после выполнения работы
+            node_watchdog_reset();
+            last_wake_time = current_time;
+        }
+        
+        // Небольшая задержка, чтобы не нагружать CPU
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
@@ -129,22 +263,57 @@ static void task_pump_current(void *pvParameters) {
  * @brief Задача публикации STATUS сообщений
  * 
  * Публикует status каждые 60 секунд согласно DEVICE_NODE_PROTOCOL.md раздел 4.2
+ * 
+ * Примечание: интервал 60 секунд больше watchdog таймаута (10 сек),
+ * поэтому используем периодический сброс watchdog во время ожидания
  */
 static void task_status(void *pvParameters) {
     ESP_LOGI(TAG, "Status task started");
     
+    // Добавляем задачу в watchdog
+    esp_err_t wdt_err = node_watchdog_add_task();
+    if (wdt_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add status task to watchdog: %s", esp_err_to_name(wdt_err));
+    }
+    
     TickType_t last_wake_time = xTaskGetTickCount();
     const TickType_t interval = pdMS_TO_TICKS(STATUS_PUBLISH_INTERVAL_MS);
     
+    // Сбрасываем watchdog каждую секунду, чтобы иметь запас к системному таймауту
+    const TickType_t wdt_reset_interval = pdMS_TO_TICKS(1000);
+    TickType_t last_wdt_reset = xTaskGetTickCount();
+    
     while (1) {
-        vTaskDelayUntil(&last_wake_time, interval);
+        // Периодически сбрасываем watchdog во время ожидания
+        // (интервал задачи 60 сек > watchdog таймаут 10 сек)
+        TickType_t current_time = xTaskGetTickCount();
+        TickType_t elapsed_since_wdt = current_time - last_wdt_reset;
         
-        if (!mqtt_manager_is_connected()) {
-            continue;
+        // TickType_t - беззнаковый тип, переполнение работает по модулю, поэтому
+        // разница всегда корректна и не может быть отрицательной
+        if (elapsed_since_wdt >= wdt_reset_interval) {
+            node_watchdog_reset();
+            last_wdt_reset = current_time;
         }
         
-        // Публикация STATUS
-        ph_node_publish_status();
+        // Проверяем, наступило ли время для публикации STATUS
+        TickType_t elapsed_since_wake = current_time - last_wake_time;
+        if (elapsed_since_wake >= interval) {
+            // Сбрасываем watchdog перед выполнением работы
+            node_watchdog_reset();
+            
+            if (mqtt_manager_is_connected()) {
+                // Публикация STATUS
+                ph_node_publish_status();
+            }
+            
+            // Сбрасываем watchdog после выполнения работы
+            node_watchdog_reset();
+            last_wake_time = current_time;
+        }
+        
+        // Небольшая задержка, чтобы не нагружать CPU
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
@@ -169,6 +338,8 @@ void ph_node_start_tasks(void) {
 
 /**
  * @brief Publish pH telemetry with real values from Trema pH sensor
+ * 
+ * Использует node_telemetry_engine для унифицированной публикации телеметрии
  */
 void ph_node_publish_telemetry(void) {
     if (!mqtt_manager_is_connected()) {
@@ -187,6 +358,8 @@ void ph_node_publish_telemetry(void) {
     float ph_value = NAN;
     bool read_success = false;
     bool using_stub = false;
+    bool is_stable = true;
+    int32_t raw_value = 0;
     
     if (trema_ph_is_initialized()) {
         read_success = trema_ph_read(&ph_value);
@@ -196,6 +369,9 @@ void ph_node_publish_telemetry(void) {
             ESP_LOGW(TAG, "Failed to read pH value, using stub");
             ph_value = 6.5f;  // Neutral value
             using_stub = true;
+        } else {
+            raw_value = (int32_t)(ph_value * 1000);  // Raw value in thousandths
+            is_stable = trema_ph_get_stability();
         }
     } else {
         ESP_LOGW(TAG, "pH sensor not initialized, using stub value");
@@ -203,32 +379,19 @@ void ph_node_publish_telemetry(void) {
         using_stub = true;
     }
     
-    // Get node_id from config (через геттер, который использует config_storage)
-    const char *node_id = ph_node_get_node_id();
+    // Публикация через node_telemetry_engine (унифицированный API)
+    esp_err_t err = node_telemetry_publish_sensor(
+        "ph_sensor",
+        METRIC_TYPE_PH,
+        ph_value,
+        "pH",
+        raw_value,
+        using_stub,
+        is_stable
+    );
     
-    // Format according to MQTT_SPEC_FULL.md section 3.2
-    cJSON *telemetry = cJSON_CreateObject();
-    if (telemetry) {
-        cJSON_AddStringToObject(telemetry, "node_id", node_id);
-        cJSON_AddStringToObject(telemetry, "channel", "ph_sensor");
-        cJSON_AddStringToObject(telemetry, "metric_type", "PH");
-        cJSON_AddNumberToObject(telemetry, "value", ph_value);
-        cJSON_AddNumberToObject(telemetry, "raw", (int)(ph_value * 1000));  // Raw value in thousandths
-        cJSON_AddBoolToObject(telemetry, "stub", using_stub);  // Stub flag
-        cJSON_AddNumberToObject(telemetry, "ts", (double)(esp_timer_get_time() / 1000000));
-        
-        // Add stability information if available
-        if (trema_ph_is_initialized() && !using_stub) {
-            bool is_stable = trema_ph_get_stability();
-            cJSON_AddBoolToObject(telemetry, "stable", is_stable);
-        }
-        
-        char *json_str = cJSON_PrintUnformatted(telemetry);
-        if (json_str) {
-            mqtt_manager_publish_telemetry("ph_sensor", json_str);
-            free(json_str);
-        }
-        cJSON_Delete(telemetry);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to publish telemetry via node_telemetry_engine: %s", esp_err_to_name(err));
     }
 }
 
@@ -250,24 +413,19 @@ void ph_node_publish_pump_current_telemetry(void) {
         return;
     }
     
-    // Get node_id from config
-    const char *node_id = ph_node_get_node_id();
+    // Публикация через node_telemetry_engine (унифицированный API)
+    err = node_telemetry_publish_sensor(
+        "pump_bus_current",
+        METRIC_TYPE_CURRENT,
+        reading.bus_current_ma,
+        "mA",
+        0,  // raw value не используется
+        false,  // not stub
+        true     // is_stable
+    );
     
-    // Format according to NODE_CHANNELS_REFERENCE.md section 3.4
-    cJSON *telemetry = cJSON_CreateObject();
-    if (telemetry) {
-        cJSON_AddStringToObject(telemetry, "node_id", node_id);
-        cJSON_AddStringToObject(telemetry, "channel", "pump_bus_current");
-        cJSON_AddStringToObject(telemetry, "metric_type", "CURRENT_MA");
-        cJSON_AddNumberToObject(telemetry, "value", reading.bus_current_ma);
-        cJSON_AddNumberToObject(telemetry, "ts", (double)(esp_timer_get_time() / 1000000));
-        
-        char *json_str = cJSON_PrintUnformatted(telemetry);
-        if (json_str) {
-            mqtt_manager_publish_telemetry("pump_bus_current", json_str);
-            free(json_str);
-        }
-        cJSON_Delete(telemetry);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to publish pump current telemetry: %s", esp_err_to_name(err));
     }
 }
 

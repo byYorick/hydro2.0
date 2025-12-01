@@ -1,0 +1,34 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "light_node_app.c"
+        "light_node_tasks.c"
+        "light_node_framework_integration.c"
+        "light_node_init.c"
+        "light_node_init_steps.c"
+    INCLUDE_DIRS
+        "."
+    REQUIRES
+        mqtt_manager
+        mqtt_client
+        wifi_manager
+        config_storage
+        config_apply
+        node_framework
+        node_utils
+        trema_light
+        i2c_bus
+        oled_ui
+        setup_portal
+        connection_status
+        esp_wifi
+        nvs_flash
+        esp_netif
+        esp_event
+        freertos
+        mqtt
+        esp_timer
+        esp_system
+        json
+)
+

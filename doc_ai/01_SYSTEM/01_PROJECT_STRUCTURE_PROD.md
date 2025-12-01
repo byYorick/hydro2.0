@@ -204,15 +204,15 @@ backend/
 │  │  ├─ README.md             # Описание legacy статуса
 │  │  └─ Dockerfile            # Placeholder
 │  ├─ mqtt-bridge/             # MQTT-мост: подписка на ноды, публикация команд
-│  │  ├─ src/
-│  │  ├─ tests/
+│  │  ├─ main.py               # Основной код (FastAPI)
+│  │  ├─ publisher.py           # Публикация в MQTT
+│  │  ├─ requirements.txt
 │  │  ├─ Dockerfile
-│  │  └─ ...
+│  │  └─ README.md
 │  ├─ device-registry/         # LEGACY / NOT USED — функционал реализован в Laravel
 │  ├─ automation-engine/       # Правила автоматизации (по расписанию/датчикам)
 │  ├─ history-logger/          # Логирование телеметрии в БД/TSDB
-│  └─ ...
-├─ libs/                       # Общие библиотеки (модели, DTO, клиенты MQTT/БД)
+│  └─ common/                  # Общие библиотеки для Python-сервисов (модели, DTO, клиенты MQTT/БД)
 ├─ configs/
 │  ├─ dev/
 │  │  ├─ mqtt.yaml

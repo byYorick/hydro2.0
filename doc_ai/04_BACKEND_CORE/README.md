@@ -56,28 +56,10 @@
 #### [REFACTORING_PLAN.md](REFACTORING_PLAN.md)
 План рефакторинга
 
-#### [REFACTORING_PHASE1_COMPLETED.md](REFACTORING_PHASE1_COMPLETED.md)
-Завершенные этапы рефакторинга (Phase 1-4)
+#### [BACKEND_REFACTOR_PLAN.md](BACKEND_REFACTOR_PLAN.md)
+План доработок backend-системы
 
-### Тестирование и баги
-
-#### [PHASE2_BUGS_AND_TESTS.md](PHASE2_BUGS_AND_TESTS.md)
-Баги и тесты Phase 2
-
-#### [PHASE2_BUGS_FIXED.md](PHASE2_BUGS_FIXED.md)
-Исправленные баги Phase 2
-
-#### [PHASE2_TESTS_COMPLETED.md](PHASE2_TESTS_COMPLETED.md)
-Завершенные тесты Phase 2
-
-#### [PHASE3_TESTS_COMPLETED.md](PHASE3_TESTS_COMPLETED.md)
-Завершенные тесты Phase 3
-
-#### [PHASE3_TESTS_FIXED.md](PHASE3_TESTS_FIXED.md)
-Исправления тестов Phase 3
-
-#### [PHASE3_FRONTEND_UI_COMPLETED.md](PHASE3_FRONTEND_UI_COMPLETED.md)
-Завершенный UI Phase 3
+**Примечание:** Промежуточные отчеты по фазам рефакторинга и тестирования перемещены в архив: `00_ARCHIVE/PHASE_REPORTS/`
 
 ---
 

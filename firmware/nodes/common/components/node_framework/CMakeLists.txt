@@ -1,0 +1,23 @@
+idf_component_register(
+    SRCS 
+        "node_framework.c"
+        "node_config_handler.c"
+        "node_command_handler.c"
+        "node_telemetry_engine.c"
+        "node_state_manager.c"
+        "node_watchdog.c"
+    INCLUDE_DIRS 
+        "include"
+    PRIV_REQUIRES 
+        mqtt_manager
+        config_storage
+        config_apply
+        node_utils
+        json
+        esp_timer
+        freertos
+        memory_pool
+        i2c_cache
+        diagnostics
+)
+

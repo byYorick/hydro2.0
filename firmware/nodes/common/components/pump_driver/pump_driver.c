@@ -55,6 +55,7 @@ typedef struct {
     bool initialized;
     pump_channel_stats_t stats;
     bool last_command_success;
+    bool stop_requested;  // Флаг для неблокирующей остановки из таймера
 } pump_channel_t;
 
 static pump_channel_t s_channels[PUMP_DRIVER_MAX_CHANNELS] = {0};
@@ -65,11 +66,17 @@ static ina209_config_t s_ina209_config = {0};
 static bool s_ina209_enabled = false;
 static uint32_t s_stabilization_delay_ms = 200; // Задержка стабилизации тока после включения насоса
 static pump_driver_ina_status_t s_ina_status = {0};
+static TaskHandle_t s_monitor_task_handle = NULL;  // Handle для фоновой задачи мониторинга
+#define PUMP_MONITOR_TASK_STACK_SIZE 2048
+#define PUMP_MONITOR_TASK_PRIORITY 5
+#define PUMP_MONITOR_TASK_INTERVAL_MS 100  // Интервал проверки флагов stop_requested (100 мс)
 
 // Forward declarations
 static void pump_timer_callback(TimerHandle_t timer);
+static void pump_monitor_task(void *pvParameters);  // Фоновая задача для мониторинга stop_requested
 static esp_err_t pump_start_internal(const char *channel_name, uint32_t duration_ms);
 static esp_err_t pump_stop_internal(const char *channel_name);
+static esp_err_t pump_stop_internal_unlocked(pump_channel_t *channel);  // Версия без mutex (для emergency_stop)
 static pump_channel_t *find_channel(const char *channel_name);
 static void pump_record_failure(pump_channel_t *channel);
 static void pump_record_overcurrent(pump_channel_t *channel, bool undercurrent);
@@ -145,10 +152,12 @@ esp_err_t pump_driver_init(const pump_channel_config_t *channels, size_t channel
     for (size_t i = 0; i < channel_count; i++) {
         pump_channel_t *channel = &s_channels[i];
         strncpy(channel->channel_name, channels[i].channel_name, sizeof(channel->channel_name) - 1);
+        channel->channel_name[sizeof(channel->channel_name) - 1] = '\0';  // Гарантируем null-termination
         channel->gpio_pin = channels[i].gpio_pin;
         channel->use_relay = channels[i].use_relay;
         if (channels[i].use_relay && channels[i].relay_channel != NULL) {
             strncpy(channel->relay_channel, channels[i].relay_channel, sizeof(channel->relay_channel) - 1);
+            channel->relay_channel[sizeof(channel->relay_channel) - 1] = '\0';  // Гарантируем null-termination
         }
         channel->fail_safe_nc = channels[i].fail_safe_nc;
         channel->max_duration_ms = channels[i].max_duration_ms;
@@ -160,6 +169,7 @@ esp_err_t pump_driver_init(const pump_channel_config_t *channels, size_t channel
         channel->run_duration_ms = 0;
         channel->last_stop_time_ms = 0;
         channel->initialized = true;
+        channel->stop_requested = false;
         memset(&channel->stats, 0, sizeof(channel->stats));
         channel->last_command_success = false;
         
@@ -179,6 +189,14 @@ esp_err_t pump_driver_init(const pump_channel_config_t *channels, size_t channel
         
         if (channel->timer == NULL) {
             ESP_LOGE(TAG, "Failed to create timer for channel %s", channel->channel_name);
+            // Очистка уже созданных таймеров и каналов
+            for (size_t j = 0; j < i; j++) {
+                if (s_channels[j].timer != NULL) {
+                    xTimerDelete(s_channels[j].timer, portMAX_DELAY);
+                    s_channels[j].timer = NULL;
+                }
+                s_channels[j].initialized = false;
+            }
             vSemaphoreDelete(s_mutex);
             s_mutex = NULL;
             return ESP_ERR_NO_MEM;
@@ -193,6 +211,28 @@ esp_err_t pump_driver_init(const pump_channel_config_t *channels, size_t channel
     
     s_channel_count = channel_count;
     s_initialized = true;
+
+    // Создание фоновой задачи для мониторинга флагов stop_requested
+    // Это гарантирует, что насосы будут остановлены вовремя, даже если
+    // pump_driver_run/dose/get_health_snapshot не вызываются достаточно часто
+    if (s_monitor_task_handle == NULL) {
+        BaseType_t task_err = xTaskCreate(
+            pump_monitor_task,
+            "pump_monitor",
+            PUMP_MONITOR_TASK_STACK_SIZE,
+            NULL,
+            PUMP_MONITOR_TASK_PRIORITY,
+            &s_monitor_task_handle
+        );
+        if (task_err != pdPASS) {
+            ESP_LOGE(TAG, "Failed to create pump monitor task");
+            s_initialized = false;
+            vSemaphoreDelete(s_mutex);
+            s_mutex = NULL;
+            return ESP_ERR_NO_MEM;
+        }
+        ESP_LOGI(TAG, "Pump monitor task created");
+    }
 
     ESP_LOGI(TAG, "Pump driver initialized with %zu channels", channel_count);
     return ESP_OK;
@@ -370,9 +410,18 @@ esp_err_t pump_driver_deinit(void) {
     // Удаление таймеров
     for (size_t i = 0; i < s_channel_count; i++) {
         if (s_channels[i].initialized && s_channels[i].timer != NULL) {
+            // Сначала останавливаем таймер, затем удаляем
+            xTimerStop(s_channels[i].timer, portMAX_DELAY);
             xTimerDelete(s_channels[i].timer, portMAX_DELAY);
             s_channels[i].timer = NULL;
         }
+    }
+    
+    // Остановка и удаление фоновой задачи мониторинга
+    if (s_monitor_task_handle != NULL) {
+        vTaskDelete(s_monitor_task_handle);
+        s_monitor_task_handle = NULL;
+        ESP_LOGI(TAG, "Pump monitor task deleted");
     }
     
     if (s_mutex != NULL) {
@@ -441,6 +490,14 @@ esp_err_t pump_driver_run(const char *channel_name, uint32_t duration_ms) {
     if (channel->is_running) {
         xSemaphoreGive(s_mutex);
         ESP_LOGW(TAG, "Pump %s already running", channel_name);
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    // Проверка флага stop_requested (установлен из таймера, если mutex был занят)
+    if (channel->stop_requested) {
+        channel->stop_requested = false;
+        xSemaphoreGive(s_mutex);
+        ESP_LOGD(TAG, "Pump %s stop was requested, skipping start", channel_name);
         return ESP_ERR_INVALID_STATE;
     }
     
@@ -525,9 +582,10 @@ esp_err_t pump_driver_emergency_stop(void) {
         return ESP_ERR_TIMEOUT;
     }
     
+    // Используем версию без mutex, так как mutex уже взят
     for (size_t i = 0; i < s_channel_count; i++) {
         if (s_channels[i].initialized && s_channels[i].is_running) {
-            pump_stop_internal(s_channels[i].channel_name);
+            pump_stop_internal_unlocked(&s_channels[i]);
         }
     }
     
@@ -576,12 +634,20 @@ bool pump_driver_is_running(const char *channel_name) {
         return false;
     }
     
-    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
         return false;
     }
     
     pump_channel_t *channel = find_channel(channel_name);
     bool running = (channel != NULL && channel->is_running);
+    
+    // Проверяем и обрабатываем флаг stop_requested, если насос работает
+    if (channel != NULL && running && channel->stop_requested) {
+        ESP_LOGD(TAG, "Processing queued stop request for pump %s", channel_name);
+        pump_stop_internal_unlocked(channel);
+        channel->stop_requested = false;
+        running = false;
+    }
     
     xSemaphoreGive(s_mutex);
     return running;
@@ -640,6 +706,14 @@ static esp_err_t pump_start_internal(const char *channel_name, uint32_t duration
         xSemaphoreGive(s_mutex);
         return ESP_ERR_NOT_FOUND;
     }
+    
+    // Проверка флага stop_requested (установлен из таймера, если mutex был занят)
+    if (channel->stop_requested) {
+        channel->stop_requested = false;
+        xSemaphoreGive(s_mutex);
+        ESP_LOGD(TAG, "Pump %s stop was requested, skipping start", channel_name);
+        return ESP_ERR_INVALID_STATE;
+    }
 
     ESP_LOGI(TAG, "Starting pump %s: %lu ms (GPIO %d)",
              channel_name, (unsigned long)duration_ms, channel->gpio_pin);
@@ -660,6 +734,14 @@ static esp_err_t pump_start_internal(const char *channel_name, uint32_t duration
         xSemaphoreGive(s_mutex);
         vTaskDelay(pdMS_TO_TICKS(s_stabilization_delay_ms));
         if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+            // КРИТИЧНО: mutex не получен, но насос уже включен!
+            // Нужно остановить насос, иначе он залипнет во включенном состоянии
+            ESP_LOGE(TAG, "Failed to take mutex after INA209 stabilization, stopping pump %s", channel_name);
+            // Пытаемся остановить насос без mutex (аварийная остановка)
+            pump_set_gpio_state(channel, false);
+            // Пытаемся остановить таймер (может не сработать, но попробуем)
+            xTimerStop(channel->timer, 0);
+            channel->is_running = false;
             return ESP_ERR_TIMEOUT;
         }
 
@@ -690,8 +772,9 @@ static esp_err_t pump_start_internal(const char *channel_name, uint32_t duration
                         s_ina209_config.min_bus_current_on, s_ina209_config.max_bus_current_on);
 
                 pump_record_overcurrent(channel, undercurrent);
+                // КРИТИЧНО: Rollback - насос уже включен, нужно остановить перед возвратом ошибки
+                pump_stop_internal_unlocked(channel);
                 xSemaphoreGive(s_mutex);
-                pump_stop_internal(channel_name);
 
                 if (undercurrent) {
                     return ESP_ERR_INVALID_RESPONSE;
@@ -701,6 +784,13 @@ static esp_err_t pump_start_internal(const char *channel_name, uint32_t duration
         } else {
             ESP_LOGW(TAG, "Failed to read INA209 for pump %s: %s", channel_name, esp_err_to_name(err));
             s_ina_status.last_read_valid = false;
+            // КРИТИЧНО: Если чтение INA209 критично для работы насоса, нужно остановить насос
+            // Для безопасности останавливаем насос при ошибке чтения INA209
+            // (можно закомментировать, если ошибка чтения не критична)
+            ESP_LOGE(TAG, "INA209 read failed, stopping pump %s for safety", channel_name);
+            pump_stop_internal_unlocked(channel);
+            xSemaphoreGive(s_mutex);
+            return ESP_ERR_INVALID_RESPONSE;
         }
     } else {
         s_ina_status.enabled = false;
@@ -712,31 +802,42 @@ static esp_err_t pump_start_internal(const char *channel_name, uint32_t duration
     channel->start_time_ms = esp_timer_get_time() / 1000; // мс
     channel->stats.last_start_timestamp_ms = channel->start_time_ms;
     channel->run_duration_ms = duration_ms;
-    channel->stats.last_run_success = true;
-    channel->stats.run_count++;
     channel->last_command_success = true;
 
     // Запуск таймера автоостановки
-    xTimerChangePeriod(channel->timer, pdMS_TO_TICKS(duration_ms), 0);
-    xTimerStart(channel->timer, 0);
+    // КРИТИЧНО: Таймер должен быть запущен ДО отпускания mutex, чтобы гарантировать автоостановку
+    esp_err_t timer_err = xTimerChangePeriod(channel->timer, pdMS_TO_TICKS(duration_ms), 0);
+    if (timer_err != pdPASS) {
+        ESP_LOGE(TAG, "Failed to change timer period for pump %s, stopping pump", channel_name);
+        pump_stop_internal_unlocked(channel);
+        xSemaphoreGive(s_mutex);
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    timer_err = xTimerStart(channel->timer, 0);
+    if (timer_err != pdPASS) {
+        ESP_LOGE(TAG, "Failed to start timer for pump %s, stopping pump", channel_name);
+        pump_stop_internal_unlocked(channel);
+        xSemaphoreGive(s_mutex);
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    // КРИТИЧНО: Инкрементируем run_count только после успешного запуска таймера
+    // Это гарантирует, что неуспешные запуски (таймаут, overcurrent) не считаются успешными
+    channel->stats.last_run_success = true;
+    channel->stats.run_count++;
     
     xSemaphoreGive(s_mutex);
     return ESP_OK;
 }
 
-static esp_err_t pump_stop_internal(const char *channel_name) {
-    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
-        return ESP_ERR_TIMEOUT;
-    }
-    
-    pump_channel_t *channel = find_channel(channel_name);
+// Внутренняя версия остановки без захвата mutex (для использования когда mutex уже взят)
+static esp_err_t pump_stop_internal_unlocked(pump_channel_t *channel) {
     if (channel == NULL) {
-        xSemaphoreGive(s_mutex);
-        return ESP_ERR_NOT_FOUND;
+        return ESP_ERR_INVALID_ARG;
     }
     
     if (!channel->is_running) {
-        xSemaphoreGive(s_mutex);
         return ESP_OK; // Уже остановлен
     }
     
@@ -759,18 +860,91 @@ static esp_err_t pump_stop_internal(const char *channel_name) {
     channel->stats.last_run_success = channel->last_command_success;
 
     ESP_LOGI(TAG, "Pump %s stopped: %llu ms (GPIO %d)",
-             channel_name, (unsigned long long)actual_time_ms, channel->gpio_pin);
+             channel->channel_name, (unsigned long long)actual_time_ms, channel->gpio_pin);
     
-    xSemaphoreGive(s_mutex);
     return ESP_OK;
+}
+
+static esp_err_t pump_stop_internal(const char *channel_name) {
+    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+    
+    pump_channel_t *channel = find_channel(channel_name);
+    if (channel == NULL) {
+        xSemaphoreGive(s_mutex);
+        return ESP_ERR_NOT_FOUND;
+    }
+    
+    esp_err_t err = pump_stop_internal_unlocked(channel);
+    xSemaphoreGive(s_mutex);
+    return err;
+}
+
+/**
+ * @brief Фоновая задача для мониторинга флагов stop_requested
+ * 
+ * Эта задача гарантирует, что насосы будут остановлены вовремя, даже если
+ * pump_driver_run/dose/get_health_snapshot не вызываются достаточно часто.
+ * Проверяет флаги каждые PUMP_MONITOR_TASK_INTERVAL_MS миллисекунд.
+ */
+static void pump_monitor_task(void *pvParameters) {
+    (void)pvParameters;
+    
+    ESP_LOGI(TAG, "Pump monitor task started");
+    
+    while (s_initialized) {
+        // Проверяем все каналы на наличие флагов stop_requested
+        if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+            for (size_t i = 0; i < s_channel_count; i++) {
+                if (s_channels[i].initialized && 
+                    s_channels[i].is_running && 
+                    s_channels[i].stop_requested) {
+                    ESP_LOGD(TAG, "Monitor task: processing queued stop request for pump %s", 
+                            s_channels[i].channel_name);
+                    pump_stop_internal_unlocked(&s_channels[i]);
+                    s_channels[i].stop_requested = false;
+                }
+            }
+            xSemaphoreGive(s_mutex);
+        }
+        
+        // Задержка перед следующей проверкой
+        vTaskDelay(pdMS_TO_TICKS(PUMP_MONITOR_TASK_INTERVAL_MS));
+    }
+    
+    ESP_LOGI(TAG, "Pump monitor task exiting");
+    vTaskDelete(NULL);
 }
 
 static void pump_timer_callback(TimerHandle_t timer) {
     size_t channel_index = (size_t)(uintptr_t)pvTimerGetTimerID(timer);
 
-    if (channel_index < s_channel_count && s_channels[channel_index].initialized) {
-        ESP_LOGD(TAG, "Timer callback for pump %s", s_channels[channel_index].channel_name);
-        pump_stop_internal(s_channels[channel_index].channel_name);
+    if (channel_index >= s_channel_count || !s_channels[channel_index].initialized) {
+        return;
+    }
+    
+    pump_channel_t *channel = &s_channels[channel_index];
+    ESP_LOGD(TAG, "Timer callback for pump %s", channel->channel_name);
+    
+    // Неблокирующая остановка: устанавливаем флаг и пытаемся взять mutex без таймаута
+    // Если mutex занят (например, INA209 чтение или команда), флаг будет обработан позже
+    // фоновой задачей pump_monitor_task
+    channel->stop_requested = true;
+    
+    // Пытаемся взять mutex без блокировки (0 таймаут)
+    if (xSemaphoreTake(s_mutex, 0) == pdTRUE) {
+        // Mutex получен - можем безопасно остановить насос
+        if (channel->stop_requested && channel->is_running) {
+            pump_stop_internal_unlocked(channel);
+            channel->stop_requested = false;
+        }
+        xSemaphoreGive(s_mutex);
+    } else {
+        // Mutex занят - флаг stop_requested установлен, остановка произойдет позже
+        // в pump_monitor_task или других функциях, которые проверяют этот флаг
+        ESP_LOGD(TAG, "Mutex busy, stop request queued for pump %s (will be processed by monitor task)", 
+                channel->channel_name);
     }
 }
 
@@ -805,6 +979,7 @@ static void pump_fill_channel_health(const pump_channel_t *channel, pump_driver_
 
     memset(out, 0, sizeof(*out));
     strncpy(out->channel_name, channel->channel_name, sizeof(out->channel_name) - 1);
+    out->channel_name[sizeof(out->channel_name) - 1] = '\0';  // Гарантируем null-termination
     out->last_run_duration_ms = channel->stats.last_run_duration_ms;
     out->total_run_time_ms = channel->stats.total_run_time_ms;
     out->run_count = channel->stats.run_count;
@@ -830,6 +1005,15 @@ esp_err_t pump_driver_get_health_snapshot(pump_driver_health_snapshot_t *snapsho
 
     if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
         return ESP_ERR_TIMEOUT;
+    }
+    
+    // Проверяем и обрабатываем флаги stop_requested для всех каналов
+    for (size_t i = 0; i < s_channel_count; i++) {
+        if (s_channels[i].initialized && s_channels[i].is_running && s_channels[i].stop_requested) {
+            ESP_LOGD(TAG, "Processing queued stop request for pump %s", s_channels[i].channel_name);
+            pump_stop_internal_unlocked(&s_channels[i]);
+            s_channels[i].stop_requested = false;
+        }
     }
 
     size_t out_index = 0;

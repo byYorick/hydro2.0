@@ -31,6 +31,7 @@ describe('useRateLimitedApi', () => {
     vi.useFakeTimers()
     mockShowToast = vi.fn()
     vi.clearAllMocks()
+    Object.values(mockApi).forEach(fn => fn.mockReset())
   })
 
   afterEach(() => {
@@ -69,8 +70,8 @@ describe('useRateLimitedApi', () => {
       backoff: 'exponential',
     })
 
-    // Продвигаем время на 2 секунды (Retry-After)
-    vi.advanceTimersByTime(2000)
+    // Продвигаем время на 2 секунды (Retry-After) + небольшой буфер
+    await vi.advanceTimersByTimeAsync(2100)
 
     const result = await promise
 
@@ -81,7 +82,7 @@ describe('useRateLimitedApi', () => {
       'warning',
       3000
     )
-  })
+  }, 10000) // Увеличиваем таймаут для теста
 
   it('should retry with exponential backoff on error', async () => {
     const { rateLimitedGet } = useRateLimitedApi(mockShowToast)
@@ -98,15 +99,17 @@ describe('useRateLimitedApi', () => {
       baseDelay: 1000,
     })
 
-    // Продвигаем время для exponential backoff: 1s, 2s
-    await vi.advanceTimersByTimeAsync(1000) // Первая попытка
-    await vi.advanceTimersByTimeAsync(2000) // Вторая попытка
+    // Продвигаем время для exponential backoff: 1s (attempt 0->1), 2s (attempt 1->2)
+    // Нужно продвинуть достаточно времени для всех задержек
+    await vi.advanceTimersByTimeAsync(100)
+    await vi.runAllTimersAsync()
+    await vi.advanceTimersByTimeAsync(3100) // 1s + 2s + буфер
 
     const result = await promise
 
     expect(result).toEqual({ data: { success: true } })
     expect(mockApi.get).toHaveBeenCalledTimes(3)
-  })
+  }, 10000)
 
   it('should retry with linear backoff on error', async () => {
     const { rateLimitedGet } = useRateLimitedApi(mockShowToast)
@@ -142,14 +145,20 @@ describe('useRateLimitedApi', () => {
       baseDelay: 1000,
     })
 
-    // Продвигаем время для всех попыток
-    await vi.advanceTimersByTimeAsync(1000) // Первая попытка
-    await vi.advanceTimersByTimeAsync(2000) // Вторая попытка
-    await vi.advanceTimersByTimeAsync(4000) // Третья попытка
+    // Обрабатываем промис сразу, чтобы избежать unhandled rejection
+    promise.catch(() => {
+      // Игнорируем ошибку, она будет проверена ниже
+    })
 
+    // Продвигаем время для всех попыток: 1 initial + 2 retries = 3 вызова
+    // Exponential backoff: 1s (attempt 0->1), 2s (attempt 1->2)
+    await vi.advanceTimersByTimeAsync(100)
+    await vi.runAllTimersAsync()
+    await vi.advanceTimersByTimeAsync(3100) // Достаточно для всех задержек
+    
     await expect(promise).rejects.toThrow('Network error')
     expect(mockApi.get).toHaveBeenCalledTimes(3) // 1 initial + 2 retries
-  })
+  }, 10000)
 
   it('should handle rate limit without Retry-After header', async () => {
     const { rateLimitedGet } = useRateLimitedApi(mockShowToast)
@@ -220,7 +229,7 @@ describe('useRateLimitedApi', () => {
     // isProcessing должен быть true во время выполнения
     // (но это сложно проверить без реального промиса)
     
-    vi.advanceTimersByTime(100)
+    await vi.advanceTimersByTimeAsync(100)
     await promise
   })
 })

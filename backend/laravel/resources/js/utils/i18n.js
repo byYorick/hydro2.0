@@ -50,6 +50,8 @@ export function translateRole(role) {
     'admin': 'Администратор',
     'operator': 'Оператор',
     'viewer': 'Наблюдатель',
+    'agronomist': 'Агроном',
+    'engineer': 'Инженер',
   }
   return translations[role] || role
 }

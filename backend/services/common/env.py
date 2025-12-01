@@ -25,6 +25,9 @@ class Settings:
     laravel_api_url: str = os.getenv("LARAVEL_API_URL", "http://laravel")
     laravel_api_token: str = os.getenv("LARAVEL_API_TOKEN", "")
     bridge_api_token: str = os.getenv("PY_API_TOKEN", "")
+    # Для ingest операций (регистрация нод, телеметрия) используем PY_INGEST_TOKEN
+    ingest_token: str = os.getenv("PY_INGEST_TOKEN", "") or os.getenv("PY_API_TOKEN", "")
+    history_logger_api_token: str = os.getenv("HISTORY_LOGGER_API_TOKEN", "") or os.getenv("PY_INGEST_TOKEN", "") or os.getenv("PY_API_TOKEN", "")  # Используем PY_INGEST_TOKEN как основной fallback
 
     telemetry_batch_size: int = int(os.getenv("TELEMETRY_BATCH_SIZE", "200"))
     telemetry_flush_ms: int = int(os.getenv("TELEMETRY_FLUSH_MS", "500"))
@@ -49,7 +52,9 @@ def get_settings() -> Settings:
     settings = Settings()
     
     # Проверка обязательных паролей в продакшене
-    is_prod = os.getenv("APP_ENV", "").lower() in ("production", "prod")
+    # Проверяем явно production, игнорируя пустые значения и dev/local окружения
+    app_env = os.getenv("APP_ENV", "").lower().strip()
+    is_prod = app_env in ("production", "prod") and app_env != ""
     
     if is_prod:
         # В продакшене пароли обязательны
@@ -64,6 +69,10 @@ def get_settings() -> Settings:
         if not settings.bridge_api_token:
             raise ValueError(
                 "PY_API_TOKEN must be set in production environment for MQTT bridge security"
+            )
+        if not settings.history_logger_api_token:
+            raise ValueError(
+                "HISTORY_LOGGER_API_TOKEN or PY_API_TOKEN must be set in production environment for history-logger security"
             )
     
     return settings

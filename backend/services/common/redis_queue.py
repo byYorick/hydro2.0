@@ -10,11 +10,12 @@ from pydantic import BaseModel
 
 try:
     import redis.asyncio as redis_async
-    HAS_ASYNC = True
 except ImportError:
-    import redis as redis_sync
-    redis_async = None
-    HAS_ASYNC = False
+    # redis[asyncio] обязателен для работы сервиса
+    raise ImportError(
+        "redis.asyncio is required. Please install redis with asyncio support: "
+        "pip install 'redis[asyncio]' or add 'redis[asyncio]' to requirements.txt"
+    )
 
 from .env import get_settings
 
@@ -29,11 +30,13 @@ class TelemetryQueueItem:
     """Элемент очереди телеметрии."""
     node_uid: str
     zone_uid: Optional[str] = None
+    gh_uid: Optional[str] = None  # Greenhouse UID для корректного резолва зоны в многотепличной конфигурации
     metric_type: str = ""
     value: float = 0.0
     ts: Optional[datetime] = None
     raw: Optional[dict] = None
     channel: Optional[str] = None
+    enqueued_at: Optional[datetime] = None  # Время добавления в очередь для трекинга возраста
     
     def dict(self) -> dict:
         """Преобразовать в словарь для сериализации."""
@@ -41,6 +44,8 @@ class TelemetryQueueItem:
         # Преобразуем datetime в ISO строку
         if data.get("ts") and isinstance(data["ts"], datetime):
             data["ts"] = data["ts"].isoformat()
+        if data.get("enqueued_at") and isinstance(data["enqueued_at"], datetime):
+            data["enqueued_at"] = data["enqueued_at"].isoformat()
         return data
     
     def to_json(self) -> bytes:
@@ -58,6 +63,11 @@ class TelemetryQueueItem:
                     obj["ts"] = datetime.fromisoformat(obj["ts"].replace('Z', '+00:00'))
                 except (ValueError, AttributeError):
                     obj["ts"] = None
+            if obj.get("enqueued_at"):
+                try:
+                    obj["enqueued_at"] = datetime.fromisoformat(obj["enqueued_at"].replace('Z', '+00:00'))
+                except (ValueError, AttributeError):
+                    obj["enqueued_at"] = None
             return cls(**obj)
         except (json.JSONDecodeError, KeyError, TypeError) as e:
             logger.warning(f"Failed to deserialize TelemetryQueueItem: {e}")
@@ -71,7 +81,7 @@ class TelemetryQueue:
     MAX_QUEUE_SIZE = 10000  # Максимальный размер очереди
     
     def __init__(self):
-        self._client: Optional[redis.Redis] = None
+        self._client: Optional[redis_async.Redis] = None
     
     async def _ensure_client(self):
         """Убедиться, что Redis клиент инициализирован."""
@@ -153,6 +163,34 @@ class TelemetryQueue:
             logger.error(f"Failed to get queue size: {e}", exc_info=True)
             return 0
     
+    async def get_oldest_age_seconds(self) -> Optional[float]:
+        """
+        Получить возраст самого старого элемента в очереди в секундах.
+        
+        Returns:
+            Возраст в секундах или None если очередь пуста или элемент не имеет enqueued_at
+        """
+        try:
+            await self._ensure_client()
+            
+            # Читаем первый элемент очереди без удаления (LINDEX 0)
+            oldest_item_data = await self._client.lindex(self.QUEUE_KEY, 0)
+            if not oldest_item_data:
+                return None
+            
+            # Десериализуем элемент
+            oldest_item = TelemetryQueueItem.from_json(oldest_item_data)
+            if not oldest_item or not oldest_item.enqueued_at:
+                return None
+            
+            # Вычисляем возраст
+            age = (datetime.utcnow() - oldest_item.enqueued_at).total_seconds()
+            return max(0.0, age)  # Не возвращаем отрицательные значения
+            
+        except Exception as e:
+            logger.error(f"Failed to get queue oldest age: {e}", exc_info=True)
+            return None
+    
     async def clear(self):
         """Очистить очередь."""
         try:
@@ -168,37 +206,24 @@ async def get_redis_client():
     Получить глобальный Redis клиент (singleton).
     
     Returns:
-        Redis клиент
+        Redis async клиент (redis.asyncio.Redis)
     """
     global _redis_client
     
     if _redis_client is None:
         s = get_settings()
         
-        # Используем redis.asyncio если доступен, иначе обычный redis
-        if HAS_ASYNC:
-            _redis_client = redis_async.Redis(
-                host=s.redis_host if hasattr(s, 'redis_host') else 'redis',
-                port=s.redis_port if hasattr(s, 'redis_port') else 6379,
-                db=0,
-                decode_responses=False,  # Работаем с bytes для JSON
-            )
-        else:
-            # Fallback на синхронный redis (не рекомендуется для production)
-            logger.warning("Using synchronous redis client (redis.asyncio not available)")
-            _redis_client = redis_sync.Redis(
-                host=s.redis_host if hasattr(s, 'redis_host') else 'redis',
-                port=s.redis_port if hasattr(s, 'redis_port') else 6379,
-                db=0,
-                decode_responses=False,
-            )
+        # Используем redis.asyncio (обязательно для async сервиса)
+        _redis_client = redis_async.Redis(
+            host=s.redis_host if hasattr(s, 'redis_host') else 'redis',
+            port=s.redis_port if hasattr(s, 'redis_port') else 6379,
+            db=0,
+            decode_responses=False,  # Работаем с bytes для JSON
+        )
         
         # Проверяем подключение
         try:
-            if HAS_ASYNC:
-                await _redis_client.ping()
-            else:
-                _redis_client.ping()
+            await _redis_client.ping()
         except Exception as e:
             logger.error(f"Failed to connect to Redis: {e}")
             _redis_client = None
@@ -213,10 +238,7 @@ async def close_redis_client():
     
     if _redis_client is not None:
         try:
-            if hasattr(_redis_client, 'close'):
-                await _redis_client.close()
-            else:
-                _redis_client.close()
+            await _redis_client.aclose()  # redis.asyncio использует aclose()
         except Exception as e:
             logger.error(f"Error closing Redis client: {e}")
         finally:

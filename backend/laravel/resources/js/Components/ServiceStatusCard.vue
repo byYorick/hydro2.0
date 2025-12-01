@@ -1,5 +1,8 @@
 <template>
-  <div class="bg-neutral-900 rounded-lg p-3 border border-neutral-800 hover:border-neutral-700 transition-colors">
+  <div 
+    class="bg-neutral-900 rounded-lg p-3 border border-neutral-800 hover:border-neutral-700 transition-colors relative group"
+    :class="status === 'fail' || status === 'offline' || status === 'disconnected' ? 'border-red-500/50' : ''"
+  >
     <div class="flex items-start justify-between gap-2">
       <div class="flex items-center gap-2 flex-1">
         <div class="relative">
@@ -31,6 +34,18 @@
         <div v-if="endpoint" class="text-[10px] text-neutral-500 mt-0.5 truncate max-w-[120px]">
           {{ endpoint.replace(/^https?:\/\//, '').split('/')[0] }}
         </div>
+      </div>
+    </div>
+    <!-- Tooltip с дополнительной информацией при ошибке -->
+    <div 
+      v-if="(status === 'fail' || status === 'offline' || status === 'disconnected') && endpoint"
+      class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-xs text-neutral-300 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 whitespace-nowrap shadow-lg"
+    >
+      <div class="font-medium mb-1">Проблема с подключением</div>
+      <div class="text-neutral-400">Endpoint: {{ endpoint }}</div>
+      <div class="text-neutral-400 mt-1">Проверьте, запущен ли сервис</div>
+      <div class="absolute top-full left-1/2 transform -translate-x-1/2 -mt-1">
+        <div class="w-2 h-2 bg-neutral-800 border-r border-b border-neutral-700 transform rotate-45"></div>
       </div>
     </div>
   </div>

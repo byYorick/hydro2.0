@@ -26,9 +26,9 @@ async def test_handle_telemetry_adds_to_queue(mock_redis_queue):
     
     # Мокаем глобальную очередь
     with patch('main.telemetry_queue', mock_redis_queue):
-        # Симулируем MQTT payload
+        # Симулируем MQTT payload (формат от прошивок)
         topic = "hydro/gh-1/zn-1/nd-ph-1/ph_sensor/telemetry"
-        payload = b'{"metric_type": "PH", "value": 6.5, "timestamp": 1737979200000, "channel": "ph_sensor"}'
+        payload = b'{"metric_type": "PH", "value": 6.5, "ts": 1737979.2, "channel": "ph_sensor"}'
         
         await handle_telemetry(topic, payload)
         

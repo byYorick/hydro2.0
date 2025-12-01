@@ -3,6 +3,8 @@ from fastapi import HTTPException, Request
 from fastapi import Body, Response
 from pydantic import BaseModel, Field
 from typing import Optional
+import logging
+import os
 from common.schemas import CommandRequest
 from common.commands import new_command_id, mark_command_sent
 from publisher import Publisher
@@ -12,25 +14,87 @@ from common.mqtt import MqttClient
 from common.db import fetch
 from common.water_flow import execute_fill_mode, execute_drain_mode, calibrate_flow
 
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 REQ_COUNTER = Counter("bridge_requests_total", "Bridge HTTP requests", ["path"])
 
 app = FastAPI(title="MQTT Bridge", version="0.1.2")
-publisher = Publisher()
+
+# Создаем Publisher при старте приложения
+try:
+    publisher = Publisher()
+    logger.info("Publisher initialized successfully, MQTT connected: %s", publisher._mqtt.is_connected())
+except Exception as e:
+    logger.error(f"Failed to initialize Publisher: {e}", exc_info=True)
+    publisher = None
 
 
 def _auth(request: Request):
-    """Проверка токена аутентификации. Токен обязателен, если настроен."""
+    """
+    Проверка токена аутентификации.
+    В production токен обязателен всегда, без исключений для внутренних IP.
+    В dev окружении разрешаем внутренние запросы без токена только если токен не настроен.
+    """
     s = get_settings()
-    if not s.bridge_api_token:
-        # Если токен не настроен, это ошибка конфигурации безопасности
+    
+    # Проверяем окружение
+    app_env = os.getenv("APP_ENV", "").lower().strip()
+    is_prod = app_env in ("production", "prod") and app_env != ""
+    
+    # В production токен обязателен всегда
+    if is_prod:
+        if not s.bridge_api_token:
+            logger.error("PY_API_TOKEN must be set in production environment")
+            raise HTTPException(
+                status_code=500,
+                detail="Server configuration error: API token not configured"
+            )
+        
+        token = request.headers.get("Authorization", "")
+        if token != f"Bearer {s.bridge_api_token}":
+            client_ip = request.client.host if request.client else "unknown"
+            logger.warning(
+                f"Invalid or missing token in production: token_present={bool(token)}, "
+                f"client_ip={client_ip}"
+            )
+            raise HTTPException(
+                status_code=401,
+                detail="Unauthorized: token required in production"
+            )
+        return
+    
+    # В dev окружении: если токен настроен, он обязателен
+    # Если токен не настроен, разрешаем только localhost (не все внутренние IP)
+    if s.bridge_api_token:
+        token = request.headers.get("Authorization", "")
+        if token != f"Bearer {s.bridge_api_token}":
+            logger.warning(f"Invalid or missing token: token_present={bool(token)}")
+            raise HTTPException(
+                status_code=401,
+                detail="Unauthorized: invalid or missing token"
+            )
+        return
+    
+    # Dev окружение без токена: разрешаем только localhost
+    client_ip = request.client.host if request.client else ""
+    is_localhost = client_ip in ["127.0.0.1", "::1", "localhost"]
+    
+    if not is_localhost:
+        logger.warning(
+            f"Rejecting non-localhost request without token in dev: client_ip={client_ip}. "
+            f"Set PY_API_TOKEN for production or use localhost in dev."
+        )
         raise HTTPException(
-            status_code=500,
-            detail="Server misconfiguration: PY_API_TOKEN must be set for security"
+            status_code=401,
+            detail="Unauthorized: token required for non-localhost requests. Set PY_API_TOKEN or use localhost."
         )
     
-    token = request.headers.get("Authorization", "")
-    if token != f"Bearer {s.bridge_api_token}":
-        raise HTTPException(status_code=401, detail="Unauthorized: invalid or missing token")
+    logger.debug(f"Allowing localhost request without token (dev mode): client_ip={client_ip}")
 
 
 @app.get("/metrics")
@@ -228,9 +292,19 @@ async def publish_node_config(
         raise HTTPException(status_code=400, detail="greenhouse_uid is required (zone must have a greenhouse)")
     
     # Публикуем конфиг
-    publisher.publish_config(gh_uid, zone_id, node_uid, req.config)
+    if not publisher:
+        raise HTTPException(status_code=500, detail="Publisher not initialized")
     
-    return {"status": "ok", "data": {"published": True, "topic": f"hydro/{gh_uid}/zn-{zone_id}/{node_uid}/config"}}
+    try:
+        logger.info(f"Publishing config for node {node_uid}, zone_id: {zone_id}, gh_uid: {gh_uid}")
+        # Преобразуем Pydantic модель в dict для публикации
+        config_dict = req.config.dict() if hasattr(req.config, 'dict') else req.config.model_dump() if hasattr(req.config, 'model_dump') else dict(req.config)
+        publisher.publish_config(gh_uid, zone_id, node_uid, config_dict)
+        logger.info(f"Config published successfully for node {node_uid}")
+        return {"status": "ok", "data": {"published": True, "topic": f"hydro/{gh_uid}/zn-{zone_id}/{node_uid}/config"}}
+    except Exception as e:
+        logger.error(f"Failed to publish config for node {node_uid}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to publish config: {str(e)}")
 
 
 @app.post("/bridge/zones/{zone_id}/calibrate-flow")

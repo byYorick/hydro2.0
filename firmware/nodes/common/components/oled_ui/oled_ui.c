@@ -187,6 +187,9 @@ static struct {
     bool mqtt_rx_active;  // Флаг активности приема
     uint64_t mqtt_tx_timestamp;  // Время последней отправки
     uint64_t mqtt_rx_timestamp;  // Время последнего приема
+    
+    // Буфер кадров для устранения мерцания (128x64 = 1024 байта)
+    uint8_t frame_buffer[SSD1306_WIDTH * SSD1306_PAGES];
 } s_ui = {0};
 
 // Внутренние функции
@@ -195,6 +198,13 @@ static esp_err_t ssd1306_write_data(const uint8_t *data, size_t len);
 static esp_err_t ssd1306_init_display(void);
 static esp_err_t ssd1306_clear(void);
 static esp_err_t ssd1306_set_cursor(uint8_t x, uint8_t y);
+static esp_err_t ssd1306_update_display(void);  // Отправка всего буфера на дисплей
+static void frame_buffer_clear(void);  // Очистка буфера кадров
+static void frame_buffer_set_pixel(uint8_t x, uint8_t y, bool on);  // Установка пикселя в буфере
+static void frame_buffer_draw_char(uint8_t x, uint8_t y, uint8_t c);  // Отрисовка символа в буфере
+static void frame_buffer_draw_string(uint8_t x, uint8_t y, const char *str);  // Отрисовка строки в буфере
+static void frame_buffer_draw_line(uint8_t line_num, const char *str);  // Отрисовка строки на линии в буфере
+static void frame_buffer_draw_wifi_icon(uint8_t x, uint8_t y, int8_t rssi);  // Отрисовка иконки WiFi в буфере
 static void render_boot_screen(void);
 static void render_wifi_setup_screen(void);
 static void render_normal_screen(void);
@@ -299,8 +309,9 @@ static esp_err_t ssd1306_init_display(void) {
         vTaskDelay(pdMS_TO_TICKS(1));
     }
     
-    // Очистка дисплея
-    err = ssd1306_clear();
+    // Очистка буфера кадров и отправка на дисплей
+    frame_buffer_clear();
+    err = ssd1306_update_display();
     if (err != ESP_OK) {
         return err;
     }
@@ -312,7 +323,7 @@ static esp_err_t ssd1306_init_display(void) {
 /**
  * @brief Очистка дисплея
  */
-static esp_err_t ssd1306_clear(void) {
+__attribute__((unused)) static esp_err_t ssd1306_clear(void) {
     // Установка адреса колонок и страниц
     esp_err_t err = ssd1306_write_command(SSD1306_CMD_COLUMN_ADDR);
     if (err != ESP_OK) return err;
@@ -342,7 +353,7 @@ static esp_err_t ssd1306_clear(void) {
 /**
  * @brief Установка курсора (упрощенная версия)
  */
-static esp_err_t ssd1306_set_cursor(uint8_t x, uint8_t y) {
+__attribute__((unused)) static esp_err_t ssd1306_set_cursor(uint8_t x, uint8_t y) {
     esp_err_t err = ssd1306_write_command(SSD1306_CMD_COLUMN_ADDR);
     if (err != ESP_OK) return err;
     err = ssd1306_write_command(x);
@@ -358,6 +369,161 @@ static esp_err_t ssd1306_set_cursor(uint8_t x, uint8_t y) {
     if (err != ESP_OK) return err;
     
     return ESP_OK;
+}
+
+/**
+ * @brief Отправка всего буфера кадров на дисплей
+ * 
+ * Отправляет весь буфер кадров на дисплей за один раз для устранения мерцания
+ */
+static esp_err_t ssd1306_update_display(void) {
+    // Установка адреса колонок и страниц для всего дисплея
+    esp_err_t err = ssd1306_write_command(SSD1306_CMD_COLUMN_ADDR);
+    if (err != ESP_OK) return err;
+    err = ssd1306_write_command(0);
+    if (err != ESP_OK) return err;
+    err = ssd1306_write_command(SSD1306_WIDTH - 1);
+    if (err != ESP_OK) return err;
+    
+    err = ssd1306_write_command(SSD1306_CMD_PAGE_ADDR);
+    if (err != ESP_OK) return err;
+    err = ssd1306_write_command(0);
+    if (err != ESP_OK) return err;
+    err = ssd1306_write_command(SSD1306_PAGES - 1);
+    if (err != ESP_OK) return err;
+    
+    // Отправка всего буфера кадров
+    err = ssd1306_write_data(s_ui.frame_buffer, sizeof(s_ui.frame_buffer));
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to update display: %s", esp_err_to_name(err));
+        return err;
+    }
+    
+    return ESP_OK;
+}
+
+/**
+ * @brief Очистка буфера кадров
+ */
+static void frame_buffer_clear(void) {
+    memset(s_ui.frame_buffer, 0, sizeof(s_ui.frame_buffer));
+}
+
+/**
+ * @brief Установка пикселя в буфере кадров
+ * @param x X координата (0-127)
+ * @param y Y координата (0-63)
+ * @param on true = включить пиксель, false = выключить
+ */
+__attribute__((unused)) static void frame_buffer_set_pixel(uint8_t x, uint8_t y, bool on) {
+    if (x >= SSD1306_WIDTH || y >= SSD1306_HEIGHT) {
+        return;
+    }
+    
+    uint8_t page = y / 8;
+    uint8_t bit = y % 8;
+    size_t index = page * SSD1306_WIDTH + x;
+    
+    if (on) {
+        s_ui.frame_buffer[index] |= (1 << bit);
+    } else {
+        s_ui.frame_buffer[index] &= ~(1 << bit);
+    }
+}
+
+/**
+ * @brief Отрисовка символа в буфере кадров
+ * @param x X координата (0-127)
+ * @param y Y координата (0-63, должна быть кратна 8)
+ * @param c Символ для отрисовки
+ */
+static void frame_buffer_draw_char(uint8_t x, uint8_t y, uint8_t c) {
+    if (x >= SSD1306_WIDTH || y >= SSD1306_HEIGHT) {
+        return;
+    }
+    
+    const uint8_t *glyph = get_char_glyph(c);
+    if (glyph == NULL) {
+        return;
+    }
+    
+    uint8_t page = y / 8;
+    if (page >= SSD1306_PAGES) {
+        return;
+    }
+    
+    // Копируем глиф в буфер кадров
+    size_t base_index = page * SSD1306_WIDTH + x;
+    for (int i = 0; i < FONT_WIDTH && (x + i) < SSD1306_WIDTH; i++) {
+        s_ui.frame_buffer[base_index + i] = glyph[i];
+    }
+}
+
+/**
+ * @brief Отрисовка иконки WiFi в буфере кадров
+ * @param x X координата (0-127)
+ * @param y Y координата (0-63, должна быть кратна 8)
+ * @param rssi RSSI значение в dBm
+ */
+static void frame_buffer_draw_wifi_icon(uint8_t x, uint8_t y, int8_t rssi) {
+    if (x >= SSD1306_WIDTH - 8 || y >= SSD1306_HEIGHT) {
+        return;
+    }
+    
+    uint8_t page = y / 8;
+    if (page >= SSD1306_PAGES) {
+        return;
+    }
+    
+    // Определяем количество полосок на основе RSSI
+    int bars = 0;
+    bool is_connected = (rssi > -100);
+    
+    if (is_connected) {
+        if (rssi >= -50) {
+            bars = 4;
+        } else if (rssi >= -60) {
+            bars = 3;
+        } else if (rssi >= -70) {
+            bars = 2;
+        } else if (rssi >= -80) {
+            bars = 1;
+        }
+    }
+    
+    // Создаем данные иконки
+    uint8_t icon_data[8] = {0};
+    
+    if (is_connected && bars > 0) {
+        if (bars >= 1) {
+            icon_data[7] = 0x18;
+        }
+        if (bars >= 2) {
+            icon_data[6] = 0x3C;
+        }
+        if (bars >= 3) {
+            icon_data[5] = 0x7E;
+        }
+        if (bars >= 4) {
+            icon_data[4] = 0xFF;
+        }
+    } else {
+        // Крестик для отсутствия подключения
+        icon_data[0] = 0x81;
+        icon_data[1] = 0x42;
+        icon_data[2] = 0x24;
+        icon_data[3] = 0x18;
+        icon_data[4] = 0x18;
+        icon_data[5] = 0x24;
+        icon_data[6] = 0x42;
+        icon_data[7] = 0x81;
+    }
+    
+    // Копируем данные иконки в буфер кадров
+    size_t base_index = page * SSD1306_WIDTH + x;
+    for (int i = 0; i < 8 && (x + i) < SSD1306_WIDTH; i++) {
+        s_ui.frame_buffer[base_index + i] = icon_data[i];
+    }
 }
 
 /**
@@ -446,7 +612,7 @@ static void render_string(uint8_t x, uint8_t y, const char *str) {
  * @param line_num Line number (0-7, each line = 8 pixels)
  * @param str String to render
  */
-static void render_line(uint8_t line_num, const char *str) {
+__attribute__((unused)) static void render_line(uint8_t line_num, const char *str) {
     if (line_num >= SSD1306_PAGES) {
         return;
     }
@@ -469,7 +635,7 @@ static void render_line(uint8_t line_num, const char *str) {
  * Дизайн: полоски расположены по дуге, самая короткая сверху, самая длинная снизу
  * Даже при отсутствии подключения отображается пустая иконка WiFi
  */
-static void render_wifi_icon(uint8_t x, uint8_t y, int8_t rssi) {
+__attribute__((unused)) static void render_wifi_icon(uint8_t x, uint8_t y, int8_t rssi) {
     if (x >= SSD1306_WIDTH - 8 || y >= SSD1306_HEIGHT) {
         return;
     }
@@ -597,7 +763,8 @@ static void render_boot_screen(void) {
         return;
     }
     
-    ssd1306_clear();
+    // Очищаем буфер кадров
+    frame_buffer_clear();
     
     // Если активны шаги инициализации, показываем их
     if (s_ui.init_steps_active) {
@@ -621,15 +788,15 @@ static void render_boot_screen(void) {
                 break;
         }
         
-        render_line(0, header);
+        frame_buffer_draw_line(0, header);
         
         // Строка 1: "Step X/8"
         char step_line[22];
         snprintf(step_line, sizeof(step_line), "Step %d/8", s_ui.current_step_num);
-        render_line(1, step_line);
+        frame_buffer_draw_line(1, step_line);
         
         // Строка 2: Текст шага
-        render_line(2, s_ui.current_step_text);
+        frame_buffer_draw_line(2, s_ui.current_step_text);
         
         // Строка 3: Анимация точек
         char dots_line[22] = "";
@@ -640,28 +807,76 @@ static void render_boot_screen(void) {
             }
             dots_line[s_ui.init_dot_count] = '\0';
         }
-        render_line(3, dots_line);
+        frame_buffer_draw_line(3, dots_line);
     } else {
         // Стандартный экран загрузки
-        render_line(0, "Hydro 2.0");
-        render_line(1, "Booting...");
+        frame_buffer_draw_line(0, "Hydro 2.0");
+        frame_buffer_draw_line(1, "Booting...");
         
         if (s_ui.model.connections.wifi_connected) {
-            render_line(2, "WiFi: OK");
+            frame_buffer_draw_line(2, "WiFi: OK");
         } else {
-            render_line(2, "WiFi: Connecting");
+            frame_buffer_draw_line(2, "WiFi: Connecting");
         }
         
         if (s_ui.model.connections.mqtt_connected) {
-            render_line(3, "MQTT: OK");
+            frame_buffer_draw_line(3, "MQTT: OK");
         } else {
-            render_line(3, "MQTT: Connecting");
+            frame_buffer_draw_line(3, "MQTT: Connecting");
         }
+    }
+    
+    // Отправляем весь буфер на дисплей за один раз
+    esp_err_t err = ssd1306_update_display();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to update display: %s", esp_err_to_name(err));
     }
     
     // Освобождаем mutex
     if (s_ui.render_mutex != NULL) {
         xSemaphoreGive(s_ui.render_mutex);
+    }
+}
+
+/**
+ * @brief Отрисовка строки в буфере кадров
+ * @param line_num Номер строки (0-7, каждая строка = 8 пикселей)
+ * @param str Строка для отрисовки
+ */
+static void frame_buffer_draw_line(uint8_t line_num, const char *str) {
+    if (line_num >= SSD1306_PAGES || str == NULL) {
+        return;
+    }
+    
+    uint8_t y = line_num * 8;
+    uint8_t x = 0;
+    const char *p = str;
+    
+    while (*p != '\0' && x < SSD1306_WIDTH - FONT_WIDTH) {
+        frame_buffer_draw_char(x, y, (uint8_t)*p);
+        x += FONT_WIDTH;
+        p++;
+    }
+}
+
+/**
+ * @brief Отрисовка строки в буфере кадров с указанной позицией X
+ * @param x Начальная X координата
+ * @param y Y координата (должна быть кратна 8)
+ * @param str Строка для отрисовки
+ */
+static void frame_buffer_draw_string(uint8_t x, uint8_t y, const char *str) {
+    if (str == NULL) {
+        return;
+    }
+    
+    uint8_t pos_x = x;
+    const char *p = str;
+    
+    while (*p != '\0' && pos_x < SSD1306_WIDTH - FONT_WIDTH) {
+        frame_buffer_draw_char(pos_x, y, (uint8_t)*p);
+        pos_x += FONT_WIDTH;
+        p++;
     }
 }
 
@@ -675,12 +890,40 @@ static void render_wifi_setup_screen(void) {
         return;
     }
     
-    ssd1306_clear();
-    render_line(0, "WiFi Setup");
-    render_line(1, "Connect to:");
-    render_line(2, "PH_SETUP_XXXX");
-    render_line(3, "Use app to");
-    render_line(4, "configure");
+    // Очищаем буфер кадров
+    frame_buffer_clear();
+    
+    // Отрисовываем в буфер кадров
+    frame_buffer_draw_line(0, "WiFi Setup");
+    frame_buffer_draw_line(1, "Connect to:");
+    
+    // Используем zone_name из модели, если доступен, иначе используем node_uid (который содержит SSID)
+    const char *ap_ssid = s_ui.model.zone_name[0] != '\0' ? s_ui.model.zone_name : 
+                          (s_ui.node_uid[0] != '\0' ? s_ui.node_uid : "PH_SETUP_XXXX");
+    
+    ESP_LOGI(TAG, "Rendering WiFi setup screen with SSID: %s (zone_name='%s', node_uid='%s')", 
+             ap_ssid, s_ui.model.zone_name, s_ui.node_uid);
+    
+    // Обрезаем SSID если слишком длинный для отображения (максимум 21 символ на строку)
+    char display_ssid[22];
+    strncpy(display_ssid, ap_ssid, sizeof(display_ssid) - 1);
+    display_ssid[sizeof(display_ssid) - 1] = '\0';
+    
+    frame_buffer_draw_line(0, "WiFi Setup");
+    frame_buffer_draw_line(1, "Connect to:");
+    frame_buffer_draw_line(2, display_ssid);
+    frame_buffer_draw_line(3, "Use app to");
+    frame_buffer_draw_line(4, "configure");
+    
+    ESP_LOGI(TAG, "Frame buffer prepared, sending to display...");
+    
+    // Отправляем весь буфер на дисплей за один раз
+    esp_err_t err = ssd1306_update_display();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to update display: %s", esp_err_to_name(err));
+    } else {
+        ESP_LOGI(TAG, "WiFi setup screen rendered and sent to display successfully");
+    }
     
     // Освобождаем mutex
     if (s_ui.render_mutex != NULL) {
@@ -692,25 +935,25 @@ static void render_wifi_setup_screen(void) {
  * @brief Отрисовка экрана NORMAL (основной)
  */
 static void render_normal_screen(void) {
+    ESP_LOGD(TAG, "render_normal_screen called");
+    
     // Захватываем mutex для защиты от одновременного доступа
     if (s_ui.render_mutex != NULL && xSemaphoreTake(s_ui.render_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
         ESP_LOGW(TAG, "Failed to take render mutex, skipping render");
         return;
     }
     
-    ssd1306_clear();
+    // Очищаем буфер кадров
+    frame_buffer_clear();
     
     // Верхняя строка: иконка WiFi, статус MQTT, UID
-    // Иконка WiFi (8x8 пикселей) в позиции (0, 0)
-    // ВАЖНО: render_wifi_icon должен вызываться ПОСЛЕ ssd1306_clear(), 
-    // но ПЕРЕД render_string/render_line, чтобы не конфликтовать с областью отрисовки
     int8_t wifi_rssi = s_ui.model.connections.wifi_rssi;
     if (!s_ui.model.connections.wifi_connected) {
         wifi_rssi = -100;  // Нет подключения
     }
     
-    // Отображаем иконку WiFi
-    render_wifi_icon(0, 0, wifi_rssi);
+    // Отображаем иконку WiFi в буфере
+    frame_buffer_draw_wifi_icon(0, 0, wifi_rssi);
     
     // Статус MQTT: "OK" или "ERR"
     const char *mqtt_status = "ERR";
@@ -718,7 +961,6 @@ static void render_normal_screen(void) {
         mqtt_status = "OK";
         
         // Проверяем активность мигания (мигание длится 200 мс)
-        // Мигание можно использовать для других целей, но статус остается "OK"
         uint64_t now_ms = esp_timer_get_time() / 1000;
         bool tx_blink = s_ui.mqtt_tx_active && (now_ms - s_ui.mqtt_tx_timestamp) < 200;
         bool rx_blink = s_ui.mqtt_rx_active && (now_ms - s_ui.mqtt_rx_timestamp) < 200;
@@ -733,15 +975,13 @@ static void render_normal_screen(void) {
     }
     
     // Отображаем статус MQTT и UID
-    // Формат: "M:OK  nd-ph-1" или "M:ERR nd-ph-1" (компактнее)
     char status_line[22];
-    char uid_display[12];  // Ограничиваем длину UID для отображения (12 символов)
+    char uid_display[12];
     strncpy(uid_display, s_ui.node_uid, sizeof(uid_display) - 1);
     uid_display[sizeof(uid_display) - 1] = '\0';
     
-    // Компактный формат: "M:OK" или "M:ERR" (занимает меньше места)
     snprintf(status_line, sizeof(status_line), "M:%s %s", mqtt_status, uid_display);
-    render_string(10, 0, status_line);  // Начинаем с позиции 10 (после иконки WiFi 8px + 2px отступ)
+    frame_buffer_draw_string(10, 0, status_line);  // После иконки WiFi 8px + 2px отступ
     
     // Основной блок в зависимости от типа узла и текущего экрана
     if (s_ui.current_screen == 0) {
@@ -749,56 +989,143 @@ static void render_normal_screen(void) {
         switch (s_ui.node_type) {
             case OLED_UI_NODE_TYPE_PH: {
                 char line[22];
-                snprintf(line, sizeof(line), "pH: %.2f", s_ui.model.ph_value);
-                render_line(2, line);
-                snprintf(line, sizeof(line), "Temp: %.1fC", s_ui.model.temperature_water);
-                render_line(3, line);
+                // Отображаем pH значение с индикацией stub значений и ошибок
+                if (s_ui.model.sensor_status.using_stub || isnan(s_ui.model.ph_value) || 
+                    s_ui.model.ph_value == 0.0f || s_ui.model.sensor_status.has_error) {
+                    snprintf(line, sizeof(line), "pH: --.--");
+                } else {
+                    snprintf(line, sizeof(line), "pH: %.2f", s_ui.model.ph_value);
+                }
+                frame_buffer_draw_line(2, line);
+                
+                // Статус I2C подключения и ошибки
+                if (s_ui.model.sensor_status.has_error) {
+                    // Показываем ошибку или статус I2C
+                    if (s_ui.model.sensor_status.error_msg[0] != '\0') {
+                        char error_line[22];
+                        strncpy(error_line, s_ui.model.sensor_status.error_msg, sizeof(error_line) - 1);
+                        error_line[sizeof(error_line) - 1] = '\0';
+                        frame_buffer_draw_line(3, error_line);
+                    } else if (!s_ui.model.sensor_status.i2c_connected) {
+                        frame_buffer_draw_line(3, "I2C: Disconnected");
+                    } else {
+                        frame_buffer_draw_line(3, "Sensor error");
+                    }
+                } else {
+                    // Нормальный режим - показываем статус I2C и температуру
+                    if (!isnan(s_ui.model.temperature_water)) {
+                        snprintf(line, sizeof(line), "Temp: %.1fC", s_ui.model.temperature_water);
+                        frame_buffer_draw_line(3, line);
+                    } else {
+                        frame_buffer_draw_line(3, "I2C: OK");
+                    }
+                }
                 break;
             }
             case OLED_UI_NODE_TYPE_EC: {
                 char line[22];
                 snprintf(line, sizeof(line), "EC: %.2f", s_ui.model.ec_value);
-                render_line(2, line);
+                frame_buffer_draw_line(2, line);
                 snprintf(line, sizeof(line), "Temp: %.1fC", s_ui.model.temperature_water);
-                render_line(3, line);
+                frame_buffer_draw_line(3, line);
                 break;
             }
             case OLED_UI_NODE_TYPE_CLIMATE: {
                 char line[22];
-                snprintf(line, sizeof(line), "T: %.1fC H: %.0f%%", 
-                        s_ui.model.temperature_air, s_ui.model.humidity);
-                render_line(2, line);
+                // Строка 2: Температура и влажность - показываем прочерки при ошибках (как в ph_node)
+                if (!isnan(s_ui.model.temperature_air) && isfinite(s_ui.model.temperature_air) &&
+                    !isnan(s_ui.model.humidity) && isfinite(s_ui.model.humidity) &&
+                    s_ui.model.temperature_air >= -40.0f && s_ui.model.temperature_air <= 125.0f &&
+                    s_ui.model.humidity >= 0.0f && s_ui.model.humidity <= 100.0f) {
+                    snprintf(line, sizeof(line), "T:%.1fC H:%.0f%%", 
+                            s_ui.model.temperature_air, s_ui.model.humidity);
+                } else {
+                    // Показываем прочерки при ошибках или невалидных значениях
+                    strncpy(line, "T:--.-C H:--%", sizeof(line) - 1);
+                    line[sizeof(line) - 1] = '\0';
+                }
+                frame_buffer_draw_line(2, line);
+                
+                // Строка 3: CO2 или статус I2C
+                if (!isnan(s_ui.model.co2) && isfinite(s_ui.model.co2) && s_ui.model.co2 >= 0.0f) {
+                    snprintf(line, sizeof(line), "CO2: %d ppm", (int)s_ui.model.co2);
+                } else {
+                    // Если CO2 не доступен, показываем статус I2C
+                    if (s_ui.model.sensor_status.i2c_connected) {
+                        strncpy(line, "I2C: OK", sizeof(line) - 1);
+                    } else {
+                        strncpy(line, "I2C: ERR", sizeof(line) - 1);
+                    }
+                    line[sizeof(line) - 1] = '\0';
+                }
+                frame_buffer_draw_line(3, line);
+                break;
+            }
+            case OLED_UI_NODE_TYPE_LIGHTING: {
+                char line[22];
+                // Строка 2: Освещенность - показываем прочерки при ошибках (как в ph_node)
+                if (!isnan(s_ui.model.lux_value) && isfinite(s_ui.model.lux_value) && s_ui.model.lux_value >= 0.0f) {
+                    snprintf(line, sizeof(line), "Lux: %.0f", s_ui.model.lux_value);
+                } else {
+                    // Показываем прочерки при ошибках или невалидных значениях
+                    strncpy(line, "Lux: --", sizeof(line) - 1);
+                    line[sizeof(line) - 1] = '\0';
+                }
+                frame_buffer_draw_line(2, line);
+                
+                // Строка 3: Статус I2C или ошибка
+                if (s_ui.model.sensor_status.i2c_connected) {
+                    if (s_ui.model.sensor_status.has_error && s_ui.model.sensor_status.error_msg[0] != '\0') {
+                        // Показываем сообщение об ошибке, если есть
+                        strncpy(line, s_ui.model.sensor_status.error_msg, sizeof(line) - 1);
+                        line[sizeof(line) - 1] = '\0';
+                    } else {
+                        // Датчик подключен и работает
+                        strncpy(line, "I2C: OK", sizeof(line) - 1);
+                        line[sizeof(line) - 1] = '\0';
+                    }
+                } else {
+                    strncpy(line, "I2C: ERR", sizeof(line) - 1);
+                    line[sizeof(line) - 1] = '\0';
+                }
+                frame_buffer_draw_line(3, line);
                 break;
             }
             default:
-                render_line(2, "Node active");
+                frame_buffer_draw_line(2, "Node active");
                 break;
         }
     } else if (s_ui.current_screen == 1) {
         // Экран каналов
-        render_line(1, "Channels:");
+        frame_buffer_draw_line(1, "Channels:");
         for (size_t i = 0; i < s_ui.model.channel_count && i < 5; i++) {
             char line[22];
             snprintf(line, sizeof(line), "%s: %.2f",
                     s_ui.model.channels[i].name,
                     s_ui.model.channels[i].value);
-            render_line(2 + i, line);
+            frame_buffer_draw_line(2 + i, line);
         }
     } else if (s_ui.current_screen == 2) {
         // Экран зоны
-        render_line(1, "Zone:");
-        render_line(2, s_ui.model.zone_name);
-        render_line(3, "Recipe:");
-        render_line(4, s_ui.model.recipe_name);
+        frame_buffer_draw_line(1, "Zone:");
+        frame_buffer_draw_line(2, s_ui.model.zone_name);
+        frame_buffer_draw_line(3, "Recipe:");
+        frame_buffer_draw_line(4, s_ui.model.recipe_name);
     }
     
     // Нижняя строка: состояние
     if (s_ui.model.alert) {
-        render_line(7, "ALERT");
+        frame_buffer_draw_line(7, "ALERT");
     } else if (s_ui.model.paused) {
-        render_line(7, "PAUSED");
+        frame_buffer_draw_line(7, "PAUSED");
     } else {
-        render_line(7, "OK");
+        frame_buffer_draw_line(7, "OK");
+    }
+    
+    // Отправляем весь буфер на дисплей за один раз
+    esp_err_t err = ssd1306_update_display();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to update display: %s", esp_err_to_name(err));
     }
     
     // Освобождаем mutex
@@ -817,10 +1144,19 @@ static void render_alert_screen(void) {
         return;
     }
     
-    ssd1306_clear();
-    render_line(2, "ALERT");
-    render_line(3, s_ui.model.alert_message);
-    render_line(5, "See app");
+    // Очищаем буфер кадров
+    frame_buffer_clear();
+    
+    // Отрисовываем в буфер кадров
+    frame_buffer_draw_line(2, "ALERT");
+    frame_buffer_draw_line(3, s_ui.model.alert_message);
+    frame_buffer_draw_line(5, "See app");
+    
+    // Отправляем весь буфер на дисплей за один раз
+    esp_err_t err = ssd1306_update_display();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to update display: %s", esp_err_to_name(err));
+    }
     
     // Освобождаем mutex
     if (s_ui.render_mutex != NULL) {
@@ -838,10 +1174,19 @@ static void render_calibration_screen(void) {
         return;
     }
     
-    ssd1306_clear();
-    render_line(1, "Calibration");
-    render_line(2, "Follow");
-    render_line(3, "instructions");
+    // Очищаем буфер кадров
+    frame_buffer_clear();
+    
+    // Отрисовываем в буфер кадров
+    frame_buffer_draw_line(1, "Calibration");
+    frame_buffer_draw_line(2, "Follow");
+    frame_buffer_draw_line(3, "instructions");
+    
+    // Отправляем весь буфер на дисплей за один раз
+    esp_err_t err = ssd1306_update_display();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to update display: %s", esp_err_to_name(err));
+    }
     
     // Освобождаем mutex
     if (s_ui.render_mutex != NULL) {
@@ -859,10 +1204,19 @@ static void render_service_screen(void) {
         return;
     }
     
-    ssd1306_clear();
-    render_line(0, "Service Menu");
-    render_line(2, "Node:");
-    render_line(3, s_ui.node_uid);
+    // Очищаем буфер кадров
+    frame_buffer_clear();
+    
+    // Отрисовываем в буфер кадров
+    frame_buffer_draw_line(0, "Service Menu");
+    frame_buffer_draw_line(2, "Node:");
+    frame_buffer_draw_line(3, s_ui.node_uid);
+    
+    // Отправляем весь буфер на дисплей за один раз
+    esp_err_t err = ssd1306_update_display();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to update display: %s", esp_err_to_name(err));
+    }
     
     // Освобождаем mutex
     if (s_ui.render_mutex != NULL) {
@@ -1082,6 +1436,12 @@ esp_err_t oled_ui_update_model(const oled_ui_model_t *model) {
     if (!isnan(model->co2) && isfinite(model->co2)) {
         s_ui.model.co2 = model->co2;
     }
+    if (!isnan(model->lux_value) && isfinite(model->lux_value)) {
+        s_ui.model.lux_value = model->lux_value;
+    }
+    
+    // Статус датчиков - всегда обновляем
+    s_ui.model.sensor_status = model->sensor_status;
     
     // Статус узла - всегда обновляем
     s_ui.model.alert = model->alert;

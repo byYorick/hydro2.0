@@ -12,9 +12,11 @@ class NodesTest extends TestCase
 {
     use RefreshDatabase;
 
-    private function token(): string
+    private function token(string $role = 'operator'): string
     {
-        $user = User::factory()->create();
+        $user = User::factory()->create(['role' => $role]);
+        $this->actingAs($user);
+
         return $user->createToken('test')->plainTextToken;
     }
 
@@ -164,7 +166,7 @@ class NodesTest extends TestCase
         
         $response->assertStatus(401)
             ->assertJsonPath('status', 'error')
-            ->assertJsonPath('message', 'Unauthorized: token required');
+            ->assertJsonPath('message', 'Unauthorized: invalid token');
     }
 
     public function test_register_node_without_token_when_not_configured(): void

@@ -92,16 +92,20 @@ services:
     build:
       context: ./laravel
       dockerfile: Dockerfile
+      args:
+        VITE_REVERB_HOST: localhost
+        VITE_WS_HOST: localhost
+        VITE_REVERB_PORT: "6001"
+        VITE_WS_PORT: "6001"
+        VITE_REVERB_SCHEME: http
+        VITE_WS_TLS: "false"
+        VITE_ENABLE_WS: "true"
+        VITE_REVERB_APP_KEY: ${REVERB_APP_KEY:-change-me}
+        VITE_PUSHER_APP_KEY: ${REVERB_APP_KEY:-change-me}
     working_dir: /app
-    command: >
-      sh -c "
-        if [ \"$$REVERB_AUTO_START\" = \"true\" ]; then
-          echo 'Starting Laravel Reverb...';
-          cd /app && nohup php artisan reverb:start --host=0.0.0.0 --port=6001 > /tmp/reverb.log 2>&1 &
-          sleep 2;
-        fi;
-        exec /opt/docker/bin/entrypoint.sh supervisord
-      "
+    # Reverb запускается автоматически через supervisor (reverb-supervisor.conf)
+    # Не запускаем через nohup, чтобы избежать двойного запуска и ошибки EADDRINUSE
+    # command: оставлен по умолчанию (docker-entrypoint.sh запустит supervisord)
     deploy:
       resources:
         limits:
@@ -118,7 +122,8 @@ services:
       - CACHE_DRIVER=redis
       - LOG_CHANNEL=stderr
       - LOG_LEVEL=info
-      - BROADCAST_DRIVER=reverb
+      - BROADCAST_CONNECTION=reverb
+      - QUEUE_CONNECTION=redis
       # PHP-FPM performance settings
       - PHP_FPM_PM=dynamic
       - PHP_FPM_PM_MAX_CHILDREN=50
@@ -147,6 +152,14 @@ services:
       - REVERB_SCHEME=http
       - REVERB_DEBUG=false
       - REVERB_AUTO_START=${REVERB_AUTO_START:-true}
+      # WebSocket security: явный список разрешенных origins
+      - REVERB_ALLOWED_ORIGINS=${REVERB_ALLOWED_ORIGINS:?REVERB_ALLOWED_ORIGINS must be set}
+      # Кросс-доменная авторизация для фронта на отдельном домене
+      # SANCTUM_STATEFUL_DOMAINS: домены, с которых разрешены cookie-based запросы (через запятую)
+      # SESSION_DOMAIN: домен для сессионных cookie (например .example.com для всех поддоменов)
+      - SANCTUM_STATEFUL_DOMAINS=${SANCTUM_STATEFUL_DOMAINS:?SANCTUM_STATEFUL_DOMAINS must be set}
+      - SESSION_DOMAIN=${SESSION_DOMAIN:-}
+      - SESSION_SECURE_COOKIE=${SESSION_SECURE_COOKIE:-true}
       # Vite environment variables for WebSocket (передаются при сборке)
       # ВАЖНО: Для браузера используем localhost, а не 0.0.0.0
       - VITE_ENABLE_WS=true
@@ -158,6 +171,9 @@ services:
       - VITE_WS_HOST=localhost
       - VITE_WS_PORT=6001
       - VITE_WS_TLS=false
+      # ВАЖНО: Токены для безопасности сервисов
+      - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN must be set}
+      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN must be set}
     volumes:
       - ./laravel:/app
     ports:
@@ -179,6 +195,7 @@ services:
       context: ./services
       dockerfile: mqtt-bridge/Dockerfile
     environment:
+      - APP_ENV=production
       - MQTT_HOST=mqtt
       - MQTT_PORT=1883
       - MQTT_TLS=0
@@ -190,6 +207,9 @@ services:
       - PG_USER=hydro
       - PG_PASS=${POSTGRES_PASSWORD:-change-me}
       - LARAVEL_API_URL=http://laravel
+      # ВАЖНО: Токены для безопасности сервисов
+      - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN must be set}
+      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN must be set}
     depends_on:
       - mqtt
       - db
@@ -212,6 +232,7 @@ services:
       context: ./services
       dockerfile: automation-engine/Dockerfile
     environment:
+      - APP_ENV=production
       - MQTT_HOST=mqtt
       - MQTT_PORT=1883
       - MQTT_TLS=0
@@ -223,7 +244,9 @@ services:
       - PG_USER=hydro
       - PG_PASS=${POSTGRES_PASSWORD:-change-me}
       - LARAVEL_API_URL=http://laravel
-      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-}
+      # ВАЖНО: Токены для безопасности сервисов
+      - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN must be set}
+      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN must be set}
     depends_on:
       - mqtt
       - db
@@ -242,6 +265,7 @@ services:
       context: ./services
       dockerfile: history-logger/Dockerfile
     environment:
+      - APP_ENV=production
       - MQTT_HOST=mqtt
       - MQTT_PORT=1883
       - MQTT_TLS=0
@@ -253,7 +277,11 @@ services:
       - PG_USER=hydro
       - PG_PASS=${POSTGRES_PASSWORD:-change-me}
       - LARAVEL_API_URL=http://laravel
-      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-${PY_INGEST_TOKEN:-${PY_API_TOKEN:-}}}
+      # ВАЖНО: Токены для безопасности сервисов
+      - PY_API_TOKEN=${PY_API_TOKEN:?PY_API_TOKEN must be set}
+      - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:?PY_INGEST_TOKEN must be set}
+      - HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:?HISTORY_LOGGER_API_TOKEN or PY_INGEST_TOKEN must be set}}
+      - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:?LARAVEL_API_TOKEN must be set}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
     depends_on:
@@ -264,6 +292,12 @@ services:
     ports:
       - "9300:9300"
       - "9301:9301"  # Prometheus metrics
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9300)); s.close()' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     restart: unless-stopped
   prometheus:
     image: prom/prometheus:latest
@@ -326,6 +360,7 @@ services:
       context: ./services
       dockerfile: scheduler/Dockerfile
     environment:
+      - APP_ENV=production
       - MQTT_HOST=mqtt
       - MQTT_PORT=1883
       - MQTT_TLS=0
@@ -353,6 +388,7 @@ services:
       context: ./services
       dockerfile: digital-twin/Dockerfile
     environment:
+      - APP_ENV=production
       - PG_HOST=db
       - PG_PORT=5432
       - PG_DB=hydro
@@ -364,12 +400,19 @@ services:
     ports:
       - "8003:8003"
       - "9403:9403"  # Prometheus metrics
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 8003)); s.close()' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     restart: unless-stopped
   telemetry-aggregator:
     build:
       context: ./services
       dockerfile: telemetry-aggregator/Dockerfile
     environment:
+      - APP_ENV=production
       - PG_HOST=db
       - PG_PORT=5432
       - PG_DB=hydro
@@ -380,6 +423,12 @@ services:
       - db
     ports:
       - "9404:9404"  # Prometheus metrics
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9404)); s.close()' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     restart: unless-stopped
 
 volumes:

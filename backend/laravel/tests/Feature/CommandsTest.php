@@ -21,9 +21,36 @@ class CommandsTest extends TestCase
     public function test_zone_command_validation(): void
     {
         $zone = \App\Models\Zone::factory()->create();
-        $token = User::factory()->create()->createToken('t')->plainTextToken;
+        $node = \App\Models\DeviceNode::factory()->create(['zone_id' => $zone->id]);
+        // Создаем канал напрямую, так как фабрики может не быть
+        \App\Models\NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'ph_pump',
+            'type' => 'pump',
+        ]);
+        
+        $user = User::factory()->create(['role' => 'operator']);
+        $this->actingAs($user);
+        $token = $user->createToken('t')->plainTextToken;
+
+        // Тест: отсутствует type
         $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/zones/{$zone->id}/commands", [])
+            ->assertStatus(422);
+
+        // Тест: отсутствует node_uid
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson("/api/zones/{$zone->id}/commands", [
+                'type' => 'FORCE_IRRIGATION',
+            ])
+            ->assertStatus(422);
+
+        // Тест: отсутствует channel
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson("/api/zones/{$zone->id}/commands", [
+                'type' => 'FORCE_IRRIGATION',
+                'node_uid' => $node->uid,
+            ])
             ->assertStatus(422);
     }
 }

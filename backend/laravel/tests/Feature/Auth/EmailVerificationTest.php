@@ -13,8 +13,15 @@ class EmailVerificationTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        // Event::fake() будет вызван в тесте, где это нужно
+    }
+
     public function test_email_verification_screen_can_be_rendered(): void
     {
+        Event::fake();
         $user = User::factory()->unverified()->create();
 
         $response = $this->actingAs($user)->get('/verify-email');

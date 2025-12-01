@@ -151,12 +151,15 @@ NodeConfig определяет:
 ## 5.2. Шаги
 
 1. Backend генерирует NodeConfig.
-2. Публикует MQTT config.
+2. Публикует MQTT config в топик `hydro/{gh}/{zone}/{node}/config`.
 3. Узел принимает config.
 4. Валидирует.
 5. Сохраняет в NVS.
 6. Перезапускает каналы.
-7. Отправляет config_response.
+7. Отправляет config_response в топик `hydro/{gh}/{zone}/{node}/config_response`.
+8. **Backend обрабатывает config_response:**
+   - При `status: "OK"`: если нода в состоянии `REGISTERED_BACKEND` и имеет `zone_id`, переводит в `ASSIGNED_TO_ZONE`
+   - При `status: "ERROR"`: логирует ошибку, нода остается в `REGISTERED_BACKEND`
 
 ## 5.3. Топик
 ```

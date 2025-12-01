@@ -17,6 +17,11 @@ def test_automation_settings_defaults():
     assert settings.EC_CORRECTION_THRESHOLD == 0.2
     assert settings.PH_DOSING_MULTIPLIER == 10.0
     assert settings.EC_DOSING_MULTIPLIER == 100.0
+    assert settings.PH_PID_DEAD_ZONE == 0.2
+    assert settings.PH_PID_KP_CLOSE == 10.0
+    assert settings.EC_PID_KP_CLOSE == 100.0
+    assert settings.PH_PID_MAX_OUTPUT == 50.0
+    assert settings.EC_PID_MAX_OUTPUT == 200.0
 
 
 def test_automation_settings_post_init():
@@ -106,4 +111,3 @@ def test_settings_health():
     assert settings.EC_STABILITY_HOURS == 2
     assert settings.HEALTH_ALERT_PENALTY == 15.0
     assert settings.HEALTH_WATER_LEVEL_PENALTY == 70.0
-

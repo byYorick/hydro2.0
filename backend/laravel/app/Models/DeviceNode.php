@@ -57,21 +57,34 @@ class DeviceNode extends Model
         parent::boot();
 
         // Отправляем событие при обновлении узла (если изменились поля, влияющие на конфиг)
+        // Используем afterCommit, чтобы событие срабатывало только после коммита транзакции
+        // Это предотвращает публикацию конфига до коммита или при откате транзакции
         static::saved(function (DeviceNode $node) {
             // Проверяем, изменились ли поля, влияющие на конфиг
             if ($node->wasChanged(['zone_id', 'type', 'config', 'uid']) || 
                 $node->wasRecentlyCreated) {
-                event(new NodeConfigUpdated($node));
+                // Используем afterCommit, чтобы событие срабатывало только после коммита транзакции
+                \Illuminate\Support\Facades\DB::afterCommit(function () use ($node) {
+                    event(new NodeConfigUpdated($node));
+                });
             }
             
             // Очищаем кеш списка устройств при создании или обновлении ноды
-            // Это гарантирует, что фронтенд увидит новые ноды сразу
+            // Используем точечную очистку вместо глобального flush для предотвращения DoS
             try {
                 \Illuminate\Support\Facades\Cache::tags(['devices_list'])->flush();
             } catch (\BadMethodCallException $e) {
-                // Если теги не поддерживаются, очищаем весь кеш
-                // В production лучше использовать Redis с тегами
-                \Illuminate\Support\Facades\Cache::flush();
+                // Если теги не поддерживаются, очищаем только конкретные ключи
+                // Используем паттерн для поиска ключей кеша устройств
+                $cacheKeys = [
+                    'devices_list_all',
+                    'devices_list_zone_' . ($node->zone_id ?? 'null'),
+                    'devices_list_unassigned',
+                ];
+                foreach ($cacheKeys as $key) {
+                    \Illuminate\Support\Facades\Cache::forget($key);
+                }
+                // НЕ используем Cache::flush() - это может привести к DoS при массовых обновлениях
             }
         });
     }

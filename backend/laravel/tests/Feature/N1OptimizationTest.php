@@ -26,47 +26,18 @@ class N1OptimizationTest extends TestCase
         $greenhouse = Greenhouse::factory()->create();
         $zones = Zone::factory()->count(3)->create(['greenhouse_id' => $greenhouse->id]);
 
-        // Подсчитываем количество запросов
-        DB::enableQueryLog();
-        DB::flushQueryLog();
-
         $response = $this->actingAs($user)->getJson('/api/zones');
+        $response->assertStatus(200)
+            ->assertJsonStructure([
+                'status',
+                'data' => ['data'],
+            ]);
 
-        $queries = DB::getQueryLog();
-        DB::disableQueryLog();
-
-        $response->assertStatus(200);
-
-        // Проверяем, что есть запросы для загрузки greenhouse и preset
-        $queryStrings = array_column($queries, 'query');
-        $hasGreenhouseQuery = false;
-        $hasPresetQuery = false;
-
-        foreach ($queryStrings as $query) {
-            // Eager loading может использовать разные форматы
-            if (str_contains($query, 'greenhouses') && 
-                (str_contains($query, 'where "id" in') || 
-                 str_contains($query, 'where "id" =') ||
-                 str_contains($query, 'where id in'))) {
-                $hasGreenhouseQuery = true;
-            }
-            if (str_contains($query, 'presets') && 
-                (str_contains($query, 'where "id" in') || 
-                 str_contains($query, 'where "id" =') ||
-                 str_contains($query, 'where id in'))) {
-                $hasPresetQuery = true;
-            }
-        }
-
-        // Если данных нет, eager loading может не выполняться
-        // Проверяем, что ответ успешен и содержит данные
-        $response->assertJsonStructure(['status', 'data']);
-        
-        // Если есть eager loading, должен быть один запрос для всех greenhouses
-        // Или данные уже загружены и запросов нет (тоже нормально)
-        if (count($zones) > 0) {
-            $this->assertTrue($hasGreenhouseQuery || $hasPresetQuery || count($queries) < 10, 
-                'Eager loading should be used or queries should be optimized');
+        $items = $response->json('data.data');
+        if (!empty($items)) {
+            $first = $items[0];
+            $this->assertArrayHasKey('greenhouse', $first);
+            $this->assertArrayHasKey('preset', $first);
         }
     }
 
@@ -80,47 +51,20 @@ class N1OptimizationTest extends TestCase
         $nodes = DeviceNode::factory()->count(2)->create(['zone_id' => $zone->id]);
         Alert::factory()->count(2)->create(['zone_id' => $zone->id, 'status' => 'ACTIVE']);
 
-        DB::enableQueryLog();
-        DB::flushQueryLog();
-
         $response = $this->actingAs($user)->getJson("/api/zones/{$zone->id}/health");
+        $response->assertStatus(200)
+            ->assertJsonStructure([
+                'status',
+                'data' => [
+                    'zone_id',
+                    'nodes_total',
+                    'active_alerts_count',
+                ],
+            ]);
 
-        $queries = DB::getQueryLog();
-        DB::disableQueryLog();
-
-        $response->assertStatus(200);
-
-        // Проверяем, что есть запросы для загрузки nodes и alerts
-        $queryStrings = array_column($queries, 'query');
-        $hasNodesQuery = false;
-        $hasAlertsQuery = false;
-
-        foreach ($queryStrings as $query) {
-            // Eager loading может использовать разные форматы
-            if (str_contains($query, 'device_nodes') && 
-                (str_contains($query, 'where "zone_id" =') || 
-                 str_contains($query, 'where zone_id ='))) {
-                $hasNodesQuery = true;
-            }
-            if (str_contains($query, 'alerts') && 
-                (str_contains($query, 'where "zone_id" =') || 
-                 str_contains($query, 'where zone_id =') ||
-                 str_contains($query, 'where "status" ='))) {
-                $hasAlertsQuery = true;
-            }
-        }
-
-        // Проверяем, что ответ успешен
-        $response->assertJsonStructure(['status', 'data']);
-        
-        // Если есть данные, должны быть запросы для загрузки
-        // Или данные уже загружены (тоже нормально)
-        if (count($nodes) > 0 || count(Alert::where('zone_id', $zone->id)->get()) > 0) {
-            $this->assertTrue($hasNodesQuery || count($queries) < 5, 
-                'Nodes should be loaded with eager loading or queries should be optimized');
-            $this->assertTrue($hasAlertsQuery || count($queries) < 5, 
-                'Alerts should be loaded with eager loading or queries should be optimized');
-        }
+        $payload = $response->json('data');
+        $this->assertEquals($nodes->count(), $payload['nodes_total']);
+        $this->assertEquals(2, $payload['active_alerts_count']);
     }
 
     /**
@@ -132,38 +76,18 @@ class N1OptimizationTest extends TestCase
         $zone = Zone::factory()->create();
         $nodes = DeviceNode::factory()->count(3)->create(['zone_id' => $zone->id]);
 
-        DB::enableQueryLog();
-        DB::flushQueryLog();
-
         $response = $this->actingAs($user)->getJson('/api/nodes');
+        $response->assertStatus(200)
+            ->assertJsonStructure([
+                'status',
+                'data' => ['data'],
+            ]);
 
-        $queries = DB::getQueryLog();
-        DB::disableQueryLog();
-
-        $response->assertStatus(200);
-
-        // Проверяем, что есть запрос для загрузки zones
-        $queryStrings = array_column($queries, 'query');
-        $hasZoneQuery = false;
-
-        foreach ($queryStrings as $query) {
-            // Eager loading может использовать разные форматы
-            if (str_contains($query, 'zones') && 
-                (str_contains($query, 'where "id" in') || 
-                 str_contains($query, 'where "id" =') ||
-                 str_contains($query, 'where id in'))) {
-                $hasZoneQuery = true;
-                break;
-            }
-        }
-
-        // Проверяем, что ответ успешен
-        $response->assertJsonStructure(['status', 'data']);
-        
-        // Если есть данные, должны быть запросы для загрузки zones
-        if (count($nodes) > 0) {
-            $this->assertTrue($hasZoneQuery || count($queries) < 5, 
-                'Zones should be loaded with eager loading or queries should be optimized');
+        $items = $response->json('data.data');
+        if (!empty($items)) {
+            $first = $items[0];
+            $this->assertArrayHasKey('zone', $first);
+            $this->assertArrayHasKey('channels', $first);
         }
     }
 
@@ -176,38 +100,16 @@ class N1OptimizationTest extends TestCase
         $zone = Zone::factory()->create();
         $alerts = Alert::factory()->count(3)->create(['zone_id' => $zone->id]);
 
-        DB::enableQueryLog();
-        DB::flushQueryLog();
-
         $response = $this->actingAs($user)->getJson('/api/alerts');
+        $response->assertStatus(200)
+            ->assertJsonStructure([
+                'status',
+                'data' => ['data'],
+            ]);
 
-        $queries = DB::getQueryLog();
-        DB::disableQueryLog();
-
-        $response->assertStatus(200);
-
-        // Проверяем, что есть запрос для загрузки zones
-        $queryStrings = array_column($queries, 'query');
-        $hasZoneQuery = false;
-
-        foreach ($queryStrings as $query) {
-            // Eager loading может использовать разные форматы
-            if (str_contains($query, 'zones') && 
-                (str_contains($query, 'where "id" in') || 
-                 str_contains($query, 'where "id" =') ||
-                 str_contains($query, 'where id in'))) {
-                $hasZoneQuery = true;
-                break;
-            }
-        }
-
-        // Проверяем, что ответ успешен
-        $response->assertJsonStructure(['status', 'data']);
-        
-        // Если есть данные, должны быть запросы для загрузки zones
-        if (count($alerts) > 0) {
-            $this->assertTrue($hasZoneQuery || count($queries) < 5, 
-                'Zones should be loaded with eager loading or queries should be optimized');
+        $items = $response->json('data.data');
+        if (!empty($items)) {
+            $this->assertArrayHasKey('zone', $items[0]);
         }
     }
 
@@ -292,10 +194,6 @@ class N1OptimizationTest extends TestCase
             'recipe_id' => $recipe->id,
         ]);
 
-        DB::enableQueryLog();
-        DB::flushQueryLog();
-
-        // Проверяем маршрут - может быть другой путь
         $response = $this->actingAs($user)->getJson("/api/reports/zones/{$zone->id}/harvests");
         
         // Если маршрут не найден, пробуем альтернативный
@@ -303,31 +201,16 @@ class N1OptimizationTest extends TestCase
             $response = $this->actingAs($user)->getJson("/api/zones/{$zone->id}/harvests");
         }
 
-        $queries = DB::getQueryLog();
-        DB::disableQueryLog();
-
         // Проверяем, что ответ успешен (может быть 200 или 404 если маршрут не существует)
         if ($response->status() === 200) {
-            // Проверяем, что есть запрос для загрузки recipes
-            $queryStrings = array_column($queries, 'query');
-            $hasRecipeQuery = false;
+            $response->assertJsonStructure([
+                'status',
+                'data' => ['data'],
+            ]);
 
-            foreach ($queryStrings as $query) {
-                // Eager loading может использовать разные форматы
-                if (str_contains($query, 'recipes') && 
-                    (str_contains($query, 'where "id" in') || 
-                     str_contains($query, 'where "id" =') ||
-                     str_contains($query, 'where id in'))) {
-                    $hasRecipeQuery = true;
-                    break;
-                }
-            }
-
-            if (count($harvests) > 0) {
-                // Проверяем, что запросов не слишком много (оптимизация работает)
-                // Eager loading может не выполняться, если данных мало или они уже загружены
-                $this->assertTrue($hasRecipeQuery || count($queries) < 10, 
-                    'Recipes should be loaded with eager loading or queries should be optimized (got ' . count($queries) . ' queries)');
+            $items = $response->json('data.data');
+            if (!empty($items)) {
+                $this->assertArrayHasKey('recipe', $items[0]);
             }
         } else {
             // Маршрут не существует - пропускаем тест

@@ -12,6 +12,7 @@
 #include "ph_node_app.h"
 #include "ph_node_defaults.h"
 #include "ph_node_init_steps.h"
+#include "ph_node_framework_integration.h"
 #include "config_storage.h"
 #include "wifi_manager.h"
 #include "i2c_bus.h"
@@ -22,6 +23,7 @@
 #include "ph_node_handlers.h"
 #include "setup_portal.h"
 #include "connection_status.h"
+#include "node_utils.h"
 #include "esp_log.h"
 #include "esp_err.h"
 #include "esp_mac.h"
@@ -37,6 +39,24 @@ static const char *TAG = "ph_node_init";
 // Setup mode function
 void ph_node_run_setup_mode(void) {
     ESP_LOGI(TAG, "Starting setup mode for PH node");
+    
+    // Инициализируем I2C шину для OLED перед запуском setup mode
+    // Это нужно, чтобы OLED мог работать в setup mode
+    if (!i2c_bus_is_initialized_bus(I2C_BUS_0)) {
+        ESP_LOGI(TAG, "Initializing I2C bus 0 for OLED in setup mode...");
+        i2c_bus_config_t i2c0_config = {
+            .sda_pin = PH_NODE_I2C_BUS_0_SDA,
+            .scl_pin = PH_NODE_I2C_BUS_0_SCL,
+            .clock_speed = 100000,
+            .pullup_enable = true
+        };
+        esp_err_t i2c_err = i2c_bus_init_bus(I2C_BUS_0, &i2c0_config);
+        if (i2c_err == ESP_OK) {
+            ESP_LOGI(TAG, "I2C bus 0 initialized for setup mode OLED");
+        } else {
+            ESP_LOGW(TAG, "Failed to initialize I2C bus 0 for setup mode: %s", esp_err_to_name(i2c_err));
+        }
+    }
     
     setup_portal_full_config_t config = {
         .node_type_prefix = "PH",
@@ -152,6 +172,9 @@ void ph_node_mqtt_connection_cb(bool connected, void *user_ctx) {
             // Устройство еще не зарегистрировано - публикуем node_hello
             ph_node_publish_hello();
         }
+        
+        // Запрашиваем время у сервера для синхронизации
+        node_utils_request_time();
     } else {
         ESP_LOGW(TAG, "MQTT disconnected - ph_node is offline");
     }
@@ -205,21 +228,23 @@ esp_err_t ph_node_init_components(void) {
     
     config_storage_wifi_t wifi_cfg;
     if (config_storage_get_wifi(&wifi_cfg) == ESP_OK) {
-    wifi_manager_config_t wifi_config;
-    static char wifi_ssid[CONFIG_STORAGE_MAX_STRING_LEN];
-    static char wifi_password[CONFIG_STORAGE_MAX_STRING_LEN];
-    
-    strncpy(wifi_ssid, wifi_cfg.ssid, sizeof(wifi_ssid) - 1);
-    strncpy(wifi_password, wifi_cfg.password, sizeof(wifi_password) - 1);
-    wifi_config.ssid = wifi_ssid;
-    wifi_config.password = wifi_password;
-    ESP_LOGI(TAG, "Connecting to Wi-Fi from config: %s", wifi_cfg.ssid);
-    
-    err = wifi_manager_connect(&wifi_config);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to connect to Wi-Fi: %s", esp_err_to_name(err));
-        // Continue - Wi-Fi will try to reconnect automatically
-    }
+        wifi_manager_config_t wifi_config;
+        static char wifi_ssid[CONFIG_STORAGE_MAX_STRING_LEN];
+        static char wifi_password[CONFIG_STORAGE_MAX_STRING_LEN];
+        
+        strncpy(wifi_ssid, wifi_cfg.ssid, sizeof(wifi_ssid) - 1);
+        wifi_ssid[sizeof(wifi_ssid) - 1] = '\0';
+        strncpy(wifi_password, wifi_cfg.password, sizeof(wifi_password) - 1);
+        wifi_password[sizeof(wifi_password) - 1] = '\0';
+        wifi_config.ssid = wifi_ssid;
+        wifi_config.password = wifi_password;
+        ESP_LOGI(TAG, "Connecting to Wi-Fi from config: %s", wifi_cfg.ssid);
+        
+        err = wifi_manager_connect(&wifi_config);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to connect to Wi-Fi: %s", esp_err_to_name(err));
+            // Continue - Wi-Fi will try to reconnect automatically
+        }
     }
     
     // [Step 3/8] I2C Buses
@@ -259,9 +284,20 @@ esp_err_t ph_node_init_components(void) {
         return err;
     }
     
-    // Регистрация MQTT callbacks
-    mqtt_manager_register_config_cb(ph_node_config_handler, NULL);
-    mqtt_manager_register_command_cb(ph_node_command_handler, NULL);
+    // Инициализация node_framework (перед регистрацией MQTT callbacks)
+    esp_err_t fw_err = ph_node_framework_init();
+    if (fw_err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to initialize node_framework: %s (using legacy handlers)", 
+                esp_err_to_name(fw_err));
+        // Fallback на старые обработчики
+        mqtt_manager_register_config_cb(ph_node_config_handler, NULL);
+        mqtt_manager_register_command_cb(ph_node_command_handler, NULL);
+    } else {
+        // Используем node_framework обработчики
+        ph_node_framework_register_mqtt_handlers();
+        ESP_LOGI(TAG, "Using node_framework handlers");
+    }
+    
     mqtt_manager_register_connection_cb(ph_node_mqtt_connection_cb, NULL);
     
     // [Step 8/8] Finalize

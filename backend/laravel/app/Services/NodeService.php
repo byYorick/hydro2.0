@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\DeviceNode;
 use App\Services\NodeLifecycleService;
 use App\Enums\NodeLifecycleState;
+use App\Events\NodeConfigUpdated;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -25,13 +26,19 @@ class NodeService
             Log::info('Node created', ['node_id' => $node->id, 'uid' => $node->uid]);
             
             // Очищаем кеш списка устройств для всех пользователей
-            // Используем паттерн для очистки всех ключей devices_list_*
+            // Используем точечную очистку вместо глобального flush для предотвращения DoS
             try {
                 \Illuminate\Support\Facades\Cache::tags(['devices_list'])->flush();
             } catch (\BadMethodCallException $e) {
-                // Если теги не поддерживаются, очищаем все ключи с паттерном
-                // В production лучше использовать Redis с тегами
-                \Illuminate\Support\Facades\Cache::flush();
+                // Если теги не поддерживаются, очищаем только конкретные ключи
+                $cacheKeys = [
+                    'devices_list_all',
+                    'devices_list_unassigned',
+                ];
+                foreach ($cacheKeys as $key) {
+                    \Illuminate\Support\Facades\Cache::forget($key);
+                }
+                // НЕ используем Cache::flush() - это может привести к DoS при массовых обновлениях
             }
             
             return $node;
@@ -47,31 +54,45 @@ class NodeService
             $oldZoneId = $node->zone_id;
             $node->update($data);
             
-            // Если узел привязан к зоне и раньше не был привязан, обновляем lifecycle_state
-            if ($node->zone_id && !$oldZoneId) {
-                // Используем NodeLifecycleService для безопасного перехода
+            // Если узел отвязан от зоны (zone_id стал null)
+            if (!$node->zone_id && $oldZoneId) {
+                // Сбрасываем lifecycle_state в REGISTERED_BACKEND, чтобы нода считалась новой
+                $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
+                $node->save();
+                
+                Log::info('Node detached from zone via update, reset to REGISTERED_BACKEND', [
+                    'node_id' => $node->id,
+                    'uid' => $node->uid,
+                    'old_zone_id' => $oldZoneId,
+                    'new_lifecycle_state' => $node->lifecycle_state?->value,
+                ]);
+            }
+            // Если узел привязан к зоне и раньше не был привязан
+            // НЕ переводим сразу в ASSIGNED_TO_ZONE - это произойдет только после успешной публикации конфига
+            elseif ($node->zone_id && !$oldZoneId) {
                 $currentState = $node->lifecycleState();
-                if ($currentState === NodeLifecycleState::REGISTERED_BACKEND) {
-                    $this->lifecycleService->transitionToAssigned(
-                        $node,
-                        'Node assigned to zone via NodeService::update'
-                    );
-                } elseif ($currentState === NodeLifecycleState::ASSIGNED_TO_ZONE) {
-                    // Узел уже в правильном состоянии
-                    Log::debug('Node already in ASSIGNED_TO_ZONE state', [
-                        'node_id' => $node->id,
-                        'zone_id' => $node->zone_id,
-                    ]);
-                } else {
-                    // Попытка присвоить узел, который не в правильном состоянии
+                
+                // Проверяем, что узел в правильном состоянии для привязки
+                if ($currentState !== NodeLifecycleState::REGISTERED_BACKEND) {
                     Log::warning('Cannot assign node to zone - invalid lifecycle state', [
                         'node_id' => $node->id,
                         'zone_id' => $node->zone_id,
                         'current_state' => $currentState->value,
                         'required_state' => NodeLifecycleState::REGISTERED_BACKEND->value,
                     ]);
-                    // Можно выбросить исключение, но для обратной совместимости оставляем как есть
+                    // Откатываем привязку к зоне, если состояние неправильное
+                    $node->zone_id = null;
+                    $node->save();
+                    throw new \DomainException("Cannot assign node to zone: node must be in REGISTERED_BACKEND state");
                 }
+                
+                // Оставляем в REGISTERED_BACKEND - переход в ASSIGNED_TO_ZONE произойдет
+                // только после успешной публикации конфига через PublishNodeConfigOnUpdate
+                Log::info('Node zone_id updated, waiting for config publish', [
+                    'node_id' => $node->id,
+                    'zone_id' => $node->zone_id,
+                    'lifecycle_state' => $node->lifecycle_state?->value,
+                ]);
             }
             
             Log::info('Node updated', [
@@ -88,6 +109,53 @@ class NodeService
                 // Если теги не поддерживаются, очищаем все ключи с паттерном
                 \Illuminate\Support\Facades\Cache::flush();
             }
+            
+            return $node->fresh();
+        });
+    }
+
+    /**
+     * Отвязать узел от зоны.
+     * При отвязке нода сбрасывается в REGISTERED_BACKEND и считается новой.
+     */
+    public function detach(DeviceNode $node): DeviceNode
+    {
+        return DB::transaction(function () use ($node) {
+            $oldZoneId = $node->zone_id;
+            
+            if (!$oldZoneId) {
+                Log::info('Node already detached', [
+                    'node_id' => $node->id,
+                    'uid' => $node->uid,
+                ]);
+                return $node;
+            }
+            
+            // Отвязываем от зоны
+            $node->zone_id = null;
+            
+            // Сбрасываем lifecycle_state в REGISTERED_BACKEND, чтобы нода считалась новой
+            // Это позволит ей снова появиться в списке новых нод для привязки
+            $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
+            
+            $node->save();
+            
+            Log::info('Node detached from zone', [
+                'node_id' => $node->id,
+                'uid' => $node->uid,
+                'old_zone_id' => $oldZoneId,
+                'new_lifecycle_state' => $node->lifecycle_state?->value,
+            ]);
+            
+            // Очищаем кеш списка устройств
+            try {
+                \Illuminate\Support\Facades\Cache::tags(['devices_list'])->flush();
+            } catch (\BadMethodCallException $e) {
+                \Illuminate\Support\Facades\Cache::flush();
+            }
+            
+            // Генерируем событие для обновления фронтенда через WebSocket
+            event(new NodeConfigUpdated($node->fresh()));
             
             return $node->fresh();
         });

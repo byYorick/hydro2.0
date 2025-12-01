@@ -72,6 +72,15 @@ typedef struct {
     float temperature_water;  // Для pH/EC узлов
     float humidity;           // Для climate узла
     float co2;                // Для climate узла (опционально)
+    float lux_value;          // Для light узла (освещенность в люксах)
+    
+    // Статус датчиков (для pH/EC узлов)
+    struct {
+        bool i2c_connected;   // Статус I2C подключения датчика
+        bool using_stub;       // Используются ли stub значения
+        bool has_error;        // Есть ли ошибка датчика
+        char error_msg[24];    // Краткое сообщение об ошибке (например, "I2C NACK", "No sensor")
+    } sensor_status;
     
     // Статус узла
     bool alert;

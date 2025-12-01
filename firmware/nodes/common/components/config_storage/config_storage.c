@@ -241,11 +241,23 @@ esp_err_t config_storage_get_mqtt(config_storage_mqtt_t *mqtt) {
         strncpy(mqtt->username, item->valuestring, sizeof(mqtt->username) - 1);
     }
     
-    if ((item = cJSON_GetObjectItem(mqtt_obj, "pass")) && cJSON_IsString(item)) {
+    // Используем "password" вместо "pass" для унификации с config_apply
+    if ((item = cJSON_GetObjectItem(mqtt_obj, "password")) && cJSON_IsString(item)) {
         strncpy(mqtt->password, item->valuestring, sizeof(mqtt->password) - 1);
+        mqtt->password[sizeof(mqtt->password) - 1] = '\0';  // Гарантируем null-termination
+    }
+    // Поддержка старого формата "pass" для обратной совместимости
+    else if ((item = cJSON_GetObjectItem(mqtt_obj, "pass")) && cJSON_IsString(item)) {
+        strncpy(mqtt->password, item->valuestring, sizeof(mqtt->password) - 1);
+        mqtt->password[sizeof(mqtt->password) - 1] = '\0';  // Гарантируем null-termination
     }
     
-    if ((item = cJSON_GetObjectItem(mqtt_obj, "tls")) && cJSON_IsBool(item)) {
+    // Используем "use_tls" вместо "tls" для унификации с config_apply
+    if ((item = cJSON_GetObjectItem(mqtt_obj, "use_tls")) && cJSON_IsBool(item)) {
+        mqtt->use_tls = cJSON_IsTrue(item);
+    }
+    // Поддержка старого формата "tls" для обратной совместимости
+    else if ((item = cJSON_GetObjectItem(mqtt_obj, "tls")) && cJSON_IsBool(item)) {
         mqtt->use_tls = cJSON_IsTrue(item);
     }
     
@@ -386,6 +398,34 @@ esp_err_t config_storage_validate(const char *json_config, size_t json_len,
         cJSON_Delete(config);
         if (error_msg && error_msg_size > 0) {
             strncpy(error_msg, "Missing or invalid mqtt", error_msg_size - 1);
+        }
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    // Валидация обязательных MQTT полей
+    cJSON *mqtt_host = cJSON_GetObjectItem(mqtt, "host");
+    if (!cJSON_IsString(mqtt_host) || mqtt_host->valuestring == NULL || mqtt_host->valuestring[0] == '\0') {
+        cJSON_Delete(config);
+        if (error_msg && error_msg_size > 0) {
+            strncpy(error_msg, "Missing or invalid mqtt.host", error_msg_size - 1);
+        }
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    cJSON *mqtt_port = cJSON_GetObjectItem(mqtt, "port");
+    if (!cJSON_IsNumber(mqtt_port) || cJSON_GetNumberValue(mqtt_port) <= 0 || cJSON_GetNumberValue(mqtt_port) > 65535) {
+        cJSON_Delete(config);
+        if (error_msg && error_msg_size > 0) {
+            strncpy(error_msg, "Missing or invalid mqtt.port (must be 1-65535)", error_msg_size - 1);
+        }
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    cJSON *mqtt_keepalive = cJSON_GetObjectItem(mqtt, "keepalive");
+    if (mqtt_keepalive != NULL && (!cJSON_IsNumber(mqtt_keepalive) || cJSON_GetNumberValue(mqtt_keepalive) <= 0 || cJSON_GetNumberValue(mqtt_keepalive) > 65535)) {
+        cJSON_Delete(config);
+        if (error_msg && error_msg_size > 0) {
+            strncpy(error_msg, "Invalid mqtt.keepalive (must be 1-65535)", error_msg_size - 1);
         }
         return ESP_ERR_INVALID_ARG;
     }

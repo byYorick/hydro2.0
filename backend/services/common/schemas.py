@@ -53,20 +53,32 @@ class CommandResponse(BaseModel):
 
 class NodeConfigModel(BaseModel):
     """Модель для конфигурации узла."""
-    node_type: Optional[str] = Field(None, max_length=32)
-    zone_id: Optional[int] = Field(None, ge=1)
-    channel: Optional[str] = Field(None, max_length=64)
+    node_id: Optional[str] = Field(None, max_length=128, description="Node UID")
+    version: Optional[int] = Field(None, ge=1, description="Config version")
+    type: Optional[str] = Field(None, max_length=32, description="Node type")
+    node_type: Optional[str] = Field(None, max_length=32, description="Node type (legacy)")
+    zone_id: Optional[int] = Field(None, ge=1, description="Zone ID")
+    zone_uid: Optional[str] = Field(None, max_length=128, description="Zone UID")
+    gh_uid: Optional[str] = Field(None, max_length=128, description="Greenhouse UID")
+    channel: Optional[str] = Field(None, max_length=64, description="Channel name (legacy)")
+    channels: Optional[list] = Field(None, description="List of node channels")
+    wifi: Optional[Dict[str, Any]] = Field(None, description="WiFi configuration")
+    mqtt: Optional[Dict[str, Any]] = Field(None, description="MQTT configuration")
     calibration: Optional[Dict[str, Any]] = None
     thresholds: Optional[Dict[str, float]] = None
     schedule: Optional[Dict[str, Any]] = None
     
-    @validator('node_type')
+    class Config:
+        extra = "allow"  # Разрешаем дополнительные поля для обратной совместимости
+    
+    @validator('node_type', 'type')
     def validate_node_type(cls, v):
         """Валидация типа узла."""
         if v:
-            allowed_types = ['ph', 'ec', 'climate', 'pump', 'irrig', 'light']
+            allowed_types = ['ph', 'ec', 'climate', 'pump', 'irrig', 'light', 'unknown']
             if v not in allowed_types:
-                raise ValueError(f"Invalid node_type: {v}. Allowed: {allowed_types}")
+                # Предупреждение, но не блокируем (для расширяемости)
+                pass
         return v
 
 

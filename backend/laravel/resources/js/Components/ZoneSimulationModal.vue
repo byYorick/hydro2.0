@@ -6,8 +6,10 @@
       
       <form @submit.prevent="onSubmit" class="space-y-4" @click.stop>
         <div>
-          <label class="block text-sm font-medium mb-1">Duration (hours)</label>
+          <label for="simulation-duration-hours" class="block text-sm font-medium mb-1">Duration (hours)</label>
           <input
+            id="simulation-duration-hours"
+            name="duration_hours"
             v-model.number="form.duration_hours"
             type="number"
             min="1"
@@ -18,8 +20,10 @@
         </div>
         
         <div>
-          <label class="block text-sm font-medium mb-1">Step (minutes)</label>
+          <label for="simulation-step-minutes" class="block text-sm font-medium mb-1">Step (minutes)</label>
           <input
+            id="simulation-step-minutes"
+            name="step_minutes"
             v-model.number="form.step_minutes"
             type="number"
             min="1"
@@ -30,8 +34,10 @@
         </div>
         
         <div>
-          <label class="block text-sm font-medium mb-1">Recipe ID (optional)</label>
+          <label for="simulation-recipe-id" class="block text-sm font-medium mb-1">Recipe ID (optional)</label>
           <input
+            id="simulation-recipe-id"
+            name="recipe_id"
             v-model.number="form.recipe_id"
             type="number"
             class="w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-sm"
@@ -42,8 +48,10 @@
           <div class="text-sm font-medium mb-2">Initial State (optional)</div>
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label class="block text-xs text-neutral-400 mb-1">pH</label>
+              <label for="simulation-initial-ph" class="block text-xs text-neutral-400 mb-1">pH</label>
               <input
+                id="simulation-initial-ph"
+                name="initial_state_ph"
                 v-model.number="form.initial_state.ph"
                 type="number"
                 step="0.1"
@@ -51,8 +59,10 @@
               />
             </div>
             <div>
-              <label class="block text-xs text-neutral-400 mb-1">EC</label>
+              <label for="simulation-initial-ec" class="block text-xs text-neutral-400 mb-1">EC</label>
               <input
+                id="simulation-initial-ec"
+                name="initial_state_ec"
                 v-model.number="form.initial_state.ec"
                 type="number"
                 step="0.1"
@@ -60,8 +70,10 @@
               />
             </div>
             <div>
-              <label class="block text-xs text-neutral-400 mb-1">Temp Air (°C)</label>
+              <label for="simulation-initial-temp-air" class="block text-xs text-neutral-400 mb-1">Temp Air (°C)</label>
               <input
+                id="simulation-initial-temp-air"
+                name="initial_state_temp_air"
                 v-model.number="form.initial_state.temp_air"
                 type="number"
                 step="0.1"
@@ -69,8 +81,10 @@
               />
             </div>
             <div>
-              <label class="block text-xs text-neutral-400 mb-1">Temp Water (°C)</label>
+              <label for="simulation-initial-temp-water" class="block text-xs text-neutral-400 mb-1">Temp Water (°C)</label>
               <input
+                id="simulation-initial-temp-water"
+                name="initial_state_temp_water"
                 v-model.number="form.initial_state.temp_water"
                 type="number"
                 step="0.1"
@@ -78,8 +92,10 @@
               />
             </div>
             <div class="col-span-2">
-              <label class="block text-xs text-neutral-400 mb-1">Влажность (%)</label>
+              <label for="simulation-initial-humidity" class="block text-xs text-neutral-400 mb-1">Влажность (%)</label>
               <input
+                id="simulation-initial-humidity"
+                name="initial_state_humidity_air"
                 v-model.number="form.initial_state.humidity_air"
                 type="number"
                 step="0.1"
@@ -118,22 +134,61 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, reactive, computed } from 'vue'
 import { logger } from '@/utils/logger'
 import Button from '@/Components/Button.vue'
 import ChartBase from '@/Components/ChartBase.vue'
-import axios from 'axios'
+import { useApi } from '@/composables/useApi'
+import { useToast } from '@/composables/useToast'
+import { useLoading } from '@/composables/useLoading'
+import type { EChartsOption } from 'echarts'
 
-const props = defineProps({
-  show: { type: Boolean, default: false },
-  zoneId: { type: Number, required: true },
-  defaultRecipeId: { type: Number, default: null },
+interface Props {
+  show?: boolean
+  zoneId: number
+  defaultRecipeId?: number | null
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  show: false,
+  defaultRecipeId: null,
 })
 
-const emit = defineEmits(['close'])
+const emit = defineEmits<{
+  close: []
+}>()
 
-const form = reactive({
+const { showToast } = useToast()
+const { api } = useApi(showToast)
+
+interface SimulationForm {
+  duration_hours: number
+  step_minutes: number
+  recipe_id: number | null
+  initial_state: {
+    ph: number | null
+    ec: number | null
+    temp_air: number | null
+    temp_water: number | null
+    humidity_air: number | null
+  }
+}
+
+interface SimulationPoint {
+  t: number
+  ph: number
+  ec: number
+  temp_air: number
+}
+
+interface SimulationResults {
+  duration_hours: number
+  step_minutes: number
+  points: SimulationPoint[]
+}
+
+const form = reactive<SimulationForm>({
   duration_hours: 72,
   step_minutes: 10,
   recipe_id: props.defaultRecipeId || null,
@@ -146,11 +201,11 @@ const form = reactive({
   },
 })
 
-const loading = ref(false)
-const error = ref(null)
-const results = ref(null)
+const { loading, startLoading, stopLoading } = useLoading<boolean>(false)
+const error = ref<string | null>(null)
+const results = ref<SimulationResults | null>(null)
 
-const chartOption = computed(() => {
+const chartOption = computed<EChartsOption | null>(() => {
   if (!results.value?.points) return null
   
   const points = results.value.points
@@ -226,13 +281,20 @@ const chartOption = computed(() => {
   }
 })
 
-async function onSubmit() {
-  loading.value = true
+async function onSubmit(): Promise<void> {
+  startLoading()
   error.value = null
   results.value = null
   
   try {
-    const payload = {
+    interface SimulationPayload {
+      duration_hours: number
+      step_minutes: number
+      recipe_id?: number
+      initial_state?: Partial<SimulationForm['initial_state']>
+    }
+    
+    const payload: SimulationPayload = {
       duration_hours: form.duration_hours,
       step_minutes: form.step_minutes,
     }
@@ -242,7 +304,7 @@ async function onSubmit() {
     }
     
     // Фильтруем initial_state, убирая null значения
-    const initialState = {}
+    const initialState: Partial<SimulationForm['initial_state']> = {}
     if (form.initial_state.ph !== null) initialState.ph = form.initial_state.ph
     if (form.initial_state.ec !== null) initialState.ec = form.initial_state.ec
     if (form.initial_state.temp_air !== null) initialState.temp_air = form.initial_state.temp_air
@@ -253,33 +315,23 @@ async function onSubmit() {
       payload.initial_state = initialState
     }
     
-    const response = await axios.post(
-      `/api/zones/${props.zoneId}/simulate`,
-      payload,
-      {
-        headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-      }
+    const response = await api.post<{ status: string; data?: SimulationResults }>(
+      `/zones/${props.zoneId}/simulate`,
+      payload
     )
     
     if (response.data?.status === 'ok' && response.data?.data) {
       results.value = response.data.data
+      showToast('Simulation completed successfully', 'success', TOAST_TIMEOUT.NORMAL)
     } else {
       error.value = 'Unexpected response format'
     }
   } catch (err) {
     logger.error('[ZoneSimulationModal] Simulation error:', err)
-    let errorMsg = 'Failed to run simulation'
-    if (err && typeof err === 'object') {
-      const errorObj = err
-      if (errorObj.response && errorObj.response.data && errorObj.response.data.message) {
-        errorMsg = errorObj.response.data.message
-      } else if (errorObj.message) {
-        errorMsg = errorObj.message
-      }
-    }
+    const errorMsg = err instanceof Error ? err.message : 'Failed to run simulation'
     error.value = errorMsg
   } finally {
-    loading.value = false
+    stopLoading()
   }
 }
 </script>

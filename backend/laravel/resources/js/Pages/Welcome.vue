@@ -1,5 +1,7 @@
 <script setup>
 import { Head, Link } from '@inertiajs/vue3';
+// Импорт route из утилиты
+import { route } from '@/utils/route';
 
 defineProps({
     canLogin: {

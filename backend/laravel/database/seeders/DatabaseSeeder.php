@@ -18,21 +18,14 @@ class DatabaseSeeder extends Seeder
         // Seed presets (plant growing presets)
         $this->call(PresetSeeder::class);
 
+        // Seed базовые растения и словари
+        $this->call(PlantTaxonomySeeder::class);
+
         // Seed demo data (only in development)
         if (app()->environment('local', 'development')) {
-            $this->call(DemoDataSeeder::class);
-            
-            // Seed telemetry data (only in development, after demo data)
-            // Используйте TelemetryMiniGraphSeeder для быстрого заполнения только миниграфиков
-            // или TelemetrySeeder для полного набора данных
-            if (config('app.telemetry_seeder_fast', false)) {
-                $this->call(TelemetryMiniGraphSeeder::class);
-            } else {
-                $this->call(TelemetrySeeder::class);
-            }
-            
-            // Seed comprehensive dashboard data (all tables for all Grafana dashboards)
-            $this->call(ComprehensiveDashboardSeeder::class);
+            // Полное заполнение всех таблиц для тестирования всех сервисов
+            // PresetSeeder уже выполнен выше
+            $this->call(FullServiceTestSeeder::class);
         }
     }
 }

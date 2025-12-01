@@ -10,18 +10,25 @@ export default defineConfig({
         },
     },
     server: {
-        host: '0.0.0.0',
+        // ИСПРАВЛЕНО: Используем 0.0.0.0 для прослушивания (чтобы принимать соединения из сети)
+        // Но для HMR и клиентских подключений используем localhost (см. hmr.host)
+        // nginx прокси будет работать с 127.0.0.1 внутри контейнера
+        host: process.env.VITE_HOST || '0.0.0.0',
         port: 5173,
         strictPort: true,
-        origin: 'http://localhost:5173',
         cors: {
-            origin: ['http://localhost:8080'],
-            credentials: true,
+            origin: (origin, callback) => {
+                callback(null, true);
+            },
+            credentials: false,
+            methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+            allowedHeaders: ['*'],
         },
         hmr: {
             host: 'localhost',
             port: 5173,
-            protocol: 'ws',
+            clientPort: 5173,
+            path: '/@vite/client',
         },
         watch: {
             usePolling: true, // Для Docker на Windows
@@ -59,9 +66,12 @@ export default defineConfig({
                 // Оптимизация для production
                 manualChunks: (id) => {
                     // Разделение vendor chunks для лучшего кеширования
+                    // Vue должен быть в основном bundle, а не в отдельном chunk
+                    // для правильной синхронной загрузки
                     if (id.includes('node_modules')) {
-                        if (id.includes('vue')) {
-                            return 'vue-vendor';
+                        // Vue и его зависимости не разделяем, они будут в основном bundle
+                        if (id.includes('vue') || id.includes('@vue')) {
+                            return null; // Возвращаем null, чтобы Vue был в основном bundle
                         }
                         if (id.includes('echarts')) {
                             return 'echarts-vendor';
@@ -100,6 +110,14 @@ export default defineConfig({
                 'app/Http/Controllers/**',
                 'routes/**',
             ], // Ограничиваем refresh только нужными файлами для снижения нагрузки
+            detectTls: false, // Отключить автоматическое определение TLS
+            // Явно указываем devServerUrl для правильной генерации URL
+            // Используем localhost:8080 (через nginx прокси), а не 0.0.0.0
+            // Браузер не может использовать 0.0.0.0 для запросов
+            devServerUrl: process.env.VITE_DEV_SERVER_URL || 'http://localhost:8080',
+            // Использовать прокси через nginx вместо прямых ссылок на Vite
+            buildDirectory: 'build',
+            hotFile: 'public/hot',
         }),
         vue({
             template: {
@@ -123,6 +141,9 @@ export default defineConfig({
         force: false, // Не пересобирать принудительно
         esbuildOptions: {
             resolveExtensions: ['.mjs', '.js', '.mts', '.ts', '.jsx', '.tsx', '.json'],
+            // ИСПРАВЛЕНО: Отключаем source maps для оптимизированных зависимостей
+            // Это устраняет ошибки "No sources are declared in this source map"
+            sourcemap: false,
         },
     },
     // Кеш для оптимизированных зависимостей

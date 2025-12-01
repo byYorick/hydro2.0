@@ -4,12 +4,38 @@ namespace App\Http\Controllers;
 
 use App\Models\TelemetryLast;
 use App\Models\TelemetrySample;
+use App\Helpers\ZoneAccessHelper;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 class TelemetryController extends Controller
 {
     public function zoneLast(int $zoneId)
     {
+        // Проверяем авторизацию
+        if (!Auth::check()) {
+            return response()->json([
+                'status' => 'error',
+                'code' => 'UNAUTHENTICATED',
+                'message' => 'Authentication required',
+            ], 401);
+        }
+        
+        // Проверяем доступ к зоне
+        if (!ZoneAccessHelper::canAccessZone(Auth::user(), $zoneId)) {
+            Log::warning('TelemetryController: Unauthorized access attempt to zone telemetry', [
+                'user_id' => Auth::id(),
+                'zone_id' => $zoneId,
+            ]);
+            
+            return response()->json([
+                'status' => 'error',
+                'code' => 'FORBIDDEN',
+                'message' => 'Access denied',
+            ], 403);
+        }
+        
         $rows = TelemetryLast::query()
             ->where('zone_id', $zoneId)
             ->get();
@@ -22,6 +48,29 @@ class TelemetryController extends Controller
 
     public function zoneHistory(Request $request, int $zoneId)
     {
+        // Проверяем авторизацию
+        if (!Auth::check()) {
+            return response()->json([
+                'status' => 'error',
+                'code' => 'UNAUTHENTICATED',
+                'message' => 'Authentication required',
+            ], 401);
+        }
+        
+        // Проверяем доступ к зоне
+        if (!ZoneAccessHelper::canAccessZone(Auth::user(), $zoneId)) {
+            Log::warning('TelemetryController: Unauthorized access attempt to zone history', [
+                'user_id' => Auth::id(),
+                'zone_id' => $zoneId,
+            ]);
+            
+            return response()->json([
+                'status' => 'error',
+                'code' => 'FORBIDDEN',
+                'message' => 'Access denied',
+            ], 403);
+        }
+        
         $validated = $request->validate([
             'metric' => ['required', 'string', 'max:64'],
             'from' => ['nullable', 'date'],
@@ -49,6 +98,29 @@ class TelemetryController extends Controller
 
     public function nodeLast(int $nodeId)
     {
+        // Проверяем авторизацию
+        if (!Auth::check()) {
+            return response()->json([
+                'status' => 'error',
+                'code' => 'UNAUTHENTICATED',
+                'message' => 'Authentication required',
+            ], 401);
+        }
+        
+        // Проверяем доступ к ноде
+        if (!ZoneAccessHelper::canAccessNode(Auth::user(), $nodeId)) {
+            Log::warning('TelemetryController: Unauthorized access attempt to node telemetry', [
+                'user_id' => Auth::id(),
+                'node_id' => $nodeId,
+            ]);
+            
+            return response()->json([
+                'status' => 'error',
+                'code' => 'FORBIDDEN',
+                'message' => 'Access denied',
+            ], 403);
+        }
+        
         $rows = TelemetryLast::query()
             ->where('node_id', $nodeId)
             ->get();
@@ -67,6 +139,15 @@ class TelemetryController extends Controller
      */
     public function aggregates(Request $request)
     {
+        // Проверяем авторизацию
+        if (!Auth::check()) {
+            return response()->json([
+                'status' => 'error',
+                'code' => 'UNAUTHENTICATED',
+                'message' => 'Authentication required',
+            ], 401);
+        }
+        
         $validated = $request->validate([
             'zone_id' => ['required', 'integer', 'exists:zones,id'],
             'metric' => ['required', 'string'],
@@ -74,6 +155,20 @@ class TelemetryController extends Controller
         ]);
 
         $zoneId = $validated['zone_id'];
+        
+        // Проверяем доступ к зоне
+        if (!ZoneAccessHelper::canAccessZone(Auth::user(), $zoneId)) {
+            Log::warning('TelemetryController: Unauthorized access attempt to zone aggregates', [
+                'user_id' => Auth::id(),
+                'zone_id' => $zoneId,
+            ]);
+            
+            return response()->json([
+                'status' => 'error',
+                'code' => 'FORBIDDEN',
+                'message' => 'Access denied',
+            ], 403);
+        }
         $metric = strtoupper($validated['metric']); // Преобразуем в верхний регистр (ph -> PH)
         $period = $validated['period'];
 

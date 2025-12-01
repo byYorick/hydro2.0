@@ -1,7 +1,8 @@
 """
 Telemetry Repository - доступ к телеметрии.
 """
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Tuple
+from datetime import datetime
 from common.db import fetch
 
 
@@ -29,6 +30,29 @@ class TelemetryRepository:
         result: Dict[str, Optional[float]] = {}
         for row in rows:
             result[row["metric_type"]] = row["value"]
+        return result
+    
+    async def get_last_telemetry_with_timestamps(self, zone_id: int) -> Dict[str, Tuple[Optional[float], Optional[datetime]]]:
+        """
+        Получить последние значения телеметрии для зоны с временными метками.
+        
+        Args:
+            zone_id: ID зоны
+        
+        Returns:
+            Dict[metric_type, (value, updated_at)]
+        """
+        rows = await fetch(
+            """
+            SELECT metric_type, value, updated_at
+            FROM telemetry_last
+            WHERE zone_id = $1
+            """,
+            zone_id,
+        )
+        result: Dict[str, Tuple[Optional[float], Optional[datetime]]] = {}
+        for row in rows:
+            result[row["metric_type"]] = (row["value"], row.get("updated_at"))
         return result
     
     async def get_zones_telemetry_batch(self, zone_ids: List[int]) -> Dict[int, Dict[str, Optional[float]]]:
