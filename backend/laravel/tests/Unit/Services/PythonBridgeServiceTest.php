@@ -34,6 +34,13 @@ class PythonBridgeServiceTest extends TestCase
     public function test_send_zone_command_with_explicit_node_uid_and_channel(): void
     {
         $zone = Zone::factory()->create();
+        $node = DeviceNode::factory()->create(['zone_id' => $zone->id, 'uid' => 'nd-pump-1']);
+        NodeChannel::create([
+            'node_id' => $node->id,
+            'channel' => 'pump_main',
+            'type' => 'pump',
+            'metric' => null,
+        ]);
 
         $cmdId = $this->service->sendZoneCommand($zone, [
             'type' => 'FORCE_IRRIGATION',
@@ -53,7 +60,7 @@ class PythonBridgeServiceTest extends TestCase
         });
     }
 
-    public function test_send_zone_command_uses_node_from_zone_when_not_specified(): void
+    public function test_send_zone_command_validates_node_exists_and_belongs_to_zone(): void
     {
         $zone = Zone::factory()->create();
         $node = DeviceNode::factory()->create(['zone_id' => $zone->id, 'uid' => 'nd-ph-1']);
@@ -64,9 +71,12 @@ class PythonBridgeServiceTest extends TestCase
             'metric' => 'PH',
         ]);
 
+        // Тест: успешная отправка команды с валидными node_uid и channel
         $cmdId = $this->service->sendZoneCommand($zone, [
             'type' => 'FORCE_PH_CONTROL',
             'params' => [],
+            'node_uid' => $node->uid,
+            'channel' => 'ph_sensor',
         ]);
 
         $this->assertNotEmpty($cmdId);
@@ -77,6 +87,54 @@ class PythonBridgeServiceTest extends TestCase
             return isset($data['node_uid']) && $data['node_uid'] === $node->uid
                 && isset($data['channel']) && $data['channel'] === 'ph_sensor';
         });
+    }
+
+    public function test_send_zone_command_throws_exception_when_node_not_found(): void
+    {
+        $zone = Zone::factory()->create();
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/Node non-existent-node not found or not assigned to zone \d+/');
+
+        $this->service->sendZoneCommand($zone, [
+            'type' => 'FORCE_IRRIGATION',
+            'params' => [],
+            'node_uid' => 'non-existent-node',
+            'channel' => 'pump_main',
+        ]);
+    }
+
+    public function test_send_zone_command_throws_exception_when_node_not_in_zone(): void
+    {
+        $zone1 = Zone::factory()->create();
+        $zone2 = Zone::factory()->create();
+        $node = DeviceNode::factory()->create(['zone_id' => $zone1->id, 'uid' => 'nd-ph-1']);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/Node nd-ph-1 not found or not assigned to zone \d+/');
+
+        $this->service->sendZoneCommand($zone2, [
+            'type' => 'FORCE_IRRIGATION',
+            'params' => [],
+            'node_uid' => $node->uid,
+            'channel' => 'pump_main',
+        ]);
+    }
+
+    public function test_send_zone_command_throws_exception_when_channel_not_found(): void
+    {
+        $zone = Zone::factory()->create();
+        $node = DeviceNode::factory()->create(['zone_id' => $zone->id, 'uid' => 'nd-ph-1']);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/Channel non-existent-channel not found on node nd-ph-1/');
+
+        $this->service->sendZoneCommand($zone, [
+            'type' => 'FORCE_IRRIGATION',
+            'params' => [],
+            'node_uid' => $node->uid,
+            'channel' => 'non-existent-channel',
+        ]);
     }
 
     public function test_send_zone_command_throws_exception_when_no_node_or_channel(): void

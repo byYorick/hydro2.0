@@ -42,7 +42,7 @@ export interface LogContext {
  * Проверяет, нужно ли логировать на данном уровне
  */
 function shouldLog(level: LogLevel): boolean {
-  // ИСПРАВЛЕНО: Включаем жесткое логирование для диагностики
+  // Включаем жесткое логирование для диагностики
   // Проверяем переменную окружения для принудительного включения логирования
   const forceDebug = String((import.meta.env.VITE_FORCE_DEBUG_LOGS || 'false')).toLowerCase() === 'true'
   
@@ -83,11 +83,21 @@ function formatMessage(level: LogLevel, message: string, context?: LogContext): 
   
   // Если есть контекст, форматируем как JSON для структурированного логирования
   if (context && Object.keys(context).length > 0) {
-    const jsonContext = safeStringify(context)
-    if (isDev) {
-      return [prefix, message, context]
-    } else {
-      // В проде выводим JSON для сопоставления с backend логами
+    try {
+      // Удаляем циклические ссылки перед передачей в консоль
+      const cleanedContext = removeCircularReferences(context) as LogContext
+      const jsonContext = safeStringify(cleanedContext)
+      
+      if (isDev) {
+        // В dev режиме передаем очищенный объект для удобного просмотра
+        return [prefix, message, cleanedContext]
+      } else {
+        // В проде выводим JSON для сопоставления с backend логами
+        return [`${prefix} ${message}`, jsonContext]
+      }
+    } catch (err) {
+      // Если не удалось очистить, передаем только JSON строку
+      const jsonContext = safeStringify(context)
       return [`${prefix} ${message}`, jsonContext]
     }
   }
@@ -95,9 +105,43 @@ function formatMessage(level: LogLevel, message: string, context?: LogContext): 
   return [prefix, message]
 }
 
+/**
+ * Удаляет циклические ссылки из объекта
+ */
+function removeCircularReferences(obj: unknown, seen = new WeakSet()): unknown {
+  if (obj === null || typeof obj !== 'object') {
+    return obj
+  }
+  
+  if (seen.has(obj as object)) {
+    return '[Circular Reference]'
+  }
+  
+  seen.add(obj as object)
+  
+  if (Array.isArray(obj)) {
+    return obj.map(item => removeCircularReferences(item, seen))
+  }
+  
+  const result: Record<string, unknown> = {}
+  for (const key in obj) {
+    if (Object.prototype.hasOwnProperty.call(obj, key)) {
+      try {
+        result[key] = removeCircularReferences((obj as Record<string, unknown>)[key], seen)
+      } catch {
+        result[key] = '[Unable to serialize]'
+      }
+    }
+  }
+  
+  return result
+}
+
 function safeStringify(context: LogContext): string {
   try {
-    return JSON.stringify(context, null, isDev ? 2 : 0)
+    // Удаляем циклические ссылки перед сериализацией
+    const cleaned = removeCircularReferences(context)
+    return JSON.stringify(cleaned, null, isDev ? 2 : 0)
   } catch (err) {
     const fallbackMessage = err instanceof Error ? err.message : 'Unable to serialize context'
     return JSON.stringify(

@@ -27,11 +27,8 @@
         <div class="flex items-center justify-between mb-4">
           <h1 class="text-lg font-semibold">Панель управления</h1>
         <div class="flex gap-2">
-          <Link href="/setup/wizard">
-            <Button size="sm" variant="secondary">Мастер настройки</Button>
-          </Link>
-          <Link href="/greenhouses/create">
-            <Button size="sm" variant="outline">Создать теплицу</Button>
+          <Link href="/greenhouses">
+            <Button size="sm" variant="secondary">Теплицы</Button>
           </Link>
         </div>
       </div>
@@ -119,11 +116,8 @@
               </div>
             </div>
             <div class="flex gap-2">
-              <Link href="/setup/wizard">
-                <Button size="sm">Мастер настройки</Button>
-              </Link>
-              <Link href="/greenhouses/create">
-                <Button size="sm" variant="secondary">Создать теплицу</Button>
+              <Link href="/greenhouses">
+                <Button size="sm">Создать теплицу</Button>
               </Link>
             </div>
           </div>
@@ -134,8 +128,8 @@
       <div v-if="hasGreenhouses" class="mb-6">
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-base font-semibold text-neutral-100">Теплицы</h2>
-          <Link href="/greenhouses/create">
-            <Button size="sm" variant="outline">Создать теплицу</Button>
+          <Link href="/greenhouses">
+            <Button size="sm" variant="outline">Все теплицы</Button>
           </Link>
         </div>
         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
@@ -198,8 +192,20 @@
                 variant="outline"
                 @click="handleQuickAction(zone, 'PAUSE')"
                 class="text-xs"
+                :disabled="isQuickActionLoading(zone.id)"
               >
+                <template v-if="isQuickActionLoading(zone.id, 'PAUSE')">
+                  <span class="inline-flex items-center gap-1">
+                    <svg class="w-3.5 h-3.5 animate-spin text-neutral-300" viewBox="0 0 24 24">
+                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                    </svg>
+                    <span>Пауза...</span>
+                  </span>
+                </template>
+                <template v-else>
                 ⏸ Пауза
+                </template>
               </Button>
               <Button
                 v-if="zone.status === 'PAUSED'"
@@ -207,8 +213,20 @@
                 variant="outline"
                 @click="handleQuickAction(zone, 'RESUME')"
                 class="text-xs"
+                :disabled="isQuickActionLoading(zone.id)"
               >
+                <template v-if="isQuickActionLoading(zone.id, 'RESUME')">
+                  <span class="inline-flex items-center gap-1">
+                    <svg class="w-3.5 h-3.5 animate-spin text-neutral-300" viewBox="0 0 24 24">
+                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                    </svg>
+                    <span>Запуск...</span>
+                  </span>
+                </template>
+                <template v-else>
                 ▶ Запустить
+                </template>
               </Button>
               <Button
                 v-if="zone.status === 'ALARM' || zone.status === 'WARNING'"
@@ -216,8 +234,20 @@
                 variant="outline"
                 @click="handleQuickAction(zone, 'FORCE_IRRIGATION')"
                 class="text-xs text-emerald-400 border-emerald-700 hover:bg-emerald-950/20"
+                :disabled="isQuickActionLoading(zone.id)"
               >
+                <template v-if="isQuickActionLoading(zone.id, 'FORCE_IRRIGATION')">
+                  <span class="inline-flex items-center gap-1">
+                    <svg class="w-3.5 h-3.5 animate-spin text-emerald-300" viewBox="0 0 24 24">
+                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                    </svg>
+                    <span>Полив...</span>
+                  </span>
+                </template>
+                <template v-else>
                 💧 Полив
+                </template>
               </Button>
             </div>
           </Card>
@@ -230,32 +260,73 @@
       </div>
 
       <!-- Мини-графики телеметрии (если есть зоны) -->
-      <div v-if="hasZonesForTelemetry" class="mb-6">
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="text-base font-semibold text-neutral-100">Телеметрия за 24 часа</h2>
-          <div class="flex items-center gap-2 text-xs text-neutral-500">
-            <div class="flex items-center gap-1.5">
+      <div class="mb-6">
+        <template v-if="hasZonesForTelemetry">
+          <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
+            <div>
+              <h2 class="text-base font-semibold text-neutral-100">
+                Телеметрия
+                <span v-if="selectedZoneLabel" class="text-neutral-400 font-normal">· {{ selectedZoneLabel }}</span>
+                <span class="text-neutral-500 font-normal">· {{ telemetryPeriodLabel }}</span>
+              </h2>
+              <div class="flex items-center gap-1.5 text-xs text-neutral-500 mt-1">
               <div class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
               <span>Обновляется в реальном времени</span>
             </div>
+            </div>
+            <div class="flex flex-wrap items-center gap-3">
+              <div v-if="telemetryZones.length > 0" class="flex items-center gap-2">
+                <label class="text-xs text-neutral-400">Зона</label>
+                <select
+                  v-model.number="selectedZoneId"
+                  class="h-8 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-xs min-w-[160px]"
+                >
+                  <option
+                    v-for="zone in telemetryZones"
+                    :key="zone.id"
+                    :value="zone.id"
+                  >
+                    {{ zone.greenhouse?.name ? `${zone.name} · ${zone.greenhouse.name}` : zone.name }}
+                  </option>
+                </select>
+              </div>
+              <div class="flex items-center gap-1">
+                <button
+                  v-for="range in telemetryRangeOptions"
+                  :key="range.value"
+                  @click="telemetryPeriod = range.value"
+                  class="px-3 py-1 rounded-md text-xs border transition-colors"
+                  :class="telemetryPeriod === range.value
+                    ? 'border-sky-500 bg-sky-900/40 text-sky-200'
+                    : 'border-neutral-700 bg-neutral-900 text-neutral-400 hover:border-neutral-600'"
+                >
+                  {{ range.label }}
+                </button>
+              </div>
           </div>
         </div>
         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
           <MiniTelemetryChart
             v-for="metric in telemetryMetrics"
             :key="metric.key"
-            v-memo="[metric.data, metric.currentValue, metric.loading]"
+              v-memo="[metric.data, metric.currentValue, metric.loading, selectedZoneId]"
             :label="metric.label"
             :data="metric.data"
             :current-value="metric.currentValue"
             :unit="metric.unit"
             :loading="metric.loading"
             :color="metric.color"
-            :zone-id="firstZoneId"
+              :zone-id="selectedZoneId"
             :metric="metric.key"
             @open-detail="handleOpenDetail"
           />
         </div>
+        </template>
+        <template v-else>
+          <Card>
+            <div class="text-sm text-neutral-400">Нет доступных зон с телеметрией</div>
+          </Card>
+        </template>
       </div>
 
       <!-- Heatmap зон по статусам -->
@@ -271,8 +342,8 @@
       </div>
     </template>
     <template #context>
-      <div class="h-full flex flex-col">
-        <div class="flex items-center justify-between mb-3">
+      <div class="flex flex-col flex-1 min-h-0">
+        <div class="flex items-center justify-between mb-3 shrink-0">
           <div class="text-neutral-300 font-medium">Последние события</div>
           <div class="flex items-center gap-1.5 text-xs text-neutral-500">
             <div class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></div>
@@ -281,7 +352,7 @@
         </div>
         
         <!-- Фильтр по типу событий -->
-        <div class="mb-3 flex gap-1 flex-wrap">
+        <div class="mb-3 flex gap-1 flex-wrap shrink-0">
           <button
             v-for="kind in ['ALL', 'ALERT', 'WARNING', 'INFO']"
             :key="kind"
@@ -295,7 +366,7 @@
           </button>
         </div>
         
-        <div v-if="filteredEvents.length > 0" class="space-y-2 flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-800 scrollbar-track-transparent">
+        <div v-if="filteredEvents.length > 0" class="space-y-2 flex-1 min-h-0 overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-800 scrollbar-track-transparent pr-1">
           <div 
             v-for="e in filteredEvents" 
             :key="e.id" 
@@ -333,7 +404,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, shallowRef } from 'vue'
+import { computed, ref, onMounted, onUnmounted, shallowRef, watch, reactive } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
@@ -353,7 +424,14 @@ import { useTelemetry } from '@/composables/useTelemetry'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useRole } from '@/composables/useRole'
 import { useCommands } from '@/composables/useCommands'
+import { useToast } from '@/composables/useToast'
 import type { Zone, Greenhouse, Alert, ZoneEvent, EventKind } from '@/types'
+
+type QuickAction = 'PAUSE' | 'RESUME' | 'FORCE_IRRIGATION'
+type TelemetryPeriod = '1h' | '24h' | '7d'
+type TelemetryZone = Pick<Zone, 'id' | 'name' | 'status'> & {
+  greenhouse?: { name?: string | null } | null
+}
 
 interface DashboardData {
   greenhousesCount: number
@@ -364,8 +442,18 @@ interface DashboardData {
   nodesByStatus?: Record<string, number>
   greenhouses?: Greenhouse[]
   problematicZones?: Zone[]
+  zones?: TelemetryZone[]
   latestAlerts?: Alert[]
 }
+
+const TELEMETRY_ZONE_STORAGE_KEY = 'dashboard.telemetry.zone'
+const TELEMETRY_PERIOD_STORAGE_KEY = 'dashboard.telemetry.period'
+
+const telemetryRangeOptions: Array<{ label: string; value: TelemetryPeriod }> = [
+  { label: '1ч', value: '1h' },
+  { label: '24ч', value: '24h' },
+  { label: '7д', value: '7d' },
+]
 
 interface Props {
   dashboard: DashboardData
@@ -394,15 +482,126 @@ const hasZones = computed(() => {
   return props.dashboard.zonesCount > 0
 })
 
-const hasZonesForTelemetry = computed(() => {
-  return props.dashboard.zonesCount > 0
+const telemetryPeriod = ref<TelemetryPeriod>('24h')
+const selectedZoneId = ref<number | null>(null)
+const telemetryZones = computed<TelemetryZone[]>(() => {
+  const uniqueZones = new Map<number, TelemetryZone>()
+  const problemZones = Array.isArray(props.dashboard.problematicZones) ? props.dashboard.problematicZones : []
+  const payloadZones = Array.isArray(props.dashboard.zones) ? props.dashboard.zones : []
+
+  const pushZone = (zone: any) => {
+    if (!zone?.id) {
+      return
+    }
+    const normalizedId = typeof zone.id === 'string' ? parseInt(zone.id, 10) : zone.id
+    if (!normalizedId || Number.isNaN(normalizedId) || uniqueZones.has(normalizedId)) {
+      return
+    }
+    uniqueZones.set(normalizedId, {
+      id: normalizedId,
+      name: zone.name || `Зона ${zone.id}`,
+      status: zone.status,
+      greenhouse: zone.greenhouse ? { name: zone.greenhouse.name } : null,
+    })
+  }
+
+  problemZones.forEach(pushZone)
+  payloadZones.forEach(pushZone)
+
+  return Array.from(uniqueZones.values())
 })
+const selectedZone = computed(() => {
+  if (!selectedZoneId.value) {
+    return null
+  }
+  return telemetryZones.value.find(zone => zone.id === selectedZoneId.value) ?? null
+})
+const selectedZoneLabel = computed(() => selectedZone.value?.name ?? '')
+const telemetryPeriodLabel = computed(() => telemetryRangeOptions.find(option => option.value === telemetryPeriod.value)?.label ?? '24ч')
+
+const hasZonesForTelemetry = computed(() => telemetryZones.value.length > 0)
+const quickActionLoading = reactive<Record<number, QuickAction | null>>({})
+
+function isQuickActionLoading(zoneId: number, action?: QuickAction): boolean {
+  const state = quickActionLoading[zoneId]
+  if (!state) {
+    return false
+  }
+  return action ? state === action : true
+}
+
+watch(telemetryZones, (zones) => {
+  if (!zones.length) {
+    selectedZoneId.value = null
+    return
+  }
+  if (selectedZoneId.value && zones.some(zone => zone.id === selectedZoneId.value)) {
+    return
+  }
+  selectedZoneId.value = zones[0].id
+}, { immediate: true })
+
+watch(selectedZoneId, (zoneId) => {
+  if (typeof window === 'undefined') {
+    return
+  }
+  if (zoneId) {
+    window.localStorage.setItem(TELEMETRY_ZONE_STORAGE_KEY, String(zoneId))
+  } else {
+    window.localStorage.removeItem(TELEMETRY_ZONE_STORAGE_KEY)
+  }
+})
+
+watch(telemetryPeriod, (period) => {
+  if (typeof window === 'undefined') {
+    return
+  }
+  window.localStorage.setItem(TELEMETRY_PERIOD_STORAGE_KEY, period)
+})
+
+watch([selectedZoneId, telemetryPeriod], ([zoneId]) => {
+  if (!zoneId) {
+    resetTelemetryData()
+    return
+  }
+  loadTelemetryMetrics()
+})
+
+function restoreTelemetryPreferences(): void {
+  if (typeof window === 'undefined') {
+    return
+  }
+  const storedZoneId = window.localStorage.getItem(TELEMETRY_ZONE_STORAGE_KEY)
+  if (storedZoneId) {
+    const parsed = Number(storedZoneId)
+    if (!Number.isNaN(parsed) && telemetryZones.value.some(zone => zone.id === parsed)) {
+      selectedZoneId.value = parsed
+    }
+  } else if (selectedZoneId.value) {
+    window.localStorage.setItem(TELEMETRY_ZONE_STORAGE_KEY, String(selectedZoneId.value))
+  }
+  const storedPeriod = window.localStorage.getItem(TELEMETRY_PERIOD_STORAGE_KEY) as TelemetryPeriod | null
+  if (storedPeriod && telemetryRangeOptions.some(option => option.value === storedPeriod)) {
+    telemetryPeriod.value = storedPeriod
+  } else {
+    window.localStorage.setItem(TELEMETRY_PERIOD_STORAGE_KEY, telemetryPeriod.value)
+  }
+}
 
 // Телеметрия для мини-графиков
 const { fetchAggregates } = useTelemetry()
 const { subscribeToGlobalEvents } = useWebSocket()
+const telemetryMetricKeys = ['ph', 'ec', 'temp', 'humidity'] as const
+type TelemetryMetricKey = typeof telemetryMetricKeys[number]
+
+interface TelemetryMiniChartState {
+  data: Array<{ ts: number; value?: number | null; avg?: number | null; min?: number | null; max?: number | null }>
+  currentValue: number | null
+  loading: boolean
+}
+
 // Используем shallowRef для больших объектов телеметрии
-const telemetryData = shallowRef({
+const telemetryData = shallowRef<Record<TelemetryMetricKey, TelemetryMiniChartState>>({
   ph: { data: [], currentValue: null, loading: false },
   ec: { data: [], currentValue: null, loading: false },
   temp: { data: [], currentValue: null, loading: false },
@@ -442,17 +641,6 @@ const filteredEvents = computed(() => {
 })
 
 // Получаем первую зону для отображения телеметрии (можно расширить для всех зон)
-const firstZoneId = computed(() => {
-  if (props.dashboard.problematicZones && props.dashboard.problematicZones.length > 0) {
-    return props.dashboard.problematicZones[0].id
-  }
-  // Если нет проблемных зон, берем первую зону из списка
-  if (props.dashboard.zones && props.dashboard.zones.length > 0) {
-    return props.dashboard.zones[0].id
-  }
-  return null
-})
-
 // Обработчик клика на мини-график для перехода к детальному графику
 function handleOpenDetail(zoneId: number, metric: string): void {
   if (zoneId) {
@@ -462,31 +650,31 @@ function handleOpenDetail(zoneId: number, metric: string): void {
   }
 }
 
-// Toast notifications для быстрых действий
-function showToast(message: string, variant: 'success' | 'error' | 'warning' | 'info' = 'info', duration: number = 3000): void {
-  // Используем простой console.log для Dashboard, так как здесь нет глобального toast
-  console.log(`[Dashboard] ${variant.toUpperCase()}: ${message}`)
-}
+const { showToast } = useToast()
 
 // Инициализация useCommands для быстрых действий
 const { sendZoneCommand } = useCommands(showToast)
 
 // Обработчик быстрых действий для проблемных зон
 async function handleQuickAction(zone: Zone, action: 'PAUSE' | 'RESUME' | 'FORCE_IRRIGATION'): Promise<void> {
+  const zoneId = typeof zone.id === 'string' ? parseInt(zone.id, 10) : zone.id
+  quickActionLoading[zoneId] = action
   try {
     if (action === 'PAUSE') {
-      await sendZoneCommand(zone.id, 'PAUSE', {})
+      await sendZoneCommand(zoneId, 'PAUSE', {})
       showToast(`Зона "${zone.name}" приостановлена`, 'success')
     } else if (action === 'RESUME') {
-      await sendZoneCommand(zone.id, 'RESUME', {})
+      await sendZoneCommand(zoneId, 'RESUME', {})
       showToast(`Зона "${zone.name}" запущена`, 'success')
     } else if (action === 'FORCE_IRRIGATION') {
-      await sendZoneCommand(zone.id, 'FORCE_IRRIGATION', {})
+      await sendZoneCommand(zoneId, 'FORCE_IRRIGATION', {})
       showToast(`Запущен полив для зоны "${zone.name}"`, 'success')
     }
   } catch (error) {
     logger.error('[Dashboard] Failed to execute quick action:', error)
     showToast(`Ошибка выполнения действия для зоны "${zone.name}"`, 'error')
+  } finally {
+    quickActionLoading[zoneId] = null
   }
 }
 
@@ -533,15 +721,30 @@ const telemetryMetrics = computed(() => {
   ]
 })
 
-async function loadTelemetryMetrics() {
-  if (!firstZoneId.value) return
+function resetTelemetryData(): void {
+  telemetryMetricKeys.forEach(metric => {
+    telemetryData.value[metric].data = []
+    telemetryData.value[metric].currentValue = null
+    telemetryData.value[metric].loading = false
+  })
+}
 
-  const metrics = ['ph', 'ec', 'temp', 'humidity']
-  
-  for (const metric of metrics) {
+async function loadTelemetryMetrics() {
+  const zoneId = selectedZoneId.value
+  const period = telemetryPeriod.value
+  if (!zoneId) {
+    resetTelemetryData()
+    return
+  }
+
+  for (const metric of telemetryMetricKeys) {
     telemetryData.value[metric].loading = true
     try {
-      const data = await fetchAggregates(firstZoneId.value, metric, '24h')
+      const data = await fetchAggregates(zoneId, metric, period)
+      // Если за время загрузки зона или период сменились — пропускаем обновление
+      if (selectedZoneId.value !== zoneId || telemetryPeriod.value !== period) {
+        continue
+      }
       telemetryData.value[metric].data = data.map(item => ({
         ts: new Date(item.ts).getTime(),
         value: item.value,
@@ -549,7 +752,6 @@ async function loadTelemetryMetrics() {
         min: item.min,
         max: item.max
       }))
-      // Текущее значение - последнее значение из данных
       if (data.length > 0) {
         telemetryData.value[metric].currentValue = data[data.length - 1].value || data[data.length - 1].avg
       }
@@ -561,10 +763,11 @@ async function loadTelemetryMetrics() {
   }
 }
 
+// Сохраняем функцию отписки для очистки при размонтировании
+let unsubscribeGlobalEvents: (() => void) | null = null
+
 onMounted(async () => {
-  if (hasZonesForTelemetry.value) {
-    loadTelemetryMetrics()
-  }
+  restoreTelemetryPreferences()
   
   // Подписаться на глобальные события с оптимизацией
   const { useBatchUpdates } = await import('@/composables/useOptimizedUpdates')
@@ -590,7 +793,8 @@ onMounted(async () => {
     { debounceMs: 200, maxBatchSize: 5, maxWaitMs: 1000 }
   )
   
-  subscribeToGlobalEvents((event) => {
+  // Сохраняем функцию отписки
+  unsubscribeGlobalEvents = subscribeToGlobalEvents((event) => {
     // Используем batch updates для оптимизации
     addEvent({
       id: event.id,
@@ -600,6 +804,14 @@ onMounted(async () => {
       occurredAt: event.occurredAt
     })
   })
+})
+
+// Отписываемся при размонтировании
+onUnmounted(() => {
+  if (unsubscribeGlobalEvents) {
+    unsubscribeGlobalEvents()
+    unsubscribeGlobalEvents = null
+  }
 })
 
 </script>

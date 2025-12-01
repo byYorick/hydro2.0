@@ -7,8 +7,7 @@ import type { Zone } from '@/types'
 vi.mock('@/Components/Card.vue', () => ({
   default: {
     name: 'Card',
-    props: ['class'],
-    template: '<div :class="class"><slot /></div>'
+    template: '<div class="card-stub"><slot /></div>',
   }
 }))
 

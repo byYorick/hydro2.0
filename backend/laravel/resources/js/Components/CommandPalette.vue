@@ -92,6 +92,36 @@ import { useRole } from '@/composables/useRole'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
 import type { Zone, Device, Recipe } from '@/types'
 
+// Debounce для предотвращения множественных вызовов router.visit
+const visitTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const VISIT_DEBOUNCE_MS = 300
+
+/**
+ * Безопасный переход с проверкой текущего URL и debounce
+ */
+function safeVisit(url: string, options: { preserveScroll?: boolean } = {}): void {
+  const currentUrl = router.page?.url || window.location.pathname
+  const targetUrl = url.startsWith('/') ? url : `/${url}`
+  
+  // Если уже на целевой странице, не делаем переход
+  if (currentUrl === targetUrl) {
+    return
+  }
+  
+  const key = targetUrl
+  
+  // Очищаем предыдущий таймер для этого URL
+  if (visitTimers.has(key)) {
+    clearTimeout(visitTimers.get(key)!)
+  }
+  
+  // Устанавливаем новый таймер с debounce
+  visitTimers.set(key, setTimeout(() => {
+    visitTimers.delete(key)
+    router.visit(targetUrl, { preserveScroll: options.preserveScroll ?? true })
+  }, VISIT_DEBOUNCE_MS))
+}
+
 interface CommandItem {
   type: 'nav' | 'zone' | 'node' | 'recipe' | 'action'
   id?: number | string
@@ -187,11 +217,11 @@ const confirmModal = ref<ConfirmModalState>({
 
 // Статические команды навигации (базовые для всех)
 const baseStaticCommands: CommandItem[] = [
-  { type: 'nav', label: 'Открыть Dashboard', icon: '📊', category: 'Навигация', action: () => router.visit('/') },
-  { type: 'nav', label: 'Открыть Zones', icon: '🌱', category: 'Навигация', action: () => router.visit('/zones') },
-  { type: 'nav', label: 'Открыть Devices', icon: '📱', category: 'Навигация', action: () => router.visit('/devices') },
-  { type: 'nav', label: 'Открыть Recipes', icon: '📋', category: 'Навигация', action: () => router.visit('/recipes') },
-  { type: 'nav', label: 'Открыть Alerts', icon: '⚠️', category: 'Навигация', action: () => router.visit('/alerts') },
+  { type: 'nav', label: 'Открыть Dashboard', icon: '📊', category: 'Навигация', action: () => safeVisit('/') },
+  { type: 'nav', label: 'Открыть Zones', icon: '🌱', category: 'Навигация', action: () => safeVisit('/zones') },
+  { type: 'nav', label: 'Открыть Devices', icon: '📱', category: 'Навигация', action: () => safeVisit('/devices') },
+  { type: 'nav', label: 'Открыть Recipes', icon: '📋', category: 'Навигация', action: () => safeVisit('/recipes') },
+  { type: 'nav', label: 'Открыть Alerts', icon: '⚠️', category: 'Навигация', action: () => safeVisit('/alerts') },
 ]
 
 // Ролевые команды
@@ -201,33 +231,32 @@ const roleBasedCommands = computed<CommandItem[]>(() => {
   // Команды для админа
   if (isAdmin.value) {
     commands.push(
-      { type: 'nav', label: 'Управление пользователями', icon: '👥', category: 'Администрирование', action: () => router.visit('/users') },
-      { type: 'nav', label: 'Системные настройки', icon: '⚙️', category: 'Администрирование', action: () => router.visit('/settings') },
-      { type: 'nav', label: 'Аудит', icon: '📝', category: 'Администрирование', action: () => router.visit('/audit') },
+      { type: 'nav', label: 'Управление пользователями', icon: '👥', category: 'Администрирование', action: () => safeVisit('/users') },
+      { type: 'nav', label: 'Системные настройки', icon: '⚙️', category: 'Администрирование', action: () => safeVisit('/settings') },
+      { type: 'nav', label: 'Аудит', icon: '📝', category: 'Администрирование', action: () => safeVisit('/audit') },
     )
   }
   
   // Команды для агронома
   if (isAgronomist.value) {
     commands.push(
-      { type: 'nav', label: 'Аналитика', icon: '📈', category: 'Аналитика', action: () => router.visit('/analytics') },
-      { type: 'nav', label: 'Создать рецепт', icon: '➕', category: 'Создание', action: () => router.visit('/recipes/create') },
+      { type: 'nav', label: 'Аналитика', icon: '📈', category: 'Аналитика', action: () => safeVisit('/analytics') },
+      { type: 'nav', label: 'Создать рецепт', icon: '➕', category: 'Создание', action: () => safeVisit('/recipes/create') },
     )
   }
   
   // Команды для инженера
   if (isEngineer.value) {
     commands.push(
-      { type: 'nav', label: 'Системные метрики', icon: '📊', category: 'Система', action: () => router.visit('/system') },
-      { type: 'nav', label: 'Логи', icon: '📋', category: 'Система', action: () => router.visit('/logs') },
+      { type: 'nav', label: 'Системные метрики', icon: '📊', category: 'Система', action: () => safeVisit('/system') },
+      { type: 'nav', label: 'Логи', icon: '📋', category: 'Система', action: () => safeVisit('/logs') },
     )
   }
   
   // Команды для оператора и админа
   if (isOperator.value || isAdmin.value) {
     commands.push(
-      { type: 'nav', label: 'Мастер настройки системы', icon: '⚙️', category: 'Настройка', action: () => router.visit('/setup/wizard') },
-      { type: 'nav', label: 'Создать теплицу', icon: '🏠', category: 'Создание', action: () => router.visit('/greenhouses/create') },
+      { type: 'nav', label: 'Теплицы', icon: '🏠', category: 'Управление', action: () => safeVisit('/greenhouses') },
     )
   }
   
@@ -372,7 +401,7 @@ const groupedResults = computed<GroupedResult[]>(() => {
           label: zone.name,
           icon: '🌱',
           category: 'Зона',
-          action: () => router.visit(`/zones/${zone.id}`)
+          action: () => safeVisit(`/zones/${zone.id}`)
         })
       
         // Быстрые действия для зоны
@@ -466,7 +495,7 @@ const groupedResults = computed<GroupedResult[]>(() => {
           label,
           icon: '📱',
           category: 'Устройство',
-          action: () => router.visit(`/devices/${node.id}`)
+          action: () => safeVisit(`/devices/${node.id}`)
         })
       }
     })
@@ -481,7 +510,7 @@ const groupedResults = computed<GroupedResult[]>(() => {
           label: recipe.name,
           icon: '📋',
           category: 'Рецепт',
-          action: () => router.visit(`/recipes/${recipe.id}`)
+          action: () => safeVisit(`/recipes/${recipe.id}`)
         })
         
         // Действие: применить рецепт к зоне (нужно выбрать зону)

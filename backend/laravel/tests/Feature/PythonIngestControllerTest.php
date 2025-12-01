@@ -16,9 +16,9 @@ class PythonIngestControllerTest extends TestCase
 {
     use RefreshDatabase;
 
-    private function token(): string
+    private function token(string $role = 'operator'): string
     {
-        $user = User::factory()->create();
+        $user = User::factory()->create(['role' => $role]);
         $this->actingAs($user);
 
         return $user->createToken('test')->plainTextToken;
@@ -136,15 +136,99 @@ class PythonIngestControllerTest extends TestCase
     public function test_telemetry_endpoint_validation(): void
     {
         Config::set('services.python_bridge.ingest_token', 'test-token');
+        Config::set('services.python_bridge.token', 'test-token');
 
+        // Тест: отсутствует zone_id
         $response = $this->withHeader('Authorization', 'Bearer test-token')
             ->postJson('/api/python/ingest/telemetry', [
-                // Отсутствует zone_id
+                'metric_type' => 'ph',
+                'value' => 6.5,
+            ]);
+        $response->assertStatus(422); // Validation error
+
+        // Тест: zone_id не существует
+        $response = $this->withHeader('Authorization', 'Bearer test-token')
+            ->postJson('/api/python/ingest/telemetry', [
+                'zone_id' => 99999, // Несуществующий zone_id
+                'metric_type' => 'ph',
+                'value' => 6.5,
+            ]);
+        $response->assertStatus(422); // Validation error
+
+        // Тест: node_id не существует
+        $zone = Zone::factory()->create();
+        $response = $this->withHeader('Authorization', 'Bearer test-token')
+            ->postJson('/api/python/ingest/telemetry', [
+                'zone_id' => $zone->id,
+                'node_id' => 99999, // Несуществующий node_id
+                'metric_type' => 'ph',
+                'value' => 6.5,
+            ]);
+        $response->assertStatus(422); // Validation error (exists:nodes,id)
+
+        // Тест: node_id не привязан к zone_id
+        $zone1 = Zone::factory()->create();
+        $zone2 = Zone::factory()->create();
+        $node = DeviceNode::factory()->create(['zone_id' => $zone1->id]);
+        
+        $response = $this->withHeader('Authorization', 'Bearer test-token')
+            ->postJson('/api/python/ingest/telemetry', [
+                'zone_id' => $zone2->id, // Другая зона
+                'node_id' => $node->id, // Нода привязана к zone1
+                'metric_type' => 'ph',
+                'value' => 6.5,
+            ]);
+        $response->assertStatus(422) // Validation error
+            ->assertJson(['status' => 'error', 'message' => 'Node is not assigned to the specified zone']);
+    }
+
+    public function test_telemetry_endpoint_validates_node_belongs_to_zone(): void
+    {
+        Config::set('services.python_bridge.ingest_token', 'test-token');
+        Config::set('services.python_bridge.token', 'test-token');
+
+        $zone1 = Zone::factory()->create();
+        $zone2 = Zone::factory()->create();
+        $node = DeviceNode::factory()->create(['zone_id' => $zone1->id]);
+
+        // Попытка отправить телеметрию с node_id из zone1, но указать zone_id = zone2
+        $response = $this->withHeader('Authorization', 'Bearer test-token')
+            ->postJson('/api/python/ingest/telemetry', [
+                'zone_id' => $zone2->id, // Другая зона
+                'node_id' => $node->id, // Нода из zone1
                 'metric_type' => 'ph',
                 'value' => 6.5,
             ]);
 
-        $response->assertStatus(422); // Validation error
+        $response->assertStatus(422)
+            ->assertJson(['status' => 'error', 'message' => 'Node is not assigned to the specified zone']);
+    }
+
+    public function test_telemetry_endpoint_allows_zone_without_node(): void
+    {
+        Http::fake([
+            'history-logger:9300/ingest/telemetry' => Http::response([
+                'status' => 'ok',
+                'count' => 1,
+            ], 200),
+        ]);
+
+        Config::set('services.history_logger.url', 'http://history-logger:9300');
+        Config::set('services.python_bridge.ingest_token', 'test-token');
+        Config::set('services.python_bridge.token', 'test-token');
+
+        $zone = Zone::factory()->create();
+
+        // Телеметрия без node_id должна быть разрешена
+        $response = $this->withHeader('Authorization', 'Bearer test-token')
+            ->postJson('/api/python/ingest/telemetry', [
+                'zone_id' => $zone->id,
+                'metric_type' => 'ph',
+                'value' => 6.5,
+            ]);
+
+        $response->assertOk()
+            ->assertJson(['status' => 'ok']);
     }
 
     public function test_command_ack_endpoint_does_not_update_status(): void
@@ -175,6 +259,10 @@ class PythonIngestControllerTest extends TestCase
 
     public function test_command_ack_endpoint_requires_auth(): void
     {
+        // Убеждаемся, что токен не настроен для этого теста
+        Config::set('services.python_bridge.ingest_token', null);
+        Config::set('services.python_bridge.token', null);
+        
         $this->postJson('/api/python/commands/ack', [
             'cmd_id' => 'cmd-test-123',
             'status' => 'completed',

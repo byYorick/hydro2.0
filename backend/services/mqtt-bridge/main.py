@@ -4,6 +4,7 @@ from fastapi import Body, Response
 from pydantic import BaseModel, Field
 from typing import Optional
 import logging
+import os
 from common.schemas import CommandRequest
 from common.commands import new_command_id, mark_command_sent
 from publisher import Publisher
@@ -34,52 +35,66 @@ except Exception as e:
 
 
 def _auth(request: Request):
-    """Проверка токена аутентификации. Токен обязателен, если настроен."""
+    """
+    Проверка токена аутентификации.
+    В production токен обязателен всегда, без исключений для внутренних IP.
+    В dev окружении разрешаем внутренние запросы без токена только если токен не настроен.
+    """
     s = get_settings()
     
-    # Проверяем, идет ли запрос от внутреннего сервиса (Laravel в Docker сети)
-    # Проверяем как прямой IP, так и заголовки прокси
-    client_ip = request.client.host if request.client else ""
-    forwarded_for = request.headers.get("X-Forwarded-For", "")
-    real_ip = request.headers.get("X-Real-IP", "")
+    # Проверяем окружение
+    app_env = os.getenv("APP_ENV", "").lower().strip()
+    is_prod = app_env in ("production", "prod") and app_env != ""
     
-    # Собираем все возможные IP адреса
-    all_ips = [client_ip]
-    if forwarded_for:
-        all_ips.extend([ip.strip() for ip in forwarded_for.split(",")])
-    if real_ip:
-        all_ips.append(real_ip.strip())
-    
-    # Проверяем, является ли хотя бы один IP внутренним
-    is_internal_request = any(
-        ip in ["127.0.0.1", "::1"] or
-        ip.startswith("172.") or
-        ip.startswith("10.") or
-        ip.startswith("192.168.")
-        for ip in all_ips if ip
-    )
-    
-    logger.debug(f"Auth check: client_ip={client_ip}, forwarded_for={forwarded_for}, real_ip={real_ip}, all_ips={all_ips}, is_internal={is_internal_request}, bridge_api_token_set={bool(s.bridge_api_token)}")
-    
-    # Если токен не настроен, разрешаем только внутренние запросы
-    if not s.bridge_api_token:
-        if is_internal_request:
-            # Разрешаем внутренние запросы без токена (dev окружение)
-            logger.debug("Allowing internal request without token")
-            return
-        else:
-            # Для внешних запросов без токена - отклоняем
-            logger.warning(f"Rejecting external request without token: client_ip={client_ip}, all_ips={all_ips}")
+    # В production токен обязателен всегда
+    if is_prod:
+        if not s.bridge_api_token:
+            logger.error("PY_API_TOKEN must be set in production environment")
+            raise HTTPException(
+                status_code=500,
+                detail="Server configuration error: API token not configured"
+            )
+        
+        token = request.headers.get("Authorization", "")
+        if token != f"Bearer {s.bridge_api_token}":
+            client_ip = request.client.host if request.client else "unknown"
+            logger.warning(
+                f"Invalid or missing token in production: token_present={bool(token)}, "
+                f"client_ip={client_ip}"
+            )
             raise HTTPException(
                 status_code=401,
-                detail="Unauthorized: token required for external requests"
+                detail="Unauthorized: token required in production"
             )
+        return
     
-    # Если токен настроен, проверяем его
-    token = request.headers.get("Authorization", "")
-    if token != f"Bearer {s.bridge_api_token}":
-        logger.warning(f"Invalid or missing token: token_present={bool(token)}, expected_token_set={bool(s.bridge_api_token)}")
-        raise HTTPException(status_code=401, detail="Unauthorized: invalid or missing token")
+    # В dev окружении: если токен настроен, он обязателен
+    # Если токен не настроен, разрешаем только localhost (не все внутренние IP)
+    if s.bridge_api_token:
+        token = request.headers.get("Authorization", "")
+        if token != f"Bearer {s.bridge_api_token}":
+            logger.warning(f"Invalid or missing token: token_present={bool(token)}")
+            raise HTTPException(
+                status_code=401,
+                detail="Unauthorized: invalid or missing token"
+            )
+        return
+    
+    # Dev окружение без токена: разрешаем только localhost
+    client_ip = request.client.host if request.client else ""
+    is_localhost = client_ip in ["127.0.0.1", "::1", "localhost"]
+    
+    if not is_localhost:
+        logger.warning(
+            f"Rejecting non-localhost request without token in dev: client_ip={client_ip}. "
+            f"Set PY_API_TOKEN for production or use localhost in dev."
+        )
+        raise HTTPException(
+            status_code=401,
+            detail="Unauthorized: token required for non-localhost requests. Set PY_API_TOKEN or use localhost."
+        )
+    
+    logger.debug(f"Allowing localhost request without token (dev mode): client_ip={client_ip}")
 
 
 @app.get("/metrics")

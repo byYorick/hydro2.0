@@ -35,7 +35,9 @@ class DigitalTwinClient
         ];
 
         try {
-            $response = Http::timeout(300) // 5 минут на симуляцию
+            // Используем более короткий таймаут для синхронных запросов
+            // Для длительных симуляций рекомендуется использовать очередь (RunSimulationJob)
+            $response = Http::timeout(30) // 30 секунд - короткий таймаут для проверки доступности
                 ->post($url, $payload);
 
             if ($response->successful()) {

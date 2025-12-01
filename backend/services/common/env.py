@@ -25,7 +25,9 @@ class Settings:
     laravel_api_url: str = os.getenv("LARAVEL_API_URL", "http://laravel")
     laravel_api_token: str = os.getenv("LARAVEL_API_TOKEN", "")
     bridge_api_token: str = os.getenv("PY_API_TOKEN", "")
-    history_logger_api_token: str = os.getenv("HISTORY_LOGGER_API_TOKEN", "") or os.getenv("PY_API_TOKEN", "")  # Используем PY_API_TOKEN как fallback
+    # Для ingest операций (регистрация нод, телеметрия) используем PY_INGEST_TOKEN
+    ingest_token: str = os.getenv("PY_INGEST_TOKEN", "") or os.getenv("PY_API_TOKEN", "")
+    history_logger_api_token: str = os.getenv("HISTORY_LOGGER_API_TOKEN", "") or os.getenv("PY_INGEST_TOKEN", "") or os.getenv("PY_API_TOKEN", "")  # Используем PY_INGEST_TOKEN как основной fallback
 
     telemetry_batch_size: int = int(os.getenv("TELEMETRY_BATCH_SIZE", "200"))
     telemetry_flush_ms: int = int(os.getenv("TELEMETRY_FLUSH_MS", "500"))

@@ -5,8 +5,10 @@
       <!-- Динамические поля на основе actionType -->
       <div v-if="actionType === 'FORCE_IRRIGATION'" class="space-y-3">
         <div>
-          <label class="block text-sm font-medium mb-1">Длительность полива (секунды)</label>
+          <label for="zone-action-duration-sec" class="block text-sm font-medium mb-1">Длительность полива (секунды)</label>
           <input
+            id="zone-action-duration-sec"
+            name="duration_sec"
             v-model.number="form.duration_sec"
             type="number"
             min="1"
@@ -22,8 +24,10 @@
 
       <div v-else-if="actionType === 'FORCE_PH_CONTROL'" class="space-y-3">
         <div>
-          <label class="block text-sm font-medium mb-1">Целевой pH</label>
+          <label for="zone-action-target-ph" class="block text-sm font-medium mb-1">Целевой pH</label>
           <input
+            id="zone-action-target-ph"
+            name="target_ph"
             v-model.number="form.target_ph"
             type="number"
             min="4.0"
@@ -39,8 +43,10 @@
 
       <div v-else-if="actionType === 'FORCE_EC_CONTROL'" class="space-y-3">
         <div>
-          <label class="block text-sm font-medium mb-1">Целевой EC</label>
+          <label for="zone-action-target-ec" class="block text-sm font-medium mb-1">Целевой EC</label>
           <input
+            id="zone-action-target-ec"
+            name="target_ec"
             v-model.number="form.target_ec"
             type="number"
             min="0.1"
@@ -56,8 +62,10 @@
 
       <div v-else-if="actionType === 'FORCE_CLIMATE'" class="space-y-3">
         <div>
-          <label class="block text-sm font-medium mb-1">Целевая температура (°C)</label>
+          <label for="zone-action-target-temp" class="block text-sm font-medium mb-1">Целевая температура (°C)</label>
           <input
+            id="zone-action-target-temp"
+            name="target_temp"
             v-model.number="form.target_temp"
             type="number"
             min="10"
@@ -70,8 +78,10 @@
           <div class="text-xs text-neutral-400 mt-1">От 10 до 35°C</div>
         </div>
         <div>
-          <label class="block text-sm font-medium mb-1">Целевая влажность (%)</label>
+          <label for="zone-action-target-humidity" class="block text-sm font-medium mb-1">Целевая влажность (%)</label>
           <input
+            id="zone-action-target-humidity"
+            name="target_humidity"
             v-model.number="form.target_humidity"
             type="number"
             min="30"
@@ -87,8 +97,10 @@
 
       <div v-else-if="actionType === 'FORCE_LIGHTING'" class="space-y-3">
         <div>
-          <label class="block text-sm font-medium mb-1">Интенсивность (%)</label>
+          <label for="zone-action-intensity" class="block text-sm font-medium mb-1">Интенсивность (%)</label>
           <input
+            id="zone-action-intensity"
+            name="intensity"
             v-model.number="form.intensity"
             type="number"
             min="0"
@@ -101,8 +113,10 @@
           <div class="text-xs text-neutral-400 mt-1">От 0 до 100%</div>
         </div>
         <div>
-          <label class="block text-sm font-medium mb-1">Длительность (часы)</label>
+          <label for="zone-action-duration-hours" class="block text-sm font-medium mb-1">Длительность (часы)</label>
           <input
+            id="zone-action-duration-hours"
+            name="duration_hours"
             v-model.number="form.duration_hours"
             type="number"
             min="0.5"
@@ -138,6 +152,8 @@
 import { ref, computed, watch } from 'vue'
 import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'
+import { useFormValidation } from '@/composables/useFormValidation'
+import { VALIDATION_RANGES, VALIDATION_MESSAGES } from '@/constants/validation'
 import type { CommandType } from '@/types'
 
 type ActionType = CommandType
@@ -171,6 +187,14 @@ const emit = defineEmits<{
 
 const loading = ref<boolean>(false)
 const error = ref<string | null>(null)
+
+// Создаем мок-форму для использования useFormValidation
+const mockForm = {
+  errors: {} as Record<string, string>,
+  clearErrors: () => {},
+} as any
+
+const { validateNumberRange } = useFormValidation(mockForm)
 
 // Форма с параметрами по умолчанию
 const form = ref<ActionParams>({
@@ -227,38 +251,80 @@ watch(() => props.show, (newVal: boolean) => {
 function onSubmit(): void {
   error.value = null
 
-  // Валидация полей
+  // Валидация полей с использованием useFormValidation
   if (props.actionType === 'FORCE_IRRIGATION') {
-    if (!form.value.duration_sec || form.value.duration_sec < 1 || form.value.duration_sec > 3600) {
-      error.value = 'Длительность должна быть от 1 до 3600 секунд'
+    const validationError = validateNumberRange(
+      form.value.duration_sec,
+      VALIDATION_RANGES.IRRIGATION_DURATION.min,
+      VALIDATION_RANGES.IRRIGATION_DURATION.max,
+      'Длительность полива'
+    )
+    if (validationError) {
+      error.value = VALIDATION_MESSAGES.IRRIGATION_DURATION
       return
     }
   } else if (props.actionType === 'FORCE_PH_CONTROL') {
-    if (!form.value.target_ph || form.value.target_ph < 4.0 || form.value.target_ph > 9.0) {
-      error.value = 'pH должен быть от 4.0 до 9.0'
+    const validationError = validateNumberRange(
+      form.value.target_ph,
+      VALIDATION_RANGES.PH.min,
+      VALIDATION_RANGES.PH.max,
+      'pH'
+    )
+    if (validationError) {
+      error.value = VALIDATION_MESSAGES.PH
       return
     }
   } else if (props.actionType === 'FORCE_EC_CONTROL') {
-    if (!form.value.target_ec || form.value.target_ec < 0.1 || form.value.target_ec > 10.0) {
-      error.value = 'EC должен быть от 0.1 до 10.0'
+    const validationError = validateNumberRange(
+      form.value.target_ec,
+      VALIDATION_RANGES.EC.min,
+      VALIDATION_RANGES.EC.max,
+      'EC'
+    )
+    if (validationError) {
+      error.value = VALIDATION_MESSAGES.EC
       return
     }
   } else if (props.actionType === 'FORCE_CLIMATE') {
-    if (!form.value.target_temp || form.value.target_temp < 10 || form.value.target_temp > 35) {
-      error.value = 'Температура должна быть от 10 до 35°C'
+    const tempError = validateNumberRange(
+      form.value.target_temp,
+      VALIDATION_RANGES.TEMPERATURE.min,
+      VALIDATION_RANGES.TEMPERATURE.max,
+      'Температура'
+    )
+    if (tempError) {
+      error.value = VALIDATION_MESSAGES.TEMPERATURE
       return
     }
-    if (!form.value.target_humidity || form.value.target_humidity < 30 || form.value.target_humidity > 90) {
-      error.value = 'Влажность должна быть от 30 до 90%'
+    const humidityError = validateNumberRange(
+      form.value.target_humidity,
+      VALIDATION_RANGES.HUMIDITY.min,
+      VALIDATION_RANGES.HUMIDITY.max,
+      'Влажность'
+    )
+    if (humidityError) {
+      error.value = VALIDATION_MESSAGES.HUMIDITY
       return
     }
   } else if (props.actionType === 'FORCE_LIGHTING') {
-    if (form.value.intensity === undefined || form.value.intensity < 0 || form.value.intensity > 100) {
-      error.value = 'Интенсивность должна быть от 0 до 100%'
+    const intensityError = validateNumberRange(
+      form.value.intensity,
+      VALIDATION_RANGES.LIGHTING_INTENSITY.min,
+      VALIDATION_RANGES.LIGHTING_INTENSITY.max,
+      'Интенсивность'
+    )
+    if (intensityError) {
+      error.value = VALIDATION_MESSAGES.LIGHTING_INTENSITY
       return
     }
-    if (!form.value.duration_hours || form.value.duration_hours < 0.5 || form.value.duration_hours > 24) {
-      error.value = 'Длительность должна быть от 0.5 до 24 часов'
+    const durationError = validateNumberRange(
+      form.value.duration_hours,
+      VALIDATION_RANGES.LIGHTING_DURATION.min,
+      VALIDATION_RANGES.LIGHTING_DURATION.max,
+      'Длительность освещения'
+    )
+    if (durationError) {
+      error.value = VALIDATION_MESSAGES.LIGHTING_DURATION
       return
     }
   }

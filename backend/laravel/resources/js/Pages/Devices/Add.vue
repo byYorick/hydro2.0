@@ -1,27 +1,5 @@
 <template>
   <AppLayout>
-    <!-- Toast notifications -->
-    <Teleport to="body">
-      <div 
-        class="fixed top-4 right-4 z-[10000] space-y-2 pointer-events-none"
-        style="position: fixed !important; top: 1rem !important; right: 1rem !important; z-index: 10000 !important; pointer-events: none;"
-      >
-        <div
-          v-for="toast in toasts"
-          :key="toast.id"
-          class="pointer-events-auto"
-          style="pointer-events: auto;"
-        >
-          <Toast
-            :message="toast.message"
-            :variant="toast.variant"
-            :duration="toast.duration"
-            @close="removeToast(toast.id)"
-          />
-        </div>
-      </div>
-    </Teleport>
-    
     <div class="flex flex-col gap-4">
       <div class="flex items-center justify-between">
         <h1 class="text-lg font-semibold">Добавление новой ноды</h1>
@@ -97,7 +75,10 @@
             <div class="mt-3 pt-3 border-t border-neutral-800">
               <div class="text-xs font-semibold mb-2 text-neutral-300">Привязать к зоне:</div>
               <form @submit.prevent="assignNode(node)" class="grid grid-cols-1 md:grid-cols-4 gap-2">
+                <label :for="`node-${node.id}-greenhouse`" class="sr-only">Теплица</label>
                 <select
+                  :id="`node-${node.id}-greenhouse`"
+                  :name="`node_${node.id}_greenhouse_id`"
                   v-model="assignmentForms[node.id].greenhouse_id"
                   @change="onGreenhouseChange(node.id)"
                   class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
@@ -108,7 +89,10 @@
                     {{ gh.name }}
                   </option>
                 </select>
+                <label :for="`node-${node.id}-zone`" class="sr-only">Зона</label>
                 <select
+                  :id="`node-${node.id}-zone`"
+                  :name="`node_${node.id}_zone_id`"
                   v-model="assignmentForms[node.id].zone_id"
                   class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
                   :disabled="!assignmentForms[node.id].greenhouse_id"
@@ -119,7 +103,10 @@
                     {{ zone.name }}
                   </option>
                 </select>
+                <label :for="`node-${node.id}-name`" class="sr-only">Имя ноды</label>
                 <input
+                  :id="`node-${node.id}-name`"
+                  :name="`node_${node.id}_name`"
                   v-model="assignmentForms[node.id].name"
                   placeholder="Имя ноды (опционально)"
                   class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
@@ -142,46 +129,36 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
 import { router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
-import Toast from '@/Components/Toast.vue'
 import { logger } from '@/utils/logger'
-import axios from 'axios'
 import { useNodeLifecycle } from '@/composables/useNodeLifecycle'
 import { useErrorHandler } from '@/composables/useErrorHandler'
-import type { Device } from '@/types'
+import { useToast } from '@/composables/useToast'
+import { useApi } from '@/composables/useApi'
+import { useLoading } from '@/composables/useLoading'
+import { extractData } from '@/utils/apiHelpers'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
+import type { Device, Greenhouse, Zone } from '@/types'
 
-// Toast notifications
-const toasts = ref([])
-let toastIdCounter = 0
-
-function showToast(message, variant = 'info', duration = 3000) {
-  const id = ++toastIdCounter
-  toasts.value.push({ id, message, variant, duration })
-  return id
-}
-
-function removeToast(id) {
-  const index = toasts.value.findIndex(t => t.id === id)
-  if (index > -1) {
-    toasts.value.splice(index, 1)
-  }
-}
+const { showToast } = useToast()
+const { api } = useApi(showToast)
+const { loading, startLoading, stopLoading } = useLoading<boolean>(false)
 
 // Инициализация composables для lifecycle
 const { canAssignToZone, getStateLabel } = useNodeLifecycle(showToast)
 const { handleError } = useErrorHandler(showToast)
 
-const loading = ref(false)
-const newNodes = ref([])
-const greenhouses = ref([])
-const zones = ref([])
-const assigning = reactive({})
-const assignmentForms = reactive({})
+const newNodes = ref<Device[]>([])
+const greenhouses = ref<Greenhouse[]>([])
+const zones = ref<Zone[]>([])
+const assigning = reactive<Record<number, boolean>>({})
+const assignmentForms = reactive<Record<number, { greenhouse_id: number | null; zone_id: number | null; name: string }>>({})
+let refreshInterval: ReturnType<typeof setInterval> | null = null
 
 function formatDate(dateString) {
   if (!dateString) return '-'
@@ -222,18 +199,17 @@ function onGreenhouseChange(nodeId) {
   }
 }
 
-async function loadNewNodes() {
-  loading.value = true
+async function loadNewNodes(): Promise<void> {
+  startLoading()
   try {
-    const response = await axios.get('/api/nodes', {
-      params: { unassigned: true },
-      headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-    })
-    const data = response.data?.data
+    const response = await api.get<{ data?: Device[] } | Device[]>(
+      '/nodes',
+      { params: { unassigned: true } }
+    )
+    
+    const data = extractData<Device[]>(response.data) || []
     // Обработка пагинации или прямого массива
-    if (data?.data && Array.isArray(data.data)) {
-      newNodes.value = data.data
-    } else if (Array.isArray(data)) {
+    if (Array.isArray(data)) {
       newNodes.value = data
     } else {
       newNodes.value = []
@@ -241,7 +217,7 @@ async function loadNewNodes() {
     
     // Инициализировать формы для каждой ноды
     newNodes.value.forEach(node => {
-      if (!assignmentForms[node.id]) {
+      if (node.id && !assignmentForms[node.id]) {
         assignmentForms[node.id] = {
           greenhouse_id: null,
           zone_id: null,
@@ -250,47 +226,43 @@ async function loadNewNodes() {
       }
     })
   } catch (err) {
+    // Ошибка уже обработана в useApi через showToast
     logger.error('[Devices/Add] Failed to load new nodes:', err)
-    showToast('Ошибка при загрузке новых нод', 'error', 5000)
   } finally {
-    loading.value = false
+    stopLoading()
   }
 }
 
-async function loadGreenhouses() {
+async function loadGreenhouses(): Promise<void> {
   try {
-    const response = await axios.get('/api/greenhouses', {
-      headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-    })
-    const data = response.data?.data
+    const response = await api.get<{ data?: Greenhouse[] } | Greenhouse[]>('/greenhouses')
+    
+    const data = extractData<Greenhouse[]>(response.data) || []
     // Обработка пагинации или прямого массива
-    if (data?.data && Array.isArray(data.data)) {
-      greenhouses.value = data.data
-    } else if (Array.isArray(data)) {
+    if (Array.isArray(data)) {
       greenhouses.value = data
     } else {
       greenhouses.value = []
     }
   } catch (err) {
+    // Ошибка уже обработана в useApi через showToast
     logger.error('[Devices/Add] Failed to load greenhouses:', err)
   }
 }
 
-async function loadZones() {
+async function loadZones(): Promise<void> {
   try {
-    const response = await axios.get('/api/zones', {
-      headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-    })
-    const data = response.data?.data
+    const response = await api.get<{ data?: Zone[] } | Zone[]>('/zones')
+    
+    const data = extractData<Zone[]>(response.data) || []
     // Обработка пагинации или прямого массива
-    if (data?.data && Array.isArray(data.data)) {
-      zones.value = data.data
-    } else if (Array.isArray(data)) {
+    if (Array.isArray(data)) {
       zones.value = data
     } else {
       zones.value = []
     }
   } catch (err) {
+    // Ошибка уже обработана в useApi через showToast
     logger.error('[Devices/Add] Failed to load zones:', err)
   }
 }
@@ -298,7 +270,7 @@ async function loadZones() {
 async function assignNode(node) {
   const form = assignmentForms[node.id]
   if (!form.zone_id) {
-    showToast('Выберите зону для привязки', 'error', 3000)
+    showToast('Выберите зону для привязки', 'error', TOAST_TIMEOUT.NORMAL)
     return
   }
 
@@ -338,17 +310,18 @@ async function assignNode(node) {
       name: form.name || node.name || node.uid,
     }
     
-    const response = await axios.patch(`/api/nodes/${node.id}`, updateData, {
-      headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-    })
+    const response = await api.patch<{ status: string; data?: Device }>(
+      `/nodes/${node.id}`,
+      updateData
+    )
     
-    if (response.data?.status === 'ok') {
+    if (response.data?.status === 'ok' && response.data?.data) {
       const updatedNode = response.data.data
       
       // Проверяем, что конфиг был успешно опубликован (lifecycle_state = ASSIGNED_TO_ZONE)
       // Если lifecycle_state все еще REGISTERED_BACKEND, значит публикация конфига не удалась
       if (updatedNode?.lifecycle_state === 'ASSIGNED_TO_ZONE') {
-        showToast(`Нода "${node.uid}" успешно привязана к зоне и получила конфиг`, 'success', 3000)
+        showToast(`Нода "${node.uid}" успешно привязана к зоне и получила конфиг`, 'success', TOAST_TIMEOUT.NORMAL)
         
         // Удалить ноду из списка новых (так как она теперь привязана)
         newNodes.value = newNodes.value.filter(n => n.id !== node.id)
@@ -356,7 +329,7 @@ async function assignNode(node) {
       } else if (updatedNode?.lifecycle_state === 'REGISTERED_BACKEND' && updatedNode?.zone_id) {
         // Конфиг еще не опубликован, но zone_id установлен
         // Показываем предупреждение, что нужно подождать публикации конфига
-        showToast(`Нода "${node.uid}" привязана к зоне, ожидание публикации конфига...`, 'info', 5000)
+        showToast(`Нода "${node.uid}" привязана к зоне, ожидание публикации конфига...`, 'info', TOAST_TIMEOUT.LONG)
         
         // Обновляем данные ноды, но не удаляем из списка
         const nodeIndex = newNodes.value.findIndex(n => n.id === node.id)
@@ -365,7 +338,7 @@ async function assignNode(node) {
         }
       } else {
         // Что-то пошло не так
-        showToast(`Нода "${node.uid}" обновлена, но привязка может быть не завершена`, 'warning', 5000)
+        showToast(`Нода "${node.uid}" обновлена, но привязка может быть не завершена`, 'warning', TOAST_TIMEOUT.LONG)
       }
     }
   } catch (err) {
@@ -394,7 +367,7 @@ async function assignNode(node) {
 }
 
 async function refreshNodes() {
-  showToast('Обновление списка нод...', 'info', 2000)
+  showToast('Обновление списка нод...', 'info', TOAST_TIMEOUT.SHORT)
   await loadNewNodes()
 }
 
@@ -406,9 +379,17 @@ onMounted(async () => {
   ])
   
   // Автоматическое обновление каждые 10 секунд
-  setInterval(() => {
+  refreshInterval = setInterval(() => {
     loadNewNodes()
   }, 10000)
+})
+
+onUnmounted(() => {
+  // Очищаем интервал при уходе со страницы, чтобы предотвратить накопление таймеров
+  if (refreshInterval) {
+    clearInterval(refreshInterval)
+    refreshInterval = null
+  }
 })
 </script>
 

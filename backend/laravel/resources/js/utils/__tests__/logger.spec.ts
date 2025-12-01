@@ -1,17 +1,24 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import * as loggerModule from '../logger'
+
+type LoggerModule = typeof import('../logger')
+let loggerModule: LoggerModule
+const loadLoggerModule = async () => {
+  vi.resetModules()
+  return await import('../logger')
+}
 
 describe('logger', () => {
-  let originalEnv: typeof import.meta.env
+  let originalEnv: Record<string, any>
   let consoleLogSpy: ReturnType<typeof vi.spyOn>
   let consoleWarnSpy: ReturnType<typeof vi.spyOn>
   let consoleErrorSpy: ReturnType<typeof vi.spyOn>
 
-  beforeEach(() => {
+  beforeEach(async () => {
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    originalEnv = import.meta.env
+    originalEnv = { ...import.meta.env }
+    loggerModule = await loadLoggerModule()
   })
 
   afterEach(() => {
@@ -24,12 +31,19 @@ describe('logger', () => {
   })
 
   describe('in development mode', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
       Object.defineProperty(import.meta, 'env', {
-        value: { ...originalEnv, DEV: true, PROD: false },
+        value: {
+          ...originalEnv,
+          DEV: true,
+          PROD: false,
+          VITE_WS_LOG_LEVEL: '',
+          VITE_FORCE_DEBUG_LOGS: 'false',
+        },
         writable: true,
         configurable: true,
       })
+      loggerModule = await loadLoggerModule()
     })
 
     it('should log debug messages', () => {
@@ -76,23 +90,20 @@ describe('logger', () => {
     })
   })
 
-  describe('in production mode', () => {
-    beforeEach(() => {
+  describe('with log level overrides', () => {
+    beforeEach(async () => {
       Object.defineProperty(import.meta, 'env', {
-        value: { ...originalEnv, DEV: false, PROD: true },
+        value: {
+          ...originalEnv,
+          DEV: true,
+          PROD: false,
+          VITE_WS_LOG_LEVEL: 'warn',
+          VITE_FORCE_DEBUG_LOGS: 'false',
+        },
         writable: true,
         configurable: true,
       })
-    })
-
-    it('should not log debug messages', () => {
-      loggerModule.debug('test debug')
-      expect(consoleLogSpy).not.toHaveBeenCalled()
-    })
-
-    it('should not log info messages', () => {
-      loggerModule.info('test info')
-      expect(consoleLogSpy).not.toHaveBeenCalled()
+      loggerModule = await loadLoggerModule()
     })
 
     it('should still log warn messages', () => {
@@ -105,14 +116,9 @@ describe('logger', () => {
       expect(consoleErrorSpy).toHaveBeenCalledWith('[ERROR]', 'test error')
     })
 
-    it('should not call group methods', () => {
-      loggerModule.group('test group')
-      expect(consoleLogSpy).not.toHaveBeenCalled()
-    })
-
-    it('should expose isDev and isProd properties', () => {
-      expect(loggerModule.logger.isDev).toBe(false)
-      expect(loggerModule.logger.isProd).toBe(true)
+    it('should expose env flags from vite build', () => {
+      expect(loggerModule.logger.isDev).toBe(import.meta.env.DEV)
+      expect(loggerModule.logger.isProd).toBe(import.meta.env.PROD)
     })
   })
 

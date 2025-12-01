@@ -1,7 +1,7 @@
 FROM webdevops/php-nginx:8.2
 
 RUN apt-get update && \
-    apt-get install -y curl ca-certificates gnupg supervisor && \
+    apt-get install -y curl ca-certificates gnupg supervisor chromium chromium-driver fonts-liberation && \
     mkdir -p /etc/apt/keyrings && \
     curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
     echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" >/etc/apt/sources.list.d/nodesource.list && \
@@ -97,6 +97,9 @@ COPY php-prod.ini /usr/local/etc/php/conf.d/99-prod.ini
 
 # Copy nginx Vite proxy configuration
 COPY nginx-vite-proxy.conf /opt/docker/etc/nginx/vhost.common.d/vite-proxy.conf
+
+# Copy nginx FastCGI buffers configuration
+COPY nginx-fastcgi-buffers.conf /opt/docker/etc/nginx/vhost.common.d/20-fastcgi-buffers.conf
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 

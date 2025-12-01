@@ -7,6 +7,7 @@ use App\Models\ZoneRecipeInstance;
 use App\Events\ZoneUpdated;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class ZoneService
 {
@@ -16,14 +17,72 @@ class ZoneService
     public function create(array $data): Zone
     {
         return DB::transaction(function () use ($data) {
+            // Генерируем UID, если не указан
+            if (empty($data['uid'])) {
+                $data['uid'] = $this->generateZoneUid($data['name'] ?? 'untitled');
+            }
+            
             $zone = Zone::create($data);
-            Log::info('Zone created', ['zone_id' => $zone->id, 'name' => $zone->name]);
+            Log::info('Zone created', ['zone_id' => $zone->id, 'uid' => $zone->uid, 'name' => $zone->name]);
             
             // Dispatch event для уведомления Python-сервиса
             event(new ZoneUpdated($zone));
             
             return $zone;
         });
+    }
+
+    /**
+     * Генерирует UID для зоны на основе названия
+     * 
+     * @param string $name Название зоны (может быть на русском)
+     * @return string Сгенерированный UID в формате zn-{transliterated-name}
+     */
+    private function generateZoneUid(string $name): string
+    {
+        $prefix = 'zn-';
+        
+        if (empty($name) || trim($name) === '') {
+            return $prefix . 'untitled-' . strtolower(Str::random(6));
+        }
+
+        // Используем Str::slug для транслитерации и нормализации
+        // Str::slug автоматически транслитерирует русские буквы
+        $transliterated = Str::slug(trim($name), '-');
+        
+        // Если после обработки ничего не осталось, используем значение по умолчанию
+        if (empty($transliterated)) {
+            $transliterated = 'untitled-' . strtolower(Str::random(6));
+        }
+
+        // Ограничиваем длину (оставляем место для префикса и суффикса)
+        $maxLength = 50 - strlen($prefix);
+        if (strlen($transliterated) > $maxLength) {
+            $transliterated = substr($transliterated, 0, $maxLength);
+            // Убираем возможный дефис в конце после обрезки
+            $transliterated = rtrim($transliterated, '-');
+        }
+
+        $uid = $prefix . $transliterated;
+        
+        // Проверяем уникальность UID и добавляем суффикс, если нужно
+        $counter = 0;
+        $originalUid = $uid;
+        while (Zone::where('uid', $uid)->exists()) {
+            $counter++;
+            $suffix = '-' . $counter;
+            $maxLengthWithSuffix = $maxLength - strlen($suffix);
+            $base = substr($transliterated, 0, $maxLengthWithSuffix);
+            $uid = $prefix . rtrim($base, '-') . $suffix;
+            
+            // Защита от бесконечного цикла
+            if ($counter > 1000) {
+                $uid = $originalUid . '-' . time();
+                break;
+            }
+        }
+
+        return $uid;
     }
 
     /**
@@ -244,20 +303,50 @@ class ZoneService
             $payload['max_duration_sec'] = $data['max_duration_sec'];
         }
 
-        $response = \Illuminate\Support\Facades\Http::withHeaders($headers)
-            ->timeout(350) // Больше чем max_duration_sec (300) + запас
-            ->post("{$baseUrl}/bridge/zones/{$zone->id}/fill", $payload);
+        try {
+            $response = \Illuminate\Support\Facades\Http::withHeaders($headers)
+                ->timeout(350) // Больше чем max_duration_sec (300) + запас
+                ->post("{$baseUrl}/bridge/zones/{$zone->id}/fill", $payload);
 
-        if (!$response->successful()) {
-            throw new \DomainException('Fill operation failed: ' . $response->body());
+            if (!$response->successful()) {
+                Log::error('ZoneService: Fill operation failed', [
+                    'zone_id' => $zone->id,
+                    'target_level' => $data['target_level'],
+                    'status' => $response->status(),
+                    'response' => substr($response->body(), 0, 500),
+                ]);
+                throw new \DomainException('Fill operation failed: ' . substr($response->body(), 0, 200));
+            }
+
+            Log::info('Zone fill executed', [
+                'zone_id' => $zone->id,
+                'target_level' => $data['target_level'],
+            ]);
+
+            return $response->json('data', []);
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            Log::error('ZoneService: Connection error during fill', [
+                'zone_id' => $zone->id,
+                'target_level' => $data['target_level'],
+                'error' => $e->getMessage(),
+            ]);
+            throw new \DomainException('Unable to connect to fill service. Please try again later.');
+        } catch (\Illuminate\Http\Client\TimeoutException $e) {
+            Log::error('ZoneService: Timeout error during fill', [
+                'zone_id' => $zone->id,
+                'target_level' => $data['target_level'],
+                'error' => $e->getMessage(),
+            ]);
+            throw new \DomainException('Fill operation timed out. Please try again later.');
+        } catch (\Illuminate\Http\Client\RequestException $e) {
+            Log::error('ZoneService: Request error during fill', [
+                'zone_id' => $zone->id,
+                'target_level' => $data['target_level'],
+                'error' => $e->getMessage(),
+                'status' => $e->response?->status(),
+            ]);
+            throw new \DomainException('Fill operation failed. Please check the request parameters.');
         }
-
-        Log::info('Zone fill executed', [
-            'zone_id' => $zone->id,
-            'target_level' => $data['target_level'],
-        ]);
-
-        return $response->json('data', []);
     }
 
     /**
@@ -280,20 +369,50 @@ class ZoneService
             $payload['max_duration_sec'] = $data['max_duration_sec'];
         }
 
-        $response = \Illuminate\Support\Facades\Http::withHeaders($headers)
-            ->timeout(350) // Больше чем max_duration_sec (300) + запас
-            ->post("{$baseUrl}/bridge/zones/{$zone->id}/drain", $payload);
+        try {
+            $response = \Illuminate\Support\Facades\Http::withHeaders($headers)
+                ->timeout(350) // Больше чем max_duration_sec (300) + запас
+                ->post("{$baseUrl}/bridge/zones/{$zone->id}/drain", $payload);
 
-        if (!$response->successful()) {
-            throw new \DomainException('Drain operation failed: ' . $response->body());
+            if (!$response->successful()) {
+                Log::error('ZoneService: Drain operation failed', [
+                    'zone_id' => $zone->id,
+                    'target_level' => $data['target_level'],
+                    'status' => $response->status(),
+                    'response' => substr($response->body(), 0, 500),
+                ]);
+                throw new \DomainException('Drain operation failed: ' . substr($response->body(), 0, 200));
+            }
+
+            Log::info('Zone drain executed', [
+                'zone_id' => $zone->id,
+                'target_level' => $data['target_level'],
+            ]);
+
+            return $response->json('data', []);
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            Log::error('ZoneService: Connection error during drain', [
+                'zone_id' => $zone->id,
+                'target_level' => $data['target_level'],
+                'error' => $e->getMessage(),
+            ]);
+            throw new \DomainException('Unable to connect to drain service. Please try again later.');
+        } catch (\Illuminate\Http\Client\TimeoutException $e) {
+            Log::error('ZoneService: Timeout error during drain', [
+                'zone_id' => $zone->id,
+                'target_level' => $data['target_level'],
+                'error' => $e->getMessage(),
+            ]);
+            throw new \DomainException('Drain operation timed out. Please try again later.');
+        } catch (\Illuminate\Http\Client\RequestException $e) {
+            Log::error('ZoneService: Request error during drain', [
+                'zone_id' => $zone->id,
+                'target_level' => $data['target_level'],
+                'error' => $e->getMessage(),
+                'status' => $e->response?->status(),
+            ]);
+            throw new \DomainException('Drain operation failed. Please check the request parameters.');
         }
-
-        Log::info('Zone drain executed', [
-            'zone_id' => $zone->id,
-            'target_level' => $data['target_level'],
-        ]);
-
-        return $response->json('data', []);
     }
 
     /**
@@ -317,21 +436,55 @@ class ZoneService
             $payload['pump_duration_sec'] = $data['pump_duration_sec'];
         }
 
-        $response = \Illuminate\Support\Facades\Http::withHeaders($headers)
-            ->timeout(30) // Калибровка занимает ~12 секунд (10 сек насос + 2 сек ожидание)
-            ->post("{$baseUrl}/bridge/zones/{$zone->id}/calibrate-flow", $payload);
+        try {
+            $response = \Illuminate\Support\Facades\Http::withHeaders($headers)
+                ->timeout(30) // Калибровка занимает ~12 секунд (10 сек насос + 2 сек ожидание)
+                ->post("{$baseUrl}/bridge/zones/{$zone->id}/calibrate-flow", $payload);
 
-        if (!$response->successful()) {
-            throw new \DomainException('Flow calibration failed: ' . $response->body());
+            if (!$response->successful()) {
+                Log::error('ZoneService: Flow calibration failed', [
+                    'zone_id' => $zone->id,
+                    'node_id' => $data['node_id'] ?? null,
+                    'channel' => $data['channel'] ?? null,
+                    'status' => $response->status(),
+                    'response' => substr($response->body(), 0, 500),
+                ]);
+                throw new \DomainException('Flow calibration failed: ' . substr($response->body(), 0, 200));
+            }
+
+            Log::info('Flow calibration executed', [
+                'zone_id' => $zone->id,
+                'node_id' => $data['node_id'],
+                'channel' => $data['channel'],
+            ]);
+
+            return $response->json('data', []);
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            Log::error('ZoneService: Connection error during flow calibration', [
+                'zone_id' => $zone->id,
+                'node_id' => $data['node_id'] ?? null,
+                'channel' => $data['channel'] ?? null,
+                'error' => $e->getMessage(),
+            ]);
+            throw new \DomainException('Unable to connect to calibration service. Please try again later.');
+        } catch (\Illuminate\Http\Client\TimeoutException $e) {
+            Log::error('ZoneService: Timeout error during flow calibration', [
+                'zone_id' => $zone->id,
+                'node_id' => $data['node_id'] ?? null,
+                'channel' => $data['channel'] ?? null,
+                'error' => $e->getMessage(),
+            ]);
+            throw new \DomainException('Flow calibration timed out. Please try again later.');
+        } catch (\Illuminate\Http\Client\RequestException $e) {
+            Log::error('ZoneService: Request error during flow calibration', [
+                'zone_id' => $zone->id,
+                'node_id' => $data['node_id'] ?? null,
+                'channel' => $data['channel'] ?? null,
+                'error' => $e->getMessage(),
+                'status' => $e->response?->status(),
+            ]);
+            throw new \DomainException('Flow calibration failed. Please check the request parameters.');
         }
-
-        Log::info('Flow calibration executed', [
-            'zone_id' => $zone->id,
-            'node_id' => $data['node_id'],
-            'channel' => $data['channel'],
-        ]);
-
-        return $response->json('data', []);
     }
 }
 

@@ -5,6 +5,8 @@ import { ref, computed, type Ref, type ComputedRef } from 'vue'
 import { router } from '@inertiajs/vue3'
 import { useApi, type ToastHandler } from './useApi'
 import { useErrorHandler } from './useErrorHandler'
+import { extractData } from '@/utils/apiHelpers'
+import { logger } from '@/utils/logger'
 import type { Zone } from '@/types'
 
 // Кеш в памяти (TTL 10-30 секунд)
@@ -56,9 +58,7 @@ export function useZones(showToast?: ToastHandler) {
 
     try {
       const response = await api.get<{ data?: Zone[] } | Zone[]>('/api/zones')
-      const zones = ((response.data as { data?: Zone[] })?.data || 
-                    (response.data as Zone[]) || 
-                    []) as Zone[]
+      const zones = extractData<Zone[]>(response.data) || []
       
       // Сохраняем в кеш
       zonesCache.set(cacheKey, {
@@ -99,8 +99,7 @@ export function useZones(showToast?: ToastHandler) {
 
     try {
       const response = await api.get<{ data?: Zone } | Zone>(`/api/zones/${zoneId}`)
-      const zone = ((response.data as { data?: Zone })?.data || 
-                   (response.data as Zone)) as Zone
+      const zone = extractData<Zone>(response.data) as Zone
       
       // Сохраняем в кеш
       zonesCache.set(cacheKey, {
@@ -124,17 +123,43 @@ export function useZones(showToast?: ToastHandler) {
   }
 
   /**
-   * Обновить зону через Inertia partial reload
+   * Обновить зону через API и store (вместо Inertia reload)
+   * Сохраняет состояние страницы и избегает лишних перерисовок
    */
-  function reloadZone(zoneId: number, only: string[] = ['zone']): void {
-    router.reload({ only })
+  async function reloadZone(zoneId: number, only: string[] = ['zone'], preserveScroll: boolean = true): Promise<void> {
+    try {
+      const updatedZone = await fetchZone(zoneId, true) // forceRefresh = true
+      if (updatedZone?.id) {
+        const { useZonesStore } = await import('@/stores/zones')
+        const zonesStore = useZonesStore()
+        zonesStore.upsert(updatedZone)
+        logger.debug('[useZones] Zone updated in store via reloadZone', { zoneId })
+      }
+    } catch (error) {
+      logger.error('[useZones] Failed to update zone via API, falling back to reload', { zoneId, error })
+      // Fallback к частичному reload при ошибке
+      router.reload({ only, preserveScroll })
+    }
   }
 
   /**
-   * Обновить список зон через Inertia partial reload
+   * Обновить список зон через API и store (вместо Inertia reload)
+   * Сохраняет состояние страницы и избегает лишних перерисовок
    */
-  function reloadZones(only: string[] = ['zones']): void {
-    router.reload({ only })
+  async function reloadZones(only: string[] = ['zones'], preserveScroll: boolean = true): Promise<void> {
+    try {
+      const updatedZones = await fetchZones(true) // forceRefresh = true
+      if (updatedZones && updatedZones.length > 0) {
+        const { useZonesStore } = await import('@/stores/zones')
+        const zonesStore = useZonesStore()
+        updatedZones.forEach(zone => zonesStore.upsert(zone))
+        logger.debug('[useZones] Zones updated in store via reloadZones', { count: updatedZones.length })
+      }
+    } catch (error) {
+      logger.error('[useZones] Failed to update zones via API, falling back to reload', { error })
+      // Fallback к частичному reload при ошибке
+      router.reload({ only, preserveScroll })
+    }
   }
 
   /**

@@ -5,13 +5,20 @@ const config: PlaywrightTestConfig = {
     command: 'php artisan serve --host=127.0.0.1 --port=8000',
     port: 8000,
     reuseExistingServer: true,
-    timeout: 30000,
+    timeout: 60000,
+    env: {
+      APP_ENV: process.env.APP_ENV ?? 'testing',
+      APP_URL: 'http://127.0.0.1:8000',
+      CACHE_DRIVER: process.env.CACHE_DRIVER ?? 'file',
+      SESSION_DRIVER: process.env.SESSION_DRIVER ?? 'file',
+      QUEUE_CONNECTION: process.env.QUEUE_CONNECTION ?? 'sync',
+    },
   },
   use: {
     baseURL: 'http://127.0.0.1:8000',
     headless: true,
   },
-  testDir: 'tests/e2e',
+  testDir: 'tests/E2E',
 }
 
 export default config

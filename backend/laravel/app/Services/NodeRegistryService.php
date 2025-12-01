@@ -32,11 +32,39 @@ class NodeRegistryService
             // Находим или создаём узел
             $node = DeviceNode::firstOrNew(['uid' => $nodeUid]);
             
+            // Сохраняем текущую зону для проверки перепривязки
+            $existingZoneId = $node->id ? $node->zone_id : null;
+            
             // Привязка к зоне, если указана
             if ($zoneUid) {
                 $zoneId = $this->resolveZoneId($zoneUid);
                 if ($zoneId) {
-                    $node->zone_id = $zoneId;
+                    // Безопасность: запрещаем перепривязку существующих нод к другой зоне
+                    // Перепривязка возможна только через явные операции detach/attach в контроллере
+                    if ($node->id && $existingZoneId && $existingZoneId !== $zoneId) {
+                        Log::warning('Node registration: Attempt to rebind existing node to different zone blocked', [
+                            'node_id' => $node->id,
+                            'node_uid' => $nodeUid,
+                            'current_zone_id' => $existingZoneId,
+                            'requested_zone_id' => $zoneId,
+                            'ip' => request()->ip(),
+                        ]);
+                        // Не меняем зону для существующей ноды - это уязвимость безопасности
+                        // Для перепривязки нужно сначала вызвать detach, затем attach через API
+                    } elseif ($node->id && !$existingZoneId) {
+                        // Если нода существует, но не привязана - тоже запрещаем автоматическую привязку
+                        // Это предотвращает "угон" устройств через утечку токена
+                        Log::warning('Node registration: Attempt to bind existing unbound node blocked for security', [
+                            'node_id' => $node->id,
+                            'node_uid' => $nodeUid,
+                            'requested_zone_id' => $zoneId,
+                            'ip' => request()->ip(),
+                        ]);
+                        // Не привязываем существующую ноду автоматически
+                    } else {
+                        // Разрешаем привязку только для новых нод (когда $node->id === null)
+                        $node->zone_id = $zoneId;
+                    }
                 }
             }
             
@@ -157,7 +185,7 @@ class NodeRegistryService
                 $greenhouseToken = $provisioningMeta['greenhouse_token'];
                 $greenhouse = $this->findGreenhouseByToken($greenhouseToken);
                 if ($greenhouse) {
-                    // Если указана зона, привязываем к ней
+                    // Если указана зона, привязываем к ней только если она принадлежит этой теплице
                     $zoneId = $provisioningMeta['zone_id'] ?? null;
                     if ($zoneId) {
                         $zone = Zone::where('id', $zoneId)
@@ -165,18 +193,37 @@ class NodeRegistryService
                             ->first();
                         if ($zone) {
                             $node->zone_id = $zone->id;
+                            Log::info('Node bound to zone via greenhouse_token', [
+                                'node_id' => $node->id,
+                                'zone_id' => $zone->id,
+                                'greenhouse_id' => $greenhouse->id,
+                            ]);
+                        } else {
+                            Log::warning('Node registration: zone_id does not belong to greenhouse from token', [
+                                'node_id' => $node->id,
+                                'requested_zone_id' => $zoneId,
+                                'greenhouse_id' => $greenhouse->id,
+                            ]);
                         }
                     }
+                } else {
+                    Log::warning('Node registration: Invalid greenhouse_token', [
+                        'node_id' => $node->id,
+                        'token_prefix' => substr($greenhouseToken, 0, 4) . '...',
+                    ]);
                 }
             }
             
-            // Привязка к зоне напрямую (если zone_id указан без greenhouse_token)
+            // Прямая привязка к зоне БЕЗ greenhouse_token запрещена для безопасности
+            // Это предотвращает привязку устройств к любым зонам без проверки прав
+            // Если zone_id указан без greenhouse_token, игнорируем его
             $zoneId = $provisioningMeta['zone_id'] ?? null;
             if ($zoneId && !$node->zone_id) {
-                $zone = Zone::find($zoneId);
-                if ($zone) {
-                    $node->zone_id = $zone->id;
-                }
+                Log::warning('Node registration: zone_id provided without greenhouse_token - ignoring for security', [
+                    'node_id' => $node->id,
+                    'requested_zone_id' => $zoneId,
+                    'hardware_id' => $hardwareId,
+                ]);
             }
             
             // Устанавливаем lifecycle_state
@@ -196,10 +243,31 @@ class NodeRegistryService
             $node->save();
             
             // Очищаем кеш списка устройств и статистики для всех пользователей
-            // Кеш формируется как 'devices_list_' . auth()->id()
-            // Очищаем кеш для всех пользователей (паттерн не поддерживается напрямую)
-            // Используем flush, так как это редкое событие (регистрация узла)
-            Cache::flush();
+            // Вместо Cache::flush() используем более безопасную очистку только связанных ключей
+            // Это предотвращает DoS через частые node_hello запросы
+            // Очищаем только кеш, связанный с устройствами
+            $cachePrefixes = ['devices_list_', 'nodes_list_', 'node_stats_'];
+            foreach ($cachePrefixes as $prefix) {
+                // Laravel Cache не поддерживает поиск по префиксу напрямую
+                // Используем tags, если они доступны, или ограничиваем очистку
+                // В production лучше использовать Redis с поддержкой SCAN
+                if (config('cache.default') === 'redis') {
+                    // Для Redis можно использовать более точную очистку через tags
+                    // Но пока просто не очищаем весь кеш - это безопаснее
+                    // Кеш устареет естественным образом через TTL
+                    Log::debug('NodeRegistryService: Skipping cache flush for security', [
+                        'node_id' => $node->id,
+                        'cache_driver' => config('cache.default'),
+                    ]);
+                } else {
+                    // Для других драйверов кеша не очищаем глобально
+                    // Кеш устареет естественным образом
+                    Log::debug('NodeRegistryService: Skipping cache flush for security', [
+                        'node_id' => $node->id,
+                        'cache_driver' => config('cache.default'),
+                    ]);
+                }
+            }
             
             Log::info('Node registered from node_hello', [
                 'node_id' => $node->id,
@@ -251,14 +319,14 @@ class NodeRegistryService
     /**
      * Найти теплицу по токену.
      * 
-     * @param string $token Greenhouse token (может быть uid теплицы)
+     * @param string $token Greenhouse provisioning_token (секретный токен, не uid!)
      * @return Greenhouse|null
      */
     private function findGreenhouseByToken(string $token): ?Greenhouse
     {
-        // Пока упрощённая логика: ищем по uid
-        // В будущем можно добавить отдельную таблицу для токенов
-        return Greenhouse::where('uid', $token)->first();
+        // Ищем по provisioning_token (секретный токен, не публичный uid)
+        // Это предотвращает регистрацию нод в чужие теплицы, т.к. uid доступен всем viewer'ам
+        return Greenhouse::where('provisioning_token', $token)->first();
     }
     
     /**

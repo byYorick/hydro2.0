@@ -12,9 +12,9 @@ class AlertsTest extends TestCase
 {
     use RefreshDatabase;
 
-    private function token(): string
+    private function token(string $role = 'operator'): string
     {
-        $user = User::factory()->create();
+        $user = User::factory()->create(['role' => $role]);
         $this->actingAs($user);
 
         return $user->createToken('test')->plainTextToken;

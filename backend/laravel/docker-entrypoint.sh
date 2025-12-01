@@ -81,6 +81,11 @@ if [ -f /app/.env ]; then
     if ! grep -q "^VITE_REVERB_APP_KEY=" /app/.env 2>/dev/null; then
         echo "VITE_REVERB_APP_KEY=${REVERB_APP_KEY:-local}" >> /app/.env
     fi
+    # Устанавливаем VITE_DEV_SERVER_URL для правильной генерации URL Laravel Vite plugin
+    # Используем localhost:8080 (через nginx прокси), а не 0.0.0.0, так как браузер не может использовать 0.0.0.0
+    if ! grep -q "^VITE_DEV_SERVER_URL=" /app/.env 2>/dev/null; then
+        echo "VITE_DEV_SERVER_URL=${VITE_DEV_SERVER_URL:-http://localhost:8080}" >> /app/.env
+    fi
     if ! grep -q "^VITE_PUSHER_APP_KEY=" /app/.env 2>/dev/null; then
         echo "VITE_PUSHER_APP_KEY=${REVERB_APP_KEY:-local}" >> /app/.env
     fi
@@ -169,8 +174,20 @@ fi
 mkdir -p /opt/docker/etc/supervisor.d /var/log/supervisor /var/run 2>/dev/null || true
 chmod 755 /opt/docker/etc/supervisor.d /var/log/supervisor /var/run 2>/dev/null || true
 
-if [ -f /app/reverb-supervisor.conf ] && [ ! -f /opt/docker/etc/supervisor.d/reverb.conf ]; then
-    echo "Copying reverb supervisor config to base image directory..."
+# Добавляем настройки fastcgi_buffers в конфигурацию PHP-FPM для решения проблемы 502 Bad Gateway
+# "upstream sent too big header while reading response header from upstream"
+if [ -f /opt/docker/etc/nginx/vhost.common.d/10-php.conf ]; then
+    if ! grep -q "fastcgi_buffers" /opt/docker/etc/nginx/vhost.common.d/10-php.conf; then
+        echo "Adding fastcgi_buffers configuration to 10-php.conf..."
+        # Добавляем настройки перед закрывающей скобкой location блока
+        sed -i '/^}$/i\    # FastCGI buffers для больших заголовков (решение 502 Bad Gateway)\n    fastcgi_buffers 16 16k;\n    fastcgi_buffer_size 32k;\n    fastcgi_busy_buffers_size 64k;\n    fastcgi_temp_file_write_size 64k;' /opt/docker/etc/nginx/vhost.common.d/10-php.conf
+        echo "✓ FastCGI buffers configuration added"
+    fi
+fi
+
+# Всегда обновляем конфигурацию Reverb для применения изменений
+if [ -f /app/reverb-supervisor.conf ]; then
+    echo "Updating reverb supervisor config to base image directory..."
     cp /app/reverb-supervisor.conf /opt/docker/etc/supervisor.d/reverb.conf
     chmod 644 /opt/docker/etc/supervisor.d/reverb.conf 2>/dev/null || true
 fi

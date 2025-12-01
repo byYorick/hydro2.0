@@ -30,30 +30,38 @@ const {
 
 const buildRoleItems = (): Record<string, NavItem[]> => ({
   agronomist: [
+    { label: 'Теплицы', href: '/greenhouses', order: 19 },
     { label: 'Зоны', href: '/zones', order: 20 },
     { label: 'Рецепты', href: '/recipes', order: 21 },
-    { label: 'Аналитика', href: '/analytics', order: 22 },
+    { label: 'Растения', href: '/plants', order: 22 },
+    { label: 'Аналитика', href: '/analytics', order: 23 },
   ],
   admin: [
+    { label: 'Теплицы', href: '/greenhouses', order: 29 },
     { label: 'Зоны', href: '/zones', order: 30 },
     { label: 'Устройства', href: '/devices', order: 31 },
     { label: 'Рецепты', href: '/recipes', order: 32 },
-    { label: 'Пользователи', href: '/users', order: 33 },
-    { label: 'Аудит', href: '/audit', order: 34 },
+    { label: 'Растения', href: '/plants', order: 33 },
+    { label: 'Пользователи', href: '/users', order: 34 },
+    { label: 'Аудит', href: '/audit', order: 35 },
   ],
   engineer: [
+    { label: 'Теплицы', href: '/greenhouses', order: 39 },
     { label: 'Зоны', href: '/zones', order: 40 },
     { label: 'Устройства', href: '/devices', order: 41 },
     { label: 'Система', href: '/system', order: 42 },
     { label: 'Логи', href: '/logs', order: 43 },
   ],
   operator: [
+    { label: 'Теплицы', href: '/greenhouses', order: 49 },
     { label: 'Зоны', href: '/zones', order: 50 },
     { label: 'Устройства', href: '/devices', order: 51 },
     { label: 'Рецепты', href: '/recipes', order: 52 },
-    { label: 'Логи', href: '/logs', order: 53 },
+    { label: 'Растения', href: '/plants', order: 53 },
+    { label: 'Логи', href: '/logs', order: 54 },
   ],
   viewer: [
+    { label: 'Теплицы', href: '/greenhouses', order: 59 },
     { label: 'Зоны', href: '/zones', order: 60 },
     { label: 'Устройства', href: '/devices', order: 61 },
     { label: 'Рецепты', href: '/recipes', order: 62 },
@@ -79,13 +87,13 @@ const navigationItems = computed(() => {
 
   addItems(commonItems)
 
-  if (isAgronomist) addItems(buildRoleItems().agronomist)
-  if (isAdmin) addItems(buildRoleItems().admin)
-  if (isEngineer) addItems(buildRoleItems().engineer)
-  if (isOperator) addItems(buildRoleItems().operator)
-  if (isViewer) addItems(buildRoleItems().viewer)
+  if (isAgronomist.value) addItems(buildRoleItems().agronomist)
+  if (isAdmin.value) addItems(buildRoleItems().admin)
+  if (isEngineer.value) addItems(buildRoleItems().engineer)
+  if (isOperator.value) addItems(buildRoleItems().operator)
+  if (isViewer.value) addItems(buildRoleItems().viewer)
 
-  if (!isViewer) {
+  if (!isViewer.value) {
     addItems([settingsItem])
   }
 

@@ -265,7 +265,7 @@
         
         <!-- Кнопка мониторинга сервисов -->
         <button
-          @click="showMonitoringModal = true"
+          @click="openMonitoringModal()"
           class="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-neutral-800 transition-colors text-xs text-neutral-400 hover:text-neutral-200"
           title="Мониторинг сервисов"
         >
@@ -278,7 +278,7 @@
     <!-- Модальное окно мониторинга сервисов -->
     <SystemMonitoringModal
       :show="showMonitoringModal"
-      @close="showMonitoringModal = false"
+      @close="closeMonitoringModal()"
     />
   </div>
 </template>
@@ -291,6 +291,10 @@ import { useWebSocket } from '@/composables/useWebSocket'
 import { formatTime } from '@/utils/formatTime'
 import SystemMonitoringModal from '@/Components/SystemMonitoringModal.vue'
 import { useApi } from '@/composables/useApi'
+import { useSimpleModal } from '@/composables/useModal'
+import { logger } from '@/utils/logger'
+
+const { isOpen: showMonitoringModal, open: openMonitoringModal, close: closeMonitoringModal } = useSimpleModal()
 
 const { 
   coreStatus, 
@@ -307,7 +311,6 @@ const {
 
 const page = usePage()
 const { api } = useApi()
-const showMonitoringModal = ref(false)
 
 // Real-time метрики
 const metrics = ref<{
@@ -326,8 +329,43 @@ const metrics = ref<{
   alertsCount: null,
 })
 
+// Флаг для предотвращения повторных запросов при 401
+let isUnauthenticated = false
+// Объявляем metricsInterval до watch, чтобы он был доступен в immediate: true
+let metricsInterval: ReturnType<typeof setInterval> | null = null
+
 // Загрузка метрик (только алерты, данные dashboard приходят через props)
 async function loadMetrics() {
+  // Проверяем, авторизован ли пользователь
+  const user = page.props.auth?.user
+  if (!user) {
+    // Если пользователь не авторизован, не делаем запросы
+    isUnauthenticated = true
+    if (metricsInterval) {
+      clearInterval(metricsInterval)
+      metricsInterval = null
+    }
+    return
+  }
+  
+  // Если уже была ошибка 401, не повторяем запросы
+  if (isUnauthenticated) {
+    return
+  }
+  
+  // Используем данные из props, если они доступны (предпочтительно)
+  const dashboardData = page.props.dashboard as any
+  if (dashboardData?.alertsCount !== undefined) {
+    metrics.value.alertsCount = dashboardData.alertsCount
+    return
+  }
+  
+  // Проверяем аутентификацию перед запросом
+  const currentUser = page.props.auth?.user
+  if (!currentUser || isUnauthenticated) {
+    return
+  }
+  
   try {
     // Загружаем только активные алерты, данные dashboard уже в props
     const alertsRes = await Promise.allSettled([
@@ -337,9 +375,43 @@ async function loadMetrics() {
     if (alertsRes[0]?.status === 'fulfilled') {
       const alerts = alertsRes[0].value.data?.data || alertsRes[0].value.data || []
       metrics.value.alertsCount = Array.isArray(alerts) ? alerts.length : 0
+      isUnauthenticated = false // Сбрасываем флаг при успешном запросе
+    } else if (alertsRes[0]?.status === 'rejected') {
+      const error = alertsRes[0].reason
+      // Игнорируем отмененные запросы (Inertia.js при навигации)
+      if (error?.code === 'ERR_CANCELED' || 
+          error?.name === 'CanceledError' || 
+          error?.message === 'canceled' ||
+          error?.message === 'Request aborted') {
+        // Не логируем отмененные запросы - это нормальное поведение
+        return
+      }
+      // Если ошибка 401, прекращаем повторные запросы
+      if (error?.response?.status === 401) {
+        isUnauthenticated = true
+        if (metricsInterval) {
+          clearInterval(metricsInterval)
+          metricsInterval = null
+        }
+      }
     }
-  } catch (err) {
-    // Игнорируем ошибки загрузки алертов, они не критичны
+  } catch (err: any) {
+    // Если ошибка 401, прекращаем повторные запросы
+    if (err?.response?.status === 401) {
+      isUnauthenticated = true
+      if (metricsInterval) {
+        clearInterval(metricsInterval)
+        metricsInterval = null
+      }
+    }
+    // Игнорируем отмененные запросы и другие некритичные ошибки
+    if (err?.code === 'ERR_CANCELED' || 
+        err?.name === 'CanceledError' || 
+        err?.message === 'canceled' ||
+        err?.message === 'Request aborted') {
+      // Не логируем отмененные запросы - это нормальное поведение Inertia.js
+      return
+    }
     logger.debug('[HeaderStatusBar] Failed to load alerts:', err)
   }
 }
@@ -353,27 +425,62 @@ watch(dashboardData, (data) => {
     metrics.value.devicesCount = data.devicesCount || null
     metrics.value.devicesOnline = data.nodesByStatus?.online || null
     metrics.value.devicesOffline = data.nodesByStatus?.offline || null
-    metrics.value.alertsCount = data.alertsCount || null
+    // Если данные алертов доступны из props, используем их и не делаем API запросы
+    if (data.alertsCount !== undefined) {
+      metrics.value.alertsCount = data.alertsCount
+      // Останавливаем интервал, так как данные обновляются через props
+      if (metricsInterval) {
+        clearInterval(metricsInterval)
+        metricsInterval = null
+      }
+      isUnauthenticated = false // Сбрасываем флаг, так как данные есть
+    }
   }
 }, { immediate: true })
 
 // Подписка на WebSocket обновления
 const { subscribeToGlobalEvents } = useWebSocket()
 let unsubscribeMetrics: (() => void) | null = null
-let metricsInterval: ReturnType<typeof setInterval> | null = null
 
 onMounted(() => {
+  // Проверяем аутентификацию перед началом загрузки метрик
+  const user = page.props.auth?.user
+  if (!user) {
+    // Если пользователь не авторизован, не запускаем загрузку метрик
+    isUnauthenticated = true
+    logger.debug('[HeaderStatusBar] User not authenticated, skipping metrics loading')
+    return
+  }
+  
   // Загружаем метрики только один раз при монтировании
   // Dashboard данные обновляются через props, алерты обновляются реже
   loadMetrics()
   
   // Обновляем только алерты каждые 30 секунд (не критично часто)
-  metricsInterval = setInterval(loadMetrics, 30000)
+  // Только если пользователь авторизован И не было ошибки 401
+  // Запускаем интервал только после успешной загрузки метрик
+  metricsInterval = setInterval(() => {
+      // Проверяем аутентификацию перед каждым запросом
+      const currentUser = page.props.auth?.user
+      if (!currentUser || isUnauthenticated) {
+        if (metricsInterval) {
+          clearInterval(metricsInterval)
+          metricsInterval = null
+        }
+        logger.debug('[HeaderStatusBar] Stopping metrics interval - user not authenticated')
+        return
+      }
+      // Вызываем loadMetrics только если пользователь авторизован
+      loadMetrics()
+    }, 30000)
   
   // Подписываемся на глобальные события для обновления метрик
   unsubscribeMetrics = subscribeToGlobalEvents(() => {
-    // Обновляем метрики при получении событий
-    loadMetrics()
+    // Обновляем метрики при получении событий только если авторизован
+    const currentUser = page.props.auth?.user
+    if (currentUser && !isUnauthenticated) {
+      loadMetrics()
+    }
   })
 })
 

@@ -1,27 +1,5 @@
 <template>
   <AppLayout>
-    <!-- Toast notifications -->
-    <Teleport to="body">
-      <div 
-        class="fixed top-4 right-4 z-[10000] space-y-2 pointer-events-none"
-        style="position: fixed !important; top: 1rem !important; right: 1rem !important; z-index: 10000 !important; pointer-events: none;"
-      >
-        <div
-          v-for="toast in toasts"
-          :key="toast.id"
-          class="pointer-events-auto"
-          style="pointer-events: auto;"
-        >
-          <Toast
-            :message="toast.message"
-            :variant="toast.variant"
-            :duration="toast.duration"
-            @close="removeToast(toast.id)"
-          />
-        </div>
-      </div>
-    </Teleport>
-    
     <div class="flex flex-col gap-3">
       <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div class="flex-1 min-w-0">
@@ -62,7 +40,7 @@
               <span class="sm:hidden">⏭</span>
             </Button>
           </template>
-          <Button size="sm" variant="outline" @click="showSimulationModal = true" class="flex-1 sm:flex-none">
+          <Button size="sm" variant="outline" @click="modals.open('simulation')" class="flex-1 sm:flex-none">
             <span class="hidden sm:inline">Симуляция</span>
             <span class="sm:hidden">🧪</span>
           </Button>
@@ -127,7 +105,7 @@
               <Button
                 size="sm"
                 :variant="zone.recipeInstance?.recipe ? 'secondary' : 'primary'"
-                @click="showAttachRecipeModal = true"
+                @click="modals.open('attachRecipe')"
               >
                 {{ zone.recipeInstance?.recipe ? 'Изменить рецепт' : 'Привязать рецепт' }}
               </Button>
@@ -145,8 +123,11 @@
           <div v-else class="space-y-2">
             <div class="text-sm text-neutral-400">
               Рецепт не привязан
-              <span v-if="zone.recipeInstance && !zone.recipeInstance.recipe" class="text-red-400 text-xs block mt-1">
-                DEBUG: recipeInstance существует (id={{ zone.recipeInstance.id }}, recipe_id={{ zone.recipeInstance.recipe_id }}), но recipe не загружен!
+              <span
+                v-if="zone.recipeInstance && !zone.recipeInstance.recipe"
+                class="text-amber-400 text-xs block mt-1"
+              >
+                Данные рецепта пока не загружены. Обновите страницу или привяжите рецепт заново.
               </span>
             </div>
             <template v-if="page.props.auth?.user?.role === 'admin' || page.props.auth?.user?.role === 'operator'">
@@ -271,7 +252,7 @@
       :show="showSimulationModal"
       :zone-id="zoneId"
       :default-recipe-id="zone.recipeInstance?.recipe_id"
-      @close="showSimulationModal = false"
+      @close="modals.close('simulation')"
     />
     
     <!-- Модальное окно для действий с параметрами -->
@@ -280,7 +261,7 @@
       :show="showActionModal"
       :action-type="currentActionType"
       :zone-id="zoneId"
-      @close="showActionModal = false"
+      @close="modals.close('action')"
       @submit="onActionSubmit"
     />
     
@@ -289,7 +270,7 @@
       v-if="showAttachRecipeModal"
       :show="showAttachRecipeModal"
       :zone-id="zoneId"
-      @close="showAttachRecipeModal = false"
+      @close="modals.close('attachRecipe')"
       @attached="onRecipeAttached"
     />
     
@@ -308,7 +289,7 @@
       :show="showNodeConfigModal"
       :node-id="selectedNodeId"
       :node="selectedNode"
-      @close="showNodeConfigModal = false"
+      @close="modals.close('nodeConfig')"
       @published="onNodeConfigPublished"
     />
   </AppLayout>
@@ -325,7 +306,6 @@ import { useHistory } from '@/composables/useHistory'
 import ZoneTargets from '@/Components/ZoneTargets.vue'
 import PhaseProgress from '@/Components/PhaseProgress.vue'
 import ZoneDevicesVisualization from '@/Components/ZoneDevicesVisualization.vue'
-import Toast from '@/Components/Toast.vue'
 import LoadingState from '@/Components/LoadingState.vue'
 import ZoneSimulationModal from '@/Components/ZoneSimulationModal.vue'
 import ZoneActionModal from '@/Components/ZoneActionModal.vue'
@@ -337,11 +317,7 @@ import { translateStatus, translateEventKind, translateCycleType, translateStrat
 import { formatTimeShort, formatInterval } from '@/utils/formatTime'
 import { logger } from '@/utils/logger'
 
-// Безопасные обёртки для логирования
-const logInfo = logger?.info || ((...args: unknown[]) => console.log('[INFO]', ...args))
-const logError = logger?.error || ((...args: unknown[]) => console.error('[ERROR]', ...args))
-const logWarn = logger?.warn || ((...args: unknown[]) => console.warn('[WARN]', ...args))
-const logLog = logger?.log || ((...args: unknown[]) => console.log('[LOG]', ...args))
+// Используем logger напрямую (logger уже проверен и доступен)
 import { useCommands } from '@/composables/useCommands'
 import { useTelemetry } from '@/composables/useTelemetry'
 import { useZones } from '@/composables/useZones'
@@ -351,9 +327,14 @@ import { useErrorHandler } from '@/composables/useErrorHandler'
 import { useOptimisticUpdate, createOptimisticZoneUpdate } from '@/composables/useOptimisticUpdate'
 import { useZonesStore } from '@/stores/zones'
 import { useOptimizedUpdates, useTelemetryBatch } from '@/composables/useOptimizedUpdates'
+import { useToast } from '@/composables/useToast'
+import { useModal } from '@/composables/useModal'
+import { useLoading } from '@/composables/useLoading'
+import { extractData } from '@/utils/apiHelpers'
+import { usePageProps } from '@/composables/usePageProps'
+import { DEBOUNCE_DELAY, ANIMATION_DELAY, TOAST_TIMEOUT } from '@/constants/timeouts'
 import type { Zone, Device, ZoneTelemetry, ZoneTargets as ZoneTargetsType, Cycle, CommandType } from '@/types'
 import type { ZoneEvent } from '@/types/ZoneEvent'
-import type { ToastVariant } from '@/composables/useToast'
 
 const ZoneTelemetryChart = defineAsyncComponent(() => import('@/Pages/Zones/ZoneTelemetryChart.vue'))
 const MultiSeriesTelemetryChart = defineAsyncComponent(() => import('@/Components/MultiSeriesTelemetryChart.vue'))
@@ -375,28 +356,32 @@ interface PageProps {
 
 const page = usePage<PageProps>()
 
-interface ToastItem {
-  id: number
-  message: string
-  variant: ToastVariant
-  duration: number
-}
+// Modal states using useModal composable
+const modals = useModal<{
+  simulation: boolean
+  action: boolean
+  attachRecipe: boolean
+  attachNodes: boolean
+  nodeConfig: boolean
+}>({
+  simulation: false,
+  action: false,
+  attachRecipe: false,
+  attachNodes: false,
+  nodeConfig: false,
+})
 
-// Toast notifications
-const toasts = ref<ToastItem[]>([])
-let toastIdCounter = 0
+const showSimulationModal = computed(() => modals.isModalOpen('simulation'))
+const showActionModal = computed(() => modals.isModalOpen('action'))
+const showAttachRecipeModal = computed(() => modals.isModalOpen('attachRecipe'))
+const showAttachNodesModal = computed(() => modals.isModalOpen('attachNodes'))
+const showNodeConfigModal = computed(() => modals.isModalOpen('nodeConfig'))
 
-// Simulation modal
-const showSimulationModal = ref<boolean>(false)
-const showActionModal = ref<boolean>(false)
 const currentActionType = ref<CommandType>('FORCE_IRRIGATION')
-const showAttachRecipeModal = ref<boolean>(false)
-const showAttachNodesModal = ref<boolean>(false)
-const showNodeConfigModal = ref<boolean>(false)
 const selectedNodeId = ref<number | null>(null)
 const selectedNode = ref<any>(null)
 
-// Loading states
+// Loading states using useLoading composable
 interface LoadingState {
   toggle: boolean
   irrigate: boolean
@@ -404,7 +389,7 @@ interface LoadingState {
   cycles: Record<string, boolean>
 }
 
-const loading = ref<LoadingState>({
+const { loading, setLoading, startLoading, stopLoading } = useLoading<LoadingState>({
   toggle: false,
   irrigate: false,
   nextPhase: false,
@@ -417,13 +402,9 @@ const loading = ref<LoadingState>({
   },
 })
 
-function showToast(message: string, variant: ToastVariant = 'info', duration: number = 3000): number {
-  const id = ++toastIdCounter
-  toasts.value.push({ id, message, variant, duration })
-  return id
-}
+const { showToast } = useToast()
 
-// Инициализация composables с Toast (после определения showToast)
+// Инициализация composables с Toast
 const { sendZoneCommand, reloadZoneAfterCommand, updateCommandStatus, pendingCommands } = useCommands(showToast)
 const { fetchHistory } = useTelemetry(showToast)
 const { reloadZone } = useZones(showToast)
@@ -433,13 +414,42 @@ const { handleError } = useErrorHandler(showToast)
 const { performUpdate } = useOptimisticUpdate()
 const zonesStore = useZonesStore()
 
-function removeToast(id: number): void {
-  const index = toasts.value.findIndex(t => t.id === id)
-  if (index > -1) {
-    toasts.value.splice(index, 1)
+// zoneId должен определяться из URL или props напрямую, без зависимости от zone
+// Извлекаем ID из URL (например, /zones/25 -> 25)
+const zoneId = computed(() => {
+  // Сначала пробуем из props
+  if (page.props.zoneId) {
+    const id = page.props.zoneId
+    return typeof id === 'string' ? parseInt(id) : id
   }
-}
-const zone = computed(() => {
+  
+  // Пробуем из zone props
+  if (page.props.zone?.id) {
+    const id = page.props.zone.id
+    return typeof id === 'string' ? parseInt(id) : id
+  }
+  
+  // Извлекаем из URL как fallback
+  const pathMatch = window.location.pathname.match(/\/zones\/(\d+)/)
+  if (pathMatch && pathMatch[1]) {
+    return parseInt(pathMatch[1])
+  }
+  
+  return null
+})
+
+const zone = computed<Zone>(() => {
+  const zoneIdValue = zoneId.value
+  
+  // Сначала проверяем store - там может быть более актуальное состояние
+  if (zoneIdValue) {
+    const storeZone = zonesStore.zoneById(zoneIdValue)
+    if (storeZone && storeZone.id) {
+      return storeZone
+    }
+  }
+  
+  // Если в store нет, используем props
   const rawZoneData = (page.props.zone || {}) as any
   
   // Нормализуем snake_case в camelCase для recipe_instance
@@ -449,11 +459,19 @@ const zone = computed(() => {
     zoneData.recipeInstance = zoneData.recipe_instance
   }
   
+  // Убеждаемся, что у объекта есть id
+  if (!zoneData.id && zoneIdValue) {
+    zoneData.id = zoneIdValue
+  }
+  
+  // Если zoneData все еще пустой, возвращаем минимальный объект
+  if (!zoneData.id) {
+    return {
+      id: zoneIdValue || undefined,
+    } as Zone
+  }
+  
   return zoneData as Zone
-})
-const zoneId = computed(() => {
-  const id = zone.value.id || page.props.zoneId
-  return typeof id === 'string' ? parseInt(id) : id
 })
 
 // История просмотров
@@ -501,13 +519,14 @@ const { addUpdate, flush } = useTelemetryBatch((updates) => {
       telemetryRef.value = current
     }
   })
-}, 200) // Debounce 200ms для телеметрии
+}) // Использует DEBOUNCE_DELAY.NORMAL по умолчанию
 
 const telemetry = computed(() => telemetryRef.value)
-const targets = computed(() => (page.props.targets || {}) as ZoneTargetsType)
-const devices = computed(() => (page.props.devices || []) as Device[])
-const events = computed(() => (page.props.events || []) as ZoneEvent[])
-const cycles = computed(() => (page.props.cycles || {}) as Record<string, Cycle>)
+const { targets: targetsProp, devices: devicesProp, events: eventsProp, cycles: cyclesProp } = usePageProps<PageProps>(['targets', 'devices', 'events', 'cycles'])
+const targets = computed(() => (targetsProp.value || {}) as ZoneTargetsType)
+const devices = computed(() => (devicesProp.value || []) as Device[])
+const events = computed(() => (eventsProp.value || []) as ZoneEvent[])
+const cycles = computed(() => (cyclesProp.value || {}) as Record<string, Cycle>)
 
 // Вычисление прогресса фазы рецепта
 const computedPhaseProgress = computed(() => {
@@ -710,7 +729,7 @@ async function loadChartData(metric: 'PH' | 'EC', timeRange: string): Promise<Ar
     
     return await fetchHistory(zoneId.value, metric, params)
   } catch (err) {
-    logError(`Failed to load ${metric} history:`, err)
+    logger.error(`Failed to load ${metric} history:`, err)
     return []
   }
 }
@@ -726,16 +745,25 @@ async function onChartTimeRangeChange(newRange: string): Promise<void> {
 //   logInfo('[Zones/Show] Zone props changed')
 // }, { deep: true, immediate: true })
 
+// Сохраняем функцию отписки для очистки при размонтировании
+let unsubscribeZoneCommands: (() => void) | null = null
+
 onMounted(async () => {
-  logLog('[Show.vue] Компонент смонтирован', { zoneId: zoneId.value })
+  logger.info('[Show.vue] Компонент смонтирован', { zoneId: zoneId.value })
+  
+  // Инициализируем зону в store из props для синхронизации
+  if (zoneId.value && zone.value?.id) {
+    zonesStore.upsert(zone.value, true) // silent: true, так как это начальная инициализация
+    logger.debug('[Zones/Show] Zone initialized in store from props', { zoneId: zoneId.value })
+  }
   
   // Загрузить данные для графиков
   chartDataPh.value = await loadChartData('PH', chartTimeRange.value)
   chartDataEc.value = await loadChartData('EC', chartTimeRange.value)
   
-  // Подписаться на WebSocket канал команд зоны
+  // Подписаться на WebSocket канал команд зоны и сохранить функцию отписки
   if (zoneId.value) {
-    subscribeToZoneCommands(zoneId.value, (commandEvent) => {
+    unsubscribeZoneCommands = subscribeToZoneCommands(zoneId.value, (commandEvent) => {
       // Обновляем статус команды через useCommands
       updateCommandStatus(commandEvent.commandId, commandEvent.status, commandEvent.message)
       
@@ -785,6 +813,11 @@ onMounted(async () => {
   
   // При размонтировании применяем все накопленные обновления телеметрии
   onUnmounted(() => {
+    // Отписываемся от WebSocket канала при размонтировании
+    if (unsubscribeZoneCommands) {
+      unsubscribeZoneCommands()
+      unsubscribeZoneCommands = null
+    }
     flush()
   })
 })
@@ -925,28 +958,29 @@ function getDefaultCycleParams(cycleType: string): Record<string, unknown> {
 
 async function onRunCycle(cycleType: string): Promise<void> {
   if (!zoneId.value) {
-    logWarn('[onRunCycle] zoneId is missing')
-    showToast('Ошибка: зона не найдена', 'error', 3000)
+    logger.warn('[onRunCycle] zoneId is missing')
+    showToast('Ошибка: зона не найдена', 'error', TOAST_TIMEOUT.NORMAL)
     return
   }
   
-  loading.value.cycles[cycleType] = true
+  const cycles = (loading.value as LoadingState).cycles
+  cycles[cycleType] = true
   const cycleName = translateCycleType(cycleType)
   const commandType = `FORCE_${cycleType}` as CommandType
   
   // Получаем параметры по умолчанию из targets/recipe
   const defaultParams = getDefaultCycleParams(cycleType)
   
-  logInfo(`[onRunCycle] Отправка команды ${commandType} для зоны ${zoneId.value} с параметрами:`, defaultParams)
+  logger.info(`[onRunCycle] Отправка команды ${commandType} для зоны ${zoneId.value} с параметрами:`, defaultParams)
   
   try {
     await sendZoneCommand(zoneId.value, commandType, defaultParams)
-    logInfo(`✓ [onRunCycle] Команда "${cycleName}" отправлена успешно`)
-    showToast(`Команда "${cycleName}" отправлена успешно`, 'success', 3000)
+    logger.info(`✓ [onRunCycle] Команда "${cycleName}" отправлена успешно`)
+    showToast(`Команда "${cycleName}" отправлена успешно`, 'success', TOAST_TIMEOUT.NORMAL)
     // Обновляем зону и cycles через Inertia partial reload (не window.location.reload!)
     reloadZoneAfterCommand(zoneId.value, ['zone', 'cycles'])
   } catch (err) {
-    logError(`✗ [onRunCycle] Ошибка при отправке команды ${cycleType}:`, err)
+    logger.error(`✗ [onRunCycle] Ошибка при отправке команды ${cycleType}:`, err)
     handleError(err, {
       component: 'Zones/Show',
       action: 'onRunCycle',
@@ -954,7 +988,8 @@ async function onRunCycle(cycleType: string): Promise<void> {
       zoneId: zoneId.value,
     })
   } finally {
-    loading.value.cycles[cycleType] = false
+    const cycles = (loading.value as LoadingState).cycles
+    cycles[cycleType] = false
   }
 }
 
@@ -971,12 +1006,17 @@ const variant = computed<'success' | 'neutral' | 'warning' | 'danger'>(() => {
 async function onToggle(): Promise<void> {
   if (!zoneId.value) return
   
-  loading.value.toggle = true
+  // Получаем актуальное состояние зоны из store или props
+  const currentZone = zone.value
+  const currentStatus = currentZone?.status
   
-  // Оптимистично обновляем статус зоны в store
-  const newStatus = zone.value.status === 'PAUSED' ? 'RUNNING' : 'PAUSED'
-  const action = zone.value.status === 'PAUSED' ? 'resume' : 'pause'
-  const actionText = zone.value.status === 'PAUSED' ? 'возобновлена' : 'приостановлена'
+  // Определяем действие на основе актуального статуса
+  const isPaused = currentStatus === 'PAUSED'
+  const newStatus = isPaused ? 'RUNNING' : 'PAUSED'
+  const action = isPaused ? 'resume' : 'pause'
+  const actionText = isPaused ? 'возобновлена' : 'приостановлена'
+  
+  setLoading('toggle', true)
   
   // Создаем оптимистичное обновление
   const optimisticUpdate = createOptimisticZoneUpdate(
@@ -997,28 +1037,75 @@ async function onToggle(): Promise<void> {
           const response = await api.post(`/api/zones/${zoneId.value}/${action}`, {})
           
           // Обновляем зону в store с данными с сервера
-          const updatedZone = (response.data as { data?: Zone })?.data || 
-                            (response.data as Zone) || 
-                            zone.value
+          const updatedZone = extractData<Zone>(response.data) || currentZone
           
           if (updatedZone.id) {
-            zonesStore.upsert(updatedZone)
+            zonesStore.upsert(updatedZone, false)
           }
           
           return updatedZone
         },
-        onSuccess: () => {
-          showToast(`Зона успешно ${actionText}`, 'success', 3000)
-          // Обновляем зону через Inertia partial reload для синхронизации всех данных
-          reloadZone(zoneId.value, ['zone'])
+        onSuccess: async () => {
+          showToast(`Зона успешно ${actionText}`, 'success', TOAST_TIMEOUT.NORMAL)
+          // Обновляем зону через API и store вместо reload для сохранения состояния
+          if (zoneId.value) {
+            try {
+              // Используем уже инициализированный useZones composable
+              const { fetchZone } = useZones(showToast)
+              const updatedZone = await fetchZone(zoneId.value, true)
+              if (updatedZone?.id) {
+                zonesStore.upsert(updatedZone, false)
+              }
+            } catch (error) {
+              logger.error('[Zones/Show] Failed to fetch updated zone after toggle:', error)
+              // Fallback к частичному reload при ошибке
+              reloadZone(zoneId.value, ['zone'])
+            }
+          }
         },
-        onError: (error) => {
-          logError('Failed to toggle zone:', error)
-          let errorMessage = 'Неизвестная ошибка'
+        onError: async (error) => {
+          logger.error('Failed to toggle zone:', error)
+          let errorMessage = ERROR_MESSAGES.UNKNOWN
+          
+          // Проверяем, если это ошибка 422 (Zone is not paused/paused), синхронизируем статус
+          const is422Error = error && typeof error === 'object' && 'response' in error && 
+                           (error as any).response?.status === 422
+          
           if (error && typeof error === 'object' && 'message' in error) {
             errorMessage = String(error.message)
+          } else if (is422Error && error && typeof error === 'object' && 'response' in error) {
+            const response = (error as any).response
+            if (response?.data?.message) {
+              errorMessage = String(response.data.message)
+            }
           }
-          showToast(`Ошибка при изменении статуса зоны: ${errorMessage}`, 'error', 5000)
+          
+          showToast(`Ошибка при изменении статуса зоны: ${errorMessage}`, 'error', TOAST_TIMEOUT.LONG)
+          
+          // При ошибке 422 откладываем синхронизацию, чтобы избежать rate limiting
+          // Используем setTimeout с задержкой и reloadZone, который делает fallback к Inertia reload
+          if (is422Error) {
+            logger.info('[Zones/Show] Status mismatch detected, will sync zone from server with delay', {
+              zoneId: zoneId.value,
+              currentStatus,
+              action,
+            })
+            
+            // Откладываем синхронизацию на 2 секунды, чтобы избежать rate limiting
+            setTimeout(() => {
+              if (zoneId.value) {
+                logger.info('[Zones/Show] Syncing zone status from server after delay', {
+                  zoneId: zoneId.value,
+                })
+                // Используем reloadZone вместо fetchZone - он делает fallback к Inertia reload при ошибке
+                reloadZone(zoneId.value, ['zone']).catch((syncError) => {
+                  logger.error('[Zones/Show] Failed to sync zone status after validation error:', syncError)
+                  // Если и reloadZone не помог, просто логируем ошибку
+                  // Пользователь может обновить страницу вручную
+                })
+              }
+            }, 2000)
+          }
         },
         showLoading: false, // Управляем loading вручную
         timeout: 10000, // 10 секунд таймаут
@@ -1026,9 +1113,9 @@ async function onToggle(): Promise<void> {
     )
   } catch (err) {
     // Ошибка уже обработана в onError callback
-    logError('Failed to toggle zone (unhandled):', err)
+    logger.error('Failed to toggle zone (unhandled):', err)
   } finally {
-    loading.value.toggle = false
+    setLoading('toggle', false)
   }
 }
 
@@ -1040,7 +1127,7 @@ function openActionModal(actionType: CommandType): void {
 async function onActionSubmit({ actionType, params }: { actionType: CommandType; params: Record<string, unknown> }): Promise<void> {
   if (!zoneId.value) return
   
-  loading.value.irrigate = true
+  setLoading('irrigate', true)
   
   try {
     await sendZoneCommand(zoneId.value, actionType, params)
@@ -1052,75 +1139,85 @@ async function onActionSubmit({ actionType, params }: { actionType: CommandType;
       'FORCE_LIGHTING': 'Управление освещением'
     } as Record<CommandType, string>
     const actionName = actionNames[actionType] || 'Действие'
-    showToast(`${actionName} запущено успешно`, 'success', 3000)
+    showToast(`${actionName} запущено успешно`, 'success', TOAST_TIMEOUT.NORMAL)
     // Обновляем зону и cycles через Inertia partial reload
     reloadZoneAfterCommand(zoneId.value, ['zone', 'cycles'])
   } catch (err) {
-    logError(`Failed to execute ${actionType}:`, err)
-    let errorMessage = 'Неизвестная ошибка'
+    logger.error(`Failed to execute ${actionType}:`, err)
+    let errorMessage = ERROR_MESSAGES.UNKNOWN
     if (err && typeof err === 'object' && 'message' in err) errorMessage = String(err.message)
     const actionName = actionNames[actionType] || 'Действие'
-    showToast(`Ошибка при выполнении "${actionName}": ${errorMessage}`, 'error', 5000)
+    showToast(`Ошибка при выполнении "${actionName}": ${errorMessage}`, 'error', TOAST_TIMEOUT.LONG)
   } finally {
-    loading.value.irrigate = false
+    setLoading('irrigate', false)
   }
 }
 
 function openNodeConfig(nodeId: number, node: any): void {
   selectedNodeId.value = nodeId
   selectedNode.value = node
-  showNodeConfigModal.value = true
+  modals.open('nodeConfig')
 }
 
 async function onRecipeAttached(recipeId: number): Promise<void> {
-  logInfo('[Zones/Show] Recipe attached event received:', recipeId)
+  logger.info('[Zones/Show] Recipe attached event received:', recipeId)
   
   // Показываем уведомление
-  showToast('Рецепт успешно привязан к зоне', 'success', 3000)
+  showToast('Рецепт успешно привязан к зоне', 'success', TOAST_TIMEOUT.NORMAL)
   
-  // Даем время для отображения toast перед обновлением
-  await new Promise(resolve => setTimeout(resolve, 300))
+  if (!zoneId.value) return
   
-  // Делаем полный reload страницы через Inertia для получения обновленных данных
-  // Используем router.reload() для гарантированного обновления всех данных
-  // preserveState: false чтобы обновить все props, включая zone с recipeInstance
-  logInfo('[Zones/Show] Starting zone reload after recipe attachment')
-  
-  router.reload({ 
-    only: ['zone'],
-    preserveScroll: true,
-    preserveState: false, // Важно! Это гарантирует обновление всех props
-    onSuccess: (page) => {
-      logInfo('[Zones/Show] Zone reloaded successfully after recipe attachment', {
-        zone: page.props.zone,
-        hasRecipeInstance: !!page.props.zone?.recipeInstance,
-        recipeId: page.props.zone?.recipeInstance?.recipe_id,
-        recipeName: page.props.zone?.recipeInstance?.recipe?.name
+  try {
+    // Загружаем обновленную зону через API вместо полного reload
+    // Используем уже инициализированный useZones composable
+    const { fetchZone } = useZones(showToast)
+    const updatedZone = await fetchZone(zoneId.value, true) // forceRefresh = true
+    
+    // Обновляем зону в store для мгновенного отображения
+    if (updatedZone?.id) {
+      zonesStore.upsert(updatedZone)
+      logger.info('[Zones/Show] Zone updated in store after recipe attachment', {
+        zoneId: updatedZone.id,
+        hasRecipeInstance: !!updatedZone.recipeInstance,
+        recipeId: updatedZone.recipeInstance?.recipe_id,
       })
-    },
-    onError: (error) => {
-      logError('[Zones/Show] Failed to reload zone:', error)
-    },
-    onFinish: () => {
-      logInfo('[Zones/Show] Zone reload finished')
     }
-  })
+  } catch (error) {
+    logger.error('[Zones/Show] Failed to fetch updated zone after recipe attachment:', error)
+    // В случае ошибки делаем частичный reload как fallback
+    reloadZone(zoneId.value, ['zone'])
+  }
 }
 
-function onNodesAttached(nodeIds: number[]): void {
-  showToast(`Успешно привязано узлов: ${nodeIds.length}`, 'success', 3000)
-  reloadZone(zoneId.value, ['zone', 'devices'])
+async function onNodesAttached(nodeIds: number[]): Promise<void> {
+  if (!zoneId.value) return
+  
+  try {
+    // Обновляем зону через API вместо reload
+    const { fetchZone } = useZones(showToast)
+    const updatedZone = await fetchZone(zoneId.value, true) // forceRefresh = true
+    
+    if (updatedZone?.id) {
+      zonesStore.upsert(updatedZone)
+      logger.debug('[Zones/Show] Zone updated in store after nodes attachment', { zoneId: updatedZone.id })
+    }
+  } catch (error) {
+    logger.error('[Zones/Show] Failed to update zone after nodes attachment, falling back to reload', { zoneId: zoneId.value, error })
+    // Fallback к частичному reload при ошибке
+    reloadZone(zoneId.value, ['zone', 'devices'])
+  }
 }
 
 function onNodeConfigPublished(): void {
-  showToast('Конфигурация узла успешно отправлена', 'success', 3000)
-  reloadZone(zoneId.value, ['devices'])
+  // Конфигурация уже обновлена в store через NodeConfigModal
+  // Дополнительное обновление не требуется, так как данные приходят через WebSocket
+  logger.debug('[Zones/Show] Node config published, store already updated')
 }
 
 async function onNextPhase(): Promise<void> {
   if (!zoneId.value || !zone.value.recipeInstance) return
   
-  loading.value.nextPhase = true
+  setLoading('nextPhase', true)
   
   // Оптимистично обновляем фазу в store
   const nextPhaseIndex = (zone.value.recipeInstance.current_phase_index || 0) + 1
@@ -1151,9 +1248,7 @@ async function onNextPhase(): Promise<void> {
           })
           
           // Обновляем зону в store с данными с сервера
-          const updatedZone = (response.data as { data?: Zone })?.data || 
-                            (response.data as Zone) || 
-                            zone.value
+          const updatedZone = extractData<Zone>(response.data) || zone.value
           
           if (updatedZone.id) {
             zonesStore.upsert(updatedZone)
@@ -1161,18 +1256,31 @@ async function onNextPhase(): Promise<void> {
           
           return updatedZone
         },
-        onSuccess: () => {
-          showToast('Фаза успешно изменена', 'success', 3000)
-          // Обновляем зону через Inertia partial reload для синхронизации всех данных
-          reloadZone(zoneId.value, ['zone'])
+        onSuccess: async () => {
+          showToast('Фаза успешно изменена', 'success', TOAST_TIMEOUT.NORMAL)
+          // Обновляем зону через API и store вместо reload для сохранения состояния
+          if (zoneId.value) {
+            try {
+              // Используем уже инициализированный useZones composable
+              const { fetchZone } = useZones(showToast)
+              const updatedZone = await fetchZone(zoneId.value, true)
+              if (updatedZone?.id) {
+                zonesStore.upsert(updatedZone)
+              }
+            } catch (error) {
+              logger.error('[Zones/Show] Failed to fetch updated zone after phase change:', error)
+              // Fallback к частичному reload при ошибке
+              reloadZone(zoneId.value, ['zone'])
+            }
+          }
         },
         onError: (error) => {
-          logError('Failed to change phase:', error)
-          let errorMessage = 'Неизвестная ошибка'
+          logger.error('Failed to change phase:', error)
+          let errorMessage = ERROR_MESSAGES.UNKNOWN
           if (error && typeof error === 'object' && 'message' in error) {
             errorMessage = String(error.message)
           }
-          showToast(`Ошибка при изменении фазы: ${errorMessage}`, 'error', 5000)
+          showToast(`Ошибка при изменении фазы: ${errorMessage}`, 'error', TOAST_TIMEOUT.LONG)
         },
         showLoading: false, // Управляем loading вручную
         timeout: 10000, // 10 секунд таймаут
@@ -1180,9 +1288,9 @@ async function onNextPhase(): Promise<void> {
     )
   } catch (err) {
     // Ошибка уже обработана в onError callback
-    logError('Failed to change phase (unhandled):', err)
+    logger.error('Failed to change phase (unhandled):', err)
   } finally {
-    loading.value.nextPhase = false
+    setLoading('nextPhase', false)
   }
 }
 </script>

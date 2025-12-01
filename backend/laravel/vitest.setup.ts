@@ -134,3 +134,7 @@ vi.mock('vue-virtual-scroller', () => {
     }
   }
 })
+
+// Моки для window.setInterval и window.clearInterval (нужны для WebSocket тестов)
+// Не мокаем setInterval/clearInterval глобально, так как jsdom использует их в teardown
+// Вместо этого, моки будут установлены в конкретных тестах, где это необходимо

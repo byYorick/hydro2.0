@@ -153,33 +153,42 @@ describe('useOptimizedUpdates', () => {
   })
 
   describe('useOptimizedWatcher', () => {
-    it('should debounce watcher callbacks', () => {
+    it('should debounce watcher callbacks', async () => {
       const callback = vi.fn()
       const source = ref(1)
       
       useOptimizedWatcher(source, callback, 100)
       
+      // watch с immediate: true вызывает callback сразу, но это может быть асинхронно
+      await vi.runAllTimersAsync()
+      expect(callback).toHaveBeenCalledWith(1)
+      callback.mockClear()
+      
       source.value = 2
       source.value = 3
       source.value = 4
       
+      // Callback не должен быть вызван сразу после изменений
       expect(callback).not.toHaveBeenCalled()
       
-      vi.advanceTimersByTime(100)
+      // Используем runAllTimersAsync для обработки всех таймеров
+      await vi.runAllTimersAsync()
       
+      // После debounce должен быть вызван с последним значением
       expect(callback).toHaveBeenCalledTimes(1)
       expect(callback).toHaveBeenCalledWith(4)
     })
 
-    it('should call immediately on function source', () => {
+    it('should call immediately on function source', async () => {
       const callback = vi.fn()
       const value = ref(1)
       const source = () => value.value
       
       useOptimizedWatcher(source, callback, 100)
       
-      // Should call immediately
-      vi.advanceTimersByTime(0)
+      // watch с immediate: true вызывает callback сразу, но это может быть асинхронно
+      // Используем runAllTimersAsync для обработки всех асинхронных операций
+      await vi.runAllTimersAsync()
       expect(callback).toHaveBeenCalledWith(1)
     })
   })

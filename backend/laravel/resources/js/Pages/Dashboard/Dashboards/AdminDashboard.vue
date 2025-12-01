@@ -183,6 +183,7 @@ import { translateStatus } from '@/utils/i18n'
 import { formatTime } from '@/utils/formatTime'
 import { useRole } from '@/composables/useRole'
 import { useApi } from '@/composables/useApi'
+import { logger } from '@/utils/logger'
 import type { Zone } from '@/types'
 
 interface Props {
@@ -213,12 +214,12 @@ const recentUserActions = computed(() => props.dashboard.recentUserActions || []
 
 function handleQuickAction(zoneId: number, action: string) {
   // TODO: Реализовать быстрые действия
-  console.log('Quick action:', action, 'for zone:', zoneId)
+  logger.debug('[AdminDashboard] Quick action:', action, 'for zone:', zoneId)
 }
 
 function exportSystemData() {
   // TODO: Реализовать экспорт данных
-  console.log('Export system data')
+  logger.debug('[AdminDashboard] Export system data')
 }
 </script>
 

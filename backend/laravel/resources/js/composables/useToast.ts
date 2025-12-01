@@ -2,6 +2,7 @@
  * Composable для централизованного управления Toast уведомлениями
  */
 import { ref, type Ref } from 'vue'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
 
 // Группировка похожих уведомлений
 const groupedToasts = new Map<string, number[]>()
@@ -48,7 +49,7 @@ export function useToast() {
   function showToast(
     message: string,
     variant: ToastVariant = 'info',
-    duration: number = 3000,
+    duration: number = TOAST_TIMEOUT.NORMAL,
     options?: {
       title?: string
       actions?: ToastAction[]
@@ -141,28 +142,28 @@ export function useToast() {
   /**
    * Показать успешное уведомление
    */
-  function success(message: string, duration: number = 3000): number {
+  function success(message: string, duration: number = TOAST_TIMEOUT.NORMAL): number {
     return showToast(message, 'success', duration)
   }
 
   /**
    * Показать уведомление об ошибке
    */
-  function error(message: string, duration: number = 5000): number {
+  function error(message: string, duration: number = TOAST_TIMEOUT.LONG): number {
     return showToast(message, 'error', duration)
   }
 
   /**
    * Показать предупреждение
    */
-  function warning(message: string, duration: number = 4000): number {
+  function warning(message: string, duration: number = TOAST_TIMEOUT.NORMAL): number {
     return showToast(message, 'warning', duration)
   }
 
   /**
    * Показать информационное уведомление
    */
-  function info(message: string, duration: number = 3000): number {
+  function info(message: string, duration: number = TOAST_TIMEOUT.NORMAL): number {
     return showToast(message, 'info', duration)
   }
 

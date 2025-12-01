@@ -1,27 +1,5 @@
 <template>
   <AppLayout>
-    <!-- Toast notifications -->
-    <Teleport to="body">
-      <div 
-        class="fixed top-4 right-4 z-[10000] space-y-2 pointer-events-none"
-        style="position: fixed !important; top: 1rem !important; right: 1rem !important; z-index: 10000 !important; pointer-events: none;"
-      >
-        <div
-          v-for="toast in toasts"
-          :key="toast.id"
-          class="pointer-events-auto"
-          style="pointer-events: auto;"
-        >
-          <Toast
-            :message="toast.message"
-            :variant="toast.variant"
-            :duration="toast.duration"
-            @close="removeToast(toast.id)"
-          />
-        </div>
-      </div>
-    </Teleport>
-    
     <h1 class="text-lg font-semibold mb-4">Настройки</h1>
 
     <div v-if="isAdmin" class="mb-6">
@@ -32,6 +10,7 @@
             v-model="searchQuery"
             placeholder="Поиск по имени/email..."
             class="h-9 w-64 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
+            autocomplete="off"
           />
           <select
             v-model="roleFilter"
@@ -43,7 +22,7 @@
             <option value="viewer">Наблюдатель</option>
           </select>
           <Button size="sm" @click="loadUsers">Обновить</Button>
-          <Button size="sm" variant="secondary" @click="showCreateModal = true">Создать пользователя</Button>
+          <Button size="sm" variant="secondary" @click="openCreateModal()">Создать пользователя</Button>
         </div>
 
         <div class="rounded-xl border border-neutral-800 overflow-hidden max-h-[600px] overflow-y-auto">
@@ -128,6 +107,7 @@
           <input
             v-model="userForm.name"
             class="mt-1 w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
+            autocomplete="name"
           />
         </div>
         <div>
@@ -136,20 +116,26 @@
             v-model="userForm.email"
             type="email"
             class="mt-1 w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
+            autocomplete="email"
           />
         </div>
         <div>
-          <label class="text-sm text-neutral-300">Пароль</label>
+          <label for="user-form-password" class="text-sm text-neutral-300">Пароль</label>
           <input
+            id="user-form-password"
+            name="password"
             v-model="userForm.password"
             type="password"
             class="mt-1 w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
             :placeholder="editingUser ? 'Оставьте пустым, чтобы не менять' : ''"
+            :autocomplete="editingUser ? 'new-password' : 'new-password'"
           />
         </div>
         <div>
-          <label class="text-sm text-neutral-300">Роль</label>
+          <label for="user-form-role" class="text-sm text-neutral-300">Роль</label>
           <select
+            id="user-form-role"
+            name="role"
             v-model="userForm.role"
             class="mt-1 w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
           >
@@ -180,7 +166,6 @@
 
 <script setup>
 import { computed, reactive, ref, onMounted } from 'vue'
-import { Teleport } from 'vue'
 import { usePage, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
@@ -189,30 +174,18 @@ import Badge from '@/Components/Badge.vue'
 import Modal from '@/Components/Modal.vue'
 import { translateRole } from '@/utils/i18n'
 import { logger } from '@/utils/logger'
-import Toast from '@/Components/Toast.vue'
 import { useApi } from '@/composables/useApi'
+import { useToast } from '@/composables/useToast'
+import { useSimpleModal } from '@/composables/useModal'
+import { ERROR_MESSAGES } from '@/constants/messages'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
 
 const page = usePage()
 const currentUser = computed(() => page.props.auth?.user)
 const currentUserId = computed(() => currentUser.value?.id)
 const isAdmin = computed(() => currentUser.value?.role === 'admin')
 
-// Toast notifications
-const toasts = ref([])
-let toastIdCounter = 0
-
-function showToast(message, variant = 'info', duration = 3000) {
-  const id = ++toastIdCounter
-  toasts.value.push({ id, message, variant, duration })
-  return id
-}
-
-function removeToast(id) {
-  const index = toasts.value.findIndex(t => t.id === id)
-  if (index > -1) {
-    toasts.value.splice(index, 1)
-  }
-}
+const { showToast } = useToast()
 
 // Инициализация API с Toast
 const { api } = useApi(showToast)
@@ -220,7 +193,7 @@ const { api } = useApi(showToast)
 const users = ref([])
 const searchQuery = ref('')
 const roleFilter = ref('')
-const showCreateModal = ref(false)
+const { isOpen: showCreateModal, open: openCreateModal, close: closeCreateModal } = useSimpleModal()
 const editingUser = ref(null)
 const deletingUser = ref(null)
 
@@ -267,13 +240,15 @@ const confirmDelete = (user) => {
       if (!deletingUser.value) return
       try {
         await api.delete(`/settings/users/${deletingUser.value.id}`)
-        showToast('Пользователь успешно удален', 'success', 3000)
-        router.reload({ only: ['users'] })
+        showToast('Пользователь успешно удален', 'success', TOAST_TIMEOUT.NORMAL)
+        
+        // Обновляем локальный список пользователей без reload
+        users.value = users.value.filter(u => u.id !== deletingUser.value.id)
         deletingUser.value = null
       } catch (err) {
         logger.error('Failed to delete user:', err)
-        const errorMsg = err.response?.data?.message || err.message || 'Неизвестная ошибка'
-        showToast(`Ошибка: ${errorMsg}`, 'error', 5000)
+        const errorMsg = err.response?.data?.message || err.message || ERROR_MESSAGES.UNKNOWN
+        showToast(`Ошибка: ${errorMsg}`, 'error', TOAST_TIMEOUT.LONG)
         deletingUser.value = null
       }
     }
@@ -285,21 +260,38 @@ const confirmDelete = (user) => {
           if (!payload.password) {
             delete payload.password
           }
-          await api.patch(`/settings/users/${editingUser.value.id}`, payload)
+          const response = await api.patch(`/settings/users/${editingUser.value.id}`, payload)
+          const updatedUser = response.data?.data || response.data
+          
+          // Обновляем пользователя в локальном списке без reload
+          if (updatedUser?.id) {
+            const index = users.value.findIndex(u => u.id === updatedUser.id)
+            if (index !== -1) {
+              users.value[index] = { ...updatedUser, created_at: updatedUser.created_at || users.value[index].created_at }
+            } else {
+              users.value.push({ ...updatedUser, created_at: updatedUser.created_at })
+            }
+          }
         } else {
-          await api.post('/settings/users', payload)
+          const response = await api.post('/settings/users', payload)
+          const newUser = response.data?.data || response.data
+          
+          // Добавляем нового пользователя в локальный список без reload
+          if (newUser?.id) {
+            users.value.push({ ...newUser, created_at: newUser.created_at })
+          }
         }
-        showToast(editingUser.value ? 'Пользователь успешно обновлен' : 'Пользователь успешно создан', 'success', 3000)
-        router.reload({ only: ['users'] })
+        showToast(editingUser.value ? 'Пользователь успешно обновлен' : 'Пользователь успешно создан', 'success', TOAST_TIMEOUT.NORMAL)
+        closeModal()
       } catch (err) {
         logger.error('Failed to save user:', err)
-        const errorMsg = err.response?.data?.message || err.message || 'Неизвестная ошибка'
-        showToast(`Ошибка: ${errorMsg}`, 'error', 5000)
+        const errorMsg = err.response?.data?.message || err.message || ERROR_MESSAGES.UNKNOWN
+        showToast(`Ошибка: ${errorMsg}`, 'error', TOAST_TIMEOUT.LONG)
       }
     }
 
 const closeModal = () => {
-  showCreateModal.value = false
+  closeCreateModal()
   editingUser.value = null
   userForm.name = ''
   userForm.email = ''

@@ -9,14 +9,7 @@ class BroadcastServiceProvider extends ServiceProvider
 {
     public function boot(): void
     {
-        Broadcast::routes([
-            'middleware' => [
-                'web',
-                'auth:sanctum',
-                'throttle:60,1',
-            ],
-        ]);
-
+        // Custom /broadcasting/auth route is defined in routes/web.php
         require base_path('routes/channels.php');
     }
 }

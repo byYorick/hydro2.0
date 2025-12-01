@@ -35,42 +35,79 @@
   </AppLayout>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
-import { reactive, ref, onMounted } from 'vue'
+import { reactive, ref, onMounted, computed } from 'vue'
 import { logger } from '@/utils/logger'
-import axios from 'axios'
-import { usePage, router } from '@inertiajs/vue3'
+import { useApi } from '@/composables/useApi'
+import { useToast } from '@/composables/useToast'
+import { usePageProps } from '@/composables/usePageProps'
+import { router } from '@inertiajs/vue3'
+import { extractData } from '@/utils/apiHelpers'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
+import { useZonesStore } from '@/stores/zones'
+import type { Greenhouse, Zone } from '@/types'
 
-const page = usePage()
-const zones = page.props.zones || []
-const greenhouses = ref([])
-const form = reactive({ name: '', description: '', status: 'RUNNING', greenhouse_id: null })
+interface PageProps {
+  zones?: Zone[]
+}
 
-onMounted(() => {
-  axios.get('/api/greenhouses', {
-    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-  }).then(res => {
-    const data = res.data?.data
-    greenhouses.value = (data?.data || (Array.isArray(data) ? data : [])) || []
-  }).catch(err => {
-    logger.error('[Admin/Zones] Failed to load greenhouses:', err)
-  })
+const { zones: zonesProp } = usePageProps<PageProps>(['zones'])
+const zonesStore = useZonesStore()
+
+// Используем store для получения зон, с fallback на props
+const zones = computed(() => {
+  const storeZones = zonesStore.allZones
+  return storeZones.length > 0 ? storeZones : (zonesProp.value || [])
+})
+const { showToast } = useToast()
+const { api } = useApi(showToast)
+const greenhouses = ref<Greenhouse[]>([])
+const form = reactive<{ name: string; description: string; status: string; greenhouse_id: number | null }>({ 
+  name: '', 
+  description: '', 
+  status: 'RUNNING', 
+  greenhouse_id: null 
 })
 
-async function onCreate() {
-  await axios.post('/api/zones', form, {
-    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-  }).then(() => {
-    router.reload({ only: ['zones'] })
+onMounted(async () => {
+  // Инициализируем store из props
+  if (zonesProp.value) {
+    zonesStore.initFromProps({ zones: zonesProp.value })
+  }
+  
+  // Загружаем теплицы
+  try {
+    const response = await api.get<{ data?: Greenhouse[] } | Greenhouse[]>('/greenhouses')
+    const data = extractData<Greenhouse[]>(response.data) || []
+    greenhouses.value = Array.isArray(data) ? data : []
+  } catch (err) {
+    // Ошибка уже обработана в useApi через showToast
+    logger.error('[Admin/Zones] Failed to load greenhouses:', err)
+  }
+})
+
+async function onCreate(): Promise<void> {
+  try {
+    const response = await api.post<{ data?: Zone } | Zone>('/zones', form)
+    const newZone = extractData<Zone>(response.data) || response.data as Zone
+    
+    // Добавляем новую зону в store вместо reload
+    if (newZone?.id) {
+      zonesStore.upsert(newZone)
+      logger.debug('[Admin/Zones] Zone added to store after creation', { zoneId: newZone.id })
+    }
+    
+    showToast('Зона успешно создана', 'success', TOAST_TIMEOUT.NORMAL)
     form.name = ''
     form.description = ''
     form.greenhouse_id = null
-  }).catch(err => {
+  } catch (err) {
+    // Ошибка уже обработана в useApi через showToast
     logger.error('[Admin/Zones] Failed to create zone:', err)
-  })
+  }
 }
 </script>
 

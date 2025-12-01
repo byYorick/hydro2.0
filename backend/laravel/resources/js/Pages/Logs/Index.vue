@@ -13,7 +13,7 @@
             <span class="text-xs uppercase text-neutral-500 tracking-[0.3em]">Фильтры</span>
             <select
               v-model="selectedService"
-              class="h-9 rounded-xl border border-neutral-700 bg-neutral-900 px-3 text-sm"
+              class="h-9 rounded-xl border border-neutral-700 bg-neutral-900 px-3 text-sm text-neutral-100"
             >
               <option value="all">Все сервисы</option>
               <option
@@ -26,7 +26,7 @@
             </select>
             <select
               v-model="selectedLevel"
-              class="h-9 rounded-xl border border-neutral-700 bg-neutral-900 px-3 text-sm"
+              class="h-9 rounded-xl border border-neutral-700 bg-neutral-900 px-3 text-sm text-neutral-100"
             >
               <option value="">Все уровни</option>
               <option
@@ -159,3 +159,10 @@ const summarizeContext = (context?: Record<string, any> | null) => {
     .join(', ')
 }
 </script>
+
+<style scoped>
+select option {
+  background-color: rgb(23 23 23); /* neutral-900 */
+  color: rgb(245 245 245); /* neutral-100 */
+}
+</style>

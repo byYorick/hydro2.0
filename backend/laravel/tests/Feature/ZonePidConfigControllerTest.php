@@ -199,7 +199,7 @@ class ZonePidConfigControllerTest extends TestCase
     public function test_creates_pid_config_updated_event(): void
     {
         $zone = Zone::factory()->create();
-        $user = User::factory()->create();
+        $user = User::factory()->create(['role' => 'operator']);
         Sanctum::actingAs($user);
 
         $config = [

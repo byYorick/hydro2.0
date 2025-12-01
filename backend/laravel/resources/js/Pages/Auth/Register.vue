@@ -2,9 +2,12 @@
 import GuestLayout from '@/Layouts/GuestLayout.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
-import PrimaryButton from '@/Components/PrimaryButton.vue';
+import Button from '@/Components/Button.vue';
 import TextInput from '@/Components/TextInput.vue';
-import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Head, Link } from '@inertiajs/vue3';
+// Импорт route из утилиты
+import { route } from '@/utils/route';
+import { useInertiaForm } from '@/composables/useInertiaForm';
 
 interface RegisterFormData {
     name: string
@@ -13,17 +16,22 @@ interface RegisterFormData {
     password_confirmation: string
 }
 
-const form = useForm<RegisterFormData>({
-    name: '',
-    email: '',
-    password: '',
-    password_confirmation: '',
-});
+const { form, submit: submitForm } = useInertiaForm<RegisterFormData>(
+    {
+        name: '',
+        email: '',
+        password: '',
+        password_confirmation: '',
+    },
+    {
+        resetFieldsOnSuccess: ['password', 'password_confirmation'],
+        showSuccessToast: false, // Auth формы обычно не показывают Toast
+        showErrorToast: false,
+    }
+);
 
 const submit = (): void => {
-    form.post(route('register'), {
-        onFinish: () => form.reset('password', 'password_confirmation'),
-    });
+    submitForm('post', route('register'));
 };
 </script>
 
@@ -107,13 +115,13 @@ const submit = (): void => {
                     Уже зарегистрированы? Войти
                 </Link>
 
-                <PrimaryButton
+                    <Button variant="primary"
                     class="ms-4"
                     :class="{ 'opacity-25': form.processing }"
                     :disabled="form.processing"
                 >
                     Зарегистрироваться
-                </PrimaryButton>
+                    </Button>
             </div>
         </form>
     </GuestLayout>

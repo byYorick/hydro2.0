@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 import signal
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -891,11 +892,22 @@ async def handle_node_hello(topic: str, payload: bytes):
     
     s = get_settings()
     laravel_url = s.laravel_api_url if hasattr(s, 'laravel_api_url') else None
-    laravel_token = s.laravel_api_token if hasattr(s, 'laravel_api_token') else None
+    # Используем ingest_token для регистрации нод (PY_INGEST_TOKEN или HISTORY_LOGGER_API_TOKEN)
+    # Это соответствует требованиям NodeController::register
+    ingest_token = s.history_logger_api_token if hasattr(s, 'history_logger_api_token') and s.history_logger_api_token else (s.ingest_token if hasattr(s, 'ingest_token') and s.ingest_token else None)
     
     if not laravel_url:
         logger.error("[NODE_HELLO] Laravel API URL not configured, cannot register node")
         NODE_HELLO_ERRORS.labels(error_type="config_missing").inc()
+        return
+    
+    # В production токен обязателен
+    app_env = os.getenv("APP_ENV", "").lower().strip()
+    is_prod = app_env in ("production", "prod") and app_env != ""
+    
+    if is_prod and not ingest_token:
+        logger.error("[NODE_HELLO] Ingest token (PY_INGEST_TOKEN or HISTORY_LOGGER_API_TOKEN) must be set in production for node registration")
+        NODE_HELLO_ERRORS.labels(error_type="token_missing").inc()
         return
     
     try:
@@ -916,11 +928,15 @@ async def handle_node_hello(topic: str, payload: bytes):
             "Accept": "application/json",
         }
         
-        # Токен опционален - если он не установлен, Laravel проверит это в своем контроллере
-        if laravel_token:
-            headers["Authorization"] = f"Bearer {laravel_token}"
+        # Токен обязателен в production, в dev может быть опционален
+        if ingest_token:
+            headers["Authorization"] = f"Bearer {ingest_token}"
+        elif is_prod:
+            logger.error("[NODE_HELLO] Cannot register node without ingest token in production")
+            NODE_HELLO_ERRORS.labels(error_type="token_missing").inc()
+            return
         else:
-            logger.debug(f"[NODE_HELLO] No API token configured, registering without auth")
+            logger.warning(f"[NODE_HELLO] No ingest token configured, registering without auth (dev mode only)")
         
         # Retry логика для Laravel API с exponential backoff
         MAX_API_RETRIES = 3
@@ -1439,11 +1455,42 @@ def _extract_channel_from_topic(topic: str) -> Optional[str]:
 def _auth_ingest(request: Request):
     """
     Проверка токена аутентификации для HTTP ingest endpoint.
-    Токен обязателен, если настроен (даже для внутренних запросов).
+    Использует HISTORY_LOGGER_API_TOKEN или PY_INGEST_TOKEN (через get_settings).
+    В production токен обязателен всегда.
     """
     s = get_settings()
     
-    # Если токен настроен, он обязателен для всех запросов (включая внутренние)
+    # Проверяем окружение
+    app_env = os.getenv("APP_ENV", "").lower().strip()
+    is_prod = app_env in ("production", "prod") and app_env != ""
+    
+    # В production токен обязателен всегда
+    if is_prod:
+        if not s.history_logger_api_token:
+            logger.error("HISTORY_LOGGER_API_TOKEN or PY_INGEST_TOKEN must be set in production environment")
+            INGEST_AUTH_FAILED.inc()
+            raise HTTPException(
+                status_code=500,
+                detail="Server configuration error: ingest token not configured"
+            )
+        
+        token = request.headers.get("Authorization", "")
+        expected_token = f"Bearer {s.history_logger_api_token}"
+        
+        if token != expected_token:
+            client_ip = request.client.host if request.client else "unknown"
+            logger.warning(
+                f"Invalid or missing token for HTTP ingest in production: token_present={bool(token)}, "
+                f"client_ip={client_ip}"
+            )
+            INGEST_AUTH_FAILED.inc()
+            raise HTTPException(
+                status_code=401,
+                detail="Unauthorized: token required in production"
+            )
+        return
+    
+    # В dev окружении: если токен настроен, он обязателен
     if s.history_logger_api_token:
         token = request.headers.get("Authorization", "")
         expected_token = f"Bearer {s.history_logger_api_token}"
@@ -1455,23 +1502,25 @@ def _auth_ingest(request: Request):
                 f"client_ip={client_ip}"
             )
             INGEST_AUTH_FAILED.inc()
-            raise HTTPException(status_code=401, detail="Unauthorized: invalid or missing token")
+            raise HTTPException(
+                status_code=401,
+                detail="Unauthorized: invalid or missing token"
+            )
         return
     
-    # Если токен не настроен, разрешаем только для dev окружения (localhost)
-    # В production это должно быть запрещено через проверку в get_settings()
+    # Dev окружение без токена: разрешаем только localhost
     client_ip = request.client.host if request.client else ""
     is_localhost = client_ip in ["127.0.0.1", "::1", "localhost"]
     
     if not is_localhost:
         logger.warning(
             f"Rejecting non-localhost request without token: client_ip={client_ip}. "
-            f"Token is required in production. Set HISTORY_LOGGER_API_TOKEN environment variable."
+            f"Token is required in production. Set HISTORY_LOGGER_API_TOKEN or PY_INGEST_TOKEN environment variable."
         )
         INGEST_AUTH_FAILED.inc()
         raise HTTPException(
             status_code=401,
-            detail="Unauthorized: token required. Set HISTORY_LOGGER_API_TOKEN environment variable."
+            detail="Unauthorized: token required. Set HISTORY_LOGGER_API_TOKEN or PY_INGEST_TOKEN environment variable."
         )
     
     logger.debug(f"Allowing localhost request without token (dev mode): client_ip={client_ip}")

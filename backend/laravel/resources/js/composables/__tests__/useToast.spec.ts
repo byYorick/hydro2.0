@@ -101,7 +101,7 @@ describe('useToast', () => {
       id,
       message: 'Warning message',
       variant: 'warning',
-      duration: 4000
+      duration: 3000 // TOAST_TIMEOUT.NORMAL
     })
   })
 

@@ -275,13 +275,22 @@ function getIndicatorLabel(value: number | null | undefined, min: number | null 
 }
 
 // Форматирование значений телеметрии
+function trimTrailingZeros(value: string): string {
+  if (!value.includes('.')) {
+    return value
+  }
+
+  return value.replace(/(\.\d*?[1-9])0+$/u, '$1').replace(/\.0+$/u, '')
+}
+
 function formatTelemetryValue(value: number | null | undefined, type: string, unit: string = ''): string {
   if (value === null || value === undefined) return '-'
   if (typeof value !== 'number') return String(value)
   
   // Для pH показываем 2 знака после точки, для остальных - 1
   const decimals = type === 'ph' ? 2 : 1
-  const formatted = value.toFixed(decimals)
+  const fixed = value.toFixed(decimals)
+  const formatted = type === 'ph' ? fixed : trimTrailingZeros(fixed)
   
   return unit ? `${formatted}${unit}` : formatted
 }
@@ -292,12 +301,16 @@ function formatTarget(target: { min?: number | null; max?: number | null; target
   
   if (target.target !== null && target.target !== undefined) {
     const decimals = unit === '' ? 2 : 1 // pH без единиц - 2 знака, остальные - 1
-    return `${Number(target.target).toFixed(decimals)}${unit}`
+    const fixed = Number(target.target).toFixed(decimals)
+    const formatted = unit === '' ? fixed : trimTrailingZeros(fixed)
+    return `${formatted}${unit}`
   }
   
   if (target.min !== null && target.max !== null && target.min !== undefined && target.max !== undefined) {
     const decimals = unit === '' ? 2 : 1
-    return `${Number(target.min).toFixed(decimals)}–${Number(target.max).toFixed(decimals)}${unit}`
+    const minFormatted = unit === '' ? Number(target.min).toFixed(decimals) : trimTrailingZeros(Number(target.min).toFixed(decimals))
+    const maxFormatted = unit === '' ? Number(target.max).toFixed(decimals) : trimTrailingZeros(Number(target.max).toFixed(decimals))
+    return `${minFormatted}–${maxFormatted}${unit}`
   }
   
   return '-'

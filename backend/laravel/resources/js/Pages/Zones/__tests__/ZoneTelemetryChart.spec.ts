@@ -56,8 +56,15 @@ describe('ZoneTelemetryChart.vue', () => {
       },
     })
     
-    const buttons = wrapper.findAll('button')
-    const activeButton = buttons.find(btn => btn.classes().includes('default') || !btn.classes().includes('secondary'))
+    // Фильтруем только кнопки времени (исключаем кнопку экспорта)
+    const buttons = wrapper.findAll('button').filter(btn => {
+      const text = btn.text()
+      return ['1H', '24H', '7D', '30D', 'ALL'].includes(text)
+    })
+    const activeButton = buttons.find(btn => {
+      const classes = btn.classes()
+      return classes.includes('default') || (!classes.includes('secondary') && btn.text() === '7D')
+    })
     expect(activeButton?.text()).toBe('7D')
   })
 

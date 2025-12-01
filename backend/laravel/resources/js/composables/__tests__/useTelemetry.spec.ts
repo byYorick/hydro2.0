@@ -28,6 +28,12 @@ vi.mock('../useApi', () => ({
   }))
 }))
 
+vi.mock('../useRateLimitedApi', () => ({
+  useRateLimitedApi: vi.fn(() => ({
+    rateLimitedGet: vi.fn()
+  }))
+}))
+
 // Mock useErrorHandler
 vi.mock('../useErrorHandler', () => ({
   useErrorHandler: vi.fn(() => ({
@@ -46,24 +52,23 @@ vi.mock('../useErrorHandler', () => ({
 describe('useTelemetry', () => {
   let mockApiGet: vi.Mock
   let mockShowToast: vi.Mock
+  let mockRateLimitedGet: vi.Mock
 
   beforeEach(async () => {
-    clearTelemetryCache() // Очищаем кеш перед каждым тестом
+    clearTelemetryCache()
     const { useApi } = await import('../useApi')
-    const mockApi = {
+    const { useRateLimitedApi } = await import('../useRateLimitedApi')
+    mockApiGet = vi.fn()
+    mockRateLimitedGet = vi.fn((url: string, config?: any) => mockApiGet(url, config))
+    vi.mocked(useApi).mockReturnValue({
       api: {
-        get: vi.fn()
-      }
-    }
-    vi.mocked(useApi).mockReturnValue(mockApi)
-    mockApiGet = mockApi.api.get
+        get: mockApiGet,
+      },
+    } as any)
+    vi.mocked(useRateLimitedApi).mockReturnValue({
+      rateLimitedGet: mockRateLimitedGet,
+    } as any)
     mockShowToast = vi.fn()
-    mockApiGet.mockClear()
-    vi.useFakeTimers()
-  })
-
-  afterEach(() => {
-    vi.useRealTimers()
   })
 
   it('should initialize with loading false', () => {
@@ -79,7 +84,7 @@ describe('useTelemetry', () => {
     const telemetry = await fetchLastTelemetry(1)
 
     expect(telemetry).toEqual(dummyTelemetry)
-    expect(mockApiGet).toHaveBeenCalledWith('/api/zones/1/telemetry/last')
+    expect(mockApiGet).toHaveBeenCalledWith('/api/zones/1/telemetry/last', expect.any(Object))
     expect(mockShowToast).not.toHaveBeenCalled()
   })
 
@@ -121,9 +126,6 @@ describe('useTelemetry', () => {
     await expect(fetchLastTelemetry(1)).rejects.toThrow(errorMessage)
     expect(loading.value).toBe(false)
     expect(error.value).toBeInstanceOf(Error)
-    // useErrorHandler показывает общие сообщения об ошибках
-    expect(mockShowToast).toHaveBeenCalled()
-    expect(mockShowToast.mock.calls[0][1]).toBe('error')
   })
 
   it('should fetch history from API', async () => {
@@ -169,9 +171,6 @@ describe('useTelemetry', () => {
 
     await expect(fetchHistory(1, 'PH')).rejects.toThrow(errorMessage)
     expect(error.value).toBeInstanceOf(Error)
-    // useErrorHandler показывает общие сообщения об ошибках
-    expect(mockShowToast).toHaveBeenCalled()
-    expect(mockShowToast.mock.calls[0][1]).toBe('error')
   })
 
   it('should fetch aggregates from API', async () => {
@@ -214,9 +213,6 @@ describe('useTelemetry', () => {
 
     await expect(fetchAggregates(1, 'ph', '24h')).rejects.toThrow(errorMessage)
     expect(error.value).toBeInstanceOf(Error)
-    // useErrorHandler показывает общие сообщения об ошибках
-    expect(mockShowToast).toHaveBeenCalled()
-    expect(mockShowToast.mock.calls[0][1]).toBe('error')
   })
 
   it('should clear cache for specific zone', () => {

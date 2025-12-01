@@ -14,7 +14,8 @@ if (csrfToken) {
 }
 
 import { logger } from './utils/logger';
-import { initEcho, isEchoInitializing, getEchoInstance } from './utils/echoClient';
+import { initEcho, isEchoInitializing, getEchoInstance, onWsStateChange } from './utils/echoClient';
+import Echo from 'laravel-echo';
 
 // Axios error logging to console
 window.axios.interceptors.response.use(
@@ -36,26 +37,67 @@ window.axios.interceptors.response.use(
     
     // Логируем только реальные ошибки
     // eslint-disable-next-line no-console
-    console.error('[HTTP ERROR]', method, url, { status, data, error });
+    logger.error('[HTTP ERROR]', { method, url, status, data, error });
     return Promise.reject(error);
   }
 );
 
-// ИСПРАВЛЕНО: Удалены локальные флаги - теперь используется единая точка входа в echoClient.ts
-// Флаги isInitializing и initializationPromise управляются в echoClient.ts
-
-// ИСПРАВЛЕНО: ЕДИНАЯ ТОЧКА ВХОДА для инициализации WebSocket
-// Все инициализации проходят через initEcho() из echoClient.ts
-// Эта функция является оберткой для удобства использования в bootstrap.js
 function initializeEcho() {
-  // Проверяем, не идет ли уже инициализация через echoClient
   if (isEchoInitializing()) {
     logger.debug('[bootstrap.js] Echo initialization already in progress via echoClient, skipping', {});
-    return;
+    return null;
   }
   
-  // Проверяем, есть ли уже активный экземпляр
-  const existingEcho = getEchoInstance();
+  // HMR guard: проверяем существующий window.Echo перед проверкой getEchoInstance()
+  // При HMR модуль перезагружается, но window.Echo остается живым
+  let existingWindowEcho = window.Echo;
+  let existingEcho = getEchoInstance();
+  
+  // Если window.Echo существует, но getEchoInstance() возвращает null (HMR case),
+  // проверяем состояние window.Echo и решаем, что делать
+  if (existingWindowEcho && !existingEcho) {
+    const pusher = existingWindowEcho.connector?.pusher;
+    const connection = pusher?.connection;
+    const state = connection?.state;
+    
+    if (state === 'connected' || state === 'connecting') {
+      // Активное соединение - переиспользуем window.Echo
+      logger.info('[bootstrap.js] HMR detected: reusing existing active window.Echo', {
+        state: state,
+        socketId: connection?.socket_id,
+      });
+      // Синхронизируем флаги с реальным состоянием
+      echoInitialized = true;
+      echoInitInProgress = false;
+      return existingWindowEcho;
+    } else {
+      // Неактивное соединение - нужно teardown перед новой инициализацией
+      logger.info('[bootstrap.js] HMR detected: existing window.Echo is inactive, tearing down', {
+        state: state,
+      });
+      try {
+        // Вызываем teardown для существующего Echo
+        if (pusher && typeof pusher.disconnect === 'function') {
+          pusher.disconnect();
+        }
+        if (connection && typeof connection.disconnect === 'function') {
+          connection.disconnect();
+        }
+        // Очищаем window.Echo
+        window.Echo = undefined;
+        existingWindowEcho = undefined;
+      } catch (err) {
+        logger.warn('[bootstrap.js] Error tearing down existing Echo during HMR', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        // Продолжаем с принудительной переинициализацией
+        window.Echo = undefined;
+        existingWindowEcho = undefined;
+      }
+    }
+  }
+  
+  // Проверяем существующий Echo из модуля (нормальный случай, не HMR)
   if (existingEcho && window.Echo) {
     const pusher = existingEcho.connector?.pusher;
     const connection = pusher?.connection;
@@ -64,26 +106,29 @@ function initializeEcho() {
         state: connection.state,
         socketId: connection.socket_id,
       });
-      return;
+      return existingEcho;
     }
   }
   
   try {
-    // ИСПРАВЛЕНО: Используем единую точку входа initEcho()
-    // forceReinit = true для гарантии чистой инициализации при загрузке страницы
-    const echo = initEcho(true);
+    // Принудительная переинициализация нужна, если есть старый Echo (неактивный)
+    const shouldForceReinit = !!(existingEcho || existingWindowEcho) && !!window.Echo;
+    const echo = initEcho(shouldForceReinit);
     if (echo) {
       logger.info('[bootstrap.js] Echo client initialized via single entry point', {
         socketId: echo.connector?.pusher?.connection?.socket_id,
+        forceReinit: shouldForceReinit,
       });
+      return echo;
     } else {
       logger.warn('[bootstrap.js] Echo client initialization returned null', {
         isInitializing: isEchoInitializing(),
         hasExistingInstance: !!getEchoInstance(),
+        hasWindowEcho: !!window.Echo,
       });
+      return null;
     }
   } catch (e) {
-    // Обработка ошибок, которые могут быть не Error объектами
     let errorMessage = 'Unknown error';
     let errorType = typeof e;
     
@@ -104,90 +149,345 @@ function initializeEcho() {
       errorValue: e,
     }, e instanceof Error ? e : undefined);
     window.Echo = undefined;
+    return null;
   }
 }
 
-// Инициализируем Echo после полной загрузки DOM
-if (document.readyState === 'loading') {
-  // DOM еще загружается, ждем события DOMContentLoaded
-  document.addEventListener('DOMContentLoaded', () => {
-    // Небольшая задержка для гарантии, что все скрипты загружены
-    setTimeout(initializeEcho, 100);
-  });
-} else {
-  // DOM уже загружен, инициализируем сразу с небольшой задержкой
-  setTimeout(initializeEcho, 100);
+// Инициализируем Echo только один раз при загрузке страницы
+// Добавляем защиту от множественных инициализаций
+let echoInitialized = false;
+let echoInitInProgress = false;
+
+function initializeEchoOnce() {
+  if (echoInitialized || echoInitInProgress) {
+    logger.debug('[bootstrap.js] Echo already initialized or in progress, skipping', {
+      initialized: echoInitialized,
+      inProgress: echoInitInProgress,
+    });
+    return window.Echo || null;
+  }
+  echoInitInProgress = true;
+  try {
+    const echo = initializeEcho();
+    if (echo && window.Echo) {
+      const pusher = echo.connector?.pusher;
+      const connection = pusher?.connection;
+      echoInitialized = true;
+      logger.debug('[bootstrap.js] Echo initialized successfully', {
+        hasConnection: !!connection,
+        connectionState: connection?.state,
+      });
+      return echo;
+    } else {
+      logger.warn('[bootstrap.js] Echo initialization returned null or window.Echo not set', {
+        echoReturned: !!echo,
+        windowEcho: !!window.Echo,
+      });
+      echoInitialized = false;
+      return null;
+    }
+  } catch (error) {
+    logger.error('[bootstrap.js] Error initializing Echo', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    echoInitialized = false;
+    return null;
+  } finally {
+    echoInitInProgress = false;
+  }
 }
 
-// Zones WS subscription helper (example)
-export function subscribeZone(zoneId, handler) {
-  if (!window.Echo) return () => {}
-  const channel = window.Echo.private(`hydro.zones.${zoneId}`)
-  channel.listen('.App\\Events\\ZoneUpdated', (e) => {
-    handler?.(e)
-  })
-  // Возвращаем функцию для отписки
-  return () => {
-    if (channel) {
-      channel.stopListening('.App\\Events\\ZoneUpdated')
+let initializationScheduled = false;
+let initializationAttempts = 0;
+const MAX_INIT_ATTEMPTS = 5;
+const INIT_RETRY_DELAYS = [1000, 2000, 5000, 10000, 30000];
+
+function scheduleEchoInitialization(force = false) {
+  if (initializationScheduled && !force) {
+    logger.debug('[bootstrap.js] Echo initialization already scheduled, skipping', {});
+    return;
+  }
+  
+  if (force) {
+    initializationScheduled = false;
+    initializationAttempts = 0;
+  }
+  
+  if (initializationScheduled) {
+    return;
+  }
+  
+  initializationScheduled = true;
+  
+  const attemptInit = () => {
+    // Проверяем реальное состояние соединения, а не только флаг
+    if (window.Echo) {
+      const pusher = window.Echo.connector?.pusher;
+      const connection = pusher?.connection;
+      if (connection && (connection.state === 'connected' || connection.state === 'connecting')) {
+        logger.debug('[bootstrap.js] Echo already connected or connecting, skipping initialization', {
+          state: connection.state,
+          socketId: connection.socket_id,
+        });
+        initializationScheduled = false;
+        echoInitialized = true;
+        return;
+      }
     }
+    
+    if (echoInitialized || echoInitInProgress) {
+      initializationScheduled = false;
+      return;
+    }
+    
+    const echo = initializeEchoOnce();
+    
+    if (!echo || !window.Echo) {
+      initializationAttempts++;
+      
+      if (initializationAttempts < MAX_INIT_ATTEMPTS) {
+        const delay = INIT_RETRY_DELAYS[initializationAttempts - 1] || 30000;
+        logger.debug('[bootstrap.js] Echo initialization failed, retrying', {
+          attempt: initializationAttempts,
+          maxAttempts: MAX_INIT_ATTEMPTS,
+          nextRetryIn: delay,
+        });
+        
+        initializationScheduled = false;
+        setTimeout(() => {
+          scheduleEchoInitialization();
+        }, delay);
+      } else {
+        logger.error('[bootstrap.js] Echo initialization failed after max attempts', {
+          attempts: initializationAttempts,
+        });
+        initializationScheduled = false;
+      }
+    } else {
+      initializationAttempts = 0;
+      initializationScheduled = false;
+    }
+  };
+  
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      setTimeout(attemptInit, 100);
+    }, { once: true });
+  } else {
+    setTimeout(attemptInit, 100);
+  }
+}
+
+// Обработчик события teardown от echoClient.ts
+window.addEventListener('echo:teardown', () => {
+  logger.debug('[bootstrap.js] Echo teardown event received, resetting flags', {});
+  echoInitialized = false;
+  echoInitInProgress = false;
+  initializationScheduled = false;
+  initializationAttempts = 0;
+});
+
+// Инициализируем Echo после полной загрузки DOM
+scheduleEchoInitialization();
+
+// Zones WS subscription helper с восстановлением подписки при reconnect
+export function subscribeZone(zoneId, handler) {
+  const channelName = `hydro.zones.${zoneId}`
+  const eventName = '.App\\Events\\ZoneUpdated'
+  let channel = null
+  let listener = null
+  let unsubscribeWsState = null
+  let stopped = false
+
+  const cleanupChannel = () => {
+    try {
+      if (channel && listener) {
+        channel.stopListening(eventName)
+      }
+      if (channel && typeof window.Echo?.leave === 'function') {
+        window.Echo.leave(channelName)
+      }
+    } catch (error) {
+      logger.warn('[bootstrap.js] subscribeZone cleanup failed', { error })
+    } finally {
+      channel = null
+      listener = null
+    }
+  }
+
+  function doSubscribe() {
+    if (stopped || !window.Echo) {
+      return
+    }
+
+    try {
+      channel = window.Echo.private(channelName)
+      listener = (event) => handler?.(event)
+      channel.listen(eventName, listener)
+      logger.debug('[bootstrap.js] subscribeZone: subscribed to zone channel', {
+        channel: channelName,
+        zoneId,
+      })
+    } catch (error) {
+      logger.warn('[bootstrap.js] subscribeZone: failed to subscribe', { error })
+      cleanupChannel()
+    }
+  }
+
+  // Пытаемся подписаться сразу, если Echo доступен
+  doSubscribe()
+
+  // Подписываемся на изменения состояния WebSocket для автоматического восстановления
+  unsubscribeWsState = onWsStateChange((state) => {
+    if (stopped) return
+    if (state === 'connected') {
+      logger.debug('[bootstrap.js] subscribeZone: WebSocket connected, (re)subscribing to zone channel', { zoneId })
+      cleanupChannel()
+      doSubscribe()
+    } else if (state === 'disconnected') {
+      logger.debug('[bootstrap.js] subscribeZone: WebSocket disconnected, cleaning up zone channel', { zoneId })
+      cleanupChannel()
+    }
+  })
+
+  return () => {
+    stopped = true
+    // Отписываемся от изменений состояния WebSocket
+    if (unsubscribeWsState) {
+      unsubscribeWsState()
+      unsubscribeWsState = null
+    }
+    // Отписываемся от канала зоны
+    cleanupChannel()
   }
 }
 
 export function subscribeAlerts(handler) {
-  if (!window.Echo) {
-    logger.warn('[bootstrap.js] Echo not available, skip subscribeAlerts', {})
-    return () => {}
-  }
-
   const channelName = 'hydro.alerts'
   const eventName = '.App\\Events\\AlertCreated'
-  const channel = window.Echo.private(channelName)
-  const listener = (event) => handler?.(event)
+  let channel = null
+  let listener = null
+  let unsubscribeWsState = null
+  let stopped = false
 
-  channel.listen(eventName, listener)
-
-  return () => {
+  const cleanupChannel = () => {
     try {
-      channel.stopListening(eventName)
-      if (typeof window.Echo?.leave === 'function') {
+      if (channel && listener) {
+        channel.stopListening(eventName)
+      }
+      if (channel && typeof window.Echo?.leave === 'function') {
         window.Echo.leave(channelName)
       }
     } catch (error) {
       logger.warn('[bootstrap.js] subscribeAlerts cleanup failed', { error })
+    } finally {
+      channel = null
+      listener = null
     }
+  }
+
+  function doSubscribe() {
+    if (stopped || channel) {
+      return
+    }
+
+    try {
+      channel = window.Echo.private(channelName)
+      listener = (event) => handler?.(event)
+      channel.listen(eventName, listener)
+      logger.debug('[bootstrap.js] subscribeAlerts: subscribed to alerts channel', {
+        channel: channelName,
+        event: eventName,
+      })
+    } catch (error) {
+      logger.warn('[bootstrap.js] subscribeAlerts: failed to subscribe', { error })
+      cleanupChannel()
+    }
+  }
+
+  // Если Echo уже доступен, подписываемся сразу
+  if (window.Echo) {
+    doSubscribe()
+  } else {
+    logger.debug('[bootstrap.js] subscribeAlerts: Echo not available, will subscribe on connect', {})
+  }
+
+  // Подписываемся на изменения состояния WebSocket для автоматического восстановления
+  unsubscribeWsState = onWsStateChange((state) => {
+    if (stopped) return
+    if (state === 'connected') {
+      logger.debug('[bootstrap.js] subscribeAlerts: WebSocket connected, (re)subscribing to alerts', {})
+      cleanupChannel()
+      doSubscribe()
+    } else if (state === 'disconnected') {
+      logger.debug('[bootstrap.js] subscribeAlerts: WebSocket disconnected, cleaning up alerts channel', {})
+      cleanupChannel()
+    }
+  })
+
+  return () => {
+    stopped = true
+    // Отписываемся от изменений состояния WebSocket
+    if (unsubscribeWsState) {
+      unsubscribeWsState()
+      unsubscribeWsState = null
+    }
+
+    // Отписываемся от канала алертов
+    cleanupChannel()
   }
 }
 
-// ИСПРАВЛЕНО: Обработка глобальных ошибок без перезагрузки страницы
-window.addEventListener('error', (event) => {
-  // ИСПРАВЛЕНО: Логируем ошибку, но НЕ перезагружаем страницу
-  // eslint-disable-next-line no-console
-  console.error('[WINDOW ERROR]', event?.message, event?.error);
-  // Предотвращаем стандартное поведение браузера (перезагрузку страницы)
-  event.preventDefault();
-  // НЕ вызываем location.reload() или router.reload() здесь
-});
+// Обработка глобальных ошибок с логированием, но без блокировки стандартного поведения
+// Сохраняем ссылки на обработчики в глобальной области для очистки при HMR
+// НЕ вызываем event.preventDefault() - это глушит ошибки и мешает Vite/Sentry/консоли
 
-window.addEventListener('unhandledrejection', (event) => {
+// Глобальное хранилище обработчиков для HMR очистки
+if (typeof window !== 'undefined' && !window.__bootstrapHandlers) {
+  window.__bootstrapHandlers = {
+    error: null,
+    unhandledrejection: null,
+    beforeunload: null,
+    pagehide: null,
+    pageshow: null,
+    visibilitychange: null,
+    focus: null,
+  }
+}
+
+const errorHandler = (event) => {
+  // Логируем ошибку для нашего логгера, но позволяем стандартному поведению работать
+  // Это позволяет Vite HMR, Sentry и консоли браузера нормально обрабатывать ошибки
+  import('./utils/logger').then(({ logger }) => {
+      logger.error('[WINDOW ERROR]', { message: event?.message, error: event?.error });
+  }).catch(() => {
+      // Игнорируем ошибки при логировании, чтобы не создавать цикл
+  });
+  // НЕ вызываем event.preventDefault() - ошибки должны всплывать нормально
+  // Это критично для работы Vite HMR, Sentry и отладки в консоли браузера
+};
+
+const unhandledRejectionHandler = (event) => {
   // Игнорируем отмененные запросы Inertia.js
   const reason = event?.reason;
   if (reason?.code === 'ERR_CANCELED' || reason?.name === 'CanceledError' || reason?.message === 'canceled') {
-    // Не логируем отмененные запросы
-    event.preventDefault();
+    // Не логируем отмененные запросы - это нормальное поведение Inertia.js
+    // НЕ вызываем event.preventDefault() даже для отмененных запросов
+    // Это позволяет браузеру нормально обрабатывать все события
     return;
   }
-  // ИСПРАВЛЕНО: Логируем ошибку, но НЕ перезагружаем страницу
-  // eslint-disable-next-line no-console
-  console.error('[UNHANDLED REJECTION]', reason || event);
-  // Предотвращаем стандартное поведение браузера
-  event.preventDefault();
-  // НЕ вызываем location.reload() или router.reload() здесь
-});
+  // Логируем ошибку для нашего логгера, но позволяем стандартному поведению работать
+  // Это позволяет Vite HMR, Sentry и консоли браузера нормально обрабатывать ошибки
+  import('./utils/logger').then(({ logger }) => {
+      logger.error('[UNHANDLED REJECTION]', { reason: reason || event });
+  }).catch(() => {
+      // Игнорируем ошибки при логировании, чтобы не создавать цикл
+  });
+  // НЕ вызываем event.preventDefault() - ошибки должны всплывать нормально
+  // Это критично для работы Vite HMR, Sentry и отладки в консоли браузера
+};
 
-// ИСПРАВЛЕНО: Очистка WebSocket соединения при перезагрузке страницы
-// Это предотвращает проблемы с "висящими" соединениями при жесткой перезагрузке
-window.addEventListener('beforeunload', () => {
+const beforeUnloadHandler = () => {
   if (window.Echo && window.Echo.connector?.pusher) {
     try {
       const pusher = window.Echo.connector.pusher;
@@ -205,129 +505,211 @@ window.addEventListener('beforeunload', () => {
       });
     }
   }
-});
+};
 
-// Также очищаем при событии pagehide (более надежно для мобильных браузеров)
-window.addEventListener('pagehide', () => {
+const pagehideHandler = (event) => {
+  if (event.persisted) {
+    return;
+  }
+  
   if (window.Echo && window.Echo.connector?.pusher) {
     try {
       const pusher = window.Echo.connector.pusher;
-      if (typeof pusher.disconnect === 'function') {
-        pusher.disconnect();
-      } else if (pusher.connection && typeof pusher.connection.disconnect === 'function') {
-        pusher.connection.disconnect();
+      const connection = pusher.connection;
+      
+      if (connection && connection.state === 'connected') {
+        logger.debug('[bootstrap.js] Page hidden, keeping connection alive', {});
+        return;
       }
     } catch (err) {
-      // Игнорируем ошибки
+      logger.debug('[bootstrap.js] Error checking connection state on pagehide', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
-});
+};
 
-// ИСПРАВЛЕНО: Переподключение при возврате на страницу из back/forward cache и жесткой перезагрузке
-// При жесткой перезагрузке страница может быть восстановлена из кеша браузера
-// В этом случае нужно проверить состояние соединения и переподключиться, если необходимо
-window.addEventListener('pageshow', (event) => {
-  // event.persisted = true означает, что страница была восстановлена из bfcache
-  if (event.persisted) {
-    logger.info('[bootstrap.js] Page restored from back/forward cache, checking WebSocket connection', {
-      persisted: event.persisted,
-    });
+const pageshowHandler = (event) => {
+  if (!event.persisted) {
+    return;
+  }
+  logger.info('[bootstrap.js] Page restored from back/forward cache, checking WebSocket connection', {
+    persisted: event.persisted,
+  });
+  
+  echoInitialized = false;
+  echoInitInProgress = false;
+  initializationScheduled = false;
+  
+  setTimeout(() => {
+    const echo = window.Echo;
+    if (echo && echo.connector?.pusher) {
+      const connection = echo.connector.pusher.connection;
+      const state = connection?.state;
+      
+      if (state !== 'connected' && state !== 'connecting') {
+        initializeEchoOnce();
+      }
+    } else if (!echo) {
+      initializeEchoOnce();
+    }
+  }, 200);
+};
+
+const visibilityChangeHandler = () => {
+  if (document.hidden) {
+    return;
+  }
+  
+  logger.debug('[bootstrap.js] Page visible, checking WebSocket connection', {});
+  
+  setTimeout(() => {
+    const echo = window.Echo;
+    if (!echo) {
+      logger.info('[bootstrap.js] Echo not initialized after visibility change, initializing', {});
+      scheduleEchoInitialization(true);
+      return;
+    }
     
-    // Проверяем состояние соединения и переподключаемся, если необходимо
-    setTimeout(() => {
-      const echo = window.Echo;
-      if (echo && echo.connector?.pusher) {
-        const connection = echo.connector.pusher.connection;
-        const state = connection?.state;
-        
-        logger.debug('[bootstrap.js] WebSocket state after page restore', {
-          state,
+    const pusher = echo.connector?.pusher;
+    const connection = pusher?.connection;
+    const state = connection?.state;
+    
+    if (state !== 'connected' && state !== 'connecting') {
+      logger.info('[bootstrap.js] WebSocket not connected after visibility change, reconnecting', {
+        state,
+      });
+      
+      try {
+        if (pusher && typeof pusher.connect === 'function') {
+          pusher.connect();
+        } else if (connection && typeof connection.connect === 'function') {
+          connection.connect();
+        } else {
+          scheduleEchoInitialization(true);
+        }
+      } catch (err) {
+        logger.warn('[bootstrap.js] Error reconnecting on visibility change', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        scheduleEchoInitialization(true);
+      }
+    }
+  }, 200);
+};
+
+const focusHandler = () => {
+  visibilityChangeHandler();
+};
+
+// Функция для очистки всех обработчиков
+function cleanupBootstrapHandlers() {
+  if (typeof window === 'undefined' || !window.__bootstrapHandlers) {
+    return
+  }
+  
+  const handlers = window.__bootstrapHandlers
+  
+  if (handlers.error) {
+    window.removeEventListener('error', handlers.error)
+    handlers.error = null
+  }
+  if (handlers.unhandledrejection) {
+    window.removeEventListener('unhandledrejection', handlers.unhandledrejection)
+    handlers.unhandledrejection = null
+  }
+  if (handlers.beforeunload) {
+    window.removeEventListener('beforeunload', handlers.beforeunload)
+    handlers.beforeunload = null
+  }
+  if (handlers.pagehide) {
+    window.removeEventListener('pagehide', handlers.pagehide)
+    handlers.pagehide = null
+  }
+  if (handlers.pageshow) {
+    window.removeEventListener('pageshow', handlers.pageshow)
+    handlers.pageshow = null
+  }
+  if (handlers.visibilitychange) {
+    document.removeEventListener('visibilitychange', handlers.visibilitychange)
+    handlers.visibilitychange = null
+  }
+  if (handlers.focus) {
+    window.removeEventListener('focus', handlers.focus)
+    handlers.focus = null
+  }
+}
+
+// Очищаем старые обработчики перед добавлением новых
+cleanupBootstrapHandlers()
+
+// Сохраняем ссылки на обработчики в глобальном хранилище
+if (typeof window !== 'undefined' && window.__bootstrapHandlers) {
+  window.__bootstrapHandlers.error = errorHandler
+  window.__bootstrapHandlers.unhandledrejection = unhandledRejectionHandler
+  window.__bootstrapHandlers.beforeunload = beforeUnloadHandler
+  window.__bootstrapHandlers.pagehide = pagehideHandler
+  window.__bootstrapHandlers.pageshow = pageshowHandler
+  window.__bootstrapHandlers.visibilitychange = visibilityChangeHandler
+  window.__bootstrapHandlers.focus = focusHandler
+}
+
+// Добавляем обработчики
+window.addEventListener('error', errorHandler)
+window.addEventListener('unhandledrejection', unhandledRejectionHandler)
+window.addEventListener('beforeunload', beforeUnloadHandler)
+window.addEventListener('pagehide', pagehideHandler)
+window.addEventListener('pageshow', pageshowHandler)
+document.addEventListener('visibilitychange', visibilityChangeHandler)
+window.addEventListener('focus', focusHandler)
+
+// Очистка при HMR
+if (import.meta.hot) {
+  import.meta.hot.on('vite:beforeUpdate', () => {
+    cleanupBootstrapHandlers()
+    
+    // HMR guard: проверяем существующий window.Echo перед обновлением
+    if (window.Echo) {
+      const pusher = window.Echo.connector?.pusher;
+      const connection = pusher?.connection;
+      const state = connection?.state;
+      
+      if (state === 'connected' || state === 'connecting') {
+        // Активное соединение - сохраняем для переиспользования
+        logger.debug('[bootstrap.js] HMR: preserving active window.Echo', {
+          state: state,
           socketId: connection?.socket_id,
         });
-        
-        // Если соединение не активно, переинициализируем
-        if (state !== 'connected' && state !== 'connecting') {
-          logger.info('[bootstrap.js] WebSocket not connected after page restore, reinitializing', {
-            state,
-          });
-          initializeEcho();
-        }
+        // Сбрасываем только модульные флаги, window.Echo остается
+        echoInitialized = false;
+        echoInitInProgress = false;
+        initializationScheduled = false;
       } else {
-        // Если Echo не инициализирован, инициализируем
-        logger.info('[bootstrap.js] Echo not initialized after page restore, initializing', {});
-        initializeEcho();
-      }
-    }, 200); // Небольшая задержка для стабилизации
-  } else {
-    // Обычная загрузка страницы или жесткая перезагрузка
-    // ИСПРАВЛЕНО: Улучшена проверка состояния после загрузки с несколькими попытками
-    // Это критично для жесткой перезагрузки, когда соединение может не успеть установиться
-    const checkConnection = (attempt = 0) => {
-      const maxAttempts = 5 // 5 попыток проверки
-      const delays = [500, 1000, 2000, 3000, 5000] // Увеличивающиеся задержки
-      const delay = delays[Math.min(attempt, delays.length - 1)]
-      
-      setTimeout(() => {
-        const echo = window.Echo;
-        if (echo && echo.connector?.pusher) {
-          const connection = echo.connector.pusher.connection;
-          const state = connection?.state;
-          
-          logger.debug('[bootstrap.js] Checking WebSocket connection state after page load', {
-            attempt: attempt + 1,
-            maxAttempts,
-            state,
-            socketId: connection?.socket_id,
+        // Неактивное соединение - очищаем
+        logger.debug('[bootstrap.js] HMR: cleaning up inactive window.Echo', {
+          state: state,
+        });
+        try {
+          if (pusher && typeof pusher.disconnect === 'function') {
+            pusher.disconnect();
+          }
+          if (connection && typeof connection.disconnect === 'function') {
+            connection.disconnect();
+          }
+        } catch (err) {
+          logger.warn('[bootstrap.js] HMR: error disconnecting Echo', {
+            error: err instanceof Error ? err.message : String(err),
           });
-          
-          if (state === 'connected' || state === 'connecting') {
-            logger.info('[bootstrap.js] WebSocket connection established', {
-              state,
-              socketId: connection?.socket_id,
-              attempts: attempt + 1,
-            });
-            return // Соединение установлено, выходим
-          }
-          
-          // Если соединение не установлено и не в процессе подключения
-          if (state !== 'connected' && state !== 'connecting') {
-            if (attempt < maxAttempts - 1) {
-              // Продолжаем проверку
-              logger.debug('[bootstrap.js] Connection not ready, will retry', {
-                state,
-                attempt: attempt + 1,
-                nextDelay: delays[Math.min(attempt + 1, delays.length - 1)],
-              });
-              checkConnection(attempt + 1)
-            } else {
-              // Все попытки исчерпаны, переинициализируем
-              logger.warn('[bootstrap.js] WebSocket not connected after all checks, reinitializing', {
-                state,
-                socketId: connection?.socket_id,
-                attempts: maxAttempts,
-              });
-              initializeEcho();
-            }
-          }
-        } else {
-          // Echo не инициализирован
-          if (attempt < maxAttempts - 1) {
-            logger.debug('[bootstrap.js] Echo not initialized yet, will retry', {
-              attempt: attempt + 1,
-              nextDelay: delays[Math.min(attempt + 1, delays.length - 1)],
-            });
-            checkConnection(attempt + 1)
-          } else {
-            logger.warn('[bootstrap.js] Echo not initialized after all checks, initializing', {
-              attempts: maxAttempts,
-            });
-            initializeEcho();
-          }
         }
-      }, delay)
+        window.Echo = undefined;
+        echoInitialized = false;
+        echoInitInProgress = false;
+        initializationScheduled = false;
+      }
     }
-    
-    // Начинаем проверку с первой попытки
-    checkConnection(0)
-  }
-});
+  })
+  
+  import.meta.hot.dispose(() => {
+    cleanupBootstrapHandlers()
+  })
+}

@@ -13,7 +13,17 @@
 
         <!-- Scripts -->
         @routes
-        @vite(['resources/js/app.js', "resources/js/Pages/{$page['component']}.vue"])
+        <?php
+            $vite = app(\Illuminate\Foundation\Vite::class);
+            $entries = ['resources/js/app.js'];
+            $pageComponent = "resources/js/Pages/{$page['component']}.vue";
+
+            try {
+                echo $vite(array_merge($entries, [$pageComponent]));
+            } catch (\Illuminate\Foundation\ViteException $e) {
+                echo $vite($entries);
+            }
+        ?>
         @inertiaHead
     </head>
     <body class="font-sans antialiased">

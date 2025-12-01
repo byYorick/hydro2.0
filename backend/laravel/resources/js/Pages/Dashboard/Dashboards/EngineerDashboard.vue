@@ -151,6 +151,8 @@ import Badge from '@/Components/Badge.vue'
 import { translateStatus } from '@/utils/i18n'
 import { formatTime } from '@/utils/formatTime'
 import { useApi } from '@/composables/useApi'
+import { useFilteredList } from '@/composables/useFilteredList'
+import { logger } from '@/utils/logger'
 import type { Device } from '@/types'
 
 interface Props {
@@ -176,13 +178,11 @@ const { api } = useApi()
 
 const devices = computed(() => props.dashboard.devices || [])
 
-const problematicDevices = computed(() => {
-  return devices.value.filter(d => 
-    d.status !== 'ONLINE' || 
-    (d.issues && d.issues.length > 0) ||
-    (d.rssi !== null && d.rssi !== undefined && d.rssi < -80)
-  )
-})
+const problematicDevices = useFilteredList(devices, (d) => 
+  d.status !== 'ONLINE' || 
+  (d.issues && d.issues.length > 0) ||
+  (d.rssi !== null && d.rssi !== undefined && d.rssi < -80)
+)
 
 const systemMetrics = computed(() => props.dashboard.systemMetrics || {
   cpu: null,
@@ -214,12 +214,12 @@ function formatTimeAgo(timestamp: string | Date): string {
 
 function testDevice(deviceId: number) {
   // TODO: Реализовать тестирование устройства
-  console.log('Test device:', deviceId)
+  logger.debug('[EngineerDashboard] Test device:', deviceId)
 }
 
 function restartDevice(deviceId: number) {
   // TODO: Реализовать перезапуск устройства
-  console.log('Restart device:', deviceId)
+  logger.debug('[EngineerDashboard] Restart device:', deviceId)
 }
 </script>
 

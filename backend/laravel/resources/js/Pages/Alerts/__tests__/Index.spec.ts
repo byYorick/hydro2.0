@@ -38,15 +38,33 @@ const itemsDataValue = vi.hoisted(() => [
   },
 ])
 
+const axiosGetMock = vi.hoisted(() => vi.fn())
 const axiosPatchMock = vi.hoisted(() => vi.fn())
 const routerReloadMock = vi.hoisted(() => vi.fn())
 
-vi.mock('axios', () => ({
-  default: {
-    get: vi.fn().mockResolvedValue({ data: itemsDataValue }),
+vi.mock('axios', () => {
+  const axiosInstance = {
+    get: (...args: Parameters<typeof axiosGetMock>) => axiosGetMock(...args),
     patch: (url: string, data?: any, config?: any) => axiosPatchMock(url, data, config),
+    interceptors: {
+      request: {
+        use: vi.fn(),
+        eject: vi.fn(),
+      },
+      response: {
+        use: vi.fn(),
+        eject: vi.fn(),
+      },
   },
-}))
+  }
+
+  return {
+    default: {
+      ...axiosInstance,
+      create: () => axiosInstance,
+    },
+  }
+})
 
 vi.mock('@inertiajs/vue3', () => ({
   usePage: () => ({
@@ -67,20 +85,39 @@ vi.mock('@/bootstrap', () => ({
 }))
 
 import AlertsIndex from '../Index.vue'
+import { config } from '@vue/test-utils'
+
+config.global.components.RecycleScroller = {
+  name: 'RecycleScroller',
+  props: ['items', 'itemSize', 'keyField'],
+  template: `
+    <div>
+      <slot
+        v-for="(item, index) in items"
+        :item="item"
+        :index="index"
+      />
+    </div>
+  `,
+}
 
 describe('Alerts/Index.vue', () => {
   beforeEach(() => {
+    axiosGetMock.mockReset()
     axiosPatchMock.mockClear()
     routerReloadMock.mockClear()
     subscribeAlertsMock.mockClear()
+    axiosGetMock.mockResolvedValue({ data: itemsDataValue })
     axiosPatchMock.mockResolvedValue({ data: { status: 'ok' } })
   })
+
+  const findRows = (wrapper: ReturnType<typeof mount>) => wrapper.findAll('.virtual-table-body .grid')
 
   it('фильтрует только активные', async () => {
     const wrapper = mount(AlertsIndex)
     // onlyActive=true по умолчанию -> исключает resolved
     await wrapper.vm.$nextTick()
-    const rows = wrapper.findAll('tbody tr')
+    const rows = findRows(wrapper)
     expect(rows.length).toBeGreaterThan(0)
     rows.forEach(r => expect(r.text()).not.toContain('RESOLVED'))
   })
@@ -88,10 +125,10 @@ describe('Alerts/Index.vue', () => {
   it('фильтрует по зоне', async () => {
     const wrapper = mount(AlertsIndex)
     await wrapper.vm.$nextTick()
-    const input = wrapper.find('input[placeholder*="Zone"]')
+    const input = wrapper.find('input[placeholder*="Зона"]')
     await input.setValue('A1')
     await wrapper.vm.$nextTick()
-    const rows = wrapper.findAll('tbody tr')
+    const rows = findRows(wrapper)
     expect(rows.length).toBeGreaterThanOrEqual(1)
     rows.forEach(r => expect(r.text()).toMatch(/A1/))
   })
@@ -100,47 +137,18 @@ describe('Alerts/Index.vue', () => {
     const wrapper = mount(AlertsIndex)
     await wrapper.vm.$nextTick()
     
-    // Ищем первую кнопку "Подтвердить" в строке таблицы
-    const buttons = wrapper.findAll('button')
-    const resolveButton = buttons.find(btn => {
-      const text = btn.text().trim()
-      return text === 'Подтвердить' || text.includes('Подтвердить')
-    })
-    
-    if (resolveButton) {
-      // Кликаем на кнопку "Подтвердить" - это откроет модал и установит confirm.open = true
-      await resolveButton.trigger('click')
-      await wrapper.vm.$nextTick()
-      await new Promise(resolve => setTimeout(resolve, 100))
-      
-      // Проверяем что модал открылся (через проверку компонента Modal)
-      const modal = wrapper.findComponent({ name: 'Modal' })
-      if (modal.exists() && modal.props('open')) {
-        // Ищем кнопку "Подтвердить" в модале (вторая кнопка с текстом "Подтвердить")
-        const allButtonsAfter = wrapper.findAll('button')
-        const modalButtons = allButtonsAfter.filter(btn => btn.text().includes('Подтвердить'))
-        
-        // Вторая кнопка "Подтвердить" должна быть в модале
-        if (modalButtons.length > 1) {
-          await modalButtons[1].trigger('click')
-          await wrapper.vm.$nextTick()
-          await new Promise(resolve => setTimeout(resolve, 100))
+  // Эмулируем выбор алерта и подтверждение напрямую через метод
+  // чтобы избежать сложной работы со слотами виртуализатора
+  // @ts-ignore accessing component instance internals for testing
+  wrapper.vm.confirm.open = true
+  // @ts-ignore
+  wrapper.vm.confirm.alertId = itemsDataValue[0].id
+
+  // @ts-ignore
+  await wrapper.vm.doResolve()
+  await new Promise(resolve => setTimeout(resolve, 10))
           
           expect(axiosPatchMock).toHaveBeenCalled()
-        } else {
-          // Если кнопка в модале не найдена, проверяем что компонент работает
-          expect(wrapper.exists()).toBe(true)
-        }
-      } else {
-        // Если модал не открылся, проверяем что компонент работает
-        expect(wrapper.exists()).toBe(true)
-        expect(wrapper.text()).toBeTruthy()
-      }
-    } else {
-      // Если кнопка не найдена, проверяем что компонент отрендерился
-      expect(wrapper.exists()).toBe(true)
-      expect(wrapper.text()).toContain('Alerts')
-    }
   })
 })
 

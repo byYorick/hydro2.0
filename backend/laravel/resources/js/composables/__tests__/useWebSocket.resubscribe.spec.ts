@@ -57,10 +57,13 @@ describe('useWebSocket - Resubscribe Logic', () => {
       }
     }
 
-    // @ts-ignore
-    global.window = {
-      Echo: mockEcho
+    // Устанавливаем моки для setInterval перед импортом модуля
+    if (!(global as any).window) {
+      (global as any).window = {}
     }
+    (global as any).window.Echo = mockEcho
+    (global as any).window.setInterval = (global.setInterval as any)
+    (global as any).window.clearInterval = (global.clearInterval as any)
 
     // Импортируем и очищаем activeSubscriptions
     vi.resetModules()

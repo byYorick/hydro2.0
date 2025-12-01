@@ -1,54 +1,64 @@
-<script setup>
+<script setup lang="ts">
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
-import PrimaryButton from '@/Components/PrimaryButton.vue';
+import Button from '@/Components/Button.vue';
 import TextInput from '@/Components/TextInput.vue';
-import { useForm } from '@inertiajs/vue3';
+import { useInertiaForm } from '@/composables/useInertiaForm';
+import { route } from '@/utils/route';
 import { ref } from 'vue';
 
 const passwordInput = ref(null);
 const currentPasswordInput = ref(null);
 
-const form = useForm({
-    current_password: '',
-    password: '',
-    password_confirmation: '',
-});
+interface UpdatePasswordFormData {
+    current_password: string;
+    password: string;
+    password_confirmation: string;
+}
 
-const updatePassword = () => {
-    form.put(route('password.update'), {
+const { form, submit: submitForm } = useInertiaForm<UpdatePasswordFormData>(
+    {
+        current_password: '',
+        password: '',
+        password_confirmation: '',
+    },
+    {
+        resetOnSuccess: true,
+        successMessage: 'Пароль успешно обновлен',
         preserveScroll: true,
-        onSuccess: () => form.reset(),
-        onError: () => {
-            if (form.errors.password) {
+        onError: (errors) => {
+            if (errors.password) {
                 form.reset('password', 'password_confirmation');
-                passwordInput.value.focus();
+                passwordInput.value?.focus();
             }
-            if (form.errors.current_password) {
+            if (errors.current_password) {
                 form.reset('current_password');
-                currentPasswordInput.value.focus();
+                currentPasswordInput.value?.focus();
             }
         },
-    });
+    }
+);
+
+const updatePassword = () => {
+    submitForm('put', route('password.update'));
 };
 </script>
 
 <template>
     <section>
         <header>
-            <h2 class="text-lg font-medium text-gray-900">
-                Update Password
+            <h2 class="text-lg font-medium text-neutral-100">
+                Изменение пароля
             </h2>
 
-            <p class="mt-1 text-sm text-gray-600">
-                Ensure your account is using a long, random password to stay
-                secure.
+            <p class="mt-1 text-sm text-neutral-400">
+                Убедитесь, что ваш аккаунт использует длинный, случайный пароль для обеспечения безопасности.
             </p>
         </header>
 
         <form @submit.prevent="updatePassword" class="mt-6 space-y-6">
             <div>
-                <InputLabel for="current_password" value="Current Password" />
+                <InputLabel for="current_password" value="Текущий пароль" />
 
                 <TextInput
                     id="current_password"
@@ -66,7 +76,7 @@ const updatePassword = () => {
             </div>
 
             <div>
-                <InputLabel for="password" value="New Password" />
+                <InputLabel for="password" value="Новый пароль" />
 
                 <TextInput
                     id="password"
@@ -83,7 +93,7 @@ const updatePassword = () => {
             <div>
                 <InputLabel
                     for="password_confirmation"
-                    value="Confirm Password"
+                    value="Подтвердите пароль"
                 />
 
                 <TextInput
@@ -101,7 +111,7 @@ const updatePassword = () => {
             </div>
 
             <div class="flex items-center gap-4">
-                <PrimaryButton :disabled="form.processing">Save</PrimaryButton>
+                <Button variant="primary" :disabled="form.processing">Сохранить</Button>
 
                 <Transition
                     enter-active-class="transition ease-in-out"
@@ -111,9 +121,9 @@ const updatePassword = () => {
                 >
                     <p
                         v-if="form.recentlySuccessful"
-                        class="text-sm text-gray-600"
+                        class="text-sm text-neutral-400"
                     >
-                        Saved.
+                        Сохранено.
                     </p>
                 </Transition>
             </div>

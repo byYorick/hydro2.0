@@ -137,6 +137,7 @@ class FullServiceTestSeeder extends Seeder
                 'timezone' => 'Europe/Moscow',
                 'type' => 'indoor',
                 'coordinates' => ['lat' => 55.7558, 'lon' => 37.6173],
+                'provisioning_token' => 'gh_'.\Illuminate\Support\Str::random(32),
                 'description' => 'Main production greenhouse',
             ]
         );
@@ -148,6 +149,7 @@ class FullServiceTestSeeder extends Seeder
                 'timezone' => 'Europe/Moscow',
                 'type' => 'outdoor',
                 'coordinates' => ['lat' => 55.7558, 'lon' => 37.6174],
+                'provisioning_token' => 'gh_'.\Illuminate\Support\Str::random(32),
                 'description' => 'Secondary production greenhouse',
             ]
         );
@@ -192,6 +194,7 @@ class FullServiceTestSeeder extends Seeder
                     'name' => $data['name'],
                 ],
                 [
+                    'uid' => 'zone-'.\Illuminate\Support\Str::random(16),
                     'description' => "Production zone for {$data['name']}",
                     'status' => $data['status'],
                     'preset_id' => $preset ? $preset->id : null,

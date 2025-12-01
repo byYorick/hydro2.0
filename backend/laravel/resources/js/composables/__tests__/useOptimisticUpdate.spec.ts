@@ -161,15 +161,12 @@ describe('useOptimisticUpdate', () => {
       onError: () => {},
     })
 
-    // Продвигаем время на 1.5 секунды - сначала таймаут, потом операция
+    const timeoutExpectation = expect(promise).rejects.toThrow('Update timeout')
+    
     await vi.advanceTimersByTimeAsync(1500)
-
-    try {
-      await promise
-    } catch {
-      // Ожидаем ошибку таймаута
-    }
-
+    await vi.advanceTimersByTimeAsync(10000)
+    
+    await timeoutExpectation
     expect(rolledBack).toBe(true)
   })
 
@@ -236,6 +233,7 @@ describe('useOptimisticUpdate', () => {
     })
 
     rollbackAll()
+    await vi.advanceTimersByTimeAsync(200)
 
     expect(rollbackCount).toBe(2)
 

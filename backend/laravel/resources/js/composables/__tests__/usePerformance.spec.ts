@@ -22,7 +22,8 @@ describe('usePerformance (P3-4)', () => {
       expect(filtered.value).toEqual([2, 3])
 
       items.value = [4, 5, 6]
-      expect(filtered.value).toEqual([5, 6])
+      // Все элементы [4, 5, 6] больше 1, поэтому фильтр должен вернуть все
+      expect(filtered.value).toEqual([4, 5, 6])
     })
 
     it('should work with computed items', () => {

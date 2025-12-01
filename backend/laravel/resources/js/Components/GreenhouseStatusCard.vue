@@ -1,24 +1,26 @@
 <template>
   <Card class="flex flex-col gap-4 hover:shadow-2xl transition-all duration-200">
-    <div class="flex justify-between gap-4 items-start">
-      <div>
+    <div class="flex justify-between gap-4 items-start min-w-0">
+      <div class="min-w-0 flex-1">
         <div class="text-xs uppercase text-neutral-500 tracking-[0.2em]">{{ greenhouse.type || 'Теплица' }}</div>
         <h3 class="text-lg font-semibold text-neutral-100 truncate">{{ greenhouse.name }}</h3>
         <p v-if="greenhouse.description" class="text-xs text-neutral-500 mt-1 max-h-10 overflow-hidden">
           {{ greenhouse.description }}
         </p>
       </div>
-      <div class="text-right text-xs text-neutral-400">
+      <div class="text-right text-xs text-neutral-400 flex-shrink-0">
         <div>Зон: <span class="font-semibold text-neutral-100">{{ greenhouse.zones_count || 0 }}</span></div>
         <div class="mt-1">Активных: <span class="font-semibold text-emerald-300">{{ greenhouse.zones_running || 0 }}</span></div>
       </div>
     </div>
 
     <div class="grid grid-cols-2 gap-2 md:grid-cols-4 text-xs text-neutral-400">
-      <div v-for="status in zoneStatusList" :key="status.key" class="surface-strong p-3 rounded-xl border border-neutral-800">
-        <div class="flex items-center justify-between">
-          <Badge :variant="status.badge" size="xs">{{ status.label }}</Badge>
-          <span class="text-sm font-semibold text-neutral-100">{{ status.value }}</span>
+      <div v-for="status in zoneStatusList" :key="status.key" class="surface-strong p-3 rounded-xl border border-neutral-800 min-w-0 overflow-hidden">
+        <div class="flex items-center justify-between gap-2 min-w-0">
+          <div class="min-w-0 flex-1 overflow-hidden">
+            <Badge :variant="status.badge" size="xs" class="max-w-full overflow-hidden">{{ status.label }}</Badge>
+          </div>
+          <span class="text-sm font-semibold text-neutral-100 flex-shrink-0 whitespace-nowrap">{{ status.value }}</span>
         </div>
       </div>
     </div>
@@ -48,13 +50,13 @@
         <div
           v-for="zone in highlightZones"
           :key="zone.id"
-          class="flex items-center justify-between gap-2 p-3 rounded-xl border border-neutral-800 surface-strong"
+          class="flex items-center justify-between gap-2 p-3 rounded-xl border border-neutral-800 surface-strong min-w-0 overflow-hidden"
         >
-          <div>
-            <div class="text-sm font-semibold">{{ zone.name }}</div>
-            <div class="text-xs text-neutral-500">{{ zone.description || 'Без описания' }}</div>
+          <div class="min-w-0 flex-1">
+            <div class="text-sm font-semibold truncate">{{ zone.name }}</div>
+            <div class="text-xs text-neutral-500 truncate">{{ zone.description || 'Без описания' }}</div>
           </div>
-          <Badge :variant="zone.status === 'ALARM' ? 'danger' : 'warning'" size="xs">
+          <Badge :variant="zone.status === 'ALARM' ? 'danger' : 'warning'" size="xs" class="flex-shrink-0">
             {{ zone.status }}
           </Badge>
         </div>
@@ -120,3 +122,18 @@ const zoneStatusList = computed(() => {
 
 const highlightZones = computed(() => props.problematicZones || [])
 </script>
+
+<style scoped>
+/* Обработка переполнения для Badge в статусах зон */
+.surface-strong > div > div:first-child {
+  max-width: 100%;
+}
+
+.surface-strong .inline-flex {
+  display: inline-flex;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+</style>

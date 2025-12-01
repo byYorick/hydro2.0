@@ -1,30 +1,55 @@
 #!/bin/bash
-# Скрипт для обновления файла /app/public/hot с правильным URL через прокси
-# В dev режиме используем прокси через nginx на порту 8080
-VITE_URL="http://localhost:8080"
+# Обновляет файл /app/public/hot только если dev-сервер Vite доступен.
+# Это предотвращает бесконечные перезагрузки браузера, когда hot-файл существует,
+# а dev-сервер не запущен или недоступен.
 
-# Убеждаемся, что директория public доступна для записи
-chmod 777 /app/public 2>/dev/null || true
-chown -R application:application /app/public 2>/dev/null || true
+set -o errexit
+set -o nounset
+set -o pipefail
 
-# Обновляем файл сразу при запуске
-echo "$VITE_URL" > /app/public/hot
-chmod 666 /app/public/hot 2>/dev/null || chmod 777 /app/public/hot 2>/dev/null || true
-chown application:application /app/public/hot 2>/dev/null || true
-echo "Updated /app/public/hot to $VITE_URL"
+HOT_FILE="/app/public/hot"
+VITE_URL="${VITE_DEV_SERVER_URL:-http://localhost:8080}"
+PING_URL="${VITE_URL%/}/@vite/client"
+CHECK_INTERVAL=${CHECK_INTERVAL:-5}
 
-# Периодически проверяем и обновляем файл
-while true; do
-    CURRENT=$(cat /app/public/hot 2>/dev/null || echo "")
-    # Игнорируем шаблонные значения (содержат ${ или $)
-    if [[ "$CURRENT" == *'${'* ]] || [[ "$CURRENT" == *'$'* ]] || [ "$CURRENT" != "$VITE_URL" ]; then
-        if [ "$CURRENT" != "$VITE_URL" ]; then
-            echo "$VITE_URL" > /app/public/hot
-            chmod 666 /app/public/hot 2>/dev/null || chmod 777 /app/public/hot 2>/dev/null || true
-            chown application:application /app/public/hot 2>/dev/null || true
-            echo "$(date): Updated /app/public/hot from '$CURRENT' to '$VITE_URL'"
-        fi
+ensure_permissions() {
+    chmod 777 /app/public 2>/dev/null || true
+    chown -R application:application /app/public 2>/dev/null || true
+}
+
+write_hot_file() {
+    local current
+    current="$(cat "$HOT_FILE" 2>/dev/null || echo "")"
+
+    # Не перезаписываем, если значение уже корректное
+    if [[ "$current" == "$VITE_URL" ]]; then
+        return
     fi
-    sleep 3
-done
 
+    echo "$VITE_URL" > "$HOT_FILE"
+    chmod 666 "$HOT_FILE" 2>/dev/null || chmod 777 "$HOT_FILE" 2>/dev/null || true
+    chown application:application "$HOT_FILE" 2>/dev/null || true
+    echo "$(date): Updated $HOT_FILE to $VITE_URL"
+}
+
+remove_hot_file() {
+    if [ -f "$HOT_FILE" ]; then
+        rm -f "$HOT_FILE" 2>/dev/null || true
+        echo "$(date): Removed $HOT_FILE because Vite dev server is unreachable"
+    fi
+}
+
+is_vite_available() {
+    curl -sf --max-time 1 --connect-timeout 1 "$PING_URL" >/dev/null 2>&1
+}
+
+ensure_permissions
+
+while true; do
+    if is_vite_available; then
+        write_hot_file
+    else
+        remove_hot_file
+    fi
+    sleep "$CHECK_INTERVAL"
+done

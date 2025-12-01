@@ -138,6 +138,7 @@ import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
 import Modal from '@/Components/Modal.vue'
+import { logger } from '@/utils/logger'
 
 interface SystemLog {
   id: number
@@ -182,9 +183,16 @@ const getLevelVariant = (level?: string): string => {
 const loadLogs = async () => {
   loading.value = true
   try {
-    await router.reload({ only: ['logs'] })
+    // Используем router.reload с only для обновления только логов без сброса состояния
+    // Это лучше, чем полный reload, так как сохраняет фильтры и scroll
+    await router.reload({ 
+      only: ['logs'], 
+      preserveScroll: true,
+      preserveState: true 
+    })
   } catch (err) {
-    console.error('Failed to load logs:', err)
+    logger.error('[Audit/Index] Failed to load logs:', err)
+    showToast('Ошибка загрузки логов', 'error', TOAST_TIMEOUT.LONG)
   } finally {
     loading.value = false
   }

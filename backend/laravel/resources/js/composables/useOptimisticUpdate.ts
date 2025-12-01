@@ -87,8 +87,11 @@ export function useOptimisticUpdate() {
     // Создаем запись о pending обновлении
     let timeoutId: NodeJS.Timeout | null = null
     
+    let timeoutError: Error | null = null
+
     if (timeout > 0) {
       timeoutId = setTimeout(() => {
+        timeoutError = new Error('Update timeout')
         logger.warn(`[useOptimisticUpdate] Update ${updateId} timed out, rolling back`)
         rollback()
         pendingUpdates.value.delete(updateId)
@@ -96,7 +99,7 @@ export function useOptimisticUpdate() {
           isUpdating.value = false
         }
         if (onError) {
-          onError(new Error('Update timeout'))
+          onError(timeoutError)
         }
       }, timeout)
     }
@@ -126,12 +129,14 @@ export function useOptimisticUpdate() {
         result = {} as T
       }
       
-      // Очищаем timeout
       if (timeoutId) {
         clearTimeout(timeoutId)
       }
       
-      // Удаляем из pending
+      if (timeoutError) {
+        throw timeoutError
+      }
+      
       pendingUpdates.value.delete(updateId)
       
       if (showLoading) {
@@ -147,25 +152,21 @@ export function useOptimisticUpdate() {
       // Ошибка - откатываем изменения
       logger.error(`[useOptimisticUpdate] Update ${updateId} failed, rolling back:`, error)
       
-      // Очищаем timeout
       if (timeoutId) {
         clearTimeout(timeoutId)
       }
       
-      // Откатываем изменения
+      const err = error instanceof Error ? error : new Error(String(error))
+
+      if (!timeoutError) {
       rollback()
-      
-      // Удаляем из pending
       pendingUpdates.value.delete(updateId)
-      
       if (showLoading) {
         isUpdating.value = false
       }
-      
-      const err = error instanceof Error ? error : new Error(String(error))
-      
       if (onError) {
         onError(err)
+        }
       }
       
       throw err

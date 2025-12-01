@@ -12,11 +12,16 @@ class Greenhouse extends Model
 
     protected $fillable = [
         'uid',
+        'provisioning_token',
         'name',
         'timezone',
         'type',
         'coordinates',
         'description',
+    ];
+
+    protected $hidden = [
+        'provisioning_token', // Скрываем токен от API-ответов
     ];
 
     protected $casts = [

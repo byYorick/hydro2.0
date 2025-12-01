@@ -2,8 +2,7 @@
   <TransitionGroup
     name="toast-group"
     tag="div"
-    class="fixed top-4 right-4 z-[10000] space-y-2 pointer-events-none"
-    style="position: fixed !important; top: 1rem !important; right: 1rem !important; z-index: 10000 !important; pointer-events: none;"
+    class="fixed z-[10000] pointer-events-none space-y-2 left-4 right-4 bottom-[calc(env(safe-area-inset-bottom,0px)+4.5rem)] sm:left-auto sm:right-4 sm:bottom-auto sm:top-4"
   >
     <div
       v-for="toast in toasts"

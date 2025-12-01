@@ -110,9 +110,10 @@
 import { ref, watch, computed } from 'vue'
 import Modal from './Modal.vue'
 import Button from './Button.vue'
-import axios from 'axios'
 import { logger } from '@/utils/logger'
 import { router } from '@inertiajs/vue3'
+import { useApi } from '@/composables/useApi'
+import { useToast } from '@/composables/useToast'
 
 interface Props {
   show: boolean
@@ -138,10 +139,13 @@ const emit = defineEmits<{
   published: []
 }>()
 
-const loading = ref(false)
-const publishing = ref(false)
+const { showToast } = useToast()
+const { api } = useApi(showToast)
+
+const loading = ref<boolean>(false)
+const publishing = ref<boolean>(false)
 const channels = ref<Channel[]>([])
-const errorMessage = ref('')
+const errorMessage = ref<string>('')
 
 const availableTypes = [
   { value: 'sensor', label: 'Sensor' },
@@ -194,16 +198,20 @@ async function loadNodeConfig() {
   errorMessage.value = ''
 
   try {
-    const response = await axios.get(`/api/nodes/${props.nodeId}/config`, {
-      headers: {
-        'Accept': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest',
-      },
-    })
+    interface ConfigResponse {
+      data?: {
+        config?: {
+          channels?: Channel[]
+        }
+      }
+    }
+
+    const response = await api.get<ConfigResponse>(`/nodes/${props.nodeId}/config`)
 
     const payload = response.data?.data?.config?.channels || []
     channels.value = Array.isArray(payload) ? payload.map(normalizeChannel) : []
-  } catch (error: any) {
+  } catch (error) {
+    // Ошибка уже обработана в useApi через showToast
     logger.error('Failed to load node config:', error)
     errorMessage.value = 'Не удалось загрузить каналы. Попробуйте позже.'
     channels.value = []
@@ -238,21 +246,33 @@ async function onPublish() {
       max: channel.max ?? undefined,
     }))
 
-    await axios.post(`/api/nodes/${props.nodeId}/config/publish`, {
-      config: {
-        channels: sanitizedChannels,
-      },
-    }, {
-      headers: {
-        'Accept': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest',
-      },
-    })
+    const response = await api.post(
+      `/nodes/${props.nodeId}/config/publish`,
+      {
+        config: {
+          channels: sanitizedChannels,
+        },
+      }
+    )
 
+    // Обновляем устройство в store из ответа API, если он содержит данные
+    try {
+      const responseData = response.data?.data || response.data
+      if (responseData?.id) {
+        const { useDevicesStore } = await import('@/stores/devices')
+        const devicesStore = useDevicesStore()
+        devicesStore.upsert(responseData)
+        logger.debug('[NodeConfigModal] Device updated in store after config publish', { deviceId: responseData.id })
+      }
+    } catch (storeError) {
+      logger.warn('[NodeConfigModal] Failed to update device store', { error: storeError })
+    }
+    
+    showToast('Конфигурация успешно опубликована', 'success', TOAST_TIMEOUT.NORMAL)
     emit('published')
     emit('close')
-    router.reload({ only: ['devices'] })
-  } catch (error: any) {
+  } catch (error) {
+    // Ошибка уже обработана в useApi через showToast
     logger.error('Failed to publish node config:', error)
     errorMessage.value = error.response?.data?.message || 'Ошибка при публикации конфигурации'
   } finally {

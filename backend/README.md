@@ -12,7 +12,6 @@ Backend-сервисы для гидропонной системы управл
 
 ### Быстрые гайды
 - **Мониторинг:** `MONITORING_QUICK_START.md` - быстрый старт
-- **Исправления Prometheus:** `PROMETHEUS_FIX_SUMMARY.md`
 - **Анализ логов:** `LOGS_ANALYSIS.md`
 
 ### История изменений

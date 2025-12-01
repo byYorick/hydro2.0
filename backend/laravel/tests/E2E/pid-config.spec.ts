@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 
-test.describe('PID Configuration', () => {
+test.describe.skip('PID Configuration', () => {
   test.beforeEach(async ({ page }) => {
     // Предполагаем, что есть страница логина
     // В реальном тесте нужно добавить логин

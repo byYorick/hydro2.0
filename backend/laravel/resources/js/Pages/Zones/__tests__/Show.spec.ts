@@ -65,12 +65,29 @@ const sampleEvents = [
 const axiosGetMock = vi.hoisted(() => vi.fn())
 const axiosPostMock = vi.hoisted(() => vi.fn())
 
-vi.mock('axios', () => ({
-  default: {
+vi.mock('axios', () => {
+  const axiosInstance = {
     get: (url: string, config?: any) => axiosGetMock(url, config),
     post: (url: string, data?: any, config?: any) => axiosPostMock(url, data, config),
-  },
-}))
+    interceptors: {
+      request: {
+        use: vi.fn(),
+        eject: vi.fn(),
+      },
+      response: {
+        use: vi.fn(),
+        eject: vi.fn(),
+      },
+    },
+  }
+
+  return {
+    default: {
+      ...axiosInstance,
+      create: () => axiosInstance,
+    },
+  }
+})
 
 const usePageMock = vi.hoisted(() => vi.fn(() => ({
   props: {
@@ -90,6 +107,20 @@ const usePageMockInstance = usePageMock()
 vi.mock('@inertiajs/vue3', () => ({
   usePage: () => usePageMockInstance,
   Link: { name: 'Link', props: ['href'], template: '<a :href="href"><slot /></a>' },
+  router: {
+    reload: vi.fn(),
+  },
+}))
+
+vi.mock('@/stores/zones', () => ({
+  useZonesStore: () => ({
+    allZones: [],
+    cacheVersion: 0,
+    initFromProps: vi.fn(),
+    upsert: vi.fn(),
+    remove: vi.fn(),
+    invalidateCache: vi.fn(),
+  }),
 }))
 
 import ZonesShow from '../Show.vue'
@@ -125,7 +156,8 @@ describe('Zones/Show.vue', () => {
   it('отображает статус зоны с правильным вариантом', () => {
     const wrapper = mount(ZonesShow)
     
-    expect(wrapper.text()).toContain('RUNNING')
+    // Статус переводится через translateStatus, поэтому ищем переведенный текст
+    expect(wrapper.text()).toContain('Запущено') // RUNNING переводится как "Запущено"
     const badge = wrapper.findComponent({ name: 'Badge' })
     expect(badge.props('variant')).toBe('success')
   })
@@ -164,19 +196,22 @@ describe('Zones/Show.vue', () => {
     
     expect(wrapper.text()).toContain('Zone started')
     expect(wrapper.text()).toContain('High temperature')
-    expect(wrapper.text()).toContain('INFO')
-    expect(wrapper.text()).toContain('WARNING')
+    // События отображаются с переведенными типами
+    expect(wrapper.text()).toContain('Информация') // INFO переводится как "Информация"
+    expect(wrapper.text()).toContain('Предупреждение') // WARNING переводится как "Предупреждение"
   })
 
   it('отображает блок Cycles', () => {
     const wrapper = mount(ZonesShow)
     
-    expect(wrapper.text()).toContain('Cycles')
-    expect(wrapper.text()).toContain('PH_CONTROL')
-    expect(wrapper.text()).toContain('EC_CONTROL')
-    expect(wrapper.text()).toContain('IRRIGATION')
-    expect(wrapper.text()).toContain('LIGHTING')
-    expect(wrapper.text()).toContain('CLIMATE')
+    // "Cycles" переводится как "Циклы"
+    expect(wrapper.text()).toContain('Циклы')
+    // Типы циклов переведены на русский
+    expect(wrapper.text()).toContain('Контроль pH')
+    expect(wrapper.text()).toContain('Контроль EC')
+    expect(wrapper.text()).toContain('Полив')
+    expect(wrapper.text()).toContain('Освещение')
+    expect(wrapper.text()).toContain('Климат')
   })
 
   it('показывает кнопки управления только для операторов и админов', () => {
@@ -184,9 +219,10 @@ describe('Zones/Show.vue', () => {
     
     const buttons = wrapper.findAllComponents({ name: 'Button' })
     expect(buttons.length).toBeGreaterThan(0)
-    expect(wrapper.text()).toContain('Pause')
-    expect(wrapper.text()).toContain('Irrigate Now')
-    expect(wrapper.text()).toContain('Next Phase')
+    // Кнопки на русском языке
+    expect(wrapper.text()).toContain('Приостановить')
+    expect(wrapper.text()).toContain('Полить сейчас')
+    expect(wrapper.text()).toContain('Следующая фаза')
   })
 
   it('загружает графики с правильными параметрами времени', async () => {
@@ -221,10 +257,10 @@ describe('Zones/Show.vue', () => {
     expect(wrapper.exists()).toBe(true)
     await new Promise(resolve => setTimeout(resolve, 100))
     
-    // Проверяем что компонент отрендерился и содержит текст
-    expect(wrapper.text()).toBeTruthy()
+    // Проверяем что компонент отрендерился и содержит кнопку "Приостановить"
+    expect(wrapper.text()).toContain('Приостановить')
     // Моки кнопок могут не работать, поэтому просто проверяем что компонент работает
-    expect(wrapper.text()).toContain('Pause')
+    expect(wrapper.text()).toBeTruthy()
   })
 
   it('отправляет команду полива при клике на Irrigate Now', async () => {
@@ -234,8 +270,8 @@ describe('Zones/Show.vue', () => {
     expect(wrapper.exists()).toBe(true)
     await new Promise(resolve => setTimeout(resolve, 100))
     
-    // Проверяем что компонент отрендерился и содержит кнопку Irrigate
-    expect(wrapper.text()).toContain('Irrigate')
+    // Проверяем что компонент отрендерился и содержит кнопку "Полить сейчас"
+    expect(wrapper.text()).toContain('Полить сейчас')
     // Моки кнопок могут не работать, поэтому просто проверяем что компонент работает
     expect(wrapper.text()).toBeTruthy()
   })
@@ -272,17 +308,17 @@ describe('Zones/Show.vue', () => {
     const wrapper = mount(ZonesShow)
     expect(wrapper.exists()).toBe(true)
     
-    // Проверяем, что Badge получает правильный variant для RUNNING
-    expect(wrapper.text()).toContain('RUNNING')
+    // Проверяем, что Badge получает правильный variant для RUNNING (переведен как "Запущено")
+    expect(wrapper.text()).toContain('Запущено')
     const badges = wrapper.findAllComponents({ name: 'Badge' })
     if (badges.length > 0) {
-      const statusBadge = badges.find(b => b.text().includes('RUNNING'))
+      const statusBadge = badges.find(b => b.text().includes('Запущено'))
       if (statusBadge) {
         expect(statusBadge.props('variant')).toBe('success')
       }
     } else {
       // Если badges не найдены, проверяем что текст есть
-      expect(wrapper.text()).toContain('RUNNING')
+      expect(wrapper.text()).toContain('Запущено')
     }
   })
 
@@ -290,8 +326,8 @@ describe('Zones/Show.vue', () => {
     const wrapper = mount(ZonesShow)
     expect(wrapper.exists()).toBe(true)
     
-    // Проверяем, что блок Cycles отображается
-    expect(wrapper.text()).toContain('Cycles')
+    // Проверяем, что блок Cycles отображается (переведен как "Циклы")
+    expect(wrapper.text()).toContain('Циклы')
     // Форматирование времени может быть '-' для пустых значений
     expect(wrapper.text()).toBeTruthy()
   })
@@ -303,8 +339,8 @@ describe('Zones/Show.vue', () => {
     expect(wrapper.exists()).toBe(true)
     await new Promise(resolve => setTimeout(resolve, 100))
     
-    // Проверяем что блок Cycles отображается
-    expect(wrapper.text()).toContain('Cycles')
+    // Проверяем что блок Cycles отображается (переведен как "Циклы")
+    expect(wrapper.text()).toContain('Циклы')
     // Моки кнопок могут не работать, поэтому просто проверяем что компонент работает
     expect(wrapper.text()).toBeTruthy()
   })

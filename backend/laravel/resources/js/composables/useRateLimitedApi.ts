@@ -4,6 +4,7 @@
 import { ref, type Ref } from 'vue'
 import { useApi, type ToastHandler } from './useApi'
 import { logger } from '@/utils/logger'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
 
 export interface RateLimitedRequestOptions {
   retries?: number
@@ -94,7 +95,7 @@ export function useRateLimitedApi(showToast?: ToastHandler) {
           logger.warn(`[useRateLimitedApi] Rate limit hit, retrying after ${delayMs}ms (from Retry-After header)`)
           
           if (showToast && attempt === 0) {
-            showToast('Превышен лимит запросов. Повторная попытка...', 'warning', 3000)
+            showToast('Превышен лимит запросов. Повторная попытка...', 'warning', TOAST_TIMEOUT.NORMAL)
           }
           
           await sleep(delayMs)
@@ -106,7 +107,7 @@ export function useRateLimitedApi(showToast?: ToastHandler) {
           if (isRateLimit) {
             logger.error(`[useRateLimitedApi] Rate limit exceeded after ${retries} retries`)
             if (showToast) {
-              showToast('Превышен лимит запросов. Попробуйте позже.', 'error', 5000)
+              showToast('Превышен лимит запросов. Попробуйте позже.', 'error', TOAST_TIMEOUT.LONG)
             }
           }
           throw err
@@ -124,7 +125,7 @@ export function useRateLimitedApi(showToast?: ToastHandler) {
         }
         
         if (showToast && attempt === 0 && !isRateLimit) {
-          showToast('Ошибка запроса. Повторная попытка...', 'warning', 3000)
+          showToast('Ошибка запроса. Повторная попытка...', 'warning', TOAST_TIMEOUT.NORMAL)
         }
         
         await sleep(delay)

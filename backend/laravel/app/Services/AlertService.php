@@ -17,15 +17,18 @@ class AlertService
             $alert = Alert::create($data);
             Log::info('Alert created', ['alert_id' => $alert->id, 'type' => $alert->type]);
             
-            // Dispatch event для realtime обновлений
-            event(new \App\Events\AlertCreated([
-                'id' => $alert->id,
-                'type' => $alert->type,
-                'status' => $alert->status,
-                'zone_id' => $alert->zone_id,
-                'details' => $alert->details,
-                'created_at' => $alert->created_at,
-            ]));
+            // Dispatch event для realtime обновлений после коммита транзакции
+            // Это предотвращает отправку фантомных алертов при откате транзакции
+            DB::afterCommit(function () use ($alert) {
+                event(new \App\Events\AlertCreated([
+                    'id' => $alert->id,
+                    'type' => $alert->type,
+                    'status' => $alert->status,
+                    'zone_id' => $alert->zone_id,
+                    'details' => $alert->details,
+                    'created_at' => $alert->created_at,
+                ]));
+            });
             
             return $alert;
         });

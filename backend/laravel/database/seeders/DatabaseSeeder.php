@@ -18,6 +18,9 @@ class DatabaseSeeder extends Seeder
         // Seed presets (plant growing presets)
         $this->call(PresetSeeder::class);
 
+        // Seed базовые растения и словари
+        $this->call(PlantTaxonomySeeder::class);
+
         // Seed demo data (only in development)
         if (app()->environment('local', 'development')) {
             // Полное заполнение всех таблиц для тестирования всех сервисов

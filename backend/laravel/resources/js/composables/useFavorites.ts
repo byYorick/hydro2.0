@@ -2,6 +2,7 @@
  * Composable для работы с избранными зонами и устройствами
  */
 import { ref, computed, watch } from 'vue'
+import { logger } from '@/utils/logger'
 
 interface FavoritesState {
   zones: number[]
@@ -25,7 +26,7 @@ function loadFromStorage(): FavoritesState {
       return JSON.parse(stored)
     }
   } catch (err) {
-    console.error('[useFavorites] Failed to load from localStorage:', err)
+    logger.error('[useFavorites] Failed to load from localStorage:', err)
   }
   return defaultState
 }
@@ -37,7 +38,7 @@ function saveToStorage(state: FavoritesState): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
   } catch (err) {
-    console.error('[useFavorites] Failed to save to localStorage:', err)
+    logger.error('[useFavorites] Failed to save to localStorage:', err)
   }
 }
 

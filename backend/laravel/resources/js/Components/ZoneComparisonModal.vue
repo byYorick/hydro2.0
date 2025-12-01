@@ -244,7 +244,9 @@ async function loadTelemetryData(): Promise<void> {
           }
           telemetryData.value.get(zoneId)?.set(metric.key, data)
         } catch (err) {
-          console.error(`[ZoneComparisonModal] Failed to load ${metric.key} for zone ${zoneId}:`, err)
+          import('@/utils/logger').then(({ logger }) => {
+            logger.error(`[ZoneComparisonModal] Failed to load ${metric.key} for zone ${zoneId}:`, err)
+          })
         }
       })
     )

@@ -270,6 +270,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { usePidConfig } from '@/composables/usePidConfig'
+import { logger } from '@/utils/logger'
 import Card from './Card.vue'
 import Button from './Button.vue'
 import type { PidConfig, PidConfigWithMeta } from '@/types/PidConfig'
@@ -318,7 +319,7 @@ async function loadConfig() {
       form.value = { ...config.config }
     }
   } catch (error) {
-    console.error('Failed to load PID config:', error)
+    logger.error('[PidConfigForm] Failed to load PID config:', error)
   }
 }
 
@@ -333,7 +334,7 @@ async function onSubmit() {
     emit('saved', saved)
     confirmed.value = false
   } catch (error) {
-    console.error('Failed to save PID config:', error)
+    logger.error('[PidConfigForm] Failed to save PID config:', error)
   }
 }
 
