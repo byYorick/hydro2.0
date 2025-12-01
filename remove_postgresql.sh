@@ -66,22 +66,24 @@ fi
 
 log_info "Удаление пакетов PostgreSQL и TimescaleDB..."
 
-# Удаляем TimescaleDB
-if dpkg -l | grep -q "timescaledb"; then
+# Удаляем TimescaleDB (только установленные пакеты)
+if dpkg -l | grep -q "^ii.*timescaledb"; then
     log_info "Удаление TimescaleDB..."
-    apt-get remove -y --purge timescaledb-2-postgresql-* 2>/dev/null || true
+    INSTALLED_TIMESCALE=$(dpkg -l | grep "^ii.*timescaledb" | awk '{print $2}')
+    for pkg in $INSTALLED_TIMESCALE; do
+        log_info "  Удаление: $pkg"
+        apt-get remove -y --purge "$pkg" 2>/dev/null || true
+    done
 fi
 
-# Удаляем PostgreSQL
-if dpkg -l | grep -q "postgresql"; then
+# Удаляем PostgreSQL (только установленные пакеты)
+if dpkg -l | grep -q "^ii.*postgresql"; then
     log_info "Удаление PostgreSQL..."
-    apt-get remove -y --purge postgresql-* postgresql-contrib-* 2>/dev/null || true
-fi
-
-# Удаляем клиентские утилиты
-if dpkg -l | grep -q "postgresql-client"; then
-    log_info "Удаление PostgreSQL клиента..."
-    apt-get remove -y --purge postgresql-client-* 2>/dev/null || true
+    INSTALLED_POSTGRES=$(dpkg -l | grep "^ii.*postgresql" | awk '{print $2}')
+    for pkg in $INSTALLED_POSTGRES; do
+        log_info "  Удаление: $pkg"
+        apt-get remove -y --purge "$pkg" 2>/dev/null || true
+    done
 fi
 
 # Автоочистка

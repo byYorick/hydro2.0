@@ -162,47 +162,182 @@ fi
 # ============================================================================
 
 log_info "Установка PostgreSQL 16 с TimescaleDB..."
-if ! command -v psql &> /dev/null; then
-    # Установка PostgreSQL (используем современный метод без apt-key)
-    log_info "Добавление репозитория PostgreSQL..."
+
+# Проверяем, установлен ли PostgreSQL правильно
+POSTGRES_INSTALLED=false
+if command -v psql &> /dev/null; then
+    # Проверяем, что это действительно PostgreSQL 16
+    PSQL_VERSION=$(psql --version 2>/dev/null | grep -oP '\d+' | head -1 || echo "")
+    if [ "$PSQL_VERSION" = "16" ]; then
+        # Проверяем, что пакет установлен
+        if dpkg -l | grep -q "^ii.*postgresql-16"; then
+            POSTGRES_INSTALLED=true
+            log_info "PostgreSQL 16 уже установлен"
+        fi
+    fi
+fi
+
+if [ "$POSTGRES_INSTALLED" = "false" ]; then
+    # ============================================================================
+    # Полная установка PostgreSQL 16
+    # ============================================================================
+    
+    log_info "Начинаем полную установку PostgreSQL 16..."
+    
+    # Шаг 1: Добавление репозитория PostgreSQL
+    log_info "Шаг 1: Добавление репозитория PostgreSQL..."
     mkdir -p /etc/apt/keyrings
     
     # Удаляем старые файлы, если они есть
     rm -f /etc/apt/sources.list.d/pgdg.list /etc/apt/keyrings/postgresql.gpg
     
+    # Определяем кодовое имя дистрибутива
+    DISTRO_CODENAME=$(lsb_release -cs)
+    log_info "Кодовое имя дистрибутива: $DISTRO_CODENAME"
+    
     # Добавляем репозиторий PostgreSQL
-    sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
-    wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/keyrings/postgresql.gpg
+    log_info "Загрузка GPG ключа PostgreSQL..."
+    if ! wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/keyrings/postgresql.gpg; then
+        log_error "Не удалось загрузить GPG ключ PostgreSQL"
+        exit 1
+    fi
     chmod 644 /etc/apt/keyrings/postgresql.gpg
-    sh -c 'echo "deb [signed-by=/etc/apt/keyrings/postgresql.gpg] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
     
-    log_info "Обновление списка пакетов..."
-    apt-get update -qq
+    log_info "Добавление репозитория в sources.list..."
+    echo "deb [signed-by=/etc/apt/keyrings/postgresql.gpg] https://apt.postgresql.org/pub/repos/apt $DISTRO_CODENAME-pgdg main" > /etc/apt/sources.list.d/pgdg.list
     
-    log_info "Установка PostgreSQL 16..."
-    apt-get install -y -qq postgresql-16 postgresql-contrib-16
+    # Проверяем, что файл создан
+    if [ ! -f "/etc/apt/sources.list.d/pgdg.list" ]; then
+        log_error "Не удалось создать файл репозитория"
+        exit 1
+    fi
     
-    # Установка TimescaleDB (используем современный метод)
+    # Шаг 2: Обновление списка пакетов
+    log_info "Шаг 2: Обновление списка пакетов..."
+    if ! apt-get update; then
+        log_error "Ошибка при обновлении списка пакетов"
+        log_error "Проверьте доступность репозитория: cat /etc/apt/sources.list.d/pgdg.list"
+        exit 1
+    fi
+    
+    # Проверяем доступность пакетов
+    log_info "Проверка доступности пакетов PostgreSQL 16..."
+    if ! apt-cache show postgresql-16 &>/dev/null; then
+        log_error "Пакет postgresql-16 не найден в репозитории"
+        log_error "Проверьте репозиторий: apt-cache search postgresql-16"
+        exit 1
+    fi
+    
+    # Шаг 3: Установка PostgreSQL 16
+    log_info "Шаг 3: Установка PostgreSQL 16 и contrib..."
+    if ! apt-get install -y postgresql-16 postgresql-contrib-16; then
+        log_error "Ошибка при установке PostgreSQL 16"
+        log_error "Проверьте логи: tail -50 /var/log/apt/history.log"
+        exit 1
+    fi
+    
+    # Шаг 4: Проверка установки PostgreSQL
+    log_info "Шаг 4: Проверка установки PostgreSQL..."
+    
+    # Проверяем наличие команды psql
+    if ! command -v psql &> /dev/null; then
+        log_warn "Команда psql не найдена в PATH, ищем в стандартных местах..."
+        # Добавляем путь к PostgreSQL в PATH для текущей сессии
+        export PATH="$PATH:/usr/lib/postgresql/16/bin"
+        if ! command -v psql &> /dev/null; then
+            log_error "PostgreSQL установлен, но команда psql недоступна"
+            log_error "Проверьте установку: dpkg -l | grep postgresql"
+            log_error "Попробуйте: export PATH=\$PATH:/usr/lib/postgresql/16/bin"
+            exit 1
+        fi
+    fi
+    
+    # Проверяем версию
+    PSQL_VERSION=$(psql --version 2>/dev/null | head -1)
+    if [ -z "$PSQL_VERSION" ]; then
+        log_error "Не удалось определить версию PostgreSQL"
+        exit 1
+    fi
+    log_info "Установлена версия: $PSQL_VERSION"
+    
+    # Проверяем установленные пакеты
+    INSTALLED_PACKAGES=$(dpkg -l | grep "^ii.*postgresql-16" | wc -l)
+    log_info "Установлено пакетов PostgreSQL 16: $INSTALLED_PACKAGES"
+    
+    if [ "$INSTALLED_PACKAGES" -lt 2 ]; then
+        log_warn "Установлено меньше пакетов, чем ожидалось"
+    fi
+    
+    # Шаг 5: Установка TimescaleDB
+    log_info "Шаг 5: Установка TimescaleDB..."
+    
+    # Добавляем репозиторий TimescaleDB
     log_info "Добавление репозитория TimescaleDB..."
     rm -f /etc/apt/sources.list.d/timescaledb.list /etc/apt/keyrings/timescaledb.gpg
     
-    sh -c 'echo "deb https://packagecloud.io/timescale/timescaledb/ubuntu/ $(lsb_release -c -s) main" > /etc/apt/sources.list.d/timescaledb.list'
-    wget --quiet -O - https://packagecloud.io/timescale/timescaledb/gpgkey | gpg --dearmor -o /etc/apt/keyrings/timescaledb.gpg
-    chmod 644 /etc/apt/keyrings/timescaledb.gpg
-    sh -c 'echo "deb [signed-by=/etc/apt/keyrings/timescaledb.gpg] https://packagecloud.io/timescale/timescaledb/ubuntu/ $(lsb_release -c -s) main" > /etc/apt/sources.list.d/timescaledb.list'
+    # Определяем кодовое имя для Ubuntu
+    UBUNTU_CODENAME=$(lsb_release -c -s)
+    log_info "Кодовое имя Ubuntu: $UBUNTU_CODENAME"
     
-    log_info "Обновление списка пакетов для TimescaleDB..."
-    apt-get update -qq
+    log_info "Загрузка GPG ключа TimescaleDB..."
+    if ! wget --quiet -O - https://packagecloud.io/timescale/timescaledb/gpgkey | gpg --dearmor -o /etc/apt/keyrings/timescaledb.gpg; then
+        log_warn "Не удалось загрузить GPG ключ TimescaleDB"
+        log_warn "Продолжаем без TimescaleDB"
+    else
+        chmod 644 /etc/apt/keyrings/timescaledb.gpg
+        echo "deb [signed-by=/etc/apt/keyrings/timescaledb.gpg] https://packagecloud.io/timescale/timescaledb/ubuntu/ $UBUNTU_CODENAME main" > /etc/apt/sources.list.d/timescaledb.list
+        
+        log_info "Обновление списка пакетов для TimescaleDB..."
+        if ! apt-get update -qq; then
+            log_warn "Ошибка при обновлении списка пакетов для TimescaleDB"
+            log_warn "Продолжаем без TimescaleDB"
+        else
+            # Проверяем доступность пакета
+            if apt-cache show timescaledb-2-postgresql-16 &>/dev/null; then
+                log_info "Установка TimescaleDB..."
+                if apt-get install -y timescaledb-2-postgresql-16; then
+                    log_info "TimescaleDB установлен успешно"
+                    
+                    # Настройка TimescaleDB
+                    log_info "Настройка TimescaleDB..."
+                    if command -v timescaledb-tune &> /dev/null; then
+                        if timescaledb-tune --quiet --yes; then
+                            log_info "TimescaleDB настроен успешно"
+                        else
+                            log_warn "Не удалось настроить TimescaleDB автоматически"
+                            log_warn "Выполните вручную: sudo timescaledb-tune"
+                        fi
+                    else
+                        log_warn "Команда timescaledb-tune не найдена"
+                    fi
+                else
+                    log_warn "Ошибка при установке TimescaleDB"
+                    log_warn "Продолжаем без TimescaleDB (можно установить позже)"
+                fi
+            else
+                log_warn "Пакет timescaledb-2-postgresql-16 не найден в репозитории"
+                log_warn "Продолжаем без TimescaleDB"
+            fi
+        fi
+    fi
     
-    log_info "Установка TimescaleDB..."
-    apt-get install -y -qq timescaledb-2-postgresql-16
+    # Финальная проверка установки
+    log_info "Финальная проверка установки PostgreSQL..."
     
-    log_info "Настройка TimescaleDB..."
-    timescaledb-tune --quiet --yes
+    # Проверяем наличие основных команд
+    for cmd in psql pg_ctl pg_config; do
+        if command -v "$cmd" &> /dev/null; then
+            log_info "  ✓ $cmd доступен"
+        else
+            log_warn "  ✗ $cmd не найден"
+        fi
+    done
     
-    log_info "PostgreSQL 16 и TimescaleDB установлены успешно"
-else
-    log_info "PostgreSQL уже установлен"
+    # Проверяем установленные пакеты
+    log_info "Установленные пакеты PostgreSQL:"
+    dpkg -l | grep "^ii.*postgresql" | awk '{print "  - " $2 " (" $3 ")"}'
+    
+    log_info "PostgreSQL 16 установлен и готов к использованию!"
 fi
 
 # Настройка и запуск PostgreSQL
