@@ -217,6 +217,50 @@ else
     log_warn "Или проверьте доступные сервисы: systemctl list-unit-files | grep postgresql"
 fi
 
+# Настройка PostgreSQL для приема TCP/IP подключений
+log_info "Настройка PostgreSQL для TCP/IP подключений..."
+# Находим конфигурационный файл PostgreSQL
+PG_VERSION=$(psql --version 2>/dev/null | awk '{print $3}' | cut -d. -f1,2 || echo "16")
+PG_CONF="/etc/postgresql/${PG_VERSION}/main/postgresql.conf"
+PG_HBA="/etc/postgresql/${PG_VERSION}/main/pg_hba.conf"
+
+if [ -f "$PG_CONF" ]; then
+    # Настраиваем listen_addresses для приема подключений на localhost
+    if ! grep -q "^listen_addresses" "$PG_CONF"; then
+        echo "listen_addresses = 'localhost'" >> "$PG_CONF"
+        log_info "Добавлен listen_addresses в $PG_CONF"
+    elif ! grep -q "^listen_addresses.*localhost" "$PG_CONF"; then
+        sed -i "s/^#listen_addresses.*/listen_addresses = 'localhost'/" "$PG_CONF"
+        sed -i "s/^listen_addresses.*/listen_addresses = 'localhost'/" "$PG_CONF"
+        log_info "Обновлен listen_addresses в $PG_CONF"
+    fi
+    
+    # Перезапускаем PostgreSQL для применения изменений
+    if [ -n "$POSTGRES_SERVICE" ] && systemctl is-active --quiet "$POSTGRES_SERVICE"; then
+        log_info "Перезапуск PostgreSQL для применения изменений..."
+        systemctl restart "$POSTGRES_SERVICE" 2>/dev/null || true
+        sleep 3
+    fi
+else
+    log_warn "Конфигурационный файл PostgreSQL не найден: $PG_CONF"
+    log_warn "Убедитесь, что PostgreSQL настроен на прослушивание localhost"
+fi
+
+# Проверяем pg_hba.conf для разрешения подключений
+if [ -f "$PG_HBA" ]; then
+    if ! grep -q "^host.*all.*all.*127.0.0.1/32.*md5" "$PG_HBA" && ! grep -q "^host.*all.*all.*127.0.0.1/32.*password" "$PG_HBA"; then
+        echo "host    all             all             127.0.0.1/32            md5" >> "$PG_HBA"
+        log_info "Добавлено правило в pg_hba.conf для подключений с localhost"
+        
+        # Перезапускаем PostgreSQL для применения изменений
+        if [ -n "$POSTGRES_SERVICE" ] && systemctl is-active --quiet "$POSTGRES_SERVICE"; then
+            log_info "Перезапуск PostgreSQL для применения изменений pg_hba.conf..."
+            systemctl restart "$POSTGRES_SERVICE" 2>/dev/null || true
+            sleep 3
+        fi
+    fi
+fi
+
 # Создание базы данных и пользователя
 if [ "$ENVIRONMENT" = "production" ]; then
     DB_NAME="hydro"
@@ -401,8 +445,40 @@ chmod -R 775 "$LARAVEL_DIR/storage"
 chmod -R 775 "$LARAVEL_DIR/bootstrap/cache"
 
 # ============================================================================
-# 13. Миграции и сидеры базы данных
+# 13. Проверка подключения к базе данных и миграции
 # ============================================================================
+
+log_info "Проверка подключения к базе данных..."
+# Ждем, пока PostgreSQL будет готов принимать подключения
+max_attempts=30
+attempt=0
+DB_READY=false
+
+while [ $attempt -lt $max_attempts ]; do
+    attempt=$((attempt + 1))
+    if sudo -u postgres psql -c "SELECT 1;" >/dev/null 2>&1; then
+        # Проверяем подключение от имени пользователя БД
+        if PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1;" >/dev/null 2>&1; then
+            DB_READY=true
+            log_info "Подключение к базе данных установлено"
+            break
+        else
+            log_info "Попытка $attempt/$max_attempts: PostgreSQL запущен, но подключение не установлено, ожидание..."
+        fi
+    else
+        log_info "Попытка $attempt/$max_attempts: PostgreSQL не готов, ожидание..."
+    fi
+    sleep 2
+done
+
+if [ "$DB_READY" = "false" ]; then
+    log_error "Не удалось подключиться к базе данных после $max_attempts попыток"
+    log_error "Проверьте:"
+    log_error "  1. Запущен ли PostgreSQL: sudo systemctl status postgresql"
+    log_error "  2. Настроен ли PostgreSQL на прослушивание TCP/IP: sudo grep 'listen_addresses' /etc/postgresql/*/main/postgresql.conf"
+    log_error "  3. Правильность пароля в .env файле"
+    exit 1
+fi
 
 log_info "Запуск миграций базы данных..."
 if sudo -u "$APP_USER" php artisan migrate --force; then
