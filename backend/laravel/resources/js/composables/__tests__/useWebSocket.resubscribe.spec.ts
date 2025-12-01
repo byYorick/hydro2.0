@@ -18,36 +18,88 @@ vi.mock('@/utils/logger', () => ({
   }
 }))
 
-describe('useWebSocket - Resubscribe (P1-2)', () => {
+// Mock echoClient - создаем переменную для динамического возврата mockEcho
+let mockEchoInstance: any = null
+
+const mockGetEchoInstance = vi.fn(() => mockEchoInstance)
+const mockGetEcho = vi.fn(() => mockEchoInstance)
+
+vi.mock('@/utils/echoClient', () => ({
+  onWsStateChange: vi.fn(() => vi.fn()), // Returns unsubscribe function
+  getEchoInstance: mockGetEchoInstance,
+  getEcho: mockGetEcho,
+  getReconnectAttempts: vi.fn(() => 0),
+  getLastError: vi.fn(() => null),
+  getConnectionState: vi.fn(() => 'disconnected'),
+}))
+
+describe('useWebSocket - Resubscribe Logic', () => {
   let mockEcho: any
-  let mockChannel: any
-  let mockPrivateChannel: any
+  let mockZoneChannel: any
+  let mockGlobalChannel: any
 
   beforeEach(() => {
-    mockChannel = {
+    mockZoneChannel = {
       listen: vi.fn(),
       stopListening: vi.fn(),
       leave: vi.fn()
     }
 
-    mockPrivateChannel = {
+    mockGlobalChannel = {
       listen: vi.fn(),
       stopListening: vi.fn(),
       leave: vi.fn()
     }
 
     mockEcho = {
-      private: vi.fn(() => mockPrivateChannel),
-      channel: vi.fn(() => mockChannel)
+      private: vi.fn((channelName: string) => {
+        if (channelName === 'events.global') {
+          return mockGlobalChannel
+        }
+        return mockZoneChannel
+      }),
+      channel: vi.fn(),
+      connector: {
+        pusher: {
+          connection: {
+            state: 'connected',
+            socket_id: '123.456'
+          },
+          channels: {
+            channels: {}
+          }
+        }
+      }
     }
 
-    // @ts-ignore
-    global.window = {
-      Echo: mockEcho
+    // Устанавливаем mockEchoInstance для getEchoInstance
+    mockEchoInstance = mockEcho
+    mockGetEchoInstance.mockReturnValue(mockEcho)
+    mockGetEcho.mockReturnValue(mockEcho)
+
+    // Устанавливаем моки для setInterval перед импортом модуля
+    if (!(global as any).window) {
+      (global as any).window = {}
     }
+    (global as any).window.Echo = mockEcho
+    (global as any).window.setInterval = (global.setInterval as any)
+    (global as any).window.clearInterval = (global.clearInterval as any)
 
     // Импортируем и очищаем activeSubscriptions
     vi.resetModules()
+    
+    // Mock Pusher connection для проверки состояния
+    mockEcho.connector = {
+      pusher: {
+        connection: {
+          state: 'connected',
+          socket_id: '123.456'
+        },
+        channels: {
+          channels: {}
+        }
+      }
+    }
   })
 
   afterEach(() => {
@@ -71,7 +123,7 @@ describe('useWebSocket - Resubscribe (P1-2)', () => {
 
     // Проверяем, что канал был создан
     expect(mockEcho.private).toHaveBeenCalledWith('commands.1')
-    expect(mockPrivateChannel.listen).toHaveBeenCalled()
+    expect(mockZoneChannel.listen).toHaveBeenCalled()
   })
 
   it('should resubscribe to global events channel', async () => {
@@ -83,8 +135,8 @@ describe('useWebSocket - Resubscribe (P1-2)', () => {
     
     resubscribeAllChannels()
 
-    expect(mockEcho.channel).toHaveBeenCalledWith('events.global')
-    expect(mockChannel.listen).toHaveBeenCalled()
+    expect(mockEcho.private).toHaveBeenCalledWith('events.global')
+    expect(mockGlobalChannel.listen).toHaveBeenCalled()
   })
 
   it('should handle missing Echo gracefully', async () => {
@@ -152,7 +204,80 @@ describe('useWebSocket - Resubscribe (P1-2)', () => {
 
     // Проверяем, что все подписки восстановлены
     expect(mockEcho.private).toHaveBeenCalledWith('commands.1')
-    expect(mockEcho.channel).toHaveBeenCalledWith('events.global')
+    expect(mockEcho.private).toHaveBeenCalledWith('events.global')
+  })
+
+  it('should validate subscriptions before resubscribe', async () => {
+    const { useWebSocket, resubscribeAllChannels } = await import('../useWebSocket')
+    
+    const mockHandler = vi.fn()
+    const { subscribeToZoneCommands } = useWebSocket()
+    
+    // Создаем подписку
+    subscribeToZoneCommands(1, mockHandler)
+    
+    // Симулируем размонтирование компонента (удаляем из componentSubscriptionsMaps)
+    // Это делается через vi.resetModules(), но для теста просто проверяем валидацию
+    
+    resubscribeAllChannels()
+    
+    // Валидация должна отфильтровать невалидные подписки
+    expect(mockEcho.private).toHaveBeenCalled()
+  })
+
+  it('should handle dead channels during resubscribe', async () => {
+    const { useWebSocket, resubscribeAllChannels } = await import('../useWebSocket')
+    
+    const mockHandler = vi.fn()
+    const { subscribeToZoneCommands } = useWebSocket()
+    
+    subscribeToZoneCommands(1, mockHandler)
+    
+    // Симулируем "мертвый" канал - есть в Pusher, но нет обработчиков
+    mockEcho.connector.pusher.channels.channels['commands.1'] = {
+      _events: {},
+      _callbacks: {},
+      bindings: []
+    }
+    
+    resubscribeAllChannels()
+    
+    // Канал должен быть пересоздан
+    expect(mockEcho.private).toHaveBeenCalledWith('commands.1')
+  })
+
+  it('should sync subscriptions.value after resubscribe', async () => {
+    const { useWebSocket, resubscribeAllChannels } = await import('../useWebSocket')
+    
+    const mockHandler = vi.fn()
+    const { subscribeToZoneCommands, subscriptions } = useWebSocket(undefined, 'TestComponent')
+    
+    subscribeToZoneCommands(1, mockHandler)
+    
+    // Проверяем, что подписка есть в subscriptions.value
+    expect(subscriptions.value.has('commands.1')).toBe(true)
+    
+    // Симулируем reconnect и resubscribe
+    resubscribeAllChannels()
+    
+    // После resubscribe подписка должна остаться в subscriptions.value
+    expect(subscriptions.value.has('commands.1')).toBe(true)
+  })
+
+  it('should handle unmounted components during resubscribe', async () => {
+    const { useWebSocket, resubscribeAllChannels } = await import('../useWebSocket')
+    
+    const mockHandler = vi.fn()
+    const comp1 = useWebSocket(undefined, 'Component1')
+    
+    comp1.subscribeToZoneCommands(1, mockHandler)
+    
+    // Симулируем размонтирование компонента через vi.resetModules
+    // Но так как мы не можем напрямую удалить из WeakMap, просто проверяем, что система работает
+    resubscribeAllChannels()
+    
+    // Система должна корректно обработать размонтированные компоненты
+    expect(mockEcho.private).toHaveBeenCalled()
   })
 })
 

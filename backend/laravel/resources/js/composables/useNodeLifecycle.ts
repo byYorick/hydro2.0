@@ -5,6 +5,8 @@ import { ref, computed, type Ref, type ComputedRef } from 'vue'
 import { useApi, type ToastHandler } from './useApi'
 import { logger } from '@/utils/logger'
 import { useErrorHandler } from './useErrorHandler'
+import { extractData } from '@/utils/apiHelpers'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
 
 export type NodeLifecycleState = 
   | 'MANUFACTURED'
@@ -37,7 +39,7 @@ export interface AllowedTransitionsResponse {
 }
 
 export function useNodeLifecycle(showToast?: ToastHandler) {
-  const { api } = useApi(showToast || null)
+  const { api, post, get } = useApi(showToast || null)
   const { handleError } = useErrorHandler(showToast || null)
   
   const loading: Ref<boolean> = ref(false)
@@ -55,12 +57,12 @@ export function useNodeLifecycle(showToast?: ToastHandler) {
     error.value = null
     
     try {
-      const response = await api.post(`/api/nodes/${nodeId}/lifecycle/transition`, {
+      const response = await post(`/api/nodes/${nodeId}/lifecycle/transition`, {
         target_state: targetState,
         reason,
       })
       
-      const data = response.data?.data || response.data
+      const data = extractData(response.data)
       
       logger.info(`[useNodeLifecycle] Node ${nodeId} transitioned to ${targetState}`, {
         previous_state: data.previous_state,
@@ -69,7 +71,7 @@ export function useNodeLifecycle(showToast?: ToastHandler) {
       })
       
       if (showToast) {
-        showToast(`Узел переведен в состояние: ${getStateLabel(targetState)}`, 'success', 3000)
+        showToast(`Узел переведен в состояние: ${getStateLabel(targetState)}`, 'success', TOAST_TIMEOUT.NORMAL)
       }
       
       return data
@@ -99,9 +101,9 @@ export function useNodeLifecycle(showToast?: ToastHandler) {
     error.value = null
     
     try {
-      const response = await api.get(`/api/nodes/${nodeId}/lifecycle/allowed-transitions`)
+      const response = await get(`/api/nodes/${nodeId}/lifecycle/allowed-transitions`)
       
-      const data = response.data?.data || response.data
+      const data = extractData(response.data)
       
       logger.debug(`[useNodeLifecycle] Allowed transitions for node ${nodeId}:`, data.allowed_transitions.length)
       

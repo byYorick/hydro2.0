@@ -2,6 +2,8 @@
 
 #include "config_storage.h"
 #include "wifi_manager.h"
+#include "mqtt_manager.h"
+#include "node_utils.h"
 #include "pump_driver.h"
 #include "relay_driver.h"
 #include "esp_err.h"
@@ -270,6 +272,74 @@ esp_err_t config_apply_wifi(const cJSON *new_config,
     return ESP_OK;
 }
 
+// Forward declarations
+static void config_apply_populate_node_info(mqtt_node_info_t *node_info,
+                                            const config_apply_mqtt_params_t *params);
+static esp_err_t config_apply_populate_mqtt_config(mqtt_manager_config_t *mqtt_config);
+
+esp_err_t config_apply_wifi_with_mqtt_restart(const cJSON *new_config,
+                                                const cJSON *previous_config,
+                                                const config_apply_mqtt_params_t *mqtt_params,
+                                                config_apply_result_t *result) {
+    // Сначала применяем Wi-Fi конфиг
+    esp_err_t err = config_apply_wifi(new_config, previous_config, result);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    // Если MQTT был остановлен перед Wi-Fi реконнектом, принудительно перезапускаем его
+    // даже если MQTT настройки не изменились
+    if (mqtt_params != NULL) {
+        ESP_LOGI(TAG, "Restarting MQTT after Wi-Fi reconnection");
+        
+        // Проверяем, был ли MQTT остановлен (если он не подключен, значит был остановлен)
+        bool mqtt_was_stopped = !mqtt_manager_is_connected();
+        
+        if (mqtt_was_stopped) {
+            // Принудительно перезапускаем MQTT
+            mqtt_manager_deinit();
+            vTaskDelay(pdMS_TO_TICKS(200));
+
+            mqtt_manager_config_t mqtt_config = {0};
+            err = config_apply_populate_mqtt_config(&mqtt_config);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to populate MQTT config: %s", esp_err_to_name(err));
+                return err;
+            }
+
+            mqtt_node_info_t node_info = {0};
+            config_apply_populate_node_info(&node_info, mqtt_params);
+
+            err = mqtt_manager_init(&mqtt_config, &node_info);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to init MQTT manager: %s", esp_err_to_name(err));
+                return err;
+            }
+
+            if (mqtt_params->config_cb) {
+                mqtt_manager_register_config_cb(mqtt_params->config_cb, mqtt_params->user_ctx);
+            }
+            if (mqtt_params->command_cb) {
+                mqtt_manager_register_command_cb(mqtt_params->command_cb, mqtt_params->user_ctx);
+            }
+            if (mqtt_params->connection_cb) {
+                mqtt_manager_register_connection_cb(mqtt_params->connection_cb, mqtt_params->user_ctx);
+            }
+
+            err = mqtt_manager_start();
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to start MQTT manager: %s", esp_err_to_name(err));
+                return err;
+            }
+
+            config_apply_result_add(result, "mqtt");
+            ESP_LOGI(TAG, "MQTT client restarted after Wi-Fi reconnection");
+        }
+    }
+
+    return ESP_OK;
+}
+
 static void config_apply_populate_node_info(mqtt_node_info_t *node_info,
                                             const config_apply_mqtt_params_t *params) {
     if (node_info == NULL || params == NULL) {
@@ -434,7 +504,7 @@ esp_err_t config_apply_publish_ack(const config_apply_result_t *result) {
     }
 
     cJSON_AddStringToObject(ack, "status", "ACK");
-    cJSON_AddNumberToObject(ack, "applied_at", (double)esp_timer_get_time() / 1000000.0);
+    cJSON_AddNumberToObject(ack, "applied_at", (double)node_utils_get_timestamp_seconds());
 
     cJSON *restarted = cJSON_AddArrayToObject(ack, "restarted");
     if (restarted == NULL) {

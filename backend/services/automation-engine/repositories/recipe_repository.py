@@ -103,7 +103,7 @@ class RecipeRepository:
                 WHERE z.id = $1
             ),
             telemetry_data AS (
-                SELECT metric_type, value
+                SELECT metric_type, value, updated_at
                 FROM telemetry_last
                 WHERE zone_id = $1
             ),
@@ -115,7 +115,10 @@ class RecipeRepository:
             )
             SELECT 
                 (SELECT row_to_json(zone_info) FROM zone_info) as zone_info,
-                (SELECT json_object_agg(metric_type, value) FROM telemetry_data) as telemetry,
+                (SELECT json_object_agg(
+                    metric_type, 
+                    json_build_object('value', value, 'updated_at', updated_at)
+                ) FROM telemetry_data) as telemetry,
                 (SELECT json_agg(row_to_json(nodes_data)) FROM nodes_data) as nodes
             """,
             zone_id,
@@ -131,8 +134,20 @@ class RecipeRepository:
         
         result = rows[0]
         zone_info = result.get("zone_info") or {}
-        telemetry = result.get("telemetry") or {}
+        telemetry_raw = result.get("telemetry") or {}
         nodes_list = result.get("nodes") or []
+        
+        # Преобразуем телеметрию: извлекаем value и updated_at из объектов
+        # Формат: {"PH": {"value": 6.5, "updated_at": "2024-01-01T12:00:00"}, ...}
+        telemetry: Dict[str, Optional[float]] = {}
+        telemetry_timestamps: Dict[str, Any] = {}  # Для проверки свежести
+        for metric_type, metric_data in telemetry_raw.items():
+            if isinstance(metric_data, dict):
+                telemetry[metric_type] = metric_data.get("value")
+                telemetry_timestamps[metric_type] = metric_data.get("updated_at")
+            else:
+                # Обратная совместимость: если приходит просто value
+                telemetry[metric_type] = metric_data
         
         # Преобразуем список узлов в словарь
         nodes_dict: Dict[str, Dict[str, Any]] = {}
@@ -167,6 +182,7 @@ class RecipeRepository:
         return {
             "recipe_info": recipe_info,
             "telemetry": telemetry,
+            "telemetry_timestamps": telemetry_timestamps,  # Добавляем timestamps для проверки свежести
             "nodes": nodes_dict,
             "capabilities": capabilities
         }

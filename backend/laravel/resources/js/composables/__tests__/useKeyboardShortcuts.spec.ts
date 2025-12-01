@@ -2,9 +2,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 
-const mockRouter = {
-  visit: vi.fn()
-}
+const mockRouter = vi.hoisted(() => ({
+  visit: vi.fn(),
+  page: {
+    url: '/test'
+  }
+}))
 
 vi.mock('@inertiajs/vue3', () => ({
   router: mockRouter
@@ -20,9 +23,10 @@ describe('useKeyboardShortcuts (P3-1)', () => {
   })
 
   it('should register keyboard shortcut', async () => {
+    const { useKeyboardShortcuts } = await import('../useKeyboardShortcuts')
+    
     const TestComponent = defineComponent({
       setup() {
-        const { useKeyboardShortcuts } = require('../useKeyboardShortcuts')
         const { registerShortcut } = useKeyboardShortcuts()
         
         const handler = vi.fn()
@@ -48,10 +52,11 @@ describe('useKeyboardShortcuts (P3-1)', () => {
     expect(wrapper.vm.handler).toHaveBeenCalled()
   })
 
-  it('should handle Ctrl+Z shortcut for Zones', async () => {
+  it('should handle Ctrl+Shift+Z shortcut for Zones', async () => {
+    const { useKeyboardShortcuts } = await import('../useKeyboardShortcuts')
+    
     const TestComponent = defineComponent({
       setup() {
-        const { useKeyboardShortcuts } = require('../useKeyboardShortcuts')
         useKeyboardShortcuts()
         return {}
       },
@@ -63,19 +68,23 @@ describe('useKeyboardShortcuts (P3-1)', () => {
 
     const event = new KeyboardEvent('keydown', {
       key: 'z',
-      ctrlKey: true
+      ctrlKey: true,
+      shiftKey: true
     })
     
     window.dispatchEvent(event)
     await wrapper.vm.$nextTick()
+    // Ждем debounce (300ms)
+    await new Promise(resolve => setTimeout(resolve, 350))
     
-    expect(mockRouter.visit).toHaveBeenCalledWith('/zones')
+    expect(mockRouter.visit).toHaveBeenCalledWith('/zones', { preserveScroll: true })
   })
 
-  it('should handle Ctrl+D shortcut for Dashboard', async () => {
+  it('should handle Ctrl+Shift+D shortcut for Dashboard', async () => {
+    const { useKeyboardShortcuts } = await import('../useKeyboardShortcuts')
+    
     const TestComponent = defineComponent({
       setup() {
-        const { useKeyboardShortcuts } = require('../useKeyboardShortcuts')
         useKeyboardShortcuts()
         return {}
       },
@@ -87,19 +96,50 @@ describe('useKeyboardShortcuts (P3-1)', () => {
 
     const event = new KeyboardEvent('keydown', {
       key: 'd',
-      ctrlKey: true
+      ctrlKey: true,
+      shiftKey: true
     })
     
     window.dispatchEvent(event)
     await wrapper.vm.$nextTick()
+    // Ждем debounce (300ms)
+    await new Promise(resolve => setTimeout(resolve, 350))
     
-    expect(mockRouter.visit).toHaveBeenCalledWith('/')
+    expect(mockRouter.visit).toHaveBeenCalledWith('/', { preserveScroll: true })
+  })
+
+  it('should handle Alt+R shortcut for Recipes', async () => {
+    const { useKeyboardShortcuts } = await import('../useKeyboardShortcuts')
+    
+    const TestComponent = defineComponent({
+      setup() {
+        useKeyboardShortcuts()
+        return {}
+      },
+      template: '<div>Test</div>'
+    })
+
+    const wrapper = mount(TestComponent)
+    await wrapper.vm.$nextTick()
+
+    const event = new KeyboardEvent('keydown', {
+      key: 'r',
+      altKey: true
+    })
+    
+    window.dispatchEvent(event)
+    await wrapper.vm.$nextTick()
+    // Ждем debounce (300ms)
+    await new Promise(resolve => setTimeout(resolve, 350))
+    
+    expect(mockRouter.visit).toHaveBeenCalledWith('/recipes', { preserveScroll: true })
   })
 
   it('should handle Shift+D shortcut for Devices', async () => {
+    const { useKeyboardShortcuts } = await import('../useKeyboardShortcuts')
+    
     const TestComponent = defineComponent({
       setup() {
-        const { useKeyboardShortcuts } = require('../useKeyboardShortcuts')
         useKeyboardShortcuts()
         return {}
       },
@@ -116,14 +156,17 @@ describe('useKeyboardShortcuts (P3-1)', () => {
     
     window.dispatchEvent(event)
     await wrapper.vm.$nextTick()
+    // Ждем debounce (300ms)
+    await new Promise(resolve => setTimeout(resolve, 350))
     
-    expect(mockRouter.visit).toHaveBeenCalledWith('/devices')
+    expect(mockRouter.visit).toHaveBeenCalledWith('/devices', { preserveScroll: true })
   })
 
   it('should ignore shortcuts when focus is in input', async () => {
+    const { useKeyboardShortcuts } = await import('../useKeyboardShortcuts')
+    
     const TestComponent = defineComponent({
       setup() {
-        const { useKeyboardShortcuts } = require('../useKeyboardShortcuts')
         const { registerShortcut } = useKeyboardShortcuts()
         
         const handler = vi.fn()
@@ -139,14 +182,18 @@ describe('useKeyboardShortcuts (P3-1)', () => {
 
     const input = wrapper.find('input').element
     input.focus()
+    await wrapper.vm.$nextTick()
 
+    // Создаем событие и диспатчим его на элементе, чтобы target был установлен правильно
     const event = new KeyboardEvent('keydown', {
       key: 'x',
       ctrlKey: true,
-      target: input
+      bubbles: true,
+      cancelable: true
     })
     
-    window.dispatchEvent(event)
+    // Диспатчим событие на элементе, чтобы event.target был установлен
+    input.dispatchEvent(event)
     await wrapper.vm.$nextTick()
     
     // Handler не должен быть вызван, так как фокус в input
@@ -177,9 +224,10 @@ describe('useKeyboardShortcuts (P3-1)', () => {
   })
 
   it('should unregister keyboard shortcut', async () => {
+    const { useKeyboardShortcuts } = await import('../useKeyboardShortcuts')
+    
     const TestComponent = defineComponent({
       setup() {
-        const { useKeyboardShortcuts } = require('../useKeyboardShortcuts')
         const { registerShortcut, unregisterShortcut } = useKeyboardShortcuts()
         
         const handler = vi.fn()

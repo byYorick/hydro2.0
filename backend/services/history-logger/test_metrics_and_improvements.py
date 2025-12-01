@@ -59,28 +59,14 @@ class TestTelemetryPayloadValidation:
         payload = TelemetryPayloadModel(
             metric_type="PH",
             value=6.5,
-            timestamp=1737979200000,
+            ts=1737979.2,  # seconds (from firmware)
             channel="ph_sensor"
         )
         
         assert payload.metric_type == "PH"
         assert payload.value == 6.5
-        assert payload.timestamp == 1737979200000
+        assert payload.ts == 1737979.2
         assert payload.channel == "ph_sensor"
-    
-    def test_payload_with_metric_field(self):
-        """Тест payload с полем metric (обратная совместимость)."""
-        from main import TelemetryPayloadModel
-        
-        # В модели metric_type обязателен, но в handle_telemetry используется fallback на metric
-        payload = TelemetryPayloadModel(
-            metric_type="PH",  # metric_type обязателен
-            value=6.5,
-            metric="PH"  # Дополнительное поле для обратной совместимости
-        )
-        
-        assert payload.metric_type == "PH"
-        assert payload.metric == "PH"
     
     def test_payload_min_length_validation(self):
         """Тест валидации минимальной длины metric_type."""
@@ -192,7 +178,7 @@ class TestMetrics:
         from unittest.mock import AsyncMock
         
         topic = "hydro/gh-1/zn-1/nd-ph-1/telemetry/PH"
-        payload = b'{"metric_type": "PH", "value": 6.5, "timestamp": 1737979200000}'
+        payload = b'{"metric_type": "PH", "value": 6.5, "ts": 1737979.2}'
         
         mock_queue = AsyncMock()
         mock_queue.push = AsyncMock(return_value=True)
@@ -386,7 +372,7 @@ class TestHandleTelemetryImprovements:
         from unittest.mock import AsyncMock
         
         topic = "hydro/gh-1/zn-1/nd-ph-1/telemetry/PH"
-        payload = b'{"metric_type": "PH", "value": 6.5, "timestamp": 1737979200000}'
+        payload = b'{"metric_type": "PH", "value": 6.5, "ts": 1737979.2}'
         
         mock_queue = AsyncMock()
         mock_queue.push = AsyncMock(return_value=True)

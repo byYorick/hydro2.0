@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { setActivePinia, createPinia } from 'pinia'
 
 // Моки для интеграционных тестов
 vi.mock('@/Layouts/AppLayout.vue', () => ({
@@ -39,10 +40,27 @@ vi.mock('@/Pages/Zones/ZoneTelemetryChart.vue', () => ({
 const axiosGetMock = vi.hoisted(() => vi.fn())
 const axiosPostMock = vi.hoisted(() => vi.fn())
 
+const mockAxiosInstance = vi.hoisted(() => ({
+  get: (url: string, config?: any) => axiosGetMock(url, config),
+  post: (url: string, data?: any, config?: any) => axiosPostMock(url, data, config),
+  patch: vi.fn(),
+  delete: vi.fn(),
+  put: vi.fn(),
+  interceptors: {
+    request: { use: vi.fn(), eject: vi.fn() },
+    response: { use: vi.fn(), eject: vi.fn() },
+  },
+}))
+
 vi.mock('axios', () => ({
   default: {
     get: (url: string, config?: any) => axiosGetMock(url, config),
     post: (url: string, data?: any, config?: any) => axiosPostMock(url, data, config),
+    create: vi.fn(() => mockAxiosInstance),
+    interceptors: {
+      request: { use: vi.fn(), eject: vi.fn() },
+      response: { use: vi.fn(), eject: vi.fn() },
+    },
   },
 }))
 
@@ -87,6 +105,9 @@ import ZonesShow from '../Show.vue'
 
 describe('Zones/Show.vue - Интеграционные тесты', () => {
   beforeEach(() => {
+    // Инициализируем Pinia перед каждым тестом
+    setActivePinia(createPinia())
+    
     axiosGetMock.mockClear()
     axiosPostMock.mockClear()
     

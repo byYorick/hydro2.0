@@ -6,6 +6,7 @@ idf_component_register(
         "ph_node_init.c"
         "ph_node_init_steps.c"
         "ph_node_handlers.c"
+        "ph_node_framework_integration.c"
     INCLUDE_DIRS 
         "."
     REQUIRES 
@@ -13,8 +14,11 @@ idf_component_register(
         wifi_manager
         config_storage
         config_apply
+        node_framework
+        node_utils
         trema_ph
         i2c_bus
+        ina209
         oled_ui
         setup_portal
         heartbeat_task

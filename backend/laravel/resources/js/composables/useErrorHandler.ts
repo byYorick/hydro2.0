@@ -3,6 +3,8 @@
  */
 import { ref, type Ref } from 'vue'
 import { logger } from '@/utils/logger'
+import { ERROR_MESSAGES, getErrorMessageByStatus } from '@/constants/messages'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import type { ToastHandler } from './useApi'
 
 /**
@@ -78,7 +80,7 @@ export function useErrorHandler(showToast?: ToastHandler) {
 
       const status = axiosError.response?.status || 500
       const responseData = axiosError.response?.data
-      const message = responseData?.message || axiosError.message || 'Неизвестная ошибка'
+      const message = responseData?.message || axiosError.message || ERROR_MESSAGES.UNKNOWN
 
       // Ошибки валидации (422)
       if (status === 422 && responseData?.errors) {
@@ -98,7 +100,7 @@ export function useErrorHandler(showToast?: ToastHandler) {
       const code = (error as { code?: string }).code
       if (code === 'ERR_NETWORK' || code === 'ECONNABORTED') {
         return new NetworkError(
-          'Ошибка сети. Проверьте подключение к интернету.',
+          ERROR_MESSAGES.NETWORK,
           error
         )
       }
@@ -115,7 +117,38 @@ export function useErrorHandler(showToast?: ToastHandler) {
     }
 
     // Остальное
-    return new Error('Неизвестная ошибка')
+    return new Error(ERROR_MESSAGES.UNKNOWN)
+  }
+
+  /**
+   * Очищает контекст от потенциальных циклических ссылок
+   */
+  function sanitizeContext(context?: ErrorContext): ErrorContext | undefined {
+    if (!context) return undefined
+    
+    const sanitized: ErrorContext = {}
+    for (const key in context) {
+      if (Object.prototype.hasOwnProperty.call(context, key)) {
+        const value = context[key]
+        // Пропускаем сложные объекты, которые могут содержать циклические ссылки
+        if (value === null || value === undefined) {
+          sanitized[key] = value
+        } else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+          sanitized[key] = value
+        } else if (Array.isArray(value)) {
+          // Для массивов конвертируем в строку, если содержит сложные объекты
+          sanitized[key] = value.map(item => 
+            typeof item === 'object' && item !== null ? '[Object]' : item
+          )
+        } else if (typeof value === 'object') {
+          // Для объектов сохраняем только простые свойства
+          sanitized[key] = '[Object]'
+        } else {
+          sanitized[key] = String(value)
+        }
+      }
+    }
+    return sanitized
   }
 
   /**
@@ -129,32 +162,39 @@ export function useErrorHandler(showToast?: ToastHandler) {
     lastError.value = normalizedError
     errorContext.value = context || null
 
+    // Очищаем контекст от циклических ссылок
+    const safeContext = sanitizeContext(context)
+
     // Логирование
     if (normalizedError instanceof ApiError) {
       logger.error('[ApiError]', {
         message: normalizedError.message,
         status: normalizedError.status,
         code: normalizedError.code,
-        context,
+        context: safeContext,
       })
     } else if (normalizedError instanceof NetworkError) {
       logger.error('[NetworkError]', {
         message: normalizedError.message,
-        context,
-        originalError: normalizedError.originalError,
+        context: safeContext,
+        originalError: normalizedError.originalError instanceof Error ? {
+          message: normalizedError.originalError.message,
+          name: normalizedError.originalError.name,
+        } : normalizedError.originalError,
       })
     } else if (normalizedError instanceof ValidationError) {
       logger.warn('[ValidationError]', {
         message: normalizedError.message,
         errors: normalizedError.errors,
-        context,
+        context: safeContext,
       })
     } else {
       logger.error('[Error]', {
         message: normalizedError.message,
-        error: normalizedError,
-        context,
-      })
+        errorName: normalizedError.name,
+        errorStack: normalizedError.stack?.split('\n').slice(0, 5).join('\n'),
+        context: safeContext,
+      }, normalizedError)
     }
 
     // Показ Toast уведомления
@@ -166,15 +206,15 @@ export function useErrorHandler(showToast?: ToastHandler) {
         toastMessage = 'Ошибка сети. Проверьте подключение.'
         toastVariant = 'error'
       } else if (normalizedError instanceof ValidationError) {
-        toastMessage = 'Ошибка валидации. Проверьте введенные данные.'
+        toastMessage = ERROR_MESSAGES.VALIDATION
         toastVariant = 'warning'
       } else if (normalizedError instanceof ApiError) {
         if (normalizedError.status === 401) {
-          toastMessage = 'Требуется авторизация'
+          toastMessage = ERROR_MESSAGES.UNAUTHORIZED
         } else if (normalizedError.status === 403) {
-          toastMessage = 'Доступ запрещен'
+          toastMessage = ERROR_MESSAGES.FORBIDDEN
         } else if (normalizedError.status === 404) {
-          toastMessage = 'Ресурс не найден'
+          toastMessage = ERROR_MESSAGES.NOT_FOUND
         } else if (normalizedError.status >= 500) {
           toastMessage = 'Ошибка сервера. Попробуйте позже.'
         } else {
@@ -183,7 +223,7 @@ export function useErrorHandler(showToast?: ToastHandler) {
         toastVariant = 'error'
       }
 
-      showToast(toastMessage, toastVariant, 5000)
+      showToast(toastMessage, toastVariant, TOAST_TIMEOUT.LONG)
     }
 
     return normalizedError

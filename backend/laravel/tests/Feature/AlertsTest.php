@@ -12,9 +12,11 @@ class AlertsTest extends TestCase
 {
     use RefreshDatabase;
 
-    private function token(): string
+    private function token(string $role = 'operator'): string
     {
-        $user = User::factory()->create();
+        $user = User::factory()->create(['role' => $role]);
+        $this->actingAs($user);
+
         return $user->createToken('test')->plainTextToken;
     }
 
@@ -57,10 +59,10 @@ class AlertsTest extends TestCase
             ->patchJson("/api/alerts/{$alert->id}/ack");
 
         $resp->assertOk()
-            ->assertJsonPath('data.status', 'resolved');
+            ->assertJsonPath('data.status', 'RESOLVED');
         $this->assertDatabaseHas('alerts', [
             'id' => $alert->id,
-            'status' => 'resolved',
+            'status' => 'RESOLVED',
         ]);
     }
 

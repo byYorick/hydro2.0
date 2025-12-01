@@ -1,17 +1,23 @@
 <template>
   <AppLayout>
-    <h1 class="text-lg font-semibold mb-4">Алерты</h1>
-    <div class="mb-3 flex flex-wrap items-center gap-2">
-      <label class="text-sm text-neutral-300">Фильтр:</label>
-      <select v-model="onlyActive" class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm">
-        <option :value="true">Только активные</option>
-        <option :value="false">Все</option>
-      </select>
-      <label class="ml-4 text-sm text-neutral-300">Зона:</label>
-      <input v-model="zoneQuery" placeholder="Зона..." class="h-9 w-48 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
+    <div class="flex items-center justify-between mb-4">
+      <h1 class="text-lg font-semibold">Алерты</h1>
+    </div>
+    <div class="mb-3 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
+      <div class="flex items-center gap-2 flex-1 sm:flex-none">
+        <label class="text-sm text-neutral-300 shrink-0">Фильтр:</label>
+        <select v-model="onlyActive" class="h-9 flex-1 sm:w-auto sm:min-w-[140px] rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm">
+          <option :value="true">Только активные</option>
+          <option :value="false">Все</option>
+        </select>
+      </div>
+      <div class="flex items-center gap-2 flex-1 sm:flex-none">
+        <label class="text-sm text-neutral-300 shrink-0">Зона:</label>
+        <input v-model="zoneQuery" placeholder="Зона..." class="h-9 flex-1 sm:w-56 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
+      </div>
     </div>
 
-    <div class="rounded-xl border border-neutral-800 overflow-hidden max-h-[700px] flex flex-col">
+    <div class="rounded-xl border border-neutral-800 overflow-hidden max-h-[720px] flex flex-col">
       <!-- Заголовок таблицы -->
       <div class="flex-shrink-0 grid grid-cols-5 gap-0 bg-neutral-900 text-neutral-300 text-sm border-b border-neutral-800">
         <div v-for="(h, i) in headers" :key="i" class="px-3 py-2 text-left font-medium">
@@ -56,15 +62,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, onMounted } from 'vue'
+import { reactive, ref, watch, onMounted, onUnmounted } from 'vue'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Button from '@/Components/Button.vue'
 import Modal from '@/Components/Modal.vue'
-import { usePage, router } from '@inertiajs/vue3'
+import { usePage } from '@inertiajs/vue3'
 import { subscribeAlerts } from '@/bootstrap'
 import { translateStatus } from '@/utils/i18n'
 import { logger } from '@/utils/logger'
 import { useApi } from '@/composables/useApi'
+import { useFilteredList } from '@/composables/useFilteredList'
 import type { Alert } from '@/types'
 
 interface PageProps {
@@ -72,7 +79,37 @@ interface PageProps {
 }
 
 const page = usePage<PageProps>()
-const alerts = computed(() => (page.props.alerts || []) as Alert[])
+const alerts = ref<Alert[]>(Array.isArray(page.props.alerts) ? [...page.props.alerts] : [])
+
+// Синхронизируем локальный список с props без перезагрузок страницы
+watch(
+  () => page.props.alerts,
+  (newAlerts) => {
+    alerts.value = Array.isArray(newAlerts) ? [...newAlerts] : []
+  },
+  { deep: true }
+)
+
+const upsertAlert = (alert: Alert): void => {
+  if (!alert || !('id' in alert)) return
+  const idx = alerts.value.findIndex(a => a.id === alert.id)
+  if (idx >= 0) {
+    alerts.value[idx] = { ...alerts.value[idx], ...alert }
+  } else {
+    alerts.value.unshift(alert)
+  }
+}
+
+const markResolved = (id: number): void => {
+  const idx = alerts.value.findIndex(a => a.id === id)
+  if (idx >= 0) {
+    alerts.value[idx] = {
+      ...alerts.value[idx],
+      status: 'resolved',
+      resolved_at: new Date().toISOString(),
+    }
+  }
+}
 
 // Инициализация API без Toast (используем стандартную обработку ошибок)
 const { api } = useApi()
@@ -81,14 +118,12 @@ const headers = ['Тип', 'Зона', 'Время', 'Статус', 'Дейст
 const onlyActive = ref<boolean>(true)
 const zoneQuery = ref<string>('')
 
-const filtered = computed(() =>
-  alerts.value.filter(a => {
-    const activeOk = onlyActive.value ? a.status !== 'resolved' && a.status !== 'RESOLVED' : true
-    const zoneName = a.zone?.name || `Zone #${a.zone_id}` || ''
-    const zoneOk = zoneQuery.value ? zoneName.toLowerCase().includes(zoneQuery.value.toLowerCase()) : true
-    return activeOk && zoneOk
-  })
-)
+const filtered = useFilteredList(alerts, (alert) => {
+  const activeOk = onlyActive.value ? alert.status !== 'resolved' && alert.status !== 'RESOLVED' : true
+  const zoneName = alert.zone?.name || `Zone #${alert.zone_id}` || ''
+  const zoneOk = zoneQuery.value ? zoneName.toLowerCase().includes(zoneQuery.value.toLowerCase()) : true
+  return activeOk && zoneOk
+})
 const confirm = reactive<{ open: boolean; alertId: number | null }>({ open: false, alertId: null })
 const onResolve = (a: Alert): void => {
   confirm.open = true
@@ -97,8 +132,14 @@ const onResolve = (a: Alert): void => {
 const doResolve = (): void => {
   const id = confirm.alertId
   if (!id) return
-  api.patch(`/api/alerts/${id}/ack`, {}).then(() => {
-    router.reload({ only: ['alerts'] })
+  api.patch(`/api/alerts/${id}/ack`, {}).then((res) => {
+    // Обновляем локальный список без перезагрузки страницы
+    const updated = (res?.data as { data?: Alert })?.data
+    if (updated) {
+      upsertAlert(updated)
+    } else {
+      markResolved(id)
+    }
     confirm.open = false
   }).catch((err) => {
     logger.error('Failed to resolve alert:', err)
@@ -107,15 +148,21 @@ const doResolve = (): void => {
 }
 
 // subscribe realtime
+let unsubscribeAlerts: (() => void) | null = null
+
 onMounted(() => {
-  subscribeAlerts((e) => {
+  unsubscribeAlerts = subscribeAlerts((e) => {
     if (e?.alert) {
-      router.reload({ only: ['alerts'] })
+      upsertAlert(e.alert as Alert)
     }
   })
+})
+
+onUnmounted(() => {
+  unsubscribeAlerts?.()
+  unsubscribeAlerts = null
 })
 
 // Виртуализация через RecycleScroller
 const rowHeight = 44
 </script>
-

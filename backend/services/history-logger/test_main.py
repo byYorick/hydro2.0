@@ -95,7 +95,7 @@ def test_ingest_telemetry_endpoint_with_ts_string(client):
 
 
 def test_ingest_telemetry_endpoint_with_ts_numeric(client):
-    """Test telemetry ingestion with timestamp as numeric (milliseconds)."""
+    """Test telemetry ingestion with ts as numeric (seconds from firmware)."""
     with patch("main.process_telemetry_batch") as mock_process:
         payload = {
             "samples": [
@@ -104,7 +104,7 @@ def test_ingest_telemetry_endpoint_with_ts_numeric(client):
                     "zone_id": 1,
                     "metric_type": "ph",
                     "value": 6.5,
-                    "ts": 1737979200000  # milliseconds
+                    "ts": 1737979.2  # seconds (from firmware: esp_timer_get_time() / 1000000)
                 }
             ]
         }

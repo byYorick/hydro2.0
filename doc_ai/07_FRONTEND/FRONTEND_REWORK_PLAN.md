@@ -29,37 +29,37 @@
 
 На основе `FRONTEND_AUDIT.md` и UI-спецификации:
 
-1. **Dashboard**: отсутствуют мини-графики, heatmap зон, последние события — нет связки с телеметрией и events API.【F:doc_ai/07_FRONTEND/FRONTEND_AUDIT.md†L86-L118】
+1. **Dashboard**: ✅ Ролевые дашборды реализованы, последние события добавлены. ⏳ Мини-графики и heatmap зон планируются в Волне 3.
 
-2. **Command Palette**: спецификация требует Ctrl+K с быстрыми действиями, но компонент не реализует поиски/действия и не подключён к API зон/узлов.【F:doc_ai/07_FRONTEND/FRONTEND_AUDIT.md†L120-L129】
+2. **Command Palette**: ✅ Базовый функционал реализован (Ctrl+K, поиск, навигация). ⏳ Быстрые действия и fuzzy search планируются в Волне 4.
 
-3. **Zone Detail**: кнопки используют захардкоженные параметры и не показывают реальные расписания, хотя backend уже предоставляет cycles/commands API.【F:doc_ai/07_FRONTEND/FRONTEND_AUDIT.md†L50-L84】
+3. **Zone Detail**: ✅ Cycles блок использует реальные данные из backend. ⏳ Forms для параметров команд планируются в Волне 2.
 
-4. **Локализация**: основная навигация и кнопки остаются на английском, что нарушает требование полной русификации интерфейса.【F:doc_ai/07_FRONTEND/FRONTEND_AUDIT.md†L131-L164】
+4. **Локализация**: ✅ Полностью выполнена - все тексты на русском языке.
 
-5. **Ошибки UX**: используется `window.location.reload()`, нет уведомлений об ошибках, отсутствуют формы для параметров команд — интерфейс не отражает backend-потоки команд/подтверждений.【F:doc_ai/07_FRONTEND/FRONTEND_AUDIT.md†L22-L48】
+5. **Ошибки UX**: ✅ Исправлено - используется `router.reload()`, добавлены Toast уведомления. ⏳ Forms для параметров команд планируются в Волне 2.
 
-6. **Хедер без статусов**: верхняя панель не показывает состояния WebSocket, MQTT, базы данных и Core, поэтому оператор не видит цепочку health, несмотря на то, что backend уже поставляет соответствующие потоки через status/LWT и health endpoints.【F:doc_ai/01_SYSTEM/DATAFLOW_FULL.md†L11-L239】【F:doc_ai/04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md†L472-L644】
+6. **Хедер статусов**: ✅ Реализован `HeaderStatusBar.vue` с индикаторами WebSocket, MQTT, DB, Core.
 
 ## 4. План доработки (5 волн)
 
-### Волна 1 — Синхронизация базовой архитектуры
+### Волна 1 — Синхронизация базовой архитектуры ✅ ВЫПОЛНЕНО
 
-- **Инвентаризация API**: сопоставить все используемые фронтом эндпоинты с `REST_API_REFERENCE.md`. Добавить отсутствующие схемы (cycles, events, commands) и описать пропсы Inertia в `routes/web.php`.
+- ✅ **Инвентаризация API**: создан `API_MAPPING.md` с полным маппингом endpoints.
 
-- **State-management**: внедрить единый слой composables (например, `useZones`, `useTelemetry`) с кешированием и Inertia partial reloads вместо полного обновления страницы.
+- ✅ **State-management**: реализованы composables (`useZones`, `useTelemetry`, `useApi`, и др.) с кешированием и оптимизацией.
 
-- **Локализация навигации**: перевести `AppLayout.vue`, общие компоненты меню и кнопок на русский (использовать словарь/константы).
+- ✅ **Локализация навигации**: все тексты переведены на русский, создана система локализации `utils/i18n.js`.
 
-- **Хедер статусов**: добавить компонент `HeaderStatusBar.vue` с иконками ONLINE/OFFLINE для WebSocket, MQTT, базы данных и Core. Источники данных: `laravel-echo` connection state для WebSocket, REST `GET /api/system/health` для Core+DB, WebSocket канал `nodes.{id}.status`/`zones_status_summary` для агрегированного MQTT-состояния (ONLINE/OFFLINE/DEGRADED) и таймер опроса (30 c).【F:doc_ai/04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md†L472-L644】
+- ✅ **Хедер статусов**: реализован `HeaderStatusBar.vue` с индикаторами WebSocket, MQTT, DB, Core.
 
 ### Волна 2 — Zone Detail ↔ backend use-cases
 
-- **Actions drawer**: заменить захардкоженные параметры команд на формы, подгружая допустимые параметры из backend (например, `available_actions` для зоны).
+- ⏳ **Actions drawer**: заменить захардкоженные параметры команд на формы, подгружая допустимые параметры из backend (например, `available_actions` для зоны).
 
-- **Команды и ответы**: интегрировать WebSocket/echo канал `commands.{zoneId}` для отображения статуса и ошибок; добавить уведомления.
+- ⏳ **Команды и ответы**: интегрировать WebSocket/echo канал `commands.{zoneId}` для отображения статуса и ошибок; добавить уведомления.
 
-- **Cycles виджет**: подключить данные `last_run`, `next_run`, `strategy`, `interval` через Laravel контроллеры и отображать согласно спецификации.
+- ✅ **Cycles виджет**: реализован - использует реальные данные `last_run`, `next_run`, `strategy`, `interval` из backend через API endpoint `/api/zones/{id}/cycles`.
 
 ### Волна 3 — Dashboard и realtime телеметрия
 
@@ -79,11 +79,11 @@
 
 ### Волна 5 — UX & технические улучшения
 
-- **Toast/notifications**: стандартные хуки для успеха/ошибки; заменить `console.error` на пользовательские уведомления.
+- ✅ **Toast/notifications**: реализованы через `useToast` composable и `ToastContainer` компонент.
 
-- **Form validation**: использовать `useForm` от Inertia с серверной валидацией для команд/рецептов.
+- ⏳ **Form validation**: использовать `useForm` от Inertia с серверной валидацией для команд/рецептов.
 
-- **Testing & Storybook**: восстановить `vitest` snapshot тесты для ключевых компонентов и задокументировать сценарии.
+- ✅ **Testing**: реализованы unit тесты для ключевых компонентов (Vitest).
 
 ## 5. Зависимости и контрольные точки
 

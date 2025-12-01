@@ -1,0 +1,12 @@
+--- a/vendor/laravel/reverb/src/Servers/Reverb/Http/Router.php
++++ b/vendor/laravel/reverb/src/Servers/Reverb/Http/Router.php
+@@ -71,7 +71,7 @@ class Router
+         $routeParameters = array_filter($routeParameters, fn ($key) => ! in_array($key, [
+             '_controller',
+             '_route',
+-        ]) + ['request' => $request, 'connection' => $connection];
++        ])) + ['request' => $request, 'connection' => $connection];
+ 
+         $response = $controller(
+             ...$this->arguments($controller, $routeParameters)
+

@@ -6,10 +6,13 @@
 #include "heartbeat_task.h"
 #include "mqtt_manager.h"
 #include "wifi_manager.h"
+#include "memory_pool.h"
+#include "node_utils.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_system.h"
 #include "esp_wifi.h"
+#include "node_watchdog.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "cJSON.h"
@@ -32,29 +35,70 @@ static void task_heartbeat(void *pvParameters) {
     
     ESP_LOGI(TAG, "Heartbeat task started (interval: %lu ms)", (unsigned long)interval_ms);
     
+    // Добавляем задачу в watchdog
+    esp_err_t wdt_err = node_watchdog_add_task();
+    if (wdt_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add heartbeat task to watchdog: %s", esp_err_to_name(wdt_err));
+    }
+    
     TickType_t last_wake_time = xTaskGetTickCount();
     const TickType_t interval = pdMS_TO_TICKS(interval_ms);
     
+    // Сбрасываем watchdog чаще (каждую секунду), чтобы быть устойчивыми к системному таймауту 5 сек
+    const TickType_t wdt_reset_interval = pdMS_TO_TICKS(1000);
+    TickType_t last_wdt_reset = xTaskGetTickCount();
+    
     while (1) {
-        vTaskDelayUntil(&last_wake_time, interval);
+        // Периодически сбрасываем watchdog во время ожидания
+        // (интервал задачи может быть больше watchdog таймаута)
+        TickType_t current_time = xTaskGetTickCount();
+        TickType_t elapsed_since_wdt = current_time - last_wdt_reset;
         
-        if (!mqtt_manager_is_connected()) {
-            continue;
+        // TickType_t - беззнаковый тип, переполнение работает по модулю, поэтому
+        // разница всегда корректна и не может быть отрицательной
+        if (elapsed_since_wdt >= wdt_reset_interval) {
+            node_watchdog_reset();
+            last_wdt_reset = current_time;
         }
         
-        // Получение RSSI
-        wifi_ap_record_t ap_info;
-        int8_t rssi = -100;
-        if (wifi_manager_is_connected() && esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
-            rssi = ap_info.rssi;
-        }
-        
-        // Формат согласно MQTT_SPEC_FULL.md раздел 9.2
-        cJSON *heartbeat = cJSON_CreateObject();
-        if (heartbeat) {
+        // Проверяем, наступило ли время для публикации heartbeat
+        TickType_t elapsed_since_wake = current_time - last_wake_time;
+        if (elapsed_since_wake >= interval) {
+            // Сбрасываем watchdog перед выполнением работы
+            node_watchdog_reset();
+            
+            if (mqtt_manager_is_connected()) {
+                // Получение RSSI
+                wifi_ap_record_t ap_info;
+                int8_t rssi = -100;
+                if (wifi_manager_is_connected() && esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+                    rssi = ap_info.rssi;
+                }
+                
+                // Формат согласно MQTT_SPEC_FULL.md раздел 9.2
+                cJSON *heartbeat = cJSON_CreateObject();
+                if (heartbeat) {
+            // uptime - аптайм в миллисекундах (диагностика)
             cJSON_AddNumberToObject(heartbeat, "uptime", (double)(esp_timer_get_time() / 1000));
+            // ts - Unix timestamp в секундах (для синхронизации с сервером)
+            cJSON_AddNumberToObject(heartbeat, "ts", (double)node_utils_now_epoch());
             cJSON_AddNumberToObject(heartbeat, "free_heap", (double)esp_get_free_heap_size());
             cJSON_AddNumberToObject(heartbeat, "rssi", rssi);
+            
+            // Добавляем метрики памяти, если доступны
+            if (memory_pool_is_initialized()) {
+                memory_pool_metrics_t mem_metrics;
+                if (memory_pool_get_metrics(&mem_metrics) == ESP_OK) {
+                    cJSON_AddNumberToObject(heartbeat, "min_heap_free", (double)mem_metrics.min_heap_free);
+                    // Добавляем информацию о пуле памяти (опционально)
+                    if (mem_metrics.pool_hits > 0 || mem_metrics.pool_misses > 0) {
+                        uint32_t pool_total = mem_metrics.pool_hits + mem_metrics.pool_misses;
+                        double pool_hit_rate = pool_total > 0 ? 
+                            (100.0 * mem_metrics.pool_hits / pool_total) : 0.0;
+                        cJSON_AddNumberToObject(heartbeat, "memory_pool_hit_rate", pool_hit_rate);
+                    }
+                }
+            }
             
             char *json_str = cJSON_PrintUnformatted(heartbeat);
             if (json_str) {
@@ -62,7 +106,16 @@ static void task_heartbeat(void *pvParameters) {
                 free(json_str);
             }
             cJSON_Delete(heartbeat);
+                }
+            }
+            
+            // Сбрасываем watchdog после выполнения работы
+            node_watchdog_reset();
+            last_wake_time = current_time;
         }
+        
+        // Небольшая задержка, чтобы не нагружать CPU
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 

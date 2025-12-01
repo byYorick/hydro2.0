@@ -18,6 +18,9 @@ static const char *TAG = "ph_main";
 void app_main(void) {
     ESP_LOGI(TAG, "Starting ph_node...");
 
+    // Инициализация watchdog таймера теперь выполняется автоматически в node_framework_init()
+    // Конфигурация watchdog берется из node_framework (10 секунд, idle задачи отключены)
+
     // Инициализация NVS
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -44,5 +47,8 @@ void app_main(void) {
     ph_node_app_init();
 
     ESP_LOGI(TAG, "ph_node started");
+    
+    // app_main завершается, main_task переходит в idle loop
+    // Все рабочие задачи уже добавлены в watchdog в ph_node_start_tasks()
 }
 

@@ -15,9 +15,26 @@
 #include "mqtt_manager.h"
 #include "esp_log.h"
 #include "mqtt_client.h"
+#include "node_utils.h"
 #include "esp_timer.h"
 #include <string.h>
 #include <stdio.h>
+
+// Слабые символы для опциональной зависимости от oled_ui
+// Если oled_ui не включен, эти функции будут NULL
+void oled_ui_notify_mqtt_tx(void) __attribute__((weak));
+void oled_ui_notify_mqtt_rx(void) __attribute__((weak));
+
+// Условный include для diagnostics (может быть не всегда доступен)
+#ifdef __has_include
+    #if __has_include("diagnostics.h")
+        #include "diagnostics.h"
+        #define DIAGNOSTICS_AVAILABLE 1
+    #endif
+#endif
+#ifndef DIAGNOSTICS_AVAILABLE
+    #define DIAGNOSTICS_AVAILABLE 0
+#endif
 
 static const char *TAG = "mqtt_manager";
 
@@ -26,7 +43,9 @@ static esp_mqtt_client_handle_t s_mqtt_client = NULL;
 static mqtt_manager_config_t s_config = {0};
 static mqtt_node_info_t s_node_info = {0};
 static bool s_is_connected = false;
+static bool s_was_connected = false;  // Флаг, что было хотя бы одно подключение
 static char s_mqtt_uri[256] = {0};
+static uint32_t s_reconnect_count = 0;  // Счетчик переподключений
 
 // Callbacks
 static mqtt_config_callback_t s_config_cb = NULL;
@@ -210,6 +229,8 @@ esp_err_t mqtt_manager_deinit(void) {
     memset(&s_config, 0, sizeof(s_config));
     memset(&s_node_info, 0, sizeof(s_node_info));
     s_is_connected = false;
+    s_was_connected = false;
+    s_reconnect_count = 0;
 
     ESP_LOGI(TAG, "MQTT manager deinitialized");
     return ESP_OK;
@@ -300,8 +321,26 @@ esp_err_t mqtt_manager_publish_config_response(const char *data) {
     return mqtt_manager_publish_internal(topic, data, 1, 0);
 }
 
+esp_err_t mqtt_manager_publish_diagnostics(const char *data) {
+    if (!data) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    char topic[192];
+    esp_err_t err = build_topic(topic, sizeof(topic), "diagnostics", NULL);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    return mqtt_manager_publish_internal(topic, data, 1, 0);
+}
+
 bool mqtt_manager_is_connected(void) {
     return s_is_connected;
+}
+
+uint32_t mqtt_manager_get_reconnect_count(void) {
+    return s_reconnect_count;
 }
 
 esp_err_t mqtt_manager_reconnect(void) {
@@ -334,7 +373,8 @@ static esp_err_t mqtt_manager_publish_internal(const char *topic, const char *da
     }
 
     // Уведомляем OLED UI о MQTT активности (отправка)
-    extern void oled_ui_notify_mqtt_tx(void);
+    // Используем слабые символы для опциональной зависимости от oled_ui
+    // Если функция не определена, линкер разрешит слабый символ (NULL)
     oled_ui_notify_mqtt_tx();
 
     int data_len = strlen(data);
@@ -358,10 +398,24 @@ static esp_err_t mqtt_manager_publish_internal(const char *topic, const char *da
     
     if (msg_id < 0) {
         ESP_LOGE(TAG, "Failed to publish to %s (msg_id=%d)", topic, msg_id);
+        // Обновление метрик диагностики (ошибка публикации)
+        #if DIAGNOSTICS_AVAILABLE
+        if (diagnostics_is_initialized()) {
+            diagnostics_update_mqtt_metrics(false, false, true);
+        }
+        #endif
         return ESP_FAIL;
     }
     
     ESP_LOGI(TAG, "MQTT PUBLISH SUCCESS: topic='%s', msg_id=%d, len=%d", topic, msg_id, data_len);
+    
+    // Обновление метрик диагностики (успешная публикация)
+    #if DIAGNOSTICS_AVAILABLE
+    if (diagnostics_is_initialized()) {
+        diagnostics_update_mqtt_metrics(true, false, false);
+    }
+    #endif
+    
     return ESP_OK;
 }
 
@@ -375,13 +429,21 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
     switch ((esp_mqtt_event_id_t)event_id) {
         case MQTT_EVENT_CONNECTED:
             ESP_LOGI(TAG, "MQTT connected to broker");
+            // Увеличиваем счетчик переподключений (если это не первое подключение)
+            // s_was_connected проверяем ДО установки s_is_connected
+            if (s_was_connected) {
+                // Переподключение после отключения
+                s_reconnect_count++;
+                ESP_LOGI(TAG, "MQTT reconnected (count: %u)", s_reconnect_count);
+            }
             s_is_connected = true;
+            s_was_connected = true;  // Отмечаем, что было подключение
 
             // Публикация статуса ONLINE (ОБЯЗАТЕЛЬНО сразу после подключения, до подписки)
             // Согласно MQTT_SPEC_FULL.md раздел 4.2 и BACKEND_NODE_CONTRACT_FULL.md раздел 8.1
             char status_json[128];
             snprintf(status_json, sizeof(status_json), "{\"status\":\"ONLINE\",\"ts\":%lld}", 
-                    (long long)(esp_timer_get_time() / 1000000));
+                    (long long)node_utils_get_timestamp_seconds());
             mqtt_manager_publish_status(status_json);
             ESP_LOGI(TAG, "Published status: ONLINE");
 
@@ -430,8 +492,38 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
             break;
 
         case MQTT_EVENT_DATA: {
+            // Проверка длины topic и data перед обработкой
+            // max_topic_len должен соответствовать размеру буфера build_topic (192 байта)
+            // с небольшим запасом для безопасности
+            const size_t max_topic_len = 192;
+            const size_t max_data_len = 2048;
+            
+            // Проверяем, не превышает ли длина допустимые значения
+            if (event->topic_len > max_topic_len) {
+                ESP_LOGW(TAG, "MQTT topic too long: %d bytes (max %zu), dropping message", 
+                         event->topic_len, max_topic_len);
+                #if DIAGNOSTICS_AVAILABLE
+                if (diagnostics_is_initialized()) {
+                    diagnostics_update_mqtt_metrics(false, true, false);
+                }
+                #endif
+                break;
+            }
+            
+            if (event->data_len > max_data_len) {
+                ESP_LOGW(TAG, "MQTT data too long: %d bytes (max %zu), dropping message", 
+                         event->data_len, max_data_len);
+                #if DIAGNOSTICS_AVAILABLE
+                if (diagnostics_is_initialized()) {
+                    diagnostics_update_mqtt_metrics(false, true, false);
+                }
+                #endif
+                break;
+            }
+            
             // Создание null-terminated строк для topic и data
-            char topic[128] = {0};
+            // Размер буфера topic увеличен до 192 для соответствия build_topic
+            char topic[192] = {0};
             char data[2048] = {0};
 
             int topic_len = (event->topic_len < sizeof(topic) - 1) ? 
@@ -471,8 +563,16 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                      event->data_len, log_data);
             
             // Уведомляем OLED UI о MQTT активности (прием)
-            extern void oled_ui_notify_mqtt_rx(void);
+            // Используем слабые символы для опциональной зависимости от oled_ui
+            // Если функция не определена, линкер разрешит слабый символ (NULL)
             oled_ui_notify_mqtt_rx();
+            
+            // Обновление метрик диагностики (получение сообщения)
+            #if DIAGNOSTICS_AVAILABLE
+            if (diagnostics_is_initialized()) {
+                diagnostics_update_mqtt_metrics(false, true, false);
+            }
+            #endif
 
             // Определяем тип топика и вызываем соответствующий callback
             // Согласно MQTT_SPEC_FULL.md раздел 2:
@@ -481,7 +581,8 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
             if (strstr(topic, "/config") != NULL) {
                 // Config топик - вызываем callback для обработки конфигурации
                 if (s_config_cb) {
-                    s_config_cb(topic, data, data_len, s_config_user_ctx);
+                    // Передаем оригинальную длину, так как мы уже проверили, что она не превышает max_data_len
+                    s_config_cb(topic, data, event->data_len, s_config_user_ctx);
                 } else {
                     ESP_LOGW(TAG, "Config message received but no callback registered");
                 }
@@ -504,7 +605,8 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                             char channel[64] = {0};
                             memcpy(channel, prev_slash, channel_len);
                             if (s_command_cb) {
-                                s_command_cb(topic, channel, data, data_len, s_command_user_ctx);
+                                // Передаем оригинальную длину, так как мы уже проверили, что она не превышает max_data_len
+                                s_command_cb(topic, channel, data, event->data_len, s_command_user_ctx);
                             } else {
                                 ESP_LOGW(TAG, "Command message received but no callback registered");
                             }

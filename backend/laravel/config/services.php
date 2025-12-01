@@ -35,6 +35,14 @@ return [
         'base_url' => env('PY_API_URL', 'http://mqtt-bridge:9000'),
         'token' => env('PY_API_TOKEN'),
         'ingest_token' => env('PY_INGEST_TOKEN'),
+        'timeout' => env('PY_API_TIMEOUT', 10), // таймаут в секундах
+        'retry_attempts' => env('PY_API_RETRY_ATTEMPTS', 2), // количество попыток
+        'retry_delay' => env('PY_API_RETRY_DELAY', 1), // задержка между попытками в секундах
+    ],
+
+    'alertmanager' => [
+        'webhook_secret' => env('ALERTMANAGER_WEBHOOK_SECRET'),
+        'allowed_ips' => env('ALERTMANAGER_ALLOWED_IPS') ? explode(',', env('ALERTMANAGER_ALLOWED_IPS')) : [],
     ],
 
     'history_logger' => [

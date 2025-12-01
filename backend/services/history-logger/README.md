@@ -114,18 +114,21 @@ HTTP endpoint для приема телеметрии.
 
 Сервис подписывается на следующие топики:
 
-- `hydro/+/+/+/telemetry/+` - телеметрия от узлов
+- `hydro/+/+/+/+/telemetry` - телеметрия от узлов (формат: `hydro/{gh}/{zone}/{node}/{channel}/telemetry`)
 - `hydro/+/+/+/heartbeat` - heartbeat сообщения от узлов
 - `hydro/node_hello` - регистрация новых узлов
 - `hydro/+/+/+/node_hello` - регистрация новых узлов (альтернативный формат)
+- `hydro/+/+/+/config_response` - ответы на установку конфигурации
 
 ### Формат топика телеметрии
 
 ```
-hydro/{gh_uid}/{zone_uid}/{node_uid}/telemetry/{metric_type}
+hydro/{gh_uid}/{zone_uid}/{node_uid}/{channel}/telemetry
 ```
 
-Пример: `hydro/gh-1/zn-1/nd-ph-1/telemetry/PH`
+Пример: `hydro/gh-1/zn-1/nd-ph-1/ph_sensor/telemetry`
+
+**Примечание:** Формат синхронизирован с прошивками ESP32 согласно `MQTT_SPEC_FULL.md`.
 
 ### Формат payload телеметрии
 
@@ -133,10 +136,24 @@ hydro/{gh_uid}/{zone_uid}/{node_uid}/telemetry/{metric_type}
 {
   "metric_type": "PH",
   "value": 6.5,
-  "timestamp": 1737979200000,
-  "channel": "ph_sensor"
+  "ts": 1737979.2,
+  "channel": "ph_sensor",
+  "node_id": "nd-ph-1",
+  "raw": 1465,
+  "stub": false,
+  "stable": true
 }
 ```
+
+**Поля:**
+- `metric_type` (обязательное) - тип метрики: PH, EC, TEMPERATURE, и т.д.
+- `value` (обязательное) - значение метрики
+- `ts` (опциональное) - timestamp в секундах (Unix timestamp) от прошивок
+- `channel` (опциональное) - имя канала (может быть извлечено из топика)
+- `node_id` (опциональное) - ID узла от прошивки
+- `raw` (опциональное) - сырое значение сенсора
+- `stub` (опциональное) - флаг, указывающий, что значение симулированное
+- `stable` (опциональное) - флаг стабильности показаний сенсора
 
 ## Метрики Prometheus
 

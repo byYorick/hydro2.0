@@ -1,27 +1,5 @@
 <template>
   <AppLayout>
-    <!-- Toast notifications -->
-    <Teleport to="body">
-      <div 
-        class="fixed top-4 right-4 z-[10000] space-y-2 pointer-events-none"
-        style="position: fixed !important; top: 1rem !important; right: 1rem !important; z-index: 10000 !important; pointer-events: none;"
-      >
-        <div
-          v-for="toast in toasts"
-          :key="toast.id"
-          class="pointer-events-auto"
-          style="pointer-events: auto;"
-        >
-          <Toast
-            :message="toast.message"
-            :variant="toast.variant"
-            :duration="toast.duration"
-            @close="removeToast(toast.id)"
-          />
-        </div>
-      </div>
-    </Teleport>
-    
     <div class="flex items-center justify-between mb-3">
       <div>
         <div class="text-lg font-semibold">{{ device.uid || device.name || device.id }}</div>
@@ -43,6 +21,52 @@
       </div>
     </div>
 
+    <!-- Визуализация связи с зоной -->
+    <Card v-if="device.zone" class="mb-3">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-12 h-12 rounded-lg border-2 border-sky-500/50 bg-sky-950/20 flex items-center justify-center">
+            <span class="text-2xl">🌱</span>
+          </div>
+          <div>
+            <div class="text-sm font-semibold text-neutral-200">Привязано к зоне</div>
+            <Link :href="`/zones/${device.zone.id}`" class="text-sky-400 hover:text-sky-300 hover:underline text-sm">
+              {{ device.zone.name }}
+            </Link>
+            <div v-if="device.zone.status" class="text-xs text-neutral-400 mt-1">
+              Статус: {{ device.zone.status }}
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <Link :href="`/zones/${device.zone.id}`">
+            <Button size="sm" variant="outline">
+              Перейти к зоне →
+            </Button>
+          </Link>
+          <button 
+            @click="detachNode"
+            :disabled="detaching"
+            class="inline-flex items-center justify-center rounded-md font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-red-600/50 h-8 px-3 text-xs bg-red-900/50 hover:bg-red-800/50 text-red-200 border border-red-700/50 hover:border-red-600/50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <svg v-if="!detaching" class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+            <span v-if="detaching">Отвязка...</span>
+            <span v-else>Отвязать от зоны</span>
+          </button>
+        </div>
+      </div>
+    </Card>
+    <Card v-else class="mb-3 border-amber-500/30 bg-amber-950/10">
+      <div class="flex items-center gap-2 text-amber-400">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+        <span class="text-sm">Устройство не привязано к зоне</span>
+      </div>
+    </Card>
+
     <div class="grid grid-cols-1 xl:grid-cols-3 gap-3">
       <Card class="xl:col-span-2">
         <div class="text-sm font-semibold mb-2">Channels</div>
@@ -62,37 +86,49 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { Link, usePage } from '@inertiajs/vue3'
+import { computed, ref, watch } from 'vue'
+import { Link, usePage, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import NodeLifecycleBadge from '@/Components/NodeLifecycleBadge.vue'
 import DeviceChannelsTable from '@/Pages/Devices/DeviceChannelsTable.vue'
-import Toast from '@/Components/Toast.vue'
 import { logger } from '@/utils/logger'
-import axios from 'axios'
+import { useHistory } from '@/composables/useHistory'
+import { useToast } from '@/composables/useToast'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
+import { useApi } from '@/composables/useApi'
+import { useDevicesStore } from '@/stores/devices'
 import type { Device, DeviceChannel } from '@/types'
-import type { ToastVariant } from '@/composables/useToast'
 
 interface PageProps {
   device?: Device
-}
-
-interface ToastItem {
-  id: number
-  message: string
-  variant: ToastVariant
-  duration: number
 }
 
 const page = usePage<PageProps>()
 const device = computed(() => (page.props.device || {}) as Device)
 const channels = computed(() => (device.value.channels || []) as DeviceChannel[])
 const testingChannels = ref<Set<string>>(new Set())
-const toasts = ref<ToastItem[]>([])
-let toastIdCounter = 0
+const detaching = ref(false)
+const { showToast } = useToast()
+const { api } = useApi(showToast)
+const devicesStore = useDevicesStore()
+
+// История просмотров
+const { addToHistory } = useHistory()
+
+// Добавляем устройство в историю просмотров
+watch(device, (newDevice) => {
+  if (newDevice?.id) {
+    addToHistory({
+      id: newDevice.id,
+      type: 'device',
+      name: newDevice.name || newDevice.uid || `Устройство ${newDevice.id}`,
+      url: `/devices/${newDevice.id}`
+    })
+  }
+}, { immediate: true })
 
 const nodeConfig = computed(() => {
   const config = {
@@ -112,38 +148,68 @@ const nodeConfig = computed(() => {
   return JSON.stringify(config, null, 2)
 })
 
-function showToast(message: string, variant: ToastVariant = 'info', duration: number = 3000): number {
-  const id = ++toastIdCounter
-  toasts.value.push({ id, message, variant, duration })
-  return id
-}
-
-function removeToast(id: number): void {
-  const index = toasts.value.findIndex(t => t.id === id)
-  if (index > -1) {
-    toasts.value.splice(index, 1)
-  }
-}
-
 const onRestart = async (): Promise<void> => {
   try {
-    const response = await axios.post(`/api/nodes/${device.value.id}/commands`, {
-      type: 'restart',
-      params: {},
-    }, {
-      headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-    })
+    const response = await api.post<{ status: string }>(
+      `/nodes/${device.value.id}/commands`,
+      {
+        type: 'restart',
+        params: {},
+      }
+    )
     
     if (response.data?.status === 'ok') {
       logger.debug('[Devices/Show] Device restart command sent successfully', response.data)
-      showToast('Команда перезапуска отправлена', 'success', 3000)
+      showToast('Команда перезапуска отправлена', 'success', TOAST_TIMEOUT.NORMAL)
     }
   } catch (err) {
+    // Ошибка уже обработана в useApi через showToast
     logger.error('[Devices/Show] Failed to restart device:', err)
-    let errorMsg = 'Неизвестная ошибка'
-    if (err && err.response && err.response.data && err.response.data.message) errorMsg = err.response.data.message
-    else if (err && err.message) errorMsg = err.message
-    showToast(`Ошибка перезапуска: ${errorMsg}`, 'error', 5000)
+  }
+}
+
+const detachNode = async (): Promise<void> => {
+  if (!device.value.zone_id) {
+    showToast('Нода уже отвязана от зоны', 'warning', TOAST_TIMEOUT.NORMAL)
+    return
+  }
+
+  if (!confirm('Вы уверены, что хотите отвязать ноду от зоны? Нода будет сброшена в состояние "Зарегистрирована" и появится в списке новых нод.')) {
+    return
+  }
+
+  detaching.value = true
+  try {
+    const response = await api.post<{ status: string; data?: Device }>(
+      `/nodes/${device.value.id}/detach`,
+      {}
+    )
+    
+    if (response.data?.status === 'ok') {
+      logger.debug('[Devices/Show] Node detached successfully', response.data)
+      showToast(`Нода "${device.value.uid || device.value.name}" успешно отвязана от зоны`, 'success', TOAST_TIMEOUT.NORMAL)
+      
+      // Обновляем device локально, убирая zone_id, вместо полного reload
+      const updatedDevice = response.data?.data || {
+        ...device.value,
+        zone_id: null,
+        zone: null,
+      }
+      
+      // Обновляем device в store для мгновенного отображения
+      if (updatedDevice?.id) {
+        devicesStore.upsert(updatedDevice)
+        logger.debug('[Devices/Show] Device updated in store after detach', { deviceId: updatedDevice.id })
+      }
+      
+      // Опционально: можно перенаправить на список устройств, если нужно
+      // router.visit('/devices')
+    }
+  } catch (err) {
+    // Ошибка уже обработана в useApi через showToast
+    logger.error('[Devices/Show] Failed to detach node:', err)
+  } finally {
+    detaching.value = false
   }
 }
 
@@ -153,7 +219,7 @@ const onTestPump = async (channelName: string, channelType: string): Promise<voi
   
   testingChannels.value.add(channelName)
   const channelLabel = getChannelLabel(channelName, channelType)
-  showToast(`Запуск теста: ${channelLabel}...`, 'info', 2000)
+  showToast(`Запуск теста: ${channelLabel}...`, 'info', TOAST_TIMEOUT.SHORT)
   
   try {
     // Определяем команду в зависимости от типа канала
@@ -166,33 +232,31 @@ const onTestPump = async (channelName: string, channelType: string): Promise<voi
       params = { state: true, duration_ms: 3000 }
     }
     
-    const response = await axios.post(`/api/nodes/${device.value.id}/commands`, {
-      type: commandType,
-      channel: channelName,
-      params: params,
-    }, {
-      headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-    })
+    const response = await api.post<{ status: string; data?: { command_id: number } }>(
+      `/nodes/${device.value.id}/commands`,
+      {
+        type: commandType,
+        channel: channelName,
+        params: params,
+      }
+    )
     
     if (response.data?.status === 'ok' && response.data?.data?.command_id) {
       const cmdId = response.data.data.command_id
       // Ожидаем ответа от ноды
-      const result = await checkCommandStatus(cmdId, 30) // Максимум 15 секунд
+      const result = await checkCommandStatus(cmdId, 30) // Максимум 30 секунд
       
       if (result.success) {
-        showToast(`Тест ${channelLabel} выполнен успешно!`, 'success', 5000)
+        showToast(`Тест ${channelLabel} выполнен успешно!`, 'success', TOAST_TIMEOUT.LONG)
       } else {
-        showToast(`Ошибка теста ${channelLabel}: ${result.status}`, 'error', 5000)
+        showToast(`Ошибка теста ${channelLabel}: ${result.status}`, 'error', TOAST_TIMEOUT.LONG)
       }
     } else {
-      showToast(`Не удалось отправить команду для ${channelLabel}`, 'error', 5000)
+      showToast(`Не удалось отправить команду для ${channelLabel}`, 'error', TOAST_TIMEOUT.LONG)
     }
   } catch (err) {
+    // Ошибка уже обработана в useApi через showToast
     logger.error(`[Devices/Show] Failed to test ${channelName}:`, err)
-    let errorMsg = 'Неизвестная ошибка'
-    if (err && err.response && err.response.data && err.response.data.message) errorMsg = err.response.data.message
-    else if (err && err.message) errorMsg = err.message
-    showToast(`Ошибка теста ${channelLabel}: ${errorMsg}`, 'error', 5000)
   } finally {
     testingChannels.value.delete(channelName)
   }
@@ -230,14 +294,14 @@ function getChannelLabel(channelName, channelType) {
 }
 
 // Функция для проверки статуса команды
-async function checkCommandStatus(cmdId, maxAttempts = 30) {
+async function checkCommandStatus(cmdId: number, maxAttempts = 30): Promise<{ success: boolean; status: string; error?: string }> {
   for (let i = 0; i < maxAttempts; i++) {
     try {
-      const response = await axios.get(`/api/commands/${cmdId}/status`, {
-        headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-      })
+      const response = await api.get<{ status: string; data?: { status: string } }>(
+        `/commands/${cmdId}/status`
+      )
       
-      if (response.data?.status === 'ok') {
+      if (response.data?.status === 'ok' && response.data?.data) {
         const cmdStatus = response.data.data.status
         if (cmdStatus === 'ack') {
           return { success: true, status: 'ack' }
@@ -252,11 +316,13 @@ async function checkCommandStatus(cmdId, maxAttempts = 30) {
     } catch (err) {
       logger.error('[Devices/Show] Failed to check command status:', err)
       // Если команда не найдена, возможно она еще не создана, продолжаем ожидание
-      if ((err as { response?: { status?: number } })?.response?.status === 404 && i < maxAttempts - 1) {
+      const errorStatus = (err as { response?: { status?: number } })?.response?.status
+      if (errorStatus === 404 && i < maxAttempts - 1) {
         await new Promise(resolve => setTimeout(resolve, 500))
         continue
       }
-      return { success: false, status: 'error', error: err.message }
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+      return { success: false, status: 'error', error: errorMessage }
     }
   }
   return { success: false, status: 'timeout' }

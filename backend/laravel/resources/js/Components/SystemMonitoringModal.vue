@@ -277,13 +277,13 @@ const chainIssues = computed(() => {
   if (historyLoggerStatus.value === 'fail') {
     issues.push('❌ History Logger недоступен - телеметрия не логируется')
   } else if (historyLoggerStatus.value === 'unknown') {
-    issues.push('⚠️ Статус History Logger неизвестен - проверка не завершена')
+    issues.push('⚠️ Статус History Logger неизвестен - проверка не завершена или требуется аутентификация')
   }
   
   if (automationEngineStatus.value === 'fail') {
     issues.push('❌ Automation Engine недоступен - автоматизация не работает')
   } else if (automationEngineStatus.value === 'unknown') {
-    issues.push('⚠️ Статус Automation Engine неизвестен - проверка не завершена')
+    issues.push('⚠️ Статус Automation Engine неизвестен - проверка не завершена или требуется аутентификация')
   }
   
   return issues

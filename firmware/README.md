@@ -4,11 +4,19 @@
 
 - `common/components/` — общие компоненты
   - `mqtt_client/` — MQTT клиент (MVP_DONE)
+  - `mqtt_manager/` — MQTT менеджер и топик-роутер (MVP_DONE)
   - `wifi_manager/` — Wi-Fi менеджер (MVP_DONE)
   - `config_storage/` — Хранение NodeConfig (MVP_DONE)
+  - `config_apply/` — Применение конфигурации (MVP_DONE)
   - `i2c_bus/` — I²C шина (MVP_DONE)
   - `oled_ui/` — OLED дисплей UI (MVP_DONE)
   - `logging/` — Система логирования (MVP_DONE)
+  - `heartbeat_task/` — Задача публикации heartbeat (MVP_DONE)
+  - `node_framework/` — Унифицированный фреймворк для всех нод (MVP_DONE)
+    - Обработка NodeConfig, команд, телеметрии
+    - Управление состоянием (Safe Mode)
+    - Унифицированный watchdog
+  - `memory_pool/` — Оптимизация использования памяти (MVP_DONE)
   - `sensors/` — Драйверы сенсоров
     - `ph_sensor/` — pH-сенсор (универсальный драйвер, MVP_DONE)
     - `trema_ph/` — Trema pH-сенсор (iarduino, I²C, MVP_DONE) - используется в ph_node
@@ -16,6 +24,9 @@
     - `trema_ec/` — Trema EC-сенсор (iarduino, I²C, MVP_DONE) - используется в ec_node
     - `sht3x/` — Температура/влажность (MVP_DONE)
     - `ina209/` — Датчик тока (MVP_DONE)
+  - `pump_driver/` — Драйвер насосов с мониторингом тока (MVP_DONE)
+  - `relay_driver/` — Драйвер реле (MVP_DONE)
+  - `pwm_driver/` — Драйвер PWM (MVP_DONE)
 - `nodes/` — проекты нод:
   - `pump_node/` — насосная нода (частичная реализация)
   - `ph_node/` — pH нода (частичная реализация)
@@ -33,9 +44,13 @@
 
 ### Общие компоненты
 - ✅ `mqtt_client` — MVP_DONE
+- ✅ `mqtt_manager` — MVP_DONE
 - ✅ `wifi_manager` — MVP_DONE
 - ✅ `config_storage` — MVP_DONE
+- ✅ `config_apply` — MVP_DONE
 - ✅ `i2c_bus` — MVP_DONE
+- ✅ `node_framework` — MVP_DONE (интегрирован во все ноды)
+- ✅ `memory_pool` — MVP_DONE (интегрирован в node_framework)
 - ✅ `oled_ui` — MVP_DONE
 - ✅ `logging` — MVP_DONE
 

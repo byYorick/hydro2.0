@@ -227,8 +227,11 @@ static esp_err_t wifi_post_handler(httpd_req_t *req) {
 
     setup_portal_credentials_t creds = {0};
     strncpy(creds.ssid, ssid->valuestring, sizeof(creds.ssid) - 1);
+    creds.ssid[sizeof(creds.ssid) - 1] = '\0';  // Гарантируем null-termination
     strncpy(creds.password, password->valuestring, sizeof(creds.password) - 1);
+    creds.password[sizeof(creds.password) - 1] = '\0';  // Гарантируем null-termination
     strncpy(creds.mqtt_host, mqtt_host->valuestring, sizeof(creds.mqtt_host) - 1);
+    creds.mqtt_host[sizeof(creds.mqtt_host) - 1] = '\0';  // Гарантируем null-termination
     creds.mqtt_port = (uint16_t)port_value;
     
     ESP_LOGI(TAG, "Данные WiFi: SSID='%s', пароль (%d символов)", creds.ssid, (int)strlen(creds.password));
@@ -473,7 +476,6 @@ esp_err_t setup_portal_run_full_setup(const setup_portal_full_config_t *config) 
     const char *ap_password = config->ap_password ? config->ap_password : "hydro2025";
     
     // Initialize OLED if enabled
-    bool oled_initialized = false;
     if (config->enable_oled) {
         ESP_LOGI(TAG, "=== Setup Mode OLED Initialization ===");
         if (!i2c_bus_is_initialized()) {
@@ -502,7 +504,7 @@ esp_err_t setup_portal_run_full_setup(const setup_portal_full_config_t *config) 
             
             err = oled_ui_init(node_type, ap_ssid, &oled_config);
             if (err == ESP_OK) {
-                oled_initialized = true;
+                ESP_LOGI(TAG, "OLED initialized successfully for setup mode");
                 ESP_LOGI(TAG, "Setting OLED state to WIFI_SETUP...");
                 err = oled_ui_set_state(OLED_UI_STATE_WIFI_SETUP);
                 if (err != ESP_OK) {
@@ -512,12 +514,19 @@ esp_err_t setup_portal_run_full_setup(const setup_portal_full_config_t *config) 
                 // Update OLED model with AP SSID
                 oled_ui_model_t model = {0};
                 strncpy(model.zone_name, ap_ssid, sizeof(model.zone_name) - 1);
+                model.zone_name[sizeof(model.zone_name) - 1] = '\0';  // Гарантируем null-termination
                 model.connections.wifi_connected = false;
                 model.connections.mqtt_connected = false;
-                oled_ui_update_model(&model);
-                oled_ui_refresh();
                 
-                ESP_LOGI(TAG, "OLED initialized successfully for setup mode");
+                ESP_LOGI(TAG, "Updating OLED model with AP SSID: %s", model.zone_name);
+                oled_ui_update_model(&model);
+                
+                // Принудительное обновление экрана сразу
+                vTaskDelay(pdMS_TO_TICKS(100));  // Небольшая задержка для завершения инициализации
+                oled_ui_refresh();
+                vTaskDelay(pdMS_TO_TICKS(100));  // Даем время на отрисовку
+                
+                ESP_LOGI(TAG, "OLED initialized successfully for setup mode (SSID: %s)", ap_ssid);
             } else {
                 ESP_LOGE(TAG, "Failed to initialize OLED: %s (error code: %d)", 
                          esp_err_to_name(err), err);
@@ -557,8 +566,9 @@ esp_err_t setup_portal_run_full_setup(const setup_portal_full_config_t *config) 
     ESP_LOGI(TAG, "========================================");
     ESP_LOGI(TAG, "Connection data:");
     ESP_LOGI(TAG, "  WiFi SSID:    %s", ap_ssid);
-    ESP_LOGI(TAG, "  WiFi Pass:    %s", ap_password);
-    ESP_LOGI(TAG, "  PIN:          %s", setup_pin);
+    // Безопасность: не логируем пароль и PIN в открытом виде
+    ESP_LOGI(TAG, "  WiFi Pass:    [%d characters]", (int)strlen(ap_password));
+    ESP_LOGI(TAG, "  PIN:          [%d characters]", (int)strlen(setup_pin));
     ESP_LOGI(TAG, "  Open browser: http://192.168.4.1");
     ESP_LOGI(TAG, "========================================");
     

@@ -13,6 +13,7 @@ class Zone extends Model
     use HasFactory;
 
     protected $fillable = [
+        'uid',
         'greenhouse_id',
         'preset_id',
         'name',
@@ -84,12 +85,18 @@ class Zone extends Model
         return $this->hasMany(AiLog::class);
     }
 
+    public function pidConfigs(): HasMany
+    {
+        return $this->hasMany(ZonePidConfig::class);
+    }
+
     /**
      * Проверка возможности управления pH
      */
     public function canPhControl(): bool
     {
         $capabilities = $this->capabilities ?? [];
+
         return $capabilities['ph_control'] ?? false;
     }
 
@@ -99,6 +106,7 @@ class Zone extends Model
     public function canEcControl(): bool
     {
         $capabilities = $this->capabilities ?? [];
+
         return $capabilities['ec_control'] ?? false;
     }
 
@@ -108,6 +116,7 @@ class Zone extends Model
     public function canClimateControl(): bool
     {
         $capabilities = $this->capabilities ?? [];
+
         return $capabilities['climate_control'] ?? false;
     }
 
@@ -117,6 +126,7 @@ class Zone extends Model
     public function canLightControl(): bool
     {
         $capabilities = $this->capabilities ?? [];
+
         return $capabilities['light_control'] ?? false;
     }
 
@@ -126,6 +136,7 @@ class Zone extends Model
     public function canIrrigationControl(): bool
     {
         $capabilities = $this->capabilities ?? [];
+
         return $capabilities['irrigation_control'] ?? false;
     }
 
@@ -135,6 +146,7 @@ class Zone extends Model
     public function canRecirculation(): bool
     {
         $capabilities = $this->capabilities ?? [];
+
         return $capabilities['recirculation'] ?? false;
     }
 
@@ -144,8 +156,7 @@ class Zone extends Model
     public function hasFlowSensor(): bool
     {
         $capabilities = $this->capabilities ?? [];
+
         return $capabilities['flow_sensor'] ?? false;
     }
 }
-
-

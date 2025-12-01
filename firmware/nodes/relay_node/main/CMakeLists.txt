@@ -1,0 +1,35 @@
+idf_component_register(
+    SRCS 
+        "main.c"
+        "relay_node_app.c"
+        "relay_node_tasks.c"
+        "relay_node_init.c"
+        "relay_node_init_steps.c"
+        "relay_node_handlers.c"
+        "relay_node_framework_integration.c"
+    INCLUDE_DIRS 
+        "."
+    REQUIRES 
+        mqtt_manager
+        wifi_manager
+        config_storage
+        config_apply
+        node_framework
+        node_utils
+        i2c_bus
+        oled_ui
+        setup_portal
+        heartbeat_task
+        connection_status
+        relay_driver
+        driver
+        esp_wifi
+        nvs_flash
+        esp_netif
+        esp_event
+        freertos
+        mqtt
+        esp_timer
+        json
+)
+

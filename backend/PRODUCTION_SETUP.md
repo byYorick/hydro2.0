@@ -130,3 +130,6 @@ docker-compose -f docker-compose.prod.yml restart automation-engine history-logg
 - [Laravel Reverb документация](https://laravel.com/docs/reverb)
 - [Grafana документация](https://grafana.com/docs/)
 
+
+
+

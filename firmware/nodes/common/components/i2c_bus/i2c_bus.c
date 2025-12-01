@@ -267,7 +267,8 @@ esp_err_t i2c_bus_read_bus(i2c_bus_id_t bus_id, uint8_t device_addr, const uint8
     xSemaphoreGive(bus->mutex);
     
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "I²C read failed on bus %d: %s (addr=0x%02X)", bus_id, esp_err_to_name(err), device_addr);
+        // Понижаем уровень логирования - ошибки чтения могут быть ожидаемыми (датчик не подключен)
+        ESP_LOGD(TAG, "I²C read failed on bus %d: %s (addr=0x%02X)", bus_id, esp_err_to_name(err), device_addr);
     }
     
     return err;
@@ -348,7 +349,8 @@ esp_err_t i2c_bus_write_bus(i2c_bus_id_t bus_id, uint8_t device_addr, const uint
     xSemaphoreGive(bus->mutex);
     
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "I²C write failed on bus %d: %s (addr=0x%02X)", bus_id, esp_err_to_name(err), device_addr);
+        // Понижаем уровень логирования - ошибки записи могут быть ожидаемыми (датчик не подключен)
+        ESP_LOGD(TAG, "I²C write failed on bus %d: %s (addr=0x%02X)", bus_id, esp_err_to_name(err), device_addr);
     }
     
     return err;
@@ -540,11 +542,15 @@ esp_err_t i2c_bus_init_from_config(void) {
         i2c_config.clock_speed = (uint32_t)cJSON_GetNumberValue(item);
     }
     
-    cJSON_Delete(config);
-    
     ESP_LOGI(TAG, "Initializing I²C bus from NodeConfig: SDA=%d, SCL=%d, speed=%lu Hz",
             i2c_config.sda_pin, i2c_config.scl_pin, i2c_config.clock_speed);
     
-    return i2c_bus_init(&i2c_config);
+    // Сохраняем результат инициализации перед удалением config
+    esp_err_t result = i2c_bus_init(&i2c_config);
+    
+    // Освобождаем память в любом случае
+    cJSON_Delete(config);
+    
+    return result;
 }
 

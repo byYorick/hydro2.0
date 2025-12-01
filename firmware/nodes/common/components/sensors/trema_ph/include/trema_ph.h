@@ -110,6 +110,12 @@ bool trema_ph_is_using_stub_values(void);
  */
 bool trema_ph_is_initialized(void);
 
+/**
+ * @brief Log I²C bus 1 connectivity status for the pH sensor
+ * @return true if sensor responded with expected model ID, false otherwise
+ */
+bool trema_ph_log_connection_status(void);
+
 #ifdef __cplusplus
 }
 #endif

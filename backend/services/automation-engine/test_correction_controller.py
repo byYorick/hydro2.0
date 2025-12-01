@@ -12,7 +12,7 @@ async def test_ph_controller_check_and_correct_no_target():
     telemetry = {"PH": 6.5}
     nodes = {}
     
-    result = await controller.check_and_correct(1, targets, telemetry, nodes, True)
+    result = await controller.check_and_correct(1, targets, telemetry, nodes=nodes, water_level_ok=True)
     assert result is None
 
 
@@ -24,7 +24,7 @@ async def test_ph_controller_check_and_correct_no_current():
     telemetry = {}
     nodes = {}
     
-    result = await controller.check_and_correct(1, targets, telemetry, nodes, True)
+    result = await controller.check_and_correct(1, targets, telemetry, nodes=nodes, water_level_ok=True)
     assert result is None
 
 
@@ -36,7 +36,7 @@ async def test_ph_controller_check_and_correct_small_diff():
     telemetry = {"PH": 6.4}  # diff = 0.1, меньше порога 0.2
     nodes = {}
     
-    result = await controller.check_and_correct(1, targets, telemetry, nodes, True)
+    result = await controller.check_and_correct(1, targets, telemetry, nodes=nodes, water_level_ok=True)
     assert result is None
 
 
@@ -57,7 +57,7 @@ async def test_ph_controller_check_and_correct_cooldown():
     with patch("correction_controller.should_apply_correction") as mock_should:
         mock_should.return_value = (False, "В cooldown периоде")
         with patch("correction_controller.create_zone_event") as mock_event:
-            result = await controller.check_and_correct(1, targets, telemetry, nodes, True)
+            result = await controller.check_and_correct(1, targets, telemetry, nodes=nodes, water_level_ok=True)
             
             assert result is None
             mock_event.assert_called_once()
@@ -82,7 +82,7 @@ async def test_ph_controller_check_and_correct_low_ph():
     with patch("correction_controller.should_apply_correction") as mock_should:
         mock_should.return_value = (True, "Корректировка необходима")
         
-        result = await controller.check_and_correct(1, targets, telemetry, nodes, True)
+        result = await controller.check_and_correct(1, targets, telemetry, nodes=nodes, water_level_ok=True)
         
         assert result is not None
         assert result['cmd'] == 'adjust_ph'
@@ -109,7 +109,7 @@ async def test_ph_controller_check_and_correct_high_ph():
     with patch("correction_controller.should_apply_correction") as mock_should:
         mock_should.return_value = (True, "Корректировка необходима")
         
-        result = await controller.check_and_correct(1, targets, telemetry, nodes, True)
+        result = await controller.check_and_correct(1, targets, telemetry, nodes=nodes, water_level_ok=True)
         
         assert result is not None
         assert result['cmd'] == 'adjust_ph'
@@ -135,7 +135,7 @@ async def test_ph_controller_check_and_correct_no_water():
     with patch("correction_controller.should_apply_correction") as mock_should:
         mock_should.return_value = (True, "Корректировка необходима")
         
-        result = await controller.check_and_correct(1, targets, telemetry, nodes, False)
+        result = await controller.check_and_correct(1, targets, telemetry, nodes=nodes, water_level_ok=False)
         
         assert result is None  # Не должно быть корректировки при низком уровне воды
 
@@ -151,7 +151,7 @@ async def test_ph_controller_check_and_correct_no_nodes():
     with patch("correction_controller.should_apply_correction") as mock_should:
         mock_should.return_value = (True, "Корректировка необходима")
         
-        result = await controller.check_and_correct(1, targets, telemetry, nodes, True)
+        result = await controller.check_and_correct(1, targets, telemetry, nodes=nodes, water_level_ok=True)
         
         assert result is None
 
@@ -173,7 +173,7 @@ async def test_ec_controller_check_and_correct_low_ec():
     with patch("correction_controller.should_apply_correction") as mock_should:
         mock_should.return_value = (True, "Корректировка необходима")
         
-        result = await controller.check_and_correct(1, targets, telemetry, nodes, True)
+        result = await controller.check_and_correct(1, targets, telemetry, nodes=nodes, water_level_ok=True)
         
         assert result is not None
         assert result['cmd'] == 'adjust_ec'
@@ -199,7 +199,7 @@ async def test_ec_controller_check_and_correct_high_ec():
     with patch("correction_controller.should_apply_correction") as mock_should:
         mock_should.return_value = (True, "Корректировка необходима")
         
-        result = await controller.check_and_correct(1, targets, telemetry, nodes, True)
+        result = await controller.check_and_correct(1, targets, telemetry, nodes=nodes, water_level_ok=True)
         
         assert result is not None
         assert result['cmd'] == 'adjust_ec'
@@ -390,4 +390,3 @@ async def test_ec_controller_apply_correction():
         
         # Проверяем, что был создан AI log
         mock_ai_log.assert_called_once()
-

@@ -20,8 +20,11 @@ extern "C" {
  * @brief Конфигурация Wi-Fi
  */
 typedef struct {
-    const char *ssid;      ///< SSID сети
-    const char *password; ///< Пароль сети
+    const char *ssid;          ///< SSID сети
+    const char *password;      ///< Пароль сети
+    uint16_t timeout_sec;      ///< Таймаут подключения в секундах (0 = использовать дефолт 30)
+    bool auto_reconnect;       ///< Автоматическое переподключение при разрыве связи
+    uint32_t max_reconnect_attempts; ///< Максимальное количество попыток переподключения (0 = использовать дефолт 5)
 } wifi_manager_config_t;
 
 /**

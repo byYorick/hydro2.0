@@ -3,20 +3,17 @@
 namespace App\Http\Controllers;
 
 use App\Models\Zone;
-use App\Services\DigitalTwinClient;
+use App\Jobs\RunSimulationJob;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
 
 class SimulationController extends Controller
 {
-    public function __construct(
-        private DigitalTwinClient $client
-    ) {
-    }
-
     /**
-     * Симулировать зону.
+     * Симулировать зону (асинхронно через очередь).
      *
      * @param Request $request
      * @param Zone $zone
@@ -60,19 +57,58 @@ class SimulationController extends Controller
             ];
         }
 
-        try {
-            $result = $this->client->simulateZone($zone->id, [
+        // Генерируем уникальный ID для job
+        $jobId = 'sim_' . Str::uuid()->toString();
+
+        // Создаем job и отправляем в очередь
+        RunSimulationJob::dispatch(
+            $zone->id,
+            [
                 'duration_hours' => $data['duration_hours'] ?? 72,
                 'step_minutes' => $data['step_minutes'] ?? 10,
                 'scenario' => $scenario,
-            ]);
+            ],
+            $jobId
+        );
 
-            return response()->json($result);
-        } catch (\Exception $e) {
+        // Устанавливаем начальный статус
+        Cache::put("simulation:{$jobId}", [
+            'status' => 'queued',
+            'created_at' => now()->toIso8601String(),
+        ], 3600);
+
+        return response()->json([
+            'status' => 'ok',
+            'data' => [
+                'job_id' => $jobId,
+                'status' => 'queued',
+                'message' => 'Simulation queued successfully. Use GET /api/simulations/{job_id} to check status.',
+            ],
+        ], 202); // 202 Accepted
+    }
+
+    /**
+     * Получить статус симуляции.
+     *
+     * @param Request $request
+     * @param string $jobId
+     * @return JsonResponse
+     */
+    public function show(Request $request, string $jobId): JsonResponse
+    {
+        $status = Cache::get("simulation:{$jobId}");
+
+        if (!$status) {
             return response()->json([
                 'status' => 'error',
-                'message' => $e->getMessage(),
-            ], 500);
+                'code' => 'NOT_FOUND',
+                'message' => 'Simulation job not found or expired.',
+            ], 404);
         }
+
+        return response()->json([
+            'status' => 'ok',
+            'data' => $status,
+        ]);
     }
 }

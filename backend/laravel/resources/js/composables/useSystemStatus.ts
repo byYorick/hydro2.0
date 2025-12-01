@@ -1,21 +1,94 @@
 /**
- * Composable для управления статусами системы (Core, DB, WebSocket, MQTT)
+ * Composable для управления статусами системы
  */
-import { ref, computed, onMounted, onUnmounted, type Ref, type ComputedRef } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useApi, type ToastHandler } from './useApi'
 import { logger } from '@/utils/logger'
+import { extractData } from '@/utils/apiHelpers'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
+import { getReconnectAttempts, getLastError, getConnectionState, initEcho, onWsStateChange } from '@/utils/echoClient'
 
-const POLL_INTERVAL = 30000 // 30 секунд
-const RATE_LIMIT_BACKOFF = 60000 // 60 секунд при ошибке 429
-const WS_CHECK_INTERVAL = 5000 // 5 секунд для проверки WebSocket
+const HEALTH_CHECK_INTERVAL = 30000
+const WS_CHECK_INTERVAL = 10000
 
 type CoreStatus = 'ok' | 'fail' | 'unknown'
 type DbStatus = 'ok' | 'fail' | 'unknown'
-type WsStatus = 'connected' | 'disconnected' | 'unknown'
+type WsStatus = 'connected' | 'disconnected' | 'connecting' | 'unknown'
 type MqttStatus = 'online' | 'offline' | 'degraded' | 'unknown'
 type ServiceStatus = 'ok' | 'fail' | 'unknown'
 
-// Расширяем Window для Echo
+// Singleton для предотвращения множественных интервалов
+let sharedState: {
+  coreStatus: ReturnType<typeof ref<CoreStatus>>
+  dbStatus: ReturnType<typeof ref<DbStatus>>
+  wsStatus: ReturnType<typeof ref<WsStatus>>
+  mqttStatus: ReturnType<typeof ref<MqttStatus>>
+  historyLoggerStatus: ReturnType<typeof ref<ServiceStatus>>
+  automationEngineStatus: ReturnType<typeof ref<ServiceStatus>>
+  lastUpdate: ReturnType<typeof ref<Date | null>>
+  healthInterval: ReturnType<typeof setInterval> | null
+  wsInterval: ReturnType<typeof setInterval> | null
+  isRateLimited: boolean
+  rateLimitBackoffMs: number
+  rateLimitTimeout: ReturnType<typeof setTimeout> | null
+  subscribers: number
+  connectedHandler: (() => void) | null
+  disconnectedHandler: (() => void) | null
+} | null = null
+
+function resetWebSocketBindings() {
+  if (!sharedState) return
+  const pusher = window?.Echo?.connector?.pusher
+  if (pusher?.connection?.unbind) {
+    if (sharedState.connectedHandler) {
+      pusher.connection.unbind('connected', sharedState.connectedHandler)
+      sharedState.connectedHandler = null
+    }
+    if (sharedState.disconnectedHandler) {
+      pusher.connection.unbind('disconnected', sharedState.disconnectedHandler)
+      sharedState.disconnectedHandler = null
+    }
+  }
+}
+
+if (import.meta.hot) {
+  import.meta.hot.on('vite:beforeUpdate', () => {
+    if (sharedState) {
+      if (sharedState.healthInterval) {
+        clearInterval(sharedState.healthInterval)
+        sharedState.healthInterval = null
+      }
+      if (sharedState.wsInterval) {
+        clearInterval(sharedState.wsInterval)
+        sharedState.wsInterval = null
+      }
+      if (sharedState.rateLimitTimeout) {
+        clearTimeout(sharedState.rateLimitTimeout)
+        sharedState.rateLimitTimeout = null
+      }
+      resetWebSocketBindings()
+    }
+  })
+  
+  import.meta.hot.dispose(() => {
+    if (sharedState) {
+      if (sharedState.healthInterval) {
+        clearInterval(sharedState.healthInterval)
+        sharedState.healthInterval = null
+      }
+      if (sharedState.wsInterval) {
+        clearInterval(sharedState.wsInterval)
+        sharedState.wsInterval = null
+      }
+      if (sharedState.rateLimitTimeout) {
+        clearTimeout(sharedState.rateLimitTimeout)
+        sharedState.rateLimitTimeout = null
+      }
+      resetWebSocketBindings()
+    }
+  })
+}
+
 declare global {
   interface Window {
     Echo?: {
@@ -23,11 +96,8 @@ declare global {
         pusher?: {
           connection?: {
             state?: string
-            socket_id?: string
-            bind: (event: string, handler: () => void) => void
-          }
-          channels?: {
-            channels?: Record<string, unknown>
+            bind?: (event: string, handler: () => void) => void
+            unbind?: (event: string, handler: () => void) => void
           }
         }
       }
@@ -35,429 +105,361 @@ declare global {
   }
 }
 
+interface StatusResponse {
+  app?: string
+  db?: string
+  mqtt?: string
+  history_logger?: string
+  automation_engine?: string
+}
+
 export function useSystemStatus(showToast?: ToastHandler) {
   const { api } = useApi(showToast || null)
-  
-  // Статусы компонентов системы
-  const coreStatus: Ref<CoreStatus> = ref('unknown')
-  const dbStatus: Ref<DbStatus> = ref('unknown')
-  const wsStatus: Ref<WsStatus> = ref('unknown')
-  const mqttStatus: Ref<MqttStatus> = ref('unknown')
-  const historyLoggerStatus: Ref<ServiceStatus> = ref('unknown')
-  const automationEngineStatus: Ref<ServiceStatus> = ref('unknown')
-  
-  const lastUpdate: Ref<Date | null> = ref(null)
-  let healthPollInterval: ReturnType<typeof setInterval> | null = null
-  let wsConnectionCheckInterval: ReturnType<typeof setInterval> | null = null
-  
-  // Флаг для отслеживания rate limiting
-  let isRateLimited = false
-  let rateLimitTimeout: ReturnType<typeof setTimeout> | null = null
-  
-  // Флаг для предотвращения одновременных запросов
-  let isCheckingHealth = false
 
-  /**
-   * Проверка статуса Core, Database, MQTT и сервисов через /api/system/health
-   * Объединенная функция для избежания дублирующих запросов
-   */
+  // Используем singleton для предотвращения множественных интервалов
+  if (!sharedState) {
+    sharedState = {
+      coreStatus: ref<CoreStatus>('unknown'),
+      dbStatus: ref<DbStatus>('unknown'),
+      wsStatus: ref<WsStatus>('unknown'),
+      mqttStatus: ref<MqttStatus>('unknown'),
+      historyLoggerStatus: ref<ServiceStatus>('unknown'),
+      automationEngineStatus: ref<ServiceStatus>('unknown'),
+      lastUpdate: ref<Date | null>(null),
+      healthInterval: null,
+      wsInterval: null,
+      isRateLimited: false,
+      rateLimitBackoffMs: 30000, // Начальный backoff: 30 секунд
+      rateLimitTimeout: null,
+      subscribers: 0,
+      connectedHandler: null,
+      disconnectedHandler: null,
+    }
+  }
+
+  // Увеличиваем счетчик подписчиков
+  sharedState.subscribers++
+
+  const coreStatus = sharedState.coreStatus
+  const dbStatus = sharedState.dbStatus
+  const wsStatus = sharedState.wsStatus
+  const mqttStatus = sharedState.mqttStatus
+  const historyLoggerStatus = sharedState.historyLoggerStatus
+  const automationEngineStatus = sharedState.automationEngineStatus
+  const lastUpdate = sharedState.lastUpdate
+
+  const isCoreOk = computed(() => coreStatus.value === 'ok')
+  const isDbOk = computed(() => dbStatus.value === 'ok')
+
   async function checkHealth(): Promise<void> {
-    // Пропускаем запрос, если активен rate limiting
-    if (isRateLimited) {
-      logger.warn('[useSystemStatus] Пропуск запроса из-за rate limiting')
+    if (!sharedState) return
+    // Если уже была ошибка 429, пропускаем запрос
+    if (sharedState.isRateLimited) {
       return
     }
     
-    // Пропускаем запрос, если уже выполняется проверка
-    if (isCheckingHealth) {
-      logger.warn('[useSystemStatus] Пропуск запроса - проверка уже выполняется')
-      return
-    }
-    
-    isCheckingHealth = true
-
     try {
-      const response = await api.get<{ 
-        data?: { 
-          app?: string
-          db?: string
-          mqtt?: string
-          history_logger?: string
-          automation_engine?: string
-        }
-      } | { 
-        app?: string
-        db?: string
-        mqtt?: string
-        history_logger?: string
-        automation_engine?: string
-      }>('/api/system/health')
+      const response = await api.get<{ data?: StatusResponse; app?: string }>(
+        '/api/system/health'
+      )
+
+      const payload = extractData(response.data) || {}
+
+      coreStatus.value = payload.app === 'ok' ? 'ok' : payload.app === 'fail' ? 'fail' : 'unknown'
+      dbStatus.value = payload.db === 'ok' ? 'ok' : payload.db === 'fail' ? 'fail' : 'unknown'
       
-      const data = ((response.data as { data?: { app?: string; db?: string; mqtt?: string; history_logger?: string; automation_engine?: string } })?.data || 
-                   (response.data as { app?: string; db?: string; mqtt?: string; history_logger?: string; automation_engine?: string })) || {}
-      
-      // Обновляем статусы Core и DB
-      coreStatus.value = data.app === 'ok' ? 'ok' : 'fail'
-      dbStatus.value = data.db === 'ok' ? 'ok' : 'fail'
-      
-      // Обновляем статус MQTT
-      if (data.mqtt === 'ok' || data.mqtt === 'online' || data.mqtt === 'connected') {
-        mqttStatus.value = 'online'
-      } else if (data.mqtt === 'fail' || data.mqtt === 'offline' || data.mqtt === 'disconnected') {
-        mqttStatus.value = 'offline'
-      } else if (data.mqtt === 'degraded') {
-        mqttStatus.value = 'degraded'
+      // Обновляем статусы сервисов только если они присутствуют в ответе
+      // Если поля отсутствуют (например, при неаутентифицированном запросе),
+      // оставляем текущее значение (не перезаписываем 'unknown')
+      if ('history_logger' in payload) {
+        historyLoggerStatus.value = payload.history_logger === 'ok' ? 'ok' : payload.history_logger === 'fail' ? 'fail' : 'unknown'
       } else {
-        // Если статус MQTT не указан, используем fallback логику
-        if (wsStatus.value === 'connected') {
-          mqttStatus.value = 'online'
-        } else {
-          mqttStatus.value = 'unknown'
-        }
+        // Если поле отсутствует, логируем для диагностики
+        logger.debug('[useSystemStatus] history_logger status not in health response', {
+          availableFields: Object.keys(payload),
+          isAuthenticated: true, // Если мы здесь, значит запрос прошел, но поля нет
+        })
+        // Оставляем текущее значение, не устанавливаем в 'unknown'
       }
       
-      // Проверка статусов сервисов
-      if (data.history_logger) {
-        historyLoggerStatus.value = data.history_logger === 'ok' ? 'ok' : 'fail'
+      if ('automation_engine' in payload) {
+        automationEngineStatus.value = payload.automation_engine === 'ok' ? 'ok' : payload.automation_engine === 'fail' ? 'fail' : 'unknown'
       } else {
-        historyLoggerStatus.value = 'unknown'
+        // Если поле отсутствует, логируем для диагностики
+        logger.debug('[useSystemStatus] automation_engine status not in health response', {
+          availableFields: Object.keys(payload),
+          isAuthenticated: true,
+        })
+        // Оставляем текущее значение, не устанавливаем в 'unknown'
       }
-      
-      if (data.automation_engine) {
-        automationEngineStatus.value = data.automation_engine === 'ok' ? 'ok' : 'fail'
-      } else {
-        automationEngineStatus.value = 'unknown'
-      }
-      
+
       lastUpdate.value = new Date()
-      
-      // Сбрасываем флаг rate limiting при успешном запросе
-      if (isRateLimited) {
-        isRateLimited = false
-        if (rateLimitTimeout) {
-          clearTimeout(rateLimitTimeout)
-          rateLimitTimeout = null
+      // Сбрасываем флаг и backoff при успешном запросе
+      if (sharedState.isRateLimited) {
+        sharedState.isRateLimited = false
+        sharedState.rateLimitBackoffMs = 30000 // Сбрасываем backoff до начального значения
+        if (sharedState.rateLimitTimeout) {
+          clearTimeout(sharedState.rateLimitTimeout)
+          sharedState.rateLimitTimeout = null
         }
+        logger.debug('[useSystemStatus] Rate limit cleared after successful health check', {})
       }
-    } catch (err: any) {
+    } catch (error: any) {
+      // Игнорируем отмененные запросы (Inertia.js при навигации)
+      if (error?.code === 'ERR_CANCELED' || 
+          error?.name === 'CanceledError' || 
+          error?.message === 'canceled' ||
+          error?.message === 'Request aborted') {
+        // Не логируем отмененные запросы - это нормальное поведение
+        return
+      }
+      
       // Обработка ошибки 429 (Too Many Requests)
-      if (err?.response?.status === 429) {
-        isRateLimited = true
-        logger.warn('[useSystemStatus] Получена ошибка 429, приостанавливаем запросы на', RATE_LIMIT_BACKOFF / 1000, 'секунд')
+      if (error?.response?.status === 429) {
+        sharedState.isRateLimited = true
+        
+        // Останавливаем текущий интервал при rate limiting
+        if (sharedState.healthInterval) {
+          clearInterval(sharedState.healthInterval)
+          sharedState.healthInterval = null
+        }
         
         // Очищаем предыдущий timeout, если он был
-        if (rateLimitTimeout) {
-          clearTimeout(rateLimitTimeout)
+        if (sharedState.rateLimitTimeout) {
+          clearTimeout(sharedState.rateLimitTimeout)
+          sharedState.rateLimitTimeout = null
         }
         
-        // Устанавливаем таймер для сброса rate limiting
-        rateLimitTimeout = setTimeout(() => {
-          isRateLimited = false
-          rateLimitTimeout = null
-          logger.info('[useSystemStatus] Rate limiting сброшен, возобновляем запросы')
-        }, RATE_LIMIT_BACKOFF)
+        // Планируем возобновление с экспоненциальным backoff
+        const backoffMs = sharedState.rateLimitBackoffMs
+        logger.debug('[useSystemStatus] Rate limited, scheduling resume with backoff', {
+          backoffMs,
+          nextCheckIn: `${Math.round(backoffMs / 1000)}s`,
+        })
         
-        // Не показываем toast для 429, чтобы не спамить
+        sharedState.rateLimitTimeout = setTimeout(() => {
+          // Увеличиваем backoff экспоненциально (максимум 5 минут)
+          sharedState.rateLimitBackoffMs = Math.min(sharedState.rateLimitBackoffMs * 2, 300000)
+          sharedState.isRateLimited = false
+          sharedState.rateLimitTimeout = null
+          
+          // Возобновляем проверку здоровья
+          if (sharedState && !sharedState.healthInterval) {
+            checkHealth()
+            sharedState.healthInterval = setInterval(checkHealth, HEALTH_CHECK_INTERVAL)
+            logger.debug('[useSystemStatus] Health checks resumed after rate limit backoff', {
+              backoffMs: sharedState.rateLimitBackoffMs,
+            })
+          }
+        }, backoffMs)
+        
+        // Не показываем Toast для 429, это нормальное поведение rate limiting
         return
       }
       
-      // Логируем ошибку для диагностики
-      const errorMessage = err?.response?.data?.message || err?.message || 'Неизвестная ошибка'
-      const errorStatus = err?.response?.status
-      logger.error('[useSystemStatus] Ошибка проверки здоровья системы:', {
-        message: errorMessage,
-        status: errorStatus,
-        url: '/api/system/health',
-        error: err,
+      // Обработка ошибки 401/403 (неаутентифицирован)
+      if (error?.response?.status === 401 || error?.response?.status === 403) {
+        logger.debug('[useSystemStatus] Health check failed: unauthenticated', {
+          status: error?.response?.status,
+        })
+        // При ошибке аутентификации не обновляем статусы - они остаются как есть
+        // Это нормально, если пользователь не залогинен или сессия истекла
+        // historyLoggerStatus и automationEngineStatus останутся 'unknown', что корректно
+        return
+      }
+      
+      logger.error('[useSystemStatus] Failed to check health', { 
+        error,
+        status: error?.response?.status,
+        message: error?.message,
       })
       
-      // Для других ошибок обновляем статусы как fail
-      // Но не сбрасываем статусы, если они уже были установлены ранее (сохраняем последние известные значения)
-      if (coreStatus.value === 'unknown') {
-        coreStatus.value = 'fail'
-      }
-      if (dbStatus.value === 'unknown') {
-        dbStatus.value = 'fail'
-      }
-      if (mqttStatus.value === 'unknown') {
-        mqttStatus.value = 'offline'
-      }
-      if (historyLoggerStatus.value === 'unknown') {
-        historyLoggerStatus.value = 'fail'
-      }
-      if (automationEngineStatus.value === 'unknown') {
-        automationEngineStatus.value = 'fail'
-      }
-      
+      // При других ошибках устанавливаем только критичные статусы в 'fail'
+      // historyLoggerStatus и automationEngineStatus остаются как есть (не сбрасываем в fail)
+      // чтобы не показывать ложные предупреждения, если они были 'unknown'
+      coreStatus.value = 'fail'
+      dbStatus.value = 'fail'
+      // Не обновляем historyLoggerStatus и automationEngineStatus при ошибке,
+      // чтобы они остались в текущем состоянии (unknown или последнее известное значение)
       lastUpdate.value = new Date()
       
-      if (showToast && err?.response?.status !== 429) {
-        showToast(`Ошибка проверки статуса системы: ${errorMessage}`, 'error', 5000)
+      if (showToast && error?.response?.status !== 429 && error?.response?.status !== 401 && error?.response?.status !== 403) {
+        showToast(`Ошибка проверки статуса системы: ${error.message || 'Ошибка'}`, 'error', TOAST_TIMEOUT.LONG)
       }
-    } finally {
-      // Всегда сбрасываем флаг проверки
-      isCheckingHealth = false
     }
   }
 
-  /**
-   * Проверка статуса WebSocket соединения
-   */
   function checkWebSocketStatus(): void {
-    // Проверяем, включен ли WebSocket вообще
-    const wsEnabled = String(import.meta.env.VITE_ENABLE_WS || 'false') === 'true'
-    const appKey = import.meta.env.VITE_PUSHER_APP_KEY
+    const echo = window?.Echo
+    if (!echo || !echo.connector || !echo.connector.pusher || !echo.connector.pusher.connection) {
+      // НЕ инициализируем Echo здесь, так как это может конфликтовать с bootstrap.js
+      // bootstrap.js уже инициализирует Echo, и повторная инициализация может прервать соединение
+      // Просто показываем состояние "connecting" и ждем, пока bootstrap.js завершит инициализацию
+      const wsEnabled = String((import.meta as any).env.VITE_ENABLE_WS ?? 'true') === 'true'
+      if (wsEnabled && !echo) {
+        logger.debug('[useSystemStatus] Echo not initialized, waiting for bootstrap.js to initialize', {
+          note: 'Echo initialization is handled by bootstrap.js to avoid conflicts',
+        })
+        // НЕ вызываем initEcho() здесь - это может прервать инициализацию из bootstrap.js
+        wsStatus.value = 'connecting'
+        return
+      }
+      // Если Echo не инициализирован и не удалось инициализировать, показываем "connecting" вместо "unknown"
+      wsStatus.value = 'connecting'
+      return
+    }
 
-    // Если WebSocket не включен или нет ключа, показываем как отключенный
-    if (!wsEnabled || !appKey) {
+    const state = echo.connector.pusher.connection.state
+    logger.debug('[useSystemStatus] WebSocket state', { 
+      state,
+      socketId: echo?.connector?.pusher?.connection?.socket_id || null,
+      hasConnection: !!echo.connector.pusher.connection,
+    })
+    if (state === 'connected') {
+      wsStatus.value = 'connected'
+    } else if (state === 'connecting') {
+      wsStatus.value = 'connecting'
+    } else if (state === 'unavailable') {
+      // unavailable означает, что сервер недоступен, но мы пытаемся подключиться
+      wsStatus.value = 'connecting'
+      logger.debug('[useSystemStatus] WebSocket unavailable, showing as connecting', { state })
+    } else if (state === 'disconnected' || state === 'failed') {
       wsStatus.value = 'disconnected'
-      return
-    }
-
-    // Если Echo еще не инициализирован, ждем немного и проверяем снова
-    if (!window.Echo) {
-      // Если это первая проверка, оставляем unknown, иначе показываем disconnected
-      if (wsStatus.value === 'unknown') {
-        // Даем время на инициализацию Echo
-        setTimeout(() => {
-          if (window.Echo) {
-            checkWebSocketStatus()
-          } else {
-            wsStatus.value = 'disconnected'
-          }
-        }, 1000)
-      } else {
-        wsStatus.value = 'disconnected'
-      }
-      return
-    }
-
-    // Laravel Echo использует Pusher под капотом
-    // Проверяем состояние соединения через Pusher
-    try {
-      const pusher = window.Echo?.connector?.pusher
-      if (!pusher) {
-        wsStatus.value = 'disconnected'
-        return
-      }
-
-      // Проверяем наличие connection объекта
-      if (!pusher.connection) {
-        wsStatus.value = 'disconnected'
-        return
-      }
-
-      const state = pusher.connection?.state
-      
-      // Проверяем все возможные состояния соединения
-      if (state === 'connected') {
-        wsStatus.value = 'connected'
-      } else if (state === 'connecting' || state === 'unavailable') {
-        // В процессе подключения - сохраняем текущий статус, если он был connected
-        // Иначе показываем как disconnected
-        if (wsStatus.value !== 'connected') {
-          wsStatus.value = 'disconnected'
-        }
-      } else if (state === 'disconnected' || state === 'failed' || state === 'error') {
-        wsStatus.value = 'disconnected'
-      } else {
-        // Для неизвестных состояний проверяем, есть ли активное соединение
-        const socketId = pusher.connection?.socket_id
-        if (socketId) {
-          wsStatus.value = 'connected'
-        } else {
-          // Если состояние неизвестно и нет socket_id, проверяем через другие методы
-          // Проверяем, есть ли активные каналы
-          const hasActiveChannels = pusher.channels && Object.keys(pusher.channels.channels || {}).length > 0
-          if (hasActiveChannels) {
-            wsStatus.value = 'connected'
-          } else {
-            wsStatus.value = 'disconnected'
-          }
-        }
-      }
-    } catch (err) {
-      // Если произошла ошибка при проверке, считаем disconnected
-      logger.warn('[useSystemStatus] Ошибка проверки WebSocket:', err)
-      wsStatus.value = 'disconnected'
+    } else {
+      // Для неизвестных состояний показываем "connecting" вместо "unknown"
+      logger.warn('[useSystemStatus] Unknown WebSocket state', { state })
+      wsStatus.value = 'connecting'
     }
   }
 
-  /**
-   * Подписка на события WebSocket для отслеживания соединения
-   */
-  function setupWebSocketListeners(): void {
-    // Проверяем, включен ли WebSocket
-    const wsEnabled = String(import.meta.env.VITE_ENABLE_WS || 'false') === 'true'
-    const appKey = import.meta.env.VITE_PUSHER_APP_KEY
-
-    if (!wsEnabled || !appKey) {
-      return
-    }
-
-    if (!window.Echo) {
-      // Если Echo еще не готов, попробуем позже
-      setTimeout(() => {
-        if (window.Echo) {
-          setupWebSocketListeners()
-        }
-      }, 1000)
-      return
-    }
-
-    try {
-      const pusher = window.Echo?.connector?.pusher
-      if (!pusher) {
-        return
-      }
-
-      // Ждем, пока connection будет готов
-      if (!pusher.connection) {
-        // Подписываемся на событие инициализации connection
-        pusher.connection = pusher.connection || {} as typeof pusher.connection
-        setTimeout(() => {
-          if (pusher.connection) {
-            bindConnectionEvents(pusher.connection)
-          }
-        }, 500)
-        return
-      }
-
-      bindConnectionEvents(pusher.connection)
-    } catch (err) {
-      // Если не удалось настроить слушатели, просто используем периодическую проверку
-      logger.warn('[useSystemStatus] Ошибка настройки WebSocket listeners:', err)
+  function checkMqttStatus(): void {
+    if (wsStatus.value === 'connected') {
+      mqttStatus.value = 'online'
+    } else if (wsStatus.value === 'disconnected') {
+      mqttStatus.value = 'offline'
+    } else if (wsStatus.value === 'connecting') {
+      mqttStatus.value = 'degraded'
+    } else {
+      mqttStatus.value = 'unknown'
     }
   }
 
-  /**
-   * Привязка событий к connection объекту
-   */
-  function bindConnectionEvents(connection: NonNullable<typeof window.Echo>['connector']['pusher']['connection']): void {
-    if (!connection) return
-
-    try {
-      // Слушаем события подключения/отключения
-      connection.bind('connected', () => {
-        wsStatus.value = 'connected'
-      })
-
-      connection.bind('disconnected', () => {
-        wsStatus.value = 'disconnected'
-      })
-
-      connection.bind('error', () => {
-        wsStatus.value = 'disconnected'
-      })
-
-      connection.bind('state_change', (states: { previous?: string; current?: string }) => {
-        // states: { previous: 'disconnected', current: 'connected' }
-        if (states.current === 'connected') {
-          wsStatus.value = 'connected'
-        } else if (states.current === 'disconnected' || states.current === 'failed') {
-          wsStatus.value = 'disconnected'
-        }
-      })
-
-      // Также проверяем текущее состояние сразу после привязки
-      if (connection.state === 'connected') {
-        wsStatus.value = 'connected'
-      }
-    } catch (err) {
-      logger.warn('[useSystemStatus] Ошибка привязки событий connection:', err)
-    }
-  }
-
-  /**
-   * Проверка статуса MQTT через API
-   * Теперь MQTT статус получается из checkHealth(), эта функция оставлена для обратной совместимости
-   * @deprecated Используйте checkHealth() вместо этой функции
-   */
-  async function checkMqttStatus(): Promise<void> {
-    // Просто вызываем checkHealth, так как он уже получает статус MQTT
-    await checkHealth()
-  }
-
-  /**
-   * Инициализация мониторинга статусов
-   */
   function startMonitoring(): void {
-    // Первоначальная проверка
-    checkHealth()
-    
-    // Даем время на инициализацию Echo перед первой проверкой WebSocket
-    setTimeout(() => {
-      checkWebSocketStatus()
-      setupWebSocketListeners()
-    }, 500)
-
-    // Периодическая проверка здоровья (Core + DB + MQTT + сервисы)
-    // Все статусы получаются из одного запроса /api/system/health
-    healthPollInterval = setInterval(() => {
+    if (!sharedState) return
+    // Запускаем интервалы только один раз для всех подписчиков
+    if (!sharedState.healthInterval) {
       checkHealth()
-    }, POLL_INTERVAL)
+      sharedState.healthInterval = setInterval(checkHealth, HEALTH_CHECK_INTERVAL)
+    }
 
-    // Периодическая проверка WebSocket (не требует API запросов)
-    wsConnectionCheckInterval = setInterval(() => {
+    if (!sharedState.wsInterval) {
       checkWebSocketStatus()
-    }, WS_CHECK_INTERVAL)
+      checkMqttStatus()
+      sharedState.wsInterval = setInterval(() => {
+        checkWebSocketStatus()
+        checkMqttStatus()
+      }, WS_CHECK_INTERVAL)
+    }
+
+    const pusher = window?.Echo?.connector?.pusher
+    if (pusher && pusher.connection && typeof pusher.connection.bind === 'function') {
+      if (!sharedState.connectedHandler) {
+        sharedState.connectedHandler = () => {
+          wsStatus.value = 'connected'
+          checkMqttStatus()
+        }
+        pusher.connection.bind('connected', sharedState.connectedHandler)
+      }
+      if (!sharedState.disconnectedHandler) {
+        sharedState.disconnectedHandler = () => {
+          wsStatus.value = 'disconnected'
+          checkMqttStatus()
+        }
+        pusher.connection.bind('disconnected', sharedState.disconnectedHandler)
+      }
+    }
   }
 
-  /**
-   * Остановка мониторинга
-   */
   function stopMonitoring(): void {
-    if (healthPollInterval) {
-      clearInterval(healthPollInterval)
-      healthPollInterval = null
+    if (!sharedState) return
+    // Останавливаем интервалы только когда все подписчики отписались
+    sharedState.subscribers--
+    if (sharedState.subscribers <= 0) {
+      if (sharedState.healthInterval) {
+        clearInterval(sharedState.healthInterval)
+        sharedState.healthInterval = null
+      }
+      if (sharedState.wsInterval) {
+        clearInterval(sharedState.wsInterval)
+        sharedState.wsInterval = null
+      }
+      if (sharedState.rateLimitTimeout) {
+        clearTimeout(sharedState.rateLimitTimeout)
+        sharedState.rateLimitTimeout = null
+      }
+      resetWebSocketBindings()
+      // Сбрасываем singleton только когда нет подписчиков
+      sharedState = null
     }
-    if (wsConnectionCheckInterval) {
-      clearInterval(wsConnectionCheckInterval)
-      wsConnectionCheckInterval = null
-    }
-    if (rateLimitTimeout) {
-      clearTimeout(rateLimitTimeout)
-      rateLimitTimeout = null
-    }
-    isRateLimited = false
   }
+
+  // Подписка на изменения состояния WebSocket для мгновенного обновления статусов
+  let unsubscribeWsState: (() => void) | null = null
 
   onMounted(() => {
     startMonitoring()
+    
+    // Подписываемся на изменения состояния WebSocket для мгновенного обновления
+    unsubscribeWsState = onWsStateChange((state) => {
+      if (!sharedState) return
+      
+      // Мгновенно обновляем статусы WebSocket и MQTT при изменении состояния
+      if (state === 'connected') {
+        sharedState.wsStatus.value = 'connected'
+        checkMqttStatus()
+        logger.debug('[useSystemStatus] WebSocket state changed to connected, statuses updated immediately')
+      } else if (state === 'disconnected' || state === 'unavailable' || state === 'failed') {
+        sharedState.wsStatus.value = 'disconnected'
+        sharedState.mqttStatus.value = 'offline'
+        logger.debug('[useSystemStatus] WebSocket state changed to disconnected, statuses updated immediately')
+      } else if (state === 'connecting') {
+        sharedState.wsStatus.value = 'connecting'
+        logger.debug('[useSystemStatus] WebSocket state changed to connecting, statuses updated immediately')
+      }
+    })
   })
 
   onUnmounted(() => {
+    // Отписываемся от изменений состояния WebSocket
+    if (unsubscribeWsState) {
+      unsubscribeWsState()
+      unsubscribeWsState = null
+    }
     stopMonitoring()
   })
 
-  // Computed свойства для удобного доступа
-  const isCoreOk = computed(() => coreStatus.value === 'ok')
-  const isDbOk = computed(() => dbStatus.value === 'ok')
-  const isWsConnected = computed(() => wsStatus.value === 'connected')
-  const isMqttOnline = computed(() => mqttStatus.value === 'online')
+  // WebSocket детали из echoClient
+  const wsReconnectAttempts = computed(() => getReconnectAttempts())
+  const wsLastError = computed(() => getLastError())
+  const wsConnectionDetails = computed(() => getConnectionState())
 
   return {
-    // Статусы
-    coreStatus: computed(() => coreStatus.value) as ComputedRef<CoreStatus>,
-    dbStatus: computed(() => dbStatus.value) as ComputedRef<DbStatus>,
-    wsStatus: computed(() => wsStatus.value) as ComputedRef<WsStatus>,
-    mqttStatus: computed(() => mqttStatus.value) as ComputedRef<MqttStatus>,
-    historyLoggerStatus: computed(() => historyLoggerStatus.value) as ComputedRef<ServiceStatus>,
-    automationEngineStatus: computed(() => automationEngineStatus.value) as ComputedRef<ServiceStatus>,
-    lastUpdate: computed(() => lastUpdate.value) as ComputedRef<Date | null>,
-    
-    // Computed флаги
+    coreStatus,
+    dbStatus,
+    wsStatus,
+    mqttStatus,
+    historyLoggerStatus,
+    automationEngineStatus,
+    lastUpdate,
     isCoreOk,
     isDbOk,
-    isWsConnected,
-    isMqttOnline,
-    
-    // Методы
     checkHealth,
     checkWebSocketStatus,
     checkMqttStatus,
     startMonitoring,
     stopMonitoring,
+    wsReconnectAttempts,
+    wsLastError,
+    wsConnectionDetails,
   }
 }
-

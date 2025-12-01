@@ -30,4 +30,7 @@ CMakeBuilds.json
 # Docker
 .docker/
 
+# Environment
+.env
+
 

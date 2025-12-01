@@ -3,6 +3,7 @@
 namespace Tests\Unit\Services;
 
 use App\Models\DeviceNode;
+use App\Services\NodeLifecycleService;
 use App\Services\NodeService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -16,7 +17,9 @@ class NodeServiceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->service = new NodeService();
+        $this->service = new NodeService(
+            app(NodeLifecycleService::class)
+        );
     }
 
     public function test_create_node(): void
@@ -71,4 +74,3 @@ class NodeServiceTest extends TestCase
         $this->service->delete($node);
     }
 }
-

@@ -1,10 +1,32 @@
 <template>
-  <Card class="h-full overflow-hidden">
-    <div class="text-xs text-neutral-400 mb-1">{{ label }}</div>
-    <div class="text-lg font-semibold mb-2">
-      {{ currentValue !== null ? formatValue(currentValue) : '-' }}
-      <span v-if="unit" class="text-sm text-neutral-400">{{ unit }}</span>
+  <Card 
+    class="h-full overflow-hidden hover:border-neutral-700 transition-all duration-200 hover:shadow-lg group cursor-pointer"
+    @click="handleClick"
+  >
+    <div class="flex items-center justify-between mb-2">
+      <div class="text-xs font-medium uppercase tracking-wide text-neutral-400 group-hover:text-neutral-300 transition-colors">
+        {{ label }}
+      </div>
+      <div class="flex items-center gap-2">
+        <!-- Индикатор аномалий -->
+        <div 
+          v-if="hasAnomalies && !loading"
+          class="w-2 h-2 rounded-full bg-red-400 animate-pulse"
+          title="Обнаружены аномалии"
+        ></div>
+        <!-- Индикатор активности -->
+        <div 
+          v-if="currentValue !== null && !loading"
+          class="w-2 h-2 rounded-full animate-pulse"
+          :style="{ backgroundColor: color }"
+        ></div>
+      </div>
     </div>
+    <div class="text-2xl font-bold mb-2" :style="{ color: color }">
+      {{ currentValue !== null ? formatValue(currentValue) : '-' }}
+      <span v-if="unit" class="text-sm text-neutral-400 ml-1">{{ unit }}</span>
+    </div>
+    <!-- Sparkline график -->
     <div v-if="loading" class="h-16 flex items-center justify-center">
       <div class="text-xs text-neutral-500">Загрузка...</div>
     </div>
@@ -13,6 +35,12 @@
     </div>
     <div v-else class="h-16 relative">
       <ChartBase :option="chartOption" full-height />
+      <!-- Подсказка о клике -->
+      <div class="absolute bottom-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div class="text-[10px] text-neutral-500 bg-neutral-900/80 px-1.5 py-0.5 rounded">
+          Клик для деталей
+        </div>
+      </div>
     </div>
   </Card>
 </template>
@@ -37,7 +65,14 @@ interface Props {
   unit?: string
   loading?: boolean
   color?: string
+  zoneId?: number
+  metric?: string
 }
+
+const emit = defineEmits<{
+  click: []
+  'open-detail': [zoneId: number, metric: string]
+}>()
 
 const props = withDefaults(defineProps<Props>(), {
   data: () => [],
@@ -55,6 +90,32 @@ function formatValue(value: number | null | undefined): string {
     return value.toFixed(isPH ? 2 : 1)
   }
   return String(value)
+}
+
+// Определение аномалий (простое: значения вне нормального диапазона)
+const hasAnomalies = computed(() => {
+  if (!props.data || props.data.length === 0) return false
+  
+  // Простая проверка: если есть значения, сильно отличающиеся от среднего
+  const values = props.data
+    .map(item => item.avg !== undefined ? item.avg : item.value)
+    .filter(v => v !== null && v !== undefined) as number[]
+  
+  if (values.length < 3) return false
+  
+  const avg = values.reduce((a, b) => a + b, 0) / values.length
+  const variance = values.reduce((sum, v) => sum + Math.pow(v - avg, 2), 0) / values.length
+  const stdDev = Math.sqrt(variance)
+  
+  // Аномалия: значение отличается от среднего более чем на 2 стандартных отклонения
+  return values.some(v => Math.abs(v - avg) > 2 * stdDev)
+})
+
+const handleClick = () => {
+  emit('click')
+  if (props.zoneId && props.metric) {
+    emit('open-detail', props.zoneId, props.metric)
+  }
 }
 
 const chartOption = computed(() => {

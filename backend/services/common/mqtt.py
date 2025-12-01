@@ -13,10 +13,19 @@ logger = logging.getLogger(__name__)
 
 class MqttClient:
     def __init__(self, client_id_suffix: str = ""):
+        import os
+        import sys
         s = get_settings()
         self._host = s.mqtt_host
         self._port = s.mqtt_port
         self._subs: List[Tuple[str, int, Callable[[str, bytes], None]]] = []
+        # Логируем переменную окружения и настройки TLS для диагностики
+        mqtt_tls_env = os.getenv("MQTT_TLS", "NOT_SET")
+        # Используем print для гарантированного вывода, так как логирование может быть не настроено
+        print(f"[MQTT] MQTT_TLS env var: {mqtt_tls_env}, Settings mqtt_tls: {s.mqtt_tls}", file=sys.stderr, flush=True)
+        print(f"[MQTT] MQTT client config: host={self._host}, port={self._port}, tls={s.mqtt_tls}, user={s.mqtt_user}", file=sys.stderr, flush=True)
+        logger.info(f"MQTT_TLS env var: {mqtt_tls_env}, Settings mqtt_tls: {s.mqtt_tls}")
+        logger.info(f"MQTT client config: host={self._host}, port={self._port}, tls={s.mqtt_tls}, user={s.mqtt_user}")
         self._client = mqtt.Client(
             client_id=f"{s.mqtt_client_id}{client_id_suffix}",
             clean_session=s.mqtt_clean_session,
@@ -24,10 +33,13 @@ class MqttClient:
         if s.mqtt_user:
             self._client.username_pw_set(s.mqtt_user, s.mqtt_pass or None)
         if s.mqtt_tls:
+            logger.info("Enabling TLS for MQTT connection")
             if s.mqtt_ca_file:
                 self._client.tls_set(ca_certs=s.mqtt_ca_file)
             else:
                 self._client.tls_set()
+        else:
+            logger.info("TLS disabled for MQTT connection")
         self._connected = threading.Event()
         self._client.on_connect = self._on_connect
         self._client.on_disconnect = self._on_disconnect
@@ -148,7 +160,13 @@ class MqttClient:
 
     def start(self):
         """Start MQTT client and wait for connection. Raises exception if connection fails."""
-        self._client.connect(self._host, self._port, keepalive=30)
+        s = get_settings()
+        logger.info(f"Starting MQTT client: host={self._host}, port={self._port}, tls={s.mqtt_tls}, user={s.mqtt_user}")
+        try:
+            self._client.connect(self._host, self._port, keepalive=30)
+        except Exception as e:
+            logger.error(f"Failed to connect to MQTT broker {self._host}:{self._port} (TLS={s.mqtt_tls}): {e}", exc_info=True)
+            raise
         self._client.loop_start()
         # wait connected with timeout
         timeout = 10.0  # 10 seconds

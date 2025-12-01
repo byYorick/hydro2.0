@@ -1,47 +1,85 @@
 <template>
-  <div>
+  <Transition name="command-palette">
     <div v-if="open" class="fixed inset-0 z-50">
-      <div class="absolute inset-0 bg-black/70" @click="close"></div>
-      <div class="relative mx-auto mt-24 w-full max-w-xl rounded-xl border border-neutral-800 bg-neutral-925 p-3">
+      <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="close"></div>
+      <div class="relative mx-auto mt-12 sm:mt-24 w-full max-w-xl rounded-xl border border-neutral-800 bg-neutral-925 p-3 shadow-2xl mx-4 sm:mx-auto">
+        <!-- Заголовок и подсказки -->
+        <div class="mb-2 flex items-center justify-between">
+          <div class="text-xs text-neutral-400">Командная палитра</div>
+          <div class="hidden sm:flex items-center gap-2 text-xs text-neutral-500">
+            <kbd class="px-1.5 py-0.5 rounded bg-neutral-900 border border-neutral-800">↑↓</kbd>
+            <span>навигация</span>
+            <kbd class="px-1.5 py-0.5 rounded bg-neutral-900 border border-neutral-800">↵</kbd>
+            <span>выбрать</span>
+            <kbd class="px-1.5 py-0.5 rounded bg-neutral-900 border border-neutral-800">Esc</kbd>
+            <span>закрыть</span>
+          </div>
+        </div>
+        
         <input 
           v-model="q" 
           ref="inputRef"
           placeholder="Команда или поиск..." 
-          class="h-10 w-full rounded-md border border-neutral-800 bg-neutral-900 px-3 text-sm"
-          @keydown.down.prevent="selectedIndex = Math.min(selectedIndex + 1, filteredResults.length - 1)"
+          class="h-12 w-full rounded-md border border-neutral-800 bg-neutral-900 px-4 text-sm transition-all duration-200 focus:border-neutral-700 focus:ring-2 focus:ring-sky-500/20"
+          @keydown.down.prevent="selectedIndex = Math.min(selectedIndex + 1, totalItemsCount - 1)"
           @keydown.up.prevent="selectedIndex = Math.max(selectedIndex - 1, 0)"
-          @keydown.enter.prevent="run(filteredResults[selectedIndex])"
+          @keydown.enter.prevent="runSelected()"
         />
-        <div class="mt-2 max-h-72 overflow-y-auto">
-          <div 
-            v-for="(item, i) in filteredResults" 
-            :key="`${item.type}-${item.id || i}`"
-            class="px-3 py-2 text-sm hover:bg-neutral-850 cursor-pointer rounded-md flex items-center gap-2"
-            :class="{ 'bg-neutral-850': i === selectedIndex }"
-            @click="run(item)"
-            @mouseenter="selectedIndex = i"
-          >
-            <span v-if="item.icon" class="text-neutral-400">{{ item.icon }}</span>
-            <span v-html="highlightMatch(item.label, q)"></span>
-            <span v-if="item.category" class="ml-auto text-xs text-neutral-500">{{ item.category }}</span>
+        
+        <div class="mt-3 max-h-80 overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-800 scrollbar-track-transparent">
+          <!-- Группированные результаты -->
+          <template v-for="(group, groupIndex) in groupedResults" :key="group.category">
+            <div v-if="group.items.length > 0" class="mb-2">
+              <div class="px-3 py-1.5 text-xs font-semibold text-neutral-500 uppercase tracking-wider">
+                {{ group.category }}
+              </div>
+              <TransitionGroup name="command-item" tag="div">
+                <div 
+                  v-for="(item, itemIndex) in group.items" 
+                  :key="`${item.type}-${item.id || itemIndex}`"
+                  :data-index="getItemIndex(groupIndex, itemIndex)"
+                  class="px-3 py-2.5 text-sm hover:bg-neutral-850 cursor-pointer rounded-md flex items-center gap-3 transition-all duration-150"
+                  :class="{ 
+                    'bg-neutral-850 border-l-2 border-sky-500': getItemIndex(groupIndex, itemIndex) === selectedIndex 
+                  }"
+                  @click="run(item)"
+                  @mouseenter="selectedIndex = getItemIndex(groupIndex, itemIndex)"
+                >
+                  <span v-if="item.icon" class="text-lg flex-shrink-0">{{ item.icon }}</span>
+                  <span class="flex-1" v-html="highlightMatch(item.label, q)"></span>
+                  <span v-if="item.shortcut" class="ml-auto text-xs text-neutral-500 flex items-center gap-1">
+                    <kbd class="px-1.5 py-0.5 rounded bg-neutral-900 border border-neutral-800 text-[10px]">
+                      {{ item.shortcut }}
+                    </kbd>
+                  </span>
+                </div>
+              </TransitionGroup>
+            </div>
+          </template>
+          
+          <div v-if="loading" class="px-3 py-4 text-sm text-neutral-400 flex items-center gap-2">
+            <div class="w-4 h-4 border-2 border-neutral-600 border-t-transparent rounded-full animate-spin"></div>
+            Загрузка...
           </div>
-          <div v-if="loading" class="px-3 py-2 text-sm text-neutral-400">Загрузка...</div>
-          <div v-if="!loading && filteredResults.length === 0 && q" class="px-3 py-2 text-sm text-neutral-400">
+          <div v-if="!loading && groupedResults.length === 0 && q" class="px-3 py-4 text-sm text-neutral-400 text-center">
             Ничего не найдено
+          </div>
+          <div v-if="!loading && groupedResults.length === 0 && !q" class="px-3 py-4 text-sm text-neutral-400 text-center">
+            Начните вводить для поиска...
           </div>
         </div>
       </div>
     </div>
-    
-    <!-- Модальное окно подтверждения -->
-    <ConfirmModal
-      :open="confirmModal.open"
-      :title="confirmModal.title"
-      :message="confirmModal.message"
-      @close="confirmModal.open = false"
-      @confirm="confirmAction"
-    />
-  </div>
+  </Transition>
+  
+  <!-- Модальное окно подтверждения -->
+  <ConfirmModal
+    :open="confirmModal.open"
+    :title="confirmModal.title"
+    :message="confirmModal.message"
+    @close="confirmModal.open = false"
+    @confirm="confirmAction"
+  />
 </template>
 
 <script setup lang="ts">
@@ -50,8 +88,39 @@ import { router } from '@inertiajs/vue3'
 import { logger } from '@/utils/logger'
 import { useApi } from '@/composables/useApi'
 import { useCommands } from '@/composables/useCommands'
+import { useRole } from '@/composables/useRole'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
 import type { Zone, Device, Recipe } from '@/types'
+
+// Debounce для предотвращения множественных вызовов router.visit
+const visitTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const VISIT_DEBOUNCE_MS = 300
+
+/**
+ * Безопасный переход с проверкой текущего URL и debounce
+ */
+function safeVisit(url: string, options: { preserveScroll?: boolean } = {}): void {
+  const currentUrl = router.page?.url || window.location.pathname
+  const targetUrl = url.startsWith('/') ? url : `/${url}`
+  
+  // Если уже на целевой странице, не делаем переход
+  if (currentUrl === targetUrl) {
+    return
+  }
+  
+  const key = targetUrl
+  
+  // Очищаем предыдущий таймер для этого URL
+  if (visitTimers.has(key)) {
+    clearTimeout(visitTimers.get(key)!)
+  }
+  
+  // Устанавливаем новый таймер с debounce
+  visitTimers.set(key, setTimeout(() => {
+    visitTimers.delete(key)
+    router.visit(targetUrl, { preserveScroll: options.preserveScroll ?? true })
+  }, VISIT_DEBOUNCE_MS))
+}
 
 interface CommandItem {
   type: 'nav' | 'zone' | 'node' | 'recipe' | 'action'
@@ -59,6 +128,7 @@ interface CommandItem {
   label: string
   icon?: string
   category?: string
+  shortcut?: string
   action?: () => void
   actionFn?: () => void | Promise<void>
   requiresConfirm?: boolean
@@ -68,6 +138,11 @@ interface CommandItem {
   recipeName?: string
   actionType?: string
   cycleType?: string
+}
+
+interface GroupedResult {
+  category: string
+  items: CommandItem[]
 }
 
 interface ConfirmModalState {
@@ -91,6 +166,46 @@ const loading = ref<boolean>(false)
 
 const { api } = useApi()
 const { sendZoneCommand } = useCommands()
+const { isAdmin, isOperator, isAgronomist, isEngineer } = useRole()
+
+// История команд (хранится в localStorage)
+const commandHistory = ref<Array<{ label: string; timestamp: number; action: string }>>([])
+const maxHistorySize = 10
+
+// Загрузка истории из localStorage
+function loadHistory() {
+  try {
+    const stored = localStorage.getItem('commandPaletteHistory')
+    if (stored) {
+      commandHistory.value = JSON.parse(stored).slice(0, maxHistorySize)
+    }
+  } catch (err) {
+    logger.error('[CommandPalette] Failed to load history:', err)
+  }
+}
+
+// Сохранение команды в историю
+function saveToHistory(item: CommandItem) {
+  if (item.type === 'nav' || item.type === 'action') {
+    const historyItem = {
+      label: item.label,
+      timestamp: Date.now(),
+      action: item.type
+    }
+    // Удаляем дубликаты
+    commandHistory.value = commandHistory.value.filter(h => h.label !== item.label)
+    // Добавляем в начало
+    commandHistory.value.unshift(historyItem)
+    // Ограничиваем размер
+    commandHistory.value = commandHistory.value.slice(0, maxHistorySize)
+    // Сохраняем в localStorage
+    try {
+      localStorage.setItem('commandPaletteHistory', JSON.stringify(commandHistory.value))
+    } catch (err) {
+      logger.error('[CommandPalette] Failed to save history:', err)
+    }
+  }
+}
 
 // Модальное окно подтверждения
 const confirmModal = ref<ConfirmModalState>({
@@ -100,17 +215,56 @@ const confirmModal = ref<ConfirmModalState>({
   action: null
 })
 
-// Статические команды навигации
-const staticCommands: CommandItem[] = [
-  { type: 'nav', label: 'Открыть Zones', icon: '📁', action: () => router.visit('/zones') },
-  { type: 'nav', label: 'Открыть Devices', icon: '📱', action: () => router.visit('/devices') },
-  { type: 'nav', label: 'Открыть Recipes', icon: '📋', action: () => router.visit('/recipes') },
-  { type: 'nav', label: 'Открыть Alerts', icon: '⚠️', action: () => router.visit('/alerts') },
-  { type: 'nav', label: 'Открыть Dashboard', icon: '📊', action: () => router.visit('/') },
-  { type: 'nav', label: 'Мастер настройки системы', icon: '⚙️', action: () => router.visit('/setup/wizard'), category: 'Настройка' },
-  { type: 'nav', label: 'Создать теплицу', icon: '🏠', action: () => router.visit('/greenhouses/create'), category: 'Создание' },
-  { type: 'nav', label: 'Создать рецепт', icon: '➕', action: () => router.visit('/recipes/create'), category: 'Создание' },
+// Статические команды навигации (базовые для всех)
+const baseStaticCommands: CommandItem[] = [
+  { type: 'nav', label: 'Открыть Dashboard', icon: '📊', category: 'Навигация', action: () => safeVisit('/') },
+  { type: 'nav', label: 'Открыть Zones', icon: '🌱', category: 'Навигация', action: () => safeVisit('/zones') },
+  { type: 'nav', label: 'Открыть Devices', icon: '📱', category: 'Навигация', action: () => safeVisit('/devices') },
+  { type: 'nav', label: 'Открыть Recipes', icon: '📋', category: 'Навигация', action: () => safeVisit('/recipes') },
+  { type: 'nav', label: 'Открыть Alerts', icon: '⚠️', category: 'Навигация', action: () => safeVisit('/alerts') },
 ]
+
+// Ролевые команды
+const roleBasedCommands = computed<CommandItem[]>(() => {
+  const commands: CommandItem[] = []
+  
+  // Команды для админа
+  if (isAdmin.value) {
+    commands.push(
+      { type: 'nav', label: 'Управление пользователями', icon: '👥', category: 'Администрирование', action: () => safeVisit('/users') },
+      { type: 'nav', label: 'Системные настройки', icon: '⚙️', category: 'Администрирование', action: () => safeVisit('/settings') },
+      { type: 'nav', label: 'Аудит', icon: '📝', category: 'Администрирование', action: () => safeVisit('/audit') },
+    )
+  }
+  
+  // Команды для агронома
+  if (isAgronomist.value) {
+    commands.push(
+      { type: 'nav', label: 'Аналитика', icon: '📈', category: 'Аналитика', action: () => safeVisit('/analytics') },
+      { type: 'nav', label: 'Создать рецепт', icon: '➕', category: 'Создание', action: () => safeVisit('/recipes/create') },
+    )
+  }
+  
+  // Команды для инженера
+  if (isEngineer.value) {
+    commands.push(
+      { type: 'nav', label: 'Системные метрики', icon: '📊', category: 'Система', action: () => safeVisit('/system') },
+      { type: 'nav', label: 'Логи', icon: '📋', category: 'Система', action: () => safeVisit('/logs') },
+    )
+  }
+  
+  // Команды для оператора и админа
+  if (isOperator.value || isAdmin.value) {
+    commands.push(
+      { type: 'nav', label: 'Теплицы', icon: '🏠', category: 'Управление', action: () => safeVisit('/greenhouses') },
+    )
+  }
+  
+  return commands
+})
+
+// Объединенные статические команды
+const staticCommands = computed(() => [...baseStaticCommands, ...roleBasedCommands.value])
 
 // Результаты поиска
 const searchResults = ref<SearchResults>({
@@ -182,199 +336,269 @@ watch(q, (newQuery: string) => {
   }, 300)
 })
 
-// Формируем результаты
-const filteredResults = computed<CommandItem[]>(() => {
+// Формируем результаты с группировкой
+const groupedResults = computed<GroupedResult[]>(() => {
   const query = q.value.toLowerCase()
+  const flatResults: CommandItem[] = []
   
-  // Если запрос пустой, показываем только статические команды
+  // Если запрос пустой, показываем историю и статические команды
   if (!query) {
-    return staticCommands
-  }
-
-  const results = []
-  
-  // Фильтруем статические команды
-  staticCommands.forEach(cmd => {
-    if (fuzzyMatch(cmd.label, query)) {
-      results.push(cmd)
-    }
-  })
-
-  // Добавляем зоны с быстрыми действиями
-  searchResults.value.zones.forEach(zone => {
-    if (fuzzyMatch(zone.name, query)) {
-      // Переход к зоне
-      results.push({
-        type: 'zone',
-        id: zone.id,
-        label: zone.name,
-        icon: '🌱',
-        category: 'Зона',
-        action: () => router.visit(`/zones/${zone.id}`)
+    // Добавляем историю команд
+    if (commandHistory.value.length > 0) {
+      commandHistory.value.forEach((historyItem, index) => {
+        flatResults.push({
+          type: 'nav',
+          label: historyItem.label,
+          icon: '🕐',
+          category: 'История',
+          shortcut: index === 0 ? 'Недавно' : undefined,
+          action: () => {
+            // Восстанавливаем действие из истории (упрощенная версия)
+            const matchingCommand = staticCommands.value.find(cmd => cmd.label === historyItem.label)
+            if (matchingCommand?.action) {
+              matchingCommand.action()
+            }
+          }
+        })
       })
-      
-      // Быстрые действия для зоны
-      if (zone.status === 'PAUSED') {
-        results.push({
-          type: 'action',
-          id: `zone-${zone.id}-resume`,
-          label: `Возобновить зону "${zone.name}"`,
-          icon: '▶️',
-          category: 'Действие',
-          zoneId: zone.id,
-          zoneName: zone.name,
-          actionType: 'resume',
-          requiresConfirm: false,
-          actionFn: () => executeZoneAction(zone.id, 'resume', zone.name)
-        })
-      } else if (zone.status === 'RUNNING') {
-        results.push({
-          type: 'action',
-          id: `zone-${zone.id}-pause`,
-          label: `Приостановить зону "${zone.name}"`,
-          icon: '⏸️',
-          category: 'Действие',
-          zoneId: zone.id,
-          zoneName: zone.name,
-          actionType: 'pause',
-          requiresConfirm: true,
-          actionFn: () => executeZoneAction(zone.id, 'pause', zone.name)
-        })
-        
-        // Быстрые действия для циклов
-        results.push({
-          type: 'action',
-          id: `zone-${zone.id}-irrigate`,
-          label: `Полить зону "${zone.name}"`,
-          icon: '💧',
-          category: 'Цикл: Полив',
-          zoneId: zone.id,
-          zoneName: zone.name,
-          actionType: 'irrigate',
-          requiresConfirm: true,
-          actionFn: () => executeZoneCycle(zone.id, 'IRRIGATION', zone.name)
-        })
-        results.push({
-          type: 'action',
-          id: `zone-${zone.id}-ph-control`,
-          label: `Коррекция pH в зоне "${zone.name}"`,
-          icon: '🧪',
-          category: 'Цикл: pH',
-          zoneId: zone.id,
-          zoneName: zone.name,
-          actionType: 'ph-control',
-          requiresConfirm: true,
-          actionFn: () => executeZoneCycle(zone.id, 'PH_CONTROL', zone.name)
-        })
-        results.push({
-          type: 'action',
-          id: `zone-${zone.id}-ec-control`,
-          label: `Коррекция EC в зоне "${zone.name}"`,
-          icon: '⚡',
-          category: 'Цикл: EC',
-          zoneId: zone.id,
-          zoneName: zone.name,
-          actionType: 'ec-control',
-          requiresConfirm: true,
-          actionFn: () => executeZoneCycle(zone.id, 'EC_CONTROL', zone.name)
-        })
-        results.push({
-          type: 'action',
-          id: `zone-${zone.id}-climate`,
-          label: `Управление климатом в зоне "${zone.name}"`,
-          icon: '🌡️',
-          category: 'Цикл: Климат',
-          zoneId: zone.id,
-          zoneName: zone.name,
-          actionType: 'climate',
-          requiresConfirm: true,
-          actionFn: () => executeZoneCycle(zone.id, 'CLIMATE', zone.name)
-        })
-        results.push({
-          type: 'action',
-          id: `zone-${zone.id}-lighting`,
-          label: `Управление освещением в зоне "${zone.name}"`,
-          icon: '💡',
-          category: 'Цикл: Освещение',
-          zoneId: zone.id,
-          zoneName: zone.name,
-          actionType: 'lighting',
-          requiresConfirm: true,
-          actionFn: () => executeZoneCycle(zone.id, 'LIGHTING', zone.name)
-        })
-        
-        results.push({
-          type: 'action',
-          id: `zone-${zone.id}-next-phase`,
-          label: `Следующая фаза в зоне "${zone.name}"`,
-          icon: '⏭️',
-          category: 'Рецепт',
-          zoneId: zone.id,
-          zoneName: zone.name,
-          actionType: 'next-phase',
-          requiresConfirm: true,
-          actionFn: () => executeZoneAction(zone.id, 'next-phase', zone.name)
+    }
+    // Добавляем статические команды
+    flatResults.push(...staticCommands.value)
+  } else {
+  
+    // Фильтруем статические команды
+    staticCommands.value.forEach(cmd => {
+      if (fuzzyMatch(cmd.label, query)) {
+        flatResults.push(cmd)
+      }
+    })
+    
+    // Фильтруем историю
+    commandHistory.value.forEach(historyItem => {
+      if (fuzzyMatch(historyItem.label, query)) {
+        flatResults.push({
+          type: 'nav',
+          label: historyItem.label,
+          icon: '🕐',
+          category: 'История',
+          action: () => {
+            const matchingCommand = staticCommands.value.find(cmd => cmd.label === historyItem.label)
+            if (matchingCommand?.action) {
+              matchingCommand.action()
+            }
+          }
         })
       }
-    }
-  })
+    })
 
-  // Добавляем узлы
-  searchResults.value.nodes.forEach(node => {
-    const label = node.name || node.uid || `Node #${node.id}`
-    if (fuzzyMatch(label, query)) {
-      results.push({
-        type: 'node',
-        id: node.id,
-        label,
-        icon: '📱',
-        category: 'Устройство',
-        action: () => router.visit(`/devices/${node.id}`)
-      })
-    }
-  })
-
-  // Добавляем рецепты с действиями
-  searchResults.value.recipes.forEach(recipe => {
-    if (fuzzyMatch(recipe.name, query)) {
-      // Переход к рецепту
-      results.push({
-        type: 'recipe',
-        id: recipe.id,
-        label: recipe.name,
-        icon: '📋',
-        category: 'Рецепт',
-        action: () => router.visit(`/recipes/${recipe.id}`)
-      })
+    // Добавляем зоны с быстрыми действиями
+    searchResults.value.zones.forEach(zone => {
+      if (fuzzyMatch(zone.name, query)) {
+        // Переход к зоне
+        flatResults.push({
+          type: 'zone',
+          id: zone.id,
+          label: zone.name,
+          icon: '🌱',
+          category: 'Зона',
+          action: () => safeVisit(`/zones/${zone.id}`)
+        })
       
-      // Действие: применить рецепт к зоне (нужно выбрать зону)
-      // Это будет работать только если в запросе упомянута зона
-      searchResults.value.zones.forEach(zone => {
-        if (fuzzyMatch(zone.name, query) || query.includes(zone.name.toLowerCase())) {
-          results.push({
+        // Быстрые действия для зоны
+        if (zone.status === 'PAUSED') {
+          flatResults.push({
             type: 'action',
-            id: `recipe-${recipe.id}-apply-zone-${zone.id}`,
-            label: `Применить рецепт "${recipe.name}" к зоне "${zone.name}"`,
-            icon: '🔄',
+            id: `zone-${zone.id}-resume`,
+            label: `Возобновить зону "${zone.name}"`,
+            icon: '▶️',
+            category: 'Действие',
+            zoneId: zone.id,
+            zoneName: zone.name,
+            actionType: 'resume',
+            requiresConfirm: false,
+            actionFn: () => executeZoneAction(zone.id, 'resume', zone.name)
+          })
+        } else if (zone.status === 'RUNNING') {
+          flatResults.push({
+            type: 'action',
+            id: `zone-${zone.id}-pause`,
+            label: `Приостановить зону "${zone.name}"`,
+            icon: '⏸️',
+            category: 'Действие',
+            zoneId: zone.id,
+            zoneName: zone.name,
+            actionType: 'pause',
+            requiresConfirm: true,
+            actionFn: () => executeZoneAction(zone.id, 'pause', zone.name)
+          })
+          
+          // Быстрые действия для циклов
+          flatResults.push({
+            type: 'action',
+            id: `zone-${zone.id}-irrigate`,
+            label: `Полить зону "${zone.name}"`,
+            icon: '💧',
+            category: 'Цикл',
+            zoneId: zone.id,
+            zoneName: zone.name,
+            actionType: 'irrigate',
+            requiresConfirm: true,
+            actionFn: () => executeZoneCycle(zone.id, 'IRRIGATION', zone.name)
+          })
+          flatResults.push({
+            type: 'action',
+            id: `zone-${zone.id}-ph-control`,
+            label: `Коррекция pH в зоне "${zone.name}"`,
+            icon: '🧪',
+            category: 'Цикл',
+            zoneId: zone.id,
+            zoneName: zone.name,
+            actionType: 'ph-control',
+            requiresConfirm: true,
+            actionFn: () => executeZoneCycle(zone.id, 'PH_CONTROL', zone.name)
+          })
+          flatResults.push({
+            type: 'action',
+            id: `zone-${zone.id}-ec-control`,
+            label: `Коррекция EC в зоне "${zone.name}"`,
+            icon: '⚡',
+            category: 'Цикл',
+            zoneId: zone.id,
+            zoneName: zone.name,
+            actionType: 'ec-control',
+            requiresConfirm: true,
+            actionFn: () => executeZoneCycle(zone.id, 'EC_CONTROL', zone.name)
+          })
+          flatResults.push({
+            type: 'action',
+            id: `zone-${zone.id}-next-phase`,
+            label: `Следующая фаза в зоне "${zone.name}"`,
+            icon: '⏭️',
             category: 'Рецепт',
             zoneId: zone.id,
             zoneName: zone.name,
-            recipeId: recipe.id,
-            recipeName: recipe.name,
-            actionType: 'apply-recipe',
+            actionType: 'next-phase',
             requiresConfirm: true,
-            actionFn: () => applyRecipeToZone(zone.id, recipe.id, zone.name, recipe.name)
+            actionFn: () => executeZoneAction(zone.id, 'next-phase', zone.name)
           })
         }
-      })
-    }
-  })
+      }
+    })
 
-  return results
+    // Добавляем узлы
+    searchResults.value.nodes.forEach(node => {
+      const label = node.name || node.uid || `Node #${node.id}`
+      if (fuzzyMatch(label, query)) {
+        flatResults.push({
+          type: 'node',
+          id: node.id,
+          label,
+          icon: '📱',
+          category: 'Устройство',
+          action: () => safeVisit(`/devices/${node.id}`)
+        })
+      }
+    })
+
+    // Добавляем рецепты с действиями
+    searchResults.value.recipes.forEach(recipe => {
+      if (fuzzyMatch(recipe.name, query)) {
+        // Переход к рецепту
+        flatResults.push({
+          type: 'recipe',
+          id: recipe.id,
+          label: recipe.name,
+          icon: '📋',
+          category: 'Рецепт',
+          action: () => safeVisit(`/recipes/${recipe.id}`)
+        })
+        
+        // Действие: применить рецепт к зоне (нужно выбрать зону)
+        searchResults.value.zones.forEach(zone => {
+          if (fuzzyMatch(zone.name, query) || query.includes(zone.name.toLowerCase())) {
+            flatResults.push({
+              type: 'action',
+              id: `recipe-${recipe.id}-apply-zone-${zone.id}`,
+              label: `Применить рецепт "${recipe.name}" к зоне "${zone.name}"`,
+              icon: '🔄',
+              category: 'Рецепт',
+              zoneId: zone.id,
+              zoneName: zone.name,
+              recipeId: recipe.id,
+              recipeName: recipe.name,
+              actionType: 'apply-recipe',
+              requiresConfirm: true,
+              actionFn: () => applyRecipeToZone(zone.id, recipe.id, zone.name, recipe.name)
+            })
+          }
+        })
+      }
+    })
+  }
+  
+  // Группируем результаты по категориям
+  const grouped = new Map<string, CommandItem[]>()
+  flatResults.forEach(item => {
+    const category = item.category || 'Другое'
+    if (!grouped.has(category)) {
+      grouped.set(category, [])
+    }
+    grouped.get(category)!.push(item)
+  })
+  
+  // Преобразуем в массив и сортируем категории
+  const categoryOrder = ['История', 'Навигация', 'Зона', 'Устройство', 'Рецепт', 'Действие', 'Цикл', 'Создание', 'Настройка', 'Администрирование', 'Аналитика', 'Система', 'Другое']
+  return Array.from(grouped.entries())
+    .map(([category, items]) => ({ category, items }))
+    .sort((a, b) => {
+      const aIndex = categoryOrder.indexOf(a.category)
+      const bIndex = categoryOrder.indexOf(b.category)
+      return (aIndex === -1 ? 999 : aIndex) - (bIndex === -1 ? 999 : bIndex)
+    })
+})
+
+// Вычисляем индекс элемента в плоском списке
+function getItemIndex(groupIndex: number, itemIndex: number): number {
+  let index = 0
+  for (let i = 0; i < groupIndex; i++) {
+    index += groupedResults.value[i].items.length
+  }
+  return index + itemIndex
+}
+
+// Получаем выбранный элемент
+const selectedItem = computed<CommandItem | null>(() => {
+  let currentIndex = 0
+  for (const group of groupedResults.value) {
+    if (selectedIndex.value >= currentIndex && selectedIndex.value < currentIndex + group.items.length) {
+      return group.items[selectedIndex.value - currentIndex]
+    }
+    currentIndex += group.items.length
+  }
+  return null
+})
+
+function runSelected(): void {
+  if (selectedItem.value) {
+    run(selectedItem.value)
+  }
+}
+
+// Плоский список для обратной совместимости
+const filteredResults = computed<CommandItem[]>(() => {
+  return groupedResults.value.flatMap(group => group.items)
+})
+
+// Общее количество элементов для навигации
+const totalItemsCount = computed(() => {
+  return groupedResults.value.reduce((sum, group) => sum + group.items.length, 0)
 })
 
 const run = (item: CommandItem | undefined): void => {
   if (!item) return
+  
+  // Сохраняем в историю перед выполнением
+  saveToHistory(item)
   
   // Если действие требует подтверждения
   if (item.requiresConfirm && item.actionFn) {
@@ -538,7 +762,75 @@ const onKey = (e: KeyboardEvent): void => {
   }
 }
 
-onMounted(() => window.addEventListener('keydown', onKey))
+onMounted(() => {
+  loadHistory()
+  window.addEventListener('keydown', onKey)
+})
 onUnmounted(() => window.removeEventListener('keydown', onKey))
 </script>
+
+<style scoped>
+/* Анимации для Command Palette */
+.command-palette-enter-active,
+.command-palette-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.command-palette-enter-from,
+.command-palette-leave-to {
+  opacity: 0;
+}
+
+.command-palette-enter-active > div:last-child,
+.command-palette-leave-active > div:last-child {
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.command-palette-enter-from > div:last-child {
+  transform: translateY(-10px) scale(0.95);
+  opacity: 0;
+}
+
+.command-palette-leave-to > div:last-child {
+  transform: translateY(-10px) scale(0.95);
+  opacity: 0;
+}
+
+/* Анимации для элементов списка */
+.command-item-enter-active {
+  transition: all 0.15s ease;
+}
+
+.command-item-enter-from {
+  opacity: 0;
+  transform: translateX(-10px);
+}
+
+.command-item-leave-active {
+  transition: all 0.1s ease;
+}
+
+.command-item-leave-to {
+  opacity: 0;
+  transform: translateX(10px);
+}
+
+/* Кастомный скроллбар */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+</style>
 

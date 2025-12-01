@@ -191,11 +191,29 @@ esp_err_t mqtt_manager_publish_command_response(const char *channel, const char 
 esp_err_t mqtt_manager_publish_config_response(const char *data);
 
 /**
+ * @brief Публикация диагностики
+ * 
+ * Топик: hydro/{gh}/{zone}/{node}/diagnostics
+ * QoS: 1, Retain: false
+ * 
+ * @param data JSON данные диагностики
+ * @return ESP_OK при успехе
+ */
+esp_err_t mqtt_manager_publish_diagnostics(const char *data);
+
+/**
  * @brief Проверка подключения к MQTT брокеру
  * 
  * @return true если подключен
  */
 bool mqtt_manager_is_connected(void);
+
+/**
+ * @brief Получить количество переподключений
+ * 
+ * @return Количество переподключений к брокеру
+ */
+uint32_t mqtt_manager_get_reconnect_count(void);
 
 /**
  * @brief Переподключение к MQTT брокеру
