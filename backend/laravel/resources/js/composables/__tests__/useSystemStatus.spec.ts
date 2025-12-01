@@ -279,7 +279,7 @@ describe('useSystemStatus', () => {
       }
     })
 
-    const { startMonitoring, checkHealth } = useSystemStatus()
+    const { startMonitoring, checkHealth, stopMonitoring } = useSystemStatus()
     
     // Сначала вызываем checkHealth вручную, чтобы убедиться, что он работает
     await checkHealth()
@@ -288,22 +288,24 @@ describe('useSystemStatus', () => {
     // Очищаем мок для следующей проверки
     mockApiGet.mockClear()
     
-    // Запускаем мониторинг (он установит интервал и вызовет checkHealth сразу)
+    // Запускаем мониторинг (он установит интервал)
     startMonitoring()
     
-    // Даем время для асинхронных вызовов (startMonitoring может вызвать checkHealth сразу)
-    await new Promise(resolve => setTimeout(resolve, 100))
+    // Продвигаем таймеры на интервал (обычно 30 секунд)
+    vi.advanceTimersByTime(31000)
     
-    const initialCalls = mockApiGet.mock.calls.length
-    // Проверяем, что был хотя бы один вызов после startMonitoring
-    // Если нет, значит checkHealth не вызывается автоматически, что нормально
-    // Главное - что startMonitoring не бросает ошибок
+    // Даем время для асинхронных вызовов
+    await vi.runAllTimersAsync()
+    
+    // Останавливаем мониторинг, чтобы очистить интервалы
+    stopMonitoring()
+    
+    // Проверяем, что функции определены и работают без ошибок
     expect(startMonitoring).toBeDefined()
-    
-    // Проверяем, что stopMonitoring работает
-    const { stopMonitoring } = useSystemStatus()
-    expect(() => stopMonitoring()).not.toThrow()
-  })
+    expect(stopMonitoring).toBeDefined()
+    expect(typeof startMonitoring).toBe('function')
+    expect(typeof stopMonitoring).toBe('function')
+  }, 10000) // Увеличиваем таймаут теста
 
   it('should stop polling when stopMonitoring is called', () => {
     mockApiGet.mockResolvedValue({

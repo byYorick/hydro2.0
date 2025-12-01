@@ -70,10 +70,12 @@ class DatabaseBackupCommand extends Command
         chmod($pgpassPath, 0600);
 
         // Команда pg_dump БЕЗ PGPASSWORD в командной строке
-        // Передаем PGPASSFILE через переменные окружения в exec()
+        // Передаем PGPASSFILE через переменную окружения PHP, чтобы избежать
+        // проблем с экранированием пути в shell
+        putenv('PGPASSFILE='.$pgpassPath);
+
         $command = sprintf(
-            'PGPASSFILE=%s pg_dump -h %s -p %s -U %s -d %s -Fc -f %s',
-            escapeshellarg($pgpassPath),
+            'pg_dump -h %s -p %s -U %s -d %s -Fc -f %s',
             escapeshellarg($host),
             escapeshellarg($port),
             escapeshellarg($username),

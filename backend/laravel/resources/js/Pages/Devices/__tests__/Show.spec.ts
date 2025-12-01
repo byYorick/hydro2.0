@@ -26,8 +26,8 @@ vi.mock('@/Pages/Devices/DeviceChannelsTable.vue', () => ({
   },
 }))
 
-const axiosPostMock = vi.fn()
-const mockShowToast = vi.fn()
+const axiosPostMock = vi.hoisted(() => vi.fn())
+const mockShowToast = vi.hoisted(() => vi.fn())
 
 const mockAxiosInstance = vi.hoisted(() => ({
   get: vi.fn(),

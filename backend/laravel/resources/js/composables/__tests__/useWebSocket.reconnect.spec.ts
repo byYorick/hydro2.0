@@ -14,10 +14,16 @@ vi.mock('@/utils/logger', () => ({
   }
 }))
 
-// Mock echoClient
+// Mock echoClient - создаем переменную для динамического возврата mockEcho
+let mockEchoInstance: any = null
+
+const mockGetEchoInstance = vi.fn(() => mockEchoInstance)
+const mockGetEcho = vi.fn(() => mockEchoInstance)
+
 vi.mock('@/utils/echoClient', () => ({
   onWsStateChange: vi.fn(() => vi.fn()), // Returns unsubscribe function
-  getEcho: vi.fn(() => null),
+  getEchoInstance: mockGetEchoInstance,
+  getEcho: mockGetEcho,
   getReconnectAttempts: vi.fn(() => 0),
   getLastError: vi.fn(() => null),
   getConnectionState: vi.fn(() => 'disconnected'),
@@ -29,6 +35,9 @@ describe('useWebSocket - Reconnect Logic', () => {
   let mockConnection: any
   let mockZoneChannel: any
   let mockGlobalChannel: any
+
+  const originalWindow = global.window ?? (global.window = {} as any)
+  let previousEcho: any
 
   beforeEach(async () => {
     // НЕ используем fake timers, так как они конфликтуют с моками setInterval
@@ -71,7 +80,8 @@ describe('useWebSocket - Reconnect Logic', () => {
 
     const pusherChannels: Record<string, any> = {}
     
-    mockEcho = {
+    // Создаем mockEcho как объект
+    const echoObj: any = {
       private: vi.fn((channelName: string) => {
         if (channelName === 'events.global') {
           pusherChannels[channelName] = mockGlobalChannel
@@ -91,15 +101,17 @@ describe('useWebSocket - Reconnect Logic', () => {
         }
       }
     }
+    
+    mockEcho = echoObj
 
-    // Устанавливаем моки для setInterval перед импортом модуля
-    if (!(global as any).window) {
-      (global as any).window = {}
-    }
-    (global as any).window.Echo = mockEcho
-    (global as any).window.setInterval = (global.setInterval as any)
-    (global as any).window.clearInterval = (global.clearInterval as any)
+    // Устанавливаем mockEchoInstance для getEchoInstance
+    mockEchoInstance = echoObj
+    mockGetEchoInstance.mockReturnValue(echoObj)
+    mockGetEcho.mockReturnValue(echoObj)
 
+    previousEcho = originalWindow.Echo
+    originalWindow.Echo = echoObj
+    
     vi.resetModules()
     useWebSocketModule = await import('../useWebSocket')
   })
@@ -107,10 +119,14 @@ describe('useWebSocket - Reconnect Logic', () => {
   afterEach(() => {
     // vi.useRealTimers() - не используем, так как не использовали fake timers
     vi.clearAllMocks()
-    if ((globalThis as any).window) {
-      delete (globalThis as any).window.Echo
-      delete (globalThis as any).window.setInterval
-      delete (globalThis as any).window.clearInterval
+    // Очищаем состояние модуля между тестами
+    if (useWebSocketModule && typeof (useWebSocketModule as any).__reset === 'function') {
+      (useWebSocketModule as any).__reset()
+    }
+    if (previousEcho === undefined) {
+      delete originalWindow.Echo
+    } else {
+      originalWindow.Echo = previousEcho
     }
   })
 

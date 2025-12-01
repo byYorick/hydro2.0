@@ -18,6 +18,21 @@ vi.mock('@/utils/logger', () => ({
   }
 }))
 
+// Mock echoClient - создаем переменную для динамического возврата mockEcho
+let mockEchoInstance: any = null
+
+const mockGetEchoInstance = vi.fn(() => mockEchoInstance)
+const mockGetEcho = vi.fn(() => mockEchoInstance)
+
+vi.mock('@/utils/echoClient', () => ({
+  onWsStateChange: vi.fn(() => vi.fn()), // Returns unsubscribe function
+  getEchoInstance: mockGetEchoInstance,
+  getEcho: mockGetEcho,
+  getReconnectAttempts: vi.fn(() => 0),
+  getLastError: vi.fn(() => null),
+  getConnectionState: vi.fn(() => 'disconnected'),
+}))
+
 describe('useWebSocket - Resubscribe Logic', () => {
   let mockEcho: any
   let mockZoneChannel: any
@@ -56,6 +71,11 @@ describe('useWebSocket - Resubscribe Logic', () => {
         }
       }
     }
+
+    // Устанавливаем mockEchoInstance для getEchoInstance
+    mockEchoInstance = mockEcho
+    mockGetEchoInstance.mockReturnValue(mockEcho)
+    mockGetEcho.mockReturnValue(mockEcho)
 
     // Устанавливаем моки для setInterval перед импортом модуля
     if (!(global as any).window) {

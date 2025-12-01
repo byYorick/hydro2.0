@@ -50,7 +50,38 @@ jobs:
         run: |
           cp .env.example .env
           php artisan key:generate
-          php -r "file_put_contents('.env', str_replace(['DB_CONNECTION=mysql','DB_DATABASE=laravel','DB_USERNAME=root','DB_PASSWORD='], ['DB_CONNECTION=pgsql','DB_DATABASE=hydro','DB_USERNAME=hydro','DB_PASSWORD=hydro'], file_get_contents('.env')));"
+          php -r "
+            \$file = '.env';
+            \$env = file_get_contents(\$file);
+            // Устанавливаем/обновляем параметры БД независимо от начальных значений
+            \$env = preg_replace('/^DB_CONNECTION=.*/m', 'DB_CONNECTION=pgsql', \$env);
+            if (preg_match('/^DB_DATABASE=.*/m', \$env)) {
+              \$env = preg_replace('/^DB_DATABASE=.*/m', 'DB_DATABASE=hydro', \$env);
+            } else {
+              \$env .= PHP_EOL.'DB_DATABASE=hydro';
+            }
+            if (preg_match('/^DB_USERNAME=.*/m', \$env)) {
+              \$env = preg_replace('/^DB_USERNAME=.*/m', 'DB_USERNAME=hydro', \$env);
+            } else {
+              \$env .= PHP_EOL.'DB_USERNAME=hydro';
+            }
+            if (preg_match('/^DB_PASSWORD=.*/m', \$env)) {
+              \$env = preg_replace('/^DB_PASSWORD=.*/m', 'DB_PASSWORD=hydro', \$env);
+            } else {
+              \$env .= PHP_EOL.'DB_PASSWORD=hydro';
+            }
+            if (preg_match('/^DB_HOST=.*/m', \$env)) {
+              \$env = preg_replace('/^DB_HOST=.*/m', 'DB_HOST=127.0.0.1', \$env);
+            } else {
+              \$env .= PHP_EOL.'DB_HOST=127.0.0.1';
+            }
+            if (preg_match('/^DB_PORT=.*/m', \$env)) {
+              \$env = preg_replace('/^DB_PORT=.*/m', 'DB_PORT=5432', \$env);
+            } else {
+              \$env .= PHP_EOL.'DB_PORT=5432';
+            }
+            file_put_contents(\$file, \$env);
+          "
       - name: PHP configs cache
         run: |
           php artisan config:clear
@@ -176,9 +207,8 @@ jobs:
             exit 1
           fi
           
-          # Run Playwright tests
-          npx playwright test --reporter=list,html || true
-          # Playwright tests may fail but we continue
+          # Run Playwright tests (ошибки должны падать в CI)
+          npx playwright test --reporter=list,html
           
           # Cleanup will be handled by trap
       - name: Upload Playwright report
