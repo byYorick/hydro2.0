@@ -542,6 +542,7 @@ else
 fi
 
 # Создание базы данных и пользователя
+log_info "Создание базы данных и пользователя PostgreSQL..."
 if [ "$ENVIRONMENT" = "production" ]; then
     DB_NAME="hydro"
     DB_USER="hydro"
@@ -552,10 +553,51 @@ else
     DB_PASSWORD="hydro"
 fi
 
-sudo -u postgres psql -c "CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';" 2>/dev/null || log_warn "Пользователь ${DB_USER} уже существует"
-sudo -u postgres psql -c "CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};" 2>/dev/null || log_warn "База данных ${DB_NAME} уже существует"
-sudo -u postgres psql -d ${DB_NAME} -c "CREATE EXTENSION IF NOT EXISTS timescaledb;" 2>/dev/null || log_warn "Расширение TimescaleDB уже установлено"
+# Проверяем, существует ли пользователь postgres
+if ! id postgres &>/dev/null; then
+    log_error "Пользователь postgres не существует"
+    log_error "PostgreSQL установлен неправильно"
+    exit 1
+fi
+
+# Создаем пользователя БД
+log_info "Создание пользователя БД: ${DB_USER}..."
+if sudo -u postgres psql -c "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}';" 2>/dev/null | grep -q "1"; then
+    log_info "Пользователь ${DB_USER} уже существует, обновляем пароль..."
+    sudo -u postgres psql -c "ALTER USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';" 2>/dev/null || {
+        log_error "Не удалось обновить пароль пользователя ${DB_USER}"
+        exit 1
+    }
+else
+    log_info "Создание нового пользователя ${DB_USER}..."
+    sudo -u postgres psql -c "CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';" 2>/dev/null || {
+        log_error "Не удалось создать пользователя ${DB_USER}"
+        exit 1
+    }
+fi
+
+# Даем пользователю необходимые права
+log_info "Настройка прав пользователя ${DB_USER}..."
 sudo -u postgres psql -c "ALTER USER ${DB_USER} CREATEDB;" 2>/dev/null || true
+sudo -u postgres psql -c "ALTER USER ${DB_USER} WITH SUPERUSER;" 2>/dev/null || true
+
+# Создаем базу данных
+log_info "Создание базы данных: ${DB_NAME}..."
+if sudo -u postgres psql -lqt 2>/dev/null | cut -d \| -f 1 | grep -qw "${DB_NAME}"; then
+    log_info "База данных ${DB_NAME} уже существует"
+    # Обновляем владельца базы данных
+    sudo -u postgres psql -c "ALTER DATABASE ${DB_NAME} OWNER TO ${DB_USER};" 2>/dev/null || true
+else
+    log_info "Создание новой базы данных ${DB_NAME}..."
+    sudo -u postgres psql -c "CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};" 2>/dev/null || {
+        log_error "Не удалось создать базу данных ${DB_NAME}"
+        exit 1
+    }
+fi
+
+# Устанавливаем расширение TimescaleDB
+log_info "Установка расширения TimescaleDB..."
+sudo -u postgres psql -d ${DB_NAME} -c "CREATE EXTENSION IF NOT EXISTS timescaledb;" 2>/dev/null || log_warn "Расширение TimescaleDB не установлено (можно установить позже)"
 
 log_info "Пароль PostgreSQL для пользователя ${DB_USER}: ${DB_PASSWORD}"
 log_warn "Сохраните этот пароль! Он понадобится для настройки .env файла"
@@ -992,43 +1034,159 @@ if netstat -tlnp 2>/dev/null | grep -q ":5432" || ss -tlnp 2>/dev/null | grep -q
     log_info "PostgreSQL слушает на порту 5432"
 else
     log_warn "PostgreSQL не слушает на порту 5432"
-    log_warn "Возможно, PostgreSQL настроен только на socket подключения"
+    log_warn "Проверяем подключение через socket..."
 fi
 
-# Проверяем подключение через Laravel (более надежный способ на сервере)
-log_info "Проверка подключения через Laravel..."
-max_attempts=30
+# Проверяем подключение напрямую через psql с паролем
+log_info "Проверка подключения к базе данных через psql..."
+log_info "Параметры подключения:"
+log_info "  Хост: 127.0.0.1"
+log_info "  Порт: 5432"
+log_info "  Пользователь: ${DB_USER}"
+log_info "  База данных: ${DB_NAME}"
+
+max_attempts=15
 attempt=0
 DB_READY=false
 
 while [ $attempt -lt $max_attempts ]; do
     attempt=$((attempt + 1))
+    log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log_info "Попытка подключения $attempt/$max_attempts"
     
-    # Проверяем подключение через Laravel artisan db:show
-    if sudo -u "$APP_USER" php artisan db:show >/dev/null 2>&1; then
-        DB_READY=true
-        log_info "Подключение к базе данных установлено через Laravel"
-        break
+    # Проверка 1: Процесс PostgreSQL
+    if pgrep -x postgres >/dev/null 2>&1; then
+        log_info "  ✓ Процесс PostgreSQL запущен (PID: $(pgrep -x postgres | head -1))"
     else
-        log_info "Попытка $attempt/$max_attempts: Ожидание готовности PostgreSQL..."
-        # Пробуем запустить PostgreSQL, если он не запущен
-        if [ $attempt -eq 5 ] || [ $attempt -eq 15 ]; then
-            if [ -n "$POSTGRES_SERVICE" ]; then
-                log_info "Попытка запуска PostgreSQL через systemctl..."
-                systemctl start "$POSTGRES_SERVICE" 2>/dev/null || true
-                sleep 2
+        log_warn "  ✗ Процесс PostgreSQL не запущен"
+        if [ -n "$POSTGRES_SERVICE" ]; then
+            log_info "  → Попытка запуска через systemctl..."
+            systemctl start "$POSTGRES_SERVICE" 2>/dev/null || true
+            sleep 2
+        fi
+        sleep 2
+        continue
+    fi
+    
+    # Проверка 2: Порт 5432
+    if netstat -tlnp 2>/dev/null | grep -q ":5432" || ss -tlnp 2>/dev/null | grep -q ":5432"; then
+        log_info "  ✓ PostgreSQL слушает на порту 5432"
+    else
+        log_warn "  ✗ PostgreSQL не слушает на порту 5432"
+        if [ -f "$PG_CONF" ]; then
+            if ! grep -q "^listen_addresses.*localhost" "$PG_CONF" && ! grep -q "^listen_addresses.*'\*'" "$PG_CONF"; then
+                log_info "  → Настройка listen_addresses..."
+                if ! grep -q "^listen_addresses" "$PG_CONF"; then
+                    echo "listen_addresses = 'localhost'" >> "$PG_CONF"
+                else
+                    sed -i "s/^listen_addresses.*/listen_addresses = 'localhost'/" "$PG_CONF"
+                fi
+                if [ -n "$POSTGRES_SERVICE" ]; then
+                    log_info "  → Перезапуск PostgreSQL для применения изменений..."
+                    systemctl restart "$POSTGRES_SERVICE" 2>/dev/null || true
+                    sleep 3
+                fi
             fi
         fi
+        sleep 2
+        continue
     fi
+    
+    # Проверка 3: Подключение через socket (локально)
+    log_info "  → Проверка подключения через socket..."
+    SOCKET_RESULT=$(sudo -u postgres psql -d ${DB_NAME} -c "SELECT 1;" 2>&1)
+    if [ $? -eq 0 ]; then
+        log_info "  ✓ Подключение через socket работает"
+    else
+        log_warn "  ✗ Подключение через socket не работает"
+        log_warn "    Ошибка: $(echo "$SOCKET_RESULT" | head -1)"
+        sleep 2
+        continue
+    fi
+    
+    # Проверка 4: Подключение через TCP/IP с паролем
+    log_info "  → Проверка подключения через TCP/IP (127.0.0.1:5432)..."
+    TCP_RESULT=$(PGPASSWORD="${DB_PASSWORD}" psql -h 127.0.0.1 -p 5432 -U "${DB_USER}" -d "${DB_NAME}" -c "SELECT 1;" 2>&1)
+    TCP_EXIT_CODE=$?
+    
+    if [ $TCP_EXIT_CODE -eq 0 ]; then
+        DB_READY=true
+        log_info "  ✓ Подключение через TCP/IP работает!"
+        log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        log_info "Подключение к базе данных установлено успешно"
+        break
+    else
+        log_warn "  ✗ Подключение через TCP/IP не работает"
+        ERROR_MSG=$(echo "$TCP_RESULT" | grep -i "error\|fatal\|failed" | head -1 || echo "$TCP_RESULT" | head -1)
+        log_warn "    Ошибка: $ERROR_MSG"
+        
+        # Диагностика проблем
+        if echo "$TCP_RESULT" | grep -qi "password authentication failed"; then
+            log_warn "    → Проблема с аутентификацией пароля"
+            log_warn "    → Проверьте пароль в .env файле"
+        elif echo "$TCP_RESULT" | grep -qi "connection refused"; then
+            log_warn "    → Подключение отклонено"
+            log_warn "    → Проверьте pg_hba.conf"
+        elif echo "$TCP_RESULT" | grep -qi "could not connect"; then
+            log_warn "    → Не удалось подключиться"
+            log_warn "    → Проверьте, что PostgreSQL слушает на localhost"
+        fi
+        
+        # Проверяем pg_hba.conf
+        if [ -f "$PG_HBA" ]; then
+            if ! grep -q "^host.*all.*all.*127.0.0.1/32" "$PG_HBA"; then
+                log_info "  → Добавление правила в pg_hba.conf..."
+                echo "host    all             all             127.0.0.1/32            md5" >> "$PG_HBA"
+                if [ -n "$POSTGRES_SERVICE" ]; then
+                    log_info "  → Перезапуск PostgreSQL для применения pg_hba.conf..."
+                    systemctl restart "$POSTGRES_SERVICE" 2>/dev/null || true
+                    sleep 3
+                fi
+            else
+                log_info "  ✓ Правило для 127.0.0.1/32 существует в pg_hba.conf"
+            fi
+        else
+            log_warn "  ✗ Файл pg_hba.conf не найден: $PG_HBA"
+        fi
+    fi
+    
     sleep 2
 done
 
+# Если прямое подключение не работает, пробуем через Laravel
+if [ "$DB_READY" = "false" ]; then
+    log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log_info "Прямое подключение не работает, проверяем через Laravel..."
+    log_info "  → Выполнение: php artisan db:show"
+    
+    LARAVEL_DB_RESULT=$(sudo -u "$APP_USER" php artisan db:show 2>&1)
+    LARAVEL_DB_EXIT=$?
+    
+    if [ $LARAVEL_DB_EXIT -eq 0 ]; then
+        DB_READY=true
+        log_info "  ✓ Подключение к базе данных установлено через Laravel"
+        log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    else
+        log_warn "  ✗ Laravel не может подключиться к базе данных"
+        ERROR_MSG=$(echo "$LARAVEL_DB_RESULT" | grep -i "error\|exception\|failed" | head -3)
+        if [ -n "$ERROR_MSG" ]; then
+            log_warn "    Ошибки Laravel:"
+            echo "$ERROR_MSG" | while read line; do
+                log_warn "      $line"
+            done
+        fi
+    fi
+fi
+
 if [ "$DB_READY" = "false" ]; then
     log_error "Не удалось подключиться к базе данных после $max_attempts попыток"
-    log_error "Проверьте:"
-    log_error "  1. Запущен ли PostgreSQL: sudo systemctl status postgresql"
-    log_error "  2. Настроен ли PostgreSQL на прослушивание TCP/IP: sudo grep 'listen_addresses' /etc/postgresql/*/main/postgresql.conf"
-    log_error "  3. Правильность пароля в .env файле"
+    log_error "Диагностика:"
+    log_error "  1. Проверьте статус PostgreSQL: sudo systemctl status postgresql"
+    log_error "  2. Проверьте listen_addresses: sudo grep 'listen_addresses' /etc/postgresql/*/main/postgresql.conf"
+    log_error "  3. Проверьте pg_hba.conf: sudo grep '127.0.0.1' /etc/postgresql/*/main/pg_hba.conf"
+    log_error "  4. Проверьте подключение вручную:"
+    log_error "     PGPASSWORD='${DB_PASSWORD}' psql -h 127.0.0.1 -U ${DB_USER} -d ${DB_NAME} -c 'SELECT 1;'"
+    log_error "  5. Проверьте пароль в .env файле"
     exit 1
 fi
 
