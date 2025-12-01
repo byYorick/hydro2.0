@@ -1191,10 +1191,122 @@ if [ "$DB_READY" = "false" ]; then
 fi
 
 log_info "Запуск миграций базы данных..."
-if sudo -u "$APP_USER" php artisan migrate --force; then
-    log_info "Миграции выполнены успешно"
-else
-    log_error "Ошибка при выполнении миграций!"
+
+# Проверяем подключение перед миграциями
+log_info "Проверка подключения к базе данных перед миграциями..."
+if ! PGPASSWORD="${DB_PASSWORD}" psql -h 127.0.0.1 -p 5432 -U "${DB_USER}" -d "${DB_NAME}" -c "SELECT 1;" >/dev/null 2>&1; then
+    log_error "Не удалось подключиться к базе данных перед миграциями"
+    log_error "Проверьте настройки подключения в .env файле"
+    exit 1
+fi
+log_info "Подключение к базе данных подтверждено"
+
+# Увеличиваем таймауты для миграций
+log_info "Настройка параметров подключения для миграций..."
+# Обновляем .env с увеличенными таймаутами
+update_env_var "$LARAVEL_DIR/.env" "DB_TIMEOUT" "30"
+update_env_var "$LARAVEL_DIR/.env" "DB_CONNECTION_TIMEOUT" "30"
+
+# Выполняем миграции с повторными попытками
+MIGRATION_ATTEMPTS=3
+MIGRATION_SUCCESS=false
+
+for attempt in $(seq 1 $MIGRATION_ATTEMPTS); do
+    log_info "Попытка выполнения миграций $attempt/$MIGRATION_ATTEMPTS..."
+    
+    # Проверяем подключение перед каждой попыткой
+    if ! PGPASSWORD="${DB_PASSWORD}" psql -h 127.0.0.1 -p 5432 -U "${DB_USER}" -d "${DB_NAME}" -c "SELECT 1;" >/dev/null 2>&1; then
+        log_warn "Подключение потеряно, ожидание восстановления..."
+        sleep 3
+        
+        # Пробуем переподключиться
+        if ! PGPASSWORD="${DB_PASSWORD}" psql -h 127.0.0.1 -p 5432 -U "${DB_USER}" -d "${DB_NAME}" -c "SELECT 1;" >/dev/null 2>&1; then
+            log_error "Не удалось восстановить подключение к базе данных"
+            if [ $attempt -lt $MIGRATION_ATTEMPTS ]; then
+                log_info "Повторная попытка через 5 секунд..."
+                sleep 5
+                continue
+            else
+                log_error "Исчерпаны все попытки восстановления подключения"
+                exit 1
+            fi
+        fi
+        log_info "Подключение восстановлено"
+    fi
+    
+    # Выполняем миграции
+    MIGRATION_OUTPUT=$(sudo -u "$APP_USER" php artisan migrate --force 2>&1)
+    MIGRATION_EXIT=$?
+    
+    if [ $MIGRATION_EXIT -eq 0 ]; then
+        MIGRATION_SUCCESS=true
+        log_info "Миграции выполнены успешно"
+        echo "$MIGRATION_OUTPUT" | tail -5
+        break
+    else
+        log_warn "Ошибка при выполнении миграций (попытка $attempt/$MIGRATION_ATTEMPTS)"
+        
+        # Анализируем ошибку
+        if echo "$MIGRATION_OUTPUT" | grep -qi "no connection to the server\|connection.*lost\|connection.*closed"; then
+            log_warn "Обнаружена ошибка разрыва соединения"
+            log_warn "Проверяем состояние базы данных..."
+            
+            # Проверяем, запущен ли PostgreSQL
+            if ! pgrep -x postgres >/dev/null 2>&1; then
+                log_error "PostgreSQL не запущен!"
+                if [ -n "$POSTGRES_SERVICE" ]; then
+                    log_info "Попытка запуска PostgreSQL..."
+                    systemctl start "$POSTGRES_SERVICE" 2>/dev/null || true
+                    sleep 5
+                fi
+            fi
+            
+            # Проверяем подключение
+            if PGPASSWORD="${DB_PASSWORD}" psql -h 127.0.0.1 -p 5432 -U "${DB_USER}" -d "${DB_NAME}" -c "SELECT 1;" >/dev/null 2>&1; then
+                log_info "Подключение восстановлено, повторная попытка..."
+                if [ $attempt -lt $MIGRATION_ATTEMPTS ]; then
+                    sleep 3
+                    continue
+                fi
+            else
+                log_error "Не удалось восстановить подключение"
+                if [ $attempt -lt $MIGRATION_ATTEMPTS ]; then
+                    log_info "Повторная попытка через 5 секунд..."
+                    sleep 5
+                    continue
+                fi
+            fi
+        elif echo "$MIGRATION_OUTPUT" | grep -qi "already exists\|duplicate"; then
+            log_warn "Обнаружена ошибка дублирования (таблица/индекс уже существует)"
+            log_warn "Это может быть нормально, если миграции выполнялись ранее"
+            # Пробуем продолжить с --force
+            log_info "Попытка продолжить миграции..."
+            if [ $attempt -lt $MIGRATION_ATTEMPTS ]; then
+                sleep 2
+                continue
+            fi
+        fi
+        
+        # Выводим последние строки ошибки
+        log_error "Детали ошибки:"
+        echo "$MIGRATION_OUTPUT" | grep -i "error\|exception\|failed" | tail -5 | while read line; do
+            log_error "  $line"
+        done
+        
+        if [ $attempt -lt $MIGRATION_ATTEMPTS ]; then
+            log_info "Повторная попытка через 5 секунд..."
+            sleep 5
+        else
+            log_error "Все попытки выполнения миграций исчерпаны"
+            log_error "Последний вывод команды:"
+            echo "$MIGRATION_OUTPUT" | tail -20
+            exit 1
+        fi
+    fi
+done
+
+if [ "$MIGRATION_SUCCESS" = "false" ]; then
+    log_error "Не удалось выполнить миграции после $MIGRATION_ATTEMPTS попыток"
     exit 1
 fi
 
