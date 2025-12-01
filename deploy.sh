@@ -636,26 +636,112 @@ fi
 # Запускаем Redis
 log_info "Запуск Redis..."
 if ! systemctl start redis-server; then
-    log_error "Не удалось запустить Redis через systemctl"
-    log_error "Проверьте статус: systemctl status redis-server.service"
-    log_error "Проверьте логи: journalctl -xeu redis-server.service"
+    log_warn "Не удалось запустить Redis через systemctl, выполняем диагностику..."
     
-    # Пробуем запустить через service (для SysV)
-    if command -v service &> /dev/null; then
-        log_info "Попытка запуска через service..."
-        if service redis-server start 2>/dev/null; then
-            log_info "Redis запущен через service"
+    # Диагностика: проверяем логи
+    REDIS_ERROR=$(journalctl -u redis-server.service -n 20 --no-pager 2>/dev/null | grep -i "error\|fatal\|failed" | head -3 || echo "")
+    if [ -n "$REDIS_ERROR" ]; then
+        log_info "Ошибки из логов Redis:"
+        echo "$REDIS_ERROR" | while read line; do
+            log_info "  $line"
+        done
+    fi
+    
+    # Исправление проблем
+    
+    # 1. Проверяем и исправляем права на директорию данных
+    if [ -d "$REDIS_DIR" ]; then
+        log_info "Проверка прав доступа к директории данных: $REDIS_DIR"
+        chown -R redis:redis "$REDIS_DIR" 2>/dev/null || true
+        chmod 755 "$REDIS_DIR" 2>/dev/null || true
+        
+        # Проверяем файлы в директории
+        if [ -f "$REDIS_DIR/dump.rdb" ]; then
+            chown redis:redis "$REDIS_DIR/dump.rdb" 2>/dev/null || true
+            chmod 660 "$REDIS_DIR/dump.rdb" 2>/dev/null || true
+        fi
+    fi
+    
+    # 2. Проверяем, не занят ли порт 6379
+    if netstat -tlnp 2>/dev/null | grep -q ":6379" || ss -tlnp 2>/dev/null | grep -q ":6379"; then
+        log_warn "Порт 6379 уже занят"
+        OCCUPIED_PID=$(netstat -tlnp 2>/dev/null | grep ":6379" | awk '{print $7}' | cut -d'/' -f1 | head -1 || \
+                      ss -tlnp 2>/dev/null | grep ":6379" | grep -oP 'pid=\K\d+' | head -1 || echo "")
+        if [ -n "$OCCUPIED_PID" ]; then
+            log_warn "Порт занят процессом PID: $OCCUPIED_PID"
+            if [ "$OCCUPIED_PID" != "$$" ]; then
+                log_warn "Останавливаем процесс, занимающий порт..."
+                kill "$OCCUPIED_PID" 2>/dev/null || true
+                sleep 2
+            fi
+        fi
+    fi
+    
+    # 3. Проверяем конфигурацию Redis
+    if [ -f "/etc/redis/redis.conf" ]; then
+        log_info "Проверка конфигурации Redis..."
+        
+        # Проверяем синтаксис конфигурации
+        if command -v redis-server &> /dev/null; then
+            if redis-server /etc/redis/redis.conf --test-memory 1 2>&1 | grep -qi "error\|fatal"; then
+                log_warn "Обнаружены проблемы в конфигурации Redis"
+            fi
+        fi
+        
+        # Убеждаемся, что директория для данных существует и доступна
+        CONFIG_DIR=$(grep "^dir " /etc/redis/redis.conf 2>/dev/null | awk '{print $2}' | head -1 || echo "")
+        if [ -n "$CONFIG_DIR" ] && [ "$CONFIG_DIR" != "$REDIS_DIR" ]; then
+            REDIS_DIR="$CONFIG_DIR"
+        fi
+        
+        if [ -n "$REDIS_DIR" ] && [ ! -d "$REDIS_DIR" ]; then
+            log_info "Создание директории из конфигурации: $REDIS_DIR"
+            mkdir -p "$REDIS_DIR"
+            chown redis:redis "$REDIS_DIR" 2>/dev/null || true
+            chmod 755 "$REDIS_DIR" 2>/dev/null || true
+        fi
+    fi
+    
+    # 4. Убиваем старые процессы Redis, если они есть
+    if pgrep -x redis-server >/dev/null 2>&1; then
+        log_info "Обнаружены запущенные процессы Redis, останавливаем..."
+        pkill -x redis-server 2>/dev/null || true
+        sleep 2
+    fi
+    
+    # 5. Пробуем запустить еще раз
+    log_info "Повторная попытка запуска Redis после исправлений..."
+    sleep 2
+    
+    if ! systemctl start redis-server; then
+        # Пробуем запустить через service (для SysV)
+        if command -v service &> /dev/null; then
+            log_info "Попытка запуска через service..."
+            if service redis-server start 2>/dev/null; then
+                log_info "Redis запущен через service"
+            else
+                # Последняя попытка - запуск напрямую для диагностики
+                log_warn "Попытка запуска Redis напрямую для диагностики..."
+                if command -v redis-server &> /dev/null && [ -f "/etc/redis/redis.conf" ]; then
+                    if sudo -u redis redis-server /etc/redis/redis.conf --daemonize yes 2>&1 | head -5; then
+                        log_info "Redis запущен напрямую"
+                    else
+                        log_error "Redis не удалось запустить даже напрямую"
+                        log_error "Выполните диагностику вручную:"
+                        log_error "  sudo systemctl status redis-server"
+                        log_error "  sudo journalctl -xeu redis-server"
+                        log_error "  sudo -u redis redis-server /etc/redis/redis.conf"
+                        exit 1
+                    fi
+                else
+                    log_error "Redis не удалось запустить"
+                    exit 1
+                fi
+            fi
         else
             log_error "Redis не удалось запустить"
-            log_error "Выполните диагностику вручную:"
-            log_error "  sudo systemctl status redis-server"
-            log_error "  sudo journalctl -xeu redis-server"
-            log_error "  sudo redis-server /etc/redis/redis.conf --test-memory 1"
             exit 1
         fi
-    else
-        log_error "Redis не удалось запустить"
-        exit 1
     fi
 fi
 
