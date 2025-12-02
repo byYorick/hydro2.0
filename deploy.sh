@@ -363,18 +363,37 @@ if ! wait_for_apt_lock; then
 fi
 
 log_info "Выполнение: apt-get update"
-if timeout 300 apt-get update 2>&1 | tee /tmp/apt-update.log; then
+log_info "Это может занять 10-15 минут при первом запуске из-за больших репозиториев..."
+if timeout 1200 apt-get update 2>&1 | tee /tmp/apt-update.log; then
     log_info "Список пакетов обновлен успешно"
 else
     UPDATE_EXIT=$?
     if [ $UPDATE_EXIT -eq 124 ]; then
-        log_error "Обновление списка пакетов превысило таймаут (5 минут)"
-        exit 1
+        log_warn "Обновление списка пакетов превысило таймаут (20 минут)"
+        log_warn "Проверяем, были ли обновлены основные репозитории..."
+        
+        # Проверяем, есть ли хотя бы частично обновлённые списки
+        if [ -f /var/lib/apt/lists/lock ]; then
+            log_warn "Блокировка всё ещё существует, ожидаем завершения..."
+            if wait_for_apt_lock; then
+                log_info "Блокировка освобождена, продолжаем..."
+            fi
+        fi
+        
+        # Проверяем, можем ли мы продолжить с частично обновлёнными списками
+        if apt-cache show apt 2>/dev/null | head -1 >/dev/null 2>&1; then
+            log_warn "Основные репозитории обновлены, продолжаем установку..."
+            log_warn "Некоторые репозитории могут быть не полностью обновлены"
+        else
+            log_error "Не удалось обновить даже основные репозитории"
+            log_error "Попробуйте запустить вручную: sudo apt-get update"
+            exit 1
+        fi
     elif [ $UPDATE_EXIT -eq 100 ]; then
         log_warn "Ошибка блокировки apt (код: 100)"
         sleep 10
         log_info "Повторное выполнение: apt-get update"
-        if wait_for_apt_lock && timeout 300 apt-get update 2>&1 | tee -a /tmp/apt-update.log; then
+        if wait_for_apt_lock && timeout 1200 apt-get update 2>&1 | tee -a /tmp/apt-update.log; then
             log_info "Список пакетов обновлен успешно после повторной попытки"
         else
             log_error "Не удалось обновить список пакетов после повторной попытки"
@@ -386,6 +405,14 @@ else
         tail -20 /tmp/apt-update.log 2>/dev/null | while read line; do
             log_warn "  $line"
         done
+        
+        # Пытаемся продолжить, если основные репозитории доступны
+        if apt-cache show apt 2>/dev/null | head -1 >/dev/null 2>&1; then
+            log_warn "Основные репозитории доступны, продолжаем установку..."
+        else
+            log_error "Критическая ошибка: основные репозитории недоступны"
+            exit 1
+        fi
     fi
 fi
 
@@ -414,7 +441,7 @@ if ! command -v php &> /dev/null || ! php -v 2>/dev/null | grep -q "8.2"; then
         log_warn "Не удалось получить доступ к apt, пропускаем установку PHP"
     else
         log_info "Выполнение: apt-get update"
-        if ! timeout 180 apt-get update 2>&1 | tee -a /tmp/apt-update.log; then
+        if ! timeout 600 apt-get update 2>&1 | tee -a /tmp/apt-update.log; then
             log_warn "Ошибка при обновлении списка пакетов для PHP"
             log_warn "Последние строки лога:"
             tail -10 /tmp/apt-update.log 2>/dev/null | while read line; do
@@ -470,7 +497,7 @@ if ! command -v node &> /dev/null || ! node -v | grep -q "v20"; then
         log_warn "Не удалось получить доступ к apt, пропускаем установку Node.js"
     else
         log_info "Выполнение: apt-get update"
-        if ! timeout 180 apt-get update 2>&1 | tee -a /tmp/apt-update.log; then
+        if ! timeout 600 apt-get update 2>&1 | tee -a /tmp/apt-update.log; then
             log_warn "Ошибка при обновлении списка пакетов для Node.js"
         fi
         
@@ -523,7 +550,7 @@ if [ "$POSTGRES_INSTALLED" = "false" ]; then
     fi
     
     log_info "Выполнение: apt-get update"
-    if ! timeout 180 apt-get update 2>&1 | tee -a /tmp/apt-update.log; then
+    if ! timeout 600 apt-get update 2>&1 | tee -a /tmp/apt-update.log; then
         log_error "Ошибка при обновлении списка пакетов"
         exit 1
     fi
