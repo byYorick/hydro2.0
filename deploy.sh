@@ -46,9 +46,11 @@ log_info "Начинаем развертывание проекта Hydro 2.0 �
 wait_for_apt_lock() {
     local max_wait=300
     local waited=0
+    local dead_lock_attempts=0
+    local max_dead_lock_attempts=3
     
     while [ $waited -lt $max_wait ]; do
-        local apt_processes=$(pgrep -x "apt-get|apt|dpkg" 2>/dev/null || echo "")
+        local apt_processes=$(pgrep -E "apt-get|apt|dpkg" 2>/dev/null || echo "")
         if [ -n "$apt_processes" ]; then
             local apt_pid=$(echo "$apt_processes" | head -1)
             local apt_cmd=$(ps -p "$apt_pid" -o cmd= 2>/dev/null | head -1 || echo "unknown")
@@ -57,6 +59,7 @@ wait_for_apt_lock() {
             log_info "  Ожидание завершения процесса..."
             sleep 5
             waited=$((waited + 5))
+            dead_lock_attempts=0
             continue
         fi
         
@@ -67,7 +70,9 @@ wait_for_apt_lock() {
         [ -f /var/lib/dpkg/lock-frontend ] && lock_files="$lock_files /var/lib/dpkg/lock-frontend"
         
         if [ -n "$lock_files" ]; then
+            local active_locks=0
             local lock_pid=""
+            
             for lock_file in $lock_files; do
                 if [ -f "$lock_file" ]; then
                     lock_pid=$(lsof -t "$lock_file" 2>/dev/null | head -1 || echo "")
@@ -81,18 +86,44 @@ wait_for_apt_lock() {
                             log_warn "  Процесс $lock_pid не существует, но блокировка осталась"
                             log_warn "  Удаляем устаревшую блокировку..."
                             rm -f "$lock_file" 2>/dev/null || true
-                            continue
+                        else
+                            active_locks=$((active_locks + 1))
                         fi
                     else
+                        # Блокировка существует, но процесс не определён
+                        # Проверяем, можно ли удалить блокировку (мёртвая блокировка)
                         log_info "Блокировка обнаружена: $lock_file (процесс не определен)"
+                        
+                        # Пытаемся проверить, действительно ли блокировка активна
+                        # Пробуем удалить и пересоздать (если не заблокирована процессом)
+                        if [ $dead_lock_attempts -ge $max_dead_lock_attempts ]; then
+                            log_warn "  Блокировка существует без процесса более $max_dead_lock_attempts раз"
+                            log_warn "  Пытаемся удалить мёртвую блокировку..."
+                            
+                            # Пробуем удалить блокировку
+                            if rm -f "$lock_file" 2>/dev/null; then
+                                log_info "  ✓ Мёртвая блокировка удалена: $lock_file"
+                                dead_lock_attempts=0
+                            else
+                                log_warn "  ✗ Не удалось удалить блокировку, возможно она активна"
+                                active_locks=$((active_locks + 1))
+                            fi
+                        else
+                            active_locks=$((active_locks + 1))
+                            dead_lock_attempts=$((dead_lock_attempts + 1))
+                        fi
                     fi
                 fi
             done
             
-            if [ -n "$lock_pid" ] && ps -p "$lock_pid" >/dev/null 2>&1; then
+            if [ $active_locks -eq 0 ]; then
+                log_info "Все блокировки освобождены"
+                return 0
+            elif [ -n "$lock_pid" ] && ps -p "$lock_pid" >/dev/null 2>&1; then
                 log_info "Ожидание завершения процесса $lock_pid..."
+                dead_lock_attempts=0
             else
-                log_info "Ожидание освобождения блокировки..."
+                log_info "Ожидание освобождения блокировки... (попытка $dead_lock_attempts/$max_dead_lock_attempts)"
             fi
             sleep 5
             waited=$((waited + 5))
@@ -107,6 +138,19 @@ wait_for_apt_lock() {
     ps aux | grep -E '[a]pt|[d]pkg' | head -5 | while read line; do
         log_warn "  $line"
     done
+    
+    # Последняя попытка удалить мёртвые блокировки
+    log_warn "Последняя попытка удалить возможные мёртвые блокировки..."
+    for lock_file in /var/lib/apt/lists/lock /var/lib/dpkg/lock /var/cache/apt/archives/lock /var/lib/dpkg/lock-frontend; do
+        if [ -f "$lock_file" ]; then
+            lock_pid=$(lsof -t "$lock_file" 2>/dev/null | head -1 || echo "")
+            if [ -z "$lock_pid" ] || ! ps -p "$lock_pid" >/dev/null 2>&1; then
+                log_warn "  Удаляем мёртвую блокировку: $lock_file"
+                rm -f "$lock_file" 2>/dev/null || true
+            fi
+        fi
+    done
+    
     return 1
 }
 
@@ -367,36 +411,35 @@ if ! command -v php &> /dev/null || ! php -v 2>/dev/null | grep -q "8.2"; then
     add-apt-repository -y ppa:ondrej/php
     
     if ! wait_for_apt_lock; then
-        log_warn "Не удалось получить доступ к apt, пропускаем обновление"
-        return 0
+        log_warn "Не удалось получить доступ к apt, пропускаем установку PHP"
+    else
+        log_info "Выполнение: apt-get update"
+        if ! timeout 180 apt-get update 2>&1 | tee -a /tmp/apt-update.log; then
+            log_warn "Ошибка при обновлении списка пакетов для PHP"
+            log_warn "Последние строки лога:"
+            tail -10 /tmp/apt-update.log 2>/dev/null | while read line; do
+                log_warn "  $line"
+            done
+        fi
+        
+        log_info "Выполнение: apt-get install (прогресс будет виден ниже)"
+        apt-get install -y \
+            php8.2 \
+            php8.2-fpm \
+            php8.2-cli \
+            php8.2-common \
+            php8.2-mysql \
+            php8.2-pgsql \
+            php8.2-zip \
+            php8.2-gd \
+            php8.2-mbstring \
+            php8.2-curl \
+            php8.2-xml \
+            php8.2-bcmath \
+            php8.2-intl \
+            php8.2-redis \
+            php8.2-opcache
     fi
-    
-    log_info "Выполнение: apt-get update"
-    if ! timeout 180 apt-get update 2>&1 | tee -a /tmp/apt-update.log; then
-        log_warn "Ошибка при обновлении списка пакетов для PHP"
-        log_warn "Последние строки лога:"
-        tail -10 /tmp/apt-update.log 2>/dev/null | while read line; do
-            log_warn "  $line"
-        done
-    fi
-    
-    log_info "Выполнение: apt-get install (прогресс будет виден ниже)"
-    apt-get install -y \
-        php8.2 \
-        php8.2-fpm \
-        php8.2-cli \
-        php8.2-common \
-        php8.2-mysql \
-        php8.2-pgsql \
-        php8.2-zip \
-        php8.2-gd \
-        php8.2-mbstring \
-        php8.2-curl \
-        php8.2-xml \
-        php8.2-bcmath \
-        php8.2-intl \
-        php8.2-redis \
-        php8.2-opcache
 else
     log_info "PHP 8.2 уже установлен"
 fi
@@ -424,17 +467,16 @@ if ! command -v node &> /dev/null || ! node -v | grep -q "v20"; then
     echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" > /etc/apt/sources.list.d/nodesource.list
     
     if ! wait_for_apt_lock; then
-        log_warn "Не удалось получить доступ к apt, пропускаем обновление"
-        return 0
+        log_warn "Не удалось получить доступ к apt, пропускаем установку Node.js"
+    else
+        log_info "Выполнение: apt-get update"
+        if ! timeout 180 apt-get update 2>&1 | tee -a /tmp/apt-update.log; then
+            log_warn "Ошибка при обновлении списка пакетов для Node.js"
+        fi
+        
+        log_info "Выполнение: apt-get install (прогресс будет виден ниже)"
+        apt-get install -y nodejs
     fi
-    
-    log_info "Выполнение: apt-get update"
-    if ! timeout 180 apt-get update 2>&1 | tee -a /tmp/apt-update.log; then
-        log_warn "Ошибка при обновлении списка пакетов для Node.js"
-    fi
-    
-    log_info "Выполнение: apt-get install (прогресс будет виден ниже)"
-    apt-get install -y nodejs
 else
     log_info "Node.js 20 уже установлен"
 fi
@@ -615,15 +657,15 @@ if [ -f "$PG_CONF" ]; then
     fi
     
     restart_postgresql "$POSTGRES_SERVICE"
-fi
-
-PG_HBA=$(dirname "$PG_CONF")/pg_hba.conf
-if [ -f "$PG_HBA" ]; then
-    log_info "Найден файл pg_hba.conf: $PG_HBA"
-    if ! grep -q "^host.*all.*all.*127.0.0.1/32.*md5" "$PG_HBA" && ! grep -q "^host.*all.*all.*127.0.0.1/32.*password" "$PG_HBA" && ! grep -q "^host.*all.*all.*127.0.0.1/32.*trust" "$PG_HBA"; then
-        echo "host    all             all             127.0.0.1/32            md5" >> "$PG_HBA"
-        log_info "Добавлено правило в pg_hba.conf для подключений с localhost"
-        restart_postgresql "$POSTGRES_SERVICE"
+    
+    PG_HBA=$(dirname "$PG_CONF")/pg_hba.conf
+    if [ -f "$PG_HBA" ]; then
+        log_info "Найден файл pg_hba.conf: $PG_HBA"
+        if ! grep -q "^host.*all.*all.*127.0.0.1/32.*md5" "$PG_HBA" && ! grep -q "^host.*all.*all.*127.0.0.1/32.*password" "$PG_HBA" && ! grep -q "^host.*all.*all.*127.0.0.1/32.*trust" "$PG_HBA"; then
+            echo "host    all             all             127.0.0.1/32            md5" >> "$PG_HBA"
+            log_info "Добавлено правило в pg_hba.conf для подключений с localhost"
+            restart_postgresql "$POSTGRES_SERVICE"
+        fi
     fi
 fi
 
