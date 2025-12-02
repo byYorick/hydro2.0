@@ -44,7 +44,23 @@ log_info "Начинаем развертывание проекта Hydro 2.0 �
 # ============================================================================
 
 log_info "Обновление списка пакетов..."
-apt-get update -qq
+log_info "Это может занять некоторое время..."
+
+# Выполняем apt-get update с таймаутом и логированием
+if timeout 300 apt-get update 2>&1 | tee /tmp/apt-update.log; then
+    log_info "Список пакетов обновлен успешно"
+else
+    UPDATE_EXIT=$?
+    if [ $UPDATE_EXIT -eq 124 ]; then
+        log_error "Обновление списка пакетов превысило таймаут (5 минут)"
+        log_error "Проверьте подключение к интернету и доступность репозиториев"
+        exit 1
+    else
+        log_warn "Обновление списка пакетов завершилось с ошибкой (код: $UPDATE_EXIT)"
+        log_warn "Проверьте логи: tail -20 /tmp/apt-update.log"
+        log_warn "Продолжаем работу, но некоторые пакеты могут быть недоступны"
+    fi
+fi
 
 log_info "Установка базовых утилит..."
 apt-get install -y -qq \
@@ -72,7 +88,15 @@ PYTHON_VERSION="3.11"
 if ! apt-cache show python${PYTHON_VERSION} &>/dev/null; then
     log_info "Python ${PYTHON_VERSION} не найден в стандартных репозиториях, добавляем deadsnakes PPA..."
     add-apt-repository -y ppa:deadsnakes/ppa
-    apt-get update -qq
+    if ! timeout 180 apt-get update 2>&1 | tee -a /tmp/apt-update.log; then
+        UPDATE_EXIT=$?
+        if [ $UPDATE_EXIT -eq 124 ]; then
+            log_error "Обновление списка пакетов превысило таймаут (3 минуты)"
+            exit 1
+        else
+            log_warn "Ошибка при обновлении списка пакетов (код: $UPDATE_EXIT)"
+        fi
+    fi
 fi
 
 # Проверяем доступность Python 3.11, если нет - используем доступную версию
@@ -111,7 +135,15 @@ fi
 
 if [ "$PHP_INSTALLED" = "false" ]; then
     add-apt-repository -y ppa:ondrej/php
-    apt-get update -qq
+    if ! timeout 180 apt-get update 2>&1 | tee -a /tmp/apt-update.log; then
+        UPDATE_EXIT=$?
+        if [ $UPDATE_EXIT -eq 124 ]; then
+            log_error "Обновление списка пакетов превысило таймаут (3 минуты)"
+            exit 1
+        else
+            log_warn "Ошибка при обновлении списка пакетов (код: $UPDATE_EXIT)"
+        fi
+    fi
     apt-get install -y -qq \
         php8.2 \
         php8.2-fpm \
@@ -153,7 +185,15 @@ log_info "Установка Node.js 20..."
 if ! command -v node &> /dev/null || ! node -v | grep -q "v20"; then
     curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
     echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" > /etc/apt/sources.list.d/nodesource.list
-    apt-get update -qq
+    if ! timeout 180 apt-get update 2>&1 | tee -a /tmp/apt-update.log; then
+        UPDATE_EXIT=$?
+        if [ $UPDATE_EXIT -eq 124 ]; then
+            log_error "Обновление списка пакетов превысило таймаут (3 минуты)"
+            exit 1
+        else
+            log_warn "Ошибка при обновлении списка пакетов (код: $UPDATE_EXIT)"
+        fi
+    fi
     apt-get install -y -qq nodejs
 else
     log_info "Node.js 20 уже установлен"
