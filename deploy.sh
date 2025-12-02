@@ -74,37 +74,63 @@ wait_for_apt_lock() {
         
         if [ -n "$lock_files" ]; then
             # Проверяем, есть ли процесс, который держит блокировку
-            local lock_pid=""
+            local active_locks=0
+            local stale_locks=0
+            
             for lock_file in $lock_files; do
                 if [ -f "$lock_file" ]; then
-                    # Пробуем прочитать PID из файла блокировки (если возможно)
-                    lock_pid=$(lsof -t "$lock_file" 2>/dev/null | head -1 || echo "")
-                    if [ -n "$lock_pid" ]; then
+                    # Пробуем прочитать PID из файла блокировки
+                    local lock_pid=$(lsof -t "$lock_file" 2>/dev/null | head -1 || echo "")
+                    if [ -n "$lock_pid" ] && ps -p "$lock_pid" >/dev/null 2>&1; then
+                        # Активная блокировка с работающим процессом
                         local lock_cmd=$(ps -p "$lock_pid" -o cmd= 2>/dev/null | head -1 || echo "unknown")
-                        log_info "Блокировка обнаружена: $lock_file"
-                        log_info "  Удерживается процессом PID: $lock_pid"
-                        log_info "  Команда: $lock_cmd"
-                        
-                        # Проверяем, действительно ли процесс еще работает
-                        if ! ps -p "$lock_pid" >/dev/null 2>&1; then
-                            log_warn "  Процесс $lock_pid не существует, но блокировка осталась"
-                            log_warn "  Удаляем устаревшую блокировку..."
-                            rm -f "$lock_file" 2>/dev/null || true
-                            continue
+                        if [ $active_locks -eq 0 ]; then
+                            log_info "Блокировка обнаружена: $lock_file"
+                            log_info "  Удерживается процессом PID: $lock_pid"
+                            log_info "  Команда: $lock_cmd"
                         fi
+                        active_locks=$((active_locks + 1))
                     else
-                        log_info "Блокировка обнаружена: $lock_file (процесс не определен)"
+                        # Устаревшая блокировка (процесс не найден или не существует)
+                        if [ $stale_locks -eq 0 ]; then
+                            log_warn "Обнаружены устаревшие блокировки (процессы не найдены)"
+                        fi
+                        log_warn "  Устаревшая блокировка: $lock_file"
+                        stale_locks=$((stale_locks + 1))
                     fi
                 fi
             done
             
-            if [ -n "$lock_pid" ] && ps -p "$lock_pid" >/dev/null 2>&1; then
-                log_info "Ожидание завершения процесса $lock_pid..."
-            else
-                log_info "Ожидание освобождения блокировки..."
+            # Если есть устаревшие блокировки, удаляем их сразу
+            if [ $stale_locks -gt 0 ]; then
+                log_info "Удаление устаревших блокировок..."
+                for lock_file in $lock_files; do
+                    if [ -f "$lock_file" ]; then
+                        local lock_pid=$(lsof -t "$lock_file" 2>/dev/null | head -1 || echo "")
+                        if [ -z "$lock_pid" ] || ! ps -p "$lock_pid" >/dev/null 2>&1; then
+                            log_info "  Удаление: $lock_file"
+                            rm -f "$lock_file" 2>/dev/null || true
+                        fi
+                    fi
+                done
+                sleep 1
+                # Проверяем, остались ли активные блокировки
+                if [ $active_locks -eq 0 ]; then
+                    log_info "Все устаревшие блокировки удалены, продолжаем..."
+                    return 0
+                fi
             fi
-            sleep 5
-            waited=$((waited + 5))
+            
+            # Если есть активные блокировки, ждем
+            if [ $active_locks -gt 0 ]; then
+                log_info "Ожидание завершения процесса(ов), удерживающих блокировку..."
+                sleep 5
+                waited=$((waited + 5))
+            else
+                # Не должно быть здесь, но на всякий случай
+                log_info "Блокировки обработаны, продолжаем..."
+                return 0
+            fi
         else
             log_info "Блокировка apt освобождена"
             return 0
