@@ -339,36 +339,74 @@ setup_russian_mirrors() {
         fi
     fi
     
-    # Отключаем проблемный репозиторий Armbian, если он есть
-    local armbian_found=false
-    if [ -f /etc/apt/sources.list.d/armbian.list ]; then
-        armbian_found=true
-    elif grep -q "armbian\|beta.armbian.com\|fi.mirror.armbian.de" /etc/apt/sources.list.d/*.list 2>/dev/null; then
-        armbian_found=true
-    elif [ -f /etc/apt/sources.list ] && grep -q "armbian\|beta.armbian.com\|fi.mirror.armbian.de" /etc/apt/sources.list 2>/dev/null; then
-        armbian_found=true
+    # Отключаем проблемный репозиторий Armbian (более агрессивно)
+    log_info "Проверка и отключение репозитория Armbian..."
+    
+    local armbian_files_found=0
+    
+    # Проверяем основной sources.list
+    if [ -f /etc/apt/sources.list ]; then
+        if grep -qiE "armbian|beta\.armbian\.com|fi\.mirror\.armbian\.de" /etc/apt/sources.list 2>/dev/null; then
+            armbian_files_found=$((armbian_files_found + 1))
+            log_info "  Найден репозиторий Armbian в: /etc/apt/sources.list"
+            sed -i 's|^[^#]*deb.*armbian|# &|g' /etc/apt/sources.list 2>/dev/null || true
+            sed -i 's|^[^#]*deb.*beta\.armbian\.com|# &|g' /etc/apt/sources.list 2>/dev/null || true
+            sed -i 's|^[^#]*deb.*fi\.mirror\.armbian\.de|# &|g' /etc/apt/sources.list 2>/dev/null || true
+        fi
     fi
     
-    if [ "$armbian_found" = "true" ]; then
-        log_info "Отключение проблемного репозитория Armbian..."
-        
-        # Комментируем строки с Armbian в sources.list.d
-        for sources_file in /etc/apt/sources.list.d/*.list; do
-            if [ -f "$sources_file" ]; then
-                sed -i 's|^deb.*armbian|# deb armbian|g' "$sources_file" 2>/dev/null || true
-                sed -i 's|^deb.*beta.armbian.com|# deb beta.armbian.com|g' "$sources_file" 2>/dev/null || true
-                sed -i 's|^deb.*fi.mirror.armbian.de|# deb fi.mirror.armbian.de|g' "$sources_file" 2>/dev/null || true
+    # Проверяем все файлы в sources.list.d
+    for sources_file in /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.save; do
+        if [ -f "$sources_file" ] 2>/dev/null; then
+            # Проверяем, есть ли упоминания Armbian
+            if grep -qiE "armbian|beta\.armbian\.com|fi\.mirror\.armbian\.de" "$sources_file" 2>/dev/null; then
+                armbian_files_found=$((armbian_files_found + 1))
+                log_info "  Найден репозиторий Armbian в: $sources_file"
+                
+                # Комментируем все строки с Armbian (независимо от того, закомментированы они уже или нет)
+                sed -i 's|^[^#]*deb.*armbian|# &|g' "$sources_file" 2>/dev/null || true
+                sed -i 's|^[^#]*deb.*beta\.armbian\.com|# &|g' "$sources_file" 2>/dev/null || true
+                sed -i 's|^[^#]*deb.*fi\.mirror\.armbian\.de|# &|g' "$sources_file" 2>/dev/null || true
+                sed -i 's|^[^#]*deb.*mirror\.armbian\.de|# &|g' "$sources_file" 2>/dev/null || true
             fi
-        done
-        
-        # Комментируем в основном sources.list
-        if [ -f /etc/apt/sources.list ]; then
-            sed -i 's|^deb.*armbian|# deb armbian|g' /etc/apt/sources.list 2>/dev/null || true
-            sed -i 's|^deb.*beta.armbian.com|# deb beta.armbian.com|g' /etc/apt/sources.list 2>/dev/null || true
-            sed -i 's|^deb.*fi.mirror.armbian.de|# deb fi.mirror.armbian.de|g' /etc/apt/sources.list 2>/dev/null || true
         fi
-        
-        log_info "Репозиторий Armbian отключен"
+    done
+    
+    # Также удаляем или переименовываем файл armbian.list, если он существует
+    if [ -f /etc/apt/sources.list.d/armbian.list ]; then
+        log_info "  Переименование /etc/apt/sources.list.d/armbian.list в .disabled"
+        mv /etc/apt/sources.list.d/armbian.list /etc/apt/sources.list.d/armbian.list.disabled 2>/dev/null || true
+        armbian_files_found=$((armbian_files_found + 1))
+    fi
+    
+    # Проверяем все файлы с расширениями .save, .bak и другими
+    for sources_file in /etc/apt/sources.list.d/*.save /etc/apt/sources.list.d/*.bak /etc/apt/sources.list.d/*.old; do
+        if [ -f "$sources_file" ] 2>/dev/null; then
+            if grep -qiE "armbian|beta\.armbian\.com|fi\.mirror\.armbian\.de" "$sources_file" 2>/dev/null; then
+                log_info "  Отключение Armbian в резервном файле: $sources_file"
+                sed -i 's|^[^#]*deb.*armbian|# &|g' "$sources_file" 2>/dev/null || true
+                sed -i 's|^[^#]*deb.*beta\.armbian\.com|# &|g' "$sources_file" 2>/dev/null || true
+                sed -i 's|^[^#]*deb.*fi\.mirror\.armbian\.de|# &|g' "$sources_file" 2>/dev/null || true
+            fi
+        fi
+    done
+    
+    # Финальная проверка - убеждаемся, что репозиторий отключен
+    if grep -qiE "^[^#]*deb.*armbian|^[^#]*deb.*beta\.armbian\.com|^[^#]*deb.*fi\.mirror\.armbian\.de" /etc/apt/sources.list /etc/apt/sources.list.d/*.list 2>/dev/null; then
+        log_warn "  Предупреждение: репозиторий Armbian всё ещё активен, применяем принудительное отключение..."
+        # Более агрессивное отключение - комментируем все строки, содержащие armbian
+        find /etc/apt/sources.list.d -name "*.list" -type f 2>/dev/null | while read -r file; do
+            sed -i '/armbian\|beta\.armbian\.com\|fi\.mirror\.armbian\.de/s/^/# /' "$file" 2>/dev/null || true
+        done
+        if [ -f /etc/apt/sources.list ]; then
+            sed -i '/armbian\|beta\.armbian\.com\|fi\.mirror\.armbian\.de/s/^/# /' /etc/apt/sources.list 2>/dev/null || true
+        fi
+    fi
+    
+    if [ $armbian_files_found -gt 0 ]; then
+        log_info "Репозиторий Armbian отключен в $armbian_files_found файле(ах)"
+    else
+        log_info "Репозиторий Armbian не найден (возможно, уже отключен)"
     fi
     
     log_info "Настройка российских зеркал завершена"
