@@ -53,14 +53,56 @@ wait_for_apt_lock() {
     
     while [ $waited -lt $max_wait ]; do
         # Проверяем, есть ли процессы apt/dpkg
-        if pgrep -x "apt-get|apt|dpkg" >/dev/null 2>&1; then
-            local apt_pid=$(pgrep -x "apt-get|apt|dpkg" | head -1)
-            log_info "Обнаружен запущенный процесс apt (PID: $apt_pid), ожидание..."
+        local apt_processes=$(pgrep -x "apt-get|apt|dpkg" 2>/dev/null || echo "")
+        if [ -n "$apt_processes" ]; then
+            local apt_pid=$(echo "$apt_processes" | head -1)
+            local apt_cmd=$(ps -p "$apt_pid" -o cmd= 2>/dev/null | head -1 || echo "unknown")
+            log_info "Обнаружен запущенный процесс apt (PID: $apt_pid)"
+            log_info "  Команда: $apt_cmd"
+            log_info "  Ожидание завершения процесса..."
             sleep 5
             waited=$((waited + 5))
+            continue
+        fi
+        
         # Проверяем блокировку напрямую
-        elif [ -f /var/lib/apt/lists/lock ] || [ -f /var/lib/dpkg/lock ] || [ -f /var/cache/apt/archives/lock ]; then
-            log_info "Обнаружена блокировка apt, ожидание освобождения..."
+        local lock_files=""
+        [ -f /var/lib/apt/lists/lock ] && lock_files="$lock_files /var/lib/apt/lists/lock"
+        [ -f /var/lib/dpkg/lock ] && lock_files="$lock_files /var/lib/dpkg/lock"
+        [ -f /var/cache/apt/archives/lock ] && lock_files="$lock_files /var/cache/apt/archives/lock"
+        [ -f /var/lib/dpkg/lock-frontend ] && lock_files="$lock_files /var/lib/dpkg/lock-frontend"
+        
+        if [ -n "$lock_files" ]; then
+            # Проверяем, есть ли процесс, который держит блокировку
+            local lock_pid=""
+            for lock_file in $lock_files; do
+                if [ -f "$lock_file" ]; then
+                    # Пробуем прочитать PID из файла блокировки (если возможно)
+                    lock_pid=$(lsof -t "$lock_file" 2>/dev/null | head -1 || echo "")
+                    if [ -n "$lock_pid" ]; then
+                        local lock_cmd=$(ps -p "$lock_pid" -o cmd= 2>/dev/null | head -1 || echo "unknown")
+                        log_info "Блокировка обнаружена: $lock_file"
+                        log_info "  Удерживается процессом PID: $lock_pid"
+                        log_info "  Команда: $lock_cmd"
+                        
+                        # Проверяем, действительно ли процесс еще работает
+                        if ! ps -p "$lock_pid" >/dev/null 2>&1; then
+                            log_warn "  Процесс $lock_pid не существует, но блокировка осталась"
+                            log_warn "  Удаляем устаревшую блокировку..."
+                            rm -f "$lock_file" 2>/dev/null || true
+                            continue
+                        fi
+                    else
+                        log_info "Блокировка обнаружена: $lock_file (процесс не определен)"
+                    fi
+                fi
+            done
+            
+            if [ -n "$lock_pid" ] && ps -p "$lock_pid" >/dev/null 2>&1; then
+                log_info "Ожидание завершения процесса $lock_pid..."
+            else
+                log_info "Ожидание освобождения блокировки..."
+            fi
             sleep 5
             waited=$((waited + 5))
         else
@@ -70,7 +112,45 @@ wait_for_apt_lock() {
     done
     
     log_warn "Превышено время ожидания освобождения блокировки apt (5 минут)"
-    log_warn "Проверьте запущенные процессы: ps aux | grep -E 'apt|dpkg'"
+    log_warn "Текущие процессы apt/dpkg:"
+    ps aux | grep -E '[a]pt|[d]pkg' | head -5 | while read line; do
+        log_warn "  $line"
+    done
+    log_warn "Файлы блокировки:"
+    local stale_locks=0
+    for lock_file in /var/lib/apt/lists/lock /var/lib/dpkg/lock /var/cache/apt/archives/lock /var/lib/dpkg/lock-frontend; do
+        if [ -f "$lock_file" ]; then
+            local lock_pid=$(lsof -t "$lock_file" 2>/dev/null | head -1 || echo "")
+            if [ -z "$lock_pid" ] || ! ps -p "$lock_pid" >/dev/null 2>&1; then
+                log_warn "  $lock_file (устаревшая блокировка, процесс не существует)"
+                stale_locks=$((stale_locks + 1))
+            else
+                log_warn "  $lock_file (удерживается процессом PID: $lock_pid)"
+            fi
+        fi
+    done
+    
+    # Если есть устаревшие блокировки, предлагаем их удалить
+    if [ $stale_locks -gt 0 ]; then
+        log_warn "Обнаружены устаревшие блокировки (процессы не существуют)"
+        log_warn "Попытка автоматического удаления устаревших блокировок..."
+        for lock_file in /var/lib/apt/lists/lock /var/lib/dpkg/lock /var/cache/apt/archives/lock /var/lib/dpkg/lock-frontend; do
+            if [ -f "$lock_file" ]; then
+                local lock_pid=$(lsof -t "$lock_file" 2>/dev/null | head -1 || echo "")
+                if [ -z "$lock_pid" ] || ! ps -p "$lock_pid" >/dev/null 2>&1; then
+                    log_info "  Удаление устаревшей блокировки: $lock_file"
+                    rm -f "$lock_file" 2>/dev/null || true
+                fi
+            fi
+        done
+        sleep 2
+        # Проверяем еще раз после удаления
+        if [ ! -f /var/lib/apt/lists/lock ] && [ ! -f /var/lib/dpkg/lock ] && [ ! -f /var/cache/apt/archives/lock ] && [ ! -f /var/lib/dpkg/lock-frontend ]; then
+            log_info "Устаревшие блокировки удалены, продолжаем..."
+            return 0
+        fi
+    fi
+    
     return 1
 }
 
