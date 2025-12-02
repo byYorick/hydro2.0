@@ -46,6 +46,42 @@ log_info "Начинаем развертывание проекта Hydro 2.0 �
 log_info "Обновление списка пакетов..."
 log_info "Это может занять некоторое время..."
 
+# Функция для ожидания освобождения блокировки apt
+wait_for_apt_lock() {
+    local max_wait=300  # 5 минут максимум
+    local waited=0
+    
+    while [ $waited -lt $max_wait ]; do
+        # Проверяем, есть ли процессы apt/dpkg
+        if pgrep -x "apt-get|apt|dpkg" >/dev/null 2>&1; then
+            local apt_pid=$(pgrep -x "apt-get|apt|dpkg" | head -1)
+            log_info "Обнаружен запущенный процесс apt (PID: $apt_pid), ожидание..."
+            sleep 5
+            waited=$((waited + 5))
+        # Проверяем блокировку напрямую
+        elif [ -f /var/lib/apt/lists/lock ] || [ -f /var/lib/dpkg/lock ] || [ -f /var/cache/apt/archives/lock ]; then
+            log_info "Обнаружена блокировка apt, ожидание освобождения..."
+            sleep 5
+            waited=$((waited + 5))
+        else
+            log_info "Блокировка apt освобождена"
+            return 0
+        fi
+    done
+    
+    log_warn "Превышено время ожидания освобождения блокировки apt (5 минут)"
+    log_warn "Проверьте запущенные процессы: ps aux | grep -E 'apt|dpkg'"
+    return 1
+}
+
+# Ожидаем освобождения блокировки перед обновлением
+log_info "Проверка блокировки apt..."
+if ! wait_for_apt_lock; then
+    log_error "Не удалось получить доступ к apt"
+    log_error "Выполните вручную: sudo killall apt-get apt dpkg 2>/dev/null; sudo rm -f /var/lib/apt/lists/lock /var/lib/dpkg/lock /var/cache/apt/archives/lock"
+    exit 1
+fi
+
 # Выполняем apt-get update с таймаутом и логированием
 if timeout 300 apt-get update 2>&1 | tee /tmp/apt-update.log; then
     log_info "Список пакетов обновлен успешно"
@@ -55,6 +91,17 @@ else
         log_error "Обновление списка пакетов превысило таймаут (5 минут)"
         log_error "Проверьте подключение к интернету и доступность репозиториев"
         exit 1
+    elif [ $UPDATE_EXIT -eq 100 ]; then
+        log_warn "Ошибка блокировки apt (код: 100)"
+        log_warn "Попытка ожидания и повторного запуска..."
+        sleep 10
+        if wait_for_apt_lock && timeout 300 apt-get update 2>&1 | tee -a /tmp/apt-update.log; then
+            log_info "Список пакетов обновлен успешно после повторной попытки"
+        else
+            log_error "Не удалось обновить список пакетов после повторной попытки"
+            log_error "Выполните вручную: sudo apt-get update"
+            exit 1
+        fi
     else
         log_warn "Обновление списка пакетов завершилось с ошибкой (код: $UPDATE_EXIT)"
         log_warn "Проверьте логи: tail -20 /tmp/apt-update.log"
@@ -88,11 +135,21 @@ PYTHON_VERSION="3.11"
 if ! apt-cache show python${PYTHON_VERSION} &>/dev/null; then
     log_info "Python ${PYTHON_VERSION} не найден в стандартных репозиториях, добавляем deadsnakes PPA..."
     add-apt-repository -y ppa:deadsnakes/ppa
+    # Ожидаем освобождения блокировки перед обновлением
+    wait_for_apt_lock || {
+        log_warn "Не удалось получить доступ к apt, пропускаем обновление"
+        return 0
+    }
+    
     if ! timeout 180 apt-get update 2>&1 | tee -a /tmp/apt-update.log; then
         UPDATE_EXIT=$?
         if [ $UPDATE_EXIT -eq 124 ]; then
             log_error "Обновление списка пакетов превысило таймаут (3 минуты)"
             exit 1
+        elif [ $UPDATE_EXIT -eq 100 ]; then
+            log_warn "Ошибка блокировки apt, ожидание и повторная попытка..."
+            sleep 10
+            wait_for_apt_lock && timeout 180 apt-get update 2>&1 | tee -a /tmp/apt-update.log || true
         else
             log_warn "Ошибка при обновлении списка пакетов (код: $UPDATE_EXIT)"
         fi
@@ -135,11 +192,21 @@ fi
 
 if [ "$PHP_INSTALLED" = "false" ]; then
     add-apt-repository -y ppa:ondrej/php
+    # Ожидаем освобождения блокировки перед обновлением
+    wait_for_apt_lock || {
+        log_warn "Не удалось получить доступ к apt, пропускаем обновление"
+        return 0
+    }
+    
     if ! timeout 180 apt-get update 2>&1 | tee -a /tmp/apt-update.log; then
         UPDATE_EXIT=$?
         if [ $UPDATE_EXIT -eq 124 ]; then
             log_error "Обновление списка пакетов превысило таймаут (3 минуты)"
             exit 1
+        elif [ $UPDATE_EXIT -eq 100 ]; then
+            log_warn "Ошибка блокировки apt, ожидание и повторная попытка..."
+            sleep 10
+            wait_for_apt_lock && timeout 180 apt-get update 2>&1 | tee -a /tmp/apt-update.log || true
         else
             log_warn "Ошибка при обновлении списка пакетов (код: $UPDATE_EXIT)"
         fi
@@ -185,11 +252,21 @@ log_info "Установка Node.js 20..."
 if ! command -v node &> /dev/null || ! node -v | grep -q "v20"; then
     curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
     echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" > /etc/apt/sources.list.d/nodesource.list
+    # Ожидаем освобождения блокировки перед обновлением
+    wait_for_apt_lock || {
+        log_warn "Не удалось получить доступ к apt, пропускаем обновление"
+        return 0
+    }
+    
     if ! timeout 180 apt-get update 2>&1 | tee -a /tmp/apt-update.log; then
         UPDATE_EXIT=$?
         if [ $UPDATE_EXIT -eq 124 ]; then
             log_error "Обновление списка пакетов превысило таймаут (3 минуты)"
             exit 1
+        elif [ $UPDATE_EXIT -eq 100 ]; then
+            log_warn "Ошибка блокировки apt, ожидание и повторная попытка..."
+            sleep 10
+            wait_for_apt_lock && timeout 180 apt-get update 2>&1 | tee -a /tmp/apt-update.log || true
         else
             log_warn "Ошибка при обновлении списка пакетов (код: $UPDATE_EXIT)"
         fi
@@ -256,10 +333,30 @@ if [ "$POSTGRES_INSTALLED" = "false" ]; then
     
     # Шаг 2: Обновление списка пакетов
     log_info "Шаг 2: Обновление списка пакетов..."
-    if ! apt-get update; then
-        log_error "Ошибка при обновлении списка пакетов"
-        log_error "Проверьте доступность репозитория: cat /etc/apt/sources.list.d/pgdg.list"
+    
+    # Ожидаем освобождения блокировки
+    if ! wait_for_apt_lock; then
+        log_error "Не удалось получить доступ к apt"
         exit 1
+    fi
+    
+    if ! timeout 180 apt-get update 2>&1 | tee -a /tmp/apt-update.log; then
+        UPDATE_EXIT=$?
+        if [ $UPDATE_EXIT -eq 100 ]; then
+            log_warn "Ошибка блокировки apt, ожидание и повторная попытка..."
+            sleep 10
+            if wait_for_apt_lock && timeout 180 apt-get update 2>&1 | tee -a /tmp/apt-update.log; then
+                log_info "Список пакетов обновлен после повторной попытки"
+            else
+                log_error "Ошибка при обновлении списка пакетов"
+                log_error "Проверьте доступность репозитория: cat /etc/apt/sources.list.d/pgdg.list"
+                exit 1
+            fi
+        else
+            log_error "Ошибка при обновлении списка пакетов (код: $UPDATE_EXIT)"
+            log_error "Проверьте доступность репозитория: cat /etc/apt/sources.list.d/pgdg.list"
+            exit 1
+        fi
     fi
     
     # Проверяем доступность пакетов
