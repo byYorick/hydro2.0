@@ -274,6 +274,106 @@ setup_firewall() {
     fi
 }
 
+# Функция для настройки российских зеркал
+setup_russian_mirrors() {
+    log_info "Настройка российских зеркал для ускорения обновлений..."
+    
+    # Определяем кодовое имя дистрибутива и архитектуру
+    local distro_codename=$(lsb_release -cs 2>/dev/null || echo "noble")
+    local arch=$(dpkg --print-architecture 2>/dev/null || uname -m)
+    log_info "Кодовое имя дистрибутива: $distro_codename"
+    log_info "Архитектура: $arch"
+    
+    # Создаём резервную копию sources.list
+    if [ -f /etc/apt/sources.list ]; then
+        cp /etc/apt/sources.list /etc/apt/sources.list.backup.$(date +%Y%m%d_%H%M%S) 2>/dev/null || true
+    fi
+    
+    # Определяем, используется ли ports.ubuntu.com (для ARM)
+    local is_ports_repo=false
+    if grep -q "ports.ubuntu.com" /etc/apt/sources.list 2>/dev/null || grep -q "ports.ubuntu.com" /etc/apt/sources.list.d/*.list 2>/dev/null; then
+        is_ports_repo=true
+        log_info "Обнаружен репозиторий ports.ubuntu.com (ARM архитектура)"
+    fi
+    
+    # Настройка основных репозиториев Ubuntu на российские зеркала
+    # Для ARM используем зеркала, которые поддерживают ports
+    if [ "$is_ports_repo" = "true" ] || [ "$arch" = "arm64" ] || [ "$arch" = "armhf" ]; then
+        log_info "Используем стандартные репозитории для ARM (ports.ubuntu.com)"
+        # Для ARM оставляем ports.ubuntu.com, но отключаем проблемные репозитории
+    else
+        # Для x86_64 используем российские зеркала
+        local ubuntu_mirrors=(
+            "http://mirror.yandex.ru/ubuntu"
+            "http://mirror.truenetwork.ru/ubuntu"
+            "http://ubuntu.volia.net/ubuntu"
+            "http://mirror.corbina.net/ubuntu"
+        )
+        
+        # Проверяем доступность зеркал и выбираем первое доступное
+        local selected_mirror=""
+        for mirror in "${ubuntu_mirrors[@]}"; do
+            if curl -s --max-time 5 --head "$mirror/dists/$distro_codename/InRelease" >/dev/null 2>&1; then
+                selected_mirror="$mirror"
+                log_info "Выбрано зеркало: $mirror"
+                break
+            fi
+        done
+        
+        if [ -n "$selected_mirror" ]; then
+            # Обновляем sources.list для использования российского зеркала
+            if [ -f /etc/apt/sources.list ]; then
+                sed -i "s|http://.*archive.ubuntu.com/ubuntu|$selected_mirror|g" /etc/apt/sources.list 2>/dev/null || true
+                sed -i "s|http://.*security.ubuntu.com/ubuntu|$selected_mirror|g" /etc/apt/sources.list 2>/dev/null || true
+            fi
+            
+            # Обновляем sources.list.d файлы
+            for sources_file in /etc/apt/sources.list.d/*.list; do
+                if [ -f "$sources_file" ]; then
+                    sed -i "s|http://.*archive.ubuntu.com/ubuntu|$selected_mirror|g" "$sources_file" 2>/dev/null || true
+                    sed -i "s|http://.*security.ubuntu.com/ubuntu|$selected_mirror|g" "$sources_file" 2>/dev/null || true
+                fi
+            done
+        else
+            log_warn "Не удалось найти доступное российское зеркало, используем стандартные"
+        fi
+    fi
+    
+    # Отключаем проблемный репозиторий Armbian, если он есть
+    local armbian_found=false
+    if [ -f /etc/apt/sources.list.d/armbian.list ]; then
+        armbian_found=true
+    elif grep -q "armbian\|beta.armbian.com\|fi.mirror.armbian.de" /etc/apt/sources.list.d/*.list 2>/dev/null; then
+        armbian_found=true
+    elif [ -f /etc/apt/sources.list ] && grep -q "armbian\|beta.armbian.com\|fi.mirror.armbian.de" /etc/apt/sources.list 2>/dev/null; then
+        armbian_found=true
+    fi
+    
+    if [ "$armbian_found" = "true" ]; then
+        log_info "Отключение проблемного репозитория Armbian..."
+        
+        # Комментируем строки с Armbian в sources.list.d
+        for sources_file in /etc/apt/sources.list.d/*.list; do
+            if [ -f "$sources_file" ]; then
+                sed -i 's|^deb.*armbian|# deb armbian|g' "$sources_file" 2>/dev/null || true
+                sed -i 's|^deb.*beta.armbian.com|# deb beta.armbian.com|g' "$sources_file" 2>/dev/null || true
+                sed -i 's|^deb.*fi.mirror.armbian.de|# deb fi.mirror.armbian.de|g' "$sources_file" 2>/dev/null || true
+            fi
+        done
+        
+        # Комментируем в основном sources.list
+        if [ -f /etc/apt/sources.list ]; then
+            sed -i 's|^deb.*armbian|# deb armbian|g' /etc/apt/sources.list 2>/dev/null || true
+            sed -i 's|^deb.*beta.armbian.com|# deb beta.armbian.com|g' /etc/apt/sources.list 2>/dev/null || true
+            sed -i 's|^deb.*fi.mirror.armbian.de|# deb fi.mirror.armbian.de|g' /etc/apt/sources.list 2>/dev/null || true
+        fi
+        
+        log_info "Репозиторий Armbian отключен"
+    fi
+    
+    log_info "Настройка российских зеркал завершена"
+}
+
 # Функция для создания скрипта обновления
 create_update_script() {
     cat > /usr/local/bin/update-hydro << 'EOF'
@@ -351,6 +451,9 @@ update_env_var() {
 # ============================================================================
 # 1. Установка системных зависимостей
 # ============================================================================
+
+log_info "Настройка российских зеркал для ускорения обновлений..."
+setup_russian_mirrors
 
 log_info "Обновление списка пакетов..."
 log_info "Это может занять некоторое время..."
