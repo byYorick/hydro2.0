@@ -83,6 +83,7 @@ if ! wait_for_apt_lock; then
 fi
 
 # Выполняем apt-get update с таймаутом и логированием
+log_info "Выполнение: apt-get update"
 if timeout 300 apt-get update 2>&1 | tee /tmp/apt-update.log; then
     log_info "Список пакетов обновлен успешно"
 else
@@ -95,6 +96,7 @@ else
         log_warn "Ошибка блокировки apt (код: 100)"
         log_warn "Попытка ожидания и повторного запуска..."
         sleep 10
+        log_info "Повторное выполнение: apt-get update"
         if wait_for_apt_lock && timeout 300 apt-get update 2>&1 | tee -a /tmp/apt-update.log; then
             log_info "Список пакетов обновлен успешно после повторной попытки"
         else
@@ -104,13 +106,17 @@ else
         fi
     else
         log_warn "Обновление списка пакетов завершилось с ошибкой (код: $UPDATE_EXIT)"
-        log_warn "Проверьте логи: tail -20 /tmp/apt-update.log"
+        log_warn "Последние строки лога:"
+        tail -20 /tmp/apt-update.log 2>/dev/null | while read line; do
+            log_warn "  $line"
+        done
         log_warn "Продолжаем работу, но некоторые пакеты могут быть недоступны"
     fi
 fi
 
 log_info "Установка базовых утилит..."
-apt-get install -y -qq \
+log_info "Выполнение: apt-get install (прогресс будет виден ниже)"
+if ! apt-get install -y \
     curl \
     wget \
     git \
@@ -127,7 +133,11 @@ apt-get install -y -qq \
     python3-pip \
     gcc \
     gettext \
-    unzip
+    unzip; then
+    log_error "Ошибка при установке базовых пакетов"
+    exit 1
+fi
+log_info "Базовые пакеты установлены успешно"
 
 # Установка Python 3.11 (требуется репозиторий deadsnakes для старых версий Ubuntu)
 log_info "Установка Python 3.11..."
@@ -141,6 +151,7 @@ if ! apt-cache show python${PYTHON_VERSION} &>/dev/null; then
         return 0
     }
     
+    log_info "Выполнение: apt-get update"
     if ! timeout 180 apt-get update 2>&1 | tee -a /tmp/apt-update.log; then
         UPDATE_EXIT=$?
         if [ $UPDATE_EXIT -eq 124 ]; then
@@ -149,16 +160,22 @@ if ! apt-cache show python${PYTHON_VERSION} &>/dev/null; then
         elif [ $UPDATE_EXIT -eq 100 ]; then
             log_warn "Ошибка блокировки apt, ожидание и повторная попытка..."
             sleep 10
+            log_info "Повторное выполнение: apt-get update"
             wait_for_apt_lock && timeout 180 apt-get update 2>&1 | tee -a /tmp/apt-update.log || true
         else
             log_warn "Ошибка при обновлении списка пакетов (код: $UPDATE_EXIT)"
+            log_warn "Последние строки лога:"
+            tail -10 /tmp/apt-update.log 2>/dev/null | while read line; do
+                log_warn "  $line"
+            done
         fi
     fi
 fi
 
 # Проверяем доступность Python 3.11, если нет - используем доступную версию
 if apt-cache show python${PYTHON_VERSION} &>/dev/null; then
-    apt-get install -y -qq \
+    log_info "Выполнение: apt-get install (прогресс будет виден ниже)"
+apt-get install -y \
         python${PYTHON_VERSION} \
         python${PYTHON_VERSION}-dev \
         python${PYTHON_VERSION}-venv
@@ -167,7 +184,8 @@ if apt-cache show python${PYTHON_VERSION} &>/dev/null; then
 else
     log_warn "Python ${PYTHON_VERSION} недоступен, используем системную версию Python 3"
     # Устанавливаем системный Python 3 и его зависимости
-    apt-get install -y -qq \
+    log_info "Выполнение: apt-get install (прогресс будет виден ниже)"
+apt-get install -y \
         python3 \
         python3-dev \
         python3-venv
@@ -198,6 +216,7 @@ if [ "$PHP_INSTALLED" = "false" ]; then
         return 0
     }
     
+    log_info "Выполнение: apt-get update"
     if ! timeout 180 apt-get update 2>&1 | tee -a /tmp/apt-update.log; then
         UPDATE_EXIT=$?
         if [ $UPDATE_EXIT -eq 124 ]; then
@@ -206,12 +225,18 @@ if [ "$PHP_INSTALLED" = "false" ]; then
         elif [ $UPDATE_EXIT -eq 100 ]; then
             log_warn "Ошибка блокировки apt, ожидание и повторная попытка..."
             sleep 10
+            log_info "Повторное выполнение: apt-get update"
             wait_for_apt_lock && timeout 180 apt-get update 2>&1 | tee -a /tmp/apt-update.log || true
         else
             log_warn "Ошибка при обновлении списка пакетов (код: $UPDATE_EXIT)"
+            log_warn "Последние строки лога:"
+            tail -10 /tmp/apt-update.log 2>/dev/null | while read line; do
+                log_warn "  $line"
+            done
         fi
     fi
-    apt-get install -y -qq \
+    log_info "Выполнение: apt-get install (прогресс будет виден ниже)"
+apt-get install -y \
         php8.2 \
         php8.2-fpm \
         php8.2-cli \
@@ -258,6 +283,7 @@ if ! command -v node &> /dev/null || ! node -v | grep -q "v20"; then
         return 0
     }
     
+    log_info "Выполнение: apt-get update"
     if ! timeout 180 apt-get update 2>&1 | tee -a /tmp/apt-update.log; then
         UPDATE_EXIT=$?
         if [ $UPDATE_EXIT -eq 124 ]; then
@@ -266,12 +292,18 @@ if ! command -v node &> /dev/null || ! node -v | grep -q "v20"; then
         elif [ $UPDATE_EXIT -eq 100 ]; then
             log_warn "Ошибка блокировки apt, ожидание и повторная попытка..."
             sleep 10
+            log_info "Повторное выполнение: apt-get update"
             wait_for_apt_lock && timeout 180 apt-get update 2>&1 | tee -a /tmp/apt-update.log || true
         else
             log_warn "Ошибка при обновлении списка пакетов (код: $UPDATE_EXIT)"
+            log_warn "Последние строки лога:"
+            tail -10 /tmp/apt-update.log 2>/dev/null | while read line; do
+                log_warn "  $line"
+            done
         fi
     fi
-    apt-get install -y -qq nodejs
+    log_info "Выполнение: apt-get install (прогресс будет виден ниже)"
+    apt-get install -y nodejs
 else
     log_info "Node.js 20 уже установлен"
 fi
@@ -340,20 +372,30 @@ if [ "$POSTGRES_INSTALLED" = "false" ]; then
         exit 1
     fi
     
+    log_info "Выполнение: apt-get update"
     if ! timeout 180 apt-get update 2>&1 | tee -a /tmp/apt-update.log; then
         UPDATE_EXIT=$?
         if [ $UPDATE_EXIT -eq 100 ]; then
             log_warn "Ошибка блокировки apt, ожидание и повторная попытка..."
             sleep 10
+            log_info "Повторное выполнение: apt-get update"
             if wait_for_apt_lock && timeout 180 apt-get update 2>&1 | tee -a /tmp/apt-update.log; then
                 log_info "Список пакетов обновлен после повторной попытки"
             else
                 log_error "Ошибка при обновлении списка пакетов"
+                log_error "Последние строки лога:"
+                tail -20 /tmp/apt-update.log 2>/dev/null | while read line; do
+                    log_error "  $line"
+                done
                 log_error "Проверьте доступность репозитория: cat /etc/apt/sources.list.d/pgdg.list"
                 exit 1
             fi
         else
             log_error "Ошибка при обновлении списка пакетов (код: $UPDATE_EXIT)"
+            log_error "Последние строки лога:"
+            tail -20 /tmp/apt-update.log 2>/dev/null | while read line; do
+                log_error "  $line"
+            done
             log_error "Проверьте доступность репозитория: cat /etc/apt/sources.list.d/pgdg.list"
             exit 1
         fi
@@ -1018,7 +1060,8 @@ fi
 
 log_info "Установка Mosquitto MQTT Broker..."
 if ! command -v mosquitto &> /dev/null; then
-    apt-get install -y -qq mosquitto mosquitto-clients
+    log_info "Выполнение: apt-get install (прогресс будет виден ниже)"
+    apt-get install -y mosquitto mosquitto-clients
 else
     log_info "Mosquitto уже установлен"
 fi
