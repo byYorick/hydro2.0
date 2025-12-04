@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\DeviceNode;
 use App\Models\NodeChannel;
+use App\Enums\NodeLifecycleState;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;
 
@@ -171,13 +172,47 @@ class NodeConfigService
             ];
         }
         
-        // Для публикации конфига через MQTT (includeCredentials = true) возвращаем полную конфигурацию
-        $nodeConfig = $node->config ?? [];
-        if (isset($nodeConfig['wifi'])) {
-            return $nodeConfig['wifi'];
+        // Для публикации конфига через MQTT (includeCredentials = true)
+        // ВАЖНО: Если нода уже подключена к Wi-Fi и MQTT (lifecycle_state >= REGISTERED_BACKEND),
+        // то отправляем только {"configured": true}, чтобы прошивка не перезаписывала существующие настройки.
+        // Это предотвращает переподключение Wi-Fi, если нода уже работает.
+        $lifecycleState = $node->lifecycleState();
+        $isAlreadyConnected = $lifecycleState->value >= NodeLifecycleState::REGISTERED_BACKEND->value;
+        
+        if ($isAlreadyConnected) {
+            // Нода уже подключена - не отправляем полную конфигурацию Wi-Fi,
+            // чтобы прошивка не перезаписывала существующие настройки
+            Log::info('NodeConfigService: Node already connected, sending wifi={"configured": true} to preserve existing settings', [
+                'node_id' => $node->id,
+                'uid' => $node->uid,
+                'lifecycle_state' => $lifecycleState->value,
+            ]);
+            return [
+                'configured' => true, // Прошивка не будет перезаписывать Wi-Fi настройки
+            ];
         }
         
-        // Используем глобальные настройки
+        // Нода еще не подключена - отправляем полную конфигурацию Wi-Fi
+        // Проверяем, есть ли сохраненная конфигурация Wi-Fi в node->config
+        $nodeConfig = $node->config ?? [];
+        if (isset($nodeConfig['wifi']) && is_array($nodeConfig['wifi'])) {
+            // Если в node->config есть Wi-Fi конфигурация, используем её
+            // (это может быть конфигурация, сохраненная после setup режима)
+            $wifiConfig = $nodeConfig['wifi'];
+            // Если в конфиге есть только "configured", не добавляем ssid/pass
+            if (isset($wifiConfig['configured']) && count($wifiConfig) === 1) {
+                return $wifiConfig;
+            }
+            // Если есть ssid/pass, возвращаем их
+            return $wifiConfig;
+        }
+        
+        // Используем глобальные настройки только для новых нод
+        Log::info('NodeConfigService: Node not connected yet, sending full wifi config', [
+            'node_id' => $node->id,
+            'uid' => $node->uid,
+            'lifecycle_state' => $lifecycleState->value,
+        ]);
         return [
             'ssid' => Config::get('services.wifi.ssid', 'HydroFarm'),
             'pass' => Config::get('services.wifi.password', ''),
@@ -203,16 +238,16 @@ class NodeConfigService
         }
         
         // Для публикации конфига через MQTT (includeCredentials = true) возвращаем полную конфигурацию
-        $nodeConfig = $node->config ?? [];
-        if (isset($nodeConfig['mqtt'])) {
-            return $nodeConfig['mqtt'];
-        }
+        // ВАЖНО: Всегда генерируем полную конфигурацию из глобальных настроек,
+        // даже если в $node->config есть mqtt секция, так как она может быть неполной
+        // (например, содержать только {"configured": true} для API)
         
         // Используем глобальные настройки MQTT
+        // ВАЖНО: port и keepalive должны быть числами, а не строками (для валидации в прошивке)
         $mqtt = [
             'host' => Config::get('services.mqtt.host', 'mqtt'),
-            'port' => Config::get('services.mqtt.port', 1883),
-            'keepalive' => Config::get('services.mqtt.keepalive', 30),
+            'port' => (int) Config::get('services.mqtt.port', 1883), // Явно приводим к int
+            'keepalive' => (int) Config::get('services.mqtt.keepalive', 30), // Явно приводим к int
         ];
         
         // Включаем чувствительные параметры только если явно запрошено
@@ -220,6 +255,20 @@ class NodeConfigService
             $mqtt['username'] = Config::get('services.mqtt.username');
             $mqtt['password'] = Config::get('services.mqtt.password');
             $mqtt['client_id'] = Config::get('services.mqtt.client_id');
+        }
+        
+        // Если в $node->config есть mqtt секция, мержим её с глобальными настройками
+        // Это позволяет переопределить некоторые параметры на уровне узла
+        $nodeConfig = $node->config ?? [];
+        if (isset($nodeConfig['mqtt']) && is_array($nodeConfig['mqtt'])) {
+            $mqtt = array_merge($mqtt, $nodeConfig['mqtt']);
+            // Убеждаемся, что port и keepalive остаются числами после мержа
+            if (isset($mqtt['port'])) {
+                $mqtt['port'] = (int) $mqtt['port'];
+            }
+            if (isset($mqtt['keepalive'])) {
+                $mqtt['keepalive'] = (int) $mqtt['keepalive'];
+            }
         }
         
         return $mqtt;

@@ -47,7 +47,7 @@ class AppServiceProvider extends ServiceProvider
         );
         
         // Регистрируем listener с afterCommit, чтобы он выполнялся после коммита транзакции
-        // Это предотвращает блокировку БД при зависании mqtt-bridge
+        // Это предотвращает блокировку БД при зависании history-logger
         Event::listen(
             NodeConfigUpdated::class,
             PublishNodeConfigOnUpdate::class

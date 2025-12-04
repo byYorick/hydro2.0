@@ -19,6 +19,7 @@ class CommandRequest(BaseModel):
     greenhouse_uid: Optional[str] = Field(None, max_length=128, description="Greenhouse UID")
     zone_id: Optional[int] = Field(None, ge=1, description="Zone ID")
     cmd_id: Optional[str] = Field(None, max_length=64, description="Command ID from Laravel")
+    hardware_id: Optional[str] = Field(None, max_length=128, description="Hardware ID for temporary topic")
     
     @validator('type')
     def validate_command_type(cls, v):

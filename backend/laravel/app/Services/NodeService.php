@@ -52,12 +52,45 @@ class NodeService
     {
         return DB::transaction(function () use ($node, $data) {
             $oldZoneId = $node->zone_id;
+            $newZoneId = $data['zone_id'] ?? null;
+            
+            // Если узел привязан к зоне и раньше не был привязан
+            // Сохраняем zone_id в pending_zone_id и не обновляем zone_id сразу
+            // zone_id будет обновлен только после получения config_response с ACK
+            if ($newZoneId && !$oldZoneId) {
+                $currentState = $node->lifecycleState();
+                
+                // Проверяем, что узел в правильном состоянии для привязки
+                if ($currentState !== NodeLifecycleState::REGISTERED_BACKEND) {
+                    Log::warning('Cannot assign node to zone - invalid lifecycle state', [
+                        'node_id' => $node->id,
+                        'pending_zone_id' => $newZoneId,
+                        'current_state' => $currentState->value,
+                        'required_state' => NodeLifecycleState::REGISTERED_BACKEND->value,
+                    ]);
+                    throw new \DomainException("Cannot assign node to zone: node must be in REGISTERED_BACKEND state");
+                }
+                
+                // Сохраняем zone_id в pending_zone_id, а zone_id оставляем null
+                // zone_id будет обновлен только после получения config_response с ACK
+                $data['pending_zone_id'] = $newZoneId;
+                $data['zone_id'] = null; // Не обновляем zone_id сразу
+                
+                Log::info('Node pending_zone_id set, waiting for config confirmation', [
+                    'node_id' => $node->id,
+                    'pending_zone_id' => $newZoneId,
+                    'zone_id' => null,
+                    'lifecycle_state' => $node->lifecycle_state?->value,
+                ]);
+            }
+            
             $node->update($data);
             
             // Если узел отвязан от зоны (zone_id стал null)
             if (!$node->zone_id && $oldZoneId) {
                 // Сбрасываем lifecycle_state в REGISTERED_BACKEND, чтобы нода считалась новой
                 $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
+                $node->pending_zone_id = null; // Очищаем pending_zone_id при отвязке
                 $node->save();
                 
                 Log::info('Node detached from zone via update, reset to REGISTERED_BACKEND', [
@@ -65,33 +98,6 @@ class NodeService
                     'uid' => $node->uid,
                     'old_zone_id' => $oldZoneId,
                     'new_lifecycle_state' => $node->lifecycle_state?->value,
-                ]);
-            }
-            // Если узел привязан к зоне и раньше не был привязан
-            // НЕ переводим сразу в ASSIGNED_TO_ZONE - это произойдет только после успешной публикации конфига
-            elseif ($node->zone_id && !$oldZoneId) {
-                $currentState = $node->lifecycleState();
-                
-                // Проверяем, что узел в правильном состоянии для привязки
-                if ($currentState !== NodeLifecycleState::REGISTERED_BACKEND) {
-                    Log::warning('Cannot assign node to zone - invalid lifecycle state', [
-                        'node_id' => $node->id,
-                        'zone_id' => $node->zone_id,
-                        'current_state' => $currentState->value,
-                        'required_state' => NodeLifecycleState::REGISTERED_BACKEND->value,
-                    ]);
-                    // Откатываем привязку к зоне, если состояние неправильное
-                    $node->zone_id = null;
-                    $node->save();
-                    throw new \DomainException("Cannot assign node to zone: node must be in REGISTERED_BACKEND state");
-                }
-                
-                // Оставляем в REGISTERED_BACKEND - переход в ASSIGNED_TO_ZONE произойдет
-                // только после успешной публикации конфига через PublishNodeConfigOnUpdate
-                Log::info('Node zone_id updated, waiting for config publish', [
-                    'node_id' => $node->id,
-                    'zone_id' => $node->zone_id,
-                    'lifecycle_state' => $node->lifecycle_state?->value,
                 ]);
             }
             

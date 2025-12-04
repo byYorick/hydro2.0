@@ -148,25 +148,48 @@ static bool config_apply_wifi_changed(const cJSON *previous_config, const cJSON 
     }
 
     if (prev_wifi == NULL) {
+        // Если предыдущего конфига нет, но новый есть - проверяем, есть ли в новом явные настройки
+        // Если в новом конфиге только {"configured": true} без ssid/pass, то не меняем настройки
+        const cJSON *new_ssid = cJSON_GetObjectItem(new_wifi, "ssid");
+        const cJSON *new_pass = cJSON_GetObjectItem(new_wifi, "pass");
+        // Если есть явные настройки ssid или pass, то применяем их
+        if (new_ssid != NULL || new_pass != NULL) {
+            return true;
+        }
+        // Если только {"configured": true}, то не меняем настройки
+        return false;
+    }
+
+    // Оба конфига существуют - проверяем изменения только явных полей
+    // Если в новом конфиге нет явного поля (например, только {"configured": true}),
+    // то это поле считается неизменным
+    
+    // Проверяем ssid только если он явно указан в новом конфиге
+    const cJSON *new_ssid = cJSON_GetObjectItem(new_wifi, "ssid");
+    if (new_ssid != NULL && config_apply_string_field_changed(prev_wifi, new_wifi, "ssid")) {
         return true;
     }
 
-    if (config_apply_string_field_changed(prev_wifi, new_wifi, "ssid")) {
+    // Проверяем pass только если он явно указан в новом конфиге
+    const cJSON *new_pass = cJSON_GetObjectItem(new_wifi, "pass");
+    if (new_pass != NULL && config_apply_string_field_changed(prev_wifi, new_wifi, "pass")) {
         return true;
     }
 
-    if (config_apply_string_field_changed(prev_wifi, new_wifi, "pass")) {
+    // Проверяем auto_reconnect только если он явно указан в новом конфиге
+    const cJSON *new_auto_reconnect = cJSON_GetObjectItem(new_wifi, "auto_reconnect");
+    if (new_auto_reconnect != NULL && config_apply_bool_field_changed(prev_wifi, new_wifi, "auto_reconnect")) {
         return true;
     }
 
-    if (config_apply_bool_field_changed(prev_wifi, new_wifi, "auto_reconnect")) {
+    // Проверяем timeout_sec только если он явно указан в новом конфиге
+    const cJSON *new_timeout = cJSON_GetObjectItem(new_wifi, "timeout_sec");
+    if (new_timeout != NULL && config_apply_number_field_changed(prev_wifi, new_wifi, "timeout_sec")) {
         return true;
     }
 
-    if (config_apply_number_field_changed(prev_wifi, new_wifi, "timeout_sec")) {
-        return true;
-    }
-
+    // Если в новом конфиге нет явных полей (только {"configured": true}),
+    // то настройки не изменились
     return false;
 }
 

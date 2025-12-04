@@ -181,6 +181,7 @@ class NodeController extends Controller
 
         $data = $request->validate([
             'zone_id' => ['nullable', 'integer', 'exists:zones,id'],
+            'pending_zone_id' => ['nullable', 'integer', 'exists:zones,id'],
             'uid' => ['sometimes', 'string', 'max:64', 'unique:nodes,uid,'.$node->id],
             'name' => ['nullable', 'string', 'max:255'],
             'type' => ['nullable', 'string', 'max:64'],
@@ -449,7 +450,7 @@ class NodeController extends Controller
 
     /**
      * Опубликовать NodeConfig через MQTT.
-     * Это проксирует запрос в mqtt-bridge для публикации конфига.
+     * Это проксирует запрос в history-logger для публикации конфига (все общение с нодами через history-logger).
      */
     public function publishConfig(DeviceNode $node, Request $request)
     {
@@ -491,14 +492,14 @@ class NodeController extends Controller
                 ], Response::HTTP_BAD_REQUEST);
             }
 
-            // Вызываем mqtt-bridge API для публикации
-            $baseUrl = config('services.python_bridge.base_url');
-            $token = config('services.python_bridge.token');
+            // Вызываем history-logger API для публикации (все общение бэка с нодами через history-logger)
+            $baseUrl = config('services.history_logger.url');
+            $token = config('services.history_logger.token') ?? config('services.python_bridge.token'); // Fallback на старый токен
 
             if (! $baseUrl) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'MQTT bridge URL not configured',
+                    'message' => 'History Logger URL not configured',
                 ], Response::HTTP_INTERNAL_SERVER_ERROR);
             }
 
@@ -513,11 +514,12 @@ class NodeController extends Controller
             try {
                 $response = \Illuminate\Support\Facades\Http::withHeaders($headers)
                     ->timeout($timeout)
-                    ->post("{$baseUrl}/bridge/nodes/{$node->uid}/config", [
+                    ->post("{$baseUrl}/nodes/{$node->uid}/config", [
                         'node_uid' => $node->uid,
                         'zone_id' => $node->zone_id,
                         'greenhouse_uid' => $greenhouseUid,
                         'config' => $config,
+                        'hardware_id' => $node->hardware_id, // Передаем hardware_id для временного топика
                     ]);
 
                 if ($response->successful()) {

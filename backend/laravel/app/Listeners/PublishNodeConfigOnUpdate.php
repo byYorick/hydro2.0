@@ -31,9 +31,16 @@ class PublishNodeConfigOnUpdate
         PublishNodeConfigJob::dispatch($node->id)
             ->onQueue('config-publish'); // Отдельная очередь для публикации конфигов
         
-        Log::debug('PublishNodeConfigOnUpdate: Dispatched job for node', [
+        Log::info('PublishNodeConfigOnUpdate: Dispatched job for node', [
             'node_id' => $node->id,
             'uid' => $node->uid,
+            'pending_zone_id' => $node->pending_zone_id,
+            'zone_id' => $node->zone_id,
+            'lifecycle_state' => $node->lifecycle_state?->value,
+        ]);
+        Log::info('PublishNodeConfigOnUpdate: Job dispatched to queue', [
+            'queue' => 'config-publish',
+            'node_id' => $node->id,
         ]);
     }
 }

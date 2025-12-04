@@ -49,6 +49,7 @@ class MqttClient:
         if rc == 0:
             self._connected.set()
             logger.info(f"MQTT client connected to {self._host}:{self._port}, subscribing to {len(self._subs)} topics")
+            print(f"[MQTT] Connected to {self._host}:{self._port}, will subscribe to {len(self._subs)} topics", flush=True)
             # resubscribe - создаем новые handlers с актуальным event_loop
             for topic, qos, handler in self._subs:
                 self._client.subscribe(topic, qos=qos)
@@ -95,11 +96,12 @@ class MqttClient:
                                 handler(msg.topic, msg.payload), 
                                 current_loop
                             )
-                            # Логируем только при ошибках или для важных сообщений
-                            logger.debug(
-                                f"MQTT message on {msg.topic}: scheduled async handler "
-                                f"(future={future})"
+                            # Детальное логирование всех MQTT сообщений для диагностики
+                            logger.info(
+                                f"[MQTT] Message received on {msg.topic}: scheduled async handler "
+                                f"(future={future}, payload_len={len(msg.payload)}, handler={handler.__name__ if hasattr(handler, '__name__') else 'unknown'})"
                             )
+                            print(f"[MQTT] Message on {msg.topic}: payload_len={len(msg.payload)}, handler={handler.__name__ if hasattr(handler, '__name__') else 'unknown'}", flush=True)
                         except Exception as e:
                             logger.error(
                                 f"Failed to schedule async handler for topic {msg.topic}: {e}",

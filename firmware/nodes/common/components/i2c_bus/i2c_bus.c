@@ -224,6 +224,11 @@ esp_err_t i2c_bus_read_bus(i2c_bus_id_t bus_id, uint8_t device_addr, const uint8
         return ESP_ERR_INVALID_STATE;
     }
     
+    if (bus->mutex == NULL) {
+        ESP_LOGE(TAG, "I²C bus %d mutex is NULL", bus_id);
+        return ESP_ERR_INVALID_STATE;
+    }
+    
     if (data == NULL || data_len == 0) {
         ESP_LOGE(TAG, "Invalid arguments: data is NULL or data_len is 0");
         return ESP_ERR_INVALID_ARG;
@@ -233,6 +238,13 @@ esp_err_t i2c_bus_read_bus(i2c_bus_id_t bus_id, uint8_t device_addr, const uint8
     if (xSemaphoreTake(bus->mutex, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {
         ESP_LOGE(TAG, "Failed to take mutex for bus %d", bus_id);
         return ESP_ERR_TIMEOUT;
+    }
+    
+    // Проверяем, что bus_handle инициализирован
+    if (bus->bus_handle == NULL) {
+        ESP_LOGE(TAG, "I²C bus %d handle is NULL", bus_id);
+        xSemaphoreGive(bus->mutex);
+        return ESP_ERR_INVALID_STATE;
     }
     
     esp_err_t err = ESP_OK;
@@ -294,6 +306,11 @@ esp_err_t i2c_bus_write_bus(i2c_bus_id_t bus_id, uint8_t device_addr, const uint
         return ESP_ERR_INVALID_STATE;
     }
     
+    if (bus->mutex == NULL) {
+        ESP_LOGE(TAG, "I²C bus %d mutex is NULL", bus_id);
+        return ESP_ERR_INVALID_STATE;
+    }
+    
     if (data == NULL || data_len == 0) {
         ESP_LOGE(TAG, "Invalid arguments: data is NULL or data_len is 0");
         return ESP_ERR_INVALID_ARG;
@@ -306,6 +323,13 @@ esp_err_t i2c_bus_write_bus(i2c_bus_id_t bus_id, uint8_t device_addr, const uint
     if (xSemaphoreTake(bus->mutex, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) {
         ESP_LOGE(TAG, "Failed to take mutex for bus %d", bus_id);
         return ESP_ERR_TIMEOUT;
+    }
+    
+    // Проверяем, что bus_handle инициализирован
+    if (bus->bus_handle == NULL) {
+        ESP_LOGE(TAG, "I²C bus %d handle is NULL", bus_id);
+        xSemaphoreGive(bus->mutex);
+        return ESP_ERR_INVALID_STATE;
     }
     
     esp_err_t err = ESP_OK;
@@ -382,6 +406,11 @@ static esp_err_t i2c_bus_scan_bus(i2c_bus_id_t bus_id, uint8_t *found_addresses,
         return ESP_ERR_INVALID_STATE;
     }
     
+    if (bus->mutex == NULL) {
+        ESP_LOGE(TAG, "I²C bus %d mutex is NULL", bus_id);
+        return ESP_ERR_INVALID_STATE;
+    }
+    
     if (found_addresses == NULL || found_count == NULL) {
         ESP_LOGE(TAG, "Invalid arguments");
         return ESP_ERR_INVALID_ARG;
@@ -393,6 +422,13 @@ static esp_err_t i2c_bus_scan_bus(i2c_bus_id_t bus_id, uint8_t *found_addresses,
     if (xSemaphoreTake(bus->mutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
         ESP_LOGE(TAG, "Failed to take mutex for bus %d", bus_id);
         return ESP_ERR_TIMEOUT;
+    }
+    
+    // Проверяем, что bus_handle инициализирован
+    if (bus->bus_handle == NULL) {
+        ESP_LOGE(TAG, "I²C bus %d handle is NULL", bus_id);
+        xSemaphoreGive(bus->mutex);
+        return ESP_ERR_INVALID_STATE;
     }
     
     // Сканирование адресов 0x08-0x77 (валидные I²C адреса)

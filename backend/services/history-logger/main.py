@@ -8,17 +8,18 @@ from datetime import datetime
 from typing import Optional, List
 import httpx
 
-from fastapi import FastAPI, Response, Request, HTTPException
+from fastapi import FastAPI, Response, Request, HTTPException, Body
 from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 from pydantic import BaseModel, Field
-from typing import Union, Dict
+from typing import Union, Dict, Any
 from collections import defaultdict
 import time
 
 from common.db import execute, fetch, upsert_telemetry_last, create_zone_event
 from common.redis_queue import TelemetryQueue, TelemetryQueueItem, close_redis_client
-from common.mqtt import MqttClient, get_mqtt_client
+from common.mqtt import MqttClient, AsyncMqttClient, get_mqtt_client
 from common.env import get_settings
+from common.water_flow import execute_fill_mode, execute_drain_mode, calibrate_flow
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +89,51 @@ async def lifespan(app: FastAPI):
 
 # FastAPI app
 app = FastAPI(title="History Logger", lifespan=lifespan)
+
+# Middleware для логирования всех входящих HTTP запросов
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Логирование всех входящих HTTP запросов для диагностики."""
+    start_time = time.time()
+    
+    # Логируем входящий запрос
+    logger.info(
+        f"[HTTP_REQUEST] {request.method} {request.url.path} from {request.client.host if request.client else 'unknown'}"
+    )
+    print(
+        f"[HTTP_REQUEST] {request.method} {request.url.path} from {request.client.host if request.client else 'unknown'}",
+        flush=True
+    )
+    
+    # Логируем заголовки (особенно Authorization для диагностики)
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header:
+        logger.debug(f"[HTTP_REQUEST] Authorization header present: {auth_header[:20]}...")
+    else:
+        logger.debug(f"[HTTP_REQUEST] No Authorization header")
+    
+    try:
+        response = await call_next(request)
+        process_time = time.time() - start_time
+        logger.info(
+            f"[HTTP_REQUEST] {request.method} {request.url.path} -> {response.status_code} ({process_time:.3f}s)"
+        )
+        print(
+            f"[HTTP_REQUEST] {request.method} {request.url.path} -> {response.status_code} ({process_time:.3f}s)",
+            flush=True
+        )
+        return response
+    except Exception as e:
+        process_time = time.time() - start_time
+        logger.error(
+            f"[HTTP_REQUEST] {request.method} {request.url.path} -> ERROR: {e} ({process_time:.3f}s)",
+            exc_info=True
+        )
+        print(
+            f"[HTTP_REQUEST] {request.method} {request.url.path} -> ERROR: {e} ({process_time:.3f}s)",
+            flush=True
+        )
+        raise
 
 
 @app.get("/health")
@@ -346,10 +392,18 @@ async def handle_telemetry(topic: str, payload: bytes):
     Добавляет данные в Redis queue для последующей обработки.
     """
     global telemetry_queue
+    
+    # Детальное логирование для диагностики
+    logger.info(f"[TELEMETRY] Received message on topic: {topic}, payload length: {len(payload)}")
+    print(f"[TELEMETRY] Received message on topic: {topic}, payload length: {len(payload)}", flush=True)
 
     data = _parse_json(payload)
     if not data:
+        logger.warning(f"[TELEMETRY] Failed to parse JSON from topic: {topic}, payload length: {len(payload)}")
+        print(f"[TELEMETRY] Failed to parse JSON from topic: {topic}", flush=True)
         return
+    
+    logger.info(f"[TELEMETRY] Parsed JSON successfully, keys: {list(data.keys()) if isinstance(data, dict) else 'not a dict'}")
     
     # Валидация данных через Pydantic
     try:
@@ -457,6 +511,17 @@ async def handle_telemetry(topic: str, payload: bytes):
     # Фильтруем raw данные для защиты от раздувания БД
     filtered_raw = _filter_raw_data(data)
     
+    # Детальное логирование каждой телеметрии
+    logger.info(
+        f"[TELEMETRY] Received telemetry: topic={topic}, node_uid={node_uid}, zone_uid={zone_uid}, "
+        f"gh_uid={gh_uid}, channel={channel_name}, metric_type={metric_type}, value={validated_data.value}, ts={ts}"
+    )
+    print(
+        f"[TELEMETRY] Received: node={node_uid}, zone={zone_uid}, metric={metric_type}, "
+        f"value={validated_data.value}, channel={channel_name}",
+        flush=True
+    )
+    
     queue_item = TelemetryQueueItem(
         node_uid=node_uid or "",
         zone_uid=zone_uid,
@@ -470,6 +535,9 @@ async def handle_telemetry(topic: str, payload: bytes):
     )
 
     # Добавляем в Redis queue с retry логикой
+    logger.info(f"[TELEMETRY] Pushing to Redis queue: node_uid={node_uid}, metric_type={metric_type}, value={validated_data.value}")
+    print(f"[TELEMETRY] Pushing to Redis queue: node_uid={node_uid}, metric_type={metric_type}", flush=True)
+    
     if telemetry_queue:
         start_time = time.time()
         success = await _push_with_retry(queue_item)
@@ -477,6 +545,8 @@ async def handle_telemetry(topic: str, payload: bytes):
         REDIS_OPERATION_DURATION.observe(redis_duration)
         
         if not success:
+            logger.warning(f"[TELEMETRY] Failed to push to Redis queue (queue full or error)")
+            print(f"[TELEMETRY] Failed to push to Redis queue", flush=True)
             TELEMETRY_DROPPED.labels(reason="queue_push_failed").inc()
             logger.error(
                 "Failed to push telemetry to queue after retries, dropping message",
@@ -487,7 +557,12 @@ async def handle_telemetry(topic: str, payload: bytes):
                     "topic": topic
                 }
             )
+        else:
+            logger.info(f"[TELEMETRY] Successfully pushed to Redis queue")
+            print(f"[TELEMETRY] Successfully pushed to Redis queue", flush=True)
     else:
+        logger.error(f"[TELEMETRY] Telemetry queue not initialized!")
+        print(f"[TELEMETRY] Telemetry queue not initialized!", flush=True)
         TELEMETRY_DROPPED.labels(reason="queue_not_initialized").inc()
         logger.error(
             "Telemetry queue not initialized, dropping message",
@@ -720,6 +795,18 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
                 await execute(query, *params_list)
                 # Успешно вставлено - считаем все сэмплы из этой группы
                 processed_count += len(group_samples)
+                
+                # Детальное логирование каждой записанной телеметрии
+                for sample in group_samples:
+                    logger.info(
+                        f"[TELEMETRY] Written to DB: zone_id={zone_id}, node_id={node_id}, "
+                        f"metric_type={metric_type}, channel={channel}, value={sample.value}, ts={sample.ts}"
+                    )
+                    print(
+                        f"[TELEMETRY] DB write: zone={zone_id}, node={node_id}, metric={metric_type}, "
+                        f"value={sample.value}, channel={channel}",
+                        flush=True
+                    )
             except Exception as e:
                 error_type = type(e).__name__
                 DATABASE_ERRORS.labels(error_type=error_type).inc()
@@ -758,6 +845,16 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
     # Исправлено: считаем метрики по реально вставленным сэмплам, а не по входному списку
     TELEM_PROCESSED.inc(processed_count)
     TELEM_BATCH_SIZE.observe(processed_count)
+    
+    # Логирование итогов батча
+    logger.info(
+        f"[TELEMETRY] Batch processed: total_samples={len(samples)}, "
+        f"processed_count={processed_count}, duration={processing_duration:.3f}s"
+    )
+    print(
+        f"[TELEMETRY] Batch: {processed_count}/{len(samples)} samples written in {processing_duration:.3f}s",
+        flush=True
+    )
 
 
 async def process_telemetry_queue():
@@ -805,6 +902,14 @@ async def process_telemetry_queue():
             if should_flush:
                 # Извлекаем батч из очереди
                 batch_size = min(s.telemetry_batch_size, queue_size)
+                logger.info(
+                    f"[TELEMETRY] Flushing batch: queue_size={queue_size}, batch_size={batch_size}, "
+                    f"time_since_flush={time_since_flush:.0f}ms"
+                )
+                print(
+                    f"[TELEMETRY] Flushing: queue={queue_size}, batch={batch_size}",
+                    flush=True
+                )
                 queue_items = await telemetry_queue.pop_batch(batch_size)
 
                 if queue_items:
@@ -824,6 +929,14 @@ async def process_telemetry_queue():
                             channel=item.channel
                         )
                         samples.append(sample)
+                    
+                    logger.info(
+                        f"[TELEMETRY] Processing batch: {len(samples)} samples from queue"
+                    )
+                    print(
+                        f"[TELEMETRY] Processing batch: {len(samples)} samples",
+                        flush=True
+                    )
 
                     # Обрабатываем батч
                     await process_telemetry_batch(samples)
@@ -864,8 +977,12 @@ async def handle_node_hello(topic: str, payload: bytes):
     Обработчик node_hello сообщений от узлов ESP32.
     Регистрирует новые узлы через Laravel API.
     """
+    # Детальное логирование для диагностики
+    logger.info(f"[NODE_HELLO] ===== START processing node_hello =====")
+    logger.info(f"[NODE_HELLO] Topic: {topic}, payload length: {len(payload)}")
+    print(f"[NODE_HELLO] Received message on topic {topic}, payload length: {len(payload)}", flush=True)
+    
     try:
-        logger.info(f"[NODE_HELLO] Received message on topic {topic}, payload length: {len(payload)}")
         data = _parse_json(payload)
         if not data or not isinstance(data, dict):
             logger.warning(f"[NODE_HELLO] Invalid JSON in node_hello from topic {topic}")
@@ -884,6 +1001,8 @@ async def handle_node_hello(topic: str, payload: bytes):
             return
         
         logger.info(f"[NODE_HELLO] Processing node_hello from hardware_id: {hardware_id}")
+        logger.info(f"[NODE_HELLO] Full payload data: {data}")
+        print(f"[NODE_HELLO] Processing node_hello from hardware_id: {hardware_id}", flush=True)
         NODE_HELLO_RECEIVED.inc()
     except Exception as e:
         logger.error(f"[NODE_HELLO] Error parsing node_hello: {e}", exc_info=True)
@@ -1069,15 +1188,25 @@ async def handle_heartbeat(topic: str, payload: bytes):
     
     Безопасность: использует whitelist для имен полей, все значения передаются через параметры.
     """
+    # Детальное логирование для диагностики
+    logger.info(f"[HEARTBEAT] ===== START processing heartbeat =====")
+    logger.info(f"[HEARTBEAT] Topic: {topic}, payload length: {len(payload)}")
+    print(f"[HEARTBEAT] Received message on topic: {topic}, payload length: {len(payload)}", flush=True)
+    
     data = _parse_json(payload)
     if not data or not isinstance(data, dict):
-        logger.warning(f"Invalid JSON in heartbeat from topic {topic}")
+        logger.warning(f"[HEARTBEAT] Invalid JSON in heartbeat from topic {topic}")
+        print(f"[HEARTBEAT] Invalid JSON from topic: {topic}", flush=True)
         return
     
     node_uid = _extract_node_uid(topic)
     if not node_uid:
-        logger.warning(f"Could not extract node_uid from topic {topic}")
+        logger.warning(f"[HEARTBEAT] Could not extract node_uid from topic {topic}")
+        print(f"[HEARTBEAT] Could not extract node_uid from topic: {topic}", flush=True)
         return
+    
+    logger.info(f"[HEARTBEAT] Processing heartbeat for node_uid: {node_uid}, data: {data}")
+    print(f"[HEARTBEAT] Processing heartbeat for node_uid: {node_uid}", flush=True)
     
     # Whitelist разрешенных полей для обновления (защита от SQL injection)
     ALLOWED_FIELDS = {
@@ -1157,16 +1286,11 @@ async def handle_heartbeat(topic: str, payload: bytes):
         except (ValueError, TypeError):
             logged_uptime = uptime  # Оставляем оригинальное значение если не удалось конвертировать
     
-    logger.debug(
-        "Node heartbeat received",
-        extra={
-            "node_uid": node_uid,
-            "uptime_ms": uptime,  # Оригинальное значение в миллисекундах
-            "uptime_seconds": logged_uptime,  # Конвертированное значение в секундах
-            "free_heap": free_heap,
-            "rssi": rssi,
-        }
+    logger.info(
+        f"[HEARTBEAT] Node heartbeat processed successfully: node_uid={node_uid}, "
+        f"uptime_seconds={logged_uptime}, free_heap={free_heap}, rssi={rssi}"
     )
+    print(f"[HEARTBEAT] Node heartbeat processed: node_uid={node_uid}, uptime={logged_uptime}s", flush=True)
 
 
 async def handle_config_response(topic: str, payload: bytes):
@@ -1205,7 +1329,7 @@ async def handle_config_response(topic: str, payload: bytes):
             try:
                 node_rows = await fetch(
                     """
-                    SELECT id, uid, lifecycle_state, zone_id, config
+                    SELECT id, uid, lifecycle_state, zone_id, pending_zone_id, config
                     FROM nodes
                     WHERE uid = $1
                     """,
@@ -1281,15 +1405,44 @@ async def handle_config_response(topic: str, payload: bytes):
                 node_id = node.get("id")
                 lifecycle_state = node.get("lifecycle_state")
                 zone_id = node.get("zone_id")
+                pending_zone_id = node.get("pending_zone_id")
                 
                 # Переводим в ASSIGNED_TO_ZONE только если:
                 # 1. Нода в состоянии REGISTERED_BACKEND
-                # 2. Нода привязана к зоне (zone_id не null)
-                if lifecycle_state == "REGISTERED_BACKEND" and zone_id:
+                # 2. Нода привязана к зоне (zone_id не null) ИЛИ есть pending_zone_id
+                target_zone_id = zone_id or pending_zone_id
+                if lifecycle_state == "REGISTERED_BACKEND" and target_zone_id:
                     logger.info(
                         f"[CONFIG_RESPONSE] Transitioning node {node_uid} (id={node_id}) to ASSIGNED_TO_ZONE "
                         f"after successful config installation"
                     )
+                    
+                    # Если есть pending_zone_id, сначала обновляем zone_id, затем переводим в ASSIGNED_TO_ZONE
+                    if pending_zone_id and not zone_id:
+                        # Обновляем zone_id из pending_zone_id
+                        async with httpx.AsyncClient(timeout=10.0) as client:
+                            update_response = await client.patch(
+                                f"{laravel_url}/api/nodes/{node_id}",
+                                headers=headers,
+                                json={
+                                    "zone_id": pending_zone_id,
+                                    "pending_zone_id": None  # Очищаем pending_zone_id
+                                }
+                            )
+                            
+                            if update_response.status_code == 200:
+                                logger.info(
+                                    f"[CONFIG_RESPONSE] Node {node_uid} (id={node_id}) zone_id updated from pending_zone_id={pending_zone_id}"
+                                )
+                                # Обновляем zone_id для дальнейшей проверки
+                                zone_id = pending_zone_id
+                            else:
+                                logger.warning(
+                                    f"[CONFIG_RESPONSE] Failed to update zone_id for node {node_uid} (id={node_id}): "
+                                    f"{update_response.status_code} {update_response.text}"
+                                )
+                                # Если не удалось обновить zone_id, не переводим в ASSIGNED_TO_ZONE
+                                return
                     
                     # Переводим через lifecycle API
                     async with httpx.AsyncClient(timeout=10.0) as client:
@@ -1553,6 +1706,547 @@ def _check_rate_limit(client_id: str) -> bool:
     return True
 
 
+async def publish_node_config_mqtt(
+    mqtt_client: AsyncMqttClient,
+    gh_uid: str,
+    zone_id: int,
+    node_uid: str,
+    config: Dict[str, Any],
+    hardware_id: Optional[str] = None
+):
+    """
+    Публиковать NodeConfig в MQTT.
+    
+    Топик: hydro/{gh_uid}/{zone_segment}/{node_uid}/config
+    QoS: 1
+    Retain: true (чтобы узел получил конфигурацию при подписке)
+    
+    Также публикуем на временный топик (gh-temp/zn-temp/{hardware_id}/config), 
+    если узел еще не получил конфигурацию и подписан на временные идентификаторы.
+    Используем hardware_id для временного топика, чтобы избежать конфликтов при одинаковом node_uid.
+    """
+    try:
+        # Проверяем подключение
+        if not mqtt_client.is_connected():
+            logger.warning("MQTT client not connected, attempting to reconnect...")
+            await mqtt_client.start()
+            if not mqtt_client.is_connected():
+                raise ConnectionError("MQTT client is not connected and reconnection failed")
+        
+        s = get_settings()
+        zone_segment = f"zn-{zone_id}"  # id by default
+        if hasattr(s, 'mqtt_zone_format') and s.mqtt_zone_format == "uid" and config.get("zone_uid"):
+            zone_segment = config["zone_uid"]
+        
+        # Публикуем на правильный топик с retain=true
+        topic = f"hydro/{gh_uid}/{zone_segment}/{node_uid}/config"
+        logger.info(f"Publishing config to topic: {topic}, node_uid: {node_uid}, zone_id: {zone_id}")
+        
+        # Используем базовый MQTT клиент для публикации
+        base_client = mqtt_client._client
+        import json as json_lib
+        config_json = json_lib.dumps(config, separators=(",", ":"))
+        result = base_client._client.publish(topic, config_json, qos=1, retain=True)
+        if result.rc != 0:
+            raise RuntimeError(f"MQTT publish failed with rc={result.rc} for topic {topic}")
+        logger.info(f"[PUBLISH_CONFIG_MQTT] Config published successfully to {topic}")
+        print(f"[PUBLISH_CONFIG_MQTT] Config published successfully to {topic}", flush=True)
+        
+        # Также публикуем на временный топик для узлов, которые еще не получили конфигурацию
+        # Узел может быть подписан на временные идентификаторы до получения первой конфигурации
+        # Используем hardware_id для временного топика, чтобы избежать конфликтов при одинаковом node_uid
+        if hardware_id:
+            temp_topic = f"hydro/gh-temp/zn-temp/{hardware_id}/config"
+            logger.info(f"[PUBLISH_CONFIG_MQTT] Publishing config to temp topic: {temp_topic} (using hardware_id)")
+            print(f"[PUBLISH_CONFIG_MQTT] Publishing to temp topic: {temp_topic}", flush=True)
+            result = base_client._client.publish(temp_topic, config_json, qos=1, retain=True)
+            if result.rc != 0:
+                logger.error(f"[PUBLISH_CONFIG_MQTT] MQTT publish failed with rc={result.rc} for temp topic {temp_topic}")
+                raise RuntimeError(f"MQTT publish failed with rc={result.rc} for topic {temp_topic}")
+            logger.info(f"[PUBLISH_CONFIG_MQTT] Config published successfully to {temp_topic}")
+            print(f"[PUBLISH_CONFIG_MQTT] Config published successfully to {temp_topic}", flush=True)
+        else:
+            # Fallback: используем node_uid, если hardware_id не указан (для обратной совместимости)
+            temp_topic = f"hydro/gh-temp/zn-temp/{node_uid}/config"
+            logger.warning(f"[PUBLISH_CONFIG_MQTT] hardware_id not provided, using node_uid for temp topic: {temp_topic} (may cause conflicts)")
+            result = base_client._client.publish(temp_topic, config_json, qos=1, retain=True)
+            if result.rc != 0:
+                logger.error(f"[PUBLISH_CONFIG_MQTT] MQTT publish failed with rc={result.rc} for temp topic {temp_topic}")
+                raise RuntimeError(f"MQTT publish failed with rc={result.rc} for topic {temp_topic}")
+            logger.info(f"[PUBLISH_CONFIG_MQTT] Config published successfully to {temp_topic}")
+    except Exception as e:
+        logger.error(f"[PUBLISH_CONFIG_MQTT] Error publishing config for node {node_uid}: {e}", exc_info=True)
+        print(f"[PUBLISH_CONFIG_MQTT] Error publishing config for node {node_uid}: {e}", flush=True)
+        raise
+
+
+class NodeConfigRequest(BaseModel):
+    """Request model for publishing node config."""
+    node_uid: str = Field(..., min_length=1, max_length=128)
+    hardware_id: Optional[str] = Field(None, max_length=128)  # Для временного топика
+    zone_id: Optional[int] = Field(None, ge=1)
+    greenhouse_uid: Optional[str] = Field(None, max_length=128)
+    config: Dict[str, Any]  # Конфиг как dict
+
+
+@app.post("/nodes/{node_uid}/config")
+async def publish_node_config(
+    request: Request,
+    node_uid: str,
+    req: NodeConfigRequest = Body(...),
+):
+    """
+    Публиковать NodeConfig в MQTT через history-logger.
+    Все общение бэка с нодами должно происходить через history-logger.
+    """
+    # Детальное логирование входящего запроса
+    logger.info(f"[PUBLISH_CONFIG] ===== START processing config publish request =====")
+    logger.info(f"[PUBLISH_CONFIG] Node UID: {node_uid}")
+    logger.info(f"[PUBLISH_CONFIG] Request data: zone_id={req.zone_id}, greenhouse_uid={req.greenhouse_uid}, hardware_id={req.hardware_id}")
+    logger.info(f"[PUBLISH_CONFIG] Config keys: {list(req.config.keys()) if req.config else 'empty'}")
+    print(f"[PUBLISH_CONFIG] Received request for node: {node_uid}, zone_id: {req.zone_id}", flush=True)
+    
+    # Аутентификация (используем тот же механизм, что и для ingest)
+    _auth_ingest(request)
+    
+    logger.info(f"[PUBLISH_CONFIG] Authentication passed for node: {node_uid}")
+    
+    # Получаем zone_id и gh_uid из запроса или из БД
+    zone_id = req.zone_id
+    gh_uid = req.greenhouse_uid
+    
+    # Если не указаны, пытаемся получить из БД
+    if not zone_id or not gh_uid:
+        rows = await fetch(
+            """
+            SELECT n.zone_id, g.uid as gh_uid
+            FROM nodes n
+            LEFT JOIN zones z ON n.zone_id = z.id
+            LEFT JOIN greenhouses g ON z.greenhouse_id = g.id
+            WHERE n.uid = $1
+            """,
+            node_uid,
+        )
+        if rows and len(rows) > 0:
+            if not zone_id:
+                zone_id = rows[0].get("zone_id")
+            if not gh_uid:
+                gh_uid = rows[0].get("gh_uid")
+    
+    if not zone_id:
+        raise HTTPException(status_code=400, detail="zone_id is required (node must be assigned to a zone)")
+    if not gh_uid:
+        raise HTTPException(status_code=400, detail="greenhouse_uid is required (zone must have a greenhouse)")
+    
+    # Получаем MQTT клиент
+    mqtt = await get_mqtt_client()
+    
+    logger.info(f"[PUBLISH_CONFIG] MQTT client obtained, is_connected: {mqtt.is_connected()}")
+    
+    try:
+        logger.info(f"[PUBLISH_CONFIG] Publishing config for node {node_uid}, zone_id: {zone_id}, gh_uid: {gh_uid}, hardware_id: {req.hardware_id}")
+        print(f"[PUBLISH_CONFIG] Publishing config for node {node_uid}, zone_id: {zone_id}", flush=True)
+        await publish_node_config_mqtt(
+            mqtt,
+            gh_uid,
+            zone_id,
+            node_uid,
+            req.config,
+            hardware_id=req.hardware_id
+        )
+        logger.info(f"[PUBLISH_CONFIG] Config published successfully for node {node_uid}")
+        print(f"[PUBLISH_CONFIG] Config published successfully for node {node_uid}", flush=True)
+        return {"status": "ok", "data": {"published": True, "topic": f"hydro/{gh_uid}/zn-{zone_id}/{node_uid}/config"}}
+    except Exception as e:
+        logger.error(f"[PUBLISH_CONFIG] Failed to publish config for node {node_uid}: {e}", exc_info=True)
+        print(f"[PUBLISH_CONFIG] Failed to publish config for node {node_uid}: {e}", flush=True)
+        raise HTTPException(status_code=500, detail=f"Failed to publish config: {str(e)}")
+
+
+async def publish_command_mqtt(
+    mqtt_client: AsyncMqttClient,
+    gh_uid: str,
+    zone_id: int,
+    node_uid: str,
+    channel: str,
+    payload: Dict[str, Any],
+    hardware_id: Optional[str] = None,
+    zone_uid: Optional[str] = None
+):
+    """
+    Публиковать команду в MQTT.
+    
+    Топик: hydro/{gh_uid}/{zone_segment}/{node_uid}/{channel}/command
+    QoS: 1
+    Retain: false
+    
+    Также публикуем на временный топик (gh-temp/zn-temp/{hardware_id}/{channel}/command),
+    если узел еще не получил конфигурацию и подписан на временные идентификаторы.
+    Используем hardware_id для временного топика, чтобы избежать конфликтов при одинаковом node_uid.
+    """
+    try:
+        # Проверяем подключение
+        if not mqtt_client.is_connected():
+            logger.warning("MQTT client not connected, attempting to reconnect...")
+            await mqtt_client.start()
+            if not mqtt_client.is_connected():
+                raise ConnectionError("MQTT client is not connected and reconnection failed")
+        
+        s = get_settings()
+        zone_segment = f"zn-{zone_id}"  # id by default
+        if hasattr(s, 'mqtt_zone_format') and s.mqtt_zone_format == "uid" and zone_uid:
+            zone_segment = zone_uid
+        elif hasattr(s, 'mqtt_zone_format') and s.mqtt_zone_format == "uid":
+            logger.warning(f"mqtt_zone_format=uid but zone_uid not provided, using zn-{zone_id} (may cause mismatch with node subscription)")
+        
+        # Публикуем на правильный топик
+        topic = f"hydro/{gh_uid}/{zone_segment}/{node_uid}/{channel}/command"
+        logger.info(f"Publishing command to topic: {topic}, node_uid: {node_uid}, channel: {channel}, zone_id: {zone_id}, zone_segment: {zone_segment}")
+        
+        # Используем базовый MQTT клиент для публикации
+        base_client = mqtt_client._client
+        import json as json_lib
+        command_json = json_lib.dumps(payload, separators=(",", ":"))
+        result = base_client._client.publish(topic, command_json, qos=1, retain=False)
+        if result.rc != 0:
+            raise RuntimeError(f"MQTT publish failed with rc={result.rc} for topic {topic}")
+        logger.info(f"Command published successfully to {topic}")
+        
+        # Также публикуем на временный топик для узлов, которые еще не получили конфигурацию
+        # Узел может быть подписан на временные идентификаторы до получения первой конфигурации
+        # Используем hardware_id для временного топика, чтобы избежать конфликтов при одинаковом node_uid
+        if hardware_id:
+            temp_topic = f"hydro/gh-temp/zn-temp/{hardware_id}/{channel}/command"
+            logger.info(f"Publishing command to temp topic: {temp_topic} (using hardware_id)")
+            result = base_client._client.publish(temp_topic, command_json, qos=1, retain=False)
+            if result.rc != 0:
+                raise RuntimeError(f"MQTT publish failed with rc={result.rc} for topic {temp_topic}")
+            logger.info(f"Command published successfully to {temp_topic}")
+        else:
+            # Fallback: используем node_uid, если hardware_id не указан (для обратной совместимости)
+            temp_topic = f"hydro/gh-temp/zn-temp/{node_uid}/{channel}/command"
+            logger.warning(f"hardware_id not provided, using node_uid for temp topic: {temp_topic} (may cause conflicts)")
+            result = base_client._client.publish(temp_topic, command_json, qos=1, retain=False)
+            if result.rc != 0:
+                raise RuntimeError(f"MQTT publish failed with rc={result.rc} for topic {temp_topic}")
+            logger.info(f"Command published successfully to {temp_topic}")
+    except Exception as e:
+        logger.error(f"Error publishing command for node {node_uid}: {e}", exc_info=True)
+        raise
+
+
+class CommandRequest(BaseModel):
+    """Request model for publishing commands."""
+    type: str = Field(..., max_length=64, description="Command type")
+    params: Dict[str, Any] = Field(default_factory=dict, description="Command parameters")
+    node_uid: Optional[str] = Field(None, max_length=128, description="Node UID")
+    channel: Optional[str] = Field(None, max_length=64, description="Channel name")
+    greenhouse_uid: Optional[str] = Field(None, max_length=128, description="Greenhouse UID")
+    zone_id: Optional[int] = Field(None, ge=1, description="Zone ID")
+    zone_uid: Optional[str] = Field(None, max_length=128, description="Zone UID")
+    hardware_id: Optional[str] = Field(None, max_length=128, description="Hardware ID for temporary topic")
+    cmd_id: Optional[str] = Field(None, max_length=64, description="Command ID from Laravel")
+
+
+@app.post("/zones/{zone_id}/commands")
+async def publish_zone_command(
+    request: Request,
+    zone_id: int,
+    req: CommandRequest = Body(...),
+):
+    """
+    Публиковать команду для зоны через history-logger.
+    Все общение бэка с нодами должно происходить через history-logger.
+    """
+    # Аутентификация
+    _auth_ingest(request)
+    
+    if not (req.greenhouse_uid and req.node_uid and req.channel):
+        raise HTTPException(status_code=400, detail="greenhouse_uid, node_uid and channel are required")
+    
+    # Получаем zone_uid из БД, если mqtt_zone_format="uid"
+    zone_uid = None
+    s = get_settings()
+    if hasattr(s, 'mqtt_zone_format') and s.mqtt_zone_format == "uid":
+        rows = await fetch(
+            """
+            SELECT uid
+            FROM zones
+            WHERE id = $1
+            """,
+            zone_id,
+        )
+        if rows and len(rows) > 0:
+            zone_uid = rows[0].get("uid")
+            if not zone_uid:
+                logger.warning(f"Zone {zone_id} has no uid, using zn-{zone_id} as fallback")
+        else:
+            logger.warning(f"Zone {zone_id} not found, using zn-{zone_id} as fallback")
+    
+    # Генерируем cmd_id, если не указан
+    import uuid
+    cmd_id = req.cmd_id or str(uuid.uuid4())
+    payload = {"cmd": req.type, "cmd_id": cmd_id, **({"params": req.params} if req.params else {})}
+    
+    # Получаем MQTT клиент
+    mqtt = await get_mqtt_client()
+    
+    try:
+        logger.info(f"Publishing command for zone {zone_id}, node {req.node_uid}, channel {req.channel}, cmd_id: {cmd_id}")
+        await publish_command_mqtt(
+            mqtt,
+            req.greenhouse_uid,
+            zone_id,
+            req.node_uid,
+            req.channel,
+            payload,
+            hardware_id=req.hardware_id,
+            zone_uid=zone_uid
+        )
+        logger.info(f"Command published successfully for zone {zone_id}, node {req.node_uid}")
+        return {"status": "ok", "data": {"command_id": cmd_id}}
+    except Exception as e:
+        logger.error(f"Failed to publish command for zone {zone_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to publish command: {str(e)}")
+
+
+@app.post("/nodes/{node_uid}/commands")
+async def publish_node_command(
+    request: Request,
+    node_uid: str,
+    req: CommandRequest = Body(...),
+):
+    """
+    Публиковать команду для ноды через history-logger.
+    Все общение бэка с нодами должно происходить через history-logger.
+    """
+    # Аутентификация
+    _auth_ingest(request)
+    
+    if not (req.greenhouse_uid and req.zone_id and req.channel):
+        raise HTTPException(status_code=400, detail="greenhouse_uid, zone_id and channel are required")
+    
+    # Получаем zone_uid из БД, если mqtt_zone_format="uid"
+    zone_uid = None
+    s = get_settings()
+    if hasattr(s, 'mqtt_zone_format') and s.mqtt_zone_format == "uid" and req.zone_id:
+        rows = await fetch(
+            """
+            SELECT uid
+            FROM zones
+            WHERE id = $1
+            """,
+            req.zone_id,
+        )
+        if rows and len(rows) > 0:
+            zone_uid = rows[0].get("uid")
+            if not zone_uid:
+                logger.warning(f"Zone {req.zone_id} has no uid, using zn-{req.zone_id} as fallback")
+        else:
+            logger.warning(f"Zone {req.zone_id} not found, using zn-{req.zone_id} as fallback")
+    
+    # Генерируем cmd_id, если не указан
+    import uuid
+    cmd_id = req.cmd_id or str(uuid.uuid4())
+    payload = {"cmd": req.type, "cmd_id": cmd_id, **({"params": req.params} if req.params else {})}
+    
+    # Получаем MQTT клиент
+    mqtt = await get_mqtt_client()
+    
+    try:
+        logger.info(f"Publishing command for node {node_uid}, zone {req.zone_id}, channel {req.channel}, cmd_id: {cmd_id}")
+        await publish_command_mqtt(
+            mqtt,
+            req.greenhouse_uid,
+            req.zone_id,
+            node_uid,
+            req.channel,
+            payload,
+            hardware_id=req.hardware_id,
+            zone_uid=zone_uid
+        )
+        logger.info(f"Command published successfully for node {node_uid}")
+        return {"status": "ok", "data": {"command_id": cmd_id}}
+    except Exception as e:
+        logger.error(f"Failed to publish command for node {node_uid}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to publish command: {str(e)}")
+
+
+class FillDrainRequest(BaseModel):
+    """Request model for fill/drain operations."""
+    target_level: float = Field(..., ge=0.0, le=1.0, description="Target water level (0.0-1.0)")
+    max_duration_sec: Optional[int] = Field(300, ge=1, le=600, description="Maximum operation duration in seconds")
+
+
+class CalibrateFlowRequest(BaseModel):
+    """Request model for flow calibration."""
+    node_id: int = Field(..., ge=1, description="Node ID with flow sensor")
+    channel: str = Field(..., min_length=1, max_length=64, description="Flow sensor channel name")
+    pump_duration_sec: Optional[int] = Field(10, ge=1, le=60, description="Pump duration for calibration")
+
+
+@app.post("/zones/{zone_id}/fill")
+async def zone_fill(
+    request: Request,
+    zone_id: int,
+    req: FillDrainRequest = Body(...),
+):
+    """
+    Выполнить режим наполнения (Fill Mode) через history-logger.
+    Все общение бэка с нодами должно происходить через history-logger.
+    """
+    # Аутентификация
+    _auth_ingest(request)
+    
+    # Validate target_level
+    if not (0.1 <= req.target_level <= 1.0):
+        raise HTTPException(status_code=400, detail="target_level must be between 0.1 and 1.0")
+    
+    # Get greenhouse uid
+    rows = await fetch(
+        """
+        SELECT g.uid
+        FROM zones z
+        JOIN greenhouses g ON g.id = z.greenhouse_id
+        WHERE z.id = $1
+        """,
+        zone_id,
+    )
+    if not rows or len(rows) == 0:
+        raise HTTPException(status_code=404, detail="Zone not found or has no greenhouse")
+    
+    gh_uid = rows[0]["uid"]
+    
+    # Create MQTT client for fill operation
+    # Используем синхронный MqttClient, так как water_flow функции ожидают его
+    mqtt = MqttClient(client_id_suffix="-fill")
+    mqtt.start()
+    
+    try:
+        # Execute fill mode (async, but we wait for it)
+        result = await execute_fill_mode(
+            zone_id,
+            req.target_level,
+            mqtt,
+            gh_uid,
+            req.max_duration_sec
+        )
+        return {"status": "ok", "data": result}
+    except Exception as e:
+        logger.error(f"Failed to execute fill mode for zone {zone_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        # Закрываем соединение MQTT для предотвращения утечек
+        mqtt.stop()
+
+
+@app.post("/zones/{zone_id}/drain")
+async def zone_drain(
+    request: Request,
+    zone_id: int,
+    req: FillDrainRequest = Body(...),
+):
+    """
+    Выполнить режим слива (Drain Mode) через history-logger.
+    Все общение бэка с нодами должно происходить через history-logger.
+    """
+    # Аутентификация
+    _auth_ingest(request)
+    
+    # Validate target_level
+    if not (0.0 <= req.target_level <= 0.9):
+        raise HTTPException(status_code=400, detail="target_level must be between 0.0 and 0.9")
+    
+    # Get greenhouse uid
+    rows = await fetch(
+        """
+        SELECT g.uid
+        FROM zones z
+        JOIN greenhouses g ON g.id = z.greenhouse_id
+        WHERE z.id = $1
+        """,
+        zone_id,
+    )
+    if not rows or len(rows) == 0:
+        raise HTTPException(status_code=404, detail="Zone not found or has no greenhouse")
+    
+    gh_uid = rows[0]["uid"]
+    
+    # Create MQTT client for drain operation
+    # Используем синхронный MqttClient, так как water_flow функции ожидают его
+    mqtt = MqttClient(client_id_suffix="-drain")
+    mqtt.start()
+    
+    try:
+        # Execute drain mode (async, but we wait for it)
+        result = await execute_drain_mode(
+            zone_id,
+            req.target_level,
+            mqtt,
+            gh_uid,
+            req.max_duration_sec
+        )
+        return {"status": "ok", "data": result}
+    except Exception as e:
+        logger.error(f"Failed to execute drain mode for zone {zone_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        # Закрываем соединение MQTT для предотвращения утечек
+        mqtt.stop()
+
+
+@app.post("/zones/{zone_id}/calibrate-flow")
+async def zone_calibrate_flow(
+    request: Request,
+    zone_id: int,
+    req: CalibrateFlowRequest = Body(...),
+):
+    """
+    Выполнить калибровку расхода воды (Flow Calibration) через history-logger.
+    Все общение бэка с нодами должно происходить через history-logger.
+    """
+    # Аутентификация
+    _auth_ingest(request)
+    
+    # Get greenhouse uid
+    rows = await fetch(
+        """
+        SELECT g.uid
+        FROM zones z
+        JOIN greenhouses g ON g.id = z.greenhouse_id
+        WHERE z.id = $1
+        """,
+        zone_id,
+    )
+    if not rows or len(rows) == 0:
+        raise HTTPException(status_code=404, detail="Zone not found or has no greenhouse")
+    
+    gh_uid = rows[0]["uid"]
+    
+    # Create MQTT client for calibration operation
+    # Используем синхронный MqttClient, так как water_flow функции ожидают его
+    mqtt = MqttClient(client_id_suffix="-calibrate")
+    mqtt.start()
+    
+    try:
+        # Execute flow calibration (async, but we wait for it)
+        result = await calibrate_flow(
+            zone_id,
+            req.node_id,
+            req.channel,
+            mqtt,
+            gh_uid,
+            req.pump_duration_sec
+        )
+        return {"status": "ok", "data": result}
+    except Exception as e:
+        logger.error(f"Failed to calibrate flow for zone {zone_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        # Закрываем соединение MQTT для предотвращения утечек
+        mqtt.stop()
+
+
 @app.post("/ingest/telemetry")
 async def ingest_telemetry(request: Request):
     """
@@ -1789,7 +2483,47 @@ def setup_signal_handlers():
 
 
 if __name__ == "__main__":
+    # Настройка логирования для детального вывода
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        force=True  # Переопределяем существующую конфигурацию
+    )
+    # Устанавливаем уровень логирования для всех модулей
+    logging.getLogger().setLevel(logging.INFO)
+    logging.getLogger('main').setLevel(logging.INFO)
+    logging.getLogger('common.mqtt').setLevel(logging.INFO)
+    
     setup_signal_handlers()
     import uvicorn
     s = get_settings()
-    uvicorn.run(app, host="0.0.0.0", port=s.service_port)
+    
+    # Настройка uvicorn для детального логирования
+    log_config = {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "default": {
+                "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            },
+        },
+        "handlers": {
+            "default": {
+                "formatter": "default",
+                "class": "logging.StreamHandler",
+                "stream": "ext://sys.stdout",
+            },
+        },
+        "root": {
+            "level": "INFO",
+            "handlers": ["default"],
+        },
+        "loggers": {
+            "uvicorn": {"level": "INFO"},
+            "uvicorn.access": {"level": "INFO"},
+            "main": {"level": "INFO"},
+            "common.mqtt": {"level": "INFO"},
+        },
+    }
+    
+    uvicorn.run(app, host="0.0.0.0", port=s.service_port, log_config=log_config)

@@ -288,12 +288,13 @@ class ZoneService
      */
     public function fill(Zone $zone, array $data): array
     {
-        $baseUrl = config('services.python_bridge.base_url');
+        // Используем history-logger для всех операций с нодами
+        $baseUrl = config('services.history_logger.url');
         if (!$baseUrl) {
-            throw new \DomainException('Python bridge URL not configured');
+            throw new \DomainException('History Logger URL not configured');
         }
         
-        $token = config('services.python_bridge.token');
+        $token = config('services.history_logger.token') ?? config('services.python_bridge.token'); // Fallback на старый токен
         $headers = $token ? ['Authorization' => "Bearer {$token}"] : [];
 
         $payload = [
@@ -306,7 +307,7 @@ class ZoneService
         try {
             $response = \Illuminate\Support\Facades\Http::withHeaders($headers)
                 ->timeout(350) // Больше чем max_duration_sec (300) + запас
-                ->post("{$baseUrl}/bridge/zones/{$zone->id}/fill", $payload);
+                ->post("{$baseUrl}/zones/{$zone->id}/fill", $payload);
 
             if (!$response->successful()) {
                 Log::error('ZoneService: Fill operation failed', [
@@ -354,12 +355,13 @@ class ZoneService
      */
     public function drain(Zone $zone, array $data): array
     {
-        $baseUrl = config('services.python_bridge.base_url');
+        // Используем history-logger для всех операций с нодами
+        $baseUrl = config('services.history_logger.url');
         if (!$baseUrl) {
-            throw new \DomainException('Python bridge URL not configured');
+            throw new \DomainException('History Logger URL not configured');
         }
         
-        $token = config('services.python_bridge.token');
+        $token = config('services.history_logger.token') ?? config('services.python_bridge.token'); // Fallback на старый токен
         $headers = $token ? ['Authorization' => "Bearer {$token}"] : [];
 
         $payload = [
@@ -372,7 +374,7 @@ class ZoneService
         try {
             $response = \Illuminate\Support\Facades\Http::withHeaders($headers)
                 ->timeout(350) // Больше чем max_duration_sec (300) + запас
-                ->post("{$baseUrl}/bridge/zones/{$zone->id}/drain", $payload);
+                ->post("{$baseUrl}/zones/{$zone->id}/drain", $payload);
 
             if (!$response->successful()) {
                 Log::error('ZoneService: Drain operation failed', [
@@ -420,12 +422,13 @@ class ZoneService
      */
     public function calibrateFlow(Zone $zone, array $data): array
     {
-        $baseUrl = config('services.python_bridge.base_url');
+        // Используем history-logger для всех операций с нодами
+        $baseUrl = config('services.history_logger.url');
         if (!$baseUrl) {
-            throw new \DomainException('Python bridge URL not configured');
+            throw new \DomainException('History Logger URL not configured');
         }
         
-        $token = config('services.python_bridge.token');
+        $token = config('services.history_logger.token') ?? config('services.python_bridge.token'); // Fallback на старый токен
         $headers = $token ? ['Authorization' => "Bearer {$token}"] : [];
 
         $payload = [
@@ -439,7 +442,7 @@ class ZoneService
         try {
             $response = \Illuminate\Support\Facades\Http::withHeaders($headers)
                 ->timeout(30) // Калибровка занимает ~12 секунд (10 сек насос + 2 сек ожидание)
-                ->post("{$baseUrl}/bridge/zones/{$zone->id}/calibrate-flow", $payload);
+                ->post("{$baseUrl}/zones/{$zone->id}/calibrate-flow", $payload);
 
             if (!$response->successful()) {
                 Log::error('ZoneService: Flow calibration failed', [

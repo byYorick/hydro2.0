@@ -17,6 +17,8 @@
 #include "mqtt_client.h"
 #include "node_utils.h"
 #include "esp_timer.h"
+#include "esp_efuse.h"
+#include "esp_mac.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -34,6 +36,17 @@ void oled_ui_notify_mqtt_rx(void) __attribute__((weak));
 #endif
 #ifndef DIAGNOSTICS_AVAILABLE
     #define DIAGNOSTICS_AVAILABLE 0
+#endif
+
+// Условный include для setup_portal (может быть не всегда доступен)
+#ifdef __has_include
+    #if __has_include("setup_portal.h")
+        #include "setup_portal.h"
+        #define SETUP_PORTAL_AVAILABLE 1
+    #endif
+#endif
+#ifndef SETUP_PORTAL_AVAILABLE
+    #define SETUP_PORTAL_AVAILABLE 0
 #endif
 
 static const char *TAG = "mqtt_manager";
@@ -236,6 +249,50 @@ esp_err_t mqtt_manager_deinit(void) {
     return ESP_OK;
 }
 
+esp_err_t mqtt_manager_update_node_info(const mqtt_node_info_t *node_info) {
+    if (!node_info) {
+        ESP_LOGE(TAG, "Invalid argument: node_info is NULL");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!node_info->node_uid || node_info->node_uid[0] == '\0') {
+        ESP_LOGE(TAG, "Node UID is required");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    // Обновляем информацию об узле
+    // ВАЖНО: Используем статические буферы для хранения строк, так как node_info содержит указатели
+    static char s_gh_uid_static[64] = {0};
+    static char s_zone_uid_static[64] = {0};
+    static char s_node_uid_static[64] = {0};
+
+    if (node_info->gh_uid && node_info->gh_uid[0] != '\0') {
+        strlcpy(s_gh_uid_static, node_info->gh_uid, sizeof(s_gh_uid_static));
+        s_node_info.gh_uid = s_gh_uid_static;
+    } else {
+        s_node_info.gh_uid = NULL;
+    }
+
+    if (node_info->zone_uid && node_info->zone_uid[0] != '\0') {
+        strlcpy(s_zone_uid_static, node_info->zone_uid, sizeof(s_zone_uid_static));
+        s_node_info.zone_uid = s_zone_uid_static;
+    } else {
+        s_node_info.zone_uid = NULL;
+    }
+
+    if (node_info->node_uid && node_info->node_uid[0] != '\0') {
+        strlcpy(s_node_uid_static, node_info->node_uid, sizeof(s_node_uid_static));
+        s_node_info.node_uid = s_node_uid_static;
+    }
+
+    ESP_LOGI(TAG, "Node info updated: gh_uid=%s, zone_uid=%s, node_uid=%s",
+             s_node_info.gh_uid ? s_node_info.gh_uid : "NULL",
+             s_node_info.zone_uid ? s_node_info.zone_uid : "NULL",
+             s_node_info.node_uid ? s_node_info.node_uid : "NULL");
+
+    return ESP_OK;
+}
+
 void mqtt_manager_register_config_cb(mqtt_config_callback_t cb, void *user_ctx) {
     s_config_cb = cb;
     s_config_user_ctx = user_ctx;
@@ -394,10 +451,18 @@ static esp_err_t mqtt_manager_publish_internal(const char *topic, const char *da
     ESP_LOGI(TAG, "MQTT PUBLISH: topic='%s', qos=%d, retain=%d, len=%d, data=%s", 
              topic, qos, retain, data_len, log_data);
     
+    // Проверяем, что клиент все еще валиден перед публикацией
+    if (!s_mqtt_client) {
+        ESP_LOGE(TAG, "MQTT client became NULL, cannot publish to %s", topic);
+        return ESP_ERR_INVALID_STATE;
+    }
+    
     int msg_id = esp_mqtt_client_publish(s_mqtt_client, topic, data, data_len, qos, retain);
     
     if (msg_id < 0) {
         ESP_LOGE(TAG, "Failed to publish to %s (msg_id=%d)", topic, msg_id);
+        // При ошибке публикации не устанавливаем s_is_connected = false,
+        // так как это может быть временная проблема, и клиент сам обработает переподключение
         // Обновление метрик диагностики (ошибка публикации)
         #if DIAGNOSTICS_AVAILABLE
         if (diagnostics_is_initialized()) {
@@ -450,8 +515,46 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
             // Подписка на config топик
             char config_topic[192];
             if (build_topic(config_topic, sizeof(config_topic), "config", NULL) == ESP_OK) {
-                esp_mqtt_client_subscribe(s_mqtt_client, config_topic, 1);
-                ESP_LOGI(TAG, "Subscribed to %s", config_topic);
+                int sub_msg_id = esp_mqtt_client_subscribe(s_mqtt_client, config_topic, 1);
+                if (sub_msg_id >= 0) {
+                    ESP_LOGI(TAG, "Subscribed to %s (msg_id=%d)", config_topic, sub_msg_id);
+                } else {
+                    ESP_LOGE(TAG, "Failed to subscribe to %s (msg_id=%d)", config_topic, sub_msg_id);
+                }
+            } else {
+                ESP_LOGE(TAG, "Failed to build config topic");
+            }
+            
+            // Также подписываемся на временный топик конфига для узлов, которые еще не получили конфигурацию
+            // Это позволяет получить конфиг даже если нода использует временные идентификаторы
+            // Используем hardware_id (MAC адрес) для временного топика, чтобы избежать конфликтов при одинаковом node_uid
+            uint8_t mac[6] = {0};
+            esp_err_t mac_err = esp_efuse_mac_get_default(mac);
+            if (mac_err == ESP_OK) {
+                char hardware_id[32];
+                snprintf(hardware_id, sizeof(hardware_id), "esp32-%02x%02x%02x%02x%02x%02x",
+                         mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+                char temp_config_topic[192];
+                snprintf(temp_config_topic, sizeof(temp_config_topic), "hydro/gh-temp/zn-temp/%s/config", hardware_id);
+                int temp_sub_msg_id = esp_mqtt_client_subscribe(s_mqtt_client, temp_config_topic, 1);
+                if (temp_sub_msg_id >= 0) {
+                    ESP_LOGI(TAG, "Subscribed to temp config topic: %s (msg_id=%d, using hardware_id)", temp_config_topic, temp_sub_msg_id);
+                } else {
+                    ESP_LOGW(TAG, "Failed to subscribe to temp config topic: %s (msg_id=%d)", temp_config_topic, temp_sub_msg_id);
+                }
+            } else {
+                ESP_LOGW(TAG, "Failed to get MAC address for temp config topic: %s", esp_err_to_name(mac_err));
+                // Fallback: используем node_uid, если не удалось получить MAC
+                if (s_node_info.node_uid && s_node_info.node_uid[0] != '\0') {
+                    char temp_config_topic[192];
+                    snprintf(temp_config_topic, sizeof(temp_config_topic), "hydro/gh-temp/zn-temp/%s/config", s_node_info.node_uid);
+                    int temp_sub_msg_id = esp_mqtt_client_subscribe(s_mqtt_client, temp_config_topic, 1);
+                    if (temp_sub_msg_id >= 0) {
+                        ESP_LOGI(TAG, "Subscribed to temp config topic: %s (msg_id=%d, using node_uid fallback)", temp_config_topic, temp_sub_msg_id);
+                    } else {
+                        ESP_LOGW(TAG, "Failed to subscribe to temp config topic: %s (msg_id=%d)", temp_config_topic, temp_sub_msg_id);
+                    }
+                }
             }
 
             // Подписка на command топики (wildcard для всех каналов)
@@ -460,12 +563,52 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                     s_node_info.gh_uid ? s_node_info.gh_uid : "",
                     s_node_info.zone_uid ? s_node_info.zone_uid : "",
                     s_node_info.node_uid ? s_node_info.node_uid : "");
-            esp_mqtt_client_subscribe(s_mqtt_client, command_topic, 1);
-            ESP_LOGI(TAG, "Subscribed to %s", command_topic);
+            int cmd_sub_msg_id = esp_mqtt_client_subscribe(s_mqtt_client, command_topic, 1);
+            if (cmd_sub_msg_id >= 0) {
+                ESP_LOGI(TAG, "Subscribed to %s (msg_id=%d)", command_topic, cmd_sub_msg_id);
+            } else {
+                ESP_LOGE(TAG, "Failed to subscribe to %s (msg_id=%d)", command_topic, cmd_sub_msg_id);
+            }
+            
+            // Также подписываемся на временный топик команд для узлов, которые еще не получили конфигурацию
+            // Это позволяет получить команды даже если нода использует временные идентификаторы
+            // Используем hardware_id (MAC адрес) для временного топика, чтобы избежать конфликтов при одинаковом node_uid
+            uint8_t mac_cmd[6] = {0};
+            esp_err_t mac_cmd_err = esp_efuse_mac_get_default(mac_cmd);
+            if (mac_cmd_err == ESP_OK) {
+                char hardware_id_cmd[32];
+                snprintf(hardware_id_cmd, sizeof(hardware_id_cmd), "esp32-%02x%02x%02x%02x%02x%02x",
+                         mac_cmd[0], mac_cmd[1], mac_cmd[2], mac_cmd[3], mac_cmd[4], mac_cmd[5]);
+                char temp_command_topic[192];
+                snprintf(temp_command_topic, sizeof(temp_command_topic), "hydro/gh-temp/zn-temp/%s/+/command", hardware_id_cmd);
+                int temp_cmd_sub_msg_id = esp_mqtt_client_subscribe(s_mqtt_client, temp_command_topic, 1);
+                if (temp_cmd_sub_msg_id >= 0) {
+                    ESP_LOGI(TAG, "Subscribed to temp command topic: %s (msg_id=%d, using hardware_id)", temp_command_topic, temp_cmd_sub_msg_id);
+                } else {
+                    ESP_LOGW(TAG, "Failed to subscribe to temp command topic: %s (msg_id=%d)", temp_command_topic, temp_cmd_sub_msg_id);
+                }
+            } else {
+                ESP_LOGW(TAG, "Failed to get MAC address for temp command topic: %s", esp_err_to_name(mac_cmd_err));
+                // Fallback: используем node_uid, если не удалось получить MAC
+                if (s_node_info.node_uid && s_node_info.node_uid[0] != '\0') {
+                    char temp_command_topic[192];
+                    snprintf(temp_command_topic, sizeof(temp_command_topic), "hydro/gh-temp/zn-temp/%s/+/command", s_node_info.node_uid);
+                    int temp_cmd_sub_msg_id = esp_mqtt_client_subscribe(s_mqtt_client, temp_command_topic, 1);
+                    if (temp_cmd_sub_msg_id >= 0) {
+                        ESP_LOGI(TAG, "Subscribed to temp command topic: %s (msg_id=%d, using node_uid fallback)", temp_command_topic, temp_cmd_sub_msg_id);
+                    } else {
+                        ESP_LOGW(TAG, "Failed to subscribe to temp command topic: %s (msg_id=%d)", temp_command_topic, temp_cmd_sub_msg_id);
+                    }
+                }
+            }
 
             // Вызов callback подключения
             if (s_connection_cb) {
+                ESP_LOGI(TAG, "Calling registered connection callback (connected=true)");
                 s_connection_cb(true, s_connection_user_ctx);
+                ESP_LOGI(TAG, "Connection callback completed");
+            } else {
+                ESP_LOGW(TAG, "No connection callback registered");
             }
             break;
 
@@ -580,9 +723,12 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
             // - Command: hydro/{gh}/{zone}/{node}/{channel}/command
             if (strstr(topic, "/config") != NULL) {
                 // Config топик - вызываем callback для обработки конфигурации
+                ESP_LOGI(TAG, "Config message received on topic: %s, len=%d", topic, event->data_len);
                 if (s_config_cb) {
+                    ESP_LOGI(TAG, "Calling registered config callback");
                     // Передаем оригинальную длину, так как мы уже проверили, что она не превышает max_data_len
                     s_config_cb(topic, data, event->data_len, s_config_user_ctx);
+                    ESP_LOGI(TAG, "Config callback completed");
                 } else {
                     ESP_LOGW(TAG, "Config message received but no callback registered");
                 }
@@ -604,11 +750,42 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                         if (channel_len > 0 && channel_len < 64) {
                             char channel[64] = {0};
                             memcpy(channel, prev_slash, channel_len);
-                            if (s_command_cb) {
-                                // Передаем оригинальную длину, так как мы уже проверили, что она не превышает max_data_len
-                                s_command_cb(topic, channel, data, event->data_len, s_command_user_ctx);
+                            
+                            // Логирование приема команды
+                            const int log_data_max = 200;
+                            char cmd_log_data[log_data_max + 4];
+                            if (event->data_len <= log_data_max) {
+                                if (event->data) {
+                                    memcpy(cmd_log_data, event->data, event->data_len);
+                                    cmd_log_data[event->data_len] = '\0';
+                                } else {
+                                    cmd_log_data[0] = '\0';
+                                }
                             } else {
-                                ESP_LOGW(TAG, "Command message received but no callback registered");
+                                if (event->data) {
+                                    memcpy(cmd_log_data, event->data, log_data_max);
+                                    cmd_log_data[log_data_max] = '\0';
+                                    strcat(cmd_log_data, "...");
+                                } else {
+                                    cmd_log_data[0] = '\0';
+                                }
+                            }
+                            ESP_LOGI(TAG, "MQTT COMMAND RECEIVED: topic='%s', channel='%s', len=%d, data=%s", 
+                                     topic, channel, event->data_len, cmd_log_data);
+                            
+                            // Проверка: в setup режиме не обрабатываем команды
+                            #if SETUP_PORTAL_AVAILABLE
+                            if (setup_portal_is_running()) {
+                                ESP_LOGW(TAG, "Command ignored: device is in setup mode");
+                            } else
+                            #endif
+                            {
+                                if (s_command_cb) {
+                                    // Передаем оригинальную длину, так как мы уже проверили, что она не превышает max_data_len
+                                    s_command_cb(topic, channel, data, event->data_len, s_command_user_ctx);
+                                } else {
+                                    ESP_LOGW(TAG, "Command message received but no callback registered");
+                                }
                             }
                         } else {
                             ESP_LOGE(TAG, "Invalid channel length in topic: %s", topic);
@@ -632,10 +809,22 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                 esp_mqtt_error_type_t err_type = event->error_handle->error_type;
                 if (err_type == MQTT_ERROR_TYPE_TCP_TRANSPORT) {
                     ESP_LOGE(TAG, "TCP transport error");
+                    // При ошибке транспорта (некорректное сообщение) не устанавливаем s_is_connected = false,
+                    // так как ESP-IDF MQTT клиент сам обработает переподключение.
+                    // Установка s_is_connected = false здесь может вызвать проблемы при попытке закрыть соединение.
+                    // Вместо этого, просто логируем ошибку и позволяем клиенту обработать ситуацию.
                 } else if (err_type == MQTT_ERROR_TYPE_CONNECTION_REFUSED) {
                     ESP_LOGE(TAG, "Connection refused");
+                    s_is_connected = false;
+                } else {
+                    // Для других типов ошибок также не трогаем s_is_connected,
+                    // чтобы избежать проблем при закрытии соединения
+                    ESP_LOGE(TAG, "MQTT error type: %d", err_type);
                 }
             }
+            // ВАЖНО: Не пытаемся закрыть соединение вручную здесь,
+            // так как это может вызвать StoreProhibited при попытке освободить буферы.
+            // ESP-IDF MQTT клиент сам обработает ошибку и переподключится при необходимости.
             break;
 
         default:

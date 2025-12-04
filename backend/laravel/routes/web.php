@@ -1101,26 +1101,42 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
          * Кеширование: 10 секунд
          */
         Route::get('/', function () {
+            $user = auth()->user();
             // Кешируем список устройств на 2 секунды для быстрого обновления
-            $cacheKey = 'devices_list_'.auth()->id();
+            $cacheKey = 'devices_list_'.$user->id;
             $devices = null;
+
+            // Получаем доступные ноды для пользователя
+            $accessibleNodeIds = \App\Helpers\ZoneAccessHelper::getAccessibleNodeIds($user);
 
             // Пытаемся использовать теги, если поддерживаются
             try {
-                $devices = \Illuminate\Support\Facades\Cache::tags(['devices_list'])->remember($cacheKey, 2, function () {
-                    return DeviceNode::query()
+                $devices = \Illuminate\Support\Facades\Cache::tags(['devices_list'])->remember($cacheKey, 2, function () use ($user, $accessibleNodeIds) {
+                    $query = DeviceNode::query()
                         ->select(['id', 'uid', 'zone_id', 'name', 'type', 'status', 'fw_version', 'last_seen_at'])
-                        ->with('zone:id,name')
-                        ->latest('id') // Сортируем по ID, чтобы новые ноды были сверху
+                        ->with('zone:id,name');
+                    
+                    // Фильтруем по доступным нодам (кроме админов)
+                    if (!$user->isAdmin()) {
+                        $query->whereIn('id', $accessibleNodeIds);
+                    }
+                    
+                    return $query->latest('id') // Сортируем по ID, чтобы новые ноды были сверху
                         ->get();
                 });
             } catch (\BadMethodCallException $e) {
                 // Если теги не поддерживаются, используем обычный кеш
-                $devices = \Illuminate\Support\Facades\Cache::remember($cacheKey, 2, function () {
-                    return DeviceNode::query()
+                $devices = \Illuminate\Support\Facades\Cache::remember($cacheKey, 2, function () use ($user, $accessibleNodeIds) {
+                    $query = DeviceNode::query()
                         ->select(['id', 'uid', 'zone_id', 'name', 'type', 'status', 'fw_version', 'last_seen_at'])
-                        ->with('zone:id,name')
-                        ->latest('id') // Сортируем по ID, чтобы новые ноды были сверху
+                        ->with('zone:id,name');
+                    
+                    // Фильтруем по доступным нодам (кроме админов)
+                    if (!$user->isAdmin()) {
+                        $query->whereIn('id', $accessibleNodeIds);
+                    }
+                    
+                    return $query->latest('id') // Сортируем по ID, чтобы новые ноды были сверху
                         ->get();
                 });
             }

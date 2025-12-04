@@ -70,18 +70,19 @@ class PythonBridgeService
             );
         }
 
-        $baseUrl = Config::get('services.python_bridge.base_url');
+        // Используем history-logger для всех команд (все общение бэка с нодами через history-logger)
+        $baseUrl = Config::get('services.history_logger.url');
         if (! $baseUrl) {
-            $error = 'Python bridge base_url not configured';
+            $error = 'History Logger URL not configured';
             Log::error('PythonBridgeService: '.$error, [
-                'zone_id' => $zone->id,
+'zone_id' => $zone->id,
                 'cmd_id' => $cmdId,
             ]);
             $this->markCommandFailed($command, $error);
             throw new \RuntimeException($error);
         }
 
-        $token = Config::get('services.python_bridge.token');
+        $token = Config::get('services.history_logger.token') ?? Config::get('services.python_bridge.token'); // Fallback на старый токен
         $headers = $token ? ['Authorization' => "Bearer {$token}"] : [];
 
         // Ensure params is an associative array (dict), not a list
@@ -96,18 +97,23 @@ class PythonBridgeService
             $params = new \stdClass;
         }
 
+        // Получаем zone_uid для команды
+        $zoneUid = $zone->uid ?? null;
+        
         $requestData = [
             'type' => $command->cmd,
             'params' => $params,
             'greenhouse_uid' => $ghUid,
+            'zone_uid' => $zoneUid, // Передаем zone_uid
             'node_uid' => $nodeUid,
+            'hardware_id' => $node->hardware_id, // Передаем hardware_id для временного топика
             'channel' => $channel,
             'cmd_id' => $cmdId, // Pass Laravel's cmd_id to Python service
         ];
 
         try {
             $this->sendWithRetry(
-                "{$baseUrl}/bridge/zones/{$zone->id}/commands",
+                "{$baseUrl}/zones/{$zone->id}/commands",
                 $headers,
                 $requestData,
                 $command
@@ -142,9 +148,10 @@ class PythonBridgeService
         $zoneId = $node->zone_id ?? ($payload['zone_id'] ?? null);
         $ghUid = optional(optional($node->zone)->greenhouse)->uid ?? 'gh-1';
 
-        $baseUrl = Config::get('services.python_bridge.base_url');
+        // Используем history-logger для всех команд (все общение бэка с нодами через history-logger)
+        $baseUrl = Config::get('services.history_logger.url');
         if (! $baseUrl) {
-            $error = 'Python bridge base_url not configured';
+            $error = 'History Logger URL not configured';
             Log::error('PythonBridgeService: '.$error, [
                 'node_id' => $node->id,
                 'node_uid' => $node->uid,
@@ -154,7 +161,7 @@ class PythonBridgeService
             throw new \RuntimeException($error);
         }
 
-        $token = Config::get('services.python_bridge.token');
+        $token = Config::get('services.history_logger.token') ?? Config::get('services.python_bridge.token'); // Fallback на старый токен
         $headers = $token ? ['Authorization' => "Bearer {$token}"] : [];
 
         // Ensure params is an associative array (dict), not a list
@@ -169,18 +176,27 @@ class PythonBridgeService
             $params = new \stdClass;
         }
 
+        // Получаем zone_uid для команды
+        $zoneUid = null;
+        if ($zoneId && $node->zone) {
+            $zoneUid = $node->zone->uid;
+        }
+        
         $requestData = [
             'type' => $command->cmd,
             'params' => $params,
             'greenhouse_uid' => $ghUid,
             'zone_id' => $zoneId,
+            'zone_uid' => $zoneUid, // Передаем zone_uid
+            'node_uid' => $node->uid,
+            'hardware_id' => $node->hardware_id, // Передаем hardware_id для временного топика
             'channel' => $payload['channel'] ?? null,
             'cmd_id' => $cmdId, // Pass Laravel's cmd_id to Python service
         ];
 
         try {
             $this->sendWithRetry(
-                "{$baseUrl}/bridge/nodes/{$node->uid}/commands",
+                "{$baseUrl}/nodes/{$node->uid}/commands",
                 $headers,
                 $requestData,
                 $command
