@@ -576,9 +576,7 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
         # Батчевый резолв зон с учетом gh_uid
         for zone_uid, gh_uid in zone_gh_pairs:
             zone_id_from_uid = extract_zone_id_from_uid(zone_uid)
-            if zone_id_from_uid is None:
-                logger.warning(f"Invalid zone_uid format: {zone_uid}")
-                continue
+            # zone_id_from_uid может быть None для формата zone-{uid}, это нормально - будем искать по UID
             
             # Ищем зону по zone_id И gh_uid (через JOIN с greenhouses)
             if gh_uid:

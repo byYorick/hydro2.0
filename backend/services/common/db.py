@@ -41,18 +41,21 @@ async def fetch(query: str, *args: Any):
 async def upsert_telemetry_last(zone_id: int, metric_type: str, node_id: Optional[int], channel: Optional[str], value: Optional[float]):
     """
     Обновить или вставить последнее значение телеметрии.
-    Теперь использует (zone_id, node_id, metric_type) как уникальный ключ.
+    Использует (zone_id, metric_type) как уникальный ключ (текущая структура таблицы).
+    Если node_id указан, он также обновляется.
     """
-    # Если node_id None, используем -1 как значение по умолчанию
-    # (после миграции node_id не может быть NULL, но для обратной совместимости)
     actual_node_id = node_id if node_id is not None else -1
     
     await execute(
         """
         INSERT INTO telemetry_last (zone_id, node_id, metric_type, channel, value, updated_at)
         VALUES ($1, $2, $3, $4, $5, NOW())
-        ON CONFLICT (zone_id, node_id, metric_type)
-        DO UPDATE SET channel = EXCLUDED.channel, value = EXCLUDED.value, updated_at = NOW()
+        ON CONFLICT (zone_id, metric_type)
+        DO UPDATE SET 
+            node_id = EXCLUDED.node_id,
+            channel = EXCLUDED.channel, 
+            value = EXCLUDED.value, 
+            updated_at = NOW()
         """,
         zone_id, actual_node_id, metric_type, channel, value
     )
