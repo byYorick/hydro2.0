@@ -583,31 +583,60 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
             # Ищем зону по zone_id И gh_uid (через JOIN с greenhouses)
             if gh_uid:
                 # Резолв с учетом greenhouse
-                zone_rows = await fetch(
-                    """
-                    SELECT z.id
-                    FROM zones z
-                    JOIN greenhouses g ON g.id = z.greenhouse_id
-                    WHERE z.id = $1 AND g.uid = $2
-                    """,
-                    zone_id_from_uid,
-                    gh_uid
-                )
+                if zone_id_from_uid is not None:
+                    # Числовой ID (формат zn-{id})
+                    zone_rows = await fetch(
+                        """
+                        SELECT z.id
+                        FROM zones z
+                        JOIN greenhouses g ON g.id = z.greenhouse_id
+                        WHERE z.id = $1 AND g.uid = $2
+                        """,
+                        zone_id_from_uid,
+                        gh_uid
+                    )
+                else:
+                    # UID формат (zone-{uid}) - ищем по uid зоны
+                    zone_rows = await fetch(
+                        """
+                        SELECT z.id
+                        FROM zones z
+                        JOIN greenhouses g ON g.id = z.greenhouse_id
+                        WHERE z.uid = $1 AND g.uid = $2
+                        """,
+                        zone_uid,
+                        gh_uid
+                    )
+                
                 if zone_rows and len(zone_rows) > 0:
                     zone_uid_to_id[(zone_uid, gh_uid)] = zone_rows[0]["id"]
                 else:
                     logger.warning(
-                        f"Zone not found: zone_id={zone_id_from_uid}, gh_uid={gh_uid}",
+                        f"Zone not found: zone_uid={zone_uid}, gh_uid={gh_uid}",
                         extra={"zone_uid": zone_uid, "gh_uid": gh_uid}
                     )
             else:
                 # Fallback: если gh_uid не указан, используем простое извлечение (для обратной совместимости)
                 # Но это может привести к проблемам в многотепличной конфигурации
-                logger.warning(
-                    f"gh_uid not provided for zone_uid={zone_uid}, using simple zone_id resolution (may cause conflicts in multi-greenhouse setup)",
-                    extra={"zone_uid": zone_uid}
-                )
-                zone_uid_to_id[(zone_uid, None)] = zone_id_from_uid
+                if zone_id_from_uid is not None:
+                    zone_uid_to_id[(zone_uid, None)] = zone_id_from_uid
+                else:
+                    # Ищем по UID без greenhouse
+                    zone_rows = await fetch(
+                        """
+                        SELECT id
+                        FROM zones
+                        WHERE uid = $1
+                        """,
+                        zone_uid
+                    )
+                    if zone_rows and len(zone_rows) > 0:
+                        zone_uid_to_id[(zone_uid, None)] = zone_rows[0]["id"]
+                    else:
+                        logger.warning(
+                            f"Zone not found by UID: zone_uid={zone_uid}",
+                            extra={"zone_uid": zone_uid}
+                        )
     
     # Получаем node_id из node_uid с учетом gh_uid для каждого образца
     # Ключ: (node_uid, gh_uid) -> (node_id, zone_id) - сохраняем zone_id узла для проверки соответствия
@@ -627,6 +656,7 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
             if gh_uid:
                 # Резолв с учетом greenhouse (через zones)
                 # Получаем node_id И zone_id узла для проверки соответствия
+                # Сначала ищем ноду, привязанную к зоне в этом greenhouse
                 node_rows = await fetch(
                     """
                     SELECT n.id, n.uid, n.zone_id
@@ -643,10 +673,25 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
                     node_zone_id = node_rows[0]["zone_id"]
                     node_uid_to_info[(node_uid, gh_uid)] = (node_id, node_zone_id)
                 else:
-                    logger.warning(
-                        f"Node not found: node_uid={node_uid}, gh_uid={gh_uid}",
-                        extra={"node_uid": node_uid, "gh_uid": gh_uid}
+                    # Если нода не найдена через зону, ищем ноду без привязки к зоне
+                    # (нода может быть еще не привязана к зоне)
+                    node_rows = await fetch(
+                        """
+                        SELECT n.id, n.uid, n.zone_id
+                        FROM nodes n
+                        WHERE n.uid = $1
+                        """,
+                        node_uid
                     )
+                    if node_rows and len(node_rows) > 0:
+                        node_id = node_rows[0]["id"]
+                        node_zone_id = node_rows[0]["zone_id"]
+                        node_uid_to_info[(node_uid, gh_uid)] = (node_id, node_zone_id)
+                    else:
+                        logger.warning(
+                            f"Node not found: node_uid={node_uid}, gh_uid={gh_uid}",
+                            extra={"node_uid": node_uid, "gh_uid": gh_uid}
+                        )
             else:
                 # Fallback: если gh_uid не указан, используем простое извлечение (для обратной совместимости)
                 # Но это может привести к проблемам в многотепличной конфигурации
@@ -1480,20 +1525,27 @@ async def handle_config_response(topic: str, payload: bytes):
 
 def extract_zone_id_from_uid(zone_uid: Optional[str]) -> Optional[int]:
     """
-    Извлечь zone_id из zone_uid (формат: zn-{id}).
+    Извлечь zone_id из zone_uid (формат: zn-{id} или zone-{uid}).
     
     Args:
-        zone_uid: zone_uid в формате "zn-{id}" или None
+        zone_uid: zone_uid в формате "zn-{id}" или "zone-{uid}" или None
         
     Returns:
         zone_id как int или None если формат неверный
     """
-    if not zone_uid or not zone_uid.startswith("zn-"):
+    if not zone_uid:
         return None
-    try:
-        return int(zone_uid.split("-")[1])
-    except (ValueError, IndexError):
-        return None
+    
+    # Поддержка формата zn-{id} (числовой ID)
+    if zone_uid.startswith("zn-"):
+        try:
+            return int(zone_uid.split("-")[1])
+        except (ValueError, IndexError):
+            return None
+    
+    # Формат zone-{uid} не является числовым ID, возвращаем None
+    # (будет искаться по UID в БД)
+    return None
 
 
 def _extract_zone_id(topic: str) -> Optional[int]:
