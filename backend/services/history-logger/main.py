@@ -392,18 +392,11 @@ async def handle_telemetry(topic: str, payload: bytes):
     Добавляет данные в Redis queue для последующей обработки.
     """
     global telemetry_queue
-    
-    # Детальное логирование для диагностики
-    logger.info(f"[TELEMETRY] Received message on topic: {topic}, payload length: {len(payload)}")
-    print(f"[TELEMETRY] Received message on topic: {topic}, payload length: {len(payload)}", flush=True)
 
     data = _parse_json(payload)
     if not data:
-        logger.warning(f"[TELEMETRY] Failed to parse JSON from topic: {topic}, payload length: {len(payload)}")
-        print(f"[TELEMETRY] Failed to parse JSON from topic: {topic}", flush=True)
+        logger.warning(f"[TELEMETRY] Failed to parse JSON from topic: {topic}")
         return
-    
-    logger.info(f"[TELEMETRY] Parsed JSON successfully, keys: {list(data.keys()) if isinstance(data, dict) else 'not a dict'}")
     
     # Валидация данных через Pydantic
     try:
@@ -511,17 +504,6 @@ async def handle_telemetry(topic: str, payload: bytes):
     # Фильтруем raw данные для защиты от раздувания БД
     filtered_raw = _filter_raw_data(data)
     
-    # Детальное логирование каждой телеметрии
-    logger.info(
-        f"[TELEMETRY] Received telemetry: topic={topic}, node_uid={node_uid}, zone_uid={zone_uid}, "
-        f"gh_uid={gh_uid}, channel={channel_name}, metric_type={metric_type}, value={validated_data.value}, ts={ts}"
-    )
-    print(
-        f"[TELEMETRY] Received: node={node_uid}, zone={zone_uid}, metric={metric_type}, "
-        f"value={validated_data.value}, channel={channel_name}",
-        flush=True
-    )
-    
     queue_item = TelemetryQueueItem(
         node_uid=node_uid or "",
         zone_uid=zone_uid,
@@ -534,9 +516,8 @@ async def handle_telemetry(topic: str, payload: bytes):
         enqueued_at=datetime.utcnow()  # Время добавления в очередь для трекинга возраста
     )
 
-    # Добавляем в Redis queue с retry логикой
-    logger.info(f"[TELEMETRY] Pushing to Redis queue: node_uid={node_uid}, metric_type={metric_type}, value={validated_data.value}")
-    print(f"[TELEMETRY] Pushing to Redis queue: node_uid={node_uid}, metric_type={metric_type}", flush=True)
+    # Минимальное логирование: телеметрия принята
+    logger.info(f"[TELEMETRY] Received: node={node_uid}, metric={metric_type}, value={validated_data.value}")
     
     if telemetry_queue:
         start_time = time.time()
@@ -545,8 +526,7 @@ async def handle_telemetry(topic: str, payload: bytes):
         REDIS_OPERATION_DURATION.observe(redis_duration)
         
         if not success:
-            logger.warning(f"[TELEMETRY] Failed to push to Redis queue (queue full or error)")
-            print(f"[TELEMETRY] Failed to push to Redis queue", flush=True)
+            logger.warning(f"[TELEMETRY] Failed to push to queue: node={node_uid}, metric={metric_type}")
             TELEMETRY_DROPPED.labels(reason="queue_push_failed").inc()
             logger.error(
                 "Failed to push telemetry to queue after retries, dropping message",
@@ -557,12 +537,8 @@ async def handle_telemetry(topic: str, payload: bytes):
                     "topic": topic
                 }
             )
-        else:
-            logger.info(f"[TELEMETRY] Successfully pushed to Redis queue")
-            print(f"[TELEMETRY] Successfully pushed to Redis queue", flush=True)
     else:
-        logger.error(f"[TELEMETRY] Telemetry queue not initialized!")
-        print(f"[TELEMETRY] Telemetry queue not initialized!", flush=True)
+        logger.error(f"[TELEMETRY] Queue not initialized: node={node_uid}, metric={metric_type}")
         TELEMETRY_DROPPED.labels(reason="queue_not_initialized").inc()
         logger.error(
             "Telemetry queue not initialized, dropping message",
@@ -796,17 +772,8 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
                 # Успешно вставлено - считаем все сэмплы из этой группы
                 processed_count += len(group_samples)
                 
-                # Детальное логирование каждой записанной телеметрии
-                for sample in group_samples:
-                    logger.info(
-                        f"[TELEMETRY] Written to DB: zone_id={zone_id}, node_id={node_id}, "
-                        f"metric_type={metric_type}, channel={channel}, value={sample.value}, ts={sample.ts}"
-                    )
-                    print(
-                        f"[TELEMETRY] DB write: zone={zone_id}, node={node_id}, metric={metric_type}, "
-                        f"value={sample.value}, channel={channel}",
-                        flush=True
-                    )
+                # Минимальное логирование: телеметрия записана
+                logger.info(f"[TELEMETRY] Written: zone_id={zone_id}, node_id={node_id}, metric={metric_type}, count={len(group_samples)}")
             except Exception as e:
                 error_type = type(e).__name__
                 DATABASE_ERRORS.labels(error_type=error_type).inc()
@@ -845,16 +812,6 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
     # Исправлено: считаем метрики по реально вставленным сэмплам, а не по входному списку
     TELEM_PROCESSED.inc(processed_count)
     TELEM_BATCH_SIZE.observe(processed_count)
-    
-    # Логирование итогов батча
-    logger.info(
-        f"[TELEMETRY] Batch processed: total_samples={len(samples)}, "
-        f"processed_count={processed_count}, duration={processing_duration:.3f}s"
-    )
-    print(
-        f"[TELEMETRY] Batch: {processed_count}/{len(samples)} samples written in {processing_duration:.3f}s",
-        flush=True
-    )
 
 
 async def process_telemetry_queue():
@@ -902,14 +859,6 @@ async def process_telemetry_queue():
             if should_flush:
                 # Извлекаем батч из очереди
                 batch_size = min(s.telemetry_batch_size, queue_size)
-                logger.info(
-                    f"[TELEMETRY] Flushing batch: queue_size={queue_size}, batch_size={batch_size}, "
-                    f"time_since_flush={time_since_flush:.0f}ms"
-                )
-                print(
-                    f"[TELEMETRY] Flushing: queue={queue_size}, batch={batch_size}",
-                    flush=True
-                )
                 queue_items = await telemetry_queue.pop_batch(batch_size)
 
                 if queue_items:
@@ -929,14 +878,6 @@ async def process_telemetry_queue():
                             channel=item.channel
                         )
                         samples.append(sample)
-                    
-                    logger.info(
-                        f"[TELEMETRY] Processing batch: {len(samples)} samples from queue"
-                    )
-                    print(
-                        f"[TELEMETRY] Processing batch: {len(samples)} samples",
-                        flush=True
-                    )
 
                     # Обрабатываем батч
                     await process_telemetry_batch(samples)
@@ -2483,14 +2424,19 @@ def setup_signal_handlers():
 
 
 if __name__ == "__main__":
-    # Настройка логирования для детального вывода
+    # Настройка логирования для детального вывода в stdout
+    import sys
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler(sys.stdout)  # Явно указываем stdout
+        ],
         force=True  # Переопределяем существующую конфигурацию
     )
     # Устанавливаем уровень логирования для всех модулей
     logging.getLogger().setLevel(logging.INFO)
+    logging.getLogger('__main__').setLevel(logging.INFO)
     logging.getLogger('main').setLevel(logging.INFO)
     logging.getLogger('common.mqtt').setLevel(logging.INFO)
     
