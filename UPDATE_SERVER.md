@@ -204,3 +204,4 @@ sudo supervisorctl restart all
 Можно настроить автоматическое обновление при push в репозиторий через GitHub Actions или webhook.
 
 
+
