@@ -100,7 +100,8 @@ Route::middleware([
         // Nodes
         Route::post('nodes', [NodeController::class, 'store']);
         Route::put('nodes/{node}', [NodeController::class, 'update']);
-        Route::patch('nodes/{node}', [NodeController::class, 'update']);
+        Route::patch('nodes/{node}', [NodeController::class, 'update'])
+            ->middleware('verify.python.service');
         Route::delete('nodes/{node}', [NodeController::class, 'destroy']);
         Route::post('nodes/{node}/detach', [NodeController::class, 'detach']);
         Route::post('nodes/{node}/config/publish', [NodeController::class, 'publishConfig']);

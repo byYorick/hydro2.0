@@ -163,12 +163,43 @@ class NodeController extends Controller
 
     public function update(Request $request, DeviceNode $node)
     {
+        // Проверяем аутентификацию: либо через Sanctum, либо через сервисный токен
         $user = $request->user();
+        
+        // Если пользователь не авторизован через Sanctum, проверяем сервисный токен
         if (! $user) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Unauthorized',
-            ], 401);
+            $providedToken = $request->bearerToken();
+            if ($providedToken) {
+                $pyApiToken = config('services.python_bridge.token');
+                $laravelApiToken = env('LARAVEL_API_TOKEN');
+                
+                // Проверяем сервисный токен
+                $tokenValid = false;
+                if ($pyApiToken && hash_equals($pyApiToken, $providedToken)) {
+                    $tokenValid = true;
+                } elseif ($laravelApiToken && hash_equals($laravelApiToken, $providedToken)) {
+                    $tokenValid = true;
+                }
+                
+                if ($tokenValid) {
+                    // Устанавливаем сервисного пользователя для проверки доступа
+                    $serviceUser = \App\Models\User::where('role', 'operator')->first() 
+                        ?? \App\Models\User::where('role', 'admin')->first()
+                        ?? \App\Models\User::first();
+                    
+                    if ($serviceUser) {
+                        $user = $serviceUser;
+                        $request->setUserResolver(static fn () => $serviceUser);
+                    }
+                }
+            }
+            
+            if (! $user) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Unauthorized',
+                ], 401);
+            }
         }
 
         // Проверяем доступ к ноде
