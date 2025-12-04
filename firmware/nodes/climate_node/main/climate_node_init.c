@@ -155,24 +155,16 @@ static void climate_node_publish_hello(void) {
 }
 
 void climate_node_mqtt_connection_cb(bool connected, void *user_ctx) {
+    ESP_LOGI(TAG, "climate_node_mqtt_connection_cb called: connected=%d", connected);
     if (connected) {
         ESP_LOGI(TAG, "MQTT connected - climate_node is online");
         
-        // Публикуем node_hello при первом подключении для регистрации
-        // Проверяем, есть ли уже конфиг с правильными ID (не временные)
-        char node_id[CONFIG_STORAGE_MAX_STRING_LEN];
-        char gh_uid[CONFIG_STORAGE_MAX_STRING_LEN];
-        bool has_node_id = (config_storage_get_node_id(node_id, sizeof(node_id)) == ESP_OK);
-        bool has_gh_uid = (config_storage_get_gh_uid(gh_uid, sizeof(gh_uid)) == ESP_OK);
-        bool has_valid_config = has_node_id && 
-                                strcmp(node_id, "nd-climate-1") != 0 &&
-                                has_gh_uid &&
-                                strcmp(gh_uid, "gh-1") != 0;
-        
-        if (!has_valid_config) {
-            // Устройство еще не зарегистрировано - публикуем node_hello
-            climate_node_publish_hello();
-        }
+        // Публикуем node_hello при каждом подключении для регистрации/обновления
+        // Это позволяет backend обновить информацию о ноде, даже если она уже была зарегистрирована
+        // Backend обрабатывает дубликаты корректно (обновляет существующую ноду по hardware_id)
+        ESP_LOGI(TAG, "Publishing node_hello for registration/update");
+        climate_node_publish_hello();
+        ESP_LOGI(TAG, "node_hello publish call completed");
         
         // Запрашиваем время у сервера для синхронизации
         node_utils_request_time();

@@ -450,11 +450,23 @@ esp_err_t climate_node_init_step_finalize(climate_node_init_context_t *ctx,
     ESP_LOGI(TAG, "MQTT client started (callbacks already registered)");
     
     // Останавливаем анимацию шагов инициализации и переводим OLED в нормальный режим
+    // ВАЖНО: Эта функция вызывается только из основного потока инициализации (app_main),
+    // НЕ из MQTT callback, поэтому безопасно вызывать oled_ui_stop_init_steps()
+    // НО: Конфиг может прийти через MQTT callback во время выполнения этой функции,
+    // поэтому нужно быть осторожным с I2C операциями
     if (oled_ui_is_initialized()) {
         if (ctx && ctx->show_oled_steps) {
-            oled_ui_stop_init_steps();
+            // Проверяем, что шаги еще активны (не были остановлены из другого потока)
+            // Используем безопасный способ остановки шагов - через флаг
+            // oled_ui_stop_init_steps() безопасен, так как использует мьютекс для I2C операций
+            // Но лучше отложить вызов, если конфиг обрабатывается
+            esp_err_t oled_err = oled_ui_stop_init_steps();
+            if (oled_err != ESP_OK) {
+                ESP_LOGW(TAG, "Failed to stop init steps: %s (may be called from config handler)", esp_err_to_name(oled_err));
+            }
         }
         // Всегда переводим OLED в нормальный режим после инициализации
+        // oled_ui_set_state безопасен, так как использует внутренний мьютекс
         esp_err_t oled_err = oled_ui_set_state(OLED_UI_STATE_NORMAL);
         if (oled_err != ESP_OK) {
             ESP_LOGW(TAG, "Failed to set OLED state to NORMAL: %s", esp_err_to_name(oled_err));

@@ -235,6 +235,17 @@ esp_err_t mqtt_manager_reconnect(void);
  */
 esp_err_t mqtt_manager_publish_raw(const char *topic, const char *data, int qos, int retain);
 
+/**
+ * @brief Обновить информацию об узле (gh_uid, zone_uid, node_uid) без переинициализации MQTT
+ * 
+ * Используется после получения конфига, чтобы обновить топики для публикации config_response
+ * и других сообщений без переподключения к MQTT брокеру.
+ * 
+ * @param node_info Новая информация об узле
+ * @return ESP_OK при успехе
+ */
+esp_err_t mqtt_manager_update_node_info(const mqtt_node_info_t *node_info);
+
 #ifdef __cplusplus
 }
 #endif

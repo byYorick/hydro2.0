@@ -17,6 +17,7 @@ class DeviceNode extends Model
 
     protected $fillable = [
         'zone_id',
+        'pending_zone_id',
         'uid',
         'name',
         'type',
@@ -61,8 +62,30 @@ class DeviceNode extends Model
         // Это предотвращает публикацию конфига до коммита или при откате транзакции
         static::saved(function (DeviceNode $node) {
             // Проверяем, изменились ли поля, влияющие на конфиг
-            if ($node->wasChanged(['zone_id', 'type', 'config', 'uid']) || 
-                $node->wasRecentlyCreated) {
+            // pending_zone_id также влияет на конфиг, так как конфиг должен быть отправлен при установке pending_zone_id
+            $changedFields = ['zone_id', 'pending_zone_id', 'type', 'config', 'uid'];
+            $hasChanges = $node->wasChanged($changedFields) || $node->wasRecentlyCreated;
+            
+            // ВАЖНО: Если pending_zone_id установлен, но zone_id еще null, нужно отправить конфиг
+            // даже если pending_zone_id не изменился в текущей операции (например, при повторной попытке)
+            $needsConfigPublish = $node->pending_zone_id && !$node->zone_id;
+            
+            if ($hasChanges || $needsConfigPublish) {
+               \Illuminate\Support\Facades\Log::info('DeviceNode: Dispatching NodeConfigUpdated event', [
+                   'node_id' => $node->id,
+                   'uid' => $node->uid,
+                   'changed_fields' => array_filter($changedFields, fn($field) => $node->wasChanged($field)),
+                   'was_recently_created' => $node->wasRecentlyCreated,
+                   'needs_config_publish' => $needsConfigPublish,
+                   'pending_zone_id' => $node->pending_zone_id,
+                   'zone_id' => $node->zone_id,
+                   'lifecycle_state' => $node->lifecycle_state?->value,
+               ]);
+               \Illuminate\Support\Facades\Log::info('DeviceNode: Event will be dispatched after commit', [
+                   'node_id' => $node->id,
+                   'uid' => $node->uid,
+               ]);
+                
                 // Используем afterCommit, чтобы событие срабатывало только после коммита транзакции
                 \Illuminate\Support\Facades\DB::afterCommit(function () use ($node) {
                     event(new NodeConfigUpdated($node));

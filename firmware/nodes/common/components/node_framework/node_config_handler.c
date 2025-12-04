@@ -12,6 +12,9 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "cJSON.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/queue.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -35,6 +38,21 @@ static void *s_mqtt_user_ctx = NULL;
 static const char *s_default_node_id = NULL;
 static const char *s_default_gh_uid = NULL;
 static const char *s_default_zone_uid = NULL;
+
+// Очередь для обработки конфигов (чтобы избежать переполнения стека в MQTT callback)
+#define CONFIG_QUEUE_SIZE 2
+#define CONFIG_PROCESSOR_STACK_SIZE 16384  // Увеличенный размер стека для обработки конфигов (16KB)
+
+typedef struct {
+    char *topic;
+    char *data;
+    int data_len;
+    void *user_ctx;
+} config_queue_item_t;
+
+static QueueHandle_t s_config_queue = NULL;
+static TaskHandle_t s_config_processor_task = NULL;
+static bool s_config_processor_running = false;
 
 /**
  * @brief Маскирует секретные поля в JSON перед логированием
@@ -98,7 +116,10 @@ static bool mask_sensitive_json_fields(const char *json_str, char *masked_buf, s
     return false;
 }
 
-void node_config_handler_process(
+/**
+ * @brief Внутренняя функция обработки конфига (вызывается из задачи)
+ */
+static void node_config_handler_process_internal(
     const char *topic,
     const char *data,
     int data_len,
@@ -155,6 +176,35 @@ void node_config_handler_process(
         return;
     }
 
+    // ВАЖНО: Обновляем node_info в mqtt_manager после применения конфига,
+    // чтобы config_response отправлялся на правильный топик с актуальными gh_uid и zone_uid
+    // Это критично, так как нода может получить конфиг на временный топик,
+    // но должна отправить config_response на правильный топик с реальными gh_uid и zone_uid
+    char gh_uid[64] = {0};
+    char zone_uid[64] = {0};
+    char node_uid[64] = {0};
+    
+    // Получаем актуальные значения из сохраненного конфига
+    if (config_storage_get_gh_uid(gh_uid, sizeof(gh_uid)) == ESP_OK && gh_uid[0] != '\0') {
+        if (config_storage_get_zone_uid(zone_uid, sizeof(zone_uid)) == ESP_OK && zone_uid[0] != '\0') {
+            if (config_storage_get_node_id(node_uid, sizeof(node_uid)) == ESP_OK && node_uid[0] != '\0') {
+                // Обновляем node_info в mqtt_manager
+                mqtt_node_info_t node_info = {
+                    .gh_uid = gh_uid,
+                    .zone_uid = zone_uid,
+                    .node_uid = node_uid
+                };
+                esp_err_t update_err = mqtt_manager_update_node_info(&node_info);
+                if (update_err == ESP_OK) {
+                    ESP_LOGI(TAG, "Updated mqtt_manager node_info: gh_uid=%s, zone_uid=%s, node_uid=%s", 
+                            gh_uid, zone_uid, node_uid);
+                } else {
+                    ESP_LOGW(TAG, "Failed to update mqtt_manager node_info: %s", esp_err_to_name(update_err));
+                }
+            }
+        }
+    }
+
     // Успешное применение - публикуем ACK с информацией о перезапущенных компонентах
     // Используем result из config_apply
     const char *restarted[CONFIG_APPLY_MAX_COMPONENTS];
@@ -174,6 +224,123 @@ void node_config_handler_process(
     cJSON_Delete(config);
     if (previous_config) {
         cJSON_Delete(previous_config);
+    }
+}
+
+/**
+ * @brief Задача обработки конфигов из очереди
+ */
+static void task_config_processor(void *pvParameters) {
+    ESP_LOGI(TAG, "Config processor task started");
+    s_config_processor_running = true;
+    
+    config_queue_item_t item;
+    
+    while (1) {
+        // Получаем конфиг из очереди
+        if (xQueueReceive(s_config_queue, &item, portMAX_DELAY) == pdTRUE) {
+            // Обрабатываем конфиг
+            node_config_handler_process_internal(item.topic, item.data, item.data_len, item.user_ctx);
+            
+            // Освобождаем память
+            if (item.topic) free(item.topic);
+            if (item.data) free(item.data);
+        }
+    }
+}
+
+/**
+ * @brief Инициализация очереди конфигов
+ */
+static esp_err_t init_config_queue(void) {
+    if (s_config_queue != NULL) {
+        return ESP_OK;
+    }
+    
+    s_config_queue = xQueueCreate(CONFIG_QUEUE_SIZE, sizeof(config_queue_item_t));
+    if (s_config_queue == NULL) {
+        ESP_LOGE(TAG, "Failed to create config queue");
+        return ESP_ERR_NO_MEM;
+    }
+    
+    // Создаем задачу обработки конфигов
+    BaseType_t ret = xTaskCreate(
+        task_config_processor,
+        "config_proc",
+        CONFIG_PROCESSOR_STACK_SIZE,
+        NULL,
+        5,  // Средний приоритет для обработки конфигов
+        &s_config_processor_task
+    );
+    
+    if (ret != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create config processor task");
+        vQueueDelete(s_config_queue);
+        s_config_queue = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+    
+    ESP_LOGI(TAG, "Config queue initialized (size: %d, stack: %d)", CONFIG_QUEUE_SIZE, CONFIG_PROCESSOR_STACK_SIZE);
+    return ESP_OK;
+}
+
+/**
+ * @brief Публичная функция обработки конфига (добавляет в очередь)
+ */
+void node_config_handler_process(
+    const char *topic,
+    const char *data,
+    int data_len,
+    void *user_ctx
+) {
+    // Инициализация очереди при первом вызове
+    if (s_config_queue == NULL) {
+        esp_err_t err = init_config_queue();
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to initialize config queue, processing directly (may cause stack overflow)");
+            // Fallback: обрабатываем напрямую (может вызвать переполнение стека)
+            node_config_handler_process_internal(topic, data, data_len, user_ctx);
+            return;
+        }
+    }
+    
+    // Выделяем память для данных
+    char *topic_copy = NULL;
+    char *data_copy = NULL;
+    
+    if (topic) {
+        topic_copy = strdup(topic);
+        if (topic_copy == NULL) {
+            ESP_LOGE(TAG, "Failed to allocate memory for topic");
+            return;
+        }
+    }
+    
+    if (data && data_len > 0) {
+        data_copy = malloc(data_len + 1);
+        if (data_copy == NULL) {
+            ESP_LOGE(TAG, "Failed to allocate memory for data");
+            if (topic_copy) free(topic_copy);
+            return;
+        }
+        memcpy(data_copy, data, data_len);
+        data_copy[data_len] = '\0';
+    }
+    
+    // Создаем элемент очереди
+    config_queue_item_t item = {
+        .topic = topic_copy,
+        .data = data_copy,
+        .data_len = data_len,
+        .user_ctx = user_ctx
+    };
+    
+    // Добавляем в очередь (неблокирующий режим)
+    if (xQueueSend(s_config_queue, &item, 0) != pdTRUE) {
+        ESP_LOGW(TAG, "Config queue is full, dropping config");
+        if (topic_copy) free(topic_copy);
+        if (data_copy) free(data_copy);
+        node_config_handler_publish_response("ERROR", "Config queue full", NULL, 0);
     }
 }
 

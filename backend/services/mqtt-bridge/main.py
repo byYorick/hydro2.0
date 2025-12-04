@@ -115,7 +115,29 @@ async def send_zone_command(
     # Use cmd_id from Laravel if provided, otherwise generate new one
     cmd_id = req.cmd_id or new_command_id()
     payload = {"cmd": req.type, "cmd_id": cmd_id, **({"params": req.params} if req.params else {})}
-    publisher.publish_command(req.greenhouse_uid, zone_id, req.node_uid, req.channel, payload)
+    # Получаем hardware_id из запроса для временного топика
+    hardware_id = req.hardware_id
+    
+    # Получаем zone_uid из БД, если mqtt_zone_format="uid"
+    zone_uid = None
+    s = get_settings()
+    if s.mqtt_zone_format == "uid":
+        rows = await fetch(
+            """
+            SELECT uid
+            FROM zones
+            WHERE id = $1
+            """,
+            zone_id,
+        )
+        if rows and len(rows) > 0:
+            zone_uid = rows[0].get("uid")
+            if not zone_uid:
+                logger.warning(f"Zone {zone_id} has no uid, using zn-{zone_id} as fallback")
+        else:
+            logger.warning(f"Zone {zone_id} not found, using zn-{zone_id} as fallback")
+    
+    publisher.publish_command(req.greenhouse_uid, zone_id, req.node_uid, req.channel, payload, hardware_id=hardware_id, zone_uid=zone_uid)
     await mark_command_sent(cmd_id)
     return {"status": "ok", "data": {"command_id": cmd_id}}
 
@@ -133,7 +155,29 @@ async def send_node_command(
     # Use cmd_id from Laravel if provided, otherwise generate new one
     cmd_id = req.cmd_id or new_command_id()
     payload = {"cmd": req.type, "cmd_id": cmd_id, **({"params": req.params} if req.params else {})}
-    publisher.publish_command(req.greenhouse_uid, req.zone_id, node_uid, req.channel, payload)
+    # Получаем hardware_id из запроса для временного топика
+    hardware_id = req.hardware_id
+    
+    # Получаем zone_uid из БД, если mqtt_zone_format="uid"
+    zone_uid = None
+    s = get_settings()
+    if s.mqtt_zone_format == "uid" and req.zone_id:
+        rows = await fetch(
+            """
+            SELECT uid
+            FROM zones
+            WHERE id = $1
+            """,
+            req.zone_id,
+        )
+        if rows and len(rows) > 0:
+            zone_uid = rows[0].get("uid")
+            if not zone_uid:
+                logger.warning(f"Zone {req.zone_id} has no uid, using zn-{req.zone_id} as fallback")
+        else:
+            logger.warning(f"Zone {req.zone_id} not found, using zn-{req.zone_id} as fallback")
+    
+    publisher.publish_command(req.greenhouse_uid, req.zone_id, node_uid, req.channel, payload, hardware_id=hardware_id, zone_uid=zone_uid)
     await mark_command_sent(cmd_id)
     return {"status": "ok", "data": {"command_id": cmd_id}}
 
@@ -249,6 +293,7 @@ from common.schemas import NodeConfigModel
 
 class NodeConfigRequest(BaseModel):
     node_uid: str = Field(..., min_length=1, max_length=128)
+    hardware_id: Optional[str] = Field(None, max_length=128)  # Для временного топика
     zone_id: Optional[int] = Field(None, ge=1)
     greenhouse_uid: Optional[str] = Field(None, max_length=128)
     config: NodeConfigModel
@@ -296,10 +341,10 @@ async def publish_node_config(
         raise HTTPException(status_code=500, detail="Publisher not initialized")
     
     try:
-        logger.info(f"Publishing config for node {node_uid}, zone_id: {zone_id}, gh_uid: {gh_uid}")
+        logger.info(f"Publishing config for node {node_uid}, zone_id: {zone_id}, gh_uid: {gh_uid}, hardware_id: {req.hardware_id}")
         # Преобразуем Pydantic модель в dict для публикации
         config_dict = req.config.dict() if hasattr(req.config, 'dict') else req.config.model_dump() if hasattr(req.config, 'model_dump') else dict(req.config)
-        publisher.publish_config(gh_uid, zone_id, node_uid, config_dict)
+        publisher.publish_config(gh_uid, zone_id, node_uid, config_dict, hardware_id=req.hardware_id)
         logger.info(f"Config published successfully for node {node_uid}")
         return {"status": "ok", "data": {"published": True, "topic": f"hydro/{gh_uid}/zn-{zone_id}/{node_uid}/config"}}
     except Exception as e:

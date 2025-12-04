@@ -22,7 +22,9 @@ topic readwrite hydro/+/+/events/#
 user esp32_node
 topic readwrite hydro/+/+/esp32_node/#
 topic write hydro/+/+/+/status
+topic read hydro/+/+/+/command
 topic read hydro/+/+/+/commands/#
+topic read hydro/gh-temp/zn-temp/+/+/command
 
 # History logger - read telemetry, write events
 user history_logger

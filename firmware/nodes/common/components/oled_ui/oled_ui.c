@@ -758,7 +758,12 @@ __attribute__((unused)) static void render_wifi_icon(uint8_t x, uint8_t y, int8_
  */
 static void render_boot_screen(void) {
     // Захватываем mutex для защиты от одновременного доступа
-    if (s_ui.render_mutex != NULL && xSemaphoreTake(s_ui.render_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+    // ВАЖНО: Проверяем, что мьютекс инициализирован перед использованием
+    if (s_ui.render_mutex == NULL) {
+        ESP_LOGW(TAG, "Render mutex is NULL, skipping render");
+        return;
+    }
+    if (xSemaphoreTake(s_ui.render_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
         ESP_LOGW(TAG, "Failed to take render mutex, skipping render");
         return;
     }
@@ -1477,6 +1482,12 @@ esp_err_t oled_ui_refresh(void) {
         return ESP_ERR_INVALID_STATE;
     }
     
+    // Проверяем, что мьютекс инициализирован перед использованием
+    if (s_ui.render_mutex == NULL) {
+        ESP_LOGW(TAG, "Render mutex is NULL, cannot refresh OLED");
+        return ESP_ERR_INVALID_STATE;
+    }
+    
     // Отрисовка в зависимости от состояния
     switch (s_ui.state) {
         case OLED_UI_STATE_BOOT:
@@ -1659,6 +1670,10 @@ esp_err_t oled_ui_stop_init_steps(void) {
         return ESP_ERR_INVALID_STATE;
     }
 
+    // ВАЖНО: Эта функция может быть вызвана из MQTT callback (обработчик конфига),
+    // поэтому нужно быть осторожным с I2C операциями. oled_ui_refresh() безопасен,
+    // так как использует внутренний мьютекс, но лучше избегать вызова из callback.
+
     // Останавливаем анимацию
     s_ui.init_animation_active = false;
     int wait_count = 0;
@@ -1677,7 +1692,11 @@ esp_err_t oled_ui_stop_init_steps(void) {
     s_ui.current_step_text[0] = '\0';
 
     // Обновляем экран (вернется к стандартному BOOT экрану, oled_ui_refresh сам вызовет render_boot_screen с защитой mutex)
-    oled_ui_refresh();
+    // oled_ui_refresh() безопасен для вызова из любого контекста, так как использует мьютекс
+    esp_err_t err = oled_ui_refresh();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to refresh OLED after stopping init steps: %s", esp_err_to_name(err));
+    }
 
     ESP_LOGI(TAG, "Init steps stopped");
     return ESP_OK;

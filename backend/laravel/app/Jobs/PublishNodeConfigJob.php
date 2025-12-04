@@ -77,8 +77,9 @@ class PublishNodeConfigJob implements ShouldQueue
                 return;
             }
 
-            // Проверяем, что узел привязан к зоне
-            if (! $node->zone_id) {
+            // Проверяем, что узел привязан к зоне или есть pending_zone_id
+            $targetZoneId = $node->zone_id ?? $node->pending_zone_id;
+            if (! $targetZoneId) {
                 Log::debug('PublishNodeConfigJob: Skipping config publish for unassigned node', [
                     'node_id' => $node->id,
                     'uid' => $node->uid,
@@ -87,12 +88,28 @@ class PublishNodeConfigJob implements ShouldQueue
                 return;
             }
 
-            // Генерируем конфиг
-            $config = $configService->generateNodeConfig($node);
+            // Если есть pending_zone_id, загружаем зону из pending_zone_id для генерации конфига
+            $originalZoneId = $node->zone_id;
+            $zoneForConfig = null;
+            
+            if ($node->pending_zone_id && !$node->zone_id) {
+                // Загружаем зону из pending_zone_id
+                $zoneForConfig = \App\Models\Zone::with('greenhouse')->find($node->pending_zone_id);
+                if ($zoneForConfig) {
+                    // Временно устанавливаем zone_id для генерации конфига
+                    $node->zone_id = $node->pending_zone_id;
+                    $node->setRelation('zone', $zoneForConfig);
+                }
+            } else {
+                // Загружаем зону для генерации конфига
+                $node->load('zone.greenhouse');
+            }
+
+            // Генерируем конфиг с включением credentials для публикации через MQTT
+            $config = $configService->generateNodeConfig($node, null, true);
 
             // Получаем greenhouse_uid
-            $node->load('zone.greenhouse');
-            $greenhouseUid = $node->zone?->greenhouse?->uid;
+            $greenhouseUid = $node->zone?->greenhouse?->uid ?? $zoneForConfig?->greenhouse?->uid;
 
             if (! $greenhouseUid) {
                 Log::warning('PublishNodeConfigJob: Cannot publish config: zone has no greenhouse', [
@@ -103,12 +120,24 @@ class PublishNodeConfigJob implements ShouldQueue
                 return;
             }
 
-            // Вызываем mqtt-bridge API для публикации
-            $baseUrl = Config::get('services.python_bridge.base_url');
-            $token = Config::get('services.python_bridge.token');
+            // Вызываем history-logger API для публикации (все общение бэка с нодами через history-logger)
+            $baseUrl = Config::get('services.history_logger.url');
+            $token = Config::get('services.history_logger.token') ?? Config::get('services.python_bridge.token'); // Fallback на старый токен
+
+            Log::info('PublishNodeConfigJob: Preparing to call history-logger API', [
+                'node_id' => $node->id,
+                'uid' => $node->uid,
+                'base_url' => $baseUrl,
+                'has_token' => !empty($token),
+                'target_zone_id' => $targetZoneId,
+                'greenhouse_uid' => $greenhouseUid,
+            ]);
 
             if (! $baseUrl) {
-                Log::warning('PublishNodeConfigJob: Cannot publish config: MQTT bridge URL not configured');
+                Log::error('PublishNodeConfigJob: Cannot publish config: History Logger URL not configured', [
+                    'node_id' => $node->id,
+                    'uid' => $node->uid,
+                ]);
 
                 return;
             }
@@ -121,14 +150,31 @@ class PublishNodeConfigJob implements ShouldQueue
             // Используем короткий таймаут
             $timeout = 10; // секунд
 
+            $requestData = [
+                'node_uid' => $node->uid,
+                'hardware_id' => $node->hardware_id, // Передаем hardware_id для временного топика
+                'zone_id' => $targetZoneId,
+                'greenhouse_uid' => $greenhouseUid,
+                'config' => $config,
+            ];
+
+            Log::info('PublishNodeConfigJob: Sending request to history-logger', [
+                'node_id' => $node->id,
+                'uid' => $node->uid,
+                'url' => "{$baseUrl}/nodes/{$node->uid}/config",
+                'request_data_keys' => array_keys($requestData),
+                'config_keys' => array_keys($config),
+            ]);
+
             $response = Http::withHeaders($headers)
                 ->timeout($timeout)
-                ->post("{$baseUrl}/bridge/nodes/{$node->uid}/config", [
-                    'node_uid' => $node->uid,
-                    'zone_id' => $node->zone_id,
-                    'greenhouse_uid' => $greenhouseUid,
-                    'config' => $config,
-                ]);
+                ->post("{$baseUrl}/nodes/{$node->uid}/config", $requestData);
+            
+            // Восстанавливаем оригинальный zone_id и relation если они были изменены
+            if ($originalZoneId !== $node->zone_id) {
+                $node->zone_id = $originalZoneId;
+                $node->unsetRelation('zone');
+            }
 
             if ($response->successful()) {
                 Log::info('PublishNodeConfigJob: NodeConfig published via MQTT', [
@@ -143,10 +189,8 @@ class PublishNodeConfigJob implements ShouldQueue
                     'status' => $response->status(),
                     'body' => substr($response->body(), 0, 500),
                 ]);
-                throw new RequestException(
-                    "HTTP {$response->status()}: {$response->body()}",
-                    $response->toPsrResponse()
-                );
+                // RequestException принимает Response как первый аргумент
+                throw new RequestException($response);
             }
         } catch (ConnectionException|TimeoutException|RequestException $e) {
             Log::warning('PublishNodeConfigJob: Network error', [

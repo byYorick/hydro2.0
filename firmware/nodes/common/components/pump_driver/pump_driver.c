@@ -260,6 +260,9 @@ esp_err_t pump_driver_init_from_config(void) {
     }
     
     pump_channel_config_t pump_configs[PUMP_DRIVER_MAX_CHANNELS];
+    // Статические буферы для имен каналов (чтобы пережить удаление JSON)
+    static char channel_name_buffers[PUMP_DRIVER_MAX_CHANNELS][PUMP_DRIVER_MAX_CHANNEL_NAME_LEN];
+    static char relay_channel_buffers[PUMP_DRIVER_MAX_CHANNELS][PUMP_DRIVER_MAX_CHANNEL_NAME_LEN];
     size_t pump_count = 0;
 
     int channel_count = cJSON_GetArraySize(channels);
@@ -288,7 +291,11 @@ esp_err_t pump_driver_init_from_config(void) {
                     if (name_item != NULL && cJSON_IsString(name_item) &&
                         gpio_item != NULL && cJSON_IsNumber(gpio_item)) {
                         pump_channel_config_t *pump_cfg = &pump_configs[pump_count];
-                        pump_cfg->channel_name = name_item->valuestring;
+                        // Копируем имя канала в статический буфер
+                        strncpy(channel_name_buffers[pump_count], name_item->valuestring, 
+                                sizeof(channel_name_buffers[pump_count]) - 1);
+                        channel_name_buffers[pump_count][sizeof(channel_name_buffers[pump_count]) - 1] = '\0';
+                        pump_cfg->channel_name = channel_name_buffers[pump_count];
                         pump_cfg->gpio_pin = (int)cJSON_GetNumberValue(gpio_item);
                         pump_cfg->use_relay = false; // По умолчанию прямое управление через GPIO
                         pump_cfg->relay_channel = NULL;
