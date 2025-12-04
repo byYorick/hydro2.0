@@ -9,6 +9,7 @@ use App\Models\Recipe;
 use App\Models\SystemLog;
 use App\Models\TelemetryLast;
 use App\Models\Zone;
+use App\Models\ZoneCycle;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Broadcast;
@@ -863,7 +864,35 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
          *     }
          *   }
          * - telemetry: { ph: float|null, ec: float|null, temperature: float|null, humidity: float|null }
-         * - targets: Object - цели из текущей фазы рецепта (ph_min, ph_max, ec_min, ec_max, etc.)
+         * - targets: Object - «сырые» цели текущей фазы рецепта (исторический формат, для back-compat)
+         * - current_phase: {
+         *     index: int,
+         *     name: string|null,
+         *     duration_hours: float|null,
+         *     phase_started_at: string|null, // UTC ISO8601
+         *     phase_ends_at: string|null,    // UTC ISO8601
+         *     targets: {
+         *       ph: { min: float|null, max: float|null }|null,
+         *       ec: { min: float|null, max: float|null }|null,
+         *       climate: { temperature: float|null, humidity: float|null }|null,
+         *       lighting: { hours_on: float|null, hours_off: float|null }|null,
+         *       irrigation: { interval_minutes: float|null, duration_seconds: float|null }|null
+         *     }|null
+         *   }|null
+         * - active_cycle: {
+         *     id: int,
+         *     type: 'GROWTH_CYCLE',
+         *     status: 'active'|'finished'|'aborted',
+         *     started_at: string, // UTC ISO8601
+         *     ends_at: string,    // UTC ISO8601
+         *     subsystems: {
+         *       ph: { required: bool, enabled: bool, targets: { min: float|null, max: float|null }|null },
+         *       ec: { required: bool, enabled: bool, targets: { min: float|null, max: float|null }|null },
+         *       climate: { required: bool, enabled: bool, targets: { temperature: float|null, humidity: float|null }|null },
+         *       lighting: { required: bool, enabled: bool, targets: { hours_on: float|null, hours_off: float|null }|null },
+         *       irrigation: { required: bool, enabled: bool, targets: { interval_minutes: float|null, duration_seconds: float|null }|null }
+         *     }
+         *   }|null
          * - devices: Array<{ id, uid, zone_id, name, type, status, fw_version, last_seen_at, zone }>
          * - events: Array<{ id, kind: 'ALERT'|'WARNING'|'INFO', message: string, occurred_at: ISO8601 }>
          * - cycles: {
@@ -937,6 +966,141 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 }
             }
 
+            // Нормализованный блок current_phase с UTC-таймингами и агрегированными таргетами
+            $currentPhaseNormalized = null;
+            if ($zone->recipeInstance?->recipe && $zone->recipeInstance->started_at) {
+                $instance = $zone->recipeInstance;
+                $phases = $instance->recipe->phases()
+                    ->orderBy('phase_index')
+                    ->get();
+
+                if ($phases->isNotEmpty()) {
+                    $currentPhaseIndex = $instance->current_phase_index ?? 0;
+                    $currentPhase = $phases->firstWhere('phase_index', $currentPhaseIndex);
+
+                    if ($currentPhase) {
+                        // Кумулятивное время начала текущей фазы (в часах)
+                        $phaseStartCumulative = 0.0;
+                        foreach ($phases as $phase) {
+                            if ($phase->phase_index < $currentPhaseIndex) {
+                                $phaseStartCumulative += max(0.0, (float) ($phase->duration_hours ?? 0));
+                            } else {
+                                break;
+                            }
+                        }
+
+                        $startedAt = $instance->started_at->clone()->setTimezone('UTC');
+                        $phaseStartedAt = $startedAt->clone()->addHours($phaseStartCumulative);
+                        
+                        // Проверяем, что duration_hours валиден (больше 0)
+                        $durationHours = max(0.0, (float) ($currentPhase->duration_hours ?? 0));
+                        if ($durationHours <= 0) {
+                            // Если длительность фазы не задана или равна 0, используем текущее время как phase_ends_at
+                            $phaseEndsAt = $phaseStartedAt->clone()->addHours(24); // Дефолт: 24 часа
+                        } else {
+                            $phaseEndsAt = $phaseStartedAt->clone()->addHours($durationHours);
+                        }
+
+                        $rawTargets = $currentPhase->targets ?? [];
+
+                        // pH
+                        $phMin = $rawTargets['ph_min'] ?? ($rawTargets['ph']['min'] ?? null);
+                        $phMax = $rawTargets['ph_max'] ?? ($rawTargets['ph']['max'] ?? null);
+
+                        // EC
+                        $ecMin = $rawTargets['ec_min'] ?? ($rawTargets['ec']['min'] ?? null);
+                        $ecMax = $rawTargets['ec_max'] ?? ($rawTargets['ec']['max'] ?? null);
+
+                        // Climate (температура / влажность воздуха)
+                        $climateTemp = $rawTargets['temp_air'] ?? ($rawTargets['climate']['temperature'] ?? null);
+                        $climateHumidity = $rawTargets['humidity_air'] ?? ($rawTargets['climate']['humidity'] ?? null);
+
+                        // Lighting
+                        $lightingHoursOn = $rawTargets['light_hours_on'] ?? $rawTargets['light_hours'] ?? ($rawTargets['lighting']['hours_on'] ?? null);
+                        $lightingHoursOff = $rawTargets['light_hours_off'] ?? ($rawTargets['lighting']['hours_off'] ?? null);
+
+                        // Irrigation
+                        $irrigationIntervalMinutes = null;
+                        if (isset($rawTargets['irrigation_interval_min'])) {
+                            $irrigationIntervalMinutes = (float) $rawTargets['irrigation_interval_min'];
+                        } elseif (isset($rawTargets['irrigation_interval_sec'])) {
+                            $irrigationIntervalMinutes = (float) $rawTargets['irrigation_interval_sec'] / 60.0;
+                        } elseif (isset($rawTargets['irrigation']['interval_minutes'])) {
+                            $irrigationIntervalMinutes = (float) $rawTargets['irrigation']['interval_minutes'];
+                        }
+
+                        $irrigationDurationSeconds = null;
+                        if (isset($rawTargets['irrigation_duration_sec'])) {
+                            $irrigationDurationSeconds = (float) $rawTargets['irrigation_duration_sec'];
+                        } elseif (isset($rawTargets['irrigation']['duration_seconds'])) {
+                            $irrigationDurationSeconds = (float) $rawTargets['irrigation']['duration_seconds'];
+                        }
+
+                        // Формируем таргеты только если есть оба значения для диапазонов или одно значение для скалярных
+                        $targets = [];
+                        
+                        // pH: требуем оба значения (min и max)
+                        if ($phMin !== null && $phMax !== null && is_numeric($phMin) && is_numeric($phMax)) {
+                            $targets['ph'] = ['min' => (float)$phMin, 'max' => (float)$phMax];
+                        }
+                        
+                        // EC: требуем оба значения (min и max)
+                        if ($ecMin !== null && $ecMax !== null && is_numeric($ecMin) && is_numeric($ecMax)) {
+                            $targets['ec'] = ['min' => (float)$ecMin, 'max' => (float)$ecMax];
+                        }
+                        
+                        // Climate: требуем оба значения (temperature и humidity)
+                        if ($climateTemp !== null && $climateHumidity !== null && is_numeric($climateTemp) && is_numeric($climateHumidity)) {
+                            $targets['climate'] = ['temperature' => (float)$climateTemp, 'humidity' => (float)$climateHumidity];
+                        }
+                        
+                        // Lighting: требуем hours_on, hours_off опционален (вычисляется как 24 - hours_on)
+                        if ($lightingHoursOn !== null && is_numeric($lightingHoursOn)) {
+                            $targets['lighting'] = [
+                                'hours_on' => (float)$lightingHoursOn,
+                                'hours_off' => ($lightingHoursOff !== null && is_numeric($lightingHoursOff)) ? (float)$lightingHoursOff : (24.0 - (float)$lightingHoursOn)
+                            ];
+                        }
+                        
+                        // Irrigation: требуем оба значения (interval_minutes и duration_seconds)
+                        if ($irrigationIntervalMinutes !== null && $irrigationDurationSeconds !== null && is_numeric($irrigationIntervalMinutes) && is_numeric($irrigationDurationSeconds)) {
+                            $targets['irrigation'] = [
+                                'interval_minutes' => (int)$irrigationIntervalMinutes,
+                                'duration_seconds' => (int)$irrigationDurationSeconds
+                            ];
+                        }
+
+                        $currentPhaseNormalized = [
+                            'index' => $currentPhaseIndex,
+                            'name' => $currentPhase->name ?? "Фаза {$currentPhaseIndex}",
+                            'duration_hours' => $currentPhase->duration_hours ?? 0,
+                            'phase_started_at' => $phaseStartedAt->toIso8601String(),
+                            'phase_ends_at' => $phaseEndsAt->toIso8601String(),
+                            'targets' => $targets,
+                        ];
+                    }
+                }
+            }
+
+            // Агрегированный цикл выращивания (один активный на зону).
+            $activeCycleModel = ZoneCycle::query()
+                ->where('zone_id', $zone->id)
+                ->where('status', 'active')
+                ->latest('started_at')
+                ->first();
+
+            $activeCycle = null;
+            if ($activeCycleModel) {
+                $activeCycle = [
+                    'id' => $activeCycleModel->id,
+                    'type' => $activeCycleModel->type ?? 'GROWTH_CYCLE',
+                    'status' => $activeCycleModel->status ?? 'active',
+                    'started_at' => $activeCycleModel->started_at?->toIso8601String(),
+                    'ends_at' => $activeCycleModel->ends_at?->toIso8601String(),
+                    'subsystems' => $activeCycleModel->subsystems ?? [],
+                ];
+            }
+
             // Загрузить устройства зоны
             $devices = \App\Models\DeviceNode::query()
                 ->select(['id', 'uid', 'zone_id', 'name', 'type', 'status', 'fw_version', 'last_seen_at'])
@@ -959,7 +1123,61 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                     // type → kind, details.message → message, created_at → occurred_at
                     $events = $eventsRaw->map(function ($event) {
                         $details = $event->details ?? [];
-                        $message = $details['message'] ?? $details['msg'] ?? $event->type ?? '';
+                        $message = $details['message'] ?? $details['msg'] ?? null;
+
+                        // Специальное форматирование событий циклов выращивания, чтобы оператор видел параметры
+                        if (str_starts_with($event->type ?? '', 'CYCLE_') && isset($details['subsystems']) && is_array($details['subsystems'])) {
+                            $parts = [];
+                            $subs = $details['subsystems'];
+
+                            // pH (обязательный)
+                            if (isset($subs['ph']['enabled']) && $subs['ph']['enabled'] === true && isset($subs['ph']['targets']) && is_array($subs['ph']['targets'])) {
+                                $t = $subs['ph']['targets'];
+                                if (isset($t['min']) && isset($t['max'])) {
+                                    $parts[] = sprintf('pH %.1f–%.1f', (float)$t['min'], (float)$t['max']);
+                                }
+                            }
+
+                            // EC (обязательный)
+                            if (isset($subs['ec']['enabled']) && $subs['ec']['enabled'] === true && isset($subs['ec']['targets']) && is_array($subs['ec']['targets'])) {
+                                $t = $subs['ec']['targets'];
+                                if (isset($t['min']) && isset($t['max'])) {
+                                    $parts[] = sprintf('EC %.1f–%.1f', (float)$t['min'], (float)$t['max']);
+                                }
+                            }
+
+                            // Климат (опциональный)
+                            if (isset($subs['climate']['enabled']) && $subs['climate']['enabled'] === true && isset($subs['climate']['targets']) && is_array($subs['climate']['targets'])) {
+                                $t = $subs['climate']['targets'];
+                                if (isset($t['temperature']) && isset($t['humidity'])) {
+                                    $parts[] = sprintf('Климат t=%.1f°C, RH=%.0f%%', (float)$t['temperature'], (float)$t['humidity']);
+                                }
+                            }
+
+                            // Освещение (опциональный)
+                            if (isset($subs['lighting']['enabled']) && $subs['lighting']['enabled'] === true && isset($subs['lighting']['targets']) && is_array($subs['lighting']['targets'])) {
+                                $t = $subs['lighting']['targets'];
+                                if (isset($t['hours_on']) && isset($t['hours_off'])) {
+                                    $parts[] = sprintf('Свет %.1fч / пауза %.1fч', (float)$t['hours_on'], (float)$t['hours_off']);
+                                }
+                            }
+
+                            // Полив (обязательный)
+                            if (isset($subs['irrigation']['enabled']) && $subs['irrigation']['enabled'] === true && isset($subs['irrigation']['targets']) && is_array($subs['irrigation']['targets'])) {
+                                $t = $subs['irrigation']['targets'];
+                                if (isset($t['interval_minutes']) && isset($t['duration_seconds'])) {
+                                    $parts[] = sprintf('Полив каждые %d мин, %d с', (int)$t['interval_minutes'], (int)$t['duration_seconds']);
+                                }
+                            }
+
+                            if (!empty($parts)) {
+                                $message = implode('; ', $parts);
+                            }
+                        }
+
+                        if (!$message) {
+                            $message = $event->type ?? '';
+                        }
 
                         return [
                             'id' => $event->id,
@@ -1070,6 +1288,8 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 'zone' => $zone, // Используем модель - Inertia правильно сериализует отношения
                 'telemetry' => $telemetryLast,
                 'targets' => $targets,
+                'current_phase' => $currentPhaseNormalized,
+                'active_cycle' => $activeCycle,
                 'devices' => $devices,
                 'events' => $events,
                 'cycles' => $cycles,

@@ -119,6 +119,14 @@
                 — {{ zone.recipeInstance.current_phase_name }}
               </span>
             </div>
+            <div class="mt-2 flex flex-wrap items-center gap-2">
+              <Badge :variant="cycleStatusVariant" class="text-[10px] px-2 py-0.5">
+                {{ cycleStatusLabel }}
+              </Badge>
+              <span v-if="phaseTimeLeftLabel" class="text-[11px] text-neutral-400">
+                {{ phaseTimeLeftLabel }}
+              </span>
+            </div>
           </div>
           <div v-else class="space-y-2">
             <div class="text-sm text-neutral-400">
@@ -144,7 +152,38 @@
         <div class="text-sm font-semibold mb-3">Циклы</div>
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
           <div v-for="cycle in cyclesList" :key="cycle.type" class="text-xs text-neutral-400 p-3 rounded border border-neutral-800 bg-neutral-925 hover:border-neutral-700 transition-colors">
-            <div class="font-semibold text-sm mb-2 text-neutral-200">{{ translateCycleType(cycle.type) }}</div>
+            <div class="font-semibold text-sm mb-1 text-neutral-200 flex items-center justify-between gap-2">
+              <span>{{ translateCycleType(cycle.type) }}</span>
+              <span
+                class="px-1.5 py-0.5 rounded-full text-[10px]"
+                :class="cycle.required ? 'bg-emerald-900/40 text-emerald-300' : 'bg-neutral-800 text-neutral-400'"
+              >
+                {{ cycle.required ? 'Обязательно' : 'Опционально' }}
+              </span>
+            </div>
+
+            <!-- Таргеты текущей фазы (baseline рецепта) -->
+            <div class="text-[11px] mb-2 space-y-0.5 text-neutral-300">
+              <div v-if="cycle.recipeTargets && cycle.type === 'PH_CONTROL' && typeof cycle.recipeTargets.min === 'number' && typeof cycle.recipeTargets.max === 'number'">
+                pH: {{ cycle.recipeTargets.min }}–{{ cycle.recipeTargets.max }}
+              </div>
+              <div v-else-if="cycle.recipeTargets && cycle.type === 'EC_CONTROL' && typeof cycle.recipeTargets.min === 'number' && typeof cycle.recipeTargets.max === 'number'">
+                EC: {{ cycle.recipeTargets.min }}–{{ cycle.recipeTargets.max }}
+              </div>
+              <div v-else-if="cycle.recipeTargets && cycle.type === 'CLIMATE' && typeof cycle.recipeTargets.temperature === 'number' && typeof cycle.recipeTargets.humidity === 'number'">
+                Климат: t={{ cycle.recipeTargets.temperature }}°C, RH={{ cycle.recipeTargets.humidity }}%
+              </div>
+              <div v-else-if="cycle.recipeTargets && cycle.type === 'LIGHTING' && typeof cycle.recipeTargets.hours_on === 'number'">
+                Свет: {{ cycle.recipeTargets.hours_on }}ч / пауза {{ typeof cycle.recipeTargets.hours_off === 'number' ? cycle.recipeTargets.hours_off : (24 - cycle.recipeTargets.hours_on) }}ч
+              </div>
+              <div v-else-if="cycle.recipeTargets && cycle.type === 'IRRIGATION' && typeof cycle.recipeTargets.interval_minutes === 'number' && typeof cycle.recipeTargets.duration_seconds === 'number'">
+                Полив: каждые {{ cycle.recipeTargets.interval_minutes }} мин, {{ cycle.recipeTargets.duration_seconds }} с
+              </div>
+              <div v-else class="text-neutral-500">
+                Таргеты для этой фазы не заданы
+              </div>
+            </div>
+
             <div class="text-xs mb-1">Стратегия: {{ translateStrategy(cycle.strategy || 'periodic') }}</div>
             <div class="text-xs mb-2">Интервал: {{ cycle.interval ? formatInterval(cycle.interval) : 'Не настроено' }}</div>
             
@@ -185,7 +224,7 @@
               variant="secondary" 
               class="mt-2 w-full text-xs" 
               @click="onRunCycle(cycle.type)"
-              :disabled="loading.cycles[cycle.type]"
+              :disabled="loading.cycles[cycle.type] || !!activeCycle"
             >
               <template v-if="loading.cycles[cycle.type]">
                 <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
@@ -208,6 +247,9 @@
                   {{ getCommandStatusText(getLastCommandStatus(cycle.type)) }}
                 </span>
               </div>
+            </div>
+            <div v-if="activeCycle" class="mt-1 text-[11px] text-amber-400">
+              Запуск нового цикла недоступен: в зоне уже выполняется цикл выращивания (правило «1 цикл на зону»).
             </div>
           </div>
         </div>
@@ -292,6 +334,17 @@
       @close="modals.close('nodeConfig')"
       @published="onNodeConfigPublished"
     />
+    
+    <!-- Модальное окно запуска/корректировки цикла выращивания -->
+    <GrowthCycleModal
+      v-if="showGrowthCycleModal && zoneId"
+      :show="showGrowthCycleModal"
+      :zone-id="zoneId"
+      :current-phase-targets="currentPhase?.targets || null"
+      :active-cycle="activeCycle"
+      @close="modals.close('growthCycle')"
+      @submit="onGrowthCycleSubmit"
+    />
   </AppLayout>
 </template>
 
@@ -309,6 +362,7 @@ import ZoneDevicesVisualization from '@/Components/ZoneDevicesVisualization.vue'
 import LoadingState from '@/Components/LoadingState.vue'
 import ZoneSimulationModal from '@/Components/ZoneSimulationModal.vue'
 import ZoneActionModal from '@/Components/ZoneActionModal.vue'
+import GrowthCycleModal from '@/Components/GrowthCycleModal.vue'
 import AttachRecipeModal from '@/Components/AttachRecipeModal.vue'
 import AttachNodesModal from '@/Components/AttachNodesModal.vue'
 import NodeConfigModal from '@/Components/NodeConfigModal.vue'
@@ -333,6 +387,7 @@ import { useLoading } from '@/composables/useLoading'
 import { extractData } from '@/utils/apiHelpers'
 import { usePageProps } from '@/composables/usePageProps'
 import { DEBOUNCE_DELAY, ANIMATION_DELAY, TOAST_TIMEOUT } from '@/constants/timeouts'
+import { ERROR_MESSAGES } from '@/constants/messages'
 import type { Zone, Device, ZoneTelemetry, ZoneTargets as ZoneTargetsType, Cycle, CommandType } from '@/types'
 import type { ZoneEvent } from '@/types/ZoneEvent'
 
@@ -347,6 +402,8 @@ interface PageProps {
   devices?: Device[]
   events?: ZoneEvent[]
   cycles?: Record<string, Cycle>
+  current_phase?: any
+  active_cycle?: any
   auth?: {
     user?: {
       role?: string
@@ -360,12 +417,14 @@ const page = usePage<PageProps>()
 const modals = useModal<{
   simulation: boolean
   action: boolean
+  growthCycle: boolean
   attachRecipe: boolean
   attachNodes: boolean
   nodeConfig: boolean
 }>({
   simulation: false,
   action: false,
+  growthCycle: false,
   attachRecipe: false,
   attachNodes: false,
   nodeConfig: false,
@@ -373,6 +432,7 @@ const modals = useModal<{
 
 const showSimulationModal = computed(() => modals.isModalOpen('simulation'))
 const showActionModal = computed(() => modals.isModalOpen('action'))
+const showGrowthCycleModal = computed(() => modals.isModalOpen('growthCycle'))
 const showAttachRecipeModal = computed(() => modals.isModalOpen('attachRecipe'))
 const showAttachNodesModal = computed(() => modals.isModalOpen('attachNodes'))
 const showNodeConfigModal = computed(() => modals.isModalOpen('nodeConfig'))
@@ -522,96 +582,207 @@ const { addUpdate, flush } = useTelemetryBatch((updates) => {
 }) // Использует DEBOUNCE_DELAY.NORMAL по умолчанию
 
 const telemetry = computed(() => telemetryRef.value)
-const { targets: targetsProp, devices: devicesProp, events: eventsProp, cycles: cyclesProp } = usePageProps<PageProps>(['targets', 'devices', 'events', 'cycles'])
+const { targets: targetsProp, devices: devicesProp, events: eventsProp, cycles: cyclesProp, current_phase: currentPhaseProp, active_cycle: activeCycleProp } = usePageProps<PageProps>(['targets', 'devices', 'events', 'cycles', 'current_phase', 'active_cycle'])
+
+// Сырые targets (исторический формат, для Back-compat) + нормализованный current_phase
 const targets = computed(() => (targetsProp.value || {}) as ZoneTargetsType)
+const currentPhase = computed(() => (currentPhaseProp.value || null) as any)
+const activeCycle = computed(() => (activeCycleProp.value || null) as any)
 const devices = computed(() => (devicesProp.value || []) as Device[])
 const events = computed(() => (eventsProp.value || []) as ZoneEvent[])
 const cycles = computed(() => (cyclesProp.value || {}) as Record<string, Cycle>)
 
-// Вычисление прогресса фазы рецепта
+// Вычисление прогресса фазы/рецепта на основе нормализованного current_phase (UTC)
+// ВАЖНО: все вычисления в UTC, отображение форматируется в локальное время
 const computedPhaseProgress = computed(() => {
-  const instance = zone.value.recipeInstance
-  if (!instance || !instance.recipe?.phases || instance.current_phase_index === null) return null
-  
-  const currentPhase = instance.recipe.phases.find(p => p.phase_index === instance.current_phase_index)
-  if (!currentPhase || !currentPhase.duration_hours || !instance.started_at) return null
-  
-  // Вычисляем кумулятивное время начала текущей фазы
-  let phaseStartCumulative = 0
-  for (const phase of instance.recipe.phases) {
-    if (phase.phase_index < instance.current_phase_index) {
-      phaseStartCumulative += phase.duration_hours || 0
-    } else {
-      break
-    }
+  const phase = currentPhase.value
+  if (!phase || !phase.phase_started_at || !phase.phase_ends_at) return null
+
+  // Все даты в UTC (ISO8601 с 'Z' или без, но интерпретируем как UTC)
+  const now = new Date() // Текущее время в UTC (Date всегда в UTC внутренне)
+  const phaseStart = new Date(phase.phase_started_at)
+  const phaseEnd = new Date(phase.phase_ends_at)
+
+  // Проверяем валидность дат
+  if (isNaN(phaseStart.getTime()) || isNaN(phaseEnd.getTime())) {
+    return null
   }
-  
-  // Вычисляем прошедшее время с начала рецепта
-  const startedAt = new Date(instance.started_at)
-  const now = new Date()
-  const elapsedHours = (now.getTime() - startedAt.getTime()) / (1000 * 60 * 60)
-  if (elapsedHours < 0) return 0
-  
-  // Вычисляем время в текущей фазе
-  const timeInPhaseHours = elapsedHours - phaseStartCumulative
-  if (timeInPhaseHours < 0) return 0
-  
-  // Вычисляем прогресс (0-100%)
-  const progress = (timeInPhaseHours / currentPhase.duration_hours) * 100
-  return Math.min(100, Math.max(0, progress))
+
+  const totalMs = phaseEnd.getTime() - phaseStart.getTime()
+  if (totalMs <= 0) return null
+
+  const elapsedMs = now.getTime() - phaseStart.getTime()
+  if (elapsedMs <= 0) return 0
+  if (elapsedMs >= totalMs) return 100
+
+  return Math.min(100, Math.max(0, (elapsedMs / totalMs) * 100))
 })
 
 const computedPhaseDaysElapsed = computed(() => {
-  const instance = zone.value.recipeInstance
-  if (!instance || !instance.recipe?.phases || instance.current_phase_index === null) return null
-  
-  const currentPhase = instance.recipe.phases.find(p => p.phase_index === instance.current_phase_index)
-  if (!currentPhase || !currentPhase.duration_hours || !instance.started_at) return null
-  
-  // Вычисляем кумулятивное время начала текущей фазы
-  let phaseStartCumulative = 0
-  for (const phase of instance.recipe.phases) {
-    if (phase.phase_index < instance.current_phase_index) {
-      phaseStartCumulative += phase.duration_hours || 0
-    } else {
-      break
-    }
-  }
-  
-  const startedAt = new Date(instance.started_at)
+  const phase = currentPhase.value
+  if (!phase || !phase.phase_started_at) return null
+
+  // Все вычисления в UTC
   const now = new Date()
-  const elapsedHours = (now.getTime() - startedAt.getTime()) / (1000 * 60 * 60)
-  const timeInPhaseHours = Math.max(0, elapsedHours - phaseStartCumulative)
+  const phaseStart = new Date(phase.phase_started_at)
   
-  return Math.floor(timeInPhaseHours / 24)
+  if (isNaN(phaseStart.getTime())) {
+    return null
+  }
+
+  const elapsedMs = now.getTime() - phaseStart.getTime()
+  if (elapsedMs <= 0) return 0
+
+  const elapsedDays = elapsedMs / (1000 * 60 * 60 * 24)
+  return Math.floor(elapsedDays)
 })
 
 const computedPhaseDaysTotal = computed(() => {
-  const instance = zone.value.recipeInstance
-  if (!instance || !instance.recipe?.phases || instance.current_phase_index === null) return null
-  
-  const currentPhase = instance.recipe.phases.find(p => p.phase_index === instance.current_phase_index)
-  if (!currentPhase || !currentPhase.duration_hours) return null
-  
-  return Math.ceil(currentPhase.duration_hours / 24)
+  const phase = currentPhase.value
+  if (!phase || !phase.duration_hours) return null
+
+  return Math.ceil(phase.duration_hours / 24)
 })
 
-// Список циклов для отображения
-const cyclesList = computed(() => {
-  const defaultCycles = [
-    { type: 'PH_CONTROL', strategy: 'periodic', interval: 300 },
-    { type: 'EC_CONTROL', strategy: 'periodic', interval: 300 },
-    { type: 'IRRIGATION', strategy: 'periodic', interval: targets.value.irrigation_interval_sec || null },
-    { type: 'LIGHTING', strategy: 'periodic', interval: targets.value.light_hours ? targets.value.light_hours * 3600 : null },
-    { type: 'CLIMATE', strategy: 'periodic', interval: 300 },
-  ]
+// Единый статус цикла зоны и человекочитаемое время до конца фазы
+const cycleStatusLabel = computed(() => {
+  if (!zone.value.recipeInstance) {
+    return 'Рецепт не привязан'
+  }
+  if (activeCycle.value) {
+    return 'Цикл активен'
+  }
+  return 'Ожидает запуска'
+})
+
+const cycleStatusVariant = computed<'success' | 'neutral' | 'warning'>(() => {
+  if (!zone.value.recipeInstance) {
+    return 'neutral'
+  }
+  if (activeCycle.value) {
+    return 'success'
+  }
+  return 'warning'
+})
+
+const phaseTimeLeftLabel = computed(() => {
+  const phase = currentPhase.value
+  if (!phase || !phase.phase_ends_at) {
+    return ''
+  }
+
+  // Все вычисления в UTC
+  const now = new Date()
+  const endsAt = new Date(phase.phase_ends_at)
   
-  return defaultCycles.map(cycle => ({
-    ...cycle,
-    ...(cycles.value[cycle.type] || {}),
-    last_run: cycles.value[cycle.type]?.last_run || null,
-    next_run: cycles.value[cycle.type]?.next_run || null,
-  }))
+  if (isNaN(endsAt.getTime())) {
+    return ''
+  }
+
+  const diffMs = endsAt.getTime() - now.getTime()
+
+  if (diffMs <= 0) {
+    return 'Фаза завершена'
+  }
+
+  const minutes = Math.floor(diffMs / 60000)
+  const hours = Math.floor(minutes / 60)
+  const days = Math.floor(hours / 24)
+
+  if (days > 0) {
+    return `До конца фазы: ${days} дн.`
+  }
+  if (hours > 0) {
+    return `До конца фазы: ${hours} ч`
+  }
+  return `До конца фазы: ${minutes} мин`
+})
+
+// Список циклов для отображения:
+// объединяем расписание из API (/cycles) с таргетами текущей фазы рецепта и (в будущем) фактическим active_cycle
+const cyclesList = computed(() => {
+  const phaseTargets = (currentPhase.value?.targets || {}) as any
+  const active = (activeCycle.value?.subsystems || {}) as any
+
+  const serverCycles = cycles.value || {}
+
+  const base = [
+    {
+      key: 'ph',
+      type: 'PH_CONTROL',
+      required: true,
+      recipeTargets: phaseTargets.ph || null,
+      activeTargets: active.ph?.targets || null,
+      enabled: active.ph?.enabled ?? true,
+      strategy: serverCycles.PH_CONTROL?.strategy || 'periodic',
+      interval: serverCycles.PH_CONTROL?.interval ?? 300,
+      last_run: serverCycles.PH_CONTROL?.last_run || null,
+      next_run: serverCycles.PH_CONTROL?.next_run || null,
+    },
+    {
+      key: 'ec',
+      type: 'EC_CONTROL',
+      required: true,
+      recipeTargets: phaseTargets.ec || null,
+      activeTargets: active.ec?.targets || null,
+      enabled: active.ec?.enabled ?? true,
+      strategy: serverCycles.EC_CONTROL?.strategy || 'periodic',
+      interval: serverCycles.EC_CONTROL?.interval ?? 300,
+      last_run: serverCycles.EC_CONTROL?.last_run || null,
+      next_run: serverCycles.EC_CONTROL?.next_run || null,
+    },
+    {
+      key: 'irrigation',
+      type: 'IRRIGATION',
+      required: true,
+      recipeTargets: phaseTargets.irrigation || null,
+      activeTargets: active.irrigation?.targets || null,
+      enabled: active.irrigation?.enabled ?? true,
+      strategy: serverCycles.IRRIGATION?.strategy || 'periodic',
+      interval: serverCycles.IRRIGATION?.interval ?? null,
+      last_run: serverCycles.IRRIGATION?.last_run || null,
+      next_run: serverCycles.IRRIGATION?.next_run || null,
+    },
+    {
+      key: 'lighting',
+      type: 'LIGHTING',
+      required: false,
+      recipeTargets: phaseTargets.lighting || null,
+      activeTargets: active.lighting?.targets || null,
+      enabled: active.lighting?.enabled ?? false,
+      strategy: serverCycles.LIGHTING?.strategy || 'periodic',
+      interval: serverCycles.LIGHTING?.interval ?? null,
+      last_run: serverCycles.LIGHTING?.last_run || null,
+      next_run: serverCycles.LIGHTING?.next_run || null,
+    },
+    {
+      key: 'climate',
+      type: 'CLIMATE',
+      required: false,
+      recipeTargets: phaseTargets.climate || null,
+      activeTargets: active.climate?.targets || null,
+      enabled: active.climate?.enabled ?? false,
+      strategy: serverCycles.CLIMATE?.strategy || 'periodic',
+      interval: serverCycles.CLIMATE?.interval ?? 300,
+      last_run: serverCycles.CLIMATE?.last_run || null,
+      next_run: serverCycles.CLIMATE?.next_run || null,
+    },
+  ]
+
+  return base as Array<
+    {
+      key: string
+      type: string
+      required: boolean
+      recipeTargets: any
+      activeTargets: any
+      enabled: boolean
+    } & Cycle & {
+      last_run?: string | null
+      next_run?: string | null
+      interval?: number | null
+    }
+  >
 })
 
 // Функции для вычисления прогресса до следующего запуска
@@ -651,7 +822,22 @@ function getTimeUntilNextRun(cycle: Cycle & { next_run?: string | null }): strin
 
 // Функции для отображения статуса команд
 function getLastCommandStatus(cycleType: string): string | null {
+  // Для агрегированного цикла ищем GROWTH_CYCLE_CONFIG
+  // Для отдельных подсистем ищем FORCE_*
   const commandType = `FORCE_${cycleType}` as CommandType
+  
+  // Сначала ищем GROWTH_CYCLE_CONFIG (новый формат)
+  const growthCycleCommand = pendingCommands.value.find(cmd => 
+    cmd.type === 'GROWTH_CYCLE_CONFIG' && 
+    cmd.zoneId === zoneId.value &&
+    (cmd.status === 'pending' || cmd.status === 'executing' || cmd.status === 'completed' || cmd.status === 'failed')
+  )
+  
+  if (growthCycleCommand) {
+    return growthCycleCommand.status
+  }
+  
+  // Fallback к старому формату FORCE_*
   const command = pendingCommands.value.find(cmd => 
     cmd.type === commandType && 
     cmd.zoneId === zoneId.value &&
@@ -832,6 +1018,7 @@ function getDefaultCycleParams(cycleType: string): Record<string, unknown> {
     case 'IRRIGATION':
       // Используем длительность полива из targets или рецепта
       if (targets.value.irrigation_duration_sec) {
+        // Важно: это может приходить либо из текущей фазы рецепта, либо из агрегированных targets зоны
         params.duration_sec = targets.value.irrigation_duration_sec
       } else if (zone.value.recipeInstance?.recipe?.phases) {
         // Ищем текущую фазу рецепта
@@ -852,10 +1039,19 @@ function getDefaultCycleParams(cycleType: string): Record<string, unknown> {
       
     case 'PH_CONTROL':
       // Используем целевой pH из targets или рецепта
-      if (targets.value.ph?.min && targets.value.ph?.max) {
-        params.target_ph = (targets.value.ph.min + targets.value.ph.max) / 2
-      } else if (targets.value.ph) {
-        params.target_ph = targets.value.ph
+      if (typeof targets.value.ph_min === 'number' && typeof targets.value.ph_max === 'number') {
+        // Бэкенд отдаёт цели текущей фазы в виде плоских snake_case полей (ph_min, ph_max, ...)
+        params.target_ph = (targets.value.ph_min + targets.value.ph_max) / 2
+      } else if (typeof targets.value.ph_min === 'number' || typeof targets.value.ph_max === 'number') {
+        // Если есть только одна граница — используем её как целевое значение
+        params.target_ph = (targets.value.ph_min ?? targets.value.ph_max) as number
+      } else if ((targets.value as any).ph?.min && (targets.value as any).ph?.max) {
+        // Back-compat: старый формат с вложенным объектом ph { min, max }
+        const ph = (targets.value as any).ph
+        params.target_ph = (ph.min + ph.max) / 2
+      } else if (typeof (targets.value as any).ph === 'number') {
+        // Back-compat: старый формат с одним числовым значением pH
+        params.target_ph = (targets.value as any).ph
       } else if (zone.value.recipeInstance?.recipe?.phases) {
         const currentPhaseIndex = zone.value.recipeInstance.current_phase_index ?? 0
         const currentPhase = zone.value.recipeInstance.recipe.phases?.find(
@@ -863,7 +1059,7 @@ function getDefaultCycleParams(cycleType: string): Record<string, unknown> {
         )
         if (currentPhase?.targets?.ph?.min && currentPhase?.targets?.ph?.max) {
           params.target_ph = (currentPhase.targets.ph.min + currentPhase.targets.ph.max) / 2
-        } else if (currentPhase?.targets?.ph) {
+        } else if (typeof currentPhase?.targets?.ph === 'number') {
           params.target_ph = currentPhase.targets.ph
         } else {
           params.target_ph = 6.0
@@ -875,10 +1071,16 @@ function getDefaultCycleParams(cycleType: string): Record<string, unknown> {
       
     case 'EC_CONTROL':
       // Используем целевой EC из targets или рецепта
-      if (targets.value.ec?.min && targets.value.ec?.max) {
-        params.target_ec = (targets.value.ec.min + targets.value.ec.max) / 2
-      } else if (targets.value.ec) {
-        params.target_ec = targets.value.ec
+      if (typeof targets.value.ec_min === 'number' && typeof targets.value.ec_max === 'number') {
+        params.target_ec = (targets.value.ec_min + targets.value.ec_max) / 2
+      } else if (typeof targets.value.ec_min === 'number' || typeof targets.value.ec_max === 'number') {
+        params.target_ec = (targets.value.ec_min ?? targets.value.ec_max) as number
+      } else if ((targets.value as any).ec?.min && (targets.value as any).ec?.max) {
+        // Back-compat: старый формат с вложенным объектом ec { min, max }
+        const ec = (targets.value as any).ec
+        params.target_ec = (ec.min + ec.max) / 2
+      } else if (typeof (targets.value as any).ec === 'number') {
+        params.target_ec = (targets.value as any).ec
       } else if (zone.value.recipeInstance?.recipe?.phases) {
         const currentPhaseIndex = zone.value.recipeInstance.current_phase_index ?? 0
         const currentPhase = zone.value.recipeInstance.recipe.phases?.find(
@@ -886,7 +1088,7 @@ function getDefaultCycleParams(cycleType: string): Record<string, unknown> {
         )
         if (currentPhase?.targets?.ec?.min && currentPhase?.targets?.ec?.max) {
           params.target_ec = (currentPhase.targets.ec.min + currentPhase.targets.ec.max) / 2
-        } else if (currentPhase?.targets?.ec) {
+        } else if (typeof currentPhase?.targets?.ec === 'number') {
           params.target_ec = currentPhase.targets.ec
         } else {
           params.target_ec = 1.5
@@ -898,8 +1100,14 @@ function getDefaultCycleParams(cycleType: string): Record<string, unknown> {
       
     case 'CLIMATE':
       // Используем целевые параметры климата из targets или рецепта
-      if (targets.value.temp_air) {
-        params.target_temp = targets.value.temp_air
+      // Температура
+      if (typeof targets.value.temp_min === 'number' && typeof targets.value.temp_max === 'number') {
+        params.target_temp = (targets.value.temp_min + targets.value.temp_max) / 2
+      } else if (typeof targets.value.temp_min === 'number' || typeof targets.value.temp_max === 'number') {
+        params.target_temp = (targets.value.temp_min ?? targets.value.temp_max) as number
+      } else if ((targets.value as any).temp_air) {
+        // Back-compat: старый формат, когда приходило одно значение temp_air
+        params.target_temp = (targets.value as any).temp_air
       } else if (zone.value.recipeInstance?.recipe?.phases) {
         const currentPhaseIndex = zone.value.recipeInstance.current_phase_index ?? 0
         const currentPhase = zone.value.recipeInstance.recipe.phases?.find(
@@ -914,8 +1122,14 @@ function getDefaultCycleParams(cycleType: string): Record<string, unknown> {
         params.target_temp = 22
       }
       
-      if (targets.value.humidity_air) {
-        params.target_humidity = targets.value.humidity_air
+      // Влажность
+      if (typeof targets.value.humidity_min === 'number' && typeof targets.value.humidity_max === 'number') {
+        params.target_humidity = (targets.value.humidity_min + targets.value.humidity_max) / 2
+      } else if (typeof targets.value.humidity_min === 'number' || typeof targets.value.humidity_max === 'number') {
+        params.target_humidity = (targets.value.humidity_min ?? targets.value.humidity_max) as number
+      } else if ((targets.value as any).humidity_air) {
+        // Back-compat: старый формат, когда приходило одно значение humidity_air
+        params.target_humidity = (targets.value as any).humidity_air
       } else if (zone.value.recipeInstance?.recipe?.phases) {
         const currentPhaseIndex = zone.value.recipeInstance.current_phase_index ?? 0
         const currentPhase = zone.value.recipeInstance.recipe.phases?.find(
@@ -962,35 +1176,21 @@ async function onRunCycle(cycleType: string): Promise<void> {
     showToast('Ошибка: зона не найдена', 'error', TOAST_TIMEOUT.NORMAL)
     return
   }
-  
-  const cycles = (loading.value as LoadingState).cycles
-  cycles[cycleType] = true
-  const cycleName = translateCycleType(cycleType)
-  const commandType = `FORCE_${cycleType}` as CommandType
-  
-  // Получаем параметры по умолчанию из targets/recipe
-  const defaultParams = getDefaultCycleParams(cycleType)
-  
-  logger.info(`[onRunCycle] Отправка команды ${commandType} для зоны ${zoneId.value} с параметрами:`, defaultParams)
-  
-  try {
-    await sendZoneCommand(zoneId.value, commandType, defaultParams)
-    logger.info(`✓ [onRunCycle] Команда "${cycleName}" отправлена успешно`)
-    showToast(`Команда "${cycleName}" отправлена успешно`, 'success', TOAST_TIMEOUT.NORMAL)
-    // Обновляем зону и cycles через Inertia partial reload (не window.location.reload!)
-    reloadZoneAfterCommand(zoneId.value, ['zone', 'cycles'])
-  } catch (err) {
-    logger.error(`✗ [onRunCycle] Ошибка при отправке команды ${cycleType}:`, err)
-    handleError(err, {
-      component: 'Zones/Show',
-      action: 'onRunCycle',
-      cycleType,
-      zoneId: zoneId.value,
-    })
-  } finally {
-    const cycles = (loading.value as LoadingState).cycles
-    cycles[cycleType] = false
+
+  // Проверяем, что рецепт привязан (для агрегированного цикла нужны таргеты фазы)
+  if (!zone.value.recipeInstance?.recipe) {
+    showToast('Для запуска цикла выращивания необходимо привязать рецепт к зоне', 'warning', TOAST_TIMEOUT.LONG)
+    return
   }
+
+  // Проверяем, что есть текущая фаза с таргетами
+  if (!currentPhase.value || !currentPhase.value.targets) {
+    showToast('Текущая фаза рецепта не содержит таргетов. Проверьте настройки рецепта.', 'warning', TOAST_TIMEOUT.LONG)
+    return
+  }
+
+  // Открываем модал для запуска/корректировки агрегированного цикла
+  modals.open('growthCycle')
 }
 
 const variant = computed<'success' | 'neutral' | 'warning' | 'danger'>(() => {
@@ -1148,6 +1348,54 @@ async function onActionSubmit({ actionType, params }: { actionType: CommandType;
     if (err && typeof err === 'object' && 'message' in err) errorMessage = String(err.message)
     const actionName = actionNames[actionType] || 'Действие'
     showToast(`Ошибка при выполнении "${actionName}": ${errorMessage}`, 'error', TOAST_TIMEOUT.LONG)
+  } finally {
+    setLoading('irrigate', false)
+  }
+}
+
+async function onGrowthCycleSubmit({ mode, subsystems }: { mode: 'start' | 'adjust'; subsystems: Record<string, { enabled: boolean; targets: any }> }): Promise<void> {
+  if (!zoneId.value) return
+  
+  setLoading('irrigate', true)
+  
+  try {
+    // Отправляем команду GROWTH_CYCLE_CONFIG с mode и subsystems
+    await sendZoneCommand(zoneId.value, 'GROWTH_CYCLE_CONFIG' as CommandType, {
+      mode,
+      subsystems
+    })
+    
+    const modeText = mode === 'start' ? 'запущен' : 'скорректирован'
+    showToast(`Цикл выращивания успешно ${modeText}`, 'success', TOAST_TIMEOUT.NORMAL)
+    
+    // Обновляем зону и cycles через Inertia partial reload
+    reloadZoneAfterCommand(zoneId.value, ['zone', 'cycles'])
+  } catch (err) {
+    logger.error(`Failed to execute GROWTH_CYCLE_CONFIG:`, err)
+    let errorMessage = ERROR_MESSAGES.UNKNOWN
+    
+    // Обработка ошибок валидации с бэкенда (422)
+    if (err && typeof err === 'object' && 'response' in err) {
+      const response = (err as any).response
+      if (response?.status === 422 && response?.data) {
+        // Пытаемся извлечь детальное сообщение об ошибке
+        if (response.data.message) {
+          errorMessage = String(response.data.message)
+        } else if (response.data.errors && typeof response.data.errors === 'object') {
+          // Если есть объект errors, собираем все сообщения
+          const errorMessages = Object.values(response.data.errors).flat()
+          errorMessage = errorMessages.length > 0 ? String(errorMessages[0]) : ERROR_MESSAGES.VALIDATION
+        } else if (response.data.code === 'VALIDATION_ERROR') {
+          errorMessage = response.data.message || ERROR_MESSAGES.VALIDATION
+        }
+      } else if (response?.data?.message) {
+        errorMessage = String(response.data.message)
+      }
+    } else if (err && typeof err === 'object' && 'message' in err) {
+      errorMessage = String(err.message)
+    }
+    
+    showToast(`Ошибка при выполнении цикла выращивания: ${errorMessage}`, 'error', TOAST_TIMEOUT.LONG)
   } finally {
     setLoading('irrigate', false)
   }

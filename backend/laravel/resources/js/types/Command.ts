@@ -10,8 +10,7 @@ export type CommandType =
   | 'FORCE_EC_CONTROL'
   | 'FORCE_CLIMATE'
   | 'FORCE_LIGHTING'
-  | 'FORCE_PH_CONTROL'
-  | 'FORCE_EC_CONTROL'
+  | 'GROWTH_CYCLE_CONFIG'
   | string
 
 /**

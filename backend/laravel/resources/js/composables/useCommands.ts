@@ -40,7 +40,7 @@ export function useCommands(showToast?: ToastHandler) {
     error.value = null
 
     try {
-      const response = await api.post<{ data?: Command } | Command>(
+      const response = await api.post<{ data?: Command } | Command | { data?: { command_id?: string } }>(
         `/api/zones/${zoneId}/commands`,
         {
           type,
@@ -48,24 +48,54 @@ export function useCommands(showToast?: ToastHandler) {
         }
       )
 
-      const command = (response.data as { data?: Command })?.data || (response.data as Command)
-      const commandId = command.id
-      
+      const raw = response.data as any
+
+      // Пытаемся извлечь идентификатор команды из разных форматов ответа:
+      // 1) { data: { id, type, ... } } - полный объект команды
+      // 2) { data: { command_id: '<uuid>' } } - только cmd_id из PythonBridge
+      // 3) { id, type, ... } - прямой объект команды
+      let command: Command | null = null
+      let commandId: number | string | null = null
+      let commandType: CommandType = type
+
+      if (raw?.data?.id) {
+        command = raw.data as Command
+        commandId = command.id
+        commandType = command.type
+      } else if (raw?.id) {
+        command = raw as Command
+        commandId = command.id
+        commandType = command.type
+      } else if (raw?.data?.command_id) {
+        commandId = raw.data.command_id as string
+        commandType = type
+      }
+
       // Сохраняем информацию о команде для отслеживания статуса
       if (commandId) {
         pendingCommands.value.set(commandId, {
           status: 'pending',
           zoneId,
-          type,
-          timestamp: Date.now()
+          type: commandType,
+          timestamp: Date.now(),
         })
       }
 
       if (showToast) {
-        showToast(`Команда "${type}" отправлена успешно`, 'success', TOAST_TIMEOUT.NORMAL)
+        showToast(`Команда "${commandType}" отправлена успешно`, 'success', TOAST_TIMEOUT.NORMAL)
       }
 
-      return command
+      // Если API не вернул полный объект команды, возвращаем минимальный объект с id и type
+      if (command) {
+        return command
+      }
+
+      return {
+        id: (commandId ?? Date.now()) as number,
+        type: commandType,
+        status: 'pending',
+        created_at: new Date().toISOString(),
+      } as Command
     } catch (err) {
       error.value = err as Error
       const errorMsg = (err as { response?: { data?: { message?: string } }; message?: string })
@@ -95,7 +125,7 @@ export function useCommands(showToast?: ToastHandler) {
     error.value = null
 
     try {
-      const response = await api.post<{ data?: Command } | Command>(
+      const response = await api.post<{ data?: Command } | Command | { data?: { command_id?: string } }>(
         `/api/nodes/${nodeId}/commands`,
         {
           type,
@@ -103,23 +133,48 @@ export function useCommands(showToast?: ToastHandler) {
         }
       )
 
-      const command = (response.data as { data?: Command })?.data || (response.data as Command)
-      const commandId = command.id
+      const raw = response.data as any
+
+      let command: Command | null = null
+      let commandId: number | string | null = null
+      let commandType: CommandType = type
+
+      if (raw?.data?.id) {
+        command = raw.data as Command
+        commandId = command.id
+        commandType = command.type
+      } else if (raw?.id) {
+        command = raw as Command
+        commandId = command.id
+        commandType = command.type
+      } else if (raw?.data?.command_id) {
+        commandId = raw.data.command_id as string
+        commandType = type
+      }
       
       if (commandId) {
         pendingCommands.value.set(commandId, {
           status: 'pending',
           nodeId,
-          type,
-          timestamp: Date.now()
+          type: commandType,
+          timestamp: Date.now(),
         })
       }
 
       if (showToast) {
-        showToast(`Команда "${type}" отправлена успешно`, 'success', TOAST_TIMEOUT.NORMAL)
+        showToast(`Команда "${commandType}" отправлена успешно`, 'success', TOAST_TIMEOUT.NORMAL)
       }
 
-      return command
+      if (command) {
+        return command
+      }
+
+      return {
+        id: (commandId ?? Date.now()) as number,
+        type: commandType,
+        status: 'pending',
+        created_at: new Date().toISOString(),
+      } as Command
     } catch (err) {
       const normalizedError = handleError(err, {
         component: 'useCommands',

@@ -8,8 +8,11 @@ set -o nounset
 set -o pipefail
 
 HOT_FILE="/app/public/hot"
-VITE_URL="${VITE_DEV_SERVER_URL:-http://localhost:8080}"
-PING_URL="${VITE_URL%/}/@vite/client"
+# Убираем кавычки из переменной окружения, если они есть
+VITE_URL_RAW="${VITE_DEV_SERVER_URL:-http://localhost:8080}"
+VITE_URL="${VITE_URL_RAW//\"/}"  # Удаляем все кавычки
+# Проверяем Vite напрямую на порту 5173 внутри контейнера
+PING_URL="http://127.0.0.1:5173/@vite/client"
 CHECK_INTERVAL=${CHECK_INTERVAL:-5}
 
 ensure_permissions() {
@@ -26,7 +29,7 @@ write_hot_file() {
         return
     fi
 
-    echo "$VITE_URL" > "$HOT_FILE"
+    printf '%s\n' "$VITE_URL" > "$HOT_FILE"
     chmod 666 "$HOT_FILE" 2>/dev/null || chmod 777 "$HOT_FILE" 2>/dev/null || true
     chown application:application "$HOT_FILE" 2>/dev/null || true
     echo "$(date): Updated $HOT_FILE to $VITE_URL"
@@ -40,6 +43,8 @@ remove_hot_file() {
 }
 
 is_vite_available() {
+    # Проверяем, запущен ли процесс Vite
+    pgrep -f "vite" >/dev/null 2>&1 || \
     curl -sf --max-time 1 --connect-timeout 1 "$PING_URL" >/dev/null 2>&1
 }
 

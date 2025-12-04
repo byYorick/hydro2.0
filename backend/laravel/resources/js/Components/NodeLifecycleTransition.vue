@@ -168,8 +168,5 @@ watch(() => props.currentLifecycleState, (newState) => {
     loadAllowedTransitions()
   }
 })
-
-// Импорт logger
-import { logger } from '@/utils/logger'
 </script>
 

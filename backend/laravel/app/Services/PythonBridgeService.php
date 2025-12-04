@@ -30,44 +30,73 @@ class PythonBridgeService
         // Получаем node_uid и channel из payload или определяем автоматически
         $nodeUid = $payload['node_uid'] ?? null;
         $channel = $payload['channel'] ?? null;
+        $commandType = $payload['type'] ?? 'unknown';
 
-        // Если node_uid и channel не указаны, пытаемся определить их автоматически
-        if (! $nodeUid || ! $channel) {
-            $resolved = $this->resolveNodeAndChannel($zone, $payload['type'] ?? 'unknown', $payload['params'] ?? []);
-            if ($resolved) {
-                $nodeUid = $resolved['node_uid'];
-                $channel = $resolved['channel'];
-                Log::info('PythonBridgeService: Auto-resolved node and channel for zone command', [
-                    'zone_id' => $zone->id,
-                    'command_type' => $payload['type'] ?? 'unknown',
-                    'node_uid' => $nodeUid,
-                    'channel' => $channel,
-                ]);
+        // GROWTH_CYCLE_CONFIG - агрегированная команда на уровне зоны, не требует node_uid/channel
+        if ($commandType === 'GROWTH_CYCLE_CONFIG') {
+            // Для агрегированного цикла используем виртуальный узел или первый доступный узел зоны
+            // Python-сервис должен обработать эту команду на уровне зоны, а не конкретного узла
+            $firstNode = DeviceNode::where('zone_id', $zone->id)
+                ->where('status', 'online')
+                ->first();
+            
+            if ($firstNode) {
+                $nodeUid = $firstNode->uid;
+                // Используем первый доступный канал или null, если Python-сервис не требует его
+                $firstChannel = $firstNode->channels()->first();
+                $channel = $firstChannel?->channel ?? 'default';
             } else {
-                $this->markCommandFailed($command, 'Unable to auto-resolve node_uid and channel. Please specify them explicitly.');
+                // Если нет узлов, используем виртуальные значения
+                // Python-сервис должен обработать это как команду уровня зоны
+                $nodeUid = 'zone-'.$zone->id;
+                $channel = 'zone-control';
+            }
+            
+            Log::info('PythonBridgeService: Using zone-level node/channel for GROWTH_CYCLE_CONFIG', [
+                'zone_id' => $zone->id,
+                'node_uid' => $nodeUid,
+                'channel' => $channel,
+            ]);
+        } else {
+            // Для остальных команд требуем node_uid и channel
+            // Если node_uid и channel не указаны, пытаемся определить их автоматически
+            if (! $nodeUid || ! $channel) {
+                $resolved = $this->resolveNodeAndChannel($zone, $commandType, $payload['params'] ?? []);
+                if ($resolved) {
+                    $nodeUid = $resolved['node_uid'];
+                    $channel = $resolved['channel'];
+                    Log::info('PythonBridgeService: Auto-resolved node and channel for zone command', [
+                        'zone_id' => $zone->id,
+                        'command_type' => $commandType,
+                        'node_uid' => $nodeUid,
+                        'channel' => $channel,
+                    ]);
+                } else {
+                    $this->markCommandFailed($command, 'Unable to auto-resolve node_uid and channel. Please specify them explicitly.');
+                    throw new \InvalidArgumentException(
+                        'Unable to auto-resolve node_uid and channel for command type "'.$commandType.'". '.
+                        'Please specify target device and channel explicitly.'
+                    );
+                }
+            }
+
+            // Валидируем, что нода существует и привязана к зоне
+            $node = DeviceNode::where('uid', $nodeUid)->where('zone_id', $zone->id)->first();
+            if (! $node) {
+                $this->markCommandFailed($command, "Node {$nodeUid} not found or not assigned to zone {$zone->id}");
                 throw new \InvalidArgumentException(
-                    'Unable to auto-resolve node_uid and channel for command type "'.($payload['type'] ?? 'unknown').'". '.
-                    'Please specify target device and channel explicitly.'
+                    "Node {$nodeUid} not found or not assigned to zone {$zone->id}"
                 );
             }
-        }
 
-        // Валидируем, что нода существует и привязана к зоне
-        $node = DeviceNode::where('uid', $nodeUid)->where('zone_id', $zone->id)->first();
-        if (! $node) {
-            $this->markCommandFailed($command, "Node {$nodeUid} not found or not assigned to zone {$zone->id}");
-            throw new \InvalidArgumentException(
-                "Node {$nodeUid} not found or not assigned to zone {$zone->id}"
-            );
-        }
-
-        // Валидируем, что канал существует у ноды
-        $channelExists = $node->channels()->where('channel', $channel)->exists();
-        if (! $channelExists) {
-            $this->markCommandFailed($command, "Channel {$channel} not found on node {$nodeUid}");
-            throw new \InvalidArgumentException(
-                "Channel {$channel} not found on node {$nodeUid}"
-            );
+            // Валидируем, что канал существует у ноды
+            $channelExists = $node->channels()->where('channel', $channel)->exists();
+            if (! $channelExists) {
+                $this->markCommandFailed($command, "Channel {$channel} not found on node {$nodeUid}");
+                throw new \InvalidArgumentException(
+                    "Channel {$channel} not found on node {$nodeUid}"
+                );
+            }
         }
 
         $baseUrl = Config::get('services.python_bridge.base_url');

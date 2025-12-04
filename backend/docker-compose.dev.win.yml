@@ -1,3 +1,18 @@
+# Docker Compose конфигурация для Windows
+# 
+# Этот файл адаптирован для запуска на Windows с Docker Desktop.
+# Основные особенности:
+# - Все пути автоматически конвертируются Docker Desktop в формат Windows
+# - Используются относительные пути для совместимости
+# - Сетевые настройки оптимизированы для Windows
+#
+# Использование:
+#   docker-compose -f docker-compose.dev.win.yml up
+#
+# Примечания:
+# - Убедитесь, что Docker Desktop запущен
+# - Для лучшей производительности рекомендуется использовать WSL 2 backend
+# - Порты должны быть свободны на вашем компьютере
 
 services:
   mqtt:
@@ -5,6 +20,7 @@ services:
     ports:
       - "1883:1883"
     volumes:
+      # Windows-совместимые пути (Docker Desktop автоматически конвертирует)
       - ./services/mqtt-bridge/mosquitto.dev.conf:/mosquitto/config/mosquitto.conf:ro
       - ./services/mqtt-bridge/passwords:/mosquitto/config/passwords:ro
       - ./services/mqtt-bridge/acl:/mosquitto/config/acl:ro
@@ -38,6 +54,7 @@ services:
       - WEB_DOCUMENT_ROOT=/app/public
       - APP_ENV=local
       - APP_DEBUG=1
+      - APP_KEY=${APP_KEY:-base64:Go+le0yjTxoJWvbMib0hJTWXbzUdG00oeQpEVdNwUyc=}
       - SESSION_DRIVER=file
       - CACHE_DRIVER=file
       - LOG_CHANNEL=stderr
@@ -75,7 +92,7 @@ services:
       # Используем localhost:8080 (через nginx прокси), а не 0.0.0.0, так как браузер не может использовать 0.0.0.0
       # Для доступа с телефона установите VITE_DEV_SERVER_URL=http://YOUR_IP:8080
       # где YOUR_IP - IP адрес вашего компьютера в локальной сети
-      - VITE_DEV_SERVER_URL=${VITE_DEV_SERVER_URL:-"http://localhost:8080"}
+      - VITE_DEV_SERVER_URL=${VITE_DEV_SERVER_URL:-http://localhost:8080}
       # Vite environment variables for WebSocket
       - VITE_ENABLE_WS=true
       - VITE_REVERB_APP_KEY=local
@@ -107,6 +124,8 @@ services:
       - PHP_FPM_PM_MAX_SPARE_SERVERS=3
       - PHP_FPM_PM_MAX_REQUESTS=500
     volumes:
+      # На Windows используйте относительные пути - Docker Desktop автоматически конвертирует их
+      # Если возникают проблемы с правами доступа, добавьте :cached или :delegated
       - ./laravel:/app
       # Монтируем конфигурацию nginx для Vite прокси, чтобы изменения применялись без пересборки
       - ./laravel/nginx-vite-proxy.conf:/opt/docker/etc/nginx/vhost.common.d/vite-proxy.conf:ro
@@ -391,3 +410,4 @@ networks:
     ipam:
       config:
         - subnet: 172.30.0.0/16
+

@@ -13,7 +13,7 @@ use App\Observers\ZoneEventObserver;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
-use Laravel\Dusk\DuskServiceProvider;
+// use Laravel\Dusk\DuskServiceProvider; // Временно отключен
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -22,9 +22,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        if ($this->app->environment('local', 'testing')) {
-            $this->app->register(DuskServiceProvider::class);
-        }
+        // Временно отключен Dusk, так как пакет не установлен
+        // if ($this->app->environment('local', 'testing')) {
+        //     $this->app->register(DuskServiceProvider::class);
+        // }
 
         // Регистрация DigitalTwinClient
         $this->app->singleton(\App\Services\DigitalTwinClient::class, function ($app) {

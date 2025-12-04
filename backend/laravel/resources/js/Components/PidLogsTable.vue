@@ -139,6 +139,7 @@ import Card from './Card.vue'
 import Button from './Button.vue'
 import Badge from './Badge.vue'
 import type { PidLog } from '@/types/PidConfig'
+import { logger } from '@/utils/logger'
 
 interface Props {
   zoneId: number

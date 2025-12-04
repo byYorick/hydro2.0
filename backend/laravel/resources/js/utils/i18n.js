@@ -36,6 +36,9 @@ export function translateEventKind(kind) {
     'INFO': 'Информация',
     'ACTION': 'Действие',
     'SENSOR': 'Датчик',
+    'CYCLE_STARTED': 'Цикл запущен',
+    'CYCLE_ADJUSTED': 'Цикл скорректирован',
+    'CYCLE_CONFIG': 'Цикл (конфигурация)',
   }
   return translations[kind] || kind
 }

@@ -133,6 +133,20 @@ export default defineConfig({
             // Vue production mode
             isProduction: process.env.NODE_ENV === 'production',
         }),
+        // Dev‑middleware, который гарантирует корректный Content-Type для .vue
+        {
+            name: 'fix-vue-content-type',
+            apply: 'serve',
+            configureServer(server) {
+                server.middlewares.use((req, res, next) => {
+                    const url = req.url || '';
+                    if (url.startsWith('/resources/js/') && url.includes('.vue')) {
+                        res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
+                    }
+                    next();
+                });
+            },
+        },
     ],
     // Оптимизация зависимостей для снижения нагрузки
     optimizeDeps: {
