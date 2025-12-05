@@ -242,6 +242,9 @@ class NodeRegistryService
             
             $node->save();
             
+            // Создаём каналы из capabilities
+            $this->syncNodeChannelsFromCapabilities($node, $helloData['capabilities'] ?? []);
+            
             // Очищаем кеш списка устройств и статистики для всех пользователей
             // Вместо Cache::flush() используем более безопасную очистку только связанных ключей
             // Это предотвращает DoS через частые node_hello запросы
@@ -275,6 +278,7 @@ class NodeRegistryService
                 'hardware_id' => $hardwareId,
                 'zone_id' => $node->zone_id,
                 'lifecycle_state' => $node->lifecycle_state?->value,
+                'channels_count' => $node->channels()->count(),
             ]);
             
             return $node;
@@ -314,6 +318,74 @@ class NodeRegistryService
         }
         
         return $uid;
+    }
+    
+    /**
+     * Синхронизировать каналы узла из capabilities.
+     * 
+     * @param DeviceNode $node Узел
+     * @param array $capabilities Массив строк capabilities (например: ["temperature", "humidity", "co2"])
+     * @return void
+     */
+    private function syncNodeChannelsFromCapabilities(DeviceNode $node, array $capabilities): void
+    {
+        if (empty($capabilities)) {
+            Log::debug('NodeRegistryService: No capabilities provided, skipping channel sync', [
+                'node_id' => $node->id,
+            ]);
+            return;
+        }
+        
+        // Маппинг capability -> channel configuration
+        $capabilityConfig = [
+            'temperature' => ['type' => 'sensor', 'metric' => 'TEMP_AIR', 'unit' => '°C'],
+            'humidity' => ['type' => 'sensor', 'metric' => 'HUMIDITY', 'unit' => '%'],
+            'co2' => ['type' => 'sensor', 'metric' => 'CO2', 'unit' => 'ppm'],
+            'lighting' => ['type' => 'actuator', 'metric' => 'LIGHT', 'unit' => ''],
+            'ventilation' => ['type' => 'actuator', 'metric' => 'VENTILATION', 'unit' => ''],
+            'ph_sensor' => ['type' => 'sensor', 'metric' => 'PH', 'unit' => 'pH'],
+            'ec_sensor' => ['type' => 'sensor', 'metric' => 'EC', 'unit' => 'mS/cm'],
+            'pump_A' => ['type' => 'actuator', 'metric' => 'PUMP_A', 'unit' => ''],
+            'pump_B' => ['type' => 'actuator', 'metric' => 'PUMP_B', 'unit' => ''],
+            'pump_C' => ['type' => 'actuator', 'metric' => 'PUMP_C', 'unit' => ''],
+            'pump_D' => ['type' => 'actuator', 'metric' => 'PUMP_D', 'unit' => ''],
+        ];
+        
+        foreach ($capabilities as $capability) {
+            if (!is_string($capability)) {
+                Log::warning('NodeRegistryService: Invalid capability type', [
+                    'node_id' => $node->id,
+                    'capability' => $capability,
+                ]);
+                continue;
+            }
+            
+            $config = $capabilityConfig[$capability] ?? [
+                'type' => 'sensor',
+                'metric' => strtoupper($capability),
+                'unit' => '',
+            ];
+            
+            // Создаём или обновляем канал
+            \App\Models\NodeChannel::updateOrCreate(
+                [
+                    'node_id' => $node->id,
+                    'channel' => $capability,
+                ],
+                [
+                    'type' => $config['type'],
+                    'metric' => $config['metric'],
+                    'unit' => $config['unit'],
+                    'config' => [],
+                ]
+            );
+            
+            Log::debug('NodeRegistryService: Channel synced from capability', [
+                'node_id' => $node->id,
+                'capability' => $capability,
+                'channel_type' => $config['type'],
+            ]);
+        }
     }
     
     /**
