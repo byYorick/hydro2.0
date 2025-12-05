@@ -67,6 +67,20 @@
       </div>
     </Card>
 
+    <!-- Графики телеметрии для сенсорных каналов -->
+    <div v-if="sensorChannels.length > 0" class="mb-3">
+      <MultiSeriesTelemetryChart
+        v-if="chartSeries.length > 0"
+        title="Телеметрия устройства"
+        :series="chartSeries"
+        :time-range="chartTimeRange"
+        @time-range-change="onChartTimeRangeChange"
+      />
+      <Card v-else class="text-center text-sm text-neutral-400 py-8">
+        <div>Загрузка данных телеметрии...</div>
+      </Card>
+    </div>
+
     <div class="grid grid-cols-1 xl:grid-cols-3 gap-3">
       <Card class="xl:col-span-2">
         <div class="text-sm font-semibold mb-2">Channels</div>
@@ -86,7 +100,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted } from 'vue'
 import { Link, usePage, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
@@ -94,6 +108,7 @@ import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import NodeLifecycleBadge from '@/Components/NodeLifecycleBadge.vue'
 import DeviceChannelsTable from '@/Pages/Devices/DeviceChannelsTable.vue'
+import MultiSeriesTelemetryChart from '@/Components/MultiSeriesTelemetryChart.vue'
 import { logger } from '@/utils/logger'
 import { useHistory } from '@/composables/useHistory'
 import { useToast } from '@/composables/useToast'
@@ -114,6 +129,85 @@ const detaching = ref(false)
 const { showToast } = useToast()
 const { api } = useApi(showToast)
 const devicesStore = useDevicesStore()
+
+// Графики телеметрии
+const chartTimeRange = ref<'1H' | '24H' | '7D' | '30D' | 'ALL'>('24H')
+const chartDataByChannel = ref<Record<string, Array<{ ts: number; value: number }>>>({})
+
+// Определяем сенсорные каналы (для которых нужны графики)
+const sensorChannels = computed(() => 
+  channels.value.filter(ch => ch.type === 'sensor')
+)
+
+// Маппинг метрик к цветам
+const metricColors: Record<string, string> = {
+  'TEMP_AIR': '#f59e0b', // amber-500
+  'TEMPERATURE': '#f59e0b', // amber-500
+  'HUMIDITY': '#3b82f6', // blue-500
+  'CO2': '#10b981', // emerald-500
+  'PH': '#8b5cf6', // violet-500
+  'EC': '#06b6d4', // cyan-500
+}
+
+// Маппинг метрик к меткам
+const metricLabels: Record<string, string> = {
+  'TEMP_AIR': 'Температура',
+  'TEMPERATURE': 'Температура',
+  'HUMIDITY': 'Влажность',
+  'CO2': 'CO₂',
+  'PH': 'pH',
+  'EC': 'EC',
+}
+
+// Нормализация метрик: channel.metric может быть TEMP_AIR, но в БД сохраняется TEMPERATURE
+const normalizeMetricForQuery = (metric: string): string => {
+  const mapping: Record<string, string> = {
+    'TEMP_AIR': 'TEMPERATURE',
+    'TEMPERATURE': 'TEMPERATURE',
+    'HUMIDITY': 'HUMIDITY',
+    'CO2': 'CO2',
+    'PH': 'PH',
+    'EC': 'EC',
+  }
+  return mapping[metric] || metric
+}
+
+// Подготовка данных для графика
+const chartSeries = computed(() => {
+  return sensorChannels.value.map((channel, index) => {
+    const metric = channel.metric || channel.channel.toUpperCase()
+    const data = chartDataByChannel.value[channel.channel] || []
+    
+    // Получаем цвет из маппинга или генерируем по индексу
+    const color = metricColors[metric] || `hsl(${index * 360 / sensorChannels.value.length}, 70%, 60%)`
+    const label = metricLabels[metric] || channel.channel
+    
+    // Безопасно получаем currentValue - должно быть числом или undefined
+    let currentValue: number | undefined = undefined
+    if (data.length > 0 && data[data.length - 1]) {
+      const lastValue = data[data.length - 1].value
+      if (typeof lastValue === 'number' && !isNaN(lastValue)) {
+        currentValue = lastValue
+      }
+    }
+    
+    // Используем только 2 оси: левую (0) и правую (1)
+    // Первая метрика - левая ось, остальные - на правой оси или разделяем по типу
+    let yAxisIndex = 0
+    if (index === 1 || metric === 'HUMIDITY' || metric === 'CO2') {
+      yAxisIndex = 1
+    }
+    
+    return {
+      name: channel.channel,
+      label: `${label} (${channel.unit || ''})`,
+      color,
+      data,
+      currentValue,
+      yAxisIndex,
+    }
+  })
+})
 
 // История просмотров
 const { addToHistory } = useHistory()
@@ -327,6 +421,96 @@ async function checkCommandStatus(cmdId: number, maxAttempts = 30): Promise<{ su
   }
   return { success: false, status: 'timeout' }
 }
+
+// Загрузка данных телеметрии для графиков
+async function loadChartData(channel: string, metric: string, timeRange: string): Promise<Array<{ ts: number; value: number }>> {
+  if (!device.value.id) {
+    return []
+  }
+
+  try {
+    // Нормализуем метрику для запроса к БД
+    const normalizedMetric = normalizeMetricForQuery(metric)
+    
+    // Определяем временные рамки
+    const now = new Date()
+    let from: Date | undefined
+    
+    switch (timeRange) {
+      case '1H':
+        from = new Date(now.getTime() - 60 * 60 * 1000)
+        break
+      case '24H':
+        from = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+        break
+      case '7D':
+        from = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+        break
+      case '30D':
+        from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+        break
+      case 'ALL':
+        from = undefined
+        break
+    }
+    
+    logger.debug(`[Devices/Show] Loading telemetry: channel=${channel}, metric=${metric}, normalized=${normalizedMetric}`)
+    
+    const response = await api.get<{ status: string; data?: Array<{ ts: string; value: number; channel: string }> }>(
+      `/nodes/${device.value.id}/telemetry/history`,
+      {
+        params: {
+          metric: normalizedMetric,
+          channel,
+          from: from?.toISOString(),
+        }
+      }
+    )
+    
+    if (response.data?.status === 'ok' && response.data?.data) {
+      logger.debug(`[Devices/Show] Loaded ${response.data.data.length} telemetry records for ${channel}`)
+      return response.data.data.map(item => ({
+        ts: new Date(item.ts).getTime(),
+        value: item.value,
+      }))
+    }
+    
+    logger.warn(`[Devices/Show] No data received for channel ${channel}`)
+    return []
+  } catch (err) {
+    logger.error(`[Devices/Show] Failed to load telemetry for channel ${channel}:`, err)
+    return []
+  }
+}
+
+// Загрузка всех графиков
+async function loadAllCharts(): Promise<void> {
+  if (sensorChannels.value.length === 0) {
+    return
+  }
+  
+  for (const channel of sensorChannels.value) {
+    const metric = channel.metric || channel.channel.toUpperCase()
+    const data = await loadChartData(channel.channel, metric, chartTimeRange.value)
+    chartDataByChannel.value[channel.channel] = data
+  }
+}
+
+// Обработчик изменения временного диапазона
+function onChartTimeRangeChange(newRange: '1H' | '24H' | '7D' | '30D' | 'ALL'): void {
+  chartTimeRange.value = newRange
+  loadAllCharts()
+}
+
+// Загружаем данные при монтировании компонента
+onMounted(() => {
+  loadAllCharts()
+})
+
+// Перезагружаем графики при изменении устройства
+watch(device, () => {
+  loadAllCharts()
+})
 
 </script>
 

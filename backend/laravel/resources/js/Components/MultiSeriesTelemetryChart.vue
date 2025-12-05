@@ -168,7 +168,10 @@ function exportData(): void {
   URL.revokeObjectURL(url)
 }
 
-const formatValue = (value: number, seriesName: string): string => {
+const formatValue = (value: number | null | undefined, seriesName: string): string => {
+  if (value === null || value === undefined || typeof value !== 'number' || isNaN(value)) {
+    return '—'
+  }
   const isPH = seriesName.toLowerCase().includes('ph')
   return value.toFixed(isPH ? 2 : 1)
 }

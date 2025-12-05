@@ -165,6 +165,7 @@ Route::middleware([
     Route::get('zones/{id}/telemetry/last', [TelemetryController::class, 'zoneLast']);
     Route::get('zones/{id}/telemetry/history', [TelemetryController::class, 'zoneHistory']);
     Route::get('nodes/{id}/telemetry/last', [TelemetryController::class, 'nodeLast']);
+    Route::get('nodes/{id}/telemetry/history', [TelemetryController::class, 'nodeHistory']);
     Route::get('telemetry/aggregates', [TelemetryController::class, 'aggregates']);
 
     // Commands status (viewer+)

@@ -132,6 +132,64 @@ class TelemetryController extends Controller
     }
 
     /**
+     * Получить историю телеметрии для конкретной ноды
+     */
+    public function nodeHistory(Request $request, int $nodeId)
+    {
+        // Проверяем авторизацию
+        if (!Auth::check()) {
+            return response()->json([
+                'status' => 'error',
+                'code' => 'UNAUTHENTICATED',
+                'message' => 'Authentication required',
+            ], 401);
+        }
+        
+        // Проверяем доступ к ноде
+        if (!ZoneAccessHelper::canAccessNode(Auth::user(), $nodeId)) {
+            Log::warning('TelemetryController: Unauthorized access attempt to node history', [
+                'user_id' => Auth::id(),
+                'node_id' => $nodeId,
+            ]);
+            
+            return response()->json([
+                'status' => 'error',
+                'code' => 'FORBIDDEN',
+                'message' => 'Access denied',
+            ], 403);
+        }
+        
+        $validated = $request->validate([
+            'metric' => ['required', 'string', 'max:64'],
+            'channel' => ['nullable', 'string', 'max:64'],
+            'from' => ['nullable', 'date'],
+            'to' => ['nullable', 'date'],
+        ]);
+
+        $q = TelemetrySample::query()->where('node_id', $nodeId)
+            ->where('metric_type', $validated['metric'])
+            ->orderBy('ts', 'asc');
+
+        if (!empty($validated['channel'])) {
+            $q->where('channel', $validated['channel']);
+        }
+
+        if (!empty($validated['from'])) {
+            $q->where('ts', '>=', $validated['from']);
+        }
+        if (!empty($validated['to'])) {
+            $q->where('ts', '<=', $validated['to']);
+        }
+
+        $rows = $q->limit(5000)->get(['ts', 'value', 'channel']);
+
+        return response()->json([
+            'status' => 'ok',
+            'data' => $rows,
+        ]);
+    }
+
+    /**
      * Получить агрегированные данные телеметрии
      * 
      * @param Request $request
