@@ -329,19 +329,21 @@ static void climate_node_command_handler_wrapper(
  * @brief Инициализация интеграции climate_node с node_framework
  */
 esp_err_t climate_node_framework_init_integration(void) {
-    ESP_LOGI(TAG, "Initializing climate_node framework integration...");
+    ESP_LOGI(TAG, "Init framework integration");
 
+    // ВАЖНО: Используем статические строки для node_type, чтобы указатели оставались валидными
+    static const char node_type[] = "climate";
+    
     // Инициализация node_framework
-    node_framework_config_t config = {
-        .node_type = "climate",
-        .default_node_id = NULL,  // Будет загружен из конфига
-        .default_gh_uid = NULL,
-        .default_zone_uid = NULL,
-        .channel_init_cb = climate_node_init_channel_callback,
-        .command_handler_cb = NULL,  // Регистрация через API
-        .telemetry_cb = climate_node_publish_telemetry_callback,
-        .user_ctx = NULL
-    };
+    node_framework_config_t config = {0};
+    config.node_type = node_type;
+    config.default_node_id = NULL;  // Будет загружен из конфига
+    config.default_gh_uid = NULL;
+    config.default_zone_uid = NULL;
+    config.channel_init_cb = climate_node_init_channel_callback;
+    config.command_handler_cb = NULL;  // Регистрация через API
+    config.telemetry_cb = climate_node_publish_telemetry_callback;
+    config.user_ctx = NULL;
 
     esp_err_t err = node_framework_init(&config);
     if (err != ESP_OK) {
@@ -378,7 +380,8 @@ static esp_err_t climate_node_disable_actuators_in_safe_mode(void *user_ctx) {
     ESP_LOGW(TAG, "Disabling all actuators in safe mode");
     
     // Отключаем все реле и PWM через конфиг
-    char config_json[CONFIG_STORAGE_MAX_JSON_SIZE];
+    // КРИТИЧНО: Используем статический буфер вместо стека для предотвращения переполнения
+    static char config_json[CONFIG_STORAGE_MAX_JSON_SIZE];
     esp_err_t err = config_storage_get_json(config_json, sizeof(config_json));
     if (err == ESP_OK) {
         cJSON *config = cJSON_Parse(config_json);

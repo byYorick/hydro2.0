@@ -11,6 +11,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -24,6 +25,9 @@ static char s_mqtt_password[CONFIG_STORAGE_MAX_STRING_LEN];
 static char s_node_id[CONFIG_STORAGE_MAX_STRING_LEN];
 static char s_gh_uid[CONFIG_STORAGE_MAX_STRING_LEN];
 static char s_zone_uid[CONFIG_STORAGE_MAX_STRING_LEN];
+
+// Mutex для защиты статического буфера в config_apply_load_previous_config
+static SemaphoreHandle_t s_load_config_mutex = NULL;
 
 static void config_apply_result_add(config_apply_result_t *result, const char *component) {
     if (result == NULL || component == NULL) {
@@ -48,12 +52,44 @@ void config_apply_result_init(config_apply_result_t *result) {
 }
 
 cJSON *config_apply_load_previous_config(void) {
-    char json_buffer[CONFIG_STORAGE_MAX_JSON_SIZE];
-    if (config_storage_get_json(json_buffer, sizeof(json_buffer)) != ESP_OK) {
-        return NULL;
+    // КРИТИЧНО: Используем статический буфер вместо стека для предотвращения переполнения
+    // ВАЖНО: Защищаем mutex для потокобезопасности (может вызываться из разных задач)
+    static char json_buffer[CONFIG_STORAGE_MAX_JSON_SIZE];
+    
+    // Инициализация mutex при первом вызове
+    if (s_load_config_mutex == NULL) {
+        s_load_config_mutex = xSemaphoreCreateMutex();
+        if (s_load_config_mutex == NULL) {
+            ESP_LOGE(TAG, "Failed to create load_config mutex");
+            // Продолжаем без защиты (небезопасно, но лучше чем упасть)
+        }
     }
-
-    return cJSON_Parse(json_buffer);
+    
+    // Захватываем mutex для защиты статического буфера
+    bool mutex_taken = false;
+    if (s_load_config_mutex != NULL && 
+        xSemaphoreTake(s_load_config_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        mutex_taken = true;
+    }
+    
+    esp_err_t err = config_storage_get_json(json_buffer, sizeof(json_buffer));
+    cJSON *result = NULL;
+    
+    if (err == ESP_OK) {
+        result = cJSON_Parse(json_buffer);
+        if (result == NULL) {
+            ESP_LOGE(TAG, "Failed to parse previous config JSON");
+        }
+    } else {
+        ESP_LOGE(TAG, "Failed to load previous config: %s", esp_err_to_name(err));
+    }
+    
+    // Освобождаем mutex
+    if (mutex_taken) {
+        xSemaphoreGive(s_load_config_mutex);
+    }
+    
+    return result;
 }
 
 static const cJSON *config_apply_get_section(const cJSON *config, const char *name) {

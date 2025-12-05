@@ -502,7 +502,8 @@ static esp_err_t i2c_bus_recover_bus(i2c_bus_id_t bus_id) {
 
 esp_err_t i2c_bus_init_from_config(void) {
     // Загрузка конфигурации из NodeConfig
-    char config_json[CONFIG_STORAGE_MAX_JSON_SIZE];
+    // КРИТИЧНО: Используем статический буфер вместо стека для предотвращения переполнения
+    static char config_json[CONFIG_STORAGE_MAX_JSON_SIZE];
     esp_err_t err = config_storage_get_json(config_json, sizeof(config_json));
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to load config from storage, using defaults");

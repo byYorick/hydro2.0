@@ -461,7 +461,8 @@ bool ph_sensor_is_valid(float ph_value) {
 
 esp_err_t ph_sensor_init_from_config(const char *channel_id) {
     // Загрузка конфигурации из NodeConfig
-    char config_json[4096];
+    // КРИТИЧНО: Используем статический буфер вместо стека для предотвращения переполнения
+    static char config_json[4096];
     esp_err_t err = config_storage_get_json(config_json, sizeof(config_json));
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to load config from storage");

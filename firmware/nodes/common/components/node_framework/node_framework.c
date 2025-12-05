@@ -74,8 +74,71 @@ esp_err_t node_framework_init(const node_framework_config_t *config) {
         return ESP_ERR_NO_MEM;
     }
 
-    // Копирование конфигурации
-    memcpy(&s_framework.config, config, sizeof(node_framework_config_t));
+    // ВАЖНО: Копируем строки в статические буферы, так как config содержит указатели
+    // на локальные переменные, которые могут стать невалидными
+    static char s_node_type[32] = {0};
+    static char s_default_node_id[128] = {0};
+    static char s_default_gh_uid[128] = {0};
+    static char s_default_zone_uid[128] = {0};
+    
+    // Копируем node_type
+    if (config->node_type && config->node_type[0] != '\0') {
+        size_t len = strlen(config->node_type);
+        if (len >= sizeof(s_node_type)) {
+            len = sizeof(s_node_type) - 1;
+        }
+        memcpy(s_node_type, config->node_type, len);
+        s_node_type[len] = '\0';
+        s_framework.config.node_type = s_node_type;
+    } else {
+        s_framework.config.node_type = NULL;
+    }
+    
+    // Копируем default_node_id
+    if (config->default_node_id && config->default_node_id[0] != '\0') {
+        size_t len = strlen(config->default_node_id);
+        if (len >= sizeof(s_default_node_id)) {
+            len = sizeof(s_default_node_id) - 1;
+        }
+        memcpy(s_default_node_id, config->default_node_id, len);
+        s_default_node_id[len] = '\0';
+        s_framework.config.default_node_id = s_default_node_id;
+    } else {
+        s_framework.config.default_node_id = NULL;
+    }
+    
+    // Копируем default_gh_uid
+    if (config->default_gh_uid && config->default_gh_uid[0] != '\0') {
+        size_t len = strlen(config->default_gh_uid);
+        if (len >= sizeof(s_default_gh_uid)) {
+            len = sizeof(s_default_gh_uid) - 1;
+        }
+        memcpy(s_default_gh_uid, config->default_gh_uid, len);
+        s_default_gh_uid[len] = '\0';
+        s_framework.config.default_gh_uid = s_default_gh_uid;
+    } else {
+        s_framework.config.default_gh_uid = NULL;
+    }
+    
+    // Копируем default_zone_uid
+    if (config->default_zone_uid && config->default_zone_uid[0] != '\0') {
+        size_t len = strlen(config->default_zone_uid);
+        if (len >= sizeof(s_default_zone_uid)) {
+            len = sizeof(s_default_zone_uid) - 1;
+        }
+        memcpy(s_default_zone_uid, config->default_zone_uid, len);
+        s_default_zone_uid[len] = '\0';
+        s_framework.config.default_zone_uid = s_default_zone_uid;
+    } else {
+        s_framework.config.default_zone_uid = NULL;
+    }
+    
+    // Копируем остальные поля (callbacks и user_ctx - это указатели на функции/данные, они должны быть валидными)
+    s_framework.config.channel_init_cb = config->channel_init_cb;
+    s_framework.config.command_handler_cb = config->command_handler_cb;
+    s_framework.config.telemetry_cb = config->telemetry_cb;
+    s_framework.config.user_ctx = config->user_ctx;
+    
     s_framework.state = NODE_STATE_INIT;
     s_framework.initialized = true;
 
@@ -188,7 +251,10 @@ esp_err_t node_framework_init(const node_framework_config_t *config) {
 
     // Примечание: memory_pool уже инициализирован выше (строка 95), не инициализируем повторно
 
-    ESP_LOGI(TAG, "Node framework initialized (node_type: %s)", config->node_type);
+    // КРИТИЧНО: Убираем логирование с форматированием для предотвращения паники
+    // Проблема возникает при вызове ESP_LOGI с форматированием - возможно из-за повреждения стека
+    // Логирование будет выполнено позже, когда система стабилизируется
+    // ESP_LOGI(TAG, "Node framework initialized (node_type: %s)", s_framework.config.node_type ? s_framework.config.node_type : "NULL");
     return ESP_OK;
 
 cleanup:

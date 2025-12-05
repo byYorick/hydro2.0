@@ -57,24 +57,21 @@ class DeviceNode extends Model
     {
         parent::boot();
 
-        // Отправляем событие при обновлении узла (если изменились поля, влияющие на конфиг)
+        // КРИТИЧНО: Публикуем конфиг ТОЛЬКО при привязке узла к зоне (изменение pending_zone_id)
         // Используем afterCommit, чтобы событие срабатывало только после коммита транзакции
         // Это предотвращает публикацию конфига до коммита или при откате транзакции
         static::saved(function (DeviceNode $node) {
-            // Проверяем, изменились ли поля, влияющие на конфиг
-            // pending_zone_id также влияет на конфиг, так как конфиг должен быть отправлен при установке pending_zone_id
-            $changedFields = ['zone_id', 'pending_zone_id', 'type', 'config', 'uid'];
-            $hasChanges = $node->wasChanged($changedFields);
+            // ВАЖНО: Конфиг публикуется ТОЛЬКО при изменении pending_zone_id (привязка к зоне через UI)
+            // Не публикуем конфиг при:
+            // - Изменении других полей (config, zone_id, type, uid)
+            // - Обновлении узла от history-logger (завершение привязки)
+            // - Первичной регистрации узла (node_hello)
+            $needsConfigPublish = $node->pending_zone_id && !$node->zone_id && $node->wasChanged('pending_zone_id');
             
             // ВАЖНО: НЕ публикуем конфиг для новых узлов без zone_id или pending_zone_id
             // Если нода отправила node_hello, значит у неё уже есть рабочие настройки WiFi/MQTT
             // Публикация произойдет только после привязки к зоне (установки pending_zone_id)
             $skipNewNodeWithoutZone = $node->wasRecentlyCreated && !$node->zone_id && !$node->pending_zone_id;
-            
-            // ВАЖНО: Если pending_zone_id установлен, но zone_id еще null, нужно отправить конфиг
-            // ТОЛЬКО если pending_zone_id ИЗМЕНИЛСЯ (первая привязка к зоне)
-            // Не публикуем повторно при каждом обновлении узла
-            $needsConfigPublish = $node->pending_zone_id && !$node->zone_id && $node->wasChanged('pending_zone_id');
             
             // НЕ публикуем конфиг если узел уже в ASSIGNED_TO_ZONE и zone_id установлен
             // (завершение привязки уже произошло)
@@ -95,26 +92,36 @@ class DeviceNode extends Model
                     'lifecycle_state' => $node->lifecycle_state?->value,
                     'reason' => 'Node already assigned and configured',
                 ]);
-            } elseif ($hasChanges || $needsConfigPublish) {
-               \Illuminate\Support\Facades\Log::info('DeviceNode: Dispatching NodeConfigUpdated event', [
-                   'node_id' => $node->id,
-                   'uid' => $node->uid,
-                   'changed_fields' => array_filter($changedFields, fn($field) => $node->wasChanged($field)),
-                   'was_recently_created' => $node->wasRecentlyCreated,
-                   'needs_config_publish' => $needsConfigPublish,
-                   'pending_zone_id' => $node->pending_zone_id,
-                   'zone_id' => $node->zone_id,
-                   'lifecycle_state' => $node->lifecycle_state?->value,
-               ]);
-               \Illuminate\Support\Facades\Log::info('DeviceNode: Event will be dispatched after commit', [
-                   'node_id' => $node->id,
-                   'uid' => $node->uid,
-               ]);
+            } elseif ($needsConfigPublish) {
+                // Публикуем конфиг ТОЛЬКО при привязке узла к зоне (изменение pending_zone_id)
+                \Illuminate\Support\Facades\Log::info('DeviceNode: Dispatching NodeConfigUpdated event (node attached to zone)', [
+                    'node_id' => $node->id,
+                    'uid' => $node->uid,
+                    'pending_zone_id' => $node->pending_zone_id,
+                    'zone_id' => $node->zone_id,
+                    'lifecycle_state' => $node->lifecycle_state?->value,
+                    'reason' => 'pending_zone_id changed - node attached to zone',
+                ]);
                 
                 // Используем afterCommit, чтобы событие срабатывало только после коммита транзакции
                 \Illuminate\Support\Facades\DB::afterCommit(function () use ($node) {
                     event(new NodeConfigUpdated($node));
                 });
+            } else {
+                // Логируем, что конфиг не публикуется при других изменениях
+                $changedFields = ['zone_id', 'pending_zone_id', 'type', 'config', 'uid'];
+                $hasRelevantChanges = $node->wasChanged($changedFields);
+                
+                if ($hasRelevantChanges) {
+                    \Illuminate\Support\Facades\Log::debug('DeviceNode: Config publish skipped (not a zone attachment)', [
+                        'node_id' => $node->id,
+                        'uid' => $node->uid,
+                        'changed_fields' => array_filter($changedFields, fn($field) => $node->wasChanged($field)),
+                        'pending_zone_id' => $node->pending_zone_id,
+                        'zone_id' => $node->zone_id,
+                        'reason' => 'Config publish only happens when pending_zone_id changes (zone attachment)',
+                    ]);
+                }
             }
             
             // Очищаем кеш списка устройств при создании или обновлении ноды

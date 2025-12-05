@@ -1,74 +1,80 @@
 <template>
   <AppLayout>
     <Head title="Растения" />
-    <div class="flex flex-col xl:flex-row gap-4">
-      <div class="xl:w-2/3 space-y-3">
-        <div class="flex items-center justify-between">
-          <div>
-            <h1 class="text-lg font-semibold text-neutral-100">Растения</h1>
-            <p class="text-sm text-neutral-400">Управление культурами и их агропрофилями</p>
-          </div>
-          <Button size="sm" variant="secondary" @click="resetForm" v-if="isEditing">
-            Новый профиль
-          </Button>
+    <div class="space-y-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <h1 class="text-lg font-semibold text-neutral-100">Растения</h1>
+          <p class="text-sm text-neutral-400">Управление культурами и их агропрофилями</p>
         </div>
-        <Card v-if="plants.length === 0" class="border-dashed border-neutral-700 text-sm text-neutral-400">
-          Растения ещё не добавлены — создайте профиль, чтобы связать его с зонами и рецептами.
-        </Card>
-        <Card
-          v-for="plant in plants"
-          :key="plant.id"
-          class="transition-all duration-200"
-          :class="[
-            selectedPlantId === plant.id ? 'border-sky-600 shadow-lg shadow-sky-900/30' : 'hover:border-neutral-700'
-          ]"
-        >
-          <div class="flex items-start justify-between gap-2">
-            <div>
-              <div class="flex items-center gap-2">
-                <div class="text-base font-semibold text-neutral-100">{{ plant.name }}</div>
-                <Badge v-if="plant.substrate_type" size="xs" variant="neutral">
-                  {{ taxonomyLabel('substrate_type', plant.substrate_type) }}
-                </Badge>
-                <Badge v-if="plant.growing_system" size="xs" variant="info">
-                  {{ taxonomyLabel('growing_system', plant.growing_system) }}
-                </Badge>
-              </div>
-              <div class="text-xs text-neutral-400 mt-1">
-                <span v-if="plant.species">{{ plant.species }}</span>
-                <span v-if="plant.variety">· {{ plant.variety }}</span>
-                <span v-if="plant.photoperiod_preset">· {{ taxonomyLabel('photoperiod_preset', plant.photoperiod_preset) }}</span>
-              </div>
-            </div>
-            <div class="flex items-center gap-2">
-              <Button size="xs" variant="outline" @click="startEdit(plant)">Редактировать</Button>
-              <Button size="xs" variant="danger" @click="deletePlant(plant)" :disabled="deletingId === plant.id">Удалить</Button>
-            </div>
-          </div>
-          <p v-if="plant.description" class="text-sm text-neutral-300 mt-3 leading-relaxed">
-            {{ plant.description }}
-          </p>
-          <div v-if="hasEnvironment(plant)" class="mt-3 text-xs text-neutral-400 space-y-1">
-            <div v-for="(range, metric) in plant.environment_requirements" :key="metric" class="flex items-center gap-2">
-              <span class="uppercase tracking-wide text-neutral-500">{{ metric }}:</span>
-              <span>{{ formatRange(range) }}</span>
-            </div>
-          </div>
-        </Card>
+        <Button size="sm" variant="primary" @click="openCreateModal">
+          Новое растение
+        </Button>
       </div>
-      <div class="xl:w-1/3">
-        <Card>
-          <div class="flex items-center justify-between mb-3">
-            <div>
-              <h2 class="text-base font-semibold text-neutral-100">
-                {{ isEditing ? 'Редактирование растения' : 'Новое растение' }}
-              </h2>
-              <p class="text-xs text-neutral-400">
-                {{ isEditing ? 'Обновите данные профиля растения' : 'Создайте профиль для назначения зонам и рецептам' }}
-              </p>
-            </div>
-          </div>
-          <form @submit.prevent="handleSubmit" class="space-y-3">
+      <div class="rounded-xl border border-neutral-800 overflow-hidden max-h-[720px] flex flex-col">
+        <div class="overflow-auto flex-1">
+          <table class="w-full border-collapse">
+              <thead class="bg-neutral-900 text-neutral-300 text-sm sticky top-0 z-10">
+                <tr>
+                  <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Название</th>
+                  <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Вид / Сорт</th>
+                  <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Субстрат</th>
+                  <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Система</th>
+                  <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Фотопериод</th>
+                  <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Описание</th>
+                </tr>
+              </thead>
+            <tbody>
+              <tr
+                v-for="(plant, index) in plants"
+                :key="plant.id"
+                :class="[
+                  index % 2 === 0 ? 'bg-neutral-950' : 'bg-neutral-925',
+                  selectedPlantId === plant.id ? 'bg-sky-950/30 border-sky-600' : ''
+                ]"
+                class="text-sm border-b border-neutral-900 hover:bg-neutral-900 transition-colors"
+              >
+                  <td class="px-3 py-2">
+                    <Link :href="`/plants/${plant.id}`" class="font-semibold text-sky-400 hover:underline">{{ plant.name }}</Link>
+                  </td>
+                <td class="px-3 py-2 text-xs text-neutral-400">
+                  <div>
+                    <span v-if="plant.species">{{ plant.species }}</span>
+                    <span v-if="plant.variety"> · {{ plant.variety }}</span>
+                    <span v-if="!plant.species && !plant.variety">—</span>
+                  </div>
+                </td>
+                <td class="px-3 py-2 text-xs text-neutral-400">
+                  <span v-if="plant.substrate_type">{{ taxonomyLabel('substrate_type', plant.substrate_type) }}</span>
+                  <span v-else>—</span>
+                </td>
+                <td class="px-3 py-2 text-xs text-neutral-400">
+                  <span v-if="plant.growing_system">{{ taxonomyLabel('growing_system', plant.growing_system) }}</span>
+                  <span v-else>—</span>
+                </td>
+                <td class="px-3 py-2 text-xs text-neutral-400">
+                  <span v-if="plant.photoperiod_preset">{{ taxonomyLabel('photoperiod_preset', plant.photoperiod_preset) }}</span>
+                  <span v-else>—</span>
+                </td>
+                  <td class="px-3 py-2 text-xs text-neutral-400">
+                    <span v-if="plant.description" class="truncate block max-w-xs">{{ plant.description }}</span>
+                    <span v-else>—</span>
+                  </td>
+              </tr>
+                <tr v-if="plants.length === 0">
+                  <td colspan="6" class="px-3 py-6 text-sm text-neutral-400 text-center">
+                    Растения ещё не добавлены — создайте профиль, чтобы связать его с зонами и рецептами.
+                  </td>
+                </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Форма редактирования в модальном окне -->
+    <Modal :open="isEditing" title="Редактирование растения" @close="resetForm" size="large" v-if="selectedPlant">
+      <form @submit.prevent="handleSubmit" class="space-y-4">
             <div>
               <label class="form-label">Название</label>
               <input v-model="form.name" type="text" class="form-input" />
@@ -148,134 +154,36 @@
                 />
               </div>
             </div>
-            <div class="flex items-center gap-2 pt-2">
-              <Button type="submit" :disabled="form.processing">
-                {{ isEditing ? 'Сохранить' : 'Создать' }}
-              </Button>
-              <Button type="button" variant="secondary" @click="resetForm" :disabled="form.processing">
-                Сбросить
-              </Button>
-            </div>
-          </form>
-        </Card>
-        <Card class="mt-4">
-          <div class="flex items-center justify-between mb-3">
-            <div>
-              <h2 class="text-base font-semibold text-neutral-100">Экономика</h2>
-              <p class="text-xs text-neutral-400">Маржинальность по выбранному растению</p>
-            </div>
-          </div>
-          <div v-if="currentProfitability?.has_pricing" class="grid grid-cols-2 gap-3">
-            <div>
-              <p class="text-xs text-neutral-400 uppercase tracking-wide">Себестоимость</p>
-              <p class="text-lg font-semibold text-neutral-100">
-                {{ formatCurrency(currentProfitability.total_cost, currentProfitability.currency) }}
-              </p>
-            </div>
-            <div>
-              <p class="text-xs text-neutral-400 uppercase tracking-wide">Опт</p>
-              <p class="text-lg font-semibold text-emerald-400">
-                {{ formatCurrency(currentProfitability.wholesale_price, currentProfitability.currency) }}
-              </p>
-              <p class="text-xs text-neutral-500">Маржа: {{ formatCurrency(currentProfitability.margin_wholesale, currentProfitability.currency) }}</p>
-            </div>
-            <div>
-              <p class="text-xs text-neutral-400 uppercase tracking-wide">Розница</p>
-              <p class="text-lg font-semibold text-sky-400">
-                {{ formatCurrency(currentProfitability.retail_price, currentProfitability.currency) }}
-              </p>
-              <p class="text-xs text-neutral-500">Маржа: {{ formatCurrency(currentProfitability.margin_retail, currentProfitability.currency) }}</p>
-            </div>
-          </div>
-          <div v-else class="text-sm text-neutral-400">
-            Нет данных по ценам. Добавьте ценовую версию, чтобы увидеть маржинальность.
-          </div>
-        </Card>
-        <Card class="mt-4">
-          <div class="flex items-center justify-between mb-3">
-            <div>
-              <h2 class="text-base font-semibold text-neutral-100">Новая ценовая версия</h2>
-              <p class="text-xs text-neutral-400">Сохраняется к выбранному растению</p>
-            </div>
-          </div>
-          <div v-if="!canEditPricing" class="text-xs text-neutral-500 mb-3">
-            Выберите растение, чтобы добавить ценовую версию.
-          </div>
-          <form @submit.prevent="handlePriceSubmit" class="space-y-3">
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label class="form-label">Дата начала</label>
-                <input type="date" v-model="priceForm.effective_from" class="form-input" :disabled="!canEditPricing" />
-              </div>
-              <div>
-                <label class="form-label">Валюта</label>
-                <input v-model="priceForm.currency" class="form-input" :disabled="!canEditPricing" />
-              </div>
-            </div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div v-for="field in costFields" :key="field.key">
-                <label class="form-label">{{ field.label }}</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  v-model="priceForm[field.key]"
-                  class="form-input"
-                  :disabled="!canEditPricing"
-                />
-                <p v-if="priceForm.errors[field.key]" class="form-error">{{ priceForm.errors[field.key] }}</p>
-              </div>
-            </div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label class="form-label">Оптовая цена</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  v-model="priceForm.wholesale_price"
-                  class="form-input"
-                  :disabled="!canEditPricing"
-                />
-                <p v-if="priceForm.errors.wholesale_price" class="form-error">{{ priceForm.errors.wholesale_price }}</p>
-              </div>
-              <div>
-                <label class="form-label">Розничная цена</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  v-model="priceForm.retail_price"
-                  class="form-input"
-                  :disabled="!canEditPricing"
-                />
-                <p v-if="priceForm.errors.retail_price" class="form-error">{{ priceForm.errors.retail_price }}</p>
-              </div>
-            </div>
-            <div>
-              <label class="form-label">Источник данных</label>
-              <input v-model="priceForm.source" class="form-input" :disabled="!canEditPricing" />
-            </div>
-            <div class="flex items-center gap-2">
-              <Button type="submit" :disabled="!canEditPricing || priceForm.processing">
-                Сохранить цены
-              </Button>
-              <Button type="button" variant="secondary" @click="resetPriceForm" :disabled="priceForm.processing">
-                Очистить
-              </Button>
-            </div>
-          </form>
-        </Card>
-      </div>
-    </div>
+      </form>
+      <template #footer>
+        <Button type="button" variant="secondary" @click="resetForm" :disabled="form.processing">
+          Отмена
+        </Button>
+        <Button type="button" @click="handleSubmit" :disabled="form.processing">Сохранить</Button>
+      </template>
+    </Modal>
+
+    <!-- Модальное окно создания растения -->
+    <PlantCreateModal
+      :show="showCreateModal"
+      :taxonomies="props.taxonomies"
+      @close="closeCreateModal"
+      @created="onPlantCreated"
+    />
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { Head, useForm, router } from '@inertiajs/vue3'
+import { Head, useForm, router, Link } from '@inertiajs/vue3'
 import { computed, ref, watch } from 'vue'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
+import Modal from '@/Components/Modal.vue'
+import PlantCreateModal from '@/Components/PlantCreateModal.vue'
 import { useToast } from '@/composables/useToast'
+import { useSimpleModal } from '@/composables/useModal'
 
 interface EnvironmentRange {
   min?: number | string | null
@@ -321,6 +229,7 @@ interface Props {
 
 const props = defineProps<Props>()
 const { showToast } = useToast()
+const { isOpen: showCreateModal, open: openCreateModal, close: closeCreateModal } = useSimpleModal()
 const selectedPlantId = ref<number | null>(null)
 const deletingId = ref<number | null>(null)
 const plants = computed(() => props.plants)
@@ -450,24 +359,23 @@ function populateEnvironment(env?: Record<string, EnvironmentRange> | null): Rec
 }
 
 function handleSubmit(): void {
-  const payload = form.data()
-  if (isEditing.value && selectedPlantId.value) {
-    form.put(`/plants/${selectedPlantId.value}`, {
-      onSuccess: () => {
-        showToast('Растение обновлено', 'success')
-        form.clearErrors()
-      },
-      onError: () => showToast('Не удалось обновить растение', 'error'),
-    })
-  } else {
-    form.post('/plants', {
-      onSuccess: () => {
-        showToast('Растение создано', 'success')
-        resetForm()
-      },
-      onError: () => showToast('Не удалось создать растение', 'error'),
-    })
+  if (!isEditing.value || !selectedPlantId.value) {
+    showToast('Выберите растение для редактирования', 'warning')
+    return
   }
+  
+  form.put(`/plants/${selectedPlantId.value}`, {
+    onSuccess: () => {
+      showToast('Растение обновлено', 'success')
+      form.clearErrors()
+    },
+    onError: () => showToast('Не удалось обновить растение', 'error'),
+  })
+}
+
+function onPlantCreated(plant: any): void {
+  showToast('Растение успешно создано', 'success')
+  // Страница уже обновится через router.reload в модальном окне
 }
 
 function deletePlant(plant: PlantSummary): void {
@@ -552,6 +460,44 @@ watch(selectedPlantId, () => {
 }
 .form-error {
   @apply text-xs text-red-400 mt-1;
+}
+
+table {
+  table-layout: auto;
+}
+
+th, td {
+  white-space: nowrap;
+}
+
+th:first-child,
+td:first-child {
+  white-space: normal;
+  min-width: 150px;
+  max-width: 200px;
+}
+
+th:nth-child(2),
+td:nth-child(2) {
+  white-space: normal;
+  min-width: 150px;
+  max-width: 200px;
+}
+
+th:nth-child(3),
+td:nth-child(3),
+th:nth-child(4),
+td:nth-child(4),
+th:nth-child(5),
+td:nth-child(5) {
+  min-width: 120px;
+}
+
+th:nth-child(6),
+td:nth-child(6) {
+  white-space: normal;
+  min-width: 200px;
+  max-width: 300px;
 }
 </style>
 

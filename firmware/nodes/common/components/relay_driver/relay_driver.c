@@ -117,7 +117,8 @@ esp_err_t relay_driver_init(const relay_channel_config_t *channels, size_t chann
 }
 
 esp_err_t relay_driver_init_from_config(void) {
-    char config_json[CONFIG_STORAGE_MAX_JSON_SIZE];
+    // КРИТИЧНО: Используем статический буфер вместо стека для предотвращения переполнения
+    static char config_json[CONFIG_STORAGE_MAX_JSON_SIZE];
     esp_err_t err = config_storage_get_json(config_json, sizeof(config_json));
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to load config from storage");
@@ -138,6 +139,8 @@ esp_err_t relay_driver_init_from_config(void) {
     }
     
     relay_channel_config_t relay_configs[MAX_RELAY_CHANNELS];
+    // ВАЖНО: Буферы для хранения имен каналов (нужны, так как JSON будет удален)
+    static char channel_names[MAX_RELAY_CHANNELS][RELAY_DRIVER_MAX_STRING_LEN];
     size_t relay_count = 0;
     
     int channel_count = cJSON_GetArraySize(channels);
@@ -167,7 +170,10 @@ esp_err_t relay_driver_init_from_config(void) {
                     if (name_item != NULL && cJSON_IsString(name_item) &&
                         gpio_item != NULL && cJSON_IsNumber(gpio_item)) {
                         relay_channel_config_t *relay_cfg = &relay_configs[relay_count];
-                        relay_cfg->channel_name = name_item->valuestring;
+                        // Копируем имя канала в статический буфер перед удалением JSON
+                        strncpy(channel_names[relay_count], name_item->valuestring, RELAY_DRIVER_MAX_STRING_LEN - 1);
+                        channel_names[relay_count][RELAY_DRIVER_MAX_STRING_LEN - 1] = '\0';
+                        relay_cfg->channel_name = channel_names[relay_count];
                         relay_cfg->gpio_pin = (int)cJSON_GetNumberValue(gpio_item);
                         relay_cfg->active_high = true; // По умолчанию active high
                         

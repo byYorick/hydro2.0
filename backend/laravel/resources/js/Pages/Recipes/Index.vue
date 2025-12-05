@@ -16,41 +16,43 @@
       </div>
     </div>
     <div class="rounded-xl border border-neutral-800 overflow-hidden max-h-[720px] flex flex-col">
-      <!-- Заголовок таблицы -->
-      <div class="flex-shrink-0 grid grid-cols-4 gap-0 bg-neutral-900 text-neutral-300 text-sm border-b border-neutral-800">
-        <div v-for="(h, i) in headers" :key="i" class="px-3 py-2 text-left font-medium">
-          {{ h }}
-        </div>
-      </div>
-      <!-- Виртуализированный список -->
-      <div class="flex-1 overflow-hidden">
-        <RecycleScroller
-          :items="rows"
-          :item-size="rowHeight"
-          key-field="0"
-          v-slot="{ item: r, index }"
-          class="virtual-table-body h-full"
-        >
-          <div 
-            :class="index % 2 === 0 ? 'bg-neutral-950' : 'bg-neutral-925'" 
-            class="grid grid-cols-4 gap-0 text-sm border-b border-neutral-900"
-            style="height:44px"
-          >
-            <div class="px-3 py-2 flex items-center">
-              <Link :href="`/recipes/${r[0]}`" class="text-sky-400 hover:underline">{{ r[1] }}</Link>
-            </div>
-            <div class="px-3 py-2 flex items-center text-xs text-neutral-400">{{ r[2] || 'Без описания' }}</div>
-            <div class="px-3 py-2 flex items-center">{{ r[3] || 0 }}</div>
-            <div class="px-3 py-2 flex items-center">
-              <Link :href="`/recipes/${r[0]}`">
-                <Button size="sm" variant="secondary">Открыть</Button>
-              </Link>
-            </div>
-          </div>
-        </RecycleScroller>
-        <div v-if="!rows.length" class="text-sm text-neutral-400 px-3 py-6">
-          {{ all.length === 0 ? 'Рецепты не найдены' : 'Нет рецептов по текущему фильтру' }}
-        </div>
+      <div class="overflow-auto flex-1">
+        <table class="w-full border-collapse">
+          <thead class="bg-neutral-900 text-neutral-300 text-sm sticky top-0 z-10">
+            <tr>
+              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Название</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Описание</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Фаз</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Действия</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="(r, index) in rows"
+              :key="r[0]"
+              :class="index % 2 === 0 ? 'bg-neutral-950' : 'bg-neutral-925'"
+              class="text-sm border-b border-neutral-900 hover:bg-neutral-900 transition-colors"
+            >
+              <td class="px-3 py-2">
+                <Link :href="`/recipes/${r[0]}`" class="text-sky-400 hover:underline truncate block">{{ r[1] }}</Link>
+              </td>
+              <td class="px-3 py-2 text-xs text-neutral-400">
+                <span class="truncate block">{{ r[2] || 'Без описания' }}</span>
+              </td>
+              <td class="px-3 py-2 text-xs text-neutral-400">{{ r[3] || 0 }}</td>
+              <td class="px-3 py-2">
+                <Link :href="`/recipes/${r[0]}`">
+                  <Button size="sm" variant="secondary">Открыть</Button>
+                </Link>
+              </td>
+            </tr>
+            <tr v-if="!rows.length">
+              <td colspan="4" class="px-3 py-6 text-sm text-neutral-400 text-center">
+                {{ all.length === 0 ? 'Рецепты не найдены' : 'Нет рецептов по текущему фильтру' }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
 
@@ -108,7 +110,41 @@ const rows = computed(() => {
   ])
 })
 
-// Виртуализация через RecycleScroller
-const rowHeight = 44
 </script>
+
+<style scoped>
+table {
+  table-layout: auto;
+}
+
+th, td {
+  white-space: nowrap;
+}
+
+th:first-child,
+td:first-child {
+  white-space: normal;
+  min-width: 200px;
+  max-width: 300px;
+}
+
+th:nth-child(2),
+td:nth-child(2) {
+  white-space: normal;
+  min-width: 250px;
+  max-width: 400px;
+}
+
+th:nth-child(3),
+td:nth-child(3) {
+  min-width: 80px;
+  text-align: center;
+}
+
+th:last-child,
+td:last-child {
+  min-width: 120px;
+  text-align: center;
+}
+</style>
 

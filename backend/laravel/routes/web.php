@@ -1884,6 +1884,7 @@ Route::get('/swagger', function () {
 
 Route::middleware(['web', 'auth', 'role:admin,operator,agronomist'])->group(function () {
     Route::get('/plants', [PlantController::class, 'index'])->name('plants.index');
+    Route::get('/plants/{plant}', [PlantController::class, 'show'])->name('plants.show');
     Route::post('/plants', [PlantController::class, 'store'])->name('plants.store');
     Route::put('/plants/{plant}', [PlantController::class, 'update'])->name('plants.update');
     Route::delete('/plants/{plant}', [PlantController::class, 'destroy'])->name('plants.destroy');

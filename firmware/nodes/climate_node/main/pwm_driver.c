@@ -139,7 +139,8 @@ esp_err_t pwm_driver_init(const pwm_driver_channel_config_t *channels, size_t ch
 }
 
 esp_err_t pwm_driver_init_from_config(void) {
-    char config_json[CONFIG_STORAGE_MAX_JSON_SIZE];
+    // КРИТИЧНО: Используем статический буфер вместо стека для предотвращения переполнения
+    static char config_json[CONFIG_STORAGE_MAX_JSON_SIZE];
     esp_err_t err = config_storage_get_json(config_json, sizeof(config_json));
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to read NodeConfig from storage");
@@ -160,6 +161,8 @@ esp_err_t pwm_driver_init_from_config(void) {
     }
 
     pwm_driver_channel_config_t channel_configs[PWM_DRIVER_MAX_CHANNELS];
+    // ВАЖНО: Буферы для хранения имен каналов (нужны, так как JSON будет удален)
+    static char channel_names[PWM_DRIVER_MAX_CHANNELS][CONFIG_STORAGE_MAX_STRING_LEN];
     size_t cfg_count = 0;
 
     int channels_size = cJSON_GetArraySize(channels);
@@ -193,11 +196,15 @@ esp_err_t pwm_driver_init_from_config(void) {
         cJSON *freq_item = cJSON_GetObjectItem(channel, "pwm_frequency_hz");
         cJSON *res_item = cJSON_GetObjectItem(channel, "pwm_resolution_bits");
 
-        pwm_driver_channel_config_t *cfg = &channel_configs[cfg_count++];
-        cfg->channel_name = name_item->valuestring;
+        pwm_driver_channel_config_t *cfg = &channel_configs[cfg_count];
+        // Копируем имя канала в статический буфер перед удалением JSON
+        strncpy(channel_names[cfg_count], name_item->valuestring, CONFIG_STORAGE_MAX_STRING_LEN - 1);
+        channel_names[cfg_count][CONFIG_STORAGE_MAX_STRING_LEN - 1] = '\0';
+        cfg->channel_name = channel_names[cfg_count];
         cfg->gpio_pin = (int)cJSON_GetNumberValue(gpio_item);
         cfg->frequency_hz = (freq_item != NULL && cJSON_IsNumber(freq_item)) ? (uint32_t)cJSON_GetNumberValue(freq_item) : PWM_DRIVER_DEFAULT_FREQ_HZ;
         cfg->resolution_bits = (res_item != NULL && cJSON_IsNumber(res_item)) ? (int)cJSON_GetNumberValue(res_item) : PWM_DRIVER_DEFAULT_RES_BITS;
+        cfg_count++;
     }
 
     if (cfg_count == 0) {

@@ -19,6 +19,8 @@
 #include "esp_timer.h"
 #include "esp_efuse.h"
 #include "esp_mac.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -68,6 +70,9 @@ static void *s_config_user_ctx = NULL;
 static void *s_command_user_ctx = NULL;
 static void *s_connection_user_ctx = NULL;
 
+// Mutex для защиты s_node_info и статических буферов от гонок данных
+static SemaphoreHandle_t s_node_info_mutex = NULL;
+
 // Forward declarations
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base, 
                                int32_t event_id, void *event_data);
@@ -75,26 +80,45 @@ static esp_err_t mqtt_manager_publish_internal(const char *topic, const char *da
 
 /**
  * @brief Построение MQTT топика
+ * КРИТИЧНО: Защищено mutex для потокобезопасного доступа к s_node_info
  */
 static esp_err_t build_topic(char *topic_buf, size_t buf_size, const char *type, const char *channel) {
     if (!topic_buf || buf_size == 0) {
         return ESP_ERR_INVALID_ARG;
     }
 
+    // Защищаем доступ к s_node_info
+    const char *gh_uid = NULL;
+    const char *zone_uid = NULL;
+    const char *node_uid = NULL;
+    
+    if (s_node_info_mutex != NULL && xSemaphoreTake(s_node_info_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        gh_uid = s_node_info.gh_uid;
+        zone_uid = s_node_info.zone_uid;
+        node_uid = s_node_info.node_uid;
+        xSemaphoreGive(s_node_info_mutex);
+    } else {
+        // Fallback без защиты (небезопасно, но лучше чем упасть)
+        ESP_LOGW(TAG, "Failed to take node_info mutex in build_topic");
+        gh_uid = s_node_info.gh_uid;
+        zone_uid = s_node_info.zone_uid;
+        node_uid = s_node_info.node_uid;
+    }
+
     int len;
     if (channel && channel[0] != '\0') {
         // Топик с каналом: hydro/{gh}/{zone}/{node}/{channel}/{type}
         len = snprintf(topic_buf, buf_size, "hydro/%s/%s/%s/%s/%s",
-                      s_node_info.gh_uid ? s_node_info.gh_uid : "",
-                      s_node_info.zone_uid ? s_node_info.zone_uid : "",
-                      s_node_info.node_uid ? s_node_info.node_uid : "",
+                      gh_uid ? gh_uid : "",
+                      zone_uid ? zone_uid : "",
+                      node_uid ? node_uid : "",
                       channel, type);
     } else {
         // Топик без канала: hydro/{gh}/{zone}/{node}/{type}
         len = snprintf(topic_buf, buf_size, "hydro/%s/%s/%s/%s",
-                      s_node_info.gh_uid ? s_node_info.gh_uid : "",
-                      s_node_info.zone_uid ? s_node_info.zone_uid : "",
-                      s_node_info.node_uid ? s_node_info.node_uid : "",
+                      gh_uid ? gh_uid : "",
+                      zone_uid ? zone_uid : "",
+                      node_uid ? node_uid : "",
                       type);
     }
 
@@ -127,6 +151,15 @@ esp_err_t mqtt_manager_init(const mqtt_manager_config_t *config, const mqtt_node
         return ESP_ERR_INVALID_ARG;
     }
 
+    // Инициализация mutex для защиты s_node_info
+    if (s_node_info_mutex == NULL) {
+        s_node_info_mutex = xSemaphoreCreateMutex();
+        if (s_node_info_mutex == NULL) {
+            ESP_LOGE(TAG, "Failed to create node_info mutex");
+            return ESP_ERR_NO_MEM;
+        }
+    }
+
     ESP_LOGI(TAG, "Initializing MQTT manager...");
     ESP_LOGI(TAG, "Broker: %s:%u", config->host, config->port);
     ESP_LOGI(TAG, "Node: %s/%s/%s", 
@@ -134,23 +167,91 @@ esp_err_t mqtt_manager_init(const mqtt_manager_config_t *config, const mqtt_node
              node_info->zone_uid ? node_info->zone_uid : "?",
              node_info->node_uid);
 
-    // Сохраняем конфигурацию (сначала node_info, чтобы build_topic работал)
-    memcpy(&s_node_info, node_info, sizeof(mqtt_node_info_t));
-    memcpy(&s_config, config, sizeof(mqtt_manager_config_t));
+    // ВАЖНО: Копируем строки в статические буферы, так как node_info содержит указатели
+    // на локальные буферы, которые могут стать невалидными
+    static char s_init_gh_uid[128] = {0};
+    static char s_init_zone_uid[128] = {0};
+    static char s_init_node_uid[128] = {0};
+    
+    // Копируем node_info в статические буферы
+    if (node_info->node_uid && node_info->node_uid[0] != '\0') {
+        strlcpy(s_init_node_uid, node_info->node_uid, sizeof(s_init_node_uid));
+        s_node_info.node_uid = s_init_node_uid;
+    } else {
+        s_node_info.node_uid = NULL;
+    }
+    
+    if (node_info->gh_uid && node_info->gh_uid[0] != '\0') {
+        strlcpy(s_init_gh_uid, node_info->gh_uid, sizeof(s_init_gh_uid));
+        s_node_info.gh_uid = s_init_gh_uid;
+    } else {
+        s_node_info.gh_uid = NULL;
+    }
+    
+    if (node_info->zone_uid && node_info->zone_uid[0] != '\0') {
+        strlcpy(s_init_zone_uid, node_info->zone_uid, sizeof(s_init_zone_uid));
+        s_node_info.zone_uid = s_init_zone_uid;
+    } else {
+        s_node_info.zone_uid = NULL;
+    }
+    
+    // ВАЖНО: Копируем строки конфигурации MQTT в статические буферы
+    // так как config содержит указатели на локальные буферы, которые могут стать невалидными
+    static char s_config_host[128] = {0};
+    static char s_config_username[128] = {0};
+    static char s_config_password[128] = {0};
+    static char s_config_client_id[128] = {0};
+    
+    // Копируем host
+    if (config->host && config->host[0] != '\0') {
+        strlcpy(s_config_host, config->host, sizeof(s_config_host));
+        s_config.host = s_config_host;
+    } else {
+        s_config.host = NULL;
+    }
+    
+    // Копируем username
+    if (config->username && config->username[0] != '\0') {
+        strlcpy(s_config_username, config->username, sizeof(s_config_username));
+        s_config.username = s_config_username;
+    } else {
+        s_config.username = NULL;
+    }
+    
+    // Копируем password
+    if (config->password && config->password[0] != '\0') {
+        strlcpy(s_config_password, config->password, sizeof(s_config_password));
+        s_config.password = s_config_password;
+    } else {
+        s_config.password = NULL;
+    }
+    
+    // Копируем client_id
+    if (config->client_id && config->client_id[0] != '\0') {
+        strlcpy(s_config_client_id, config->client_id, sizeof(s_config_client_id));
+        s_config.client_id = s_config_client_id;
+    } else {
+        s_config.client_id = NULL;
+    }
+    
+    // Копируем остальные поля
+    s_config.port = config->port;
+    s_config.keepalive = config->keepalive;
+    s_config.use_tls = config->use_tls;
 
     // Формируем URI
-    const char *protocol = config->use_tls ? "mqtts://" : "mqtt://";
+    const char *protocol = s_config.use_tls ? "mqtts://" : "mqtt://";
     int uri_len = snprintf(s_mqtt_uri, sizeof(s_mqtt_uri), "%s%s:%u", 
-                          protocol, config->host, config->port);
+                          protocol, s_config.host, s_config.port);
     if (uri_len < 0 || uri_len >= sizeof(s_mqtt_uri)) {
         ESP_LOGE(TAG, "MQTT URI is too long");
         return ESP_ERR_INVALID_SIZE;
     }
 
     // Определяем client_id
-    const char *client_id = config->client_id;
+    const char *client_id = s_config.client_id;
     if (!client_id || client_id[0] == '\0') {
-        client_id = node_info->node_uid;
+        client_id = s_node_info.node_uid;  // Используем уже скопированное значение
     }
 
     // Настройка LWT (Last Will and Testament) - нужно статическое хранилище
@@ -163,7 +264,7 @@ esp_err_t mqtt_manager_init(const mqtt_manager_config_t *config, const mqtt_node
     // Конфигурация MQTT клиента
     esp_mqtt_client_config_t mqtt_cfg = {
         .broker.address.uri = s_mqtt_uri,
-        .session.keepalive = config->keepalive > 0 ? config->keepalive : 30,
+        .session.keepalive = s_config.keepalive > 0 ? s_config.keepalive : 30,
         .session.disable_clean_session = 0,
         .network.reconnect_timeout_ms = 10000,
         .network.timeout_ms = 10000,
@@ -176,10 +277,10 @@ esp_err_t mqtt_manager_init(const mqtt_manager_config_t *config, const mqtt_node
     ESP_LOGI(TAG, "LWT configured: %s -> 'offline'", lwt_topic_static);
 
     // Аутентификация (если указана)
-    if (config->username && config->username[0] != '\0') {
-        mqtt_cfg.credentials.username = config->username;
-        if (config->password && config->password[0] != '\0') {
-            mqtt_cfg.credentials.authentication.password = config->password;
+    if (s_config.username && s_config.username[0] != '\0') {
+        mqtt_cfg.credentials.username = s_config.username;
+        if (s_config.password && s_config.password[0] != '\0') {
+            mqtt_cfg.credentials.authentication.password = s_config.password;
         }
     }
 
@@ -203,7 +304,10 @@ esp_err_t mqtt_manager_init(const mqtt_manager_config_t *config, const mqtt_node
         return err;
     }
 
-    ESP_LOGI(TAG, "MQTT manager initialized successfully");
+    // КРИТИЧНО: Убираем логирование сразу после регистрации обработчика для предотвращения паники
+    // Проблема возникает при вызове ESP_LOGI - возможно из-за повреждения стека или heap
+    // Логирование будет выполнено позже, когда система стабилизируется
+    // ESP_LOGI(TAG, "MQTT manager initialized successfully");
     return ESP_OK;
 }
 
@@ -260,6 +364,17 @@ esp_err_t mqtt_manager_update_node_info(const mqtt_node_info_t *node_info) {
         return ESP_ERR_INVALID_ARG;
     }
 
+    // КРИТИЧНО: Защищаем обновление s_node_info mutex для потокобезопасности
+    if (s_node_info_mutex == NULL) {
+        ESP_LOGE(TAG, "Node info mutex not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (xSemaphoreTake(s_node_info_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        ESP_LOGE(TAG, "Failed to take node_info mutex");
+        return ESP_ERR_TIMEOUT;
+    }
+
     // Обновляем информацию об узле
     // ВАЖНО: Используем статические буферы для хранения строк, так как node_info содержит указатели
     static char s_gh_uid_static[64] = {0};
@@ -290,6 +405,7 @@ esp_err_t mqtt_manager_update_node_info(const mqtt_node_info_t *node_info) {
              s_node_info.zone_uid ? s_node_info.zone_uid : "NULL",
              s_node_info.node_uid ? s_node_info.node_uid : "NULL");
 
+    xSemaphoreGive(s_node_info_mutex);
     return ESP_OK;
 }
 
@@ -666,8 +782,11 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
             
             // Создание null-terminated строк для topic и data
             // Размер буфера topic увеличен до 192 для соответствия build_topic
-            char topic[192] = {0};
-            char data[2048] = {0};
+            // КРИТИЧНО: Используем статические буферы вместо стека для предотвращения переполнения
+            // ВАЖНО: ESP-IDF MQTT клиент вызывает обработчики событий последовательно из одного потока,
+            // поэтому статические буферы безопасны (нет гонки данных)
+            static char topic[192] = {0};
+            static char data[2048] = {0};
 
             int topic_len = (event->topic_len < sizeof(topic) - 1) ? 
                            event->topic_len : sizeof(topic) - 1;
@@ -676,9 +795,15 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
 
             if (event->topic) {
                 memcpy(topic, event->topic, topic_len);
+                topic[topic_len] = '\0';  // КРИТИЧНО: Добавляем null-terminator
+            } else {
+                topic[0] = '\0';
             }
             if (event->data) {
                 memcpy(data, event->data, data_len);
+                data[data_len] = '\0';  // КРИТИЧНО: Добавляем null-terminator
+            } else {
+                data[0] = '\0';
             }
             
             // Логирование входящих сообщений

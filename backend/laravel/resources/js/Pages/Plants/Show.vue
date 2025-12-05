@@ -1,0 +1,637 @@
+<template>
+  <AppLayout>
+    <Head :title="plant.name" />
+    <div class="flex flex-col gap-4">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div class="flex-1 min-w-0">
+          <div class="text-lg font-semibold truncate">{{ plant.name }}</div>
+          <div class="text-xs text-neutral-400 mt-1">
+            <span v-if="plant.species">{{ plant.species }}</span>
+            <span v-if="plant.variety"> · {{ plant.variety }}</span>
+            <span v-if="plant.description" class="block sm:inline sm:ml-1">
+              <span v-if="plant.species || plant.variety" class="hidden sm:inline">·</span>
+              {{ plant.description }}
+            </span>
+          </div>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <Link href="/plants">
+            <Button size="sm" variant="secondary">Назад к списку</Button>
+          </Link>
+          <Button size="sm" variant="outline" @click="openEditModal">Редактировать</Button>
+          <Button size="sm" variant="danger" @click="deletePlant" :disabled="deleting">Удалить</Button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <!-- Основная информация -->
+        <Card class="xl:col-span-2">
+          <div class="text-sm font-semibold mb-3">Основная информация</div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <div class="text-xs text-neutral-400 mb-1">Вид</div>
+              <div class="text-sm text-neutral-100">{{ plant.species || '—' }}</div>
+            </div>
+            <div>
+              <div class="text-xs text-neutral-400 mb-1">Сорт</div>
+              <div class="text-sm text-neutral-100">{{ plant.variety || '—' }}</div>
+            </div>
+            <div>
+              <div class="text-xs text-neutral-400 mb-1">Субстрат</div>
+              <div class="text-sm text-neutral-100">
+                {{ plant.substrate_type ? taxonomyLabel('substrate_type', plant.substrate_type) : '—' }}
+              </div>
+            </div>
+            <div>
+              <div class="text-xs text-neutral-400 mb-1">Система выращивания</div>
+              <div class="text-sm text-neutral-100">
+                {{ plant.growing_system ? taxonomyLabel('growing_system', plant.growing_system) : '—' }}
+              </div>
+            </div>
+            <div>
+              <div class="text-xs text-neutral-400 mb-1">Фотопериод</div>
+              <div class="text-sm text-neutral-100">
+                {{ plant.photoperiod_preset ? taxonomyLabel('photoperiod_preset', plant.photoperiod_preset) : '—' }}
+              </div>
+            </div>
+            <div>
+              <div class="text-xs text-neutral-400 mb-1">Сезонность</div>
+              <div class="text-sm text-neutral-100">
+                {{ seasonalityLabel(plant.seasonality) }}
+              </div>
+            </div>
+          </div>
+          <div v-if="plant.description" class="mt-4">
+            <div class="text-xs text-neutral-400 mb-1">Описание</div>
+            <div class="text-sm text-neutral-300 leading-relaxed">{{ plant.description }}</div>
+          </div>
+        </Card>
+
+        <!-- Экономика -->
+        <Card v-if="plant.profitability?.has_pricing">
+          <div class="text-sm font-semibold mb-3">Экономика</div>
+          <div class="space-y-3">
+            <div>
+              <div class="text-xs text-neutral-400 uppercase tracking-wide mb-1">Себестоимость</div>
+              <div class="text-lg font-semibold text-neutral-100">
+                {{ formatCurrency(plant.profitability.total_cost, plant.profitability.currency) }}
+              </div>
+            </div>
+            <div>
+              <div class="text-xs text-neutral-400 uppercase tracking-wide mb-1">Оптовая цена</div>
+              <div class="text-lg font-semibold text-emerald-400">
+                {{ formatCurrency(plant.profitability.wholesale_price, plant.profitability.currency) }}
+              </div>
+              <div class="text-xs text-neutral-500 mt-1">
+                Маржа: {{ formatCurrency(plant.profitability.margin_wholesale, plant.profitability.currency) }}
+              </div>
+            </div>
+            <div>
+              <div class="text-xs text-neutral-400 uppercase tracking-wide mb-1">Розничная цена</div>
+              <div class="text-lg font-semibold text-sky-400">
+                {{ formatCurrency(plant.profitability.retail_price, plant.profitability.currency) }}
+              </div>
+              <div class="text-xs text-neutral-500 mt-1">
+                Маржа: {{ formatCurrency(plant.profitability.margin_retail, plant.profitability.currency) }}
+              </div>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      <!-- Диапазоны параметров -->
+      <Card v-if="hasEnvironment">
+        <div class="text-sm font-semibold mb-3">Диапазоны параметров</div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div v-for="(range, metric) in plant.environment_requirements" :key="metric">
+            <div class="text-xs text-neutral-400 uppercase tracking-wide mb-1">{{ metricLabel(metric) }}</div>
+            <div class="text-sm text-neutral-100">{{ formatRange(range) }}</div>
+          </div>
+        </div>
+      </Card>
+
+      <!-- Собственные фазы роста -->
+      <Card v-if="plant.growth_phases && plant.growth_phases.length > 0">
+        <div class="text-sm font-semibold mb-3">Фазы роста</div>
+        <div class="space-y-2">
+          <div
+            v-for="(phase, index) in plant.growth_phases"
+            :key="index"
+            class="text-sm text-neutral-300 p-2 rounded border border-neutral-800 bg-neutral-900/50"
+          >
+            <div class="font-medium">{{ phase.name || `Фаза ${index + 1}` }}</div>
+            <div v-if="phase.duration_days" class="text-xs text-neutral-400 mt-1">
+              Длительность: {{ phase.duration_days }} {{ phase.duration_days === 1 ? 'день' : 'дней' }}
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <!-- Рецепты выращивания -->
+      <Card v-if="plant.recipes && plant.recipes.length > 0">
+        <div class="text-sm font-semibold mb-4">Рецепты выращивания</div>
+        <div class="space-y-4">
+          <Card
+            v-for="recipe in plant.recipes"
+            :key="recipe.id"
+            class="p-4"
+          >
+            <div class="flex items-start justify-between mb-4">
+              <div class="flex-1">
+                <div class="flex items-center gap-2 mb-2">
+                  <Link :href="`/recipes/${recipe.id}`" class="text-base font-semibold text-sky-400 hover:underline">
+                    {{ recipe.name }}
+                  </Link>
+                  <Badge v-if="recipe.is_default" size="xs" variant="info">По умолчанию</Badge>
+                </div>
+                <div v-if="recipe.description" class="text-sm text-neutral-400 mb-1">{{ recipe.description }}</div>
+                <div v-if="recipe.season || recipe.site_type" class="text-xs text-neutral-500">
+                  <span v-if="recipe.season">Сезон: {{ recipe.season }}</span>
+                  <span v-if="recipe.site_type" class="ml-2">Тип: {{ recipe.site_type }}</span>
+                </div>
+              </div>
+            </div>
+            <div v-if="recipe.phases && recipe.phases.length > 0" class="mt-3">
+              <div class="text-xs text-neutral-400 mb-3">Фазы ({{ recipe.phases.length }}):</div>
+              <div class="space-y-4">
+                <Card
+                  v-for="phase in recipe.phases"
+                  :key="phase.id"
+                  class="p-4"
+                >
+                  <div class="flex items-center justify-between mb-4">
+                    <div class="font-semibold text-base text-neutral-100">
+                      {{ phase.phase_index + 1 }}. {{ phase.name }}
+                    </div>
+                    <div class="text-sm text-neutral-400">
+                      Длительность: {{ formatDuration(phase.duration_hours) }}
+                    </div>
+                  </div>
+                  <div v-if="hasPhaseTargets(phase.targets)" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <!-- pH -->
+                    <div v-if="hasTargetValue(phase.targets?.ph)" class="rounded-lg border border-neutral-800 bg-neutral-900/50 p-3">
+                      <div class="text-xs text-neutral-400 mb-1 uppercase tracking-wide">pH</div>
+                      <div class="text-base font-semibold text-neutral-100">
+                        {{ formatTargetRange(phase.targets.ph) }}
+                      </div>
+                    </div>
+                    <!-- EC -->
+                    <div v-if="hasTargetValue(phase.targets?.ec)" class="rounded-lg border border-neutral-800 bg-neutral-900/50 p-3">
+                      <div class="text-xs text-neutral-400 mb-1 uppercase tracking-wide">EC (мСм/см)</div>
+                      <div class="text-base font-semibold text-neutral-100">
+                        {{ formatTargetRange(phase.targets.ec) }}
+                      </div>
+                    </div>
+                    <!-- Температура -->
+                    <div v-if="hasTargetValue(phase.targets?.temp_air)" class="rounded-lg border border-neutral-800 bg-neutral-900/50 p-3">
+                      <div class="text-xs text-neutral-400 mb-1 uppercase tracking-wide">Температура воздуха</div>
+                      <div class="text-base font-semibold text-neutral-100">
+                        {{ phase.targets.temp_air }}°C
+                      </div>
+                    </div>
+                    <!-- Влажность -->
+                    <div v-if="hasTargetValue(phase.targets?.humidity_air)" class="rounded-lg border border-neutral-800 bg-neutral-900/50 p-3">
+                      <div class="text-xs text-neutral-400 mb-1 uppercase tracking-wide">Влажность воздуха</div>
+                      <div class="text-base font-semibold text-neutral-100">
+                        {{ phase.targets.humidity_air }}%
+                      </div>
+                    </div>
+                    <!-- Свет -->
+                    <div v-if="hasTargetValue(phase.targets?.light_hours)" class="rounded-lg border border-neutral-800 bg-neutral-900/50 p-3">
+                      <div class="text-xs text-neutral-400 mb-1 uppercase tracking-wide">Световой день</div>
+                      <div class="text-base font-semibold text-neutral-100">
+                        {{ phase.targets.light_hours }} ч
+                      </div>
+                    </div>
+                    <!-- Интервал полива -->
+                    <div v-if="hasTargetValue(phase.targets?.irrigation_interval_sec)" class="rounded-lg border border-neutral-800 bg-neutral-900/50 p-3">
+                      <div class="text-xs text-neutral-400 mb-1 uppercase tracking-wide">Интервал полива</div>
+                      <div class="text-base font-semibold text-neutral-100">
+                        {{ formatIrrigationInterval(phase.targets.irrigation_interval_sec) }}
+                      </div>
+                    </div>
+                    <!-- Длительность полива -->
+                    <div v-if="hasTargetValue(phase.targets?.irrigation_duration_sec)" class="rounded-lg border border-neutral-800 bg-neutral-900/50 p-3">
+                      <div class="text-xs text-neutral-400 mb-1 uppercase tracking-wide">Длительность полива</div>
+                      <div class="text-base font-semibold text-neutral-100">
+                        {{ phase.targets.irrigation_duration_sec }} сек
+                      </div>
+                    </div>
+                  </div>
+                  <div v-else class="text-xs text-neutral-500 text-center py-2">
+                    Параметры не заданы
+                  </div>
+                </Card>
+              </div>
+            </div>
+            <div v-else class="text-xs text-neutral-500 mt-2">Нет фаз в рецепте</div>
+          </Card>
+        </div>
+      </Card>
+
+      <!-- Редактирование в модальном окне -->
+      <Modal :open="showEditModal" title="Редактирование растения" @close="closeEditModal" size="large">
+        <form @submit.prevent="handleSubmit" class="space-y-4">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="md:col-span-2">
+              <label class="form-label">Название</label>
+              <input v-model="form.name" type="text" class="form-input" />
+              <p v-if="form.errors.name" class="form-error">{{ form.errors.name }}</p>
+            </div>
+            <div>
+              <label class="form-label">Вид</label>
+              <input v-model="form.species" type="text" class="form-input" />
+            </div>
+            <div>
+              <label class="form-label">Сорт</label>
+              <input v-model="form.variety" type="text" class="form-input" />
+            </div>
+            <div>
+              <label class="form-label">Субстрат</label>
+              <select v-model="form.substrate_type" class="form-input">
+                <option value="">Не выбрано</option>
+                <option v-for="option in taxonomies.substrate_type" :key="option.id" :value="option.id">
+                  {{ option.label }}
+                </option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label">Система</label>
+              <select v-model="form.growing_system" class="form-input">
+                <option value="">Не выбрано</option>
+                <option v-for="option in taxonomies.growing_system" :key="option.id" :value="option.id">
+                  {{ option.label }}
+                </option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label">Фотопериод</label>
+              <select v-model="form.photoperiod_preset" class="form-input">
+                <option value="">Не выбрано</option>
+                <option v-for="option in taxonomies.photoperiod_preset" :key="option.id" :value="option.id">
+                  {{ option.label }}
+                </option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label">Сезонность</label>
+              <select v-model="form.seasonality" class="form-input">
+                <option value="">Не выбрано</option>
+                <option v-for="option in seasonOptions" :key="option.value" :value="option.value">
+                  {{ option.label }}
+                </option>
+              </select>
+            </div>
+            <div class="md:col-span-2">
+              <label class="form-label">Описание</label>
+              <textarea v-model="form.description" rows="4" class="form-input"></textarea>
+            </div>
+            <div class="md:col-span-2">
+              <p class="text-sm font-semibold text-neutral-200 mb-2">Диапазоны</p>
+              <div class="grid grid-cols-2 gap-3" v-for="metric in rangeMetrics" :key="metric.key">
+                <label class="text-xs text-neutral-400 col-span-2">{{ metric.label }}</label>
+                <input
+                  v-model="form.environment_requirements[metric.key].min"
+                  type="number"
+                  step="0.1"
+                  class="form-input text-xs"
+                  placeholder="Мин"
+                />
+                <input
+                  v-model="form.environment_requirements[metric.key].max"
+                  type="number"
+                  step="0.1"
+                  class="form-input text-xs"
+                  placeholder="Макс"
+                />
+              </div>
+            </div>
+          </div>
+        </form>
+        <template #footer>
+          <Button type="button" variant="secondary" @click="closeEditModal" :disabled="form.processing">
+            Отмена
+          </Button>
+          <Button type="button" @click="handleSubmit" :disabled="form.processing">Сохранить</Button>
+        </template>
+      </Modal>
+    </div>
+  </AppLayout>
+</template>
+
+<script setup lang="ts">
+import { Head, useForm, router, Link } from '@inertiajs/vue3'
+import { computed, ref, watch } from 'vue'
+import AppLayout from '@/Layouts/AppLayout.vue'
+import Card from '@/Components/Card.vue'
+import Button from '@/Components/Button.vue'
+import Badge from '@/Components/Badge.vue'
+import Modal from '@/Components/Modal.vue'
+import { useToast } from '@/composables/useToast'
+import { useSimpleModal } from '@/composables/useModal'
+import { usePageProps } from '@/composables/usePageProps'
+
+interface EnvironmentRange {
+  min?: number | string | null
+  max?: number | string | null
+}
+
+interface RecipePhase {
+  id: number
+  phase_index: number
+  name: string
+  duration_hours: number
+  targets?: {
+    ph?: { min?: number; max?: number } | number | null
+    ec?: { min?: number; max?: number } | number | null
+    temp_air?: number | null
+    humidity_air?: number | null
+    light_hours?: number | null
+    irrigation_interval_sec?: number | null
+    irrigation_duration_sec?: number | null
+    [key: string]: any
+  }
+}
+
+interface PlantRecipe {
+  id: number
+  name: string
+  description?: string
+  is_default?: boolean
+  season?: string
+  site_type?: string
+  phases?: RecipePhase[]
+  phases_count?: number
+}
+
+interface PlantSummary {
+  id: number
+  slug: string
+  name: string
+  species?: string | null
+  variety?: string | null
+  substrate_type?: string | null
+  growing_system?: string | null
+  photoperiod_preset?: string | null
+  seasonality?: string | null
+  description?: string | null
+  environment_requirements?: Record<string, EnvironmentRange> | null
+  growth_phases?: Array<{ name?: string; duration_days?: number }>
+  recipes?: PlantRecipe[]
+  profitability?: ProfitabilitySnapshot | null
+}
+
+interface ProfitabilitySnapshot {
+  plant_id: number
+  currency: string
+  total_cost: number | null
+  wholesale_price: number | null
+  retail_price: number | null
+  margin_wholesale: number | null
+  margin_retail: number | null
+  has_pricing: boolean
+}
+
+interface TaxonomyOption {
+  id: string
+  label: string
+}
+
+interface PageProps {
+  plant?: PlantSummary
+  taxonomies?: Record<string, TaxonomyOption[]>
+}
+
+const { plant: plantProp, taxonomies: taxonomiesProp } = usePageProps<PageProps>(['plant', 'taxonomies'])
+const plant = computed(() => (plantProp.value || {}) as PlantSummary)
+const taxonomies = computed(() => ({
+  substrate_type: taxonomiesProp.value?.substrate_type ?? [],
+  growing_system: taxonomiesProp.value?.growing_system ?? [],
+  photoperiod_preset: taxonomiesProp.value?.photoperiod_preset ?? [],
+}))
+
+const { showToast } = useToast()
+const { isOpen: showEditModal, open: openEditModal, close: closeEditModal } = useSimpleModal()
+const deleting = ref(false)
+
+const taxonomyIndex = computed(() => {
+  const map: Record<string, Record<string, string>> = {}
+  Object.entries(taxonomies.value).forEach(([key, options]) => {
+    map[key] = options.reduce((acc, option) => {
+      acc[option.id] = option.label
+      return acc
+    }, {} as Record<string, string>)
+  })
+  return map
+})
+
+const seasonOptions = [
+  { value: 'all_year', label: 'Круглый год' },
+  { value: 'multi_cycle', label: 'Несколько циклов' },
+  { value: 'seasonal', label: 'Сезонное выращивание' },
+]
+
+const rangeMetrics = [
+  { key: 'temperature', label: 'Температура (°C)' },
+  { key: 'humidity', label: 'Влажность (%)' },
+  { key: 'ph', label: 'pH' },
+  { key: 'ec', label: 'EC (мСм/см)' },
+]
+
+const emptyEnvironment = () =>
+  rangeMetrics.reduce((acc, metric) => {
+    acc[metric.key] = { min: '', max: '' }
+    return acc
+  }, {} as Record<string, EnvironmentRange>)
+
+const form = useForm({
+  name: '',
+  slug: '',
+  species: '',
+  variety: '',
+  substrate_type: '',
+  growing_system: '',
+  photoperiod_preset: '',
+  seasonality: '',
+  description: '',
+  environment_requirements: emptyEnvironment(),
+})
+
+const hasEnvironment = computed(() => {
+  return Boolean(plant.value.environment_requirements && Object.keys(plant.value.environment_requirements).length > 0)
+})
+
+function taxonomyLabel(key: string, value?: string | null): string {
+  if (!value) return '—'
+  return taxonomyIndex.value[key]?.[value] ?? value
+}
+
+function seasonalityLabel(value?: string | null): string {
+  if (!value) return '—'
+  const option = seasonOptions.find(opt => opt.value === value)
+  return option?.label ?? value
+}
+
+function metricLabel(metric: string): string {
+  const metricMap: Record<string, string> = {
+    temperature: 'Температура (°C)',
+    humidity: 'Влажность (%)',
+    ph: 'pH',
+    ec: 'EC (мСм/см)',
+  }
+  return metricMap[metric] || metric
+}
+
+function formatRange(range: EnvironmentRange | undefined): string {
+  if (!range) return '—'
+  const min = range.min ?? ''
+  const max = range.max ?? ''
+  if (min === '' && max === '') return '—'
+  if (min !== '' && max !== '') return `${min} – ${max}`
+  return min !== '' ? `от ${min}` : `до ${max}`
+}
+
+function formatCurrency(value: number | string | null | undefined, currency = 'RUB'): string {
+  if (value === null || value === undefined || value === '') {
+    return '—'
+  }
+
+  const numeric = typeof value === 'string' ? Number(value) : value
+  if (Number.isNaN(numeric)) {
+    return '—'
+  }
+
+  return new Intl.NumberFormat('ru-RU', {
+    style: 'currency',
+    currency,
+    maximumFractionDigits: 2,
+  }).format(numeric)
+}
+
+function formatDuration(hours: number | null | undefined): string {
+  if (!hours) return '-'
+  if (hours < 24) return `${hours} ч`
+  const days = Math.floor(hours / 24)
+  const remainder = hours % 24
+  if (remainder === 0) return `${days} дн`
+  return `${days} дн ${remainder} ч`
+}
+
+function formatTargetRange(target: { min?: number; max?: number } | number): string {
+  if (typeof target === 'number') {
+    return target.toString()
+  }
+  if (!target) return '-'
+  const min = target.min ?? ''
+  const max = target.max ?? ''
+  if (min === '' && max === '') return '-'
+  if (min !== '' && max !== '') return `${min}–${max}`
+  return min !== '' ? `от ${min}` : `до ${max}`
+}
+
+function formatIrrigationInterval(seconds: number): string {
+  if (!seconds) return '-'
+  if (seconds < 60) return `${seconds} сек`
+  if (seconds < 3600) {
+    const minutes = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    if (secs === 0) return `${minutes} мин`
+    return `${minutes} мин ${secs} сек`
+  }
+  const hours = Math.floor(seconds / 3600)
+  const mins = Math.floor((seconds % 3600) / 60)
+  if (mins === 0) return `${hours} ч`
+  return `${hours} ч ${mins} мин`
+}
+
+function hasTargetValue(target: any): boolean {
+  if (target === null || target === undefined) return false
+  if (typeof target === 'number') return true
+  if (typeof target === 'object') {
+    return (target.min !== null && target.min !== undefined) || (target.max !== null && target.max !== undefined)
+  }
+  return false
+}
+
+function hasPhaseTargets(targets: any): boolean {
+  if (!targets || typeof targets !== 'object') return false
+  return Object.keys(targets).some(key => hasTargetValue(targets[key]))
+}
+
+function populateEnvironment(env?: Record<string, EnvironmentRange> | null): Record<string, EnvironmentRange> {
+  const template = emptyEnvironment()
+  if (!env) {
+    return template
+  }
+
+  Object.keys(template).forEach((key) => {
+    template[key] = {
+      min: env[key]?.min ?? '',
+      max: env[key]?.max ?? '',
+    }
+  })
+
+  return template
+}
+
+watch(() => showEditModal.value, (newVal: boolean) => {
+  if (newVal && plant.value) {
+    form.reset({
+      name: plant.value.name,
+      slug: plant.value.slug,
+      species: plant.value.species || '',
+      variety: plant.value.variety || '',
+      substrate_type: plant.value.substrate_type || '',
+      growing_system: plant.value.growing_system || '',
+      photoperiod_preset: plant.value.photoperiod_preset || '',
+      seasonality: plant.value.seasonality || '',
+      description: plant.value.description || '',
+      environment_requirements: populateEnvironment(plant.value.environment_requirements),
+    })
+    form.clearErrors()
+  }
+})
+
+function handleSubmit(): void {
+  if (!plant.value?.id) return
+
+  form.put(`/plants/${plant.value.id}`, {
+    onSuccess: () => {
+      showToast('Растение обновлено', 'success')
+      closeEditModal()
+    },
+    onError: () => showToast('Не удалось обновить растение', 'error'),
+  })
+}
+
+function deletePlant(): void {
+  if (!plant.value?.id) return
+  if (!confirm(`Удалить растение "${plant.value.name}"?`)) {
+    return
+  }
+  deleting.value = true
+  router.delete(`/plants/${plant.value.id}`, {
+    onSuccess: () => {
+      showToast('Растение удалено', 'success')
+      router.visit('/plants')
+    },
+    onError: () => {
+      showToast('Ошибка при удалении растения', 'error')
+      deleting.value = false
+    },
+  })
+}
+</script>
+
+<style scoped>
+.form-label {
+  @apply text-xs text-neutral-400 block mb-1;
+}
+.form-input {
+  @apply w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm text-neutral-100 focus:border-sky-500 focus:outline-none;
+}
+.form-error {
+  @apply text-xs text-red-400 mt-1;
+}
+</style>
+

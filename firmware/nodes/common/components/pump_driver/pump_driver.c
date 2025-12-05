@@ -239,7 +239,8 @@ esp_err_t pump_driver_init(const pump_channel_config_t *channels, size_t channel
 }
 
 esp_err_t pump_driver_init_from_config(void) {
-    char config_json[CONFIG_STORAGE_MAX_JSON_SIZE];
+    // КРИТИЧНО: Используем статический буфер вместо стека для предотвращения переполнения
+    static char config_json[CONFIG_STORAGE_MAX_JSON_SIZE];
     esp_err_t err = config_storage_get_json(config_json, sizeof(config_json));
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to load config from storage");

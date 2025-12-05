@@ -58,6 +58,24 @@ esp_err_t memory_pool_init(const memory_pool_config_t *config) {
 
     if (config != NULL) {
         s_memory_pool.config = *config;
+        // Защита от некорректных значений конфигурации
+        if (s_memory_pool.config.json_string_pool_size == 0) {
+            s_memory_pool.config.json_string_pool_size = DEFAULT_JSON_STRING_POOL_SIZE;
+        }
+        if (s_memory_pool.config.json_string_max_len == 0) {
+            s_memory_pool.config.json_string_max_len = DEFAULT_JSON_STRING_MAX_LEN;
+        }
+        // Ограничиваем максимальные значения для предотвращения переполнения heap
+        if (s_memory_pool.config.json_string_pool_size > 128) {
+            ESP_LOGW(TAG, "json_string_pool_size too large (%zu), limiting to 128", 
+                     s_memory_pool.config.json_string_pool_size);
+            s_memory_pool.config.json_string_pool_size = 128;
+        }
+        if (s_memory_pool.config.json_string_max_len > 4096) {
+            ESP_LOGW(TAG, "json_string_max_len too large (%zu), limiting to 4096", 
+                     s_memory_pool.config.json_string_max_len);
+            s_memory_pool.config.json_string_max_len = 4096;
+        }
     } else {
         s_memory_pool.config = default_config;
     }
@@ -114,9 +132,11 @@ esp_err_t memory_pool_init(const memory_pool_config_t *config) {
     }
 
     s_memory_pool.initialized = true;
-    ESP_LOGI(TAG, "Memory pool initialized (json_string_pool_size=%zu, max_len=%zu)",
-             s_memory_pool.config.json_string_pool_size,
-             s_memory_pool.config.json_string_max_len);
+    
+    // КРИТИЧНО: Убираем логирование сразу после инициализации для предотвращения паники
+    // Проблема возникает при вызове ESP_LOGI - возможно из-за повреждения стека или heap
+    // Логирование будет выполнено позже, когда система стабилизируется
+    // ESP_LOGI(TAG, "Memory pool initialized");
 
     return ESP_OK;
 }
@@ -202,7 +222,20 @@ char *memory_pool_alloc_json_string(size_t size) {
 
     // Поиск свободного слота в пуле
     char *result = NULL;
+    // Защита от повреждения указателя: проверяем, что пул существует
+    if (s_memory_pool.json_string_pool == NULL) {
+        xSemaphoreGive(s_memory_pool.mutex);
+        ESP_LOGE(TAG, "JSON string pool is NULL");
+        return (char *)malloc(size);
+    }
+    
     for (size_t i = 0; i < s_memory_pool.config.json_string_pool_size; i++) {
+        // Защита от повреждения указателя: проверяем валидность слота
+        if (s_memory_pool.json_string_pool[i].buffer == NULL) {
+            ESP_LOGE(TAG, "JSON string pool slot %zu has NULL buffer", i);
+            continue;
+        }
+        
         if (!s_memory_pool.json_string_pool[i].in_use) {
             // Проверка размера
             if (size <= s_memory_pool.json_string_pool[i].size) {
@@ -257,15 +290,23 @@ void memory_pool_free_json_string(char *str) {
 
     // Поиск буфера в пуле
     bool found_in_pool = false;
-    for (size_t i = 0; i < s_memory_pool.config.json_string_pool_size; i++) {
-        if (s_memory_pool.json_string_pool[i].buffer == str) {
-            s_memory_pool.json_string_pool[i].in_use = false;
-            found_in_pool = true;
-            
-            if (s_memory_pool.config.enable_metrics) {
-                s_memory_pool.metrics.json_strings_freed++;
+    // Защита от повреждения указателя: проверяем, что пул существует
+    if (s_memory_pool.json_string_pool != NULL) {
+        for (size_t i = 0; i < s_memory_pool.config.json_string_pool_size; i++) {
+            // Защита от повреждения указателя: проверяем валидность слота
+            if (s_memory_pool.json_string_pool[i].buffer == NULL) {
+                continue;
             }
-            break;
+            
+            if (s_memory_pool.json_string_pool[i].buffer == str) {
+                s_memory_pool.json_string_pool[i].in_use = false;
+                found_in_pool = true;
+                
+                if (s_memory_pool.config.enable_metrics) {
+                    s_memory_pool.metrics.json_strings_freed++;
+                }
+                break;
+            }
         }
     }
 

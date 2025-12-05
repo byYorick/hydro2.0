@@ -355,15 +355,31 @@ static void save_credentials_to_config_storage(const setup_portal_credentials_t 
     ESP_LOGI(TAG, "Saving WiFi and MQTT credentials to config_storage: SSID='%s', MQTT host='%s', port=%d", 
              credentials->ssid, credentials->mqtt_host, credentials->mqtt_port);
     
+    // КРИТИЧНО: Проверяем, что SSID не пустой
+    // ssid - это массив, поэтому проверяем только длину
+    if (strlen(credentials->ssid) == 0) {
+        ESP_LOGE(TAG, "Cannot save config: SSID is empty");
+        return;
+    }
+    
     // Prepare WiFi config
     config_storage_wifi_t wifi_cfg = {0};
     strncpy(wifi_cfg.ssid, credentials->ssid, sizeof(wifi_cfg.ssid) - 1);
+    wifi_cfg.ssid[sizeof(wifi_cfg.ssid) - 1] = '\0';  // Гарантируем null-termination
     strncpy(wifi_cfg.password, credentials->password, sizeof(wifi_cfg.password) - 1);
+    wifi_cfg.password[sizeof(wifi_cfg.password) - 1] = '\0';  // Гарантируем null-termination
     wifi_cfg.auto_reconnect = true;
     wifi_cfg.timeout_sec = 30;
     
+    // Дополнительная проверка после копирования
+    if (strlen(wifi_cfg.ssid) == 0) {
+        ESP_LOGE(TAG, "Cannot save config: SSID is empty after copy");
+        return;
+    }
+    
     // Load current config, update WiFi and MQTT, then save
-    char json_buf[CONFIG_STORAGE_MAX_JSON_SIZE];
+    // КРИТИЧНО: Используем статический буфер вместо стека для предотвращения переполнения
+    static char json_buf[CONFIG_STORAGE_MAX_JSON_SIZE];
     if (config_storage_get_json(json_buf, sizeof(json_buf)) == ESP_OK) {
         // Update existing config
         cJSON *config = cJSON_Parse(json_buf);
@@ -376,8 +392,18 @@ static void save_credentials_to_config_storage(const setup_portal_credentials_t 
             }
             cJSON_DeleteItemFromObject(wifi_obj, "ssid");
             cJSON_DeleteItemFromObject(wifi_obj, "pass");
+            
+            // КРИТИЧНО: Проверяем SSID перед добавлением
+            if (strlen(wifi_cfg.ssid) == 0) {
+                ESP_LOGE(TAG, "CRITICAL: SSID is empty before updating WiFi config");
+                cJSON_Delete(config);
+                return;
+            }
+            
             cJSON_AddStringToObject(wifi_obj, "ssid", wifi_cfg.ssid);
             cJSON_AddStringToObject(wifi_obj, "pass", wifi_cfg.password);
+            
+            ESP_LOGI(TAG, "WiFi config updated: SSID='%s' (len=%zu)", wifi_cfg.ssid, strlen(wifi_cfg.ssid));
             
             // Update MQTT configuration
             cJSON *mqtt_obj = cJSON_GetObjectItem(config, "mqtt");
@@ -390,6 +416,20 @@ static void save_credentials_to_config_storage(const setup_portal_credentials_t 
             cJSON_AddStringToObject(mqtt_obj, "host", credentials->mqtt_host);
             cJSON_AddNumberToObject(mqtt_obj, "port", credentials->mqtt_port);
             
+            // КРИТИЧНО: Проверяем SSID в JSON перед сохранением
+            cJSON *wifi_verify = cJSON_GetObjectItem(config, "wifi");
+            if (wifi_verify) {
+                cJSON *ssid_verify = cJSON_GetObjectItem(wifi_verify, "ssid");
+                if (!ssid_verify || !cJSON_IsString(ssid_verify) || 
+                    !ssid_verify->valuestring || strlen(ssid_verify->valuestring) == 0) {
+                    ESP_LOGE(TAG, "CRITICAL: SSID is empty in JSON config before saving (update existing) - aborting");
+                    cJSON_Delete(config);
+                    return;
+                }
+                ESP_LOGI(TAG, "Verified SSID in JSON config before saving (update): '%s' (len=%zu)", 
+                        ssid_verify->valuestring, strlen(ssid_verify->valuestring));
+            }
+            
             char *json_str = cJSON_PrintUnformatted(config);
             if (json_str) {
                 esp_err_t err = config_storage_save(json_str, strlen(json_str));
@@ -397,6 +437,14 @@ static void save_credentials_to_config_storage(const setup_portal_credentials_t 
                     ESP_LOGE(TAG, "Failed to save config: %s", esp_err_to_name(err));
                 } else {
                     ESP_LOGI(TAG, "WiFi and MQTT config saved successfully");
+                    // КРИТИЧНО: После сохранения загружаем конфигурацию обратно для проверки
+                    // Это гарантирует, что конфигурация валидна и будет доступна после перезагрузки
+                    esp_err_t load_err = config_storage_load();
+                    if (load_err != ESP_OK) {
+                        ESP_LOGE(TAG, "Failed to reload config after save: %s", esp_err_to_name(load_err));
+                    } else {
+                        ESP_LOGI(TAG, "Config reloaded and validated successfully");
+                    }
                 }
                 free(json_str);
             }
@@ -420,15 +468,37 @@ static void save_credentials_to_config_storage(const setup_portal_credentials_t 
         
         // WiFi configuration
         cJSON *wifi_obj = cJSON_CreateObject();
-        cJSON_AddStringToObject(wifi_obj, "ssid", wifi_cfg.ssid);
-        cJSON_AddStringToObject(wifi_obj, "pass", wifi_cfg.password);
-        cJSON_AddItemToObject(config, "wifi", wifi_obj);
+            // КРИТИЧНО: Проверяем SSID перед добавлением в JSON
+            if (strlen(wifi_cfg.ssid) == 0) {
+                ESP_LOGE(TAG, "CRITICAL: SSID is empty before adding to JSON config");
+                cJSON_Delete(config);
+                return;
+            }
+            cJSON_AddStringToObject(wifi_obj, "ssid", wifi_cfg.ssid);
+            cJSON_AddStringToObject(wifi_obj, "pass", wifi_cfg.password);
+            cJSON_AddItemToObject(config, "wifi", wifi_obj);
+            
+            ESP_LOGI(TAG, "WiFi config prepared: SSID='%s' (len=%zu)", wifi_cfg.ssid, strlen(wifi_cfg.ssid));
         
         // MQTT configuration (using provided values)
         cJSON *mqtt_obj = cJSON_CreateObject();
         cJSON_AddStringToObject(mqtt_obj, "host", credentials->mqtt_host);
         cJSON_AddNumberToObject(mqtt_obj, "port", credentials->mqtt_port);
         cJSON_AddItemToObject(config, "mqtt", mqtt_obj);
+        
+        // КРИТИЧНО: Проверяем SSID в JSON перед сохранением
+        cJSON *wifi_check = cJSON_GetObjectItem(config, "wifi");
+        if (wifi_check) {
+            cJSON *ssid_check = cJSON_GetObjectItem(wifi_check, "ssid");
+            if (!ssid_check || !cJSON_IsString(ssid_check) || 
+                !ssid_check->valuestring || strlen(ssid_check->valuestring) == 0) {
+                ESP_LOGE(TAG, "CRITICAL: SSID is empty in JSON config before saving - aborting");
+                cJSON_Delete(config);
+                return;
+            }
+            ESP_LOGI(TAG, "Verified SSID in JSON config before saving: '%s' (len=%zu)", 
+                    ssid_check->valuestring, strlen(ssid_check->valuestring));
+        }
         
         char *json_str = cJSON_PrintUnformatted(config);
         if (json_str) {
@@ -437,6 +507,14 @@ static void save_credentials_to_config_storage(const setup_portal_credentials_t 
                 ESP_LOGE(TAG, "Failed to save config: %s", esp_err_to_name(err));
             } else {
                 ESP_LOGI(TAG, "WiFi and MQTT config saved successfully");
+                // КРИТИЧНО: После сохранения загружаем конфигурацию обратно для проверки
+                // Это гарантирует, что конфигурация валидна и будет доступна после перезагрузки
+                esp_err_t load_err = config_storage_load();
+                if (load_err != ESP_OK) {
+                    ESP_LOGE(TAG, "Failed to reload config after save: %s", esp_err_to_name(load_err));
+                } else {
+                    ESP_LOGI(TAG, "Config reloaded and validated successfully");
+                }
             }
             free(json_str);
         }

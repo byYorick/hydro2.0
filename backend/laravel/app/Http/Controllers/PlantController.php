@@ -60,6 +60,62 @@ class PlantController extends Controller
         ]);
     }
 
+    public function show(Plant $plant): Response
+    {
+        $profitability = $this->profitability->calculatePlant($plant);
+
+        // Загружаем связанные рецепты с фазами
+        $plant->load(['recipes.phases' => function ($query) {
+            $query->orderBy('phase_index');
+        }]);
+
+        // Формируем данные рецептов с фазами
+        $recipes = $plant->recipes->map(function ($recipe) {
+            return [
+                'id' => $recipe->id,
+                'name' => $recipe->name,
+                'description' => $recipe->description,
+                'is_default' => $recipe->pivot->is_default ?? false,
+                'season' => $recipe->pivot->season,
+                'site_type' => $recipe->pivot->site_type,
+                'phases' => $recipe->phases->map(function ($phase) {
+                    return [
+                        'id' => $phase->id,
+                        'phase_index' => $phase->phase_index,
+                        'name' => $phase->name,
+                        'duration_hours' => $phase->duration_hours,
+                        'targets' => $phase->targets,
+                    ];
+                })->sortBy('phase_index')->values(),
+                'phases_count' => $recipe->phases->count(),
+            ];
+        });
+
+        $plantData = [
+            'id' => $plant->id,
+            'slug' => $plant->slug,
+            'name' => $plant->name,
+            'species' => $plant->species,
+            'variety' => $plant->variety,
+            'substrate_type' => $plant->substrate_type,
+            'growing_system' => $plant->growing_system,
+            'photoperiod_preset' => $plant->photoperiod_preset,
+            'seasonality' => $plant->seasonality,
+            'description' => $plant->description,
+            'environment_requirements' => $plant->environment_requirements,
+            'growth_phases' => $plant->growth_phases,
+            'recommended_recipes' => $plant->recommended_recipes,
+            'recipes' => $recipes,
+            'created_at' => $plant->created_at,
+            'profitability' => $profitability,
+        ];
+
+        return Inertia::render('Plants/Show', [
+            'plant' => $plantData,
+            'taxonomies' => $this->loadTaxonomies(),
+        ]);
+    }
+
     public function store(StorePlantRequest $request): RedirectResponse
     {
         $payload = $this->preparePayload($request->validated());

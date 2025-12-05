@@ -18,36 +18,39 @@
     </div>
 
     <div class="rounded-xl border border-neutral-800 overflow-hidden max-h-[720px] flex flex-col">
-      <!-- Заголовок таблицы -->
-      <div class="flex-shrink-0 grid grid-cols-5 gap-0 bg-neutral-900 text-neutral-300 text-sm border-b border-neutral-800">
-        <div v-for="(h, i) in headers" :key="i" class="px-3 py-2 text-left font-medium">
-          {{ h }}
-        </div>
-      </div>
-      <!-- Виртуализированный список -->
-      <div class="flex-1 overflow-hidden">
-        <RecycleScroller
-          :items="filtered"
-          :item-size="rowHeight"
-          key-field="id"
-          v-slot="{ item: a, index }"
-          class="virtual-table-body h-full"
-        >
-          <div 
-            :class="index % 2 === 0 ? 'bg-neutral-950' : 'bg-neutral-925'" 
-            class="grid grid-cols-5 gap-0 text-sm border-b border-neutral-900"
-            style="height:44px"
-          >
-            <div class="px-3 py-2 flex items-center">{{ a.type }}</div>
-            <div class="px-3 py-2 flex items-center">{{ a.zone?.name || `Zone #${a.zone_id}` || '-' }}</div>
-            <div class="px-3 py-2 flex items-center">{{ a.created_at ? new Date(a.created_at).toLocaleString('ru-RU') : '-' }}</div>
-            <div class="px-3 py-2 flex items-center">{{ translateStatus(a.status) }}</div>
-            <div class="px-3 py-2 flex items-center">
-              <Button size="sm" variant="secondary" @click="onResolve(a)" :disabled="a.status === 'resolved'">Подтвердить</Button>
-            </div>
-          </div>
-        </RecycleScroller>
-        <div v-if="!filtered.length" class="text-sm text-neutral-400 px-3 py-6">Нет алертов по текущим фильтрам</div>
+      <div class="overflow-auto flex-1">
+        <table class="w-full border-collapse">
+          <thead class="bg-neutral-900 text-neutral-300 text-sm sticky top-0 z-10">
+            <tr>
+              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Тип</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Зона</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Время</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Статус</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Действия</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="(a, index) in filtered"
+              :key="a.id"
+              :class="index % 2 === 0 ? 'bg-neutral-950' : 'bg-neutral-925'"
+              class="text-sm border-b border-neutral-900 hover:bg-neutral-900 transition-colors"
+            >
+              <td class="px-3 py-2 text-xs text-neutral-400">{{ a.type }}</td>
+              <td class="px-3 py-2 text-xs text-neutral-400">
+                <span class="truncate block">{{ a.zone?.name || `Zone #${a.zone_id}` || '-' }}</span>
+              </td>
+              <td class="px-3 py-2 text-xs text-neutral-400">{{ a.created_at ? new Date(a.created_at).toLocaleString('ru-RU') : '-' }}</td>
+              <td class="px-3 py-2 text-xs text-neutral-400">{{ translateStatus(a.status) }}</td>
+              <td class="px-3 py-2">
+                <Button size="sm" variant="secondary" @click="onResolve(a)" :disabled="a.status === 'resolved'">Подтвердить</Button>
+              </td>
+            </tr>
+            <tr v-if="!filtered.length">
+              <td colspan="5" class="px-3 py-6 text-sm text-neutral-400 text-center">Нет алертов по текущим фильтрам</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
 
@@ -163,6 +166,41 @@ onUnmounted(() => {
   unsubscribeAlerts = null
 })
 
-// Виртуализация через RecycleScroller
-const rowHeight = 44
 </script>
+
+<style scoped>
+table {
+  table-layout: auto;
+}
+
+th, td {
+  white-space: nowrap;
+}
+
+th:first-child,
+td:first-child {
+  min-width: 120px;
+}
+
+th:nth-child(2),
+td:nth-child(2) {
+  min-width: 150px;
+  max-width: 250px;
+}
+
+th:nth-child(3),
+td:nth-child(3) {
+  min-width: 180px;
+}
+
+th:nth-child(4),
+td:nth-child(4) {
+  min-width: 100px;
+}
+
+th:last-child,
+td:last-child {
+  min-width: 140px;
+  text-align: center;
+}
+</style>

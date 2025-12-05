@@ -379,7 +379,8 @@ void pump_node_publish_status(void) {
  * Ищет канал "pump_bus_current" в NodeConfig и обновляет s_current_poll_interval_ms
  */
 void pump_node_update_current_poll_interval(void) {
-    char config_json[CONFIG_STORAGE_MAX_JSON_SIZE];
+    // КРИТИЧНО: Используем статический буфер вместо стека для предотвращения переполнения
+    static char config_json[CONFIG_STORAGE_MAX_JSON_SIZE];
     if (config_storage_get_json(config_json, sizeof(config_json)) != ESP_OK) {
         ESP_LOGW(TAG, "Failed to load config for poll interval update");
         return;

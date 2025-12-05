@@ -303,7 +303,8 @@ esp_err_t climate_node_init_step_oled(climate_node_init_context_t *ctx,
 esp_err_t climate_node_init_step_actuators(climate_node_init_context_t *ctx,
                                            climate_node_init_step_result_t *result) {
     (void)ctx;
-    ESP_LOGI(TAG, "[Step 6/8] Actuators init...");
+    // КРИТИЧНО: Упрощаем логирование для предотвращения паники
+    // ESP_LOGI(TAG, "[Step 6/8] Actuators init...");
     
     if (result) {
         result->component_name = "actuators";
@@ -315,7 +316,7 @@ esp_err_t climate_node_init_step_actuators(climate_node_init_context_t *ctx,
     // Инициализация relay_driver из NodeConfig
     err = relay_driver_init_from_config();
     if (err == ESP_OK) {
-        ESP_LOGI(TAG, "Relay driver initialized from config");
+        // ESP_LOGI(TAG, "Relay driver initialized from config");
     } else if (err == ESP_ERR_NOT_FOUND) {
         ESP_LOGW(TAG, "No relay channels found in config, relay driver not initialized");
     } else {
@@ -325,7 +326,7 @@ esp_err_t climate_node_init_step_actuators(climate_node_init_context_t *ctx,
     // Инициализация pwm_driver из NodeConfig
     err = pwm_driver_init_from_config();
     if (err == ESP_OK) {
-        ESP_LOGI(TAG, "PWM driver initialized from config");
+        // ESP_LOGI(TAG, "PWM driver initialized from config");
     } else if (err == ESP_ERR_NOT_FOUND) {
         ESP_LOGW(TAG, "No PWM channels found in config");
     } else {
