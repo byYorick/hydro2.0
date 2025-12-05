@@ -31,6 +31,8 @@ services:
     build:
       context: ./laravel
       dockerfile: Dockerfile
+      args:
+        INSTALL_DEV_DEPS: "true"
     working_dir: /app
     # docker-entrypoint.sh will handle supervisor startup automatically
     # Base image will start nginx/php-fpm via its default entrypoint

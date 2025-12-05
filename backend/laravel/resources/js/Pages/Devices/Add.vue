@@ -318,27 +318,57 @@ async function assignNode(node) {
     if (response.data?.status === 'ok' && response.data?.data) {
       const updatedNode = response.data.data
       
-      // Проверяем, что конфиг был успешно опубликован (lifecycle_state = ASSIGNED_TO_ZONE)
-      // Если lifecycle_state все еще REGISTERED_BACKEND, значит публикация конфига не удалась
+      // Проверяем состояние привязки:
+      // - Если pending_zone_id установлен (а zone_id = NULL) → привязка в процессе
+      // - Если zone_id установлен (а pending_zone_id = NULL) → привязка завершена (lifecycle может измениться позже)
+      // - Если lifecycle_state = ASSIGNED_TO_ZONE → полностью завершена
+      
       if (updatedNode?.lifecycle_state === 'ASSIGNED_TO_ZONE') {
+        // Полностью завершено (редкий случай - обычно это происходит асинхронно)
         showToast(`Нода "${node.uid}" успешно привязана к зоне и получила конфиг`, 'success', TOAST_TIMEOUT.NORMAL)
         
         // Удалить ноду из списка новых (так как она теперь привязана)
         newNodes.value = newNodes.value.filter(n => n.id !== node.id)
         delete assignmentForms[node.id]
-      } else if (updatedNode?.lifecycle_state === 'REGISTERED_BACKEND' && updatedNode?.zone_id) {
-        // Конфиг еще не опубликован, но zone_id установлен
-        // Показываем предупреждение, что нужно подождать публикации конфига
-        showToast(`Нода "${node.uid}" привязана к зоне, ожидание публикации конфига...`, 'info', TOAST_TIMEOUT.LONG)
+      } else if (updatedNode?.pending_zone_id && !updatedNode?.zone_id) {
+        // Конфиг публикуется, ожидаем подтверждения от ноды (через history-logger)
+        showToast(
+          `Нода "${node.uid}" привязывается к зоне. Конфиг публикуется, ожидайте подтверждения (~2-5 сек)...`,
+          'info',
+          5000
+        )
         
-        // Обновляем данные ноды, но не удаляем из списка
+        // Обновляем данные ноды, но оставляем в списке
         const nodeIndex = newNodes.value.findIndex(n => n.id === node.id)
         if (nodeIndex >= 0) {
           newNodes.value[nodeIndex] = { ...newNodes.value[nodeIndex], ...updatedNode }
         }
+        
+        // Автоматически обновим список через 3 секунды для проверки завершения
+        setTimeout(() => {
+          loadNewNodes()
+        }, 3000)
+      } else if (updatedNode?.zone_id && !updatedNode?.pending_zone_id) {
+        // zone_id установлен, pending_zone_id сброшен → привязка успешно завершена
+        // (lifecycle может еще быть REGISTERED_BACKEND, но это не важно - привязка завершена)
+        showToast(`Нода "${node.uid}" успешно привязана к зоне!`, 'success', TOAST_TIMEOUT.NORMAL)
+        
+        // Удалить ноду из списка новых
+        newNodes.value = newNodes.value.filter(n => n.id !== node.id)
+        delete assignmentForms[node.id]
       } else {
-        // Что-то пошло не так
-        showToast(`Нода "${node.uid}" обновлена, но привязка может быть не завершена`, 'warning', TOAST_TIMEOUT.LONG)
+        // Неизвестное состояние
+        logger.warn('[Devices/Add] Unexpected node state after assignment:', {
+          node_id: node.id,
+          zone_id: updatedNode?.zone_id,
+          pending_zone_id: updatedNode?.pending_zone_id,
+          lifecycle_state: updatedNode?.lifecycle_state,
+        })
+        showToast(
+          `Нода "${node.uid}" обновлена. Проверьте статус через несколько секунд.`,
+          'warning',
+          TOAST_TIMEOUT.LONG
+        )
       }
     }
   } catch (err) {

@@ -195,9 +195,13 @@ Route::prefix('python')->middleware('throttle:120,1')->group(function () {
     Route::post('commands/ack', [PythonIngestController::class, 'commandAck']);
 });
 
-// Node registration (token-based or public) - умеренный лимит
+// Node registration and service updates (token-based) - умеренный лимит
 Route::middleware('throttle:20,1')->group(function () {
     Route::post('nodes/register', [NodeController::class, 'register']);
+    
+    // Node updates от сервисов (history-logger и т.д.) - проверка токена в контроллере
+    Route::patch('nodes/{node}/service-update', [NodeController::class, 'update']);
+    Route::post('nodes/{node}/lifecycle/service-transition', [NodeController::class, 'transitionLifecycle']);
 
     // Alertmanager webhook (защищен секретом)
     Route::post('alerts/webhook', [\App\Http\Controllers\Api\AlertWebhookController::class, 'webhook'])

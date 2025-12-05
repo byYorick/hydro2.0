@@ -402,32 +402,40 @@ esp_err_t config_storage_validate(const char *json_config, size_t json_len,
         return ESP_ERR_INVALID_ARG;
     }
     
-    // Валидация обязательных MQTT полей
-    cJSON *mqtt_host = cJSON_GetObjectItem(mqtt, "host");
-    if (!cJSON_IsString(mqtt_host) || mqtt_host->valuestring == NULL || mqtt_host->valuestring[0] == '\0') {
-        cJSON_Delete(config);
-        if (error_msg && error_msg_size > 0) {
-            strncpy(error_msg, "Missing or invalid mqtt.host", error_msg_size - 1);
+    // ВАЖНО: Если mqtt содержит только {"configured": true}, значит нода уже подключена
+    // и backend НЕ хочет менять MQTT настройки. Пропускаем валидацию полей.
+    cJSON *mqtt_configured = cJSON_GetObjectItem(mqtt, "configured");
+    if (cJSON_IsBool(mqtt_configured) && cJSON_IsTrue(mqtt_configured)) {
+        // Backend указал, что MQTT уже настроен - пропускаем валидацию host/port
+        ESP_LOGI("config_storage", "MQTT marked as 'configured', preserving existing settings");
+    } else {
+        // Валидация обязательных MQTT полей только если это полная конфигурация
+        cJSON *mqtt_host = cJSON_GetObjectItem(mqtt, "host");
+        if (!cJSON_IsString(mqtt_host) || mqtt_host->valuestring == NULL || mqtt_host->valuestring[0] == '\0') {
+            cJSON_Delete(config);
+            if (error_msg && error_msg_size > 0) {
+                strncpy(error_msg, "Missing or invalid mqtt.host", error_msg_size - 1);
+            }
+            return ESP_ERR_INVALID_ARG;
         }
-        return ESP_ERR_INVALID_ARG;
-    }
-    
-    cJSON *mqtt_port = cJSON_GetObjectItem(mqtt, "port");
-    if (!cJSON_IsNumber(mqtt_port) || cJSON_GetNumberValue(mqtt_port) <= 0 || cJSON_GetNumberValue(mqtt_port) > 65535) {
-        cJSON_Delete(config);
-        if (error_msg && error_msg_size > 0) {
-            strncpy(error_msg, "Missing or invalid mqtt.port (must be 1-65535)", error_msg_size - 1);
+        
+        cJSON *mqtt_port = cJSON_GetObjectItem(mqtt, "port");
+        if (!cJSON_IsNumber(mqtt_port) || cJSON_GetNumberValue(mqtt_port) <= 0 || cJSON_GetNumberValue(mqtt_port) > 65535) {
+            cJSON_Delete(config);
+            if (error_msg && error_msg_size > 0) {
+                strncpy(error_msg, "Missing or invalid mqtt.port (must be 1-65535)", error_msg_size - 1);
+            }
+            return ESP_ERR_INVALID_ARG;
         }
-        return ESP_ERR_INVALID_ARG;
-    }
-    
-    cJSON *mqtt_keepalive = cJSON_GetObjectItem(mqtt, "keepalive");
-    if (mqtt_keepalive != NULL && (!cJSON_IsNumber(mqtt_keepalive) || cJSON_GetNumberValue(mqtt_keepalive) <= 0 || cJSON_GetNumberValue(mqtt_keepalive) > 65535)) {
-        cJSON_Delete(config);
-        if (error_msg && error_msg_size > 0) {
-            strncpy(error_msg, "Invalid mqtt.keepalive (must be 1-65535)", error_msg_size - 1);
+        
+        cJSON *mqtt_keepalive = cJSON_GetObjectItem(mqtt, "keepalive");
+        if (mqtt_keepalive != NULL && (!cJSON_IsNumber(mqtt_keepalive) || cJSON_GetNumberValue(mqtt_keepalive) <= 0 || cJSON_GetNumberValue(mqtt_keepalive) > 65535)) {
+            cJSON_Delete(config);
+            if (error_msg && error_msg_size > 0) {
+                strncpy(error_msg, "Invalid mqtt.keepalive (must be 1-65535)", error_msg_size - 1);
+            }
+            return ESP_ERR_INVALID_ARG;
         }
-        return ESP_ERR_INVALID_ARG;
     }
     
     cJSON_Delete(config);

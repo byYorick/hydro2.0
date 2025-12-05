@@ -173,15 +173,15 @@ class NodeConfigService
         }
         
         // Для публикации конфига через MQTT (includeCredentials = true)
-        // ВАЖНО: Если нода уже подключена к Wi-Fi и MQTT (lifecycle_state >= REGISTERED_BACKEND),
-        // то отправляем только {"configured": true}, чтобы прошивка не перезаписывала существующие настройки.
+        // ВАЖНО: Если нода отправила node_hello и зарегистрирована (hasWorkingConnection),
+        // значит у неё уже есть рабочие Wi-Fi настройки.
+        // Отправляем только {"configured": true}, чтобы прошивка не перезаписывала существующие настройки.
         // Это предотвращает переподключение Wi-Fi, если нода уже работает.
         $lifecycleState = $node->lifecycleState();
-        $isAlreadyConnected = $lifecycleState->value >= NodeLifecycleState::REGISTERED_BACKEND->value;
         
-        if ($isAlreadyConnected) {
-            // Нода уже подключена - не отправляем полную конфигурацию Wi-Fi,
-            // чтобы прошивка не перезаписывала существующие настройки
+        if ($lifecycleState->hasWorkingConnection()) {
+            // Нода уже подключена к WiFi (иначе не смогла бы отправить node_hello)
+            // Не отправляем полную конфигурацию Wi-Fi, чтобы прошивка не перезаписывала существующие настройки
             Log::info('NodeConfigService: Node already connected, sending wifi={"configured": true} to preserve existing settings', [
                 'node_id' => $node->id,
                 'uid' => $node->uid,
@@ -237,20 +237,49 @@ class NodeConfigService
             ];
         }
         
-        // Для публикации конфига через MQTT (includeCredentials = true) возвращаем полную конфигурацию
-        // ВАЖНО: Всегда генерируем полную конфигурацию из глобальных настроек,
-        // даже если в $node->config есть mqtt секция, так как она может быть неполной
-        // (например, содержать только {"configured": true} для API)
+        // Для публикации конфига через MQTT (includeCredentials = true)
+        // ВАЖНО: Если нода отправила node_hello и зарегистрирована (REGISTERED_BACKEND или выше),
+        // значит у неё уже есть рабочие MQTT настройки.
+        // Отправляем только {"configured": true}, чтобы прошивка не перезаписывала существующие настройки.
+        $lifecycleState = $node->lifecycleState();
         
+        // Проверяем, что нода в одном из состояний, когда она уже подключена к MQTT
+        $isAlreadyConnected = in_array($lifecycleState, [
+            NodeLifecycleState::REGISTERED_BACKEND,
+            NodeLifecycleState::ASSIGNED_TO_ZONE,
+            NodeLifecycleState::ACTIVE,
+            NodeLifecycleState::DEGRADED,
+        ]);
+        
+        if ($isAlreadyConnected) {
+            // Нода уже подключена к MQTT (иначе не смогла бы отправить node_hello)
+            // Не отправляем полную конфигурацию MQTT, чтобы прошивка не перезаписывала существующие настройки
+            Log::info('NodeConfigService: Node already connected, sending mqtt={"configured": true} to preserve existing settings', [
+                'node_id' => $node->id,
+                'uid' => $node->uid,
+                'lifecycle_state' => $lifecycleState->value,
+            ]);
+            return [
+                'configured' => true, // Прошивка не будет перезаписывать MQTT настройки
+            ];
+        }
+        
+        // Нода еще не подключена - отправляем полную конфигурацию MQTT
         // Используем глобальные настройки MQTT
         // ВАЖНО: port и keepalive должны быть числами, а не строками (для валидации в прошивке)
+        Log::info('NodeConfigService: Node not connected yet, sending full MQTT config', [
+            'node_id' => $node->id,
+            'uid' => $node->uid,
+            'lifecycle_state' => $lifecycleState->value,
+        ]);
+        
         $mqtt = [
             'host' => Config::get('services.mqtt.host', 'mqtt'),
             'port' => (int) Config::get('services.mqtt.port', 1883), // Явно приводим к int
             'keepalive' => (int) Config::get('services.mqtt.keepalive', 30), // Явно приводим к int
         ];
         
-        // Включаем чувствительные параметры только если явно запрошено
+        // Включаем чувствительные параметры
         if ($includeCredentials) {
             $mqtt['username'] = Config::get('services.mqtt.username');
             $mqtt['password'] = Config::get('services.mqtt.password');

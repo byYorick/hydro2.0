@@ -19,9 +19,16 @@ COPY composer.json composer.lock* ./
 COPY package.json package-lock.json* ./
 
 # Install Composer dependencies (without scripts to avoid artisan requirement)
+# Use ARG to control dev dependencies installation
+ARG INSTALL_DEV_DEPS=true
 RUN if [ -f composer.json ]; then \
-        composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist --no-scripts || \
-        composer install --optimize-autoloader --no-interaction --prefer-dist --no-scripts; \
+        if [ "$INSTALL_DEV_DEPS" = "true" ]; then \
+            echo "Installing ALL Composer dependencies (including dev)..."; \
+            composer install --optimize-autoloader --no-interaction --prefer-dist --no-scripts; \
+        else \
+            echo "Installing production Composer dependencies only..."; \
+            composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist --no-scripts; \
+        fi \
     fi
 
 # Install npm dependencies

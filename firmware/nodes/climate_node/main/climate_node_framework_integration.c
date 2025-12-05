@@ -214,13 +214,7 @@ esp_err_t climate_node_publish_telemetry_callback(void *user_ctx) {
     sht3x_reading_t sht_reading = {0};
     esp_err_t sht_err = sht3x_read(&sht_reading);
     
-    ESP_LOGD(TAG, "SHT3x read attempt: err=%s, valid=%d, T=%.1f°C, H=%.1f%%", 
-            esp_err_to_name(sht_err), sht_reading.valid, 
-            sht_reading.temperature, sht_reading.humidity);
-    
     if (sht_err == ESP_OK && sht_reading.valid) {
-        ESP_LOGI(TAG, "SHT3x: T=%.1f°C, H=%.1f%%", 
-                sht_reading.temperature, sht_reading.humidity);
         // Публикация температуры
         esp_err_t err = node_telemetry_publish_sensor(
             "temperature",

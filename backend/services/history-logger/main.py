@@ -1243,19 +1243,20 @@ async def handle_heartbeat(topic: str, payload: bytes):
         except (ValueError, TypeError):
             logger.warning(f"Invalid rssi value: {rssi}")
     
-    # Всегда обновляем timestamp полей (безопасно, так как не содержат пользовательского ввода)
+    # Всегда обновляем timestamp полей и status=online (безопасно, так как не содержат пользовательского ввода)
     updates.append("last_heartbeat_at=NOW()")
     updates.append("updated_at=NOW()")
     updates.append("last_seen_at=NOW()")
+    updates.append("status='online'")  # Узел онлайн, если отправляет heartbeat
     
     # Строим запрос с использованием только разрешенных полей
-    if len(updates) > 3:  # Есть хотя бы одно обновляемое поле кроме timestamp
+    if len(updates) > 4:  # Есть хотя бы одно обновляемое поле кроме timestamp и status
         query = f"UPDATE nodes SET {', '.join(updates)} WHERE uid=$1"
         await execute(query, *params)
     else:
-        # Только timestamp обновления
+        # Только timestamp и status обновления
         await execute(
-            "UPDATE nodes SET last_heartbeat_at=NOW(), updated_at=NOW(), last_seen_at=NOW() WHERE uid=$1",
+            "UPDATE nodes SET last_heartbeat_at=NOW(), updated_at=NOW(), last_seen_at=NOW(), status='online' WHERE uid=$1",
             node_uid
         )
     
@@ -1369,7 +1370,8 @@ async def handle_config_response(topic: str, payload: bytes):
             # Вызываем Laravel API для перевода ноды в ASSIGNED_TO_ZONE
             s = get_settings()
             laravel_url = s.laravel_api_url if hasattr(s, 'laravel_api_url') else None
-            laravel_token = s.laravel_api_token if hasattr(s, 'laravel_api_token') else None
+            # Используем тот же токен, что и для регистрации нод (history_logger_api_token или ingest_token)
+            ingest_token = s.history_logger_api_token if hasattr(s, 'history_logger_api_token') and s.history_logger_api_token else (s.ingest_token if hasattr(s, 'ingest_token') and s.ingest_token else None)
             
             if not laravel_url:
                 logger.error("[CONFIG_RESPONSE] Laravel API URL not configured, cannot update node lifecycle")
@@ -1381,8 +1383,8 @@ async def handle_config_response(topic: str, payload: bytes):
                     "Content-Type": "application/json",
                     "Accept": "application/json",
                 }
-                if laravel_token:
-                    headers["Authorization"] = f"Bearer {laravel_token}"
+                if ingest_token:
+                    headers["Authorization"] = f"Bearer {ingest_token}"
                 
                 # Получаем информацию о ноде через БД напрямую (уже получено при валидации)
                 # Используем данные из предыдущего запроса
@@ -1397,16 +1399,17 @@ async def handle_config_response(topic: str, payload: bytes):
                 target_zone_id = zone_id or pending_zone_id
                 if lifecycle_state == "REGISTERED_BACKEND" and target_zone_id:
                     logger.info(
-                        f"[CONFIG_RESPONSE] Transitioning node {node_uid} (id={node_id}) to ASSIGNED_TO_ZONE "
+                        f"[CONFIG_RESPONSE] Preparing node {node_uid} (id={node_id}) transition to ASSIGNED_TO_ZONE "
                         f"after successful config installation"
                     )
                     
-                    # Если есть pending_zone_id, сначала обновляем zone_id, затем переводим в ASSIGNED_TO_ZONE
+                    # ВАЖНО: Если есть pending_zone_id, СНАЧАЛА обновляем zone_id, ЗАТЕМ делаем transition
                     if pending_zone_id and not zone_id:
-                        # Обновляем zone_id из pending_zone_id
+                        logger.info(f"[CONFIG_RESPONSE] Step 1/2: Updating zone_id from pending_zone_id={pending_zone_id}")
+                        # Обновляем zone_id из pending_zone_id через service endpoint
                         async with httpx.AsyncClient(timeout=10.0) as client:
                             update_response = await client.patch(
-                                f"{laravel_url}/api/nodes/{node_id}",
+                                f"{laravel_url}/api/nodes/{node_id}/service-update",
                                 headers=headers,
                                 json={
                                     "zone_id": pending_zone_id,
@@ -1416,22 +1419,23 @@ async def handle_config_response(topic: str, payload: bytes):
                             
                             if update_response.status_code == 200:
                                 logger.info(
-                                    f"[CONFIG_RESPONSE] Node {node_uid} (id={node_id}) zone_id updated from pending_zone_id={pending_zone_id}"
+                                    f"[CONFIG_RESPONSE] Step 1/2 SUCCESS: Node {node_uid} (id={node_id}) zone_id updated from pending_zone_id={pending_zone_id}"
                                 )
                                 # Обновляем zone_id для дальнейшей проверки
                                 zone_id = pending_zone_id
                             else:
                                 logger.warning(
-                                    f"[CONFIG_RESPONSE] Failed to update zone_id for node {node_uid} (id={node_id}): "
+                                    f"[CONFIG_RESPONSE] Step 1/2 FAILED: Failed to update zone_id for node {node_uid} (id={node_id}): "
                                     f"{update_response.status_code} {update_response.text}"
                                 )
                                 # Если не удалось обновить zone_id, не переводим в ASSIGNED_TO_ZONE
                                 return
                     
-                    # Переводим через lifecycle API
+                    # Step 2: Переводим через service lifecycle API
+                    logger.info(f"[CONFIG_RESPONSE] Step 2/2: Transitioning to ASSIGNED_TO_ZONE")
                     async with httpx.AsyncClient(timeout=10.0) as client:
                         transition_response = await client.post(
-                            f"{laravel_url}/api/nodes/{node_id}/lifecycle/transition",
+                            f"{laravel_url}/api/nodes/{node_id}/lifecycle/service-transition",
                             headers=headers,
                             json={
                                 "target_state": "ASSIGNED_TO_ZONE",

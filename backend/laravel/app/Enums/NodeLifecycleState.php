@@ -61,6 +61,21 @@ enum NodeLifecycleState: string
     }
 
     /**
+     * Проверить, имеет ли узел рабочую конфигурацию WiFi/MQTT.
+     * Если узел в одном из этих состояний, значит он уже подключен к WiFi и MQTT.
+     * Используется для определения, нужно ли отправлять полную конфигурацию WiFi/MQTT.
+     */
+    public function hasWorkingConnection(): bool
+    {
+        return in_array($this, [
+            self::REGISTERED_BACKEND,
+            self::ASSIGNED_TO_ZONE,
+            self::ACTIVE,
+            self::DEGRADED,
+        ]);
+    }
+
+    /**
      * Получить человекочитаемое описание состояния.
      */
     public function label(): string

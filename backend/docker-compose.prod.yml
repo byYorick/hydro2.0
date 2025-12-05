@@ -93,6 +93,7 @@ services:
       context: ./laravel
       dockerfile: Dockerfile
       args:
+        INSTALL_DEV_DEPS: "false"
         VITE_REVERB_HOST: localhost
         VITE_WS_HOST: localhost
         VITE_REVERB_PORT: "6001"

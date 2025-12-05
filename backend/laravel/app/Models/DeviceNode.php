@@ -64,13 +64,38 @@ class DeviceNode extends Model
             // Проверяем, изменились ли поля, влияющие на конфиг
             // pending_zone_id также влияет на конфиг, так как конфиг должен быть отправлен при установке pending_zone_id
             $changedFields = ['zone_id', 'pending_zone_id', 'type', 'config', 'uid'];
-            $hasChanges = $node->wasChanged($changedFields) || $node->wasRecentlyCreated;
+            $hasChanges = $node->wasChanged($changedFields);
+            
+            // ВАЖНО: НЕ публикуем конфиг для новых узлов без zone_id или pending_zone_id
+            // Если нода отправила node_hello, значит у неё уже есть рабочие настройки WiFi/MQTT
+            // Публикация произойдет только после привязки к зоне (установки pending_zone_id)
+            $skipNewNodeWithoutZone = $node->wasRecentlyCreated && !$node->zone_id && !$node->pending_zone_id;
             
             // ВАЖНО: Если pending_zone_id установлен, но zone_id еще null, нужно отправить конфиг
-            // даже если pending_zone_id не изменился в текущей операции (например, при повторной попытке)
-            $needsConfigPublish = $node->pending_zone_id && !$node->zone_id;
+            // ТОЛЬКО если pending_zone_id ИЗМЕНИЛСЯ (первая привязка к зоне)
+            // Не публикуем повторно при каждом обновлении узла
+            $needsConfigPublish = $node->pending_zone_id && !$node->zone_id && $node->wasChanged('pending_zone_id');
             
-            if ($hasChanges || $needsConfigPublish) {
+            // НЕ публикуем конфиг если узел уже в ASSIGNED_TO_ZONE и zone_id установлен
+            // (завершение привязки уже произошло)
+            $skipAlreadyAssigned = $node->lifecycleState() === NodeLifecycleState::ASSIGNED_TO_ZONE && $node->zone_id;
+            
+            if ($skipNewNodeWithoutZone) {
+                \Illuminate\Support\Facades\Log::info('DeviceNode: Skipping config publish for new node without zone assignment', [
+                    'node_id' => $node->id,
+                    'uid' => $node->uid,
+                    'reason' => 'Node sent node_hello, already has working WiFi/MQTT config',
+                    'lifecycle_state' => $node->lifecycle_state?->value,
+                ]);
+            } elseif ($skipAlreadyAssigned) {
+                \Illuminate\Support\Facades\Log::info('DeviceNode: Skipping config publish for already assigned node', [
+                    'node_id' => $node->id,
+                    'uid' => $node->uid,
+                    'zone_id' => $node->zone_id,
+                    'lifecycle_state' => $node->lifecycle_state?->value,
+                    'reason' => 'Node already assigned and configured',
+                ]);
+            } elseif ($hasChanges || $needsConfigPublish) {
                \Illuminate\Support\Facades\Log::info('DeviceNode: Dispatching NodeConfigUpdated event', [
                    'node_id' => $node->id,
                    'uid' => $node->uid,

@@ -920,14 +920,10 @@ static void render_wifi_setup_screen(void) {
     frame_buffer_draw_line(3, "Use app to");
     frame_buffer_draw_line(4, "configure");
     
-    ESP_LOGI(TAG, "Frame buffer prepared, sending to display...");
-    
     // Отправляем весь буфер на дисплей за один раз
     esp_err_t err = ssd1306_update_display();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to update display: %s", esp_err_to_name(err));
-    } else {
-        ESP_LOGI(TAG, "WiFi setup screen rendered and sent to display successfully");
     }
     
     // Освобождаем mutex

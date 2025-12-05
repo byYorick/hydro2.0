@@ -51,35 +51,93 @@ class NodeService
     public function update(DeviceNode $node, array $data): DeviceNode
     {
         return DB::transaction(function () use ($node, $data) {
-            $oldZoneId = $node->zone_id;
-            $newZoneId = $data['zone_id'] ?? null;
+            Log::info('NodeService::update START', [
+                'node_id' => $node->id,
+                'uid' => $node->uid,
+                'incoming_data' => $data,
+                'current_zone_id' => $node->zone_id,
+                'current_lifecycle' => $node->lifecycle_state?->value,
+            ]);
             
-            // Если узел привязан к зоне и раньше не был привязан
-            // Сохраняем zone_id в pending_zone_id и не обновляем zone_id сразу
-            // zone_id будет обновлен только после получения config_response с ACK
-            if ($newZoneId && !$oldZoneId) {
+            $oldZoneId = $node->zone_id;
+            
+            // ВАЖНАЯ ЛОГИКА: Разделяем привязку от UI и обновление от History Logger
+            // 
+            // Сценарий 1: Пользователь привязывает/переприв язывает узел к зоне (UI)
+            //   - Приходит: {"zone_id": 6} (БЕЗ pending_zone_id в запросе)
+            //   - Устанавливаем: pending_zone_id = 6, zone_id = null
+            //   - Публикуется конфиг
+            //   - Узел получает конфиг и отправляет config_response
+            //   - History Logger делает финализацию
+            //
+            // Сценарий 2: History Logger завершает привязку после config_response
+            //   - Приходит: {"zone_id": 6, "pending_zone_id": null} (С pending_zone_id в запросе)
+            //   - Устанавливаем: zone_id = 6, pending_zone_id = null
+            //   - Конфиг НЕ публикуется (узел уже имеет конфиг)
+            
+            $hasZoneIdInRequest = array_key_exists('zone_id', $data);
+            $hasPendingZoneIdInRequest = array_key_exists('pending_zone_id', $data);
+            $newZoneId = $hasZoneIdInRequest ? $data['zone_id'] : null;
+            // $oldZoneId уже определён выше
+            
+            // КРИТИЧНО: Если в запросе есть zone_id, но НЕТ pending_zone_id - это ВСЕГДА запрос от UI
+            // Не важно, первая это привязка или переприв язка - всегда через pending_zone_id
+            // Если в запросе есть И zone_id И pending_zone_id - это завершение привязки от History Logger
+            $isAssignmentFromUI = $hasZoneIdInRequest && !$hasPendingZoneIdInRequest && $newZoneId;
+            
+            Log::info('NodeService::update zone assignment check', [
+                'node_id' => $node->id,
+                'uid' => $node->uid,
+                'hasZoneIdInRequest' => $hasZoneIdInRequest,
+                'hasPendingZoneIdInRequest' => $hasPendingZoneIdInRequest,
+                'newZoneId' => $newZoneId,
+                'oldZoneId' => $oldZoneId,
+                'isAssignmentFromUI' => $isAssignmentFromUI,
+                'lifecycle_state' => $node->lifecycle_state?->value,
+            ]);
+            
+            if ($isAssignmentFromUI) {
+                // Проверяем lifecycle state - допускаются REGISTERED_BACKEND и ASSIGNED_TO_ZONE (переприв язка)
                 $currentState = $node->lifecycleState();
+                $canAssign = in_array($currentState, [
+                    NodeLifecycleState::REGISTERED_BACKEND,
+                    NodeLifecycleState::ASSIGNED_TO_ZONE,
+                    NodeLifecycleState::ACTIVE,
+                ]);
                 
-                // Проверяем, что узел в правильном состоянии для привязки
-                if ($currentState !== NodeLifecycleState::REGISTERED_BACKEND) {
+                if (!$canAssign) {
                     Log::warning('Cannot assign node to zone - invalid lifecycle state', [
                         'node_id' => $node->id,
-                        'pending_zone_id' => $newZoneId,
+                        'requested_zone_id' => $newZoneId,
                         'current_state' => $currentState->value,
-                        'required_state' => NodeLifecycleState::REGISTERED_BACKEND->value,
+                        'allowed_states' => ['REGISTERED_BACKEND', 'ASSIGNED_TO_ZONE', 'ACTIVE'],
                     ]);
-                    throw new \DomainException("Cannot assign node to zone: node must be in REGISTERED_BACKEND state");
+                    throw new \DomainException("Cannot assign node to zone in current state: {$currentState->value}");
                 }
                 
-                // Сохраняем zone_id в pending_zone_id, а zone_id оставляем null
-                // zone_id будет обновлен только после получения config_response с ACK
+                // КРИТИЧНО: ВСЕГДА сохраняем в pending_zone_id для получения подтверждения от ноды
+                // zone_id будет обновлен только после config_response от ноды
                 $data['pending_zone_id'] = $newZoneId;
-                $data['zone_id'] = null; // Не обновляем zone_id сразу
+                unset($data['zone_id']); // Удаляем zone_id из данных обновления!
                 
-                Log::info('Node pending_zone_id set, waiting for config confirmation', [
+                // Если это переприв язка (был старый zone_id), сбрасываем в REGISTERED_BACKEND
+                if ($oldZoneId && $oldZoneId != $newZoneId) {
+                    $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
+                    $node->zone_id = null; // Явно очищаем старый zone_id
+                    Log::info('Node re-assignment: reset to REGISTERED_BACKEND, waiting for confirmation', [
+                        'node_id' => $node->id,
+                        'old_zone_id' => $oldZoneId,
+                        'pending_zone_id' => $newZoneId,
+                    ]);
+                } else {
+                    // Первичная привязка
+                    $node->zone_id = null; // Явно очищаем zone_id
+                }
+                
+                Log::info('UI zone assignment: set pending_zone_id, waiting for node confirmation', [
                     'node_id' => $node->id,
                     'pending_zone_id' => $newZoneId,
-                    'zone_id' => null,
+                    'old_zone_id' => $oldZoneId,
                     'lifecycle_state' => $node->lifecycle_state?->value,
                 ]);
             }

@@ -169,16 +169,31 @@ class NodeController extends Controller
         // Если пользователь не авторизован через Sanctum, проверяем сервисный токен
         if (! $user) {
             $providedToken = $request->bearerToken();
+            \Log::debug('[NodeController::update] Checking token', [
+                'provided_token' => $providedToken ? substr($providedToken, 0, 10).'...' : 'null',
+                'py_api_token' => config('services.python_bridge.token') ? 'set' : 'null',
+                'py_ingest_token' => config('services.python_bridge.ingest_token') ? 'set' : 'null',
+                'history_logger_token' => config('services.history_logger.token') ? 'set' : 'null',
+            ]);
             if ($providedToken) {
+                // Используем config вместо env для совместимости с кешированием
                 $pyApiToken = config('services.python_bridge.token');
-                $laravelApiToken = env('LARAVEL_API_TOKEN');
+                $pyIngestToken = config('services.python_bridge.ingest_token');
+                $historyLoggerToken = config('services.history_logger.token');
                 
-                // Проверяем сервисный токен
+                // Проверяем сервисный токен против всех известных токенов
                 $tokenValid = false;
                 if ($pyApiToken && hash_equals($pyApiToken, $providedToken)) {
                     $tokenValid = true;
-                } elseif ($laravelApiToken && hash_equals($laravelApiToken, $providedToken)) {
+                    \Log::debug('[NodeController::update] Token matched: py_api_token');
+                } elseif ($pyIngestToken && hash_equals($pyIngestToken, $providedToken)) {
                     $tokenValid = true;
+                    \Log::debug('[NodeController::update] Token matched: py_ingest_token');
+                } elseif ($historyLoggerToken && hash_equals($historyLoggerToken, $providedToken)) {
+                    $tokenValid = true;
+                    \Log::debug('[NodeController::update] Token matched: history_logger_token');
+                } else {
+                    \Log::warning('[NodeController::update] Token NOT matched');
                 }
                 
                 if ($tokenValid) {
