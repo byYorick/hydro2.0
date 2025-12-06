@@ -78,7 +78,7 @@
           @time-range-change="onChartTimeRangeChange"
         />
       </template>
-      <Card v-if="sensorChannels.length > 0 && chartSeries.length === 0" class="text-center text-sm text-neutral-400 py-8">
+      <Card v-if="sensorChannels.length > 0 && !hasChartData" class="text-center text-sm text-neutral-400 py-8">
         <div>Загрузка данных телеметрии...</div>
       </Card>
     </div>
@@ -103,7 +103,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
-import { Link, usePage, router } from '@inertiajs/vue3'
+import { Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Badge from '@/Components/Badge.vue'
@@ -137,45 +137,40 @@ const devicesStore = useDevicesStore()
 const chartTimeRange = ref<'1H' | '24H' | '7D' | '30D' | 'ALL'>('24H')
 const chartDataByChannel = ref<Record<string, Array<{ ts: number; value: number }>>>({})
 
+// Приоритеты метрик для сортировки (меньше = выше приоритет)
+const METRIC_PRIORITY: Record<string, number> = {
+  'TEMPERATURE': 1,
+  'TEMP_AIR': 1,
+  'HUMIDITY': 2,
+}
+
+const getMetricPriority = (metric: string): number => {
+  return METRIC_PRIORITY[metric] ?? 999
+}
+
 // Определяем сенсорные каналы (для которых нужны графики)
 // Сортируем так, чтобы температура была первой, влажность второй
 const sensorChannels = computed(() => {
   const sensors = channels.value.filter(ch => ch.type === 'sensor')
   
-  // Сортируем: сначала температура, потом влажность, затем остальные
   return sensors.sort((a, b) => {
-    const aMetric = (a.metric || a.channel.toUpperCase())
-    const bMetric = (b.metric || b.channel.toUpperCase())
-    
-    const aIsTemp = aMetric === 'TEMPERATURE' || aMetric === 'TEMP_AIR'
-    const bIsTemp = bMetric === 'TEMPERATURE' || bMetric === 'TEMP_AIR'
-    const aIsHumidity = aMetric === 'HUMIDITY'
-    const bIsHumidity = bMetric === 'HUMIDITY'
-    
-    // Температура всегда первая
-    if (aIsTemp && !bIsTemp) return -1
-    if (!aIsTemp && bIsTemp) return 1
-    
-    // Влажность всегда вторая (после температуры)
-    if (aIsHumidity && !bIsHumidity && !aIsTemp) return -1
-    if (!aIsHumidity && bIsHumidity && !bIsTemp) return 1
-    
-    return 0 // Сохраняем порядок для остальных
+    const aMetric = getMetricFromChannel(a)
+    const bMetric = getMetricFromChannel(b)
+    return getMetricPriority(aMetric) - getMetricPriority(bMetric)
   })
 })
 
-// Маппинг метрик к цветам
-const metricColors: Record<string, string> = {
-  'TEMP_AIR': '#f59e0b', // amber-500
-  'TEMPERATURE': '#f59e0b', // amber-500
-  'HUMIDITY': '#3b82f6', // blue-500
-  'CO2': '#10b981', // emerald-500
-  'PH': '#8b5cf6', // violet-500
-  'EC': '#06b6d4', // cyan-500
+// Константы для метрик
+const METRIC_COLORS: Record<string, string> = {
+  'TEMP_AIR': '#f59e0b',
+  'TEMPERATURE': '#f59e0b',
+  'HUMIDITY': '#3b82f6',
+  'CO2': '#10b981',
+  'PH': '#8b5cf6',
+  'EC': '#06b6d4',
 }
 
-// Маппинг метрик к меткам
-const metricLabels: Record<string, string> = {
+const METRIC_LABELS: Record<string, string> = {
   'TEMP_AIR': 'Температура',
   'TEMPERATURE': 'Температура',
   'HUMIDITY': 'Влажность',
@@ -184,53 +179,58 @@ const metricLabels: Record<string, string> = {
   'EC': 'EC',
 }
 
-// Нормализация метрик: channel.metric может быть TEMP_AIR, но в БД сохраняется TEMPERATURE
-const normalizeMetricForQuery = (metric: string): string => {
-  const mapping: Record<string, string> = {
-    'TEMP_AIR': 'TEMPERATURE',
-    'TEMPERATURE': 'TEMPERATURE',
-    'HUMIDITY': 'HUMIDITY',
-    'CO2': 'CO2',
-    'PH': 'PH',
-    'EC': 'EC',
-  }
-  return mapping[metric] || metric
+const METRIC_NORMALIZATION: Record<string, string> = {
+  'TEMP_AIR': 'TEMPERATURE',
+  'TEMPERATURE': 'TEMPERATURE',
+  'HUMIDITY': 'HUMIDITY',
+  'CO2': 'CO2',
+  'PH': 'PH',
+  'EC': 'EC',
 }
 
-// Подготовка данных для графика (все серии вместе - для обратной совместимости)
-const chartSeries = computed(() => {
-  return sensorChannels.value.map((channel, index) => {
-    const metric = channel.metric || channel.channel.toUpperCase()
-    const data = chartDataByChannel.value[channel.channel] || []
-    
-    // Получаем цвет из маппинга или генерируем по индексу
-    const color = metricColors[metric] || `hsl(${index * 360 / sensorChannels.value.length}, 70%, 60%)`
-    const label = metricLabels[metric] || channel.channel
-    
-    // Безопасно получаем currentValue - должно быть числом или undefined
-    let currentValue: number | undefined = undefined
-    if (data.length > 0 && data[data.length - 1]) {
-      const lastValue = data[data.length - 1].value
-      if (typeof lastValue === 'number' && !isNaN(lastValue)) {
-        currentValue = lastValue
-      }
-    }
-    
-    // Используем только 2 оси: левую (0) и правую (1)
-    // Первая метрика - левая ось, остальные - на правой оси или разделяем по типу
-    let yAxisIndex = 0
-    if (index === 1 || metric === 'HUMIDITY' || metric === 'CO2') {
-      yAxisIndex = 1
-    }
-    
-    return {
-      name: channel.channel,
-      label: `${label} (${channel.unit || ''})`,
-      color,
-      data,
-      currentValue,
-      yAxisIndex,
-    }
+// Утилиты для работы с метриками
+const getMetricFromChannel = (channel: DeviceChannel): string => {
+  return channel.metric || channel.channel.toUpperCase()
+}
+
+const getMetricColor = (metric: string, fallback: string = '#3b82f6'): string => {
+  return METRIC_COLORS[metric] || fallback
+}
+
+const getMetricLabel = (metric: string, fallback?: string): string => {
+  return METRIC_LABELS[metric] || fallback || metric
+}
+
+const normalizeMetricForQuery = (metric: string): string => {
+  return METRIC_NORMALIZATION[metric] || metric
+}
+
+const getCurrentValue = (data: Array<{ ts: number; value: number }>): number | undefined => {
+  if (data.length === 0) return undefined
+  const lastValue = data[data.length - 1].value
+  return typeof lastValue === 'number' && !isNaN(lastValue) ? lastValue : undefined
+}
+
+// Константы для временных диапазонов (в миллисекундах)
+const TIME_RANGE_MS: Record<string, number> = {
+  '1H': 60 * 60 * 1000,
+  '24H': 24 * 60 * 60 * 1000,
+  '7D': 7 * 24 * 60 * 60 * 1000,
+  '30D': 30 * 24 * 60 * 60 * 1000,
+}
+
+// Получить дату "от" для временного диапазона
+const getTimeRangeFrom = (timeRange: string): Date | undefined => {
+  if (timeRange === 'ALL') return undefined
+  const ms = TIME_RANGE_MS[timeRange]
+  return ms ? new Date(Date.now() - ms) : undefined
+}
+
+// Проверка наличия данных для графиков
+const hasChartData = computed(() => {
+  return sensorChannels.value.some(channel => {
+    const data = chartDataByChannel.value[channel.channel]
+    return data && data.length > 0
   })
 })
 
@@ -240,21 +240,11 @@ function getChartSeriesForChannel(channel: DeviceChannel | undefined) {
     return []
   }
   
-  const metric = channel.metric || channel.channel.toUpperCase()
+  const metric = getMetricFromChannel(channel)
   const data = chartDataByChannel.value[channel.channel] || []
-  
-  // Получаем цвет из маппинга
-  const color = metricColors[metric] || '#3b82f6'
-  const label = metricLabels[metric] || channel.channel
-  
-  // Безопасно получаем currentValue
-  let currentValue: number | undefined = undefined
-  if (data.length > 0 && data[data.length - 1]) {
-    const lastValue = data[data.length - 1].value
-    if (typeof lastValue === 'number' && !isNaN(lastValue)) {
-      currentValue = lastValue
-    }
-  }
+  const color = getMetricColor(metric)
+  const label = getMetricLabel(metric, channel.channel)
+  const currentValue = getCurrentValue(data)
   
   return [{
     name: channel.channel,
@@ -262,7 +252,7 @@ function getChartSeriesForChannel(channel: DeviceChannel | undefined) {
     color,
     data,
     currentValue,
-    yAxisIndex: 0, // Всегда левая ось для отдельного графика
+    yAxisIndex: 0,
   }]
 }
 
@@ -272,8 +262,8 @@ function getChartTitleForChannel(channel: DeviceChannel | undefined): string {
     return 'Телеметрия'
   }
   
-  const metric = channel.metric || channel.channel.toUpperCase()
-  const label = metricLabels[metric] || channel.channel
+  const metric = getMetricFromChannel(channel)
+  const label = getMetricLabel(metric, channel.channel)
   return `${label}${channel.unit ? ` (${channel.unit})` : ''}`
 }
 
@@ -497,30 +487,8 @@ async function loadChartData(channel: string, metric: string, timeRange: string)
   }
 
   try {
-    // Нормализуем метрику для запроса к БД
     const normalizedMetric = normalizeMetricForQuery(metric)
-    
-    // Определяем временные рамки
-    const now = new Date()
-    let from: Date | undefined
-    
-    switch (timeRange) {
-      case '1H':
-        from = new Date(now.getTime() - 60 * 60 * 1000)
-        break
-      case '24H':
-        from = new Date(now.getTime() - 24 * 60 * 60 * 1000)
-        break
-      case '7D':
-        from = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-        break
-      case '30D':
-        from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-        break
-      case 'ALL':
-        from = undefined
-        break
-    }
+    const from = getTimeRangeFrom(timeRange)
     
     logger.debug(`[Devices/Show] Loading telemetry: channel=${channel}, metric=${metric}, normalized=${normalizedMetric}`)
     
@@ -620,22 +588,17 @@ const handleTelemetryUpdate = (data: { node_id: number; channel: string; metric_
   }
 }
 
-// Функция для определения максимального количества точек в зависимости от временного диапазона
-function getMaxPointsForTimeRange(timeRange: string): number {
-  switch (timeRange) {
-    case '1H':
-      return 60 // 1 точка в минуту
-    case '24H':
-      return 288 // 1 точка в 5 минут
-    case '7D':
-      return 336 // 1 точка в 30 минут
-    case '30D':
-      return 720 // 1 точка в час
-    case 'ALL':
-      return 1000 // Максимум 1000 точек
-    default:
-      return 288
-  }
+// Константы для максимального количества точек в зависимости от временного диапазона
+const MAX_POINTS_BY_RANGE: Record<string, number> = {
+  '1H': 60,    // 1 точка в минуту
+  '24H': 288,  // 1 точка в 5 минут
+  '7D': 336,   // 1 точка в 30 минут
+  '30D': 720,  // 1 точка в час
+  'ALL': 1000, // Максимум 1000 точек
+}
+
+const getMaxPointsForTimeRange = (timeRange: string): number => {
+  return MAX_POINTS_BY_RANGE[timeRange] ?? 288
 }
 
 // Загружаем данные при монтировании компонента

@@ -168,12 +168,88 @@ function exportData(): void {
   URL.revokeObjectURL(url)
 }
 
+// Утилита для безопасного извлечения значения из ECharts point
+const extractValueFromPoint = (value: unknown): number => {
+  if (Array.isArray(value)) {
+    const lastElement = value[value.length - 1]
+    return typeof lastElement === 'number' ? lastElement : parseFloat(String(lastElement)) || 0
+  }
+  if (typeof value === 'number') {
+    return value
+  }
+  const parsed = parseFloat(String(value))
+  return isNaN(parsed) ? 0 : parsed
+}
+
+// Утилита для форматирования значения
+// Утилита для форматирования значения оси Y
+const formatAxisValue = (value: number): string => {
+  if (Math.abs(value) >= 1000) {
+    return (value / 1000).toFixed(1) + 'k'
+  }
+  return value.toFixed(1)
+}
+
+// Утилита для форматирования значения в легенде
 const formatValue = (value: number | null | undefined, seriesName: string): string => {
   if (value === null || value === undefined || typeof value !== 'number' || isNaN(value)) {
     return '—'
   }
   const isPH = seriesName.toLowerCase().includes('ph')
   return value.toFixed(isPH ? 2 : 1)
+}
+
+// Утилита для форматирования значения в tooltip
+const formatTooltipValue = (value: unknown, seriesName: string): string => {
+  let actualValue = extractValueFromPoint(value)
+  
+  // Гарантируем, что actualValue - это валидное число
+  if (typeof actualValue !== 'number' || isNaN(actualValue) || !isFinite(actualValue)) {
+    actualValue = 0
+  }
+  
+  // Проверяем, не является ли значение timestamp (слишком большое число)
+  if (actualValue > 946684800000) {
+    actualValue = 0
+  }
+  
+  const numValue = Number(actualValue)
+  const isPH = seriesName.toLowerCase().includes('ph')
+  return (isNaN(numValue) || !isFinite(numValue) ? 0 : numValue).toFixed(isPH ? 2 : 1)
+}
+
+// Утилита для форматирования timestamp в человекочитаемый формат
+const formatTimestamp = (timestamp: number | string | null): string => {
+  if (timestamp === null) return ''
+  
+  let ts: number
+  if (typeof timestamp === 'string') {
+    const parsed = new Date(timestamp).getTime()
+    ts = isNaN(parsed) ? 0 : parsed
+  } else {
+    ts = timestamp
+  }
+  
+  if (ts === 0 || isNaN(ts) || ts <= 946684800000) {
+    return String(timestamp)
+  }
+  
+  const date = new Date(ts)
+  if (isNaN(date.getTime())) {
+    return String(timestamp)
+  }
+  
+  const dateStr = date.toLocaleDateString('ru-RU', { 
+    day: '2-digit', 
+    month: '2-digit', 
+    year: 'numeric' 
+  })
+  const timeStr = date.toLocaleTimeString('ru-RU', { 
+    hour: '2-digit', 
+    minute: '2-digit',
+    second: '2-digit'
+  })
+  return `${dateStr}, ${timeStr}`
 }
 
 const option = computed(() => {
@@ -196,83 +272,15 @@ const option = computed(() => {
         const points = params as Array<{ axisValue: number | string; value: number; seriesName: string; color: string; data?: { ts: number } }>
         const point = points[0]
         
-        // Для оси типа 'time' ECharts может передавать axisValue в разных форматах
-        // Также можем использовать data.ts из исходных данных, если доступно
-        let timestamp: number | null = null
+        // Получаем timestamp из исходных данных или axisValue
+        const timestamp = (point.data && typeof point.data.ts === 'number') 
+          ? point.data.ts 
+          : point.axisValue
         
-        // Сначала пытаемся получить timestamp из исходных данных точки
-        if (point.data && typeof point.data.ts === 'number') {
-          timestamp = point.data.ts
-        } else {
-          // Иначе используем axisValue
-          const axisValue = point.axisValue
-          if (typeof axisValue === 'string') {
-            const parsed = new Date(axisValue).getTime()
-            if (!isNaN(parsed)) {
-              timestamp = parsed
-            }
-          } else if (typeof axisValue === 'number') {
-            timestamp = axisValue
-          }
-        }
-        
-        let dateTimeStr = ''
-        
-        if (timestamp !== null && !isNaN(timestamp) && timestamp > 946684800000) {
-          const date = new Date(timestamp)
-          if (!isNaN(date.getTime())) {
-            const dateStr = date.toLocaleDateString('ru-RU', { 
-              day: '2-digit', 
-              month: '2-digit', 
-              year: 'numeric' 
-            })
-            const timeStr = date.toLocaleTimeString('ru-RU', { 
-              hour: '2-digit', 
-              minute: '2-digit',
-              second: '2-digit'
-            })
-            dateTimeStr = `${dateStr}, ${timeStr}`
-          } else {
-            dateTimeStr = String(timestamp)
-          }
-        } else {
-          // Если не удалось получить timestamp, используем axisValue как есть
-          dateTimeStr = String(point.axisValue)
-        }
+        const dateTimeStr = formatTimestamp(timestamp)
         
         const lines = points.map(p => {
-          const isPH = p.seriesName.toLowerCase().includes('ph')
-          
-          // ECharts может передавать value как массив [timestamp, value] или просто value
-          let actualValue: number
-          if (Array.isArray(p.value)) {
-            // Если value - массив, берем последний элемент (значение)
-            const lastElement = p.value[p.value.length - 1]
-            actualValue = typeof lastElement === 'number' ? lastElement : parseFloat(String(lastElement)) || 0
-          } else if (typeof p.value === 'number') {
-            actualValue = p.value
-          } else {
-            // Если это не число и не массив, пытаемся преобразовать
-            const parsed = parseFloat(String(p.value))
-            actualValue = isNaN(parsed) ? 0 : parsed
-          }
-          
-          // Гарантируем, что actualValue - это валидное число
-          if (typeof actualValue !== 'number' || isNaN(actualValue) || !isFinite(actualValue)) {
-            actualValue = 0
-          }
-          
-          // Проверяем, не является ли значение timestamp (слишком большое число)
-          // Если значение больше 946684800000 (2000-01-01), это скорее всего timestamp, а не значение
-          if (actualValue > 946684800000) {
-            // Это timestamp, не отображаем его как значение
-            actualValue = 0
-          }
-          
-          // Финальная проверка перед вызовом toFixed
-          const numValue = Number(actualValue)
-          const valueStr = (isNaN(numValue) || !isFinite(numValue) ? 0 : numValue).toFixed(isPH ? 2 : 1)
-          
+          const valueStr = formatTooltipValue(p.value, p.seriesName)
           return `<div style="display: flex; align-items: center; gap: 8px;">
             <span style="display: inline-block; width: 10px; height: 2px; background-color: ${p.color};"></span>
             <span>${p.seriesName}: <strong>${valueStr}</strong></span>
@@ -321,12 +329,7 @@ const option = computed(() => {
         position: 'left',
         axisLabel: { 
           color: props.series[0]?.color || '#9ca3af',
-          formatter: (value: number) => {
-            if (Math.abs(value) >= 1000) {
-              return (value / 1000).toFixed(1) + 'k'
-            }
-            return value.toFixed(1)
-          }
+          formatter: formatAxisValue,
         },
         splitLine: { lineStyle: { color: '#1f2937' } },
         scale: false,
@@ -338,12 +341,7 @@ const option = computed(() => {
         position: 'right',
         axisLabel: { 
           color: props.series.find(s => s.yAxisIndex === 1)?.color || '#9ca3af',
-          formatter: (value: number) => {
-            if (Math.abs(value) >= 1000) {
-              return (value / 1000).toFixed(1) + 'k'
-            }
-            return value.toFixed(1)
-          }
+          formatter: formatAxisValue,
         },
         splitLine: { show: false },
         scale: false,

@@ -18,8 +18,11 @@ class NodeRegistryService
      * Если узел уже существует, обновляет его атрибуты.
      * Если узел новый, создаёт его и отмечает как validated.
      * 
+     * ВАЖНО: Автопривязка к зоне отключена. Привязка должна происходить только
+     * через явное действие пользователя (кнопка "Привязать" в UI).
+     * 
      * @param string $nodeUid Уникальный идентификатор узла (MAC/UID)
-     * @param string|null $zoneUid UID зоны для привязки (может быть zn-{id} или просто id)
+     * @param string|null $zoneUid UID зоны (игнорируется, оставлен для обратной совместимости)
      * @param array $attributes Дополнительные атрибуты (firmware_version, hardware_revision и т.д.)
      * @return DeviceNode
      */
@@ -32,40 +35,15 @@ class NodeRegistryService
             // Находим или создаём узел
             $node = DeviceNode::firstOrNew(['uid' => $nodeUid]);
             
-            // Сохраняем текущую зону для проверки перепривязки
-            $existingZoneId = $node->id ? $node->zone_id : null;
-            
-            // Привязка к зоне, если указана
+            // КРИТИЧНО: Автопривязка к зоне при регистрации УДАЛЕНА
+            // Привязка должна происходить только после явного действия пользователя (нажатие кнопки "Привязать")
+            // Если указан zoneUid, игнорируем его и логируем предупреждение
             if ($zoneUid) {
-                $zoneId = $this->resolveZoneId($zoneUid);
-                if ($zoneId) {
-                    // Безопасность: запрещаем перепривязку существующих нод к другой зоне
-                    // Перепривязка возможна только через явные операции detach/attach в контроллере
-                    if ($node->id && $existingZoneId && $existingZoneId !== $zoneId) {
-                        Log::warning('Node registration: Attempt to rebind existing node to different zone blocked', [
-                            'node_id' => $node->id,
-                            'node_uid' => $nodeUid,
-                            'current_zone_id' => $existingZoneId,
-                            'requested_zone_id' => $zoneId,
-                            'ip' => request()->ip(),
-                        ]);
-                        // Не меняем зону для существующей ноды - это уязвимость безопасности
-                        // Для перепривязки нужно сначала вызвать detach, затем attach через API
-                    } elseif ($node->id && !$existingZoneId) {
-                        // Если нода существует, но не привязана - тоже запрещаем автоматическую привязку
-                        // Это предотвращает "угон" устройств через утечку токена
-                        Log::warning('Node registration: Attempt to bind existing unbound node blocked for security', [
-                            'node_id' => $node->id,
-                            'node_uid' => $nodeUid,
-                            'requested_zone_id' => $zoneId,
-                            'ip' => request()->ip(),
-                        ]);
-                        // Не привязываем существующую ноду автоматически
-                    } else {
-                        // Разрешаем привязку только для новых нод (когда $node->id === null)
-                        $node->zone_id = $zoneId;
-                    }
-                }
+                Log::warning('Node registration: zoneUid provided but auto-binding is disabled. Node will remain unbound until user manually attaches it.', [
+                    'node_uid' => $nodeUid,
+                    'requested_zone_uid' => $zoneUid,
+                    'ip' => request()->ip(),
+                ]);
             }
             
             // Обновляем атрибуты
@@ -121,13 +99,17 @@ class NodeRegistryService
     /**
      * Зарегистрировать узел из node_hello сообщения (MQTT).
      * 
+     * ВАЖНО: Автопривязка к зоне отключена. Даже если в provisioning_meta указаны
+     * greenhouse_token и zone_id, они игнорируются. Привязка должна происходить только
+     * через явное действие пользователя (кнопка "Привязать" в UI).
+     * 
      * @param array $helloData Данные из node_hello:
      *   - hardware_id: string
      *   - node_type: string
      *   - fw_version: string|null
      *   - hardware_revision: string|null
      *   - capabilities: array
-     *   - provisioning_meta: array {greenhouse_token, zone_id, node_name}
+     *   - provisioning_meta: array {greenhouse_token (игнорируется), zone_id (игнорируется), node_name}
      * @return DeviceNode
      */
     public function registerNodeFromHello(array $helloData): DeviceNode
@@ -180,49 +162,16 @@ class NodeRegistryService
                 $node->name = $provisioningMeta['node_name'];
             }
             
-            // Обработка greenhouse_token
-            if (isset($provisioningMeta['greenhouse_token'])) {
-                $greenhouseToken = $provisioningMeta['greenhouse_token'];
-                $greenhouse = $this->findGreenhouseByToken($greenhouseToken);
-                if ($greenhouse) {
-                    // Если указана зона, привязываем к ней только если она принадлежит этой теплице
-                    $zoneId = $provisioningMeta['zone_id'] ?? null;
-                    if ($zoneId) {
-                        $zone = Zone::where('id', $zoneId)
-                            ->where('greenhouse_id', $greenhouse->id)
-                            ->first();
-                        if ($zone) {
-                            $node->zone_id = $zone->id;
-                            Log::info('Node bound to zone via greenhouse_token', [
-                                'node_id' => $node->id,
-                                'zone_id' => $zone->id,
-                                'greenhouse_id' => $greenhouse->id,
-                            ]);
-                        } else {
-                            Log::warning('Node registration: zone_id does not belong to greenhouse from token', [
-                                'node_id' => $node->id,
-                                'requested_zone_id' => $zoneId,
-                                'greenhouse_id' => $greenhouse->id,
-                            ]);
-                        }
-                    }
-                } else {
-                    Log::warning('Node registration: Invalid greenhouse_token', [
-                        'node_id' => $node->id,
-                        'token_prefix' => substr($greenhouseToken, 0, 4) . '...',
-                    ]);
-                }
-            }
-            
-            // Прямая привязка к зоне БЕЗ greenhouse_token запрещена для безопасности
-            // Это предотвращает привязку устройств к любым зонам без проверки прав
-            // Если zone_id указан без greenhouse_token, игнорируем его
-            $zoneId = $provisioningMeta['zone_id'] ?? null;
-            if ($zoneId && !$node->zone_id) {
-                Log::warning('Node registration: zone_id provided without greenhouse_token - ignoring for security', [
+            // КРИТИЧНО: Автопривязка к зоне через greenhouse_token УДАЛЕНА
+            // Привязка должна происходить только после явного действия пользователя (нажатие кнопки "Привязать")
+            // Если указан greenhouse_token или zone_id, игнорируем их и логируем предупреждение
+            if (isset($provisioningMeta['greenhouse_token']) || isset($provisioningMeta['zone_id'])) {
+                Log::info('Node registration: provisioning_meta contains greenhouse_token or zone_id, but auto-binding is disabled. Node will remain unbound until user manually attaches it.', [
                     'node_id' => $node->id,
-                    'requested_zone_id' => $zoneId,
                     'hardware_id' => $hardwareId,
+                    'has_greenhouse_token' => isset($provisioningMeta['greenhouse_token']),
+                    'has_zone_id' => isset($provisioningMeta['zone_id']),
+                    'zone_id' => $provisioningMeta['zone_id'] ?? null,
                 ]);
             }
             
