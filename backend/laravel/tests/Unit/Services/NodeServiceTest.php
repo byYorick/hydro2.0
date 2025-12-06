@@ -73,4 +73,23 @@ class NodeServiceTest extends TestCase
 
         $this->service->delete($node);
     }
+
+    public function test_detach_node(): void
+    {
+        $zone = \App\Models\Zone::factory()->create();
+        $node = DeviceNode::factory()->create([
+            'zone_id' => $zone->id,
+            'pending_zone_id' => null,
+        ]);
+
+        $detached = $this->service->detach($node);
+
+        $this->assertNull($detached->zone_id);
+        $this->assertNull($detached->pending_zone_id);
+        $this->assertDatabaseHas('nodes', [
+            'id' => $node->id,
+            'zone_id' => null,
+            'pending_zone_id' => null,
+        ]);
+    }
 }

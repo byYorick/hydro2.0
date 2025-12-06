@@ -7,6 +7,31 @@
 <a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
 </p>
 
+## Документация
+
+- `docs/` - документация Laravel приложения
+  - `WEBSOCKET_ARCHITECTURE.md` - архитектура WebSocket
+  - `FRONTEND_WEBSOCKET_TESTING.md` - покрытие тестами WebSocket
+  - `E2E_TESTING.md` - E2E тестирование
+  - `NODE_TELEMETRY_CHARTS.md` - графики телеметрии устройств
+  - `AGENTS.md` - работа с ИИ-агентами
+  - `CI_CD_SETUP.md` - настройка CI/CD
+  - `CPU_OPTIMIZATION.md` - оптимизация CPU
+  - `HOT_RELOAD.md` - горячая перезагрузка
+  - `LARAVEL_12_UPGRADE.md` - обновление до Laravel 12
+  - `PERFORMANCE_OPTIMIZATION.md` - оптимизация производительности
+  - `TESTING_SETUP.md` - настройка тестирования
+  - `README_ALL_DASHBOARDS.md` - документация по сидерам дашбордов
+  - `README_COMPREHENSIVE_DASHBOARD_SEEDER.md` - комплексный сидер дашбордов
+  - `README_MONITORING_SEEDER.md` - сидер мониторинга
+  - `README_TELEMETRY_SEEDERS.md` - сидеры телеметрии
+- `tests/` - тесты и тестовая документация
+  - `TESTING_PID.md` - тестирование PID
+  - `TEST_RESULTS.md` - результаты тестов
+  - `TESTS_P1_P2_P3.md` - тесты по фазам
+  - `README_PID_TESTS.md` - документация PID тестов
+  - `WEBSOCKET_TESTING.md` - тестирование WebSocket
+
 ## About Laravel
 
 Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:

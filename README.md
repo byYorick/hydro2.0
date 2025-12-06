@@ -21,12 +21,10 @@ hydro2.0 Monorepo (skeleton)
 - Roadmap: `doc_ai/ROADMAP_2.0.md`
 
 **Приоритеты разработки:**
-- См. приоритеты: `DEVELOPMENT_PRIORITIES.md`
+- См. приоритеты: `doc_ai/DEVELOPMENT_PRIORITIES.md`
 
 **WebSocket (Real-time обновления):**
 - Архитектура: `backend/laravel/docs/WEBSOCKET_ARCHITECTURE.md`
-- Договор событий: `backend/laravel/docs/WEBSOCKET_EVENTS.md`
-- Troubleshooting: `backend/laravel/docs/WEBSOCKET_TROUBLESHOOTING.md`
 - Smoke test: `tools/ws-smoke-test.sh`
 
 **Конфигурация WebSocket:**

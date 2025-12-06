@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import Checkbox from '@/Components/Checkbox.vue';
 import GuestLayout from '@/Layouts/GuestLayout.vue';
 import InputError from '@/Components/InputError.vue';
@@ -39,14 +40,37 @@ const { form, submit: submitForm } = useInertiaForm<LoginFormData>(
 const submit = (): void => {
     submitForm('post', route('login'));
 };
+
+// Проверяем, есть ли ошибки аутентификации
+const hasAuthError = computed(() => {
+    return !!(form.errors.email || form.errors.password);
+});
+
+// Получаем общее сообщение об ошибке
+const authErrorMessage = computed(() => {
+    if (form.errors.email) {
+        return form.errors.email;
+    }
+    if (form.errors.password) {
+        return form.errors.password;
+    }
+    return null;
+});
 </script>
 
 <template>
     <GuestLayout>
         <Head title="Вход" />
 
-        <div v-if="status" class="mb-4 text-sm font-medium text-green-600">
+        <div v-if="status" class="mb-4 rounded-md bg-green-50 p-4 text-sm font-medium text-green-800 dark:bg-green-900/20 dark:text-green-400">
             {{ status }}
+        </div>
+
+        <div 
+            v-if="hasAuthError && authErrorMessage" 
+            class="mb-4 rounded-md bg-red-50 p-4 text-sm font-medium text-red-800 dark:bg-red-900/20 dark:text-red-400"
+        >
+            {{ authErrorMessage }}
         </div>
 
         <form @submit.prevent="submit">
@@ -56,7 +80,12 @@ const submit = (): void => {
                 <TextInput
                     id="email"
                     type="email"
-                    class="mt-1 block w-full"
+                    :class="[
+                        'mt-1 block w-full',
+                        form.errors.email 
+                            ? 'border-red-500 focus:border-red-500 focus:ring-red-500' 
+                            : ''
+                    ]"
                     v-model="form.email"
                     required
                     autofocus
@@ -72,7 +101,12 @@ const submit = (): void => {
                 <TextInput
                     id="password"
                     type="password"
-                    class="mt-1 block w-full"
+                    :class="[
+                        'mt-1 block w-full',
+                        form.errors.password 
+                            ? 'border-red-500 focus:border-red-500 focus:ring-red-500' 
+                            : ''
+                    ]"
                     v-model="form.password"
                     required
                     autocomplete="current-password"

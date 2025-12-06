@@ -920,16 +920,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
             $zone->refresh();
             $zone->loadMissing(['recipeInstance.recipe']);
 
-            // Логируем для отладки
-            \Log::info('Loading zone for web route', [
-                'zone_id' => $zoneIdInt,
-                'has_recipe_instance' => $zone->recipeInstance !== null,
-                'recipe_instance_id' => $zone->recipeInstance?->id,
-                'recipe_id' => $zone->recipeInstance?->recipe_id,
-                'recipe_name' => $zone->recipeInstance?->recipe?->name,
-                'recipe_instance_full' => $zone->recipeInstance ? $zone->recipeInstance->toArray() : null,
-            ]);
-
             // Загрузить телеметрию
             $telemetryLast = \App\Models\TelemetryLast::query()
                 ->where('zone_id', $zoneIdInt)
@@ -1622,9 +1612,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                     ->orderBy('created_at', 'desc')
                     ->limit(1000)
                     ->get();
-
-                // Логируем для отладки
-                \Log::info('Audit logs loaded', ['count' => $result->count()]);
 
                 return $result;
             } catch (\Exception $e) {

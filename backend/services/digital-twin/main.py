@@ -3,6 +3,8 @@ Digital Twin Engine - симуляция зон для тестирования 
 """
 import asyncio
 import json
+import logging
+import os
 from typing import Dict, Any, List, Optional
 from fastapi import Query
 from datetime import datetime, timedelta
@@ -14,6 +16,14 @@ from common.db import fetch, execute
 from common.schemas import SimulationRequest, SimulationScenario
 from prometheus_client import Counter, Histogram, start_http_server
 
+# Настройка логирования (должна быть до импорта других модулей)
+log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
+logging.basicConfig(
+    level=getattr(logging, log_level, logging.INFO),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler()]  # Явно указываем stdout для Docker
+)
+
 SIMULATIONS_RUN = Counter("simulations_run_total", "Total simulations executed")
 SIMULATION_DURATION = Histogram("simulation_duration_seconds", "Simulation execution time")
 
@@ -21,9 +31,6 @@ app = FastAPI(title="Digital Twin Engine")
 
 # Модели для симуляции
 from models import PHModel, ECModel, ClimateModel
-import logging
-
-logging.basicConfig(level=logging.INFO)
 
 
 class SimulationResponse(BaseModel):

@@ -463,9 +463,12 @@ async def main():
 
 
 if __name__ == "__main__":
+    import os
+    log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
     logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        level=getattr(logging, log_level, logging.INFO),
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[logging.StreamHandler()]  # Явно указываем stdout для Docker
     )
     asyncio.run(main())
 

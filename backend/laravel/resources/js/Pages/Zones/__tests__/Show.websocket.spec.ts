@@ -88,6 +88,10 @@ vi.mock('@/stores/zones', () => ({
     upsert: vi.fn(),
     remove: vi.fn(),
     invalidateCache: vi.fn(),
+    zoneById: vi.fn((id: number) => {
+      // Возвращаем undefined для любых ID в тестах, так как store пустой
+      return undefined
+    }),
   }),
 }))
 

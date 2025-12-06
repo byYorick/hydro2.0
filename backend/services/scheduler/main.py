@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 from datetime import datetime, time
 from typing import Optional, Dict, Any, List
 from common.env import get_settings
@@ -23,6 +24,14 @@ from common.water_cycle import (
     WATER_STATE_WATER_CHANGE_DRAIN,
     WATER_STATE_WATER_CHANGE_FILL,
     WATER_STATE_WATER_CHANGE_STABILIZE,
+)
+
+# Настройка логирования
+log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
+logging.basicConfig(
+    level=getattr(logging, log_level, logging.INFO),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler()]  # Явно указываем stdout для Docker
 )
 
 logger = logging.getLogger(__name__)

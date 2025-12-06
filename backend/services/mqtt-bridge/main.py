@@ -15,9 +15,11 @@ from common.db import fetch
 from common.water_flow import execute_fill_mode, execute_drain_mode, calibrate_flow
 
 # Настройка логирования
+log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=getattr(logging, log_level, logging.INFO),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler()]  # Явно указываем stdout для Docker
 )
 logger = logging.getLogger(__name__)
 

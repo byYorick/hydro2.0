@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI):
     
     # Подключение к MQTT
     mqtt = await get_mqtt_client()
-    # Исправлено: формат топика согласно документации: hydro/{gh}/{zone}/{node}/{channel}/telemetry
+    # Формат топика согласно документации: hydro/{gh}/{zone}/{node}/{channel}/telemetry
     await mqtt.subscribe("hydro/+/+/+/+/telemetry", handle_telemetry)
     await mqtt.subscribe("hydro/+/+/+/heartbeat", handle_heartbeat)
     # Подписка на node_hello для регистрации новых узлов
@@ -100,10 +100,6 @@ async def log_requests(request: Request, call_next):
     logger.info(
         f"[HTTP_REQUEST] {request.method} {request.url.path} from {request.client.host if request.client else 'unknown'}"
     )
-    print(
-        f"[HTTP_REQUEST] {request.method} {request.url.path} from {request.client.host if request.client else 'unknown'}",
-        flush=True
-    )
     
     # Логируем заголовки (особенно Authorization для диагностики)
     auth_header = request.headers.get("Authorization", "")
@@ -118,20 +114,12 @@ async def log_requests(request: Request, call_next):
         logger.info(
             f"[HTTP_REQUEST] {request.method} {request.url.path} -> {response.status_code} ({process_time:.3f}s)"
         )
-        print(
-            f"[HTTP_REQUEST] {request.method} {request.url.path} -> {response.status_code} ({process_time:.3f}s)",
-            flush=True
-        )
         return response
     except Exception as e:
         process_time = time.time() - start_time
         logger.error(
             f"[HTTP_REQUEST] {request.method} {request.url.path} -> ERROR: {e} ({process_time:.3f}s)",
             exc_info=True
-        )
-        print(
-            f"[HTTP_REQUEST] {request.method} {request.url.path} -> ERROR: {e} ({process_time:.3f}s)",
-            flush=True
         )
         raise
 
@@ -798,11 +786,11 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
             ts = sample.ts or datetime.utcnow()
             value = sample.value
             
-            # Исправлено: добавляем ts в плейсхолдеры (6 параметров вместо 5)
+            # Добавляем ts в плейсхолдеры (6 параметров: zone_id, node_id, metric_type, channel, value, ts)
             values_list.append(
                 f"(${param_index}, ${param_index + 1}, ${param_index + 2}, ${param_index + 3}, ${param_index + 4}, ${param_index + 5})"
             )
-            # Исправлено: добавляем ts в параметры
+            # Добавляем ts в параметры
             params_list.extend([zone_id, node_id, metric_type, channel, value, ts])
             param_index += 6
         
@@ -852,14 +840,14 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
                 latest_sample.value
             )
             
-            # Broadcast телеметрии через Laravel WebSocket для real-time обновления графиков
-            # BUGFIX: Проверяем shutdown перед созданием задачи, чтобы не создавать задачи после начала shutdown
+            # Broadcast телеметрии через Laravel WebSocket для real-time обновления графиков.
+            # Проверяем shutdown перед созданием задачи, чтобы не создавать задачи после начала shutdown.
             logger.info(f"[BROADCAST] After upsert: node_id={node_id}, shutdown={shutdown_event.is_set()}, group_samples={len(group_samples)}")
             if node_id and not shutdown_event.is_set():
                 logger.info(f"[BROADCAST] Scheduling broadcast for node_id={node_id}, metric={metric_type}, value={latest_sample.value}")
-                # BUGFIX: Используем безопасное создание задачи с обработкой ошибок
-                # ВАЖНО: Не добавляем задачи в background_tasks, так как их очень много и они завершаются быстро
-                # Это fire-and-forget задачи для неблокирующей отправки broadcast
+                # Используем безопасное создание задачи с обработкой ошибок.
+                # Не добавляем задачи в background_tasks, так как их очень много и они завершаются быстро.
+                # Это fire-and-forget задачи для неблокирующей отправки broadcast.
                 try:
                     task = asyncio.create_task(_broadcast_telemetry_to_laravel(
                         node_id=node_id,
@@ -868,7 +856,7 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
                         value=latest_sample.value,
                         timestamp=latest_sample.ts or datetime.utcnow()
                     ))
-                    # BUGFIX: Добавляем callback для логирования критических ошибок (не exceptions, которые уже обработаны)
+                    # Добавляем callback для логирования критических ошибок (не exceptions, которые уже обработаны).
                     def log_task_error(t):
                         try:
                             if t.done() and t.exception():
@@ -887,7 +875,7 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
     
     processing_duration = time.time() - start_time
     TELEMETRY_PROCESSING_DURATION.observe(processing_duration)
-    # Исправлено: считаем метрики по реально вставленным сэмплам, а не по входному списку
+    # Считаем метрики по реально вставленным сэмплам, а не по входному списку
     TELEM_PROCESSED.inc(processed_count)
     TELEM_BATCH_SIZE.observe(processed_count)
 
@@ -903,7 +891,7 @@ async def _broadcast_telemetry_to_laravel(
     Вызывает Laravel API для broadcast телеметрии через WebSocket.
     Выполняется асинхронно в фоне, чтобы не блокировать основной процесс.
     """
-    # BUGFIX: Проверяем shutdown в начале функции, чтобы быстро выйти если shutdown начался
+    # Проверяем shutdown в начале функции, чтобы быстро выйти если shutdown начался.
     if shutdown_event.is_set():
         logger.debug("[BROADCAST] Shutdown in progress, skipping telemetry broadcast")
         return
@@ -923,12 +911,12 @@ async def _broadcast_telemetry_to_laravel(
     logger.info(f"[BROADCAST] Starting broadcast: node_id={node_id}, metric={metric_type}, url={laravel_url}")
     
     try:
-        # BUGFIX: Конвертируем timestamp в миллисекунды с правильной обработкой timezone
-        # datetime.utcnow() создает naive datetime, но timestamp() требует aware datetime
+        # Конвертируем timestamp в миллисекунды с правильной обработкой timezone.
+        # datetime.utcnow() создает naive datetime, но timestamp() требует aware datetime.
         if isinstance(timestamp, datetime):
-            # Если datetime naive (без timezone), считаем его UTC
+            # Если datetime naive (без timezone), считаем его UTC.
             if timestamp.tzinfo is None:
-                # BUGFIX: Используем UTC timezone для naive datetime
+                # Используем UTC timezone для naive datetime.
                 from datetime import timezone
                 timestamp_utc = timestamp.replace(tzinfo=timezone.utc)
                 timestamp_ms = int(timestamp_utc.timestamp() * 1000)
@@ -948,7 +936,7 @@ async def _broadcast_telemetry_to_laravel(
         
         API_TIMEOUT = s.laravel_api_timeout_sec if hasattr(s, 'laravel_api_timeout_sec') else 5.0
         
-        # BUGFIX: Проверяем shutdown перед HTTP запросом, чтобы не делать запросы после shutdown
+        # Проверяем shutdown перед HTTP запросом, чтобы не делать запросы после shutdown.
         if shutdown_event.is_set():
             logger.debug("[BROADCAST] Shutdown in progress, skipping HTTP request")
             return
@@ -1091,7 +1079,6 @@ async def handle_node_hello(topic: str, payload: bytes):
     # Детальное логирование для диагностики
     logger.info(f"[NODE_HELLO] ===== START processing node_hello =====")
     logger.info(f"[NODE_HELLO] Topic: {topic}, payload length: {len(payload)}")
-    print(f"[NODE_HELLO] Received message on topic {topic}, payload length: {len(payload)}", flush=True)
     
     try:
         data = _parse_json(payload)
@@ -1113,7 +1100,6 @@ async def handle_node_hello(topic: str, payload: bytes):
         
         logger.info(f"[NODE_HELLO] Processing node_hello from hardware_id: {hardware_id}")
         logger.info(f"[NODE_HELLO] Full payload data: {data}")
-        print(f"[NODE_HELLO] Processing node_hello from hardware_id: {hardware_id}", flush=True)
         NODE_HELLO_RECEIVED.inc()
     except Exception as e:
         logger.error(f"[NODE_HELLO] Error parsing node_hello: {e}", exc_info=True)
@@ -1302,22 +1288,18 @@ async def handle_heartbeat(topic: str, payload: bytes):
     # Детальное логирование для диагностики
     logger.info(f"[HEARTBEAT] ===== START processing heartbeat =====")
     logger.info(f"[HEARTBEAT] Topic: {topic}, payload length: {len(payload)}")
-    print(f"[HEARTBEAT] Received message on topic: {topic}, payload length: {len(payload)}", flush=True)
     
     data = _parse_json(payload)
     if not data or not isinstance(data, dict):
         logger.warning(f"[HEARTBEAT] Invalid JSON in heartbeat from topic {topic}")
-        print(f"[HEARTBEAT] Invalid JSON from topic: {topic}", flush=True)
         return
     
     node_uid = _extract_node_uid(topic)
     if not node_uid:
         logger.warning(f"[HEARTBEAT] Could not extract node_uid from topic {topic}")
-        print(f"[HEARTBEAT] Could not extract node_uid from topic: {topic}", flush=True)
         return
     
     logger.info(f"[HEARTBEAT] Processing heartbeat for node_uid: {node_uid}, data: {data}")
-    print(f"[HEARTBEAT] Processing heartbeat for node_uid: {node_uid}", flush=True)
     
     # Whitelist разрешенных полей для обновления (защита от SQL injection)
     ALLOWED_FIELDS = {
@@ -1402,7 +1384,6 @@ async def handle_heartbeat(topic: str, payload: bytes):
         f"[HEARTBEAT] Node heartbeat processed successfully: node_uid={node_uid}, "
         f"uptime_seconds={logged_uptime}, free_heap={free_heap}, rssi={rssi}"
     )
-    print(f"[HEARTBEAT] Node heartbeat processed: node_uid={node_uid}, uptime={logged_uptime}s", flush=True)
 
 
 async def handle_config_response(topic: str, payload: bytes):
@@ -1439,7 +1420,7 @@ async def handle_config_response(topic: str, payload: bytes):
             
             # Получаем информацию о ноде и последнем конфиге
             try:
-                # BUGFIX: Добавляем hardware_id в запрос, чтобы очистить retained сообщение на временном топике
+                # Получаем hardware_id для очистки retained сообщения на временном топике после привязки
                 node_rows = await fetch(
                     """
                     SELECT id, uid, lifecycle_state, zone_id, pending_zone_id, config, hardware_id
@@ -1552,9 +1533,9 @@ async def handle_config_response(topic: str, payload: bytes):
                                 # Обновляем zone_id для дальнейшей проверки
                                 zone_id = pending_zone_id
                                 
-                                # КРИТИЧНО: Очищаем retained сообщение на временном топике после успешной привязки
-                                # Это предотвращает автоматическую доставку конфига при переподключении
-                                # BUGFIX: Используем node.get() вместо node_data.get(), так как node - результат запроса к БД
+                                # Очищаем retained сообщение на временном топике после успешной привязки.
+                                # Это предотвращает автоматическую доставку конфига при переподключении.
+                                # Используем node.get() для получения hardware_id из результата запроса к БД.
                                 hardware_id = node.get("hardware_id")
                                 if hardware_id:
                                     temp_topic = f"hydro/gh-temp/zn-temp/{hardware_id}/config"
@@ -1892,29 +1873,24 @@ async def publish_node_config_mqtt(
         if result.rc != 0:
             raise RuntimeError(f"MQTT publish failed with rc={result.rc} for topic {topic}")
         logger.info(f"[PUBLISH_CONFIG_MQTT] Config published successfully to {topic}")
-        print(f"[PUBLISH_CONFIG_MQTT] Config published successfully to {topic}", flush=True)
         
-        # КРИТИЧНО: Публикуем на временный топик ТОЛЬКО при привязке узла (когда hardware_id передан)
-        # Если hardware_id не передан, это значит узел уже привязан и временный топик больше не нужен
-        # После успешной привязки retained сообщения на временных топиках должны быть очищены
+        # Публикуем на временный топик ТОЛЬКО при привязке узла (когда hardware_id передан).
+        # Если hardware_id не передан, узел уже привязан и временный топик больше не нужен.
+        # После успешной привязки retained сообщения на временных топиках должны быть очищены.
         if hardware_id:
             temp_topic = f"hydro/gh-temp/zn-temp/{hardware_id}/config"
             logger.info(f"[PUBLISH_CONFIG_MQTT] Publishing config to temp topic: {temp_topic} (node binding in progress, using hardware_id)")
-            print(f"[PUBLISH_CONFIG_MQTT] Publishing to temp topic: {temp_topic} (node binding)", flush=True)
             result = base_client._client.publish(temp_topic, config_json, qos=1, retain=True)
             if result.rc != 0:
                 logger.error(f"[PUBLISH_CONFIG_MQTT] MQTT publish failed with rc={result.rc} for temp topic {temp_topic}")
                 raise RuntimeError(f"MQTT publish failed with rc={result.rc} for topic {temp_topic}")
             logger.info(f"[PUBLISH_CONFIG_MQTT] Config published successfully to {temp_topic}")
-            print(f"[PUBLISH_CONFIG_MQTT] Config published successfully to {temp_topic}", flush=True)
         else:
             # hardware_id не передан - это значит узел уже привязан
             # НЕ публикуем на временный топик, так как узел больше не должен получать конфиги на временные топики
             logger.info(f"[PUBLISH_CONFIG_MQTT] Skipping temp topic publish: node already bound (hardware_id not provided)")
-            print(f"[PUBLISH_CONFIG_MQTT] Skipping temp topic: node already bound", flush=True)
     except Exception as e:
         logger.error(f"[PUBLISH_CONFIG_MQTT] Error publishing config for node {node_uid}: {e}", exc_info=True)
-        print(f"[PUBLISH_CONFIG_MQTT] Error publishing config for node {node_uid}: {e}", flush=True)
         raise
 
 
@@ -1942,7 +1918,6 @@ async def publish_node_config(
     logger.info(f"[PUBLISH_CONFIG] Node UID: {node_uid}")
     logger.info(f"[PUBLISH_CONFIG] Request data: zone_id={req.zone_id}, greenhouse_uid={req.greenhouse_uid}, hardware_id={req.hardware_id}")
     logger.info(f"[PUBLISH_CONFIG] Config keys: {list(req.config.keys()) if req.config else 'empty'}")
-    print(f"[PUBLISH_CONFIG] Received request for node: {node_uid}, zone_id: {req.zone_id}", flush=True)
     
     # Аутентификация (используем тот же механизм, что и для ingest)
     _auth_ingest(request)
@@ -1983,7 +1958,6 @@ async def publish_node_config(
     
     try:
         logger.info(f"[PUBLISH_CONFIG] Publishing config for node {node_uid}, zone_id: {zone_id}, gh_uid: {gh_uid}, hardware_id: {req.hardware_id}")
-        print(f"[PUBLISH_CONFIG] Publishing config for node {node_uid}, zone_id: {zone_id}", flush=True)
         await publish_node_config_mqtt(
             mqtt,
             gh_uid,
@@ -1993,11 +1967,9 @@ async def publish_node_config(
             hardware_id=req.hardware_id
         )
         logger.info(f"[PUBLISH_CONFIG] Config published successfully for node {node_uid}")
-        print(f"[PUBLISH_CONFIG] Config published successfully for node {node_uid}", flush=True)
         return {"status": "ok", "data": {"published": True, "topic": f"hydro/{gh_uid}/zn-{zone_id}/{node_uid}/config"}}
     except Exception as e:
         logger.error(f"[PUBLISH_CONFIG] Failed to publish config for node {node_uid}: {e}", exc_info=True)
-        print(f"[PUBLISH_CONFIG] Failed to publish config for node {node_uid}: {e}", flush=True)
         raise HTTPException(status_code=500, detail=f"Failed to publish config: {str(e)}")
 
 
@@ -2623,8 +2595,11 @@ def setup_signal_handlers():
 if __name__ == "__main__":
     # Настройка логирования для детального вывода в stdout
     import sys
+    import os
+    log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
+    log_level_value = getattr(logging, log_level, logging.INFO)
     logging.basicConfig(
-        level=logging.INFO,
+        level=log_level_value,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
             logging.StreamHandler(sys.stdout)  # Явно указываем stdout
@@ -2632,10 +2607,10 @@ if __name__ == "__main__":
         force=True  # Переопределяем существующую конфигурацию
     )
     # Устанавливаем уровень логирования для всех модулей
-    logging.getLogger().setLevel(logging.INFO)
-    logging.getLogger('__main__').setLevel(logging.INFO)
-    logging.getLogger('main').setLevel(logging.INFO)
-    logging.getLogger('common.mqtt').setLevel(logging.INFO)
+    logging.getLogger().setLevel(log_level_value)
+    logging.getLogger('__main__').setLevel(log_level_value)
+    logging.getLogger('main').setLevel(log_level_value)
+    logging.getLogger('common.mqtt').setLevel(log_level_value)
     
     setup_signal_handlers()
     import uvicorn

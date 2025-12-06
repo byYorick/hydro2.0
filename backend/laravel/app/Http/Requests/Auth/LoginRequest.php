@@ -33,6 +33,20 @@ class LoginRequest extends FormRequest
     }
 
     /**
+     * Get custom messages for validator errors.
+     *
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'email.required' => 'Поле email обязательно для заполнения.',
+            'email.email' => 'Пожалуйста, введите корректный email адрес.',
+            'password.required' => 'Поле пароль обязательно для заполнения.',
+        ];
+    }
+
+    /**
      * Attempt to authenticate the request's credentials.
      *
      * @throws \Illuminate\Validation\ValidationException
@@ -46,7 +60,8 @@ class LoginRequest extends FormRequest
             RateLimiter::hit($this->throttleKey());
 
             throw ValidationException::withMessages([
-                'email' => trans('auth.failed'),
+                'email' => 'Неверный email или пароль. Проверьте правильность введенных данных.',
+                'password' => 'Неверный email или пароль. Проверьте правильность введенных данных.',
             ]);
         }
 
@@ -67,12 +82,10 @@ class LoginRequest extends FormRequest
         event(new Lockout($this));
 
         $seconds = RateLimiter::availableIn($this->throttleKey());
+        $minutes = ceil($seconds / 60);
 
         throw ValidationException::withMessages([
-            'email' => trans('auth.throttle', [
-                'seconds' => $seconds,
-                'minutes' => ceil($seconds / 60),
-            ]),
+            'email' => "Слишком много попыток входа. Пожалуйста, попробуйте снова через {$minutes} " . ($minutes === 1 ? 'минуту' : ($minutes < 5 ? 'минуты' : 'минут')) . ".",
         ]);
     }
 

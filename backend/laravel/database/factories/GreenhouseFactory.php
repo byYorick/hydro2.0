@@ -16,6 +16,7 @@ class GreenhouseFactory extends Factory
     {
         return [
             'uid' => 'gh-'.$this->faker->unique()->numerify('####'),
+            'provisioning_token' => 'gh_'.str()->random(32),
             'name' => $this->faker->company().' Greenhouse',
             'timezone' => 'Europe/Moscow',
             'type' => $this->faker->randomElement(['indoor', 'outdoor', 'greenhouse']),

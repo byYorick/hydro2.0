@@ -117,9 +117,10 @@ describe('Recipes/Index.vue', () => {
   it('отображает кнопку создания рецепта', () => {
     const wrapper = mount(RecipesIndex)
     
-    expect(wrapper.text()).toContain('Создать рецепт')
+    // В компоненте кнопка содержит "Новый цикл", а не "Создать рецепт"
+    expect(wrapper.text()).toContain('Новый цикл')
     const buttons = wrapper.findAllComponents({ name: 'Button' })
-    const createButton = buttons.find(btn => btn.text().includes('Создать рецепт'))
+    const createButton = buttons.find(btn => btn.text().includes('Новый цикл'))
     expect(createButton).toBeTruthy()
   })
 

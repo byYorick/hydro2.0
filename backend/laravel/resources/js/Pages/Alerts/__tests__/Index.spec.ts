@@ -111,7 +111,7 @@ describe('Alerts/Index.vue', () => {
     axiosPatchMock.mockResolvedValue({ data: { status: 'ok' } })
   })
 
-  const findRows = (wrapper: ReturnType<typeof mount>) => wrapper.findAll('.virtual-table-body .grid')
+  const findRows = (wrapper: ReturnType<typeof mount>) => wrapper.findAll('tbody tr').filter(row => !row.text().includes('Нет алертов'))
 
   it('фильтрует только активные', async () => {
     const wrapper = mount(AlertsIndex)

@@ -70,40 +70,33 @@ class NodeRegistryServiceTest extends TestCase
         $this->assertNotNull($node->first_seen_at);
     }
 
-    public function test_register_node_with_zone_uid_zn_format(): void
+    public function test_register_node_with_zone_uid_ignored(): void
     {
+        // КРИТИЧНО: Автопривязка отключена - zone_uid игнорируется
         $zone = Zone::factory()->create();
 
         $node = $this->service->registerNode(
             'nd-ph-1',
-            "zn-{$zone->id}",
+            "zn-{$zone->id}",  // zone_uid предоставлен, но должен быть проигнорирован
             []
         );
 
-        $this->assertEquals($zone->id, $node->zone_id);
+        // Узел должен остаться непривязанным (zone_id = null)
+        $this->assertNull($node->zone_id);
     }
 
-    public function test_register_node_with_zone_uid_numeric(): void
+    public function test_register_node_with_numeric_zone_uid_ignored(): void
     {
+        // КРИТИЧНО: Автопривязка отключена - zone_uid игнорируется
         $zone = Zone::factory()->create();
 
         $node = $this->service->registerNode(
             'nd-ph-1',
-            (string)$zone->id,
+            (string)$zone->id,  // zone_uid предоставлен, но должен быть проигнорирован
             []
         );
 
-        $this->assertEquals($zone->id, $node->zone_id);
-    }
-
-    public function test_register_node_with_invalid_zone_uid(): void
-    {
-        $node = $this->service->registerNode(
-            'nd-ph-1',
-            'zn-99999',  // Non-existent zone
-            []
-        );
-
+        // Узел должен остаться непривязанным (zone_id = null)
         $this->assertNull($node->zone_id);
     }
 

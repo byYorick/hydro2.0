@@ -16,6 +16,9 @@ export default defineConfig({
         host: process.env.VITE_HOST || '0.0.0.0',
         port: 5173,
         strictPort: true,
+        // Включить детальное отображение ошибок в dev режиме
+        open: false, // Не открывать браузер автоматически
+        clearScreen: false, // Не очищать экран при ошибках для лучшей видимости
         cors: {
             origin: (origin, callback) => {
                 callback(null, true);
@@ -29,6 +32,8 @@ export default defineConfig({
             port: 5173,
             clientPort: 5173,
             path: '/@vite/client',
+            // Включить детальное логирование HMR ошибок
+            overlay: true, // Показывать overlay с ошибками в браузере
         },
         watch: {
             usePolling: true, // Для Docker на Windows
@@ -56,10 +61,15 @@ export default defineConfig({
         // Production optimizations (esbuild быстрее чем terser)
         minify: 'esbuild',
         cssCodeSplit: true, // Разбивать CSS на чанки для production
-        sourcemap: false, // Отключить sourcemaps в production для скорости
-        // Удалить console и debugger в production
+        // Включить sourcemaps в dev режиме для отладки
+        sourcemap: process.env.NODE_ENV === 'production' ? false : 'inline',
+        // Удалить console и debugger только в production
         esbuild: {
             drop: process.env.NODE_ENV === 'production' ? ['console', 'debugger'] : [],
+            // В dev режиме сохраняем имена функций для лучшей отладки
+            keepNames: process.env.NODE_ENV !== 'production',
+            // Включить sourcemaps в dev режиме
+            sourcemap: process.env.NODE_ENV !== 'production',
         },
         rollupOptions: {
             output: {
@@ -128,10 +138,20 @@ export default defineConfig({
                 compilerOptions: {
                     // Production optimizations для Vue
                     isCustomElement: (tag) => false,
+                    // В dev режиме включить детальные предупреждения
+                    isProd: process.env.NODE_ENV === 'production',
+                    // Включить отображение всех предупреждений в dev режиме
+                    whitespace: process.env.NODE_ENV === 'production' ? 'condense' : 'preserve',
                 },
             },
             // Vue production mode
             isProduction: process.env.NODE_ENV === 'production',
+            // Включить детальное отображение ошибок в dev режиме
+            reactivityTransform: false,
+            script: {
+                // Включить sourcemaps для Vue компонентов в dev режиме
+                defineModel: true,
+            },
         }),
         // Dev‑middleware, который гарантирует корректный Content-Type для .vue
         {

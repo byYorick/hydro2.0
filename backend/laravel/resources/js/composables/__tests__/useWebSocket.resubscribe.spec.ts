@@ -39,6 +39,22 @@ describe('useWebSocket - Resubscribe Logic', () => {
   let mockGlobalChannel: any
 
   beforeEach(() => {
+    // Очищаем все моки перед каждым тестом
+    vi.clearAllMocks()
+    
+    // Устанавливаем window перед созданием моков
+    if (!(global as any).window) {
+      (global as any).window = {}
+    }
+    ;(global as any).window.setInterval = (global.setInterval as any)
+    ;(global as any).window.clearInterval = (global.clearInterval as any)
+    ;(global as any).window.document = global.document || {
+      readyState: 'complete',
+      createElement: vi.fn(() => ({})),
+      querySelector: vi.fn(() => null),
+      querySelectorAll: vi.fn(() => []),
+    }
+    
     mockZoneChannel = {
       listen: vi.fn(),
       stopListening: vi.fn(),
@@ -51,6 +67,7 @@ describe('useWebSocket - Resubscribe Logic', () => {
       leave: vi.fn()
     }
 
+    // Создаем новый mockEcho для каждого теста, чтобы каналы создавались заново
     mockEcho = {
       private: vi.fn((channelName: string) => {
         if (channelName === 'events.global') {
@@ -59,6 +76,7 @@ describe('useWebSocket - Resubscribe Logic', () => {
         return mockZoneChannel
       }),
       channel: vi.fn(),
+      leave: vi.fn(),
       connector: {
         pusher: {
           connection: {
@@ -77,46 +95,37 @@ describe('useWebSocket - Resubscribe Logic', () => {
     mockGetEchoInstance.mockReturnValue(mockEcho)
     mockGetEcho.mockReturnValue(mockEcho)
 
-    // Устанавливаем моки для setInterval перед импортом модуля
-    if (!(global as any).window) {
-      (global as any).window = {}
-    }
-    (global as any).window.Echo = mockEcho
-    (global as any).window.setInterval = (global.setInterval as any)
-    (global as any).window.clearInterval = (global.clearInterval as any)
-
-    // Импортируем и очищаем activeSubscriptions
-    vi.resetModules()
-    
-    // Mock Pusher connection для проверки состояния
-    mockEcho.connector = {
-      pusher: {
-        connection: {
-          state: 'connected',
-          socket_id: '123.456'
-        },
-        channels: {
-          channels: {}
-        }
-      }
-    }
+    // Устанавливаем window.Echo после создания mockEcho
+    ;(global as any).window.Echo = mockEcho
   })
 
   afterEach(() => {
     vi.clearAllMocks()
     // @ts-ignore
-    delete global.window.Echo
+    if (global.window) {
+      // @ts-ignore
+      delete global.window.Echo
+    }
   })
 
   it('should resubscribe to zone commands channels', async () => {
-    const { useWebSocket } = await import('../useWebSocket')
-    const { resubscribeAllChannels } = await import('../useWebSocket')
+    // Импортируем модуль после установки window.Echo
+    const { useWebSocket, resubscribeAllChannels, cleanupWebSocketChannels } = await import('../useWebSocket')
+    
+    // Очищаем состояние перед тестом
+    if (cleanupWebSocketChannels) {
+      cleanupWebSocketChannels()
+    }
     
     const mockHandler = vi.fn()
     const { subscribeToZoneCommands } = useWebSocket()
     
     // Создаем подписку
     subscribeToZoneCommands(1, mockHandler)
+    
+    // Очищаем счетчики вызовов перед resubscribe
+    mockEcho.private.mockClear()
+    mockZoneChannel.listen.mockClear()
     
     // Вызываем resubscribe
     resubscribeAllChannels()
@@ -127,11 +136,20 @@ describe('useWebSocket - Resubscribe Logic', () => {
   })
 
   it('should resubscribe to global events channel', async () => {
-    const { useWebSocket, resubscribeAllChannels } = await import('../useWebSocket')
+    const { useWebSocket, resubscribeAllChannels, cleanupWebSocketChannels } = await import('../useWebSocket')
+    
+    // Очищаем состояние перед тестом
+    if (cleanupWebSocketChannels) {
+      cleanupWebSocketChannels()
+    }
     
     const mockHandler = vi.fn()
     const { subscribeToGlobalEvents } = useWebSocket()
     subscribeToGlobalEvents(mockHandler)
+    
+    // Очищаем счетчики вызовов перед resubscribe
+    mockEcho.private.mockClear()
+    mockGlobalChannel.listen.mockClear()
     
     resubscribeAllChannels()
 
@@ -140,18 +158,37 @@ describe('useWebSocket - Resubscribe Logic', () => {
   })
 
   it('should handle missing Echo gracefully', async () => {
-    // @ts-ignore
-    delete global.window.Echo
+    const { cleanupWebSocketChannels } = await import('../useWebSocket')
+    
+    // Очищаем состояние
+    if (cleanupWebSocketChannels) {
+      cleanupWebSocketChannels()
+    }
+    
+    // Удаляем Echo
+    if ((global as any).window) {
+      delete (global as any).window.Echo
+    }
 
     const useWebSocketModule = await import('../useWebSocket')
     const { resubscribeAllChannels } = useWebSocketModule
 
     // Не должно выбросить ошибку
     expect(() => resubscribeAllChannels()).not.toThrow()
+    
+    // Восстанавливаем Echo для следующих тестов
+    if ((global as any).window) {
+      (global as any).window.Echo = mockEcho
+    }
   })
 
   it('should resubscribe to multiple zone commands', async () => {
-    const { useWebSocket, resubscribeAllChannels } = await import('../useWebSocket')
+    const { useWebSocket, resubscribeAllChannels, cleanupWebSocketChannels } = await import('../useWebSocket')
+    
+    // Очищаем состояние перед тестом
+    if (cleanupWebSocketChannels) {
+      cleanupWebSocketChannels()
+    }
     
     const mockHandler1 = vi.fn()
     const mockHandler2 = vi.fn()
@@ -160,6 +197,8 @@ describe('useWebSocket - Resubscribe Logic', () => {
     subscribeToZoneCommands(1, mockHandler1)
     subscribeToZoneCommands(2, mockHandler2)
     
+    mockEcho.private.mockClear()
+    
     resubscribeAllChannels()
 
     expect(mockEcho.private).toHaveBeenCalledWith('commands.1')
@@ -167,7 +206,12 @@ describe('useWebSocket - Resubscribe Logic', () => {
   })
 
   it('should handle errors during resubscription gracefully', async () => {
-    const { useWebSocket, resubscribeAllChannels } = await import('../useWebSocket')
+    const { useWebSocket, resubscribeAllChannels, cleanupWebSocketChannels } = await import('../useWebSocket')
+    
+    // Очищаем состояние перед тестом
+    if (cleanupWebSocketChannels) {
+      cleanupWebSocketChannels()
+    }
     
     const mockHandler = vi.fn()
     const { subscribeToZoneCommands } = useWebSocket()
@@ -183,7 +227,12 @@ describe('useWebSocket - Resubscribe Logic', () => {
   })
 
   it('should restore all active subscriptions after reconnect', async () => {
-    const { useWebSocket, resubscribeAllChannels } = await import('../useWebSocket')
+    const { useWebSocket, resubscribeAllChannels, cleanupWebSocketChannels } = await import('../useWebSocket')
+    
+    // Очищаем состояние перед тестом
+    if (cleanupWebSocketChannels) {
+      cleanupWebSocketChannels()
+    }
     
     const zoneHandler = vi.fn()
     const globalHandler = vi.fn()
@@ -193,12 +242,16 @@ describe('useWebSocket - Resubscribe Logic', () => {
     subscribeToGlobalEvents(globalHandler)
     
     // Симулируем отключение
-    // @ts-ignore
-    delete global.window.Echo
+    if ((global as any).window) {
+      delete (global as any).window.Echo
+    }
     
     // Симулируем переподключение
-    // @ts-ignore
-    global.window.Echo = mockEcho
+    if ((global as any).window) {
+      (global as any).window.Echo = mockEcho
+    }
+    
+    mockEcho.private.mockClear()
     
     resubscribeAllChannels()
 
@@ -208,7 +261,12 @@ describe('useWebSocket - Resubscribe Logic', () => {
   })
 
   it('should validate subscriptions before resubscribe', async () => {
-    const { useWebSocket, resubscribeAllChannels } = await import('../useWebSocket')
+    const { useWebSocket, resubscribeAllChannels, cleanupWebSocketChannels } = await import('../useWebSocket')
+    
+    // Очищаем состояние перед тестом
+    if (cleanupWebSocketChannels) {
+      cleanupWebSocketChannels()
+    }
     
     const mockHandler = vi.fn()
     const { subscribeToZoneCommands } = useWebSocket()
@@ -216,8 +274,7 @@ describe('useWebSocket - Resubscribe Logic', () => {
     // Создаем подписку
     subscribeToZoneCommands(1, mockHandler)
     
-    // Симулируем размонтирование компонента (удаляем из componentSubscriptionsMaps)
-    // Это делается через vi.resetModules(), но для теста просто проверяем валидацию
+    mockEcho.private.mockClear()
     
     resubscribeAllChannels()
     
@@ -226,7 +283,12 @@ describe('useWebSocket - Resubscribe Logic', () => {
   })
 
   it('should handle dead channels during resubscribe', async () => {
-    const { useWebSocket, resubscribeAllChannels } = await import('../useWebSocket')
+    const { useWebSocket, resubscribeAllChannels, cleanupWebSocketChannels } = await import('../useWebSocket')
+    
+    // Очищаем состояние перед тестом
+    if (cleanupWebSocketChannels) {
+      cleanupWebSocketChannels()
+    }
     
     const mockHandler = vi.fn()
     const { subscribeToZoneCommands } = useWebSocket()
@@ -234,11 +296,13 @@ describe('useWebSocket - Resubscribe Logic', () => {
     subscribeToZoneCommands(1, mockHandler)
     
     // Симулируем "мертвый" канал - есть в Pusher, но нет обработчиков
-    mockEcho.connector.pusher.channels.channels['commands.1'] = {
+    mockEcho.connector.pusher.channels.channels['private-commands.1'] = {
       _events: {},
       _callbacks: {},
       bindings: []
     }
+    
+    mockEcho.private.mockClear()
     
     resubscribeAllChannels()
     
@@ -247,7 +311,12 @@ describe('useWebSocket - Resubscribe Logic', () => {
   })
 
   it('should sync subscriptions.value after resubscribe', async () => {
-    const { useWebSocket, resubscribeAllChannels } = await import('../useWebSocket')
+    const { useWebSocket, resubscribeAllChannels, cleanupWebSocketChannels } = await import('../useWebSocket')
+    
+    // Очищаем состояние перед тестом
+    if (cleanupWebSocketChannels) {
+      cleanupWebSocketChannels()
+    }
     
     const mockHandler = vi.fn()
     const { subscribeToZoneCommands, subscriptions } = useWebSocket(undefined, 'TestComponent')
@@ -265,18 +334,28 @@ describe('useWebSocket - Resubscribe Logic', () => {
   })
 
   it('should handle unmounted components during resubscribe', async () => {
-    const { useWebSocket, resubscribeAllChannels } = await import('../useWebSocket')
+    const { useWebSocket, resubscribeAllChannels, cleanupWebSocketChannels } = await import('../useWebSocket')
+    
+    // Очищаем состояние перед тестом
+    if (cleanupWebSocketChannels) {
+      cleanupWebSocketChannels()
+    }
     
     const mockHandler = vi.fn()
     const comp1 = useWebSocket(undefined, 'Component1')
     
     comp1.subscribeToZoneCommands(1, mockHandler)
     
-    // Симулируем размонтирование компонента через vi.resetModules
-    // Но так как мы не можем напрямую удалить из WeakMap, просто проверяем, что система работает
+    mockEcho.private.mockClear()
+    
+    // Симулируем размонтирование компонента - вызываем unsubscribeAll
+    comp1.unsubscribeAll()
+    
+    // Но канал должен остаться в channelControls, поэтому resubscribe все равно должен работать
     resubscribeAllChannels()
     
     // Система должна корректно обработать размонтированные компоненты
+    // После unsubscribeAll канал может быть удален, но это нормально
     expect(mockEcho.private).toHaveBeenCalled()
   })
 })

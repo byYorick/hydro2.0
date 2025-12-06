@@ -16,6 +16,7 @@ class ZoneFactory extends Factory
     public function definition(): array
     {
         return [
+            'uid' => 'zn-'.str()->slug($this->faker->words(2, true)).'-'.str()->random(6),
             'name' => $this->faker->word(),
             'description' => $this->faker->sentence(),
             'status' => $this->faker->randomElement(['RUNNING', 'PAUSED', 'WARNING', 'ALARM']),

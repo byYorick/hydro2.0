@@ -61,29 +61,37 @@ class NodeService
             
             $oldZoneId = $node->zone_id;
             
-            // ВАЖНАЯ ЛОГИКА: Разделяем привязку от UI и обновление от History Logger
-            // 
-            // Сценарий 1: Пользователь привязывает/переприв язывает узел к зоне (UI)
-            //   - Приходит: {"zone_id": 6} (БЕЗ pending_zone_id в запросе)
-            //   - Устанавливаем: pending_zone_id = 6, zone_id = null
-            //   - Публикуется конфиг
-            //   - Узел получает конфиг и отправляет config_response
-            //   - History Logger делает финализацию
-            //
-            // Сценарий 2: History Logger завершает привязку после config_response
-            //   - Приходит: {"zone_id": 6, "pending_zone_id": null} (С pending_zone_id в запросе)
-            //   - Устанавливаем: zone_id = 6, pending_zone_id = null
-            //   - Конфиг НЕ публикуется (узел уже имеет конфиг)
+            /**
+             * ВАЖНАЯ ЛОГИКА: Разделяем привязку от UI и обновление от History Logger
+             * 
+             * Сценарий 1: Пользователь привязывает/перепривязывает узел к зоне (UI)
+             *   - Приходит: {"zone_id": 6} (БЕЗ pending_zone_id в запросе)
+             *   - Устанавливаем: pending_zone_id = 6, zone_id = null
+             *   - Публикуется конфиг
+             *   - Узел получает конфиг и отправляет config_response
+             *   - History Logger делает финализацию
+             * 
+             * Сценарий 2: History Logger завершает привязку после config_response
+             *   - Приходит: {"zone_id": 6, "pending_zone_id": null} (С pending_zone_id в запросе)
+             *   - Устанавливаем: zone_id = 6, pending_zone_id = null
+             *   - Конфиг НЕ публикуется (узел уже имеет конфиг)
+             */
             
             $hasZoneIdInRequest = array_key_exists('zone_id', $data);
             $hasPendingZoneIdInRequest = array_key_exists('pending_zone_id', $data);
             $newZoneId = $hasZoneIdInRequest ? $data['zone_id'] : null;
-            // $oldZoneId уже определён выше
+            $newPendingZoneId = $hasPendingZoneIdInRequest ? $data['pending_zone_id'] : null;
+            $oldPendingZoneId = $node->pending_zone_id;
             
-            // КРИТИЧНО: Если в запросе есть zone_id, но НЕТ pending_zone_id - это ВСЕГДА запрос от UI
+            /**
+             * КРИТИЧНО: Если в запросе есть zone_id, но НЕТ pending_zone_id - это ВСЕГДА запрос от UI
+             * Не важно, первая это привязка или перепривязка - всегда через pending_zone_id
+             * Если в запросе есть И zone_id И pending_zone_id - это завершение привязки от History Logger
+             */
             // Не важно, первая это привязка или переприв язка - всегда через pending_zone_id
             // Если в запросе есть И zone_id И pending_zone_id - это завершение привязки от History Logger
             $isAssignmentFromUI = $hasZoneIdInRequest && !$hasPendingZoneIdInRequest && $newZoneId;
+            $isBindingCompletion = $hasZoneIdInRequest && $hasPendingZoneIdInRequest && $newZoneId && $newPendingZoneId === null;
             
             Log::info('NodeService::update zone assignment check', [
                 'node_id' => $node->id,
@@ -91,8 +99,11 @@ class NodeService
                 'hasZoneIdInRequest' => $hasZoneIdInRequest,
                 'hasPendingZoneIdInRequest' => $hasPendingZoneIdInRequest,
                 'newZoneId' => $newZoneId,
+                'newPendingZoneId' => $newPendingZoneId,
                 'oldZoneId' => $oldZoneId,
+                'oldPendingZoneId' => $oldPendingZoneId,
                 'isAssignmentFromUI' => $isAssignmentFromUI,
+                'isBindingCompletion' => $isBindingCompletion,
                 'lifecycle_state' => $node->lifecycle_state?->value,
             ]);
             
@@ -115,8 +126,10 @@ class NodeService
                     throw new \DomainException("Cannot assign node to zone in current state: {$currentState->value}");
                 }
                 
-                // КРИТИЧНО: ВСЕГДА сохраняем в pending_zone_id для получения подтверждения от ноды
-                // zone_id будет обновлен только после config_response от ноды
+                /**
+                 * КРИТИЧНО: ВСЕГДА сохраняем в pending_zone_id для получения подтверждения от ноды
+                 * zone_id будет обновлен только после config_response от ноды
+                 */
                 $data['pending_zone_id'] = $newZoneId;
                 unset($data['zone_id']); // Удаляем zone_id из данных обновления!
                 
@@ -144,8 +157,26 @@ class NodeService
             
             $node->update($data);
             
-            // Если узел отвязан от зоны (zone_id стал null)
-            if (!$node->zone_id && $oldZoneId) {
+            // Логируем завершение привязки от history-logger (когда zone_id устанавливается и pending_zone_id очищается)
+            if ($isBindingCompletion && $node->zone_id && !$node->pending_zone_id) {
+                Log::info('NodeService: Binding completed by history-logger (zone_id set, pending_zone_id cleared)', [
+                    'node_id' => $node->id,
+                    'uid' => $node->uid,
+                    'zone_id' => $node->zone_id,
+                    'old_zone_id' => $oldZoneId,
+                    'old_pending_zone_id' => $oldPendingZoneId,
+                    'new_zone_id' => $node->zone_id,
+                    'new_pending_zone_id' => $node->pending_zone_id,
+                    'lifecycle_state' => $node->lifecycle_state?->value,
+                    'reason' => 'History-logger completed node binding after config_response',
+                ]);
+            }
+            
+            /**
+             * Если узел отвязан от зоны (zone_id стал null), но НЕ при привязке от UI
+             * КРИТИЧНО: Не срабатывает при привязке от UI, так как там pending_zone_id установлен
+             */
+            if (!$node->zone_id && $oldZoneId && !$isAssignmentFromUI) {
                 // Сбрасываем lifecycle_state в REGISTERED_BACKEND, чтобы нода считалась новой
                 $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
                 $node->pending_zone_id = null; // Очищаем pending_zone_id при отвязке
@@ -155,6 +186,7 @@ class NodeService
                     'node_id' => $node->id,
                     'uid' => $node->uid,
                     'old_zone_id' => $oldZoneId,
+                    'old_pending_zone_id' => $oldPendingZoneId,
                     'new_lifecycle_state' => $node->lifecycle_state?->value,
                 ]);
             }
@@ -163,14 +195,18 @@ class NodeService
                 'node_id' => $node->id,
                 'uid' => $node->uid,
                 'zone_id' => $node->zone_id,
+                'pending_zone_id' => $node->pending_zone_id,
                 'lifecycle_state' => $node->lifecycle_state?->value,
             ]);
             
-            // Очищаем кеш списка устройств для всех пользователей
+            /**
+             * Очищаем кеш списка устройств для всех пользователей
+             * Используем теги для точечной очистки, если поддерживаются
+             */
             try {
                 \Illuminate\Support\Facades\Cache::tags(['devices_list'])->flush();
             } catch (\BadMethodCallException $e) {
-                // Если теги не поддерживаются, очищаем все ключи с паттерном
+                // Если теги не поддерживаются, очищаем весь кеш
                 \Illuminate\Support\Facades\Cache::flush();
             }
             
@@ -186,8 +222,10 @@ class NodeService
     {
         return DB::transaction(function () use ($node) {
             $oldZoneId = $node->zone_id;
+            $oldPendingZoneId = $node->pending_zone_id;
             
-            if (!$oldZoneId) {
+            // Если нода уже отвязана (нет ни zone_id, ни pending_zone_id), ничего не делаем
+            if (!$oldZoneId && !$oldPendingZoneId) {
                 Log::info('Node already detached', [
                     'node_id' => $node->id,
                     'uid' => $node->uid,
@@ -197,6 +235,13 @@ class NodeService
             
             // Отвязываем от зоны
             $node->zone_id = null;
+            
+            /**
+             * КРИТИЧНО: Очищаем pending_zone_id при отвязке
+             * Если нода была в процессе привязки (pending_zone_id установлен, но zone_id еще null),
+             * необходимо очистить pending_zone_id, чтобы избежать проблем
+             */
+            $node->pending_zone_id = null;
             
             // Сбрасываем lifecycle_state в REGISTERED_BACKEND, чтобы нода считалась новой
             // Это позволит ей снова появиться в списке новых нод для привязки
@@ -208,6 +253,7 @@ class NodeService
                 'node_id' => $node->id,
                 'uid' => $node->uid,
                 'old_zone_id' => $oldZoneId,
+                'old_pending_zone_id' => $oldPendingZoneId,
                 'new_lifecycle_state' => $node->lifecycle_state?->value,
             ]);
             

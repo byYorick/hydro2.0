@@ -4,11 +4,14 @@
 Документ описывает структуру и формат NodeConfig — конфигурации узлов ESP32.
 
 **Связанные документы:**
+- `doc_ai/02_HARDWARE_FIRMWARE/NODE_CONFIG_SPEC.md` — эталонная спецификация NodeConfig
 - `doc_ai/02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md` — архитектура нод
 - `doc_ai/02_HARDWARE_FIRMWARE/FIRMWARE_STRUCTURE.md` — структура прошивки
 - `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` — MQTT протокол и топики
 - `doc_ai/01_SYSTEM/DATAFLOW_FULL.md` — потоки данных
 - Шаблоны: `configs/nodes/*.json`
+
+**Примечание:** Этот файл содержит детальную спецификацию для разработчиков прошивок. Эталонная версия находится в `doc_ai/02_HARDWARE_FIRMWARE/NODE_CONFIG_SPEC.md`.
 
 ---
 

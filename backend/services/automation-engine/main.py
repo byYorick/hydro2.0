@@ -2,12 +2,21 @@ import asyncio
 import json
 import httpx
 import logging
+import os
 from typing import Optional, Dict, Any, Tuple, List
 from datetime import datetime
 from common.env import get_settings
 from common.mqtt import MqttClient
 from common.db import fetch, execute, create_zone_event, create_ai_log
 from prometheus_client import Counter, Histogram, start_http_server
+
+# Настройка логирования
+log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
+logging.basicConfig(
+    level=getattr(logging, log_level, logging.INFO),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler()]  # Явно указываем stdout для Docker
+)
 
 logger = logging.getLogger(__name__)
 from recipe_utils import calculate_current_phase, advance_phase, get_phase_targets

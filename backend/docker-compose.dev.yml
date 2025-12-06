@@ -39,11 +39,16 @@ services:
     environment:
       - WEB_DOCUMENT_ROOT=/app/public
       - APP_ENV=local
-      - APP_DEBUG=1
+      - APP_DEBUG=true
+      - APP_DEBUG_MODE=true
       - SESSION_DRIVER=file
       - CACHE_DRIVER=file
       - LOG_CHANNEL=stderr
       - LOG_LEVEL=debug
+      # PHP error display settings for development
+      - PHP_DISPLAY_ERRORS=On
+      - PHP_DISPLAY_STARTUP_ERRORS=On
+      - PHP_ERROR_REPORTING=E_ALL
       - BROADCAST_CONNECTION=reverb
       - QUEUE_CONNECTION=redis
       - DB_CONNECTION=pgsql
@@ -71,7 +76,6 @@ services:
       - REVERB_DEBUG=true
       - REVERB_AUTO_START=true
       - REVERB_VERBOSE=true
-      - LOG_LEVEL=debug
       - REVERB_ALLOWED_ORIGINS=http://localhost:8080,http://127.0.0.1:8080,http://localhost:5173,http://127.0.0.1:5173,http://localhost,http://127.0.0.1,*
       # Устанавливаем VITE_DEV_SERVER_URL для правильной генерации URL Laravel Vite plugin
       # Используем localhost:8080 (через nginx прокси), а не 0.0.0.0, так как браузер не может использовать 0.0.0.0
@@ -81,6 +85,12 @@ services:
       # Vite environment variables for WebSocket
       - VITE_ENABLE_WS=true
       - VITE_REVERB_APP_KEY=local
+      # Vite dev mode settings - включить детальное отображение ошибок
+      - NODE_ENV=development
+      - VITE_NODE_ENV=development
+      # Включить sourcemaps и детальное логирование
+      - VITE_SOURCEMAP=true
+      - VITE_LOG_LEVEL=info
       # В dev режиме НЕ указываем VITE_REVERB_HOST и VITE_REVERB_PORT
       # чтобы клиент использовал window.location (nginx прокси на порту 8080)
       # Nginx проксирует WebSocket на /app/ к Reverb на порту 6001
@@ -132,6 +142,8 @@ services:
       dockerfile: mqtt-bridge/Dockerfile
     environment:
       - APP_ENV=local
+      - LOG_LEVEL=DEBUG
+      - PYTHONUNBUFFERED=1
       - MQTT_HOST=mqtt
       - MQTT_PORT=1883
       - MQTT_TLS=0
@@ -165,6 +177,8 @@ services:
       dockerfile: history-logger/Dockerfile
     environment:
       - APP_ENV=local
+      - LOG_LEVEL=DEBUG
+      - PYTHONUNBUFFERED=1
       - MQTT_HOST=mqtt
       - MQTT_PORT=1883
       - MQTT_TLS=0
@@ -197,6 +211,8 @@ services:
       dockerfile: automation-engine/Dockerfile
     environment:
       - APP_ENV=local
+      - LOG_LEVEL=DEBUG
+      - PYTHONUNBUFFERED=1
       - MQTT_HOST=mqtt
       - MQTT_PORT=1883
       - MQTT_TLS=0
@@ -229,6 +245,8 @@ services:
       dockerfile: scheduler/Dockerfile
     environment:
       - APP_ENV=local
+      - LOG_LEVEL=DEBUG
+      - PYTHONUNBUFFERED=1
       - MQTT_HOST=mqtt
       - MQTT_PORT=1883
       - MQTT_TLS=0
@@ -314,6 +332,8 @@ services:
       dockerfile: digital-twin/Dockerfile
     environment:
       - APP_ENV=local
+      - LOG_LEVEL=DEBUG
+      - PYTHONUNBUFFERED=1
       - PG_HOST=db
       - PG_PORT=5432
       - PG_DB=hydro_dev
@@ -333,6 +353,8 @@ services:
       dockerfile: telemetry-aggregator/Dockerfile
     environment:
       - APP_ENV=local
+      - LOG_LEVEL=DEBUG
+      - PYTHONUNBUFFERED=1
       - PG_HOST=db
       - PG_PORT=5432
       - PG_DB=hydro_dev
