@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\NodeTelemetryUpdated;
 use App\Models\DeviceNode;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -128,6 +129,24 @@ class PythonIngestController extends Controller
                 return Response::json(['status' => 'error', 'message' => 'Failed to ingest telemetry'], 500);
             }
 
+            // Broadcast телеметрии через WebSocket для real-time обновления графиков
+            if ($nodeId) {
+                Log::debug('PythonIngestController: Broadcasting telemetry via WebSocket', [
+                    'node_id' => $nodeId,
+                    'channel' => $data['channel'] ?? '',
+                    'metric_type' => $data['metric_type'],
+                    'value' => $data['value'],
+                ]);
+                
+                event(new NodeTelemetryUpdated(
+                    nodeId: $nodeId,
+                    channel: $data['channel'] ?? '',
+                    metricType: $data['metric_type'],
+                    value: (float) $data['value'],
+                    timestamp: $timestamp->getTimestamp() * 1000, // Конвертируем в миллисекунды
+                ));
+            }
+
             return Response::json(['status' => 'ok']);
         } catch (\Exception $e) {
             Log::error('History logger request exception', [
@@ -150,6 +169,39 @@ class PythonIngestController extends Controller
         // Laravel больше не обновляет статусы команд напрямую
         // Это делает только Python-часть (history-logger через MQTT command_response)
         // Просто возвращаем подтверждение получения
+
+        return Response::json(['status' => 'ok']);
+    }
+
+    /**
+     * Broadcast телеметрии через WebSocket
+     * Вызывается из history-logger после сохранения телеметрии в БД
+     */
+    public function broadcastTelemetry(Request $request)
+    {
+        $this->ensureToken($request);
+        $data = $request->validate([
+            'node_id' => ['required', 'integer', 'exists:nodes,id'],
+            'channel' => ['nullable', 'string', 'max:64'],
+            'metric_type' => ['required', 'string', 'max:64'],
+            'value' => ['required', 'numeric'],
+            'timestamp' => ['required', 'integer'], // timestamp в миллисекундах
+        ]);
+
+        Log::debug('PythonIngestController: Broadcasting telemetry via WebSocket', [
+            'node_id' => $data['node_id'],
+            'channel' => $data['channel'] ?? '',
+            'metric_type' => $data['metric_type'],
+            'value' => $data['value'],
+        ]);
+
+        event(new NodeTelemetryUpdated(
+            nodeId: $data['node_id'],
+            channel: $data['channel'] ?? '',
+            metricType: $data['metric_type'],
+            value: (float) $data['value'],
+            timestamp: $data['timestamp'],
+        ));
 
         return Response::json(['status' => 'ok']);
     }

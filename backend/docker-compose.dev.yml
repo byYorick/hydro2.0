@@ -45,7 +45,7 @@ services:
       - LOG_CHANNEL=stderr
       - LOG_LEVEL=debug
       - BROADCAST_CONNECTION=reverb
-      - QUEUE_CONNECTION=sync
+      - QUEUE_CONNECTION=redis
       - DB_CONNECTION=pgsql
       - DB_HOST=db
       - DB_PORT=5432

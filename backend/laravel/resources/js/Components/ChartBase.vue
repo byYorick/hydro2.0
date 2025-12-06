@@ -119,7 +119,9 @@ watch(
           ...(opt.grid || {}), // Сохраняем все настройки grid из опций
         },
       }
-      chart.setOption(safeOption, { notMerge: true })
+      // Используем notMerge: false для инкрементальных обновлений (добавляем только новые данные)
+      // Без replaceMerge, чтобы обновлялись только измененные части опции
+      chart.setOption(safeOption, { notMerge: false, lazyUpdate: false })
     }
   },
   { deep: true }

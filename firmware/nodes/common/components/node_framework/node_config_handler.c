@@ -208,36 +208,44 @@ static void node_config_handler_process_internal(
     char current_zone_uid[64] = {0};
     bool is_temp_mode = false;
     
-    if (config_storage_get_gh_uid(current_gh_uid, sizeof(current_gh_uid)) == ESP_OK &&
-        config_storage_get_zone_uid(current_zone_uid, sizeof(current_zone_uid)) == ESP_OK) {
-        // Проверяем, находится ли узел в временном режиме
-        is_temp_mode = (strcmp(current_gh_uid, "gh-temp") == 0) || (strcmp(current_zone_uid, "zn-temp") == 0);
+    // BUGFIX: Проверяем оба значения отдельно, чтобы не пропустить временный режим
+    // если одна из функций вернула ошибку, но другая успешно загрузила временное значение
+    esp_err_t gh_err = config_storage_get_gh_uid(current_gh_uid, sizeof(current_gh_uid));
+    esp_err_t zone_err = config_storage_get_zone_uid(current_zone_uid, sizeof(current_zone_uid));
+    
+    // Проверяем, находится ли узел в временном режиме
+    // Считаем режим временным, если хотя бы одно из значений временное
+    if (gh_err == ESP_OK && strcmp(current_gh_uid, "gh-temp") == 0) {
+        is_temp_mode = true;
+    }
+    if (zone_err == ESP_OK && strcmp(current_zone_uid, "zn-temp") == 0) {
+        is_temp_mode = true;
+    }
+    
+    if (is_temp_mode) {
+        ESP_LOGI(TAG, "Node is in temporary mode (gh_uid=%s, zone_uid=%s)", current_gh_uid, current_zone_uid);
         
-        if (is_temp_mode) {
-            ESP_LOGI(TAG, "Node is in temporary mode (gh_uid=%s, zone_uid=%s)", current_gh_uid, current_zone_uid);
-            
-            // Получаем значения из нового конфига
-            cJSON *new_gh_uid = cJSON_GetObjectItem(config, "gh_uid");
-            cJSON *new_zone_uid = cJSON_GetObjectItem(config, "zone_uid");
-            
-            bool new_is_temp = false;
-            if (new_gh_uid && cJSON_IsString(new_gh_uid) && new_gh_uid->valuestring) {
-                new_is_temp = (strcmp(new_gh_uid->valuestring, "gh-temp") == 0);
-            }
-            if (!new_is_temp && new_zone_uid && cJSON_IsString(new_zone_uid) && new_zone_uid->valuestring) {
-                new_is_temp = (strcmp(new_zone_uid->valuestring, "zn-temp") == 0);
-            }
-            
-            // Если новый конфиг тоже временный - не применяем (игнорируем автоматические конфиги)
-            if (new_is_temp) {
-                ESP_LOGI(TAG, "Ignoring config from MQTT: node is in temporary mode and new config is also temporary (waiting for user binding)");
-                cJSON_Delete(config);
-                node_config_handler_publish_response("ACK", "Config received but not applied (temporary mode)", NULL, 0);
-                return;
-            } else {
-                // Новый конфиг имеет реальные значения - это привязка от пользователя, применяем
-                ESP_LOGI(TAG, "Applying config: node was in temporary mode but new config has real zone assignment (user binding)");
-            }
+        // Получаем значения из нового конфига
+        cJSON *new_gh_uid = cJSON_GetObjectItem(config, "gh_uid");
+        cJSON *new_zone_uid = cJSON_GetObjectItem(config, "zone_uid");
+        
+        bool new_is_temp = false;
+        if (new_gh_uid && cJSON_IsString(new_gh_uid) && new_gh_uid->valuestring) {
+            new_is_temp = (strcmp(new_gh_uid->valuestring, "gh-temp") == 0);
+        }
+        if (!new_is_temp && new_zone_uid && cJSON_IsString(new_zone_uid) && new_zone_uid->valuestring) {
+            new_is_temp = (strcmp(new_zone_uid->valuestring, "zn-temp") == 0);
+        }
+        
+        // Если новый конфиг тоже временный - не применяем (игнорируем автоматические конфиги)
+        if (new_is_temp) {
+            ESP_LOGI(TAG, "Ignoring config from MQTT: node is in temporary mode and new config is also temporary (waiting for user binding)");
+            cJSON_Delete(config);
+            node_config_handler_publish_response("ACK", "Config received but not applied (temporary mode)", NULL, 0);
+            return;
+        } else {
+            // Новый конфиг имеет реальные значения - это привязка от пользователя, применяем
+            ESP_LOGI(TAG, "Applying config: node was in temporary mode but new config has real zone assignment (user binding)");
         }
     }
 

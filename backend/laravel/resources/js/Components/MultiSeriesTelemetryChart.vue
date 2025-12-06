@@ -193,30 +193,93 @@ const option = computed(() => {
       formatter: (params: unknown) => {
         if (!params || !Array.isArray(params) || params.length === 0) return ''
         
-        const points = params as Array<{ axisValue: number; value: number; seriesName: string; color: string }>
-        const date = new Date(points[0].axisValue)
-        const dateStr = date.toLocaleDateString('ru-RU', { 
-          day: '2-digit', 
-          month: '2-digit', 
-          year: 'numeric' 
-        })
-        const timeStr = date.toLocaleTimeString('ru-RU', { 
-          hour: '2-digit', 
-          minute: '2-digit' 
-        })
+        const points = params as Array<{ axisValue: number | string; value: number; seriesName: string; color: string; data?: { ts: number } }>
+        const point = points[0]
+        
+        // Для оси типа 'time' ECharts может передавать axisValue в разных форматах
+        // Также можем использовать data.ts из исходных данных, если доступно
+        let timestamp: number | null = null
+        
+        // Сначала пытаемся получить timestamp из исходных данных точки
+        if (point.data && typeof point.data.ts === 'number') {
+          timestamp = point.data.ts
+        } else {
+          // Иначе используем axisValue
+          const axisValue = point.axisValue
+          if (typeof axisValue === 'string') {
+            const parsed = new Date(axisValue).getTime()
+            if (!isNaN(parsed)) {
+              timestamp = parsed
+            }
+          } else if (typeof axisValue === 'number') {
+            timestamp = axisValue
+          }
+        }
+        
+        let dateTimeStr = ''
+        
+        if (timestamp !== null && !isNaN(timestamp) && timestamp > 946684800000) {
+          const date = new Date(timestamp)
+          if (!isNaN(date.getTime())) {
+            const dateStr = date.toLocaleDateString('ru-RU', { 
+              day: '2-digit', 
+              month: '2-digit', 
+              year: 'numeric' 
+            })
+            const timeStr = date.toLocaleTimeString('ru-RU', { 
+              hour: '2-digit', 
+              minute: '2-digit',
+              second: '2-digit'
+            })
+            dateTimeStr = `${dateStr}, ${timeStr}`
+          } else {
+            dateTimeStr = String(timestamp)
+          }
+        } else {
+          // Если не удалось получить timestamp, используем axisValue как есть
+          dateTimeStr = String(point.axisValue)
+        }
         
         const lines = points.map(p => {
           const isPH = p.seriesName.toLowerCase().includes('ph')
-          const valueStr = typeof p.value === 'number' 
-            ? p.value.toFixed(isPH ? 2 : 1)
-            : String(p.value)
+          
+          // ECharts может передавать value как массив [timestamp, value] или просто value
+          let actualValue: number
+          if (Array.isArray(p.value)) {
+            // Если value - массив, берем последний элемент (значение)
+            const lastElement = p.value[p.value.length - 1]
+            actualValue = typeof lastElement === 'number' ? lastElement : parseFloat(String(lastElement)) || 0
+          } else if (typeof p.value === 'number') {
+            actualValue = p.value
+          } else {
+            // Если это не число и не массив, пытаемся преобразовать
+            const parsed = parseFloat(String(p.value))
+            actualValue = isNaN(parsed) ? 0 : parsed
+          }
+          
+          // Гарантируем, что actualValue - это валидное число
+          if (typeof actualValue !== 'number' || isNaN(actualValue) || !isFinite(actualValue)) {
+            actualValue = 0
+          }
+          
+          // Проверяем, не является ли значение timestamp (слишком большое число)
+          // Если значение больше 946684800000 (2000-01-01), это скорее всего timestamp, а не значение
+          if (actualValue > 946684800000) {
+            // Это timestamp, не отображаем его как значение
+            actualValue = 0
+          }
+          
+          // Финальная проверка перед вызовом toFixed
+          const numValue = Number(actualValue)
+          const valueStr = (isNaN(numValue) || !isFinite(numValue) ? 0 : numValue).toFixed(isPH ? 2 : 1)
+          
           return `<div style="display: flex; align-items: center; gap: 8px;">
             <span style="display: inline-block; width: 10px; height: 2px; background-color: ${p.color};"></span>
             <span>${p.seriesName}: <strong>${valueStr}</strong></span>
           </div>`
         }).join('')
         
-        return `${dateStr}, ${timeStr}<br/>${lines}`
+        return `${dateTimeStr}<br/>${lines}`
       },
       backgroundColor: 'rgba(17, 24, 39, 0.95)',
       borderColor: '#374151',

@@ -194,6 +194,7 @@ Route::middleware([
 Route::prefix('python')->middleware('throttle:120,1')->group(function () {
     Route::post('ingest/telemetry', [PythonIngestController::class, 'telemetry']);
     Route::post('commands/ack', [PythonIngestController::class, 'commandAck']);
+    Route::post('broadcast/telemetry', [PythonIngestController::class, 'broadcastTelemetry']);
 });
 
 // Node registration and service updates (token-based) - умеренный лимит

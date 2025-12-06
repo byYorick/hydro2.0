@@ -67,16 +67,18 @@
       </div>
     </Card>
 
-    <!-- Графики телеметрии для сенсорных каналов -->
-    <div v-if="sensorChannels.length > 0" class="mb-3">
-      <MultiSeriesTelemetryChart
-        v-if="chartSeries.length > 0"
-        title="Телеметрия устройства"
-        :series="chartSeries"
-        :time-range="chartTimeRange"
-        @time-range-change="onChartTimeRangeChange"
-      />
-      <Card v-else class="text-center text-sm text-neutral-400 py-8">
+    <!-- Графики телеметрии для сенсорных каналов (раздельно) -->
+    <div v-if="sensorChannels.length > 0" class="mb-3 space-y-3">
+      <template v-for="(channel, index) in sensorChannels" :key="channel?.channel || index">
+        <MultiSeriesTelemetryChart
+          v-if="channel && getChartSeriesForChannel(channel).length > 0"
+          :title="getChartTitleForChannel(channel)"
+          :series="getChartSeriesForChannel(channel)"
+          :time-range="chartTimeRange"
+          @time-range-change="onChartTimeRangeChange"
+        />
+      </template>
+      <Card v-if="sensorChannels.length > 0 && chartSeries.length === 0" class="text-center text-sm text-neutral-400 py-8">
         <div>Загрузка данных телеметрии...</div>
       </Card>
     </div>
@@ -100,7 +102,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, onMounted } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { Link, usePage, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
@@ -115,6 +117,7 @@ import { useToast } from '@/composables/useToast'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { useApi } from '@/composables/useApi'
 import { useDevicesStore } from '@/stores/devices'
+import { useNodeTelemetry } from '@/composables/useNodeTelemetry'
 import type { Device, DeviceChannel } from '@/types'
 
 interface PageProps {
@@ -135,9 +138,31 @@ const chartTimeRange = ref<'1H' | '24H' | '7D' | '30D' | 'ALL'>('24H')
 const chartDataByChannel = ref<Record<string, Array<{ ts: number; value: number }>>>({})
 
 // Определяем сенсорные каналы (для которых нужны графики)
-const sensorChannels = computed(() => 
-  channels.value.filter(ch => ch.type === 'sensor')
-)
+// Сортируем так, чтобы температура была первой, влажность второй
+const sensorChannels = computed(() => {
+  const sensors = channels.value.filter(ch => ch.type === 'sensor')
+  
+  // Сортируем: сначала температура, потом влажность, затем остальные
+  return sensors.sort((a, b) => {
+    const aMetric = (a.metric || a.channel.toUpperCase())
+    const bMetric = (b.metric || b.channel.toUpperCase())
+    
+    const aIsTemp = aMetric === 'TEMPERATURE' || aMetric === 'TEMP_AIR'
+    const bIsTemp = bMetric === 'TEMPERATURE' || bMetric === 'TEMP_AIR'
+    const aIsHumidity = aMetric === 'HUMIDITY'
+    const bIsHumidity = bMetric === 'HUMIDITY'
+    
+    // Температура всегда первая
+    if (aIsTemp && !bIsTemp) return -1
+    if (!aIsTemp && bIsTemp) return 1
+    
+    // Влажность всегда вторая (после температуры)
+    if (aIsHumidity && !bIsHumidity && !aIsTemp) return -1
+    if (!aIsHumidity && bIsHumidity && !bIsTemp) return 1
+    
+    return 0 // Сохраняем порядок для остальных
+  })
+})
 
 // Маппинг метрик к цветам
 const metricColors: Record<string, string> = {
@@ -172,7 +197,7 @@ const normalizeMetricForQuery = (metric: string): string => {
   return mapping[metric] || metric
 }
 
-// Подготовка данных для графика
+// Подготовка данных для графика (все серии вместе - для обратной совместимости)
 const chartSeries = computed(() => {
   return sensorChannels.value.map((channel, index) => {
     const metric = channel.metric || channel.channel.toUpperCase()
@@ -208,6 +233,49 @@ const chartSeries = computed(() => {
     }
   })
 })
+
+// Получить серию для конкретного канала (для раздельных графиков)
+function getChartSeriesForChannel(channel: DeviceChannel | undefined) {
+  if (!channel || !channel.channel) {
+    return []
+  }
+  
+  const metric = channel.metric || channel.channel.toUpperCase()
+  const data = chartDataByChannel.value[channel.channel] || []
+  
+  // Получаем цвет из маппинга
+  const color = metricColors[metric] || '#3b82f6'
+  const label = metricLabels[metric] || channel.channel
+  
+  // Безопасно получаем currentValue
+  let currentValue: number | undefined = undefined
+  if (data.length > 0 && data[data.length - 1]) {
+    const lastValue = data[data.length - 1].value
+    if (typeof lastValue === 'number' && !isNaN(lastValue)) {
+      currentValue = lastValue
+    }
+  }
+  
+  return [{
+    name: channel.channel,
+    label: `${label} (${channel.unit || ''})`,
+    color,
+    data,
+    currentValue,
+    yAxisIndex: 0, // Всегда левая ось для отдельного графика
+  }]
+}
+
+// Получить заголовок для графика канала
+function getChartTitleForChannel(channel: DeviceChannel | undefined): string {
+  if (!channel) {
+    return 'Телеметрия'
+  }
+  
+  const metric = channel.metric || channel.channel.toUpperCase()
+  const label = metricLabels[metric] || channel.channel
+  return `${label}${channel.unit ? ` (${channel.unit})` : ''}`
+}
 
 // История просмотров
 const { addToHistory } = useHistory()
@@ -502,14 +570,126 @@ function onChartTimeRangeChange(newRange: '1H' | '24H' | '7D' | '30D' | 'ALL'): 
   loadAllCharts()
 }
 
+// WebSocket подписка на телеметрию
+const nodeId = computed(() => device.value.id)
+const { subscribe: subscribeTelemetry, unsubscribe: unsubscribeTelemetry } = useNodeTelemetry(nodeId)
+let unsubscribeTelemetryFn: (() => void) | null = null
+
+// Обработчик обновления телеметрии через WebSocket
+const handleTelemetryUpdate = (data: { node_id: number; channel: string; metric_type: string; value: number; ts: number }) => {
+  try {
+    const channel = sensorChannels.value.find(ch => ch.channel === data.channel)
+    if (!channel) {
+      return
+    }
+
+    // Получаем или создаем массив данных для канала
+    if (!chartDataByChannel.value[data.channel]) {
+      chartDataByChannel.value[data.channel] = []
+    }
+    
+    const existingData = chartDataByChannel.value[data.channel]
+
+    // Проверяем, не дублируется ли точка (по timestamp)
+    const isDuplicate = existingData.length > 0 && 
+      existingData[existingData.length - 1].ts === data.ts
+
+    if (!isDuplicate) {
+      // Добавляем новую точку напрямую в массив (мутация вместо создания нового массива)
+      existingData.push({
+        ts: data.ts,
+        value: data.value,
+      })
+      
+      // Ограничиваем количество точек в зависимости от временного диапазона
+      const maxPoints = getMaxPointsForTimeRange(chartTimeRange.value)
+      if (existingData.length > maxPoints) {
+        // Удаляем самые старые точки
+        existingData.splice(0, existingData.length - maxPoints)
+      }
+
+      logger.debug('[Devices/Show] Updated chart data via WebSocket', {
+        channel: data.channel,
+        value: data.value,
+        pointsCount: existingData.length,
+      })
+    }
+  } catch (error) {
+    // Обрабатываем ошибки, чтобы они не вызывали перезагрузку страницы
+    logger.error('[Devices/Show] Error updating chart data via WebSocket:', error)
+  }
+}
+
+// Функция для определения максимального количества точек в зависимости от временного диапазона
+function getMaxPointsForTimeRange(timeRange: string): number {
+  switch (timeRange) {
+    case '1H':
+      return 60 // 1 точка в минуту
+    case '24H':
+      return 288 // 1 точка в 5 минут
+    case '7D':
+      return 336 // 1 точка в 30 минут
+    case '30D':
+      return 720 // 1 точка в час
+    case 'ALL':
+      return 1000 // Максимум 1000 точек
+    default:
+      return 288
+  }
+}
+
 // Загружаем данные при монтировании компонента
 onMounted(() => {
-  loadAllCharts()
+  loadAllCharts().catch((error) => {
+    logger.error('[Devices/Show] Error loading charts on mount:', error)
+  })
+  
+  // Подписываемся на WebSocket обновления телеметрии
+  try {
+    unsubscribeTelemetryFn = subscribeTelemetry(handleTelemetryUpdate)
+  } catch (error) {
+    logger.error('[Devices/Show] Error subscribing to telemetry:', error)
+  }
 })
 
-// Перезагружаем графики при изменении устройства
-watch(device, () => {
-  loadAllCharts()
+// Отписываемся при размонтировании
+onUnmounted(() => {
+  if (unsubscribeTelemetryFn) {
+    unsubscribeTelemetryFn()
+    unsubscribeTelemetryFn = null
+  }
+  unsubscribeTelemetry()
+})
+
+// Перезагружаем графики и переподписываемся при изменении устройства
+watch(device, (newDevice, oldDevice) => {
+  // Если изменился nodeId, нужно переподписаться
+  if (newDevice?.id !== oldDevice?.id) {
+    // Отписываемся от старого устройства
+    if (unsubscribeTelemetryFn) {
+      unsubscribeTelemetryFn()
+      unsubscribeTelemetryFn = null
+    }
+    unsubscribeTelemetry()
+    
+    // Очищаем данные графиков при смене устройства
+    chartDataByChannel.value = {}
+    
+    // Подписываемся на новое устройство
+    if (newDevice?.id) {
+      try {
+        unsubscribeTelemetryFn = subscribeTelemetry(handleTelemetryUpdate)
+      } catch (error) {
+        logger.error('[Devices/Show] Error subscribing to telemetry on device change:', error)
+      }
+    }
+    
+    // Загружаем данные только при смене устройства
+    loadAllCharts().catch((error) => {
+      logger.error('[Devices/Show] Error loading charts on device change:', error)
+    })
+  }
+  // Не перезагружаем графики при других изменениях устройства (например, статус)
 })
 
 </script>

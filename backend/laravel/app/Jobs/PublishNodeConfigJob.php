@@ -88,9 +88,16 @@ class PublishNodeConfigJob implements ShouldQueue
                 return;
             }
 
-            // Если есть pending_zone_id, загружаем зону из pending_zone_id для генерации конфига
+            // BUGFIX: Сохраняем исходные значения ДО любых изменений
             $originalZoneId = $node->zone_id;
+            $originalPendingZoneId = $node->pending_zone_id;
             $zoneForConfig = null;
+            
+            // КРИТИЧНО: Определяем, нужно ли публиковать на временный топик
+            // Публикуем на временный топик ТОЛЬКО при привязке узла (pending_zone_id установлен, zone_id еще null)
+            // После успешной привязки временный топик больше не нужен
+            // BUGFIX: Проверяем ДО изменения zone_id
+            $isNodeBinding = $originalPendingZoneId && !$originalZoneId;
             
             if ($node->pending_zone_id && !$node->zone_id) {
                 // Загружаем зону из pending_zone_id
@@ -117,6 +124,12 @@ class PublishNodeConfigJob implements ShouldQueue
                     'zone_id' => $node->zone_id,
                 ]);
 
+                // BUGFIX: Восстанавливаем zone_id перед возвратом
+                if ($originalZoneId !== $node->zone_id) {
+                    $node->zone_id = $originalZoneId;
+                    $node->unsetRelation('zone');
+                }
+
                 return;
             }
 
@@ -139,6 +152,12 @@ class PublishNodeConfigJob implements ShouldQueue
                     'uid' => $node->uid,
                 ]);
 
+                // BUGFIX: Восстанавливаем zone_id перед возвратом
+                if ($originalZoneId !== $node->zone_id) {
+                    $node->zone_id = $originalZoneId;
+                    $node->unsetRelation('zone');
+                }
+
                 return;
             }
 
@@ -149,14 +168,31 @@ class PublishNodeConfigJob implements ShouldQueue
 
             // Используем короткий таймаут
             $timeout = 10; // секунд
-
+            
+            // BUGFIX: Проверяем наличие hardware_id при привязке
+            // Если hardware_id отсутствует, конфиг не будет опубликован на временный топик
+            if ($isNodeBinding && !$node->hardware_id) {
+                Log::warning('PublishNodeConfigJob: Cannot publish to temp topic: hardware_id is missing', [
+                    'node_id' => $node->id,
+                    'uid' => $node->uid,
+                ]);
+            }
+            
             $requestData = [
                 'node_uid' => $node->uid,
-                'hardware_id' => $node->hardware_id, // Передаем hardware_id для временного топика
+                'hardware_id' => ($isNodeBinding && $node->hardware_id) ? $node->hardware_id : null, // Передаем hardware_id ТОЛЬКО при привязке и если он есть
                 'zone_id' => $targetZoneId,
                 'greenhouse_uid' => $greenhouseUid,
                 'config' => $config,
             ];
+            
+            Log::info('PublishNodeConfigJob: Request data prepared', [
+                'node_id' => $node->id,
+                'is_node_binding' => $isNodeBinding,
+                'pending_zone_id' => $node->pending_zone_id,
+                'zone_id' => $node->zone_id,
+                'has_hardware_id' => !empty($requestData['hardware_id']),
+            ]);
 
             Log::info('PublishNodeConfigJob: Sending request to history-logger', [
                 'node_id' => $node->id,
@@ -206,6 +242,14 @@ class PublishNodeConfigJob implements ShouldQueue
             ]);
             throw $e; // Пробрасываем для повторной попытки
         } finally {
+            // BUGFIX: Гарантируем восстановление zone_id в finally блоке
+            // Это важно, так как объект $node может быть изменен даже при ошибках
+            if (isset($node) && isset($originalZoneId) && property_exists($node, 'zone_id')) {
+                if ($originalZoneId !== $node->zone_id) {
+                    $node->zone_id = $originalZoneId;
+                    $node->unsetRelation('zone');
+                }
+            }
             $lock->release();
         }
     }
