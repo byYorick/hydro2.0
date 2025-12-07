@@ -9,6 +9,7 @@ from common.env import get_settings
 from common.mqtt import MqttClient
 from common.db import fetch, execute, create_zone_event, create_ai_log
 from prometheus_client import Counter, Histogram, start_http_server
+from common.service_logs import send_service_log
 
 # Настройка логирования
 log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
@@ -369,12 +370,24 @@ async def main():
     
     # Start Prometheus metrics server
     start_http_server(automation_settings.PROMETHEUS_PORT)  # Prometheus metrics
+    send_service_log(
+        service="automation-engine",
+        level="info",
+        message="Automation Engine service started",
+        context={"prometheus_port": automation_settings.PROMETHEUS_PORT},
+    )
     
     mqtt = MqttClient(client_id_suffix="-auto")
     try:
         mqtt.start()
     except Exception as e:
         logger.critical(f"Failed to start MQTT client: {e}. Exiting.", exc_info=True)
+        send_service_log(
+            service="automation-engine",
+            level="critical",
+            message=f"Failed to start MQTT client: {e}",
+            context={"error": str(e)},
+        )
         # Exit on critical configuration errors
         raise
 

@@ -43,7 +43,7 @@ const buildRoleItems = (): Record<string, NavItem[]> => ({
     { label: 'Рецепты', href: '/recipes', order: 32 },
     { label: 'Растения', href: '/plants', order: 33 },
     { label: 'Пользователи', href: '/users', order: 34 },
-    { label: 'Аудит', href: '/audit', order: 35 },
+    { label: 'Логи', href: '/logs', order: 35 },
   ],
   engineer: [
     { label: 'Теплицы', href: '/greenhouses', order: 39 },

@@ -13,6 +13,7 @@ use App\Http\Controllers\PythonIngestController;
 use App\Http\Controllers\RecipeController;
 use App\Http\Controllers\RecipePhaseController;
 use App\Http\Controllers\ReportController;
+use App\Http\Controllers\ServiceLogController;
 use App\Http\Controllers\SimulationController;
 use App\Http\Controllers\SystemController;
 use App\Http\Controllers\TelemetryController;
@@ -168,6 +169,10 @@ Route::middleware([
     Route::get('nodes/{id}/telemetry/history', [TelemetryController::class, 'nodeHistory']);
     Route::get('telemetry/aggregates', [TelemetryController::class, 'aggregates']);
 
+    // Service logs (admin/operator/engineer)
+    Route::middleware(['role:admin,operator,engineer', 'throttle:60,1'])
+        ->get('logs/service', [ServiceLogController::class, 'index']);
+
     // Commands status (viewer+)
     Route::get('commands/{cmdId}/status', [\App\Http\Controllers\CommandStatusController::class, 'show']);
 
@@ -195,6 +200,7 @@ Route::prefix('python')->middleware('throttle:120,1')->group(function () {
     Route::post('ingest/telemetry', [PythonIngestController::class, 'telemetry']);
     Route::post('commands/ack', [PythonIngestController::class, 'commandAck']);
     Route::post('broadcast/telemetry', [PythonIngestController::class, 'broadcastTelemetry']);
+    Route::post('logs', [ServiceLogController::class, 'store'])->middleware('verify.python.service');
 });
 
 // Node registration and service updates (token-based) - умеренный лимит

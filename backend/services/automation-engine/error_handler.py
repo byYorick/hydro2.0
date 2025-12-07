@@ -6,6 +6,7 @@ import traceback
 from typing import Optional, Dict, Any, Callable, Awaitable
 from functools import wraps
 from prometheus_client import Counter
+from common.service_logs import send_service_log
 
 from exceptions import (
     AutomationError,
@@ -49,26 +50,38 @@ def handle_zone_error(
     
     if isinstance(error, AutomationError):
         # Обработка кастомных исключений
-        logger.error(
-            f"Zone {zone_id}: {error.message}{context_str}",
-            extra={
+        msg = f"Zone {zone_id}: {error.message}{context_str}"
+        log_context = {
+            "zone_id": zone_id,
+            "error_type": error_type,
+            "error_details": error.details,
+            "context": context,
+        }
+        logger.error(msg, extra=log_context, exc_info=True)
+        send_service_log(
+            service="automation-engine",
+            level="error",
+            message=msg,
+            context={
                 "zone_id": zone_id,
                 "error_type": error_type,
-                "error_details": error.details,
                 "context": context,
             },
-            exc_info=True
         )
     else:
         # Обработка стандартных исключений
-        logger.error(
-            f"Zone {zone_id}: Unexpected error: {error}{context_str}",
-            extra={
-                "zone_id": zone_id,
-                "error_type": error_type,
-                "context": context,
-            },
-            exc_info=True
+        msg = f"Zone {zone_id}: Unexpected error: {error}{context_str}"
+        log_context = {
+            "zone_id": zone_id,
+            "error_type": error_type,
+            "context": context,
+        }
+        logger.error(msg, extra=log_context, exc_info=True)
+        send_service_log(
+            service="automation-engine",
+            level="error",
+            message=msg,
+            context=log_context,
         )
 
 
@@ -89,23 +102,31 @@ def handle_automation_error(
     context_str = f" Context: {context}" if context else ""
     
     if isinstance(error, AutomationError):
-        logger.error(
-            f"Automation error: {error.message}{context_str}",
-            extra={
-                "error_type": error_type,
-                "error_details": error.details,
-                "context": context,
-            },
-            exc_info=True
+        msg = f"Automation error: {error.message}{context_str}"
+        log_context = {
+            "error_type": error_type,
+            "error_details": error.details,
+            "context": context,
+        }
+        logger.error(msg, extra=log_context, exc_info=True)
+        send_service_log(
+            service="automation-engine",
+            level="error",
+            message=msg,
+            context=log_context,
         )
     else:
-        logger.error(
-            f"Unexpected automation error: {error}{context_str}",
-            extra={
-                "error_type": error_type,
-                "context": context,
-            },
-            exc_info=True
+        msg = f"Unexpected automation error: {error}{context_str}"
+        log_context = {
+            "error_type": error_type,
+            "context": context,
+        }
+        logger.error(msg, extra=log_context, exc_info=True)
+        send_service_log(
+            service="automation-engine",
+            level="error",
+            message=msg,
+            context=log_context,
         )
 
 
@@ -180,4 +201,3 @@ def error_handler(
             return sync_wrapper
     
     return decorator
-

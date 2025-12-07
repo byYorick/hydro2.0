@@ -38,8 +38,24 @@ let connectingStartTime = 0 // Отслеживание времени нача�
 interface ActiveTimer {
   timeoutId: ReturnType<typeof setTimeout>
   abortController?: AbortController
+  onClear?: () => void
 }
 const activeTimers = new Set<ActiveTimer>()
+
+function clearActiveTimers(): void {
+  activeTimers.forEach(timer => {
+    if (timer.abortController) {
+      timer.abortController.abort()
+    }
+    if (timer.timeoutId) {
+      clearTimeout(timer.timeoutId)
+    }
+    if (timer.onClear) {
+      timer.onClear()
+    }
+  })
+  activeTimers.clear()
+}
 
 function isBrowser(): boolean {
   return typeof window !== 'undefined'
@@ -526,15 +542,7 @@ function bindConnectionEvents(connection: any): void {
   }
 
   // Отменяем все предыдущие таймеры перед привязкой новых обработчиков
-  activeTimers.forEach(timer => {
-    if (timer.abortController) {
-      timer.abortController.abort()
-    }
-    if (timer.timeoutId) {
-      clearTimeout(timer.timeoutId)
-    }
-  })
-  activeTimers.clear()
+  clearActiveTimers()
 
   cleanupConnectionHandlers()
 
@@ -610,10 +618,13 @@ function bindConnectionEvents(connection: any): void {
                 scheduleReconnect('no_socket_id')
               }
             }
+            // Таймер отработал — убираем из набора
+            activeTimers.delete(timerRef)
           }, delay)
           
           // Сохраняем таймер для возможной отмены
-          activeTimers.add({ timeoutId, abortController })
+          const timerRef: ActiveTimer = { timeoutId, abortController }
+          activeTimers.add(timerRef)
         }
         
         checkSocketId(0) // Начинаем первую проверку
@@ -656,6 +667,7 @@ function bindConnectionEvents(connection: any): void {
           connectionState: connection?.state,
         })
         emitState('connected')
+        clearActiveTimers()
       },
     },
     {
@@ -669,6 +681,7 @@ function bindConnectionEvents(connection: any): void {
         connectingStartTime = 0
         
         emitState('disconnected')
+        clearActiveTimers()
         // Переподключаемся только если не в процессе подключения
         if (connection.state !== 'connecting') {
           scheduleReconnect('disconnected')
@@ -693,7 +706,7 @@ function bindConnectionEvents(connection: any): void {
         emitState('unavailable')
         lastUnavailableTime = now
         
-      
+        clearActiveTimers()
         if (connection.state === 'connecting' || timeSinceConnectingStart > 0) {
           const waitTime = timeSinceConnectingStart < CONNECTING_TIMEOUT 
             ? CONNECTING_TIMEOUT - timeSinceConnectingStart 
@@ -739,15 +752,18 @@ function bindConnectionEvents(connection: any): void {
                   scheduleReconnect('unavailable')
                 }
               }, 5000) // Еще 5 секунд ожидания
-              activeTimers.add({ timeoutId: timeoutId2, abortController })
+              const ref2: ActiveTimer = { timeoutId: timeoutId2, abortController }
+              activeTimers.add(ref2)
             } else {
               logger.info('[echoClient] Connection not connecting anymore, reconnecting', {
                 state: currentState,
               })
               scheduleReconnect('unavailable')
             }
+            activeTimers.delete(ref1)
           }, waitTime)
-          activeTimers.add({ timeoutId: timeoutId1, abortController })
+          const ref1: ActiveTimer = { timeoutId: timeoutId1, abortController }
+          activeTimers.add(ref1)
         } else if (timeSinceLastUnavailable > UNAVAILABLE_COOLDOWN) {
           // Если прошло достаточно времени с последнего "unavailable", переподключаемся
           logger.info('[echoClient] Unavailable cooldown passed, reconnecting', {
@@ -1128,4 +1144,3 @@ declare global {
     Pusher?: typeof Pusher
   }
 }
-

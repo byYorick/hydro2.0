@@ -13,6 +13,7 @@ from common.env import get_settings
 from common.mqtt import MqttClient
 from common.db import fetch
 from common.water_flow import execute_fill_mode, execute_drain_mode, calibrate_flow
+from common.service_logs import send_service_log
 
 # Настройка логирования
 log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
@@ -31,8 +32,20 @@ app = FastAPI(title="MQTT Bridge", version="0.1.2")
 try:
     publisher = Publisher()
     logger.info("Publisher initialized successfully, MQTT connected: %s", publisher._mqtt.is_connected())
+    send_service_log(
+        service="mqtt-bridge",
+        level="info",
+        message="MQTT Bridge started",
+        context={"mqtt_connected": bool(publisher._mqtt.is_connected())},
+    )
 except Exception as e:
     logger.error(f"Failed to initialize Publisher: {e}", exc_info=True)
+    send_service_log(
+        service="mqtt-bridge",
+        level="critical",
+        message=f"Failed to initialize Publisher: {e}",
+        context={"error": str(e)},
+    )
     publisher = None
 
 
@@ -393,5 +406,4 @@ async def zone_calibrate_flow(
     finally:
         # Закрываем соединение MQTT для предотвращения утечек
         mqtt.stop()
-
 

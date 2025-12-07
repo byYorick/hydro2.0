@@ -25,6 +25,7 @@ from common.water_cycle import (
     WATER_STATE_WATER_CHANGE_FILL,
     WATER_STATE_WATER_CHANGE_STABILIZE,
 )
+from common.service_logs import send_service_log
 
 # Настройка логирования
 log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
@@ -404,10 +405,22 @@ async def main():
         mqtt.start()
     except Exception as e:
         logger.critical(f"Failed to start MQTT client: {e}. Exiting.", exc_info=True)
+        send_service_log(
+            service="scheduler",
+            level="critical",
+            message=f"Failed to start MQTT client: {e}",
+            context={"error": str(e)},
+        )
         # Exit on critical configuration errors
         raise
     
     start_http_server(9402)  # Prometheus metrics
+    send_service_log(
+        service="scheduler",
+        level="info",
+        message="Scheduler service started",
+        context={"port": 9402},
+    )
 
     while True:
         try:
@@ -417,6 +430,12 @@ async def main():
             break
         except Exception as e:
             logger.exception(f"Error in scheduler main loop: {e}")
+            send_service_log(
+                service="scheduler",
+                level="error",
+                message="Error in scheduler main loop",
+                context={"error": str(e)},
+            )
             # Sleep before retrying to avoid tight error loops
             await asyncio.sleep(60)
         # Check schedules every minute
@@ -425,4 +444,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-

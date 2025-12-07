@@ -1643,70 +1643,39 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 'label' => 'Automation Engine',
                 'description' => 'События ядра автоматики и командные переходы.',
             ],
-            'history-locker' => [
-                'label' => 'History Locker',
-                'description' => 'Архив событий, восстановления и следов действия оператора.',
+            'history-logger' => [
+                'label' => 'History Logger',
+                'description' => 'Архив событий телеметрии и подтверждений команд.',
+            ],
+            'scheduler' => [
+                'label' => 'Scheduler',
+                'description' => 'Запуск расписаний полива, освещения и заданий.',
+            ],
+            'mqtt-bridge' => [
+                'label' => 'MQTT Bridge',
+                'description' => 'REST→MQTT мост и публикация команд.',
+            ],
+            'laravel' => [
+                'label' => 'Laravel',
+                'description' => 'Веб-приложение, фоновые задачи и WebSocket.',
             ],
             'system' => [
-                'label' => 'System Services',
-                'description' => 'Системные сервисы, очередь, запуск крон-заданий.',
+                'label' => 'System',
+                'description' => 'Общие события: очередь, cron, миграции.',
             ],
         ];
 
-        $levelFilter = $request->query('level');
-        $serviceFilter = $request->query('service');
-        if ($serviceFilter === 'all') {
-            $serviceFilter = null;
-        }
-
-        $logsByService = collect($serviceCatalog)
-            ->map(function ($meta, $serviceKey) use ($levelFilter) {
-                $query = SystemLog::query()
-                    ->select(['id', 'level', 'message', 'context', 'created_at'])
-                    ->orderBy('created_at', 'desc')
-                    ->when($serviceKey, fn ($q) => $q->where('context->service', $serviceKey));
-
-                if ($levelFilter) {
-                    $query->whereRaw('UPPER(level) = ?', [strtoupper($levelFilter)]);
-                }
-
-                return [
-                    'key' => $serviceKey,
-                    'label' => $meta['label'],
-                    'description' => $meta['description'],
-                    'entries' => $query->limit(75)->get()->map(function ($log) {
-                        return [
-                            'id' => $log->id,
-                            'level' => strtoupper($log->level ?? 'info'),
-                            'message' => $log->message,
-                            'context' => $log->context ?? [],
-                            'created_at' => (string) $log->created_at,
-                        ];
-                    }),
-                ];
-            })
-            ->filter(fn ($item) => ! $serviceFilter || $item['key'] === $serviceFilter)
-            ->values()
-            ->toArray();
-
-        $levelFilters = collect($logsByService)
-            ->flatMap(fn ($service) => collect($service['entries'])->pluck('level'))
-            ->unique()
-            ->values()
-            ->toArray();
-
         $serviceOptions = collect($serviceCatalog)
-            ->map(fn ($meta, $key) => ['key' => $key, 'label' => $meta['label']])
+            ->map(fn ($meta, $key) => ['key' => $key, 'label' => $meta['label'], 'description' => $meta['description']])
             ->values()
             ->toArray();
 
         return Inertia::render('Logs/Index', [
             'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
-            'serviceLogs' => $logsByService,
             'serviceOptions' => $serviceOptions,
-            'levelFilters' => $levelFilters,
-            'selectedService' => $serviceFilter ?? 'all',
-            'selectedLevel' => $levelFilter ?? '',
+            'defaultService' => $request->query('service', 'all'),
+            'defaultLevel' => $request->query('level', ''),
+            'defaultSearch' => $request->query('search', ''),
         ]);
     })->name('logs.index');
 

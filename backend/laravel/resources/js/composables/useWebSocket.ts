@@ -92,11 +92,15 @@ function isBrowser(): boolean {
   return typeof window !== 'undefined'
 }
 
+function isWsEnabled(): boolean {
+  return readBooleanEnv('VITE_ENABLE_WS', true)
+}
+
 function ensureEchoAvailable(showToast?: ToastHandler): any | null {
   if (!isBrowser()) {
     return null
   }
-  const wsEnabled = readBooleanEnv('VITE_ENABLE_WS', true)
+  const wsEnabled = isWsEnabled()
   if (!wsEnabled) {
     if (showToast) {
       showToast(WS_DISABLED_MESSAGE, 'warning', TOAST_TIMEOUT.NORMAL)
@@ -506,8 +510,8 @@ function removeSubscription(subscriptionId: string): void {
       const control = channelControls.get(subscription.channelName)
       if (control) {
         if (!isGlobalChannel(subscription.channelName)) {
-          // Для не-глобальных каналов удаляем канал полностью
-          detachChannel(control, true)
+          // Отключаем канал, но сохраняем control, чтобы resubscribeAllChannels мог восстановить слушатели
+          detachChannel(control, false)
         } else {
           // Для глобальных каналов НЕ удаляем канал из реестра, даже если ref-count = 0
           // Это позволяет переиспользовать канал при следующей подписке без нового auth запроса
@@ -516,6 +520,9 @@ function removeSubscription(subscriptionId: string): void {
           if (registry && registry.subscriptionRefCount === 0) {
             // Обнуляем handlers, но сохраняем канал в реестре для переиспользования
             registry.handlers.clear()
+            // Убираем слушатели и выходим из канала, чтобы не держать "пустые" глобальные подписки
+            detachChannel(control, false)
+            registry.isAuthorized = false
             logger.debug('[useWebSocket] Global channel kept in registry for reuse (ref-count=0)', {
               channel: subscription.channelName,
               hasActiveChannel: !!registry.channelControl?.echoChannel,
@@ -818,8 +825,10 @@ export function cleanupWebSocketChannels(): void {
   // Очищаем все структуры данных
   channelControls.clear()
   channelSubscribers.clear()
+  activeSubscriptions.clear()
   componentChannelCounts.clear()
-  instanceSubscriptionSets.clear()
+  // Сохраняем ссылки на sets, чтобы существующие инстансы могли продолжить обновлять свои subscriptions
+  instanceSubscriptionSets.forEach(set => set.clear())
   globalChannelRegistry.clear()
   pendingSubscriptions.clear()
   
@@ -901,6 +910,12 @@ export function useWebSocket(showToast?: ToastHandler, componentTag?: string) {
       return () => undefined
     }
 
+    if (!isWsEnabled()) {
+      // Явно не добавляем отложенные подписки при отключенном WS
+      ensureEchoAvailable(showToast)
+      return () => undefined
+    }
+
     const channelName = `commands.${zoneId}`
     const echo = ensureEchoAvailable(showToast)
     
@@ -944,6 +959,12 @@ export function useWebSocket(showToast?: ToastHandler, componentTag?: string) {
   ): (() => void) => {
     if (typeof handler !== 'function') {
       logger.warn('[useWebSocket] Missing global event handler', {})
+      return () => undefined
+    }
+
+    if (!isWsEnabled()) {
+      // WS отключен явно: возвращаем no-op и не ставим в очередь
+      ensureEchoAvailable(showToast)
       return () => undefined
     }
 

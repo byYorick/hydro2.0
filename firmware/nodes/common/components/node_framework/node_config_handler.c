@@ -573,6 +573,8 @@ esp_err_t node_config_handler_apply_with_result(
         return ESP_ERR_INVALID_ARG;
     }
 
+    esp_err_t first_err = ESP_OK;
+
     // Сохранение конфига в NVS
     char *json_str = cJSON_PrintUnformatted(config);
     if (!json_str) {
@@ -614,11 +616,17 @@ esp_err_t node_config_handler_apply_with_result(
         err = config_apply_wifi_with_mqtt_restart(config, previous_config, mqtt_params, result_ptr);
         if (err != ESP_OK) {
             ESP_LOGW(TAG, "Failed to apply Wi-Fi config: %s", esp_err_to_name(err));
+            if (first_err == ESP_OK) {
+                first_err = err;
+            }
         }
     } else {
         err = config_apply_wifi(config, previous_config, result_ptr);
         if (err != ESP_OK) {
             ESP_LOGW(TAG, "Failed to apply Wi-Fi config: %s", esp_err_to_name(err));
+            if (first_err == ESP_OK) {
+                first_err = err;
+            }
         }
     }
 
@@ -628,6 +636,9 @@ esp_err_t node_config_handler_apply_with_result(
         err = config_apply_mqtt(config, previous_config, mqtt_params, result_ptr);
         if (err != ESP_OK) {
             ESP_LOGW(TAG, "Failed to apply MQTT config: %s", esp_err_to_name(err));
+            if (first_err == ESP_OK) {
+                first_err = err;
+            }
         }
     } else {
         ESP_LOGW(TAG, "MQTT callbacks not registered, skipping MQTT config apply");
@@ -637,6 +648,9 @@ esp_err_t node_config_handler_apply_with_result(
     err = config_apply_channels_pump(result_ptr);
     if (err != ESP_OK && err != ESP_ERR_NOT_FOUND) {
         ESP_LOGW(TAG, "Failed to apply pump channels: %s", esp_err_to_name(err));
+        if (first_err == ESP_OK) {
+            first_err = err;
+        }
     }
 
     // Инициализация каналов через callback
@@ -663,7 +677,7 @@ esp_err_t node_config_handler_apply_with_result(
         }
     }
 
-    return ESP_OK;
+    return first_err;
 }
 
 esp_err_t node_config_handler_publish_response(
@@ -746,4 +760,3 @@ void node_config_handler_set_mqtt_callbacks(
     s_default_gh_uid = default_gh_uid;
     s_default_zone_uid = default_zone_uid;
 }
-

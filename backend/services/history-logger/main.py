@@ -20,6 +20,7 @@ from common.redis_queue import TelemetryQueue, TelemetryQueueItem, close_redis_c
 from common.mqtt import MqttClient, AsyncMqttClient, get_mqtt_client
 from common.env import get_settings
 from common.water_flow import execute_fill_mode, execute_drain_mode, calibrate_flow
+from common.service_logs import send_service_log
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,12 @@ async def lifespan(app: FastAPI):
     global telemetry_queue
     
     logger.info("Starting History Logger service")
+    send_service_log(
+        service="history-logger",
+        level="info",
+        message="History Logger service starting",
+        context={"stage": "startup"},
+    )
     
     # Инициализация Redis queue
     telemetry_queue = TelemetryQueue()
@@ -85,6 +92,12 @@ async def lifespan(app: FastAPI):
     await close_redis_client()
     
     logger.info("History Logger service stopped")
+    send_service_log(
+        service="history-logger",
+        level="info",
+        message="History Logger service stopped",
+        context={"stage": "shutdown"},
+    )
 
 
 # FastAPI app
