@@ -6,7 +6,6 @@
 #include "ec_sensor.h"
 #include "i2c_bus.h"
 #include "esp_log.h"
-#include "driver/adc.h"
 #include <string.h>
 #include <math.h>
 
@@ -48,11 +47,10 @@ esp_err_t ec_sensor_read(ec_sensor_reading_t *reading, float temperature) {
 
 esp_err_t ec_sensor_init_from_config(const char *channel_id) {
     ec_sensor_config_t config = {
-        .adc_channel = ADC1_CHANNEL_1,
+        .adc_channel = 0,  // Заглушка: аналоговый канал не используется в MVP
         .min_value = 0.1f,
         .max_value = 5.0f,
         .temp_coefficient = 0.02f
     };
     return ec_sensor_init(&config);
 }
-

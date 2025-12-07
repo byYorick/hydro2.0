@@ -19,10 +19,10 @@
 #include "oled_ui.h"
 #include "relay_driver.h"
 #include "mqtt_manager.h"
-#include "relay_node_handlers.h"
 #include "setup_portal.h"
 #include "connection_status.h"
 #include "node_utils.h"
+#include "esp_system.h"
 #include "esp_log.h"
 #include "esp_err.h"
 #include "esp_mac.h"
@@ -84,6 +84,34 @@ static void update_oled_connections(void) {
     model.connections.wifi_connected = conn_status.wifi_connected;
     model.connections.mqtt_connected = conn_status.mqtt_connected;
     model.connections.wifi_rssi = conn_status.wifi_rssi;
+    // Глушим "I2C error" на релейной ноде и показываем базовый статус
+    model.sensor_status.has_error = false;
+    model.sensor_status.i2c_connected = true;
+    model.sensor_status.using_stub = false;
+    memset(model.sensor_status.error_msg, 0, sizeof(model.sensor_status.error_msg));
+    model.alert = false;
+    memset(model.alert_message, 0, sizeof(model.alert_message));
+
+    // WiFi/MQTT параметры для OLED
+    config_storage_wifi_t wifi_cfg = {0};
+    if (config_storage_get_wifi(&wifi_cfg) == ESP_OK) {
+        strncpy(model.wifi_ssid, wifi_cfg.ssid, sizeof(model.wifi_ssid) - 1);
+    }
+    config_storage_mqtt_t mqtt_cfg = {0};
+    if (config_storage_get_mqtt(&mqtt_cfg) == ESP_OK) {
+        strncpy(model.mqtt_host, mqtt_cfg.host, sizeof(model.mqtt_host) - 1);
+        model.mqtt_port = mqtt_cfg.port;
+    }
+
+    // Теплица/зона на экране: используем UID, если названия не храним
+    char gh_uid[CONFIG_STORAGE_MAX_STRING_LEN] = {0};
+    char zone_uid[CONFIG_STORAGE_MAX_STRING_LEN] = {0};
+    if (config_storage_get_gh_uid(gh_uid, sizeof(gh_uid)) == ESP_OK) {
+        strncpy(model.gh_name, gh_uid, sizeof(model.gh_name) - 1);
+    }
+    if (config_storage_get_zone_uid(zone_uid, sizeof(zone_uid)) == ESP_OK) {
+        strncpy(model.zone_name, zone_uid, sizeof(model.zone_name) - 1);
+    }
     
     oled_ui_update_model(&model);
 }
@@ -272,16 +300,21 @@ esp_err_t relay_node_init_components(void) {
     // Инициализация node_framework (перед регистрацией MQTT callbacks)
     esp_err_t fw_err = relay_node_framework_init();
     if (fw_err != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to initialize node_framework: %s (using legacy handlers)", 
-                esp_err_to_name(fw_err));
-        // Fallback на старые обработчики
-        mqtt_manager_register_config_cb(relay_node_config_handler, NULL);
-        mqtt_manager_register_command_cb(relay_node_command_handler, NULL);
-    } else {
-        // Используем node_framework обработчики
-        relay_node_framework_register_mqtt_handlers();
-        ESP_LOGI(TAG, "Using node_framework handlers");
+        ESP_LOGE(TAG, "Failed to initialize node_framework: %s. Entering safe mode and restarting...", 
+                 esp_err_to_name(fw_err));
+        // На всякий случай убеждаемся, что реле останутся в разомкнутом состоянии
+        if (relay_driver_is_initialized()) {
+            // Проходим по актуаторам из конфига, чтобы раскрыть их — в init шаге он уже должен быть загружен
+            relay_driver_init_from_config();
+        }
+        vTaskDelay(pdMS_TO_TICKS(500));
+        esp_restart();
+        return fw_err;
     }
+
+    // Используем node_framework обработчики
+    relay_node_framework_register_mqtt_handlers();
+    ESP_LOGI(TAG, "Using node_framework handlers");
     
     mqtt_manager_register_connection_cb(relay_node_mqtt_connection_cb, NULL);
     
@@ -294,4 +327,3 @@ esp_err_t relay_node_init_components(void) {
     
     return ESP_OK;
 }
-

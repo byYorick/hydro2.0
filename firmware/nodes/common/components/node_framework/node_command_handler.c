@@ -7,6 +7,7 @@
 #include "node_framework.h"
 #include "mqtt_manager.h"
 #include "node_utils.h"
+#include "oled_ui.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -269,6 +270,9 @@ void node_command_handler_process(
             
             cJSON_Delete(params);
         }
+
+        // Уведомляем OLED о принятой команде
+        oled_ui_notify_command();
     } else {
         ESP_LOGW(TAG, "Unknown command: %s", cmd);
         response = node_command_handler_create_response(
@@ -467,4 +471,3 @@ bool node_command_handler_is_duplicate(const char *cmd_id) {
 
     return false;
 }
-

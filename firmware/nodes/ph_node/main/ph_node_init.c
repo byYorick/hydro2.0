@@ -20,10 +20,10 @@
 #include "oled_ui.h"
 #include "pump_driver.h"
 #include "mqtt_manager.h"
-#include "ph_node_handlers.h"
 #include "setup_portal.h"
 #include "connection_status.h"
 #include "node_utils.h"
+#include "esp_system.h"
 #include "esp_log.h"
 #include "esp_err.h"
 #include "esp_mac.h"
@@ -287,16 +287,19 @@ esp_err_t ph_node_init_components(void) {
     // Инициализация node_framework (перед регистрацией MQTT callbacks)
     esp_err_t fw_err = ph_node_framework_init();
     if (fw_err != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to initialize node_framework: %s (using legacy handlers)", 
-                esp_err_to_name(fw_err));
-        // Fallback на старые обработчики
-        mqtt_manager_register_config_cb(ph_node_config_handler, NULL);
-        mqtt_manager_register_command_cb(ph_node_command_handler, NULL);
-    } else {
-        // Используем node_framework обработчики
-        ph_node_framework_register_mqtt_handlers();
-        ESP_LOGI(TAG, "Using node_framework handlers");
+        ESP_LOGE(TAG, "Failed to initialize node_framework: %s. Entering safe mode and restarting...", 
+                 esp_err_to_name(fw_err));
+        // Останавливаем насосы на всякий случай
+        pump_driver_emergency_stop();
+        // Даем логам уйти
+        vTaskDelay(pdMS_TO_TICKS(500));
+        esp_restart();
+        return fw_err;
     }
+
+    // Используем node_framework обработчики
+    ph_node_framework_register_mqtt_handlers();
+    ESP_LOGI(TAG, "Using node_framework handlers");
     
     mqtt_manager_register_connection_cb(ph_node_mqtt_connection_cb, NULL);
     
@@ -309,4 +312,3 @@ esp_err_t ph_node_init_components(void) {
     
     return ESP_OK;
 }
-

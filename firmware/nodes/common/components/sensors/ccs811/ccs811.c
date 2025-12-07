@@ -44,6 +44,7 @@ static uint8_t data[8];
 // Sensor state
 static struct {
     bool initialized;
+    bool config_initialized;
     ccs811_config_t config;
     uint32_t last_read_time_ms;
 } s_ccs811 = {0};
@@ -164,10 +165,11 @@ esp_err_t ccs811_init(const ccs811_config_t *config) {
         memcpy(&s_ccs811.config, config, sizeof(ccs811_config_t));
     } else {
         s_ccs811.config.i2c_address = CCS811_I2C_ADDR_DEFAULT;
-        s_ccs811.config.i2c_bus = I2C_BUS_1;
+        s_ccs811.config.i2c_bus = I2C_BUS_0;
         s_ccs811.config.measurement_mode = CCS811_MEAS_MODE_1SEC;
         s_ccs811.config.measurement_interval_ms = 1000;
     }
+    s_ccs811.config_initialized = true;
     
     // Проверка инициализации I2C шины
     if (!i2c_bus_is_initialized_bus(s_ccs811.config.i2c_bus)) {
@@ -237,7 +239,11 @@ esp_err_t ccs811_read(ccs811_reading_t *reading) {
     
     // Если сенсор не инициализирован, пытаемся инициализировать
     if (!s_ccs811.initialized) {
-        esp_err_t err = ccs811_init(NULL);
+        const ccs811_config_t *cfg = NULL;
+        if (s_ccs811.config_initialized) {
+            cfg = &s_ccs811.config;
+        }
+        esp_err_t err = ccs811_init(cfg);
         if (err != ESP_OK) {
             // Используем stub значения
             reading->co2_ppm = stub_co2;

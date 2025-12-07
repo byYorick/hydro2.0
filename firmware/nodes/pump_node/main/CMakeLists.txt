@@ -4,6 +4,8 @@ idf_component_register(
         "pump_node_app.c"
         "pump_node_tasks.c"
         "pump_node_framework_integration.c"
+        "pump_node_init.c"
+        "pump_node_init_steps.c"
     INCLUDE_DIRS 
         "."
     REQUIRES 
@@ -15,7 +17,9 @@ idf_component_register(
         config_apply
         setup_portal
         node_framework
+        heartbeat_task
         node_utils
+        connection_status
         ina209
         esp_wifi
         nvs_flash
@@ -26,4 +30,3 @@ idf_component_register(
         esp_timer
         json
 )
-

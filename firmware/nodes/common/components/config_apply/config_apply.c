@@ -405,12 +405,23 @@ static void config_apply_populate_node_info(mqtt_node_info_t *node_info,
         return;
     }
 
-    if (config_storage_get_node_id(s_node_id, sizeof(s_node_id)) == ESP_OK) {
-        node_info->node_uid = s_node_id;
-    } else {
-        strlcpy(s_node_id, params->default_node_id, sizeof(s_node_id));
-        node_info->node_uid = s_node_id;
+    bool node_id_set = false;
+    if (config_storage_get_node_id(s_node_id, sizeof(s_node_id)) == ESP_OK &&
+        strlen(s_node_id) > 0 && strcmp(s_node_id, "node-temp") != 0) {
+        node_id_set = true;
     }
+
+    if (!node_id_set) {
+        char hw_id[32] = {0};
+        if (node_utils_get_hardware_id(hw_id, sizeof(hw_id)) == ESP_OK) {
+            strlcpy(s_node_id, hw_id, sizeof(s_node_id));
+            ESP_LOGW(TAG, "Node ID not set, using hardware_id: %s", s_node_id);
+        } else {
+            strlcpy(s_node_id, params->default_node_id, sizeof(s_node_id));
+            ESP_LOGW(TAG, "Node ID not set, using default: %s", s_node_id);
+        }
+    }
+    node_info->node_uid = s_node_id;
 
     if (config_storage_get_gh_uid(s_gh_uid, sizeof(s_gh_uid)) == ESP_OK) {
         node_info->gh_uid = s_gh_uid;

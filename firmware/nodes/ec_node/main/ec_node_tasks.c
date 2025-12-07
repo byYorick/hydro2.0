@@ -4,22 +4,21 @@
  * 
  * Реализует периодические задачи согласно FIRMWARE_STRUCTURE.md:
  * - task_sensors - опрос датчиков
- * - task_heartbeat - публикация heartbeat
+ * - heartbeat_task_start_default - публикация heartbeat через общий компонент
  */
 
 #include "ec_node_app.h"
 #include "ec_node_framework_integration.h"
 #include "node_watchdog.h"
 #include "mqtt_manager.h"
+#include "heartbeat_task.h"
 #include "oled_ui.h"
 #include "trema_ec.h"
 #include "connection_status.h"
+#include "config_storage.h"
 #include "i2c_bus.h"
 #include "esp_log.h"
-#include "esp_timer.h"
-#include "esp_wifi.h"
 #include "freertos/task.h"
-#include "cJSON.h"
 #include <string.h>
 #include <math.h>
 #include <stdbool.h>
@@ -28,7 +27,6 @@ static const char *TAG = "ec_node_tasks";
 
 // Периоды задач (в миллисекундах)
 #define SENSOR_POLL_INTERVAL_MS    3000  // 3 секунды - опрос EC датчика
-#define HEARTBEAT_INTERVAL_MS      15000 // 15 секунд - heartbeat
 
 /**
  * @brief Задача опроса сенсоров
@@ -95,6 +93,25 @@ static void task_sensors(void *pvParameters) {
                     model.connections.wifi_connected = conn_status.wifi_connected;
                     model.connections.mqtt_connected = conn_status.mqtt_connected;
                     model.connections.wifi_rssi = conn_status.wifi_rssi;
+
+                    // GH/Zone идентификаторы
+                    char gh_uid[CONFIG_STORAGE_MAX_STRING_LEN] = {0};
+                    char zone_uid[CONFIG_STORAGE_MAX_STRING_LEN] = {0};
+                    if (config_storage_get_gh_uid(gh_uid, sizeof(gh_uid)) == ESP_OK) {
+                        strncpy(model.gh_name, gh_uid, sizeof(model.gh_name) - 1);
+                    }
+                    if (config_storage_get_zone_uid(zone_uid, sizeof(zone_uid)) == ESP_OK) {
+                        strncpy(model.zone_name, zone_uid, sizeof(model.zone_name) - 1);
+                    }
+                    config_storage_wifi_t wifi_cfg = {0};
+                    if (config_storage_get_wifi(&wifi_cfg) == ESP_OK) {
+                        strncpy(model.wifi_ssid, wifi_cfg.ssid, sizeof(model.wifi_ssid) - 1);
+                    }
+                    config_storage_mqtt_t mqtt_cfg = {0};
+                    if (config_storage_get_mqtt(&mqtt_cfg) == ESP_OK) {
+                        strncpy(model.mqtt_host, mqtt_cfg.host, sizeof(model.mqtt_host) - 1);
+                        model.mqtt_port = mqtt_cfg.port;
+                    }
                     
                     // Get current EC value and sensor status (EC-специфичная логика)
                     // trema_ec использует дефолтную шину (I2C_BUS_0)
@@ -189,82 +206,14 @@ static void task_sensors(void *pvParameters) {
 }
 
 /**
- * @brief Задача публикации heartbeat
- */
-static void task_heartbeat(void *pvParameters) {
-    ESP_LOGI(TAG, "Heartbeat task started");
-    
-    // Добавляем задачу в watchdog
-    esp_err_t wdt_err = node_watchdog_add_task();
-    if (wdt_err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to add heartbeat task to watchdog: %s", esp_err_to_name(wdt_err));
-    }
-    
-    TickType_t last_wake_time = xTaskGetTickCount();
-    const TickType_t interval = pdMS_TO_TICKS(HEARTBEAT_INTERVAL_MS);
-    
-    // Сбрасываем watchdog каждую секунду, чтобы иметь запас к системному таймауту
-    const TickType_t wdt_reset_interval = pdMS_TO_TICKS(1000);
-    TickType_t last_wdt_reset = xTaskGetTickCount();
-    
-    while (1) {
-        TickType_t current_time = xTaskGetTickCount();
-        TickType_t elapsed_since_wdt = current_time - last_wdt_reset;
-        
-        if (elapsed_since_wdt >= wdt_reset_interval) {
-            node_watchdog_reset();
-            last_wdt_reset = current_time;
-        }
-        
-        TickType_t elapsed_since_wake = current_time - last_wake_time;
-        if (elapsed_since_wake >= interval) {
-            node_watchdog_reset();
-            
-            if (!mqtt_manager_is_connected()) {
-                last_wake_time = current_time;
-                vTaskDelay(pdMS_TO_TICKS(100));
-                continue;
-            }
-            
-            // Получение RSSI
-            wifi_ap_record_t ap_info;
-            int8_t rssi = -100;
-            if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
-                rssi = ap_info.rssi;
-            }
-            
-            // Формат согласно MQTT_SPEC_FULL.md раздел 9.1
-            cJSON *heartbeat = cJSON_CreateObject();
-            if (heartbeat) {
-                cJSON_AddNumberToObject(heartbeat, "uptime", (double)(esp_timer_get_time() / 1000.0));
-                cJSON_AddNumberToObject(heartbeat, "free_heap", (double)esp_get_free_heap_size());
-                cJSON_AddNumberToObject(heartbeat, "rssi", rssi);
-                
-                char *json_str = cJSON_PrintUnformatted(heartbeat);
-                if (json_str) {
-                    mqtt_manager_publish_heartbeat(json_str);
-                    free(json_str);
-                }
-                cJSON_Delete(heartbeat);
-            }
-            
-            last_wake_time = current_time;
-        }
-        
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
-}
-
-/**
  * @brief Запуск FreeRTOS задач
  */
 void ec_node_start_tasks(void) {
     // Задача опроса сенсоров
     xTaskCreate(task_sensors, "sensor_task", 4096, NULL, 5, NULL);
     
-    // Задача heartbeat
-    xTaskCreate(task_heartbeat, "heartbeat_task", 3072, NULL, 3, NULL);
+    // Общая задача heartbeat из компонента
+    heartbeat_task_start_default();
     
     ESP_LOGI(TAG, "FreeRTOS tasks started");
 }
-

@@ -29,6 +29,17 @@ extern "C" {
 esp_err_t node_utils_strncpy_safe(char *dest, const char *src, size_t dest_size);
 
 /**
+ * @brief Получить hardware_id (MAC-основанный идентификатор ноды)
+ *
+ * Формат: esp32-<mac6bytes lowercase hex>
+ *
+ * @param hardware_id Буфер для записи hardware_id
+ * @param size Размер буфера (рекомендуется >= 32)
+ * @return ESP_OK при успехе
+ */
+esp_err_t node_utils_get_hardware_id(char *hardware_id, size_t size);
+
+/**
  * @brief Инициализация WiFi конфигурации из config_storage
  * 
  * @param wifi_config Указатель на структуру для заполнения
@@ -142,4 +153,3 @@ esp_err_t node_utils_request_time(void);
 #endif
 
 #endif // NODE_UTILS_H
-

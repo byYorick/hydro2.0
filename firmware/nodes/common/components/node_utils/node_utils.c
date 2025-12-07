@@ -33,6 +33,23 @@ esp_err_t node_utils_strncpy_safe(char *dest, const char *src, size_t dest_size)
     return ESP_OK;
 }
 
+esp_err_t node_utils_get_hardware_id(char *hardware_id, size_t size) {
+    if (hardware_id == NULL || size < 8) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    uint8_t mac[6] = {0};
+    esp_err_t err = esp_efuse_mac_get_default(mac);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to get MAC address: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    snprintf(hardware_id, size, "esp32-%02x%02x%02x%02x%02x%02x",
+             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    return ESP_OK;
+}
+
 esp_err_t node_utils_init_wifi_config(
     wifi_manager_config_t *wifi_config,
     char *wifi_ssid,
@@ -118,13 +135,23 @@ esp_err_t node_utils_init_mqtt_config(
     }
     
     // Получение node_id
-    if (config_storage_get_node_id(node_id, 64) == ESP_OK) {
+    bool node_id_set = false;
+    if (config_storage_get_node_id(node_id, 64) == ESP_OK && strlen(node_id) > 0) {
         node_info->node_uid = node_id;
+        node_id_set = true;
         ESP_LOGI(TAG, "Node ID from config: %s", node_id);
-    } else {
-        node_utils_strncpy_safe(node_id, default_node_id, 64);
+    }
+
+    if (!node_id_set) {
+        char hw_id[32] = {0};
+        if (node_utils_get_hardware_id(hw_id, sizeof(hw_id)) == ESP_OK) {
+            node_utils_strncpy_safe(node_id, hw_id, 64);
+            ESP_LOGW(TAG, "Node ID not found, using hardware_id: %s", node_id);
+        } else {
+            node_utils_strncpy_safe(node_id, default_node_id, 64);
+            ESP_LOGW(TAG, "Node ID not found, using default: %s", default_node_id);
+        }
         node_info->node_uid = node_id;
-        ESP_LOGW(TAG, "Using default node ID: %s", default_node_id);
     }
     
     // Получение gh_uid
@@ -234,17 +261,11 @@ esp_err_t node_utils_publish_node_hello(
     }
     
     // Получаем MAC адрес как hardware_id
-    uint8_t mac[6] = {0};
-    esp_err_t err = esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    char hardware_id[32];
+    esp_err_t err = node_utils_get_hardware_id(hardware_id, sizeof(hardware_id));
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to get MAC address: %s", esp_err_to_name(err));
         return err;
     }
-    
-    // Формируем hardware_id из MAC адреса
-    char hardware_id[32];
-    snprintf(hardware_id, sizeof(hardware_id), "esp32-%02x%02x%02x%02x%02x%02x",
-             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     
     // Получаем версию прошивки
     char fw_version[64];
@@ -329,4 +350,3 @@ esp_err_t node_utils_request_time(void) {
     cJSON_Delete(request);
     return ESP_OK;
 }
-

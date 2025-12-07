@@ -8,6 +8,7 @@
 #include "config_storage.h"
 #include "memory_pool.h"
 #include "node_utils.h"
+#include "oled_ui.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -151,6 +152,7 @@ static esp_err_t flush_batch_internal(void) {
                 }
                 
                 mqtt_manager_publish_telemetry(item->channel, json_str);
+                oled_ui_notify_telemetry();
                 free(json_str);
             }
             cJSON_Delete(telemetry);
@@ -375,4 +377,3 @@ esp_err_t node_telemetry_engine_deinit(void) {
     ESP_LOGI(TAG, "Telemetry engine deinitialized");
     return ESP_OK;
 }
-

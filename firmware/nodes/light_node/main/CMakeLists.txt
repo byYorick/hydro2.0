@@ -15,6 +15,7 @@ idf_component_register(
         config_storage
         config_apply
         node_framework
+        heartbeat_task
         node_utils
         trema_light
         i2c_bus
@@ -27,8 +28,5 @@ idf_component_register(
         esp_event
         freertos
         mqtt
-        esp_timer
-        esp_system
         json
 )
-

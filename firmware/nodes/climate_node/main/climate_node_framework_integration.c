@@ -271,33 +271,25 @@ esp_err_t climate_node_publish_telemetry_callback(void *user_ctx) {
     ccs811_reading_t ccs_reading = {0};
     esp_err_t ccs_err = ccs811_read(&ccs_reading);
     
-    if (ccs_err == ESP_OK && ccs_reading.valid) {
-        esp_err_t err = node_telemetry_publish_sensor(
-            "co2",
-            METRIC_TYPE_CUSTOM,  // CO₂ пока нет в enum, используем CUSTOM
-            (float)ccs_reading.co2_ppm,
-            "ppm",
-            ccs_reading.co2_ppm,
-            false,  // not stub
-            true     // is_stable
-        );
-        if (err != ESP_OK) {
-            ESP_LOGW(TAG, "Failed to publish CO2: %s", esp_err_to_name(err));
-        }
-    } else {
-        esp_err_t report_err = (ccs_err == ESP_OK) ? ESP_ERR_INVALID_RESPONSE : ccs_err;
-        ESP_LOGW(TAG, "Failed to read CCS811: %s", esp_err_to_name(report_err));
-        
-        // Публикация ошибки
-        node_telemetry_publish_sensor(
-            "co2",
-            METRIC_TYPE_CUSTOM,
-            NAN,
-            "ppm",
-            0,
-            true,  // stub (ошибка)
-            false
-        );
+    bool co2_stub = (ccs_err != ESP_OK) || !ccs_reading.valid;
+    float co2_value = (float)ccs_reading.co2_ppm;
+
+    if (co2_stub) {
+        ESP_LOGW(TAG, "Failed to read CCS811 (will publish stub): %s",
+                 esp_err_to_name((ccs_err == ESP_OK) ? ESP_ERR_INVALID_RESPONSE : ccs_err));
+    }
+
+    esp_err_t err = node_telemetry_publish_sensor(
+        "co2",
+        METRIC_TYPE_CUSTOM,  // CO₂ пока нет в enum, используем CUSTOM
+        co2_value,
+        "ppm",
+        ccs_reading.co2_ppm,
+        co2_stub,
+        !co2_stub
+    );
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to publish CO2: %s", esp_err_to_name(err));
     }
 
     return ESP_OK;
@@ -436,4 +428,3 @@ void climate_node_framework_register_mqtt_handlers(void) {
     
     ESP_LOGI(TAG, "MQTT handlers registered");
 }
-

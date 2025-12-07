@@ -192,6 +192,24 @@ static struct {
     uint8_t frame_buffer[SSD1306_WIDTH * SSD1306_PAGES];
 } s_ui = {0};
 
+typedef enum {
+    OLED_EVENT_NONE = 0,
+    OLED_EVENT_TELEMETRY,
+    OLED_EVENT_HEARTBEAT,
+    OLED_EVENT_COMMAND
+} oled_ui_event_type_t;
+
+typedef struct {
+    oled_ui_event_type_t type;
+    uint64_t ts_ms;
+} oled_ui_event_t;
+
+// Очередь событий для нижнего индикатора
+#define OLED_EVENT_QUEUE_SIZE 8
+static oled_ui_event_t s_event_queue[OLED_EVENT_QUEUE_SIZE];
+static size_t s_event_head = 0;
+static const uint32_t OLED_EVENT_SHOW_MS = 2000;  // держим событие дольше, чтобы успеть обновить экран
+
 // Внутренние функции
 static esp_err_t ssd1306_write_command(uint8_t cmd);
 static esp_err_t ssd1306_write_data(const uint8_t *data, size_t len);
@@ -217,6 +235,29 @@ static void render_string(uint8_t x, uint8_t y, const char *str);
 static void render_line(uint8_t line_num, const char *str);
 static void render_wifi_icon(uint8_t x, uint8_t y, int8_t rssi);
 static void task_update_display(void *pvParameters);
+static void oled_ui_push_event(oled_ui_event_type_t type);
+static oled_ui_event_type_t oled_ui_peek_event(uint64_t now_ms);
+static void shorten_host_last_two_octets(const char *host, char *out, size_t out_size);
+
+static void oled_ui_push_event(oled_ui_event_type_t type) {
+    if (type == OLED_EVENT_NONE) {
+        return;
+    }
+    s_event_queue[s_event_head].type = type;
+    s_event_queue[s_event_head].ts_ms = esp_timer_get_time() / 1000;
+    s_event_head = (s_event_head + 1) % OLED_EVENT_QUEUE_SIZE;
+}
+
+static oled_ui_event_type_t oled_ui_peek_event(uint64_t now_ms) {
+    for (size_t i = 0; i < OLED_EVENT_QUEUE_SIZE; i++) {
+        size_t idx = (s_event_head + OLED_EVENT_QUEUE_SIZE - 1 - i) % OLED_EVENT_QUEUE_SIZE;
+        oled_ui_event_t *ev = &s_event_queue[idx];
+        if (ev->type != OLED_EVENT_NONE && (now_ms - ev->ts_ms) < OLED_EVENT_SHOW_MS) {
+            return ev->type;
+        }
+    }
+    return OLED_EVENT_NONE;
+}
 
 /**
  * @brief Запись команды в SSD1306
@@ -466,7 +507,8 @@ static void frame_buffer_draw_char(uint8_t x, uint8_t y, uint8_t c) {
  * @param rssi RSSI значение в dBm
  */
 static void frame_buffer_draw_wifi_icon(uint8_t x, uint8_t y, int8_t rssi) {
-    if (x >= SSD1306_WIDTH - 8 || y >= SSD1306_HEIGHT) {
+    const uint8_t icon_width = 12;  // 6 столбцов по 2 пикселя
+    if (x >= SSD1306_WIDTH - icon_width || y >= SSD1306_HEIGHT) {
         return;
     }
     
@@ -475,54 +517,66 @@ static void frame_buffer_draw_wifi_icon(uint8_t x, uint8_t y, int8_t rssi) {
         return;
     }
     
-    // Определяем количество полосок на основе RSSI
+    // Определяем количество полосок на основе RSSI (6 уровней)
     int bars = 0;
     bool is_connected = (rssi > -100);
     
     if (is_connected) {
-        if (rssi >= -50) {
+        if (rssi >= -45) {
+            bars = 6;
+        } else if (rssi >= -55) {
+            bars = 5;
+        } else if (rssi >= -65) {
             bars = 4;
-        } else if (rssi >= -60) {
+        } else if (rssi >= -75) {
             bars = 3;
-        } else if (rssi >= -70) {
+        } else if (rssi >= -85) {
             bars = 2;
-        } else if (rssi >= -80) {
+        } else {
             bars = 1;
         }
     }
     
-    // Создаем данные иконки
-    uint8_t icon_data[8] = {0};
+    uint8_t icon_data[12] = {0};
     
     if (is_connected && bars > 0) {
-        if (bars >= 1) {
-            icon_data[7] = 0x18;
-        }
-        if (bars >= 2) {
-            icon_data[6] = 0x3C;
-        }
-        if (bars >= 3) {
-            icon_data[5] = 0x7E;
-        }
-        if (bars >= 4) {
-            icon_data[4] = 0xFF;
+        // Рисуем 6 полосок слева направо, высота растёт снизу вверх
+        for (int b = 0; b < 6; b++) {
+            int height = b + 1;  // 1..6
+            bool filled = (bars > b);
+            uint8_t column = 0;
+            if (filled) {
+                for (int h = 0; h < height && h < 8; h++) {
+                    column |= (1U << h);  // набиваем снизу вверх
+                }
+            }
+            int col_idx = b * 2;  // слева направо
+            icon_data[col_idx] = column;
+            if (col_idx + 1 < (int)sizeof(icon_data)) {
+                icon_data[col_idx + 1] = column;
+            }
         }
     } else {
-        // Крестик для отсутствия подключения
-        icon_data[0] = 0x81;
-        icon_data[1] = 0x42;
-        icon_data[2] = 0x24;
-        icon_data[3] = 0x18;
-        icon_data[4] = 0x18;
-        icon_data[5] = 0x24;
-        icon_data[6] = 0x42;
-        icon_data[7] = 0x81;
+        // Крестик для отсутствия подключения (12x8)
+        icon_data[0] = 0x81; icon_data[1] = 0x81;
+        icon_data[2] = 0x42; icon_data[3] = 0x42;
+        icon_data[4] = 0x24; icon_data[5] = 0x24;
+        icon_data[6] = 0x18; icon_data[7] = 0x18;
+        icon_data[8] = 0x24; icon_data[9] = 0x24;
+        icon_data[10] = 0x42; icon_data[11] = 0x42;
     }
-    
-    // Копируем данные иконки в буфер кадров
+
+    // Копируем данные иконки в буфер кадров с вертикальным отражением (рост снизу вверх), без горизонтального разворота
     size_t base_index = page * SSD1306_WIDTH + x;
-    for (int i = 0; i < 8 && (x + i) < SSD1306_WIDTH; i++) {
-        s_ui.frame_buffer[base_index + i] = icon_data[i];
+    for (int i = 0; i < icon_width && (x + i) < SSD1306_WIDTH; i++) {
+        uint8_t col = icon_data[i];
+        uint8_t rev = 0;
+        for (int b = 0; b < 8; b++) {
+            if (col & (1U << b)) {
+                rev |= (1U << (7 - b));  // вертикальный разворот
+            }
+        }
+        s_ui.frame_buffer[base_index + i] = rev;
     }
 }
 
@@ -975,15 +1029,56 @@ static void render_normal_screen(void) {
         }
     }
     
-    // Отображаем статус MQTT и UID
-    char status_line[22];
+    // Строка 0: Wi-Fi SSID + иконка
+    char ssid_line[22];
+    if (s_ui.model.wifi_ssid[0] != '\0') {
+        snprintf(ssid_line, sizeof(ssid_line), " %.20s", s_ui.model.wifi_ssid);  // отступ перед именем
+    } else {
+        strncpy(ssid_line, " WiFi", sizeof(ssid_line) - 1);
+    }
+    frame_buffer_draw_string(10, 0, ssid_line);  // После иконки WiFi 8px + 2px отступ
+
+    // Строка 1: MQTT host:port + статус
+    char mqtt_line[22];
+    if (s_ui.model.mqtt_host[0] != '\0' && s_ui.model.mqtt_port > 0) {
+        char host_short[12] = {0};
+        shorten_host_last_two_octets(s_ui.model.mqtt_host, host_short, sizeof(host_short));
+        if (host_short[0] == '\0') {
+            strlcpy(host_short, s_ui.model.mqtt_host, sizeof(host_short));
+        }
+        snprintf(mqtt_line, sizeof(mqtt_line), "%s:%u %s", host_short, (unsigned)s_ui.model.mqtt_port, mqtt_status);
+    } else {
+        snprintf(mqtt_line, sizeof(mqtt_line), "MQTT %s", mqtt_status);
+    }
+    frame_buffer_draw_line(1, mqtt_line);
+
+    // Строка 2: ID
     char uid_display[12];
     strncpy(uid_display, s_ui.node_uid, sizeof(uid_display) - 1);
     uid_display[sizeof(uid_display) - 1] = '\0';
+    char id_line[22];
+    snprintf(id_line, sizeof(id_line), "ID:%s", uid_display);
+    frame_buffer_draw_line(2, id_line);
+
+    // Линия теплица и зона
+    char gh_line[22];
+    char zone_line[22];
+    const char *gh = (s_ui.model.gh_name[0] != '\0') ? s_ui.model.gh_name : "-";
+    const char *zone = (s_ui.model.zone_name[0] != '\0') ? s_ui.model.zone_name : "-";
+    char gh_short[16] = {0};
+    char zone_short[16] = {0};
+    strncpy(gh_short, gh, sizeof(gh_short) - 1);
+    strncpy(zone_short, zone, sizeof(zone_short) - 1);
+    snprintf(gh_line, sizeof(gh_line), "GH: %s", gh_short);
+    snprintf(zone_line, sizeof(zone_line), "ZN: %s", zone_short);
+    frame_buffer_draw_line(3, gh_line);
+    frame_buffer_draw_line(4, zone_line);
     
-    snprintf(status_line, sizeof(status_line), "M:%s %s", mqtt_status, uid_display);
-    frame_buffer_draw_string(10, 0, status_line);  // После иконки WiFi 8px + 2px отступ
-    
+    bool has_sensor_error = s_ui.model.sensor_status.has_error ||
+                            !s_ui.model.sensor_status.i2c_connected ||
+                            s_ui.model.sensor_status.using_stub;
+    bool invalid_data = false;
+
     // Основной блок в зависимости от типа узла и текущего экрана
     if (s_ui.current_screen == 0) {
         // Основной экран
@@ -997,7 +1092,7 @@ static void render_normal_screen(void) {
                 } else {
                     snprintf(line, sizeof(line), "pH: %.2f", s_ui.model.ph_value);
                 }
-                frame_buffer_draw_line(2, line);
+                frame_buffer_draw_line(5, line);
                 
                 // Статус I2C подключения и ошибки
                 if (s_ui.model.sensor_status.has_error) {
@@ -1006,19 +1101,19 @@ static void render_normal_screen(void) {
                         char error_line[22];
                         strncpy(error_line, s_ui.model.sensor_status.error_msg, sizeof(error_line) - 1);
                         error_line[sizeof(error_line) - 1] = '\0';
-                        frame_buffer_draw_line(3, error_line);
+                        frame_buffer_draw_line(6, error_line);
                     } else if (!s_ui.model.sensor_status.i2c_connected) {
-                        frame_buffer_draw_line(3, "I2C: Disconnected");
+                        frame_buffer_draw_line(6, "I2C: Disconnected");
                     } else {
-                        frame_buffer_draw_line(3, "Sensor error");
+                        frame_buffer_draw_line(6, "Sensor error");
                     }
                 } else {
                     // Нормальный режим - показываем статус I2C и температуру
                     if (!isnan(s_ui.model.temperature_water)) {
                         snprintf(line, sizeof(line), "Temp: %.1fC", s_ui.model.temperature_water);
-                        frame_buffer_draw_line(3, line);
+                        frame_buffer_draw_line(6, line);
                     } else {
-                        frame_buffer_draw_line(3, "I2C: OK");
+                        frame_buffer_draw_line(6, "I2C: OK");
                     }
                 }
                 break;
@@ -1026,9 +1121,9 @@ static void render_normal_screen(void) {
             case OLED_UI_NODE_TYPE_EC: {
                 char line[22];
                 snprintf(line, sizeof(line), "EC: %.2f", s_ui.model.ec_value);
-                frame_buffer_draw_line(2, line);
+                frame_buffer_draw_line(5, line);
                 snprintf(line, sizeof(line), "Temp: %.1fC", s_ui.model.temperature_water);
-                frame_buffer_draw_line(3, line);
+                frame_buffer_draw_line(6, line);
                 break;
             }
             case OLED_UI_NODE_TYPE_CLIMATE: {
@@ -1044,8 +1139,9 @@ static void render_normal_screen(void) {
                     // Показываем прочерки при ошибках или невалидных значениях
                     strncpy(line, "T:--.-C H:--%", sizeof(line) - 1);
                     line[sizeof(line) - 1] = '\0';
+                    invalid_data = true;
                 }
-                frame_buffer_draw_line(2, line);
+                frame_buffer_draw_line(5, line);
                 
                 // Строка 3: CO2 или статус I2C
                 if (!isnan(s_ui.model.co2) && isfinite(s_ui.model.co2) && s_ui.model.co2 >= 0.0f) {
@@ -1058,8 +1154,9 @@ static void render_normal_screen(void) {
                         strncpy(line, "I2C: ERR", sizeof(line) - 1);
                     }
                     line[sizeof(line) - 1] = '\0';
+                    invalid_data = true;
                 }
-                frame_buffer_draw_line(3, line);
+                frame_buffer_draw_line(6, line);
                 break;
             }
             case OLED_UI_NODE_TYPE_LIGHTING: {
@@ -1071,8 +1168,9 @@ static void render_normal_screen(void) {
                     // Показываем прочерки при ошибках или невалидных значениях
                     strncpy(line, "Lux: --", sizeof(line) - 1);
                     line[sizeof(line) - 1] = '\0';
+                    invalid_data = true;
                 }
-                frame_buffer_draw_line(2, line);
+                frame_buffer_draw_line(5, line);
                 
                 // Строка 3: Статус I2C или ошибка
                 if (s_ui.model.sensor_status.i2c_connected) {
@@ -1088,39 +1186,74 @@ static void render_normal_screen(void) {
                 } else {
                     strncpy(line, "I2C: ERR", sizeof(line) - 1);
                     line[sizeof(line) - 1] = '\0';
+                    invalid_data = true;
                 }
-                frame_buffer_draw_line(3, line);
+                frame_buffer_draw_line(6, line);
                 break;
             }
             default:
-                frame_buffer_draw_line(2, "Node active");
+                frame_buffer_draw_line(5, "Node active");
                 break;
         }
     } else if (s_ui.current_screen == 1) {
         // Экран каналов
-        frame_buffer_draw_line(1, "Channels:");
-        for (size_t i = 0; i < s_ui.model.channel_count && i < 5; i++) {
+        frame_buffer_draw_line(4, "Channels:");
+        for (size_t i = 0; i < s_ui.model.channel_count && i < 2; i++) {
             char line[22];
             snprintf(line, sizeof(line), "%s: %.2f",
                     s_ui.model.channels[i].name,
                     s_ui.model.channels[i].value);
-            frame_buffer_draw_line(2 + i, line);
+            frame_buffer_draw_line(5 + i, line);
         }
     } else if (s_ui.current_screen == 2) {
         // Экран зоны
-        frame_buffer_draw_line(1, "Zone:");
-        frame_buffer_draw_line(2, s_ui.model.zone_name);
-        frame_buffer_draw_line(3, "Recipe:");
-        frame_buffer_draw_line(4, s_ui.model.recipe_name);
+        frame_buffer_draw_line(2, "Zone:");
+        frame_buffer_draw_line(3, s_ui.model.zone_name);
+        frame_buffer_draw_line(4, "Recipe:");
+        frame_buffer_draw_line(5, s_ui.model.recipe_name);
     }
-    
-    // Нижняя строка: состояние
-    if (s_ui.model.alert) {
-        frame_buffer_draw_line(7, "ALERT");
-    } else if (s_ui.model.paused) {
-        frame_buffer_draw_line(7, "PAUSED");
+
+    // Линия ошибок сенсоров (единая строка)
+    char err_line[22] = {0};
+    if (s_ui.model.sensor_status.has_error && s_ui.model.sensor_status.error_msg[0] != '\0') {
+        char short_msg[16] = {0};
+        strncpy(short_msg, s_ui.model.sensor_status.error_msg, sizeof(short_msg) - 1);
+        snprintf(err_line, sizeof(err_line), "ERR: %s", short_msg);
+    } else if (s_ui.model.sensor_status.has_error && !s_ui.model.sensor_status.i2c_connected) {
+        strncpy(err_line, "ERR: I2C", sizeof(err_line) - 1);
+    } else if (s_ui.model.sensor_status.using_stub) {
+        strncpy(err_line, "ERR: stub data", sizeof(err_line) - 1);
+    } else if (invalid_data) {
+        strncpy(err_line, "ERR: sensor data", sizeof(err_line) - 1);
+    } else if (!s_ui.model.sensor_status.i2c_connected) {
+        strncpy(err_line, "ERR: I2C", sizeof(err_line) - 1);
+    } else if (has_sensor_error) {
+        strncpy(err_line, "ERR: sensor", sizeof(err_line) - 1);
+    }
+    if (err_line[0] != '\0') {
+        frame_buffer_draw_line(7, err_line);
     } else {
-        frame_buffer_draw_line(7, "OK");
+        // Нижняя строка: состояние
+        if (s_ui.model.alert) {
+            frame_buffer_draw_line(7, "ALERT");
+        } else if (s_ui.model.paused) {
+            frame_buffer_draw_line(7, "PAUSED");
+        } else {
+            frame_buffer_draw_line(7, "OK");
+        }
+    }
+
+    // Индикатор событий (телеметрия/heartbeat/команда) в правом нижнем углу
+    oled_ui_event_type_t ev = oled_ui_peek_event(esp_timer_get_time() / 1000);
+    char ev_char = 0;
+    switch (ev) {
+        case OLED_EVENT_TELEMETRY: ev_char = 'T'; break;
+        case OLED_EVENT_HEARTBEAT: ev_char = 'H'; break;
+        case OLED_EVENT_COMMAND:   ev_char = 'C'; break;
+        default: break;
+    }
+    if (ev_char != 0) {
+        frame_buffer_draw_char(SSD1306_WIDTH - FONT_WIDTH, (SSD1306_HEIGHT - FONT_HEIGHT), (uint8_t)ev_char);
     }
     
     // Отправляем весь буфер на дисплей за один раз
@@ -1451,6 +1584,21 @@ esp_err_t oled_ui_update_model(const oled_ui_model_t *model) {
         strncpy(s_ui.model.alert_message, model->alert_message, sizeof(s_ui.model.alert_message) - 1);
         s_ui.model.alert_message[sizeof(s_ui.model.alert_message) - 1] = '\0';
     }
+    if (model->gh_name[0] != '\0') {
+        strncpy(s_ui.model.gh_name, model->gh_name, sizeof(s_ui.model.gh_name) - 1);
+        s_ui.model.gh_name[sizeof(s_ui.model.gh_name) - 1] = '\0';
+    }
+    if (model->wifi_ssid[0] != '\0') {
+        strncpy(s_ui.model.wifi_ssid, model->wifi_ssid, sizeof(s_ui.model.wifi_ssid) - 1);
+        s_ui.model.wifi_ssid[sizeof(s_ui.model.wifi_ssid) - 1] = '\0';
+    }
+    if (model->mqtt_host[0] != '\0') {
+        strncpy(s_ui.model.mqtt_host, model->mqtt_host, sizeof(s_ui.model.mqtt_host) - 1);
+        s_ui.model.mqtt_host[sizeof(s_ui.model.mqtt_host) - 1] = '\0';
+    }
+    if (model->mqtt_port != 0) {
+        s_ui.model.mqtt_port = model->mqtt_port;
+    }
     
     // Информация о зоне/рецепте - обновляем только если не пустые
     if (model->zone_name[0] != '\0') {
@@ -1515,6 +1663,7 @@ void oled_ui_notify_mqtt_tx(void) {
     }
     s_ui.mqtt_tx_active = true;
     s_ui.mqtt_tx_timestamp = esp_timer_get_time() / 1000;  // Время в миллисекундах
+    oled_ui_push_event(OLED_EVENT_TELEMETRY);
 }
 
 void oled_ui_notify_mqtt_rx(void) {
@@ -1523,6 +1672,19 @@ void oled_ui_notify_mqtt_rx(void) {
     }
     s_ui.mqtt_rx_active = true;
     s_ui.mqtt_rx_timestamp = esp_timer_get_time() / 1000;  // Время в миллисекундах
+    oled_ui_push_event(OLED_EVENT_COMMAND);
+}
+
+void oled_ui_notify_telemetry(void) {
+    oled_ui_push_event(OLED_EVENT_TELEMETRY);
+}
+
+void oled_ui_notify_heartbeat(void) {
+    oled_ui_push_event(OLED_EVENT_HEARTBEAT);
+}
+
+void oled_ui_notify_command(void) {
+    oled_ui_push_event(OLED_EVENT_COMMAND);
 }
 
 esp_err_t oled_ui_next_screen(void) {
@@ -1697,4 +1859,33 @@ esp_err_t oled_ui_stop_init_steps(void) {
     ESP_LOGI(TAG, "Init steps stopped");
     return ESP_OK;
 }
+static void shorten_host_last_two_octets(const char *host, char *out, size_t out_size) {
+    if (out == NULL || out_size == 0) {
+        return;
+    }
+    out[0] = '\0';
+    if (host == NULL) {
+        return;
+    }
 
+    const char *last_dot = strrchr(host, '.');
+    if (!last_dot) {
+        strlcpy(out, host, out_size);
+        return;
+    }
+    const char *prev_dot = last_dot;
+    while (prev_dot > host) {
+        prev_dot = memrchr(host, '.', prev_dot - host);
+        if (prev_dot == NULL || prev_dot == host) {
+            break;
+        }
+        break;
+    }
+    if (prev_dot && prev_dot != host) {
+        // Копируем начиная с второй с конца точки
+        strlcpy(out, prev_dot + 1, out_size);
+    } else {
+        // Нет второй точки - fallback
+        strlcpy(out, last_dot + 1, out_size);
+    }
+}

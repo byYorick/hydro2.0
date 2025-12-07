@@ -5,7 +5,6 @@ idf_component_register(
         "ph_node_tasks.c"
         "ph_node_init.c"
         "ph_node_init_steps.c"
-        "ph_node_handlers.c"
         "ph_node_framework_integration.c"
     INCLUDE_DIRS 
         "."
@@ -34,4 +33,3 @@ idf_component_register(
         esp_timer
         json
 )
-

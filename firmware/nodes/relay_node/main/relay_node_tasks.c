@@ -13,6 +13,7 @@
 #include "connection_status.h"
 #include "heartbeat_task.h"
 #include "node_utils.h"
+#include "esp_idf_version.h"
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
@@ -129,4 +130,3 @@ void relay_node_publish_status(void) {
         cJSON_Delete(status);
     }
 }
-

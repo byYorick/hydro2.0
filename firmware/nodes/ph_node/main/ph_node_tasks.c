@@ -23,6 +23,7 @@
 #include "node_utils.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_idf_version.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
 #include "node_watchdog.h"
@@ -111,6 +112,25 @@ static void task_sensors(void *pvParameters) {
                     model.connections.wifi_connected = conn_status.wifi_connected;
                     model.connections.mqtt_connected = conn_status.mqtt_connected;
                     model.connections.wifi_rssi = conn_status.wifi_rssi;
+
+                    // GH/Zone идентификаторы
+                    char gh_uid[CONFIG_STORAGE_MAX_STRING_LEN] = {0};
+                    char zone_uid[CONFIG_STORAGE_MAX_STRING_LEN] = {0};
+                    if (config_storage_get_gh_uid(gh_uid, sizeof(gh_uid)) == ESP_OK) {
+                        strncpy(model.gh_name, gh_uid, sizeof(model.gh_name) - 1);
+                    }
+                    if (config_storage_get_zone_uid(zone_uid, sizeof(zone_uid)) == ESP_OK) {
+                        strncpy(model.zone_name, zone_uid, sizeof(model.zone_name) - 1);
+                    }
+                    config_storage_wifi_t wifi_cfg = {0};
+                    if (config_storage_get_wifi(&wifi_cfg) == ESP_OK) {
+                        strncpy(model.wifi_ssid, wifi_cfg.ssid, sizeof(model.wifi_ssid) - 1);
+                    }
+                    config_storage_mqtt_t mqtt_cfg = {0};
+                    if (config_storage_get_mqtt(&mqtt_cfg) == ESP_OK) {
+                        strncpy(model.mqtt_host, mqtt_cfg.host, sizeof(model.mqtt_host) - 1);
+                        model.mqtt_port = mqtt_cfg.port;
+                    }
                     
                     // Get current pH value and sensor status (pH-специфичная логика)
                     bool sensor_initialized = ph_node_is_ph_sensor_initialized();
@@ -475,4 +495,3 @@ void ph_node_publish_status(void) {
         cJSON_Delete(status);
     }
 }
-

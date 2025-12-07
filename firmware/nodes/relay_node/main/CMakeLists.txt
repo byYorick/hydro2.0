@@ -5,7 +5,6 @@ idf_component_register(
         "relay_node_tasks.c"
         "relay_node_init.c"
         "relay_node_init_steps.c"
-        "relay_node_handlers.c"
         "relay_node_framework_integration.c"
     INCLUDE_DIRS 
         "."
@@ -32,4 +31,3 @@ idf_component_register(
         esp_timer
         json
 )
-

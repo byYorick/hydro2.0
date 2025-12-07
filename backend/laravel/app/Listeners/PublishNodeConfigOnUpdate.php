@@ -53,8 +53,9 @@ class PublishNodeConfigOnUpdate
         
         // Диспатчим Job с дедупликацией для предотвращения множественных публикаций
         // Дедупликация работает через Cache lock в Job
-        PublishNodeConfigJob::dispatch($node->id)
-            ->onQueue('config-publish'); // Отдельная очередь для публикации конфигов
+        // Используем очередь по умолчанию: в dev окружении крутится только worker для default,
+        // отдельный worker для config-publish не поднимается и задания зависали.
+        PublishNodeConfigJob::dispatch($node->id);
         
         Log::info('PublishNodeConfigOnUpdate: Dispatched config publish job (node attached to zone)', [
             'node_id' => $node->id,

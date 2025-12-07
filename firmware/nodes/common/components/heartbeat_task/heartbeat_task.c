@@ -8,6 +8,7 @@
 #include "wifi_manager.h"
 #include "memory_pool.h"
 #include "node_utils.h"
+#include "oled_ui.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_system.h"
@@ -103,6 +104,7 @@ static void task_heartbeat(void *pvParameters) {
             char *json_str = cJSON_PrintUnformatted(heartbeat);
             if (json_str) {
                 mqtt_manager_publish_heartbeat(json_str);
+                oled_ui_notify_heartbeat();
                 free(json_str);
             }
             cJSON_Delete(heartbeat);
@@ -168,4 +170,3 @@ esp_err_t heartbeat_task_stop(void) {
     ESP_LOGI(TAG, "Heartbeat task stopped");
     return ESP_OK;
 }
-

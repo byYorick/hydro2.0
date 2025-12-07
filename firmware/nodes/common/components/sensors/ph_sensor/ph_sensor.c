@@ -253,7 +253,8 @@ esp_err_t ph_sensor_init(const ph_sensor_config_t *config) {
         }
         
         s_ph_sensor.adc_channel = (adc_channel_t)config->adc_channel;
-        s_ph_sensor.adc_atten = ADC_ATTEN_DB_11;
+        // ESP-IDF объявляет 11 dB как синоним 12 dB и помечает как deprecated
+        s_ph_sensor.adc_atten = ADC_ATTEN_DB_12;
         
         adc_oneshot_chan_cfg_t channel_config = {
             .bitwidth = ADC_BITWIDTH_12,
@@ -488,4 +489,3 @@ esp_err_t ph_sensor_init_from_config(const char *channel_id) {
     
     return ph_sensor_init(&config);
 }
-

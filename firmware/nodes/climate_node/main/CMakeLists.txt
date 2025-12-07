@@ -17,6 +17,7 @@ idf_component_register(
         config_apply
         node_framework
         relay_driver
+        heartbeat_task
         i2c_bus
         sht3x
         ccs811

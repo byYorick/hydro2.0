@@ -10,6 +10,7 @@
 #include "esp_system.h"
 #include "nvs_flash.h"
 #include "esp_http_server.h"
+#include "node_utils.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
@@ -377,6 +378,10 @@ static void save_credentials_to_config_storage(const setup_portal_credentials_t 
         return;
     }
     
+    // hardware_id для первичной идентификации
+    char hardware_id[32] = {0};
+    bool has_hw_id = (node_utils_get_hardware_id(hardware_id, sizeof(hardware_id)) == ESP_OK);
+
     // Load current config, update WiFi and MQTT, then save
     // КРИТИЧНО: Используем статический буфер вместо стека для предотвращения переполнения
     static char json_buf[CONFIG_STORAGE_MAX_JSON_SIZE];
@@ -384,6 +389,18 @@ static void save_credentials_to_config_storage(const setup_portal_credentials_t 
         // Update existing config
         cJSON *config = cJSON_Parse(json_buf);
         if (config) {
+            // Обновляем node_id, если он пустой или временный
+            if (has_hw_id) {
+                cJSON *node_id_item = cJSON_GetObjectItem(config, "node_id");
+                if (!cJSON_IsString(node_id_item) || node_id_item->valuestring == NULL ||
+                    strlen(node_id_item->valuestring) == 0 ||
+                    strcmp(node_id_item->valuestring, "node-temp") == 0) {
+                    cJSON_DeleteItemFromObject(config, "node_id");
+                    cJSON_AddStringToObject(config, "node_id", hardware_id);
+                    ESP_LOGI(TAG, "Updated node_id to hardware_id: %s", hardware_id);
+                }
+            }
+
             // Update WiFi configuration
             cJSON *wifi_obj = cJSON_GetObjectItem(config, "wifi");
             if (!wifi_obj) {
@@ -456,7 +473,11 @@ static void save_credentials_to_config_storage(const setup_portal_credentials_t 
         cJSON *config = cJSON_CreateObject();
         
         // Required fields for validation
-        cJSON_AddStringToObject(config, "node_id", "node-temp"); // Temporary ID, will be replaced
+        if (has_hw_id) {
+            cJSON_AddStringToObject(config, "node_id", hardware_id);
+        } else {
+            cJSON_AddStringToObject(config, "node_id", "node-temp"); // fallback
+        }
         cJSON_AddNumberToObject(config, "version", 1);
         cJSON_AddStringToObject(config, "type", "unknown");
         cJSON_AddStringToObject(config, "gh_uid", "gh-temp"); // Temporary, will be replaced via MQTT
@@ -676,4 +697,3 @@ esp_err_t setup_portal_run_full_setup(const setup_portal_full_config_t *config) 
     
     return ESP_OK; // Never reached
 }
-

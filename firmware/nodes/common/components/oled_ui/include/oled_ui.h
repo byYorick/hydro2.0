@@ -86,7 +86,11 @@ typedef struct {
     bool alert;
     bool paused;
     char alert_message[32];   // Краткое сообщение об ошибке
-    
+    char gh_name[32];         // Название/UID теплицы
+    char wifi_ssid[32];       // Имя WiFi сети
+    char mqtt_host[32];       // MQTT хост/IP
+    uint16_t mqtt_port;       // MQTT порт
+
     // Информация о зоне/рецепте
     char zone_name[32];
     char recipe_name[32];
@@ -171,6 +175,13 @@ void oled_ui_notify_mqtt_tx(void);
  */
 void oled_ui_notify_mqtt_rx(void);
 
+/** Уведомление о публикации телеметрии */
+void oled_ui_notify_telemetry(void);
+/** Уведомление о публикации heartbeat */
+void oled_ui_notify_heartbeat(void);
+/** Уведомление о приеме/обработке команды */
+void oled_ui_notify_command(void);
+
 /**
  * @brief Переключение на следующий экран (для режима NORMAL)
  * 
@@ -252,4 +263,3 @@ esp_err_t oled_ui_stop_init_steps(void);
 #endif
 
 #endif // OLED_UI_H
-

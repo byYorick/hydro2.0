@@ -13,6 +13,7 @@ idf_component_register(
         config_storage
         config_apply
         node_utils
+        oled_ui
         json
         esp_timer
         freertos
@@ -20,4 +21,3 @@ idf_component_register(
         i2c_cache
         diagnostics
 )
-
