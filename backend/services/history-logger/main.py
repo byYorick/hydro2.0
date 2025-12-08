@@ -558,6 +558,53 @@ async def handle_telemetry(topic: str, payload: bytes):
         )
 
 
+# Глобальный кеш для резолва zone_id и node_id (с TTL refresh)
+_zone_cache: dict[tuple[str, Optional[str]], int] = {}
+_node_cache: dict[tuple[str, Optional[str]], tuple[int, Optional[int]]] = {}
+_cache_last_update = 0.0
+_cache_ttl = 60.0  # TTL кеша в секундах
+
+
+async def refresh_caches():
+    """Обновить кеши zone_id и node_id."""
+    global _zone_cache, _node_cache, _cache_last_update
+    
+    try:
+        # Загружаем все зоны (обычно <1000, помещаются в память)
+        zones = await fetch("""
+            SELECT z.id, z.uid, g.uid as gh_uid
+            FROM zones z
+            JOIN greenhouses g ON g.id = z.greenhouse_id
+        """)
+        _zone_cache.clear()
+        for zone in zones:
+            key = (zone['uid'], zone['gh_uid'])
+            _zone_cache[key] = zone['id']
+            # Также добавляем без gh_uid для fallback
+            if (zone['uid'], None) not in _zone_cache:
+                _zone_cache[(zone['uid'], None)] = zone['id']
+        
+        # Загружаем все ноды (обычно <10000, помещаются в память)
+        nodes = await fetch("""
+            SELECT n.id, n.uid, n.zone_id, g.uid as gh_uid
+            FROM nodes n
+            LEFT JOIN zones z ON z.id = n.zone_id
+            LEFT JOIN greenhouses g ON g.id = z.greenhouse_id
+        """)
+        _node_cache.clear()
+        for node in nodes:
+            key = (node['uid'], node['gh_uid'])
+            _node_cache[key] = (node['id'], node['zone_id'])
+            # Также добавляем без gh_uid для fallback
+            if (node['uid'], None) not in _node_cache:
+                _node_cache[(node['uid'], None)] = (node['id'], node['zone_id'])
+        
+        _cache_last_update = time.time()
+        logger.info(f"Cache refreshed: {len(_zone_cache)} zone entries, {len(_node_cache)} node entries")
+    except Exception as e:
+        logger.error(f"Failed to refresh caches: {e}", exc_info=True)
+
+
 async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
     """
     Обработать батч телеметрии и записать в БД.
@@ -567,6 +614,12 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
 
     start_time = time.time()
     s = get_settings()
+    
+    # Обновляем кеш если устарел
+    global _cache_last_update, _cache_ttl
+    current_time = time.time()
+    if current_time - _cache_last_update > _cache_ttl:
+        await refresh_caches()
     
     # Получаем zone_id из zone_uid с учетом gh_uid для каждого образца
     # Ключ: (zone_uid, gh_uid) -> zone_id
@@ -580,8 +633,60 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
     ))
     
     if zone_gh_pairs:
-        # Батчевый резолв зон с учетом gh_uid
+        # Собираем недостающие zone_uid из кеша
+        missing_zones = []
         for zone_uid, gh_uid in zone_gh_pairs:
+            key = (zone_uid, gh_uid)
+            if key in _zone_cache:
+                zone_uid_to_id[key] = _zone_cache[key]
+            else:
+                # Fallback: пробуем без gh_uid
+                fallback_key = (zone_uid, None)
+                if fallback_key in _zone_cache:
+                    zone_uid_to_id[key] = _zone_cache[fallback_key]
+                else:
+                    missing_zones.append((zone_uid, gh_uid))
+        
+        # Batch resolve недостающих зон
+        if missing_zones:
+            # Группируем по наличию gh_uid
+            zones_with_gh = [(z, g) for z, g in missing_zones if g]
+            zones_without_gh = [(z, g) for z, g in missing_zones if not g]
+            
+            # Batch resolve с gh_uid
+            if zones_with_gh:
+                zone_uids = [z for z, _ in zones_with_gh]
+                gh_uids = [g for _, g in zones_with_gh]
+                zone_rows = await fetch("""
+                    SELECT z.id, z.uid, g.uid as gh_uid
+                    FROM zones z
+                    JOIN greenhouses g ON g.id = z.greenhouse_id
+                    WHERE (z.uid, g.uid) IN (SELECT unnest($1::text[]), unnest($2::text[]))
+                """, zone_uids, gh_uids)
+                
+                for zone in zone_rows:
+                    key = (zone['uid'], zone['gh_uid'])
+                    zone_uid_to_id[key] = zone['id']
+                    _zone_cache[key] = zone['id']
+            
+            # Batch resolve без gh_uid (fallback)
+            if zones_without_gh:
+                zone_uids = [z for z, _ in zones_without_gh]
+                zone_rows = await fetch("""
+                    SELECT id, uid
+                    FROM zones
+                    WHERE uid = ANY($1)
+                """, zone_uids)
+                
+                for zone in zone_rows:
+                    key = (zone['uid'], None)
+                    zone_uid_to_id[key] = zone['id']
+                    _zone_cache[key] = zone['id']
+        
+        # Батчевый резолв зон с учетом gh_uid (старый код для обратной совместимости)
+        for zone_uid, gh_uid in zone_gh_pairs:
+            if (zone_uid, gh_uid) in zone_uid_to_id:
+                continue  # Уже резолвлено через кеш
             zone_id_from_uid = extract_zone_id_from_uid(zone_uid)
             # zone_id_from_uid может быть None для формата zone-{uid}, это нормально - будем искать по UID
             
@@ -645,7 +750,7 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
     
     # Получаем node_id из node_uid с учетом gh_uid для каждого образца
     # Ключ: (node_uid, gh_uid) -> (node_id, zone_id) - сохраняем zone_id узла для проверки соответствия
-    node_uid_to_info: dict[tuple[str, Optional[str]], tuple[int, int]] = {}
+    node_uid_to_info: dict[tuple[str, Optional[str]], tuple[int, Optional[int]]] = {}
     
     # Группируем samples по (node_uid, gh_uid) для батчевого резолва
     node_gh_pairs = list(set(
@@ -655,9 +760,63 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
     ))
     
     if node_gh_pairs:
-        # Батчевый резолв узлов с учетом gh_uid (через zones и greenhouses)
-        # Важно: получаем и node_id, и zone_id узла для проверки соответствия
+        # Собираем недостающие node_uid из кеша
+        missing_nodes = []
         for node_uid, gh_uid in node_gh_pairs:
+            key = (node_uid, gh_uid)
+            if key in _node_cache:
+                node_uid_to_info[key] = _node_cache[key]
+            else:
+                # Fallback: пробуем без gh_uid
+                fallback_key = (node_uid, None)
+                if fallback_key in _node_cache:
+                    node_uid_to_info[key] = _node_cache[fallback_key]
+                else:
+                    missing_nodes.append((node_uid, gh_uid))
+        
+        # Batch resolve недостающих нод
+        if missing_nodes:
+            # Группируем по наличию gh_uid
+            nodes_with_gh = [(n, g) for n, g in missing_nodes if g]
+            nodes_without_gh = [(n, g) for n, g in missing_nodes if not g]
+            
+            # Batch resolve с gh_uid
+            if nodes_with_gh:
+                node_uids = [n for n, _ in nodes_with_gh]
+                gh_uids = [g for _, g in nodes_with_gh]
+                node_rows = await fetch("""
+                    SELECT n.id, n.uid, n.zone_id, g.uid as gh_uid
+                    FROM nodes n
+                    LEFT JOIN zones z ON z.id = n.zone_id
+                    LEFT JOIN greenhouses g ON g.id = z.greenhouse_id
+                    WHERE (n.uid, COALESCE(g.uid, '')) IN (
+                        SELECT unnest($1::text[]), unnest($2::text[])
+                    )
+                """, node_uids, gh_uids)
+                
+                for node in node_rows:
+                    key = (node['uid'], node['gh_uid'])
+                    node_uid_to_info[key] = (node['id'], node['zone_id'])
+                    _node_cache[key] = (node['id'], node['zone_id'])
+            
+            # Batch resolve без gh_uid (fallback)
+            if nodes_without_gh:
+                node_uids = [n for n, _ in nodes_without_gh]
+                node_rows = await fetch("""
+                    SELECT id, uid, zone_id
+                    FROM nodes
+                    WHERE uid = ANY($1)
+                """, node_uids)
+                
+                for node in node_rows:
+                    key = (node['uid'], None)
+                    node_uid_to_info[key] = (node['id'], node['zone_id'])
+                    _node_cache[key] = (node['id'], node['zone_id'])
+        
+        # Батчевый резолв узлов с учетом gh_uid (старый код для обратной совместимости)
+        for node_uid, gh_uid in node_gh_pairs:
+            if (node_uid, gh_uid) in node_uid_to_info:
+                continue  # Уже резолвлено через кеш
             if gh_uid:
                 # Резолв с учетом greenhouse (через zones)
                 # Получаем node_id И zone_id узла для проверки соответствия
@@ -794,6 +953,9 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
     # Считаем реально вставленные сэмплы (не пропущенные из-за отсутствия zone_id)
     processed_count = 0
     
+    # Собираем все значения для batch upsert telemetry_last
+    telemetry_last_updates: dict[tuple[int, str], dict] = {}  # (zone_id, metric_type) -> {node_id, channel, value, ts}
+    
     for (zone_id, metric_type, node_id, channel), group_samples in grouped.items():
         logger.info(f"[BROADCAST] Processing group: zone_id={zone_id}, node_id={node_id}, metric={metric_type}, samples={len(group_samples)}")
         # Используем TimescaleDB для эффективной вставки
@@ -841,7 +1003,7 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
                 )
                 # При ошибке вставки сэмплы не считаются как обработанные
         
-        # Обновляем telemetry_last
+        # Собираем данные для batch upsert telemetry_last
         # Выбираем сэмпл с максимальным ts (самый свежий), а не просто последний в батче
         # Это важно, так как телеметрия может приходить вне порядка (MQTT/очереди/ретраи)
         logger.info(f"[BROADCAST] Before upsert check: group_samples={len(group_samples) if group_samples else 0}, node_id={node_id}")
@@ -851,13 +1013,27 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
                 group_samples,
                 key=lambda s: s.ts if s.ts else datetime.min.replace(tzinfo=None)
             )
-            await upsert_telemetry_last(
-                zone_id,
-                metric_type,
-                node_id,
-                channel,
-                latest_sample.value
-            )
+            
+            # Сохраняем для batch upsert
+            key = (zone_id, metric_type)
+            if key not in telemetry_last_updates:
+                telemetry_last_updates[key] = {
+                    'node_id': node_id,
+                    'channel': channel,
+                    'value': latest_sample.value,
+                    'ts': latest_sample.ts
+                }
+            else:
+                # Обновляем только если новый ts больше
+                existing_ts = telemetry_last_updates[key].get('ts') or datetime.min.replace(tzinfo=None)
+                new_ts = latest_sample.ts or datetime.min.replace(tzinfo=None)
+                if new_ts > existing_ts:
+                    telemetry_last_updates[key] = {
+                        'node_id': node_id,
+                        'channel': channel,
+                        'value': latest_sample.value,
+                        'ts': new_ts
+                    }
             
             # Broadcast телеметрии через Laravel WebSocket для real-time обновления графиков.
             # Проверяем shutdown перед созданием задачи, чтобы не создавать задачи после начала shutdown.
@@ -891,6 +1067,52 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
                     logger.debug(f"[BROADCAST] Cannot create task (event loop may be closed): {e}")
                 except Exception as e:
                     logger.warning(f"[BROADCAST] Failed to create broadcast task: {e}", exc_info=True)
+    
+    # Batch upsert telemetry_last для всех обновлений
+    if telemetry_last_updates:
+        try:
+            values_list = []
+            params_list = []
+            param_index = 1
+            
+            for (zone_id, metric_type), update_data in telemetry_last_updates.items():
+                node_id = update_data['node_id'] if update_data['node_id'] is not None else -1
+                channel = update_data['channel']
+                value = update_data['value']
+                
+                values_list.append(
+                    f"(${param_index}, ${param_index + 1}, ${param_index + 2}, ${param_index + 3}, ${param_index + 4}, NOW())"
+                )
+                params_list.extend([zone_id, node_id, metric_type, channel, value])
+                param_index += 5
+            
+            if values_list:
+                query = f"""
+                    INSERT INTO telemetry_last (zone_id, node_id, metric_type, channel, value, updated_at)
+                    VALUES {', '.join(values_list)}
+                    ON CONFLICT (zone_id, metric_type)
+                    DO UPDATE SET 
+                        node_id = EXCLUDED.node_id,
+                        channel = EXCLUDED.channel,
+                        value = EXCLUDED.value,
+                        updated_at = NOW()
+                """
+                await execute(query, *params_list)
+                logger.debug(f"Batch upserted {len(telemetry_last_updates)} telemetry_last records")
+        except Exception as e:
+            logger.error(f"Failed to batch upsert telemetry_last: {e}", exc_info=True)
+            # Fallback: используем индивидуальные upsert
+            for (zone_id, metric_type), update_data in telemetry_last_updates.items():
+                try:
+                    await upsert_telemetry_last(
+                        zone_id,
+                        metric_type,
+                        update_data['node_id'],
+                        update_data['channel'],
+                        update_data['value']
+                    )
+                except Exception as e2:
+                    logger.error(f"Failed to upsert telemetry_last for zone_id={zone_id}, metric_type={metric_type}: {e2}")
     
     processing_duration = time.time() - start_time
     TELEMETRY_PROCESSING_DURATION.observe(processing_duration)

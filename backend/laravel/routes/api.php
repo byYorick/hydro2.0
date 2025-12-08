@@ -204,7 +204,7 @@ Route::prefix('python')->middleware('throttle:120,1')->group(function () {
 });
 
 // Node registration and service updates (token-based) - умеренный лимит
-Route::middleware('throttle:20,1')->group(function () {
+Route::middleware(['throttle:node_register', 'ip.whitelist'])->group(function () {
     Route::post('nodes/register', [NodeController::class, 'register']);
     
     // Node updates от сервисов (history-logger и т.д.) - проверка токена в контроллере

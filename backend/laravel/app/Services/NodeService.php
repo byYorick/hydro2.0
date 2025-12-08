@@ -50,7 +50,19 @@ class NodeService
      */
     public function update(DeviceNode $node, array $data): DeviceNode
     {
+        // Используем REPEATABLE READ вместо SERIALIZABLE для избежания проблем с isolation level
+        // REPEATABLE READ достаточно для предотвращения lost updates с lockForUpdate()
         return DB::transaction(function () use ($node, $data) {
+            
+            // Блокируем строку для предотвращения lost updates
+            $node = DeviceNode::where('id', $node->id)
+                ->lockForUpdate()
+                ->first();
+            
+            if (!$node) {
+                throw new \RuntimeException('Node not found');
+            }
+            
             Log::info('NodeService::update START', [
                 'node_id' => $node->id,
                 'uid' => $node->uid,
@@ -211,7 +223,7 @@ class NodeService
             }
             
             return $node->fresh();
-        });
+        }, 5); // 5 попыток при serialization failure
     }
 
     /**

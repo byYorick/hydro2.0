@@ -36,6 +36,11 @@ class AppServiceProvider extends ServiceProvider
     {
         Vite::prefetch(concurrency: 3);
         
+        // Настройка rate limiting для регистрации нод
+        \Illuminate\Support\Facades\RateLimiter::for('node_register', function (\Illuminate\Http\Request $request) {
+            return \Illuminate\Cache\RateLimiting\Limit::perMinute(10)->by($request->ip());
+        });
+        
         // Регистрация слушателей событий
         Event::listen(
             ZoneUpdated::class,

@@ -139,6 +139,10 @@ class PythonBridgeService
             'channel' => $channel,
             'cmd_id' => $cmdId, // Pass Laravel's cmd_id to Python service
         ];
+        
+        // Подписываем команду HMAC подписью
+        $signatureService = app(\App\Services\CommandSignatureService::class);
+        $requestData = $signatureService->signCommand($node, $requestData);
 
         try {
             $this->sendWithRetry(
@@ -222,6 +226,10 @@ class PythonBridgeService
             'channel' => $payload['channel'] ?? null,
             'cmd_id' => $cmdId, // Pass Laravel's cmd_id to Python service
         ];
+        
+        // Подписываем команду HMAC подписью
+        $signatureService = app(\App\Services\CommandSignatureService::class);
+        $requestData = $signatureService->signCommand($node, $requestData);
 
         try {
             $this->sendWithRetry(

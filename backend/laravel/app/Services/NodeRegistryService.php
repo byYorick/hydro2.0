@@ -114,124 +114,206 @@ class NodeRegistryService
      */
     public function registerNodeFromHello(array $helloData): DeviceNode
     {
-        return DB::transaction(function () use ($helloData) {
-            $hardwareId = $helloData['hardware_id'] ?? null;
-            if (!$hardwareId) {
-                throw new \InvalidArgumentException('hardware_id is required');
-            }
-            
-            // Ищем узел по hardware_id
-            $node = DeviceNode::where('hardware_id', $hardwareId)->first();
-            
-            // Если узел не найден, создаём новый
-            if (!$node) {
-                // Генерируем uid на основе hardware_id и типа узла
-                $nodeType = $helloData['node_type'] ?? 'unknown';
-                $uid = $this->generateNodeUid($hardwareId, $nodeType);
-                
-                // Проверяем уникальность uid
-                $counter = 1;
-                while (DeviceNode::where('uid', $uid)->exists()) {
-                    $uid = $this->generateNodeUid($hardwareId, $nodeType, $counter);
-                    $counter++;
-                }
-                
-                $node = new DeviceNode();
-                $node->uid = $uid;
-                $node->hardware_id = $hardwareId;
-                $node->type = $nodeType;
-                $node->first_seen_at = now();
-                // Новые ноды с временными конфигами регистрируются как REGISTERED_BACKEND
-                // Когда нода получит реальные конфиги и будет привязана к зоне, состояние изменится на ASSIGNED_TO_ZONE
-                $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
-            }
-            
-            // Обновляем атрибуты
-            if (isset($helloData['fw_version'])) {
-                $node->fw_version = $helloData['fw_version'];
-            }
-            
-            if (isset($helloData['hardware_revision'])) {
-                $node->hardware_revision = $helloData['hardware_revision'];
-            }
-            
-            // Обработка provisioning_meta
-            $provisioningMeta = $helloData['provisioning_meta'] ?? [];
-            
-            if (isset($provisioningMeta['node_name'])) {
-                $node->name = $provisioningMeta['node_name'];
-            }
-            
-            // КРИТИЧНО: Автопривязка к зоне через greenhouse_token УДАЛЕНА
-            // Привязка должна происходить только после явного действия пользователя (нажатие кнопки "Привязать")
-            // Если указан greenhouse_token или zone_id, игнорируем их и логируем предупреждение
-            if (isset($provisioningMeta['greenhouse_token']) || isset($provisioningMeta['zone_id'])) {
-                Log::info('Node registration: provisioning_meta contains greenhouse_token or zone_id, but auto-binding is disabled. Node will remain unbound until user manually attaches it.', [
-                    'node_id' => $node->id,
-                    'hardware_id' => $hardwareId,
-                    'has_greenhouse_token' => isset($provisioningMeta['greenhouse_token']),
-                    'has_zone_id' => isset($provisioningMeta['zone_id']),
-                    'zone_id' => $provisioningMeta['zone_id'] ?? null,
-                ]);
-            }
-            
-            // Устанавливаем lifecycle_state
-            // Всегда оставляем REGISTERED_BACKEND - переход в ASSIGNED_TO_ZONE произойдет
-            // только после успешной публикации конфига через PublishNodeConfigOnUpdate
-            if (!$node->id || !$node->lifecycle_state) {
-                // Новый узел - всегда REGISTERED_BACKEND, даже если есть zone_id
-                // (нода с временными конфигами еще не привязана к реальной зоне)
-                $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
-            }
-            // Для существующих узлов не меняем lifecycle_state здесь
-            // Переход в ASSIGNED_TO_ZONE произойдет только после успешной публикации конфига
-            
-            // Отмечаем как validated
-            $node->validated = true;
-            
-            $node->save();
-            
-            // Создаём каналы из capabilities
-            $this->syncNodeChannelsFromCapabilities($node, $helloData['capabilities'] ?? []);
-            
-            // Очищаем кеш списка устройств и статистики для всех пользователей
-            // Вместо Cache::flush() используем более безопасную очистку только связанных ключей
-            // Это предотвращает DoS через частые node_hello запросы
-            // Очищаем только кеш, связанный с устройствами
-            $cachePrefixes = ['devices_list_', 'nodes_list_', 'node_stats_'];
-            foreach ($cachePrefixes as $prefix) {
-                // Laravel Cache не поддерживает поиск по префиксу напрямую
-                // Используем tags, если они доступны, или ограничиваем очистку
-                // В production лучше использовать Redis с поддержкой SCAN
-                if (config('cache.default') === 'redis') {
-                    // Для Redis можно использовать более точную очистку через tags
-                    // Но пока просто не очищаем весь кеш - это безопаснее
-                    // Кеш устареет естественным образом через TTL
-                    Log::debug('NodeRegistryService: Skipping cache flush for security', [
+        $maxRetries = 5;
+        $attempt = 0;
+        
+        while ($attempt < $maxRetries) {
+            try {
+                return DB::transaction(function () use ($helloData) {
+                    // Устанавливаем SERIALIZABLE isolation level для критической операции
+                    DB::statement('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE');
+                    
+                    $hardwareId = $helloData['hardware_id'] ?? null;
+                    if (!$hardwareId) {
+                        throw new \InvalidArgumentException('hardware_id is required');
+                    }
+                    
+                    // Ищем узел по hardware_id с блокировкой для атомарности
+                    $node = DeviceNode::where('hardware_id', $hardwareId)
+                        ->lockForUpdate()
+                        ->first();
+                    
+                    // Если узел не найден, создаём новый с retry логикой при UID коллизии
+                    if (!$node) {
+                        $nodeType = $helloData['node_type'] ?? 'unknown';
+                        $maxAttempts = 5;
+                        $uidAttempt = 0;
+                        
+                        while ($uidAttempt < $maxAttempts) {
+                            try {
+                                $uid = $this->generateNodeUid($hardwareId, $nodeType, $uidAttempt);
+                                
+                                $node = new DeviceNode();
+                                $node->uid = $uid;
+                                $node->hardware_id = $hardwareId;
+                                $node->type = $nodeType;
+                                $node->first_seen_at = now();
+                                // Новые ноды с временными конфигами регистрируются как REGISTERED_BACKEND
+                                // Когда нода получит реальные конфиги и будет привязана к зоне, состояние изменится на ASSIGNED_TO_ZONE
+                                $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
+                                
+                                $node->save();
+                                
+                                // Успех - выходим из цикла
+                                Log::info('Node created successfully', [
+                                    'node_id' => $node->id,
+                                    'uid' => $uid,
+                                    'hardware_id' => $hardwareId,
+                                    'attempt' => $uidAttempt,
+                                ]);
+                                
+                                break;
+                                
+                            } catch (\Illuminate\Database\QueryException $e) {
+                                // Проверяем, является ли это ошибкой уникального ограничения
+                                if ($e->getCode() === '23505' || str_contains($e->getMessage(), 'duplicate key value')) {
+                                    $uidAttempt++;
+                                    
+                                    if ($uidAttempt >= $maxAttempts) {
+                                        Log::error('Failed to generate unique UID after max attempts', [
+                                            'hardware_id' => $hardwareId,
+                                            'max_attempts' => $maxAttempts,
+                                        ]);
+                                        throw new \RuntimeException('Failed to register node: UID generation failed after ' . $maxAttempts . ' attempts');
+                                    }
+                                    
+                                    Log::warning('UID collision detected, retrying', [
+                                        'hardware_id' => $hardwareId,
+                                        'attempt' => $uidAttempt,
+                                        'uid' => $uid ?? 'unknown',
+                                    ]);
+                                    
+                                    // Exponential backoff: 100ms, 200ms, 300ms, ...
+                                    usleep(100000 * $uidAttempt);
+                                } else {
+                                    // Другая ошибка - пробрасываем дальше
+                                    throw $e;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Обновляем атрибуты
+                    $this->updateNodeAttributes($node, $helloData);
+                    
+                    // КРИТИЧНО: Автопривязка к зоне через greenhouse_token УДАЛЕНА
+                    // Привязка должна происходить только после явного действия пользователя (нажатие кнопки "Привязать")
+                    // Если указан greenhouse_token или zone_id, игнорируем их и логируем предупреждение
+                    $provisioningMeta = $helloData['provisioning_meta'] ?? [];
+                    if (isset($provisioningMeta['greenhouse_token']) || isset($provisioningMeta['zone_id'])) {
+                        Log::info('Node registration: provisioning_meta contains greenhouse_token or zone_id, but auto-binding is disabled. Node will remain unbound until user manually attaches it.', [
+                            'node_id' => $node->id,
+                            'hardware_id' => $hardwareId,
+                            'has_greenhouse_token' => isset($provisioningMeta['greenhouse_token']),
+                            'has_zone_id' => isset($provisioningMeta['zone_id']),
+                            'zone_id' => $provisioningMeta['zone_id'] ?? null,
+                        ]);
+                    }
+                    
+                    // Устанавливаем lifecycle_state
+                    // Всегда оставляем REGISTERED_BACKEND - переход в ASSIGNED_TO_ZONE произойдет
+                    // только после успешной публикации конфига через PublishNodeConfigOnUpdate
+                    if (!$node->id || !$node->lifecycle_state) {
+                        // Новый узел - всегда REGISTERED_BACKEND, даже если есть zone_id
+                        // (нода с временными конфигами еще не привязана к реальной зоне)
+                        $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
+                    }
+                    // Для существующих узлов не меняем lifecycle_state здесь
+                    // Переход в ASSIGNED_TO_ZONE произойдет только после успешной публикации конфига
+                    
+                    // Отмечаем как validated
+                    $node->validated = true;
+                    
+                    $node->save();
+                    
+                    // Создаём каналы из capabilities
+                    $this->syncNodeChannelsFromCapabilities($node, $helloData['capabilities'] ?? []);
+                    
+                    // Очищаем кеш списка устройств и статистики для всех пользователей
+                    // Вместо Cache::flush() используем более безопасную очистку только связанных ключей
+                    // Это предотвращает DoS через частые node_hello запросы
+                    // Очищаем только кеш, связанный с устройствами
+                    $cachePrefixes = ['devices_list_', 'nodes_list_', 'node_stats_'];
+                    foreach ($cachePrefixes as $prefix) {
+                        // Laravel Cache не поддерживает поиск по префиксу напрямую
+                        // Используем tags, если они доступны, или ограничиваем очистку
+                        // В production лучше использовать Redis с поддержкой SCAN
+                        if (config('cache.default') === 'redis') {
+                            // Для Redis можно использовать более точную очистку через tags
+                            // Но пока просто не очищаем весь кеш - это безопаснее
+                            // Кеш устареет естественным образом через TTL
+                            Log::debug('NodeRegistryService: Skipping cache flush for security', [
+                                'node_id' => $node->id,
+                                'cache_driver' => config('cache.default'),
+                            ]);
+                        } else {
+                            // Для других драйверов кеша не очищаем глобально
+                            // Кеш устареет естественным образом
+                            Log::debug('NodeRegistryService: Skipping cache flush for security', [
+                                'node_id' => $node->id,
+                                'cache_driver' => config('cache.default'),
+                            ]);
+                        }
+                    }
+                    
+                    Log::info('Node registered from node_hello', [
                         'node_id' => $node->id,
-                        'cache_driver' => config('cache.default'),
+                        'uid' => $node->uid,
+                        'hardware_id' => $hardwareId,
+                        'zone_id' => $node->zone_id,
+                        'lifecycle_state' => $node->lifecycle_state?->value,
+                        'channels_count' => $node->channels()->count(),
                     ]);
+                    
+                    return $node;
+                }, 5); // 5 попыток при serialization failure
+            } catch (\Illuminate\Database\QueryException $e) {
+                // Проверяем, является ли это serialization failure
+                if ($e->getCode() === '40001' || str_contains($e->getMessage(), 'serialization failure')) {
+                    $attempt++;
+                    
+                    if ($attempt >= $maxRetries) {
+                        Log::error('Failed to register node after max retries due to serialization failure', [
+                            'hardware_id' => $helloData['hardware_id'] ?? 'unknown',
+                            'max_retries' => $maxRetries,
+                        ]);
+                        throw new \RuntimeException('Failed to register node: serialization failure after ' . $maxRetries . ' attempts');
+                    }
+                    
+                    Log::warning('Serialization failure detected, retrying transaction', [
+                        'hardware_id' => $helloData['hardware_id'] ?? 'unknown',
+                        'attempt' => $attempt,
+                    ]);
+                    
+                    // Exponential backoff: 50ms, 100ms, 150ms, ...
+                    usleep(50000 * $attempt);
                 } else {
-                    // Для других драйверов кеша не очищаем глобально
-                    // Кеш устареет естественным образом
-                    Log::debug('NodeRegistryService: Skipping cache flush for security', [
-                        'node_id' => $node->id,
-                        'cache_driver' => config('cache.default'),
-                    ]);
+                    // Другая ошибка - пробрасываем дальше
+                    throw $e;
                 }
             }
-            
-            Log::info('Node registered from node_hello', [
-                'node_id' => $node->id,
-                'uid' => $node->uid,
-                'hardware_id' => $hardwareId,
-                'zone_id' => $node->zone_id,
-                'lifecycle_state' => $node->lifecycle_state?->value,
-                'channels_count' => $node->channels()->count(),
-            ]);
-            
-            return $node;
-        });
+        }
+        
+        throw new \RuntimeException('Failed to register node: max retries exceeded');
+    }
+    
+    /**
+     * Обновить атрибуты узла из helloData.
+     */
+    private function updateNodeAttributes(DeviceNode $node, array $helloData): void
+    {
+        if (isset($helloData['fw_version'])) {
+            $node->fw_version = $helloData['fw_version'];
+        }
+        
+        if (isset($helloData['hardware_revision'])) {
+            $node->hardware_revision = $helloData['hardware_revision'];
+        }
+        
+        $provisioningMeta = $helloData['provisioning_meta'] ?? [];
+        if (isset($provisioningMeta['node_name'])) {
+            $node->name = $provisioningMeta['node_name'];
+        }
     }
     
     /**

@@ -113,10 +113,18 @@ mqtt-bridge/
 - Батчинг и upsert в `telemetry_samples`
 - Обновление `telemetry_last`
 - Обработка ошибок и реконнект
+- **Batch processing оптимизации:**
+  - Кеш `uid→id` с TTL refresh (60 секунд) для зон и нод
+  - Batch resolve недостающих UID (один запрос вместо N)
+  - Batch insert для `telemetry_samples`
+  - Batch upsert для `telemetry_last` (один запрос для всех обновлений)
+  - Backpressure при >90% заполнения очереди (sampling)
+  - Метрики: `queue_size`, `dropped`, `overflow`
 
 **Зависимости:**
 - MQTT Broker
 - PostgreSQL
+- Redis (для очереди телеметрии)
 
 **Структура:**
 ```
@@ -129,9 +137,13 @@ history-logger/
 
 **Алгоритм:**
 1. Подписка на MQTT топики телеметрии
-2. Накопление сообщений в батч
-3. Периодическая запись батча в БД (upsert)
-4. Обновление `telemetry_last` для последних значений
+2. Накопление сообщений в Redis очередь
+3. Периодическая обработка батча из очереди:
+   - Использование кеша для резолва zone_id/node_id
+   - Batch resolve недостающих UID
+   - Batch insert в `telemetry_samples`
+   - Batch upsert в `telemetry_last`
+4. Мониторинг размера очереди и backpressure
 
 ---
 
@@ -147,6 +159,15 @@ history-logger/
 - Сравнение текущих значений с targets (pH, EC)
 - Публикация команд корректировки через MQTT
 - Мониторинг через Prometheus
+- **Адаптивная конкурентность:**
+  - Автоматический расчет оптимального количества параллельных зон
+  - Формула: `concurrency = (total_zones * avg_time) / target_cycle_time`
+  - Диапазон: 5-50 параллельных зон
+  - Метрики: `optimal_concurrency`, `zone_processing_time`, `zone_processing_errors`
+- **Обработка ошибок:**
+  - Явный учет ошибок по зонам в `process_zones_parallel()`
+  - Метрики `zone_processing_errors` с детализацией по зонам
+  - Алерты при >10% ошибок за цикл
 
 **Зависимости:**
 - MQTT Broker
@@ -157,6 +178,8 @@ history-logger/
 ```
 automation-engine/
 ├── main.py          # Основной цикл проверки зон
+├── config/
+│   └── settings.py  # Настройки (ADAPTIVE_CONCURRENCY, TARGET_CYCLE_TIME_SEC)
 ├── test_main.py     # Тесты
 ├── requirements.txt
 ├── Dockerfile
@@ -166,11 +189,13 @@ automation-engine/
 **Алгоритм:**
 1. Загрузка полной конфигурации из Laravel API
 2. Получение активных зон с рецептами из БД
-3. Для каждой зоны:
+3. Расчет оптимальной конкурентности (если включена адаптивность)
+4. Параллельная обработка зон с ограничением конкурентности:
    - Получение текущих значений из `telemetry_last`
    - Сравнение с targets из рецепта
    - Публикация команд корректировки при отклонении
-4. Повтор каждые 15 секунд
+   - Отслеживание ошибок и метрик
+5. Повтор каждые 15 секунд
 
 ---
 

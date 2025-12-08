@@ -8,7 +8,9 @@ from datetime import datetime
 from common.env import get_settings
 from common.mqtt import MqttClient
 from common.db import fetch, execute, create_zone_event, create_ai_log
-from prometheus_client import Counter, Histogram, start_http_server
+from prometheus_client import Counter, Histogram, Gauge, start_http_server
+import math
+import time
 from common.service_logs import send_service_log
 
 # Настройка логирования
@@ -48,6 +50,27 @@ from exceptions import InvalidConfigurationError
 # - COMMANDS_SENT и MQTT_PUBLISH_ERRORS в infrastructure/command_bus.py
 # Импортируем метрики для регистрации в REGISTRY до запуска start_http_server
 from services.zone_automation_service import ZONE_CHECKS, CHECK_LAT
+
+# Метрики для адаптивной конкурентности
+ZONE_PROCESSING_TIME = Histogram(
+    "zone_processing_time_seconds",
+    "Time to process a single zone",
+    buckets=[0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0]
+)
+ZONE_PROCESSING_ERRORS = Counter(
+    "zone_processing_errors_total",
+    "Errors during zone processing",
+    ["zone_id", "error_type"]
+)
+OPTIMAL_CONCURRENCY = Gauge(
+    "optimal_concurrency_zones",
+    "Calculated optimal concurrency for zone processing"
+)
+
+# Глобальное хранилище для среднего времени обработки (скользящее среднее)
+_avg_processing_time = 1.0
+_processing_times = []  # Последние 100 измерений
+_MAX_SAMPLES = 100
 
 
 def validate_config(cfg: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
@@ -229,35 +252,139 @@ def validate_zone_id(zone_id: Any) -> int:
     return zone_id
 
 
+async def calculate_optimal_concurrency(
+    total_zones: int,
+    target_cycle_time: int,
+    avg_zone_processing_time: float
+) -> int:
+    """
+    Вычислить оптимальное количество параллельных зон.
+    
+    Формула: concurrency = (total_zones * avg_time) / target_cycle_time
+    
+    Args:
+        total_zones: Общее количество зон
+        target_cycle_time: Целевое время цикла в секундах
+        avg_zone_processing_time: Среднее время обработки одной зоны в секундах
+    
+    Returns:
+        Оптимальное количество параллельных зон
+    """
+    if avg_zone_processing_time <= 0:
+        # Если нет данных, используем дефолтное значение
+        return 5
+    
+    optimal = math.ceil((total_zones * avg_zone_processing_time) / target_cycle_time)
+    
+    # Ограничиваем диапазон
+    min_concurrency = 5
+    max_concurrency = 50  # Защита от перегрузки
+    
+    return max(min_concurrency, min(optimal, max_concurrency))
+
+
 async def process_zones_parallel(
     zones: List[Dict[str, Any]],
     zone_service: ZoneAutomationService,
     max_concurrent: int = 5
-) -> None:
+) -> Dict[str, Any]:
     """
-    Обработка зон параллельно с ограничением количества одновременных операций.
+    Обработка зон параллельно с ограничением количества одновременных операций и отслеживанием ошибок.
     
     Args:
         zones: Список зон для обработки
         zone_service: Сервис автоматизации зон
         max_concurrent: Максимальное количество одновременных операций
+    
+    Returns:
+        Dict с результатами: {'total': int, 'success': int, 'failed': int, 'errors': List[Dict]}
     """
+    results = {
+        'total': len(zones),
+        'success': 0,
+        'failed': 0,
+        'errors': []
+    }
+    
     semaphore = asyncio.Semaphore(max_concurrent)
     
-    async def process_zone(zone_row: Dict[str, Any]) -> None:
-        """Обработка одной зоны с ограничением через semaphore."""
+    async def process_with_tracking(zone_row: Dict[str, Any]) -> None:
+        """Обработка зоны с отслеживанием результата."""
+        zone_id = zone_row.get("id")
+        zone_name = zone_row.get("name", "unknown")
+        
         async with semaphore:
-            zone_id = zone_row["id"]
             try:
+                start = time.time()
                 await zone_service.process_zone(zone_id)
+                duration = time.time() - start
+                
+                ZONE_PROCESSING_TIME.observe(duration)
+                
+                # Обновляем скользящее среднее
+                global _avg_processing_time, _processing_times
+                _processing_times.append(duration)
+                if len(_processing_times) > _MAX_SAMPLES:
+                    _processing_times.pop(0)
+                _avg_processing_time = sum(_processing_times) / len(_processing_times)
+                
+                results['success'] += 1
+                
+                logger.debug(f"Zone {zone_id} processed successfully ({duration:.2f}s)")
+                
             except Exception as e:
+                results['failed'] += 1
+                error_info = {
+                    'zone_id': zone_id,
+                    'zone_name': zone_name,
+                    'error': str(e),
+                    'error_type': type(e).__name__,
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+                results['errors'].append(error_info)
+                
+                ZONE_PROCESSING_ERRORS.labels(
+                    zone_id=str(zone_id),
+                    error_type=type(e).__name__
+                ).inc()
+                
                 from error_handler import handle_zone_error
                 handle_zone_error(zone_id, e, {"action": "process_zone"})
-                # Продолжаем с другими зонами даже если одна упала
+                
+                logger.error(
+                    f"Error processing zone {zone_id}: {e}",
+                    exc_info=True,
+                    extra={'zone_id': zone_id, 'zone_name': zone_name}
+                )
     
     # Создаем задачи для всех зон и выполняем их параллельно
-    tasks = [process_zone(zone_row) for zone_row in zones]
-    await asyncio.gather(*tasks, return_exceptions=True)
+    tasks = [process_with_tracking(zone_row) for zone_row in zones]
+    await asyncio.gather(*tasks)
+    
+    # Логируем общий результат
+    logger.info(
+        f"Zone processing completed: {results['success']}/{results['total']} success, "
+        f"{results['failed']} failed"
+    )
+    
+    # Отправляем алерты при критическом количестве ошибок
+    if results['failed'] > 0:
+        failure_rate = results['failed'] / results['total']
+        
+        if failure_rate > 0.1:  # >10% ошибок
+            severity = 'warning' if failure_rate < 0.3 else 'critical'
+            logger.warning(
+                f"High zone processing failure rate: {failure_rate:.1%}",
+                extra={
+                    'total': results['total'],
+                    'failed': results['failed'],
+                    'failure_rate': failure_rate,
+                    'severity': severity,
+                    'errors': results['errors'][:10]  # Первые 10 ошибок
+                }
+            )
+    
+    return results
 
 
 # DEPRECATED: Используйте ZoneAutomationService.process_zone() вместо этой функции
@@ -434,12 +561,40 @@ async def main():
                 # Get active zones with recipes
                 zones = await zone_repo.get_active_zones()
                 
-                # Параллельная обработка зон с ограничением количества одновременных операций
+                # Параллельная обработка зон с адаптивной конкурентностью
                 if zones:
-                    await process_zones_parallel(
+                    # Вычисляем оптимальную конкурентность, если включена адаптивность
+                    if automation_settings.ADAPTIVE_CONCURRENCY:
+                        global _avg_processing_time
+                        optimal_concurrency = await calculate_optimal_concurrency(
+                            total_zones=len(zones),
+                            target_cycle_time=automation_settings.TARGET_CYCLE_TIME_SEC,
+                            avg_zone_processing_time=_avg_processing_time
+                        )
+                        
+                        OPTIMAL_CONCURRENCY.set(optimal_concurrency)
+                        
+                        logger.info(
+                            f"Adaptive concurrency: {optimal_concurrency} zones "
+                            f"(avg time: {_avg_processing_time:.2f}s, target cycle: {automation_settings.TARGET_CYCLE_TIME_SEC}s)"
+                        )
+                        
+                        max_concurrent = optimal_concurrency
+                    else:
+                        max_concurrent = automation_settings.MAX_CONCURRENT_ZONES
+                    
+                    # Обрабатываем зоны с отслеживанием результатов
+                    results = await process_zones_parallel(
                         zones, zone_service,
-                        max_concurrent=automation_settings.MAX_CONCURRENT_ZONES
+                        max_concurrent=max_concurrent
                     )
+                    
+                    # Логируем результаты для мониторинга
+                    if results['failed'] > 0:
+                        logger.warning(
+                            f"Zone processing completed with errors: {results['success']}/{results['total']} success, "
+                            f"{results['failed']} failed"
+                        )
             except KeyboardInterrupt:
                 logger.info("Received interrupt signal, shutting down")
                 break

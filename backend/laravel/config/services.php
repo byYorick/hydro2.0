@@ -72,4 +72,8 @@ return [
         'password' => env('WIFI_PASSWORD', ''),
     ],
 
+    'node_registration' => [
+        'allowed_ips' => env('NODE_REGISTRATION_ALLOWED_IPS', '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16'),
+    ],
+
 ];

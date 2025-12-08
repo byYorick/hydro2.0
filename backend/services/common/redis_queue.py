@@ -3,10 +3,27 @@ Redis queue для буферизации телеметрии перед зап
 """
 import json
 import logging
+import random
 from datetime import datetime
 from typing import Optional, List
 from dataclasses import dataclass, asdict
 from pydantic import BaseModel
+
+try:
+    from prometheus_client import Counter, Gauge
+    QUEUE_SIZE = Gauge("telemetry_queue_size", "Current size of telemetry queue")
+    QUEUE_DROPPED = Counter("telemetry_queue_dropped_total", "Dropped messages due to queue overflow")
+    QUEUE_OVERFLOW_ALERTS = Counter("telemetry_queue_overflow_alerts_total", "Number of overflow alerts sent")
+except ImportError:
+    # Prometheus не установлен - создаем заглушки
+    class _Counter:
+        def inc(self, *args, **kwargs): pass
+        def labels(self, *args, **kwargs): return self
+    class _Gauge:
+        def set(self, *args, **kwargs): pass
+    QUEUE_SIZE = _Gauge()
+    QUEUE_DROPPED = _Counter()
+    QUEUE_OVERFLOW_ALERTS = _Counter()
 
 try:
     import redis.asyncio as redis_async
@@ -90,7 +107,7 @@ class TelemetryQueue:
     
     async def push(self, item: TelemetryQueueItem) -> bool:
         """
-        Добавить элемент в очередь.
+        Добавить элемент в очередь с мониторингом и backpressure.
         
         Returns:
             True если успешно, False если очередь переполнена или ошибка
@@ -100,17 +117,88 @@ class TelemetryQueue:
             
             # Проверяем размер очереди
             size = await self._client.llen(self.QUEUE_KEY)
+            QUEUE_SIZE.set(size)
+            
+            # Backpressure: применяем sampling при >90% заполнения
+            utilization = size / self.MAX_QUEUE_SIZE if self.MAX_QUEUE_SIZE > 0 else 0.0
+            if utilization > 0.9:
+                # Пропускаем 50% сообщений при 90-95% заполнении
+                # Пропускаем 80% сообщений при >95% заполнении
+                sample_rate = 0.5 if utilization < 0.95 else 0.2
+                if random.random() > sample_rate:
+                    QUEUE_DROPPED.labels(reason="backpressure").inc()
+                    logger.warning(
+                        f"Dropping telemetry due to backpressure (queue {utilization:.1%} full)",
+                        extra={'queue_utilization': utilization, 'queue_size': size}
+                    )
+                    return False
+            
+            # Защита от переполнения
             if size >= self.MAX_QUEUE_SIZE:
-                logger.warning(f"Telemetry queue is full ({size} items), dropping message")
+                QUEUE_DROPPED.labels(reason="overflow").inc()
+                
+                # Отправляем алерт при критическом переполнении (>95%)
+                if size >= self.MAX_QUEUE_SIZE * 0.95:
+                    await self._send_overflow_alert(size)
+                
+                logger.warning(
+                    f"Telemetry queue is full ({size} items), dropping message",
+                    extra={
+                        'queue_size': size,
+                        'max_size': self.MAX_QUEUE_SIZE,
+                        'utilization': f"{utilization:.1%}"
+                    }
+                )
                 return False
             
             # Добавляем в очередь
+            item.enqueued_at = datetime.utcnow()  # Устанавливаем время добавления
             await self._client.rpush(self.QUEUE_KEY, item.to_json())
             return True
             
         except Exception as e:
             logger.error(f"Failed to push to telemetry queue: {e}", exc_info=True)
             return False
+    
+    async def _send_overflow_alert(self, current_size: int):
+        """Отправить алерт о переполнении очереди."""
+        try:
+            await self._ensure_client()
+            
+            # Throttling: не отправляем чаще 1 раза в минуту
+            throttle_key = "alert_throttle:queue_overflow"
+            if await self._client.exists(throttle_key):
+                return
+            
+            await self._client.setex(throttle_key, 60, "1")  # 60 секунд
+            
+            QUEUE_OVERFLOW_ALERTS.inc()
+            
+            logger.error(
+                f"CRITICAL: Telemetry queue overflow! Size: {current_size}/{self.MAX_QUEUE_SIZE}",
+                extra={
+                    'queue_size': current_size,
+                    'max_size': self.MAX_QUEUE_SIZE,
+                    'utilization': f"{current_size/self.MAX_QUEUE_SIZE:.1%}"
+                }
+            )
+            
+            # Отправляем в систему алертов (если доступна)
+            try:
+                from common.db import create_zone_event
+                await create_zone_event(
+                    zone_id=None,  # Системный алерт
+                    event_type='system_queue_overflow',
+                    details={
+                        'queue_size': current_size,
+                        'max_size': self.MAX_QUEUE_SIZE,
+                        'severity': 'critical'
+                    }
+                )
+            except Exception as e:
+                logger.warning(f"Failed to create zone event for queue overflow: {e}")
+        except Exception as e:
+            logger.error(f"Failed to send overflow alert: {e}", exc_info=True)
     
     async def pop_batch(self, batch_size: int) -> List[TelemetryQueueItem]:
         """

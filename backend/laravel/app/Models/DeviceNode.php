@@ -45,6 +45,13 @@ class DeviceNode extends Model
         'lifecycle_state' => NodeLifecycleState::class,
     ];
 
+    /**
+     * Атрибуты, которые должны быть скрыты при сериализации.
+     */
+    protected $hidden = [
+        'config', // Никогда не сериализуется в JSON (защита Wi-Fi паролей и MQTT кредов)
+    ];
+
     protected $attributes = [
         'lifecycle_state' => NodeLifecycleState::UNPROVISIONED->value,
         'status' => 'offline',
