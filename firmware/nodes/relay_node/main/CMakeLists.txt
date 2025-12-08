@@ -21,6 +21,7 @@ idf_component_register(
         heartbeat_task
         connection_status
         relay_driver
+        factory_reset_button
         driver
         esp_wifi
         nvs_flash

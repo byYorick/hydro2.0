@@ -16,9 +16,10 @@ class NodeConfigService
      * @param DeviceNode $node
      * @param int|null $version Версия конфига (если не указана, используется текущая версия из БД или 1)
      * @param bool $includeCredentials Включать ли Wi-Fi пароли и MQTT креды (по умолчанию false для безопасности)
+     * @param bool $isBindingMode true, если конфиг публикуется во время привязки (pending_zone_id установлена, zone_id ещё нет)
      * @return array
      */
-    public function generateNodeConfig(DeviceNode $node, ?int $version = null, bool $includeCredentials = false): array
+    public function generateNodeConfig(DeviceNode $node, ?int $version = null, bool $includeCredentials = false, bool $isBindingMode = false): array
     {
         // Загружаем каналы узла и связанные данные
         $node->load(['channels', 'zone.greenhouse']);
@@ -43,38 +44,61 @@ class NodeConfigService
         
         // Формируем channels
         $channels = [];
-        foreach ($node->channels as $channel) {
-            $channelData = [
-                'name' => $channel->channel,
-                'type' => $this->normalizeChannelType($channel->type),
-                'metric' => $channel->metric,
+        $isRelayNode = strtolower($node->type ?? '') === 'relay';
+
+        // В режиме привязки для релейных нод отправляем временный конфиг,
+        // чтобы прошивка корректно инициализировалась до ручной настройки каналов пользователем.
+        if ($isBindingMode && $isRelayNode) {
+            $channels = [
+                [
+                    'name' => 'relay1',
+                    'type' => 'ACTUATOR',
+                    'actuator_type' => 'RELAY',
+                    'gpio' => 26, // временный GPIO, пользователь настроит реальные после привязки
+                    'fail_safe_mode' => 'NO',
+                ],
+                [
+                    'name' => 'relay2',
+                    'type' => 'ACTUATOR',
+                    'actuator_type' => 'RELAY',
+                    'gpio' => 27,
+                    'fail_safe_mode' => 'NO',
+                ],
             ];
-            
-            // Добавляем дополнительные параметры из config канала
-            $channelConfig = $channel->config ?? [];
-            if (!empty($channelConfig)) {
-                // Объединяем с базовыми параметрами
-                $channelData = array_merge($channelData, $channelConfig);
-            }
-            
-            // Добавляем стандартные параметры, если их нет
-            if ($channelData['type'] === 'SENSOR' && !isset($channelData['poll_interval_ms'])) {
-                $channelData['poll_interval_ms'] = 3000; // По умолчанию 3 секунды
-            }
-            
-            if ($channelData['type'] === 'ACTUATOR') {
-                if (!isset($channelData['actuator_type'])) {
-                    $channelData['actuator_type'] = $this->inferActuatorType($channel->channel);
+        } else {
+            foreach ($node->channels as $channel) {
+                $channelData = [
+                    'name' => $channel->channel,
+                    'type' => $this->normalizeChannelType($channel->type),
+                    'metric' => $channel->metric,
+                ];
+                
+                // Добавляем дополнительные параметры из config канала
+                $channelConfig = $channel->config ?? [];
+                if (!empty($channelConfig)) {
+                    // Объединяем с базовыми параметрами
+                    $channelData = array_merge($channelData, $channelConfig);
                 }
-                if (!isset($channelData['safe_limits'])) {
-                    $channelData['safe_limits'] = [
-                        'max_duration_ms' => 5000,
-                        'min_off_ms' => 3000,
-                    ];
+                
+                // Добавляем стандартные параметры, если их нет
+                if ($channelData['type'] === 'SENSOR' && !isset($channelData['poll_interval_ms'])) {
+                    $channelData['poll_interval_ms'] = 3000; // По умолчанию 3 секунды
                 }
+                
+                if ($channelData['type'] === 'ACTUATOR') {
+                    if (!isset($channelData['actuator_type'])) {
+                        $channelData['actuator_type'] = $this->inferActuatorType($channel->channel);
+                    }
+                    if (!isset($channelData['safe_limits'])) {
+                        $channelData['safe_limits'] = [
+                            'max_duration_ms' => 5000,
+                            'min_off_ms' => 3000,
+                        ];
+                    }
+                }
+                
+                $channels[] = $channelData;
             }
-            
-            $channels[] = $channelData;
         }
         
         // Формируем wifi конфигурацию
@@ -341,4 +365,3 @@ class NodeConfigService
         }
     }
 }
-

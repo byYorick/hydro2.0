@@ -113,7 +113,8 @@ class PublishNodeConfigJob implements ShouldQueue
             }
 
             // Генерируем конфиг с включением credentials для публикации через MQTT
-            $config = $configService->generateNodeConfig($node, null, true);
+            // Передаём флаг привязки, чтобы релейные ноды получили временный конфиг (ACTUATOR) на этапе binding
+            $config = $configService->generateNodeConfig($node, null, true, $isNodeBinding);
 
             // Получаем greenhouse_uid
             $greenhouseUid = $node->zone?->greenhouse?->uid ?? $zoneForConfig?->greenhouse?->uid;

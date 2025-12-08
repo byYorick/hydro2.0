@@ -174,6 +174,12 @@ fi
 mkdir -p /opt/docker/etc/supervisor.d /var/log/supervisor /var/run 2>/dev/null || true
 chmod 755 /opt/docker/etc/supervisor.d /var/log/supervisor /var/run 2>/dev/null || true
 
+# Делегируем supervisorctl на базовый конфиг, чтобы сокет /.supervisor.sock был доступен по умолчанию
+if [ -f /opt/docker/etc/supervisor.conf ]; then
+    mkdir -p /etc/supervisor 2>/dev/null || true
+    ln -sf /opt/docker/etc/supervisor.conf /etc/supervisor/supervisord.conf
+fi
+
 # Добавляем настройки fastcgi_buffers в конфигурацию PHP-FPM для решения проблемы 502 Bad Gateway
 # "upstream sent too big header while reading response header from upstream"
 if [ -f /opt/docker/etc/nginx/vhost.common.d/10-php.conf ]; then
@@ -195,8 +201,10 @@ fi
 # Копируем конфигурацию queue workers
 if [ -f /app/queue-supervisor.conf ]; then
     echo "Copying queue worker supervisor config to base image directory..."
+    # Копируем под понятным именем queue.conf, чтобы supervisor подхватил
+    cp /app/queue-supervisor.conf /opt/docker/etc/supervisor.d/queue.conf
     cp /app/queue-supervisor.conf /opt/docker/etc/supervisor.d/queue-worker.conf
-    chmod 644 /opt/docker/etc/supervisor.d/queue-worker.conf 2>/dev/null || true
+    chmod 644 /opt/docker/etc/supervisor.d/queue.conf /opt/docker/etc/supervisor.d/queue-worker.conf 2>/dev/null || true
 fi
 
 # Vite supervisor only in development mode
@@ -262,4 +270,3 @@ else
     # Execute the provided command
     exec "$@"
 fi
-

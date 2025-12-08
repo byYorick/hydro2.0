@@ -56,9 +56,11 @@ async def lifespan(app: FastAPI):
     await mqtt.subscribe("hydro/+/+/+/node_hello", handle_node_hello)
     # Подписка на config_response для обработки подтверждений установки конфига
     await mqtt.subscribe("hydro/+/+/+/config_response", handle_config_response)
+    # Подписка на command_response для обновления статусов команд (уведомления на фронт)
+    await mqtt.subscribe("hydro/+/+/+/+/command_response", handle_command_response)
     
     logger.info("History Logger service started")
-    logger.info("Subscribed to MQTT topics: hydro/+/+/+/+/telemetry, hydro/+/+/+/heartbeat, hydro/node_hello, hydro/+/+/+/node_hello, hydro/+/+/+/config_response")
+    logger.info("Subscribed to MQTT topics: hydro/+/+/+/+/telemetry, hydro/+/+/+/heartbeat, hydro/node_hello, hydro/+/+/+/node_hello, hydro/+/+/+/config_response, hydro/+/+/+/+/command_response")
     
     yield
     
@@ -175,6 +177,10 @@ CONFIG_RESPONSE_ERROR = Counter("config_response_error_total",
                                ["node_uid"])
 CONFIG_RESPONSE_PROCESSED = Counter("config_response_processed_total",
                                   "Total config_response messages processed")
+COMMAND_RESPONSE_RECEIVED = Counter("command_response_received_total",
+                                   "Total command_response messages received")
+COMMAND_RESPONSE_ERROR = Counter("command_response_error_total",
+                                "Total error command_response messages")
 
 # Дополнительные метрики для мониторинга
 TELEMETRY_QUEUE_SIZE = Gauge("telemetry_queue_size",
@@ -1778,7 +1784,98 @@ def _auth_ingest(request: Request):
                 detail="Unauthorized: token required in production"
             )
         return
-    
+
+
+async def handle_command_response(topic: str, payload: bytes):
+    """
+    Обработчик command_response сообщений от узлов.
+    Обновляет статус команды через Laravel API, чтобы фронт получил уведомление (CommandFailed/CommandStatusUpdated).
+    """
+    try:
+        logger.info(f"[COMMAND_RESPONSE] Received message on topic {topic}, payload length: {len(payload)}")
+        data = _parse_json(payload)
+        if not data or not isinstance(data, dict):
+            logger.warning(f"[COMMAND_RESPONSE] Invalid JSON in command_response from topic {topic}")
+            COMMAND_RESPONSE_ERROR.inc()
+            return
+
+        cmd_id = data.get("cmd_id")
+        raw_status = str(data.get("status", "")).upper()
+        node_uid = _extract_node_uid(topic)
+        channel = _extract_channel_from_topic(topic)
+        gh_uid = _extract_gh_uid(topic)
+
+        if not cmd_id or not raw_status:
+            logger.warning(f"[COMMAND_RESPONSE] Missing cmd_id or status in payload: {data}")
+            COMMAND_RESPONSE_ERROR.inc()
+            return
+
+        # Маппинг статусов прошивки -> статус в Laravel
+        if raw_status in ("ACK", "ACCEPTED"):
+            mapped_status = "accepted"
+        elif raw_status in ("COMPLETED", "OK", "SUCCESS", "DONE"):
+            mapped_status = "completed"
+        elif raw_status in ("ERROR", "FAILED"):
+            mapped_status = "failed"
+        else:
+            logger.warning(f"[COMMAND_RESPONSE] Unknown status '{raw_status}' for cmd_id={cmd_id}")
+            COMMAND_RESPONSE_ERROR.inc()
+            return
+
+        COMMAND_RESPONSE_RECEIVED.inc()
+
+        s = get_settings()
+        laravel_url = s.laravel_api_url if hasattr(s, 'laravel_api_url') else None
+        ingest_token = s.history_logger_api_token if hasattr(s, 'history_logger_api_token') and s.history_logger_api_token else (s.ingest_token if hasattr(s, 'ingest_token') and s.ingest_token else None)
+
+        if not laravel_url:
+            logger.error("[COMMAND_RESPONSE] Laravel API URL not configured, cannot update command status")
+            COMMAND_RESPONSE_ERROR.inc()
+            return
+
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        if ingest_token:
+            headers["Authorization"] = f"Bearer {ingest_token}"
+
+        details = {
+            "error_code": data.get("error_code"),
+            "error_message": data.get("error_message"),
+            "raw_status": raw_status,
+            "node_uid": node_uid,
+            "channel": channel,
+            "gh_uid": gh_uid,
+        }
+        # Убираем None значения
+        details = {k: v for k, v in details.items() if v is not None}
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    f"{laravel_url}/api/python/commands/ack",
+                    headers=headers,
+                    json={
+                        "cmd_id": cmd_id,
+                        "status": mapped_status,
+                        "details": details or None,
+                    },
+                )
+
+            if resp.status_code != 200:
+                logger.warning(f"[COMMAND_RESPONSE] Laravel responded with {resp.status_code}: {resp.text[:200]}")
+                COMMAND_RESPONSE_ERROR.inc()
+            else:
+                logger.info(
+                    f"[COMMAND_RESPONSE] Status '{mapped_status}' pushed to Laravel for cmd_id={cmd_id}, node_uid={node_uid}, channel={channel}"
+                )
+        except Exception as e:
+            logger.error(f"[COMMAND_RESPONSE] Error sending status to Laravel: {e}", exc_info=True)
+            COMMAND_RESPONSE_ERROR.inc()
+    except Exception as e:
+        logger.error(f"[COMMAND_RESPONSE] Unexpected error processing message: {e}", exc_info=True)
+        COMMAND_RESPONSE_ERROR.inc()
     # В dev окружении: если токен настроен, он обязателен
     if s.history_logger_api_token:
         token = request.headers.get("Authorization", "")

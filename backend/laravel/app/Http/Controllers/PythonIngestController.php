@@ -166,9 +166,51 @@ class PythonIngestController extends Controller
             'details' => ['nullable', 'array'],
         ]);
 
-        // Laravel больше не обновляет статусы команд напрямую
-        // Это делает только Python-часть (history-logger через MQTT command_response)
-        // Просто возвращаем подтверждение получения
+        // Обновляем статус команды в БД, чтобы фронт получил broadcast (CommandObserver)
+        $command = \App\Models\Command::where('cmd_id', $data['cmd_id'])->latest('id')->first();
+        if ($command) {
+            $updates = ['status' => $data['status']];
+
+            if ($data['status'] === 'accepted' && ! $command->ack_at) {
+                $updates['ack_at'] = now();
+            }
+            if ($data['status'] === 'completed' && ! $command->ack_at) {
+                $updates['ack_at'] = now();
+            }
+            if ($data['status'] === 'failed') {
+                $updates['failed_at'] = now();
+            }
+
+            $command->update($updates);
+
+            // Дополнительно сразу шлем событие с деталями ошибки/статуса, чтобы фронт получил уведомление
+            $zoneId = $command->zone_id;
+            $details = $data['details'] ?? [];
+            $errorMessage = $details['error_message'] ?? $details['error_code'] ?? null;
+            $message = $details['message'] ?? null;
+
+            if ($data['status'] === 'failed') {
+                event(new \App\Events\CommandFailed(
+                    commandId: $command->cmd_id,
+                    message: $message ?? 'Command failed',
+                    error: $errorMessage,
+                    zoneId: $zoneId
+                ));
+            } else {
+                event(new \App\Events\CommandStatusUpdated(
+                    commandId: $command->cmd_id,
+                    status: $data['status'],
+                    message: $message ?? 'Command status updated',
+                    error: $errorMessage,
+                    zoneId: $zoneId
+                ));
+            }
+        } else {
+            \Log::warning('commandAck: Command not found for cmd_id', [
+                'cmd_id' => $data['cmd_id'],
+                'status' => $data['status'],
+            ]);
+        }
 
         return Response::json(['status' => 'ok']);
     }

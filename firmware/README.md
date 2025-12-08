@@ -11,6 +11,7 @@
   - `i2c_bus/` — I²C шина (MVP_DONE)
   - `oled_ui/` — OLED дисплей UI (MVP_DONE)
   - `logging/` — Система логирования (MVP_DONE)
+  - `factory_reset_button/` — Аппаратный сброс NVS по длинному нажатию кнопки (NEW)
   - `heartbeat_task/` — Задача публикации heartbeat (MVP_DONE)
   - `node_framework/` — Унифицированный фреймворк для всех нод (MVP_DONE)
     - Обработка NodeConfig, команд, телеметрии
@@ -53,6 +54,7 @@
 - ✅ `memory_pool` — MVP_DONE (интегрирован в node_framework)
 - ✅ `oled_ui` — MVP_DONE
 - ✅ `logging` — MVP_DONE
+- ✅ `factory_reset_button` — MVP_DONE
 
 ### Драйверы сенсоров
 - ✅ `ph_sensor` — MVP_DONE (универсальный драйвер)
@@ -67,5 +69,4 @@
 - ⚠️ `ph_node` — скелет создан, частичная реализация
 - ⚠️ `ec_node` — скелет создан, частичная реализация
 - ⚠️ `climate_node` — скелет создан, частичная реализация
-
 
