@@ -1392,7 +1392,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
         Route::get('/{nodeId}', function (string $nodeId) {
             // Support both ID (int) and UID (string) lookup
             $query = DeviceNode::query()
-                ->with(['channels:id,node_id,channel,type,metric,unit', 'zone:id,name']);
+                ->with(['channels:id,node_id,channel,type,metric,unit,config', 'zone:id,name']);
 
             // Try to find by ID if nodeId is numeric, otherwise by UID
             if (is_numeric($nodeId)) {

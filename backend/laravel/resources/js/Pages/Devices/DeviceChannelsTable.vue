@@ -5,16 +5,22 @@
         <tr>
           <th class="px-3 py-2 text-left font-medium border-b border-neutral-800">Channel</th>
           <th class="px-3 py-2 text-left font-medium border-b border-neutral-800">Type</th>
-          <th class="px-3 py-2 text-left font-medium border-b border-neutral-800">Last</th>
+          <th class="px-3 py-2 text-left font-medium border-b border-neutral-800">Config</th>
           <th class="px-3 py-2 text-left font-medium border-b border-neutral-800">Actions</th>
         </tr>
       </thead>
       <tbody>
         <tr v-for="(channel, idx) in channels" :key="idx" class="odd:bg-neutral-950 even:bg-neutral-925">
           <td class="px-3 py-2 border-b border-neutral-900">{{ channel.channel || channel.name || '-' }}</td>
-          <td class="px-3 py-2 border-b border-neutral-900">{{ channel.type || '-' }}</td>
+          <td class="px-3 py-2 border-b border-neutral-900 uppercase">{{ channel.type || '-' }}</td>
           <td class="px-3 py-2 border-b border-neutral-900">
-            {{ channel.metric ? `${channel.metric}${channel.unit ? ` (${channel.unit})` : ''}` : '-' }}
+            <div class="text-xs text-neutral-200">
+              <span v-if="renderConfig(channel)">{{ renderConfig(channel) }}</span>
+              <span v-else>-</span>
+            </div>
+            <div v-if="channel.description || channel.config?.description" class="text-[11px] text-neutral-500">
+              {{ channel.description || channel.config?.description }}
+            </div>
           </td>
           <td class="px-3 py-2 border-b border-neutral-900">
             <div class="flex gap-2">
@@ -103,5 +109,33 @@ function getTestButtonLabel(channelName, channelType) {
   }
   
   return 'Test'
+}
+
+function renderConfig(channel) {
+  if (!channel) return ''
+
+  const cfg = channel.config || {}
+  const metric = channel.metric || cfg.metric
+  const actuatorType = channel.actuator_type || cfg.actuator_type
+  const gpio = channel.gpio ?? cfg.gpio
+  const parts = []
+
+  if (metric) {
+    parts.push(metric)
+  }
+
+  if (actuatorType) {
+    parts.push(actuatorType)
+  }
+
+  if (gpio !== undefined && gpio !== null && gpio !== '') {
+    parts.push(`GPIO ${gpio}`)
+  }
+
+  if (parts.length === 0 && channel.unit) {
+    parts.push(channel.unit)
+  }
+
+  return parts.join(' · ')
 }
 </script>

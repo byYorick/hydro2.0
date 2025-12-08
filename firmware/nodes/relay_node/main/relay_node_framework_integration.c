@@ -63,6 +63,10 @@ static esp_err_t relay_node_init_channel_callback(
                     ESP_LOGI(TAG, "Relay channel %s configured on GPIO %d (will be initialized via relay_driver_init_from_config)", 
                             channel_name, gpio);
                     return ESP_OK;
+                } else {
+                    // Не считаем это критичной ошибкой: пропускаем канал без GPIO, чтобы нода не падала на частичных конфигурациях
+                    ESP_LOGW(TAG, "Relay channel %s has no GPIO specified, skipping initialization", channel_name);
+                    return ESP_OK;
                 }
             }
         }
@@ -86,7 +90,15 @@ static esp_err_t handle_set_state(
     }
 
     cJSON *state_item = cJSON_GetObjectItem(params, "state");
-    if (!cJSON_IsNumber(state_item)) {
+    int state = 0;
+    if (cJSON_IsNumber(state_item)) {
+        state = state_item->valueint;
+    } else if (cJSON_IsBool(state_item)) {
+        state = cJSON_IsTrue(state_item) ? 1 : 0;
+    } else if (cJSON_IsString(state_item) && state_item->valuestring) {
+        state = atoi(state_item->valuestring);
+    } else {
+        ESP_LOGW(TAG, "set_state invalid params: channel=%s, state json type=%d", channel, state_item ? state_item->type : -1);
         *response = node_command_handler_create_response(
             NULL,
             "ERROR",
@@ -96,8 +108,6 @@ static esp_err_t handle_set_state(
         );
         return ESP_ERR_INVALID_ARG;
     }
-
-    int state = state_item->valueint;
     relay_state_t relay_state = (state == 0) ? RELAY_STATE_OPEN : RELAY_STATE_CLOSED;
 
     esp_err_t err = relay_driver_set_state(channel, relay_state);
@@ -266,4 +276,3 @@ void relay_node_framework_register_mqtt_handlers(void) {
         RELAY_NODE_DEFAULT_ZONE_UID
     );
 }
-

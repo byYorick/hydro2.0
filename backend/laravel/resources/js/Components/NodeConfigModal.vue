@@ -257,7 +257,7 @@ async function onPublish() {
 
     // Обновляем устройство в store из ответа API, если он содержит данные
     try {
-      const responseData = response.data?.data || response.data
+      const responseData = response.data?.data?.node || response.data?.data || response.data
       if (responseData?.id) {
         const { useDevicesStore } = await import('@/stores/devices')
         const devicesStore = useDevicesStore()

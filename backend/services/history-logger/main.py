@@ -1440,14 +1440,24 @@ async def handle_config_response(topic: str, payload: bytes):
             # Получаем информацию о ноде и последнем конфиге
             try:
                 # Получаем hardware_id для очистки retained сообщения на временном топике после привязки
-                node_rows = await fetch(
-                    """
-                    SELECT id, uid, lifecycle_state, zone_id, pending_zone_id, config, hardware_id
-                    FROM nodes
-                    WHERE uid = $1
-                    """,
-                    node_uid
-                )
+        node_rows = await fetch(
+            """
+            SELECT n.id,
+                   n.uid,
+                   n.lifecycle_state,
+                   n.zone_id,
+                   n.pending_zone_id,
+                   n.config,
+                   n.hardware_id,
+                   z.uid AS zone_uid,
+                   gh.uid AS gh_uid
+            FROM nodes n
+            LEFT JOIN zones z ON z.id = n.zone_id
+            LEFT JOIN greenhouses gh ON gh.id = z.greenhouse_id
+            WHERE n.uid = $1
+            """,
+            node_uid
+        )
                 
                 if not node_rows or len(node_rows) == 0:
                     logger.warning(f"[CONFIG_RESPONSE] Node {node_uid} not found in database, ignoring ACK")
@@ -1570,6 +1580,7 @@ async def handle_config_response(topic: str, payload: bytes):
                                             logger.warning(f"[CONFIG_RESPONSE] Failed to clear retained message on temp topic {temp_topic}: rc={result.rc}")
                                     except Exception as clear_err:
                                         logger.warning(f"[CONFIG_RESPONSE] Error clearing retained message on temp topic {temp_topic}: {clear_err}")
+                                
                             else:
                                 logger.warning(
                                     f"[CONFIG_RESPONSE] Step 1/2 FAILED: Failed to update zone_id for node {node_uid} (id={node_id}): "
@@ -1577,6 +1588,23 @@ async def handle_config_response(topic: str, payload: bytes):
                                 )
                                 # Если не удалось обновить zone_id, не переводим в ASSIGNED_TO_ZONE
                                 return
+
+                    # Очищаем retained на основном топике конфига, чтобы не слать конфиг заново при переподключениях
+                    gh_uid = node_config.get("gh_uid") or node.get("gh_uid")
+                    zone_segment = node_config.get("zone_uid") or (f"zn-{zone_id}" if zone_id else None)
+                    if gh_uid and zone_segment:
+                        main_topic = f"hydro/{gh_uid}/{zone_segment}/{node_uid}/config"
+                        logger.info(f"[CONFIG_RESPONSE] Clearing retained message on main config topic: {main_topic}")
+                        try:
+                            mqtt = await get_mqtt_client()
+                            base_client = mqtt._client
+                            result = base_client._client.publish(main_topic, "", qos=1, retain=True)
+                            if result.rc == 0:
+                                logger.info(f"[CONFIG_RESPONSE] Retained message cleared on main topic: {main_topic}")
+                            else:
+                                logger.warning(f"[CONFIG_RESPONSE] Failed to clear retained message on main topic {main_topic}: rc={result.rc}")
+                        except Exception as clear_err:
+                            logger.warning(f"[CONFIG_RESPONSE] Error clearing retained message on main topic {main_topic}: {clear_err}")
                     
                     # Step 2: Переводим через service lifecycle API
                     logger.info(f"[CONFIG_RESPONSE] Step 2/2: Transitioning to ASSIGNED_TO_ZONE")

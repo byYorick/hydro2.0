@@ -85,19 +85,47 @@
 
     <div class="grid grid-cols-1 xl:grid-cols-3 gap-3">
       <Card class="xl:col-span-2">
-        <div class="text-sm font-semibold mb-2">Channels</div>
+        <div class="flex items-center justify-between gap-2 mb-2">
+          <div>
+            <div class="text-sm font-semibold">Channels</div>
+            <div class="text-xs text-neutral-500">
+              <span v-if="configLoading">Обновляем конфиг...</span>
+              <span v-else>Текущий конфиг ноды</span>
+              <span v-if="configError" class="text-amber-400 ml-2">{{ configError }}</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <Button size="sm" variant="outline" :disabled="configLoading" @click="loadNodeConfig">
+              {{ configLoading ? 'Обновление...' : 'Обновить' }}
+            </Button>
+            <Button size="sm" @click="showConfigWizard = true">
+              Редактировать конфиг
+            </Button>
+          </div>
+        </div>
         <DeviceChannelsTable 
-          :channels="channels" 
+          :channels="displayChannels" 
           :node-type="device.type"
           :testing-channels="testingChannels"
           @test="onTestPump" 
         />
       </Card>
       <Card>
-        <div class="text-sm font-semibold mb-2">NodeConfig</div>
+        <div class="flex items-center justify-between mb-2">
+          <div class="text-sm font-semibold">NodeConfig</div>
+          <div class="text-[11px] text-neutral-500" v-if="configLoading">Загрузка...</div>
+        </div>
         <pre class="text-xs text-neutral-300 overflow-auto">{{ nodeConfig }}</pre>
       </Card>
     </div>
+
+    <RelayConfigWizard
+      :show="showConfigWizard"
+      :node-id="device.id"
+      :initial-channels="wizardInitialChannels"
+      @close="showConfigWizard = false"
+      @published="onConfigPublished"
+    />
   </AppLayout>
 </template>
 
@@ -110,6 +138,7 @@ import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import NodeLifecycleBadge from '@/Components/NodeLifecycleBadge.vue'
 import DeviceChannelsTable from '@/Pages/Devices/DeviceChannelsTable.vue'
+import RelayConfigWizard from '@/Pages/Devices/RelayConfigWizard.vue'
 import MultiSeriesTelemetryChart from '@/Components/MultiSeriesTelemetryChart.vue'
 import { logger } from '@/utils/logger'
 import { useHistory } from '@/composables/useHistory'
@@ -128,6 +157,10 @@ const page = usePage<PageProps>()
 const device = computed(() => (page.props.device || {}) as Device)
 const channels = computed(() => (device.value.channels || []) as DeviceChannel[])
 const testingChannels = ref<Set<string>>(new Set())
+const nodeConfigData = ref<any | null>(null)
+const configLoading = ref(false)
+const configError = ref('')
+const showConfigWizard = ref(false)
 const detaching = ref(false)
 const { showToast } = useToast()
 const { api } = useApi(showToast)
@@ -151,13 +184,39 @@ const getMetricPriority = (metric: string): number => {
 // Определяем сенсорные каналы (для которых нужны графики)
 // Сортируем так, чтобы температура была первой, влажность второй
 const sensorChannels = computed(() => {
-  const sensors = channels.value.filter(ch => ch.type === 'sensor')
+  const sensors = channels.value.filter(ch => (ch.type || '').toString().toLowerCase() === 'sensor')
   
   return sensors.sort((a, b) => {
     const aMetric = getMetricFromChannel(a)
     const bMetric = getMetricFromChannel(b)
     return getMetricPriority(aMetric) - getMetricPriority(bMetric)
   })
+})
+
+// Каналы из NodeConfig (приоритетнее данных из БД)
+const configChannels = computed(() => {
+  const cfg = nodeConfigData.value
+  if (cfg?.channels && Array.isArray(cfg.channels) && cfg.channels.length > 0) {
+    return cfg.channels.map((ch) => ({
+      channel: ch.name || ch.channel,
+      name: ch.name || ch.channel,
+      type: ch.type || ch.channel_type,
+      metric: ch.metric || ch.metrics || null,
+      unit: ch.unit || null,
+      actuator_type: ch.actuator_type || ch.config?.actuator_type,
+      gpio: ch.gpio ?? ch.config?.gpio ?? null,
+      description: ch.description || ch.config?.description || null,
+      config: ch,
+    }))
+  }
+  return []
+})
+
+const displayChannels = computed(() => {
+  if (configChannels.value.length > 0) {
+    return configChannels.value
+  }
+  return channels.value
 })
 
 // Константы для метрик
@@ -283,22 +342,68 @@ watch(device, (newDevice) => {
 }, { immediate: true })
 
 const nodeConfig = computed(() => {
-  const config = {
+  if (nodeConfigData.value) {
+    return JSON.stringify(nodeConfigData.value, null, 2)
+  }
+
+  const fallback = {
     id: device.value.uid || device.value.id,
     name: device.value.name,
     type: device.value.type,
     status: device.value.status,
     fw_version: device.value.fw_version,
     config: device.value.config,
-    channels: channels.value.map(c => ({
+    channels: displayChannels.value.map(c => ({
       channel: c.channel,
       type: c.type,
       metric: c.metric,
       unit: c.unit,
     })),
   }
-  return JSON.stringify(config, null, 2)
+  return JSON.stringify(fallback, null, 2)
 })
+
+const wizardInitialChannels = computed(() => {
+  if (nodeConfigData.value?.channels) {
+    return nodeConfigData.value.channels
+  }
+
+  if (channels.value.length > 0) {
+    return channels.value.map(ch => ({
+      name: ch.channel,
+      channel: ch.channel,
+      type: ch.type,
+      metric: ch.metric,
+      unit: ch.unit,
+      config: ch.config,
+    }))
+  }
+
+  return []
+})
+
+const loadNodeConfig = async (): Promise<void> => {
+  if (!device.value.id) return
+
+  configLoading.value = true
+  configError.value = ''
+  try {
+    const response = await api.get<{ status: string; data?: Record<string, unknown> }>(
+      `/nodes/${device.value.id}/config`
+    )
+    nodeConfigData.value = response.data?.data || null
+  } catch (error) {
+    configError.value = 'Не удалось загрузить конфиг'
+    logger.error('[Devices/Show] Failed to load node config', error)
+  } finally {
+    configLoading.value = false
+  }
+}
+
+const onConfigPublished = async (): Promise<void> => {
+  await loadNodeConfig()
+  showConfigWizard.value = false
+}
 
 const onRestart = async (): Promise<void> => {
   try {
@@ -374,12 +479,20 @@ const onTestPump = async (channelName: string, channelType: string): Promise<voi
   showToast(`Запуск теста: ${channelLabel}...`, 'info', TOAST_TIMEOUT.SHORT)
   
   try {
-    // Определяем команду в зависимости от типа канала
+    // Для релейной ноды вместо run_pump отправляем set_state
     let commandType = 'run_pump'
-    let params = { duration_ms: 3000 } // 3 секунды
+    let params: Record<string, any> = { duration_ms: 3000 } // 3 секунды по умолчанию
+
+    const nodeTypeLower = (device.value.type || '').toLowerCase()
+    const channelNameLower = (channelName || '').toLowerCase()
+
+    const isRelayNode = nodeTypeLower.includes('relay')
+    const isValve = channelType === 'valve' || channelNameLower.includes('valve')
     
-    // Для клапанов используем другую команду (заглушка)
-    if (channelType === 'valve' || channelName.includes('valve')) {
+    if (isRelayNode) {
+      commandType = 'set_state'
+      params = { state: 1 }
+    } else if (isValve) {
       commandType = 'set_relay'
       params = { state: true, duration_ms: 3000 }
     }
@@ -603,6 +716,9 @@ const getMaxPointsForTimeRange = (timeRange: string): number => {
 
 // Загружаем данные при монтировании компонента
 onMounted(() => {
+  loadNodeConfig().catch((error) => {
+    logger.error('[Devices/Show] Error loading node config on mount:', error)
+  })
   loadAllCharts().catch((error) => {
     logger.error('[Devices/Show] Error loading charts on mount:', error)
   })
@@ -628,6 +744,9 @@ onUnmounted(() => {
 watch(device, (newDevice, oldDevice) => {
   // Если изменился nodeId, нужно переподписаться
   if (newDevice?.id !== oldDevice?.id) {
+    loadNodeConfig().catch((error) => {
+      logger.error('[Devices/Show] Error reloading config on device change:', error)
+    })
     // Отписываемся от старого устройства
     if (unsubscribeTelemetryFn) {
       unsubscribeTelemetryFn()
@@ -656,4 +775,3 @@ watch(device, (newDevice, oldDevice) => {
 })
 
 </script>
-

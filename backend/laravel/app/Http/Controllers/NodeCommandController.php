@@ -43,6 +43,17 @@ class NodeCommandController extends Controller
             $data['params'] = [];
         }
 
+        // Для set_state требуем state от клиента
+        if (($data['cmd'] ?? '') === 'set_state') {
+            if (!array_key_exists('state', $data['params'])) {
+                return response()->json([
+                    'status' => 'error',
+                    'code' => 'INVALID_ARGUMENT',
+                    'message' => 'set_state requires params.state (0/1 or true/false)',
+                ], 422);
+            }
+        }
+
         try {
             $commandId = $bridge->sendNodeCommand($node, $data);
 
@@ -118,5 +129,3 @@ class NodeCommandController extends Controller
         }
     }
 }
-
-

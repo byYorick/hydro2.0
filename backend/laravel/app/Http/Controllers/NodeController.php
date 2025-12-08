@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\NodeLifecycleState;
 use App\Models\DeviceNode;
+use App\Models\NodeChannel;
 use App\Services\NodeConfigService;
 use App\Services\NodeLifecycleService;
 use App\Services\NodeRegistryService;
@@ -11,6 +12,7 @@ use App\Services\NodeService;
 use App\Services\NodeSwapService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
 
 class NodeController extends Controller
 {
@@ -517,6 +519,94 @@ class NodeController extends Controller
         }
 
         try {
+            // Валидация пользовательского конфига (если пришёл)
+            $validatedConfig = $request->validate([
+                'config' => ['nullable', 'array'],
+                'config.channels' => ['nullable', 'array'],
+                'config.channels.*.name' => ['nullable', 'string', 'max:64'],
+                'config.channels.*.channel' => ['nullable', 'string', 'max:64'],
+                'config.channels.*.type' => ['nullable', 'string', 'max:32'],
+                'config.channels.*.metric' => ['nullable', 'string', 'max:64'],
+                'config.channels.*.unit' => ['nullable', 'string', 'max:32'],
+                'config.channels.*.actuator_type' => ['nullable', 'string', 'max:32'],
+                'config.channels.*.gpio' => ['nullable', 'integer', 'min:0', 'max:39'],
+                'config.channels.*.description' => ['nullable', 'string', 'max:255'],
+            ]);
+
+            $customChannels = data_get($validatedConfig, 'config.channels');
+
+            if (is_array($customChannels)) {
+                $sanitizedChannels = [];
+                foreach ($customChannels as $channel) {
+                    if (!is_array($channel)) {
+                        continue;
+                    }
+                    $name = trim($channel['channel'] ?? $channel['name'] ?? '');
+                    if ($name === '') {
+                        continue;
+                    }
+                    $type = strtoupper($channel['type'] ?? 'ACTUATOR');
+                    $metric = $channel['metric'] ?? ($type === 'ACTUATOR' ? 'RELAY' : null);
+                    $actuatorType = strtoupper($channel['actuator_type'] ?? ($type === 'ACTUATOR' ? 'RELAY' : ''));
+                    $gpio = $channel['gpio'] ?? null;
+                    $description = $channel['description'] ?? null;
+
+                    $sanitizedChannels[] = [
+                        'name' => $name,
+                        'channel' => $name,
+                        'type' => $type,
+                        'metric' => $metric ? strtoupper((string) $metric) : null,
+                        'unit' => $channel['unit'] ?? null,
+                        'actuator_type' => $actuatorType ?: null,
+                        'gpio' => $gpio !== null ? (int) $gpio : null,
+                        'description' => $description ? trim((string) $description) : null,
+                    ];
+                }
+
+                if (count($sanitizedChannels) === 0) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Не переданы каналы для публикации',
+                    ], Response::HTTP_BAD_REQUEST);
+                }
+
+                DB::transaction(function () use ($sanitizedChannels, $node) {
+                    $incomingNames = [];
+                    foreach ($sanitizedChannels as $channel) {
+                        $incomingNames[] = $channel['channel'];
+
+                        $configPayload = array_filter([
+                            'actuator_type' => $channel['actuator_type'],
+                            'gpio' => $channel['gpio'],
+                            'description' => $channel['description'],
+                        ], fn ($value) => $value !== null && $value !== '');
+
+                        NodeChannel::updateOrCreate(
+                            [
+                                'node_id' => $node->id,
+                                'channel' => $channel['channel'],
+                            ],
+                            [
+                                'type' => $channel['type'],
+                                'metric' => $channel['metric'],
+                                'unit' => $channel['unit'],
+                                'config' => $configPayload,
+                            ]
+                        );
+                    }
+
+                    // Для релейных нод удаляем каналы, которых нет в новой конфигурации
+                    if (strtolower($node->type ?? '') === 'relay' && count($incomingNames) > 0) {
+                        NodeChannel::where('node_id', $node->id)
+                            ->whereNotIn('channel', $incomingNames)
+                            ->delete();
+                    }
+                });
+
+                // После обновления каналов пересчитываем связанные данные
+                $node->refresh();
+            }
+
             // Для публикации через MQTT включаем креды (нужны для подключения ноды)
             $config = $this->configService->generateNodeConfig($node, null, true);
 
@@ -571,7 +661,11 @@ class NodeController extends Controller
                 if ($response->successful()) {
                     return response()->json([
                         'status' => 'ok',
-                        'data' => $response->json('data'),
+                        'data' => [
+                            'node' => $node->fresh(['channels']),
+                            'published_config' => $config,
+                            'bridge_response' => $response->json(),
+                        ],
                     ]);
                 }
 

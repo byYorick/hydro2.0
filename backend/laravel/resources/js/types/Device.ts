@@ -15,9 +15,13 @@ export type DeviceStatus = 'online' | 'offline' | 'degraded' | 'unknown'
  */
 export interface DeviceChannel {
   channel: string
-  type: 'SENSOR' | 'ACTUATOR'
-  metric: number | null
+  type: 'SENSOR' | 'ACTUATOR' | string
+  metric: string | number | null
   unit: string | null
+  config?: Record<string, unknown>
+  actuator_type?: string | null
+  gpio?: number | null
+  description?: string | null
 }
 
 /**

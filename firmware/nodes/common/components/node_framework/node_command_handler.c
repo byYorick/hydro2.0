@@ -224,10 +224,24 @@ void node_command_handler_process(
     esp_err_t err = ESP_ERR_NOT_FOUND;
 
     if (handler) {
-        // Извлекаем параметры команды (все поля кроме cmd и cmd_id)
-        cJSON *params = cJSON_Duplicate(json, 1);
+        // Извлекаем параметры команды. Новый формат: {"cmd": "...", "cmd_id": "...", "params": {...}}
+        // Старый формат: поля команды на корне. Поддерживаем оба.
+        cJSON *params_obj = cJSON_GetObjectItem(json, "params");
+        cJSON *params = NULL;
+
+        if (params_obj && cJSON_IsObject(params_obj)) {
+            params = cJSON_Duplicate(params_obj, 1);
+        } else {
+            // Fallback на старый формат: копируем весь объект и убираем служебные поля
+            params = cJSON_Duplicate(json, 1);
+            if (params) {
+                cJSON_DeleteItemFromObject(params, "cmd");
+                cJSON_DeleteItemFromObject(params, "cmd_id");
+            }
+        }
+
         if (params == NULL) {
-            ESP_LOGE(TAG, "Failed to duplicate command JSON (out of memory)");
+            ESP_LOGE(TAG, "Failed to duplicate command params (out of memory)");
             response = node_command_handler_create_response(
                 cmd_id,
                 "ERROR",
@@ -236,9 +250,6 @@ void node_command_handler_process(
                 NULL
             );
         } else {
-            cJSON_DeleteItemFromObject(params, "cmd");
-            cJSON_DeleteItemFromObject(params, "cmd_id");
-            
             err = handler(channel, params, &response, handler_ctx);
             
             // Если обработчик не создал ответ, создаем его здесь

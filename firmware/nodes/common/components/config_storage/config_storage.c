@@ -161,17 +161,8 @@ esp_err_t config_storage_save(const char *json_config, size_t json_len) {
         return ESP_ERR_INVALID_SIZE;
     }
     
-    // Валидация перед сохранением
-    esp_err_t err = config_storage_validate(json_config, json_len, NULL, 0);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Config validation failed");
-        return err;
-    }
-    
-    // КРИТИЧНО: Перед сохранением нового конфига проверяем, нужно ли сохранить WiFi из старого конфига
-    // Конфиги от MQTT обычно не содержат WiFi (так как WiFi уже настроен через setup_portal)
-    // Если в новом конфиге нет WiFi, но в старом есть - сохраняем WiFi из старого конфига
-    ESP_LOGI(TAG, "Parsing new config JSON (%zu bytes) for WiFi preservation check", json_len);
+    // Парсим новый конфиг для последующей нормализации (до валидации, чтобы можно было дорисовать недостающие поля)
+    ESP_LOGI(TAG, "Parsing new config JSON (%zu bytes) for preservation check", json_len);
     cJSON *new_config = cJSON_Parse(json_config);
     if (new_config == NULL) {
         ESP_LOGE(TAG, "Failed to parse new config JSON");
@@ -315,6 +306,57 @@ esp_err_t config_storage_save(const char *json_config, size_t json_len) {
         ESP_LOGI(TAG, "New config has no valid MQTT, but old config is not available");
     }
     
+    // Сохраняем gh_uid/zone_uid из старого конфига, если новые отсутствуют
+    bool new_has_valid_gh = false;
+    bool new_has_valid_zone = false;
+
+    cJSON *new_gh_uid = cJSON_GetObjectItem(new_config, "gh_uid");
+    if (new_gh_uid && cJSON_IsString(new_gh_uid) && new_gh_uid->valuestring && strlen(new_gh_uid->valuestring) > 0) {
+        new_has_valid_gh = true;
+    } else {
+        ESP_LOGW(TAG, "New config has invalid or missing gh_uid");
+    }
+
+    cJSON *new_zone_uid = cJSON_GetObjectItem(new_config, "zone_uid");
+    if (new_zone_uid && cJSON_IsString(new_zone_uid) && new_zone_uid->valuestring && strlen(new_zone_uid->valuestring) > 0) {
+        new_has_valid_zone = true;
+    } else {
+        ESP_LOGW(TAG, "New config has invalid or missing zone_uid");
+    }
+
+    const char *fallback_gh = NULL;
+    const char *fallback_zone = NULL;
+
+    if (old_config != NULL) {
+        cJSON *old_gh_uid = cJSON_GetObjectItem(old_config, "gh_uid");
+        if (old_gh_uid && cJSON_IsString(old_gh_uid) && old_gh_uid->valuestring && strlen(old_gh_uid->valuestring) > 0) {
+            fallback_gh = old_gh_uid->valuestring;
+        }
+
+        cJSON *old_zone_uid = cJSON_GetObjectItem(old_config, "zone_uid");
+        if (old_zone_uid && cJSON_IsString(old_zone_uid) && old_zone_uid->valuestring && strlen(old_zone_uid->valuestring) > 0) {
+            fallback_zone = old_zone_uid->valuestring;
+        }
+    }
+
+    if (!new_has_valid_gh) {
+        const char *value = fallback_gh ? fallback_gh : "gh-temp";
+        if (new_gh_uid) {
+            cJSON_DeleteItemFromObject(new_config, "gh_uid");
+        }
+        cJSON_AddStringToObject(new_config, "gh_uid", value);
+        ESP_LOGI(TAG, "Preserved gh_uid from %s config: %s", fallback_gh ? "old" : "default", value);
+    }
+
+    if (!new_has_valid_zone) {
+        const char *value = fallback_zone ? fallback_zone : "zn-temp";
+        if (new_zone_uid) {
+            cJSON_DeleteItemFromObject(new_config, "zone_uid");
+        }
+        cJSON_AddStringToObject(new_config, "zone_uid", value);
+        ESP_LOGI(TAG, "Preserved zone_uid from %s config: %s", fallback_zone ? "old" : "default", value);
+    }
+
     // Освобождаем старый конфиг после использования
     if (old_config != NULL) {
         cJSON_Delete(old_config);
@@ -337,6 +379,14 @@ esp_err_t config_storage_save(const char *json_config, size_t json_len) {
         ESP_LOGE(TAG, "Final JSON config too large: %zu bytes (max: %zu)", final_json_len, sizeof(s_config_json) - 1);
         free(final_json);
         return ESP_ERR_INVALID_SIZE;
+    }
+
+    // Финальная валидация: к этому моменту добавлены сохраненные поля gh_uid/zone_uid/WiFi/MQTT
+    esp_err_t err = config_storage_validate(final_json, final_json_len, NULL, 0);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Final config validation failed");
+        free(final_json);
+        return err;
     }
     
     // Проверяем, что в финальном конфиге есть WiFi (если был добавлен)
@@ -861,4 +911,3 @@ void config_storage_deinit(void) {
     s_config_loaded = false;
     memset(s_config_json, 0, sizeof(s_config_json));
 }
-

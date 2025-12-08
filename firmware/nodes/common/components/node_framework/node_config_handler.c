@@ -140,6 +140,33 @@ static bool mask_sensitive_json_fields(const char *json_str, char *masked_buf, s
 }
 
 /**
+ * @brief Сравнить два конфига, игнорируя секции wifi/mqtt (они часто placeholders)
+ */
+static bool configs_equal_ignoring_connectivity(const cJSON *a, const cJSON *b) {
+    if (a == NULL || b == NULL) {
+        return false;
+    }
+
+    cJSON *a_copy = cJSON_Duplicate(a, 1);
+    cJSON *b_copy = cJSON_Duplicate(b, 1);
+    if (a_copy == NULL || b_copy == NULL) {
+        if (a_copy) cJSON_Delete(a_copy);
+        if (b_copy) cJSON_Delete(b_copy);
+        return false;
+    }
+
+    cJSON_DeleteItemFromObject(a_copy, "wifi");
+    cJSON_DeleteItemFromObject(a_copy, "mqtt");
+    cJSON_DeleteItemFromObject(b_copy, "wifi");
+    cJSON_DeleteItemFromObject(b_copy, "mqtt");
+
+    bool equal = cJSON_Compare(a_copy, b_copy, true);
+    cJSON_Delete(a_copy);
+    cJSON_Delete(b_copy);
+    return equal;
+}
+
+/**
  * @brief Внутренняя функция обработки конфига (вызывается из задачи)
  */
 static void node_config_handler_process_internal(
@@ -251,6 +278,15 @@ static void node_config_handler_process_internal(
 
     // Загрузка предыдущего конфига
     cJSON *previous_config = config_apply_load_previous_config();
+
+    // Если новый конфиг идентичен старому (без учета wifi/mqtt), не применяем его, чтобы избежать лишних рестартов
+    if (previous_config && configs_equal_ignoring_connectivity(config, previous_config)) {
+        ESP_LOGI(TAG, "Config identical to current (ignoring wifi/mqtt), skipping apply");
+        node_config_handler_publish_response("ACK", "Config unchanged", NULL, 0);
+        cJSON_Delete(config);
+        cJSON_Delete(previous_config);
+        return;
+    }
 
     // Применение конфигурации с получением результата о перезапущенных компонентах
     config_apply_result_t result;
