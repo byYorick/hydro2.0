@@ -6,6 +6,7 @@ use App\Helpers\ZoneAccessHelper;
 use App\Models\Greenhouse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class SystemController extends Controller
 {
@@ -261,11 +262,34 @@ class SystemController extends Controller
             // Получаем доступные зоны для пользователя
             $accessibleZoneIds = ZoneAccessHelper::getAccessibleZoneIds($user);
 
+            // Строим список колонок зон с учетом наличия миграций (чтобы не падать на неподнятой схеме)
+            $zoneColumns = [
+                'id',
+                'uid',
+                'greenhouse_id',
+                'name',
+                'description',
+                'status',
+                'health_score',
+                'health_status',
+                'hardware_profile',
+                'capabilities',
+            ];
+            if (Schema::hasColumn('zones', 'water_state')) {
+                $zoneColumns[] = 'water_state';
+            }
+            if (Schema::hasColumn('zones', 'solution_started_at')) {
+                $zoneColumns[] = 'solution_started_at';
+            }
+            $zoneColumns[] = 'settings';
+            $zoneColumns[] = 'created_at';
+            $zoneColumns[] = 'updated_at';
+
             // Загружаем теплицы с зонами, фильтруя по доступным зонам
             $greenhouses = Greenhouse::with([
-                'zones' => function ($query) use ($accessibleZoneIds) {
+                'zones' => function ($query) use ($accessibleZoneIds, $zoneColumns) {
                     $query->whereIn('id', $accessibleZoneIds)
-                        ->select('id', 'uid', 'greenhouse_id', 'name', 'description', 'status', 'health_score', 'health_status', 'hardware_profile', 'capabilities', 'water_state', 'solution_started_at', 'settings', 'created_at', 'updated_at')
+                        ->select($zoneColumns)
                         ->with(['nodes' => function ($nodeQuery) {
                             // Загружаем ноды без чувствительных данных конфига (Wi-Fi пароли, MQTT креды)
                             // Поле config исключаем для предотвращения утечки креденшалов

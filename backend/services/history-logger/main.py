@@ -1839,10 +1839,8 @@ async def handle_command_response(topic: str, payload: bytes):
             return
 
         # Маппинг статусов прошивки -> статус в Laravel
-        if raw_status in ("ACK", "ACCEPTED"):
-            mapped_status = "accepted"
-        elif raw_status in ("COMPLETED", "OK", "SUCCESS", "DONE"):
-            mapped_status = "completed"
+        if raw_status in ("ACK", "ACCEPTED", "COMPLETED", "OK", "SUCCESS", "DONE"):
+            mapped_status = "ack"
         elif raw_status in ("ERROR", "FAILED"):
             mapped_status = "failed"
         else:

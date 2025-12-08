@@ -162,7 +162,7 @@ class PythonIngestController extends Controller
         $this->ensureToken($request);
         $data = $request->validate([
             'cmd_id' => ['required', 'string', 'max:64'],
-            'status' => ['required', 'string', 'in:accepted,completed,failed'],
+            'status' => ['required', 'string', 'in:accepted,completed,failed,ack'],
             'details' => ['nullable', 'array'],
         ]);
 
@@ -171,7 +171,7 @@ class PythonIngestController extends Controller
         if ($command) {
             $updates = ['status' => $data['status']];
 
-            if ($data['status'] === 'accepted' && ! $command->ack_at) {
+            if (in_array($data['status'], ['accepted', 'ack']) && ! $command->ack_at) {
                 $updates['ack_at'] = now();
             }
             if ($data['status'] === 'completed' && ! $command->ack_at) {
