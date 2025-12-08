@@ -34,11 +34,16 @@ class Publisher:
             zone_uid: Zone UID для использования в топике, если mqtt_zone_format="uid" (опционально)
         """
         try:
-            # Проверяем подключение и переподключаемся при необходимости
+            # Проверяем подключение - используем reconnect вместо start для сохранения соединения
             if not self._mqtt.is_connected():
                 logger.warning("MQTT client not connected, attempting to reconnect...")
                 try:
+                    # Используем start() который теперь умный и проверяет существующее подключение
+                    # Это предотвратит создание новых подключений
                     self._mqtt.start()
+                    # Дополнительная проверка после попытки переподключения
+                    if not self._mqtt.is_connected():
+                        raise ConnectionError("MQTT client failed to reconnect")
                     logger.info("MQTT client reconnected successfully")
                 except Exception as reconnect_error:
                     logger.error(f"Failed to reconnect MQTT client: {reconnect_error}", exc_info=True)
@@ -93,11 +98,16 @@ class Publisher:
         Используем hardware_id для временного топика, чтобы избежать конфликтов при одинаковом node_uid.
         """
         try:
-            # Проверяем подключение и переподключаемся при необходимости
+            # Проверяем подключение - используем reconnect вместо start для сохранения соединения
             if not self._mqtt.is_connected():
                 logger.warning("MQTT client not connected, attempting to reconnect...")
                 try:
+                    # Используем start() который теперь умный и проверяет существующее подключение
+                    # Это предотвратит создание новых подключений
                     self._mqtt.start()
+                    # Дополнительная проверка после попытки переподключения
+                    if not self._mqtt.is_connected():
+                        raise ConnectionError("MQTT client failed to reconnect")
                     logger.info("MQTT client reconnected successfully")
                 except Exception as reconnect_error:
                     logger.error(f"Failed to reconnect MQTT client: {reconnect_error}", exc_info=True)

@@ -100,9 +100,9 @@
  "fw_version": "2.0.1",
  "capabilities": ["ph", "temperature"],
  "provisioning_meta": {
- "greenhouse_token": "gh-123",
- "zone_id": null,
- "node_name": null
+ "node_name": null,
+ "greenhouse_token": null,
+ "zone_id": null
  }
 }
 ```
@@ -121,19 +121,18 @@
 
 Во всех документах 2.0 под `logical_node_id` понимается именно этот строковый `uid` (`nodes.uid`), а не числовой PK `nodes.id`.
 
-### `greenhouse_token`
+### `greenhouse_token` (устарело)
 
-- `greenhouse_token` — одноразовый токен, который оператор получает из UI для конкретной теплицы (`greenhouses.uid`).
-- Backend по нему находит запись в таблице `greenhouses` и связывает регистрацию узла с нужной теплицей.
-- Токен имеет ограниченный срок жизни и может быть отозван; после привязки узла к теплице `greenhouse_token` больше не используется узлом напрямую.
+- Токен больше **не используется** для автоматической привязки теплицы/зоны при `node_hello`.
+- Backend игнорирует поля `greenhouse_token` и `zone_id` в `provisioning_meta`, фиксируя только `hardware_id`, `node_type`, `fw_version` и `node_name`.
+- Привязка к теплице и зоне выполняется **только вручную** через UI/Android (оператор выбирает зону и подтверждает).
 
 Backend:
 
 - проверяет, есть ли запись с таким `hardware_id`;
 - если нет → создаёт новый `DeviceNode` и задаёт `logical_node_id`;
-- если есть → связывает подключение с существующим узлом.
-
-Состояние: `REGISTERED_BACKEND`.
+- если есть → связывает подключение с существующим узлом;
+- всегда оставляет состояние `REGISTERED_BACKEND` до ручной привязки.
 
 ---
 
@@ -154,7 +153,7 @@ Backend:
 8. **После перехода в `ASSIGNED_TO_ZONE`** узел участвует в **зонной логике** 
    (`ZONE_CONTROLLER_FULL.md`, `RECIPE_ENGINE_FULL.md`)
 
-**Важно:** Переход в `ASSIGNED_TO_ZONE` происходит только после получения успешного `config_response` от ноды. Это гарантирует, что нода получила и применила конфиг перед началом работы. Если установка конфига не удалась (`config_response` с `status: "ERROR"`), нода остается в `REGISTERED_BACKEND` и не считается привязанной к зоне.
+**Важно:** Переход в `ASSIGNED_TO_ZONE` происходит только после получения успешного `config_response` от ноды. Это гарантирует, что нода получила и применила конфиг перед началом работы. Если установка конфига не удалась (`config_response` с `status: "ERROR"`), нода остается в `REGISTERED_BACKEND` и не считается привязанной к зоне. Любые `greenhouse_token`/`zone_id`, присланные в `node_hello`, на привязку не влияют.
 
 Состояние: `ASSIGNED_TO_ZONE`.
 
@@ -270,7 +269,7 @@ Backend:
 - ✅ Обработчик `handle_node_hello` в `history-logger`
 - ✅ Подписка на топики `hydro/node_hello` и `hydro/+/+/+/node_hello`
 - ✅ Интеграция с Laravel API `/api/nodes/register`
-- ✅ Поддержка `greenhouse_token` для привязки к теплице
+- ✅ Автопривязка по `greenhouse_token` отключена; привязка выполняется только вручную через UI
 
 **Файлы:**
 - `backend/services/history-logger/main.py`

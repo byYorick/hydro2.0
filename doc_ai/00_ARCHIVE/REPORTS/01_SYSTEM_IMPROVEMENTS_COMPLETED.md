@@ -67,10 +67,12 @@
 - ✅ Метод `registerNodeFromHello()` в `NodeRegistryService`:
   - Поиск узла по `hardware_id`
   - Генерация `uid` на основе `hardware_id` и типа узла
-  - Обработка `greenhouse_token` для привязки к теплице
+  - (Архив) обработка `greenhouse_token` для привязки к теплице
   - Автоматический переход в состояние `REGISTERED_BACKEND` или `ASSIGNED_TO_ZONE`
 
 **Статус:** ✅ **MVP_DONE**
+
+**Примечание (актуально):** Автопривязка по `greenhouse_token` отключена; привязка теплицы/зоны выполняется вручную через UI/Android, поля `greenhouse_token`/`zone_id` в `node_hello` игнорируются (см. обновлённые спецификации 2.0).
 
 ---
 
@@ -264,4 +266,3 @@
 ---
 
 **Дата завершения:** 2025-11-17
-

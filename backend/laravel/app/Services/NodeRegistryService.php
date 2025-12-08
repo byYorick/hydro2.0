@@ -242,7 +242,7 @@ class NodeRegistryService
      * @param int $counter Для уникальности, если uid уже существует
      * @return string
      */
-    private function generateNodeUid(string $hardwareId, string $nodeType, int $counter = 0): string
+     private function generateNodeUid(string $hardwareId, string $nodeType, int $counter = 0): string
     {
         // Используем первые 8 символов hardware_id и тип узла
         $shortId = substr(str_replace([':', '-', '_'], '', $hardwareId), 0, 8);

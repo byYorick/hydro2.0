@@ -65,16 +65,34 @@ class MqttClient:
 
     def _on_disconnect(self, client, userdata, rc):
         self._connected.clear()
-        # reconnect with backoff
-        backoff = 0.5
-        while not self._connected.is_set():
-            try:
-                self._client.reconnect()
-            except Exception:
-                time.sleep(backoff)
-                backoff = min(backoff * 2, 10)
+        # reconnect with backoff - только если не было явного отключения (rc != 0)
+        # rc == 0 означает нормальное отключение, не переподключаемся
+        if rc != 0:
+            logger.warning(f"MQTT client disconnected unexpectedly (rc={rc}), attempting to reconnect...")
+            backoff = 0.5
+            max_backoff = 30
+            attempts = 0
+            max_attempts = 60  # Максимум 60 попыток
+            while not self._connected.is_set() and attempts < max_attempts:
+                try:
+                    # Используем reconnect() вместо создания нового подключения
+                    # Это сохраняет client_id и настройки
+                    self._client.reconnect()
+                    # Ждем немного для установки соединения
+                    time.sleep(0.5)
+                    if self._connected.is_set():
+                        logger.info(f"MQTT client reconnected successfully after {attempts} attempts")
+                        break
+                except Exception as e:
+                    attempts += 1
+                    logger.warning(f"MQTT reconnection attempt {attempts} failed: {e}, retrying in {backoff}s")
+                    time.sleep(backoff)
+                    backoff = min(backoff * 2, max_backoff)
             else:
-                break
+                if attempts >= max_attempts:
+                    logger.error(f"MQTT client failed to reconnect after {max_attempts} attempts")
+        else:
+            logger.info("MQTT client disconnected normally (rc=0)")
 
     def _wrap(self, handler: Callable[[str, bytes], None], event_loop=None):
         import asyncio
@@ -162,14 +180,32 @@ class MqttClient:
 
     def start(self):
         """Start MQTT client and wait for connection. Raises exception if connection fails."""
+        # Если уже подключены, ничего не делаем - используем существующее соединение
+        if self._connected.is_set():
+            logger.debug("MQTT client already connected, skipping start()")
+            return
+        
         s = get_settings()
-        logger.info(f"Starting MQTT client: host={self._host}, port={self._port}, tls={s.mqtt_tls}, user={s.mqtt_user}")
+        client_id = self._client._client_id.decode() if isinstance(self._client._client_id, bytes) else self._client._client_id
+        logger.info(f"Starting MQTT client: host={self._host}, port={self._port}, tls={s.mqtt_tls}, user={s.mqtt_user}, client_id={client_id}")
         try:
-            self._client.connect(self._host, self._port, keepalive=30)
+            # Проверяем, не запущен ли уже loop (чтобы не создавать дублирующие подключения)
+            if hasattr(self._client, '_thread') and self._client._thread and self._client._thread.is_alive():
+                logger.debug("MQTT loop already running, attempting reconnect instead of new connection")
+                try:
+                    self._client.reconnect()
+                except Exception as reconnect_error:
+                    logger.warning(f"Reconnect failed, doing full reconnection: {reconnect_error}")
+                    self._client.loop_stop()
+                    self._client.connect(self._host, self._port, keepalive=60)  # Увеличено до 60 секунд
+                    self._client.loop_start()
+            else:
+                # Новое подключение
+                self._client.connect(self._host, self._port, keepalive=60)  # Увеличено до 60 секунд для стабильности
+                self._client.loop_start()
         except Exception as e:
             logger.error(f"Failed to connect to MQTT broker {self._host}:{self._port} (TLS={s.mqtt_tls}): {e}", exc_info=True)
             raise
-        self._client.loop_start()
         # wait connected with timeout
         timeout = 10.0  # 10 seconds
         elapsed = 0.0

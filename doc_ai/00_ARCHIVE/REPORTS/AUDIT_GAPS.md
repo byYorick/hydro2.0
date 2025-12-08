@@ -183,20 +183,22 @@ tools/
 **Статус:** ✅ **РЕАЛИЗОВАНО**
 
 #### 4.3. Регистрация узла (node_hello)
-**Требуется:**
+**Требуется (на момент отчёта):**
 - Узел публикует `node_hello` сообщение при первом подключении
 - Payload: `{"message_type": "node_hello", "hardware_id": "...", "node_type": "...", "fw_version": "...", "capabilities": [...], "provisioning_meta": {...}}`
 - Backend обрабатывает и создаёт `DeviceNode` с `logical_node_id`
 - Поддержка `greenhouse_token` для привязки к теплице
 
-**Текущее состояние:**
+**Текущее состояние (архив):**
 - ✅ Есть API `/api/nodes/register` (ручная регистрация)
 - ✅ Есть обработка MQTT `node_hello` сообщения (обработчик `handle_node_hello` в history-logger)
 - ✅ Есть подписка на топики `hydro/node_hello` и `hydro/+/+/+/node_hello`
-- ✅ Есть поддержка `greenhouse_token` в процессе регистрации (метод `registerNodeFromHello` в NodeRegistryService)
+- ✅ Была поддержка `greenhouse_token` в процессе регистрации (метод `registerNodeFromHello` в NodeRegistryService)
 - ✅ Есть генерация `uid` на основе `hardware_id` и типа узла
 
-**Статус:** ✅ **РЕАЛИЗОВАНО** (обработка node_hello через MQTT и ручная регистрация через API)
+**Статус:** ✅ **РЕАЛИЗОВАНО** (для состояния на дату отчёта).
+
+**Примечание (актуально):** Автопривязка по `greenhouse_token` отключена, привязка теплицы/зоны теперь выполняется только вручную через UI/Android; поля `greenhouse_token`/`zone_id` в `node_hello` игнорируются (см. обновлённые спецификации 2.0).
 
 #### 4.4. Замена узла (node swap)
 **Требуется:**
@@ -342,4 +344,3 @@ tools/
 1. Реализовать публикацию heartbeat в firmware (требуется для полной поддержки heartbeat flow)
 2. Добавить явную публикацию status при подключении (опционально)
 3. Реорганизовать структуру проекта (низкий приоритет)
-

@@ -385,9 +385,9 @@ hydro/{gh}/{zone}/{node}/node_hello
   "hardware_revision": "v1.0",
   "capabilities": ["ph", "temperature"],
   "provisioning_meta": {
-    "greenhouse_token": "gh-123",
-    "zone_id": null,
-    "node_name": null
+    "node_name": null,
+    "greenhouse_token": null,
+    "zone_id": null
   }
 }
 ```
@@ -395,9 +395,9 @@ hydro/{gh}/{zone}/{node}/node_hello
 **Requirements:**
 - QoS = 1
 - Retain = false
-- Backend обрабатывает и создаёт/обновляет `DeviceNode` с `logical_node_id` (uid)
+- Backend обрабатывает и создаёт/обновляет `DeviceNode` с `logical_node_id` (uid). Поля `greenhouse_token` и `zone_id` из `provisioning_meta` игнорируются; привязка теплицы/зоны выполняется только вручную через UI/Android, после чего публикуется `NodeConfig`.
 
-**Статус реализации:** ✅ **РЕАЛИЗОВАНО** (обработчик `handle_node_hello` в history-logger, интеграция с Laravel API)
+**Статус реализации:** ✅ **РЕАЛИЗОВАНО** (обработчик `handle_node_hello` в history-logger, интеграция с Laravel API; автопривязка по token отключена)
 
 ---
 

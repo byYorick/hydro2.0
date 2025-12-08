@@ -10,6 +10,14 @@ services:
       - ./services/mqtt-bridge/acl:/mosquitto/config/acl:ro
       - mqtt_data:/mosquitto/data
       - mqtt_logs:/mosquitto/log
+    healthcheck:
+      # Используем простую проверку TCP порта вместо создания MQTT подключения
+      # Это избегает создания временных подключений с auto-{UUID}
+      test: ["CMD-SHELL", "nc -z localhost 1883 || exit 1"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
   db:
     image: timescale/timescaledb:latest-pg16
     environment:
@@ -23,10 +31,22 @@ services:
       - wal_archive:/wal_archive
     # WAL архивирование отключено в dev окружении для упрощения
     # В production используйте правильную команду архивирования
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hydro -d hydro_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
   laravel:
     build:
       context: ./laravel
@@ -136,8 +156,16 @@ services:
       - "5173:5173"
       - "6001:6001"
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80/api/system/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
   mqtt-bridge:
     build:
       context: ./services
@@ -161,9 +189,12 @@ services:
       - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
       - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
     depends_on:
-      - mqtt
-      - db
-      - laravel
+      mqtt:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      laravel:
+        condition: service_healthy
     ports:
       - "9000:9000"
     healthcheck:
@@ -199,13 +230,23 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
     depends_on:
-      - mqtt
-      - db
-      - laravel
-      - redis
+      mqtt:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      laravel:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     ports:
       - "9300:9300"
       - "9301:9301"  # Prometheus metrics
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9300)); s.close()' || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
   automation-engine:
     build:
@@ -229,9 +270,12 @@ services:
       - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
       - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
     depends_on:
-      - mqtt
-      - db
-      - laravel
+      mqtt:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      laravel:
+        condition: service_healthy
     ports:
       - "9401:9401"
     healthcheck:
@@ -259,8 +303,10 @@ services:
       - PG_USER=hydro
       - PG_PASS=hydro
     depends_on:
-      - mqtt
-      - db
+      mqtt:
+        condition: service_healthy
+      db:
+        condition: service_healthy
     ports:
       - "9402:9402"
     healthcheck:
@@ -286,9 +332,12 @@ services:
     ports:
       - "9090:9090"
     depends_on:
-      - automation-engine
-      - scheduler
-      - mqtt-bridge
+      automation-engine:
+        condition: service_healthy
+      scheduler:
+        condition: service_healthy
+      mqtt-bridge:
+        condition: service_healthy
     restart: unless-stopped
   grafana:
     image: grafana/grafana:latest
@@ -309,9 +358,13 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - prometheus
-      - db
+      prometheus:
+        condition: service_started
+      db:
+        condition: service_healthy
     restart: unless-stopped
+    logging:
+      driver: "none"
   alertmanager:
     image: prom/alertmanager:latest
     container_name: alertmanager
@@ -324,9 +377,13 @@ services:
     ports:
       - "9093:9093"
     depends_on:
-      - prometheus
-      - laravel
+      prometheus:
+        condition: service_started
+      laravel:
+        condition: service_healthy
     restart: unless-stopped
+    logging:
+      driver: "none"
 
   digital-twin:
     build:
@@ -343,7 +400,8 @@ services:
       - PG_PASS=hydro
       - PYTHONPATH=/app
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     ports:
       - "8003:8003"
       - "9403:9403"  # Prometheus metrics
@@ -364,7 +422,8 @@ services:
       - PG_PASS=hydro
       - PYTHONPATH=/app
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     ports:
       - "9404:9404"  # Prometheus metrics
     restart: unless-stopped
@@ -401,7 +460,8 @@ services:
       - PG_PASS=hydro
       - PYTHONPATH=/app
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     volumes:
       - ./services:/app
     profiles:

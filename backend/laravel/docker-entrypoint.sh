@@ -192,6 +192,13 @@ if [ -f /app/reverb-supervisor.conf ]; then
     chmod 644 /opt/docker/etc/supervisor.d/reverb.conf 2>/dev/null || true
 fi
 
+# Копируем конфигурацию queue workers
+if [ -f /app/queue-supervisor.conf ]; then
+    echo "Copying queue worker supervisor config to base image directory..."
+    cp /app/queue-supervisor.conf /opt/docker/etc/supervisor.d/queue-worker.conf
+    chmod 644 /opt/docker/etc/supervisor.d/queue-worker.conf 2>/dev/null || true
+fi
+
 # Vite supervisor only in development mode
 if [ "${APP_ENV:-production}" = "local" ]; then
     if [ -f /app/vite-supervisor.conf ] && [ ! -f /opt/docker/etc/supervisor.d/vite.conf ]; then
