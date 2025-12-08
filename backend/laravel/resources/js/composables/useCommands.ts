@@ -18,6 +18,13 @@ interface PendingCommandInternal {
   message?: string
 }
 
+function normalizeStatus(status: CommandStatus | string): CommandStatus {
+  // MQTT/bridge присылает 'ack' как успешное выполнение
+  if (status === 'ack') return 'completed'
+  if (status === 'accepted') return 'executing'
+  return (status as CommandStatus) || 'unknown'
+}
+
 /**
  * Composable для работы с командами
  */
@@ -203,11 +210,13 @@ export function useCommands(showToast?: ToastHandler) {
       // Обновляем статус в pendingCommands
       if (pendingCommands.value.has(commandId)) {
         const command = pendingCommands.value.get(commandId)!
-        command.status = status.status || 'unknown'
+        command.status = normalizeStatus(status.status || 'unknown')
         pendingCommands.value.set(commandId, command)
       }
       
-      return status
+      return {
+        status: normalizeStatus(status.status || 'unknown'),
+      }
     } catch (err) {
       const normalizedError = handleError(err, {
         component: 'useCommands',
@@ -227,18 +236,19 @@ export function useCommands(showToast?: ToastHandler) {
     status: CommandStatus,
     message: string | null = null
   ): void {
+    const normalizedStatus = normalizeStatus(status)
     if (pendingCommands.value.has(commandId)) {
       const command = pendingCommands.value.get(commandId)!
-      command.status = status
+      command.status = normalizedStatus
       if (message) {
         command.message = message
       }
       pendingCommands.value.set(commandId, command)
       
       // Показываем уведомление при завершении
-      if (status === 'completed' && showToast) {
+      if (normalizedStatus === 'completed' && showToast) {
         showToast(`Команда "${command.type}" выполнена успешно`, 'success', TOAST_TIMEOUT.NORMAL)
-      } else if (status === 'failed' && showToast) {
+      } else if (normalizedStatus === 'failed' && showToast) {
         showToast(`Команда "${command.type}" завершилась с ошибкой: ${message || 'Неизвестная ошибка'}`, 'error', TOAST_TIMEOUT.LONG)
       }
     }
@@ -324,4 +334,3 @@ export function useCommands(showToast?: ToastHandler) {
     reloadZoneAfterCommand,
   }
 }
-

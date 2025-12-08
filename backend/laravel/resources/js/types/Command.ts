@@ -16,7 +16,7 @@ export type CommandType =
 /**
  * Статус команды
  */
-export type CommandStatus = 'pending' | 'executing' | 'completed' | 'failed' | 'unknown'
+export type CommandStatus = 'pending' | 'executing' | 'completed' | 'failed' | 'unknown' | 'ack'
 
 /**
  * Параметры команды

@@ -830,7 +830,7 @@ function getLastCommandStatus(cycleType: string): string | null {
   const growthCycleCommand = pendingCommands.value.find(cmd => 
     cmd.type === 'GROWTH_CYCLE_CONFIG' && 
     cmd.zoneId === zoneId.value &&
-    (cmd.status === 'pending' || cmd.status === 'executing' || cmd.status === 'completed' || cmd.status === 'failed')
+    (cmd.status === 'pending' || cmd.status === 'executing' || cmd.status === 'completed' || cmd.status === 'failed' || cmd.status === 'ack')
   )
   
   if (growthCycleCommand) {
@@ -841,7 +841,7 @@ function getLastCommandStatus(cycleType: string): string | null {
   const command = pendingCommands.value.find(cmd => 
     cmd.type === commandType && 
     cmd.zoneId === zoneId.value &&
-    (cmd.status === 'pending' || cmd.status === 'executing' || cmd.status === 'completed' || cmd.status === 'failed')
+    (cmd.status === 'pending' || cmd.status === 'executing' || cmd.status === 'completed' || cmd.status === 'failed' || cmd.status === 'ack')
   )
   return command?.status || null
 }
@@ -852,6 +852,7 @@ function getCommandStatusText(status: string | null): string {
     'pending': 'Ожидание...',
     'executing': 'Выполняется...',
     'completed': 'Выполнено',
+    'ack': 'Выполнено',
     'failed': 'Ошибка'
   }
   return texts[status] || status
