@@ -149,8 +149,8 @@ static void node_config_handler_process_internal(
     void *user_ctx
 ) {
     if (data == NULL || data_len <= 0) {
-        ESP_LOGE(TAG, "Invalid config parameters");
-        node_config_handler_publish_response("ERROR", "Invalid parameters", NULL, 0);
+        // Игнорируем пустые/некорректные сообщения конфига, чтобы не сыпать ERROR
+        ESP_LOGW(TAG, "Config message is empty, ignoring");
         return;
     }
 
