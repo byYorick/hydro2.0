@@ -169,6 +169,13 @@ class NodeService
             
             $node->update($data);
             
+            // БАГ #2 FIX: Убрана дублирующая публикация конфига
+            // Публикация происходит только через событие NodeConfigUpdated в DeviceNode::saved
+            // Это предотвращает двойную публикацию конфига
+            // if ($isAssignmentFromUI) {
+            //     \App\Jobs\PublishNodeConfigJob::dispatch($node->id);
+            // }
+            
             // Логируем завершение привязки от history-logger (когда zone_id устанавливается и pending_zone_id очищается)
             if ($isBindingCompletion && $node->zone_id && !$node->pending_zone_id) {
                 Log::info('NodeService: Binding completed by history-logger (zone_id set, pending_zone_id cleared)', [
@@ -301,5 +308,4 @@ class NodeService
         });
     }
 }
-
 

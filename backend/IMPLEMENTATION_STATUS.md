@@ -144,7 +144,7 @@
 - **Файлы:** `app/Http/Controllers/NodeController.php`
 - **Изменения:**
   - Метод `update()` разбит на: `authenticateUser()`, `validateZoneChange()`
-  - Метод `publishConfig()` разбит на: `sanitizeChannels()`, `updateNodeChannels()`, `publishConfigToMqtt()`
+  - Метод `publishConfig()` упрощён: каналы не принимаются, отправляется только базовый конфиг (gh/zone + Wi‑Fi/MQTT)
 
 ## 5. Тесты ✅
 
@@ -201,10 +201,42 @@
 - ✅ Queue overflow incidents: 0 (реализован backpressure и алерты)
 - ⏳ Ошибки обработки зон < 1% за цикл (требует мониторинга в production)
 
+## 8. Дополнительные улучшения (2025-01-27) ✅
+
+### 8.1 Интеграция API Resources в контроллеры ✅
+- **Статус:** Реализовано
+- **Файлы:** `app/Http/Controllers/NodeController.php`
+- **Изменения:**
+  - Все методы `NodeController` теперь используют `DeviceNodeResource` для сериализации
+  - Гарантированное исключение `config` из всех API ответов
+  - Улучшена консистентность формата ответов
+
+### 8.2 Улучшение качества кода ✅
+- **Статус:** Реализовано
+- **Файлы:** Все контроллеры
+- **Изменения:**
+  - Добавлены type hints (`JsonResponse`) во все методы контроллеров:
+    - `NodeController` - все 15 методов
+    - `ZoneController` - все 13 методов
+    - `RecipeController` - все 5 методов
+    - `GreenhouseController` - все 5 методов
+  - Заменено использование `\Log::` на правильный импорт `Log` фасада во всех контроллерах
+  - Исправлены: `NodeController`, `SystemController`, `PythonIngestController`, `TelemetryController`, `ZoneController`, `RecipeController`, `GreenhouseController`, `ReportController`
+  - Защита от SQL Injection: заменено `whereRaw('LOWER(...) LIKE ?')` на `ILIKE` с `addcslashes()` в `ZoneController` и `RecipeController`
+
+### 8.3 Решение TODO комментариев ✅
+- **Статус:** Реализовано
+- **Файлы:**
+  - `app/Http/Controllers/SimulationController.php`
+  - `app/Helpers/ZoneAccessHelper.php`
+- **Изменения:**
+  - Реализовано получение текущего состояния зоны из `telemetry_last` в `SimulationController`
+  - Улучшены комментарии о мультитенантности в `ZoneAccessHelper` с детальным описанием будущей реализации
+
 ## Примечания
 
 - Все критические исправления реализованы и готовы к тестированию
-- Архитектурные улучшения (Form Requests, Policies, API Resources) реализованы
+- Архитектурные улучшения (Form Requests, Policies, API Resources) реализованы и интегрированы
 - Тесты созданы для основных сценариев
 - Нагрузочное тестирование рекомендуется выполнить перед production deployment
-
+- Дополнительные улучшения качества кода завершены (2025-01-27)

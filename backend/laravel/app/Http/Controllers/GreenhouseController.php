@@ -2,14 +2,15 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Greenhouse;
 use App\Helpers\ZoneAccessHelper;
+use App\Models\Greenhouse;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
 class GreenhouseController extends Controller
 {
-    public function index(Request $request)
+    public function index(Request $request): JsonResponse
     {
         $user = $request->user();
         if (!$user) {
@@ -36,7 +37,7 @@ class GreenhouseController extends Controller
         return response()->json(['status' => 'ok', 'data' => $items]);
     }
 
-    public function store(Request $request)
+    public function store(Request $request): JsonResponse
     {
         $user = $request->user();
         if (!$user) {
@@ -65,7 +66,7 @@ class GreenhouseController extends Controller
         return response()->json(['status' => 'ok', 'data' => $greenhouse], Response::HTTP_CREATED);
     }
 
-    public function show(Request $request, Greenhouse $greenhouse)
+    public function show(Request $request, Greenhouse $greenhouse): JsonResponse
     {
         $user = $request->user();
         if (!$user) {
@@ -87,7 +88,7 @@ class GreenhouseController extends Controller
         return response()->json(['status' => 'ok', 'data' => $greenhouse]);
     }
 
-    public function update(Request $request, Greenhouse $greenhouse)
+    public function update(Request $request, Greenhouse $greenhouse): JsonResponse
     {
         $user = $request->user();
         if (!$user) {
@@ -117,7 +118,7 @@ class GreenhouseController extends Controller
         return response()->json(['status' => 'ok', 'data' => $greenhouse]);
     }
 
-    public function destroy(Request $request, Greenhouse $greenhouse)
+    public function destroy(Request $request, Greenhouse $greenhouse): JsonResponse
     {
         $user = $request->user();
         if (!$user) {

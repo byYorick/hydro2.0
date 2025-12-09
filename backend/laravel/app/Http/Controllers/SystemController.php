@@ -6,6 +6,7 @@ use App\Helpers\ZoneAccessHelper;
 use App\Models\Greenhouse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 class SystemController extends Controller
@@ -56,7 +57,7 @@ class SystemController extends Controller
             $dbOk = false;
             $dbError = $e->getMessage();
             // Логируем ошибку БД для диагностики
-            \Log::error('Database health check failed', [
+            Log::error('Database health check failed', [
                 'message' => $e->getMessage(),
                 'code' => $e->getCode(),
                 'file' => $e->getFile(),
@@ -79,7 +80,7 @@ class SystemController extends Controller
                 $mqttOk = 'ok';
             } else {
                 $mqttOk = 'fail';
-                \Log::warning('MQTT bridge health check failed', [
+                Log::warning('MQTT bridge health check failed', [
                     'url' => $mqttBridgeUrl.'/metrics',
                     'status' => $response->status(),
                     'has_body' => ! empty($response->body()),
@@ -87,19 +88,19 @@ class SystemController extends Controller
             }
         } catch (\Illuminate\Http\Client\ConnectionException $e) {
             $mqttOk = 'fail';
-            \Log::warning('MQTT bridge health check: connection failed', [
+            Log::warning('MQTT bridge health check: connection failed', [
                 'url' => $mqttBridgeUrl ?? 'unknown',
                 'error' => $e->getMessage(),
             ]);
         } catch (\Illuminate\Http\Client\TimeoutException $e) {
             $mqttOk = 'fail';
-            \Log::warning('MQTT bridge health check: timeout', [
+            Log::warning('MQTT bridge health check: timeout', [
                 'url' => $mqttBridgeUrl ?? 'unknown',
             ]);
         } catch (\Throwable $e) {
             // Если не удалось проверить MQTT, считаем недоступным
             $mqttOk = 'fail';
-            \Log::error('MQTT bridge health check: exception', [
+            Log::error('MQTT bridge health check: exception', [
                 'url' => $mqttBridgeUrl ?? 'unknown',
                 'error' => $e->getMessage(),
             ]);
@@ -120,7 +121,7 @@ class SystemController extends Controller
                     $historyLoggerOk = 'ok';
                 } else {
                     // Логируем проблему для отладки
-                    \Log::warning('History Logger health check failed', [
+                    Log::warning('History Logger health check failed', [
                         'url' => $historyLoggerUrl.'/health',
                         'status' => $response->status(),
                         'response_status' => $healthData['status'] ?? 'unknown',
@@ -129,7 +130,7 @@ class SystemController extends Controller
                 }
             } else {
                 // Логируем ошибку HTTP-кода
-                \Log::warning('History Logger health check: non-successful response', [
+                Log::warning('History Logger health check: non-successful response', [
                     'url' => $historyLoggerUrl.'/health',
                     'status' => $response->status(),
                     'body_preview' => substr($response->body(), 0, 200),
@@ -138,18 +139,18 @@ class SystemController extends Controller
             }
         } catch (\Illuminate\Http\Client\ConnectionException $e) {
             $historyLoggerOk = 'fail';
-            \Log::warning('History Logger health check: connection failed', [
+            Log::warning('History Logger health check: connection failed', [
                 'url' => $historyLoggerUrl ?? 'unknown',
                 'error' => $e->getMessage(),
             ]);
         } catch (\Illuminate\Http\Client\TimeoutException $e) {
             $historyLoggerOk = 'fail';
-            \Log::warning('History Logger health check: timeout', [
+            Log::warning('History Logger health check: timeout', [
                 'url' => $historyLoggerUrl ?? 'unknown',
             ]);
         } catch (\Throwable $e) {
             // Логируем исключение
-            \Log::error('History Logger health check: exception', [
+            Log::error('History Logger health check: exception', [
                 'url' => $historyLoggerUrl ?? 'unknown',
                 'exception' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
@@ -170,7 +171,7 @@ class SystemController extends Controller
                 $automationEngineOk = 'ok';
             } else {
                 $automationEngineOk = 'fail';
-                \Log::warning('Automation engine health check failed', [
+                Log::warning('Automation engine health check failed', [
                     'url' => $automationEngineUrl.'/metrics',
                     'status' => $response->status(),
                     'has_body' => ! empty($response->body()),
@@ -178,18 +179,18 @@ class SystemController extends Controller
             }
         } catch (\Illuminate\Http\Client\ConnectionException $e) {
             $automationEngineOk = 'fail';
-            \Log::warning('Automation engine health check: connection failed', [
+            Log::warning('Automation engine health check: connection failed', [
                 'url' => $automationEngineUrl ?? 'unknown',
                 'error' => $e->getMessage(),
             ]);
         } catch (\Illuminate\Http\Client\TimeoutException $e) {
             $automationEngineOk = 'fail';
-            \Log::warning('Automation engine health check: timeout', [
+            Log::warning('Automation engine health check: timeout', [
                 'url' => $automationEngineUrl ?? 'unknown',
             ]);
         } catch (\Throwable $e) {
             $automationEngineOk = 'fail';
-            \Log::error('Automation engine health check: exception', [
+            Log::error('Automation engine health check: exception', [
                 'url' => $automationEngineUrl ?? 'unknown',
                 'error' => $e->getMessage(),
             ]);
@@ -338,7 +339,7 @@ class SystemController extends Controller
                              str_contains($errorMessage, "doesn't exist") ||
                              str_contains($errorMessage, 'relation does not exist');
 
-            \Log::error('SystemController::configFull: Database error', [
+            Log::error('SystemController::configFull: Database error', [
                 'error' => $errorMessage,
                 'is_missing_table' => $isMissingTable,
             ]);
@@ -363,7 +364,7 @@ class SystemController extends Controller
                 ],
             ], 503);
         } catch (\Exception $e) {
-            \Log::error('SystemController::configFull: Error', [
+            Log::error('SystemController::configFull: Error', [
                 'error' => $e->getMessage(),
             ]);
 

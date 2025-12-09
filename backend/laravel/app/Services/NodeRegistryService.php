@@ -108,7 +108,7 @@ class NodeRegistryService
      *   - node_type: string
      *   - fw_version: string|null
      *   - hardware_revision: string|null
-     *   - capabilities: array
+     *   - capabilities: array (используются только как метаданные, каналы по ним не создаются)
      *   - provisioning_meta: array {greenhouse_token (игнорируется), zone_id (игнорируется), node_name}
      * @return DeviceNode
      */
@@ -119,9 +119,11 @@ class NodeRegistryService
         
         while ($attempt < $maxRetries) {
             try {
+                // Устанавливаем SERIALIZABLE isolation level ДО начала транзакции
+                // PostgreSQL не позволяет устанавливать isolation level внутри подтранзакции
+                DB::statement('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE');
+                
                 return DB::transaction(function () use ($helloData) {
-                    // Устанавливаем SERIALIZABLE isolation level для критической операции
-                    DB::statement('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE');
                     
                     $hardwareId = $helloData['hardware_id'] ?? null;
                     if (!$hardwareId) {
@@ -210,24 +212,27 @@ class NodeRegistryService
                         ]);
                     }
                     
-                    // Устанавливаем lifecycle_state
-                    // Всегда оставляем REGISTERED_BACKEND - переход в ASSIGNED_TO_ZONE произойдет
-                    // только после успешной публикации конфига через PublishNodeConfigOnUpdate
-                    if (!$node->id || !$node->lifecycle_state) {
-                        // Новый узел - всегда REGISTERED_BACKEND, даже если есть zone_id
-                        // (нода с временными конфигами еще не привязана к реальной зоне)
+                    // БАГ #3 FIX: Сбрасываем состояние при повторном node_hello после отвязки
+                    // Если узел отвязан (zone_id = null), сбрасываем состояние в REGISTERED_BACKEND
+                    if (!$node->zone_id && !$node->pending_zone_id) {
+                        // Узел отвязан - сбрасываем в REGISTERED_BACKEND
+                        $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
+                        Log::info('NodeRegistryService: Reset lifecycle_state to REGISTERED_BACKEND for unbound node', [
+                            'node_id' => $node->id,
+                            'uid' => $node->uid,
+                            'hardware_id' => $hardwareId,
+                        ]);
+                    } elseif (!$node->lifecycle_state) {
+                        // Новый узел - всегда REGISTERED_BACKEND
                         $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
                     }
-                    // Для существующих узлов не меняем lifecycle_state здесь
+                    // Для существующих привязанных узлов не меняем состояние
                     // Переход в ASSIGNED_TO_ZONE произойдет только после успешной публикации конфига
                     
                     // Отмечаем как validated
                     $node->validated = true;
                     
                     $node->save();
-                    
-                    // Создаём каналы из capabilities
-                    $this->syncNodeChannelsFromCapabilities($node, $helloData['capabilities'] ?? []);
                     
                     // Очищаем кеш списка устройств и статистики для всех пользователей
                     // Вместо Cache::flush() используем более безопасную очистку только связанных ключей
@@ -349,74 +354,6 @@ class NodeRegistryService
         }
         
         return $uid;
-    }
-    
-    /**
-     * Синхронизировать каналы узла из capabilities.
-     * 
-     * @param DeviceNode $node Узел
-     * @param array $capabilities Массив строк capabilities (например: ["temperature", "humidity", "co2"])
-     * @return void
-     */
-    private function syncNodeChannelsFromCapabilities(DeviceNode $node, array $capabilities): void
-    {
-        if (empty($capabilities)) {
-            Log::debug('NodeRegistryService: No capabilities provided, skipping channel sync', [
-                'node_id' => $node->id,
-            ]);
-            return;
-        }
-        
-        // Маппинг capability -> channel configuration
-        $capabilityConfig = [
-            'temperature' => ['type' => 'sensor', 'metric' => 'TEMP_AIR', 'unit' => '°C'],
-            'humidity' => ['type' => 'sensor', 'metric' => 'HUMIDITY', 'unit' => '%'],
-            'co2' => ['type' => 'sensor', 'metric' => 'CO2', 'unit' => 'ppm'],
-            'lighting' => ['type' => 'actuator', 'metric' => 'LIGHT', 'unit' => ''],
-            'ventilation' => ['type' => 'actuator', 'metric' => 'VENTILATION', 'unit' => ''],
-            'ph_sensor' => ['type' => 'sensor', 'metric' => 'PH', 'unit' => 'pH'],
-            'ec_sensor' => ['type' => 'sensor', 'metric' => 'EC', 'unit' => 'mS/cm'],
-            'pump_A' => ['type' => 'actuator', 'metric' => 'PUMP_A', 'unit' => ''],
-            'pump_B' => ['type' => 'actuator', 'metric' => 'PUMP_B', 'unit' => ''],
-            'pump_C' => ['type' => 'actuator', 'metric' => 'PUMP_C', 'unit' => ''],
-            'pump_D' => ['type' => 'actuator', 'metric' => 'PUMP_D', 'unit' => ''],
-        ];
-        
-        foreach ($capabilities as $capability) {
-            if (!is_string($capability)) {
-                Log::warning('NodeRegistryService: Invalid capability type', [
-                    'node_id' => $node->id,
-                    'capability' => $capability,
-                ]);
-                continue;
-            }
-            
-            $config = $capabilityConfig[$capability] ?? [
-                'type' => 'sensor',
-                'metric' => strtoupper($capability),
-                'unit' => '',
-            ];
-            
-            // Создаём или обновляем канал
-            \App\Models\NodeChannel::updateOrCreate(
-                [
-                    'node_id' => $node->id,
-                    'channel' => $capability,
-                ],
-                [
-                    'type' => $config['type'],
-                    'metric' => $config['metric'],
-                    'unit' => $config['unit'],
-                    'config' => [],
-                ]
-            );
-            
-            Log::debug('NodeRegistryService: Channel synced from capability', [
-                'node_id' => $node->id,
-                'capability' => $capability,
-                'channel_type' => $config['type'],
-            ]);
-        }
     }
     
     /**

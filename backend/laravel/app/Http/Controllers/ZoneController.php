@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Helpers\ZoneAccessHelper;
 use App\Models\Zone;
 use App\Services\ZoneService;
-use App\Helpers\ZoneAccessHelper;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Log;
 
 class ZoneController extends Controller
 {
@@ -15,7 +17,7 @@ class ZoneController extends Controller
     ) {
     }
 
-    public function index(Request $request)
+    public function index(Request $request): JsonResponse
     {
         $user = $request->user();
         if (!$user) {
@@ -61,10 +63,11 @@ class ZoneController extends Controller
         
         // Поиск по имени или описанию
         if (isset($validated['search']) && $validated['search']) {
-            $searchTerm = '%' . strtolower($validated['search']) . '%';
+            // Экранируем специальные символы LIKE для защиты от SQL injection
+            $searchTerm = addcslashes($validated['search'], '%_');
             $query->where(function ($q) use ($searchTerm) {
-                $q->whereRaw('LOWER(name) LIKE ?', [$searchTerm])
-                  ->orWhereRaw('LOWER(description) LIKE ?', [$searchTerm]);
+                $q->where('name', 'ILIKE', "%{$searchTerm}%")
+                  ->orWhere('description', 'ILIKE', "%{$searchTerm}%");
             });
         }
         
@@ -72,7 +75,7 @@ class ZoneController extends Controller
         return response()->json(['status' => 'ok', 'data' => $items]);
     }
 
-    public function store(Request $request)
+    public function store(Request $request): JsonResponse
     {
         $user = $request->user();
         if (!$user) {
@@ -104,7 +107,7 @@ class ZoneController extends Controller
         return response()->json(['status' => 'ok', 'data' => $zone], Response::HTTP_CREATED);
     }
 
-    public function show(Request $request, Zone $zone)
+    public function show(Request $request, Zone $zone): JsonResponse
     {
         $user = $request->user();
         if (!$user) {
@@ -126,7 +129,7 @@ class ZoneController extends Controller
         return response()->json(['status' => 'ok', 'data' => $zone]);
     }
 
-    public function update(Request $request, Zone $zone)
+    public function update(Request $request, Zone $zone): JsonResponse
     {
         $user = $request->user();
         if (!$user) {
@@ -165,7 +168,7 @@ class ZoneController extends Controller
         return response()->json(['status' => 'ok', 'data' => $zone]);
     }
 
-    public function destroy(Request $request, Zone $zone)
+    public function destroy(Request $request, Zone $zone): JsonResponse
     {
         $user = $request->user();
         if (!$user) {
@@ -194,7 +197,7 @@ class ZoneController extends Controller
         }
     }
 
-    public function attachRecipe(Request $request, Zone $zone)
+    public function attachRecipe(Request $request, Zone $zone): JsonResponse
     {
         $user = $request->user();
         if (!$user) {
@@ -237,7 +240,7 @@ class ZoneController extends Controller
                 ]
             ]);
         } catch (\Exception $e) {
-            \Log::error('Failed to attach recipe', [
+            Log::error('Failed to attach recipe', [
                 'zone_id' => $zone->id,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
@@ -250,7 +253,7 @@ class ZoneController extends Controller
         }
     }
 
-    public function changePhase(Request $request, Zone $zone)
+    public function changePhase(Request $request, Zone $zone): JsonResponse
     {
         $user = $request->user();
         if (!$user) {
@@ -282,7 +285,7 @@ class ZoneController extends Controller
         }
     }
 
-    public function nextPhase(Request $request, Zone $zone)
+    public function nextPhase(Request $request, Zone $zone): JsonResponse
     {
         $user = $request->user();
         if (!$user) {
@@ -311,7 +314,7 @@ class ZoneController extends Controller
         }
     }
 
-    public function pause(Request $request, Zone $zone)
+    public function pause(Request $request, Zone $zone): JsonResponse
     {
         $user = $request->user();
         if (!$user) {
@@ -340,7 +343,7 @@ class ZoneController extends Controller
         }
     }
 
-    public function resume(Request $request, Zone $zone)
+    public function resume(Request $request, Zone $zone): JsonResponse
     {
         $user = $request->user();
         if (!$user) {
@@ -369,7 +372,7 @@ class ZoneController extends Controller
         }
     }
 
-    public function health(Request $request, Zone $zone)
+    public function health(Request $request, Zone $zone): JsonResponse
     {
         $user = $request->user();
         if (!$user) {
@@ -413,7 +416,7 @@ class ZoneController extends Controller
         ]);
     }
 
-    public function fill(Request $request, Zone $zone)
+    public function fill(Request $request, Zone $zone): JsonResponse
     {
         $user = $request->user();
         if (!$user) {
@@ -447,7 +450,7 @@ class ZoneController extends Controller
         ], Response::HTTP_ACCEPTED);
     }
 
-    public function drain(Request $request, Zone $zone)
+    public function drain(Request $request, Zone $zone): JsonResponse
     {
         $user = $request->user();
         if (!$user) {
@@ -481,7 +484,7 @@ class ZoneController extends Controller
         ], Response::HTTP_ACCEPTED);
     }
 
-    public function calibrateFlow(Request $request, Zone $zone)
+    public function calibrateFlow(Request $request, Zone $zone): JsonResponse
     {
         $user = $request->user();
         if (!$user) {
@@ -529,7 +532,7 @@ class ZoneController extends Controller
      * Получить информацию о циклах зоны
      * GET /api/zones/{id}/cycles
      */
-    public function cycles(Request $request, Zone $zone)
+    public function cycles(Request $request, Zone $zone): JsonResponse
     {
         $user = $request->user();
         if (!$user) {

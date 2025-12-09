@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Recipe;
 use App\Services\RecipeService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
@@ -14,7 +15,7 @@ class RecipeController extends Controller
     ) {
     }
 
-    public function index(Request $request)
+    public function index(Request $request): JsonResponse
     {
         // Валидация query параметров
         $validated = $request->validate([
@@ -25,10 +26,11 @@ class RecipeController extends Controller
         
         // Поиск по имени или описанию
         if (isset($validated['search']) && $validated['search']) {
-            $searchTerm = '%' . strtolower($validated['search']) . '%';
+            // Экранируем специальные символы LIKE для защиты от SQL injection
+            $searchTerm = addcslashes($validated['search'], '%_');
             $query->where(function ($q) use ($searchTerm) {
-                $q->whereRaw('LOWER(name) LIKE ?', [$searchTerm])
-                  ->orWhereRaw('LOWER(description) LIKE ?', [$searchTerm]);
+                $q->where('name', 'ILIKE', "%{$searchTerm}%")
+                  ->orWhere('description', 'ILIKE', "%{$searchTerm}%");
             });
         }
         
@@ -36,7 +38,7 @@ class RecipeController extends Controller
         return response()->json(['status' => 'ok', 'data' => $items]);
     }
 
-    public function store(Request $request)
+    public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -47,13 +49,13 @@ class RecipeController extends Controller
         return response()->json(['status' => 'ok', 'data' => $recipe], Response::HTTP_CREATED);
     }
 
-    public function show(Recipe $recipe)
+    public function show(Recipe $recipe): JsonResponse
     {
         $recipe->load('phases');
         return response()->json(['status' => 'ok', 'data' => $recipe]);
     }
 
-    public function update(Request $request, Recipe $recipe)
+    public function update(Request $request, Recipe $recipe): JsonResponse
     {
         $data = $request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
@@ -63,7 +65,7 @@ class RecipeController extends Controller
         return response()->json(['status' => 'ok', 'data' => $recipe]);
     }
 
-    public function destroy(Recipe $recipe)
+    public function destroy(Recipe $recipe): JsonResponse
     {
         try {
             $this->recipeService->delete($recipe);

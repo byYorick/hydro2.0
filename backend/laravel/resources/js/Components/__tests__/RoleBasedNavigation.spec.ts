@@ -70,7 +70,7 @@ describe('RoleBasedNavigation', () => {
     expect(wrapper.text()).toContain('Устройства')
     expect(wrapper.text()).toContain('Рецепты')
     expect(wrapper.text()).toContain('Пользователи')
-    expect(wrapper.text()).toContain('Аудит')
+    expect(wrapper.text()).toContain('Логи')
     expect(wrapper.text()).toContain('Настройки')
   })
 

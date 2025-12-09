@@ -210,7 +210,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { Link } from '@inertiajs/vue3'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
@@ -218,7 +218,10 @@ import Badge from '@/Components/Badge.vue'
 import MetricCard from '@/Components/MetricCard.vue'
 import { translateStatus } from '@/utils/i18n'
 import { formatTime } from '@/utils/formatTime'
+import { useTelemetry } from '@/composables/useTelemetry'
 import type { Zone, Recipe } from '@/types'
+
+type TrendDirection = 'up' | 'down' | 'stable' | null
 
 interface Props {
   dashboard: {
@@ -230,6 +233,10 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+
+const { fetchHistory } = useTelemetry()
+const phTrendData = ref<TrendDirection>(null)
+const ecTrendData = ref<TrendDirection>(null)
 
 // Группировка зон по культурам
 const zonesByCrop = computed(() => {
@@ -295,15 +302,55 @@ const averageEc = computed(() => {
   return sum / zonesWithEc.length
 })
 
-const phTrend = computed(() => {
-  // TODO: Вычислить тренд на основе исторических данных
-  return null
+// Вычисление трендов на основе исторических данных
+async function calculateTrend(zoneId: number, metric: 'PH' | 'EC', currentValue: number | null): Promise<TrendDirection> {
+  if (currentValue === null) return null
+
+  try {
+    const now = new Date()
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+    
+    const history = await fetchHistory(zoneId, metric, {
+      from: yesterday.toISOString(),
+      to: now.toISOString(),
+    }, true)
+
+    if (history.length < 2) return null
+
+    // Берем значения из начала и конца периода
+    const oldValue = history[0].value
+    const newValue = history[history.length - 1].value
+    
+    const diff = newValue - oldValue
+    const threshold = metric === 'PH' ? 0.1 : 0.2 // Порог для определения тренда
+
+    if (Math.abs(diff) < threshold) return 'stable'
+    return diff > 0 ? 'up' : 'down'
+  } catch (error) {
+    console.error(`[AgronomistDashboard] Failed to calculate ${metric} trend:`, error)
+    return null
+  }
+}
+
+// Вычисляем тренды для всех зон
+onMounted(async () => {
+  if (!props.dashboard.zones || props.dashboard.zones.length === 0) return
+
+  // Вычисляем тренд pH на основе первой зоны с pH
+  const zoneWithPh = props.dashboard.zones.find(z => z.telemetry?.ph !== null && z.telemetry?.ph !== undefined)
+  if (zoneWithPh) {
+    phTrendData.value = await calculateTrend(zoneWithPh.id, 'PH', zoneWithPh.telemetry?.ph || null)
+  }
+
+  // Вычисляем тренд EC на основе первой зоны с EC
+  const zoneWithEc = props.dashboard.zones.find(z => z.telemetry?.ec !== null && z.telemetry?.ec !== undefined)
+  if (zoneWithEc) {
+    ecTrendData.value = await calculateTrend(zoneWithEc.id, 'EC', zoneWithEc.telemetry?.ec || null)
+  }
 })
 
-const ecTrend = computed(() => {
-  // TODO: Вычислить тренд на основе исторических данных
-  return null
-})
+const phTrend = computed(() => phTrendData.value)
+const ecTrend = computed(() => ecTrendData.value)
 
 // Целевые значения для pH (стандартный диапазон для гидропоники)
 const phTarget = computed(() => {
@@ -348,12 +395,44 @@ const activeRecipes = computed(() => {
     const zonesWithRecipe = props.dashboard.zones?.filter(z => 
       z.recipe_instance?.recipe_id === recipe.id
     ) || []
+    
+    // Вычисляем информацию о фазах из зон
+    let currentPhase: string | null = null
+    let phaseProgress = 0
+    let nextPhaseTransition: string | null = null
+
+    if (zonesWithRecipe.length > 0 && recipe.phases && recipe.phases.length > 0) {
+      // Берем первую зону для определения текущей фазы
+      const firstZone = zonesWithRecipe[0]
+      const currentPhaseIndex = firstZone.recipe_instance?.current_phase_index ?? 0
+      const currentPhaseData = recipe.phases.find(p => p.phase_index === currentPhaseIndex)
+      
+      if (currentPhaseData) {
+        currentPhase = currentPhaseData.name || `Фаза ${currentPhaseIndex + 1}`
+        
+        // Вычисляем прогресс фазы на основе времени
+        if (firstZone.recipe_instance?.started_at) {
+          const startedAt = new Date(firstZone.recipe_instance.started_at)
+          const now = new Date()
+          const phaseDuration = currentPhaseData.duration_days * 24 * 60 * 60 * 1000
+          const elapsed = now.getTime() - startedAt.getTime()
+          phaseProgress = Math.min(100, Math.max(0, (elapsed / phaseDuration) * 100))
+          
+          // Вычисляем время до следующей фазы
+          const nextPhaseStart = new Date(startedAt.getTime() + phaseDuration)
+          if (nextPhaseStart > now) {
+            nextPhaseTransition = nextPhaseStart.toISOString()
+          }
+        }
+      }
+    }
+
     return {
       ...recipe,
       zonesCount: zonesWithRecipe.length,
-      currentPhase: null, // TODO: Вычислить из zones
-      phaseProgress: 0, // TODO: Вычислить из zones
-      nextPhaseTransition: null // TODO: Вычислить из zones
+      currentPhase,
+      phaseProgress,
+      nextPhaseTransition
     }
   }).filter(r => r.zonesCount > 0)
 })

@@ -9,7 +9,6 @@ use App\Http\Requests\StoreNodeRequest;
 use App\Http\Requests\UpdateNodeRequest;
 use App\Jobs\PublishNodeConfigJob;
 use App\Models\DeviceNode;
-use App\Models\NodeChannel;
 use App\Services\NodeConfigService;
 use App\Services\NodeLifecycleService;
 use App\Services\NodeRegistryService;
@@ -17,7 +16,6 @@ use App\Services\NodeService;
 use App\Services\NodeSwapService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
-use Illuminate\Support\Facades\DB;
 
 class NodeController extends Controller
 {
@@ -437,23 +435,6 @@ class NodeController extends Controller
         $this->authorize('publishConfig', $node);
 
         try {
-            $validatedConfig = $request->validated();
-            $customChannels = data_get($validatedConfig, 'config.channels');
-
-            if (is_array($customChannels)) {
-                $sanitizedChannels = $this->sanitizeChannels($customChannels);
-                
-                if (count($sanitizedChannels) === 0) {
-                    return response()->json([
-                        'status' => 'error',
-                        'message' => 'Не переданы каналы для публикации',
-                    ], Response::HTTP_BAD_REQUEST);
-                }
-
-                $this->updateNodeChannels($node, $sanitizedChannels);
-                $node->refresh();
-            }
-
             // Для публикации через MQTT включаем креды (нужны для подключения ноды)
             $config = $this->configService->generateNodeConfig($node, null, true);
 

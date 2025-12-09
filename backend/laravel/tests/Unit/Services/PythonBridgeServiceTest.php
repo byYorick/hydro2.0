@@ -23,6 +23,9 @@ class PythonBridgeServiceTest extends TestCase
         $this->service = new PythonBridgeService;
 
         // Настраиваем моки для HTTP и конфига
+        // PythonBridgeService теперь использует history-logger для команд зон
+        Config::set('services.history_logger.url', 'http://test-bridge');
+        Config::set('services.history_logger.token', 'test-token');
         Config::set('services.python_bridge.base_url', 'http://test-bridge');
         Config::set('services.python_bridge.token', 'test-token');
 
@@ -53,7 +56,9 @@ class PythonBridgeServiceTest extends TestCase
 
         Http::assertSent(function ($request) use ($zone) {
             $data = $request->data();
-            return $request->url() === "http://test-bridge/bridge/zones/{$zone->id}/commands"
+            $url = $request->url();
+            // PythonBridgeService использует history-logger для команд зон
+            return str_contains($url, "zones/{$zone->id}/commands")
                 && $request->hasHeader('Authorization', 'Bearer test-token')
                 && isset($data['node_uid']) && $data['node_uid'] === 'nd-pump-1'
                 && isset($data['channel']) && $data['channel'] === 'pump_main';
@@ -143,7 +148,7 @@ class PythonBridgeServiceTest extends TestCase
         // Зона без узлов
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('node_uid and channel are required');
+        $this->expectExceptionMessageMatches('/Unable to auto-resolve node_uid and channel/');
 
         $this->service->sendZoneCommand($zone, [
             'type' => 'FORCE_IRRIGATION',
@@ -161,7 +166,7 @@ class PythonBridgeServiceTest extends TestCase
         // Узел без каналов
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('node_uid and channel are required');
+        $this->expectExceptionMessageMatches('/Unable to auto-resolve node_uid and channel/');
 
         $this->service->sendZoneCommand($zone, [
             'type' => 'FORCE_IRRIGATION',
@@ -174,7 +179,7 @@ class PythonBridgeServiceTest extends TestCase
         $zone = Zone::factory()->create();
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('node_uid and channel are required');
+        $this->expectExceptionMessageMatches('/Unable to auto-resolve node_uid and channel/');
 
         $this->service->sendZoneCommand($zone, [
             'type' => 'FORCE_IRRIGATION',
@@ -189,7 +194,7 @@ class PythonBridgeServiceTest extends TestCase
         $zone = Zone::factory()->create();
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('node_uid and channel are required');
+        $this->expectExceptionMessageMatches('/Unable to auto-resolve node_uid and channel/');
 
         $this->service->sendZoneCommand($zone, [
             'type' => 'FORCE_IRRIGATION',

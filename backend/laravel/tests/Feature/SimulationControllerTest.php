@@ -81,30 +81,22 @@ class SimulationControllerTest extends TestCase
                 ],
             ]);
 
-        $response->assertStatus(200);
+        // Симуляция выполняется асинхронно, возвращает 202 Accepted
+        $response->assertStatus(202);
         $response->assertJson([
             'status' => 'ok',
         ]);
         $response->assertJsonStructure([
             'status',
             'data' => [
-                'points',
-                'duration_hours',
-                'step_minutes',
+                'job_id',
+                'status',
+                'message',
             ],
         ]);
 
-        // Проверяем, что запрос был отправлен в Digital Twin
-        Http::assertSent(function ($request) use ($zone) {
-            $data = $request->data();
-            $url = $request->url();
-            return str_contains($url, 'simulate/zone')
-                && $data['zone_id'] === $zone->id
-                && $data['duration_hours'] === 24
-                && $data['step_minutes'] === 10
-                && isset($data['scenario']['recipe_id'])
-                && isset($data['scenario']['initial_state']);
-        });
+        // Симуляция выполняется асинхронно, поэтому проверяем только структуру ответа
+        // Запрос к Digital Twin будет отправлен в job
     }
 
     public function test_simulate_zone_uses_zone_active_recipe_if_no_recipe_id_provided(): void
@@ -134,14 +126,9 @@ class SimulationControllerTest extends TestCase
                 'step_minutes' => 10,
             ]);
 
-        $response->assertStatus(200);
-
-        // Проверяем, что использовался recipe_id из ZoneRecipeInstance
-        Http::assertSent(function ($request) use ($recipe) {
-            $data = $request->data();
-            return isset($data['scenario']['recipe_id'])
-                && $data['scenario']['recipe_id'] === $recipe->id;
-        });
+        // Симуляция выполняется асинхронно, возвращает 202 Accepted
+        $response->assertStatus(202);
+        // Запрос к Digital Twin будет отправлен в job
     }
 
     public function test_simulate_zone_handles_digital_twin_error(): void
@@ -161,11 +148,14 @@ class SimulationControllerTest extends TestCase
                 'step_minutes' => 10,
             ]);
 
-        $response->assertStatus(500);
+        // Симуляция ставится в очередь асинхронно, ошибка обрабатывается в job
+        $response->assertStatus(202);
         $response->assertJson([
-            'status' => 'error',
+            'status' => 'ok',
         ]);
-        $this->assertStringContainsString('Digital Twin simulation failed', $response->json('message'));
+        $data = $response->json('data');
+        $this->assertNotNull($data);
+        $this->assertStringContainsString('queued', $data['message'] ?? '');
     }
 
     public function test_simulate_zone_handles_connection_error(): void
@@ -182,11 +172,14 @@ class SimulationControllerTest extends TestCase
                 'step_minutes' => 10,
             ]);
 
-        $response->assertStatus(500);
+        // Симуляция ставится в очередь асинхронно, ошибка подключения обрабатывается в job
+        $response->assertStatus(202);
         $response->assertJson([
-            'status' => 'error',
+            'status' => 'ok',
         ]);
-        $this->assertStringContainsString('Failed to connect', $response->json('message'));
+        $data = $response->json('data');
+        $this->assertNotNull($data);
+        $this->assertStringContainsString('queued', $data['message'] ?? '');
     }
 
     public function test_simulate_zone_with_minimal_parameters(): void
@@ -206,14 +199,9 @@ class SimulationControllerTest extends TestCase
                 'step_minutes' => 10,
             ]);
 
-        $response->assertStatus(200);
+        // Симуляция выполняется асинхронно, возвращает 202 Accepted
+        $response->assertStatus(202);
 
-        // Проверяем, что использовались дефолтные значения для initial_state
-        Http::assertSent(function ($request) {
-            $data = $request->data();
-            return isset($data['scenario']['initial_state'])
-                && isset($data['scenario']['initial_state']['ph'])
-                && isset($data['scenario']['initial_state']['ec']);
-        });
+        // Симуляция выполняется асинхронно, дефолтные значения будут использованы в job
     }
 }

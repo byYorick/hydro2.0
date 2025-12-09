@@ -300,7 +300,7 @@ class TelemetryController extends Controller
         } catch (\Exception $e) {
             // Если таблица агрегации не существует или произошла ошибка,
             // возвращаем данные из raw samples с более простой агрегацией
-            \Log::warning('Failed to get aggregates from aggregated table, falling back to raw samples', [
+            Log::warning('Failed to get aggregates from aggregated table, falling back to raw samples', [
                 'error' => $e->getMessage(),
                 'table' => $table,
             ]);

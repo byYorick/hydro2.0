@@ -650,13 +650,6 @@ public function publishConfig(
 ): JsonResponse {
     $this->authorize('publishConfig', $node);
 
-    $customChannels = $request->input('config.channels');
-    
-    if ($customChannels) {
-        $this->updateNodeChannels($node, $customChannels);
-        $node->refresh();
-    }
-
     $config = $this->configService->generateNodeConfig($node, null, true);
     
     $this->validateNodeAssignment($node);
@@ -671,77 +664,6 @@ public function publishConfig(
             'bridge_response' => $response,
         ],
     ]);
-}
-
-private function updateNodeChannels(DeviceNode $node, array $channels): void
-{
-    $sanitized = $this->sanitizeChannels($channels);
-    
-    if (empty($sanitized)) {
-        abort(400, 'No valid channels provided');
-    }
-
-    DB::transaction(function () use ($sanitized, $node) {
-        $incomingNames = [];
-        
-        foreach ($sanitized as $channel) {
-            $incomingNames[] = $channel['channel'];
-            
-            NodeChannel::updateOrCreate(
-                [
-                    'node_id' => $node->id,
-                    'channel' => $channel['channel'],
-                ],
-                [
-                    'type' => $channel['type'],
-                    'metric' => $channel['metric'],
-                    'unit' => $channel['unit'],
-                    'config' => $channel['config'],
-                ]
-            );
-        }
-
-        // Удаляем старые каналы для relay нод
-        if (strtolower($node->type ?? '') === 'relay' && !empty($incomingNames)) {
-            NodeChannel::where('node_id', $node->id)
-                ->whereNotIn('channel', $incomingNames)
-                ->delete();
-        }
-    });
-}
-
-private function sanitizeChannels(array $channels): array
-{
-    $result = [];
-    
-    foreach ($channels as $channel) {
-        if (!is_array($channel)) {
-            continue;
-        }
-        
-        $name = trim($channel['channel'] ?? $channel['name'] ?? '');
-        if ($name === '') {
-            continue;
-        }
-        
-        $type = strtoupper($channel['type'] ?? 'ACTUATOR');
-        $metric = $channel['metric'] ?? ($type === 'ACTUATOR' ? 'RELAY' : null);
-        $actuatorType = strtoupper($channel['actuator_type'] ?? ($type === 'ACTUATOR' ? 'RELAY' : ''));
-        
-        $result[] = [
-            'channel' => $name,
-            'type' => $type,
-            'metric' => $metric ? strtoupper((string) $metric) : null,
-            'unit' => $channel['unit'] ?? null,
-            'config' => array_filter([
-                'actuator_type' => $actuatorType ?: null,
-                'gpio' => isset($channel['gpio']) ? (int) $channel['gpio'] : null,
-                'description' => isset($channel['description']) ? trim((string) $channel['description']) : null,
-            ], fn($v) => $v !== null && $v !== ''),
-        ];
-    }
-    
-    return $result;
 }
 
 private function validateNodeAssignment(DeviceNode $node): void
@@ -935,4 +857,3 @@ class NodeControllerTest extends TestCase
 **Следующий шаг:** Начать с критических исправлений (День 1-2)
 
 **Контакт для вопросов:** См. полный отчет в `AUDIT_REPORT.md`
-

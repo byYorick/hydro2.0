@@ -18,7 +18,8 @@ COPY mqtt-bridge/requirements.txt /app/mqtt-bridge-requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements-test.txt && \
     pip install --no-cache-dir -r /app/history-logger-requirements.txt && \
     pip install --no-cache-dir -r /app/automation-engine-requirements.txt && \
-    pip install --no-cache-dir -r /app/mqtt-bridge-requirements.txt
+    pip install --no-cache-dir -r /app/mqtt-bridge-requirements.txt && \
+    pip install --upgrade pytest-asyncio==0.24.0
 
 # Копируем код
 COPY common /app/common

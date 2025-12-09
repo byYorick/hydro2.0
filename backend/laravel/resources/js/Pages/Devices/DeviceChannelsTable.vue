@@ -117,7 +117,6 @@ function renderConfig(channel) {
   const cfg = channel.config || {}
   const metric = channel.metric || cfg.metric
   const actuatorType = channel.actuator_type || cfg.actuator_type
-  const gpio = channel.gpio ?? cfg.gpio
   const parts = []
 
   if (metric) {
@@ -126,10 +125,6 @@ function renderConfig(channel) {
 
   if (actuatorType) {
     parts.push(actuatorType)
-  }
-
-  if (gpio !== undefined && gpio !== null && gpio !== '') {
-    parts.push(`GPIO ${gpio}`)
   }
 
   if (parts.length === 0 && channel.unit) {

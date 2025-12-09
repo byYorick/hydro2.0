@@ -13,6 +13,7 @@
 #include "node_state_manager.h"
 #include "relay_node_app.h"
 #include "relay_node_defaults.h"
+#include "relay_node_hw_map.h"
 #include "relay_driver.h"
 #include "mqtt_manager.h"
 #include "config_storage.h"
@@ -25,6 +26,34 @@ static const char *TAG = "relay_node_fw";
 
 // Forward declaration для callback safe_mode
 static esp_err_t relay_node_disable_actuators_in_safe_mode(void *user_ctx);
+
+// Реализация резолвера аппаратной карты для драйвера реле
+bool relay_driver_resolve_hw_gpio(const char *channel_name, int *gpio_pin_out, bool *active_high_out, relay_type_t *relay_type_out) {
+    if (channel_name == NULL || gpio_pin_out == NULL) {
+        return false;
+    }
+
+    for (size_t i = 0; i < RELAY_NODE_HW_CHANNELS_COUNT; i++) {
+        const relay_node_hw_channel_t *hw = &RELAY_NODE_HW_CHANNELS[i];
+        if (strcmp(hw->channel_name, channel_name) == 0) {
+            *gpio_pin_out = hw->gpio_pin;
+            if (active_high_out) {
+                *active_high_out = hw->active_high;
+            }
+            if (relay_type_out) {
+                *relay_type_out = hw->relay_type;
+            }
+            ESP_LOGI(TAG, "Resolved GPIO for channel %s -> %d (active_high=%s, type=%s)",
+                     channel_name, hw->gpio_pin,
+                     hw->active_high ? "true" : "false",
+                     hw->relay_type == RELAY_TYPE_NC ? "NC" : "NO");
+            return true;
+        }
+    }
+
+    ESP_LOGW(TAG, "No hardware mapping for channel %s", channel_name);
+    return false;
+}
 
 // Callback для инициализации каналов из NodeConfig
 static esp_err_t relay_node_init_channel_callback(
@@ -57,17 +86,9 @@ static esp_err_t relay_node_init_channel_callback(
         if (actuator_type && cJSON_IsString(actuator_type)) {
             const char *act_type = actuator_type->valuestring;
             if (strcmp(act_type, "RELAY") == 0) {
-                cJSON *gpio_item = cJSON_GetObjectItem(channel_config, "gpio");
-                if (gpio_item && cJSON_IsNumber(gpio_item)) {
-                    int gpio = gpio_item->valueint;
-                    ESP_LOGI(TAG, "Relay channel %s configured on GPIO %d (will be initialized via relay_driver_init_from_config)", 
-                            channel_name, gpio);
-                    return ESP_OK;
-                } else {
-                    // Не считаем это критичной ошибкой: пропускаем канал без GPIO, чтобы нода не падала на частичных конфигурациях
-                    ESP_LOGW(TAG, "Relay channel %s has no GPIO specified, skipping initialization", channel_name);
-                    return ESP_OK;
-                }
+                // GPIO теперь задаётся только в прошивке; наличие или отсутствие в конфиге не критично
+                ESP_LOGI(TAG, "Relay channel %s acknowledged (GPIO resolved in firmware)", channel_name);
+                return ESP_OK;
             }
         }
     }

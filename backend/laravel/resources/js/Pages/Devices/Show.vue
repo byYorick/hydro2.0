@@ -204,7 +204,6 @@ const configChannels = computed(() => {
       metric: ch.metric || ch.metrics || null,
       unit: ch.unit || null,
       actuator_type: ch.actuator_type || ch.config?.actuator_type,
-      gpio: ch.gpio ?? ch.config?.gpio ?? null,
       description: ch.description || ch.config?.description || null,
       config: ch,
     }))

@@ -2,13 +2,14 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Recipe;
-use App\Models\Zone;
-use App\Models\RecipeAnalytics;
 use App\Models\Harvest;
+use App\Models\Recipe;
+use App\Models\RecipeAnalytics;
+use App\Models\Zone;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class ReportController extends Controller
 {
@@ -180,7 +181,7 @@ class ReportController extends Controller
             } catch (\Exception $e) {
                 // В тестах Job может не работать - игнорируем ошибку
                 if (!app()->environment('testing')) {
-                    \Log::warning('Failed to dispatch CalculateRecipeAnalyticsJob', [
+                    Log::warning('Failed to dispatch CalculateRecipeAnalyticsJob', [
                         'zone_id' => $harvest->zone_id,
                         'error' => $e->getMessage(),
                     ]);

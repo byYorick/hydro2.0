@@ -14,6 +14,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -58,7 +59,7 @@ class PublishNodeConfigJob implements ShouldQueue
 
         try {
             // Дополнительная защита через DB lock
-            return DB::transaction(function () use ($configService) {
+            DB::transaction(function () use ($configService) {
                 // Устанавливаем SERIALIZABLE isolation level для критической операции
                 DB::statement('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE');
                 
@@ -286,6 +287,7 @@ class PublishNodeConfigJob implements ShouldQueue
 
     /**
      * Handle a job failure.
+     * БАГ #4 FIX: Откатываем pending_zone_id при ошибке публикации конфига
      */
     public function failed(\Throwable $exception): void
     {
@@ -293,5 +295,31 @@ class PublishNodeConfigJob implements ShouldQueue
             'node_id' => $this->nodeId,
             'error' => $exception->getMessage(),
         ]);
+        
+        // Откатываем pending_zone_id при ошибке публикации
+        try {
+            DB::transaction(function () {
+                $node = DeviceNode::where('id', $this->nodeId)
+                    ->lockForUpdate()
+                    ->first();
+                    
+                if ($node && $node->pending_zone_id && !$node->zone_id) {
+                    // Если конфиг не был опубликован, откатываем привязку
+                    $node->pending_zone_id = null;
+                    $node->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
+                    $node->save();
+                    
+                    Log::warning('PublishNodeConfigJob: Rolled back pending_zone_id due to job failure', [
+                        'node_id' => $node->id,
+                        'uid' => $node->uid,
+                    ]);
+                }
+            });
+        } catch (\Exception $e) {
+            Log::error('PublishNodeConfigJob: Error rolling back pending_zone_id', [
+                'node_id' => $this->nodeId,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 }

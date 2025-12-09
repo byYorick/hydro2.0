@@ -116,8 +116,7 @@ public function registerNodeFromHello(array $helloData): DeviceNode
             }
         }
         
-        // Создаём каналы из capabilities
-        $this->syncNodeChannelsFromCapabilities($node, $helloData['capabilities'] ?? []);
+        // Каналы НЕ создаём из capabilities: нода публикует их после получения конфига (они зашиты в прошивке)
         
         return $node;
     });
@@ -1198,4 +1197,3 @@ async def handle_telemetry(topic: str, payload: bytes):
 **Дата создания:** 8 декабря 2025  
 **Автор:** AI Deep Dive Analyzer  
 **Версия:** 1.0
-

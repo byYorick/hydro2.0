@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Models\DeviceNode;
-use App\Models\NodeChannel;
 use App\Enums\NodeLifecycleState;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;
@@ -21,8 +20,8 @@ class NodeConfigService
      */
     public function generateNodeConfig(DeviceNode $node, ?int $version = null, bool $includeCredentials = false, bool $isBindingMode = false): array
     {
-        // Загружаем каналы узла и связанные данные
-        $node->load(['channels', 'zone.greenhouse']);
+        // Загружаем связанные данные для вычисления gh_uid/zone_uid
+        $node->load(['zone.greenhouse']);
         
         // Определяем версию конфига
         if ($version === null) {
@@ -41,65 +40,8 @@ class NodeConfigService
                 $ghUid = $node->zone->greenhouse->uid ?? 'gh-' . $node->zone->greenhouse->id;
             }
         }
-        
-        // Формируем channels
+        // Каналы задаются прошивкой и не отправляются сервером
         $channels = [];
-        $isRelayNode = strtolower($node->type ?? '') === 'relay';
-
-        // В режиме привязки для релейных нод отправляем временный конфиг,
-        // чтобы прошивка корректно инициализировалась до ручной настройки каналов пользователем.
-        if ($isBindingMode && $isRelayNode) {
-            $channels = [
-                [
-                    'name' => 'relay1',
-                    'type' => 'ACTUATOR',
-                    'actuator_type' => 'RELAY',
-                    'gpio' => 26, // временный GPIO, пользователь настроит реальные после привязки
-                    'fail_safe_mode' => 'NO',
-                ],
-                [
-                    'name' => 'relay2',
-                    'type' => 'ACTUATOR',
-                    'actuator_type' => 'RELAY',
-                    'gpio' => 27,
-                    'fail_safe_mode' => 'NO',
-                ],
-            ];
-        } else {
-            foreach ($node->channels as $channel) {
-                $channelData = [
-                    'name' => $channel->channel,
-                    'type' => $this->normalizeChannelType($channel->type),
-                    'metric' => $channel->metric,
-                ];
-                
-                // Добавляем дополнительные параметры из config канала
-                $channelConfig = $channel->config ?? [];
-                if (!empty($channelConfig)) {
-                    // Объединяем с базовыми параметрами
-                    $channelData = array_merge($channelData, $channelConfig);
-                }
-                
-                // Добавляем стандартные параметры, если их нет
-                if ($channelData['type'] === 'SENSOR' && !isset($channelData['poll_interval_ms'])) {
-                    $channelData['poll_interval_ms'] = 3000; // По умолчанию 3 секунды
-                }
-                
-                if ($channelData['type'] === 'ACTUATOR') {
-                    if (!isset($channelData['actuator_type'])) {
-                        $channelData['actuator_type'] = $this->inferActuatorType($channel->channel);
-                    }
-                    if (!isset($channelData['safe_limits'])) {
-                        $channelData['safe_limits'] = [
-                            'max_duration_ms' => 5000,
-                            'min_off_ms' => 3000,
-                        ];
-                    }
-                }
-                
-                $channels[] = $channelData;
-            }
-        }
         
         // Формируем wifi конфигурацию
         $wifi = $this->getWifiConfig($node, $includeCredentials);
@@ -122,60 +64,6 @@ class NodeConfigService
         $this->validateNodeConfig($nodeConfig);
         
         return $nodeConfig;
-    }
-    
-    /**
-     * Нормализовать тип канала.
-     * 
-     * @param string|null $type
-     * @return string
-     */
-    private function normalizeChannelType(?string $type): string
-    {
-        if (!$type) {
-            return 'SENSOR';
-        }
-        
-        $typeUpper = strtoupper($type);
-        if (in_array($typeUpper, ['SENSOR', 'ACTUATOR'])) {
-            return $typeUpper;
-        }
-        
-        // Маппинг старых значений
-        if (in_array($typeUpper, ['S', 'SENSOR'])) {
-            return 'SENSOR';
-        }
-        if (in_array($typeUpper, ['A', 'ACTUATOR', 'ACT'])) {
-            return 'ACTUATOR';
-        }
-        
-        return 'SENSOR'; // По умолчанию
-    }
-    
-    /**
-     * Определить тип актуатора по имени канала.
-     * 
-     * @param string $channelName
-     * @return string
-     */
-    private function inferActuatorType(string $channelName): string
-    {
-        $nameLower = strtolower($channelName);
-        
-        if (str_contains($nameLower, 'pump')) {
-            return 'PUMP';
-        }
-        if (str_contains($nameLower, 'valve') || str_contains($nameLower, 'solenoid')) {
-            return 'VALVE';
-        }
-        if (str_contains($nameLower, 'relay')) {
-            return 'RELAY';
-        }
-        if (str_contains($nameLower, 'light') || str_contains($nameLower, 'led')) {
-            return 'LIGHT';
-        }
-        
-        return 'ACTUATOR'; // По умолчанию
     }
     
     /**
@@ -326,7 +214,7 @@ class NodeConfigService
         
         return $mqtt;
     }
-    
+
     /**
      * Валидировать NodeConfig перед отправкой.
      * 
@@ -350,10 +238,6 @@ class NodeConfigService
         
         if (empty($config['zone_uid'])) {
             throw new \InvalidArgumentException('NodeConfig must have zone_uid');
-        }
-        
-        if (!is_array($config['channels'] ?? null)) {
-            throw new \InvalidArgumentException('NodeConfig must have channels array');
         }
         
         if (!is_array($config['wifi'] ?? null)) {

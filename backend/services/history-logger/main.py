@@ -1633,7 +1633,8 @@ async def handle_config_response(topic: str, payload: bytes):
     Переводит ноду в ASSIGNED_TO_ZONE после успешной установки конфига.
     """
     try:
-        logger.info(f"[CONFIG_RESPONSE] Received message on topic {topic}, payload length: {len(payload)}")
+        logger.info(f"[CONFIG_RESPONSE] ===== START processing config_response =====")
+        logger.info(f"[CONFIG_RESPONSE] Topic: {topic}, payload length: {len(payload)}")
         data = _parse_json(payload)
         if not data or not isinstance(data, dict):
             logger.warning(f"[CONFIG_RESPONSE] Invalid JSON in config_response from topic {topic}")
@@ -1643,8 +1644,12 @@ async def handle_config_response(topic: str, payload: bytes):
         node_uid = _extract_node_uid(topic)
         if not node_uid:
             logger.warning(f"[CONFIG_RESPONSE] Could not extract node_uid from topic {topic}")
+            logger.warning(f"[CONFIG_RESPONSE] Topic parts: {topic.split('/')}")
             CONFIG_RESPONSE_ERROR.labels(node_uid="unknown").inc()
             return
+        
+        logger.info(f"[CONFIG_RESPONSE] Extracted node_uid: {node_uid} from topic: {topic}")
+        logger.info(f"[CONFIG_RESPONSE] Payload: {data}")
         
         CONFIG_RESPONSE_RECEIVED.inc()
         
@@ -1682,12 +1687,18 @@ async def handle_config_response(topic: str, payload: bytes):
         )
                 
                 if not node_rows or len(node_rows) == 0:
-                    logger.warning(f"[CONFIG_RESPONSE] Node {node_uid} not found in database, ignoring ACK")
+                    logger.warning(
+                        f"[CONFIG_RESPONSE] Node {node_uid} not found in database, ignoring ACK. "
+                        f"Topic: {topic}, Payload: {data}"
+                    )
                     CONFIG_RESPONSE_ERROR.labels(node_uid=node_uid).inc()
                     return
                 
                 node = node_rows[0]
                 node_config = node.get("config") or {}
+                
+                logger.debug(f"[CONFIG_RESPONSE] Node found in DB: id={node.get('id')}, lifecycle_state={node.get('lifecycle_state')}, zone_id={node.get('zone_id')}, pending_zone_id={node.get('pending_zone_id')}")
+                logger.debug(f"[CONFIG_RESPONSE] Node config: {node_config}, has_version: {'version' in node_config if node_config else False}")
                 
                 # Проверяем cmd_id если он указан в payload
                 if cmd_id:
@@ -1756,8 +1767,21 @@ async def handle_config_response(topic: str, payload: bytes):
                 # Переводим в ASSIGNED_TO_ZONE только если:
                 # 1. Нода в состоянии REGISTERED_BACKEND
                 # 2. Нода привязана к зоне (zone_id не null) ИЛИ есть pending_zone_id
+                # 3. Зона существует в БД (ПРОБЛЕМА #2 FIX)
                 target_zone_id = zone_id or pending_zone_id
                 if lifecycle_state == "REGISTERED_BACKEND" and target_zone_id:
+                    # Проверяем существование зоны
+                    zone_check = await fetch(
+                        "SELECT id FROM zones WHERE id = $1",
+                        target_zone_id
+                    )
+                    if not zone_check:
+                        logger.warning(
+                            f"[CONFIG_RESPONSE] Zone {target_zone_id} not found, cannot complete binding for node {node_uid}"
+                        )
+                        CONFIG_RESPONSE_ERROR.labels(node_uid=node_uid).inc()
+                        return
+                    
                     logger.info(
                         f"[CONFIG_RESPONSE] Preparing node {node_uid} (id={node_id}) transition to ASSIGNED_TO_ZONE "
                         f"after successful config installation"
@@ -1788,20 +1812,36 @@ async def handle_config_response(topic: str, payload: bytes):
                                 # Это предотвращает автоматическую доставку конфига при переподключении.
                                 # Используем node.get() для получения hardware_id из результата запроса к БД.
                                 hardware_id = node.get("hardware_id")
-                                if hardware_id:
-                                    temp_topic = f"hydro/gh-temp/zn-temp/{hardware_id}/config"
+                                gh_uid = node.get("gh_uid")
+                                zone_uid = node.get("zone_uid")
+                                
+                                if hardware_id and gh_uid and zone_uid:
+                                    # Используем реальные gh_uid и zone_uid вместо хардкода
+                                    temp_topic = f"hydro/{gh_uid}/{zone_uid}/{hardware_id}/config"
                                     logger.info(f"[CONFIG_RESPONSE] Clearing retained message on temp topic: {temp_topic}")
-                                    try:
-                                        mqtt = await get_mqtt_client()
-                                        base_client = mqtt._client
-                                        # Публикуем пустое сообщение с retain=True для очистки retained сообщения
-                                        result = base_client._client.publish(temp_topic, "", qos=1, retain=True)
-                                        if result.rc == 0:
-                                            logger.info(f"[CONFIG_RESPONSE] Retained message cleared on temp topic: {temp_topic}")
-                                        else:
-                                            logger.warning(f"[CONFIG_RESPONSE] Failed to clear retained message on temp topic {temp_topic}: rc={result.rc}")
-                                    except Exception as clear_err:
-                                        logger.warning(f"[CONFIG_RESPONSE] Error clearing retained message on temp topic {temp_topic}: {clear_err}")
+                                    # ПРОБЛЕМА #3 FIX: Добавляем retry логику для очистки retained сообщений
+                                    max_retries = 3
+                                    cleared = False
+                                    for attempt in range(max_retries):
+                                        try:
+                                            mqtt = await get_mqtt_client()
+                                            base_client = mqtt._client
+                                            # Публикуем пустое сообщение с retain=True для очистки retained сообщения
+                                            result = base_client._client.publish(temp_topic, "", qos=1, retain=True)
+                                            if result.rc == 0:
+                                                logger.info(f"[CONFIG_RESPONSE] Retained message cleared on temp topic: {temp_topic}")
+                                                cleared = True
+                                                break
+                                            elif attempt < max_retries - 1:
+                                                await asyncio.sleep(0.5 * (attempt + 1))
+                                        except Exception as clear_err:
+                                            if attempt < max_retries - 1:
+                                                await asyncio.sleep(0.5 * (attempt + 1))
+                                            else:
+                                                logger.warning(f"[CONFIG_RESPONSE] Error clearing retained message on temp topic {temp_topic} after {max_retries} attempts: {clear_err}")
+                                    
+                                    if not cleared:
+                                        logger.warning(f"[CONFIG_RESPONSE] Failed to clear retained message on temp topic {temp_topic} after {max_retries} attempts")
                                 
                             else:
                                 logger.warning(

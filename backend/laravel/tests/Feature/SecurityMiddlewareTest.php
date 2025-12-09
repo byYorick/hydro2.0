@@ -39,7 +39,7 @@ class SecurityMiddlewareTest extends TestCase
         $response->assertStatus(401)
             ->assertJson([
                 'status' => 'error',
-                'message' => 'Unauthorized: service token not configured or missing authentication',
+                'message' => 'Unauthorized: missing service token',
             ]);
     }
 
@@ -94,7 +94,7 @@ class SecurityMiddlewareTest extends TestCase
         $response->assertStatus(500)
             ->assertJson([
                 'status' => 'error',
-                'message' => 'Node registration token not configured',
+                'message' => 'Node registration token not configured. Set PY_INGEST_TOKEN or PY_API_TOKEN.',
             ]);
     }
 }

@@ -3,7 +3,7 @@
     <div v-if="loading" class="text-sm text-neutral-400">Загрузка...</div>
     <div v-else class="space-y-4">
       <div class="text-xs text-neutral-400">
-        Настройте каналы (имя, тип, GPIO, описание) и отправьте конфиг на ноду.
+        Настройте каналы (имя, тип, описание) и отправьте конфиг на ноду. GPIO настраивается только в прошивке.
       </div>
 
       <div v-if="errorMessage" class="text-xs text-amber-200 bg-amber-950/30 border border-amber-800 rounded-lg p-3">
@@ -53,7 +53,7 @@
             </div>
           </div>
 
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label class="block text-xs text-neutral-400 mb-1">Тип</label>
               <select
@@ -76,18 +76,6 @@
                 <option value="PUMP">PUMP</option>
                 <option value="FAN">FAN</option>
               </select>
-            </div>
-            <div>
-              <label class="block text-xs text-neutral-400 mb-1">GPIO</label>
-              <input
-                v-model.number="channel.gpio"
-                type="number"
-                min="0"
-                max="39"
-                placeholder="26"
-                class="h-9 w-full rounded-lg border border-neutral-700 bg-neutral-900 px-2 text-xs focus:border-sky-500"
-                :disabled="channel.type !== 'ACTUATOR'"
-              />
             </div>
           </div>
 
@@ -143,7 +131,6 @@ interface EditableChannel {
   channel: string
   type: string
   actuator_type?: string
-  gpio?: number | null
   metric?: string | null
   description?: string
 }
@@ -180,7 +167,7 @@ watch(() => props.show, (value) => {
     if (normalizedInitialChannels.value.length > 0) {
       editableChannels.value = [...normalizedInitialChannels.value]
     } else {
-      editableChannels.value = [normalizeChannel({ type: 'ACTUATOR', actuator_type: 'RELAY', channel: 'relay1', gpio: 26, metric: 'RELAY' })]
+      editableChannels.value = [normalizeChannel({ type: 'ACTUATOR', actuator_type: 'RELAY', channel: 'relay1', metric: 'RELAY' })]
     }
     errorMessage.value = ''
   }
@@ -199,7 +186,6 @@ function normalizeChannel(source: Record<string, any>): EditableChannel {
     channel: source.channel || source.name || '',
     type,
     actuator_type: (source.actuator_type || source.config?.actuator_type || 'RELAY').toString().toUpperCase(),
-    gpio: source.gpio ?? source.config?.gpio ?? null,
     metric: source.metric || source.config?.metric || (type === 'ACTUATOR' ? 'RELAY' : ''),
     description: source.description || source.config?.description || '',
   }
@@ -233,14 +219,12 @@ async function publishConfig() {
       .map((ch) => {
         const type = (ch.type || 'ACTUATOR').toString().toUpperCase()
         const actuatorType = (ch.actuator_type || (type === 'ACTUATOR' ? 'RELAY' : '')).toString().toUpperCase()
-        const gpio = type === 'ACTUATOR' ? (typeof ch.gpio === 'number' ? ch.gpio : undefined) : undefined
 
         return {
           name: (ch.name || ch.channel || '').trim(),
           channel: (ch.channel || ch.name || '').trim(),
           type,
           actuator_type: type === 'ACTUATOR' ? actuatorType : undefined,
-          gpio,
           metric: ch.metric ? ch.metric.toString().toUpperCase() : undefined,
           description: ch.description?.trim() || undefined,
         }

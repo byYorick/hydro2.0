@@ -2,13 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\TelemetryLast;
 use App\Models\Zone;
 use App\Jobs\RunSimulationJob;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Validation\ValidationException;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class SimulationController extends Controller
 {
@@ -44,16 +45,21 @@ class SimulationController extends Controller
             'initial_state' => $data['initial_state'] ?? [],
         ];
 
-        // Если initial_state пустой, можно попробовать получить текущее состояние зоны
+        // Если initial_state пустой, получаем текущее состояние зоны из telemetry_last
         if (empty($scenario['initial_state'])) {
-            // TODO: Получить текущее состояние из telemetry_last
-            // Пока используем дефолтные значения
+            $telemetry = TelemetryLast::where('zone_id', $zone->id)
+                ->whereIn('metric_type', ['ph', 'ec', 'temp_air', 'temp_water', 'humidity_air'])
+                ->get()
+                ->pluck('value', 'metric_type')
+                ->toArray();
+
+            // Используем значения из телеметрии или дефолтные значения
             $scenario['initial_state'] = [
-                'ph' => 6.0,
-                'ec' => 1.2,
-                'temp_air' => 22.0,
-                'temp_water' => 20.0,
-                'humidity_air' => 60.0,
+                'ph' => $telemetry['ph'] ?? 6.0,
+                'ec' => $telemetry['ec'] ?? 1.2,
+                'temp_air' => $telemetry['temp_air'] ?? 22.0,
+                'temp_water' => $telemetry['temp_water'] ?? 20.0,
+                'humidity_air' => $telemetry['humidity_air'] ?? 60.0,
             ];
         }
 

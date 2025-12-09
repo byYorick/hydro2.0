@@ -56,7 +56,7 @@ class PythonIngestController extends Controller
         // Проверяем, что zone_id существует
         $zone = \App\Models\Zone::find($data['zone_id']);
         if (! $zone) {
-            \Illuminate\Support\Facades\Log::warning('PythonIngestController: Zone not found', [
+            Log::warning('PythonIngestController: Zone not found', [
                 'zone_id' => $data['zone_id'],
             ]);
 
@@ -72,7 +72,7 @@ class PythonIngestController extends Controller
         if ($nodeId) {
             $node = DeviceNode::find($nodeId);
             if (! $node) {
-                \Illuminate\Support\Facades\Log::warning('PythonIngestController: Node not found', [
+                Log::warning('PythonIngestController: Node not found', [
                     'node_id' => $nodeId,
                 ]);
 
@@ -84,7 +84,7 @@ class PythonIngestController extends Controller
 
             // Проверяем, что нода привязана к указанной зоне
             if ($node->zone_id !== $data['zone_id']) {
-                \Illuminate\Support\Facades\Log::warning('PythonIngestController: Node zone mismatch', [
+                Log::warning('PythonIngestController: Node zone mismatch', [
                     'node_id' => $nodeId,
                     'node_zone_id' => $node->zone_id,
                     'requested_zone_id' => $data['zone_id'],
@@ -206,7 +206,7 @@ class PythonIngestController extends Controller
                 ));
             }
         } else {
-            \Log::warning('commandAck: Command not found for cmd_id', [
+            Log::warning('commandAck: Command not found for cmd_id', [
                 'cmd_id' => $data['cmd_id'],
                 'status' => $data['status'],
             ]);
