@@ -468,6 +468,24 @@ services:
       - tests
     command: ["python", "-m", "pytest", "automation-engine/tests/test_pid_config_service.py", "automation-engine/tests/test_pid_config_service_cache_update.py", "automation-engine/tests/test_pid_config_type_safety.py", "automation-engine/tests/test_zone_automation_pid_cleanup.py", "automation-engine/test_pid_integration.py", "-v"]
 
+  node-emulator:
+    build:
+      context: ./services
+      dockerfile: node-emulator/Dockerfile
+    environment:
+      - MQTT_HOST=mqtt
+      - MQTT_PORT=1883
+      - MQTT_USER=node_emulator
+      - MQTT_PASS=node_emulator_pass
+      - API_URL=http://laravel
+    depends_on:
+      - mqtt
+      - laravel
+    networks:
+      - default
+    profiles:
+      - load-test
+
 volumes:
   postgres_data:
   prometheus_data:

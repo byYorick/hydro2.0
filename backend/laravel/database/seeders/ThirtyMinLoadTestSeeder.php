@@ -10,19 +10,19 @@ use App\Models\NodeChannel;
 use Illuminate\Support\Str;
 
 /**
- * Seeder для создания 100 зон для нагрузочного тестирования
+ * Seeder для создания 100 нод для 30-минутного нагрузочного тестирования
  */
-class LoadTestSeeder extends Seeder
+class ThirtyMinLoadTestSeeder extends Seeder
 {
     public function run(): void
     {
-        $this->command->info('Создание данных для нагрузочного тестирования (1000 нод)...');
+        $this->command->info('Создание данных для 30-минутного нагрузочного тестирования (100 нод)...');
 
         // Создаем или получаем теплицу
         $greenhouse = Greenhouse::firstOrCreate(
-            ['uid' => 'gh-load-test'],
+            ['uid' => 'gh-30min-test'],
             [
-                'name' => 'Load Test Greenhouse',
+                'name' => '30min Test Greenhouse',
                 'timezone' => 'Europe/Moscow',
                 'type' => 'indoor',
                 'provisioning_token' => Str::random(32),
@@ -32,44 +32,43 @@ class LoadTestSeeder extends Seeder
         $zones = [];
         $nodes = [];
 
-        // Создаем 40 зон (для 1000 нод это примерно 25 нод на зону)
-        $zonesCount = 40;
+        // Создаем 10 зон (для 100 нод это 10 нод на зону)
+        $zonesCount = 10;
         for ($i = 1; $i <= $zonesCount; $i++) {
             $zone = Zone::firstOrCreate(
                 [
                     'greenhouse_id' => $greenhouse->id,
-                    'name' => "Load Test Zone {$i}",
+                    'name' => "30min Test Zone {$i}",
                 ],
                 [
-                    'uid' => 'zone-load-test-' . $i,
-                    'description' => "Zone for load testing #{$i}",
-                    'status' => $i % 10 === 0 ? 'PAUSED' : 'RUNNING',
+                    'uid' => 'zone-30min-test-' . $i,
+                    'description' => "Zone for 30min test #{$i}",
+                    'status' => 'RUNNING',
                 ]
             );
             $zones[] = $zone;
         }
 
-        // Создаем 1000 нод, распределяя их по зонам
-        $nodesPerZone = (int)ceil(1000 / $zonesCount);
-        for ($i = 0; $i < 1000; $i++) {
+        // Создаем 100 нод, распределяя их по зонам
+        for ($i = 0; $i < 100; $i++) {
             $zone = $zones[$i % $zonesCount];
-            $j = (int)floor($i / $zonesCount) + 1;
-                $node = DeviceNode::firstOrCreate(
-                    [
-                        'uid' => "node-load-test-{$i}-{$j}",
-                    ],
-                    [
-                        'zone_id' => $zone->id,
-                        'name' => "Node {$j} - Zone {$i}",
-                        'type' => $j === 1 ? 'ph' : ($j === 2 ? 'ec' : 'sensor'),
-                        'status' => 'ONLINE',
-                        'lifecycle_state' => 'ACTIVE',
-                        'fw_version' => '1.0.0',
-                        'last_seen_at' => now(),
-                        'last_heartbeat_at' => now(),
-                    ]
-                );
-                $nodes[] = $node;
+            
+            $node = DeviceNode::firstOrCreate(
+                [
+                    'uid' => "node-30min-test-{$i}",
+                ],
+                [
+                    'zone_id' => $zone->id,
+                    'name' => "Node {$i} - Zone " . $zone->name,
+                    'type' => $i % 4 === 0 ? 'ph' : ($i % 4 === 1 ? 'ec' : 'sensor'),
+                    'status' => 'ONLINE',
+                    'lifecycle_state' => 'ACTIVE',
+                    'fw_version' => '1.0.0',
+                    'last_seen_at' => now(),
+                    'last_heartbeat_at' => now(),
+                ]
+            );
+            $nodes[] = $node;
 
             // Создаем каналы для ноды
             $channels = ['ph', 'ec', 'temperature', 'humidity'];

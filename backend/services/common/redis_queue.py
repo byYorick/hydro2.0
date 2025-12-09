@@ -95,7 +95,7 @@ class TelemetryQueue:
     """Очередь телеметрии в Redis для буферизации перед записью в БД."""
     
     QUEUE_KEY = "hydro:telemetry:queue"
-    MAX_QUEUE_SIZE = 10000  # Максимальный размер очереди
+    MAX_QUEUE_SIZE = 50000  # Максимальный размер очереди (увеличено для 1000+ нод)
     
     def __init__(self):
         self._client: Optional[redis_async.Redis] = None
@@ -119,12 +119,12 @@ class TelemetryQueue:
             size = await self._client.llen(self.QUEUE_KEY)
             QUEUE_SIZE.set(size)
             
-            # Backpressure: применяем sampling при >90% заполнения
+            # Backpressure: применяем sampling при >95% заполнения (менее агрессивно)
             utilization = size / self.MAX_QUEUE_SIZE if self.MAX_QUEUE_SIZE > 0 else 0.0
-            if utilization > 0.9:
-                # Пропускаем 50% сообщений при 90-95% заполнении
-                # Пропускаем 80% сообщений при >95% заполнении
-                sample_rate = 0.5 if utilization < 0.95 else 0.2
+            if utilization > 0.95:
+                # Пропускаем 20% сообщений при 95-98% заполнении
+                # Пропускаем 50% сообщений при >98% заполнении
+                sample_rate = 0.8 if utilization < 0.98 else 0.5
                 if random.random() > sample_rate:
                     QUEUE_DROPPED.labels(reason="backpressure").inc()
                     logger.warning(

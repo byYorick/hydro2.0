@@ -151,6 +151,7 @@ import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import { formatTime } from '@/utils/formatTime'
 import { useApi } from '@/composables/useApi'
+import { extractData } from '@/utils/apiHelpers'
 import { logger } from '@/utils/logger'
 
 interface ServiceOption {
@@ -196,9 +197,9 @@ const filters = reactive({
 
 const levelOptions = ['ERROR', 'WARNING', 'INFO', 'DEBUG']
 const logs = ref<ServiceLog[]>([])
-const meta = reactive({
+const meta = reactive<ServiceLogMeta>({
   page: 1,
-  perPage: 50,
+  per_page: 50,
   total: 0,
   last_page: 1,
 })
@@ -278,7 +279,7 @@ async function fetchLogs(page = 1) {
   try {
     const params: Record<string, any> = {
       page,
-      per_page: meta.perPage,
+      per_page: meta.per_page,
     }
 
     if (filters.service && filters.service !== 'all') params.service = filters.service
@@ -287,19 +288,32 @@ async function fetchLogs(page = 1) {
     if (filters.from) params.from = filters.from
     if (filters.to) params.to = filters.to
 
-    const response = await get<{ data: ServiceLog[]; meta: ServiceLogMeta }>('/logs/service', { params })
+    const response = await get('/logs/service', { params })
+    const payload = response?.data ?? {}
+    const normalized = extractData<ServiceLog[] | { data?: ServiceLog[]; meta?: ServiceLogMeta }>(payload)
+    const normalizedLogs = Array.isArray(normalized) ? normalized : normalized?.data ?? []
+    const metaPayload = (!Array.isArray(normalized) ? normalized?.meta : undefined) || (payload as any)?.meta
 
-    logs.value = response.data.data || []
-    meta.page = response.data.meta.page
-    meta.perPage = response.data.meta.per_page
-    meta.total = response.data.meta.total
-    meta.last_page = response.data.meta.last_page
+    logs.value = Array.isArray(normalizedLogs) ? normalizedLogs : []
+    updateMeta(metaPayload, logs.value.length)
   } catch (err) {
     logger.error('Failed to load service logs', { err })
     error.value = 'Не удалось загрузить логи. Попробуйте обновить страницу.'
   } finally {
     loading.value = false
   }
+}
+
+function updateMeta(metaPayload?: Partial<ServiceLogMeta> | null, fallbackTotal = 0) {
+  const pageValue = (metaPayload as any)?.page ?? (metaPayload as any)?.current_page
+  const perPageValue = (metaPayload as any)?.per_page ?? (metaPayload as any)?.perPage
+  const totalValue = (metaPayload as any)?.total ?? (metaPayload as any)?.total_count
+  const lastPageValue = (metaPayload as any)?.last_page ?? (metaPayload as any)?.lastPage ?? (metaPayload as any)?.total_pages
+
+  meta.page = pageValue ?? meta.page
+  meta.per_page = perPageValue ?? meta.per_page
+  meta.total = totalValue ?? fallbackTotal ?? meta.total
+  meta.last_page = lastPageValue ?? meta.last_page
 }
 
 function changePage(newPage: number) {
