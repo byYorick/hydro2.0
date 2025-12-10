@@ -11,9 +11,32 @@ from pydantic import BaseModel
 
 try:
     from prometheus_client import Counter, Gauge
-    QUEUE_SIZE = Gauge("telemetry_queue_size", "Current size of telemetry queue")
-    QUEUE_DROPPED = Counter("telemetry_queue_dropped_total", "Dropped messages due to queue overflow")
-    QUEUE_OVERFLOW_ALERTS = Counter("telemetry_queue_overflow_alerts_total", "Number of overflow alerts sent")
+    
+    # Создаем метрики с обработкой дублирования
+    # Если метрика уже существует, используем заглушку (no-op)
+    try:
+        QUEUE_SIZE = Gauge("telemetry_queue_size", "Current size of telemetry queue")
+    except ValueError:
+        # Метрика уже существует, используем заглушку
+        class _NoOpGauge:
+            def set(self, *args, **kwargs): pass
+        QUEUE_SIZE = _NoOpGauge()
+    
+    try:
+        QUEUE_DROPPED = Counter("telemetry_queue_dropped_total", "Dropped messages due to queue overflow")
+    except ValueError:
+        class _NoOpCounter:
+            def inc(self, *args, **kwargs): pass
+            def labels(self, *args, **kwargs): return self
+        QUEUE_DROPPED = _NoOpCounter()
+    
+    try:
+        QUEUE_OVERFLOW_ALERTS = Counter("telemetry_queue_overflow_alerts_total", "Number of overflow alerts sent")
+    except ValueError:
+        class _NoOpCounter2:
+            def inc(self, *args, **kwargs): pass
+            def labels(self, *args, **kwargs): return self
+        QUEUE_OVERFLOW_ALERTS = _NoOpCounter2()
 except ImportError:
     # Prometheus не установлен - создаем заглушки
     class _Counter:

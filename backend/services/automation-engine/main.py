@@ -116,89 +116,26 @@ def _extract_gh_uid_from_config(cfg: Dict[str, Any]) -> Optional[str]:
 
 async def get_zone_recipe_and_targets(zone_id: int) -> Optional[Dict[str, Any]]:
     """Fetch active recipe phase and targets for zone."""
-    rows = await fetch(
-        """
-        SELECT zri.zone_id, zri.current_phase_index, rp.targets, rp.name as phase_name
-        FROM zone_recipe_instances zri
-        JOIN recipe_phases rp ON rp.recipe_id = zri.recipe_id AND rp.phase_index = zri.current_phase_index
-        WHERE zri.zone_id = $1
-        """,
-        zone_id,
-    )
-    if rows and len(rows) > 0:
-        return {
-            "zone_id": rows[0]["zone_id"],
-            "phase_index": rows[0]["current_phase_index"],
-            "targets": rows[0]["targets"],
-            "phase_name": rows[0]["phase_name"],
-        }
-    return None
+    repo = RecipeRepository()
+    return await repo.get_zone_recipe_and_targets(zone_id)
 
 
 async def get_zone_telemetry_last(zone_id: int) -> Dict[str, Optional[float]]:
     """Fetch last telemetry values for zone."""
-    rows = await fetch(
-        """
-        SELECT metric_type, value
-        FROM telemetry_last
-        WHERE zone_id = $1
-        """,
-        zone_id,
-    )
-    result: Dict[str, Optional[float]] = {}
-    for row in rows:
-        result[row["metric_type"]] = row["value"]
-    return result
+    repo = TelemetryRepository()
+    return await repo.get_last_telemetry(zone_id)
 
 
 async def get_zone_nodes(zone_id: int) -> Dict[str, Dict[str, Any]]:
     """Fetch nodes for zone, keyed by type and channel."""
-    rows = await fetch(
-        """
-        SELECT n.id, n.uid, n.type, nc.channel
-        FROM nodes n
-        LEFT JOIN node_channels nc ON nc.node_id = n.id
-        WHERE n.zone_id = $1 AND n.status = 'online'
-        """,
-        zone_id,
-    )
-    result: Dict[str, Dict[str, Any]] = {}
-    for row in rows:
-        node_type = row["type"]
-        channel = row["channel"] or "default"
-        key = f"{node_type}:{channel}"
-        if key not in result:
-            result[key] = {
-                "node_id": row["id"],
-                "node_uid": row["uid"],
-                "type": node_type,
-                "channel": channel,
-            }
-    return result
+    repo = NodeRepository()
+    return await repo.get_zone_nodes(zone_id)
 
 
 async def get_zone_capabilities(zone_id: int) -> Dict[str, bool]:
     """Fetch zone capabilities from database."""
-    rows = await fetch(
-        """
-        SELECT capabilities
-        FROM zones
-        WHERE id = $1
-        """,
-        zone_id,
-    )
-    if rows and len(rows) > 0 and rows[0]["capabilities"]:
-        return rows[0]["capabilities"]
-    # Default capabilities (all False if not set)
-    return {
-        "ph_control": False,
-        "ec_control": False,
-        "climate_control": False,
-        "light_control": False,
-        "irrigation_control": False,
-        "recirculation": False,
-        "flow_sensor": False,
-    }
+    repo = ZoneRepository()
+    return await repo.get_zone_capabilities(zone_id)
 
 
 # DEPRECATED: Используйте CommandBus вместо этой функции

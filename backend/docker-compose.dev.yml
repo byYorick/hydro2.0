@@ -200,9 +200,9 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9000)); s.close()' || exit 1"]
       interval: 10s
-      timeout: 3s
-      retries: 5
-      start_period: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     restart: unless-stopped
   history-logger:
     build:
@@ -242,11 +242,11 @@ services:
       - "9300:9300"
       - "9301:9301"  # Prometheus metrics
     healthcheck:
-      test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9300)); s.close()' || exit 1"]
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:9300/health\").read()' || exit 1"]
       interval: 10s
-      timeout: 3s
-      retries: 5
-      start_period: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     restart: unless-stopped
   automation-engine:
     build:
@@ -280,10 +280,10 @@ services:
       - "9401:9401"
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9401)); s.close()' || exit 1"]
-      interval: 30s
+      interval: 15s
       timeout: 5s
-      retries: 3
-      start_period: 30s
+      retries: 10
+      start_period: 60s
     restart: unless-stopped
   scheduler:
     build:
@@ -311,10 +311,10 @@ services:
       - "9402:9402"
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9402)); s.close()' || exit 1"]
-      interval: 30s
+      interval: 15s
       timeout: 5s
-      retries: 3
-      start_period: 30s
+      retries: 10
+      start_period: 60s
     restart: unless-stopped
   prometheus:
     image: prom/prometheus:latest
@@ -405,6 +405,12 @@ services:
     ports:
       - "8003:8003"
       - "9403:9403"  # Prometheus metrics
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8003/health\").read()' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     restart: unless-stopped
 
   telemetry-aggregator:
@@ -426,6 +432,12 @@ services:
         condition: service_healthy
     ports:
       - "9404:9404"  # Prometheus metrics
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9404)); s.close()' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     restart: unless-stopped
 
   python-tests:
@@ -479,8 +491,10 @@ services:
       - MQTT_PASS=node_emulator_pass
       - API_URL=http://laravel
     depends_on:
-      - mqtt
-      - laravel
+      mqtt:
+        condition: service_healthy
+      laravel:
+        condition: service_healthy
     networks:
       - default
     profiles:

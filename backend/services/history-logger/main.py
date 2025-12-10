@@ -3,15 +3,15 @@ import json
 import logging
 import os
 import signal
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Union, Dict, Any
 import httpx
 
 from fastapi import FastAPI, Response, Request, HTTPException, Body
 from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 from pydantic import BaseModel, Field
-from typing import Union, Dict, Any
 from collections import defaultdict
 import time
 
@@ -183,8 +183,7 @@ COMMAND_RESPONSE_ERROR = Counter("command_response_error_total",
                                 "Total error command_response messages")
 
 # Дополнительные метрики для мониторинга
-TELEMETRY_QUEUE_SIZE = Gauge("telemetry_queue_size",
-                             "Current size of Redis telemetry queue")
+# TELEMETRY_QUEUE_SIZE удалена - используем QUEUE_SIZE из common.redis_queue
 TELEMETRY_QUEUE_AGE = Gauge("telemetry_queue_age_seconds",
                            "Age of oldest item in queue in seconds")
 TELEMETRY_PROCESSING_DURATION = Histogram("telemetry_processing_duration_seconds",
@@ -683,70 +682,15 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
                     zone_uid_to_id[key] = zone['id']
                     _zone_cache[key] = zone['id']
         
-        # Батчевый резолв зон с учетом gh_uid (старый код для обратной совместимости)
+        # Логируем предупреждения для зон, которые не были найдены
         for zone_uid, gh_uid in zone_gh_pairs:
-            if (zone_uid, gh_uid) in zone_uid_to_id:
-                continue  # Уже резолвлено через кеш
-            zone_id_from_uid = extract_zone_id_from_uid(zone_uid)
-            # zone_id_from_uid может быть None для формата zone-{uid}, это нормально - будем искать по UID
-            
-            # Ищем зону по zone_id И gh_uid (через JOIN с greenhouses)
-            if gh_uid:
-                # Резолв с учетом greenhouse
-                if zone_id_from_uid is not None:
-                    # Числовой ID (формат zn-{id})
-                    zone_rows = await fetch(
-                        """
-                        SELECT z.id
-                        FROM zones z
-                        JOIN greenhouses g ON g.id = z.greenhouse_id
-                        WHERE z.id = $1 AND g.uid = $2
-                        """,
-                        zone_id_from_uid,
-                        gh_uid
-                    )
-                else:
-                    # UID формат (zone-{uid}) - ищем по uid зоны
-                    zone_rows = await fetch(
-                        """
-                        SELECT z.id
-                        FROM zones z
-                        JOIN greenhouses g ON g.id = z.greenhouse_id
-                        WHERE z.uid = $1 AND g.uid = $2
-                        """,
-                        zone_uid,
-                        gh_uid
-                    )
-                
-                if zone_rows and len(zone_rows) > 0:
-                    zone_uid_to_id[(zone_uid, gh_uid)] = zone_rows[0]["id"]
-                else:
+            if (zone_uid, gh_uid) not in zone_uid_to_id:
+                # Проверяем fallback без gh_uid
+                if (zone_uid, None) not in zone_uid_to_id:
                     logger.warning(
                         f"Zone not found: zone_uid={zone_uid}, gh_uid={gh_uid}",
                         extra={"zone_uid": zone_uid, "gh_uid": gh_uid}
                     )
-            else:
-                # Fallback: если gh_uid не указан, используем простое извлечение (для обратной совместимости)
-                # Но это может привести к проблемам в многотепличной конфигурации
-                if zone_id_from_uid is not None:
-                    zone_uid_to_id[(zone_uid, None)] = zone_id_from_uid
-                else:
-                    # Ищем по UID без greenhouse
-                    zone_rows = await fetch(
-                        """
-                        SELECT id
-                        FROM zones
-                        WHERE uid = $1
-                        """,
-                        zone_uid
-                    )
-                    if zone_rows and len(zone_rows) > 0:
-                        zone_uid_to_id[(zone_uid, None)] = zone_rows[0]["id"]
-                    else:
-                        logger.warning(
-                            f"Zone not found by UID: zone_uid={zone_uid}",
-                            extra={"zone_uid": zone_uid}
-                        )
     
     # Получаем node_id из node_uid с учетом gh_uid для каждого образца
     # Ключ: (node_uid, gh_uid) -> (node_id, zone_id) - сохраняем zone_id узла для проверки соответствия
@@ -813,68 +757,20 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
                     node_uid_to_info[key] = (node['id'], node['zone_id'])
                     _node_cache[key] = (node['id'], node['zone_id'])
         
-        # Батчевый резолв узлов с учетом gh_uid (старый код для обратной совместимости)
+        # Логируем предупреждения для узлов, которые не были найдены
         for node_uid, gh_uid in node_gh_pairs:
-            if (node_uid, gh_uid) in node_uid_to_info:
-                continue  # Уже резолвлено через кеш
-            if gh_uid:
-                # Резолв с учетом greenhouse (через zones)
-                # Получаем node_id И zone_id узла для проверки соответствия
-                # Сначала ищем ноду, привязанную к зоне в этом greenhouse
-                node_rows = await fetch(
-                    """
-                    SELECT n.id, n.uid, n.zone_id
-                    FROM nodes n
-                    JOIN zones z ON z.id = n.zone_id
-                    JOIN greenhouses g ON g.id = z.greenhouse_id
-                    WHERE n.uid = $1 AND g.uid = $2
-                    """,
-                    node_uid,
-                    gh_uid
-                )
-                if node_rows and len(node_rows) > 0:
-                    node_id = node_rows[0]["id"]
-                    node_zone_id = node_rows[0]["zone_id"]
-                    node_uid_to_info[(node_uid, gh_uid)] = (node_id, node_zone_id)
-                else:
-                    # Если нода не найдена через зону, ищем ноду без привязки к зоне
-                    # (нода может быть еще не привязана к зоне)
-                    node_rows = await fetch(
-                        """
-                        SELECT n.id, n.uid, n.zone_id
-                        FROM nodes n
-                        WHERE n.uid = $1
-                        """,
-                        node_uid
-                    )
-                    if node_rows and len(node_rows) > 0:
-                        node_id = node_rows[0]["id"]
-                        node_zone_id = node_rows[0]["zone_id"]
-                        node_uid_to_info[(node_uid, gh_uid)] = (node_id, node_zone_id)
-                    else:
+            if (node_uid, gh_uid) not in node_uid_to_info:
+                # Проверяем fallback без gh_uid
+                if (node_uid, None) not in node_uid_to_info:
+                    if not gh_uid:
                         logger.warning(
-                            f"Node not found: node_uid={node_uid}, gh_uid={gh_uid}",
-                            extra={"node_uid": node_uid, "gh_uid": gh_uid}
+                            f"gh_uid not provided for node_uid={node_uid}, using simple node_id resolution (may cause conflicts in multi-greenhouse setup)",
+                            extra={"node_uid": node_uid}
                         )
-            else:
-                # Fallback: если gh_uid не указан, используем простое извлечение (для обратной совместимости)
-                # Но это может привести к проблемам в многотепличной конфигурации
-                logger.warning(
-                    f"gh_uid not provided for node_uid={node_uid}, using simple node_id resolution (may cause conflicts in multi-greenhouse setup)",
-                    extra={"node_uid": node_uid}
-                )
-                node_rows = await fetch(
-                    """
-                    SELECT id, uid, zone_id
-                    FROM nodes
-                    WHERE uid = $1
-                    """,
-                    node_uid,
-                )
-                if node_rows and len(node_rows) > 0:
-                    node_id = node_rows[0]["id"]
-                    node_zone_id = node_rows[0]["zone_id"]
-                    node_uid_to_info[(node_uid, None)] = (node_id, node_zone_id)
+                    logger.warning(
+                        f"Node not found: node_uid={node_uid}, gh_uid={gh_uid}",
+                        extra={"node_uid": node_uid, "gh_uid": gh_uid}
+                    )
     
     # Группируем по zone_id и metric_type для batch insert
     grouped: dict[tuple[int, str, Optional[int], Optional[str]], list[TelemetrySampleModel]] = {}
@@ -1233,8 +1129,8 @@ async def process_telemetry_queue():
             queue_duration = time.time() - queue_start_time
             REDIS_OPERATION_DURATION.observe(queue_duration)
             
-            # Обновляем метрики размера очереди
-            TELEMETRY_QUEUE_SIZE.set(queue_size)
+            # Метрика размера очереди обновляется автоматически в TelemetryQueue.push()
+            # Не обновляем здесь, чтобы избежать дублирования регистрации
             
             # Обновляем метрику возраста самого старого элемента в очереди
             queue_age_start_time = time.time()
@@ -1667,24 +1563,24 @@ async def handle_config_response(topic: str, payload: bytes):
             # Получаем информацию о ноде и последнем конфиге
             try:
                 # Получаем hardware_id для очистки retained сообщения на временном топике после привязки
-        node_rows = await fetch(
-            """
-            SELECT n.id,
-                   n.uid,
-                   n.lifecycle_state,
-                   n.zone_id,
-                   n.pending_zone_id,
-                   n.config,
-                   n.hardware_id,
-                   z.uid AS zone_uid,
-                   gh.uid AS gh_uid
-            FROM nodes n
-            LEFT JOIN zones z ON z.id = n.zone_id
-            LEFT JOIN greenhouses gh ON gh.id = z.greenhouse_id
-            WHERE n.uid = $1
-            """,
-            node_uid
-        )
+                node_rows = await fetch(
+                    """
+                    SELECT n.id,
+                           n.uid,
+                           n.lifecycle_state,
+                           n.zone_id,
+                           n.pending_zone_id,
+                           n.config,
+                           n.hardware_id,
+                           z.uid AS zone_uid,
+                           gh.uid AS gh_uid
+                    FROM nodes n
+                    LEFT JOIN zones z ON z.id = n.zone_id
+                    LEFT JOIN greenhouses gh ON gh.id = z.greenhouse_id
+                    WHERE n.uid = $1
+                    """,
+                    node_uid
+                )
                 
                 if not node_rows or len(node_rows) == 0:
                     logger.warning(
@@ -1962,6 +1858,77 @@ async def handle_config_response(topic: str, payload: bytes):
         CONFIG_RESPONSE_ERROR.labels(node_uid="unknown").inc()
 
 
+# Helper функции для устранения дублирования
+def _has_rows(rows: Optional[List]) -> bool:
+    """Проверить, есть ли результаты в rows."""
+    return rows is not None and len(rows) > 0
+
+
+async def _get_zone_uid_from_id(zone_id: int) -> Optional[str]:
+    """Получить zone_uid из zone_id для MQTT публикации."""
+    rows = await fetch(
+        """
+        SELECT uid
+        FROM zones
+        WHERE id = $1
+        """,
+        zone_id,
+    )
+    if _has_rows(rows):
+        zone_uid = rows[0].get("uid")
+        if not zone_uid:
+            logger.warning(f"Zone {zone_id} has no uid, using zn-{zone_id} as fallback")
+        return zone_uid
+    else:
+        logger.warning(f"Zone {zone_id} not found, using zn-{zone_id} as fallback")
+        return None
+
+
+async def _get_gh_uid_from_zone_id(zone_id: int) -> str:
+    """Получить greenhouse_uid из zone_id."""
+    rows = await fetch(
+        """
+        SELECT g.uid
+        FROM zones z
+        JOIN greenhouses g ON g.id = z.greenhouse_id
+        WHERE z.id = $1
+        """,
+        zone_id,
+    )
+    if not _has_rows(rows):
+        raise HTTPException(status_code=404, detail="Zone not found or has no greenhouse")
+    return rows[0]["uid"]
+
+
+def _create_command_payload(cmd_type: str, cmd_id: Optional[str] = None, params: Optional[dict] = None) -> dict:
+    """Создать payload для команды MQTT."""
+    cmd_id = cmd_id or str(uuid.uuid4())
+    payload = {"cmd": cmd_type, "cmd_id": cmd_id}
+    if params:
+        payload["params"] = params
+    return payload
+
+
+@asynccontextmanager
+async def _mqtt_client_context(suffix: str):
+    """Context manager для создания и закрытия MQTT клиента."""
+    mqtt = MqttClient(client_id_suffix=suffix)
+    mqtt.start()
+    try:
+        yield mqtt
+    finally:
+        mqtt.stop()
+
+
+def _validate_target_level(value: float, min_val: float, max_val: float, operation: str) -> None:
+    """Валидация target_level для fill/drain операций."""
+    if not (min_val <= value <= max_val):
+        raise HTTPException(
+            status_code=400,
+            detail=f"target_level must be between {min_val} and {max_val} for {operation}"
+        )
+
+
 def extract_zone_id_from_uid(zone_uid: Optional[str]) -> Optional[int]:
     """
     Извлечь zone_id из zone_uid (формат: zn-{id} или zone-{uid}).
@@ -1987,54 +1954,36 @@ def extract_zone_id_from_uid(zone_uid: Optional[str]) -> Optional[int]:
     return None
 
 
-def _extract_zone_id(topic: str) -> Optional[int]:
-    """Извлечь zone_id (int) из топика (для обратной совместимости)."""
-    # Формат: hydro/{gh_uid}/{zone_uid}/{node_uid}/{channel}/telemetry
-    # или: hydro/{gh_uid}/zn-{zone_id}/{node_uid}/{channel}/telemetry
+def _extract_topic_part(topic: str, index: int) -> Optional[str]:
+    """Универсальная функция для извлечения части топика по индексу.
+    
+    Формат топика: hydro/{gh_uid}/{zone_uid}/{node_uid}/{channel}/telemetry
+    Индексы: 0=hydro, 1=gh_uid, 2=zone_uid, 3=node_uid, 4=channel, 5=telemetry
+    """
     parts = topic.split("/")
-    if len(parts) >= 3:
-        zone_part = parts[2]
-        return extract_zone_id_from_uid(zone_part)
+    if 0 <= index < len(parts):
+        return parts[index]
     return None
 
 
 def _extract_zone_uid(topic: str) -> Optional[str]:
     """Извлечь zone_uid из топика."""
-    # Формат: hydro/{gh_uid}/{zone_uid}/{node_uid}/{channel}/telemetry
-    parts = topic.split("/")
-    if len(parts) >= 3:
-        return parts[2]
-    return None
+    return _extract_topic_part(topic, 2)
 
 
 def _extract_node_uid(topic: str) -> Optional[str]:
     """Извлечь node_uid из топика."""
-    # Формат: hydro/{gh_uid}/{zone_uid}/{node_uid}/{channel}/telemetry
-    parts = topic.split("/")
-    if len(parts) >= 4:
-        return parts[3]
-    return None
+    return _extract_topic_part(topic, 3)
 
 
 def _extract_gh_uid(topic: str) -> Optional[str]:
     """Извлечь gh_uid (greenhouse UID) из топика."""
-    # Формат: hydro/{gh_uid}/{zone_uid}/{node_uid}/{channel}/telemetry
-    parts = topic.split("/")
-    if len(parts) >= 2:
-        return parts[1]
-    return None
+    return _extract_topic_part(topic, 1)
 
 
 def _extract_channel_from_topic(topic: str) -> Optional[str]:
     """Извлечь channel из топика телеметрии."""
-    # Формат: hydro/{gh_uid}/{zone_uid}/{node_uid}/{channel}/telemetry
-    parts = topic.split("/")
-    if len(parts) >= 5:
-        return parts[4]
-    return None
-
-
-# Startup и shutdown события теперь обрабатываются через lifespan handler выше
+    return _extract_topic_part(topic, 4)
 
 
 def _auth_ingest(request: Request):
@@ -2338,7 +2287,7 @@ async def publish_node_config(
             """,
             node_uid,
         )
-        if rows and len(rows) > 0:
+        if _has_rows(rows):
             if not zone_id:
                 zone_id = rows[0].get("zone_id")
             if not gh_uid:
@@ -2476,25 +2425,11 @@ async def publish_zone_command(
     zone_uid = None
     s = get_settings()
     if hasattr(s, 'mqtt_zone_format') and s.mqtt_zone_format == "uid":
-        rows = await fetch(
-            """
-            SELECT uid
-            FROM zones
-            WHERE id = $1
-            """,
-            zone_id,
-        )
-        if rows and len(rows) > 0:
-            zone_uid = rows[0].get("uid")
-            if not zone_uid:
-                logger.warning(f"Zone {zone_id} has no uid, using zn-{zone_id} as fallback")
-        else:
-            logger.warning(f"Zone {zone_id} not found, using zn-{zone_id} as fallback")
+        zone_uid = await _get_zone_uid_from_id(zone_id)
     
-    # Генерируем cmd_id, если не указан
-    import uuid
-    cmd_id = req.cmd_id or str(uuid.uuid4())
-    payload = {"cmd": req.type, "cmd_id": cmd_id, **({"params": req.params} if req.params else {})}
+    # Создаем payload для команды
+    payload = _create_command_payload(req.type, req.cmd_id, req.params)
+    cmd_id = payload["cmd_id"]
     
     # Получаем MQTT клиент
     mqtt = await get_mqtt_client()
@@ -2538,25 +2473,11 @@ async def publish_node_command(
     zone_uid = None
     s = get_settings()
     if hasattr(s, 'mqtt_zone_format') and s.mqtt_zone_format == "uid" and req.zone_id:
-        rows = await fetch(
-            """
-            SELECT uid
-            FROM zones
-            WHERE id = $1
-            """,
-            req.zone_id,
-        )
-        if rows and len(rows) > 0:
-            zone_uid = rows[0].get("uid")
-            if not zone_uid:
-                logger.warning(f"Zone {req.zone_id} has no uid, using zn-{req.zone_id} as fallback")
-        else:
-            logger.warning(f"Zone {req.zone_id} not found, using zn-{req.zone_id} as fallback")
+        zone_uid = await _get_zone_uid_from_id(req.zone_id)
     
-    # Генерируем cmd_id, если не указан
-    import uuid
-    cmd_id = req.cmd_id or str(uuid.uuid4())
-    payload = {"cmd": req.type, "cmd_id": cmd_id, **({"params": req.params} if req.params else {})}
+    # Создаем payload для команды
+    payload = _create_command_payload(req.type, req.cmd_id, req.params)
+    cmd_id = payload["cmd_id"]
     
     # Получаем MQTT клиент
     mqtt = await get_mqtt_client()
@@ -2607,45 +2528,26 @@ async def zone_fill(
     _auth_ingest(request)
     
     # Validate target_level
-    if not (0.1 <= req.target_level <= 1.0):
-        raise HTTPException(status_code=400, detail="target_level must be between 0.1 and 1.0")
+    _validate_target_level(req.target_level, 0.1, 1.0, "fill")
     
     # Get greenhouse uid
-    rows = await fetch(
-        """
-        SELECT g.uid
-        FROM zones z
-        JOIN greenhouses g ON g.id = z.greenhouse_id
-        WHERE z.id = $1
-        """,
-        zone_id,
-    )
-    if not rows or len(rows) == 0:
-        raise HTTPException(status_code=404, detail="Zone not found or has no greenhouse")
+    gh_uid = await _get_gh_uid_from_zone_id(zone_id)
     
-    gh_uid = rows[0]["uid"]
-    
-    # Create MQTT client for fill operation
     # Используем синхронный MqttClient, так как water_flow функции ожидают его
-    mqtt = MqttClient(client_id_suffix="-fill")
-    mqtt.start()
-    
-    try:
-        # Execute fill mode (async, but we wait for it)
-        result = await execute_fill_mode(
-            zone_id,
-            req.target_level,
-            mqtt,
-            gh_uid,
-            req.max_duration_sec
-        )
-        return {"status": "ok", "data": result}
-    except Exception as e:
-        logger.error(f"Failed to execute fill mode for zone {zone_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        # Закрываем соединение MQTT для предотвращения утечек
-        mqtt.stop()
+    async with _mqtt_client_context("-fill") as mqtt:
+        try:
+            # Execute fill mode (async, but we wait for it)
+            result = await execute_fill_mode(
+                zone_id,
+                req.target_level,
+                mqtt,
+                gh_uid,
+                req.max_duration_sec
+            )
+            return {"status": "ok", "data": result}
+        except Exception as e:
+            logger.error(f"Failed to execute fill mode for zone {zone_id}: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/zones/{zone_id}/drain")
@@ -2662,45 +2564,26 @@ async def zone_drain(
     _auth_ingest(request)
     
     # Validate target_level
-    if not (0.0 <= req.target_level <= 0.9):
-        raise HTTPException(status_code=400, detail="target_level must be between 0.0 and 0.9")
+    _validate_target_level(req.target_level, 0.0, 0.9, "drain")
     
     # Get greenhouse uid
-    rows = await fetch(
-        """
-        SELECT g.uid
-        FROM zones z
-        JOIN greenhouses g ON g.id = z.greenhouse_id
-        WHERE z.id = $1
-        """,
-        zone_id,
-    )
-    if not rows or len(rows) == 0:
-        raise HTTPException(status_code=404, detail="Zone not found or has no greenhouse")
+    gh_uid = await _get_gh_uid_from_zone_id(zone_id)
     
-    gh_uid = rows[0]["uid"]
-    
-    # Create MQTT client for drain operation
     # Используем синхронный MqttClient, так как water_flow функции ожидают его
-    mqtt = MqttClient(client_id_suffix="-drain")
-    mqtt.start()
-    
-    try:
-        # Execute drain mode (async, but we wait for it)
-        result = await execute_drain_mode(
-            zone_id,
-            req.target_level,
-            mqtt,
-            gh_uid,
-            req.max_duration_sec
-        )
-        return {"status": "ok", "data": result}
-    except Exception as e:
-        logger.error(f"Failed to execute drain mode for zone {zone_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        # Закрываем соединение MQTT для предотвращения утечек
-        mqtt.stop()
+    async with _mqtt_client_context("-drain") as mqtt:
+        try:
+            # Execute drain mode (async, but we wait for it)
+            result = await execute_drain_mode(
+                zone_id,
+                req.target_level,
+                mqtt,
+                gh_uid,
+                req.max_duration_sec
+            )
+            return {"status": "ok", "data": result}
+        except Exception as e:
+            logger.error(f"Failed to execute drain mode for zone {zone_id}: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/zones/{zone_id}/calibrate-flow")
@@ -2717,42 +2600,24 @@ async def zone_calibrate_flow(
     _auth_ingest(request)
     
     # Get greenhouse uid
-    rows = await fetch(
-        """
-        SELECT g.uid
-        FROM zones z
-        JOIN greenhouses g ON g.id = z.greenhouse_id
-        WHERE z.id = $1
-        """,
-        zone_id,
-    )
-    if not rows or len(rows) == 0:
-        raise HTTPException(status_code=404, detail="Zone not found or has no greenhouse")
+    gh_uid = await _get_gh_uid_from_zone_id(zone_id)
     
-    gh_uid = rows[0]["uid"]
-    
-    # Create MQTT client for calibration operation
     # Используем синхронный MqttClient, так как water_flow функции ожидают его
-    mqtt = MqttClient(client_id_suffix="-calibrate")
-    mqtt.start()
-    
-    try:
-        # Execute flow calibration (async, but we wait for it)
-        result = await calibrate_flow(
-            zone_id,
-            req.node_id,
-            req.channel,
-            mqtt,
-            gh_uid,
-            req.pump_duration_sec
-        )
-        return {"status": "ok", "data": result}
-    except Exception as e:
-        logger.error(f"Failed to calibrate flow for zone {zone_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        # Закрываем соединение MQTT для предотвращения утечек
-        mqtt.stop()
+    async with _mqtt_client_context("-calibrate") as mqtt:
+        try:
+            # Execute flow calibration (async, but we wait for it)
+            result = await calibrate_flow(
+                zone_id,
+                req.node_id,
+                req.channel,
+                mqtt,
+                gh_uid,
+                req.pump_duration_sec
+            )
+            return {"status": "ok", "data": result}
+        except Exception as e:
+            logger.error(f"Failed to calibrate flow for zone {zone_id}: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/ingest/telemetry")
