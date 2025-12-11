@@ -289,18 +289,40 @@ async function fetchLogs(page = 1) {
     if (filters.to) params.to = filters.to
 
     const response = await get('/logs/service', { params })
-    const payload = response?.data ?? {}
-    const normalized = extractData<ServiceLog[] | { data?: ServiceLog[]; meta?: ServiceLogMeta }>(payload)
-    const normalizedLogs = Array.isArray(normalized) ? normalized : normalized?.data ?? []
-    const metaPayload = (!Array.isArray(normalized) ? normalized?.meta : undefined) || (payload as any)?.meta
-
-    logs.value = Array.isArray(normalizedLogs) ? normalizedLogs : []
-    updateMeta(metaPayload, logs.value.length)
+    const parsed = normalizeLogsResponse(response)
+    logs.value = parsed.logs
+    updateMeta(parsed.meta, logs.value.length)
   } catch (err) {
     logger.error('Failed to load service logs', { err })
     error.value = 'Не удалось загрузить логи. Попробуйте обновить страницу.'
   } finally {
     loading.value = false
+  }
+}
+
+/**
+ * Нормализует ответ API для логов (учитываем разные формы: {status, data, meta} | {data:{data,meta}} | массив)
+ */
+function normalizeLogsResponse(response: any): { logs: ServiceLog[]; meta?: Partial<ServiceLogMeta> | null } {
+  const payload = response?.data ?? response
+  const directData = extractData<ServiceLog[] | Record<string, any>>(payload)
+
+  // Вариант: extractData вернул массив
+  if (Array.isArray(directData)) {
+    return { logs: directData, meta: (payload as any)?.meta ?? null }
+  }
+
+  // Вариант: объект с data/meta на первом или втором уровне
+  const inner = directData ?? payload ?? {}
+  const firstLevelData = Array.isArray(inner?.data) ? inner.data : null
+  const secondLevelData = Array.isArray(inner?.data?.data) ? inner.data.data : null
+
+  const logsData = firstLevelData || secondLevelData || []
+  const metaFromPayload = inner?.meta ?? inner?.data?.meta ?? (payload as any)?.meta ?? null
+
+  return {
+    logs: Array.isArray(logsData) ? logsData : [],
+    meta: metaFromPayload,
   }
 }
 

@@ -20,4 +20,5 @@ idf_component_register(
         memory_pool
         i2c_cache
         diagnostics
+        mbedtls
 )

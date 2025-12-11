@@ -23,6 +23,7 @@ idf_component_register(
         heartbeat_task
         connection_status
         pump_driver
+        factory_reset_button
         driver
         esp_wifi
         nvs_flash
@@ -32,4 +33,5 @@ idf_component_register(
         mqtt
         esp_timer
         json
+        mbedtls
 )

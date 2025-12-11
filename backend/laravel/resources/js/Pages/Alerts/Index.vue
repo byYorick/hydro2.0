@@ -31,7 +31,7 @@
           </thead>
           <tbody>
             <tr
-              v-for="(a, index) in filtered"
+              v-for="(a, index) in paginatedAlerts"
               :key="a.id"
               :class="index % 2 === 0 ? 'bg-neutral-950' : 'bg-neutral-925'"
               class="text-sm border-b border-neutral-900 hover:bg-neutral-900 transition-colors"
@@ -46,12 +46,17 @@
                 <Button size="sm" variant="secondary" @click="onResolve(a)" :disabled="a.status === 'resolved'">Подтвердить</Button>
               </td>
             </tr>
-            <tr v-if="!filtered.length">
+            <tr v-if="!paginatedAlerts.length">
               <td colspan="5" class="px-3 py-6 text-sm text-neutral-400 text-center">Нет алертов по текущим фильтрам</td>
             </tr>
           </tbody>
         </table>
       </div>
+      <Pagination
+        v-model:current-page="currentPage"
+        v-model:per-page="perPage"
+        :total="filtered.length"
+      />
     </div>
 
     <Modal :open="confirm.open" title="Подтвердить алерт" @close="confirm.open=false">
@@ -65,10 +70,11 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, watch, onMounted, onUnmounted } from 'vue'
+import { reactive, ref, watch, computed, onMounted, onUnmounted } from 'vue'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Button from '@/Components/Button.vue'
 import Modal from '@/Components/Modal.vue'
+import Pagination from '@/Components/Pagination.vue'
 import { usePage } from '@inertiajs/vue3'
 import { subscribeAlerts } from '@/bootstrap'
 import { translateStatus } from '@/utils/i18n'
@@ -120,6 +126,8 @@ const { api } = useApi()
 const headers = ['Тип', 'Зона', 'Время', 'Статус', 'Действия']
 const onlyActive = ref<boolean>(true)
 const zoneQuery = ref<string>('')
+const currentPage = ref<number>(1)
+const perPage = ref<number>(25)
 
 const filtered = useFilteredList(alerts, (alert) => {
   const activeOk = onlyActive.value ? alert.status !== 'resolved' && alert.status !== 'RESOLVED' : true
@@ -127,6 +135,23 @@ const filtered = useFilteredList(alerts, (alert) => {
   const zoneOk = zoneQuery.value ? zoneName.toLowerCase().includes(zoneQuery.value.toLowerCase()) : true
   return activeOk && zoneOk
 })
+
+const paginatedAlerts = computed(() => {
+  const total = filtered.value.length
+  if (total === 0) return []
+  
+  // Защита от некорректных значений
+  const maxPage = Math.ceil(total / perPage.value) || 1
+  const validPage = Math.min(currentPage.value, maxPage)
+  if (validPage !== currentPage.value) {
+    currentPage.value = validPage
+  }
+  
+  const start = (validPage - 1) * perPage.value
+  const end = start + perPage.value
+  return filtered.value.slice(start, end)
+})
+
 const confirm = reactive<{ open: boolean; alertId: number | null }>({ open: false, alertId: null })
 const onResolve = (a: Alert): void => {
   confirm.open = true
@@ -164,6 +189,11 @@ onMounted(() => {
 onUnmounted(() => {
   unsubscribeAlerts?.()
   unsubscribeAlerts = null
+})
+
+// Сбрасываем на первую страницу при изменении фильтров
+watch([onlyActive, zoneQuery], () => {
+  currentPage.value = 1
 })
 
 </script>

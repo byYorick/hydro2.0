@@ -21,6 +21,7 @@ from common.mqtt import MqttClient, AsyncMqttClient, get_mqtt_client
 from common.env import get_settings
 from common.water_flow import execute_fill_mode, execute_drain_mode, calibrate_flow
 from common.service_logs import send_service_log
+from common.error_handler import get_error_handler
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,12 @@ async def lifespan(app: FastAPI):
     # Формат топика согласно документации: hydro/{gh}/{zone}/{node}/{channel}/telemetry
     await mqtt.subscribe("hydro/+/+/+/+/telemetry", handle_telemetry)
     await mqtt.subscribe("hydro/+/+/+/heartbeat", handle_heartbeat)
+    # Подписка на status для обработки статуса узлов (ONLINE/OFFLINE)
+    await mqtt.subscribe("hydro/+/+/+/status", handle_status)
+    # Подписка на diagnostics для обработки метрик ошибок
+    await mqtt.subscribe("hydro/+/+/+/diagnostics", handle_diagnostics)
+    # Подписка на error для обработки немедленных ошибок
+    await mqtt.subscribe("hydro/+/+/+/error", handle_error)
     # Подписка на node_hello для регистрации новых узлов
     await mqtt.subscribe("hydro/node_hello", handle_node_hello)
     await mqtt.subscribe("hydro/+/+/+/node_hello", handle_node_hello)
@@ -60,7 +67,7 @@ async def lifespan(app: FastAPI):
     await mqtt.subscribe("hydro/+/+/+/+/command_response", handle_command_response)
     
     logger.info("History Logger service started")
-    logger.info("Subscribed to MQTT topics: hydro/+/+/+/+/telemetry, hydro/+/+/+/heartbeat, hydro/node_hello, hydro/+/+/+/node_hello, hydro/+/+/+/config_response, hydro/+/+/+/+/command_response")
+    logger.info("Subscribed to MQTT topics: hydro/+/+/+/+/telemetry, hydro/+/+/+/heartbeat, hydro/+/+/+/status, hydro/+/+/+/diagnostics, hydro/+/+/+/error, hydro/node_hello, hydro/+/+/+/node_hello, hydro/+/+/+/config_response, hydro/+/+/+/+/command_response")
     
     yield
     
@@ -160,6 +167,15 @@ TELEM_BATCH_SIZE = Histogram("telemetry_batch_size",
 HEARTBEAT_RECEIVED = Counter("heartbeat_received_total",
                              "Total heartbeat messages received",
                              ["node_uid"])
+STATUS_RECEIVED = Counter("status_received_total",
+                          "Total status messages received",
+                          ["node_uid", "status"])
+DIAGNOSTICS_RECEIVED = Counter("diagnostics_received_total",
+                               "Total diagnostics messages received",
+                               ["node_uid"])
+ERROR_RECEIVED = Counter("error_received_total",
+                        "Total error messages received",
+                        ["node_uid", "level"])
 NODE_HELLO_RECEIVED = Counter("node_hello_received_total",
                               "Total node_hello messages received")
 NODE_HELLO_REGISTERED = Counter("node_hello_registered_total",
@@ -181,6 +197,12 @@ COMMAND_RESPONSE_RECEIVED = Counter("command_response_received_total",
                                    "Total command_response messages received")
 COMMAND_RESPONSE_ERROR = Counter("command_response_error_total",
                                 "Total error command_response messages")
+COMMANDS_SENT = Counter("commands_sent_total",
+                       "Total commands sent via REST API",
+                       ["zone_id", "metric"])
+MQTT_PUBLISH_ERRORS = Counter("mqtt_publish_errors_total",
+                              "MQTT publish errors",
+                              ["error_type"])
 
 # Дополнительные метрики для мониторинга
 # TELEMETRY_QUEUE_SIZE удалена - используем QUEUE_SIZE из common.redis_queue
@@ -1523,6 +1545,111 @@ async def handle_heartbeat(topic: str, payload: bytes):
     )
 
 
+async def handle_status(topic: str, payload: bytes):
+    """
+    Обработчик status сообщений от узлов ESP32.
+    Обновляет статус узла в БД при получении ONLINE/OFFLINE.
+    """
+    logger.info(f"[STATUS] ===== START processing status =====")
+    logger.info(f"[STATUS] Topic: {topic}, payload length: {len(payload)}")
+    
+    data = _parse_json(payload)
+    if not data or not isinstance(data, dict):
+        logger.warning(f"[STATUS] Invalid JSON in status from topic {topic}")
+        return
+    
+    node_uid = _extract_node_uid(topic)
+    if not node_uid:
+        logger.warning(f"[STATUS] Could not extract node_uid from topic {topic}")
+        return
+    
+    status = data.get("status", "").upper()
+    ts = data.get("ts")
+    
+    logger.info(f"[STATUS] Processing status for node_uid: {node_uid}, status: {status}")
+    
+    # Обновляем статус узла в БД
+    if status == "ONLINE":
+        # Обновляем статус и last_seen_at
+        await execute(
+            "UPDATE nodes SET status='online', last_seen_at=NOW(), updated_at=NOW() WHERE uid=$1",
+            node_uid
+        )
+        logger.info(f"[STATUS] Node {node_uid} marked as ONLINE")
+    elif status == "OFFLINE":
+        # Обновляем статус
+        await execute(
+            "UPDATE nodes SET status='offline', updated_at=NOW() WHERE uid=$1",
+            node_uid
+        )
+        logger.info(f"[STATUS] Node {node_uid} marked as OFFLINE")
+    else:
+        logger.warning(f"[STATUS] Unknown status value: {status} for node {node_uid}")
+    
+    STATUS_RECEIVED.labels(node_uid=node_uid, status=status.lower()).inc()
+
+
+async def handle_diagnostics(topic: str, payload: bytes):
+    """
+    Обработчик diagnostics сообщений от узлов ESP32.
+    Обрабатывает метрики ошибок через общий компонент error_handler.
+    """
+    logger.info(f"[DIAGNOSTICS] ===== START processing diagnostics =====")
+    logger.info(f"[DIAGNOSTICS] Topic: {topic}, payload length: {len(payload)}")
+    
+    data = _parse_json(payload)
+    if not data or not isinstance(data, dict):
+        logger.warning(f"[DIAGNOSTICS] Invalid JSON in diagnostics from topic {topic}")
+        return
+    
+    node_uid = _extract_node_uid(topic)
+    if not node_uid:
+        logger.warning(f"[DIAGNOSTICS] Could not extract node_uid from topic {topic}")
+        return
+    
+    logger.info(f"[DIAGNOSTICS] Processing diagnostics for node_uid: {node_uid}")
+    
+    # Используем общий компонент для обработки
+    error_handler = get_error_handler()
+    await error_handler.handle_diagnostics(node_uid, data)
+    
+    DIAGNOSTICS_RECEIVED.labels(node_uid=node_uid).inc()
+
+
+async def handle_error(topic: str, payload: bytes):
+    """
+    Обработчик error сообщений от узлов ESP32.
+    Обрабатывает немедленные ошибки через общий компонент error_handler.
+    """
+    logger.info(f"[ERROR] ===== START processing error =====")
+    logger.info(f"[ERROR] Topic: {topic}, payload length: {len(payload)}")
+    
+    data = _parse_json(payload)
+    if not data or not isinstance(data, dict):
+        logger.warning(f"[ERROR] Invalid JSON in error from topic {topic}")
+        return
+    
+    node_uid = _extract_node_uid(topic)
+    if not node_uid:
+        logger.warning(f"[ERROR] Could not extract node_uid from topic {topic}")
+        return
+    
+    level = data.get("level", "ERROR")
+    component = data.get("component", "unknown")
+    error_code = data.get("error_code", "unknown")
+    
+    logger.info(
+        f"[ERROR] Processing error for node_uid: {node_uid}, "
+        f"level: {level}, component: {component}, error_code: {error_code}"
+    )
+    
+    # Используем общий компонент для обработки
+    error_handler = get_error_handler()
+    await error_handler.handle_error(node_uid, data)
+    
+    ERROR_RECEIVED.labels(node_uid=node_uid, level=level.lower()).inc()
+
+
 async def handle_config_response(topic: str, payload: bytes):
     """
     Обработчик config_response сообщений от узлов ESP32.
@@ -1900,10 +2027,14 @@ async def _get_gh_uid_from_zone_id(zone_id: int) -> str:
     return rows[0]["uid"]
 
 
-def _create_command_payload(cmd_type: str, cmd_id: Optional[str] = None, params: Optional[dict] = None) -> dict:
+def _create_command_payload(cmd_type: Optional[str] = None, cmd_id: Optional[str] = None, params: Optional[dict] = None, cmd: Optional[str] = None) -> dict:
     """Создать payload для команды MQTT."""
     cmd_id = cmd_id or str(uuid.uuid4())
-    payload = {"cmd": cmd_type, "cmd_id": cmd_id}
+    # Поддерживаем оба формата: cmd (новый) и type (legacy)
+    command_name = cmd or cmd_type
+    if not command_name:
+        raise ValueError("Either 'cmd' or 'type' must be provided")
+    payload = {"cmd": command_name, "cmd_id": cmd_id}
     if params:
         payload["params"] = params
     return payload
@@ -2394,7 +2525,8 @@ async def publish_command_mqtt(
 
 class CommandRequest(BaseModel):
     """Request model for publishing commands."""
-    type: str = Field(..., max_length=64, description="Command type")
+    type: Optional[str] = Field(None, max_length=64, description="Command type (legacy)")
+    cmd: Optional[str] = Field(None, max_length=64, description="Command name (new format)")
     params: Dict[str, Any] = Field(default_factory=dict, description="Command parameters")
     node_uid: Optional[str] = Field(None, max_length=128, description="Node UID")
     channel: Optional[str] = Field(None, max_length=64, description="Channel name")
@@ -2403,6 +2535,11 @@ class CommandRequest(BaseModel):
     zone_uid: Optional[str] = Field(None, max_length=128, description="Zone UID")
     hardware_id: Optional[str] = Field(None, max_length=128, description="Hardware ID for temporary topic")
     cmd_id: Optional[str] = Field(None, max_length=64, description="Command ID from Laravel")
+    trace_id: Optional[str] = Field(None, max_length=64, description="Trace ID for logging")
+    
+    def get_command_name(self) -> str:
+        """Get command name from either 'cmd' or 'type' field."""
+        return self.cmd or self.type or ""
 
 
 @app.post("/zones/{zone_id}/commands")
@@ -2421,6 +2558,10 @@ async def publish_zone_command(
     if not (req.greenhouse_uid and req.node_uid and req.channel):
         raise HTTPException(status_code=400, detail="greenhouse_uid, node_uid and channel are required")
     
+    # Проверяем что команда указана
+    if not req.get_command_name():
+        raise HTTPException(status_code=400, detail="Either 'cmd' or 'type' must be provided")
+    
     # Получаем zone_uid из БД, если mqtt_zone_format="uid"
     zone_uid = None
     s = get_settings()
@@ -2428,7 +2569,10 @@ async def publish_zone_command(
         zone_uid = await _get_zone_uid_from_id(zone_id)
     
     # Создаем payload для команды
-    payload = _create_command_payload(req.type, req.cmd_id, req.params)
+    try:
+        payload = _create_command_payload(cmd_type=req.type, cmd=req.cmd, cmd_id=req.cmd_id, params=req.params)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     cmd_id = payload["cmd_id"]
     
     # Получаем MQTT клиент
@@ -2469,6 +2613,10 @@ async def publish_node_command(
     if not (req.greenhouse_uid and req.zone_id and req.channel):
         raise HTTPException(status_code=400, detail="greenhouse_uid, zone_id and channel are required")
     
+    # Проверяем что команда указана
+    if not req.get_command_name():
+        raise HTTPException(status_code=400, detail="Either 'cmd' or 'type' must be provided")
+    
     # Получаем zone_uid из БД, если mqtt_zone_format="uid"
     zone_uid = None
     s = get_settings()
@@ -2476,7 +2624,10 @@ async def publish_node_command(
         zone_uid = await _get_zone_uid_from_id(req.zone_id)
     
     # Создаем payload для команды
-    payload = _create_command_payload(req.type, req.cmd_id, req.params)
+    try:
+        payload = _create_command_payload(cmd_type=req.type, cmd=req.cmd, cmd_id=req.cmd_id, params=req.params)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     cmd_id = payload["cmd_id"]
     
     # Получаем MQTT клиент
@@ -2498,6 +2649,100 @@ async def publish_node_command(
         return {"status": "ok", "data": {"command_id": cmd_id}}
     except Exception as e:
         logger.error(f"Failed to publish command for node {node_uid}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to publish command: {str(e)}")
+
+
+@app.post("/commands")
+async def publish_command(
+    request: Request,
+    req: CommandRequest = Body(...),
+):
+    """
+    Универсальный endpoint для публикации команд через history-logger.
+    Все общение бэка с нодами должно происходить через history-logger.
+    
+    Поддерживает оба формата:
+    - Новый: {"cmd": "set_ph", "params": {...}, "greenhouse_uid": "...", "zone_id": 1, "node_uid": "...", "channel": "..."}
+    - Legacy: {"type": "set_ph", ...}
+    """
+    # Аутентификация
+    _auth_ingest(request)
+    
+    # Валидация обязательных полей
+    if not req.get_command_name():
+        raise HTTPException(status_code=400, detail="Either 'cmd' or 'type' must be provided")
+    
+    if not (req.greenhouse_uid and req.zone_id and req.node_uid and req.channel):
+        raise HTTPException(
+            status_code=400, 
+            detail="greenhouse_uid, zone_id, node_uid and channel are required"
+        )
+    
+    # Получаем zone_uid из БД, если mqtt_zone_format="uid"
+    zone_uid = None
+    s = get_settings()
+    if hasattr(s, 'mqtt_zone_format') and s.mqtt_zone_format == "uid":
+        zone_uid = await _get_zone_uid_from_id(req.zone_id)
+    
+    # Создаем payload для команды
+    try:
+        payload = _create_command_payload(
+            cmd_type=req.type, 
+            cmd=req.cmd, 
+            cmd_id=req.cmd_id, 
+            params=req.params
+        )
+        cmd_id = payload["cmd_id"]
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+    # Логирование с trace_id если есть
+    log_context = {
+        "zone_id": req.zone_id,
+        "node_uid": req.node_uid,
+        "channel": req.channel,
+        "cmd_id": cmd_id,
+        "command": req.get_command_name()
+    }
+    if req.trace_id:
+        log_context["trace_id"] = req.trace_id
+    
+    logger.info(
+        f"Publishing command via /commands endpoint: {log_context}",
+        extra=log_context
+    )
+    
+    # Получаем MQTT клиент
+    mqtt = await get_mqtt_client()
+    
+    try:
+        await publish_command_mqtt(
+            mqtt,
+            req.greenhouse_uid,
+            req.zone_id,
+            req.node_uid,
+            req.channel,
+            payload,
+            hardware_id=req.hardware_id,
+            zone_uid=zone_uid
+        )
+        logger.info(f"Command published successfully: {log_context}")
+        
+        # Метрики
+        COMMANDS_SENT.labels(zone_id=str(req.zone_id), metric=req.get_command_name()).inc()
+        
+        return {
+            "status": "ok", 
+            "data": {
+                "command_id": cmd_id,
+                "zone_id": req.zone_id,
+                "node_uid": req.node_uid,
+                "channel": req.channel
+            }
+        }
+    except Exception as e:
+        logger.error(f"Failed to publish command: {e}", exc_info=True, extra=log_context)
+        MQTT_PUBLISH_ERRORS.labels(error_type=type(e).__name__).inc()
         raise HTTPException(status_code=500, detail=f"Failed to publish command: {str(e)}")
 
 

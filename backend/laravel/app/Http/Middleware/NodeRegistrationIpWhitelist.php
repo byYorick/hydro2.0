@@ -31,8 +31,8 @@ class NodeRegistrationIpWhitelist
             return $next($request);
         }
 
-        // Проверяем, находится ли IP клиента в списке разрешенных
-        if (in_array($clientIp, $allowedIps)) {
+        // Проверяем, находится ли IP клиента в списке разрешенных (поддержка CIDR)
+        if ($this->isIpAllowed($clientIp, $allowedIps)) {
             Log::debug('NodeRegistrationIpWhitelist: Client IP is whitelisted.', ['ip' => $clientIp]);
             return $next($request);
         }

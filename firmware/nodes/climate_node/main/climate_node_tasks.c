@@ -10,6 +10,7 @@
 #include "climate_node_app.h"
 #include "climate_node_framework_integration.h"
 #include "node_watchdog.h"
+#include "node_state_manager.h"
 #include "mqtt_manager.h"
 #include "heartbeat_task.h"
 #include "oled_ui.h"
@@ -124,6 +125,7 @@ static void task_sensors(void *pvParameters) {
                     model.temperature_air = NAN;
                     model.humidity = NAN;
                     model.sensor_status.has_error = true;
+                    node_state_manager_report_error(ERROR_LEVEL_ERROR, "sht3x", sht_err, "Failed to read SHT3x sensor");
                     // Проверяем доступность I2C BUS1 для SHT3x
                     if (!i2c_bus_is_initialized_bus(I2C_BUS_1)) {
                         model.sensor_status.i2c_connected = false;
@@ -141,6 +143,7 @@ static void task_sensors(void *pvParameters) {
                     model.co2 = (float)ccs_reading.co2_ppm;
                 } else {
                     model.co2 = NAN;
+                    node_state_manager_report_error(ERROR_LEVEL_ERROR, "ccs811", ccs_err, "Failed to read CCS811 sensor");
                     // Не затираем ошибку SHT3x, только дополняем если еще не установлена
                     if (!model.sensor_status.has_error) {
                         model.sensor_status.has_error = true;

@@ -16,6 +16,7 @@ from health_monitor import calculate_zone_health, update_zone_health_in_db
 from correction_controller import CorrectionController, CorrectionType
 from repositories import ZoneRepository, TelemetryRepository, NodeRepository, RecipeRepository
 from infrastructure.command_bus import CommandBus
+from services.pid_state_manager import PidStateManager
 from prometheus_client import Histogram, Counter
 from services.pid_config_service import invalidate_cache
 
@@ -35,7 +36,8 @@ class ZoneAutomationService:
         telemetry_repo: TelemetryRepository,
         node_repo: NodeRepository,
         recipe_repo: RecipeRepository,
-        command_bus: CommandBus
+        command_bus: CommandBus,
+        pid_state_manager: Optional[PidStateManager] = None
     ):
         """
         Инициализация сервиса.
@@ -46,16 +48,23 @@ class ZoneAutomationService:
             node_repo: Репозиторий узлов
             recipe_repo: Репозиторий рецептов
             command_bus: Command Bus для публикации команд
+            pid_state_manager: Менеджер состояния PID (опционально)
         """
         self.zone_repo = zone_repo
         self.telemetry_repo = telemetry_repo
         self.node_repo = node_repo
         self.recipe_repo = recipe_repo
         self.command_bus = command_bus
+        self.pid_state_manager = pid_state_manager or PidStateManager()
         
-        # Инициализация контроллеров корректировки
-        self.ph_controller = CorrectionController(CorrectionType.PH)
-        self.ec_controller = CorrectionController(CorrectionType.EC)
+        # Инициализация контроллеров корректировки с менеджером состояния
+        self.ph_controller = CorrectionController(CorrectionType.PH, self.pid_state_manager)
+        self.ec_controller = CorrectionController(CorrectionType.EC, self.pid_state_manager)
+    
+    async def save_all_pid_states(self):
+        """Сохранить состояние всех PID контроллеров."""
+        await self.ph_controller.save_all_states()
+        await self.ec_controller.save_all_states()
     
     async def process_zone(self, zone_id: int) -> None:
         """
@@ -236,7 +245,9 @@ class ZoneAutomationService:
                 zone_id, targets, telemetry, telemetry_timestamps, nodes, water_level_ok
             )
             if ph_cmd:
-                await self.ph_controller.apply_correction(ph_cmd, self.command_bus)
+                # Получаем PID для контекста
+                pid = self.ph_controller._pid_by_zone.get(zone_id)
+                await self.ph_controller.apply_correction(ph_cmd, self.command_bus, pid)
         
         # EC Correction
         if capabilities.get("ec_control", False):
@@ -244,7 +255,9 @@ class ZoneAutomationService:
                 zone_id, targets, telemetry, telemetry_timestamps, nodes, water_level_ok
             )
             if ec_cmd:
-                await self.ec_controller.apply_correction(ec_cmd, self.command_bus)
+                # Получаем PID для контекста
+                pid = self.ec_controller._pid_by_zone.get(zone_id)
+                await self.ec_controller.apply_correction(ec_cmd, self.command_bus, pid)
     
     async def _update_zone_health(self, zone_id: int) -> None:
         """Обновление health score зоны."""

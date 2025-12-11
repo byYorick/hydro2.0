@@ -277,7 +277,8 @@ services:
       laravel:
         condition: service_healthy
     ports:
-      - "9401:9401"
+      - "9401:9401"  # Prometheus metrics
+      - "9405:9405"  # FastAPI REST API
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect((\"localhost\", 9401)); s.close()' || exit 1"]
       interval: 15s
@@ -499,6 +500,34 @@ services:
       - default
     profiles:
       - load-test
+
+  integration-tests:
+    build:
+      context: ./services
+      dockerfile: Dockerfile.test
+    environment:
+      - MQTT_HOST=mqtt
+      - MQTT_PORT=1883
+      - MQTT_USER=node_emulator
+      - MQTT_PASS=node_emulator_pass
+      - LARAVEL_URL=http://laravel
+      - LARAVEL_API_TOKEN=dev-token-12345
+      - PROMETHEUS_URL=http://prometheus:9090
+      - HISTORY_LOGGER_URL=http://history-logger:9300
+      - PYTHONPATH=/app
+    depends_on:
+      mqtt:
+        condition: service_healthy
+      laravel:
+        condition: service_healthy
+      prometheus:
+        condition: service_started
+    volumes:
+      - ./integration_tests:/app/integration_tests:ro
+      - ./services:/app/services:ro
+    profiles:
+      - tests
+    command: ["python", "integration_tests/test_error_reporting.py"]
 
 volumes:
   postgres_data:

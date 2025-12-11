@@ -22,6 +22,7 @@
 #include "setup_portal.h"
 #include "connection_status.h"
 #include "node_utils.h"
+#include "node_state_manager.h"
 #include "esp_system.h"
 #include "esp_log.h"
 #include "esp_err.h"
@@ -125,6 +126,7 @@ static void relay_node_publish_hello(void) {
     esp_err_t err = esp_efuse_mac_get_default(mac);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to get MAC address: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "system", err, "Failed to get MAC address for node_hello");
         return;
     }
     
@@ -142,6 +144,7 @@ static void relay_node_publish_hello(void) {
     cJSON *hello = cJSON_CreateObject();
     if (!hello) {
         ESP_LOGE(TAG, "Failed to create node_hello JSON");
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "mqtt", ESP_ERR_NO_MEM, "Failed to create node_hello JSON");
         return;
     }
     
@@ -166,6 +169,7 @@ static void relay_node_publish_hello(void) {
             ESP_LOGI(TAG, "node_hello published successfully");
         } else {
             ESP_LOGE(TAG, "Failed to publish node_hello: %s", esp_err_to_name(pub_err));
+            node_state_manager_report_error(ERROR_LEVEL_ERROR, "mqtt", pub_err, "Failed to publish node_hello");
         }
         
         free(json_str);
@@ -228,6 +232,7 @@ esp_err_t relay_node_init_components(void) {
     esp_err_t err = relay_node_init_step_config_storage(&init_ctx, &step_result);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Step 1 failed: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_CRITICAL, "config_storage", err, "Config storage initialization failed");
         return err;
     }
     
@@ -240,6 +245,7 @@ esp_err_t relay_node_init_components(void) {
         return ESP_ERR_NOT_FOUND; // setup mode will reboot device
     } else if (err != ESP_OK) {
         ESP_LOGE(TAG, "Step 2 failed: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_CRITICAL, "wifi_manager", err, "WiFi manager initialization failed");
         return err;
     }
     
@@ -263,6 +269,7 @@ esp_err_t relay_node_init_components(void) {
         err = wifi_manager_connect(&wifi_config);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "Failed to connect to Wi-Fi: %s", esp_err_to_name(err));
+            node_state_manager_report_error(ERROR_LEVEL_WARNING, "wifi", err, "Failed to connect to Wi-Fi, will retry");
             // Continue - Wi-Fi will try to reconnect automatically
         }
     }
@@ -271,6 +278,7 @@ esp_err_t relay_node_init_components(void) {
     err = relay_node_init_step_i2c(&init_ctx, &step_result);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Step 3 failed: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "i2c_bus", err, "I2C bus initialization failed");
         // Continue - I2C может быть не критичен
     }
     
@@ -287,6 +295,7 @@ esp_err_t relay_node_init_components(void) {
         ESP_LOGW(TAG, "Step 5: No relay channels in config (will initialize when config received)");
     } else if (err != ESP_OK) {
         ESP_LOGE(TAG, "Step 5 failed: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "relay_driver", err, "Relay driver initialization failed");
         // Continue - реле могут быть настроены позже
     }
     
@@ -294,6 +303,7 @@ esp_err_t relay_node_init_components(void) {
     err = relay_node_init_step_mqtt(&init_ctx, &step_result);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Step 6 failed: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_CRITICAL, "mqtt_manager", err, "MQTT manager initialization failed");
         return err;
     }
     
@@ -302,12 +312,13 @@ esp_err_t relay_node_init_components(void) {
     if (fw_err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize node_framework: %s. Entering safe mode and restarting...", 
                  esp_err_to_name(fw_err));
+        node_state_manager_report_error(ERROR_LEVEL_CRITICAL, "node_framework", fw_err, "Node framework initialization failed, restarting");
         // На всякий случай убеждаемся, что реле останутся в разомкнутом состоянии
         if (relay_driver_is_initialized()) {
             // Проходим по актуаторам из конфига, чтобы раскрыть их — в init шаге он уже должен быть загружен
             relay_driver_init_from_config();
         }
-        vTaskDelay(pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(1000));
         esp_restart();
         return fw_err;
     }
@@ -322,6 +333,7 @@ esp_err_t relay_node_init_components(void) {
     err = relay_node_init_step_finalize(&init_ctx, &step_result);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Step 7 failed: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "init_finalize", err, "Initialization finalization failed");
         return err;
     }
     

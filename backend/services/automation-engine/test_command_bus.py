@@ -1,78 +1,173 @@
 """Tests for command_bus."""
 import pytest
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock, AsyncMock, patch, MagicMock
+import httpx
 from infrastructure.command_bus import CommandBus
 
 
 @pytest.mark.asyncio
 async def test_publish_command_success():
-    """Test successful command publication."""
-    mqtt = Mock()
-    mqtt.is_connected = Mock(return_value=True)
-    mqtt.publish_json = Mock()
-    
-    command_bus = CommandBus(mqtt, "gh-1")
-    result = await command_bus.publish_command(1, "nd-irrig-1", "default", "irrigate", {"duration": 60})
-    
-    assert result is True
-    mqtt.publish_json.assert_called_once()
-    call_args = mqtt.publish_json.call_args
-    assert "hydro/gh-1/zn-1/nd-irrig-1/default/command" in call_args[0][0]
-    assert call_args[0][1]["cmd"] == "irrigate"
+    """Test successful command publication via REST API."""
+    with patch("httpx.AsyncClient") as mock_client_class:
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json = Mock(return_value={"status": "ok", "data": {"command_id": "cmd-123"}})
+        
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client_class.return_value = mock_client
+        
+        command_bus = CommandBus(
+            mqtt=None,
+            gh_uid="gh-1",
+            history_logger_url="http://history-logger:9300",
+            history_logger_token="test-token"
+        )
+        result = await command_bus.publish_command(1, "nd-irrig-1", "default", "irrigate", {"duration": 60})
+        
+        assert result is True
+        mock_client.post.assert_called_once()
+        call_args = mock_client.post.call_args
+        assert call_args[0][0] == "http://history-logger:9300/commands"
+        assert call_args[1]["json"]["cmd"] == "irrigate"
+        assert call_args[1]["json"]["zone_id"] == 1
+        assert call_args[1]["json"]["node_uid"] == "nd-irrig-1"
+        assert call_args[1]["json"]["channel"] == "default"
+        assert call_args[1]["json"]["params"] == {"duration": 60}
+        assert "Authorization" in call_args[1]["headers"]
+        assert call_args[1]["headers"]["Authorization"] == "Bearer test-token"
 
 
 @pytest.mark.asyncio
-async def test_publish_command_not_connected():
-    """Test command publication when MQTT is not connected."""
-    mqtt = Mock()
-    mqtt.is_connected = Mock(return_value=False)
-    
-    command_bus = CommandBus(mqtt, "gh-1")
-    result = await command_bus.publish_command(1, "nd-irrig-1", "default", "irrigate")
-    
-    assert result is False
-    mqtt.publish_json.assert_not_called()
+async def test_publish_command_http_error():
+    """Test command publication with HTTP error."""
+    with patch("httpx.AsyncClient") as mock_client_class:
+        mock_response = Mock()
+        mock_response.status_code = 500
+        mock_response.text = "Internal Server Error"
+        
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client_class.return_value = mock_client
+        
+        command_bus = CommandBus(
+            mqtt=None,
+            gh_uid="gh-1",
+            history_logger_url="http://history-logger:9300"
+        )
+        result = await command_bus.publish_command(1, "nd-irrig-1", "default", "irrigate")
+        
+        assert result is False
 
 
 @pytest.mark.asyncio
-async def test_publish_command_exception():
-    """Test command publication with exception."""
-    mqtt = Mock()
-    mqtt.is_connected = Mock(return_value=True)
-    mqtt.publish_json = Mock(side_effect=Exception("MQTT error"))
-    
-    command_bus = CommandBus(mqtt, "gh-1")
-    result = await command_bus.publish_command(1, "nd-irrig-1", "default", "irrigate")
-    
-    assert result is False
+async def test_publish_command_timeout():
+    """Test command publication with timeout."""
+    with patch("httpx.AsyncClient") as mock_client_class:
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(side_effect=httpx.TimeoutException("Timeout"))
+        mock_client_class.return_value = mock_client
+        
+        command_bus = CommandBus(
+            mqtt=None,
+            gh_uid="gh-1",
+            history_logger_url="http://history-logger:9300"
+        )
+        result = await command_bus.publish_command(1, "nd-irrig-1", "default", "irrigate")
+        
+        assert result is False
+
+
+@pytest.mark.asyncio
+async def test_publish_command_request_error():
+    """Test command publication with request error."""
+    with patch("httpx.AsyncClient") as mock_client_class:
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(side_effect=httpx.RequestError("Connection error"))
+        mock_client_class.return_value = mock_client
+        
+        command_bus = CommandBus(
+            mqtt=None,
+            gh_uid="gh-1",
+            history_logger_url="http://history-logger:9300"
+        )
+        result = await command_bus.publish_command(1, "nd-irrig-1", "default", "irrigate")
+        
+        assert result is False
+
+
+@pytest.mark.asyncio
+async def test_publish_command_json_decode_error():
+    """Test command publication with JSON decode error."""
+    with patch("httpx.AsyncClient") as mock_client_class:
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json = Mock(side_effect=ValueError("Invalid JSON"))
+        
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client_class.return_value = mock_client
+        
+        command_bus = CommandBus(
+            mqtt=None,
+            gh_uid="gh-1",
+            history_logger_url="http://history-logger:9300"
+        )
+        result = await command_bus.publish_command(1, "nd-irrig-1", "default", "irrigate")
+        
+        assert result is False
 
 
 @pytest.mark.asyncio
 async def test_publish_controller_command():
     """Test publishing controller command."""
-    mqtt = Mock()
-    mqtt.is_connected = Mock(return_value=True)
-    mqtt.publish_json = Mock()
-    
-    command_bus = CommandBus(mqtt, "gh-1")
-    command = {
-        'node_uid': 'nd-irrig-1',
-        'channel': 'default',
-        'cmd': 'irrigate',
-        'params': {'duration': 60}
-    }
-    
-    result = await command_bus.publish_controller_command(1, command)
-    
-    assert result is True
-    mqtt.publish_json.assert_called_once()
+    with patch("httpx.AsyncClient") as mock_client_class:
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json = Mock(return_value={"status": "ok", "data": {"command_id": "cmd-123"}})
+        
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client_class.return_value = mock_client
+        
+        command_bus = CommandBus(
+            mqtt=None,
+            gh_uid="gh-1",
+            history_logger_url="http://history-logger:9300"
+        )
+        command = {
+            'node_uid': 'nd-irrig-1',
+            'channel': 'default',
+            'cmd': 'irrigate',
+            'params': {'duration': 60}
+        }
+        
+        result = await command_bus.publish_controller_command(1, command)
+        
+        assert result is True
+        mock_client.post.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_publish_controller_command_invalid():
     """Test publishing invalid controller command."""
-    mqtt = Mock()
-    command_bus = CommandBus(mqtt, "gh-1")
+    command_bus = CommandBus(
+        mqtt=None,
+        gh_uid="gh-1",
+        history_logger_url="http://history-logger:9300"
+    )
     
     # Missing node_uid
     command = {'channel': 'default', 'cmd': 'irrigate'}
@@ -88,32 +183,112 @@ async def test_publish_controller_command_invalid():
 @pytest.mark.asyncio
 async def test_publish_command_with_params():
     """Test command publication with parameters."""
-    mqtt = Mock()
-    mqtt.is_connected = Mock(return_value=True)
-    mqtt.publish_json = Mock()
-    
-    command_bus = CommandBus(mqtt, "gh-1")
-    params = {"duration": 60, "intensity": 80}
-    result = await command_bus.publish_command(1, "nd-light-1", "white_light", "set_pwm", params)
-    
-    assert result is True
-    call_args = mqtt.publish_json.call_args
-    assert call_args[0][1]["cmd"] == "set_pwm"
-    assert call_args[0][1]["params"] == params
+    with patch("httpx.AsyncClient") as mock_client_class:
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json = Mock(return_value={"status": "ok", "data": {"command_id": "cmd-123"}})
+        
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client_class.return_value = mock_client
+        
+        command_bus = CommandBus(
+            mqtt=None,
+            gh_uid="gh-1",
+            history_logger_url="http://history-logger:9300"
+        )
+        params = {"duration": 60, "intensity": 80}
+        result = await command_bus.publish_command(1, "nd-light-1", "white_light", "set_pwm", params)
+        
+        assert result is True
+        call_args = mock_client.post.call_args
+        assert call_args[1]["json"]["cmd"] == "set_pwm"
+        assert call_args[1]["json"]["params"] == params
 
 
 @pytest.mark.asyncio
 async def test_publish_command_without_params():
     """Test command publication without parameters."""
-    mqtt = Mock()
-    mqtt.is_connected = Mock(return_value=True)
-    mqtt.publish_json = Mock()
-    
-    command_bus = CommandBus(mqtt, "gh-1")
-    result = await command_bus.publish_command(1, "nd-relay-1", "default", "set_relay")
-    
-    assert result is True
-    call_args = mqtt.publish_json.call_args
-    assert call_args[0][1]["cmd"] == "set_relay"
-    assert "params" not in call_args[0][1]
+    with patch("httpx.AsyncClient") as mock_client_class:
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json = Mock(return_value={"status": "ok", "data": {"command_id": "cmd-123"}})
+        
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client_class.return_value = mock_client
+        
+        command_bus = CommandBus(
+            mqtt=None,
+            gh_uid="gh-1",
+            history_logger_url="http://history-logger:9300"
+        )
+        result = await command_bus.publish_command(1, "nd-relay-1", "default", "set_relay")
+        
+        assert result is True
+        call_args = mock_client.post.call_args
+        assert call_args[1]["json"]["cmd"] == "set_relay"
+        # params не должен быть в payload если не передан
+        assert "params" not in call_args[1]["json"] or call_args[1]["json"].get("params") is None
 
+
+@pytest.mark.asyncio
+async def test_publish_command_with_trace_id():
+    """Test command publication with trace_id from context."""
+    with patch("httpx.AsyncClient") as mock_client_class, \
+         patch("infrastructure.command_bus.get_trace_id") as mock_trace_id:
+        
+        mock_trace_id.return_value = "trace-123"
+        
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json = Mock(return_value={"status": "ok", "data": {"command_id": "cmd-123"}})
+        
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client_class.return_value = mock_client
+        
+        command_bus = CommandBus(
+            mqtt=None,
+            gh_uid="gh-1",
+            history_logger_url="http://history-logger:9300"
+        )
+        result = await command_bus.publish_command(1, "nd-irrig-1", "default", "irrigate")
+        
+        assert result is True
+        call_args = mock_client.post.call_args
+        assert call_args[1]["json"]["trace_id"] == "trace-123"
+
+
+@pytest.mark.asyncio
+async def test_publish_command_without_token():
+    """Test command publication without authentication token."""
+    with patch("httpx.AsyncClient") as mock_client_class:
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json = Mock(return_value={"status": "ok", "data": {"command_id": "cmd-123"}})
+        
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client_class.return_value = mock_client
+        
+        command_bus = CommandBus(
+            mqtt=None,
+            gh_uid="gh-1",
+            history_logger_url="http://history-logger:9300",
+            history_logger_token=None
+        )
+        result = await command_bus.publish_command(1, "nd-irrig-1", "default", "irrigate")
+        
+        assert result is True
+        call_args = mock_client.post.call_args
+        # Authorization header не должен быть если token не передан
+        assert "Authorization" not in call_args[1]["headers"]

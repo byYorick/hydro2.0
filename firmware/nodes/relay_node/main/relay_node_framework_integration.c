@@ -133,6 +133,7 @@ static esp_err_t handle_set_state(
 
     esp_err_t err = relay_driver_set_state(channel, relay_state);
     if (err != ESP_OK) {
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "relay_driver", err, "Failed to set relay state");
         *response = node_command_handler_create_response(
             NULL,
             "ERROR",
@@ -173,6 +174,7 @@ static esp_err_t handle_toggle(
     esp_err_t get_err = relay_driver_get_state(channel, &current_state);
     
     if (get_err != ESP_OK) {
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "relay_driver", get_err, "Relay channel not found");
         *response = node_command_handler_create_response(
             NULL,
             "ERROR",
@@ -187,6 +189,7 @@ static esp_err_t handle_toggle(
     esp_err_t err = relay_driver_set_state(channel, new_state);
     
     if (err != ESP_OK) {
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "relay_driver", err, "Failed to toggle relay");
         *response = node_command_handler_create_response(
             NULL,
             "ERROR",
@@ -230,6 +233,7 @@ esp_err_t relay_node_framework_init(void) {
     esp_err_t err = node_framework_init(&config);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize node_framework: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_CRITICAL, "node_framework", err, "Node framework initialization failed");
         return err;
     }
 

@@ -88,8 +88,8 @@ class VerifyPythonServiceToken
             ], 401);
         }
 
-        // Токен валиден - устанавливаем сервисного пользователя
-        // Используем первого админа или создаем сервисного пользователя
+        // Токен валиден - устанавливаем сервисного пользователя, если он существует
+        // Для публичных эндпоинтов (например, /api/system/config/full) пользователь не обязателен
         $serviceUser = $this->getServiceUser();
         if ($serviceUser) {
             Auth::guard('sanctum')->setUser($serviceUser);
@@ -99,7 +99,15 @@ class VerifyPythonServiceToken
                 'user_id' => $serviceUser->id,
             ]);
         } else {
-            Log::warning('Python service token verified but service user not found');
+            // Пользователь не найден, но токен валиден - разрешаем запрос для публичных эндпоинтов
+            // Логируем только один раз, чтобы не засорять логи
+            static $logged = false;
+            if (!$logged) {
+                Log::info('Python service token verified but service user not found - allowing request for public endpoints', [
+                    'note' => 'Consider creating a viewer user for better security and authorization',
+                ]);
+                $logged = true;
+            }
         }
 
         return $next($request);

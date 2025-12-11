@@ -45,6 +45,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.14"
@@ -55,10 +56,25 @@ android {
         }
     }
 
-    // Backend/WebSocket base URLs via BuildConfig
-    defaultConfig {
-        buildConfigField("String", "BACKEND_BASE_URL", "\"https://your-backend.example\"")
-        buildConfigField("String", "WS_BASE_URL", "\"wss://your-backend.example/ws\"")
+    // Product flavors: dev, staging, prod
+    flavorDimensions += "environment"
+    productFlavors {
+        create("dev") {
+            dimension = "environment"
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+            buildConfigField("String", "ENV_CONFIG_FILE", "\"env.dev.json\"")
+        }
+        create("staging") {
+            dimension = "environment"
+            applicationIdSuffix = ".staging"
+            versionNameSuffix = "-staging"
+            buildConfigField("String", "ENV_CONFIG_FILE", "\"env.staging.json\"")
+        }
+        create("prod") {
+            dimension = "environment"
+            buildConfigField("String", "ENV_CONFIG_FILE", "\"env.prod.json\"")
+        }
     }
 }
 
@@ -90,6 +106,21 @@ dependencies {
     // DataStore (for settings/tokens, later)
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 
+    // Room for caching
+    val roomVersion = "2.6.1"
+    implementation("androidx.room:room-runtime:$roomVersion")
+    implementation("androidx.room:room-ktx:$roomVersion")
+    kapt("androidx.room:room-compiler:$roomVersion")
+
+    // WebSocket support
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // JSON parsing for config files
+    implementation("com.google.code.gson:gson:2.10.1")
+
+    // Compose charts (using simple canvas-based solution)
+    // For now, we'll use Canvas directly in Compose
+
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
@@ -100,6 +131,7 @@ dependencies {
 
 kapt {
     correctErrorTypes = true
+    useBuildCache = true
 }
 
 

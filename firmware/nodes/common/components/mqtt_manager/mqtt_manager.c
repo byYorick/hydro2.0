@@ -463,7 +463,7 @@ esp_err_t mqtt_manager_publish_heartbeat(const char *data) {
         return err;
     }
 
-    return mqtt_manager_publish_internal(topic, data, 0, 0);
+    return mqtt_manager_publish_internal(topic, data, 1, 0);  // QoS = 1 согласно MQTT_SPEC_FULL.md
 }
 
 esp_err_t mqtt_manager_publish_command_response(const char *channel, const char *data) {

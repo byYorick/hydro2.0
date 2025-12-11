@@ -2,6 +2,7 @@ package com.hydro.app.features.auth.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hydro.app.core.domain.User
 import com.hydro.app.features.auth.data.AuthRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -12,7 +13,7 @@ import javax.inject.Inject
 sealed interface LoginState {
 	data object Idle : LoginState
 	data object Loading : LoginState
-	data object Success : LoginState
+	data class Success(val user: User) : LoginState
 	data class Error(val message: String) : LoginState
 }
 
@@ -28,7 +29,7 @@ class LoginViewModel @Inject constructor(
 		viewModelScope.launch {
 			val res = authRepository.login(email, password)
 			_state.value = res.fold(
-				onSuccess = { LoginState.Success },
+				onSuccess = { user -> LoginState.Success(user) },
 				onFailure = { LoginState.Error(it.message ?: "Login failed") }
 			)
 		}

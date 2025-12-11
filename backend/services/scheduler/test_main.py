@@ -2,12 +2,14 @@
 import pytest
 from datetime import time, datetime, timedelta
 from unittest.mock import Mock, patch, AsyncMock
+import httpx
 from main import (
     _parse_time_spec,
     get_active_schedules,
     get_zone_nodes_for_type,
     execute_irrigation_schedule,
     monitor_pump_safety,
+    send_command_via_automation_engine,
 )
 
 
@@ -52,7 +54,7 @@ async def test_get_zone_nodes_for_type():
                 "id": 1,
                 "uid": "nd-irrig-1",
                 "type": "irrigation",
-                "channel": "pump1",  # Исправлено: должно быть "channel", а не "channel_name"
+                "channel": "pump1",
             }
         ]
         nodes = await get_zone_nodes_for_type(1, "irrigation")
@@ -63,17 +65,93 @@ async def test_get_zone_nodes_for_type():
 
 
 @pytest.mark.asyncio
+async def test_send_command_via_automation_engine_success():
+    """Test successful command sending via automation-engine REST API."""
+    with patch("httpx.AsyncClient") as mock_client_class:
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json = Mock(return_value={"status": "ok"})
+        
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client_class.return_value = mock_client
+        
+        result = await send_command_via_automation_engine(
+            zone_id=1,
+            node_uid="nd-irrig-1",
+            channel="default",
+            cmd="irrigate",
+            params={"duration": 60}
+        )
+        
+        assert result is True
+        mock_client.post.assert_called_once()
+        call_args = mock_client.post.call_args
+        assert "automation-engine:9405/scheduler/command" in call_args[0][0]
+        assert call_args[1]["json"]["zone_id"] == 1
+        assert call_args[1]["json"]["node_uid"] == "nd-irrig-1"
+        assert call_args[1]["json"]["channel"] == "default"
+        assert call_args[1]["json"]["cmd"] == "irrigate"
+        assert call_args[1]["json"]["params"] == {"duration": 60}
+
+
+@pytest.mark.asyncio
+async def test_send_command_via_automation_engine_error():
+    """Test command sending with HTTP error."""
+    with patch("httpx.AsyncClient") as mock_client_class:
+        mock_response = Mock()
+        mock_response.status_code = 500
+        mock_response.text = "Internal Server Error"
+        
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client_class.return_value = mock_client
+        
+        result = await send_command_via_automation_engine(
+            zone_id=1,
+            node_uid="nd-irrig-1",
+            channel="default",
+            cmd="irrigate"
+        )
+        
+        assert result is False
+
+
+@pytest.mark.asyncio
+async def test_send_command_via_automation_engine_timeout():
+    """Test command sending with timeout."""
+    with patch("httpx.AsyncClient") as mock_client_class:
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(side_effect=httpx.TimeoutException("Timeout"))
+        mock_client_class.return_value = mock_client
+        
+        result = await send_command_via_automation_engine(
+            zone_id=1,
+            node_uid="nd-irrig-1",
+            channel="default",
+            cmd="irrigate"
+        )
+        
+        assert result is False
+
+
+@pytest.mark.asyncio
 async def test_execute_irrigation_schedule():
     """Test executing irrigation schedule."""
-    mqtt = Mock()
-    mqtt.publish_json = Mock()
-    
     with patch("main.get_zone_nodes_for_type") as mock_nodes, \
          patch("main.create_scheduler_log") as mock_log, \
          patch("main.check_water_level") as mock_water, \
          patch("main.check_flow") as mock_flow, \
          patch("main.calculate_irrigation_volume") as mock_volume, \
-         patch("main.create_zone_event") as mock_event:
+         patch("main.create_zone_event") as mock_event, \
+         patch("main.send_command_via_automation_engine") as mock_send_command, \
+         patch("main.monitor_pump_safety") as mock_monitor:
         
         mock_nodes.return_value = [
             {
@@ -85,38 +163,37 @@ async def test_execute_irrigation_schedule():
         mock_water.return_value = (True, 0.5)
         mock_flow.return_value = (True, 2.0)
         mock_volume.return_value = 10.0
+        mock_send_command.return_value = True
         
-        await execute_irrigation_schedule(1, mqtt, "gh-1", {})
+        await execute_irrigation_schedule(1, {})
         
-        # Should publish irrigation command
-        assert mqtt.publish_json.called
+        # Should send irrigation command via REST API
+        assert mock_send_command.called
         # Проверяем, что была отправлена команда irrigate
-        irrigate_calls = [call for call in mqtt.publish_json.call_args_list 
-                         if len(call[0]) > 1 and isinstance(call[0][1], dict) and call[0][1].get("cmd") == "irrigate"]
+        irrigate_calls = [call for call in mock_send_command.call_args_list 
+                         if call[1]["cmd"] == "irrigate"]
         assert len(irrigate_calls) > 0
 
 
 @pytest.mark.asyncio
 async def test_monitor_pump_safety_safe():
     """Test pump safety monitoring when flow is normal."""
-    mqtt = Mock()
-    mqtt.publish_json = Mock()
     pump_start_time = datetime.utcnow() - timedelta(seconds=5)
     
     with patch("main.check_dry_run_protection") as mock_check, \
          patch("main.create_zone_event") as mock_event, \
          patch("main.create_scheduler_log") as mock_log, \
+         patch("main.send_command_via_automation_engine") as mock_send_command, \
          patch("asyncio.sleep") as mock_sleep:
         
         mock_check.return_value = (True, None)  # Безопасно
         mock_sleep.return_value = None
         
-        await monitor_pump_safety(1, pump_start_time, mqtt, "gh-1", "nd-irrig-1", "pump1")
+        await monitor_pump_safety(1, pump_start_time, "nd-irrig-1", "pump1")
         
         # Не должна быть отправлена команда остановки
-        # mqtt.publish_json вызывается с (topic, payload, ...)
-        stop_calls = [call for call in mqtt.publish_json.call_args_list 
-                     if len(call[0]) > 1 and isinstance(call[0][1], dict) and call[0][1].get("cmd") == "stop"]
+        stop_calls = [call for call in mock_send_command.call_args_list 
+                     if call[1]["cmd"] == "stop"]
         assert len(stop_calls) == 0
         
         # Не должно быть создано событие PUMP_STOPPED
@@ -128,24 +205,23 @@ async def test_monitor_pump_safety_safe():
 @pytest.mark.asyncio
 async def test_monitor_pump_safety_dry_run():
     """Test pump safety monitoring when dry run detected."""
-    mqtt = Mock()
-    mqtt.publish_json = Mock()
     pump_start_time = datetime.utcnow() - timedelta(seconds=5)
     
     with patch("main.check_dry_run_protection") as mock_check, \
          patch("main.create_zone_event") as mock_event, \
          patch("main.create_scheduler_log") as mock_log, \
+         patch("main.send_command_via_automation_engine") as mock_send_command, \
          patch("asyncio.sleep") as mock_sleep:
         
         mock_check.return_value = (False, "NO_FLOW detected: flow=0.0 L/min")
         mock_sleep.return_value = None
+        mock_send_command.return_value = True
         
-        await monitor_pump_safety(1, pump_start_time, mqtt, "gh-1", "nd-irrig-1", "pump1")
+        await monitor_pump_safety(1, pump_start_time, "nd-irrig-1", "pump1")
         
-        # Должна быть отправлена команда остановки
-        # mqtt.publish_json вызывается с (topic, payload, ...)
-        stop_calls = [call for call in mqtt.publish_json.call_args_list 
-                     if len(call[0]) > 1 and isinstance(call[0][1], dict) and call[0][1].get("cmd") == "stop"]
+        # Должна быть отправлена команда остановки через REST API
+        stop_calls = [call for call in mock_send_command.call_args_list 
+                     if call[1]["cmd"] == "stop"]
         assert len(stop_calls) > 0
         
         # Должно быть создано событие PUMP_STOPPED
@@ -155,4 +231,3 @@ async def test_monitor_pump_safety_dry_run():
         
         # Должен быть обновлен scheduler log
         mock_log.assert_called_once()
-

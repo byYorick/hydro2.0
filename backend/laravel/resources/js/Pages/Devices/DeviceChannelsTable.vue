@@ -10,7 +10,7 @@
         </tr>
       </thead>
       <tbody>
-        <tr v-for="(channel, idx) in channels" :key="idx" class="odd:bg-neutral-950 even:bg-neutral-925">
+        <tr v-for="(channel, idx) in paginatedChannels" :key="idx" class="odd:bg-neutral-950 even:bg-neutral-925">
           <td class="px-3 py-2 border-b border-neutral-900">{{ channel.channel || channel.name || '-' }}</td>
           <td class="px-3 py-2 border-b border-neutral-900 uppercase">{{ channel.type || '-' }}</td>
           <td class="px-3 py-2 border-b border-neutral-900">
@@ -45,21 +45,48 @@
             </div>
           </td>
         </tr>
-        <tr v-if="channels.length === 0">
+        <tr v-if="paginatedChannels.length === 0">
           <td colspan="4" class="px-3 py-4 text-center text-neutral-400">Нет каналов</td>
         </tr>
       </tbody>
     </table>
+    <Pagination
+      v-if="channels.length > perPage"
+      v-model:current-page="currentPage"
+      v-model:per-page="perPage"
+      :total="channels.length"
+    />
   </div>
 </template>
 
 <script setup>
+import { computed, ref } from 'vue'
 import Button from '@/Components/Button.vue'
+import Pagination from '@/Components/Pagination.vue'
 
 const props = defineProps({
   channels: { type: Array, default: () => [] }, // [{channel,type,metric,unit}]
   nodeType: { type: String, default: '' }, // Тип ноды: ph_node, ec_node, pump_node
   testingChannels: { type: Set, default: () => new Set() }, // Множество каналов, которые сейчас тестируются
+})
+
+const currentPage = ref<number>(1)
+const perPage = ref<number>(10)
+
+const paginatedChannels = computed(() => {
+  const total = props.channels.length
+  if (total === 0) return []
+  
+  // Защита от некорректных значений
+  const maxPage = Math.ceil(total / perPage.value) || 1
+  const validPage = Math.min(currentPage.value, maxPage)
+  if (validPage !== currentPage.value) {
+    currentPage.value = validPage
+  }
+  
+  const start = (validPage - 1) * perPage.value
+  const end = start + perPage.value
+  return props.channels.slice(start, end)
 })
 
 // Проверка, является ли канал насосом или клапаном

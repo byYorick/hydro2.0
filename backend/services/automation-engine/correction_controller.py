@@ -3,6 +3,7 @@ Correction Controller - универсальный контроллер для �
 Устраняет дублирование кода между pH и EC корректировкой.
 """
 from typing import Optional, Dict, Any
+from utils.adaptive_pid import AdaptivePid
 from enum import Enum
 from datetime import datetime, timedelta
 import time
@@ -12,6 +13,7 @@ from correction_cooldown import should_apply_correction, record_correction
 from config.settings import get_settings
 from utils.adaptive_pid import AdaptivePid, AdaptivePidConfig, PidZone, PidZoneCoeffs
 from services.pid_config_service import get_config, invalidate_cache
+from services.pid_state_manager import PidStateManager
 
 logger = logging.getLogger(__name__)
 
@@ -25,18 +27,20 @@ class CorrectionType(Enum):
 class CorrectionController:
     """Универсальный контроллер для корректировки pH/EC."""
     
-    def __init__(self, correction_type: CorrectionType):
+    def __init__(self, correction_type: CorrectionType, pid_state_manager: Optional[PidStateManager] = None):
         """
         Инициализация контроллера.
         
         Args:
             correction_type: Тип корректировки (PH или EC)
+            pid_state_manager: Менеджер состояния PID (опционально)
         """
         self.correction_type = correction_type
         self.metric_name = correction_type.value.upper()
         self.event_prefix = correction_type.value.upper()
         self._pid_by_zone: Dict[int, AdaptivePid] = {}
         self._last_pid_tick: Dict[int, float] = {}
+        self.pid_state_manager = pid_state_manager or PidStateManager()
     
     async def check_and_correct(
         self,
@@ -164,6 +168,31 @@ class CorrectionController:
         dt_seconds = self._get_dt_seconds(zone_id)
         amount = pid.compute(current_val, dt_seconds)
 
+        # Детальное логирование PID вычислений
+        logger.debug(
+            f"Zone {zone_id}: {self.metric_name} PID calculation",
+            extra={
+                'zone_id': zone_id,
+                'metric': self.metric_name,
+                'current': current_val,
+                'target': target_val,
+                'error': diff,
+                'pid_zone': pid.get_zone().value,
+                'pid_output': amount,
+                'pid_integral': pid.integral,
+                'pid_prev_error': pid.prev_error,
+                'pid_dt': dt_seconds,
+                'pid_config': {
+                    'dead_zone': pid.config.dead_zone,
+                    'close_zone': pid.config.close_zone,
+                    'far_zone': pid.config.far_zone,
+                    'kp': pid.config.zone_coeffs[pid.get_zone()].kp,
+                    'ki': pid.config.zone_coeffs[pid.get_zone()].ki,
+                    'kd': pid.config.zone_coeffs[pid.get_zone()].kd,
+                }
+            }
+        )
+        
         # Логируем PID_OUTPUT событие только если output > 0
         if amount > 0:
             await create_zone_event(
@@ -218,7 +247,8 @@ class CorrectionController:
     async def apply_correction(
         self,
         command: Dict[str, Any],
-        command_bus
+        command_bus,
+        pid: Optional[AdaptivePid] = None
     ) -> None:
         """
         Применить корректировку: отправить команду, создать события и логи.
@@ -226,6 +256,7 @@ class CorrectionController:
         Args:
             command: Команда корректировки (результат check_and_correct)
             command_bus: CommandBus для публикации команд
+            pid: Экземпляр PID для контекста (опционально)
         """
         zone_id = command['zone_id']
         correction_type_str = command['correction_type_str']
@@ -235,8 +266,25 @@ class CorrectionController:
         correction_type = command['event_details']['correction_type']
         reason = command.get('reason', '')
         
-        # Отправляем команду через Command Bus
-        await command_bus.publish_controller_command(zone_id, command)
+        # Подготавливаем контекст для аудита
+        context = {
+            'current_value': current_val,
+            'target_value': target_val,
+            'diff': diff,
+            'reason': reason,
+            'telemetry': command.get('telemetry', {}),
+        }
+        
+        if pid:
+            context.update({
+                'pid_zone': pid.get_zone().value,
+                'pid_output': command['event_details'].get('dose_ml', 0),
+                'pid_integral': pid.integral,
+                'pid_prev_error': pid.prev_error,
+            })
+        
+        # Отправляем команду через Command Bus с контекстом
+        await command_bus.publish_controller_command(zone_id, command, context)
         
         # Записываем информацию о корректировке
         await record_correction(zone_id, correction_type_str, {
@@ -307,7 +355,7 @@ class CorrectionController:
         )
 
     async def _get_pid(self, zone_id: int, setpoint: float) -> AdaptivePid:
-        """Получить/инициализировать PID для зоны."""
+        """Получить/инициализировать PID для зоны с восстановлением состояния."""
         pid = self._pid_by_zone.get(zone_id)
 
         if pid is None:
@@ -318,12 +366,34 @@ class CorrectionController:
                 settings = get_settings()
                 pid_config = self._build_pid_config(settings, setpoint)
             pid = AdaptivePid(pid_config)
+            
+            # Пытаемся восстановить состояние из БД
+            restored = await self.pid_state_manager.restore_pid_state(
+                zone_id,
+                self.correction_type.value,
+                pid
+            )
+            if restored:
+                logger.info(
+                    f"Zone {zone_id}: PID {self.correction_type.value} state restored from DB",
+                    extra={'zone_id': zone_id, 'pid_type': self.correction_type.value}
+                )
+            
             self._pid_by_zone[zone_id] = pid
             self._last_pid_tick[zone_id] = time.monotonic()
         else:
             pid.update_setpoint(setpoint)
 
         return pid
+    
+    async def save_all_states(self):
+        """Сохранить состояние всех PID контроллеров этого типа."""
+        for zone_id, pid in self._pid_by_zone.items():
+            await self.pid_state_manager.save_pid_state(
+                zone_id,
+                self.correction_type.value,
+                pid
+            )
 
     def _get_dt_seconds(self, zone_id: int) -> float:
         """Рассчитать dt между вызовами PID для зоны."""

@@ -37,8 +37,17 @@ class AppServiceProvider extends ServiceProvider
         Vite::prefetch(concurrency: 3);
         
         // Настройка rate limiting для регистрации нод
+        // Более строгий лимит: 10 запросов в минуту по IP
         \Illuminate\Support\Facades\RateLimiter::for('node_register', function (\Illuminate\Http\Request $request) {
-            return \Illuminate\Cache\RateLimiting\Limit::perMinute(10)->by($request->ip());
+            return \Illuminate\Cache\RateLimiting\Limit::perMinute(10)
+                ->by($request->ip())
+                ->response(function ($request, array $headers) {
+                    return response()->json([
+                        'status' => 'error',
+                        'code' => 'RATE_LIMIT_EXCEEDED',
+                        'message' => 'Too many node registration attempts. Please try again later.',
+                    ], 429)->withHeaders($headers);
+                });
         });
         
         // Регистрация слушателей событий

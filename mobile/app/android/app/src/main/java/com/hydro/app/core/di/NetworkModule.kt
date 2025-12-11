@@ -1,12 +1,15 @@
 package com.hydro.app.core.di
 
-import com.hydro.app.BuildConfig
+import android.content.Context
+import com.hydro.app.core.config.ConfigLoader
 import com.hydro.app.core.network.TokenProvider
 import com.hydro.app.core.prefs.PreferencesDataSource
 import com.squareup.moshi.Moshi
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
@@ -22,7 +25,13 @@ object NetworkModule {
 
 	@Provides
 	@Singleton
-	fun provideMoshi(): Moshi = Moshi.Builder().build()
+	fun provideConfigLoader(@ApplicationContext context: Context): ConfigLoader = ConfigLoader(context)
+
+	@Provides
+	@Singleton
+	fun provideMoshi(): Moshi = Moshi.Builder()
+		.addLast(KotlinJsonAdapterFactory())
+		.build()
 
 	@Provides
 	@Singleton
@@ -37,8 +46,15 @@ object NetworkModule {
 			val request = if (!token.isNullOrBlank()) {
 				original.newBuilder()
 					.addHeader("Authorization", "Bearer $token")
+					.addHeader("Accept", "application/json")
+					.addHeader("Content-Type", "application/json")
 					.build()
-			} else original
+			} else {
+				original.newBuilder()
+					.addHeader("Accept", "application/json")
+					.addHeader("Content-Type", "application/json")
+					.build()
+			}
 			chain.proceed(request)
 		}
 	}
@@ -47,7 +63,11 @@ object NetworkModule {
 	@Singleton
 	fun provideOkHttp(authInterceptor: Interceptor): OkHttpClient {
 		val logging = HttpLoggingInterceptor().apply {
-			level = HttpLoggingInterceptor.Level.BASIC
+			level = if (com.hydro.app.BuildConfig.DEBUG) {
+				HttpLoggingInterceptor.Level.BODY
+			} else {
+				HttpLoggingInterceptor.Level.BASIC
+			}
 		}
 		return OkHttpClient.Builder()
 			.addInterceptor(authInterceptor)
@@ -58,7 +78,9 @@ object NetworkModule {
 	@Provides
 	@Singleton
 	@Named("baseUrl")
-	fun provideBaseUrl(): String = BuildConfig.BACKEND_BASE_URL
+	fun provideBaseUrl(configLoader: ConfigLoader): String {
+		return configLoader.loadConfig().apiBaseUrl
+	}
 
 	@Provides
 	@Singleton

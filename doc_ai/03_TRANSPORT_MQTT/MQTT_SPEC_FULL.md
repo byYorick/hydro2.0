@@ -249,8 +249,12 @@ hydro/{gh}/{zone}/{node}/{channel}/command
 ```json
 {
  "cmd": "run_pump",
- "duration_ms": 2500,
- "cmd_id": "cmd-591"
+ "params": {
+   "duration_ms": 2500
+ },
+ "cmd_id": "cmd-591",
+ "ts": 1737355112,
+ "sig": "a1b2c3d4e5f6..."
 }
 ```
 
@@ -258,8 +262,12 @@ hydro/{gh}/{zone}/{node}/{channel}/command
 ```json
 {
  "cmd": "set_relay",
- "state": true,
- "cmd_id": "cmd-592"
+ "params": {
+   "state": true
+ },
+ "cmd_id": "cmd-592",
+ "ts": 1737355113,
+ "sig": "b2c3d4e5f6a1..."
 }
 ```
 
@@ -267,8 +275,12 @@ hydro/{gh}/{zone}/{node}/{channel}/command
 ```json
 {
  "cmd": "set_pwm",
- "value": 128,
- "cmd_id": "cmd-593"
+ "params": {
+   "value": 128
+ },
+ "cmd_id": "cmd-593",
+ "ts": 1737355114,
+ "sig": "c3d4e5f6a1b2..."
 }
 ```
 
@@ -276,10 +288,52 @@ hydro/{gh}/{zone}/{node}/{channel}/command
 ```json
 {
  "cmd": "calibrate",
- "type": "PH_7",
- "cmd_id": "cmd-594"
+ "params": {
+   "type": "PH_7"
+ },
+ "cmd_id": "cmd-594",
+ "ts": 1737355115,
+ "sig": "d4e5f6a1b2c3..."
 }
 ```
+
+## 7.3. Формат команды с HMAC подписью
+
+Все команды должны содержать следующие обязательные поля:
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `cmd` | string | Имя команды |
+| `cmd_id` | string | Уникальный ID команды |
+| `params` | object | Параметры команды (опционально) |
+| `ts` | number | Unix timestamp в секундах (обязательно для HMAC) |
+| `sig` | string | HMAC-SHA256 подпись (обязательно для HMAC) |
+
+**Формат подписи:**
+```
+sig = HMAC_SHA256(node_secret, cmd + '|' + ts)
+```
+
+Где:
+- `node_secret` — секретный ключ узла (хранится в NodeConfig поле `node_secret` или используется дефолтный)
+- `cmd` — имя команды (строка)
+- `ts` — Unix timestamp в секундах (number, int64)
+- Разделитель: `|` (вертикальная черта)
+- Подпись возвращается в виде hex строки (64 символа, нижний регистр)
+
+**Проверка на узле:**
+1. Узел проверяет наличие полей `ts` и `sig`
+2. Если поля присутствуют, выполняется проверка:
+   - Формат: `ts` должен быть числом, `sig` должен быть строкой длиной 64 символа (hex)
+   - Timestamp: `abs(now - ts) < 10 секунд` (где `now` и `ts` в секундах Unix timestamp)
+   - HMAC подпись: вычисляется ожидаемая подпись и сравнивается с полученной (регистронезависимое сравнение hex)
+3. Если проверки не пройдены, команда отклоняется с ошибкой:
+   - `invalid_hmac_format` — неверный формат полей или длина подписи
+   - `timestamp_expired` — timestamp вне допустимого диапазона
+   - `invalid_signature` — подпись не совпадает
+4. Если поля `ts` и `sig` отсутствуют, команда обрабатывается в режиме обратной совместимости (с предупреждением в логах)
+
+**Статус реализации:** ✅ **РЕАЛИЗОВАНО** (node_command_handler.c)
 
 ---
 
@@ -295,12 +349,38 @@ hydro/{gh}/{zone}/{node}/{channel}/command_response
 Каждая команда, отправленная в `.../{channel}/command`, **обязана** породить хотя бы один
 ответ `command_response` от узла:
 
-- даже если команда была отвергнута по валидации;
+- даже если команда была отвергнута по валидации (HMAC, timestamp, параметры);
 - даже если действие выполнить не удалось по железу (ошибка насоса, проблема с питанием);
 - даже если узел находился в SAFE_MODE.
 
-Backend никогда не остаётся “в неизвестности”: по `cmd_id` он либо получает `ACK`,
+Backend никогда не остаётся "в неизвестности": по `cmd_id` он либо получает `ACK`,
 либо `ERROR`/`TIMEOUT` и может принять управленческое решение.
+
+## 8.2.1. Ошибки валидации HMAC
+
+Если команда отклонена из-за невалидной HMAC подписи или истекшего timestamp, узел отправляет:
+
+```json
+{
+  "cmd_id": "cmd-591",
+  "status": "ERROR",
+  "ts": 1710003399,
+  "error_code": "invalid_signature",
+  "error_message": "Command HMAC signature verification failed"
+}
+```
+
+или
+
+```json
+{
+  "cmd_id": "cmd-591",
+  "status": "ERROR",
+  "ts": 1710003399,
+  "error_code": "timestamp_expired",
+  "error_message": "Command timestamp is outside acceptable range"
+}
+```
 
 ## 8.3. Базовый payload
 

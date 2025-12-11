@@ -61,14 +61,19 @@
                     <span v-else>—</span>
                   </td>
               </tr>
-                <tr v-if="plants.length === 0">
+                <tr v-if="paginatedPlants.length === 0">
                   <td colspan="6" class="px-3 py-6 text-sm text-neutral-400 text-center">
-                    Растения ещё не добавлены — создайте профиль, чтобы связать его с зонами и рецептами.
+                    {{ props.plants.length === 0 ? 'Растения ещё не добавлены — создайте профиль, чтобы связать его с зонами и рецептами.' : 'Нет растений на текущей странице' }}
                   </td>
                 </tr>
             </tbody>
           </table>
         </div>
+        <Pagination
+          v-model:current-page="currentPage"
+          v-model:per-page="perPage"
+          :total="props.plants.length"
+        />
       </div>
     </div>
     
@@ -182,6 +187,7 @@ import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
 import Modal from '@/Components/Modal.vue'
 import PlantCreateModal from '@/Components/PlantCreateModal.vue'
+import Pagination from '@/Components/Pagination.vue'
 import { useToast } from '@/composables/useToast'
 import { useSimpleModal } from '@/composables/useModal'
 
@@ -232,8 +238,30 @@ const { showToast } = useToast()
 const { isOpen: showCreateModal, open: openCreateModal, close: closeCreateModal } = useSimpleModal()
 const selectedPlantId = ref<number | null>(null)
 const deletingId = ref<number | null>(null)
-const plants = computed(() => props.plants)
-const selectedPlant = computed(() => plants.value.find(plant => plant.id === selectedPlantId.value) ?? null)
+const currentPage = ref<number>(1)
+const perPage = ref<number>(25)
+
+const paginatedPlants = computed(() => {
+  const total = props.plants.length
+  if (total === 0) return []
+  
+  // Защита от некорректных значений
+  const maxPage = Math.ceil(total / perPage.value) || 1
+  const validPage = Math.min(currentPage.value, maxPage)
+  if (validPage !== currentPage.value) {
+    currentPage.value = validPage
+  }
+  
+  const start = (validPage - 1) * perPage.value
+  const end = start + perPage.value
+  return props.plants.slice(start, end)
+})
+
+const plants = computed(() => paginatedPlants.value)
+const selectedPlant = computed(() => {
+  // Ищем в полном списке, а не только в пагинированных
+  return props.plants.find(plant => plant.id === selectedPlantId.value) ?? null
+})
 const currentProfitability = computed(() => selectedPlant.value?.profitability ?? null)
 const canEditPricing = computed(() => selectedPlantId.value !== null)
 

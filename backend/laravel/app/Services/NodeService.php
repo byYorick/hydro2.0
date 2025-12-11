@@ -6,6 +6,7 @@ use App\Models\DeviceNode;
 use App\Services\NodeLifecycleService;
 use App\Enums\NodeLifecycleState;
 use App\Events\NodeConfigUpdated;
+use App\Helpers\TransactionHelper;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -50,9 +51,9 @@ class NodeService
      */
     public function update(DeviceNode $node, array $data): DeviceNode
     {
-        // Используем REPEATABLE READ вместо SERIALIZABLE для избежания проблем с isolation level
-        // REPEATABLE READ достаточно для предотвращения lost updates с lockForUpdate()
-        return DB::transaction(function () use ($node, $data) {
+        // Используем SERIALIZABLE isolation level для критичной операции обновления узла
+        // с retry логикой на serialization failures
+        return TransactionHelper::withSerializableRetry(function () use ($node, $data) {
             
             // Блокируем строку для предотвращения lost updates
             $node = DeviceNode::where('id', $node->id)
@@ -230,7 +231,7 @@ class NodeService
             }
             
             return $node->fresh();
-        }, 5); // 5 попыток при serialization failure
+        });
     }
 
     /**

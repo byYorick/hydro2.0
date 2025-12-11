@@ -126,6 +126,11 @@
           </tbody>
         </table>
       </div>
+      <Pagination
+        v-model:current-page="currentPage"
+        v-model:per-page="perPage"
+        :total="filteredZones.length"
+      />
     </div>
 
     <!-- Модальное окно сравнения зон -->
@@ -144,6 +149,7 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 import ZoneComparisonModal from '@/Components/ZoneComparisonModal.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
+import Pagination from '@/Components/Pagination.vue'
 import { useZonesStore } from '@/stores/zones'
 import { useStoreEvents } from '@/composables/useStoreEvents'
 import { useBatchUpdates } from '@/composables/useOptimizedUpdates'
@@ -234,6 +240,8 @@ const status = ref<string>(urlParams.get('status') || '')
 const query = ref<string>('')
 const showComparisonModal = ref<boolean>(false)
 const showOnlyFavorites = ref<boolean>(false)
+const currentPage = ref<number>(1)
+const perPage = ref<number>(25)
 
 const { isZoneFavorite, toggleZoneFavorite } = useFavorites()
 
@@ -255,9 +263,26 @@ const filteredZones = computed(() => {
   })
 })
 
+// Пагинированные зоны
+const paginatedZones = computed(() => {
+  const total = filteredZones.value.length
+  if (total === 0) return []
+  
+  // Защита от некорректных значений
+  const maxPage = Math.ceil(total / perPage.value) || 1
+  const validPage = Math.min(currentPage.value, maxPage)
+  if (validPage !== currentPage.value) {
+    currentPage.value = validPage
+  }
+  
+  const start = (validPage - 1) * perPage.value
+  const end = start + perPage.value
+  return filteredZones.value.slice(start, end)
+})
+
 // Преобразуем зоны в строки таблицы
 const rows = computed(() => {
-  return filteredZones.value.map(z => {
+  return paginatedZones.value.map(z => {
     // Безопасное форматирование чисел
     const formatNumber = (value: unknown, decimals: number): string => {
       if (value === null || value === undefined) return '-'
@@ -291,6 +316,11 @@ function getZoneIdFromRow(row: (string | number)[]): number {
   const id = row[row.length - 1]
   return typeof id === 'number' ? id : 0
 }
+
+// Сбрасываем на первую страницу при изменении фильтров
+watch([status, query, showOnlyFavorites], () => {
+  currentPage.value = 1
+})
 
 // Функция для получения варианта Badge по статусу
 function getStatusVariant(status: string): string {

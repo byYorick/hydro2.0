@@ -32,4 +32,5 @@ idf_component_register(
         mqtt
         esp_timer
         json
+        mbedtls
 )

@@ -84,6 +84,9 @@ static esp_err_t handle_run_pump(const char *channel, const cJSON *params, cJSON
             error_message = "Pump current exceeds safe limit";
         }
         
+        // Отправляем ошибку на сервер
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "pump_driver", err, error_message);
+        
         *response = node_command_handler_create_response(NULL, "ERROR", error_code, error_message, NULL);
     }
     
@@ -180,6 +183,7 @@ esp_err_t pump_node_framework_init_integration(void) {
     esp_err_t err = node_framework_init(&config);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize node_framework: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_CRITICAL, "node_framework", err, "Node framework initialization failed");
         return err;
     }
     

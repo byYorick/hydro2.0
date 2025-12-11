@@ -207,18 +207,36 @@
 ### 3.9.5. POST /api/nodes/{id}/config/publish
 
 - **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
+- **Безопасность:** Использует pessimistic/optimistic locking и advisory lock для предотвращения дублирования
+- **HMAC подпись:** Конфигурация автоматически подписывается HMAC с timestamp
 - Публикация конфигурации узла через MQTT для отправки на ESP32.
+
+**Защита от дублирования:**
+- Pessimistic lock (SELECT FOR UPDATE) предотвращает одновременную публикацию
+- Optimistic lock проверяет, что узел не был изменен во время публикации
+- Advisory lock (PostgreSQL) предотвращает параллельную публикацию из разных процессов
+- Кеш-дедупликация предотвращает повторную публикацию одинаковых конфигураций в течение 60 секунд
 
 Ответ:
 ```json
 {
  "status": "ok",
  "data": {
-   "published_at": "2025-11-17T10:00:00Z",
-   "topic": "hydro/nodes/nd-001/config"
+   "node": {...},
+   "published_config": {
+     "node_id": "nd-001",
+     "version": 3,
+     "ts": 1737355500,
+     "sig": "hmacsha256_signature"
+   },
+   "bridge_response": {...}
  }
 }
 ```
+
+**Ошибки:**
+- `409 Conflict` - если конфигурация уже публикуется или была опубликована недавно
+- `409 Conflict` - если узел был изменен во время публикации (optimistic lock failed)
 
 ### 3.9.6. POST /api/nodes/{id}/swap
 
@@ -403,6 +421,9 @@
 ### 6.1. POST /api/zones/{id}/commands
 
 - **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
+- **Валидация:** Используется `StoreZoneCommandRequest` для валидации входных данных
+- **Авторизация:** Проверка прав через `ZonePolicy::sendCommand`
+- **HMAC подпись:** Команды автоматически подписываются HMAC с timestamp перед отправкой в Python-сервис
 - Отправка команд на зону (через Python-сервис).
 - Примеры команд:
  - `FORCE_IRRIGATION` - принудительный полив (требует `params.duration_sec`);
@@ -439,6 +460,9 @@
 ### 6.2. POST /api/nodes/{id}/commands
 
 - **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
+- **Валидация:** Используется `StoreNodeCommandRequest` для валидации входных данных
+- **Авторизация:** Проверка прав через `DeviceNodePolicy::sendCommand`
+- **HMAC подпись:** Команды автоматически подписываются HMAC с timestamp перед отправкой в Python-сервис
 - Низкоуровневые команды для конкретного узла (диагностика, калибровка).
 
 ---
@@ -645,6 +669,66 @@
 
 ---
 
+## 13. Node Registration API
+
+**Аутентификация:** Токен-базированная (service token), не требует `auth:sanctum`.
+
+### 13.1. POST /api/nodes/register
+
+- **Аутентификация:** Требуется service token (Bearer token) или IP whitelist
+- **Rate Limiting:** Максимум 10 запросов в минуту по IP
+- **IP Whitelist:** Настраивается через `services.node_registration.allowed_ips` (поддержка CIDR)
+- **Валидация:** Используется `RegisterNodeRequest` для валидации входных данных
+- Регистрация нового узла ESP32 в системе.
+
+**Безопасность:**
+- Обязательная проверка токена (если настроен)
+- Rate limiting по IP (10 запросов/минуту)
+- IP whitelist (если настроен)
+- Защита от дублирования через уникальные ограничения в БД
+
+Тело запроса (node_hello):
+```json
+{
+  "message_type": "node_hello",
+  "hardware_id": "ESP32-ABC123",
+  "node_type": "ph",
+  "fw_version": "2.0.1",
+  "hardware_revision": "v1.0",
+  "capabilities": {...},
+  "provisioning_meta": {...}
+}
+```
+
+Тело запроса (обычная регистрация):
+```json
+{
+  "node_uid": "nd-001",
+  "firmware_version": "2.0.1",
+  "hardware_revision": "v1.0",
+  "hardware_id": "ESP32-ABC123",
+  "name": "pH Sensor Node",
+  "type": "ph"
+}
+```
+
+Ответ:
+```json
+{
+  "status": "ok",
+  "data": {
+    "id": 1,
+    "uid": "nd-001",
+    "name": "pH Sensor Node",
+    "type": "ph",
+    "status": "offline",
+    "lifecycle_state": "REGISTERED_BACKEND"
+  }
+}
+```
+
+---
+
 ## 14. Правила для ИИ-агентов
 
 1. Все новые эндпоинты должны описываться здесь и в `REST_API_REFERENCE.md`.
@@ -652,5 +736,7 @@
 3. Все действия, влияющие на железо, должны проходить через Python-сервис (не ходить напрямую в MQTT из backend).
 4. При добавлении нового эндпоинта обязательно указать требования аутентификации.
 5. Публичные эндпоинты должны быть явно помечены как таковые.
+6. Все мутирующие операции должны использовать FormRequest для валидации и Policy для авторизации.
+7. Критичные операции (публикация конфигов, регистрация узлов) должны использовать блокировки и дедупликацию.
 
 Этот документ задаёт **единый контракт** между UI и backend и служит опорой для дальнейшего развития системы.

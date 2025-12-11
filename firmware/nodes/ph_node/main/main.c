@@ -18,8 +18,7 @@ static const char *TAG = "ph_main";
 void app_main(void) {
     ESP_LOGI(TAG, "Starting ph_node...");
 
-    // Инициализация watchdog таймера теперь выполняется автоматически в node_framework_init()
-    // Конфигурация watchdog берется из node_framework (10 секунд, idle задачи отключены)
+    // Инициализация watchdog таймера выполняется автоматически в node_framework_init()
 
     // Инициализация NVS
     esp_err_t ret = nvs_flash_init();
@@ -36,7 +35,6 @@ void app_main(void) {
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
     // Инициализация Wi-Fi (базовая)
-    // Wi-Fi менеджер инициализируется в ph_node_app_init()
     esp_netif_create_default_wifi_sta();
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));

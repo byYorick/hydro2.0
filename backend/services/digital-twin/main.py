@@ -81,9 +81,13 @@ async def simulate_zone(request: SimulationRequest) -> Dict[str, Any]:
         calibrated_params = None
         
         # Инициализация моделей с калиброванными параметрами (если есть)
-        ph_model = PHModel(calibrated_params.get("ph") if calibrated_params else None)
-        ec_model = ECModel(calibrated_params.get("ec") if calibrated_params else None)
-        climate_model = ClimateModel(calibrated_params.get("climate") if calibrated_params else None)
+        ph_params = calibrated_params.get("ph") if calibrated_params and isinstance(calibrated_params, dict) else None
+        ec_params = calibrated_params.get("ec") if calibrated_params and isinstance(calibrated_params, dict) else None
+        climate_params = calibrated_params.get("climate") if calibrated_params and isinstance(calibrated_params, dict) else None
+        
+        ph_model = PHModel(ph_params)
+        ec_model = ECModel(ec_params)
+        climate_model = ClimateModel(climate_params)
 
         # Результаты симуляции
         points = []

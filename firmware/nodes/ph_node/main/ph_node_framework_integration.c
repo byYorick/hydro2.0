@@ -258,6 +258,7 @@ static esp_err_t handle_calibrate_ph(
         ESP_LOGI(TAG, "pH sensor calibrated: stage %d, known_pH %.2f", stage, known_ph);
         return ESP_OK;
     } else {
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "ph_sensor", ESP_FAIL, "pH sensor calibration failed");
         *response = node_command_handler_create_response(
             NULL,
             "ERROR",
@@ -297,6 +298,7 @@ static esp_err_t ph_node_publish_telemetry_callback(void *user_ctx) {
         
         if (!read_success || isnan(ph_value)) {
             ESP_LOGW(TAG, "Failed to read pH value, using stub");
+            node_state_manager_report_error(ERROR_LEVEL_ERROR, "ph_sensor", ESP_ERR_INVALID_RESPONSE, "Failed to read pH sensor value");
             ph_value = 6.5f;  // Нейтральное значение
             using_stub = true;
         } else {
@@ -305,6 +307,7 @@ static esp_err_t ph_node_publish_telemetry_callback(void *user_ctx) {
         }
     } else {
         ESP_LOGW(TAG, "pH sensor not initialized, using stub value");
+        node_state_manager_report_error(ERROR_LEVEL_WARNING, "ph_sensor", ESP_ERR_INVALID_STATE, "pH sensor not initialized");
         ph_value = 6.5f;
         using_stub = true;
     }
@@ -322,6 +325,7 @@ static esp_err_t ph_node_publish_telemetry_callback(void *user_ctx) {
 
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to publish telemetry: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "mqtt", err, "Failed to publish pH telemetry");
     }
 
     return err;

@@ -28,8 +28,8 @@ Laravel → Python Scheduler → ESP32 Firmware
  "cmd": "dose",
  "params": { "ml": 1.2 },
  "cmd_id": "cmd-abc123",
- "ts": 1737355112000,
- "sig": "HMAC_SHA256(cmd|ts|node_secret)"
+ "ts": 1737355112,
+ "sig": "a1b2c3d4e5f6..."
 }
 ```
 
@@ -37,11 +37,13 @@ Laravel → Python Scheduler → ESP32 Firmware
 
 | Поле | Описание |
 |------|----------|
-| cmd | действие |
-| params | аргументы команды |
-| cmd_id | уникальный ID |
-| ts | timestamp в ms |
-| sig | подпись |
+| cmd | действие (string) |
+| params | аргументы команды (object, опционально) |
+| cmd_id | уникальный ID (string) |
+| ts | Unix timestamp в секундах (number, int64) |
+| sig | HMAC-SHA256 подпись в hex формате, 64 символа (string) |
+
+**Примечание:** Поля `ts` и `sig` опциональны для обратной совместимости. Если они отсутствуют, команда обрабатывается с предупреждением в логах.
 
 ---
 
@@ -132,14 +134,24 @@ sig = HMAC_SHA256(node_secret, cmd + '|' + ts)
 ## 5.1. Timestamp
 
 ```
-abs(now - ts) < 10 сек
+abs(now - ts) < 10 секунд
 ```
+
+Где `now` и `ts` — Unix timestamp в секундах.
 
 ## 5.2. HMAC-подпись
 
 ```
-sig == HMAC_SHA256(node_secret)
+sig == HMAC_SHA256(node_secret, cmd + '|' + ts)
 ```
+
+Где:
+- `node_secret` — секретный ключ из NodeConfig (поле `node_secret`) или дефолтный
+- `cmd` — имя команды (строка)
+- `ts` — timestamp в секундах
+- Разделитель: `|`
+- Подпись в hex формате (64 символа, нижний регистр)
+- Сравнение регистронезависимое
 
 ## 5.3. Параметры
 

@@ -227,6 +227,7 @@ esp_err_t climate_node_publish_telemetry_callback(void *user_ctx) {
         );
         if (err != ESP_OK) {
             ESP_LOGW(TAG, "Failed to publish temperature: %s", esp_err_to_name(err));
+            node_state_manager_report_error(ERROR_LEVEL_ERROR, "mqtt", err, "Failed to publish temperature telemetry");
         }
 
         // Публикация влажности
@@ -241,10 +242,12 @@ esp_err_t climate_node_publish_telemetry_callback(void *user_ctx) {
         );
         if (err != ESP_OK) {
             ESP_LOGW(TAG, "Failed to publish humidity: %s", esp_err_to_name(err));
+            node_state_manager_report_error(ERROR_LEVEL_ERROR, "mqtt", err, "Failed to publish humidity telemetry");
         }
     } else {
         esp_err_t report_err = (sht_err == ESP_OK) ? ESP_ERR_INVALID_RESPONSE : sht_err;
         ESP_LOGW(TAG, "Failed to read SHT3x: %s", esp_err_to_name(report_err));
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "sht3x", report_err, "Failed to read SHT3x sensor");
         
         // Публикация ошибок
         node_telemetry_publish_sensor(
@@ -275,8 +278,9 @@ esp_err_t climate_node_publish_telemetry_callback(void *user_ctx) {
     float co2_value = (float)ccs_reading.co2_ppm;
 
     if (co2_stub) {
-        ESP_LOGW(TAG, "Failed to read CCS811 (will publish stub): %s",
-                 esp_err_to_name((ccs_err == ESP_OK) ? ESP_ERR_INVALID_RESPONSE : ccs_err));
+        esp_err_t report_err = (ccs_err == ESP_OK) ? ESP_ERR_INVALID_RESPONSE : ccs_err;
+        ESP_LOGW(TAG, "Failed to read CCS811 (will publish stub): %s", esp_err_to_name(report_err));
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "ccs811", report_err, "Failed to read CCS811 sensor");
     }
 
     esp_err_t err = node_telemetry_publish_sensor(
@@ -290,6 +294,7 @@ esp_err_t climate_node_publish_telemetry_callback(void *user_ctx) {
     );
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to publish CO2: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "mqtt", err, "Failed to publish CO2 telemetry");
     }
 
     return ESP_OK;

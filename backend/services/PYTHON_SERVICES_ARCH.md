@@ -118,8 +118,13 @@ mqtt-bridge/
   - Batch resolve недостающих UID (один запрос вместо N)
   - Batch insert для `telemetry_samples`
   - Batch upsert для `telemetry_last` (один запрос для всех обновлений)
-  - Backpressure при >90% заполнения очереди (sampling)
-  - Метрики: `queue_size`, `dropped`, `overflow`
+  - Backpressure при >95% заполнения очереди (sampling с коэффициентом 0.8-0.5)
+  - Метрики и алерты:
+    - `telemetry_queue_size` - текущий размер очереди
+    - `telemetry_queue_dropped_total{reason}` - потерянные сообщения (overflow, backpressure)
+    - `telemetry_queue_overflow_alerts_total` - количество отправленных алертов
+    - `telemetry_dropped_total{reason}` - общие потери телеметрии
+    - Автоматические алерты при >95% заполнения очереди (throttled 1 раз в минуту)
 
 **Зависимости:**
 - MQTT Broker
@@ -161,13 +166,19 @@ history-logger/
 - Мониторинг через Prometheus
 - **Адаптивная конкурентность:**
   - Автоматический расчет оптимального количества параллельных зон
-  - Формула: `concurrency = (total_zones * avg_time) / target_cycle_time`
-  - Диапазон: 5-50 параллельных зон
-  - Метрики: `optimal_concurrency`, `zone_processing_time`, `zone_processing_errors`
+  - Формула: `concurrency = ceil((total_zones * avg_time) / target_cycle_time)`
+  - Диапазон: 5-50 параллельных зон (защита от перегрузки)
+  - Скользящее среднее времени обработки (последние 100 измерений)
+  - Метрики:
+    - `optimal_concurrency_zones` - рассчитанная оптимальная конкурентность
+    - `zone_processing_time_seconds` - гистограмма времени обработки зон
+    - `zone_processing_errors_total{zone_id, error_type}` - ошибки обработки с детализацией
 - **Обработка ошибок:**
   - Явный учет ошибок по зонам в `process_zones_parallel()`
-  - Метрики `zone_processing_errors` с детализацией по зонам
-  - Алерты при >10% ошибок за цикл
+  - Детальная информация об ошибках: zone_id, zone_name, error_type, timestamp
+  - Метрики `zone_processing_errors_total` с детализацией по зонам и типам ошибок
+  - Алерты при >10% ошибок за цикл (warning при 10-30%, critical при >30%)
+  - Интеграция с `error_handler` для централизованной обработки ошибок
 
 **Зависимости:**
 - MQTT Broker
@@ -385,6 +396,28 @@ backend/services/
 - `scheduler`: порт 9402 (`/metrics`)
 
 **Метрики:**
+
+**history-logger:**
+- `telemetry_received_total` - получено сообщений из MQTT
+- `telemetry_processed_total` - обработано сообщений
+- `telemetry_dropped_total{reason}` - потерянные сообщения
+- `telemetry_queue_size` - размер очереди Redis
+- `telemetry_queue_dropped_total{reason}` - потерянные из-за переполнения очереди
+- `telemetry_queue_overflow_alerts_total` - алерты о переполнении
+- `telemetry_batch_size` - размер батчей
+- `telemetry_processing_duration_seconds` - время обработки батча
+- `telemetry_queue_age_seconds` - возраст самого старого элемента в очереди
+
+**automation-engine:**
+- `optimal_concurrency_zones` - оптимальная конкурентность
+- `zone_processing_time_seconds` - время обработки зон
+- `zone_processing_errors_total{zone_id, error_type}` - ошибки обработки
+- `zone_checks_total` - количество проверок зон
+- `check_latency_seconds` - задержка проверок
+- `commands_sent_total` - отправлено команд
+- `mqtt_publish_errors_total` - ошибки публикации в MQTT
+
+**scheduler:**
 - Счетчики команд (отправлено, получено)
 - Гистограммы задержек
 - Счетчики ошибок
@@ -399,10 +432,37 @@ backend/services/
 - `pytest.ini` — общая конфигурация
 - `requirements-test.txt` — зависимости для тестов
 - `test_main.py` в каждом сервисе — unit-тесты
+- `tests/` — дополнительные тесты для специфичных функций
+
+**Покрытие тестами:**
+
+**history-logger:**
+- `test_main.py` - основные тесты обработки телеметрии
+- `test_batch_processing.py` - batch processing и кеширование
+- `test_batch_upsert_optimization.py` - оптимизация batch upsert
+- `test_overflow_metrics.py` - метрики overflow и алерты
+- `test_metrics_and_improvements.py` - общие метрики
+- `test_redis_queue_integration.py` - интеграция с Redis
+
+**automation-engine:**
+- `test_main.py` - основные тесты automation engine
+- `test_zone_automation_service.py` - сервис автоматизации зон
+- `tests/test_adaptive_concurrency.py` - адаптивная конкурентность
+- `tests/test_error_handling.py` - обработка ошибок
+- `test_repositories.py` - репозитории
+- `test_*_controller.py` - тесты контроллеров (pH/EC, climate, light, irrigation)
 
 **Запуск:**
 ```bash
+# Все тесты
 pytest backend/services/
+
+# Конкретный сервис
+pytest backend/services/history-logger/
+pytest backend/services/automation-engine/
+
+# С покрытием
+pytest --cov=backend/services/history-logger backend/services/history-logger/
 ```
 
 ---

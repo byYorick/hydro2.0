@@ -13,6 +13,8 @@
 extern "C" {
 #endif
 
+#include "driver/gpio.h"
+
 // Node identification defaults
 #define PH_NODE_DEFAULT_NODE_ID      "nd-ph-1"
 #define PH_NODE_DEFAULT_GH_UID       "gh-1"
@@ -36,6 +38,12 @@ extern "C" {
 
 // Setup portal defaults
 #define PH_NODE_SETUP_AP_PASSWORD    "hydro2025"
+
+// Factory reset (long-press) defaults
+#define PH_NODE_FACTORY_RESET_GPIO           GPIO_NUM_0  // BOOT button on most devkits
+#define PH_NODE_FACTORY_RESET_ACTIVE_LOW     1
+#define PH_NODE_FACTORY_RESET_HOLD_MS        20000U
+#define PH_NODE_FACTORY_RESET_POLL_INTERVAL  50U
 
 #ifdef __cplusplus
 }
