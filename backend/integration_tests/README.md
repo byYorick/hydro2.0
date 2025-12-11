@@ -15,6 +15,7 @@
 - Запущенные сервисы через `docker-compose.dev.yml`
 - Python 3.8+
 - Зависимости: `httpx`, `paho-mqtt`
+- PostgreSQL БД с созданными тестовыми данными (создаются автоматически)
 
 ## Установка зависимостей
 
@@ -37,14 +38,27 @@ docker-compose -f docker-compose.dev.yml up -d
 docker-compose -f docker-compose.dev.yml ps
 ```
 
-### 2. Запустить тесты
+### 2. Создать тестовые данные (опционально)
+
+Тестовые данные создаются автоматически при первом запуске тестов, но можно создать вручную:
 
 ```bash
 cd backend
-python integration_tests/test_error_reporting.py
+docker exec backend-laravel-1 php artisan tinker --execute="
+\$gh = \App\Models\Greenhouse::firstOrCreate(['uid' => 'gh-test-1'], ['name' => 'Test Greenhouse', 'type' => 'indoor', 'timezone' => 'UTC', 'provisioning_token' => 'test-token-12345']);
+\$zone = \App\Models\Zone::firstOrCreate(['uid' => 'zn-test-1'], ['greenhouse_id' => \$gh->id, 'name' => 'Test Zone', 'status' => 'online']);
+// ... создание нод
+"
 ```
 
-### 3. С переменными окружения
+### 3. Запустить тесты
+
+```bash
+cd backend
+python3 integration_tests/test_error_reporting.py
+```
+
+### 4. С переменными окружения
 
 ```bash
 export MQTT_HOST=localhost
@@ -68,12 +82,14 @@ python integration_tests/test_error_reporting.py
 - Проверка метрик Prometheus (`error_received_total`)
 
 ### Test 3: Alert Creation
-- Создание Alerts в Laravel через API
-- Проверка наличия тестовых Alerts
+- Создание Alerts в БД через `error_handler`
+- Проверка наличия тестовых Alerts в БД
+- Alerts создаются напрямую в PostgreSQL (не через API)
 
 ### Test 4: Error Metrics in DB
 - Обновление счетчиков ошибок в БД
-- Проверка полей `error_count`, `warning_count`, `critical_count`
+- Проверка полей `error_count`, `warning_count`, `critical_count` в таблице `nodes`
+- Проверка выполняется через прямой доступ к БД
 
 ### Test 5: Diagnostics Metrics
 - Публикация diagnostics сообщений
@@ -110,16 +126,43 @@ docker logs backend-history-logger-1 -f
 
 Запрос: `error_received_total`
 
-### Проверить Alerts в Laravel
+### Проверить Alerts в БД
 
 ```bash
-curl -H "Authorization: Bearer dev-token-12345" http://localhost:8080/api/alerts
+docker exec backend-laravel-1 php artisan tinker --execute="
+\$alerts = \App\Models\Alert::where('type', 'node_error')->orderBy('created_at', 'desc')->limit(10)->get(['id', 'code', 'type', 'status', 'created_at']);
+foreach (\$alerts as \$alert) {
+    echo \$alert->code . ' - ' . \$alert->status . PHP_EOL;
+}
+"
+```
+
+### Проверить метрики ошибок в нодах
+
+```bash
+docker exec backend-laravel-1 php artisan tinker --execute="
+\$nodes = \App\Models\DeviceNode::whereIn('uid', ['nd-ph-test-1', 'nd-ec-test-1'])->get(['uid', 'error_count', 'warning_count', 'critical_count']);
+foreach (\$nodes as \$node) {
+    echo \$node->uid . ': error=' . \$node->error_count . ', warning=' . \$node->warning_count . ', critical=' . \$node->critical_count . PHP_EOL;
+}
+"
 ```
 
 ## Примечания
 
-- Тесты используют тестовые данные с префиксом `test-`
-- После тестов можно очистить тестовые данные через Laravel API
+- Тесты используют тестовые данные с префиксом `test-` (gh-test-1, zn-test-1, nd-*-test-1)
+- Тестовые данные создаются автоматически при первом запуске
+- После тестов можно очистить тестовые данные через Laravel tinker или API
 - Для production тестов используйте соответствующие переменные окружения
+- Тесты проверяют alerts и метрики напрямую в БД (не через API), чтобы избежать проблем с аутентификацией
+
+## Результаты
+
+Все 5 тестов должны пройти успешно:
+- ✅ Error Publishing: 6/6 ошибок опубликовано
+- ✅ Error Processing: метрики найдены в history-logger и Prometheus
+- ✅ Alert Creation: alerts созданы в БД
+- ✅ Error Metrics in DB: метрики обновлены во всех нодах
+- ✅ Diagnostics Metrics: diagnostics сообщения опубликованы
 
 

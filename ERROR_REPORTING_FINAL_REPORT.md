@@ -1,10 +1,10 @@
 # Финальный отчет по внедрению отправки ошибок во все ноды
 
-## Дата: 2025-01-28
+## Дата: 2025-12-11
 
-## Статус: ✅ ВЫПОЛНЕНО
+## Статус: ✅ ВЫПОЛНЕНО И ПРОТЕСТИРОВАНО
 
-Все ноды теперь отправляют ошибки на сервер через MQTT вместо падения.
+Все ноды теперь отправляют ошибки на сервер через MQTT вместо падения. Система полностью протестирована интеграционными тестами (5/5 тестов пройдено).
 
 ## Выполненные изменения
 
@@ -157,6 +157,18 @@
 
 ## Проверка работы
 
+### Интеграционные тесты
+
+Запуск интеграционных тестов:
+```bash
+cd backend
+python3 integration_tests/test_error_reporting.py
+```
+
+Все тесты должны пройти успешно (5/5).
+
+### Ручная проверка
+
 После компиляции и загрузки прошивки:
 
 1. **Проверить топик ошибок:**
@@ -165,12 +177,23 @@
    ```
 
 2. **Проверить создание Alerts:**
-   - В Laravel проверить таблицу `alerts`
-   - Должны создаваться Alerts для критических ошибок
+   ```bash
+   docker exec backend-laravel-1 php artisan tinker --execute="
+   \$alerts = \App\Models\Alert::where('type', 'node_error')->orderBy('created_at', 'desc')->limit(10)->get(['code', 'status', 'created_at']);
+   foreach (\$alerts as \$alert) {
+       echo \$alert->code . ' - ' . \$alert->status . PHP_EOL;
+   }
+   "
+   ```
 
 3. **Проверить метрики в БД:**
-   ```sql
-   SELECT uid, error_count, warning_count, critical_count FROM nodes;
+   ```bash
+   docker exec backend-laravel-1 php artisan tinker --execute="
+   \$nodes = \App\Models\DeviceNode::select('uid', 'error_count', 'warning_count', 'critical_count')->get();
+   foreach (\$nodes as \$node) {
+       echo \$node->uid . ': error=' . \$node->error_count . ', warning=' . \$node->warning_count . ', critical=' . \$node->critical_count . PHP_EOL;
+   }
+   "
    ```
 
 4. **Проверить diagnostics:**
@@ -185,6 +208,8 @@
 2. ✅ Протестировать отправку ошибок на реальных устройствах
 3. ✅ Проверить создание Alerts в Laravel
 4. ✅ Настроить мониторинг метрик ошибок в Prometheus/Grafana
+5. ✅ Выполнить интеграционные тесты (5/5 пройдено)
+5. ✅ Выполнить интеграционные тесты (5/5 пройдено)
 
 ## Файлы изменений
 

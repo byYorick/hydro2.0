@@ -461,7 +461,8 @@ class NodeController extends Controller
             // Получаем advisory lock для дедупликации
             $advisoryLockAcquired = $this->configPublishLockService->acquireAdvisoryLock($lockedNode);
             if (!$advisoryLockAcquired) {
-                // Освобождаем pessimistic lock перед возвратом
+                // Advisory lock не был получен, поэтому не нужно его освобождать
+                // Pessimistic lock уже освобожден автоматически после завершения транзакции в acquirePessimisticLock
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Config publishing is already in progress',

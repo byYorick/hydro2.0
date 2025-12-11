@@ -82,6 +82,46 @@ Health check endpoint.
 }
 ```
 
+### POST /commands
+**Универсальный endpoint для публикации команд.**  
+**Единственная точка публикации команд в MQTT для всех сервисов.**
+
+**Request:**
+```json
+{
+  "cmd": "irrigate",
+  "greenhouse_uid": "gh-1",
+  "zone_id": 1,
+  "node_uid": "nd-irrig-1",
+  "channel": "default",
+  "params": {"duration_sec": 60},
+  "trace_id": "trace-123"
+}
+```
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "data": {
+    "command_id": "cmd-123"
+  }
+}
+```
+
+**Поддержка legacy формата:**
+- Можно использовать `type` вместо `cmd` (legacy)
+
+### POST /zones/{zone_id}/commands
+Публикация команды для зоны.
+
+**Request:** Аналогично `/commands`, но `zone_id` берется из URL.
+
+### POST /nodes/{node_uid}/commands
+Публикация команды для ноды.
+
+**Request:** Аналогично `/commands`, но `node_uid` берется из URL.
+
 ### POST /ingest/telemetry
 HTTP endpoint для приема телеметрии.
 
@@ -164,6 +204,10 @@ hydro/{gh_uid}/{zone_uid}/{node_uid}/{channel}/telemetry
 - `node_hello_received_total` - количество node_hello
 - `node_hello_registered_total` - количество зарегистрированных узлов
 - `node_hello_errors_total{error_type}` - ошибки по типам
+- `commands_received_total` - получено команд через REST API
+- `commands_published_total{zone_id, metric}` - опубликовано команд в MQTT
+- `command_publish_errors_total{error_type}` - ошибки публикации в MQTT
+- `command_rest_requests_total` - количество REST запросов команд
 
 ### Histogram метрики
 - `telemetry_batch_size` - размер батчей
@@ -176,6 +220,7 @@ hydro/{gh_uid}/{zone_uid}/{node_uid}/{channel}/telemetry
 - `telemetry_processing_duration_seconds` - время обработки батча
 - `laravel_api_request_duration_seconds` - время ответа Laravel API
 - `redis_operation_duration_seconds` - время операций с Redis
+- `command_rest_latency_seconds` - задержка обработки REST запросов команд
 
 ### Counter метрики (ошибки)
 - `telemetry_dropped_total{reason}` - потерянные сообщения по причинам
