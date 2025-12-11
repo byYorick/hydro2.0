@@ -11,6 +11,7 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import okhttp3.CertificatePinner
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -42,7 +43,11 @@ object NetworkModule {
 	fun provideAuthInterceptor(tokenProvider: TokenProvider): Interceptor {
 		return Interceptor { chain ->
 			val original = chain.request()
+			// Получаем токен синхронно из StateFlow
 			val token = tokenProvider.tokenState.value
+			
+			android.util.Log.d("NetworkModule", "AuthInterceptor: token=${if (token.isNullOrBlank()) "null" else "${token.take(10)}..."}")
+			
 			val request = if (!token.isNullOrBlank()) {
 				original.newBuilder()
 					.addHeader("Authorization", "Bearer $token")
@@ -66,20 +71,33 @@ object NetworkModule {
 			level = if (com.hydro.app.BuildConfig.DEBUG) {
 				HttpLoggingInterceptor.Level.BODY
 			} else {
-				HttpLoggingInterceptor.Level.BASIC
+				HttpLoggingInterceptor.Level.NONE
 			}
 		}
-		return OkHttpClient.Builder()
+		
+		val builder = OkHttpClient.Builder()
 			.addInterceptor(authInterceptor)
 			.addInterceptor(logging)
-			.build()
+		
+		// Certificate pinning для production (опционально)
+		// Раскомментируйте и добавьте сертификаты для вашего домена
+		// if (!com.hydro.app.BuildConfig.DEBUG) {
+		//     val certificatePinner = CertificatePinner.Builder()
+		//         .add("your-domain.com", "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+		//         .build()
+		//     builder.certificatePinner(certificatePinner)
+		// }
+		
+		return builder.build()
 	}
 
 	@Provides
 	@Singleton
 	@Named("baseUrl")
 	fun provideBaseUrl(configLoader: ConfigLoader): String {
-		return configLoader.loadConfig().apiBaseUrl
+		val baseUrl = configLoader.loadConfig().apiBaseUrl
+		android.util.Log.d("NetworkModule", "Base URL configured: $baseUrl")
+		return baseUrl
 	}
 
 	@Provides
@@ -89,6 +107,7 @@ object NetworkModule {
 		moshi: Moshi,
 		@Named("baseUrl") baseUrl: String
 	): Retrofit {
+		android.util.Log.d("NetworkModule", "Creating Retrofit with base URL: $baseUrl")
 		return Retrofit.Builder()
 			.baseUrl(baseUrl)
 			.client(okHttpClient)

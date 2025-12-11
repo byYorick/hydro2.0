@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Разрешаем cleartext трафик для dev окружения -->
+    <!-- Это необходимо для подключения к localhost через эмулятор (10.0.2.2) -->
+    <domain-config cleartextTrafficPermitted="true">
+        <!-- Эмулятор Android - localhost хост-машины -->
+        <domain includeSubdomains="true">10.0.2.2</domain>
+        <!-- Локальный хост -->
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">127.0.0.1</domain>
+    </domain-config>
+    
+    <!-- Для production используем только HTTPS -->
+    <!-- В production build cleartext будет запрещен -->
+</network-security-config>
+

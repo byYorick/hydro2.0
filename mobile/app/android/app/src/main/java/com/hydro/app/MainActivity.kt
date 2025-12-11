@@ -19,7 +19,14 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.viewModelScope
+import com.hydro.app.core.auth.SessionManager
 import com.hydro.app.core.prefs.PreferencesDataSource
+import com.hydro.app.features.auth.data.AuthRepository
 import com.hydro.app.ui.screens.AlertsScreen
 import com.hydro.app.ui.screens.GreenhousesScreen
 import com.hydro.app.ui.screens.LoginScreen
@@ -27,7 +34,16 @@ import com.hydro.app.ui.screens.ProvisioningScreen
 import com.hydro.app.ui.screens.ZoneDetailsScreen
 import com.hydro.app.ui.screens.ZonesScreen
 import dagger.hilt.android.AndroidEntryPoint
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.launch
+import javax.inject.Inject
 
+/**
+ * Главная Activity приложения.
+ * 
+ * Использует Jetpack Compose для UI.
+ * Настроена навигация и управление состоянием авторизации.
+ */
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 	override fun onCreate(savedInstanceState: Bundle?) {
@@ -40,13 +56,55 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun HydroAppRoot() {
+	val sessionManagerViewModel: SessionManagerViewModel = androidx.hilt.navigation.compose.hiltViewModel()
+	val sessionManager = sessionManagerViewModel.sessionManager
+	val authRepository = sessionManagerViewModel.authRepository
 	val navController = rememberNavController()
 	val snackbarHostState = remember { SnackbarHostState() }
 	val context = LocalContext.current
+	val lifecycleOwner = LocalLifecycleOwner.current
 	val prefs = remember { PreferencesDataSource(context) }
 	val tokenState by prefs.tokenFlow.collectAsState(initial = null)
 	val currentBackStackEntry by navController.currentBackStackEntryAsState()
 	val currentRoute = currentBackStackEntry?.destination?.route
+	
+	// Запуск мониторинга сессии при наличии токена
+	LaunchedEffect(tokenState) {
+		if (tokenState != null) {
+			sessionManager.startSessionMonitoring(
+				scope = sessionManagerViewModel.viewModelScope
+			) {
+				// Сессия истекла - выполняем logout
+				sessionManagerViewModel.viewModelScope.launch {
+					authRepository.logout()
+				}
+			}
+		} else {
+			sessionManager.stopSessionMonitoring()
+		}
+	}
+	
+	// Обновление времени активности при изменении маршрута
+	LaunchedEffect(currentRoute) {
+		if (tokenState != null && currentRoute != null) {
+			sessionManager.updateActivity()
+		}
+	}
+	
+	// Обновление времени активности при изменении жизненного цикла
+	DisposableEffect(lifecycleOwner) {
+		val observer = LifecycleEventObserver { _, event ->
+			if (event == Lifecycle.Event.ON_RESUME && tokenState != null) {
+				sessionManagerViewModel.viewModelScope.launch {
+					sessionManager.updateActivity()
+				}
+			}
+		}
+		lifecycleOwner.lifecycle.addObserver(observer)
+		onDispose {
+			lifecycleOwner.lifecycle.removeObserver(observer)
+		}
+	}
 	
 	LaunchedEffect(tokenState, currentRoute) {
 		if (tokenState != null && currentRoute == Routes.LOGIN) {
@@ -68,12 +126,35 @@ fun HydroAppRoot() {
 	}
 }
 
+/**
+ * Вспомогательный ViewModel для получения зависимостей через Hilt в Composable.
+ */
+@HiltViewModel
+class SessionManagerViewModel @Inject constructor(
+	val sessionManager: SessionManager,
+	val authRepository: AuthRepository
+) : androidx.lifecycle.ViewModel()
+
+/**
+ * Константы маршрутов навигации приложения.
+ */
 object Routes {
+	/** Экран входа. */
 	const val LOGIN = "login"
+	
+	/** Экран списка теплиц. */
 	const val GREENHOUSES = "greenhouses"
+	
+	/** Экран списка зон. */
 	const val ZONES = "zones/{greenhouseId}"
+	
+	/** Экран деталей зоны. */
 	const val ZONE_DETAILS = "zone_details/{zoneId}"
+	
+	/** Экран алертов. */
 	const val ALERTS = "alerts"
+	
+	/** Экран provisioning устройств. */
 	const val PROVISIONING = "provisioning"
 }
 

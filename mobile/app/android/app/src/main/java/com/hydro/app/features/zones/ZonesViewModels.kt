@@ -2,6 +2,7 @@ package com.hydro.app.features.zones
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hydro.app.core.auth.SessionManager
 import com.hydro.app.core.data.TelemetryRepository
 import com.hydro.app.core.data.ZonesRepository
 import com.hydro.app.core.domain.CommandRequest
@@ -10,6 +11,7 @@ import com.hydro.app.core.domain.TelemetryHistoryPoint
 import com.hydro.app.core.domain.TelemetryLast
 import com.hydro.app.core.domain.Zone
 import com.hydro.app.core.data.ZonesApi
+import com.hydro.app.core.domain.usecase.GetZonesUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -20,26 +22,45 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/**
+ * ViewModel для экрана списка зон.
+ * 
+ * Использует GetZonesUseCase для получения данных.
+ */
 @HiltViewModel
 class ZonesViewModel @Inject constructor(
-    private val repository: ZonesRepository
+    private val getZonesUseCase: GetZonesUseCase,
+    private val sessionManager: SessionManager
 ) : ViewModel() {
     private val _greenhouseId = MutableStateFlow<Int?>(null)
     
+    /**
+     * Состояние списка зон.
+     */
     val state: StateFlow<List<Zone>> = _greenhouseId
         .flatMapLatest { ghId ->
             if (ghId != null) {
-                repository.getByGreenhouse(ghId)
+                getZonesUseCase.getByGreenhouse(ghId)
             } else {
-                repository.getAll()
+                getZonesUseCase.getAll()
             }
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(com.hydro.app.core.domain.AppConstants.FlowTimeout.STATE_FLOW_TIMEOUT_MS),
+            emptyList()
+        )
 
+    /**
+     * Загружает список зон.
+     * 
+     * @param greenhouseId Опциональный ID теплицы для фильтрации
+     */
     fun load(greenhouseId: Int? = null) {
         _greenhouseId.value = greenhouseId
         viewModelScope.launch {
-            repository.refresh(greenhouseId)
+            sessionManager.updateActivity()
+            getZonesUseCase.refresh(greenhouseId)
         }
     }
 }
@@ -48,7 +69,8 @@ class ZonesViewModel @Inject constructor(
 class ZoneDetailsViewModel @Inject constructor(
     private val zonesRepository: ZonesRepository,
     private val telemetryRepository: TelemetryRepository,
-    private val zonesApi: ZonesApi
+    private val zonesApi: ZonesApi,
+    private val sessionManager: SessionManager
 ) : ViewModel() {
     private val _zoneId = MutableStateFlow<Int?>(null)
     private val _telemetryLast = MutableStateFlow<TelemetryLast?>(null)
@@ -71,6 +93,7 @@ class ZoneDetailsViewModel @Inject constructor(
     fun load(zoneId: Int) {
         _zoneId.value = zoneId
         viewModelScope.launch {
+            sessionManager.updateActivity()
             _zone.value = zonesRepository.getById(zoneId)
             loadTelemetryLast(zoneId)
         }
@@ -78,12 +101,14 @@ class ZoneDetailsViewModel @Inject constructor(
 
     fun loadTelemetryLast(zoneId: Int) {
         viewModelScope.launch {
+            sessionManager.updateActivity()
             _telemetryLast.value = telemetryRepository.getLast(zoneId)
         }
     }
 
     fun loadHistory(zoneId: Int, metric: String, from: String? = null, to: String? = null) {
         viewModelScope.launch {
+            sessionManager.updateActivity()
             telemetryRepository.refreshHistory(zoneId, metric, from, to)
             // Get first value from Flow
             val history = telemetryRepository.getHistory(zoneId, metric).first()
@@ -95,6 +120,7 @@ class ZoneDetailsViewModel @Inject constructor(
         _commandState.value = CommandState.Loading
         viewModelScope.launch {
             try {
+                sessionManager.updateActivity()
                 val response = zonesApi.sendCommand(zoneId, command)
                 if (response.status == "ok" && response.data != null) {
                     _commandState.value = CommandState.Success(response.data)

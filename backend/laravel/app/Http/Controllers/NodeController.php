@@ -4,18 +4,15 @@ namespace App\Http\Controllers;
 
 use App\Enums\NodeLifecycleState;
 use App\Http\Requests\PublishNodeConfigRequest;
-use App\Http\Requests\RegisterNodeRequest;
-use App\Http\Requests\StoreNodeRequest;
 use App\Http\Requests\UpdateNodeRequest;
-use App\Jobs\PublishNodeConfigJob;
 use App\Models\DeviceNode;
+use App\Services\ConfigPublishLockService;
+use App\Services\ConfigSignatureService;
 use App\Services\NodeConfigService;
 use App\Services\NodeLifecycleService;
 use App\Services\NodeRegistryService;
 use App\Services\NodeService;
 use App\Services\NodeSwapService;
-use App\Services\ConfigSignatureService;
-use App\Services\ConfigPublishLockService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
@@ -152,7 +149,7 @@ class NodeController extends Controller
     public function update(UpdateNodeRequest $request, DeviceNode $node)
     {
         $user = $this->authenticateUser($request);
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -177,17 +174,17 @@ class NodeController extends Controller
     private function authenticateUser(Request $request): ?\App\Models\User
     {
         $user = $request->user();
-        
+
         // Если пользователь не авторизован через Sanctum, проверяем сервисный токен
-        if (!$user) {
+        if (! $user) {
             $providedToken = $request->bearerToken();
             \Log::debug('[NodeController] Checking service token authentication');
-            
+
             if ($providedToken) {
                 $pyApiToken = config('services.python_bridge.token');
                 $pyIngestToken = config('services.python_bridge.ingest_token');
                 $historyLoggerToken = config('services.history_logger.token');
-                
+
                 $tokenValid = false;
                 if ($pyApiToken && hash_equals($pyApiToken, $providedToken)) {
                     $tokenValid = true;
@@ -196,20 +193,21 @@ class NodeController extends Controller
                 } elseif ($historyLoggerToken && hash_equals($historyLoggerToken, $providedToken)) {
                     $tokenValid = true;
                 }
-                
+
                 if ($tokenValid) {
-                    $serviceUser = \App\Models\User::where('role', 'operator')->first() 
+                    $serviceUser = \App\Models\User::where('role', 'operator')->first()
                         ?? \App\Models\User::where('role', 'admin')->first()
                         ?? \App\Models\User::first();
-                    
+
                     if ($serviceUser) {
                         $request->setUserResolver(static fn () => $serviceUser);
+
                         return $serviceUser;
                     }
                 }
             }
         }
-        
+
         return $user;
     }
 
@@ -219,7 +217,7 @@ class NodeController extends Controller
     private function validateZoneChange(\App\Models\User $user, DeviceNode $node, array $data): void
     {
         if (isset($data['zone_id']) && $data['zone_id'] !== $node->zone_id) {
-            if (!\App\Helpers\ZoneAccessHelper::canAccessZone($user, $data['zone_id'])) {
+            if (! \App\Helpers\ZoneAccessHelper::canAccessZone($user, $data['zone_id'])) {
                 abort(403, 'Forbidden: Access denied to target zone');
             }
         }
@@ -350,7 +348,7 @@ class NodeController extends Controller
         }
 
         $data = $request->validated();
-        
+
         // Проверяем, это node_hello или обычная регистрация
         if ($request->has('message_type') && $request->input('message_type') === 'node_hello') {
             // Обработка node_hello из MQTT
@@ -430,7 +428,7 @@ class NodeController extends Controller
     public function publishConfig(PublishNodeConfigRequest $request, DeviceNode $node)
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -441,8 +439,10 @@ class NodeController extends Controller
 
         try {
             // Получаем pessimistic lock для предотвращения одновременной публикации
+            // ВАЖНО: acquirePessimisticLock использует DB::transaction(), который завершается внутри метода
+            // После завершения транзакции SELECT FOR UPDATE блокировка автоматически освобождается
             $lockedNode = $this->configPublishLockService->acquirePessimisticLock($node);
-            if (!$lockedNode) {
+            if (! $lockedNode) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Failed to acquire lock for config publishing',
@@ -451,7 +451,9 @@ class NodeController extends Controller
 
             // Получаем optimistic lock для проверки версии
             $optimisticLock = $this->configPublishLockService->acquireOptimisticLock($lockedNode);
-            if (!$optimisticLock) {
+            if (! $optimisticLock) {
+                // Pessimistic lock уже освобожден автоматически после завершения транзакции в acquirePessimisticLock
+                // Advisory lock еще не был получен, поэтому не нужно его освобождать
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Failed to acquire optimistic lock',
@@ -460,7 +462,7 @@ class NodeController extends Controller
 
             // Получаем advisory lock для дедупликации
             $advisoryLockAcquired = $this->configPublishLockService->acquireAdvisoryLock($lockedNode);
-            if (!$advisoryLockAcquired) {
+            if (! $advisoryLockAcquired) {
                 // Advisory lock не был получен, поэтому не нужно его освобождать
                 // Pessimistic lock уже освобожден автоматически после завершения транзакции в acquirePessimisticLock
                 return response()->json([
@@ -475,16 +477,18 @@ class NodeController extends Controller
 
                 // Проверяем дедупликацию через хеш конфигурации
                 // Используем JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE для консистентности
-                // и сортируем ключи для детерминированного хеша
-                $configJson = json_encode($config, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_SORT_KEYS);
+                // Сортируем ключи рекурсивно для детерминированного хеша
+                $sortedConfig = $this->recursiveKsort($config);
+                $configJson = json_encode($sortedConfig, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    throw new \RuntimeException('Failed to encode config to JSON: ' . json_last_error_msg());
+                    throw new \RuntimeException('Failed to encode config to JSON: '.json_last_error_msg());
                 }
                 $configHash = hash('sha256', $configJson);
-                
+
                 if ($this->configPublishLockService->isDuplicate($lockedNode, $configHash)) {
                     // Освобождаем advisory lock перед возвратом
                     $this->configPublishLockService->releaseAdvisoryLock($lockedNode);
+
                     return response()->json([
                         'status' => 'error',
                         'message' => 'This configuration was already published recently',
@@ -498,6 +502,7 @@ class NodeController extends Controller
                 if (! $lockedNode->zone_id) {
                     // Освобождаем advisory lock перед возвратом
                     $this->configPublishLockService->releaseAdvisoryLock($lockedNode);
+
                     return response()->json([
                         'status' => 'error',
                         'message' => 'Node must be assigned to a zone before publishing config',
@@ -505,9 +510,10 @@ class NodeController extends Controller
                 }
 
                 // Проверяем optimistic lock перед публикацией
-                if (!$this->configPublishLockService->checkOptimisticLock($lockedNode, $optimisticLock['version'])) {
+                if (! $this->configPublishLockService->checkOptimisticLock($lockedNode, $optimisticLock['version'])) {
                     // Освобождаем advisory lock перед возвратом
                     $this->configPublishLockService->releaseAdvisoryLock($lockedNode);
+
                     return response()->json([
                         'status' => 'error',
                         'message' => 'Node was modified during config publishing. Please try again.',
@@ -520,6 +526,7 @@ class NodeController extends Controller
                 if (! $greenhouseUid) {
                     // Освобождаем advisory lock перед возвратом
                     $this->configPublishLockService->releaseAdvisoryLock($lockedNode);
+
                     return response()->json([
                         'status' => 'error',
                         'message' => 'Zone must have a greenhouse before publishing config',
@@ -533,6 +540,7 @@ class NodeController extends Controller
                 if (! $baseUrl) {
                     // Освобождаем advisory lock перед возвратом
                     $this->configPublishLockService->releaseAdvisoryLock($lockedNode);
+
                     return response()->json([
                         'status' => 'error',
                         'message' => 'History Logger URL not configured',
@@ -561,7 +569,7 @@ class NodeController extends Controller
                     if ($response->successful()) {
                         // Помечаем конфигурацию как опубликованную (для дедупликации)
                         $this->configPublishLockService->markAsPublished($lockedNode, $configHash);
-                        
+
                         return response()->json([
                             'status' => 'ok',
                             'data' => [
@@ -876,5 +884,19 @@ class NodeController extends Controller
         }
 
         return false;
+    }
+
+    /**
+     * Рекурсивно сортирует ключи массива для детерминированного JSON
+     */
+    private function recursiveKsort(array &$array): array
+    {
+        ksort($array);
+        foreach ($array as &$value) {
+            if (is_array($value)) {
+                $this->recursiveKsort($value);
+            }
+        }
+        return $array;
     }
 }

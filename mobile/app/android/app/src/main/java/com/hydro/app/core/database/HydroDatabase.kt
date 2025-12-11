@@ -14,6 +14,18 @@ import com.hydro.app.core.database.entity.NodeEntity
 import com.hydro.app.core.database.entity.TelemetryEntity
 import com.hydro.app.core.database.entity.ZoneEntity
 
+/**
+ * Главная база данных приложения.
+ * 
+ * Использует Room для локального хранения данных:
+ * - Теплицы (GreenhouseEntity)
+ * - Зоны (ZoneEntity)
+ * - Узлы (NodeEntity)
+ * - Телеметрия (TelemetryEntity)
+ * - Алерты (AlertEntity)
+ * 
+ * Версия базы данных: 1
+ */
 @Database(
     entities = [
         GreenhouseEntity::class,

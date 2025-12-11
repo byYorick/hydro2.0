@@ -3,6 +3,7 @@ package com.hydro.app.features.provisioning
 import android.content.Context
 import android.net.wifi.WifiManager
 import android.net.wifi.ScanResult
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -16,7 +17,7 @@ import javax.inject.Singleton
 @Singleton
 class ProvisioningRepository @Inject constructor(
     private val client: OkHttpClient,
-    private val context: Context
+    @ApplicationContext private val context: Context
 ) {
     suspend fun scanForDevices(): List<ProvisioningViewModel.ProvisioningDevice> = withContext(Dispatchers.IO) {
         val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager

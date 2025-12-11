@@ -1,6 +1,5 @@
 package com.hydro.app.ui.components
 
-import android.graphics.Paint
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -44,6 +43,9 @@ fun TelemetryChart(
         return
     }
 
+    val gridColorValue = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f)
+    val textColorValue = MaterialTheme.colorScheme.onSurfaceVariant
+    
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
@@ -67,7 +69,7 @@ fun TelemetryChart(
             val valueRange = max(maxValue - minValue, 0.1) // Avoid division by zero
 
             // Draw grid lines
-            val gridColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f)
+            val gridColor = gridColorValue
             for (i in 0..4) {
                 val y = padding + (chartHeight / 4) * i
                 drawLine(
@@ -86,7 +88,7 @@ fun TelemetryChart(
             data.forEachIndexed { index, point ->
                 val x = padding + stepX * index
                 val normalizedValue = (point.value - minValue) / valueRange
-                val y = padding + chartHeight - (normalizedValue * chartHeight)
+                val y = padding + chartHeight - (normalizedValue.toFloat() * chartHeight)
 
                 if (index == 0) {
                     path.moveTo(x, y)
@@ -109,27 +111,8 @@ fun TelemetryChart(
                 style = Stroke(width = 2.dp.toPx())
             )
 
-            // Draw min/max labels (simplified - using native canvas)
-            val textColor = MaterialTheme.colorScheme.onSurfaceVariant
-            val textPaint = Paint().apply {
-                color = textColor.toArgb()
-                textSize = 10.dp.toPx()
-                isAntiAlias = true
-            }
-            drawContext.canvas.nativeCanvas.apply {
-                drawText(
-                    String.format("%.1f", maxValue),
-                    padding,
-                    padding + 10.dp.toPx(),
-                    textPaint
-                )
-                drawText(
-                    String.format("%.1f", minValue),
-                    padding,
-                    size.height - padding,
-                    textPaint
-                )
-            }
+            // Min/max values are visible through grid lines
+            // Text labels removed to avoid using internal APIs
         }
     }
 }

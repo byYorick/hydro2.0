@@ -5,7 +5,12 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 
 class Converters {
-    private val gson = Gson()
+    // Gson не thread-safe, поэтому используем ThreadLocal для безопасности
+    // Room может вызывать конвертеры из разных потоков
+    private val gsonThreadLocal = ThreadLocal.withInitial { Gson() }
+    
+    private val gson: Gson
+        get() = gsonThreadLocal.get()
 
     @TypeConverter
     fun fromStringList(value: String?): List<String>? {

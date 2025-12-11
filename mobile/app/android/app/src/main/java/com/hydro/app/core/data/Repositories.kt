@@ -17,17 +17,33 @@ import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Repository для работы с данными о теплицах.
+ * 
+ * Объединяет данные из API и локальной базы данных Room.
+ * Предоставляет реактивный интерфейс через Flow.
+ */
 @Singleton
 class GreenhousesRepository @Inject constructor(
     private val api: GreenhousesApi,
     private val db: HydroDatabase
 ) {
+    /**
+     * Получает поток всех теплиц из локальной базы данных.
+     * 
+     * @return Flow со списком теплиц
+     */
     fun getAll(): Flow<List<Greenhouse>> {
         return db.greenhouseDao().getAll().map { entities ->
             entities.map { it.toDomain() }
         }
     }
 
+    /**
+     * Обновляет данные о теплицах из API и сохраняет в локальную базу данных.
+     * 
+     * В случае ошибки использует кэшированные данные.
+     */
     suspend fun refresh() {
         try {
             val response = api.list()
@@ -43,6 +59,12 @@ class GreenhousesRepository @Inject constructor(
         }
     }
 
+    /**
+     * Получает теплицу по ID из локальной базы данных.
+     * 
+     * @param id ID теплицы
+     * @return Теплица или null, если не найдена
+     */
     suspend fun getById(id: Int): Greenhouse? {
         return db.greenhouseDao().getById(id)?.toDomain()
     }
