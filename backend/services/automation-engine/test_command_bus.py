@@ -147,11 +147,12 @@ async def test_publish_controller_command():
             gh_uid="gh-1",
             history_logger_url="http://history-logger:9300"
         )
+        # Используем правильный формат для команды irrigate: duration_sec вместо duration
         command = {
             'node_uid': 'nd-irrig-1',
             'channel': 'default',
             'cmd': 'irrigate',
-            'params': {'duration': 60}
+            'params': {'duration_sec': 60}
         }
         
         result = await command_bus.publish_controller_command(1, command)

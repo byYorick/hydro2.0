@@ -19,10 +19,19 @@ def auth_headers():
 
 @pytest.fixture
 def mock_mqtt_client():
-    """Create mock MQTT client."""
+    """Create mock MQTT client with proper structure."""
     mqtt = Mock()
     mqtt.is_connected = Mock(return_value=True)
-    mqtt.publish_json = Mock()
+    
+    # Создаем правильную структуру для mqtt_client._client._client.publish()
+    publish_result = Mock()
+    publish_result.rc = 0  # 0 означает успех в paho-mqtt
+    
+    base_client = Mock()
+    base_client._client = Mock()
+    base_client._client.publish = Mock(return_value=publish_result)
+    
+    mqtt._client = base_client
     return mqtt
 
 
@@ -52,7 +61,8 @@ async def test_publish_command_success(client, auth_headers, mock_mqtt_client):
         assert "command_id" in data["data"]
         
         # Проверяем, что команда была опубликована в MQTT
-        assert mock_mqtt_client.publish_json.called
+        # Структура: mqtt_client._client._client.publish()
+        assert mock_mqtt_client._client._client.publish.called
 
 
 @pytest.mark.asyncio
@@ -78,6 +88,9 @@ async def test_publish_command_legacy_type(client, auth_headers, mock_mqtt_clien
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "ok"
+        
+        # Проверяем, что команда была опубликована в MQTT
+        assert mock_mqtt_client._client._client.publish.called
 
 
 @pytest.mark.asyncio
@@ -114,16 +127,35 @@ async def test_publish_command_missing_cmd(client, auth_headers):
 @pytest.mark.asyncio
 async def test_publish_command_unauthorized(client, mock_mqtt_client):
     """Test command publication without authentication."""
-    payload = {
-        "cmd": "irrigate",
-        "greenhouse_uid": "gh-1",
-        "zone_id": 1,
-        "node_uid": "nd-irrig-1",
-        "channel": "default"
-    }
+    import os
+    original_env = os.environ.get("APP_ENV")
     
-    response = client.post("/commands", json=payload)
-    assert response.status_code == 401
+    try:
+        # Устанавливаем production окружение для проверки авторизации
+        os.environ["APP_ENV"] = "production"
+        
+        with patch("main.get_settings") as mock_settings, \
+             patch("main.get_mqtt_client", new_callable=AsyncMock) as mock_get_mqtt:
+            
+            mock_settings.return_value = Mock(history_logger_api_token="required-token")
+            mock_get_mqtt.return_value = mock_mqtt_client
+            
+            payload = {
+                "cmd": "irrigate",
+                "greenhouse_uid": "gh-1",
+                "zone_id": 1,
+                "node_uid": "nd-irrig-1",
+                "channel": "default"
+            }
+            
+            response = client.post("/commands", json=payload)
+            assert response.status_code == 401
+    finally:
+        # Восстанавливаем окружение
+        if original_env:
+            os.environ["APP_ENV"] = original_env
+        elif "APP_ENV" in os.environ:
+            del os.environ["APP_ENV"]
 
 
 @pytest.mark.asyncio

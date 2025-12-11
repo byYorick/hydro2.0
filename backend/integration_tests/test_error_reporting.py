@@ -308,70 +308,72 @@ class IntegrationTestRunner:
         return result["passed"]
     
     async def test_alert_creation(self):
-        """Тест 3: Создание Alerts в Laravel."""
+        """Тест 3: Создание Alerts в БД."""
         logger.info("\n=== Test 3: Alert Creation ===")
         
         # Ждем создания Alerts
         await asyncio.sleep(5)
         
-        # Пробуем разные способы аутентификации
-        headers_options = [
-            {"Authorization": f"Bearer {LARAVEL_API_TOKEN}"},
-            {"X-API-Token": LARAVEL_API_TOKEN},
-            {}  # Без аутентификации (может работать в dev)
-        ]
-        
-        alerts_found = False
-        last_error = None
-        
-        for headers in headers_options:
-            try:
-                response = await self.http_client.get(
-                    f"{LARAVEL_URL}/api/alerts",
-                    headers=headers
-                )
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    alerts = data.get("data", [])
-                    
-                    # Фильтруем тестовые Alerts
-                    test_alerts = [
-                        a for a in alerts 
-                        if any(node_uid in str(a.get("node_uid", "")) for node_uid in TEST_NODES.values())
-                    ]
-                    
-                    if len(test_alerts) > 0:
-                        logger.info(f"✓ Found {len(test_alerts)} test alerts in Laravel")
-                        alerts_found = True
-                        result = {
-                            "test": "alert_creation",
-                            "passed": True,
-                            "alerts_count": len(test_alerts)
-                        }
-                        break
-                    else:
-                        logger.debug(f"No test alerts found (total alerts: {len(alerts)})")
-                elif response.status_code == 401:
-                    last_error = f"HTTP 401 (auth failed with headers: {list(headers.keys())})"
-                    continue
+        # Проверяем alerts напрямую в БД через Laravel tinker
+        # (API требует аутентификации, поэтому используем прямой доступ к БД)
+        try:
+            import subprocess
+            result = subprocess.run(
+                [
+                    "docker", "exec", "backend-laravel-1",
+                    "php", "artisan", "tinker", "--execute",
+                    f"""
+$zoneId = \\App\\Models\\DeviceNode::whereIn('uid', {list(TEST_NODES.values())})
+    ->value('zone_id');
+if (!$zoneId) {{
+    echo '0';
+    exit;
+}}
+$alerts = \\App\\Models\\Alert::where('zone_id', $zoneId)
+    ->where('type', 'node_error')
+    ->where('created_at', '>', now()->subMinutes(10))
+    ->count();
+echo $alerts;
+"""
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            if result.returncode == 0:
+                alerts_count = int(result.stdout.strip())
+                if alerts_count > 0:
+                    logger.info(f"✓ Found {alerts_count} alerts in database")
+                    result_obj = {
+                        "test": "alert_creation",
+                        "passed": True,
+                        "alerts_count": alerts_count
+                    }
                 else:
-                    last_error = f"HTTP {response.status_code}"
-                    continue
-            except Exception as e:
-                last_error = str(e)
-                continue
-        
-        if not alerts_found:
-            logger.warning(f"⚠ Alert creation test: {last_error or 'No alerts found'}")
-            result = {
+                    logger.warning("⚠ No alerts found in database")
+                    result_obj = {
+                        "test": "alert_creation",
+                        "passed": False,
+                        "error": "No alerts found"
+                    }
+            else:
+                logger.warning(f"⚠ Failed to check alerts: {result.stderr}")
+                result_obj = {
+                    "test": "alert_creation",
+                    "passed": False,
+                    "error": result.stderr[:100]
+                }
+        except Exception as e:
+            logger.warning(f"⚠ Alert creation test failed: {e}")
+            result_obj = {
                 "test": "alert_creation",
                 "passed": False,
-                "error": last_error or "No test alerts found"
+                "error": str(e)
             }
         
-        self.test_results.append(result)
-        return result["passed"]
+        self.test_results.append(result_obj)
+        return result_obj["passed"]
     
     async def test_error_metrics_in_db(self):
         """Тест 4: Обновление метрик ошибок в БД."""
@@ -380,69 +382,76 @@ class IntegrationTestRunner:
         # Ждем обновления БД
         await asyncio.sleep(3)
         
-        # Пробуем разные способы аутентификации
-        headers_options = [
-            {"Authorization": f"Bearer {LARAVEL_API_TOKEN}"},
-            {"X-API-Token": LARAVEL_API_TOKEN},
-            {}  # Без аутентификации (может работать в dev)
-        ]
-        
-        metrics_found = False
-        last_error = None
-        
-        for headers in headers_options:
-            try:
-                # Проверяем метрики через Laravel API
-                for node_uid in TEST_NODES.values():
-                    response = await self.http_client.get(
-                        f"{LARAVEL_URL}/api/nodes/{node_uid}",
-                        headers=headers
-                    )
-                    
-                    if response.status_code == 200:
-                        data = response.json()
-                        node_data = data.get("data", {})
-                        
-                        error_count = node_data.get("error_count", 0)
-                        warning_count = node_data.get("warning_count", 0)
-                        critical_count = node_data.get("critical_count", 0)
-                        
-                        if error_count > 0 or warning_count > 0 or critical_count > 0:
+        # Проверяем метрики напрямую в БД через Laravel tinker
+        try:
+            import subprocess
+            node_uids_str = ",".join([f"'{uid}'" for uid in TEST_NODES.values()])
+            result = subprocess.run(
+                [
+                    "docker", "exec", "backend-laravel-1",
+                    "php", "artisan", "tinker", "--execute",
+                    f"""
+$nodes = \\App\\Models\\DeviceNode::whereIn('uid', [{node_uids_str}])
+    ->get(['uid', 'error_count', 'warning_count', 'critical_count']);
+$found = false;
+foreach ($nodes as $node) {{
+    if ($node->error_count > 0 || $node->warning_count > 0 || $node->critical_count > 0) {{
+        echo $node->uid . ':' . $node->error_count . ':' . $node->warning_count . ':' . $node->critical_count . PHP_EOL;
+        $found = true;
+    }}
+}}
+if (!$found) {{
+    echo 'NO_METRICS';
+}}
+"""
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            if result.returncode == 0:
+                output = result.stdout.strip()
+                if output and output != "NO_METRICS":
+                    lines = output.split("\n")
+                    for line in lines:
+                        if ":" in line:
+                            parts = line.split(":")
+                            node_uid = parts[0]
+                            error_count = int(parts[1])
+                            warning_count = int(parts[2])
+                            critical_count = int(parts[3])
                             logger.info(f"✓ Node {node_uid} has error metrics: error={error_count}, warning={warning_count}, critical={critical_count}")
-                            metrics_found = True
-                            result = {
-                                "test": "error_metrics_in_db",
-                                "passed": True,
-                                "node_uid": node_uid,
-                                "error_count": error_count,
-                                "warning_count": warning_count,
-                                "critical_count": critical_count
-                            }
-                            self.test_results.append(result)
-                            return True
-                    elif response.status_code == 401:
-                        last_error = f"HTTP 401 (auth failed)"
-                        break
-                    elif response.status_code == 404:
-                        # Нода не найдена - это нормально для тестовых данных
-                        logger.debug(f"Node {node_uid} not found in DB (expected for test data)")
-                        continue
-                if metrics_found:
-                    break
-            except Exception as e:
-                last_error = str(e)
-                continue
-        
-        if not metrics_found:
-            logger.warning(f"⚠ Error metrics test: {last_error or 'No metrics found (test nodes may not exist in DB)'}")
-            result = {
+                    
+                    result_obj = {
+                        "test": "error_metrics_in_db",
+                        "passed": True,
+                        "nodes_with_metrics": len(lines)
+                    }
+                else:
+                    logger.warning("⚠ No error metrics found in nodes")
+                    result_obj = {
+                        "test": "error_metrics_in_db",
+                        "passed": False,
+                        "error": "No error metrics found"
+                    }
+            else:
+                logger.warning(f"⚠ Failed to check error metrics: {result.stderr}")
+                result_obj = {
+                    "test": "error_metrics_in_db",
+                    "passed": False,
+                    "error": result.stderr[:100]
+                }
+        except Exception as e:
+            logger.warning(f"⚠ Error metrics test failed: {e}")
+            result_obj = {
                 "test": "error_metrics_in_db",
                 "passed": False,
-                "error": last_error or "No error metrics found (test nodes may not exist in DB)"
+                "error": str(e)
             }
-            self.test_results.append(result)
         
-        return metrics_found
+        self.test_results.append(result_obj)
+        return result_obj["passed"]
     
     async def test_diagnostics_metrics(self):
         """Тест 5: Проверка diagnostics метрик."""
