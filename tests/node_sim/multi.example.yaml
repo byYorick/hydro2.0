@@ -1,0 +1,190 @@
+# Пример конфигурации для multi-node симулятора
+# Один процесс управляет множеством нод (5-50)
+
+mqtt:
+  host: localhost
+  port: 1883
+  username: null
+  password: null
+  tls: false
+  ca_certs: null
+  keepalive: 60
+
+# Общие настройки телеметрии (применяются ко всем нодам, если не переопределены)
+telemetry:
+  interval_seconds: 5.0
+  heartbeat_interval_seconds: 30.0
+
+# Общий режим отказов (опционально, применяется ко всем нодам)
+# failure_mode:
+#   delay_response: false
+#   delay_ms: 0
+#   drop_response: false
+#   duplicate_response: false
+
+# Список нод
+nodes:
+  # Нода 1 - pH сенсор в зоне 1
+  - node_uid: nd-ph-1
+    hardware_id: esp32-sim-001
+    gh_uid: gh-1
+    zone_uid: zn-1
+    node_type: ph
+    mode: configured
+    channels:
+      - ph_sensor
+      - solution_temp_c
+    actuators:
+      - main_pump
+      - drain_pump
+  
+  # Нода 2 - EC сенсор в зоне 1
+  - node_uid: nd-ec-1
+    hardware_id: esp32-sim-002
+    gh_uid: gh-1
+    zone_uid: zn-1
+    node_type: ec
+    mode: configured
+    channels:
+      - ec_sensor
+      - solution_temp_c
+    actuators:
+      - main_pump
+  
+  # Нода 3 - Климат в зоне 1
+  - node_uid: nd-climate-1
+    hardware_id: esp32-sim-003
+    gh_uid: gh-1
+    zone_uid: zn-1
+    node_type: climate
+    mode: configured
+    sensors:
+      - air_temp_c
+      - air_rh
+      - co2_ppm
+      - lux
+    actuators:
+      - fan
+      - heater
+      - light
+      - mister
+  
+  # Нода 4 - pH сенсор в зоне 2
+  - node_uid: nd-ph-2
+    hardware_id: esp32-sim-004
+    gh_uid: gh-1
+    zone_uid: zn-2
+    node_type: ph
+    mode: configured
+    channels:
+      - ph_sensor
+      - solution_temp_c
+    actuators:
+      - main_pump
+      - drain_pump
+  
+  # Нода 5 - EC сенсор в зоне 2
+  - node_uid: nd-ec-2
+    hardware_id: esp32-sim-005
+    gh_uid: gh-1
+    zone_uid: zn-2
+    node_type: ec
+    mode: configured
+    channels:
+      - ec_sensor
+      - solution_temp_c
+    actuators:
+      - main_pump
+  
+  # Нода 6 - Климат в зоне 2
+  - node_uid: nd-climate-2
+    hardware_id: esp32-sim-006
+    gh_uid: gh-1
+    zone_uid: zn-2
+    node_type: climate
+    mode: configured
+    sensors:
+      - air_temp_c
+      - air_rh
+      - co2_ppm
+      - lux
+    actuators:
+      - fan
+      - heater
+      - light
+      - mister
+  
+  # Нода 7 - pH сенсор в зоне 3
+  - node_uid: nd-ph-3
+    hardware_id: esp32-sim-007
+    gh_uid: gh-1
+    zone_uid: zn-3
+    node_type: ph
+    mode: configured
+    channels:
+      - ph_sensor
+      - solution_temp_c
+    actuators:
+      - main_pump
+      - drain_pump
+  
+  # Нода 8 - EC сенсор в зоне 3
+  - node_uid: nd-ec-3
+    hardware_id: esp32-sim-008
+    gh_uid: gh-1
+    zone_uid: zn-3
+    node_type: ec
+    mode: configured
+    sensors:
+      - ec
+      - solution_temp_c
+    actuators:
+      - main_pump
+  
+  # Нода 9 - Климат в зоне 3
+  - node_uid: nd-climate-3
+    hardware_id: esp32-sim-009
+    gh_uid: gh-1
+    zone_uid: zn-3
+    node_type: climate
+    mode: configured
+    sensors:
+      - air_temp_c
+      - air_rh
+      - co2_ppm
+      - lux
+    actuators:
+      - fan
+      - heater
+      - light
+      - mister
+  
+  # Нода 10 - pH сенсор в зоне 4
+  - node_uid: nd-ph-4
+    hardware_id: esp32-sim-010
+    gh_uid: gh-1
+    zone_uid: zn-4
+    node_type: ph
+    mode: configured
+    sensors:
+      - ph
+      - solution_temp_c
+    actuators:
+      - main_pump
+      - drain_pump
+
+# Пример: нода с индивидуальными настройками телеметрии
+#  - node_uid: nd-special-1
+#    hardware_id: esp32-sim-011
+#    gh_uid: gh-1
+#    zone_uid: zn-1
+#    node_type: unknown
+#    mode: configured
+#    sensors:
+#      - ph
+#    actuators:
+#      - main_pump
+#    telemetry:
+#      interval_seconds: 2.0  # Более частые обновления
+#      heartbeat_interval_seconds: 15.0
+

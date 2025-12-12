@@ -1,0 +1,12 @@
+{
+  "cmd_id": "cmd-ghi789",
+  "cmd": "calibrate_ph",
+  "ts": 1737979200000,
+  "params": {
+    "value": 7.0,
+    "channel": "ph_sensor"
+  },
+  "deadline_ms": 1737979800000,
+  "attempt": 1
+}
+

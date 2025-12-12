@@ -1,0 +1,11 @@
+{
+  "cmd_id": "cmd-abc123",
+  "cmd": "dose",
+  "ts": 1737979200000,
+  "params": {
+    "ml": 1.2,
+    "channel": "pump_nutrient"
+  },
+  "attempt": 1
+}
+

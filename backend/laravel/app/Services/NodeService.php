@@ -13,7 +13,8 @@ use Illuminate\Support\Facades\Log;
 class NodeService
 {
     public function __construct(
-        private NodeLifecycleService $lifecycleService
+        private NodeLifecycleService $lifecycleService,
+        private NodeRegistryService $registryService,
     ) {
     }
 
@@ -190,6 +191,19 @@ class NodeService
                     'lifecycle_state' => $node->lifecycle_state?->value,
                     'reason' => 'History-logger completed node binding after config_response',
                 ]);
+
+                // Превращаем накопленные unassigned ошибки в alerts теперь, когда зона известна.
+                try {
+                    $this->registryService->attachUnassignedErrorsForNode($node);
+                } catch (\Throwable $e) {
+                    Log::error('NodeService: Failed to attach unassigned node errors on binding completion', [
+                        'node_id' => $node->id,
+                        'uid' => $node->uid,
+                        'hardware_id' => $node->hardware_id,
+                        'zone_id' => $node->zone_id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
             }
             
             /**

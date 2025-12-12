@@ -1,0 +1,143 @@
+# E03: Duplicate Command Response - Дублирующиеся ответы не ломают статус
+# DoD: duplicate responses не ломают статус
+
+name: E03_duplicate_cmd_response
+description: |
+  Проверяет устойчивость к дублирующимся ответам от узла:
+  - Команда отправляется
+  - Узел отправляет DONE ответ дважды (дубль)
+  - Статус команды остается DONE (не переходит в FAILED или другой статус)
+  - WebSocket событие отправляется только один раз
+
+setup:
+  # Настройка симулятора узла
+  node_sim:
+    config:
+      mqtt:
+        host: ${MQTT_HOST:-localhost}
+        port: ${MQTT_PORT:-1883}
+        username: ${MQTT_USER:-null}
+        password: ${MQTT_PASS:-null}
+      node:
+        gh_uid: gh-test-1
+        zone_uid: zn-test-1
+        node_uid: nd-ph-test-1
+        hardware_id: esp32-test-001
+        node_type: ph
+        mode: configured
+        channels:
+          - ph_sensor
+        actuators:
+          - main_pump
+      telemetry:
+        interval_seconds: 2.0
+        heartbeat_interval_seconds: 15.0
+
+  # Предварительные условия
+  prerequisites:
+    - database: nodes table exists
+    - database: zones table exists with zone_id for zn-test-1
+    - database: node attached to zone
+    - mqtt: broker is accessible
+    - backend: Laravel is running
+    - websocket: WebSocket server is running
+
+actions:
+  # Шаг 1: Запуск симулятора узла
+  - step: start_node_simulator
+    type: start_simulator
+    config_ref: node_sim.config
+    wait_seconds: 3
+
+  # Шаг 2: Подписка на WebSocket канал команд зоны
+  - step: subscribe_ws_commands
+    type: websocket_subscribe
+    channel: "private-commands.{zone_id}"
+    wait_seconds: 1
+
+  # Шаг 3: Отправка команды через API
+  - step: send_command
+    type: api_post
+    endpoint: "/api/zones/{zone_id}/commands"
+    payload:
+      type: "pump_control"
+      params:
+        channel: "main_pump"
+        action: "stop"
+    wait_seconds: 2
+
+  # Шаг 4: Симулятор отправляет DONE ответ (первый раз)
+  - step: node_sends_done_first
+    type: mqtt_publish
+    topic: "hydro/gh-test-1/zn-test-1/nd-ph-test-1/main_pump/cmd_response"
+    payload:
+      cmd_id: ${COMMAND_ID}
+      status: "DONE"
+      result_code: 0
+      ts: ${TIMESTAMP_MS}
+    qos: 1
+    wait_seconds: 2
+
+  # Шаг 5: Симулятор отправляет DONE ответ второй раз (дубль)
+  - step: node_sends_done_duplicate
+    type: mqtt_publish
+    topic: "hydro/gh-test-1/zn-test-1/nd-ph-test-1/main_pump/cmd_response"
+    payload:
+      cmd_id: ${COMMAND_ID}
+      status: "DONE"
+      result_code: 0
+      ts: ${TIMESTAMP_MS}
+    qos: 1
+    wait_seconds: 2
+
+assertions:
+  # Проверка 1: Команда остается в статусе DONE (не изменилась после дубля)
+  - name: command_stays_done
+    type: database_query
+    query: |
+      SELECT id, status, result_code, updated_at
+      FROM commands
+      WHERE cmd_id = ${COMMAND_ID}
+    expected:
+      - field: status
+        operator: equals
+        value: "DONE"
+      - field: result_code
+        operator: equals
+        value: 0
+
+  # Проверка 2: Команда обновлялась только один раз (по updated_at)
+  - name: command_updated_once
+    type: database_query
+    query: |
+      SELECT COUNT(*) as update_count
+      FROM (
+        SELECT status, updated_at
+        FROM commands
+        WHERE cmd_id = ${COMMAND_ID}
+      ) AS cmd
+      GROUP BY status, DATE_TRUNC('second', updated_at)
+    expected:
+      - field: update_count
+        operator: less_than_or_equal
+        value: 1
+
+  # Проверка 3: WebSocket событие CommandStatusUpdated отправлено один раз
+  - name: ws_event_sent_once
+    type: websocket_event_count
+    channel: "private-commands.{zone_id}"
+    event_type: ".App\\Events\\CommandStatusUpdated"
+    timeout: 10.0
+    filter:
+      command.cmd_id: ${COMMAND_ID}
+      command.status: "DONE"
+    expected:
+      - field: count
+        operator: equals
+        value: 1
+
+cleanup:
+  - step: stop_node_simulator
+    type: stop_simulator
+  - step: unsubscribe_ws
+    type: websocket_unsubscribe

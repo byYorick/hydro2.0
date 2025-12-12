@@ -1,0 +1,168 @@
+{
+  "test_suite": "E07_ws_reconnect_snapshot_replay",
+  "generated_at": "2025-12-12T21:21:15.707322",
+  "test_cases": [
+    {
+      "name": "start_node_simulator",
+      "status": "passed",
+      "duration": 2.0021307468414307,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "start_node_simulator",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-12T21:21:08.479177"
+    },
+    {
+      "name": "connect_ws",
+      "status": "passed",
+      "duration": 1.0018889904022217,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "connect_ws",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-12T21:21:09.481095"
+    },
+    {
+      "name": "subscribe_ws_zone",
+      "status": "passed",
+      "duration": 1.0866873264312744,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "subscribe_ws_zone",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-12T21:21:10.568114"
+    },
+    {
+      "name": "fetch_snapshot_before",
+      "status": "passed",
+      "duration": 1.0736093521118164,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "fetch_snapshot_before",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-12T21:21:11.641775"
+    },
+    {
+      "name": "capture_last_event_id",
+      "status": "passed",
+      "duration": 5.9604644775390625e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "capture_last_event_id",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-12T21:21:11.641830"
+    },
+    {
+      "name": "disconnect_ws",
+      "status": "passed",
+      "duration": 1.0030410289764404,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "disconnect_ws",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-12T21:21:12.644881"
+    },
+    {
+      "name": "publish_error_during_gap",
+      "status": "passed",
+      "duration": 2.0023391246795654,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "publish_error_during_gap",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-12T21:21:14.647282"
+    },
+    {
+      "name": "reconnect_ws",
+      "status": "passed",
+      "duration": 1.0030262470245361,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "reconnect_ws",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-12T21:21:15.650334"
+    },
+    {
+      "name": "fetch_events_after_id",
+      "status": "failed",
+      "duration": 0.05392289161682129,
+      "error_message": "Server error '500 Internal Server Error' for url 'http://localhost:8081/api/zones/1/events?after_id=1&limit=50'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500",
+      "steps": [
+        {
+          "name": "fetch_events_after_id",
+          "status": "failed",
+          "error": "Server error '500 Internal Server Error' for url 'http://localhost:8081/api/zones/1/events?after_id=1&limit=50'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+        }
+      ],
+      "timestamp": "2025-12-12T21:21:15.704357"
+    },
+    {
+      "name": "snapshot_has_last_event_id",
+      "status": "passed",
+      "duration": 7.3909759521484375e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "snapshot_has_last_event_id",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-12T21:21:15.704377"
+    },
+    {
+      "name": "replay_has_events",
+      "status": "failed",
+      "duration": 6.4373016357421875e-06,
+      "error_message": "Expected length > 0, got 0",
+      "steps": [
+        {
+          "name": "replay_has_events",
+          "status": "failed",
+          "error": "Expected length > 0, got 0"
+        }
+      ],
+      "timestamp": "2025-12-12T21:21:15.704431"
+    }
+  ],
+  "timeline": [],
+  "artifacts": {
+    "E07_ws_reconnect_snapshot_replay": {
+      "ws_messages": [
+        {
+          "data": {
+            "event": "pusher_internal:subscription_succeeded",
+            "data": "{}",
+            "channel": "private-hydro.zones.1"
+          },
+          "timestamp": "2025-12-12T21:21:09.571425"
+        }
+      ],
+      "mqtt_messages": [],
+      "api_responses": []
+    }
+  }
+}

@@ -1,0 +1,177 @@
+# Golden Path Regression Suite (P1)
+# Быстрый локальный прогон базовых инвариантов пайплайна
+# Без Docker, против dev окружения
+
+name: golden_path
+description: |
+  Базовый набор проверок критичных инвариантов:
+  - Команда: отправка команды и проверка выполнения
+  - Ошибка: публикация ошибки и проверка алерта
+  - Snapshot: получение snapshot и проверка данных
+
+# Конфигурация окружения (переопределяется через env vars)
+config:
+  mqtt:
+    host: ${MQTT_HOST:-localhost}
+    port: ${MQTT_PORT:-1883}
+    username: ${MQTT_USER:-}
+    password: ${MQTT_PASS:-}
+  
+  laravel:
+    url: ${LARAVEL_URL:-http://localhost:8080}
+    api_token: ${API_TOKEN:-}
+  
+  test_data:
+    gh_uid: gh-test-1
+    zone_uid: zn-test-1
+    node_uid: nd-ph-test-1
+    hardware_id: esp32-golden-001
+    node_type: ph
+
+# Сценарии для проверки
+scenarios:
+  # 1. Команда: отправка и выполнение
+  command:
+    description: "Проверка отправки команды и её выполнения"
+    steps:
+      - name: send_command
+        type: api_post
+        endpoint: "/api/zones/{zone_id}/commands"
+        payload:
+          type: "pump_control"
+          params:
+            channel: "main_pump"
+            action: "start"
+            duration_seconds: 5
+        expected_status: 200
+        capture: command_id
+        wait_seconds: 2
+      
+      - name: check_command_status
+        type: api_get
+        endpoint: "/api/commands/{command_id}/status"
+        expected_status: 200
+        expected_json:
+          - field: status
+            operator: in
+            value: ["QUEUED", "SENT", "ACCEPTED", "DONE"]
+        wait_seconds: 3
+    
+    assertions:
+      - name: command_in_db
+        type: database_query
+        query: |
+          SELECT id, status, cmd, channel
+          FROM commands
+          WHERE id = {command_id}
+        expected:
+          - field: status
+            operator: in
+            value: ["QUEUED", "SENT", "ACCEPTED", "DONE"]
+          - field: cmd
+            operator: equals
+            value: "pump_control"
+
+  # 2. Ошибка: публикация и создание алерта
+  error:
+    description: "Проверка публикации ошибки и создания алерта"
+    steps:
+      - name: publish_error
+        type: mqtt_publish
+        topic: "hydro/{gh_uid}/{zone_uid}/{node_uid}/error"
+        payload:
+          code: "GOLDEN_PATH_TEST"
+          message: "Test error for golden path regression"
+          severity: "ERROR"
+          ts: ${TIMESTAMP_MS}
+        qos: 1
+        wait_seconds: 3
+      
+      - name: check_alert_created
+        type: api_get
+        endpoint: "/api/zones/{zone_id}/alerts"
+        expected_status: 200
+        expected_json:
+          - field: data
+            operator: array_contains
+            condition: "any alert with code='GOLDEN_PATH_TEST' and status='ACTIVE'"
+        wait_seconds: 2
+    
+    assertions:
+      - name: alert_in_db
+        type: database_query
+        query: |
+          SELECT id, status, code, zone_id
+          FROM alerts
+          WHERE zone_id = {zone_id}
+          AND code = 'GOLDEN_PATH_TEST'
+          AND status = 'ACTIVE'
+          ORDER BY created_at DESC
+          LIMIT 1
+        expected:
+          - field: status
+            operator: equals
+            value: "ACTIVE"
+          - field: code
+            operator: equals
+            value: "GOLDEN_PATH_TEST"
+
+  # 3. Snapshot: получение и проверка данных
+  snapshot:
+    description: "Проверка получения snapshot зоны"
+    steps:
+      - name: get_snapshot
+        type: api_get
+        endpoint: "/api/zones/{zone_id}/snapshot"
+        expected_status: 200
+        capture: snapshot_data
+        wait_seconds: 1
+      
+      - name: verify_snapshot_structure
+        type: json_assertion
+        source: snapshot_data
+        path: data
+        expected:
+          - field: snapshot_id
+            operator: is_not_null
+          - field: last_event_id
+            operator: is_not_null
+          - field: server_ts
+            operator: is_not_null
+          - field: zone
+            operator: is_not_null
+        wait_seconds: 1
+    
+    assertions:
+      - name: snapshot_contains_zone_data
+        type: json_assertion
+        source: snapshot_data
+        path: data.zone
+        expected:
+          - field: id
+            operator: equals
+            value: {zone_id}
+          - field: uid
+            operator: equals
+            value: "{zone_uid}"
+
+# Время ожидания между сценариями
+scenario_delay_seconds: 2
+
+# Очистка после тестов
+cleanup:
+  - name: cleanup_test_alerts
+    type: database_cleanup
+    query: |
+      DELETE FROM alerts
+      WHERE code = 'GOLDEN_PATH_TEST'
+      AND zone_id = {zone_id}
+  
+  - name: cleanup_test_commands
+    type: database_cleanup
+    query: |
+      DELETE FROM commands
+      WHERE cmd = 'pump_control'
+      AND zone_id = {zone_id}
+      AND created_at > NOW() - INTERVAL '1 hour'
+

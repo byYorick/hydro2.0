@@ -235,6 +235,16 @@ Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
         ]);
 
         return $response;
+    } catch (\Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException $e) {
+        // PusherBroadcaster::auth throws AccessDeniedHttpException for unauthorized / invalid channel_name/socket_id.
+        // Treat it as 403 to avoid turning auth failures into 500s (important for E2E clarity).
+        \Log::warning('Broadcasting auth: Access denied', [
+            'ip' => $request->ip(),
+            'channel' => $request->input('channel_name'),
+            'user_id' => auth()->id(),
+        ]);
+
+        return response()->json(['message' => 'Unauthorized.'], 403);
     } catch (\Illuminate\Broadcasting\BroadcastException $broadcastException) {
         // Отказ в доступе к каналу - возвращаем 403, а не 500
         \Log::warning('Broadcasting auth: Channel authorization denied', [
@@ -262,7 +272,11 @@ Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
 
         return response()->json(['message' => 'Authorization failed.'], 500);
     }
-})->middleware(['web', 'auth', 'throttle:300,1'])->withoutMiddleware([\App\Http\Middleware\HandleInertiaRequests::class]); // Rate limiting: 300 запросов в минуту для поддержки множественных каналов и переподключений
+})
+    // IMPORTANT: allow token-based auth for WS clients (E2E runner, mobile, etc.).
+    // The handler itself supports both session and Sanctum PAT; do not block it with the default auth middleware.
+    ->withoutMiddleware([\Illuminate\Auth\Middleware\Authenticate::class, \App\Http\Middleware\HandleInertiaRequests::class])
+    ->middleware(['web', \App\Http\Middleware\AuthenticateWithApiToken::class, 'throttle:300,1']); // Rate limiting: 300/min
 
 Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->group(function () {
     /**

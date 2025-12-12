@@ -1,0 +1,123 @@
+# E01: Bootstrap - Телеметрия в БД + online статус
+# DoD: telemetry в БД + online статус
+
+name: E01_bootstrap
+description: |
+  Проверяет базовый bootstrap пайплайна:
+  - Узел публикует телеметрию через MQTT
+  - Телеметрия сохраняется в БД
+  - Статус узла обновляется на ONLINE
+  - last_seen_at обновляется
+
+setup:
+  # Настройка симулятора узла
+  node_sim:
+    config:
+      mqtt:
+        host: ${MQTT_HOST:-localhost}
+        port: ${MQTT_PORT:-1883}
+        username: ${MQTT_USER:-null}
+        password: ${MQTT_PASS:-null}
+      node:
+        gh_uid: gh-test-1
+        zone_uid: zn-test-1
+        node_uid: nd-ph-test-1
+        hardware_id: esp32-test-001
+        node_type: ph
+        mode: configured
+        channels:
+          - ph_sensor
+          - solution_temp_c
+        actuators:
+          - main_pump
+      telemetry:
+        interval_seconds: 2.0
+        heartbeat_interval_seconds: 15.0
+
+  # Предварительные условия
+  prerequisites:
+    - database: nodes table exists
+    - database: zones table exists with zone_id for zn-test-1
+    - mqtt: broker is accessible
+    - backend: Laravel is running
+
+actions:
+  # Шаг 1: Запуск симулятора узла
+  - step: start_node_simulator
+    type: start_simulator
+    config_ref: node_sim.config
+    wait_seconds: 3  # Ждем подключения и первой публикации
+
+  # Шаг 2: Публикация телеметрии
+  - step: publish_telemetry
+    type: publish_mqtt
+    topic: "hydro/gh-test-1/zn-test-1/nd-ph-test-1/ph_sensor/telemetry"
+    payload:
+      metric_type: "ph"
+      value: 6.5
+      ts: ${TIMESTAMP_S}
+    qos: 1
+    wait_seconds: 2  # Ждем обработки
+
+  # Шаг 3: Публикация статуса ONLINE
+  - step: publish_online_status
+    type: publish_mqtt
+    topic: "hydro/gh-test-1/zn-test-1/nd-ph-test-1/status"
+    payload:
+      status: "ONLINE"
+      ts: ${TIMESTAMP_S}
+    qos: 1
+    retain: true
+    wait_seconds: 2
+
+assertions:
+  # Проверка 1: Телеметрия в БД
+  - name: telemetry_in_db
+    type: database_query
+    query: |
+      SELECT value, channel, node_id, zone_id, updated_at
+      FROM telemetry_last
+      WHERE zone_id = (
+        SELECT id FROM zones WHERE uid = 'zn-test-1'
+      )
+      AND channel = 'ph_sensor'
+      AND metric_type = 'ph'
+    expected:
+      - field: value
+        operator: equals
+        value: 6.5
+      - field: channel
+        operator: equals
+        value: "ph_sensor"
+      - field: updated_at
+        operator: is_not_null
+
+  # Проверка 2: Статус узла ONLINE
+  - name: node_status_online
+    type: database_query
+    query: |
+      SELECT status, last_seen_at
+      FROM nodes
+      WHERE uid = 'nd-ph-test-1'
+    expected:
+      - field: status
+        operator: equals
+        value: "online"
+      - field: last_seen_at
+        operator: is_not_null
+
+  # Проверка 3: Узел привязан к зоне
+  - name: node_attached_to_zone
+    type: database_query
+    query: |
+      SELECT zone_id
+      FROM nodes
+      WHERE uid = 'nd-ph-test-1'
+    expected:
+      - field: zone_id
+        operator: is_not_null
+
+cleanup:
+  - step: stop_node_simulator
+    type: stop_simulator
+

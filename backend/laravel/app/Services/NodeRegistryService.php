@@ -611,4 +611,13 @@ class NodeRegistryService
             ]);
         }
     }
+
+    /**
+     * Public wrapper: attach накопленные ошибки неназначенного узла к ноде.
+     * Используется при завершении привязки (binding completion), когда zone_id становится известен.
+     */
+    public function attachUnassignedErrorsForNode(DeviceNode $node): void
+    {
+        $this->attachUnassignedErrors($node);
+    }
 }

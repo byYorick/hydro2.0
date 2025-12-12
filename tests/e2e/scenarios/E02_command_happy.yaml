@@ -1,0 +1,101 @@
+name: E02_command_happy
+description: Тест успешного выполнения команды узлу
+
+steps:
+  - name: Check system health
+    api.get:
+      path: /api/system/health
+      save: health
+
+  - name: Get zones
+    api.get:
+      path: /api/zones
+      save: zones
+
+  - name: Get nodes
+    api.get:
+      path: /api/nodes
+      save: nodes
+
+  - name: Find test node
+    set:
+      test_zone_id: ${zones.data.data[0].id}
+      test_node_id: ${nodes.data.data[0].id}
+
+  - name: Subscribe to command channel
+    ws.subscribe:
+      # Commands are broadcast per-zone (see App\Events\CommandStatusUpdated::broadcastOn)
+      channel: private-commands.${test_zone_id}
+
+  - name: Subscribe to zone channel
+    ws.subscribe:
+      channel: private-hydro.zones.${test_zone_id}
+
+  - name: Send command to node
+    api.post:
+      path: /api/nodes/${test_node_id}/commands
+      json:
+        cmd: get_status
+      save: command_response
+
+  - name: Save command ID
+    set:
+      command_id: ${command_response.data.command_id}
+
+  - name: Wait for command status update (SENT)
+    ws.wait_event:
+      event: CommandStatusUpdated
+      timeout: 5.0
+
+  - name: Check command status in DB
+    db.wait:
+      query: SELECT status FROM commands WHERE cmd_id = :cmd_id
+      params:
+        cmd_id: ${command_id}
+      timeout: 5.0
+      expected_rows: 1
+      save: command_status
+
+  - name: Assert command status is SENT
+    assert.equals:
+      actual: ${command_status[0].status}
+      expected: SENT
+
+  - name: Wait for command acceptance (ACCEPTED)
+    ws.wait_event:
+      event: CommandStatusUpdated
+      timeout: 10.0
+
+  - name: Check command status is ACCEPTED
+    db.wait:
+      query: SELECT status FROM commands WHERE cmd_id = :cmd_id AND status = 'ACCEPTED'
+      params:
+        cmd_id: ${command_id}
+      timeout: 10.0
+      expected_rows: 1
+
+  - name: Wait for command completion (DONE)
+    ws.wait_event:
+      event: CommandStatusUpdated
+      timeout: 10.0
+
+  - name: Get final command status
+    api.get:
+      path: /api/commands/${command_id}/status
+      save: final_command
+
+  - name: Assert command is DONE
+    assert.equals:
+      actual: ${final_command.data.status}
+      expected: DONE
+
+  - name: Get command history
+    db.query:
+      query: SELECT status, created_at, sent_at, ack_at FROM commands WHERE cmd_id = :cmd_id ORDER BY created_at
+      params:
+        cmd_id: ${command_id}
+      save: command_history
+
+  - name: Assert monotonic command status
+    assert.monotonic_command_status:
+      commands: ${command_history}

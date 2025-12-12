@@ -1,0 +1,54 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CommandResponse",
+  "description": "Единый контракт ответа на команду для всех сервисов",
+  "type": "object",
+  "required": ["cmd_id", "status", "ts"],
+  "properties": {
+    "cmd_id": {
+      "type": "string",
+      "description": "Идентификатор команды, на которую приходит ответ",
+      "pattern": "^[a-zA-Z0-9_-]+$",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "status": {
+      "type": "string",
+      "description": "Статус выполнения команды",
+      "enum": ["ACCEPTED", "DONE", "FAILED"]
+    },
+    "result_code": {
+      "type": "integer",
+      "description": "Код результата выполнения (0 = успех, >0 = код ошибки)",
+      "minimum": 0,
+      "default": 0
+    },
+    "error_code": {
+      "anyOf": [
+        {"type": "string", "maxLength": 64},
+        {"type": "null"}
+      ],
+      "description": "Символический код ошибки (например: TIMEOUT, INVALID_PARAMS, DEVICE_ERROR)"
+    },
+    "error_message": {
+      "anyOf": [
+        {"type": "string", "maxLength": 512},
+        {"type": "null"}
+      ],
+      "description": "Человекочитаемое сообщение об ошибке"
+    },
+    "ts": {
+      "type": "integer",
+      "description": "Unix timestamp ответа в миллисекундах",
+      "minimum": 0
+    },
+    "duration_ms": {
+      "anyOf": [
+        {"type": "integer", "minimum": 0},
+        {"type": "null"}
+      ],
+      "description": "Длительность выполнения команды в миллисекундах"
+    }
+  },
+  "additionalProperties": false
+}

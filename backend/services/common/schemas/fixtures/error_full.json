@@ -1,0 +1,16 @@
+{
+  "level": "ERROR",
+  "component": "pump",
+  "error_code": "ESP_ERR_NO_MEM",
+  "error_code_num": 101,
+  "message": "Out of memory",
+  "ts": 1737979200.5,
+  "hardware_id": "AA:BB:CC:DD:EE:FF",
+  "node_uid": "nd-ph-1",
+  "zone_id": 1,
+  "details": {
+    "free_heap": 1024,
+    "allocated": 50000
+  }
+}
+

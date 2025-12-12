@@ -27,6 +27,7 @@ use App\Http\Controllers\PipelineHealthController;
 use App\Http\Controllers\GrowCycleController;
 use App\Http\Controllers\PlantController;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Http\Request;
 
 // Auth роуты с более строгим rate limiting для предотвращения брутфорса
 Route::prefix('auth')->middleware('throttle:10,1')->group(function () {
@@ -46,6 +47,33 @@ Route::get('system/health', [SystemController::class, 'health'])
         \App\Http\Middleware\AuthenticateWithApiToken::class, // Попытка аутентификации через токен (необязательно)
         'throttle:300,1',
     ]);
+
+// Debug endpoint for E2E: verify that Authorization header reaches PHP/Laravel through nginx/FastCGI.
+// Only enabled in testing environment.
+if (app()->environment('testing')) {
+    Route::get('system/auth-debug', function (Request $request) {
+        $bearer = $request->bearerToken();
+        $authHeader = $request->header('Authorization');
+        $serverAuth = $request->server('HTTP_AUTHORIZATION');
+        $serverRedirectAuth = $request->server('REDIRECT_HTTP_AUTHORIZATION');
+
+        return response()->json([
+            'status' => 'ok',
+            'data' => [
+                'has_authorization_header' => $request->headers->has('Authorization'),
+                'authorization_header_prefix' => is_string($authHeader) ? substr($authHeader, 0, 20) : null,
+                'bearer_token_prefix' => is_string($bearer) ? substr($bearer, 0, 12) : null,
+                'server_http_authorization_prefix' => is_string($serverAuth) ? substr($serverAuth, 0, 20) : null,
+                'server_redirect_http_authorization_prefix' => is_string($serverRedirectAuth) ? substr($serverRedirectAuth, 0, 20) : null,
+            ],
+        ]);
+    })->middleware([
+        \Illuminate\Cookie\Middleware\EncryptCookies::class,
+        \Illuminate\Session\Middleware\StartSession::class,
+        \App\Http\Middleware\AuthenticateWithApiToken::class,
+        'throttle:60,1',
+    ]);
+}
 // configFull доступен для Python сервисов через токен или для авторизованных пользователей через Sanctum
 Route::middleware('throttle:30,1')->group(function () {
     // Используем middleware, который проверяет либо Sanctum токен, либо Python service token
@@ -62,7 +90,8 @@ Route::middleware([
     \Illuminate\Cookie\Middleware\EncryptCookies::class,
     \Illuminate\Session\Middleware\StartSession::class,
     \App\Http\Middleware\AuthenticateWithApiToken::class,
-    'auth',
+    // API routes should accept Sanctum bearer tokens (E2E / services) and also work for session-auth SPA if needed.
+    'auth:sanctum',
     'throttle:120,1', // Увеличен лимит до 120 запросов в минуту для поддержки множественных компонентов
 ])->group(function () {
     // Read-only endpoints (viewer+)

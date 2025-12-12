@@ -1,0 +1,21 @@
+# MQTT ACL (Access Control List) for HIL testing
+# Format: topic [read|write|readwrite]
+# For HIL testing, we allow all topics (not for production!)
+
+# Allow all topics for testing
+topic #
+
+# Service-specific topics
+user mqtt_bridge
+topic hydro/+/+/+/commands write
+topic hydro/+/+/+/config write
+
+user history_logger
+topic hydro/+/+/+/telemetry read
+topic hydro/+/+/+/status read
+
+user automation_engine
+topic hydro/+/+/+/commands write
+topic hydro/+/+/+/telemetry read
+
+

@@ -1,0 +1,138 @@
+# E04: Error Alert - Ошибка → alert ACTIVE + WS + dedup
+# DoD: error → alert ACTIVE + WS + dedup
+
+name: E04_error_alert
+description: |
+  Проверяет создание алерта при ошибке:
+  - Узел публикует ошибку через MQTT
+  - Алерт создается в БД со статусом ACTIVE
+  - WebSocket событие отправляется на канал зоны
+  - Повторные одинаковые ошибки не создают дубликаты алертов (dedup)
+
+setup:
+  # Настройка симулятора узла
+  node_sim:
+    config:
+      mqtt:
+        host: ${MQTT_HOST:-localhost}
+        port: ${MQTT_PORT:-1883}
+        username: ${MQTT_USER:-null}
+        password: ${MQTT_PASS:-null}
+      node:
+        gh_uid: gh-test-1
+        zone_uid: zn-test-1
+        node_uid: nd-ph-test-1
+        hardware_id: esp32-test-001
+        node_type: ph
+        mode: configured
+        channels:
+          - ph_sensor
+        actuators:
+          - main_pump
+      telemetry:
+        interval_seconds: 2.0
+        heartbeat_interval_seconds: 15.0
+
+  # Предварительные условия
+  prerequisites:
+    - database: nodes table exists
+    - database: zones table exists with zone_id for zn-test-1
+    - database: alerts table exists
+    - database: node attached to zone
+    - mqtt: broker is accessible
+    - backend: Laravel is running
+    - websocket: WebSocket server is running
+
+actions:
+  # Шаг 1: Запуск симулятора узла
+  - step: start_node_simulator
+    type: start_simulator
+    config_ref: node_sim.config
+    wait_seconds: 3
+
+  # Шаг 2: Подписка на WebSocket канал зоны
+  - step: subscribe_ws_zone
+    type: websocket_subscribe
+    channel: "private-hydro.zones.${zone_id}"
+    wait_seconds: 1
+
+  # Шаг 3: Узел публикует ошибку (первый раз)
+  - step: node_publishes_error
+    type: mqtt_publish
+    topic: "hydro/gh-test-1/zn-test-1/nd-ph-test-1/error"
+    payload:
+      level: "ERROR"
+      component: "sensor"
+      error_code: "infra_sensor_stuck_i2c"
+      message: "I2C sensor bus stuck"
+      ts: ${TIMESTAMP_S}
+    qos: 1
+    wait_seconds: 2
+
+  # Шаг 4: Узел публикует ту же ошибку повторно (для проверки dedup)
+  - step: node_publishes_error_duplicate
+    type: mqtt_publish
+    topic: "hydro/gh-test-1/zn-test-1/nd-ph-test-1/error"
+    payload:
+      level: "ERROR"
+      component: "sensor"
+      error_code: "infra_sensor_stuck_i2c"
+      message: "I2C sensor bus stuck"
+      ts: ${TIMESTAMP_S}
+    qos: 1
+    wait_seconds: 2
+
+assertions:
+  # Проверка 1: Алерт создан в БД со статусом ACTIVE
+  - name: alert_created_active
+    type: database_query
+    query: |
+      SELECT id, status, code, type, zone_id, created_at
+      FROM alerts
+      WHERE zone_id = (SELECT id FROM zones WHERE uid = 'zn-test-1')
+      AND code = 'node_error_sensor_infra_sensor_stuck_i2c'
+      ORDER BY created_at DESC
+      LIMIT 1
+    expected:
+      - field: status
+        operator: equals
+        value: "ACTIVE"
+      - field: code
+        operator: equals
+        value: "node_error_sensor_infra_sensor_stuck_i2c"
+      - field: zone_id
+        operator: is_not_null
+      - field: created_at
+        operator: is_not_null
+
+  # Проверка 2: Только один алерт создан (dedup работает)
+  - name: alert_no_duplicates
+    type: database_query
+    query: |
+      SELECT COUNT(*) as alert_count
+      FROM alerts
+      WHERE zone_id = (SELECT id FROM zones WHERE uid = 'zn-test-1')
+      AND code = 'node_error_sensor_infra_sensor_stuck_i2c'
+      AND status = 'ACTIVE'
+    expected:
+      - field: alert_count
+        operator: equals
+        value: 1
+
+  # Проверка 3: WebSocket событие ZoneUpdated получено (алерт активирован)
+  - name: ws_zone_updated_with_alert
+    type: websocket_event
+    channel: "private-hydro.zones.${zone_id}"
+    event_type: "App\\Events\\ZoneUpdated"
+    timeout: 10.0
+    expected:
+      - field: zone.id
+        operator: equals
+        value: ${zone_id}
+      - field: zone.alerts
+        operator: contains
+        condition: "any alert with code='node_error_sensor_infra_sensor_stuck_i2c' and status='ACTIVE'"
+
+cleanup:
+  - step: stop_node_simulator
+    type: stop_simulator

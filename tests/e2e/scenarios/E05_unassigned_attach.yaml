@@ -1,0 +1,178 @@
+# E05: Unassigned Node Attach - temp error → unassigned → attach → alert
+# DoD: temp error → unassigned → attach → alert
+
+name: E05_unassigned_attach
+description: |
+  Проверяет сценарий присвоения не назначенного узла:
+  - Узел публикует телеметрию без привязки к зоне (unassigned)
+  - Ошибка регистрируется в unassigned_node_errors
+  - Узел вручную привязывается к зоне через API
+  - Алерт создается после привязки (если ошибка была критичной)
+
+setup:
+  # Настройка симулятора узла (без зоны)
+  node_sim:
+    config:
+      mqtt:
+        host: ${MQTT_HOST:-localhost}
+        port: ${MQTT_PORT:-1883}
+        username: ${MQTT_USER:-null}
+        password: ${MQTT_PASS:-null}
+      node:
+        gh_uid: gh-test-1
+        zone_uid: zn-test-1  # зона известна тесту (для резолва zone_id), но error идет в temp-топик
+        node_uid: nd-ph-esp32una
+        hardware_id: esp32-unassigned-001
+        node_type: ph
+        mode: preconfig  # Узел в режиме конфигурации
+        channels:
+          - ph_sensor
+        actuators:
+          - main_pump
+      telemetry:
+        interval_seconds: 2.0
+        heartbeat_interval_seconds: 15.0
+
+  # Предварительные условия
+  prerequisites:
+    - database: nodes table exists
+    - database: zones table exists with zone_id for zn-test-1
+    - database: unassigned_node_errors table exists
+    - database: alerts table exists
+    - mqtt: broker is accessible
+    - backend: Laravel is running
+
+actions:
+  # Шаг 1: Запуск симулятора узла (без зоны)
+  - step: start_node_simulator_unassigned
+    type: start_simulator
+    config_ref: node_sim.config
+    wait_seconds: 3
+
+  # Шаг 2: Узел публикует ошибку в temp-топик (до регистрации/привязки)
+  - step: node_publishes_temp_error
+    type: mqtt_publish
+    topic: "hydro/gh-temp/zn-temp/esp32-unassigned-001/error"
+    payload:
+      level: "ERROR"
+      component: "provisioning"
+      error_code: "ERR_UNASSIGNED"
+      message: "Node not assigned to any zone"
+      ts: ${TIMESTAMP_S}
+    qos: 1
+    wait_seconds: 2
+
+  # Шаг 3: Узел публикует node_hello (регистрация в backend)
+  - step: node_sends_node_hello
+    type: mqtt_publish
+    topic: "hydro/gh-temp/zn-temp/esp32-unassigned-001/node_hello"
+    payload:
+      message_type: "node_hello"
+      hardware_id: "esp32-unassigned-001"
+      node_type: "ph"
+      fw_version: "2.0.0-sim"
+      ts: ${TIMESTAMP_S}
+    qos: 1
+    wait_seconds: 2
+
+  # Шаг 4: Узнаем node_id по hardware_id (нода могла быть создана с сгенерированным uid)
+  - step: db_lookup_node_id
+    type: database_query
+    query: |
+      SELECT id, uid, zone_id, lifecycle_state
+      FROM nodes
+      WHERE hardware_id = 'esp32-unassigned-001'
+      ORDER BY id DESC
+      LIMIT 1
+    save: node_row
+    wait_seconds: 1
+
+  - step: set_node_id
+    type: set
+    node_id: ${node_row[0].id}
+    node_uid: ${node_row[0].uid}
+
+  # Шаг 5: Привязка от UI (zone_id без pending_zone_id) → backend должен поставить pending_zone_id и обнулить zone_id
+  - step: assign_node_to_zone_ui
+    type: api_put
+    endpoint: "/api/nodes/${node_id}"
+    payload:
+      zone_id: ${zone_id}
+    wait_seconds: 1
+
+  # Шаг 6: Завершение привязки (симулируем completion от history-logger)
+  # Важно: запрос должен содержать zone_id и pending_zone_id=null, чтобы NodeService трактовал это как completion
+  - step: complete_node_binding
+    type: api_put
+    endpoint: "/api/nodes/${node_id}"
+    payload:
+      zone_id: ${zone_id}
+      pending_zone_id: null
+    wait_seconds: 3  # Ждем обработки привязки + attachUnassignedErrors
+
+assertions:
+  # Проверка 1: Ошибка зарегистрирована в unassigned_node_errors
+  - name: error_in_unassigned_errors
+    type: database_query
+    query: |
+      SELECT id, hardware_id, error_code, error_message, node_id
+      FROM unassigned_node_errors
+      WHERE hardware_id = 'esp32-unassigned-001'
+      ORDER BY last_seen_at DESC
+      LIMIT 1
+    expected:
+      - field: error_code
+        operator: equals
+        value: "ERR_UNASSIGNED"
+      - field: hardware_id
+        operator: equals
+        value: "esp32-unassigned-001"
+
+  # Проверка 2: Узел привязан к зоне
+  - name: node_attached_to_zone
+    type: database_query
+    query: |
+      SELECT id, zone_id, uid, lifecycle_state
+      FROM nodes
+      WHERE id = ${node_id}
+    expected:
+      - field: zone_id
+        operator: equals
+        value: ${zone_id}
+      - field: lifecycle_state
+        operator: in
+        value: ["ASSIGNED_TO_ZONE", "REGISTERED_BACKEND"]
+
+  # Проверка 3: Алерт создан после привязки (если ошибка была критичной)
+  - name: alert_created_after_attach
+    type: database_query
+    query: |
+      SELECT id, status, code, zone_id, created_at
+      FROM alerts
+      WHERE zone_id = ${zone_id}
+      AND code = 'infra_node_error_ERR_UNASSIGNED'
+      ORDER BY created_at DESC
+      LIMIT 1
+    expected:
+      - field: status
+        operator: in
+        value: ["ACTIVE", "RESOLVED"]
+      - field: zone_id
+        operator: equals
+        value: ${zone_id}
+
+  # Проверка 4: unassigned ошибки по hardware_id архивированы/удалены
+  - name: unassigned_errors_removed
+    type: database_query
+    query: |
+      SELECT COUNT(*) as count
+      FROM unassigned_node_errors
+      WHERE hardware_id = 'esp32-unassigned-001'
+    expected:
+      - field: count
+        operator: equals
+        value: 0
+
+cleanup:
+  - step: stop_node_simulator
+    type: stop_simulator
