@@ -14,10 +14,9 @@ from typing import Optional, Dict, Any, Union
 from datetime import datetime, timedelta
 from enum import Enum
 
-import httpx
-
 from .db import get_pool
 from .env import get_settings
+from .http_client_pool import make_request, calculate_backoff_with_jitter
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +95,31 @@ class StatusUpdateQueue:
                 CREATE INDEX IF NOT EXISTS idx_pending_status_cmd_id 
                 ON pending_status_updates(cmd_id)
             """)
+            
+            # Таблица DLQ для pending_status_updates
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS pending_status_updates_dlq (
+                    id BIGSERIAL PRIMARY KEY,
+                    cmd_id VARCHAR(64) NOT NULL,
+                    status VARCHAR(16) NOT NULL,
+                    details JSONB,
+                    retry_count INTEGER NOT NULL,
+                    last_error TEXT,
+                    failed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    original_id BIGINT,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
+            """)
+            
+            await conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_status_dlq_cmd_id 
+                ON pending_status_updates_dlq(cmd_id)
+            """)
+            
+            await conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_status_dlq_failed_at 
+                ON pending_status_updates_dlq(failed_at)
+            """)
         
         self._initialized = True
         logger.info("Status update queue table initialized")
@@ -159,6 +183,35 @@ class StatusUpdateQueue:
                 DELETE FROM pending_status_updates WHERE id = $1
             """, update_id)
     
+    async def move_to_dlq(
+        self,
+        update_id: int,
+        cmd_id: str,
+        status: Union[CommandStatus, str],
+        details: Optional[Dict[str, Any]],
+        retry_count: int,
+        last_error: str
+    ):
+        """Перемещает запись в DLQ после превышения максимального количества попыток."""
+        await self.ensure_table()
+        
+        status_value = status.value if isinstance(status, CommandStatus) else str(status)
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            try:
+                details_json = json.dumps(details) if details else None
+                await conn.execute("""
+                    INSERT INTO pending_status_updates_dlq 
+                    (cmd_id, status, details, retry_count, last_error, original_id)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                """, cmd_id, status_value, details_json, retry_count, last_error, update_id)
+                logger.warning(
+                    f"[DLQ] Moved status update to DLQ: cmd_id={cmd_id}, "
+                    f"status={status_value}, retry_count={retry_count}, error={last_error[:100]}"
+                )
+            except Exception as e:
+                logger.error(f"Failed to move status update to DLQ: {e}", exc_info=True)
+    
     async def get_pending(self, limit: int = 100) -> list:
         """
         Получает записи, готовые к ретраю.
@@ -190,6 +243,47 @@ class StatusUpdateQueue:
             ))
         
         return result
+    
+    async def get_queue_metrics(self) -> Dict[str, Any]:
+        """
+        Получает метрики очереди для observability.
+        
+        Returns:
+            Словарь с метриками: size, oldest_age_seconds
+        """
+        await self.ensure_table()
+        
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            try:
+                # Получаем размер очереди
+                size_row = await conn.fetchrow("""
+                    SELECT COUNT(*) as count
+                    FROM pending_status_updates
+                """)
+                size = size_row['count'] if size_row else 0
+                
+                # Получаем возраст самой старой записи (только если есть записи)
+                if size > 0:
+                    oldest_row = await conn.fetchrow("""
+                        SELECT EXTRACT(EPOCH FROM (NOW() - MIN(created_at))) as age_seconds
+                        FROM pending_status_updates
+                    """)
+                    oldest_age_seconds = oldest_row['age_seconds'] if oldest_row and oldest_row['age_seconds'] is not None else 0.0
+                else:
+                    oldest_age_seconds = 0.0
+                
+                return {
+                    'size': size,
+                    'oldest_age_seconds': float(oldest_age_seconds),
+                }
+            except Exception as e:
+                # Если таблица еще не создана, возвращаем нулевые метрики
+                logger.warning(f"Failed to get queue metrics: {e}")
+                return {
+                    'size': 0,
+                    'oldest_age_seconds': 0.0,
+                }
 
 
 # Глобальный экземпляр очереди
@@ -201,34 +295,8 @@ async def get_status_queue() -> StatusUpdateQueue:
     return _status_queue
 
 
-# Глобальный httpx.AsyncClient
-_http_client: Optional[httpx.AsyncClient] = None
-
-
-async def get_http_client() -> httpx.AsyncClient:
-    """
-    Возвращает глобальный httpx.AsyncClient для процесса.
-    Создаёт клиент при первом вызове.
-    """
-    global _http_client
-    
-    if _http_client is None:
-        s = get_settings()
-        timeout = httpx.Timeout(10.0, connect=5.0)
-        _http_client = httpx.AsyncClient(timeout=timeout)
-        logger.info("Created global httpx.AsyncClient for command status delivery")
-    
-    return _http_client
-
-
-async def close_http_client():
-    """Закрывает глобальный httpx.AsyncClient."""
-    global _http_client
-    
-    if _http_client is not None:
-        await _http_client.aclose()
-        _http_client = None
-        logger.info("Closed global httpx.AsyncClient")
+# Используем единый HTTP клиент из http_client_pool
+# close_http_client больше не нужен - закрывается централизованно
 
 
 async def send_status_to_laravel(
@@ -282,9 +350,10 @@ async def send_status_to_laravel(
     }
     
     try:
-        client = await get_http_client()
-        resp = await client.post(
+        resp = await make_request(
+            'post',
             f"{laravel_url}/api/python/commands/ack",
+            endpoint='command_ack',
             headers=headers,
             json=payload,
         )
@@ -305,14 +374,6 @@ async def send_status_to_laravel(
             await queue.enqueue(cmd_id, status, details)
             return False
             
-    except (httpx.TimeoutException, httpx.RequestError, httpx.NetworkError) as e:
-        logger.warning(
-            f"[STATUS_DELIVERY] Network error sending status to Laravel: {e}"
-        )
-        # Сохраняем в очередь для ретрая
-        queue = await get_status_queue()
-        await queue.enqueue(cmd_id, status, details)
-        return False
     except Exception as e:
         logger.error(
             f"[STATUS_DELIVERY] Unexpected error sending status to Laravel: {e}",
@@ -324,20 +385,7 @@ async def send_status_to_laravel(
         return False
 
 
-def calculate_backoff(retry_count: int, base_delay: float = 1.0, max_delay: float = 300.0) -> float:
-    """
-    Вычисляет задержку для exponential backoff.
-    
-    Args:
-        retry_count: Номер попытки (0-based)
-        base_delay: Базовая задержка в секундах
-        max_delay: Максимальная задержка в секундах
-        
-    Returns:
-        Задержка в секундах
-    """
-    delay = base_delay * (2 ** retry_count)
-    return min(delay, max_delay)
+# calculate_backoff удалён - используем calculate_backoff_with_jitter из http_client_pool
 
 
 async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.Event] = None):
@@ -387,9 +435,9 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
                             f"id={update_id}, cmd_id={cmd_id}, status={status.value}"
                         )
                     else:
-                        # Не удалось - планируем следующий ретрай
+                        # Не удалось - планируем следующий ретрай с jitter
                         new_retry_count = retry_count + 1
-                        backoff_seconds = calculate_backoff(new_retry_count)
+                        backoff_seconds = calculate_backoff_with_jitter(new_retry_count)
                         next_retry_at = datetime.utcnow() + timedelta(seconds=backoff_seconds)
                         
                         await queue.mark_retry(update_id, new_retry_count, next_retry_at)
@@ -403,8 +451,10 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
                         if new_retry_count >= 10:
                             logger.error(
                                 f"[RETRY_WORKER] Max retries reached for update "
-                                f"id={update_id}, cmd_id={cmd_id}. Removing from queue."
+                                f"id={update_id}, cmd_id={cmd_id}. Moving to DLQ."
                             )
+                            # Перемещаем в DLQ перед удалением
+                            await queue.move_to_dlq(update_id, cmd_id, status, details, new_retry_count, "Max retries reached")
                             await queue.mark_delivered(update_id)
                 
                 except Exception as e:
@@ -412,13 +462,15 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
                         f"[RETRY_WORKER] Error processing update id={update_id}: {e}",
                         exc_info=True
                     )
-                    # Планируем ретрай даже при ошибке обработки
+                    # Планируем ретрай даже при ошибке обработки с jitter
                     new_retry_count = retry_count + 1
                     if new_retry_count < 10:
-                        backoff_seconds = calculate_backoff(new_retry_count)
+                        backoff_seconds = calculate_backoff_with_jitter(new_retry_count)
                         next_retry_at = datetime.utcnow() + timedelta(seconds=backoff_seconds)
                         await queue.mark_retry(update_id, new_retry_count, next_retry_at)
                     else:
+                        # Перемещаем в DLQ перед удалением
+                        await queue.move_to_dlq(update_id, cmd_id, status, details, retry_count + 1, str(e))
                         await queue.mark_delivered(update_id)
             
             # Небольшая задержка перед следующей итерацией

@@ -200,8 +200,100 @@ describe('CommandPalette (P3-1)', () => {
     wrapper.vm.q = 'zones'
     await nextTick()
 
-    const highlighted = wrapper.vm.highlightMatch('Zones', 'zones')
-    expect(highlighted).toContain('<mark')
+    const segments = wrapper.vm.highlightMatch('Zones', 'zones')
+    expect(Array.isArray(segments)).toBe(true)
+    expect(segments.length).toBeGreaterThan(0)
+    const matchSegment = segments.find((s: any) => s.match === true)
+    expect(matchSegment).toBeDefined()
+    expect(matchSegment?.text.toLowerCase()).toBe('zones')
+  })
+
+  it('returns single segment for empty query', () => {
+    const wrapper = mount(CommandPalette)
+    const segments = wrapper.vm.highlightMatch('Test Label', '')
+    expect(segments).toHaveLength(1)
+    expect(segments[0].text).toBe('Test Label')
+    expect(segments[0].match).toBe(false)
+  })
+
+  it('handles special regex characters safely', () => {
+    const wrapper = mount(CommandPalette)
+    const testCases = [
+      { text: 'Test [label]', query: '[' },
+      { text: 'Test (label)', query: '(' },
+      { text: 'Test {label}', query: '{' },
+      { text: 'Test .label', query: '.' },
+      { text: 'Test *label', query: '*' },
+      { text: 'Test +label', query: '+' },
+      { text: 'Test ?label', query: '?' },
+      { text: 'Test ^label', query: '^' },
+      { text: 'Test $label', query: '$' },
+      { text: 'Test |label', query: '|' },
+      { text: 'Test \\label', query: '\\' },
+    ]
+    
+    testCases.forEach(({ text, query }) => {
+      const segments = wrapper.vm.highlightMatch(text, query)
+      expect(Array.isArray(segments)).toBe(true)
+      // Должен найти совпадение
+      const matchSegment = segments.find((s: any) => s.match === true)
+      expect(matchSegment).toBeDefined()
+      expect(matchSegment?.text).toContain(query)
+    })
+  })
+
+  it('handles unicode and cyrillic characters', () => {
+    const wrapper = mount(CommandPalette)
+    const segments = wrapper.vm.highlightMatch('Тестовая зона', 'зона')
+    expect(Array.isArray(segments)).toBe(true)
+    const matchSegment = segments.find((s: any) => s.match === true)
+    expect(matchSegment).toBeDefined()
+    expect(matchSegment?.text).toBe('зона')
+  })
+
+  it('handles case-insensitive matching', () => {
+    const wrapper = mount(CommandPalette)
+    const segments = wrapper.vm.highlightMatch('Test Label', 'test')
+    const matchSegment = segments.find((s: any) => s.match === true)
+    expect(matchSegment).toBeDefined()
+    expect(matchSegment?.text.toLowerCase()).toBe('test')
+  })
+
+  it('handles multiple matches in text', () => {
+    const wrapper = mount(CommandPalette)
+    const segments = wrapper.vm.highlightMatch('test test test', 'test')
+    const matchSegments = segments.filter((s: any) => s.match === true)
+    expect(matchSegments.length).toBe(3)
+    matchSegments.forEach((segment: any) => {
+      expect(segment.text.toLowerCase()).toBe('test')
+    })
+  })
+
+  it('prevents XSS by escaping HTML in segments', async () => {
+    const wrapper = mount(CommandPalette)
+    wrapper.vm.open = true
+    const xssLabel = '<img src=x onerror=alert(1)>'
+    wrapper.vm.q = 'img'
+    await nextTick()
+
+    const segments = wrapper.vm.highlightMatch(xssLabel, 'img')
+    expect(Array.isArray(segments)).toBe(true)
+    
+    // Сегменты должны содержать текст, а не HTML
+    segments.forEach((segment: any) => {
+      expect(typeof segment.text).toBe('string')
+    })
+    
+    // Проверяем, что весь исходный текст присутствует в сегментах
+    const fullText = segments.map((s: any) => s.text).join('')
+    expect(fullText).toBe(xssLabel)
+    
+    // Проверяем, что сегменты содержат исходный HTML как текст (не выполняется)
+    // Это важно - Vue автоматически экранирует текст в {{ }}, поэтому HTML не выполнится
+    // Когда ищем "img", функция разбивает строку на части, но весь HTML остается как текст
+    const allText = segments.map((s: any) => s.text).join('')
+    expect(allText).toContain('<img')
+    expect(allText).toContain('onerror')
   })
 })
 

@@ -8,6 +8,7 @@ use App\Services\ZoneService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class ZoneController extends Controller
@@ -625,6 +626,241 @@ class ZoneController extends Controller
         return response()->json([
             'status' => 'ok',
             'data' => $cycles,
+        ]);
+    }
+
+    /**
+     * Получить unassigned errors для зоны
+     * GET /api/zones/{zone}/unassigned-errors
+     */
+    public function unassignedErrors(Request $request, Zone $zone): JsonResponse
+    {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+        
+        // Проверяем доступ к зоне
+        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Access denied to this zone',
+            ], 403);
+        }
+        
+        // Получаем ноды зоны
+        $nodeIds = $zone->nodes()->pluck('id')->toArray();
+        
+        // Если у зоны нет нод, возвращаем пустой результат
+        if (empty($nodeIds)) {
+            return response()->json([
+                'status' => 'ok',
+                'data' => [],
+                'meta' => [
+                    'current_page' => 1,
+                    'last_page' => 1,
+                    'per_page' => 50,
+                    'total' => 0,
+                ]
+            ]);
+        }
+        
+        // Получаем unassigned errors для нод этой зоны
+        $query = DB::table('unassigned_node_errors')
+            ->whereIn('node_id', $nodeIds)
+            ->select([
+                'id',
+                'hardware_id',
+                'error_message',
+                'error_code',
+                'severity',
+                'topic',
+                'last_payload',
+                'count',
+                'first_seen_at',
+                'last_seen_at',
+                'node_id',
+                'created_at',
+                'updated_at'
+            ])
+            ->orderBy('last_seen_at', 'desc');
+        
+        // Фильтр по severity
+        if ($request->has('severity')) {
+            $query->where('severity', $request->input('severity'));
+        }
+        
+        // Фильтр по error_code
+        if ($request->has('error_code')) {
+            $query->where('error_code', $request->input('error_code'));
+        }
+        
+        // Пагинация
+        $perPage = min($request->input('per_page', 50), 100);
+        $errors = $query->paginate($perPage);
+        
+        return response()->json([
+            'status' => 'ok',
+            'data' => $errors->items(),
+            'meta' => [
+                'current_page' => $errors->currentPage(),
+                'last_page' => $errors->lastPage(),
+                'per_page' => $errors->perPage(),
+                'total' => $errors->total(),
+            ]
+        ]);
+    }
+
+    /**
+     * Получить snapshot состояния зоны для восстановления после reconnect
+     * GET /api/zones/{zone}/snapshot
+     * 
+     * Возвращает:
+     * - latest telemetry (per node/channel)
+     * - active alerts
+     * - last N commands + statuses
+     * - device online/offline status
+     * - server_ts + snapshot_id
+     */
+    public function snapshot(Request $request, Zone $zone): JsonResponse
+    {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+        
+        // Проверяем доступ к зоне
+        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Access denied to this zone',
+            ], 403);
+        }
+
+        $now = now();
+        $serverTs = $now->timestamp * 1000; // миллисекунды
+        $snapshotId = \Illuminate\Support\Str::uuid()->toString();
+
+        // Получаем последние значения телеметрии для зоны (per node/channel)
+        $telemetryRaw = \App\Models\TelemetryLast::query()
+            ->where('zone_id', $zone->id)
+            ->select(['node_id', 'channel', 'metric_type', 'value', 'updated_at'])
+            ->orderBy('updated_at', 'desc')
+            ->get();
+        
+        // Группируем по node_id, затем по channel
+        $telemetry = [];
+        foreach ($telemetryRaw as $item) {
+            $nodeId = $item->node_id ?? 'unknown';
+            $channel = $item->channel ?? 'default';
+            
+            if (!isset($telemetry[$nodeId])) {
+                $telemetry[$nodeId] = [];
+            }
+            if (!isset($telemetry[$nodeId][$channel])) {
+                $telemetry[$nodeId][$channel] = [];
+            }
+            
+            $telemetry[$nodeId][$channel][] = [
+                'metric_type' => $item->metric_type,
+                'value' => $item->value,
+                'updated_at' => $item->updated_at?->toIso8601String(),
+            ];
+        }
+
+        // Получаем активные алерты
+        $activeAlerts = \App\Models\Alert::query()
+            ->where('zone_id', $zone->id)
+            ->where('status', 'ACTIVE')
+            ->select(['id', 'code', 'type', 'details', 'status', 'created_at'])
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($alert) {
+                return [
+                    'id' => $alert->id,
+                    'code' => $alert->code,
+                    'type' => $alert->type,
+                    'details' => $alert->details,
+                    'status' => $alert->status,
+                    'created_at' => $alert->created_at?->toIso8601String(),
+                ];
+            });
+
+        // Получаем последние N команд (по умолчанию 50)
+        $commandsLimit = min($request->input('commands_limit', 50), 200);
+        $recentCommands = \App\Models\Command::query()
+            ->where('zone_id', $zone->id)
+            ->select([
+                'id',
+                'cmd_id',
+                'cmd',
+                'status',
+                'node_id',
+                'channel',
+                'params',
+                'sent_at',
+                'ack_at',
+                'failed_at',
+                'error_code',
+                'error_message',
+                'result_code',
+                'duration_ms',
+            ])
+            ->orderBy('created_at', 'desc')
+            ->limit($commandsLimit)
+            ->get()
+            ->map(function ($command) {
+                return [
+                    'id' => $command->id,
+                    'cmd_id' => $command->cmd_id,
+                    'cmd' => $command->cmd,
+                    'status' => $command->status,
+                    'node_id' => $command->node_id,
+                    'channel' => $command->channel,
+                    'params' => $command->params,
+                    'sent_at' => $command->sent_at?->toIso8601String(),
+                    'ack_at' => $command->ack_at?->toIso8601String(),
+                    'failed_at' => $command->failed_at?->toIso8601String(),
+                    'error_code' => $command->error_code,
+                    'error_message' => $command->error_message,
+                    'result_code' => $command->result_code,
+                    'duration_ms' => $command->duration_ms,
+                ];
+            });
+
+        // Получаем статусы устройств (online/offline)
+        $nodes = $zone->nodes()
+            ->select(['id', 'uid', 'name', 'type', 'status', 'last_seen_at', 'last_heartbeat_at'])
+            ->get()
+            ->map(function ($node) {
+                return [
+                    'id' => $node->id,
+                    'uid' => $node->uid,
+                    'name' => $node->name,
+                    'type' => $node->type,
+                    'status' => $node->status, // online/offline
+                    'last_seen_at' => $node->last_seen_at?->toIso8601String(),
+                    'last_heartbeat_at' => $node->last_heartbeat_at?->toIso8601String(),
+                ];
+            });
+
+        return response()->json([
+            'status' => 'ok',
+            'data' => [
+                'snapshot_id' => $snapshotId,
+                'server_ts' => $serverTs,
+                'zone_id' => $zone->id,
+                'telemetry' => $telemetry,
+                'active_alerts' => $activeAlerts,
+                'recent_commands' => $recentCommands,
+                'nodes' => $nodes,
+            ],
         ]);
     }
 }

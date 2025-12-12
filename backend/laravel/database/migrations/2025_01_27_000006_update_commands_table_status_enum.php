@@ -15,6 +15,11 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Проверяем, существует ли таблица commands
+        if (!Schema::hasTable('commands')) {
+            return; // Таблица будет создана в другой миграции
+        }
+        
         // Сначала обновляем существующие данные для миграции старых статусов
         DB::statement("
             UPDATE commands 
@@ -53,6 +58,11 @@ return new class extends Migration
      */
     public function down(): void
     {
+        // Проверяем, существует ли таблица commands
+        if (!Schema::hasTable('commands')) {
+            return; // Таблица не существует, нечего откатывать
+        }
+        
         // Удаляем CHECK constraint
         DB::statement('ALTER TABLE commands DROP CONSTRAINT IF EXISTS commands_status_check');
 

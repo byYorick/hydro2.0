@@ -5,6 +5,7 @@ namespace App\Observers;
 use App\Events\CommandFailed;
 use App\Events\CommandStatusUpdated;
 use App\Models\Command;
+use App\Services\PipelineMetricsService;
 use Illuminate\Support\Facades\Log;
 
 class CommandObserver
@@ -74,6 +75,16 @@ class CommandObserver
                     'new_status' => $newStatus,
                     'error' => $e->getMessage(),
                 ]);
+            }
+            
+            // Записываем метрики latency для команды
+            if (in_array($newStatus, [Command::STATUS_ACCEPTED, Command::STATUS_DONE, Command::STATUS_FAILED, Command::STATUS_TIMEOUT])) {
+                try {
+                    $metricsService = app(PipelineMetricsService::class);
+                    $metricsService->recordCommandLatency($command);
+                } catch (\Exception $e) {
+                    // Не логируем ошибки метрик
+                }
             }
         }
     }

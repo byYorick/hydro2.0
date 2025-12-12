@@ -2,6 +2,7 @@
 
 namespace App\Events;
 
+use App\Services\EventSequenceService;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
@@ -16,13 +17,30 @@ class AlertCreated implements ShouldBroadcast
 
     public array $alert;
 
+    public int $eventId;
+
+    public int $serverTs;
+
     public function __construct(array $alert)
     {
         $this->alert = $alert;
+        
+        // Генерируем event_id и server_ts для reconciliation
+        $sequence = EventSequenceService::generateEventId();
+        $this->eventId = $sequence['event_id'];
+        $this->serverTs = $sequence['server_ts'];
     }
 
-    public function broadcastOn(): PrivateChannel
+    public function broadcastOn()
     {
+        // Если есть zone_id, отправляем в канал зоны, иначе в глобальный канал
+        if (isset($this->alert['zone_id']) && $this->alert['zone_id']) {
+            return [
+                new PrivateChannel('hydro.alerts'),
+                new PrivateChannel("hydro.zones.{$this->alert['zone_id']}"),
+            ];
+        }
+        
         return new PrivateChannel('hydro.alerts');
     }
 
@@ -39,6 +57,9 @@ class AlertCreated implements ShouldBroadcast
      */
     public function broadcastWith(): array
     {
-        return $this->alert;
+        return array_merge($this->alert, [
+            'event_id' => $this->eventId,
+            'server_ts' => $this->serverTs,
+        ]);
     }
 }

@@ -261,16 +261,24 @@ class CommandBus:
             try:
                 cmd_id = await self.tracker.track_command(zone_id, command, context)
                 # Добавляем cmd_id в команду для ответа
-                if 'params' not in command:
+                # ВАЖНО: если params был None, создаём пустой dict
+                if 'params' not in command or command['params'] is None:
                     command['params'] = {}
+                # Гарантированно передаём cmd_id в params
                 command['params']['cmd_id'] = cmd_id
                 # ВАЖНО: обновляем локальную переменную params после добавления cmd_id
                 # чтобы cmd_id дошел до history-logger через publish_command()
                 params = command['params']
             except Exception as e:
                 logger.warning(f"Zone {zone_id}: Failed to track command: {e}", exc_info=True)
+                # Если tracker не сработал, используем исходные params (могут быть None)
+                params = command.get('params')
+        else:
+            # Если tracker не настроен, используем исходные params
+            params = command.get('params')
         
         # Публикация команды
+        # params гарантированно содержит cmd_id, если tracker вернул cmd_id
         success = await self.publish_command(zone_id, node_uid, channel, cmd, params)
         
         # Аудит команды (даже если не удалось отправить)

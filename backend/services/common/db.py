@@ -65,9 +65,9 @@ async def upsert_unassigned_node_error(
     hardware_id: str,
     error_message: str,
     error_code: Optional[str] = None,
-    error_level: str = "ERROR",
+    severity: str = "ERROR",
     topic: str = "",
-    error_data: Optional[Dict[str, Any]] = None
+    last_payload: Optional[Dict[str, Any]] = None
 ):
     """
     Записать или обновить ошибку неназначенного узла.
@@ -75,37 +75,73 @@ async def upsert_unassigned_node_error(
     Args:
         hardware_id: Hardware ID узла из temp-топика
         error_message: Текст ошибки
-        error_code: Код ошибки (опционально)
-        error_level: Уровень ошибки (ERROR, WARNING, etc)
+        error_code: Код ошибки (опционально, используется как часть уникального ключа)
+        severity: Уровень ошибки (ERROR, WARNING, CRITICAL, etc)
         topic: MQTT топик, откуда пришла ошибка
-        error_data: Дополнительные данные ошибки (опционально)
+        last_payload: Последний payload ошибки (опционально)
     """
-    error_data_json = json.dumps(error_data) if error_data else None
+    last_payload_json = json.dumps(last_payload) if last_payload else None
     
-    # Используем hardware_id + topic как уникальный ключ (unique constraint)
-    await execute(
+    # Используем hardware_id + COALESCE(error_code, '') как уникальный ключ
+    # Обрабатываем NULL в error_code через COALESCE
+    normalized_code = error_code or ''
+    
+    # Используем функциональный уникальный индекс для ON CONFLICT
+    # Индекс создан как: CREATE UNIQUE INDEX ... ON (hardware_id, COALESCE(error_code, ''))
+    # Для использования функционального индекса в ON CONFLICT нужно использовать имя индекса
+    # или синтаксис ON CONFLICT ON CONSTRAINT, но для функционального индекса это не работает
+    # Поэтому используем подход с проверкой существования и обновлением
+    
+    # Сначала проверяем, существует ли запись
+    existing = await fetch(
         """
-        INSERT INTO unassigned_node_errors (
-            hardware_id, error_message, error_code, error_level, topic, error_data,
-            count, first_seen_at, last_seen_at, updated_at
-        )
-        VALUES ($1, $2, $3, $4, $5, $6::jsonb, 1, NOW(), NOW(), NOW())
-        ON CONFLICT (hardware_id, topic) 
-        DO UPDATE SET
-            count = unassigned_node_errors.count + 1,
-            last_seen_at = NOW(),
-            updated_at = NOW(),
-            error_data = COALESCE(EXCLUDED.error_data, unassigned_node_errors.error_data),
-            error_code = COALESCE(EXCLUDED.error_code, unassigned_node_errors.error_code),
-            error_message = EXCLUDED.error_message
+        SELECT id, count, last_seen_at
+        FROM unassigned_node_errors
+        WHERE hardware_id = $1 AND COALESCE(error_code, '') = COALESCE($2, '')
         """,
         hardware_id,
-        error_message,
-        error_code,
-        error_level,
-        topic,
-        error_data_json
+        error_code
     )
+    
+    if existing and len(existing) > 0:
+        # Обновляем существующую запись
+        await execute(
+            """
+            UPDATE unassigned_node_errors
+            SET 
+                count = count + 1,
+                last_seen_at = NOW(),
+                updated_at = NOW(),
+                last_payload = $1::jsonb,
+                error_message = $2,
+                severity = $3,
+                topic = $4
+            WHERE hardware_id = $5 AND COALESCE(error_code, '') = COALESCE($6, '')
+            """,
+            last_payload_json,
+            error_message,
+            severity,
+            topic,
+            hardware_id,
+            error_code
+        )
+    else:
+        # Создаем новую запись
+        await execute(
+            """
+            INSERT INTO unassigned_node_errors (
+                hardware_id, error_message, error_code, severity, topic, last_payload,
+                count, first_seen_at, last_seen_at, updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6::jsonb, 1, NOW(), NOW(), NOW())
+            """,
+            hardware_id,
+            error_message,
+            error_code,
+            severity,
+            topic,
+            last_payload_json
+        )
 
 
 async def create_zone_event(zone_id: int, event_type: str, details: Optional[Dict[str, Any]] = None):

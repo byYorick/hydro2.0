@@ -22,6 +22,7 @@ use App\Http\Controllers\ZoneController;
 use App\Http\Controllers\ZonePidConfigController;
 use App\Http\Controllers\ZonePidLogController;
 use App\Http\Controllers\UnassignedNodeErrorController;
+use App\Http\Controllers\PipelineHealthController;
 use Illuminate\Support\Facades\Route;
 
 // Auth роуты с более строгим rate limiting для предотвращения брутфорса
@@ -68,6 +69,8 @@ Route::middleware([
     Route::get('zones/{zone}', [ZoneController::class, 'show']);
     Route::get('zones/{zone}/health', [ZoneController::class, 'health']);
     Route::get('zones/{zone}/cycles', [ZoneController::class, 'cycles']);
+    Route::get('zones/{zone}/unassigned-errors', [ZoneController::class, 'unassignedErrors']);
+    Route::get('zones/{zone}/snapshot', [ZoneController::class, 'snapshot']);
     Route::get('nodes', [NodeController::class, 'index']);
     Route::get('nodes/{node}', [NodeController::class, 'show']);
     Route::get('nodes/{node}/config', [NodeController::class, 'getConfig']);
@@ -191,6 +194,9 @@ Route::middleware([
     Route::get('alerts/{alert}', [AlertController::class, 'show']);
     // SSE stream с ограничением подключений для предотвращения DoS (максимум 5 подключений на пользователя в минуту)
     Route::get('alerts/stream', [AlertStreamController::class, 'stream'])->middleware('throttle:5,1');
+    
+    // Pipeline Health (viewer+)
+    Route::get('pipeline/health', [PipelineHealthController::class, 'pipelineHealth']);
 
     // Simulations status (viewer+)
     Route::get('simulations/{jobId}', [SimulationController::class, 'show']);

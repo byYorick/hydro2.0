@@ -97,6 +97,9 @@
           @configure="(device) => openNodeConfig(device.id, device)"
         />
         
+        <!-- Ошибки узлов зоны -->
+        <UnassignedNodeErrorsWidget :zone-id="zone.id" :limit="5" />
+        
         <!-- Рецепт зоны -->
         <Card>
           <div class="flex items-center justify-between mb-2">
@@ -360,6 +363,7 @@ import ZoneTargets from '@/Components/ZoneTargets.vue'
 import PhaseProgress from '@/Components/PhaseProgress.vue'
 import ZoneDevicesVisualization from '@/Components/ZoneDevicesVisualization.vue'
 import LoadingState from '@/Components/LoadingState.vue'
+import UnassignedNodeErrorsWidget from '@/Components/UnassignedNodeErrorsWidget.vue'
 import ZoneSimulationModal from '@/Components/ZoneSimulationModal.vue'
 import ZoneActionModal from '@/Components/ZoneActionModal.vue'
 import GrowthCycleModal from '@/Components/GrowthCycleModal.vue'

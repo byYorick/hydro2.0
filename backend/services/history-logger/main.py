@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from collections import defaultdict
 import time
 
-from common.db import execute, fetch, upsert_telemetry_last, create_zone_event
+from common.db import execute, fetch, upsert_telemetry_last, create_zone_event, upsert_unassigned_node_error, get_pool
 from common.commands import mark_command_sent, mark_command_send_failed
 from common.redis_queue import TelemetryQueue, TelemetryQueueItem, close_redis_client
 from common.mqtt import MqttClient, AsyncMqttClient, get_mqtt_client
@@ -27,11 +27,25 @@ from common.command_status_queue import (
     normalize_status,
     send_status_to_laravel,
     retry_worker as command_retry_worker,
-    close_http_client as close_command_http_client,
+    get_status_queue,
 )
 from common.alert_queue import (
     retry_worker as alert_retry_worker,
-    close_http_client as close_alert_http_client,
+    get_alert_queue,
+)
+from common.pipeline_metrics import (
+    update_queue_metrics,
+    update_mqtt_health,
+    update_db_health,
+    update_queue_health,
+)
+from common.infra_monitor import (
+    check_mqtt_health,
+    check_db_health,
+    check_service_health,
+)
+from common.http_client_pool import (
+    close_http_client as close_unified_http_client,
 )
 
 logger = logging.getLogger(__name__)
@@ -121,12 +135,8 @@ async def lifespan(app: FastAPI):
     # Закрываем Redis клиент
     await close_redis_client()
     
-    # Закрываем HTTP клиент для статусов команд
-    await close_command_http_client()
-    await close_alert_http_client()
-    
-    # Закрываем HTTP клиент для telemetry broadcast
-    await close_broadcast_http_client()
+    # Закрываем единый HTTP клиент
+    await close_unified_http_client()
     
     logger.info("History Logger service stopped")
     send_service_log(
@@ -176,8 +186,85 @@ async def log_requests(request: Request, call_next):
 
 @app.get("/health")
 async def health():
-    """Health check endpoint."""
-    return {"status": "ok"}
+    """
+    Health check endpoint с проверкой компонентов.
+    
+    Returns:
+        Статус здоровья сервиса и его компонентов
+    """
+    health_status = {
+        "status": "ok",
+        "components": {}
+    }
+    
+    # Проверка БД
+    db_ok = False
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.fetchval("SELECT 1")
+        db_ok = True
+        update_db_health(True)
+        await check_db_health(True)
+    except Exception as e:
+        logger.warning(f"DB health check failed: {e}")
+        update_db_health(False)
+        await check_db_health(False)
+        health_status["status"] = "degraded"
+    
+    health_status["components"]["db"] = "ok" if db_ok else "fail"
+    
+    # Проверка MQTT
+    mqtt_ok = False
+    try:
+        mqtt = await get_mqtt_client()
+        if mqtt and hasattr(mqtt, 'is_connected') and mqtt.is_connected():
+            mqtt_ok = True
+            update_mqtt_health(True)
+            await check_mqtt_health(True)
+        else:
+            update_mqtt_health(False)
+            await check_mqtt_health(False)
+            health_status["status"] = "degraded"
+    except Exception as e:
+        logger.warning(f"MQTT health check failed: {e}")
+        update_mqtt_health(False)
+        await check_mqtt_health(False)
+        health_status["status"] = "degraded"
+    
+    health_status["components"]["mqtt"] = "ok" if mqtt_ok else "fail"
+    
+    # Проверка очередей
+    try:
+        # Метрики очереди алертов
+        alert_queue = await get_alert_queue()
+        alert_metrics = await alert_queue.get_queue_metrics()
+        update_queue_metrics('alerts', alert_metrics['size'], alert_metrics['oldest_age_seconds'])
+        
+        # Проверяем здоровье очереди алертов (здорова если размер < 1000 и возраст < 1 часа)
+        alerts_healthy = alert_metrics['size'] < 1000 and alert_metrics['oldest_age_seconds'] < 3600
+        update_queue_health('alerts', alerts_healthy)
+        health_status["components"]["queue_alerts"] = "ok" if alerts_healthy else "degraded"
+        
+        # Метрики очереди статусов
+        status_queue = await get_status_queue()
+        status_metrics = await status_queue.get_queue_metrics()
+        update_queue_metrics('status_updates', status_metrics['size'], status_metrics['oldest_age_seconds'])
+        
+        # Проверяем здоровье очереди статусов
+        status_healthy = status_metrics['size'] < 1000 and status_metrics['oldest_age_seconds'] < 3600
+        update_queue_health('status_updates', status_healthy)
+        health_status["components"]["queue_status_updates"] = "ok" if status_healthy else "degraded"
+        
+        if not alerts_healthy or not status_healthy:
+            health_status["status"] = "degraded"
+    except Exception as e:
+        logger.warning(f"Queue health check failed: {e}")
+        health_status["components"]["queue_alerts"] = "unknown"
+        health_status["components"]["queue_status_updates"] = "unknown"
+        health_status["status"] = "degraded"
+    
+    return health_status
 
 
 @app.get("/metrics")
@@ -268,40 +355,10 @@ shutdown_event = asyncio.Event()
 # Background tasks для отслеживания при shutdown
 background_tasks: List[asyncio.Task] = []
 
-# Глобальный httpx.AsyncClient для telemetry broadcast
-_broadcast_http_client: Optional[httpx.AsyncClient] = None
-
 # Backoff состояние для telemetry broadcast (отслеживание последовательных ошибок)
 _broadcast_error_count = 0
 _broadcast_last_error_time: Optional[float] = None
 _broadcast_backoff_until: Optional[float] = None
-
-
-async def get_broadcast_http_client() -> httpx.AsyncClient:
-    """
-    Возвращает глобальный httpx.AsyncClient для telemetry broadcast.
-    Создаёт клиент при первом вызове.
-    """
-    global _broadcast_http_client
-    
-    if _broadcast_http_client is None:
-        s = get_settings()
-        timeout_sec = s.laravel_api_timeout_sec if hasattr(s, 'laravel_api_timeout_sec') else 5.0
-        timeout = httpx.Timeout(timeout_sec, connect=timeout_sec * 0.5)
-        _broadcast_http_client = httpx.AsyncClient(timeout=timeout)
-        logger.info("Created global httpx.AsyncClient for telemetry broadcast")
-    
-    return _broadcast_http_client
-
-
-async def close_broadcast_http_client():
-    """Закрывает глобальный httpx.AsyncClient для telemetry broadcast."""
-    global _broadcast_http_client
-    
-    if _broadcast_http_client is not None:
-        await _broadcast_http_client.aclose()
-        _broadcast_http_client = None
-        logger.info("Closed global httpx.AsyncClient for telemetry broadcast")
 
 
 def _calculate_broadcast_backoff(error_count: int, base_delay: float = 1.0, max_delay: float = 60.0) -> float:
@@ -1230,11 +1287,13 @@ async def _broadcast_telemetry_to_laravel(
             logger.debug("[BROADCAST] Shutdown in progress, skipping HTTP request")
             return
         
-        # Используем глобальный HTTP клиент вместо создания нового на каждый запрос
-        client = await get_broadcast_http_client()
+        # Используем единый HTTP клиент с semaphore для backpressure
+        from common.http_client_pool import make_request
         api_start = time.time()
-        response = await client.post(
+        response = await make_request(
+            'post',
             f"{laravel_url}/api/python/broadcast/telemetry",
+            endpoint='telemetry_broadcast',
             json=api_data,
             headers={
                 'Authorization': f'Bearer {ingest_token}',
@@ -1835,9 +1894,9 @@ async def handle_error(topic: str, payload: bytes):
                 hardware_id=hardware_id,
                 error_message=error_message,
                 error_code=error_code,
-                error_level=level,
+                severity=level,
                 topic=topic,
-                error_data=data
+                last_payload=data
             )
             logger.info(f"[ERROR] Saved error for unassigned node hardware_id={hardware_id}")
         except Exception as e:
@@ -1861,9 +1920,85 @@ async def handle_error(topic: str, payload: bytes):
         f"level: {level}, component: {component}, error_code: {error_code}"
     )
     
-    # Используем общий компонент для обработки
-    error_handler = get_error_handler()
-    await error_handler.handle_error(node_uid, data)
+    # Проверяем, существует ли узел в БД
+    try:
+        node_rows = await fetch(
+            """
+            SELECT n.id, n.hardware_id, n.zone_id
+            FROM nodes n
+            WHERE n.uid = $1
+            """,
+            node_uid
+        )
+        
+        if not node_rows or len(node_rows) == 0:
+            # Узел не найден - записываем в unassigned_node_errors
+            # Пытаемся извлечь hardware_id из topic (может быть в формате hydro/gh/zn/{hardware_id}/error)
+            # Или из payload если он там есть
+            hardware_id_from_topic = node_uid  # node_uid может быть hardware_id если узел не зарегистрирован
+            hardware_id_from_payload = data.get("hardware_id")
+            hardware_id = hardware_id_from_payload or hardware_id_from_topic
+            
+            error_message = data.get("message", data.get("error", "Unknown error"))
+            
+            logger.info(
+                f"[ERROR] Node not found in DB, saving to unassigned errors: "
+                f"node_uid={node_uid}, hardware_id={hardware_id}"
+            )
+            
+            try:
+                await upsert_unassigned_node_error(
+                    hardware_id=hardware_id,
+                    error_message=error_message,
+                    error_code=error_code,
+                    severity=level,
+                    topic=topic,
+                    last_payload=data
+                )
+                logger.info(f"[ERROR] Saved error for unassigned node hardware_id={hardware_id}")
+            except Exception as e:
+                logger.error(f"[ERROR] Failed to save unassigned node error: {e}", exc_info=True)
+            
+            ERROR_RECEIVED.labels(node_uid=f"unassigned-{hardware_id}", level=level.lower()).inc()
+            return
+        
+        # Узел найден - используем обычную обработку
+        node = node_rows[0]
+        zone_id = node.get("zone_id")
+        
+        if not zone_id:
+            # Узел не привязан к зоне - записываем в unassigned_node_errors по hardware_id
+            hardware_id = node.get("hardware_id")
+            if hardware_id:
+                error_message = data.get("message", data.get("error", "Unknown error"))
+                logger.info(
+                    f"[ERROR] Node not assigned to zone, saving to unassigned errors: "
+                    f"node_uid={node_uid}, hardware_id={hardware_id}, node_id={node['id']}"
+                )
+                try:
+                    await upsert_unassigned_node_error(
+                        hardware_id=hardware_id,
+                        error_message=error_message,
+                        error_code=error_code,
+                        severity=level,
+                        topic=topic,
+                        last_payload=data
+                    )
+                    logger.info(f"[ERROR] Saved error for unassigned node hardware_id={hardware_id}")
+                except Exception as e:
+                    logger.error(f"[ERROR] Failed to save unassigned node error: {e}", exc_info=True)
+                ERROR_RECEIVED.labels(node_uid=f"unassigned-{hardware_id}", level=level.lower()).inc()
+                return
+        
+        # Узел найден и привязан к зоне - используем обычную обработку
+        error_handler = get_error_handler()
+        await error_handler.handle_error(node_uid, data)
+        
+    except Exception as e:
+        logger.error(f"[ERROR] Error checking node in DB: {e}", exc_info=True)
+        # При ошибке БД всё равно пытаемся обработать через error_handler
+        error_handler = get_error_handler()
+        await error_handler.handle_error(node_uid, data)
     
     ERROR_RECEIVED.labels(node_uid=node_uid, level=level.lower()).inc()
 
@@ -2409,6 +2544,55 @@ async def handle_command_response(topic: str, payload: bytes):
             return
 
         COMMAND_RESPONSE_RECEIVED.inc()
+
+        # Проверяем наличие команды в БД. Если отсутствует - создаём stub record.
+        # Это защищает от потери cmd_id при быстром ответе ноды (response раньше SENT).
+        try:
+            existing_cmd = await fetch("SELECT status FROM commands WHERE cmd_id = $1", cmd_id)
+            if not existing_cmd:
+                # Команда отсутствует - создаём stub record через UPSERT
+                # Получаем node_id и zone_id из node_uid
+                node_id = None
+                zone_id = None
+                cmd_name = None
+                
+                if node_uid:
+                    node_rows = await fetch(
+                        "SELECT id, zone_id FROM nodes WHERE uid = $1",
+                        node_uid
+                    )
+                    if node_rows:
+                        node_id = node_rows[0]["id"]
+                        zone_id = node_rows[0]["zone_id"]
+                
+                # Определяем cmd из details или используем "unknown"
+                # Если cmd_name не указан, используем пустую строку (не NULL, т.к. поле NOT NULL)
+                cmd_name = "unknown"
+                
+                # Статус ставим в зависимости от normalized_status
+                status_value = normalized_status.value if hasattr(normalized_status, 'value') else str(normalized_status)
+                
+                # UPSERT stub record с origin='device' (помечаем как полученную от устройства)
+                await execute(
+                    """
+                    INSERT INTO commands (zone_id, node_id, channel, cmd, params, status, cmd_id, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+                    ON CONFLICT (cmd_id) DO UPDATE SET
+                        status = EXCLUDED.status,
+                        updated_at = NOW()
+                    """,
+                    zone_id, node_id, channel, cmd_name, {}, status_value, cmd_id
+                )
+                logger.info(
+                    f"[COMMAND_RESPONSE] Created stub record for cmd_id={cmd_id}, "
+                    f"status={status_value}, node_uid={node_uid}, channel={channel}, origin=device"
+                )
+        except Exception as e:
+            logger.warning(
+                f"[COMMAND_RESPONSE] Failed to ensure stub record for cmd_id={cmd_id}: {e}",
+                exc_info=True
+            )
+            # Продолжаем обработку даже при ошибке создания stub record
 
         # Формируем детали для отправки
         details = {

@@ -11,6 +11,10 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Проверяем, существует ли таблица nodes
+        if (!Schema::hasTable('nodes')) {
+            return; // Таблица будет создана в другой миграции
+        }
         Schema::table('nodes', function (Blueprint $table) {
             // Добавляем поля для метрик ошибок, если их еще нет
             if (!Schema::hasColumn('nodes', 'error_count')) {
@@ -30,6 +34,10 @@ return new class extends Migration
      */
     public function down(): void
     {
+        // Проверяем, существует ли таблица nodes
+        if (!Schema::hasTable('nodes')) {
+            return; // Таблица не существует, нечего откатывать
+        }
         Schema::table('nodes', function (Blueprint $table) {
             if (Schema::hasColumn('nodes', 'error_count')) {
                 $table->dropColumn('error_count');

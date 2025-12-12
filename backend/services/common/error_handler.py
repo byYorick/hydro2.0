@@ -202,13 +202,25 @@ class NodeErrorHandler:
                 "details": details or {}
             }
             
+            # Извлекаем ts_device из details, если есть
+            ts_device = None
+            if details and isinstance(details, dict):
+                ts_device = details.get("ts") or details.get("ts_device")
+                if ts_device and isinstance(ts_device, (int, float)):
+                    # Конвертируем Unix timestamp в ISO строку
+                    from datetime import datetime, timezone
+                    ts_device = datetime.fromtimestamp(ts_device, tz=timezone.utc).isoformat()
+            
             success = await send_alert_to_laravel(
                 zone_id=zone_id,
                 source="infra",  # Ошибки нод - это инфраструктурные ошибки
                 code=alert_code,
                 type=alert_type,
                 status="ACTIVE",
-                details=alert_details
+                details=alert_details,
+                node_uid=node_uid,
+                severity=level,  # level может быть warning, error, critical
+                ts_device=ts_device
             )
             
             if success:

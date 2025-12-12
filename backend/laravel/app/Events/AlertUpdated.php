@@ -9,38 +9,21 @@ use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-class EventCreated implements ShouldBroadcast
+class AlertUpdated implements ShouldBroadcast
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
     public string $queue = 'broadcasts';
 
-    public int $id;
-
-    public string $kind;
-
-    public string $message;
-
-    public ?int $zoneId;
-
-    public string $occurredAt;
+    public array $alert;
 
     public int $eventId;
 
     public int $serverTs;
 
-    public function __construct(
-        int $id,
-        string $kind,
-        string $message,
-        ?int $zoneId = null,
-        ?string $occurredAt = null
-    ) {
-        $this->id = $id;
-        $this->kind = $kind;
-        $this->message = $message;
-        $this->zoneId = $zoneId;
-        $this->occurredAt = $occurredAt ?? now()->toIso8601String();
+    public function __construct(array $alert)
+    {
+        $this->alert = $alert;
         
         // Генерируем event_id и server_ts для reconciliation
         $sequence = EventSequenceService::generateEventId();
@@ -48,12 +31,17 @@ class EventCreated implements ShouldBroadcast
         $this->serverTs = $sequence['server_ts'];
     }
 
-    /**
-     * Get the channels the event should broadcast on.
-     */
-    public function broadcastOn(): PrivateChannel
+    public function broadcastOn()
     {
-        return new PrivateChannel('events.global');
+        // Если есть zone_id, отправляем в канал зоны, иначе в глобальный канал
+        if (isset($this->alert['zone_id']) && $this->alert['zone_id']) {
+            return [
+                new PrivateChannel('hydro.alerts'),
+                new PrivateChannel("hydro.zones.{$this->alert['zone_id']}"),
+            ];
+        }
+        
+        return new PrivateChannel('hydro.alerts');
     }
 
     /**
@@ -61,7 +49,7 @@ class EventCreated implements ShouldBroadcast
      */
     public function broadcastAs(): string
     {
-        return 'EventCreated';
+        return 'AlertUpdated';
     }
 
     /**
@@ -69,14 +57,9 @@ class EventCreated implements ShouldBroadcast
      */
     public function broadcastWith(): array
     {
-        return [
-            'id' => $this->id,
-            'kind' => $this->kind,
-            'message' => $this->message,
-            'zoneId' => $this->zoneId,
-            'occurredAt' => $this->occurredAt,
+        return array_merge($this->alert, [
             'event_id' => $this->eventId,
             'server_ts' => $this->serverTs,
-        ];
+        ]);
     }
 }

@@ -2,7 +2,8 @@ import Echo from 'laravel-echo'
 import Pusher from 'pusher-js'
 import { logger } from './logger'
 import { readBooleanEnv } from './env'
-import axios from 'axios'
+import apiClient from './apiClient'
+import { useWebSocketStore } from '@/stores/websocket'
 
 type WsState = 'connecting' | 'connected' | 'disconnected' | 'unavailable' | 'failed'
 type StateListener = (state: WsState) => void
@@ -66,6 +67,26 @@ function isBrowser(): boolean {
 
 function emitState(state: WsState): void {
   currentState = state
+  
+  // Обновляем store
+  try {
+    const wsStore = useWebSocketStore()
+    const connectionState = getConnectionState()
+    wsStore.setState(state)
+    wsStore.setReconnectAttempts(connectionState.reconnectAttempts)
+    wsStore.setLastError(connectionState.lastError)
+    wsStore.setSocketId(connectionState.socketId || null)
+    wsStore.setConnectionInfo({
+      protocol: connectionState.protocol,
+      port: connectionState.port,
+      host: connectionState.host,
+    })
+  } catch (err) {
+    logger.warn('[echoClient] Error updating WebSocket store', {
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
+  
   listeners.forEach(listener => {
     try {
       listener(state)
@@ -1171,12 +1192,10 @@ async function performReconciliation(): Promise<void> {
     logger.info('[echoClient] Starting data reconciliation after reconnect')
 
     // Получаем полный snapshot данных
+    // Используем единый apiClient вместо прямого axios
     const apiUrl = import.meta.env.VITE_API_URL || '/api'
-    const response = await axios.get(`${apiUrl}/sync/full`, {
+    const response = await apiClient.get(`${apiUrl}/sync/full`, {
       timeout: 10000, // 10 секунд таймаут
-      headers: {
-        'Accept': 'application/json',
-      },
     })
 
     if (response.data?.status === 'ok' && response.data?.data) {

@@ -1,0 +1,58 @@
+name: Protocol Contract Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'backend/services/common/schemas/**'
+      - 'backend/services/history-logger/**'
+      - 'backend/services/common/schemas.py'
+      - 'backend/laravel/app/Http/Controllers/**'
+      - 'backend/laravel/app/Http/Requests/**'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'backend/services/common/schemas/**'
+      - 'backend/services/history-logger/**'
+      - 'backend/services/common/schemas.py'
+      - 'backend/laravel/app/Http/Controllers/**'
+      - 'backend/laravel/app/Http/Requests/**'
+  workflow_dispatch:
+
+jobs:
+  protocol-check:
+    name: Protocol Contract Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        working-directory: backend/services
+        run: |
+          pip install --upgrade pip
+          pip install jsonschema pytest pydantic httpx
+      
+      - name: Run protocol contract tests
+        working-directory: backend/services
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend/services:${{ github.workspace }}/backend/services/history-logger:${{ github.workspace }}/backend/services/common
+        run: |
+          cd common/schemas
+          bash run_protocol_check.sh
+      
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: protocol-test-results
+          path: backend/services/common/schemas/test-results.xml
+          if-no-files-found: ignore
+

@@ -1,9 +1,11 @@
 <template>
   <Card class="unassigned-errors-widget">
     <div class="flex items-center justify-between mb-4">
-      <h3 class="text-lg font-semibold">Ошибки неназначенных узлов</h3>
-      <Badge :variant="unassignedCount > 0 ? 'danger' : 'success'">
-        {{ unassignedCount }}
+      <h3 class="text-lg font-semibold text-neutral-100">
+        {{ zoneId ? 'Ошибки узлов зоны' : 'Ошибки неназначенных узлов' }}
+      </h3>
+      <Badge :variant="errors.length > 0 ? 'danger' : 'success'">
+        {{ errors.length }}
       </Badge>
     </div>
 
@@ -11,45 +13,51 @@
       <LoadingState />
     </div>
 
-    <div v-else-if="error" class="text-red-600 text-sm py-2">
+    <div v-else-if="error" class="text-red-400 text-sm py-2">
       {{ error }}
     </div>
 
-    <div v-else-if="errors.length === 0" class="text-gray-500 text-sm py-4 text-center">
-      Нет ошибок неназначенных узлов
+    <div v-else-if="errors.length === 0" class="text-neutral-500 text-sm py-4 text-center">
+      Нет ошибок {{ zoneId ? 'узлов зоны' : 'неназначенных узлов' }}
     </div>
 
-    <div v-else class="space-y-2">
+    <div v-else class="space-y-2 max-h-[400px] overflow-y-auto">
       <div
         v-for="err in errors"
         :key="err.id"
-        class="border rounded p-3 hover:bg-gray-50 transition-colors"
+        class="border border-neutral-800 rounded-lg p-3 hover:bg-neutral-900 transition-colors"
       >
         <div class="flex items-start justify-between">
           <div class="flex-1">
-            <div class="flex items-center gap-2 mb-1">
-              <span class="font-mono text-sm text-gray-600">{{ err.hardware_id }}</span>
-              <Badge :variant="err.error_level === 'ERROR' ? 'danger' : 'warning'" size="sm">
-                {{ err.error_level }}
+            <div class="flex items-center gap-2 mb-1 flex-wrap">
+              <span class="font-mono text-sm text-neutral-400">{{ err.hardware_id }}</span>
+              <Badge 
+                :variant="getSeverityVariant(err.severity)" 
+                size="sm"
+              >
+                {{ err.severity }}
               </Badge>
               <Badge v-if="err.count > 1" variant="info" size="sm">
                 ×{{ err.count }}
               </Badge>
             </div>
-            <p class="text-sm text-gray-800 mb-1">{{ err.error_message }}</p>
-            <div class="flex items-center gap-4 text-xs text-gray-500">
+            <p class="text-sm text-neutral-200 mb-1">{{ err.error_message }}</p>
+            <div class="flex items-center gap-4 text-xs text-neutral-500 flex-wrap">
               <span v-if="err.error_code">Код: {{ err.error_code }}</span>
               <span>Последний раз: {{ formatDate(err.last_seen_at) }}</span>
+              <span v-if="err.first_seen_at !== err.last_seen_at">
+                Первый раз: {{ formatDate(err.first_seen_at) }}
+              </span>
             </div>
           </div>
         </div>
       </div>
     </div>
 
-    <div v-if="errors.length > 0" class="mt-4 pt-4 border-t">
+    <div v-if="errors.length > 0 && !zoneId" class="mt-4 pt-4 border-t border-neutral-800">
       <a
         href="/monitoring/unassigned-errors"
-        class="text-sm text-blue-600 hover:text-blue-800"
+        class="text-sm text-sky-400 hover:text-sky-300 transition-colors"
       >
         Показать все ошибки →
       </a>
@@ -58,34 +66,52 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
-import { Card } from '@/Components/Card'
-import { Badge } from '@/Components/Badge'
-import { LoadingState } from '@/Components/LoadingState'
-import axios from 'axios'
+import { ref, onMounted, computed, onUnmounted } from 'vue'
+import Card from '@/Components/Card.vue'
+import Badge from '@/Components/Badge.vue'
+import LoadingState from '@/Components/LoadingState.vue'
+import { useApi } from '@/composables/useApi'
 
 interface UnassignedError {
   id: number
   hardware_id: string
   error_message: string
   error_code: string | null
-  error_level: string
+  severity: string
   topic: string
+  last_payload: any
   count: number
   first_seen_at: string
   last_seen_at: string
   node_id: number | null
 }
 
+interface Props {
+  zoneId?: number
+  limit?: number
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  zoneId: undefined,
+  limit: 10
+})
+
 const errors = ref<UnassignedError[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
+let refreshInterval: ReturnType<typeof setInterval> | null = null
 
-const unassignedCount = computed(() => {
-  return errors.value.filter(e => e.node_id === null).length
-})
+const { api } = useApi()
+
+const getSeverityVariant = (severity: string): 'danger' | 'warning' | 'info' => {
+  const upper = severity.toUpperCase()
+  if (upper === 'CRITICAL' || upper === 'ERROR') return 'danger'
+  if (upper === 'WARNING') return 'warning'
+  return 'info'
+}
 
 const formatDate = (dateString: string) => {
+  if (!dateString) return 'неизвестно'
   const date = new Date(dateString)
   const now = new Date()
   const diffMs = now.getTime() - date.getTime()
@@ -106,14 +132,24 @@ const fetchErrors = async () => {
     loading.value = true
     error.value = null
     
-    const response = await axios.get('/api/unassigned-node-errors', {
-      params: {
-        unassigned_only: true,
-        per_page: 5
-      }
-    })
-    
-    errors.value = response.data.data || []
+    if (props.zoneId) {
+      // Загружаем ошибки для конкретной зоны
+      const response = await api.get<{ data: UnassignedError[], meta: any }>(`/api/zones/${props.zoneId}/unassigned-errors`, {
+        params: {
+          per_page: props.limit
+        }
+      })
+      errors.value = response.data?.data || []
+    } else {
+      // Загружаем все неназначенные ошибки
+      const response = await api.get<{ data: UnassignedError[], meta: any }>('/api/unassigned-node-errors', {
+        params: {
+          unassigned_only: true,
+          per_page: props.limit
+        }
+      })
+      errors.value = response.data?.data || []
+    }
   } catch (err: any) {
     error.value = err.response?.data?.message || 'Ошибка загрузки данных'
     console.error('Failed to fetch unassigned node errors:', err)
@@ -126,10 +162,13 @@ onMounted(() => {
   fetchErrors()
   
   // Обновляем каждые 30 секунд
-  const interval = setInterval(fetchErrors, 30000)
-  
-  // Очищаем интервал при размонтировании
-  return () => clearInterval(interval)
+  refreshInterval = setInterval(fetchErrors, 30000)
+})
+
+onUnmounted(() => {
+  if (refreshInterval) {
+    clearInterval(refreshInterval)
+  }
 })
 </script>
 

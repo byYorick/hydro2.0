@@ -24,14 +24,18 @@
       "default": 0
     },
     "error_code": {
-      "type": "string",
-      "description": "Символический код ошибки (например: TIMEOUT, INVALID_PARAMS, DEVICE_ERROR)",
-      "maxLength": 64
+      "anyOf": [
+        {"type": "string", "maxLength": 64},
+        {"type": "null"}
+      ],
+      "description": "Символический код ошибки (например: TIMEOUT, INVALID_PARAMS, DEVICE_ERROR)"
     },
     "error_message": {
-      "type": "string",
-      "description": "Человекочитаемое сообщение об ошибке",
-      "maxLength": 512
+      "anyOf": [
+        {"type": "string", "maxLength": 512},
+        {"type": "null"}
+      ],
+      "description": "Человекочитаемое сообщение об ошибке"
     },
     "ts": {
       "type": "integer",
@@ -39,9 +43,11 @@
       "minimum": 0
     },
     "duration_ms": {
-      "type": "integer",
-      "description": "Длительность выполнения команды в миллисекундах",
-      "minimum": 0
+      "anyOf": [
+        {"type": "integer", "minimum": 0},
+        {"type": "null"}
+      ],
+      "description": "Длительность выполнения команды в миллисекундах"
     }
   },
   "additionalProperties": false

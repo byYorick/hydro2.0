@@ -202,6 +202,67 @@ class PythonIngestController extends Controller
         // Обновляем статус команды в БД, чтобы фронт получил broadcast (CommandObserver)
         $command = \App\Models\Command::where('cmd_id', $data['cmd_id'])->latest('id')->first();
         if ($command) {
+            // State machine guard: проверяем валидность перехода статуса
+            $currentStatus = $command->status;
+            $newStatus = $normalizedStatus;
+            
+            // Определяем конечные статусы (нельзя изменять)
+            $finalStatuses = [
+                \App\Models\Command::STATUS_DONE,
+                \App\Models\Command::STATUS_FAILED,
+                \App\Models\Command::STATUS_TIMEOUT,
+                \App\Models\Command::STATUS_SEND_FAILED,
+            ];
+            
+            // Если команда уже в конечном статусе, не обновляем (запрет отката)
+            if (in_array($currentStatus, $finalStatuses)) {
+                Log::info('commandAck: Command already in final status, skipping update', [
+                    'cmd_id' => $data['cmd_id'],
+                    'current_status' => $currentStatus,
+                    'attempted_status' => $newStatus,
+                ]);
+                
+                return Response::json([
+                    'status' => 'ok',
+                    'message' => 'Command already in final status',
+                ]);
+            }
+            
+            // Проверяем переходы: запрещаем откат (например, DONE нельзя заменить на SENT)
+            $isRollback = false;
+            
+            // Запрет перехода назад: если текущий статус более продвинутый, чем новый
+            $statusOrder = [
+                \App\Models\Command::STATUS_QUEUED => 0,
+                \App\Models\Command::STATUS_SEND_FAILED => 1,
+                \App\Models\Command::STATUS_SENT => 2,
+                \App\Models\Command::STATUS_ACCEPTED => 3,
+                \App\Models\Command::STATUS_DONE => 4,
+                \App\Models\Command::STATUS_FAILED => 4,
+                \App\Models\Command::STATUS_TIMEOUT => 4,
+            ];
+            
+            $currentOrder = $statusOrder[$currentStatus] ?? 0;
+            $newOrder = $statusOrder[$newStatus] ?? 0;
+            
+            // Запрещаем откат (кроме повторной отправки из SEND_FAILED в SENT)
+            if ($newOrder < $currentOrder && !($currentStatus === \App\Models\Command::STATUS_SEND_FAILED && $newStatus === \App\Models\Command::STATUS_SENT)) {
+                $isRollback = true;
+            }
+            
+            if ($isRollback) {
+                Log::warning('commandAck: Status rollback prevented by state machine guard', [
+                    'cmd_id' => $data['cmd_id'],
+                    'current_status' => $currentStatus,
+                    'attempted_status' => $newStatus,
+                ]);
+                
+                return Response::json([
+                    'status' => 'ok',
+                    'message' => 'Status rollback prevented',
+                ]);
+            }
+            
             $updates = ['status' => $normalizedStatus];
             
             // Добавляем детали из details если есть
@@ -319,11 +380,14 @@ class PythonIngestController extends Controller
         $this->ensureToken($request);
         $data = $request->validate([
             'zone_id' => ['nullable', 'integer'],
+            'node_uid' => ['nullable', 'string', 'max:100'],
+            'hardware_id' => ['nullable', 'string', 'max:100'],
             'source' => ['required', 'string', 'in:biz,infra'],
             'code' => ['required', 'string', 'max:64'],
             'type' => ['required', 'string', 'max:64'],
-            'status' => ['required', 'string', 'in:ACTIVE,RESOLVED'],
+            'severity' => ['nullable', 'string', 'max:32'],
             'details' => ['nullable', 'array'],
+            'ts_device' => ['nullable', 'date'],
         ]);
         
         // Валидируем zone_id отдельно, если он указан (для unassigned hardware разрешаем null)
@@ -339,30 +403,41 @@ class PythonIngestController extends Controller
 
         try {
             $alertService = app(\App\Services\AlertService::class);
-            $alert = $alertService->create([
+            
+            // Используем createOrUpdateActive для дедупликации
+            $result = $alertService->createOrUpdateActive([
                 'zone_id' => $data['zone_id'] ?? null,
                 'source' => $data['source'],
                 'code' => $data['code'],
                 'type' => $data['type'],
-                'status' => $data['status'],
                 'details' => $data['details'] ?? null,
+                'severity' => $data['severity'] ?? null,
+                'node_uid' => $data['node_uid'] ?? null,
+                'hardware_id' => $data['hardware_id'] ?? null,
+                'ts_device' => $data['ts_device'] ?? null,
             ]);
+
+            $alert = $result['alert'];
+            $serverTs = now()->toIso8601String();
 
             return Response::json([
                 'status' => 'ok',
                 'data' => [
                     'alert_id' => $alert->id,
+                    'event_id' => $result['event_id'],
+                    'server_ts' => $serverTs,
                 ],
             ]);
         } catch (\Exception $e) {
-            Log::error('PythonIngestController: Failed to create alert', [
+            Log::error('PythonIngestController: Failed to create/update alert', [
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
                 'data' => $data,
             ]);
 
             return Response::json([
                 'status' => 'error',
-                'message' => 'Failed to create alert',
+                'message' => 'Failed to create/update alert: ' . $e->getMessage(),
             ], 500);
         }
     }

@@ -412,6 +412,73 @@ class NodeRegistryService
         }
         
         try {
+            // Получаем все непривязанные ошибки для этого hardware_id
+            $errors = DB::table('unassigned_node_errors')
+                ->where('hardware_id', $node->hardware_id)
+                ->whereNull('node_id')
+                ->get();
+            
+            if ($errors->isEmpty()) {
+                return;
+            }
+            
+            // Если у ноды есть zone_id, создаем alerts для ошибок
+            if ($node->zone_id) {
+                $alertService = app(\App\Services\AlertService::class);
+                
+                foreach ($errors as $error) {
+                    // Определяем source и code для алерта
+                    // Используем infra_node_error как базовый код, добавляем error_code если есть
+                    $alertCode = 'infra_node_error';
+                    if ($error->error_code) {
+                        $alertCode = 'infra_node_error_' . str_replace('-', '_', $error->error_code);
+                    }
+                    
+                    // Создаем или обновляем алерт
+                    // Преобразуем даты из строк в ISO8601 формат если нужно
+                    $firstSeenAt = $error->first_seen_at;
+                    if (is_string($firstSeenAt)) {
+                        $firstSeenAt = \Carbon\Carbon::parse($firstSeenAt)->toIso8601String();
+                    } elseif ($firstSeenAt instanceof \Carbon\Carbon || $firstSeenAt instanceof \DateTime) {
+                        $firstSeenAt = $firstSeenAt->toIso8601String();
+                    }
+                    
+                    $lastSeenAt = $error->last_seen_at;
+                    if (is_string($lastSeenAt)) {
+                        $lastSeenAt = \Carbon\Carbon::parse($lastSeenAt)->toIso8601String();
+                    } elseif ($lastSeenAt instanceof \Carbon\Carbon || $lastSeenAt instanceof \DateTime) {
+                        $lastSeenAt = $lastSeenAt->toIso8601String();
+                    }
+                    
+                    $alertService->createOrUpdateActive([
+                        'zone_id' => $node->zone_id,
+                        'source' => 'infra',
+                        'code' => $alertCode,
+                        'type' => 'Node Error: ' . ($error->error_message ?: 'Unknown error'),
+                        'details' => [
+                            'error_message' => $error->error_message,
+                            'error_code' => $error->error_code,
+                            'severity' => $error->severity ?? 'ERROR',
+                            'node_uid' => $node->uid,
+                            'hardware_id' => $node->hardware_id,
+                            'count' => $error->count ?? 1,
+                            'first_seen_at' => $firstSeenAt,
+                            'last_seen_at' => $lastSeenAt,
+                            'topic' => $error->topic,
+                            'payload' => $error->last_payload,
+                        ],
+                    ]);
+                }
+                
+                Log::info('Created alerts from unassigned errors', [
+                    'node_id' => $node->id,
+                    'zone_id' => $node->zone_id,
+                    'hardware_id' => $node->hardware_id,
+                    'errors_count' => $errors->count(),
+                ]);
+            }
+            
+            // Привязываем ошибки к ноде (обновляем node_id)
             $updated = DB::table('unassigned_node_errors')
                 ->where('hardware_id', $node->hardware_id)
                 ->whereNull('node_id')
@@ -427,11 +494,13 @@ class NodeRegistryService
                     'errors_count' => $updated
                 ]);
             }
+            
         } catch (\Exception $e) {
             Log::warning('Failed to attach unassigned errors to node', [
                 'node_id' => $node->id,
                 'hardware_id' => $node->hardware_id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
         }
     }

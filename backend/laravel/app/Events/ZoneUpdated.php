@@ -3,6 +3,7 @@
 namespace App\Events;
 
 use App\Models\Zone;
+use App\Services\EventSequenceService;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
@@ -18,9 +19,18 @@ class ZoneUpdated implements ShouldBroadcast
 
     public Zone $zone;
 
+    public int $eventId;
+
+    public int $serverTs;
+
     public function __construct(Zone $zone)
     {
         $this->zone = $zone;
+        
+        // Генерируем event_id и server_ts для reconciliation
+        $sequence = EventSequenceService::generateEventId();
+        $this->eventId = $sequence['event_id'];
+        $this->serverTs = $sequence['server_ts'];
     }
 
     public function broadcastOn(): Channel
@@ -36,6 +46,8 @@ class ZoneUpdated implements ShouldBroadcast
                 'name' => $this->zone->name,
                 'status' => $this->zone->status,
             ],
+            'event_id' => $this->eventId,
+            'server_ts' => $this->serverTs,
         ];
     }
 }

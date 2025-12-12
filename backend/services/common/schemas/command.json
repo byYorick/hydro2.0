@@ -13,11 +13,16 @@
       "maxLength": 128
     },
     "correlation_id": {
-      "type": "string",
-      "description": "Альтернативное поле для cmd_id (для обратной совместимости)",
-      "pattern": "^[a-zA-Z0-9_-]+$",
-      "minLength": 1,
-      "maxLength": 128
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        {"type": "null"}
+      ],
+      "description": "Альтернативное поле для cmd_id (для обратной совместимости)"
     },
     "cmd": {
       "type": "string",
@@ -32,9 +37,11 @@
       "default": {}
     },
     "deadline_ms": {
-      "type": "integer",
-      "description": "Дедлайн выполнения команды в миллисекундах (Unix timestamp)",
-      "minimum": 0
+      "anyOf": [
+        {"type": "integer", "minimum": 0},
+        {"type": "null"}
+      ],
+      "description": "Дедлайн выполнения команды в миллисекундах (Unix timestamp)"
     },
     "attempt": {
       "type": "integer",

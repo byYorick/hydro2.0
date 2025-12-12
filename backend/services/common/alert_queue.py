@@ -12,10 +12,9 @@ import logging
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
 
-import httpx
-
 from .db import get_pool
 from .env import get_settings
+from .http_client_pool import make_request, calculate_backoff_with_jitter
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +59,39 @@ class AlertQueue:
             await conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_pending_alerts_zone_id 
                 ON pending_alerts(zone_id)
+            """)
+            
+            # Таблица DLQ для pending_alerts
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS pending_alerts_dlq (
+                    id BIGSERIAL PRIMARY KEY,
+                    zone_id INTEGER,
+                    source VARCHAR(16) NOT NULL,
+                    code VARCHAR(64) NOT NULL,
+                    type VARCHAR(64) NOT NULL,
+                    status VARCHAR(16) NOT NULL,
+                    details JSONB,
+                    retry_count INTEGER NOT NULL,
+                    last_error TEXT,
+                    failed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    original_id BIGINT,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
+            """)
+            
+            await conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_alerts_dlq_zone_id 
+                ON pending_alerts_dlq(zone_id)
+            """)
+            
+            await conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_alerts_dlq_failed_at 
+                ON pending_alerts_dlq(failed_at)
+            """)
+            
+            await conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_alerts_dlq_code 
+                ON pending_alerts_dlq(code)
             """)
         
         self._initialized = True
@@ -121,6 +153,37 @@ class AlertQueue:
                 DELETE FROM pending_alerts WHERE id = $1
             """, alert_id)
     
+    async def move_to_dlq(
+        self,
+        alert_id: int,
+        zone_id: Optional[int],
+        source: str,
+        code: str,
+        type: str,
+        status: str,
+        details: Optional[Dict[str, Any]],
+        retry_count: int,
+        last_error: str
+    ):
+        """Перемещает запись в DLQ после превышения максимального количества попыток."""
+        await self.ensure_table()
+        
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            try:
+                details_json = json.dumps(details) if details else None
+                await conn.execute("""
+                    INSERT INTO pending_alerts_dlq 
+                    (zone_id, source, code, type, status, details, retry_count, last_error, original_id)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                """, zone_id, source, code, type, status, details_json, retry_count, last_error, alert_id)
+                logger.warning(
+                    f"[DLQ] Moved alert to DLQ: code={code}, zone_id={zone_id}, "
+                    f"retry_count={retry_count}, error={last_error[:100]}"
+                )
+            except Exception as e:
+                logger.error(f"Failed to move alert to DLQ: {e}", exc_info=True)
+    
     async def get_pending(self, limit: int = 100) -> list:
         """
         Получает записи, готовые к ретраю.
@@ -155,6 +218,47 @@ class AlertQueue:
             ))
         
         return result
+    
+    async def get_queue_metrics(self) -> Dict[str, Any]:
+        """
+        Получает метрики очереди для observability.
+        
+        Returns:
+            Словарь с метриками: size, oldest_age_seconds
+        """
+        await self.ensure_table()
+        
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            try:
+                # Получаем размер очереди
+                size_row = await conn.fetchrow("""
+                    SELECT COUNT(*) as count
+                    FROM pending_alerts
+                """)
+                size = size_row['count'] if size_row else 0
+                
+                # Получаем возраст самой старой записи (только если есть записи)
+                if size > 0:
+                    oldest_row = await conn.fetchrow("""
+                        SELECT EXTRACT(EPOCH FROM (NOW() - MIN(created_at))) as age_seconds
+                        FROM pending_alerts
+                    """)
+                    oldest_age_seconds = oldest_row['age_seconds'] if oldest_row and oldest_row['age_seconds'] is not None else 0.0
+                else:
+                    oldest_age_seconds = 0.0
+                
+                return {
+                    'size': size,
+                    'oldest_age_seconds': float(oldest_age_seconds),
+                }
+            except Exception as e:
+                # Если таблица еще не создана, возвращаем нулевые метрики
+                logger.warning(f"Failed to get queue metrics: {e}")
+                return {
+                    'size': 0,
+                    'oldest_age_seconds': 0.0,
+                }
 
 
 # Глобальный экземпляр очереди
@@ -166,34 +270,8 @@ async def get_alert_queue() -> AlertQueue:
     return _alert_queue
 
 
-# Глобальный httpx.AsyncClient для алертов
-_http_client: Optional[httpx.AsyncClient] = None
-
-
-async def get_http_client() -> httpx.AsyncClient:
-    """
-    Возвращает глобальный httpx.AsyncClient для процесса.
-    Создаёт клиент при первом вызове.
-    """
-    global _http_client
-    
-    if _http_client is None:
-        s = get_settings()
-        timeout = httpx.Timeout(10.0, connect=5.0)
-        _http_client = httpx.AsyncClient(timeout=timeout)
-        logger.info("Created global httpx.AsyncClient for alert delivery")
-    
-    return _http_client
-
-
-async def close_http_client():
-    """Закрывает глобальный httpx.AsyncClient."""
-    global _http_client
-    
-    if _http_client is not None:
-        await _http_client.aclose()
-        _http_client = None
-        logger.info("Closed global httpx.AsyncClient for alerts")
+# Используем единый HTTP клиент из http_client_pool
+# close_http_client больше не нужен - закрывается централизованно
 
 
 async def send_alert_to_laravel(
@@ -202,7 +280,11 @@ async def send_alert_to_laravel(
     code: str,
     type: str,
     status: str,
-    details: Optional[Dict[str, Any]] = None
+    details: Optional[Dict[str, Any]] = None,
+    node_uid: Optional[str] = None,
+    hardware_id: Optional[str] = None,
+    severity: Optional[str] = None,
+    ts_device: Optional[str] = None
 ) -> bool:
     """
     Отправляет алерт в Laravel API.
@@ -216,6 +298,10 @@ async def send_alert_to_laravel(
         type: Тип алерта
         status: Статус алерта (ACTIVE или RESOLVED)
         details: Дополнительные детали
+        node_uid: UID узла (опционально)
+        hardware_id: Hardware ID узла (опционально)
+        severity: Уровень серьезности (опционально)
+        ts_device: Временная метка устройства (опционально)
         
     Returns:
         True если успешно отправлено, False если сохранено в очередь
@@ -252,10 +338,21 @@ async def send_alert_to_laravel(
         "details": details or None,
     }
     
+    # Добавляем опциональные поля, если они указаны
+    if node_uid:
+        payload["node_uid"] = node_uid
+    if hardware_id:
+        payload["hardware_id"] = hardware_id
+    if severity:
+        payload["severity"] = severity
+    if ts_device:
+        payload["ts_device"] = ts_device
+    
     try:
-        client = await get_http_client()
-        resp = await client.post(
+        resp = await make_request(
+            'post',
             f"{laravel_url}/api/python/alerts",
+            endpoint='alert_delivery',
             headers=headers,
             json=payload,
         )
@@ -276,15 +373,16 @@ async def send_alert_to_laravel(
             await queue.enqueue(zone_id, source, code, type, status, details)
             return False
             
-    except (httpx.TimeoutException, httpx.RequestError, httpx.NetworkError) as e:
+    except Exception as e:
+        # Все ошибки (включая сетевые) обрабатываются здесь
+        # make_request уже обработал сетевые ошибки и вернул исключение
         logger.warning(
-            f"[ALERT_DELIVERY] Network error sending alert to Laravel: {e}"
+            f"[ALERT_DELIVERY] Error sending alert to Laravel: {e}"
         )
         # Сохраняем в очередь для ретрая
         queue = await get_alert_queue()
         await queue.enqueue(zone_id, source, code, type, status, details)
         return False
-    except Exception as e:
         logger.error(
             f"[ALERT_DELIVERY] Unexpected error sending alert to Laravel: {e}",
             exc_info=True
@@ -295,20 +393,7 @@ async def send_alert_to_laravel(
         return False
 
 
-def calculate_backoff(retry_count: int, base_delay: float = 1.0, max_delay: float = 300.0) -> float:
-    """
-    Вычисляет задержку для exponential backoff.
-    
-    Args:
-        retry_count: Номер попытки (0-based)
-        base_delay: Базовая задержка в секундах
-        max_delay: Максимальная задержка в секундах
-        
-    Returns:
-        Задержка в секундах
-    """
-    delay = base_delay * (2 ** retry_count)
-    return min(delay, max_delay)
+# calculate_backoff удалён - используем calculate_backoff_with_jitter из http_client_pool
 
 
 async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.Event] = None):
@@ -347,8 +432,25 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
                     break
                 
                 try:
+                    # Извлекаем дополнительные поля из details, если они есть
+                    node_uid = details.get("node_uid") if details else None
+                    hardware_id = details.get("hardware_id") if details else None
+                    severity = details.get("severity") or details.get("level") if details else None
+                    ts_device = details.get("ts_device") or details.get("ts") if details else None
+                    
                     # Пытаемся отправить
-                    success = await send_alert_to_laravel(zone_id, source, code, type, status, details)
+                    success = await send_alert_to_laravel(
+                        zone_id=zone_id,
+                        source=source,
+                        code=code,
+                        type=type,
+                        status=status,
+                        details=details,
+                        node_uid=node_uid,
+                        hardware_id=hardware_id,
+                        severity=severity,
+                        ts_device=ts_device
+                    )
                     
                     if success:
                         # Успешно доставлено - удаляем из очереди
@@ -358,9 +460,9 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
                             f"id={alert_id}, code={code}, zone_id={zone_id}"
                         )
                     else:
-                        # Не удалось - планируем следующий ретрай
+                        # Не удалось - планируем следующий ретрай с jitter
                         new_retry_count = retry_count + 1
-                        backoff_seconds = calculate_backoff(new_retry_count)
+                        backoff_seconds = calculate_backoff_with_jitter(new_retry_count)
                         next_retry_at = datetime.utcnow() + timedelta(seconds=backoff_seconds)
                         
                         await queue.mark_retry(alert_id, new_retry_count, next_retry_at)
@@ -374,7 +476,12 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
                         if new_retry_count >= 10:
                             logger.error(
                                 f"[RETRY_WORKER] Max retries reached for alert "
-                                f"id={alert_id}, code={code}. Removing from queue."
+                                f"id={alert_id}, code={code}. Moving to DLQ."
+                            )
+                            # Перемещаем в DLQ перед удалением
+                            await queue.move_to_dlq(
+                                alert_id, zone_id, source, code, type, status,
+                                details, new_retry_count, "Max retries reached"
                             )
                             await queue.mark_delivered(alert_id)
                 
@@ -383,13 +490,18 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
                         f"[RETRY_WORKER] Error processing alert id={alert_id}: {e}",
                         exc_info=True
                     )
-                    # Планируем ретрай даже при ошибке обработки
+                    # Планируем ретрай даже при ошибке обработки с jitter
                     new_retry_count = retry_count + 1
                     if new_retry_count < 10:
-                        backoff_seconds = calculate_backoff(new_retry_count)
+                        backoff_seconds = calculate_backoff_with_jitter(new_retry_count)
                         next_retry_at = datetime.utcnow() + timedelta(seconds=backoff_seconds)
                         await queue.mark_retry(alert_id, new_retry_count, next_retry_at)
                     else:
+                        # Перемещаем в DLQ перед удалением
+                        await queue.move_to_dlq(
+                            alert_id, zone_id, source, code, type, status,
+                            details, retry_count + 1, str(e)
+                        )
                         await queue.mark_delivered(alert_id)
             
             # Небольшая задержка перед следующей итерацией

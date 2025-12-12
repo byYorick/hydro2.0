@@ -3,6 +3,7 @@
 namespace App\Events;
 
 use App\Models\DeviceNode;
+use App\Services\EventSequenceService;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
@@ -15,13 +16,20 @@ class NodeConfigUpdated implements ShouldBroadcast
 
     public string $queue = 'broadcasts';
 
+    public int $eventId;
+
+    public int $serverTs;
+
     /**
      * Create a new event instance.
      */
     public function __construct(
         public DeviceNode $node
     ) {
-        //
+        // Генерируем event_id и server_ts для reconciliation
+        $sequence = EventSequenceService::generateEventId();
+        $this->eventId = $sequence['event_id'];
+        $this->serverTs = $sequence['server_ts'];
     }
 
     /**
@@ -60,6 +68,8 @@ class NodeConfigUpdated implements ShouldBroadcast
                 'first_seen_at' => $this->node->first_seen_at?->toIso8601String(),
                 'was_recently_created' => $this->node->wasRecentlyCreated,
             ],
+            'event_id' => $this->eventId,
+            'server_ts' => $this->serverTs,
         ];
     }
 }
