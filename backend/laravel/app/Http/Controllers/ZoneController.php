@@ -743,9 +743,18 @@ class ZoneController extends Controller
             ], 403);
         }
 
-        $now = now();
-        $serverTs = $now->timestamp * 1000; // миллисекунды
-        $snapshotId = \Illuminate\Support\Str::uuid()->toString();
+        // Формируем snapshot атомарно в одной транзакции
+        // Фиксируем server_ts и last_event_id в начале для консистентности
+        return DB::transaction(function () use ($zone, $request) {
+            $now = now();
+            $serverTs = $now->timestamp * 1000; // миллисекунды
+            $snapshotId = \Illuminate\Support\Str::uuid()->toString();
+            
+            // Получаем максимальный last_event_id для зоны на момент формирования snapshot
+            // Это курсор событий, который клиент может использовать для catch-up
+            $lastEventId = DB::table('zone_events')
+                ->where('zone_id', $zone->id)
+                ->max('id') ?? 0;
 
         // Получаем последние значения телеметрии для зоны (per node/channel)
         $telemetryRaw = \App\Models\TelemetryLast::query()
@@ -792,75 +801,188 @@ class ZoneController extends Controller
                 ];
             });
 
-        // Получаем последние N команд (по умолчанию 50)
-        $commandsLimit = min($request->input('commands_limit', 50), 200);
-        $recentCommands = \App\Models\Command::query()
-            ->where('zone_id', $zone->id)
-            ->select([
-                'id',
-                'cmd_id',
-                'cmd',
-                'status',
-                'node_id',
-                'channel',
-                'params',
-                'sent_at',
-                'ack_at',
-                'failed_at',
-                'error_code',
-                'error_message',
-                'result_code',
-                'duration_ms',
-            ])
-            ->orderBy('created_at', 'desc')
-            ->limit($commandsLimit)
-            ->get()
-            ->map(function ($command) {
-                return [
-                    'id' => $command->id,
-                    'cmd_id' => $command->cmd_id,
-                    'cmd' => $command->cmd,
-                    'status' => $command->status,
-                    'node_id' => $command->node_id,
-                    'channel' => $command->channel,
-                    'params' => $command->params,
-                    'sent_at' => $command->sent_at?->toIso8601String(),
-                    'ack_at' => $command->ack_at?->toIso8601String(),
-                    'failed_at' => $command->failed_at?->toIso8601String(),
-                    'error_code' => $command->error_code,
-                    'error_message' => $command->error_message,
-                    'result_code' => $command->result_code,
-                    'duration_ms' => $command->duration_ms,
-                ];
-            });
+            // Получаем последние N команд (по умолчанию 50)
+            $commandsLimit = min($request->input('commands_limit', 50), 200);
+            
+            // Проверяем наличие расширенных полей в таблице commands
+            $columns = DB::getSchemaBuilder()->getColumnListing('commands');
+            $hasExtendedFields = in_array('error_code', $columns);
+            
+            $recentCommands = \App\Models\Command::query()
+                ->where('zone_id', $zone->id)
+                ->select([
+                    'id',
+                    'cmd_id',
+                    'cmd',
+                    'status',
+                    'node_id',
+                    'channel',
+                    'params',
+                    'sent_at',
+                    'ack_at',
+                    'failed_at',
+                    ...($hasExtendedFields ? ['error_code', 'error_message', 'result_code', 'duration_ms'] : []),
+                ])
+                ->orderBy('created_at', 'desc')
+                ->limit($commandsLimit)
+                ->get()
+                ->map(function ($command) use ($hasExtendedFields) {
+                    $result = [
+                        'id' => $command->id,
+                        'cmd_id' => $command->cmd_id,
+                        'cmd' => $command->cmd,
+                        'status' => $command->status,
+                        'node_id' => $command->node_id,
+                        'channel' => $command->channel,
+                        'params' => $command->params,
+                        'sent_at' => $command->sent_at?->toIso8601String(),
+                        'ack_at' => $command->ack_at?->toIso8601String(),
+                        'failed_at' => $command->failed_at?->toIso8601String(),
+                    ];
+                    
+                    if ($hasExtendedFields) {
+                        $result['error_code'] = $command->error_code;
+                        $result['error_message'] = $command->error_message;
+                        $result['result_code'] = $command->result_code;
+                        $result['duration_ms'] = $command->duration_ms;
+                    }
+                    
+                    return $result;
+                });
 
-        // Получаем статусы устройств (online/offline)
-        $nodes = $zone->nodes()
-            ->select(['id', 'uid', 'name', 'type', 'status', 'last_seen_at', 'last_heartbeat_at'])
-            ->get()
-            ->map(function ($node) {
-                return [
-                    'id' => $node->id,
-                    'uid' => $node->uid,
-                    'name' => $node->name,
-                    'type' => $node->type,
-                    'status' => $node->status, // online/offline
-                    'last_seen_at' => $node->last_seen_at?->toIso8601String(),
-                    'last_heartbeat_at' => $node->last_heartbeat_at?->toIso8601String(),
+            // Получаем статусы устройств (online/offline) - devices_online_state
+            $devicesOnlineState = $zone->nodes()
+                ->select(['id', 'uid', 'name', 'type', 'status', 'last_seen_at', 'last_heartbeat_at'])
+                ->get()
+                ->map(function ($node) {
+                    return [
+                        'id' => $node->id,
+                        'uid' => $node->uid,
+                        'name' => $node->name,
+                        'type' => $node->type,
+                        'status' => $node->status, // online/offline
+                        'last_seen_at' => $node->last_seen_at?->toIso8601String(),
+                        'last_heartbeat_at' => $node->last_heartbeat_at?->toIso8601String(),
+                    ];
+                });
+
+            // Реструктурируем телеметрию как latest_telemetry_per_channel
+            // Группируем по channel, затем по node_id для удобства клиента
+            $latestTelemetryPerChannel = [];
+            foreach ($telemetryRaw as $item) {
+                $nodeId = $item->node_id ?? 'unknown';
+                $channel = $item->channel ?? 'default';
+                
+                if (!isset($latestTelemetryPerChannel[$channel])) {
+                    $latestTelemetryPerChannel[$channel] = [];
+                }
+                if (!isset($latestTelemetryPerChannel[$channel][$nodeId])) {
+                    $latestTelemetryPerChannel[$channel][$nodeId] = [];
+                }
+                
+                $latestTelemetryPerChannel[$channel][$nodeId][] = [
+                    'metric_type' => $item->metric_type,
+                    'value' => $item->value,
+                    'updated_at' => $item->updated_at?->toIso8601String(),
                 ];
-            });
+            }
+
+            // Возвращаем атомарный snapshot с фиксированными server_ts и last_event_id
+            return response()->json([
+                'status' => 'ok',
+                'data' => [
+                    'snapshot_id' => $snapshotId,
+                    'server_ts' => $serverTs,
+                    'last_event_id' => $lastEventId, // Курсор событий для catch-up
+                    'zone_id' => $zone->id,
+                    'devices_online_state' => $devicesOnlineState, // Статусы устройств
+                    'active_alerts' => $activeAlerts, // Активные алерты
+                    'latest_telemetry_per_channel' => $latestTelemetryPerChannel, // Последняя телеметрия по каналам
+                    'commands_recent' => $recentCommands, // Последние команды со статусами
+                ],
+            ]);
+        });
+    }
+
+    /**
+     * Получить события зоны (Zone Event Ledger).
+     * 
+     * GET /api/zones/{zone}/events?after_id=...&limit=...
+     * 
+     * Возвращает отсортированный список событий с поддержкой пагинации по after_id.
+     * Используется для синхронизации клиентов, которые пропустили WebSocket события.
+     */
+    public function events(Request $request, Zone $zone): JsonResponse
+    {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+
+        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Access denied to this zone',
+            ], 403);
+        }
+
+        // Валидация query параметров
+        $validated = $request->validate([
+            'after_id' => ['nullable', 'integer', 'min:1'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:1000'],
+        ]);
+
+        $afterId = $validated['after_id'] ?? null;
+        $limit = min($validated['limit'] ?? 100, 1000); // Максимум 1000, по умолчанию 100
+
+        // Запрос событий для зоны
+        $query = DB::table('zone_events')
+            ->where('zone_id', $zone->id)
+            ->orderBy('id', 'asc'); // Строго по возрастанию id для гарантии порядка
+
+        // Если указан after_id, получаем события после этого ID
+        if ($afterId) {
+            $query->where('id', '>', $afterId);
+        }
+
+        $events = $query->limit($limit)->get([
+            'id as event_id',
+            'zone_id',
+            'type',
+            'entity_type',
+            'entity_id',
+            'payload_json',
+            'server_ts',
+            'created_at',
+        ]);
+
+        // Преобразуем payload_json из строки в массив
+        $events = $events->map(function ($event) {
+            $event->payload = $event->payload_json ? json_decode($event->payload_json, true) : null;
+            unset($event->payload_json);
+            return $event;
+        });
+
+        // Получаем последний event_id для следующего запроса
+        $lastEventId = $events->isNotEmpty() ? $events->last()->event_id : $afterId;
+
+        // Проверяем, есть ли еще события после последнего
+        $hasMore = false;
+        if ($lastEventId) {
+            $hasMore = DB::table('zone_events')
+                ->where('zone_id', $zone->id)
+                ->where('id', '>', $lastEventId)
+                ->exists();
+        }
 
         return response()->json([
             'status' => 'ok',
-            'data' => [
-                'snapshot_id' => $snapshotId,
-                'server_ts' => $serverTs,
-                'zone_id' => $zone->id,
-                'telemetry' => $telemetry,
-                'active_alerts' => $activeAlerts,
-                'recent_commands' => $recentCommands,
-                'nodes' => $nodes,
-            ],
+            'data' => $events->values(),
+            'last_event_id' => $lastEventId,
+            'has_more' => $hasMore,
         ]);
     }
 }

@@ -80,7 +80,7 @@ vi.mock('@inertiajs/vue3', () => ({
 
 const subscribeAlertsMock = vi.hoisted(() => vi.fn(() => vi.fn()))
 
-vi.mock('@/bootstrap', () => ({
+vi.mock('@/ws/subscriptions', () => ({
   subscribeAlerts: subscribeAlertsMock,
 }))
 

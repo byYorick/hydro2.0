@@ -2,6 +2,9 @@
 
 namespace App\Events;
 
+use App\Models\DeviceNode;
+use App\Services\EventSequenceService;
+use App\Traits\RecordsZoneEvent;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
@@ -10,9 +13,12 @@ use Illuminate\Queue\SerializesModels;
 
 class NodeTelemetryUpdated implements ShouldBroadcast
 {
-    use Dispatchable, InteractsWithSockets, SerializesModels;
+    use Dispatchable, InteractsWithSockets, SerializesModels, RecordsZoneEvent;
 
     public string $queue = 'broadcasts';
+
+    public int $eventId;
+    public int $serverTs;
 
     /**
      * Create a new event instance.
@@ -24,7 +30,10 @@ class NodeTelemetryUpdated implements ShouldBroadcast
         public float $value,
         public int $timestamp,
     ) {
-        //
+        // Генерируем event_id и server_ts для reconciliation
+        $sequence = EventSequenceService::generateEventId();
+        $this->eventId = $sequence['event_id'];
+        $this->serverTs = $sequence['server_ts'];
     }
 
     /**
@@ -54,7 +63,34 @@ class NodeTelemetryUpdated implements ShouldBroadcast
             'metric_type' => $this->metricType,
             'value' => $this->value,
             'ts' => $this->timestamp,
+            'event_id' => $this->eventId,
+            'server_ts' => $this->serverTs,
         ];
+    }
+
+    /**
+     * Записывает событие в zone_events после успешного broadcast.
+     */
+    public function broadcasted(): void
+    {
+        // Получаем узел для определения zone_id
+        $node = DeviceNode::find($this->nodeId);
+        if ($node && $node->zone_id) {
+            $this->recordZoneEvent(
+                zoneId: $node->zone_id,
+                type: 'telemetry_updated',
+                entityType: 'telemetry',
+                entityId: $this->nodeId,
+                payload: [
+                    'channel' => $this->channel,
+                    'metric_type' => $this->metricType,
+                    'value' => $this->value,
+                    'ts' => $this->timestamp,
+                ],
+                eventId: $this->eventId,
+                serverTs: $this->serverTs
+            );
+        }
     }
 }
 

@@ -115,6 +115,28 @@ cJSON *node_command_handler_create_response(
 bool node_command_handler_is_duplicate(const char *cmd_id, const char *channel);
 
 /**
+ * @brief Получить сохраненный финальный статус команды из кеша
+ * 
+ * Используется для идемпотентности: при повторной команде возвращается сохраненный статус (DONE/FAILED).
+ * 
+ * @param cmd_id ID команды
+ * @param channel Имя канала (может быть NULL для "default")
+ * @return Указатель на строку статуса или NULL если команда не найдена или нет финального статуса
+ */
+const char *node_command_handler_get_cached_status(const char *cmd_id, const char *channel);
+
+/**
+ * @brief Сохранить финальный статус команды в кеш
+ * 
+ * Сохраняет терминальный статус (DONE/FAILED/ERROR) для последующей идемпотентности.
+ * 
+ * @param cmd_id ID команды
+ * @param channel Имя канала (может быть NULL для "default")
+ * @param final_status Финальный статус (DONE/FAILED/ERROR)
+ */
+void node_command_handler_cache_final_status(const char *cmd_id, const char *channel, const char *final_status);
+
+/**
  * @brief Инициализация встроенных обработчиков команд
  * 
  * Регистрирует системные команды, такие как set_time

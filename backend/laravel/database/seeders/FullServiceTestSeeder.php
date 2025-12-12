@@ -568,15 +568,22 @@ class FullServiceTestSeeder extends Seeder
         $this->command->info('Создание моделей и симуляций...');
 
         foreach ($zones as $zone) {
-            // Zone Model Params
-            DB::table('zone_model_params')->insert([
-                'zone_id' => $zone->id,
-                'model_type' => 'growth_prediction',
-                'params' => json_encode(['growth_rate' => rand(80, 120) / 100, 'efficiency' => rand(70, 95) / 100]),
-                'calibrated_at' => now()->subDays(rand(1, 10)),
-                'created_at' => now()->subDays(rand(1, 10)),
-                'updated_at' => now()->subDays(rand(1, 10)),
-            ]);
+            // Zone Model Params - проверяем существование перед вставкой
+            $exists = DB::table('zone_model_params')
+                ->where('zone_id', $zone->id)
+                ->where('model_type', 'growth_prediction')
+                ->exists();
+            
+            if (!$exists) {
+                DB::table('zone_model_params')->insert([
+                    'zone_id' => $zone->id,
+                    'model_type' => 'growth_prediction',
+                    'params' => json_encode(['growth_rate' => rand(80, 120) / 100, 'efficiency' => rand(70, 95) / 100]),
+                    'calibrated_at' => now()->subDays(rand(1, 10)),
+                    'created_at' => now()->subDays(rand(1, 10)),
+                    'updated_at' => now()->subDays(rand(1, 10)),
+                ]);
+            }
 
             // Zone Simulations
             DB::table('zone_simulations')->insert([

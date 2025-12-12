@@ -21,4 +21,4 @@ yarn-error.log
 /database/*.sqlite-journal
 
 # Vite build artifacts
-vite.config.js.timestamp-*.mjs
+**/vite.config.js.timestamp-*.mjs

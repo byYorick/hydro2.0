@@ -7,6 +7,11 @@ import { zoneEvents } from '@/composables/useStoreEvents'
  * Использует id + updated_at для определения изменений
  * Это предотвращает ложные различия из-за порядка полей в JSON
  * и значительно быстрее, чем JSON.stringify
+ * 
+ * Критерий равенства:
+ * 1. id должен совпадать
+ * 2. updated_at должен совпадать (если есть)
+ * 3. Если updated_at нет, сравниваем значимые поля (без "шумных" полей)
  */
 function zonesEqual(existing: Zone, incoming: Zone): boolean {
   // Если ID не совпадают, это разные зоны
@@ -14,19 +19,61 @@ function zonesEqual(existing: Zone, incoming: Zone): boolean {
     return false
   }
   
-  // Сравниваем updated_at - если они одинаковы, данные не изменились
+  // Приоритет: используем updated_at для определения изменений
+  // Это самый надежный способ, так как сервер обновляет его при любых изменениях
   if (existing.updated_at && incoming.updated_at) {
     return existing.updated_at === incoming.updated_at
   }
   
-  // Если updated_at нет, сравниваем ключевые поля, которые могут измениться
-  // Это fallback для случаев, когда updated_at не приходит с сервера
-  return (
+  // Fallback: если updated_at нет, сравниваем значимые поля
+  // Исключаем "шумные" поля: telemetry, devices, cycles (могут меняться часто без реальных изменений)
+  // Сравниваем только поля, которые реально важны для определения изменений зоны
+  const significantFieldsEqual = (
     existing.name === incoming.name &&
     existing.status === incoming.status &&
     existing.description === incoming.description &&
-    existing.greenhouse_id === incoming.greenhouse_id
+    existing.greenhouse_id === incoming.greenhouse_id &&
+    existing.uid === incoming.uid
   )
+  
+  // Также сравниваем targets (важное поле для зоны)
+  const targetsEqual = compareTargets(existing.targets, incoming.targets)
+  
+  return significantFieldsEqual && targetsEqual
+}
+
+/**
+ * Сравнение ZoneTargets без глубокого сравнения объектов
+ * Сравнивает только числовые значения полей
+ */
+function compareTargets(
+  existing?: Zone['targets'],
+  incoming?: Zone['targets']
+): boolean {
+  if (!existing && !incoming) return true
+  if (!existing || !incoming) return false
+  
+  // Сравниваем основные поля targets
+  return (
+    existing.ph_min === incoming.ph_min &&
+    existing.ph_max === incoming.ph_max &&
+    existing.ec_min === incoming.ec_min &&
+    existing.ec_max === incoming.ec_max &&
+    existing.temp_min === incoming.temp_min &&
+    existing.temp_max === incoming.temp_max &&
+    existing.humidity_min === incoming.humidity_min &&
+    existing.humidity_max === incoming.humidity_max &&
+    existing.irrigation_interval_sec === incoming.irrigation_interval_sec &&
+    existing.light_hours === incoming.light_hours
+  )
+}
+
+/**
+ * Определяет, нужно ли обновлять зону в store
+ * Экспортируется для тестирования
+ */
+export function shouldUpdateZone(existing: Zone, incoming: Zone): boolean {
+  return !zonesEqual(existing, incoming)
 }
 
 interface ZonesStoreState {

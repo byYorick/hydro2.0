@@ -4,6 +4,7 @@ namespace App\Events;
 
 use App\Models\Zone;
 use App\Services\EventSequenceService;
+use App\Traits\RecordsZoneEvent;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
@@ -13,7 +14,7 @@ use Illuminate\Queue\SerializesModels;
 
 class ZoneUpdated implements ShouldBroadcast
 {
-    use Dispatchable, InteractsWithSockets, SerializesModels;
+    use Dispatchable, InteractsWithSockets, SerializesModels, RecordsZoneEvent;
 
     public string $queue = 'broadcasts';
 
@@ -49,5 +50,24 @@ class ZoneUpdated implements ShouldBroadcast
             'event_id' => $this->eventId,
             'server_ts' => $this->serverTs,
         ];
+    }
+
+    /**
+     * Записывает событие в zone_events после успешного broadcast.
+     */
+    public function broadcasted(): void
+    {
+        $this->recordZoneEvent(
+            zoneId: $this->zone->id,
+            type: 'zone_updated',
+            entityType: 'zone',
+            entityId: $this->zone->id,
+            payload: [
+                'name' => $this->zone->name,
+                'status' => $this->zone->status,
+            ],
+            eventId: $this->eventId,
+            serverTs: $this->serverTs
+        );
     }
 }

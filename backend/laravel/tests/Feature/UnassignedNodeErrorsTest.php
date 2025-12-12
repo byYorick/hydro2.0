@@ -246,18 +246,41 @@ class UnassignedNodeErrorsTest extends TestCase
         $method->setAccessible(true);
         $method->invoke($nodeRegistryService, $node);
 
-        // Проверяем, что ошибка привязана к ноде
-        $this->assertDatabaseHas('unassigned_node_errors', [
+        // Проверяем, что ошибка была удалена из unassigned_node_errors (после архивирования)
+        $this->assertDatabaseMissing('unassigned_node_errors', [
+            'hardware_id' => $hardwareId,
+            'node_id' => null, // Не должно быть записей с null node_id
+        ]);
+        
+        // Проверяем, что ошибка была архивирована
+        $this->assertDatabaseHas('unassigned_node_errors_archive', [
             'hardware_id' => $hardwareId,
             'node_id' => $node->id,
+            'error_code' => 'ERR_NODE_NOT_FOUND',
         ]);
 
-        // Проверяем, что создан alert
+        // Проверяем, что alert создан
         $this->assertDatabaseHas('alerts', [
             'zone_id' => $zone->id,
             'code' => 'infra_node_error_ERR_NODE_NOT_FOUND',
             'source' => 'infra',
             'status' => 'ACTIVE',
+        ]);
+        
+        // Проверяем, что в alert сохранены count, first_seen_at, last_seen_at
+        $alert = \App\Models\Alert::where('zone_id', $zone->id)
+            ->where('code', 'infra_node_error_ERR_NODE_NOT_FOUND')
+            ->first();
+        
+        $this->assertNotNull($alert);
+        $this->assertEquals(3, $alert->details['count'] ?? 0, 'Count должен быть сохранен из unassigned error');
+        $this->assertArrayHasKey('first_seen_at', $alert->details ?? []);
+        $this->assertArrayHasKey('last_seen_at', $alert->details ?? []);
+        
+        // Проверяем, что создан zone_event для прозрачности
+        $this->assertDatabaseHas('zone_events', [
+            'zone_id' => $zone->id,
+            'type' => 'unassigned_attached',
         ]);
     }
 

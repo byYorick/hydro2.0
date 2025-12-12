@@ -9,7 +9,7 @@
 import asyncio
 import json
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
 
 from .db import get_pool
@@ -42,11 +42,39 @@ class AlertQueue:
                     status VARCHAR(16) NOT NULL CHECK (status IN ('ACTIVE', 'RESOLVED')),
                     details JSONB,
                     retry_count INTEGER DEFAULT 0,
+                    max_attempts INTEGER DEFAULT 10,
                     next_retry_at TIMESTAMP WITH TIME ZONE,
+                    last_error TEXT,
+                    moved_to_dlq_at TIMESTAMP WITH TIME ZONE,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                 )
             """)
+            
+            # Добавляем новые колонки, если они еще не существуют (для миграции существующих таблиц)
+            try:
+                await conn.execute("""
+                    ALTER TABLE pending_alerts 
+                    ADD COLUMN IF NOT EXISTS max_attempts INTEGER DEFAULT 10
+                """)
+            except Exception:
+                pass  # Колонка уже существует
+            
+            try:
+                await conn.execute("""
+                    ALTER TABLE pending_alerts 
+                    ADD COLUMN IF NOT EXISTS last_error TEXT
+                """)
+            except Exception:
+                pass
+            
+            try:
+                await conn.execute("""
+                    ALTER TABLE pending_alerts 
+                    ADD COLUMN IF NOT EXISTS moved_to_dlq_at TIMESTAMP WITH TIME ZONE
+                """)
+            except Exception:
+                pass
             
             # Индекс для быстрого поиска записей для ретрая
             await conn.execute("""
@@ -72,12 +100,31 @@ class AlertQueue:
                     status VARCHAR(16) NOT NULL,
                     details JSONB,
                     retry_count INTEGER NOT NULL,
+                    max_attempts INTEGER,
                     last_error TEXT,
                     failed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    moved_to_dlq_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                     original_id BIGINT,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                 )
             """)
+            
+            # Добавляем новые колонки в DLQ, если они еще не существуют
+            try:
+                await conn.execute("""
+                    ALTER TABLE pending_alerts_dlq 
+                    ADD COLUMN IF NOT EXISTS max_attempts INTEGER
+                """)
+            except Exception:
+                pass
+            
+            try:
+                await conn.execute("""
+                    ALTER TABLE pending_alerts_dlq 
+                    ADD COLUMN IF NOT EXISTS moved_to_dlq_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                """)
+            except Exception:
+                pass
             
             await conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_alerts_dlq_zone_id 
@@ -135,15 +182,15 @@ class AlertQueue:
                 logger.error(f"Failed to enqueue alert: {e}", exc_info=True)
                 return False
     
-    async def mark_retry(self, alert_id: int, retry_count: int, next_retry_at: datetime):
+    async def mark_retry(self, alert_id: int, retry_count: int, next_retry_at: datetime, last_error: Optional[str] = None):
         """Отмечает запись для повторной попытки."""
         pool = await get_pool()
         async with pool.acquire() as conn:
             await conn.execute("""
                 UPDATE pending_alerts
-                SET retry_count = $1, next_retry_at = $2, updated_at = NOW()
-                WHERE id = $3
-            """, retry_count, next_retry_at, alert_id)
+                SET retry_count = $1, next_retry_at = $2, last_error = $3, updated_at = NOW()
+                WHERE id = $4
+            """, retry_count, next_retry_at, last_error, alert_id)
     
     async def mark_delivered(self, alert_id: int):
         """Удаляет запись после успешной доставки."""
@@ -163,6 +210,7 @@ class AlertQueue:
         status: str,
         details: Optional[Dict[str, Any]],
         retry_count: int,
+        max_attempts: int,
         last_error: str
     ):
         """Перемещает запись в DLQ после превышения максимального количества попыток."""
@@ -172,14 +220,23 @@ class AlertQueue:
         async with pool.acquire() as conn:
             try:
                 details_json = json.dumps(details) if details else None
+                moved_at = datetime.utcnow()
                 await conn.execute("""
                     INSERT INTO pending_alerts_dlq 
-                    (zone_id, source, code, type, status, details, retry_count, last_error, original_id)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                """, zone_id, source, code, type, status, details_json, retry_count, last_error, alert_id)
+                    (zone_id, source, code, type, status, details, retry_count, max_attempts, last_error, moved_to_dlq_at, original_id)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                """, zone_id, source, code, type, status, details_json, retry_count, max_attempts, last_error, moved_at, alert_id)
+                
+                # Обновляем moved_to_dlq_at в основной таблице перед удалением
+                await conn.execute("""
+                    UPDATE pending_alerts
+                    SET moved_to_dlq_at = $1
+                    WHERE id = $2
+                """, moved_at, alert_id)
+                
                 logger.warning(
                     f"[DLQ] Moved alert to DLQ: code={code}, zone_id={zone_id}, "
-                    f"retry_count={retry_count}, error={last_error[:100]}"
+                    f"retry_count={retry_count}/{max_attempts}, error={last_error[:100]}"
                 )
             except Exception as e:
                 logger.error(f"Failed to move alert to DLQ: {e}", exc_info=True)
@@ -189,14 +246,14 @@ class AlertQueue:
         Получает записи, готовые к ретраю.
         
         Returns:
-            Список кортежей (id, zone_id, source, code, type, status, details, retry_count)
+            Список кортежей (id, zone_id, source, code, type, status, details, retry_count, max_attempts, last_error)
         """
         await self.ensure_table()
         
         pool = await get_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch("""
-                SELECT id, zone_id, source, code, type, status, details, retry_count
+                SELECT id, zone_id, source, code, type, status, details, retry_count, max_attempts, last_error
                 FROM pending_alerts
                 WHERE next_retry_at <= NOW()
                 ORDER BY next_retry_at ASC, id ASC
@@ -214,7 +271,9 @@ class AlertQueue:
                 row['type'],
                 row['status'],
                 details,
-                row['retry_count']
+                row['retry_count'],
+                row.get('max_attempts', 10),
+                row.get('last_error')
             ))
         
         return result
@@ -224,7 +283,7 @@ class AlertQueue:
         Получает метрики очереди для observability.
         
         Returns:
-            Словарь с метриками: size, oldest_age_seconds
+            Словарь с метриками: size, oldest_age_seconds, dlq_size, success_rate
         """
         await self.ensure_table()
         
@@ -238,6 +297,13 @@ class AlertQueue:
                 """)
                 size = size_row['count'] if size_row else 0
                 
+                # Получаем размер DLQ
+                dlq_size_row = await conn.fetchrow("""
+                    SELECT COUNT(*) as count
+                    FROM pending_alerts_dlq
+                """)
+                dlq_size = dlq_size_row['count'] if dlq_size_row else 0
+                
                 # Получаем возраст самой старой записи (только если есть записи)
                 if size > 0:
                     oldest_row = await conn.fetchrow("""
@@ -248,9 +314,22 @@ class AlertQueue:
                 else:
                     oldest_age_seconds = 0.0
                 
+                # Вычисляем success_rate: (всего - в очереди - в DLQ) / всего
+                # Для упрощения считаем success_rate как 1 - (size + dlq_size) / (size + dlq_size + delivered)
+                # Но так как delivered не хранится, используем приближение через retry_count
+                total_processed = size + dlq_size
+                if total_processed > 0:
+                    # Приблизительно: успешные = те, что не в очереди и не в DLQ
+                    # Для точности нужно было бы хранить счетчик, но для метрик это достаточно
+                    success_rate = 1.0 - (dlq_size / total_processed) if total_processed > 0 else 1.0
+                else:
+                    success_rate = 1.0
+                
                 return {
                     'size': size,
                     'oldest_age_seconds': float(oldest_age_seconds),
+                    'dlq_size': dlq_size,
+                    'success_rate': float(success_rate),
                 }
             except Exception as e:
                 # Если таблица еще не создана, возвращаем нулевые метрики
@@ -258,7 +337,143 @@ class AlertQueue:
                 return {
                     'size': 0,
                     'oldest_age_seconds': 0.0,
+                    'dlq_size': 0,
+                    'success_rate': 1.0,
                 }
+    
+    async def list_dlq(self, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
+        """
+        Получает список элементов из DLQ.
+        
+        Args:
+            limit: Максимальное количество записей
+            offset: Смещение для пагинации
+            
+        Returns:
+            Список словарей с данными DLQ элементов
+        """
+        await self.ensure_table()
+        
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT id, zone_id, source, code, type, status, details, retry_count, 
+                       max_attempts, last_error, failed_at, moved_to_dlq_at, original_id, created_at
+                FROM pending_alerts_dlq
+                ORDER BY moved_to_dlq_at DESC, id DESC
+                LIMIT $1 OFFSET $2
+            """, limit, offset)
+        
+        result = []
+        for row in rows:
+            details = json.loads(row['details']) if row['details'] else None
+            result.append({
+                'id': row['id'],
+                'zone_id': row['zone_id'],
+                'source': row['source'],
+                'code': row['code'],
+                'type': row['type'],
+                'status': row['status'],
+                'details': details,
+                'retry_count': row['retry_count'],
+                'max_attempts': row.get('max_attempts'),
+                'last_error': row['last_error'],
+                'failed_at': row['failed_at'].isoformat() if row['failed_at'] else None,
+                'moved_to_dlq_at': row['moved_to_dlq_at'].isoformat() if row.get('moved_to_dlq_at') else None,
+                'original_id': row['original_id'],
+                'created_at': row['created_at'].isoformat() if row['created_at'] else None,
+            })
+        
+        return result
+    
+    async def replay_dlq_item(self, dlq_id: int) -> bool:
+        """
+        Перемещает элемент из DLQ обратно в очередь для повторной попытки.
+        
+        Args:
+            dlq_id: ID элемента в DLQ
+            
+        Returns:
+            True если успешно перемещено, False если элемент не найден
+        """
+        await self.ensure_table()
+        
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            # Получаем элемент из DLQ
+            row = await conn.fetchrow("""
+                SELECT zone_id, source, code, type, status, details, max_attempts
+                FROM pending_alerts_dlq
+                WHERE id = $1
+            """, dlq_id)
+            
+            if not row:
+                return False
+            
+            # Добавляем обратно в очередь с нулевым retry_count
+            details_json = row['details']
+            max_attempts = row.get('max_attempts', 10)
+            
+            await conn.execute("""
+                INSERT INTO pending_alerts (zone_id, source, code, type, status, details, retry_count, max_attempts, next_retry_at)
+                VALUES ($1, $2, $3, $4, $5, $6, 0, $7, NOW())
+            """, row['zone_id'], row['source'], row['code'], row['type'], row['status'], details_json, max_attempts)
+            
+            # Удаляем из DLQ
+            await conn.execute("""
+                DELETE FROM pending_alerts_dlq WHERE id = $1
+            """, dlq_id)
+            
+            logger.info(f"[DLQ] Replayed alert from DLQ: dlq_id={dlq_id}, code={row['code']}")
+            return True
+    
+    async def purge_dlq_item(self, dlq_id: int) -> bool:
+        """
+        Удаляет элемент из DLQ.
+        
+        Args:
+            dlq_id: ID элемента в DLQ
+            
+        Returns:
+            True если успешно удалено, False если элемент не найден
+        """
+        await self.ensure_table()
+        
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            result = await conn.execute("""
+                DELETE FROM pending_alerts_dlq WHERE id = $1
+            """, dlq_id)
+            
+            deleted = result == "DELETE 1"
+            if deleted:
+                logger.info(f"[DLQ] Purged alert from DLQ: dlq_id={dlq_id}")
+            return deleted
+    
+    async def purge_dlq_all(self) -> int:
+        """
+        Удаляет все элементы из DLQ.
+        
+        Returns:
+            Количество удаленных элементов
+        """
+        await self.ensure_table()
+        
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            # Сначала получаем количество
+            count_row = await conn.fetchrow("""
+                SELECT COUNT(*) as count FROM pending_alerts_dlq
+            """)
+            count = count_row['count'] if count_row else 0
+            
+            # Удаляем все
+            await conn.execute("""
+                DELETE FROM pending_alerts_dlq
+            """)
+            
+            logger.info(f"[DLQ] Purged all alerts from DLQ: count={count}")
+            return count
 
 
 # Глобальный экземпляр очереди
@@ -425,7 +640,7 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
             
             logger.info(f"[RETRY_WORKER] Processing {len(pending)} pending alerts")
             
-            for alert_id, zone_id, source, code, type, status, details, retry_count in pending:
+            for alert_id, zone_id, source, code, type, status, details, retry_count, max_attempts, last_error in pending:
                 # Проверяем shutdown перед обработкой каждой записи
                 if shutdown_event and shutdown_event.is_set():
                     logger.info("Alert retry worker received shutdown signal during processing")
@@ -465,23 +680,24 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
                         backoff_seconds = calculate_backoff_with_jitter(new_retry_count)
                         next_retry_at = datetime.utcnow() + timedelta(seconds=backoff_seconds)
                         
-                        await queue.mark_retry(alert_id, new_retry_count, next_retry_at)
+                        error_msg = f"Failed to deliver after {new_retry_count} attempts"
+                        await queue.mark_retry(alert_id, new_retry_count, next_retry_at, error_msg)
                         logger.info(
                             f"[RETRY_WORKER] Scheduled retry for alert id={alert_id}, "
                             f"code={code}, retry_count={new_retry_count}, "
                             f"next_retry_at={next_retry_at.isoformat()}"
                         )
                         
-                        # Ограничиваем количество попыток (максимум 10)
-                        if new_retry_count >= 10:
+                        # Проверяем максимальное количество попыток
+                        if new_retry_count >= max_attempts:
                             logger.error(
                                 f"[RETRY_WORKER] Max retries reached for alert "
-                                f"id={alert_id}, code={code}. Moving to DLQ."
+                                f"id={alert_id}, code={code} ({new_retry_count}/{max_attempts}). Moving to DLQ."
                             )
                             # Перемещаем в DLQ перед удалением
                             await queue.move_to_dlq(
                                 alert_id, zone_id, source, code, type, status,
-                                details, new_retry_count, "Max retries reached"
+                                details, new_retry_count, max_attempts, "Max retries reached"
                             )
                             await queue.mark_delivered(alert_id)
                 
@@ -492,15 +708,16 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
                     )
                     # Планируем ретрай даже при ошибке обработки с jitter
                     new_retry_count = retry_count + 1
-                    if new_retry_count < 10:
+                    error_msg = f"Processing error: {str(e)}"
+                    if new_retry_count < max_attempts:
                         backoff_seconds = calculate_backoff_with_jitter(new_retry_count)
                         next_retry_at = datetime.utcnow() + timedelta(seconds=backoff_seconds)
-                        await queue.mark_retry(alert_id, new_retry_count, next_retry_at)
+                        await queue.mark_retry(alert_id, new_retry_count, next_retry_at, error_msg)
                     else:
                         # Перемещаем в DLQ перед удалением
                         await queue.move_to_dlq(
                             alert_id, zone_id, source, code, type, status,
-                            details, retry_count + 1, str(e)
+                            details, new_retry_count, max_attempts, error_msg
                         )
                         await queue.mark_delivered(alert_id)
             

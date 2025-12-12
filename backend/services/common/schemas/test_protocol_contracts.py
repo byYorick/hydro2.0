@@ -41,6 +41,7 @@ TELEMETRY_SCHEMA = SCHEMAS_DIR / "telemetry.json"
 COMMAND_SCHEMA = SCHEMAS_DIR / "command.json"
 COMMAND_RESPONSE_SCHEMA = SCHEMAS_DIR / "command_response.json"
 ERROR_ALERT_SCHEMA = SCHEMAS_DIR / "error_alert.json"
+ZONE_EVENTS_SCHEMA = SCHEMAS_DIR / "zone_events.json"
 
 
 def load_schema(schema_path: Path) -> Dict[str, Any]:

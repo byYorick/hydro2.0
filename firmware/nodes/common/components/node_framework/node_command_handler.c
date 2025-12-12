@@ -32,18 +32,22 @@ typedef struct {
     bool used;
 } command_handler_entry_t;
 
-// Кеш для защиты от дубликатов команд
+// Кеш для защиты от дубликатов команд и идемпотентности
 // ВАЖНО: Дедуп работает глобально по cmd_id (независимо от channel и топика)
 // Это защищает от двойной подписки: если команда придет из temp-topic и main-topic,
 // она будет обработана только один раз
-#define CMD_ID_CACHE_SIZE 50  // Увеличено для глобального дедупа
-#define CMD_ID_TTL_MS 60000  // 60 секунд TTL
+// Также сохраняет final_status (DONE/FAILED) для идемпотентности
+#define CMD_ID_CACHE_SIZE 128  // Минимум N=128 для идемпотентности
+#define CMD_ID_TTL_MS 300000  // 5 минут TTL (увеличено для идемпотентности)
 #define MAX_CHANNEL_NAME_LEN 64
+#define MAX_STATUS_LEN 16  // "DONE", "FAILED", "ACK", "ERROR"
 
 typedef struct {
     char cmd_id[64];
     uint64_t timestamp_ms;
+    char final_status[MAX_STATUS_LEN];  // Сохраненный финальный статус (DONE/FAILED)
     bool valid;
+    bool has_final_status;  // Флаг наличия финального статуса
 } cmd_id_cache_entry_t;
 
 // Глобальный кеш для дедупа по cmd_id (независимо от channel)
@@ -488,15 +492,36 @@ void node_command_handler_process(
         ESP_LOGW(TAG, "Command without HMAC fields (ts/sig): cmd=%s, cmd_id=%s (backward compatibility mode)", cmd, cmd_id);
     }
 
-    // Проверка на дубликат (per channel)
-    if (node_command_handler_is_duplicate(cmd_id, channel)) {
-        ESP_LOGW(TAG, "Duplicate command ignored: %s (id: %s, channel: %s)", cmd, cmd_id, channel ? channel : "default");
-        // Отправляем ответ с тем же cmd_id, но без повторного выполнения
+    // Проверка на дубликат и идемпотентность
+    const char *cached_status = node_command_handler_get_cached_status(cmd_id, channel);
+    if (cached_status != NULL) {
+        // Команда уже обработана - возвращаем сохраненный финальный статус (DONE/FAILED)
+        ESP_LOGI(TAG, "Idempotent command: %s (id: %s, channel: %s) - returning cached status: %s", 
+                 cmd, cmd_id, channel ? channel : "default", cached_status);
+        
+        // Определяем статус ответа на основе cached_status
+        const char *response_status = "ACK";
+        const char *error_code = NULL;
+        const char *error_message = NULL;
+        
+        if (strcmp(cached_status, "DONE") == 0) {
+            response_status = "DONE";
+        } else if (strcmp(cached_status, "FAILED") == 0) {
+            response_status = "FAILED";
+            error_code = "command_already_failed";
+            error_message = "Command was already processed and failed previously";
+        } else if (strcmp(cached_status, "ERROR") == 0) {
+            response_status = "ERROR";
+            error_code = "command_already_errored";
+            error_message = "Command was already processed and errored previously";
+        }
+        // Если cached_status == "ACK", используем "ACK" (команда принята, но еще не завершена)
+        
         cJSON *response = node_command_handler_create_response(
             cmd_id,
-            "ACK",
-            NULL,
-            "Command already processed (duplicate)",
+            response_status,
+            error_code,
+            error_message,
             NULL
         );
         if (response) {
@@ -636,6 +661,19 @@ void node_command_handler_process(
 
     // Публикация ответа
     if (response) {
+        // Извлекаем финальный статус из ответа для сохранения в кеш
+        cJSON *status_item = cJSON_GetObjectItem(response, "status");
+        if (status_item && cJSON_IsString(status_item)) {
+            const char *status_str = status_item->valuestring;
+            // Сохраняем только терминальные статусы (DONE/FAILED/ERROR)
+            // ACK не сохраняем, так как это промежуточный статус
+            if (strcmp(status_str, "DONE") == 0 || 
+                strcmp(status_str, "FAILED") == 0 || 
+                strcmp(status_str, "ERROR") == 0) {
+                node_command_handler_cache_final_status(cmd_id, channel, status_str);
+            }
+        }
+        
         char *json_str = cJSON_PrintUnformatted(response);
         if (json_str) {
             // Публикуем ответ через mqtt_manager
@@ -814,17 +852,32 @@ static channel_cache_t *find_or_create_channel_cache(const char *channel) {
 }
 
 bool node_command_handler_is_duplicate(const char *cmd_id, const char *channel) {
+    // Используем get_cached_status для проверки дубликатов
+    return (node_command_handler_get_cached_status(cmd_id, channel) != NULL);
+}
+
+/**
+ * @brief Получить сохраненный финальный статус команды из кеша
+ * 
+ * @param cmd_id ID команды
+ * @param channel Имя канала (может быть NULL)
+ * @return Указатель на строку статуса или NULL если команда не найдена или нет финального статуса
+ */
+const char *node_command_handler_get_cached_status(const char *cmd_id, const char *channel) {
+    (void)channel;  // Не используем channel для глобального кеша
+    
     if (cmd_id == NULL) {
-        return false;
+        return NULL;
     }
 
     init_mutexes();
 
     if (s_global_cmd_cache.cache_mutex == NULL) {
-        return false;
+        return NULL;
     }
 
     uint64_t current_time_ms = esp_timer_get_time() / 1000;
+    const char *cached_status = NULL;
 
     // ГЛОБАЛЬНЫЙ ДЕДУП: проверяем cmd_id независимо от channel и топика
     // Это защищает от двойной подписки: если команда придет из temp-topic и main-topic,
@@ -836,28 +889,77 @@ bool node_command_handler_is_duplicate(const char *cmd_id, const char *channel) 
                 // Проверяем TTL
                 if (current_time_ms - s_global_cmd_cache.global_cache[i].timestamp_ms > CMD_ID_TTL_MS) {
                     s_global_cmd_cache.global_cache[i].valid = false;
+                    s_global_cmd_cache.global_cache[i].has_final_status = false;
                     continue;
                 }
 
                 // Проверяем совпадение cmd_id (глобально, независимо от channel)
                 if (strcmp(s_global_cmd_cache.global_cache[i].cmd_id, cmd_id) == 0) {
+                    // Если есть финальный статус, возвращаем его
+                    if (s_global_cmd_cache.global_cache[i].has_final_status) {
+                        cached_status = s_global_cmd_cache.global_cache[i].final_status;
+                    }
+                    // Если нет финального статуса, но команда в кеше - это означает, что она обрабатывается
+                    // Возвращаем NULL, чтобы команда могла быть обработана (но это не должно происходить)
                     xSemaphoreGive(s_global_cmd_cache.cache_mutex);
-                    ESP_LOGD(TAG, "Duplicate command detected (global dedup): cmd_id=%s", cmd_id);
-                    return true;  // Дубликат найден
+                    if (cached_status) {
+                        ESP_LOGD(TAG, "Cached final status found: cmd_id=%s, status=%s", cmd_id, cached_status);
+                    }
+                    return cached_status;
                 }
             }
         }
 
-        // Добавляем в глобальный кеш (LRU: перезаписываем старую запись)
+        // Команда не найдена - добавляем в глобальный кеш (LRU: перезаписываем старую запись)
         size_t idx = s_global_cmd_cache.lru_index % CMD_ID_CACHE_SIZE;
         strncpy(s_global_cmd_cache.global_cache[idx].cmd_id, cmd_id, 63);
         s_global_cmd_cache.global_cache[idx].cmd_id[63] = '\0';
         s_global_cmd_cache.global_cache[idx].timestamp_ms = current_time_ms;
         s_global_cmd_cache.global_cache[idx].valid = true;
+        s_global_cmd_cache.global_cache[idx].has_final_status = false;
+        s_global_cmd_cache.global_cache[idx].final_status[0] = '\0';
         s_global_cmd_cache.lru_index = (s_global_cmd_cache.lru_index + 1) % CMD_ID_CACHE_SIZE;
 
         xSemaphoreGive(s_global_cmd_cache.cache_mutex);
     }
 
-    return false;
+    return NULL;
+}
+
+/**
+ * @brief Сохранить финальный статус команды в кеш
+ * 
+ * @param cmd_id ID команды
+ * @param channel Имя канала (может быть NULL)
+ * @param final_status Финальный статус (DONE/FAILED/ERROR)
+ */
+void node_command_handler_cache_final_status(const char *cmd_id, const char *channel, const char *final_status) {
+    (void)channel;  // Не используем channel для глобального кеша
+    
+    if (cmd_id == NULL || final_status == NULL) {
+        return;
+    }
+
+    init_mutexes();
+
+    if (s_global_cmd_cache.cache_mutex == NULL) {
+        return;
+    }
+
+    // Ищем команду в кеше и обновляем финальный статус
+    if (xSemaphoreTake(s_global_cmd_cache.cache_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        for (size_t i = 0; i < CMD_ID_CACHE_SIZE; i++) {
+            if (s_global_cmd_cache.global_cache[i].valid &&
+                strcmp(s_global_cmd_cache.global_cache[i].cmd_id, cmd_id) == 0) {
+                // Найдена команда - обновляем финальный статус
+                strncpy(s_global_cmd_cache.global_cache[i].final_status, final_status, MAX_STATUS_LEN - 1);
+                s_global_cmd_cache.global_cache[i].final_status[MAX_STATUS_LEN - 1] = '\0';
+                s_global_cmd_cache.global_cache[i].has_final_status = true;
+                ESP_LOGI(TAG, "Cached final status for cmd_id=%s: %s", cmd_id, final_status);
+                xSemaphoreGive(s_global_cmd_cache.cache_mutex);
+                return;
+            }
+        }
+        xSemaphoreGive(s_global_cmd_cache.cache_mutex);
+    }
 }

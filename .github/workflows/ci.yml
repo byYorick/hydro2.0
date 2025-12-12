@@ -130,6 +130,8 @@ jobs:
         run: npm run typecheck
       - name: Lint (ESLint)
         run: npm run lint
+      - name: Build
+        run: npm run build
       - name: NPM audit (production)
         continue-on-error: true
         run: npm audit --omit=dev || true
@@ -153,8 +155,6 @@ jobs:
           name: vitest-coverage
           path: backend/laravel/coverage
           retention-days: 7
-      - name: Build
-        run: npm run build
       - name: Install Playwright
         run: npx playwright install --with-deps
       - name: E2E (Playwright)

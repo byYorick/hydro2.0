@@ -5,6 +5,7 @@ import { useApi } from './useApi'
 import { onWsStateChange, getEchoInstance } from '@/utils/echoClient'
 import { readBooleanEnv } from '@/utils/env'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
+import { registerSubscription, unregisterSubscription } from '@/ws/invariants'
 
 type ZoneCommandHandler = (event: {
   commandId: number | string
@@ -448,16 +449,81 @@ function ensureChannelControl(
   return control
 }
 
+// Self-check режим (DEV only): проверка инвариантов подписок
+function checkSubscriptionInvariants(channelName: string, subscriptionId: string, instanceId: number): void {
+  const isDev = (import.meta as any).env?.DEV === true || 
+                (import.meta as any).env?.MODE === 'development'
+  
+  if (!isDev) {
+    return // Self-check только в dev режиме
+  }
+  
+  // Проверка 1: нет дублей подписок на один канал с одним handler
+  const existingSub = activeSubscriptions.get(subscriptionId)
+  if (existingSub) {
+    logger.warn('[useWebSocket] INVARIANT VIOLATION: Duplicate subscription ID', {
+      subscriptionId,
+      channel: channelName,
+      existingChannel: existingSub.channelName,
+      componentTag: existingSub.componentTag,
+    })
+  }
+  
+  // Проверка 2: нет дублей handler'ов на один канал
+  const channelSet = channelSubscribers.get(channelName)
+  if (channelSet) {
+    channelSet.forEach(existingId => {
+      const existing = activeSubscriptions.get(existingId)
+      if (existing && existing.instanceId === instanceId && existing.channelName === channelName) {
+        // Это может быть нормально, если компонент подписывается несколько раз
+        // Но логируем для диагностики
+        logger.debug('[useWebSocket] Multiple subscriptions from same instance', {
+          channel: channelName,
+          instanceId,
+          subscriptionIds: Array.from(channelSet),
+        })
+      }
+    })
+  }
+  
+  // Проверка 3: счетчик подписок на канал
+  const channelCount = channelSubscribers.get(channelName)?.size || 0
+  const control = channelControls.get(channelName)
+  const hasActiveChannel = control?.echoChannel !== null
+  
+  logger.debug('[useWebSocket] Subscription invariant check', {
+    channel: channelName,
+    subscriptionId,
+    channelSubscriptions: channelCount,
+    hasActiveChannel,
+    instanceId,
+  })
+}
+
 function addSubscription(_control: ChannelControl, subscription: ActiveSubscription): void {
   // control передается для совместимости API, но не используется напрямую
+  
   activeSubscriptions.set(subscription.id, subscription)
   let channelSet = channelSubscribers.get(subscription.channelName)
   if (!channelSet) {
     channelSet = new Set()
     channelSubscribers.set(subscription.channelName, channelSet)
   }
+  
   channelSet.add(subscription.id)
   incrementComponentChannel(subscription.instanceId, subscription.channelName)
+  
+  // Регистрируем подписку для проверки инвариантов
+  const eventName = subscription.kind === 'zoneCommands' 
+    ? '.App\\Events\\CommandStatusUpdated' 
+    : '.App\\Events\\EventCreated'
+  registerSubscription(
+    subscription.channelName,
+    subscription.id,
+    eventName,
+    subscription.componentTag
+  )
+  
   logger.debug('[useWebSocket] Added subscription', {
     channel: subscription.channelName,
     subscriptionId: subscription.id,
@@ -507,6 +573,16 @@ function removeSubscription(subscriptionId: string): void {
   if (!subscription) {
     return
   }
+
+  // Удаляем из реестра инвариантов
+  const eventName = subscription.kind === 'zoneCommands' 
+    ? '.App\\Events\\CommandStatusUpdated' 
+    : '.App\\Events\\EventCreated'
+  unregisterSubscription(
+    subscription.channelName,
+    subscriptionId,
+    eventName
+  )
 
   // Для глобальных каналов обновляем реестр перед удалением
   if (isGlobalChannel(subscription.channelName)) {
@@ -1264,4 +1340,27 @@ export function useWebSocket(showToast?: ToastHandler, componentTag?: string) {
     fetchSnapshot: fetchAndApplySnapshot,
     getSnapshot: (zoneId: number) => zoneSnapshots.get(zoneId) || null,
   }
+}
+
+// Экспорты для тестирования (только для unit-тестов)
+export const __testExports = {
+  activeSubscriptions: () => new Map(activeSubscriptions),
+  channelSubscribers: () => new Map(channelSubscribers),
+  channelControls: () => new Map(channelControls),
+  globalChannelRegistry: () => new Map(globalChannelRegistry),
+  pendingSubscriptions: () => new Map(pendingSubscriptions),
+  getSubscriptionCount: (channelName: string) => channelSubscribers.get(channelName)?.size || 0,
+  hasSubscription: (subscriptionId: string) => activeSubscriptions.has(subscriptionId),
+  getChannelControl: (channelName: string) => channelControls.get(channelName),
+  reset: () => {
+    activeSubscriptions.clear()
+    channelSubscribers.clear()
+    channelControls.clear()
+    globalChannelRegistry.clear()
+    pendingSubscriptions.clear()
+    componentChannelCounts.clear()
+    instanceSubscriptionSets.clear()
+    subscriptionCounter = 0
+    componentCounter = 0
+  },
 }

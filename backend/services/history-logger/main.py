@@ -244,7 +244,13 @@ async def health():
         # Проверяем здоровье очереди алертов (здорова если размер < 1000 и возраст < 1 часа)
         alerts_healthy = alert_metrics['size'] < 1000 and alert_metrics['oldest_age_seconds'] < 3600
         update_queue_health('alerts', alerts_healthy)
-        health_status["components"]["queue_alerts"] = "ok" if alerts_healthy else "degraded"
+        health_status["components"]["queue_alerts"] = {
+            "status": "ok" if alerts_healthy else "degraded",
+            "size": alert_metrics['size'],
+            "oldest_age_seconds": alert_metrics['oldest_age_seconds'],
+            "dlq_size": alert_metrics.get('dlq_size', 0),
+            "success_rate": alert_metrics.get('success_rate', 1.0),
+        }
         
         # Метрики очереди статусов
         status_queue = await get_status_queue()
@@ -254,7 +260,13 @@ async def health():
         # Проверяем здоровье очереди статусов
         status_healthy = status_metrics['size'] < 1000 and status_metrics['oldest_age_seconds'] < 3600
         update_queue_health('status_updates', status_healthy)
-        health_status["components"]["queue_status_updates"] = "ok" if status_healthy else "degraded"
+        health_status["components"]["queue_status_updates"] = {
+            "status": "ok" if status_healthy else "degraded",
+            "size": status_metrics['size'],
+            "oldest_age_seconds": status_metrics['oldest_age_seconds'],
+            "dlq_size": status_metrics.get('dlq_size', 0),
+            "success_rate": status_metrics.get('success_rate', 1.0),
+        }
         
         if not alerts_healthy or not status_healthy:
             health_status["status"] = "degraded"
@@ -272,6 +284,238 @@ def metrics():
     """Prometheus metrics endpoint."""
     metrics_data = generate_latest()
     return Response(content=metrics_data.decode('utf-8') if isinstance(metrics_data, bytes) else metrics_data, media_type=CONTENT_TYPE_LATEST)
+
+
+# DLQ Management Endpoints
+
+@app.get("/api/dlq/alerts")
+async def list_alerts_dlq(limit: int = 100, offset: int = 0):
+    """
+    Получить список элементов из DLQ алертов.
+    
+    Args:
+        limit: Максимальное количество записей (по умолчанию 100)
+        offset: Смещение для пагинации (по умолчанию 0)
+        
+    Returns:
+        Список элементов DLQ с метаданными
+    """
+    try:
+        alert_queue = await get_alert_queue()
+        items = await alert_queue.list_dlq(limit=limit, offset=offset)
+        metrics = await alert_queue.get_queue_metrics()
+        
+        return {
+            "items": items,
+            "total": metrics.get('dlq_size', 0),
+            "limit": limit,
+            "offset": offset
+        }
+    except Exception as e:
+        logger.error(f"Failed to list alerts DLQ: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/dlq/alerts/{dlq_id}/replay")
+async def replay_alert_dlq(dlq_id: int):
+    """
+    Переместить элемент из DLQ алертов обратно в очередь для повторной попытки.
+    
+    Args:
+        dlq_id: ID элемента в DLQ
+        
+    Returns:
+        Результат операции
+    """
+    try:
+        alert_queue = await get_alert_queue()
+        success = await alert_queue.replay_dlq_item(dlq_id)
+        
+        if not success:
+            raise HTTPException(status_code=404, detail=f"DLQ item {dlq_id} not found")
+        
+        return {"success": True, "message": f"Alert DLQ item {dlq_id} replayed successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to replay alert DLQ item {dlq_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/dlq/alerts/{dlq_id}")
+async def purge_alert_dlq_item(dlq_id: int):
+    """
+    Удалить элемент из DLQ алертов.
+    
+    Args:
+        dlq_id: ID элемента в DLQ
+        
+    Returns:
+        Результат операции
+    """
+    try:
+        alert_queue = await get_alert_queue()
+        success = await alert_queue.purge_dlq_item(dlq_id)
+        
+        if not success:
+            raise HTTPException(status_code=404, detail=f"DLQ item {dlq_id} not found")
+        
+        return {"success": True, "message": f"Alert DLQ item {dlq_id} purged successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to purge alert DLQ item {dlq_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/dlq/alerts")
+async def purge_all_alerts_dlq():
+    """
+    Удалить все элементы из DLQ алертов.
+    
+    Returns:
+        Количество удаленных элементов
+    """
+    try:
+        alert_queue = await get_alert_queue()
+        count = await alert_queue.purge_dlq_all()
+        
+        return {"success": True, "message": f"Purged {count} alert DLQ items"}
+    except Exception as e:
+        logger.error(f"Failed to purge all alerts DLQ: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/dlq/status-updates")
+async def list_status_updates_dlq(limit: int = 100, offset: int = 0):
+    """
+    Получить список элементов из DLQ статусов команд.
+    
+    Args:
+        limit: Максимальное количество записей (по умолчанию 100)
+        offset: Смещение для пагинации (по умолчанию 0)
+        
+    Returns:
+        Список элементов DLQ с метаданными
+    """
+    try:
+        status_queue = await get_status_queue()
+        items = await status_queue.list_dlq(limit=limit, offset=offset)
+        metrics = await status_queue.get_queue_metrics()
+        
+        return {
+            "items": items,
+            "total": metrics.get('dlq_size', 0),
+            "limit": limit,
+            "offset": offset
+        }
+    except Exception as e:
+        logger.error(f"Failed to list status updates DLQ: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/dlq/status-updates/{dlq_id}/replay")
+async def replay_status_update_dlq(dlq_id: int):
+    """
+    Переместить элемент из DLQ статусов команд обратно в очередь для повторной попытки.
+    
+    Args:
+        dlq_id: ID элемента в DLQ
+        
+    Returns:
+        Результат операции
+    """
+    try:
+        status_queue = await get_status_queue()
+        success = await status_queue.replay_dlq_item(dlq_id)
+        
+        if not success:
+            raise HTTPException(status_code=404, detail=f"DLQ item {dlq_id} not found")
+        
+        return {"success": True, "message": f"Status update DLQ item {dlq_id} replayed successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to replay status update DLQ item {dlq_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/dlq/status-updates/{dlq_id}")
+async def purge_status_update_dlq_item(dlq_id: int):
+    """
+    Удалить элемент из DLQ статусов команд.
+    
+    Args:
+        dlq_id: ID элемента в DLQ
+        
+    Returns:
+        Результат операции
+    """
+    try:
+        status_queue = await get_status_queue()
+        success = await status_queue.purge_dlq_item(dlq_id)
+        
+        if not success:
+            raise HTTPException(status_code=404, detail=f"DLQ item {dlq_id} not found")
+        
+        return {"success": True, "message": f"Status update DLQ item {dlq_id} purged successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to purge status update DLQ item {dlq_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/dlq/status-updates")
+async def purge_all_status_updates_dlq():
+    """
+    Удалить все элементы из DLQ статусов команд.
+    
+    Returns:
+        Количество удаленных элементов
+    """
+    try:
+        status_queue = await get_status_queue()
+        count = await status_queue.purge_dlq_all()
+        
+        return {"success": True, "message": f"Purged {count} status update DLQ items"}
+    except Exception as e:
+        logger.error(f"Failed to purge all status updates DLQ: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/dlq/metrics")
+async def get_dlq_metrics():
+    """
+    Получить метрики всех DLQ очередей.
+    
+    Returns:
+        Метрики для всех очередей: oldest_age, size, dlq_size, success_rate
+    """
+    try:
+        alert_queue = await get_alert_queue()
+        status_queue = await get_status_queue()
+        
+        alert_metrics = await alert_queue.get_queue_metrics()
+        status_metrics = await status_queue.get_queue_metrics()
+        
+        return {
+            "alerts": {
+                "size": alert_metrics.get('size', 0),
+                "oldest_age_seconds": alert_metrics.get('oldest_age_seconds', 0.0),
+                "dlq_size": alert_metrics.get('dlq_size', 0),
+                "success_rate": alert_metrics.get('success_rate', 1.0),
+            },
+            "status_updates": {
+                "size": status_metrics.get('size', 0),
+                "oldest_age_seconds": status_metrics.get('oldest_age_seconds', 0.0),
+                "dlq_size": status_metrics.get('dlq_size', 0),
+                "success_rate": status_metrics.get('success_rate', 1.0),
+            }
+        }
+    except Exception as e:
+        logger.error(f"Failed to get DLQ metrics: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 TELEM_RECEIVED = Counter("telemetry_received_total",
                          "Total telemetry messages received")
@@ -3029,10 +3273,28 @@ async def publish_zone_command(
     # Получаем MQTT клиент
     mqtt = await get_mqtt_client()
     
-    # Убеждаемся, что команда существует в БД со статусом QUEUED
+    # Проверяем статус команды перед публикацией (идемпотентность)
+    # Если команда уже в терминальном статусе (ack/done/failed), не публикуем повторно
     try:
         existing_cmd = await fetch("SELECT status FROM commands WHERE cmd_id = $1", cmd_id)
-        if not existing_cmd:
+        if existing_cmd:
+            cmd_status = existing_cmd[0].get("status", "").lower()
+            # Терминальные статусы: ack, done, failed
+            if cmd_status in ("ack", "done", "failed"):
+                logger.info(
+                    f"[IDEMPOTENCY] Command {cmd_id} already in terminal status '{cmd_status}', "
+                    f"skipping republish to prevent duplicate physical actions"
+                )
+                return {
+                    "status": "ok",
+                    "data": {
+                        "command_id": cmd_id,
+                        "message": f"Command already in terminal status: {cmd_status}",
+                        "skipped": True
+                    }
+                }
+        else:
+            # Команда не существует - создаем со статусом QUEUED
             node_rows = await fetch("SELECT id FROM nodes WHERE uid = $1 AND zone_id = $2", req.node_uid, zone_id)
             node_id = node_rows[0]["id"] if node_rows else None
             await execute(
@@ -3044,7 +3306,7 @@ async def publish_zone_command(
                 zone_id, node_id, req.channel, req.get_command_name(), req.params or {}, cmd_id
             )
     except Exception as e:
-        logger.warning(f"Failed to ensure command in DB: {e}")
+        logger.warning(f"Failed to check/ensure command in DB: {e}")
     
     # Публикуем с ретраями
     max_retries = 3
@@ -3110,10 +3372,28 @@ async def publish_node_command(
     # Получаем MQTT клиент
     mqtt = await get_mqtt_client()
     
-    # Убеждаемся, что команда существует в БД со статусом QUEUED
+    # Проверяем статус команды перед публикацией (идемпотентность)
+    # Если команда уже в терминальном статусе (ack/done/failed), не публикуем повторно
     try:
         existing_cmd = await fetch("SELECT status FROM commands WHERE cmd_id = $1", cmd_id)
-        if not existing_cmd:
+        if existing_cmd:
+            cmd_status = existing_cmd[0].get("status", "").lower()
+            # Терминальные статусы: ack, done, failed
+            if cmd_status in ("ack", "done", "failed"):
+                logger.info(
+                    f"[IDEMPOTENCY] Command {cmd_id} already in terminal status '{cmd_status}', "
+                    f"skipping republish to prevent duplicate physical actions"
+                )
+                return {
+                    "status": "ok",
+                    "data": {
+                        "command_id": cmd_id,
+                        "message": f"Command already in terminal status: {cmd_status}",
+                        "skipped": True
+                    }
+                }
+        else:
+            # Команда не существует - создаем со статусом QUEUED
             node_rows = await fetch("SELECT id FROM nodes WHERE uid = $1 AND zone_id = $2", node_uid, req.zone_id)
             node_id = node_rows[0]["id"] if node_rows else None
             await execute(
@@ -3125,7 +3405,7 @@ async def publish_node_command(
                 req.zone_id, node_id, req.channel, req.get_command_name(), req.params or {}, cmd_id
             )
     except Exception as e:
-        logger.warning(f"Failed to ensure command in DB: {e}")
+        logger.warning(f"Failed to check/ensure command in DB: {e}")
     
     # Публикуем с ретраями
     max_retries = 3
@@ -3224,16 +3504,33 @@ async def publish_command(
         extra=log_context
     )
     
-    # ШАГ 1: Убеждаемся, что команда существует в БД со статусом QUEUED
-    # Это гарантирует, что команда уже создана до публикации в MQTT
+    # ШАГ 1: Проверяем статус команды перед публикацией (идемпотентность)
+    # Если команда уже в терминальном статусе (ack/done/failed), не публикуем повторно
     try:
-        # Проверяем, существует ли команда в БД
+        # Проверяем, существует ли команда в БД и её статус
         existing_cmd = await fetch(
             """
             SELECT status FROM commands WHERE cmd_id = $1
             """,
             cmd_id
         )
+        
+        if existing_cmd:
+            cmd_status = existing_cmd[0].get("status", "").lower()
+            # Терминальные статусы: ack, done, failed
+            if cmd_status in ("ack", "done", "failed"):
+                logger.info(
+                    f"[IDEMPOTENCY] Command {cmd_id} already in terminal status '{cmd_status}', "
+                    f"skipping republish to prevent duplicate physical actions"
+                )
+                return {
+                    "status": "ok",
+                    "data": {
+                        "command_id": cmd_id,
+                        "message": f"Command already in terminal status: {cmd_status}",
+                        "skipped": True
+                    }
+                }
         
         if not existing_cmd:
             # Команда не существует - создаем её со статусом QUEUED
