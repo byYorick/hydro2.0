@@ -80,15 +80,27 @@ class GrowCycleUpdated implements ShouldBroadcast
      */
     public function broadcasted(): void
     {
+        // Определяем тип события для zone_events
+        $eventType = match($this->action) {
+            'PAUSED' => 'CYCLE_PAUSED',
+            'RESUMED' => 'CYCLE_RESUMED',
+            'HARVESTED' => 'CYCLE_HARVESTED',
+            'ABORTED' => 'CYCLE_ABORTED',
+            'STAGE_ADVANCED' => 'STAGE_ADVANCED',
+            'STAGE_COMPUTED' => 'STAGE_COMPUTED',
+            default => "CYCLE_{$this->action}",
+        };
+        
         $this->recordZoneEvent(
             $this->cycle->zone_id,
-            "CYCLE_{$this->action}",
+            $eventType,
             'grow_cycle',
             (string) $this->cycle->id,
             [
                 'cycle_id' => $this->cycle->id,
                 'status' => $this->cycle->status->value,
                 'action' => $this->action,
+                'stage_code' => $this->cycle->current_stage_code,
             ],
             $this->eventId,
             $this->serverTs

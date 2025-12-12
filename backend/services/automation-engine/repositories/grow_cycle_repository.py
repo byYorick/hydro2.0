@@ -49,6 +49,8 @@ class GrowCycleRepository:
                     gc.batch_label,
                     gc.notes,
                     gc.settings,
+                    gc.current_stage_code,
+                    gc.current_stage_started_at,
                     zri.current_phase_index,
                     rp.targets,
                     rp.name as phase_name
@@ -86,8 +88,10 @@ class GrowCycleRepository:
                 "batch_label": row["batch_label"],
                 "notes": row["notes"],
                 "settings": row["settings"],
+                "current_stage_code": row["current_stage_code"],
+                "current_stage_started_at": row["current_stage_started_at"],
                 "current_phase_index": row["current_phase_index"],
-                "targets": row["targets"],
+                "targets": row["targets"],  # Fallback targets из фазы (для обратной совместимости)
                 "phase_name": row["phase_name"],
             }
         return None
@@ -126,6 +130,8 @@ class GrowCycleRepository:
                     gc.batch_label,
                     gc.notes,
                     gc.settings,
+                    gc.current_stage_code,
+                    gc.current_stage_started_at,
                     zri.current_phase_index,
                     rp.targets,
                     rp.name as phase_name
@@ -169,8 +175,10 @@ class GrowCycleRepository:
                 "batch_label": row["batch_label"],
                 "notes": row["notes"],
                 "settings": row["settings"],
+                "current_stage_code": row["current_stage_code"],
+                "current_stage_started_at": row["current_stage_started_at"],
                 "current_phase_index": row["current_phase_index"],
-                "targets": row["targets"],
+                "targets": row["targets"],  # Fallback targets из фазы
                 "phase_name": row["phase_name"],
             }
         

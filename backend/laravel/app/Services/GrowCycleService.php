@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Events\GrowCycleUpdated;
 use App\Models\GrowCycle;
 use App\Models\GrowStageTemplate;
 use App\Models\Recipe;
@@ -129,14 +130,22 @@ class GrowCycleService
 
             $stageTemplate = $targetMap->stageTemplate;
             
+            $oldStageCode = $cycle->current_stage_code;
+            
             $cycle->update([
                 'current_stage_code' => $stageTemplate->code,
                 'current_stage_started_at' => now(),
             ]);
+            
+            $cycle->refresh();
+
+            // Отправляем событие об обновлении цикла для автоматического обновления targets в AE
+            GrowCycleUpdated::dispatch($cycle, 'STAGE_ADVANCED');
 
             Log::info('Grow cycle stage advanced', [
                 'cycle_id' => $cycle->id,
-                'stage_code' => $stageTemplate->code,
+                'old_stage_code' => $oldStageCode,
+                'new_stage_code' => $stageTemplate->code,
             ]);
 
             return $cycle->fresh();
@@ -190,10 +199,19 @@ class GrowCycleService
         }
 
         if ($currentMap) {
+            $oldStageCode = $cycle->current_stage_code;
+            $newStageCode = $currentMap->stageTemplate->code;
+            
             $cycle->update([
-                'current_stage_code' => $currentMap->stageTemplate->code,
+                'current_stage_code' => $newStageCode,
                 'current_stage_started_at' => $cycle->current_stage_started_at ?? now(),
             ]);
+            
+            // Если стадия изменилась, отправляем событие для обновления targets
+            if ($oldStageCode !== $newStageCode) {
+                $cycle->refresh();
+                GrowCycleUpdated::dispatch($cycle, 'STAGE_COMPUTED');
+            }
         }
     }
 
