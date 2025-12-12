@@ -322,18 +322,13 @@ class PythonBridgeService
                 }
 
                 // Если ответ неуспешный, но не критическая ошибка сети
-                $status = $response->status();
-                $body = $response->body();
-                $lastException = new RequestException(
-                    "HTTP {$status}: {$body}",
-                    $response->toPsrResponse()
-                );
+                $lastException = new RequestException($response);
 
                 Log::warning('PythonBridgeService: Non-successful response', [
                     'cmd_id' => $command->cmd_id,
                     'url' => $url,
-                    'status' => $status,
-                    'body' => substr($body, 0, 500), // Ограничиваем длину лога
+                    'status' => $response->status(),
+                    'body' => substr($response->body(), 0, 500), // Ограничиваем длину лога
                     'attempt' => $attempt,
                 ]);
 

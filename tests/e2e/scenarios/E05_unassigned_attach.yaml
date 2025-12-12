@@ -94,21 +94,21 @@ actions:
 
   # Шаг 5: Привязка от UI (zone_id без pending_zone_id) → backend должен поставить pending_zone_id и обнулить zone_id
   - step: assign_node_to_zone_ui
-    type: api_put
+    type: api_patch
     endpoint: "/api/nodes/${node_id}"
     payload:
       zone_id: ${zone_id}
-    wait_seconds: 1
+    wait_seconds: 2
 
   # Шаг 6: Завершение привязки (симулируем completion от history-logger)
   # Важно: запрос должен содержать zone_id и pending_zone_id=null, чтобы NodeService трактовал это как completion
   - step: complete_node_binding
-    type: api_put
+    type: api_patch
     endpoint: "/api/nodes/${node_id}"
     payload:
       zone_id: ${zone_id}
       pending_zone_id: null
-    wait_seconds: 3  # Ждем обработки привязки + attachUnassignedErrors
+    wait_seconds: 5  # Ждем обработки привязки + attachUnassignedErrors
 
 assertions:
   # Проверка 1: Ошибка зарегистрирована в unassigned_node_errors
@@ -134,7 +134,9 @@ assertions:
     query: |
       SELECT id, zone_id, uid, lifecycle_state
       FROM nodes
-      WHERE id = ${node_id}
+      WHERE id = :node_id
+    params:
+      node_id: ${node_id}
     expected:
       - field: zone_id
         operator: equals
@@ -168,6 +170,7 @@ assertions:
       SELECT COUNT(*) as count
       FROM unassigned_node_errors
       WHERE hardware_id = 'esp32-unassigned-001'
+    timeout: 10.0
     expected:
       - field: count
         operator: equals

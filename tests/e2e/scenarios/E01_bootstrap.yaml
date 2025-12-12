@@ -55,9 +55,9 @@ actions:
     payload:
       metric_type: "ph"
       value: 6.5
-      ts: ${TIMESTAMP_S}
+      ts: ${TIMESTAMP_MS}
     qos: 1
-    wait_seconds: 2  # Ждем обработки
+    wait_seconds: 5  # Увеличиваем время для обработки телеметрии
 
   # Шаг 3: Публикация статуса ONLINE
   - step: publish_online_status
@@ -75,20 +75,23 @@ assertions:
   - name: telemetry_in_db
     type: database_query
     query: |
-      SELECT value, channel, node_id, zone_id, updated_at
+      SELECT value, channel, node_id, zone_id, updated_at, metric_type
       FROM telemetry_last
       WHERE zone_id = (
         SELECT id FROM zones WHERE uid = 'zn-test-1'
       )
-      AND channel = 'ph_sensor'
+      AND node_id = (
+        SELECT id FROM nodes WHERE uid = 'nd-ph-test-1'
+      )
       AND metric_type = 'ph'
+    timeout: 15.0
     expected:
       - field: value
         operator: equals
         value: 6.5
-      - field: channel
+      - field: metric_type
         operator: equals
-        value: "ph_sensor"
+        value: "ph"
       - field: updated_at
         operator: is_not_null
 

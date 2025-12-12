@@ -51,7 +51,8 @@ async def run_simulator(config: SimConfig):
     
     # Подключаемся к MQTT
     try:
-        await mqtt.connect()
+        if not mqtt.connect():
+            raise RuntimeError("Failed to connect to MQTT broker")
         logger.info("Connected to MQTT")
     except Exception as e:
         logger.error(f"Failed to connect to MQTT: {e}")
@@ -124,7 +125,7 @@ async def run_simulator(config: SimConfig):
     finally:
         await telemetry.stop()
         await status_publisher.stop()
-        await mqtt.disconnect()
+        mqtt.disconnect()
         logger.info("Node simulator stopped")
 
 
@@ -212,7 +213,8 @@ async def run_scenario(config: SimConfig, scenario_name: str):
         
         # Подключаемся к MQTT
         try:
-            await mqtt.connect()
+            if not mqtt.connect():
+                raise RuntimeError("Failed to connect to MQTT broker")
             logger.info("Connected to MQTT")
         except Exception as e:
             logger.error(f"Failed to connect to MQTT: {e}")
@@ -309,7 +311,7 @@ async def run_scenario(config: SimConfig, scenario_name: str):
         finally:
             await telemetry.stop()
             await status_publisher.stop()
-            await mqtt.disconnect()
+            mqtt.disconnect()
             logger.info("Node simulator stopped")
     else:
         # Для других сценариев запускаем обычный симулятор

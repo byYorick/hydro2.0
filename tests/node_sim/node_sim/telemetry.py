@@ -145,7 +145,7 @@ class TelemetryPublisher:
             topic = telemetry(self.node.gh_uid, self.node.zone_uid, self.node.node_uid, channel)
         
         # Публикуем
-        await self.mqtt.publish_json(topic, payload, qos=1, retain=False)
+        self.mqtt.publish_json(topic, payload, qos=1, retain=False)
         logger.debug(f"Published telemetry: {channel}={value}")
     
     async def _publish_ina209_telemetry(self):
@@ -166,7 +166,7 @@ class TelemetryPublisher:
             topic = telemetry(self.node.gh_uid, self.node.zone_uid, self.node.node_uid, "ina209")
         
         # Публикуем
-        await self.mqtt.publish_json(topic, payload, qos=1, retain=False)
+        self.mqtt.publish_json(topic, payload, qos=1, retain=False)
         logger.debug(f"Published INA209 telemetry: {current_ma}mA")
     
     async def _publish_flow_present_telemetry(self):
@@ -187,7 +187,7 @@ class TelemetryPublisher:
             topic = telemetry(self.node.gh_uid, self.node.zone_uid, self.node.node_uid, "flow_present")
         
         # Публикуем
-        await self.mqtt.publish_json(topic, payload, qos=1, retain=False)
+        self.mqtt.publish_json(topic, payload, qos=1, retain=False)
         logger.debug(f"Published flow_present telemetry: {flow_present}")
     
     def _get_metric_type(self, channel: str) -> str:

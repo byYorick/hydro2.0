@@ -1,214 +1,256 @@
-# E2E Test Runner Framework
+# E2E Test Suite - End-to-End тестовый контур
 
-Единый раннер YAML сценариев с проверками API/DB/WS/MQTT для Hydro 2.0.
+Полностью рабочий, воспроизводимый end-to-end тестовый контур с эмулятором нод и автоисправлением ошибок до состояния GREEN.
 
-## Структура
+## Быстрый старт
+
+### 1. Подготовка окружения
+
+```bash
+# Перейти в директорию E2E тестов
+cd tests/e2e
+
+# Создать файл .env.e2e на основе примера
+cp .env.e2e.example .env.e2e
+
+# Отредактировать .env.e2e при необходимости
+# (по умолчанию значения должны работать)
+```
+
+### 2. Запуск инфраструктуры
+
+```bash
+# Использовать скрипт из корня проекта
+./tools/testing/run_e2e.sh up
+
+# Или напрямую через docker-compose
+docker-compose -f tests/e2e/docker-compose.e2e.yml up -d
+```
+
+### 3. Запуск тестов
+
+```bash
+# Запуск всех обязательных сценариев
+./tools/testing/run_e2e.sh test
+
+# Или напрямую через Python
+cd tests/e2e
+python3 -m runner.e2e_runner scenarios/E01_bootstrap.yaml
+```
+
+## Структура проекта
 
 ```
 tests/e2e/
-├── runner/
-│   ├── __init__.py
-│   ├── e2e_runner.py      # Основной раннер
-│   ├── api_client.py      # HTTP клиент для API
-│   ├── ws_client.py       # WebSocket клиент (Reverb)
-│   ├── db_probe.py        # Проверки базы данных
-│   ├── mqtt_probe.py      # Проверки MQTT
-│   ├── assertions.py     # Кастомные assertions
-│   └── reporting.py      # Генерация отчетов
-├── scenarios/
-│   └── E02_command_happy.yaml  # Пример сценария
-├── reports/               # Генерируемые отчеты
-│   ├── junit.xml
-│   └── timeline.json
-└── requirements.txt
+├── docker-compose.e2e.yml    # Docker Compose конфигурация для E2E окружения
+├── .env.e2e.example          # Пример переменных окружения
+├── mosquitto.e2e.conf        # Конфигурация MQTT брокера
+├── node-sim-config.yaml      # Конфигурация node-sim для E2E
+├── requirements.txt          # Python зависимости для runner
+├── runner/                   # E2E test runner
+│   ├── e2e_runner.py         # Главный раннер
+│   ├── api_client.py         # HTTP клиент для Laravel API
+│   ├── ws_client.py          # WebSocket клиент для Reverb
+│   ├── db_probe.py           # Проверки базы данных
+│   ├── mqtt_probe.py         # Проверки MQTT
+│   ├── assertions.py         # Кастомные assertions
+│   └── reporting.py          # Генерация отчетов
+├── scenarios/                # YAML сценарии тестов
+│   ├── E01_bootstrap.yaml
+│   ├── E02_command_happy.yaml
+│   ├── E04_error_alert.yaml
+│   ├── E05_unassigned_attach.yaml
+│   └── E07_ws_reconnect_snapshot_replay.yaml
+└── reports/                 # Отчеты (генерируются автоматически)
+    ├── junit.xml
+    └── timeline.json
 ```
 
-## Установка
+## Обязательные сценарии
+
+### E01_bootstrap
+**DoD**: telemetry в БД + online статус
+
+Проверяет базовый bootstrap пайплайна:
+- Узел публикует телеметрию через MQTT
+- Телеметрия сохраняется в БД
+- Статус узла обновляется на ONLINE
+
+### E02_command_happy
+**DoD**: команда → DONE + WS событие + zone_events запись
+
+Проверяет успешное выполнение команды:
+- Отправка команды через API
+- Обработка командой узла
+- WebSocket события
+- Запись в zone_events
+
+### E04_error_alert
+**DoD**: error → alert ACTIVE + WS + dedup
+
+Проверяет создание алертов из ошибок узлов:
+- Узел публикует ошибку через MQTT
+- Алерт создается в БД со статусом ACTIVE
+- WebSocket событие отправляется на канал зоны
+- Повторные одинаковые ошибки не создают дубликаты алертов (dedup)
+
+### E05_unassigned_attach
+**DoD**: temp error → unassigned → attach → alert
+
+Проверяет сценарий присвоения непривязанного узла:
+- temp error → unassigned_node_errors
+- регистрация ноды
+- attach → alert
+- unassigned очищен/архивирован
+
+### E07_ws_reconnect_snapshot_replay
+**DoD**: snapshot last_event_id + replay закрывают gap
+
+Проверяет механизм восстановления после разрыва WebSocket:
+- WS disconnect
+- накопление событий
+- reconnect
+- snapshot + events догоняют состояние
+
+## Инварианты пайплайна
+
+### Команды
+Статусы должны изменяться монотонно:
+```
+QUEUED → SENT → ACCEPTED → DONE/FAILED/TIMEOUT
+```
+❌ Без откатов
+
+### Ошибки
+Ошибки должны быть обработаны одним из способов:
+- alerts
+- unassigned_node_errors
+- DLQ
+
+Ничего не теряется.
+
+### Realtime
+- Каждое событие имеет event_id
+- Reconnect: snapshot содержит last_event_id
+- `/events?after_id` догоняет gap
+
+## Использование скрипта run_e2e.sh
 
 ```bash
-cd tests/e2e
-pip install -r requirements.txt
-```
+# Запуск инфраструктуры
+./tools/testing/run_e2e.sh up
 
-## Использование
+# Остановка инфраструктуры
+./tools/testing/run_e2e.sh down
 
-### Базовый запуск
+# Перезапуск инфраструктуры
+./tools/testing/run_e2e.sh restart
 
-```bash
-python tests/e2e/runner/e2e_runner.py tests/e2e/scenarios/E02_command_happy.yaml
-```
+# Запуск тестов (требует запущенной инфраструктуры)
+./tools/testing/run_e2e.sh test
 
-### Переменные окружения
+# Полный цикл: запуск инфраструктуры + тесты
+./tools/testing/run_e2e.sh all
 
-```bash
-export LARAVEL_URL=http://localhost:8080
-export LARAVEL_API_TOKEN=your-token
-export REVERB_URL=ws://localhost:6001
-export DB_DATABASE=/path/to/database.sqlite
-export MQTT_HOST=localhost
-export MQTT_PORT=1883
-export MQTT_USER=username  # опционально
-export MQTT_PASS=password  # опционально
+# Просмотр логов
+./tools/testing/run_e2e.sh logs [service_name]
 
-python tests/e2e/runner/e2e_runner.py tests/e2e/scenarios/E02_command_happy.yaml
-```
-
-## Формат YAML сценариев
-
-### Структура сценария
-
-```yaml
-name: Test Scenario Name
-description: Описание сценария
-
-steps:
-  - name: Step name
-    api.get:
-      path: /api/endpoint
-      params:
-        key: value
-      save: response_var  # Сохранить результат в переменную
-
-  - name: Subscribe to WebSocket
-    ws.subscribe:
-      channel: private-commands.1
-
-  - name: Wait for event
-    ws.wait_event:
-      event: CommandStatusUpdated
-      timeout: 10.0
-
-  - name: Check database
-    db.wait:
-      query: SELECT * FROM commands WHERE id = :id
-      params:
-        id: 1
-      timeout: 5.0
-      expected_rows: 1
-      save: command_data
-
-  - name: Assert
-    assert.equals:
-      actual: ${command_data[0].status}
-      expected: DONE
-```
-
-### Типы шагов
-
-#### API шаги
-
-- `api.get` - GET запрос
-- `api.post` - POST запрос
-- `api.put` - PUT запрос
-- `api.delete` - DELETE запрос
-
-#### WebSocket шаги
-
-- `ws.subscribe` - Подписка на канал
-- `ws.wait_event` - Ожидание события
-
-#### Database шаги
-
-- `db.wait` - Ожидание выполнения SQL запроса с условием
-- `db.query` - Выполнение SQL запроса
-
-#### MQTT шаги
-
-- `mqtt.subscribe` - Подписка на топик
-- `mqtt.wait_message` - Ожидание сообщения
-
-#### Assertions
-
-- `assert.equals` - Проверка равенства
-- `assert.contains` - Проверка наличия элемента
-- `assert.monotonic_command_status` - Проверка монотонности статусов команд
-- `assert.alert_dedup_count` - Проверка количества дубликатов алертов
-- `assert.unassigned_present` - Проверка наличия непривязанных узлов
-- `assert.attached` - Проверка наличия привязанных узлов
-
-#### Другие шаги
-
-- `set` - Установка переменных в контекст
-- `sleep` - Задержка (в секундах)
-- `snapshot.fetch` - Получение снимка состояния зоны
-- `events.replay` - Воспроизведение событий из снимка
-
-### Переменные
-
-Поддерживается использование переменных в формате `${var}` или `{{var}}`:
-
-```yaml
-- name: Use variable
-  api.get:
-    path: /api/nodes/${node_id}/status
-```
-
-Доступ к вложенным полям и индексам:
-
-```yaml
-- name: Use nested variable
-  set:
-    node_id: ${nodes.data[0].id}
-    zone_id: ${zones.data[0].zone_id}
+# Очистка данных
+./tools/testing/run_e2e.sh clean
 ```
 
 ## Отчеты
 
-После выполнения сценария генерируются отчеты в `tests/e2e/reports/`:
+После выполнения тестов генерируются отчеты:
 
-- `junit.xml` - JUnit XML отчет для CI/CD
-- `timeline.json` - JSON timeline с детальной информацией о выполнении
+- **JUnit XML** (`reports/junit.xml`) - для CI/CD систем
+- **JSON Timeline** (`reports/timeline.json`) - детальная информация о выполнении
 
-### Артефакты
+JSON Timeline содержит:
+- Все WebSocket сообщения (последние 50)
+- Все MQTT сообщения (последние 50)
+- Все API запросы и ответы
+- Временные метки всех событий
+- Результаты проверок
 
-В JSON timeline включаются последние 50 сообщений:
-- WebSocket сообщения
-- MQTT сообщения
-- API ответы
+## Отладка
 
-## Примеры
+### Просмотр логов сервисов
 
-### Пример 1: Проверка статуса команды
+```bash
+# Все сервисы
+docker-compose -f tests/e2e/docker-compose.e2e.yml logs -f
 
-```yaml
-name: Command Status Check
-
-steps:
-  - name: Send command
-    api.post:
-      path: /api/nodes/1/commands
-      json:
-        cmd: get_status
-        params: {}
-      save: command_response
-
-  - name: Get command ID
-    set:
-      cmd_id: ${command_response.data.cmd_id}
-
-  - name: Wait for status update
-    ws.wait_event:
-      event: CommandStatusUpdated
-      timeout: 10.0
-
-  - name: Check status in DB
-    db.wait:
-      query: SELECT status FROM commands WHERE cmd_id = :cmd_id
-      params:
-        cmd_id: ${cmd_id}
-      timeout: 5.0
-      expected_rows: 1
-      save: command_status
-
-  - name: Assert status is DONE
-    assert.equals:
-      actual: ${command_status[0].status}
-      expected: DONE
+# Конкретный сервис
+docker-compose -f tests/e2e/docker-compose.e2e.yml logs -f laravel
+docker-compose -f tests/e2e/docker-compose.e2e.yml logs -f history-logger
+docker-compose -f tests/e2e/docker-compose.e2e.yml logs -f node-sim
 ```
 
-## DoD
+### Проверка состояния сервисов
 
-✅ Запуск: `python tests/e2e/runner/e2e_runner.py tests/e2e/scenarios/E02_command_happy.yaml`  
-✅ На выходе: `tests/e2e/reports/junit.xml`  
-✅ Поддержка шагов: `api.post|get|put`, `ws.subscribe/wait_event`, `db.wait`, `assert.*`  
-✅ Отчеты: JUnit XML + JSON timeline + артефакты (последние 50 WS/MQTT сообщений)
+```bash
+# Статус всех сервисов
+docker-compose -f tests/e2e/docker-compose.e2e.yml ps
+
+# Health check Laravel
+curl http://localhost:8081/api/system/health
+
+# Health check history-logger
+curl http://localhost:9302/health
+```
+
+### Проверка базы данных
+
+```bash
+# Подключение к БД
+docker-compose -f tests/e2e/docker-compose.e2e.yml exec postgres psql -U hydro -d hydro_e2e
+
+# Проверка таблиц
+\dt
+
+# Проверка команд
+SELECT * FROM commands ORDER BY created_at DESC LIMIT 10;
+
+# Проверка телеметрии
+SELECT * FROM telemetry_last ORDER BY updated_at DESC LIMIT 10;
+```
+
+### Проверка MQTT
+
+```bash
+# Подписка на все топики
+docker-compose -f tests/e2e/docker-compose.e2e.yml exec mosquitto mosquitto_sub -h localhost -p 1883 -t "#" -v
+```
+
+## Требования
+
+- Docker и Docker Compose
+- Python 3.8+
+- Доступные порты: 8081 (Laravel), 6002 (Reverb), 1884 (MQTT), 5433 (PostgreSQL), 6380 (Redis)
+
+## Troubleshooting
+
+### Сервисы не запускаются
+
+1. Проверьте, что все порты свободны
+2. Проверьте логи: `./tools/testing/run_e2e.sh logs`
+3. Проверьте health endpoints
+
+### Тесты падают
+
+1. Проверьте, что все сервисы здоровы
+2. Проверьте логи сервисов
+3. Проверьте отчеты в `tests/e2e/reports/`
+4. Убедитесь, что node-sim запущен и публикует телеметрию
+
+### Проблемы с подключением к БД
+
+1. Проверьте переменные окружения в `.env.e2e`
+2. Убедитесь, что PostgreSQL запущен: `docker-compose -f tests/e2e/docker-compose.e2e.yml ps postgres`
+3. Проверьте подключение: `docker-compose -f tests/e2e/docker-compose.e2e.yml exec postgres pg_isready -U hydro`
+
+## Дополнительная документация
+
+- [E2E_GUIDE.md](../../docs/testing/E2E_GUIDE.md) - Подробное руководство по E2E тестам
+- [NODE_SIM.md](../../docs/testing/NODE_SIM.md) - Документация по симулятору узлов

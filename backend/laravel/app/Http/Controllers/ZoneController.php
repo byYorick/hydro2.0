@@ -931,7 +931,7 @@ class ZoneController extends Controller
 
         // Валидация query параметров
         $validated = $request->validate([
-            'after_id' => ['nullable', 'integer', 'min:1'],
+            'after_id' => ['nullable', 'integer', 'min:0'],  // Разрешаем 0 для начального запроса
             'limit' => ['nullable', 'integer', 'min:1', 'max:1000'],
             'cycle_only' => ['nullable', 'boolean'], // Фильтр для событий цикла
         ]);
@@ -974,18 +974,24 @@ class ZoneController extends Controller
             $query->where('id', '>', $afterId);
         }
 
+        // Используем payload_json (новое имя колонки) или details (старое имя) для обратной совместимости
+        // Проверяем, какая колонка существует
+        $hasPayloadJson = DB::getSchemaBuilder()->hasColumn('zone_events', 'payload_json');
+        $detailsColumn = $hasPayloadJson ? 'payload_json' : 'details';
+        
         $events = $query->limit($limit)->get([
             'id as event_id',
             'zone_id',
             'type',
-            'details',
+            DB::raw("{$detailsColumn} as details"),
             'created_at',
-        ]);
-
-        // Преобразуем details из jsonb в массив
-        $events = $events->map(function ($event) {
+        ])->map(function ($event) {
+            // Преобразуем details из jsonb в массив, если это строка
+            if (is_string($event->details)) {
+                $event->details = json_decode($event->details, true) ?? [];
+            }
+            // Добавляем payload для обратной совместимости
             $event->payload = $event->details;
-            $event->details = $event->details;
             return $event;
         });
 

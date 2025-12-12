@@ -44,8 +44,9 @@ class E2ERunner:
         # Конфигурация из переменных окружения или значений по умолчанию
         self.api_url = config.get("api_url") or os.getenv("LARAVEL_URL", "http://localhost:8080")
         self.api_token = config.get("api_token") or os.getenv("LARAVEL_API_TOKEN")
-        self.ws_url = config.get("ws_url") or os.getenv("REVERB_URL", "ws://localhost:6001")
-        self.db_path = config.get("db_path") or os.getenv("DB_DATABASE")
+        self.ws_url = config.get("ws_url") or os.getenv("WS_URL", "ws://localhost:6002/app/local")
+        # Используем DATABASE_URL если есть, иначе формируем из переменных
+        self.db_path = config.get("db_path") or os.getenv("DATABASE_URL") or os.getenv("DB_DATABASE")
         self.mqtt_host = config.get("mqtt_host") or os.getenv("MQTT_HOST", "localhost")
         self.mqtt_port = config.get("mqtt_port") or int(os.getenv("MQTT_PORT", "1883"))
         self.mqtt_user = config.get("mqtt_user") or os.getenv("MQTT_USER")
@@ -240,6 +241,9 @@ class E2ERunner:
                     value = getattr(value, part)
                 else:
                     return None
+            
+            if value is None:
+                return None
         
         return value
     
@@ -749,6 +753,22 @@ class E2ERunner:
         if step_type in ("start_simulator", "stop_simulator"):
             logger.info(f"Simulator step '{step_type}' (noop in this runner)")
             return
+        
+        # System control (docker-compose services)
+        if step_type == "system_stop":
+            service = cfg.get("service")
+            logger.warning(f"system_stop for {service} is not implemented in runner (use docker-compose directly)")
+            return
+        if step_type == "system_start":
+            service = cfg.get("service")
+            logger.warning(f"system_start for {service} is not implemented in runner (use docker-compose directly)")
+            return
+        
+        # Sleep/wait
+        if step_type in ("sleep", "wait"):
+            seconds = float(cfg.get("seconds", cfg.get("wait_seconds", 1.0)))
+            await asyncio.sleep(seconds)
+            return
 
         # MQTT publish
         if step_type in ("publish_mqtt", "mqtt_publish"):
@@ -757,6 +777,15 @@ class E2ERunner:
             qos = int(cfg.get("qos", 1))
             retain = bool(cfg.get("retain", False))
             self.mqtt.publish_json(topic, payload, qos=qos, retain=retain)
+            return
+        if step_type == "mqtt_publish_multiple":
+            messages = cfg.get("messages", [])
+            for msg in messages:
+                topic = msg["topic"]
+                payload = msg.get("payload", {})
+                qos = int(msg.get("qos", 1))
+                retain = bool(msg.get("retain", False))
+                self.mqtt.publish_json(topic, payload, qos=qos, retain=retain)
             return
 
         # HTTP request (full URL)
@@ -782,7 +811,12 @@ class E2ERunner:
             endpoint = cfg.get("endpoint") or cfg.get("path")
             if not endpoint:
                 raise ValueError(f"{step_type} requires endpoint")
+            # Разрешаем переменные в endpoint
+            endpoint = self._resolve_variables(endpoint)
             payload = cfg.get("payload") or cfg.get("json") or cfg.get("data")
+            # Разрешаем переменные в payload
+            if payload:
+                payload = self._resolve_variables(payload)
             if step_type == "api_get":
                 res = await self.api.get(endpoint, params=cfg.get("params"))
             elif step_type == "api_post":
@@ -794,6 +828,12 @@ class E2ERunner:
                 res = await self.api.request("PATCH", endpoint, json=payload)
             else:
                 res = await self.api.delete(endpoint)
+            # Проверяем expected_status, если указан
+            expected_status = cfg.get("expected_status")
+            if expected_status:
+                last_response = self.api.get_last_response()
+                if last_response and last_response.status_code != expected_status:
+                    raise AssertionError(f"Expected status {expected_status}, got {last_response.status_code}")
             if "save" in cfg:
                 self.context[cfg["save"]] = res
             return
@@ -809,13 +849,20 @@ class E2ERunner:
             channel = cfg["channel"]
             await self.ws.subscribe(channel)
             return
+        if step_type == "websocket_unsubscribe":
+            # Просто игнорируем, т.к. в текущей реализации нет явной отписки
+            logger.info("websocket_unsubscribe (noop)")
+            return
 
         # DB query in actions (rare)
         if step_type == "database_query":
             query = cfg["query"]
             params = cfg.get("params", {})
-            self.context[cfg.get("save", "last_db")] = self.db.query(query, params=params)
-            return
+            params = self._resolve_variables(params) if params else {}
+            result = self.db.query(query, params=params)
+            if "save" in cfg:
+                self.context[cfg["save"]] = result
+            return result
 
         # Snapshot fetch
         if step_type == "snapshot.fetch":
@@ -872,6 +919,58 @@ class E2ERunner:
             ev = await self.ws.wait_event(event_type, timeout=timeout)
             if ev is None:
                 raise TimeoutError(f"Timeout waiting for WebSocket event: {event_type}")
+            return
+
+        if a_type == "websocket_event_count":
+            event_type = assertion.get("event_type") or assertion.get("event")
+            channel = assertion.get("channel")
+            timeout = float(assertion.get("timeout_seconds", assertion.get("timeout", 10.0)))
+            filter_dict = assertion.get("filter", {})
+            expected = assertion.get("expected", [])
+            
+            # Подписываемся на канал, если еще не подписаны
+            if channel and channel not in self.ws._subscribed_channels:
+                await self.ws.subscribe(channel)
+            
+            # Собираем все события за период
+            events = []
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                messages = self.ws.get_messages(100)
+                for msg in messages:
+                    data = msg.get("data", {})
+                    msg_event = data.get("event", data.get("type"))
+                    if msg_event == event_type:
+                        # Проверяем фильтр
+                        match = True
+                        for key, value in filter_dict.items():
+                            # Простой путь через точку (например, command.cmd_id)
+                            parts = key.split(".")
+                            target = data
+                            for part in parts:
+                                if isinstance(target, dict):
+                                    target = target.get(part)
+                                else:
+                                    match = False
+                                    break
+                            if target != value:
+                                match = False
+                                break
+                        if match:
+                            events.append(data)
+                await asyncio.sleep(0.1)
+            
+            # Проверяем ожидаемое количество
+            for rule in expected:
+                field = rule.get("field")
+                operator = rule.get("operator")
+                value = rule.get("value")
+                if field == "count":
+                    actual = len(events)
+                    if operator == "equals" and actual != value:
+                        raise AssertionError(f"Expected {value} events, got {actual}")
+                    elif operator == "greater_than" and not (actual > value):
+                        raise AssertionError(f"Expected > {value} events, got {actual}")
             return
 
         if a_type == "compare_json":
@@ -941,6 +1040,9 @@ class E2ERunner:
             elif op == "less_than_or_equal":
                 if not (float(actual_value) <= float(expected_value)):
                     raise AssertionError(f"Field {field}: expected <= {expected_value}, got {actual_value}")
+            elif op == "greater_than_or_equal":
+                if not (float(actual_value) >= float(expected_value)):
+                    raise AssertionError(f"Field {field}: expected >= {expected_value}, got {actual_value}")
             else:
                 raise AssertionError(f"Unsupported operator in db assertion: {op}")
 

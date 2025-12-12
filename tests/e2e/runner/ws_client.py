@@ -49,6 +49,14 @@ class WSClient:
             headers["Authorization"] = f"Bearer {self.api_token}"
         
         try:
+            # Формируем правильный URL для Laravel Reverb
+            # Формат: ws://host:port/app/{app_id}?protocol=7&client=python&version=1.0
+            if "/app/" not in self.ws_url:
+                # Если URL не содержит /app/, добавляем его
+                base_url = self.ws_url.rstrip("/")
+                if not base_url.endswith("/app/local"):
+                    self.ws_url = f"{base_url}/app/local?protocol=7&client=python&version=1.0&flash=false"
+            
             # websockets<15 использует extra_headers, websockets>=15 использует additional_headers
             try:
                 self.ws = await websockets.connect(

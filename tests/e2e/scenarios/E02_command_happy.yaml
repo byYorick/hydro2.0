@@ -35,7 +35,10 @@ steps:
     api.post:
       path: /api/nodes/${test_node_id}/commands
       json:
-        cmd: get_status
+        cmd: set_relay_state
+        channel: main_pump
+        params:
+          state: false
       save: command_response
 
   - name: Save command ID

@@ -117,19 +117,32 @@ class NodeModel:
         now = time.time()
         
         # Климатические сенсоры
-        self.sensor_states["air_temp_c"].value = 22.0
-        self.sensor_states["air_rh"].value = 60.0
-        self.sensor_states["co2_ppm"].value = 400.0
-        self.sensor_states["lux"].value = 1000.0
+        if "air_temp_c" in self.sensor_states:
+            self.sensor_states["air_temp_c"].value = 22.0
+        if "air_rh" in self.sensor_states:
+            self.sensor_states["air_rh"].value = 60.0
+        if "co2_ppm" in self.sensor_states:
+            self.sensor_states["co2_ppm"].value = 400.0
+        if "lux" in self.sensor_states:
+            self.sensor_states["lux"].value = 1000.0
         
         # Сенсоры раствора
-        self.sensor_states["solution_temp_c"].value = 20.0
-        self.sensor_states["ph"].value = 6.0
-        self.sensor_states["ec"].value = 1.5
+        if "solution_temp_c" in self.sensor_states:
+            self.sensor_states["solution_temp_c"].value = 20.0
+        if "ph_sensor" in self.sensor_states:
+            self.sensor_states["ph_sensor"].value = 6.0
+        elif "ph" in self.sensor_states:
+            self.sensor_states["ph"].value = 6.0
+        if "ec_sensor" in self.sensor_states:
+            self.sensor_states["ec_sensor"].value = 1.5
+        elif "ec" in self.sensor_states:
+            self.sensor_states["ec"].value = 1.5
         
         # INA209 и flow
-        self.sensor_states["ina209_ma"].value = self.base_current
-        self.sensor_states["flow_present"].value = 0.0  # bool как float (0/1)
+        if "ina209_ma" in self.sensor_states:
+            self.sensor_states["ina209_ma"].value = self.base_current
+        if "flow_present" in self.sensor_states:
+            self.sensor_states["flow_present"].value = 0.0  # bool как float (0/1)
         
         # Обновляем время последнего обновления
         for sensor_state in self.sensor_states.values():

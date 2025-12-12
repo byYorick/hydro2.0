@@ -30,22 +30,32 @@ class DBProbe:
         self._backend: Optional[str] = None  # "sqlite" | "postgres"
     
     def _get_db_path(self) -> Optional[str]:
-        """Получить путь к базе данных."""
+        """Получить путь к базе данных. Только PostgreSQL поддерживается."""
         if self.db_path:
-            return self.db_path
+            # Если явно указан путь, проверяем, это DSN или файл
+            if self.db_path.startswith(("postgres://", "postgresql://")):
+                return self.db_path
+            # Если это не DSN, считаем что это PostgreSQL DSN нужно сформировать
+            # Но лучше использовать переменные окружения
         
-        # Пытаемся найти базу данных через переменные окружения или стандартные пути
-        possible_paths = [
-            os.getenv("DB_DATABASE"),
-            os.getenv("DATABASE_URL"),
-            "database/database.sqlite",
-            "backend/laravel/database/database.sqlite",
-        ]
+        # Приоритет 1: DATABASE_URL (если установлен)
+        database_url = os.getenv("DATABASE_URL")
+        if database_url:
+            return database_url
         
-        for path in possible_paths:
-            if path and Path(path).exists():
-                return path
+        # Приоритет 2: PostgreSQL переменные окружения
+        db_host = os.getenv("DB_HOST", "localhost")
+        db_port = os.getenv("DB_PORT", "5432")
+        db_name = os.getenv("DB_DATABASE", "hydro_e2e")
+        db_user = os.getenv("DB_USERNAME", "hydro")
+        db_pass = os.getenv("DB_PASSWORD", "hydro_e2e")
         
+        # Всегда используем PostgreSQL, если есть переменные окружения
+        if db_host and db_name:
+            dsn = f"postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
+            return dsn
+        
+        # Если переменные не установлены, возвращаем None
         return None
     
     def connect(self):
@@ -54,24 +64,22 @@ class DBProbe:
         if not db_path:
             raise RuntimeError("Database path not found. Set DB_DATABASE or db_path parameter.")
 
-        # DSN?
-        if isinstance(db_path, str) and db_path.startswith(("postgres://", "postgresql://")):
-            try:
-                import psycopg
-            except Exception as e:
-                raise RuntimeError("psycopg is required for Postgres DBProbe. Install tests/e2e requirements.") from e
+        # Только PostgreSQL поддерживается
+        if not isinstance(db_path, str) or not db_path.startswith(("postgres://", "postgresql://")):
+            raise RuntimeError(
+                f"Only PostgreSQL is supported. Got: {db_path}. "
+                "Set DATABASE_URL or DB_HOST/DB_PORT/DB_DATABASE environment variables."
+            )
+        
+        try:
+            import psycopg
+        except Exception as e:
+            raise RuntimeError("psycopg is required for Postgres DBProbe. Install tests/e2e requirements.") from e
 
-            self.pg_conn = psycopg.connect(db_path)
-            self.pg_conn.autocommit = True
-            self._backend = "postgres"
-            logger.info("Connected to Postgres database via DSN")
-            return
-
-        # SQLite file
-        self.connection = sqlite3.connect(db_path)
-        self.connection.row_factory = sqlite3.Row
-        self._backend = "sqlite"
-        logger.info(f"Connected to SQLite database: {db_path}")
+        self.pg_conn = psycopg.connect(db_path)
+        self.pg_conn.autocommit = True
+        self._backend = "postgres"
+        logger.info(f"Connected to Postgres database: {db_path.split('@')[1] if '@' in db_path else 'via DSN'}")
     
     def disconnect(self):
         """Отключиться от базы данных."""

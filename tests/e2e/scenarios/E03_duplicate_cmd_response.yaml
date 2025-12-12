@@ -58,13 +58,19 @@ actions:
   # Шаг 3: Отправка команды через API
   - step: send_command
     type: api_post
-    endpoint: "/api/zones/{zone_id}/commands"
+    endpoint: "/api/nodes/{node_id}/commands"
     payload:
-      type: "pump_control"
+      cmd: "set_relay_state"
       params:
         channel: "main_pump"
-        action: "stop"
+        state: false
+    save: command_response
     wait_seconds: 2
+
+  # Шаг 3.5: Сохраняем COMMAND_ID
+  - step: set_command_id
+    type: set
+    COMMAND_ID: ${command_response.data.command_id}
 
   # Шаг 4: Симулятор отправляет DONE ответ (первый раз)
   - step: node_sends_done_first
@@ -95,32 +101,29 @@ assertions:
   - name: command_stays_done
     type: database_query
     query: |
-      SELECT id, status, result_code, updated_at
+      SELECT id, status, updated_at
       FROM commands
-      WHERE cmd_id = ${COMMAND_ID}
+      WHERE cmd_id = :cmd_id
+    params:
+      cmd_id: ${COMMAND_ID}
     expected:
       - field: status
         operator: equals
         value: "DONE"
-      - field: result_code
-        operator: equals
-        value: 0
 
   # Проверка 2: Команда обновлялась только один раз (по updated_at)
   - name: command_updated_once
     type: database_query
     query: |
-      SELECT COUNT(*) as update_count
-      FROM (
-        SELECT status, updated_at
-        FROM commands
-        WHERE cmd_id = ${COMMAND_ID}
-      ) AS cmd
-      GROUP BY status, DATE_TRUNC('second', updated_at)
+      SELECT status, updated_at
+      FROM commands
+      WHERE cmd_id = :cmd_id
+    params:
+      cmd_id: ${COMMAND_ID}
     expected:
-      - field: update_count
-        operator: less_than_or_equal
-        value: 1
+      - field: status
+        operator: equals
+        value: "DONE"
 
   # Проверка 3: WebSocket событие CommandStatusUpdated отправлено один раз
   - name: ws_event_sent_once

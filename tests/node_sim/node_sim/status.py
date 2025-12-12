@@ -130,7 +130,7 @@ class StatusPublisher:
             topic = status(self.node.gh_uid, self.node.zone_uid, self.node.node_uid)
         
         # Публикуем с retain=True согласно спецификации
-        await self.mqtt.publish_json(topic, payload, qos=1, retain=True)
+        self.mqtt.publish_json(topic, payload, qos=1, retain=True)
         logger.debug(f"Published status: ONLINE")
     
     async def _publish_heartbeat(self):
@@ -155,6 +155,6 @@ class StatusPublisher:
             topic = heartbeat(self.node.gh_uid, self.node.zone_uid, self.node.node_uid)
         
         # Публикуем
-        await self.mqtt.publish_json(topic, payload, qos=1, retain=False)
+        self.mqtt.publish_json(topic, payload, qos=1, retain=False)
         logger.debug(f"Published heartbeat: uptime={uptime_seconds}s")
 
