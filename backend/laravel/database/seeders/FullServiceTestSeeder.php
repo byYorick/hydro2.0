@@ -435,7 +435,7 @@ class FullServiceTestSeeder extends Seeder
         $this->command->info('Создание команд...');
 
         $commandTypes = ['DOSE', 'IRRIGATE', 'SET_LIGHT', 'SET_CLIMATE', 'READ_SENSOR'];
-        $statuses = ['pending', 'sent', 'ack', 'failed'];
+        $statuses = [Command::STATUS_QUEUED, Command::STATUS_SENT, Command::STATUS_DONE, Command::STATUS_FAILED];
         $statusWeights = [5, 20, 70, 5]; // Процентное распределение
 
         $commandsCount = 0;
@@ -453,7 +453,7 @@ class FullServiceTestSeeder extends Seeder
                 // Выбираем статус по весам
                 $rand = rand(1, 100);
                 $cumulative = 0;
-                $status = 'pending';
+                $status = Command::STATUS_QUEUED;
                 foreach ($statuses as $index => $stat) {
                     $cumulative += $statusWeights[$index];
                     if ($rand <= $cumulative) {
@@ -463,8 +463,10 @@ class FullServiceTestSeeder extends Seeder
                 }
 
                 $createdAt = $dayStart->copy()->addHours(rand(0, 23))->addMinutes(rand(0, 59));
-                $sentAt = $status !== 'pending' ? $createdAt->copy()->addMinutes(rand(1, 5)) : null;
-                $ackAt = ($status === 'ack' || $status === 'failed') ? $sentAt->copy()->addMinutes(rand(1, 10)) : null;
+                $sentAt = $status !== Command::STATUS_QUEUED ? $createdAt->copy()->addMinutes(rand(1, 5)) : null;
+                $ackAt = in_array($status, [Command::STATUS_DONE, Command::STATUS_FAILED, Command::STATUS_TIMEOUT]) 
+                    ? ($sentAt ? $sentAt->copy()->addMinutes(rand(1, 10)) : $createdAt->copy()->addMinutes(rand(1, 10))) 
+                    : null;
 
                 Command::create([
                     'zone_id' => $zone->id,

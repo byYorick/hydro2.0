@@ -238,7 +238,7 @@ class PythonIngestControllerTest extends TestCase
         // Создаём команду напрямую
         $command = \App\Models\Command::create([
             'cmd_id' => 'cmd-test-123',
-            'status' => 'pending',
+            'status' => Command::STATUS_QUEUED,
             'cmd' => 'test_command',
         ]);
 

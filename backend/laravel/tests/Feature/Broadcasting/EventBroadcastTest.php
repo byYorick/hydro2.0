@@ -137,7 +137,7 @@ class EventBroadcastTest extends TestCase
 
         $this->assertSame([
             'commandId' => 321,
-            'status' => 'failed',
+            'status' => Command::STATUS_FAILED,
             'message' => 'Ошибка выполнения',
             'error' => 'Timeout',
             'zoneId' => 12,

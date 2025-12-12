@@ -19,10 +19,26 @@ interface PendingCommandInternal {
 }
 
 function normalizeStatus(status: CommandStatus | string): CommandStatus {
-  // MQTT/bridge присылает 'ack' как успешное выполнение
-  if (status === 'ack') return 'completed'
-  if (status === 'accepted') return 'executing'
-  return (status as CommandStatus) || 'unknown'
+  // Нормализация статусов: маппинг старых значений на новые
+  const statusUpper = String(status).toUpperCase()
+  
+  // Новые статусы (используем как есть)
+  if (['QUEUED', 'SENT', 'ACCEPTED', 'DONE', 'FAILED', 'TIMEOUT', 'SEND_FAILED'].includes(statusUpper)) {
+    return statusUpper as CommandStatus
+  }
+  
+  // Маппинг старых статусов на новые (для обратной совместимости)
+  const legacyMap: Record<string, CommandStatus> = {
+    'PENDING': 'QUEUED',
+    'ACK': 'DONE',           // ack -> DONE (команда выполнена)
+    'ACCEPTED': 'ACCEPTED',  // accepted -> ACCEPTED
+    'COMPLETED': 'DONE',     // completed -> DONE
+    'EXECUTING': 'ACCEPTED', // executing -> ACCEPTED (команда выполняется)
+    'FAILED': 'FAILED',      // failed -> FAILED
+    'SENT': 'SENT',          // sent -> SENT
+  }
+  
+  return legacyMap[statusUpper] || 'unknown'
 }
 
 /**
@@ -276,7 +292,7 @@ export function useCommands(showToast?: ToastHandler) {
     const now = Date.now()
     for (const [id, command] of pendingCommands.value.entries()) {
       if (
-        (command.status === 'completed' || command.status === 'failed') &&
+        (['DONE', 'FAILED', 'TIMEOUT', 'SEND_FAILED', 'completed', 'failed'].includes(command.status)) &&
         (now - command.timestamp) > maxAge
       ) {
         pendingCommands.value.delete(id)

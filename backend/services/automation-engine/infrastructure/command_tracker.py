@@ -4,6 +4,17 @@
 
 Статусы команд отслеживаются через таблицу commands в БД, которая обновляется history-logger.
 Это обеспечивает единый источник истины и работу после рестарта.
+
+Статусы команд:
+- QUEUED: команда в очереди
+- SENT: команда отправлена
+- ACCEPTED: команда принята узлом (промежуточный статус)
+- DONE: команда выполнена успешно (терминальный)
+- FAILED: команда провалилась (терминальный)
+- TIMEOUT: таймаут выполнения команды (терминальный)
+- SEND_FAILED: ошибка отправки команды (терминальный)
+
+Терминальные статусы: DONE, FAILED, TIMEOUT, SEND_FAILED
 """
 import asyncio
 import json
@@ -96,7 +107,7 @@ class CommandTracker:
             'command': command,
             'command_type': command.get('cmd', 'unknown'),
             'sent_at': datetime.utcnow(),
-            'status': 'pending',
+            'status': 'QUEUED',
             'context': context or {}
         }
         
@@ -126,7 +137,7 @@ class CommandTracker:
     async def _confirm_command_internal(
         self,
         cmd_id: str,
-        status: str,  # 'ack', 'failed', 'timeout'
+        status: str,  # 'DONE', 'FAILED', 'TIMEOUT', 'SEND_FAILED'
         response: Optional[Dict[str, Any]] = None,
         error: Optional[str] = None
     ):
@@ -135,7 +146,7 @@ class CommandTracker:
         
         Args:
             cmd_id: ID команды
-            status: Статус из БД ('ack', 'failed', 'timeout')
+            status: Статус из БД ('DONE', 'FAILED', 'TIMEOUT', 'SEND_FAILED')
             response: Ответ от узла (опционально)
             error: Сообщение об ошибке (опционально)
         """
@@ -154,7 +165,9 @@ class CommandTracker:
             del self._timeout_tasks[cmd_id]
         
         # Определяем успешность на основе статуса
-        success = (status == 'ack')
+        # ВАЖНО: Успехом считается только DONE, не ACCEPTED!
+        # ACCEPTED - это промежуточный статус (команда принята, но еще выполняется)
+        success = (status == 'DONE')
         
         # Обновляем статус
         command_info['status'] = status
@@ -216,7 +229,7 @@ class CommandTracker:
         DEPRECATED: Используйте _confirm_command_internal или проверку через БД.
         Оставлено для обратной совместимости.
         """
-        status = 'ack' if success else 'failed'
+        status = 'DONE' if success else 'FAILED'
         await self._confirm_command_internal(cmd_id, status, response, error)
     
     async def _check_timeout(self, cmd_id: str):
@@ -229,7 +242,7 @@ class CommandTracker:
                 # Проверяем статус в БД перед обработкой таймаута
                 db_status = await self._get_command_status_from_db(cmd_id)
                 
-                if db_status and db_status in ('ack', 'failed'):
+                if db_status and db_status in ('DONE', 'FAILED', 'TIMEOUT', 'SEND_FAILED'):
                     # Команда уже обработана, просто удаляем из pending
                     logger.debug(f"Command {cmd_id} already processed in DB (status: {db_status}), removing from pending")
                     del self.pending_commands[cmd_id]
@@ -238,18 +251,19 @@ class CommandTracker:
                         del self._timeout_tasks[cmd_id]
                     return
                 
-                if command_info['status'] in ('pending', 'sent'):
-                    # Команда не подтверждена и не обработана в БД
+                if command_info['status'] in ('QUEUED', 'SENT', 'ACCEPTED'):
+                    # Команда не завершена (в очереди, отправлена или принята, но еще не выполнена)
                     zone_id = command_info['zone_id']
                     command_type = command_info['command_type']
                     
                     logger.warning(
-                        f"Zone {zone_id}: Command {cmd_id} timed out after {self.command_timeout}s",
+                        f"Zone {zone_id}: Command {cmd_id} timed out after {self.command_timeout}s (status: {command_info['status']})",
                         extra={
                             'zone_id': zone_id,
                             'cmd_id': cmd_id,
                             'command_type': command_type,
-                            'timeout': self.command_timeout
+                            'timeout': self.command_timeout,
+                            'status': command_info['status']
                         }
                     )
                     
@@ -257,7 +271,7 @@ class CommandTracker:
                     PENDING_COMMANDS.labels(zone_id=str(zone_id)).dec()
                     
                     # Подтверждаем как timeout
-                    await self._confirm_command_internal(cmd_id, 'timeout', error='timeout')
+                    await self._confirm_command_internal(cmd_id, 'TIMEOUT', error='timeout')
                     
                     # Создаем событие
                     await create_zone_event(
@@ -283,7 +297,7 @@ class CommandTracker:
             cmd_id: ID команды
         
         Returns:
-            Статус команды ('pending', 'sent', 'ack', 'failed', 'timeout') или None
+            Статус команды ('QUEUED', 'SENT', 'ACCEPTED', 'DONE', 'FAILED', 'TIMEOUT', 'SEND_FAILED') или None
         """
         try:
             rows = await fetch(
@@ -301,6 +315,9 @@ class CommandTracker:
     async def _poll_command_statuses(self):
         """
         Периодически проверяет статусы команд из БД и обновляет внутреннее состояние.
+        
+        ВАЖНО: Обрабатываются только терминальные статусы (DONE, FAILED, TIMEOUT, SEND_FAILED).
+        ACCEPTED не обрабатывается, так как это промежуточный статус.
         """
         while not self._shutdown_event.is_set():
             try:
@@ -319,10 +336,10 @@ class CommandTracker:
                 try:
                     rows = await fetch(
                         """
-                        SELECT cmd_id, status, ack_at, failed_at
+                        SELECT cmd_id, status, ack_at, failed_at, error_message
                         FROM commands
                         WHERE cmd_id = ANY($1::text[])
-                        AND status IN ('ack', 'failed', 'timeout')
+                        AND status IN ('DONE', 'FAILED', 'TIMEOUT', 'SEND_FAILED')
                         """,
                         cmd_ids
                     )
@@ -335,8 +352,8 @@ class CommandTracker:
                         if cmd_id in self.pending_commands:
                             # Команда завершена, обновляем состояние
                             error = None
-                            if status == 'failed' and row.get('failed_at'):
-                                error = 'Command failed'
+                            if status in ('FAILED', 'TIMEOUT', 'SEND_FAILED'):
+                                error = row.get('error_message') or f'Command {status}'
                             
                             await self._confirm_command_internal(cmd_id, status, error=error)
                             
@@ -370,7 +387,7 @@ class CommandTracker:
     async def restore_pending_commands(self):
         """
         Восстановить pending команды из БД после рестарта.
-        Загружает команды со статусами 'pending' или 'sent', которые были отправлены недавно.
+        Загружает команды со статусами 'QUEUED', 'SENT' или 'ACCEPTED', которые были отправлены недавно.
         """
         try:
             # Загружаем команды, которые были отправлены в последние command_timeout секунд
@@ -378,7 +395,7 @@ class CommandTracker:
                 """
                 SELECT cmd_id, zone_id, cmd, params, status, sent_at, created_at
                 FROM commands
-                WHERE status IN ('pending', 'sent')
+                WHERE status IN ('QUEUED', 'SENT', 'ACCEPTED')
                 AND (sent_at IS NOT NULL AND sent_at > NOW() - INTERVAL '%s seconds')
                 OR (sent_at IS NULL AND created_at > NOW() - INTERVAL '%s seconds')
                 ORDER BY created_at DESC
@@ -424,6 +441,56 @@ class CommandTracker:
                 
         except Exception as e:
             logger.warning(f"Failed to restore pending commands from DB: {e}", exc_info=True)
+    
+    async def wait_for_command_done(
+        self,
+        cmd_id: str,
+        timeout_sec: Optional[float] = None,
+        poll_interval_sec: float = 1.0
+    ) -> Optional[bool]:
+        """
+        Явно ждать завершения команды (статус DONE).
+        
+        ВАЖНО: Успехом считается только статус DONE, не ACCEPTED!
+        ACCEPTED - это промежуточный статус, команда еще выполняется.
+        
+        Args:
+            cmd_id: ID команды
+            timeout_sec: Таймаут ожидания в секундах (None = использовать command_timeout)
+            poll_interval_sec: Интервал проверки статуса в секундах
+        
+        Returns:
+            True если команда завершилась со статусом DONE
+            False если команда завершилась со статусом FAILED/TIMEOUT/SEND_FAILED
+            None если истек таймаут
+        """
+        if timeout_sec is None:
+            timeout_sec = self.command_timeout
+        
+        start_time = time.time()
+        
+        while (time.time() - start_time) < timeout_sec:
+            db_status = await self._get_command_status_from_db(cmd_id)
+            
+            if db_status == 'DONE':
+                # Команда успешно завершена
+                if cmd_id in self.pending_commands:
+                    await self._confirm_command_internal(cmd_id, 'DONE')
+                return True
+            
+            if db_status in ('FAILED', 'TIMEOUT', 'SEND_FAILED'):
+                # Команда завершилась с ошибкой
+                if cmd_id in self.pending_commands:
+                    error = f'Command {db_status}'
+                    await self._confirm_command_internal(cmd_id, db_status, error=error)
+                return False
+            
+            # Промежуточные статусы (QUEUED, SENT, ACCEPTED) - продолжаем ждать
+            await asyncio.sleep(poll_interval_sec)
+        
+        # Таймаут
+        logger.warning(f"Timeout waiting for command {cmd_id} to complete (waited {timeout_sec}s)")
+        return None
     
     async def get_pending_commands(self, zone_id: Optional[int] = None) -> Dict[str, Dict[str, Any]]:
         """

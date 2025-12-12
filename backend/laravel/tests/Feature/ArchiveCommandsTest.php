@@ -100,7 +100,7 @@ class ArchiveCommandsTest extends TestCase
                 'channel' => 'ph_pump',
                 'cmd' => 'run_pump',
                 'params' => json_encode(['duration_ms' => 1000]),
-                'status' => 'pending',
+                'status' => Command::STATUS_QUEUED,
                 'cmd_id' => 'cmd-pending-' . $i,
                 'created_at' => $oldDate->copy()->addSeconds($i),
                 'updated_at' => $oldDate->copy()->addSeconds($i),
@@ -131,7 +131,7 @@ class ArchiveCommandsTest extends TestCase
         $this->assertEquals(100, $archivedCount);
         
         // Проверяем, что pending команды остались
-        $remainingPending = Command::where('status', 'pending')->count();
+        $remainingPending = Command::where('status', Command::STATUS_QUEUED)->count();
         $this->assertEquals(100, $remainingPending);
     }
 

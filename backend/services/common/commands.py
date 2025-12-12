@@ -7,16 +7,46 @@ import uuid
 from .db import execute
 
 
-async def mark_command_sent(cmd_id: str):
-    """Помечает команду как отправленную (SENT)."""
-    await execute(
-        "UPDATE commands SET status='SENT', sent_at=NOW(), updated_at=NOW() WHERE cmd_id=$1",
-        cmd_id,
-    )
+async def mark_command_sent(cmd_id: str, allow_resend: bool = True):
+    """
+    Помечает команду как отправленную (SENT).
+    
+    Защита от гонок: обновляет только если статус QUEUED (или SEND_FAILED при allow_resend=True).
+    Это предотвращает откат статуса назад, если команда уже перешла в ACCEPTED/DONE/FAILED.
+    
+    Args:
+        cmd_id: Идентификатор команды
+        allow_resend: Разрешить повторную отправку из SEND_FAILED (по умолчанию True)
+    """
+    if allow_resend:
+        # Разрешаем переход из QUEUED или SEND_FAILED (для повторной отправки)
+        await execute(
+            """
+            UPDATE commands 
+            SET status='SENT', sent_at=NOW(), updated_at=NOW() 
+            WHERE cmd_id=$1 AND status IN ('QUEUED', 'SEND_FAILED')
+            """,
+            cmd_id,
+        )
+    else:
+        # Только из QUEUED (без повторной отправки)
+        await execute(
+            """
+            UPDATE commands 
+            SET status='SENT', sent_at=NOW(), updated_at=NOW() 
+            WHERE cmd_id=$1 AND status = 'QUEUED'
+            """,
+            cmd_id,
+        )
 
 
 async def mark_command_accepted(cmd_id: str):
-    """Помечает команду как принятую узлом (ACCEPTED)."""
+    """
+    Помечает команду как принятую узлом (ACCEPTED).
+    
+    Защита от гонок: обновляет только если статус QUEUED или SENT.
+    Не обновляет если команда уже в ACCEPTED/DONE/FAILED/TIMEOUT/SEND_FAILED.
+    """
     await execute(
         """
         UPDATE commands
@@ -28,7 +58,12 @@ async def mark_command_accepted(cmd_id: str):
 
 
 async def mark_command_done(cmd_id: str, duration_ms: int = None, result_code: int = 0):
-    """Помечает команду как успешно выполненную (DONE)."""
+    """
+    Помечает команду как успешно выполненную (DONE).
+    
+    Защита от гонок: обновляет только если статус не является конечным (QUEUED/SENT/ACCEPTED).
+    Не обновляет если команда уже в DONE/FAILED/TIMEOUT/SEND_FAILED.
+    """
     if duration_ms is not None:
         await execute(
             """
@@ -60,7 +95,12 @@ async def mark_command_failed(
     error_message: str = None,
     result_code: int = 1
 ):
-    """Помечает команду как завершившуюся с ошибкой (FAILED)."""
+    """
+    Помечает команду как завершившуюся с ошибкой (FAILED).
+    
+    Защита от гонок: обновляет только если статус не является конечным (QUEUED/SENT/ACCEPTED).
+    Не обновляет если команда уже в DONE/FAILED/TIMEOUT/SEND_FAILED.
+    """
     if error_code or error_message:
         await execute(
             """
@@ -87,7 +127,12 @@ async def mark_command_failed(
 
 
 async def mark_command_timeout(cmd_id: str):
-    """Помечает команду как завершившуюся по таймауту (TIMEOUT)."""
+    """
+    Помечает команду как завершившуюся по таймауту (TIMEOUT).
+    
+    Защита от гонок: обновляет только если статус не является конечным (QUEUED/SENT/ACCEPTED).
+    Не обновляет если команда уже в DONE/FAILED/TIMEOUT/SEND_FAILED.
+    """
     await execute(
         """
         UPDATE commands
@@ -100,13 +145,18 @@ async def mark_command_timeout(cmd_id: str):
 
 
 async def mark_command_send_failed(cmd_id: str, error_message: str = None):
-    """Помечает команду как не отправленную (SEND_FAILED)."""
+    """
+    Помечает команду как не отправленную (SEND_FAILED).
+    
+    Защита от гонок: обновляет только если статус QUEUED.
+    Не обновляет если команда уже отправлена (SENT/ACCEPTED) или завершена (DONE/FAILED/TIMEOUT).
+    """
     await execute(
         """
         UPDATE commands
         SET status='SEND_FAILED', failed_at=NOW(), 
             error_code='SEND_FAILED', error_message=$2, result_code=1, updated_at=NOW()
-        WHERE cmd_id=$1 AND status IN ('QUEUED')
+        WHERE cmd_id=$1 AND status = 'QUEUED'
         """,
         cmd_id,
         error_message,

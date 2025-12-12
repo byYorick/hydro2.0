@@ -18,7 +18,7 @@ class CommandObserver
         try {
             event(new CommandStatusUpdated(
                 commandId: $command->cmd_id,
-                status: $command->status ?? 'pending',
+                status: $command->status ?? Command::STATUS_QUEUED,
                 message: 'Command created',
                 zoneId: $command->zone_id
             ));
@@ -41,20 +41,22 @@ class CommandObserver
             $newStatus = $command->status;
 
             try {
-                if ($newStatus === 'failed') {
+                // Проверяем конечные статусы ошибок
+                if (in_array($newStatus, [Command::STATUS_FAILED, Command::STATUS_TIMEOUT, Command::STATUS_SEND_FAILED])) {
                     // Отправляем событие об ошибке
                     event(new CommandFailed(
                         commandId: $command->cmd_id,
                         message: 'Command failed',
-                        error: $command->failed_at ? 'Command execution failed' : null,
+                        error: $command->error_message ?? ($command->failed_at ? 'Command execution failed' : null),
                         zoneId: $command->zone_id
                     ));
                 } else {
                     // Отправляем событие об обновлении статуса
                     $message = match ($newStatus) {
-                        'sent' => 'Command sent',
-                        'ack' => 'Command acknowledged',
-                        'completed' => 'Command completed',
+                        Command::STATUS_QUEUED => 'Command queued',
+                        Command::STATUS_SENT => 'Command sent',
+                        Command::STATUS_ACCEPTED => 'Command accepted',
+                        Command::STATUS_DONE => 'Command completed',
                         default => 'Command status updated',
                     };
 

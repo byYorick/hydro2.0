@@ -238,9 +238,9 @@
                 <div 
                   class="w-1.5 h-1.5 rounded-full"
                   :class="{
-                    'bg-amber-400 animate-pulse': getLastCommandStatus(cycle.type) === 'pending' || getLastCommandStatus(cycle.type) === 'executing',
-                    'bg-emerald-400': getLastCommandStatus(cycle.type) === 'completed',
-                    'bg-red-400': getLastCommandStatus(cycle.type) === 'failed'
+                    'bg-amber-400 animate-pulse': ['QUEUED', 'SENT', 'ACCEPTED', 'pending', 'executing'].includes(getLastCommandStatus(cycle.type) || ''),
+                    'bg-emerald-400': ['DONE', 'completed', 'ack'].includes(getLastCommandStatus(cycle.type) || ''),
+                    'bg-red-400': ['FAILED', 'TIMEOUT', 'SEND_FAILED', 'failed'].includes(getLastCommandStatus(cycle.type) || '')
                   }"
                 ></div>
                 <span class="text-neutral-500">
@@ -827,10 +827,16 @@ function getLastCommandStatus(cycleType: string): string | null {
   const commandType = `FORCE_${cycleType}` as CommandType
   
   // Сначала ищем GROWTH_CYCLE_CONFIG (новый формат)
+  // Используем новые статусы из единого контракта
+  const activeStatuses = ['QUEUED', 'SENT', 'ACCEPTED', 'DONE', 'FAILED', 'TIMEOUT', 'SEND_FAILED']
+  // Также поддерживаем старые для обратной совместимости
+  const legacyStatuses = ['pending', 'executing', 'completed', 'failed', 'ack']
+  const allActiveStatuses = [...activeStatuses, ...legacyStatuses]
+  
   const growthCycleCommand = pendingCommands.value.find(cmd => 
     cmd.type === 'GROWTH_CYCLE_CONFIG' && 
     cmd.zoneId === zoneId.value &&
-    (cmd.status === 'pending' || cmd.status === 'executing' || cmd.status === 'completed' || cmd.status === 'failed' || cmd.status === 'ack')
+    allActiveStatuses.includes(cmd.status)
   )
   
   if (growthCycleCommand) {
@@ -841,7 +847,7 @@ function getLastCommandStatus(cycleType: string): string | null {
   const command = pendingCommands.value.find(cmd => 
     cmd.type === commandType && 
     cmd.zoneId === zoneId.value &&
-    (cmd.status === 'pending' || cmd.status === 'executing' || cmd.status === 'completed' || cmd.status === 'failed' || cmd.status === 'ack')
+    allActiveStatuses.includes(cmd.status)
   )
   return command?.status || null
 }
@@ -849,9 +855,19 @@ function getLastCommandStatus(cycleType: string): string | null {
 function getCommandStatusText(status: string | null): string {
   if (!status) return ''
   const texts: Record<string, string> = {
+    // Новые статусы
+    'QUEUED': 'В очереди',
+    'SENT': 'Отправлено',
+    'ACCEPTED': 'Принято',
+    'DONE': 'Выполнено',
+    'FAILED': 'Ошибка',
+    'TIMEOUT': 'Таймаут',
+    'SEND_FAILED': 'Ошибка отправки',
+    // Старые статусы (для обратной совместимости)
     'pending': 'Ожидание...',
     'executing': 'Выполняется...',
     'completed': 'Выполнено',
+    'ack': 'Выполнено',
     'ack': 'Выполнено',
     'failed': 'Ошибка'
   }
@@ -955,7 +971,9 @@ onMounted(async () => {
       updateCommandStatus(commandEvent.commandId, commandEvent.status, commandEvent.message)
       
       // Если команда завершена, обновляем зону
-      if (commandEvent.status === 'completed' || commandEvent.status === 'failed') {
+      // Проверяем новые и старые статусы для обратной совместимости
+      const finalStatuses = ['DONE', 'FAILED', 'TIMEOUT', 'SEND_FAILED', 'completed', 'failed']
+      if (finalStatuses.includes(commandEvent.status)) {
         reloadZoneAfterCommand(zoneId.value, ['zone', 'cycles'])
       }
     })

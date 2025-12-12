@@ -64,7 +64,7 @@ class CommandFailed implements ShouldBroadcast
     {
         return [
             'commandId' => $this->commandId,
-            'status' => 'failed',
+            'status' => \App\Models\Command::STATUS_FAILED,
             'message' => $this->message,
             'error' => $this->error,
             'zoneId' => $this->zoneId,

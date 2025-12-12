@@ -42,7 +42,7 @@ class CommandStatusUpdatedTest extends TestCase
         $this->assertEquals(new PrivateChannel('commands.global'), $event->broadcastOn());
         $this->assertEquals([
             'commandId' => 'cmd-1',
-            'status' => 'failed',
+            'status' => Command::STATUS_FAILED,
             'message' => null,
             'error' => 'Timeout',
             'zoneId' => null,

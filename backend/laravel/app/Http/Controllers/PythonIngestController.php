@@ -162,35 +162,56 @@ class PythonIngestController extends Controller
         $this->ensureToken($request);
         $data = $request->validate([
             'cmd_id' => ['required', 'string', 'max:64'],
-            'status' => ['required', 'string', 'in:ACCEPTED,DONE,FAILED,accepted,completed,failed,ack'],
+            'status' => ['required', 'string', 'in:ACCEPTED,DONE,FAILED,TIMEOUT,SEND_FAILED,accepted,completed,failed,ack,timeout'],
             'details' => ['nullable', 'array'],
         ]);
 
-        // Нормализуем статус: поддерживаем старые значения для обратной совместимости
+        // Нормализуем статус в новые значения: ACCEPTED/DONE/FAILED
+        // Поддерживаем старые значения для обратной совместимости
         $normalizedStatus = match (strtoupper($data['status'])) {
-            'ACCEPTED', 'ACK' => 'accepted',
-            'DONE', 'COMPLETED' => 'completed',
-            'FAILED' => 'failed',
-            default => $data['status'],
+            'ACCEPTED', 'ACK' => \App\Models\Command::STATUS_ACCEPTED,
+            'DONE', 'COMPLETED', 'OK', 'SUCCESS' => \App\Models\Command::STATUS_DONE,
+            'FAILED', 'ERROR', 'REJECTED' => \App\Models\Command::STATUS_FAILED,
+            'TIMEOUT' => \App\Models\Command::STATUS_TIMEOUT,
+            default => strtoupper($data['status']), // Используем как есть, если это новый статус
         };
 
         // Обновляем статус команды в БД, чтобы фронт получил broadcast (CommandObserver)
         $command = \App\Models\Command::where('cmd_id', $data['cmd_id'])->latest('id')->first();
         if ($command) {
             $updates = ['status' => $normalizedStatus];
+            
+            // Добавляем детали из details если есть
+            $details = $data['details'] ?? [];
+            if (isset($details['error_code'])) {
+                $updates['error_code'] = $details['error_code'];
+            }
+            if (isset($details['error_message'])) {
+                $updates['error_message'] = $details['error_message'];
+            }
+            if (isset($details['result_code'])) {
+                $updates['result_code'] = $details['result_code'];
+            }
+            if (isset($details['duration_ms'])) {
+                $updates['duration_ms'] = $details['duration_ms'];
+            }
 
             // ACCEPTED - команда принята к выполнению
-            if ($normalizedStatus === 'accepted' && ! $command->ack_at) {
+            if ($normalizedStatus === \App\Models\Command::STATUS_ACCEPTED && ! $command->ack_at) {
                 $updates['ack_at'] = now();
             }
             
-            // DONE/COMPLETED - команда успешно выполнена
-            if ($normalizedStatus === 'completed' && ! $command->ack_at) {
+            // DONE - команда успешно выполнена
+            if ($normalizedStatus === \App\Models\Command::STATUS_DONE && ! $command->ack_at) {
                 $updates['ack_at'] = now();
             }
             
-            // FAILED - команда завершилась с ошибкой
-            if ($normalizedStatus === 'failed') {
+            // FAILED/TIMEOUT/SEND_FAILED - команда завершилась с ошибкой
+            if (in_array($normalizedStatus, [
+                \App\Models\Command::STATUS_FAILED,
+                \App\Models\Command::STATUS_TIMEOUT,
+                \App\Models\Command::STATUS_SEND_FAILED
+            ]) && ! $command->failed_at) {
                 $updates['failed_at'] = now();
             }
 
@@ -198,11 +219,14 @@ class PythonIngestController extends Controller
 
             // Дополнительно сразу шлем событие с деталями ошибки/статуса, чтобы фронт получил уведомление
             $zoneId = $command->zone_id;
-            $details = $data['details'] ?? [];
             $errorMessage = $details['error_message'] ?? $details['error_code'] ?? null;
             $message = $details['message'] ?? null;
 
-            if ($normalizedStatus === 'failed') {
+            if (in_array($normalizedStatus, [
+                \App\Models\Command::STATUS_FAILED,
+                \App\Models\Command::STATUS_TIMEOUT,
+                \App\Models\Command::STATUS_SEND_FAILED
+            ])) {
                 event(new \App\Events\CommandFailed(
                     commandId: $command->cmd_id,
                     message: $message ?? 'Command failed',
