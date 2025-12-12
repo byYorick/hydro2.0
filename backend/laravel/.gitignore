@@ -19,3 +19,6 @@ yarn-error.log
 /.vscode
 /database/*.sqlite
 /database/*.sqlite-journal
+
+# Vite build artifacts
+vite.config.js.timestamp-*.mjs

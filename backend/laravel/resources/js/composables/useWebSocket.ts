@@ -971,6 +971,9 @@ export function cleanupWebSocketChannels(): void {
     resubscribeTimer = null
   }
   
+  // Сбрасываем флаг resubscribe
+  isResubscribing = false
+  
   logger.debug('[useWebSocket] All channels and registries cleaned up', {})
 }
 

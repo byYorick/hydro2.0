@@ -2,6 +2,33 @@ import { defineStore } from 'pinia'
 import type { Zone } from '@/types/Zone'
 import { zoneEvents } from '@/composables/useStoreEvents'
 
+/**
+ * Эффективное сравнение зон без JSON.stringify
+ * Использует id + updated_at для определения изменений
+ * Это предотвращает ложные различия из-за порядка полей в JSON
+ * и значительно быстрее, чем JSON.stringify
+ */
+function zonesEqual(existing: Zone, incoming: Zone): boolean {
+  // Если ID не совпадают, это разные зоны
+  if (existing.id !== incoming.id) {
+    return false
+  }
+  
+  // Сравниваем updated_at - если они одинаковы, данные не изменились
+  if (existing.updated_at && incoming.updated_at) {
+    return existing.updated_at === incoming.updated_at
+  }
+  
+  // Если updated_at нет, сравниваем ключевые поля, которые могут измениться
+  // Это fallback для случаев, когда updated_at не приходит с сервера
+  return (
+    existing.name === incoming.name &&
+    existing.status === incoming.status &&
+    existing.description === incoming.description &&
+    existing.greenhouse_id === incoming.greenhouse_id
+  )
+}
+
 interface ZonesStoreState {
   // Нормализованная структура: Record<id, Zone> для быстрого доступа O(1)
   items: Record<number, Zone>
@@ -70,15 +97,11 @@ export const useZonesStore = defineStore('zones', {
       
       const exists = this.items[zone.id]
       
-      // Проверяем, изменилась ли зона (простое сравнение по JSON)
+      // Проверяем, изменилась ли зона (эффективное сравнение без JSON.stringify)
       // Это предотвращает рекурсию при обновлении с теми же данными
-      if (exists) {
-        const existingJson = JSON.stringify(exists)
-        const newJson = JSON.stringify(zone)
-        if (existingJson === newJson) {
-          // Данные не изменились, не обновляем и не эмитим события
-          return
-        }
+      if (exists && zonesEqual(exists, zone)) {
+        // Данные не изменились, не обновляем и не эмитим события
+        return
       }
       
       this.items[zone.id] = zone
