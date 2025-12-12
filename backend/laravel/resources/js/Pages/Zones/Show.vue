@@ -50,13 +50,14 @@
       <!-- Target vs Actual (основная метрика зоны) -->
       <ZoneTargets :telemetry="telemetry" :targets="targets" />
 
-      <!-- Прогресс фазы рецепта -->
-      <PhaseProgress
+      <!-- Прогресс стадий цикла -->
+      <StageProgress
         v-if="zone.recipeInstance"
         :recipe-instance="zone.recipeInstance"
         :phase-progress="computedPhaseProgress"
         :phase-days-elapsed="computedPhaseDaysElapsed"
         :phase-days-total="computedPhaseDaysTotal"
+        :started-at="zone.recipeInstance.started_at"
       />
 
       <div class="grid grid-cols-1 xl:grid-cols-3 gap-3">
@@ -258,6 +259,22 @@
         </div>
       </Card>
 
+      <!-- Cycle Control Panel -->
+      <CycleControlPanel
+        v-if="activeGrowCycle"
+        :cycle="activeGrowCycle"
+        :recipe-instance="zone.recipeInstance"
+        :phase-progress="computedPhaseProgress"
+        :phase-days-elapsed="computedPhaseDaysElapsed"
+        :phase-days-total="computedPhaseDaysTotal"
+        :can-manage="canManageCycle"
+        :loading="loading.cyclePause || loading.cycleResume || loading.cycleHarvest || loading.cycleAbort"
+        @pause="onCyclePause"
+        @resume="onCycleResume"
+        @harvest="onCycleHarvest"
+        @abort="onCycleAbort"
+      />
+
       <!-- Automation Engine -->
       <AutomationEngine :zone-id="zoneId" />
 
@@ -360,7 +377,7 @@ import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
 import { useHistory } from '@/composables/useHistory'
 import ZoneTargets from '@/Components/ZoneTargets.vue'
-import PhaseProgress from '@/Components/PhaseProgress.vue'
+import StageProgress from '@/Components/StageProgress.vue'
 import ZoneDevicesVisualization from '@/Components/ZoneDevicesVisualization.vue'
 import LoadingState from '@/Components/LoadingState.vue'
 import UnassignedNodeErrorsWidget from '@/Components/UnassignedNodeErrorsWidget.vue'
@@ -371,6 +388,7 @@ import AttachRecipeModal from '@/Components/AttachRecipeModal.vue'
 import AttachNodesModal from '@/Components/AttachNodesModal.vue'
 import NodeConfigModal from '@/Components/NodeConfigModal.vue'
 import AutomationEngine from '@/Components/AutomationEngine.vue'
+import CycleControlPanel from '@/Components/GrowCycle/CycleControlPanel.vue'
 import { translateStatus, translateEventKind, translateCycleType, translateStrategy } from '@/utils/i18n'
 import { formatTimeShort, formatInterval } from '@/utils/formatTime'
 import { logger } from '@/utils/logger'
@@ -408,6 +426,7 @@ interface PageProps {
   cycles?: Record<string, Cycle>
   current_phase?: any
   active_cycle?: any
+  active_grow_cycle?: any
   auth?: {
     user?: {
       role?: string
@@ -451,6 +470,11 @@ interface LoadingState {
   irrigate: boolean
   nextPhase: boolean
   cycles: Record<string, boolean>
+  cyclePause: boolean
+  cycleResume: boolean
+  cycleHarvest: boolean
+  cycleAbort: boolean
+  cycleChangeRecipe: boolean
 }
 
 const { loading, setLoading, startLoading, stopLoading } = useLoading<LoadingState>({
@@ -464,6 +488,11 @@ const { loading, setLoading, startLoading, stopLoading } = useLoading<LoadingSta
     LIGHTING: false,
     CLIMATE: false,
   },
+  cyclePause: false,
+  cycleResume: false,
+  cycleHarvest: false,
+  cycleAbort: false,
+  cycleChangeRecipe: false,
 })
 
 const { showToast } = useToast()
@@ -586,15 +615,22 @@ const { addUpdate, flush } = useTelemetryBatch((updates) => {
 }) // Использует DEBOUNCE_DELAY.NORMAL по умолчанию
 
 const telemetry = computed(() => telemetryRef.value)
-const { targets: targetsProp, devices: devicesProp, events: eventsProp, cycles: cyclesProp, current_phase: currentPhaseProp, active_cycle: activeCycleProp } = usePageProps<PageProps>(['targets', 'devices', 'events', 'cycles', 'current_phase', 'active_cycle'])
+const { targets: targetsProp, devices: devicesProp, events: eventsProp, cycles: cyclesProp, current_phase: currentPhaseProp, active_cycle: activeCycleProp, active_grow_cycle: activeGrowCycleProp } = usePageProps<PageProps>(['targets', 'devices', 'events', 'cycles', 'current_phase', 'active_cycle', 'active_grow_cycle'])
 
 // Сырые targets (исторический формат, для Back-compat) + нормализованный current_phase
 const targets = computed(() => (targetsProp.value || {}) as ZoneTargetsType)
 const currentPhase = computed(() => (currentPhaseProp.value || null) as any)
 const activeCycle = computed(() => (activeCycleProp.value || null) as any)
+const activeGrowCycle = computed(() => (activeGrowCycleProp.value || zone.value?.activeGrowCycle || null) as any)
 const devices = computed(() => (devicesProp.value || []) as Device[])
 const events = computed(() => (eventsProp.value || []) as ZoneEvent[])
 const cycles = computed(() => (cyclesProp.value || {}) as Record<string, Cycle>)
+
+// События цикла (теперь загружаются внутри CycleControlPanel)
+const canManageCycle = computed(() => {
+  const userRole = page.props.auth?.user?.role
+  return userRole === 'admin' || userRole === 'operator'
+})
 
 // Вычисление прогресса фазы/рецепта на основе нормализованного current_phase (UTC)
 // ВАЖНО: все вычисления в UTC, отображение форматируется в локальное время
@@ -981,6 +1017,24 @@ onMounted(async () => {
         reloadZoneAfterCommand(zoneId.value, ['zone', 'cycles'])
       }
     })
+
+    // Подписаться на обновления цикла через канал зоны
+    const echo = window.Echo
+    if (echo) {
+      const channel = echo.private(`hydro.zones.${zoneId.value}`)
+      channel.listen('.App\\Events\\GrowCycleUpdated', (event: any) => {
+        logger.info('[Zones/Show] GrowCycleUpdated event received', event)
+        // Обновляем зону для получения актуального состояния цикла
+        reloadZone(zoneId.value, ['zone', 'active_grow_cycle'])
+      })
+      
+      // Сохраняем функцию отписки
+      const originalUnsubscribe = unsubscribeZoneCommands
+      unsubscribeZoneCommands = () => {
+        if (originalUnsubscribe) originalUnsubscribe()
+        channel.stopListening('.App\\Events\\GrowCycleUpdated')
+      }
+    }
   }
   
   // Автоматическая синхронизация через события stores
@@ -1564,4 +1618,204 @@ async function onNextPhase(): Promise<void> {
     setLoading('nextPhase', false)
   }
 }
+
+// Методы для работы с циклами (события теперь загружаются в CycleControlPanel)
+
+async function onCyclePause(): Promise<void> {
+  if (!activeGrowCycle.value?.id) return
+
+  setLoading('cyclePause', true)
+  try {
+    const response = await api.post(`/api/grow-cycles/${activeGrowCycle.value.id}/pause`)
+    if (response.data?.status === 'ok') {
+      showToast('Цикл приостановлен', 'success', TOAST_TIMEOUT.NORMAL)
+      await reloadZone(zoneId.value, ['zone', 'active_grow_cycle'])
+    }
+  } catch (err) {
+    logger.error('Failed to pause cycle:', err)
+    handleError(err)
+  } finally {
+    setLoading('cyclePause', false)
+  }
+}
+
+async function onCycleResume(): Promise<void> {
+  if (!activeGrowCycle.value?.id) return
+
+  setLoading('cycleResume', true)
+  try {
+    const response = await api.post(`/api/grow-cycles/${activeGrowCycle.value.id}/resume`)
+    if (response.data?.status === 'ok') {
+      showToast('Цикл возобновлен', 'success', TOAST_TIMEOUT.NORMAL)
+      await reloadZone(zoneId.value, ['zone', 'active_grow_cycle'])
+    }
+  } catch (err) {
+    logger.error('Failed to resume cycle:', err)
+    handleError(err)
+  } finally {
+    setLoading('cycleResume', false)
+  }
+}
+
+async function onCycleHarvest(): Promise<void> {
+  if (!activeGrowCycle.value?.id) return
+
+  const batchLabel = prompt('Введите метку партии (опционально):')
+  if (batchLabel === null) return // Пользователь отменил
+
+  setLoading('cycleHarvest', true)
+  try {
+    const response = await api.post(`/api/grow-cycles/${activeGrowCycle.value.id}/harvest`, {
+      batch_label: batchLabel || undefined,
+    })
+    if (response.data?.status === 'ok') {
+      showToast('Урожай зафиксирован, цикл закрыт', 'success', TOAST_TIMEOUT.NORMAL)
+      await reloadZone(zoneId.value, ['zone', 'active_grow_cycle'])
+    }
+  } catch (err) {
+    logger.error('Failed to harvest cycle:', err)
+    handleError(err)
+  } finally {
+    setLoading('cycleHarvest', false)
+  }
+}
+
+async function onCycleAbort(): Promise<void> {
+  if (!activeGrowCycle.value?.id) return
+
+  if (!confirm('Вы уверены, что хотите аварийно остановить цикл? Это действие нельзя отменить.')) {
+    return
+  }
+
+  const notes = prompt('Введите причину остановки (опционально):')
+  if (notes === null) return // Пользователь отменил
+
+  setLoading('cycleAbort', true)
+  try {
+    const response = await api.post(`/api/grow-cycles/${activeGrowCycle.value.id}/abort`, {
+      notes: notes || undefined,
+    })
+    if (response.data?.status === 'ok') {
+      showToast('Цикл аварийно остановлен', 'success', TOAST_TIMEOUT.NORMAL)
+      await reloadZone(zoneId.value, ['zone', 'active_grow_cycle'])
+    }
+  } catch (err) {
+    logger.error('Failed to abort cycle:', err)
+    handleError(err)
+  } finally {
+    setLoading('cycleAbort', false)
+  }
+}
+
+async function onCycleChangeRecipe(): Promise<void> {
+  if (!zoneId.value) return
+
+  const recipeId = prompt('Введите ID нового рецепта:')
+  if (!recipeId) return
+
+  const recipeIdNum = parseInt(recipeId)
+  if (isNaN(recipeIdNum)) {
+    showToast('Неверный ID рецепта', 'error', TOAST_TIMEOUT.NORMAL)
+    return
+  }
+
+  const action = confirm('Создать новый цикл? (Отмена = rebase текущего цикла)') ? 'new_cycle' : 'rebase'
+
+  setLoading('cycleChangeRecipe', true)
+  try {
+    const response = await api.post(`/api/zones/${zoneId.value}/grow-cycle/change-recipe`, {
+      recipe_id: recipeIdNum,
+      action,
+    })
+    if (response.data?.status === 'ok') {
+      const actionText = action === 'new_cycle' ? 'создан' : 'обновлен'
+      showToast(`Рецепт ${actionText}`, 'success', TOAST_TIMEOUT.NORMAL)
+      await reloadZone(zoneId.value, ['zone'])
+      await loadCycleEvents()
+    }
+  } catch (err) {
+    logger.error('Failed to change recipe:', err)
+    handleError(err)
+  } finally {
+    setLoading('cycleChangeRecipe', false)
+  }
+}
+
+// Вспомогательные функции для отображения циклов
+function getCycleStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    PLANNED: 'Запланирован',
+    RUNNING: 'Запущен',
+    PAUSED: 'Приостановлен',
+    HARVESTED: 'Собран',
+    ABORTED: 'Прерван',
+  }
+  return labels[status] || status
+}
+
+function getCycleStatusVariant(status: string): 'success' | 'neutral' | 'warning' | 'danger' {
+  const variants: Record<string, 'success' | 'neutral' | 'warning' | 'danger'> = {
+    PLANNED: 'neutral',
+    RUNNING: 'success',
+    PAUSED: 'warning',
+    HARVESTED: 'success',
+    ABORTED: 'danger',
+  }
+  return variants[status] || 'neutral'
+}
+
+function getCycleEventVariant(type: string): 'success' | 'neutral' | 'warning' | 'danger' {
+  if (type.includes('HARVESTED') || type.includes('STARTED') || type.includes('RESUMED')) {
+    return 'success'
+  }
+  if (type.includes('ABORTED') || type.includes('CRITICAL')) {
+    return 'danger'
+  }
+  if (type.includes('PAUSED') || type.includes('WARNING')) {
+    return 'warning'
+  }
+  return 'neutral'
+}
+
+function getCycleEventTypeLabel(type: string): string {
+  const labels: Record<string, string> = {
+    CYCLE_CREATED: 'Создан цикл',
+    CYCLE_STARTED: 'Запущен цикл',
+    CYCLE_PAUSED: 'Приостановлен',
+    CYCLE_RESUMED: 'Возобновлен',
+    CYCLE_HARVESTED: 'Собран урожай',
+    CYCLE_ABORTED: 'Прерван',
+    CYCLE_RECIPE_REBASED: 'Рецепт изменен',
+    PHASE_TRANSITION: 'Смена фазы',
+    RECIPE_PHASE_CHANGED: 'Изменена фаза',
+    ZONE_COMMAND: 'Ручное вмешательство',
+    ALERT_CREATED: 'Критическое предупреждение',
+  }
+  return labels[type] || type
+}
+
+function getCycleEventMessage(event: any): string {
+  const details = event.details || event.payload || {}
+  const type = event.type
+
+  if (type === 'CYCLE_HARVESTED') {
+    return `Урожай собран${details.batch_label ? ` (партия: ${details.batch_label})` : ''}`
+  }
+  if (type === 'CYCLE_ABORTED') {
+    return `Цикл прерван${details.reason ? `: ${details.reason}` : ''}`
+  }
+  if (type === 'PHASE_TRANSITION' || type === 'RECIPE_PHASE_CHANGED') {
+    return `Фаза ${details.from_phase ?? ''} → ${details.to_phase ?? ''}`
+  }
+  if (type === 'ZONE_COMMAND') {
+    return `Ручное вмешательство: ${details.command_type || 'команда'}`
+  }
+  if (type === 'ALERT_CREATED') {
+    return `Критическое предупреждение: ${details.message || details.code || 'alert'}`
+  }
+
+  return getCycleEventTypeLabel(type)
+}
+
+// События цикла теперь загружаются внутри CycleControlPanel
 </script>

@@ -25,6 +25,9 @@ class GrowCycle extends Model
         'batch_label',
         'notes',
         'settings',
+        'current_stage_code',
+        'current_stage_started_at',
+        'planting_at',
     ];
 
     protected $casts = [
@@ -33,6 +36,8 @@ class GrowCycle extends Model
         'recipe_started_at' => 'datetime',
         'expected_harvest_at' => 'datetime',
         'actual_harvest_at' => 'datetime',
+        'current_stage_started_at' => 'datetime',
+        'planting_at' => 'datetime',
         'settings' => 'array',
     ];
 

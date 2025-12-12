@@ -8,6 +8,7 @@ use App\Models\Zone;
 use App\Models\ZoneEvent;
 use App\Models\ZoneCycle;
 use App\Services\PythonBridgeService;
+use App\Services\ZoneReadinessService;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\TimeoutException;
@@ -47,6 +48,36 @@ class ZoneCommandController extends Controller
                     'status' => 'error',
                     'code' => 'CYCLE_ALREADY_ACTIVE',
                     'message' => 'В этой зоне уже есть активный цикл выращивания. Сначала завершите или остановите текущий цикл.',
+                ], 422);
+            }
+
+            // Проверка готовности зоны к старту цикла
+            $readinessService = app(ZoneReadinessService::class);
+            $readiness = $readinessService->validate($zone->id);
+            
+            // Если есть критические ошибки - блокируем старт
+            if (!$readiness['valid']) {
+                return response()->json([
+                    'status' => 'error',
+                    'code' => 'ZONE_NOT_READY',
+                    'message' => 'Зона не готова к запуску цикла',
+                    'data' => [
+                        'errors' => $readiness['errors'],
+                        'warnings' => $readiness['warnings'],
+                    ],
+                ], 422);
+            }
+            
+            // Если есть предупреждения и не указан флаг "start_anyway" - возвращаем предупреждения
+            if (!empty($readiness['warnings']) && !($data['params']['start_anyway'] ?? false)) {
+                return response()->json([
+                    'status' => 'warning',
+                    'code' => 'ZONE_READINESS_WARNINGS',
+                    'message' => 'Зона готова к запуску, но есть предупреждения',
+                    'data' => [
+                        'warnings' => $readiness['warnings'],
+                        'can_start_anyway' => true,
+                    ],
                 ], 422);
             }
         }

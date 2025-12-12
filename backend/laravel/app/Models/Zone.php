@@ -90,6 +90,63 @@ class Zone extends Model
         return $this->hasMany(ZonePidConfig::class);
     }
 
+    public function growCycles(): HasMany
+    {
+        return $this->hasMany(GrowCycle::class);
+    }
+
+    public function infrastructure(): HasMany
+    {
+        return $this->hasMany(ZoneInfrastructure::class);
+    }
+
+    public function channelBindings(): HasMany
+    {
+        return $this->hasMany(ZoneChannelBinding::class);
+    }
+
+    /**
+     * Проверка валидности инфраструктуры зоны
+     * Все required-оборудование должно быть привязано к каналам
+     */
+    public function isInfrastructureValid(): bool
+    {
+        $requiredAssets = $this->infrastructure()
+            ->where('required', true)
+            ->get();
+
+        foreach ($requiredAssets as $asset) {
+            if (!$asset->isBound()) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Получить список незаполненных required-оборудований
+     */
+    public function getMissingRequiredAssets(): array
+    {
+        $requiredAssets = $this->infrastructure()
+            ->where('required', true)
+            ->get();
+
+        $missing = [];
+        foreach ($requiredAssets as $asset) {
+            if (!$asset->isBound()) {
+                $missing[] = [
+                    'id' => $asset->id,
+                    'type' => $asset->asset_type,
+                    'label' => $asset->label,
+                ];
+            }
+        }
+
+        return $missing;
+    }
+
     /**
      * Проверка возможности управления pH
      */

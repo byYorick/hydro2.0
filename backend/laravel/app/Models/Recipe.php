@@ -14,6 +14,11 @@ class Recipe extends Model
     protected $fillable = [
         'name',
         'description',
+        'metadata',
+    ];
+
+    protected $casts = [
+        'metadata' => 'array',
     ];
 
     public function phases(): HasMany
@@ -24,6 +29,11 @@ class Recipe extends Model
     public function zoneRecipeInstances(): HasMany
     {
         return $this->hasMany(\App\Models\ZoneRecipeInstance::class);
+    }
+
+    public function stageMaps(): HasMany
+    {
+        return $this->hasMany(RecipeStageMap::class)->orderBy('order_index');
     }
 }
 

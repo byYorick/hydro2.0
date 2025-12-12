@@ -46,7 +46,14 @@ from common.water_flow import (
 )
 # tick_recirculation moved to irrigation_controller
 from common.pump_safety import can_run_pump
-from repositories import ZoneRepository, TelemetryRepository, NodeRepository, RecipeRepository
+from repositories import (
+    ZoneRepository, 
+    TelemetryRepository, 
+    NodeRepository, 
+    RecipeRepository,
+    GrowCycleRepository,
+    InfrastructureRepository
+)
 from services.zone_automation_service import ZoneAutomationService, ZONE_CHECKS, CHECK_LAT
 from infrastructure import CommandBus
 from config.settings import get_settings as get_automation_settings
@@ -398,8 +405,16 @@ async def check_and_correct_zone(
         await _command_bus.start()
     
     command_bus = _command_bus
+    grow_cycle_repo = GrowCycleRepository()
+    infrastructure_repo = InfrastructureRepository()
     zone_service = ZoneAutomationService(
-        zone_repo, telemetry_repo, node_repo, recipe_repo, command_bus
+        zone_repo, 
+        telemetry_repo, 
+        node_repo, 
+        recipe_repo, 
+        grow_cycle_repo,
+        infrastructure_repo,
+        command_bus
     )
     await zone_service.process_zone(zone_id)
 
@@ -660,6 +675,8 @@ async def main():
                     telemetry_repo = TelemetryRepository(db_circuit_breaker=db_circuit_breaker)
                     node_repo = NodeRepository()
                     recipe_repo = RecipeRepository(db_circuit_breaker=db_circuit_breaker)
+                    grow_cycle_repo = GrowCycleRepository(db_circuit_breaker=db_circuit_breaker)
+                    infrastructure_repo = InfrastructureRepository(db_circuit_breaker=db_circuit_breaker)
                     
                     # Инициализация Command Audit
                     command_audit = CommandAudit()
@@ -694,7 +711,14 @@ async def main():
                     
                     # Инициализация сервиса автоматизации зон
                     _zone_service = ZoneAutomationService(
-                        zone_repo, telemetry_repo, node_repo, recipe_repo, command_bus, pid_state_manager
+                        zone_repo, 
+                        telemetry_repo, 
+                        node_repo, 
+                        recipe_repo, 
+                        grow_cycle_repo,
+                        infrastructure_repo,
+                        command_bus, 
+                        pid_state_manager
                     )
                     
                     # Get active zones with recipes через Circuit Breaker

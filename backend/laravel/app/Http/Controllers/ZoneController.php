@@ -126,7 +126,7 @@ class ZoneController extends Controller
             ], 403);
         }
         
-        $zone->load(['greenhouse', 'preset', 'nodes', 'recipeInstance.recipe.phases']);
+        $zone->load(['greenhouse', 'preset', 'nodes', 'recipeInstance.recipe.phases', 'activeGrowCycle']);
         return response()->json(['status' => 'ok', 'data' => $zone]);
     }
 
@@ -933,15 +933,41 @@ class ZoneController extends Controller
         $validated = $request->validate([
             'after_id' => ['nullable', 'integer', 'min:1'],
             'limit' => ['nullable', 'integer', 'min:1', 'max:1000'],
+            'cycle_only' => ['nullable', 'boolean'], // Фильтр для событий цикла
         ]);
 
         $afterId = $validated['after_id'] ?? null;
         $limit = min($validated['limit'] ?? 100, 1000); // Максимум 1000, по умолчанию 100
+        $cycleOnly = $validated['cycle_only'] ?? false;
 
         // Запрос событий для зоны
         $query = DB::table('zone_events')
-            ->where('zone_id', $zone->id)
-            ->orderBy('id', 'asc'); // Строго по возрастанию id для гарантии порядка
+            ->where('zone_id', $zone->id);
+
+        // Фильтр для событий цикла: старт, смена стадии, critical alerts, ручные вмешательства
+        if ($cycleOnly) {
+            $cycleEventTypes = [
+                'CYCLE_CREATED',
+                'CYCLE_STARTED',
+                'CYCLE_PAUSED',
+                'CYCLE_RESUMED',
+                'CYCLE_HARVESTED',
+                'CYCLE_ABORTED',
+                'CYCLE_RECIPE_REBASED',
+                'PHASE_TRANSITION',
+                'RECIPE_PHASE_CHANGED',
+                'ZONE_COMMAND', // Ручные вмешательства
+            ];
+            $query->whereIn('type', $cycleEventTypes);
+            
+            // Также включаем critical alerts (ALERT_CREATED с severity CRITICAL)
+            $query->orWhere(function ($q) {
+                $q->where('type', 'ALERT_CREATED')
+                  ->whereRaw("details->>'severity' = 'CRITICAL'");
+            });
+        }
+
+        $query->orderBy('id', 'asc'); // Строго по возрастанию id для гарантии порядка
 
         // Если указан after_id, получаем события после этого ID
         if ($afterId) {
@@ -952,17 +978,14 @@ class ZoneController extends Controller
             'id as event_id',
             'zone_id',
             'type',
-            'entity_type',
-            'entity_id',
-            'payload_json',
-            'server_ts',
+            'details',
             'created_at',
         ]);
 
-        // Преобразуем payload_json из строки в массив
+        // Преобразуем details из jsonb в массив
         $events = $events->map(function ($event) {
-            $event->payload = $event->payload_json ? json_decode($event->payload_json, true) : null;
-            unset($event->payload_json);
+            $event->payload = $event->details;
+            $event->details = $event->details;
             return $event;
         });
 
@@ -984,6 +1007,52 @@ class ZoneController extends Controller
             'last_event_id' => $lastEventId,
             'has_more' => $hasMore,
         ]);
+    }
+
+    /**
+     * Обновить инфраструктуру зоны
+     */
+    public function updateInfrastructure(Request $request, Zone $zone): JsonResponse
+    {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 401);
+        }
+
+        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+            return response()->json(['status' => 'error', 'message' => 'Forbidden'], 403);
+        }
+
+        $data = $request->validate([
+            'infrastructure' => ['required', 'array'],
+            'infrastructure.*.asset_type' => ['required', 'string', 'in:PUMP,MISTER,TANK_NUTRIENT,TANK_CLEAN,DRAIN,LIGHT,VENT,HEATER'],
+            'infrastructure.*.label' => ['required', 'string', 'max:255'],
+            'infrastructure.*.required' => ['required', 'boolean'],
+            'infrastructure.*.capacity_liters' => ['nullable', 'numeric', 'min:0'],
+            'infrastructure.*.flow_rate' => ['nullable', 'numeric', 'min:0'],
+            'infrastructure.*.specs' => ['nullable', 'array'],
+        ]);
+
+        return DB::transaction(function () use ($zone, $data) {
+            // Удаляем старую инфраструктуру
+            $zone->infrastructure()->delete();
+
+            // Создаем новую
+            foreach ($data['infrastructure'] as $assetData) {
+                $zone->infrastructure()->create($assetData);
+            }
+
+            $zone->refresh();
+            $zone->load('infrastructure');
+
+            return response()->json([
+                'status' => 'ok',
+                'data' => [
+                    'zone_id' => $zone->id,
+                    'infrastructure' => $zone->infrastructure,
+                ],
+            ]);
+        });
     }
 }
 

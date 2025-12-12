@@ -15,7 +15,14 @@ from climate_controller import check_and_control_climate
 from irrigation_controller import check_and_control_irrigation, check_and_control_recirculation
 from health_monitor import calculate_zone_health, update_zone_health_in_db
 from correction_controller import CorrectionController, CorrectionType
-from repositories import ZoneRepository, TelemetryRepository, NodeRepository, RecipeRepository
+from repositories import (
+    ZoneRepository, 
+    TelemetryRepository, 
+    NodeRepository, 
+    RecipeRepository,
+    GrowCycleRepository,
+    InfrastructureRepository
+)
 from infrastructure.command_bus import CommandBus
 from infrastructure.circuit_breaker import CircuitBreakerOpenError
 from services.pid_state_manager import PidStateManager
@@ -47,6 +54,8 @@ class ZoneAutomationService:
         telemetry_repo: TelemetryRepository,
         node_repo: NodeRepository,
         recipe_repo: RecipeRepository,
+        grow_cycle_repo: GrowCycleRepository,
+        infrastructure_repo: InfrastructureRepository,
         command_bus: CommandBus,
         pid_state_manager: Optional[PidStateManager] = None
     ):
@@ -58,6 +67,8 @@ class ZoneAutomationService:
             telemetry_repo: Репозиторий телеметрии
             node_repo: Репозиторий узлов
             recipe_repo: Репозиторий рецептов
+            grow_cycle_repo: Репозиторий циклов выращивания
+            infrastructure_repo: Репозиторий инфраструктуры
             command_bus: Command Bus для публикации команд
             pid_state_manager: Менеджер состояния PID (опционально)
         """
@@ -65,6 +76,8 @@ class ZoneAutomationService:
         self.telemetry_repo = telemetry_repo
         self.node_repo = node_repo
         self.recipe_repo = recipe_repo
+        self.grow_cycle_repo = grow_cycle_repo
+        self.infrastructure_repo = infrastructure_repo
         self.command_bus = command_bus
         self.pid_state_manager = pid_state_manager or PidStateManager()
         
@@ -114,7 +127,32 @@ class ZoneAutomationService:
             
             # Получение данных зоны через circuit breaker
             try:
+                # Получаем активный grow_cycle (приоритет над zone_recipe_instance)
+                grow_cycle = await self.grow_cycle_repo.get_active_grow_cycle(zone_id)
+                
+                # Получаем targets из grow_cycle или fallback на zone_recipe_instance
+                targets = None
+                if grow_cycle and grow_cycle.get("targets"):
+                    targets = grow_cycle["targets"]
+                else:
+                    # Fallback: используем старый способ через zone_recipe_instance
+                    zone_data = await self.recipe_repo.get_zone_data_batch(zone_id)
+                    recipe_info = zone_data.get("recipe_info")
+                    if recipe_info and recipe_info.get("targets"):
+                        targets = recipe_info["targets"]
+                
+                if not targets or not isinstance(targets, dict):
+                    return
+                
+                # Получаем телеметрию и capabilities
                 zone_data = await self.recipe_repo.get_zone_data_batch(zone_id)
+                telemetry = zone_data.get("telemetry", {})
+                telemetry_timestamps = zone_data.get("telemetry_timestamps", {})
+                nodes = zone_data.get("nodes", {})
+                capabilities = zone_data.get("capabilities", {})
+                
+                # Получаем bindings для зоны
+                bindings = await self.infrastructure_repo.get_zone_bindings_by_role(zone_id)
             except CircuitBreakerOpenError:
                 # Circuit breaker открыт - переходим в спокойный режим
                 logger.warning(
@@ -123,20 +161,6 @@ class ZoneAutomationService:
                 )
                 self._record_zone_error(zone_id)
                 return
-            
-            recipe_info = zone_data.get("recipe_info")
-            if not recipe_info or not recipe_info.get("targets"):
-                return
-            
-            targets = recipe_info["targets"]
-            if not isinstance(targets, dict):
-                return
-            
-            # Получаем данные из batch запроса
-            telemetry = zone_data.get("telemetry", {})
-            telemetry_timestamps = zone_data.get("telemetry_timestamps", {})  # Временные метки для проверки свежести
-            nodes = zone_data.get("nodes", {})
-            capabilities = zone_data.get("capabilities", {})
             
             # Сохраняем telemetry_timestamps для использования в _process_correction_controllers
             self._current_telemetry_timestamps = telemetry_timestamps
@@ -171,28 +195,28 @@ class ZoneAutomationService:
             # 1. Light Controller
             await self._safe_process_controller(
                 'light',
-                self._process_light_controller(zone_id, targets, capabilities),
+                self._process_light_controller(zone_id, targets, capabilities, bindings),
                 zone_id
             )
             
             # 2. Climate Controller
             await self._safe_process_controller(
                 'climate',
-                self._process_climate_controller(zone_id, targets, telemetry, capabilities),
+                self._process_climate_controller(zone_id, targets, telemetry, capabilities, bindings),
                 zone_id
             )
             
             # 3. Irrigation Controller
             await self._safe_process_controller(
                 'irrigation',
-                self._process_irrigation_controller(zone_id, targets, telemetry, capabilities, water_level_ok),
+                self._process_irrigation_controller(zone_id, targets, telemetry, capabilities, water_level_ok, bindings),
                 zone_id
             )
             
             # 4. Recirculation Controller
             await self._safe_process_controller(
                 'recirculation',
-                self._process_recirculation_controller(zone_id, targets, telemetry, capabilities, water_level_ok),
+                self._process_recirculation_controller(zone_id, targets, telemetry, capabilities, water_level_ok, bindings),
                 zone_id
             )
             
@@ -475,13 +499,14 @@ class ZoneAutomationService:
         self,
         zone_id: int,
         targets: Dict[str, Any],
-        capabilities: Dict[str, bool]
+        capabilities: Dict[str, bool],
+        bindings: Dict[str, Dict[str, Any]]
     ) -> None:
         """Обработка контроллера освещения."""
         if not capabilities.get("light_control", False):
             return
         
-        light_cmd = await check_and_control_lighting(zone_id, targets, utcnow())
+        light_cmd = await check_and_control_lighting(zone_id, targets, bindings, utcnow())
         if light_cmd:
             if light_cmd.get('event_type'):
                 await create_zone_event(zone_id, light_cmd['event_type'], light_cmd.get('event_details', {}))
@@ -498,13 +523,14 @@ class ZoneAutomationService:
         zone_id: int,
         targets: Dict[str, Any],
         telemetry: Dict[str, Optional[float]],
-        capabilities: Dict[str, bool]
+        capabilities: Dict[str, bool],
+        bindings: Dict[str, Dict[str, Any]]
     ) -> None:
         """Обработка контроллера климата."""
         if not capabilities.get("climate_control", False):
             return
         
-        climate_commands = await check_and_control_climate(zone_id, targets, telemetry)
+        climate_commands = await check_and_control_climate(zone_id, targets, telemetry, bindings)
         for cmd in climate_commands:
             if cmd.get('event_type'):
                 await create_zone_event(zone_id, cmd['event_type'], cmd.get('event_details', {}))
@@ -523,13 +549,14 @@ class ZoneAutomationService:
         targets: Dict[str, Any],
         telemetry: Dict[str, Optional[float]],
         capabilities: Dict[str, bool],
-        water_level_ok: bool
+        water_level_ok: bool,
+        bindings: Dict[str, Dict[str, Any]]
     ) -> None:
         """Обработка контроллера полива."""
         if not capabilities.get("irrigation_control", False):
             return
         
-        irrigation_cmd = await check_and_control_irrigation(zone_id, targets, telemetry)
+        irrigation_cmd = await check_and_control_irrigation(zone_id, targets, telemetry, bindings)
         
         # Проверка безопасности перед запуском насоса
         if irrigation_cmd:
@@ -556,13 +583,14 @@ class ZoneAutomationService:
         targets: Dict[str, Any],
         telemetry: Dict[str, Optional[float]],
         capabilities: Dict[str, bool],
-        water_level_ok: bool
+        water_level_ok: bool,
+        bindings: Dict[str, Dict[str, Any]]
     ) -> None:
         """Обработка контроллера рециркуляции."""
         if not capabilities.get("recirculation", False):
             return
         
-        recirculation_cmd = await check_and_control_recirculation(zone_id, targets, telemetry)
+        recirculation_cmd = await check_and_control_recirculation(zone_id, targets, telemetry, bindings)
         if recirculation_cmd:
             if recirculation_cmd.get('event_type'):
                 await create_zone_event(zone_id, recirculation_cmd['event_type'], recirculation_cmd.get('event_details', {}))
