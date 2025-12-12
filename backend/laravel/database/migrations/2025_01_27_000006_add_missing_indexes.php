@@ -100,6 +100,13 @@ return new class extends Migration
                     $table->index(['zone_id', 'type', 'status'], 'alerts_zone_type_status_idx');
                 });
             }
+
+            // Композитный индекс для zone_id, code и status (для дедупликации алертов)
+            if (!$this->indexExists('alerts', 'alerts_zone_code_status_idx')) {
+                Schema::table('alerts', function (Blueprint $table) {
+                    $table->index(['zone_id', 'code', 'status'], 'alerts_zone_code_status_idx');
+                });
+            }
         }
 
         // 4. zone_events - дополнительные индексы
@@ -132,6 +139,7 @@ return new class extends Migration
         });
 
         Schema::table('alerts', function (Blueprint $table) {
+            $table->dropIndex('alerts_zone_code_status_idx');
             $table->dropIndex('alerts_zone_type_status_idx');
             $table->dropIndex('alerts_resolved_at_idx');
             $table->dropIndex('alerts_created_at_idx');

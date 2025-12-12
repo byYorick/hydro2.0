@@ -21,6 +21,7 @@ use App\Http\Controllers\ZoneCommandController;
 use App\Http\Controllers\ZoneController;
 use App\Http\Controllers\ZonePidConfigController;
 use App\Http\Controllers\ZonePidLogController;
+use App\Http\Controllers\UnassignedNodeErrorController;
 use Illuminate\Support\Facades\Route;
 
 // Auth роуты с более строгим rate limiting для предотвращения брутфорса
@@ -71,6 +72,9 @@ Route::middleware([
     Route::get('nodes/{node}', [NodeController::class, 'show']);
     Route::get('nodes/{node}/config', [NodeController::class, 'getConfig']);
     Route::get('nodes/{node}/lifecycle/allowed-transitions', [NodeController::class, 'getAllowedTransitions']);
+    Route::get('unassigned-node-errors', [UnassignedNodeErrorController::class, 'index']);
+    Route::get('unassigned-node-errors/stats', [UnassignedNodeErrorController::class, 'stats']);
+    Route::get('unassigned-node-errors/{hardwareId}', [UnassignedNodeErrorController::class, 'show']);
     Route::get('recipes', [RecipeController::class, 'index']);
     Route::get('recipes/{recipe}', [RecipeController::class, 'show']);
     Route::get('presets', [PresetController::class, 'index']);
@@ -200,6 +204,7 @@ Route::prefix('python')->middleware('throttle:120,1')->group(function () {
     Route::post('ingest/telemetry', [PythonIngestController::class, 'telemetry']);
     Route::post('commands/ack', [PythonIngestController::class, 'commandAck']);
     Route::post('broadcast/telemetry', [PythonIngestController::class, 'broadcastTelemetry']);
+    Route::post('alerts', [PythonIngestController::class, 'alerts']);
     Route::post('logs', [ServiceLogController::class, 'store'])->middleware('verify.python.service');
 });
 

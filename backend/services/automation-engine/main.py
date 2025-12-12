@@ -78,6 +78,7 @@ _processing_times_lock = asyncio.Lock()  # Блокировка для thread-sa
 _shutdown_event = asyncio.Event()
 _zone_service: Optional[ZoneAutomationService] = None
 _command_tracker: Optional[CommandTracker] = None
+_command_bus: Optional[CommandBus] = None
 
 
 def validate_config(cfg: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
@@ -160,11 +161,20 @@ async def publish_correction_command(
     DEPRECATED: Используйте CommandBus.publish_command() вместо этой функции.
     Оставлено для обратной совместимости.
     """
+    global _command_bus
+    if _command_bus is not None:
+        return await _command_bus.publish_command(zone_id, node_uid, channel, cmd, params)
+    
+    # Fallback: создаем временный CommandBus если глобальный не инициализирован
     from infrastructure import CommandBus
     history_logger_url = os.getenv("HISTORY_LOGGER_URL", "http://history-logger:9300")
     history_logger_token = os.getenv("HISTORY_LOGGER_API_TOKEN") or os.getenv("PY_INGEST_TOKEN")
     command_bus = CommandBus(mqtt=None, gh_uid=gh_uid, history_logger_url=history_logger_url, history_logger_token=history_logger_token)
-    return await command_bus.publish_command(zone_id, node_uid, channel, cmd, params)
+    await command_bus.start()
+    try:
+        return await command_bus.publish_command(zone_id, node_uid, channel, cmd, params)
+    finally:
+        await command_bus.stop()
 
 
 async def check_phase_transitions(zone_id: int):
@@ -369,9 +379,14 @@ async def check_and_correct_zone(
         return
     
     # Используем новый сервисный слой (метрики внутри сервиса)
-    history_logger_url = os.getenv("HISTORY_LOGGER_URL", "http://history-logger:9300")
-    history_logger_token = os.getenv("HISTORY_LOGGER_API_TOKEN") or os.getenv("PY_INGEST_TOKEN")
-    command_bus = CommandBus(mqtt=None, gh_uid=gh_uid, history_logger_url=history_logger_url, history_logger_token=history_logger_token)
+    global _command_bus
+    if _command_bus is None:
+        history_logger_url = os.getenv("HISTORY_LOGGER_URL", "http://history-logger:9300")
+        history_logger_token = os.getenv("HISTORY_LOGGER_API_TOKEN") or os.getenv("PY_INGEST_TOKEN")
+        _command_bus = CommandBus(mqtt=None, gh_uid=gh_uid, history_logger_url=history_logger_url, history_logger_token=history_logger_token)
+        await _command_bus.start()
+    
+    command_bus = _command_bus
     zone_service = ZoneAutomationService(
         zone_repo, telemetry_repo, node_repo, recipe_repo, command_bus
     )
@@ -640,17 +655,23 @@ async def main():
                     
                     # Инициализация Command Bus с валидатором, трекером и аудитом
                     # Все команды отправляются через history-logger REST API
-                    history_logger_url = os.getenv("HISTORY_LOGGER_URL", "http://history-logger:9300")
-                    history_logger_token = os.getenv("HISTORY_LOGGER_API_TOKEN") or os.getenv("PY_INGEST_TOKEN")
-                    command_bus = CommandBus(
-                        mqtt=None,  # MQTT больше не используется для команд
-                        gh_uid=gh_uid,
-                        history_logger_url=history_logger_url,
-                        history_logger_token=history_logger_token,
-                        command_validator=command_validator,
-                        command_tracker=_command_tracker,
-                        command_audit=command_audit
-                    )
+                    global _command_bus
+                    if _command_bus is None:
+                        history_logger_url = os.getenv("HISTORY_LOGGER_URL", "http://history-logger:9300")
+                        history_logger_token = os.getenv("HISTORY_LOGGER_API_TOKEN") or os.getenv("PY_INGEST_TOKEN")
+                        _command_bus = CommandBus(
+                            mqtt=None,  # MQTT больше не используется для команд
+                            gh_uid=gh_uid,
+                            history_logger_url=history_logger_url,
+                            history_logger_token=history_logger_token,
+                            command_validator=command_validator,
+                            command_tracker=_command_tracker,
+                            command_audit=command_audit
+                        )
+                        await _command_bus.start()
+                        logger.info("CommandBus initialized with long-lived HTTP client")
+                    
+                    command_bus = _command_bus
                     
                     # Устанавливаем CommandBus в API для scheduler endpoint
                     try:
@@ -779,7 +800,14 @@ async def main():
             except Exception as e:
                 logger.warning(f"Failed to stop command polling: {e}")
         
-        # 4. Закрываем соединения
+        # 4. Закрываем CommandBus HTTP клиент
+        if _command_bus:
+            try:
+                await _command_bus.stop()
+            except Exception as e:
+                logger.warning(f"Failed to stop CommandBus: {e}")
+        
+        # 5. Закрываем соединения
         try:
             mqtt.stop()
         except Exception as e:

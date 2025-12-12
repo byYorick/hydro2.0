@@ -285,4 +285,46 @@ class PythonIngestController extends Controller
 
         return Response::json(['status' => 'ok']);
     }
+
+    public function alerts(Request $request)
+    {
+        $this->ensureToken($request);
+        $data = $request->validate([
+            'zone_id' => ['nullable', 'integer', 'exists:zones,id'],
+            'source' => ['required', 'string', 'in:biz,infra'],
+            'code' => ['required', 'string', 'max:64'],
+            'type' => ['required', 'string', 'max:64'],
+            'status' => ['required', 'string', 'in:ACTIVE,RESOLVED'],
+            'details' => ['nullable', 'array'],
+        ]);
+
+        try {
+            $alertService = app(\App\Services\AlertService::class);
+            $alert = $alertService->create([
+                'zone_id' => $data['zone_id'] ?? null,
+                'source' => $data['source'],
+                'code' => $data['code'],
+                'type' => $data['type'],
+                'status' => $data['status'],
+                'details' => $data['details'] ?? null,
+            ]);
+
+            return Response::json([
+                'status' => 'ok',
+                'data' => [
+                    'alert_id' => $alert->id,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('PythonIngestController: Failed to create alert', [
+                'error' => $e->getMessage(),
+                'data' => $data,
+            ]);
+
+            return Response::json([
+                'status' => 'error',
+                'message' => 'Failed to create alert',
+            ], 500);
+        }
+    }
 }

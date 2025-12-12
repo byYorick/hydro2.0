@@ -23,6 +23,7 @@ import time
 from typing import Dict, Optional, Any
 from datetime import datetime
 from common.db import execute, fetch, create_zone_event
+from common.commands import new_command_id
 from prometheus_client import Histogram, Counter, Gauge
 
 logger = logging.getLogger(__name__)
@@ -97,9 +98,9 @@ class CommandTracker:
             context: Дополнительный контекст
         
         Returns:
-            cmd_id: Уникальный ID команды
+            cmd_id: Уникальный ID команды (UUID формат, совместимый с history-logger)
         """
-        cmd_id = f"{zone_id}_{int(time.time() * 1000)}"
+        cmd_id = new_command_id()
         
         command_info = {
             'cmd_id': cmd_id,

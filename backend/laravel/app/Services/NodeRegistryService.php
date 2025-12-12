@@ -234,6 +234,9 @@ class NodeRegistryService
                     
                     $node->save();
                     
+                    // Привязываем накопленные ошибки по hardware_id
+                    $this->attachUnassignedErrors($node);
+                    
                     // Очищаем кеш списка устройств и статистики для всех пользователей
                     // Вместо Cache::flush() используем более безопасную очистку только связанных ключей
                     // Это предотвращает DoS через частые node_hello запросы
@@ -395,5 +398,41 @@ class NodeRegistryService
         
         // В будущем можно добавить поиск по uid, если он появится в таблице zones
         return null;
+    }
+    
+    /**
+     * Привязать накопленные ошибки неназначенного узла к зарегистрированному узлу.
+     * 
+     * @param DeviceNode $node Зарегистрированный узел
+     */
+    protected function attachUnassignedErrors(DeviceNode $node): void
+    {
+        if (!$node->hardware_id) {
+            return;
+        }
+        
+        try {
+            $updated = DB::table('unassigned_node_errors')
+                ->where('hardware_id', $node->hardware_id)
+                ->whereNull('node_id')
+                ->update([
+                    'node_id' => $node->id,
+                    'updated_at' => now()
+                ]);
+            
+            if ($updated > 0) {
+                Log::info('Attached unassigned errors to node', [
+                    'node_id' => $node->id,
+                    'hardware_id' => $node->hardware_id,
+                    'errors_count' => $updated
+                ]);
+            }
+        } catch (\Exception $e) {
+            Log::warning('Failed to attach unassigned errors to node', [
+                'node_id' => $node->id,
+                'hardware_id' => $node->hardware_id,
+                'error' => $e->getMessage()
+            ]);
+        }
     }
 }

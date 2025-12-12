@@ -23,6 +23,8 @@ class AlertService
                 event(new \App\Events\AlertCreated([
                     'id' => $alert->id,
                     'type' => $alert->type,
+                    'source' => $alert->source,
+                    'code' => $alert->code,
                     'status' => $alert->status,
                     'zone_id' => $alert->zone_id,
                     'details' => $alert->details,

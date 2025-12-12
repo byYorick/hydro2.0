@@ -61,6 +61,53 @@ async def upsert_telemetry_last(zone_id: int, metric_type: str, node_id: Optiona
     )
 
 
+async def upsert_unassigned_node_error(
+    hardware_id: str,
+    error_message: str,
+    error_code: Optional[str] = None,
+    error_level: str = "ERROR",
+    topic: str = "",
+    error_data: Optional[Dict[str, Any]] = None
+):
+    """
+    Записать или обновить ошибку неназначенного узла.
+    
+    Args:
+        hardware_id: Hardware ID узла из temp-топика
+        error_message: Текст ошибки
+        error_code: Код ошибки (опционально)
+        error_level: Уровень ошибки (ERROR, WARNING, etc)
+        topic: MQTT топик, откуда пришла ошибка
+        error_data: Дополнительные данные ошибки (опционально)
+    """
+    error_data_json = json.dumps(error_data) if error_data else None
+    
+    # Используем hardware_id + topic как уникальный ключ (unique constraint)
+    await execute(
+        """
+        INSERT INTO unassigned_node_errors (
+            hardware_id, error_message, error_code, error_level, topic, error_data,
+            count, first_seen_at, last_seen_at, updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6::jsonb, 1, NOW(), NOW(), NOW())
+        ON CONFLICT (hardware_id, topic) 
+        DO UPDATE SET
+            count = unassigned_node_errors.count + 1,
+            last_seen_at = NOW(),
+            updated_at = NOW(),
+            error_data = COALESCE(EXCLUDED.error_data, unassigned_node_errors.error_data),
+            error_code = COALESCE(EXCLUDED.error_code, unassigned_node_errors.error_code),
+            error_message = EXCLUDED.error_message
+        """,
+        hardware_id,
+        error_message,
+        error_code,
+        error_level,
+        topic,
+        error_data_json
+    )
+
+
 async def create_zone_event(zone_id: int, event_type: str, details: Optional[Dict[str, Any]] = None):
     """Create a zone event according to DATA_MODEL_REFERENCE.md section 8.1."""
     details_json = json.dumps(details) if details else None

@@ -293,3 +293,73 @@ async def test_publish_command_without_token():
         call_args = mock_client.post.call_args
         # Authorization header не должен быть если token не передан
         assert "Authorization" not in call_args[1]["headers"]
+
+
+@pytest.mark.asyncio
+async def test_publish_controller_command_without_params_preserves_cmd_id():
+    """Test that command without params preserves cmd_id and it reaches history-logger."""
+    from infrastructure.command_tracker import CommandTracker
+    
+    with patch("httpx.AsyncClient") as mock_client_class:
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json = Mock(return_value={"status": "ok", "data": {"command_id": "cmd-123"}})
+        
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client_class.return_value = mock_client
+        
+        # Создаем CommandTracker для генерации cmd_id
+        tracker = CommandTracker()
+        command_bus = CommandBus(
+            mqtt=None,
+            gh_uid="gh-1",
+            history_logger_url="http://history-logger:9300",
+            command_tracker=tracker
+        )
+        
+        # Команда БЕЗ params
+        command = {
+            'node_uid': 'nd-relay-1',
+            'channel': 'default',
+            'cmd': 'set_relay',
+            # params отсутствует
+        }
+        
+        result = await command_bus.publish_controller_command(1, command)
+        
+        assert result is True
+        mock_client.post.assert_called_once()
+        call_args = mock_client.post.call_args
+        
+        # Проверяем, что params был создан и содержит cmd_id
+        payload = call_args[1]["json"]
+        assert "params" in payload, "params должен быть создан даже если его не было в команде"
+        assert "cmd_id" in payload["params"], "cmd_id должен быть в params"
+        
+        # Проверяем, что cmd_id не пустой
+        cmd_id_in_payload = payload["params"]["cmd_id"]
+        assert cmd_id_in_payload is not None
+        assert len(cmd_id_in_payload) > 0
+        
+        # Проверяем, что cmd_id также был добавлен в исходную команду
+        assert "params" in command, "params должен быть добавлен в исходную команду"
+        assert "cmd_id" in command["params"], "cmd_id должен быть в command['params']"
+        cmd_id_in_command = command["params"]["cmd_id"]
+        
+        # Проверяем, что cmd_id совпадает (тот же cmd_id, что был сгенерирован трекером)
+        assert cmd_id_in_command == cmd_id_in_payload, "cmd_id в команде и в payload должны совпадать"
+        
+        # Проверяем, что cmd_id дошел до history-logger
+        assert payload["cmd"] == "set_relay"
+        assert payload["node_uid"] == "nd-relay-1"
+        assert payload["zone_id"] == 1
+        
+        # Проверяем, что команда была отслежена трекером
+        pending_commands = await tracker.get_pending_commands(zone_id=1)
+        assert len(pending_commands) > 0, "Команда должна быть в pending_commands трекера"
+        # Проверяем, что cmd_id из трекера совпадает с отправленным
+        tracked_cmd_id = list(pending_commands.keys())[0]
+        assert tracked_cmd_id == cmd_id_in_payload, "cmd_id из трекера должен совпадать с отправленным в history-logger"

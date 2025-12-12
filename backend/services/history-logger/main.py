@@ -25,8 +25,12 @@ from common.error_handler import get_error_handler
 from common.command_status_queue import (
     normalize_status,
     send_status_to_laravel,
-    retry_worker,
-    close_http_client,
+    retry_worker as command_retry_worker,
+    close_http_client as close_command_http_client,
+)
+from common.alert_queue import (
+    retry_worker as alert_retry_worker,
+    close_http_client as close_alert_http_client,
 )
 
 logger = logging.getLogger(__name__)
@@ -54,8 +58,12 @@ async def lifespan(app: FastAPI):
     background_tasks.append(task)
     
     # Запуск воркера для ретраев статусов команд
-    retry_task = asyncio.create_task(retry_worker(interval=30.0, shutdown_event=shutdown_event))
-    background_tasks.append(retry_task)
+    command_retry_task = asyncio.create_task(command_retry_worker(interval=30.0, shutdown_event=shutdown_event))
+    background_tasks.append(command_retry_task)
+    
+    # Запуск воркера для ретраев алертов
+    alert_retry_task = asyncio.create_task(alert_retry_worker(interval=30.0, shutdown_event=shutdown_event))
+    background_tasks.append(alert_retry_task)
     
     # Подключение к MQTT
     mqtt = await get_mqtt_client()
@@ -111,7 +119,11 @@ async def lifespan(app: FastAPI):
     await close_redis_client()
     
     # Закрываем HTTP клиент для статусов команд
-    await close_http_client()
+    await close_command_http_client()
+    await close_alert_http_client()
+    
+    # Закрываем HTTP клиент для telemetry broadcast
+    await close_broadcast_http_client()
     
     logger.info("History Logger service stopped")
     send_service_log(
@@ -252,6 +264,59 @@ shutdown_event = asyncio.Event()
 
 # Background tasks для отслеживания при shutdown
 background_tasks: List[asyncio.Task] = []
+
+# Глобальный httpx.AsyncClient для telemetry broadcast
+_broadcast_http_client: Optional[httpx.AsyncClient] = None
+
+# Backoff состояние для telemetry broadcast (отслеживание последовательных ошибок)
+_broadcast_error_count = 0
+_broadcast_last_error_time: Optional[float] = None
+_broadcast_backoff_until: Optional[float] = None
+
+
+async def get_broadcast_http_client() -> httpx.AsyncClient:
+    """
+    Возвращает глобальный httpx.AsyncClient для telemetry broadcast.
+    Создаёт клиент при первом вызове.
+    """
+    global _broadcast_http_client
+    
+    if _broadcast_http_client is None:
+        s = get_settings()
+        timeout_sec = s.laravel_api_timeout_sec if hasattr(s, 'laravel_api_timeout_sec') else 5.0
+        timeout = httpx.Timeout(timeout_sec, connect=timeout_sec * 0.5)
+        _broadcast_http_client = httpx.AsyncClient(timeout=timeout)
+        logger.info("Created global httpx.AsyncClient for telemetry broadcast")
+    
+    return _broadcast_http_client
+
+
+async def close_broadcast_http_client():
+    """Закрывает глобальный httpx.AsyncClient для telemetry broadcast."""
+    global _broadcast_http_client
+    
+    if _broadcast_http_client is not None:
+        await _broadcast_http_client.aclose()
+        _broadcast_http_client = None
+        logger.info("Closed global httpx.AsyncClient for telemetry broadcast")
+
+
+def _calculate_broadcast_backoff(error_count: int, base_delay: float = 1.0, max_delay: float = 60.0) -> float:
+    """
+    Вычисляет задержку для exponential backoff при ошибках broadcast.
+    
+    Args:
+        error_count: Количество последовательных ошибок
+        base_delay: Базовая задержка в секундах
+        max_delay: Максимальная задержка в секундах
+        
+    Returns:
+        Задержка в секундах
+    """
+    if error_count == 0:
+        return 0.0
+    delay = base_delay * (2 ** min(error_count - 1, 6))  # Ограничиваем экспоненту
+    return min(delay, max_delay)
 
 # Rate limiting для HTTP ingest endpoint
 # Простой in-memory rate limiter (можно улучшить через Redis для распределенных систем)
@@ -1062,10 +1127,23 @@ async def _broadcast_telemetry_to_laravel(
     """
     Вызывает Laravel API для broadcast телеметрии через WebSocket.
     Выполняется асинхронно в фоне, чтобы не блокировать основной процесс.
+    Использует глобальный httpx.AsyncClient для переиспользования соединений.
     """
+    global _broadcast_error_count, _broadcast_last_error_time, _broadcast_backoff_until
+    
     # Проверяем shutdown в начале функции, чтобы быстро выйти если shutdown начался.
     if shutdown_event.is_set():
         logger.debug("[BROADCAST] Shutdown in progress, skipping telemetry broadcast")
+        return
+    
+    # Проверяем backoff: если мы в режиме backoff, пропускаем запрос
+    current_time = time.time()
+    if _broadcast_backoff_until is not None and current_time < _broadcast_backoff_until:
+        logger.debug(
+            f"[BROADCAST] In backoff mode, skipping broadcast. "
+            f"Backoff until: {_broadcast_backoff_until:.2f}, current: {current_time:.2f}, "
+            f"error_count: {_broadcast_error_count}"
+        )
         return
     
     s = get_settings()
@@ -1106,42 +1184,87 @@ async def _broadcast_telemetry_to_laravel(
             'timestamp': timestamp_ms,
         }
         
-        API_TIMEOUT = s.laravel_api_timeout_sec if hasattr(s, 'laravel_api_timeout_sec') else 5.0
-        
         # Проверяем shutdown перед HTTP запросом, чтобы не делать запросы после shutdown.
         if shutdown_event.is_set():
             logger.debug("[BROADCAST] Shutdown in progress, skipping HTTP request")
             return
         
-        async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
-            api_start = time.time()
-            response = await client.post(
-                f"{laravel_url}/api/python/broadcast/telemetry",
-                json=api_data,
-                headers={
-                    'Authorization': f'Bearer {ingest_token}',
-                    'Content-Type': 'application/json',
+        # Используем глобальный HTTP клиент вместо создания нового на каждый запрос
+        client = await get_broadcast_http_client()
+        api_start = time.time()
+        response = await client.post(
+            f"{laravel_url}/api/python/broadcast/telemetry",
+            json=api_data,
+            headers={
+                'Authorization': f'Bearer {ingest_token}',
+                'Content-Type': 'application/json',
+            }
+        )
+        api_duration = time.time() - api_start
+        LARAVEL_API_DURATION.observe(api_duration)
+        
+        if response.status_code == 200:
+            # Успешный запрос - сбрасываем счетчик ошибок и backoff
+            if _broadcast_error_count > 0:
+                logger.info(
+                    f"[BROADCAST] Success after {_broadcast_error_count} errors, "
+                    f"resetting error count and backoff"
+                )
+            _broadcast_error_count = 0
+            _broadcast_backoff_until = None
+            logger.info(f"[BROADCAST] Telemetry broadcasted successfully: node_id={node_id}, metric={metric_type}, value={value}")
+        else:
+            # Ошибка HTTP статуса - увеличиваем счетчик ошибок
+            _broadcast_error_count += 1
+            _broadcast_last_error_time = current_time
+            backoff_delay = _calculate_broadcast_backoff(_broadcast_error_count)
+            _broadcast_backoff_until = current_time + backoff_delay
+            
+            logger.warning(
+                f"[BROADCAST] Failed to broadcast telemetry: status={response.status_code}, "
+                f"error_count={_broadcast_error_count}, backoff={backoff_delay:.2f}s",
+                extra={
+                    'node_id': node_id,
+                    'metric_type': metric_type,
+                    'status_code': response.status_code,
+                    'response': response.text[:200],
+                    'error_count': _broadcast_error_count,
+                    'backoff_seconds': backoff_delay
                 }
             )
-            api_duration = time.time() - api_start
-            LARAVEL_API_DURATION.observe(api_duration)
-            
-            if response.status_code == 200:
-                logger.info(f"[BROADCAST] Telemetry broadcasted successfully: node_id={node_id}, metric={metric_type}, value={value}")
-            else:
-                logger.warning(
-                    f"[BROADCAST] Failed to broadcast telemetry: status={response.status_code}",
-                    extra={
-                        'node_id': node_id,
-                        'metric_type': metric_type,
-                        'status_code': response.status_code,
-                        'response': response.text[:200]
-                    }
-                )
-    except httpx.TimeoutException as e:
-        logger.warning(f"[BROADCAST] Timeout broadcasting telemetry: {e}", extra={'node_id': node_id})
+    except (httpx.TimeoutException, httpx.RequestError, httpx.NetworkError) as e:
+        # Сетевые ошибки - увеличиваем счетчик ошибок
+        _broadcast_error_count += 1
+        _broadcast_last_error_time = current_time
+        backoff_delay = _calculate_broadcast_backoff(_broadcast_error_count)
+        _broadcast_backoff_until = current_time + backoff_delay
+        
+        logger.warning(
+            f"[BROADCAST] Network error broadcasting telemetry: {e}, "
+            f"error_count={_broadcast_error_count}, backoff={backoff_delay:.2f}s",
+            extra={
+                'node_id': node_id,
+                'error_count': _broadcast_error_count,
+                'backoff_seconds': backoff_delay
+            }
+        )
     except Exception as e:
-        logger.warning(f"[BROADCAST] Error broadcasting telemetry: {e}", extra={'node_id': node_id}, exc_info=True)
+        # Неожиданные ошибки - также увеличиваем счетчик
+        _broadcast_error_count += 1
+        _broadcast_last_error_time = current_time
+        backoff_delay = _calculate_broadcast_backoff(_broadcast_error_count)
+        _broadcast_backoff_until = current_time + backoff_delay
+        
+        logger.warning(
+            f"[BROADCAST] Error broadcasting telemetry: {e}, "
+            f"error_count={_broadcast_error_count}, backoff={backoff_delay:.2f}s",
+            extra={
+                'node_id': node_id,
+                'error_count': _broadcast_error_count,
+                'backoff_seconds': backoff_delay
+            },
+            exc_info=True
+        )
 
 
 async def process_telemetry_queue():
@@ -1633,6 +1756,7 @@ async def handle_error(topic: str, payload: bytes):
     """
     Обработчик error сообщений от узлов ESP32.
     Обрабатывает немедленные ошибки через общий компонент error_handler.
+    Для temp-топиков (gh-temp/zn-temp) записывает ошибки в unassigned_node_errors.
     """
     logger.info(f"[ERROR] ===== START processing error =====")
     logger.info(f"[ERROR] Topic: {topic}, payload length: {len(payload)}")
@@ -1642,6 +1766,46 @@ async def handle_error(topic: str, payload: bytes):
         logger.warning(f"[ERROR] Invalid JSON in error from topic {topic}")
         return
     
+    # Проверяем, является ли это temp-топиком
+    gh_uid = _extract_gh_uid(topic)
+    zone_uid = _extract_zone_uid(topic)
+    is_temp_topic = (gh_uid == "gh-temp" and zone_uid == "zn-temp")
+    
+    if is_temp_topic:
+        # Это temp-топик - извлекаем hardware_id вместо node_uid
+        hardware_id = _extract_node_uid(topic)  # В temp-топике на позиции node_uid находится hardware_id
+        if not hardware_id:
+            logger.warning(f"[ERROR] Could not extract hardware_id from temp topic {topic}")
+            return
+        
+        level = data.get("level", "ERROR")
+        component = data.get("component", "unknown")
+        error_code = data.get("error_code")
+        error_message = data.get("message", data.get("error", "Unknown error"))
+        
+        logger.info(
+            f"[ERROR] Processing error for unassigned node (hardware_id: {hardware_id}), "
+            f"level: {level}, component: {component}, error_code: {error_code}"
+        )
+        
+        # Записываем ошибку в таблицу unassigned_node_errors
+        try:
+            await upsert_unassigned_node_error(
+                hardware_id=hardware_id,
+                error_message=error_message,
+                error_code=error_code,
+                error_level=level,
+                topic=topic,
+                error_data=data
+            )
+            logger.info(f"[ERROR] Saved error for unassigned node hardware_id={hardware_id}")
+        except Exception as e:
+            logger.error(f"[ERROR] Failed to save unassigned node error: {e}", exc_info=True)
+        
+        ERROR_RECEIVED.labels(node_uid=f"unassigned-{hardware_id}", level=level.lower()).inc()
+        return
+    
+    # Обычная обработка для привязанных узлов
     node_uid = _extract_node_uid(topic)
     if not node_uid:
         logger.warning(f"[ERROR] Could not extract node_uid from topic {topic}")

@@ -14,6 +14,7 @@ import httpx
 import json
 from .db import execute, fetch
 from .env import get_settings
+from .alert_queue import send_alert_to_laravel
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +147,7 @@ class NodeErrorHandler:
         details: Optional[Dict[str, Any]] = None
     ) -> None:
         """
-        Создание Alert напрямую в БД (Laravel API не поддерживает POST для alerts).
+        Создание Alert через Laravel API с персистентной очередью для ретраев.
         
         Args:
             node_uid: UID узла
@@ -188,30 +189,29 @@ class NodeErrorHandler:
             alert_code = f"node_error_{component}_{error_code}"
             alert_type = "node_error"
             
-            # Создаем Alert напрямую в БД
-            await execute(
-                """
-                INSERT INTO alerts (
-                    zone_id, source, code, type, status, details, created_at
-                )
-                VALUES ($1, $2, $3, $4, $5, $6, NOW())
-                """,
-                zone_id,
-                "infra",  # Ошибки нод - это инфраструктурные ошибки
-                alert_code,
-                alert_type,
-                "ACTIVE",
-                json.dumps({
-                    "node_uid": node_uid,
-                    "component": component,
-                    "error_code": error_code,
-                    "level": level,
-                    "message": message,
-                    "details": details or {}
-                })
+            # Создаем Alert через Laravel API (с автоматической очередью при ошибках)
+            alert_details = {
+                "node_uid": node_uid,
+                "component": component,
+                "error_code": error_code,
+                "level": level,
+                "message": message,
+                "details": details or {}
+            }
+            
+            success = await send_alert_to_laravel(
+                zone_id=zone_id,
+                source="infra",  # Ошибки нод - это инфраструктурные ошибки
+                code=alert_code,
+                type=alert_type,
+                status="ACTIVE",
+                details=alert_details
             )
             
-            logger.info(f"[ERROR_HANDLER] Alert created for node {node_uid}: {error_code}")
+            if success:
+                logger.info(f"[ERROR_HANDLER] Alert created for node {node_uid}: {error_code}")
+            else:
+                logger.info(f"[ERROR_HANDLER] Alert queued for retry for node {node_uid}: {error_code}")
         
         except Exception as e:
             logger.error(
