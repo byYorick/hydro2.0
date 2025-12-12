@@ -4,6 +4,7 @@
 import logging
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, timedelta
+from common.utils.time import utcnow
 from common.db import fetch
 
 logger = logging.getLogger(__name__)
@@ -20,7 +21,7 @@ async def calibrate_ph_model(zone_id: int, days: int = 7) -> Dict[str, float]:
     Returns:
         Словарь с параметрами: buffer_capacity, natural_drift, correction_rate
     """
-    cutoff_date = datetime.utcnow() - timedelta(days=days)
+    cutoff_date = utcnow() - timedelta(days=days)
     
     # Получаем историю pH (только валидные значения)
     ph_samples = await fetch(
@@ -150,7 +151,7 @@ async def calibrate_ec_model(zone_id: int, days: int = 7) -> Dict[str, float]:
     Returns:
         Словарь с параметрами: evaporation_rate, dilution_rate, nutrient_addition_rate
     """
-    cutoff_date = datetime.utcnow() - timedelta(days=days)
+    cutoff_date = utcnow() - timedelta(days=days)
     
     # Получаем историю EC (только валидные значения)
     ec_samples = await fetch(
@@ -281,7 +282,7 @@ async def calibrate_climate_model(zone_id: int, days: int = 7) -> Dict[str, floa
     Returns:
         Словарь с параметрами: heat_loss_rate, humidity_decay_rate, ventilation_cooling
     """
-    cutoff_date = datetime.utcnow() - timedelta(days=days)
+    cutoff_date = utcnow() - timedelta(days=days)
     
     # Получаем историю температуры и влажности (только валидные значения)
     temp_samples = await fetch(
@@ -399,7 +400,7 @@ async def calibrate_zone_models(zone_id: int, days: int = 7) -> Dict[str, Any]:
     
     result = {
         "zone_id": zone_id,
-        "calibrated_at": datetime.utcnow().isoformat(),
+        "calibrated_at": utcnow().isoformat(),
         "data_period_days": days,
         "models": {
             "ph": ph_params,

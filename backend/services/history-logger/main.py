@@ -6,6 +6,7 @@ import signal
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
+from common.utils.time import utcnow
 from typing import Optional, List, Union, Dict, Any
 import httpx
 
@@ -845,7 +846,7 @@ async def handle_telemetry(topic: str, payload: bytes):
     # Также проверяем отклонение от серверного времени (искаженное время)
     MIN_VALID_TIMESTAMP = 1_000_000_000  # 2001-09-09 01:46:40 UTC
     MAX_TIMESTAMP_DRIFT_SEC = 300  # Максимальное допустимое отклонение: 5 минут
-    server_time = datetime.utcnow()
+    server_time = utcnow()
     server_timestamp = server_time.timestamp()
     
     ts = None
@@ -961,7 +962,7 @@ async def handle_telemetry(topic: str, payload: bytes):
         ts=ts,
         raw=filtered_raw,  # Сохраняем отфильтрованные данные
         channel=channel_name,
-        enqueued_at=datetime.utcnow()  # Время добавления в очередь для трекинга возраста
+        enqueued_at=utcnow()  # Время добавления в очередь для трекинга возраста
     )
 
     # Минимальное логирование: телеметрия принята
@@ -1302,7 +1303,7 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
         param_index = 1
         
         for sample in group_samples:
-            ts = sample.ts or datetime.utcnow()
+            ts = sample.ts or utcnow()
             value = sample.value
             
             # Добавляем ts в плейсхолдеры (6 параметров: zone_id, node_id, metric_type, channel, value, ts)
@@ -1387,7 +1388,7 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
                         channel=channel or '',
                         metric_type=metric_type,
                         value=latest_sample.value,
-                        timestamp=latest_sample.ts or datetime.utcnow()
+                        timestamp=latest_sample.ts or utcnow()
                     ))
                     # Добавляем callback для логирования критических ошибок (не exceptions, которые уже обработаны).
                     def log_task_error(t):
@@ -1504,7 +1505,7 @@ async def _broadcast_telemetry_to_laravel(
     
     try:
         # Конвертируем timestamp в миллисекунды с правильной обработкой timezone.
-        # datetime.utcnow() создает naive datetime, но timestamp() требует aware datetime.
+        # utcnow() создает aware datetime с timezone.utc.
         if isinstance(timestamp, datetime):
             # Если datetime naive (без timezone), считаем его UTC.
             if timestamp.tzinfo is None:
@@ -1619,7 +1620,7 @@ async def process_telemetry_queue():
     global telemetry_queue
 
     s = get_settings()
-    last_flush = datetime.utcnow()
+    last_flush = utcnow()
 
     logger.info("Starting telemetry queue processor")
 
@@ -1646,7 +1647,7 @@ async def process_telemetry_queue():
                 # Если очередь пуста или элементы не имеют enqueued_at, устанавливаем 0
                 TELEMETRY_QUEUE_AGE.set(0.0)
             
-            time_since_flush = (datetime.utcnow() - last_flush).total_seconds() * 1000
+            time_since_flush = (utcnow() - last_flush).total_seconds() * 1000
 
             should_flush = (
                 queue_size >= s.telemetry_batch_size or
@@ -1678,7 +1679,7 @@ async def process_telemetry_queue():
 
                     # Обрабатываем батч
                     await process_telemetry_batch(samples)
-                    last_flush = datetime.utcnow()
+                    last_flush = utcnow()
 
             # Небольшая задержка перед следующей проверкой
             await asyncio.sleep(s.queue_check_interval_sec)
@@ -2889,7 +2890,7 @@ async def handle_time_request(topic: str, payload: bytes):
             return
         
         # Получаем текущее серверное время (Unix timestamp в секундах)
-        server_time = int(datetime.utcnow().timestamp())
+        server_time = int(utcnow().timestamp())
         
         # Получаем MQTT клиент для публикации команды
         mqtt = await get_mqtt_client()
@@ -3637,7 +3638,7 @@ async def publish_command(
                         "node_uid": req.node_uid,
                         "channel": req.channel,
                         "command": req.get_command_name(),
-                        "published_at": datetime.utcnow().isoformat()
+                        "published_at": utcnow().isoformat()
                     }
                 )
                 logger.debug(f"Correlation ACK sent for command {cmd_id} (status: SENT)")
@@ -3973,7 +3974,7 @@ async def ingest_telemetry(request: Request):
         
         # Если ts невалиден или отсутствует, используем серверное время
         if ts is None:
-            ts = datetime.utcnow()
+            ts = utcnow()
         
         # Извлекаем zone_id из zone_uid если нужно (будет резолвлен в process_telemetry_batch с учетом gh_uid)
         zone_uid = validated_data.zone_uid

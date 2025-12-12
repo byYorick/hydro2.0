@@ -9,6 +9,7 @@ Correction Cooldown Manager - предотвращение лавины корр
 """
 from typing import Dict, Optional, Tuple
 from datetime import datetime, timedelta
+from common.utils.time import utcnow
 from common.db import fetch, execute
 import logging
 
@@ -82,7 +83,7 @@ async def is_in_cooldown(zone_id: int, correction_type: str, cooldown_minutes: i
         return False
     
     cooldown_end = last_correction + timedelta(minutes=cooldown_minutes)
-    return datetime.utcnow() < cooldown_end
+    return utcnow() < cooldown_end
 
 
 async def analyze_trend(
@@ -107,7 +108,7 @@ async def analyze_trend(
         - is_improving: True если значение приближается к цели
         - trend_slope: Наклон тренда (положительный = улучшение для pH/EC)
     """
-    cutoff_time = datetime.utcnow() - timedelta(hours=hours)
+    cutoff_time = utcnow() - timedelta(hours=hours)
     
     rows = await fetch(
         """
@@ -197,7 +198,7 @@ async def should_apply_correction(
     if await is_in_cooldown(zone_id, correction_type, cooldown_minutes):
         last_correction = await get_last_correction_time(zone_id, correction_type)
         if last_correction:
-            time_since = datetime.utcnow() - last_correction
+            time_since = utcnow() - last_correction
             return False, f"В cooldown периоде (последняя корректировка {time_since.seconds // 60} минут назад)"
         return False, "В cooldown периоде"
     

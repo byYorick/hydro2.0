@@ -9,6 +9,7 @@
 import logging
 from typing import Optional, Dict, Any
 from datetime import datetime
+from .utils.time import utcnow
 from prometheus_client import Gauge, Histogram, Counter
 
 logger = logging.getLogger(__name__)
@@ -125,7 +126,7 @@ def record_command_latency(sent_at: datetime, accepted_at: Optional[datetime], d
         accepted_at: Время принятия команды (ACCEPTED), может быть None
         done_at: Время завершения команды (DONE), может быть None
     """
-    now = datetime.utcnow()
+    now = utcnow()
     
     if accepted_at:
         sent_to_accepted = (accepted_at - sent_at).total_seconds()

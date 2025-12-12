@@ -4,6 +4,7 @@ Irrigation Controller - управление поливом и рециркул�
 """
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta, timezone
+from common.utils.time import utcnow
 from common.db import fetch, create_zone_event
 from common.water_flow import check_water_level
 
@@ -68,12 +69,12 @@ async def check_and_control_irrigation(
         return None
     
     # Проверяем, прошло ли достаточно времени
-    now = datetime.utcnow()
-    if last_irrigation_time.tzinfo:
-        # Если есть timezone, используем его
-        if now.tzinfo is None:
-            from datetime import timezone
-            now = now.replace(tzinfo=timezone.utc)
+    now = utcnow()
+    # Приводим last_irrigation_time к aware UTC для корректного сравнения
+    if last_irrigation_time.tzinfo is None:
+        last_irrigation_time = last_irrigation_time.replace(tzinfo=timezone.utc)
+    elif last_irrigation_time.tzinfo != timezone.utc:
+        last_irrigation_time = last_irrigation_time.astimezone(timezone.utc)
     
     elapsed_sec = (now - last_irrigation_time).total_seconds()
     
@@ -184,17 +185,15 @@ async def check_and_control_recirculation(
     # Получаем время последней рециркуляции
     last_recirculation_time = await get_last_recirculation_time(zone_id)
     
-    now = datetime.utcnow()
-    if now.tzinfo is None:
-        now = now.replace(tzinfo=timezone.utc)
+    now = utcnow()
     
     if last_recirculation_time is not None:
         # Проверяем, прошло ли достаточно времени
-        # Приводим last_recirculation_time к тому же timezone, что и now
+        # Приводим last_recirculation_time к aware UTC для корректного сравнения
         if last_recirculation_time.tzinfo is None:
             last_recirculation_time = last_recirculation_time.replace(tzinfo=timezone.utc)
-        elif now.tzinfo is None:
-            now = now.replace(tzinfo=timezone.utc)
+        elif last_recirculation_time.tzinfo != timezone.utc:
+            last_recirculation_time = last_recirculation_time.astimezone(timezone.utc)
         
         elapsed_min = (now - last_recirculation_time).total_seconds() / 60.0
         

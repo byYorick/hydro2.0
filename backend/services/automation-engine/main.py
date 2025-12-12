@@ -6,6 +6,7 @@ import os
 import signal
 from typing import Optional, Dict, Any, Tuple, List
 from datetime import datetime
+from common.utils.time import utcnow
 from common.env import get_settings
 from common.mqtt import MqttClient
 from common.db import fetch, execute, create_zone_event, create_ai_log
@@ -123,13 +124,23 @@ def _extract_gh_uid_from_config(cfg: Dict[str, Any]) -> Optional[str]:
 
 
 async def get_zone_recipe_and_targets(zone_id: int) -> Optional[Dict[str, Any]]:
-    """Fetch active recipe phase and targets for zone."""
+    """
+    DEPRECATED: Fetch active recipe phase and targets for zone.
+    Используется только для тестов. В основном коде используйте RecipeRepository напрямую.
+    """
+    # Для обратной совместимости создаем репозиторий без circuit breaker
+    # В основном коде circuit breaker передается из main()
     repo = RecipeRepository()
     return await repo.get_zone_recipe_and_targets(zone_id)
 
 
 async def get_zone_telemetry_last(zone_id: int) -> Dict[str, Optional[float]]:
-    """Fetch last telemetry values for zone."""
+    """
+    DEPRECATED: Fetch last telemetry values for zone.
+    Используется только для тестов. В основном коде используйте TelemetryRepository напрямую.
+    """
+    # Для обратной совместимости создаем репозиторий без circuit breaker
+    # В основном коде circuit breaker передается из main()
     repo = TelemetryRepository()
     return await repo.get_last_telemetry(zone_id)
 
@@ -301,7 +312,7 @@ async def process_zones_parallel(
                         'zone_name': zone_name,
                         'error': str(e),
                         'error_type': type(e).__name__,
-                        'timestamp': datetime.utcnow().isoformat()
+                        'timestamp': utcnow().isoformat()
                     }
                     results['errors'].append(error_info)
                     
@@ -644,11 +655,11 @@ async def main():
                         await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
                         continue
                     
-                    # Инициализация репозиториев
+                    # Инициализация репозиториев с circuit breakers
                     zone_repo = ZoneRepository()
-                    telemetry_repo = TelemetryRepository()
+                    telemetry_repo = TelemetryRepository(db_circuit_breaker=db_circuit_breaker)
                     node_repo = NodeRepository()
-                    recipe_repo = RecipeRepository()
+                    recipe_repo = RecipeRepository(db_circuit_breaker=db_circuit_breaker)
                     
                     # Инициализация Command Audit
                     command_audit = CommandAudit()
@@ -666,7 +677,8 @@ async def main():
                             history_logger_token=history_logger_token,
                             command_validator=command_validator,
                             command_tracker=_command_tracker,
-                            command_audit=command_audit
+                            command_audit=command_audit,
+                            api_circuit_breaker=api_circuit_breaker
                         )
                         await _command_bus.start()
                         logger.info("CommandBus initialized with long-lived HTTP client")

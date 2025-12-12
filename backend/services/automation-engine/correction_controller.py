@@ -5,15 +5,17 @@ Correction Controller - универсальный контроллер для �
 from typing import Optional, Dict, Any
 from utils.adaptive_pid import AdaptivePid
 from enum import Enum
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import time
 import logging
 from common.db import create_zone_event, create_ai_log
+from common.utils.time import utcnow
 from correction_cooldown import should_apply_correction, record_correction
 from config.settings import get_settings
 from utils.adaptive_pid import AdaptivePid, AdaptivePidConfig, PidZone, PidZoneCoeffs
 from services.pid_config_service import get_config, invalidate_cache
 from services.pid_state_manager import PidStateManager
+from common.alerts import create_alert, AlertSource, AlertCode
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +43,8 @@ class CorrectionController:
         self._pid_by_zone: Dict[int, AdaptivePid] = {}
         self._last_pid_tick: Dict[int, float] = {}
         self.pid_state_manager = pid_state_manager or PidStateManager()
+        # Счетчик подряд пропусков проверки свежести по зонам
+        self._freshness_check_failure_count: Dict[int, int] = {}
     
     async def check_and_correct(
         self,
@@ -73,7 +77,10 @@ class CorrectionController:
             return None
         
         # КРИТИЧЕСКАЯ ПРОВЕРКА: проверяем свежесть данных телеметрии
-        # Предотвращает дозирование на основе устаревших данных
+        # Предотвращает дозирование на основе устаревших или недоступных данных (fail-closed)
+        freshness_check_passed = False
+        freshness_check_error = None
+        
         if telemetry_timestamps:
             metric_timestamp = telemetry_timestamps.get(self.metric_name) or telemetry_timestamps.get(target_key)
             if metric_timestamp:
@@ -89,7 +96,12 @@ class CorrectionController:
                     if updated_at:
                         settings = get_settings()
                         max_age = timedelta(minutes=settings.TELEMETRY_MAX_AGE_MINUTES)
-                        age = datetime.utcnow() - updated_at.replace(tzinfo=None) if updated_at.tzinfo else datetime.utcnow() - updated_at
+                        # Приводим updated_at к aware UTC для корректного сравнения
+                        if updated_at.tzinfo is None:
+                            updated_at = updated_at.replace(tzinfo=timezone.utc)
+                        elif updated_at.tzinfo != timezone.utc:
+                            updated_at = updated_at.astimezone(timezone.utc)
+                        age = utcnow() - updated_at
                         
                         if age > max_age:
                             logger.warning(
@@ -109,12 +121,73 @@ class CorrectionController:
                                     'reason': 'telemetry_data_too_old'
                                 }
                             )
+                            # Сбрасываем счетчик пропусков проверки свежести (это другая причина пропуска)
+                            self._freshness_check_failure_count.pop(zone_id, None)
                             return None
+                        else:
+                            # Проверка свежести прошла успешно
+                            freshness_check_passed = True
+                    else:
+                        # Не удалось определить updated_at
+                        freshness_check_error = "unable_to_parse_timestamp"
                 except Exception as e:
-                    logger.warning(
-                        f"Zone {zone_id}: Failed to check {target_key} data freshness: {e}. "
-                        f"Proceeding with correction (may be risky)."
-                    )
+                    # Ошибка при проверке свежести - fail-closed
+                    freshness_check_error = str(e)
+            else:
+                # Нет timestamp для метрики
+                freshness_check_error = "timestamp_missing"
+        else:
+            # Нет telemetry_timestamps - fail-closed
+            freshness_check_error = "telemetry_timestamps_missing"
+        
+        # Fail-closed: если проверка свежести не прошла, не дозируем
+        if not freshness_check_passed:
+            # Увеличиваем счетчик подряд пропусков
+            failure_count = self._freshness_check_failure_count.get(zone_id, 0) + 1
+            self._freshness_check_failure_count[zone_id] = failure_count
+            
+            logger.warning(
+                f"Zone {zone_id}: Failed to check {target_key} data freshness (error: {freshness_check_error}). "
+                f"Skipping correction to prevent blind dosing (fail-closed). "
+                f"Consecutive failures: {failure_count}"
+            )
+            
+            # Создаем событие о пропуске корректировки из-за ошибки проверки свежести
+            await create_zone_event(
+                zone_id,
+                'CORRECTION_SKIPPED_FRESHNESS_CHECK_FAILED',
+                {
+                    'correction_type': self.correction_type.value,
+                    'metric': self.metric_name,
+                    f'current_{target_key}': current,
+                    f'target_{target_key}': target,
+                    'error': freshness_check_error,
+                    'consecutive_failures': failure_count,
+                    'reason': 'freshness_check_failed'
+                }
+            )
+            
+            # Создаем alert при N подряд пропусках
+            settings = get_settings()
+            if failure_count >= settings.FRESHNESS_CHECK_FAILED_ALERT_THRESHOLD:
+                await create_alert(
+                    zone_id=zone_id,
+                    source=AlertSource.INFRA.value,
+                    code=AlertCode.INFRA_FRESHNESS_CHECK_FAILED.value,
+                    type='FRESHNESS_CHECK_FAILED',
+                    details={
+                        'correction_type': self.correction_type.value,
+                        'metric': self.metric_name,
+                        'consecutive_failures': failure_count,
+                        'error': freshness_check_error,
+                        'threshold': settings.FRESHNESS_CHECK_FAILED_ALERT_THRESHOLD
+                    }
+                )
+            
+            return None
+        
+        # Проверка свежести прошла успешно - сбрасываем счетчик
+        self._freshness_check_failure_count.pop(zone_id, None)
         
         try:
             target_val = float(target)

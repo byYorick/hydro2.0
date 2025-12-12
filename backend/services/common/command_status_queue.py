@@ -12,6 +12,7 @@ import json
 import logging
 from typing import Optional, Dict, Any, Union, List
 from datetime import datetime, timedelta
+from .utils.time import utcnow
 from enum import Enum
 
 from .db import get_pool
@@ -248,7 +249,7 @@ class StatusUpdateQueue:
         async with pool.acquire() as conn:
             try:
                 details_json = json.dumps(details) if details else None
-                moved_at = datetime.utcnow()
+                moved_at = utcnow()
                 await conn.execute("""
                     INSERT INTO pending_status_updates_dlq 
                     (cmd_id, status, details, retry_count, max_attempts, last_error, moved_to_dlq_at, original_id)
@@ -654,7 +655,7 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
                         # Не удалось - планируем следующий ретрай с jitter
                         new_retry_count = retry_count + 1
                         backoff_seconds = calculate_backoff_with_jitter(new_retry_count)
-                        next_retry_at = datetime.utcnow() + timedelta(seconds=backoff_seconds)
+                        next_retry_at = utcnow() + timedelta(seconds=backoff_seconds)
                         
                         error_msg = f"Failed to deliver after {new_retry_count} attempts"
                         await queue.mark_retry(update_id, new_retry_count, next_retry_at, error_msg)
@@ -684,7 +685,7 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
                     error_msg = f"Processing error: {str(e)}"
                     if new_retry_count < max_attempts:
                         backoff_seconds = calculate_backoff_with_jitter(new_retry_count)
-                        next_retry_at = datetime.utcnow() + timedelta(seconds=backoff_seconds)
+                        next_retry_at = utcnow() + timedelta(seconds=backoff_seconds)
                         await queue.mark_retry(update_id, new_retry_count, next_retry_at, error_msg)
                     else:
                         # Перемещаем в DLQ перед удалением

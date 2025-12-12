@@ -40,6 +40,7 @@ class AlertCode(str, Enum):
     INFRA_MQTT_DOWN = "infra_mqtt_down"
     INFRA_DB_UNREACHABLE = "infra_db_unreachable"
     INFRA_SERVICE_DOWN = "infra_service_down"
+    INFRA_FRESHNESS_CHECK_FAILED = "infra_freshness_check_failed"
 
 
 async def create_alert(

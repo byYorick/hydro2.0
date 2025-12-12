@@ -8,6 +8,7 @@ import logging
 import json
 from typing import Optional, Dict, Any
 from datetime import datetime
+from common.utils.time import utcnow
 
 # Context variable для trace ID
 trace_id_var = contextvars.ContextVar('trace_id', default=None)
@@ -51,7 +52,7 @@ class StructuredFormatter(logging.Formatter):
         """Форматировать запись лога как JSON."""
         # Базовые поля
         log_data: Dict[str, Any] = {
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': utcnow().isoformat(),
             'level': record.levelname,
             'logger': record.name,
             'message': record.getMessage(),

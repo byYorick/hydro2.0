@@ -8,6 +8,7 @@ import logging
 import os
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
+from common.utils.time import utcnow
 from common.env import get_settings
 from common.db import fetch, execute
 from prometheus_client import Counter, Histogram, start_http_server
@@ -82,7 +83,7 @@ async def _check_error_backoff() -> bool:
     """
     global _error_count, _last_error_time, _backoff_until
     
-    now = datetime.utcnow()
+    now = utcnow()
     
     # Если есть активный backoff, проверяем, не истек ли он
     if _backoff_until and now < _backoff_until:
@@ -115,7 +116,7 @@ async def _record_error() -> None:
     global _error_count, _last_error_time, _backoff_until
     
     _error_count += 1
-    _last_error_time = datetime.utcnow()
+    _last_error_time = utcnow()
     
     # Применяем exponential backoff при серии ошибок
     # Пороги: 3 ошибки -> 30s, 5 ошибок -> 2min, 10 ошибок -> 10min
@@ -129,7 +130,7 @@ async def _record_error() -> None:
         backoff_seconds = 0
     
     if backoff_seconds > 0:
-        _backoff_until = datetime.utcnow() + timedelta(seconds=backoff_seconds)
+        _backoff_until = utcnow() + timedelta(seconds=backoff_seconds)
         logger.error(
             f"Error backoff activated: {_error_count} consecutive errors, "
             f"backing off for {backoff_seconds}s to reduce infrastructure pressure",
@@ -171,7 +172,7 @@ async def aggregate_1m() -> int:
             
             # Если нет последней метки, берём последний час
             if last_ts is None:
-                last_ts = datetime.utcnow() - timedelta(hours=1)
+                last_ts = utcnow() - timedelta(hours=1)
             
             # Агрегируем данные из telemetry_samples
             # Пробуем использовать time_bucket (TimescaleDB), если не работает - используем date_trunc
@@ -288,7 +289,7 @@ async def aggregate_1h() -> int:
             
             # Если нет последней метки, берём последние 24 часа
             if last_ts is None:
-                last_ts = datetime.utcnow() - timedelta(hours=24)
+                last_ts = utcnow() - timedelta(hours=24)
             
             # Агрегируем данные из telemetry_agg_1m
             try:
@@ -403,7 +404,7 @@ async def aggregate_daily() -> int:
             
             # Если нет последней метки, берём последние 7 дней
             if last_ts is None:
-                last_ts = datetime.utcnow() - timedelta(days=7)
+                last_ts = utcnow() - timedelta(days=7)
             
             # Агрегируем данные из telemetry_agg_1h
             rows = await fetch(
@@ -509,9 +510,9 @@ async def cleanup_old_data():
             retention_1m_days = int(os.getenv('RETENTION_1M_DAYS', '30'))
             retention_1h_days = int(os.getenv('RETENTION_1H_DAYS', '365'))
             
-            cutoff_samples = datetime.utcnow() - timedelta(days=retention_samples_days)
-            cutoff_1m = datetime.utcnow() - timedelta(days=retention_1m_days)
-            cutoff_1h = datetime.utcnow() - timedelta(days=retention_1h_days)
+            cutoff_samples = utcnow() - timedelta(days=retention_samples_days)
+            cutoff_1m = utcnow() - timedelta(days=retention_1m_days)
+            cutoff_1h = utcnow() - timedelta(days=retention_1h_days)
             
             # Удаляем старые raw samples
             deleted_samples = await execute(
@@ -586,14 +587,14 @@ async def main():
     
     logger.info(f"Telemetry aggregator started (interval: {aggregation_interval_seconds}s, cleanup: {cleanup_interval_seconds}s)")
     
-    last_cleanup = datetime.utcnow()
+    last_cleanup = utcnow()
     
     while True:
         try:
             await run_aggregation()
             
             # Периодически запускаем очистку старых данных
-            now = datetime.utcnow()
+            now = utcnow()
             if (now - last_cleanup).total_seconds() >= cleanup_interval_seconds:
                 await cleanup_old_data()
                 last_cleanup = now
@@ -613,8 +614,8 @@ async def main():
             )
         
         # Применяем backoff: если активен, используем его вместо обычного интервала
-        if _backoff_until and datetime.utcnow() < _backoff_until:
-            backoff_remaining = (_backoff_until - datetime.utcnow()).total_seconds()
+        if _backoff_until and utcnow() < _backoff_until:
+            backoff_remaining = (_backoff_until - utcnow()).total_seconds()
             # Ждем до окончания backoff или минимальный интервал
             sleep_time = min(backoff_remaining, aggregation_interval_seconds)
             if sleep_time > 0:

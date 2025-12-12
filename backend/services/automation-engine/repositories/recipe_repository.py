@@ -3,10 +3,20 @@ Recipe Repository - доступ к рецептам и фазам.
 """
 from typing import Dict, Any, Optional, List
 from common.db import fetch
+from infrastructure.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
 
 
 class RecipeRepository:
     """Репозиторий для работы с рецептами."""
+    
+    def __init__(self, db_circuit_breaker: Optional[CircuitBreaker] = None):
+        """
+        Инициализация репозитория.
+        
+        Args:
+            db_circuit_breaker: Circuit breaker для БД (опционально)
+        """
+        self.db_circuit_breaker = db_circuit_breaker
     
     async def get_zone_recipe_and_targets(self, zone_id: int) -> Optional[Dict[str, Any]]:
         """
@@ -17,16 +27,25 @@ class RecipeRepository:
         
         Returns:
             Dict с zone_id, phase_index, targets, phase_name или None
+        
+        Raises:
+            CircuitBreakerOpenError: Если Circuit Breaker открыт
         """
-        rows = await fetch(
-            """
-            SELECT zri.zone_id, zri.current_phase_index, rp.targets, rp.name as phase_name
-            FROM zone_recipe_instances zri
-            JOIN recipe_phases rp ON rp.recipe_id = zri.recipe_id AND rp.phase_index = zri.current_phase_index
-            WHERE zri.zone_id = $1
-            """,
-            zone_id,
-        )
+        async def _fetch():
+            return await fetch(
+                """
+                SELECT zri.zone_id, zri.current_phase_index, rp.targets, rp.name as phase_name
+                FROM zone_recipe_instances zri
+                JOIN recipe_phases rp ON rp.recipe_id = zri.recipe_id AND rp.phase_index = zri.current_phase_index
+                WHERE zri.zone_id = $1
+                """,
+                zone_id,
+            )
+        
+        if self.db_circuit_breaker:
+            rows = await self.db_circuit_breaker.call(_fetch)
+        else:
+            rows = await _fetch()
         if rows and len(rows) > 0:
             return {
                 "zone_id": rows[0]["zone_id"],
@@ -45,19 +64,28 @@ class RecipeRepository:
         
         Returns:
             Dict[zone_id, recipe_info] или None если рецепта нет
+        
+        Raises:
+            CircuitBreakerOpenError: Если Circuit Breaker открыт
         """
         if not zone_ids:
             return {}
         
-        rows = await fetch(
-            """
-            SELECT zri.zone_id, zri.current_phase_index, rp.targets, rp.name as phase_name
-            FROM zone_recipe_instances zri
-            JOIN recipe_phases rp ON rp.recipe_id = zri.recipe_id AND rp.phase_index = zri.current_phase_index
-            WHERE zri.zone_id = ANY($1::int[])
-            """,
-            zone_ids,
-        )
+        async def _fetch():
+            return await fetch(
+                """
+                SELECT zri.zone_id, zri.current_phase_index, rp.targets, rp.name as phase_name
+                FROM zone_recipe_instances zri
+                JOIN recipe_phases rp ON rp.recipe_id = zri.recipe_id AND rp.phase_index = zri.current_phase_index
+                WHERE zri.zone_id = ANY($1::int[])
+                """,
+                zone_ids,
+            )
+        
+        if self.db_circuit_breaker:
+            rows = await self.db_circuit_breaker.call(_fetch)
+        else:
+            rows = await _fetch()
         
         result: Dict[int, Optional[Dict[str, Any]]] = {}
         for row in rows:
@@ -86,43 +114,52 @@ class RecipeRepository:
         
         Returns:
             Dict с recipe_info, telemetry, nodes, capabilities
+        
+        Raises:
+            CircuitBreakerOpenError: Если Circuit Breaker открыт
         """
-        rows = await fetch(
-            """
-            WITH zone_info AS (
+        async def _fetch():
+            return await fetch(
+                """
+                WITH zone_info AS (
+                    SELECT 
+                        z.id as zone_id,
+                        z.capabilities,
+                        zri.current_phase_index,
+                        rp.targets,
+                        rp.name as phase_name
+                    FROM zones z
+                    LEFT JOIN zone_recipe_instances zri ON zri.zone_id = z.id
+                    LEFT JOIN recipe_phases rp ON rp.recipe_id = zri.recipe_id 
+                        AND rp.phase_index = zri.current_phase_index
+                    WHERE z.id = $1
+                ),
+                telemetry_data AS (
+                    SELECT metric_type, value, updated_at
+                    FROM telemetry_last
+                    WHERE zone_id = $1
+                ),
+                nodes_data AS (
+                    SELECT n.id, n.uid, n.type, nc.channel
+                    FROM nodes n
+                    LEFT JOIN node_channels nc ON nc.node_id = n.id
+                    WHERE n.zone_id = $1 AND n.status = 'online'
+                )
                 SELECT 
-                    z.id as zone_id,
-                    z.capabilities,
-                    zri.current_phase_index,
-                    rp.targets,
-                    rp.name as phase_name
-                FROM zones z
-                LEFT JOIN zone_recipe_instances zri ON zri.zone_id = z.id
-                LEFT JOIN recipe_phases rp ON rp.recipe_id = zri.recipe_id 
-                    AND rp.phase_index = zri.current_phase_index
-                WHERE z.id = $1
-            ),
-            telemetry_data AS (
-                SELECT metric_type, value, updated_at
-                FROM telemetry_last
-                WHERE zone_id = $1
-            ),
-            nodes_data AS (
-                SELECT n.id, n.uid, n.type, nc.channel
-                FROM nodes n
-                LEFT JOIN node_channels nc ON nc.node_id = n.id
-                WHERE n.zone_id = $1 AND n.status = 'online'
+                    (SELECT row_to_json(zone_info) FROM zone_info) as zone_info,
+                    (SELECT json_object_agg(
+                        metric_type, 
+                        json_build_object('value', value, 'updated_at', updated_at)
+                    ) FROM telemetry_data) as telemetry,
+                    (SELECT json_agg(row_to_json(nodes_data)) FROM nodes_data) as nodes
+                """,
+                zone_id,
             )
-            SELECT 
-                (SELECT row_to_json(zone_info) FROM zone_info) as zone_info,
-                (SELECT json_object_agg(
-                    metric_type, 
-                    json_build_object('value', value, 'updated_at', updated_at)
-                ) FROM telemetry_data) as telemetry,
-                (SELECT json_agg(row_to_json(nodes_data)) FROM nodes_data) as nodes
-            """,
-            zone_id,
-        )
+        
+        if self.db_circuit_breaker:
+            rows = await self.db_circuit_breaker.call(_fetch)
+        else:
+            rows = await _fetch()
         
         if not rows or not rows[0]:
             return {
@@ -197,11 +234,15 @@ class RecipeRepository:
         
         Returns:
             Dict[zone_id, zone_data] с полными данными каждой зоны
+        
+        Raises:
+            CircuitBreakerOpenError: Если Circuit Breaker открыт
         """
         if not zone_ids:
             return {}
         
-        rows = await fetch(
+        async def _fetch():
+            return await fetch(
             """
             WITH zone_info AS (
                 SELECT 
@@ -271,6 +312,11 @@ class RecipeRepository:
             """,
             zone_ids,
         )
+        
+        if self.db_circuit_breaker:
+            rows = await self.db_circuit_breaker.call(_fetch)
+        else:
+            rows = await _fetch()
         
         result: Dict[int, Dict[str, Any]] = {}
         for row in rows:

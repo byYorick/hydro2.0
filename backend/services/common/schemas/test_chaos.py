@@ -18,7 +18,7 @@ import paho.mqtt.client as mqtt
 
 from common.env import get_settings
 from common.mqtt import MqttClient
-from common.db import get_db_connection
+from common.db import get_pool
 
 
 class TestMqttDown:
@@ -143,7 +143,8 @@ class TestDbReadOnly:
     async def test_db_read_only_detection(self):
         """Тест определения read-only режима БД."""
         # Подключаемся к БД
-        async with get_db_connection() as conn:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
             # Пытаемся выполнить SELECT (должен работать)
             result = await conn.fetchval("SELECT 1")
             assert result == 1
@@ -165,7 +166,8 @@ class TestDbReadOnly:
     @pytest.mark.asyncio
     async def test_db_write_failure_handling(self):
         """Тест обработки ошибки записи в БД."""
-        async with get_db_connection() as conn:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
             # Пытаемся записать в несуществующую таблицу
             # (симуляция ошибки записи)
             try:

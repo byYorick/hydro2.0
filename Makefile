@@ -21,6 +21,6 @@ down-dev:
 .PHONY: protocol-check
 protocol-check:
 	@echo "Running protocol contract tests..."
-	@cd backend/services/common/schemas && bash run_protocol_check.sh
+	@cd backend/services/common/schemas && bash run_contract_tests.sh
 
 

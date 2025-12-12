@@ -6,6 +6,7 @@ Water Cycle Engine - управление циркуляцией и сменой
 import logging
 from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime, timedelta
+from .utils.time import utcnow
 from .db import fetch, execute, create_zone_event
 from .alerts import create_alert, AlertSource, AlertCode
 from .water_flow import check_water_level, check_flow, execute_fill_mode, execute_drain_mode
@@ -170,7 +171,7 @@ async def set_solution_started_at(zone_id: int, started_at: Optional[datetime] =
         started_at: Время начала (по умолчанию сейчас)
     """
     if started_at is None:
-        started_at = datetime.utcnow()
+        started_at = utcnow()
     
     await execute(
         """
@@ -247,7 +248,7 @@ async def tick_recirculation(
         Команда для управления насосом или None
     """
     if now is None:
-        now = datetime.utcnow()
+        now = utcnow()
     
     # Получаем конфигурацию водного цикла
     water_cycle = await get_zone_water_cycle_config(zone_id)
@@ -433,7 +434,7 @@ async def check_water_change_required(zone_id: int) -> Tuple[bool, Optional[str]
         # Если раствор ещё не был начат, не требуется смена
         return False, None
     
-    now = datetime.utcnow()
+    now = utcnow()
     
     # Проверяем interval_days
     interval_days = water_change_cfg.get("interval_days", 7)
@@ -532,7 +533,7 @@ async def execute_water_change(
             'WATER_CHANGE_STARTED',
             {
                 'zone_id': zone_id,
-                'start_time': datetime.utcnow().isoformat()
+                'start_time': utcnow().isoformat()
             }
         )
         # После изменения состояния перечитываем его для следующего блока
@@ -627,7 +628,7 @@ async def execute_water_change(
             }
         
         # Проверяем, прошло ли время стабилизации
-        elapsed_minutes = (datetime.utcnow() - solution_started_at).total_seconds() / 60.0
+        elapsed_minutes = (utcnow() - solution_started_at).total_seconds() / 60.0
         
         if elapsed_minutes >= stabilize_minutes:
             # Фиксируем параметры после стабилизации
@@ -656,7 +657,7 @@ async def execute_water_change(
                 {
                     'zone_id': zone_id,
                     'solution_started_at': solution_started_at.isoformat(),
-                    'completed_at': datetime.utcnow().isoformat(),
+                    'completed_at': utcnow().isoformat(),
                     'stabilized_params': stabilized_params
                 }
             )

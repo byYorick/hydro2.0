@@ -3,6 +3,7 @@ Utility functions for working with recipes and phases.
 """
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
+from common.utils.time import utcnow
 from common.db import fetch, execute
 
 
@@ -84,7 +85,7 @@ async def calculate_current_phase(zone_id: int) -> Optional[Dict[str, Any]]:
     else:
         return None
 
-    now = datetime.utcnow()
+    now = utcnow()
     if started_at.tzinfo:
         now = datetime.now(started_at.tzinfo)
 

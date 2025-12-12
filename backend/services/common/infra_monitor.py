@@ -13,6 +13,7 @@
 import logging
 from typing import Optional, Dict, Any
 from datetime import datetime
+from .utils.time import utcnow
 from .alert_queue import send_alert_to_laravel
 from .alerts import AlertCode
 
@@ -35,7 +36,7 @@ async def check_mqtt_health(connected: bool) -> None:
         connected: True если MQTT подключен
     """
     state = _infra_state['mqtt']
-    state['last_check'] = datetime.utcnow()
+    state['last_check'] = utcnow()
     
     if connected:
         state['status'] = 'ok'
@@ -56,7 +57,7 @@ async def check_mqtt_health(connected: bool) -> None:
                 details={
                     "component": "mqtt",
                     "message": "MQTT connection is down",
-                    "detected_at": datetime.utcnow().isoformat(),
+                    "detected_at": utcnow().isoformat(),
                 }
             )
             state['alert_sent'] = True
@@ -71,7 +72,7 @@ async def check_db_health(connected: bool) -> None:
         connected: True если БД доступна
     """
     state = _infra_state['db']
-    state['last_check'] = datetime.utcnow()
+    state['last_check'] = utcnow()
     
     if connected:
         state['status'] = 'ok'
@@ -90,7 +91,7 @@ async def check_db_health(connected: bool) -> None:
                 details={
                     "component": "database",
                     "message": "Database is unreachable",
-                    "detected_at": datetime.utcnow().isoformat(),
+                    "detected_at": utcnow().isoformat(),
                 }
             )
             state['alert_sent'] = True
@@ -105,7 +106,7 @@ async def check_laravel_health(available: bool) -> None:
         available: True если Laravel API доступен
     """
     state = _infra_state['laravel']
-    state['last_check'] = datetime.utcnow()
+    state['last_check'] = utcnow()
     
     if available:
         state['status'] = 'ok'
@@ -125,7 +126,7 @@ async def check_laravel_health(available: bool) -> None:
                     "component": "laravel",
                     "service": "laravel_api",
                     "message": "Laravel API is down",
-                    "detected_at": datetime.utcnow().isoformat(),
+                    "detected_at": utcnow().isoformat(),
                 }
             )
             state['alert_sent'] = True
@@ -144,7 +145,7 @@ async def check_service_health(service_name: str, available: bool) -> None:
         _infra_state[service_name] = {'status': 'unknown', 'last_check': None, 'alert_sent': False}
     
     state = _infra_state[service_name]
-    state['last_check'] = datetime.utcnow()
+    state['last_check'] = utcnow()
     
     if available:
         state['status'] = 'ok'
@@ -164,7 +165,7 @@ async def check_service_health(service_name: str, available: bool) -> None:
                     "component": service_name,
                     "service": service_name,
                     "message": f"{service_name} service is down",
-                    "detected_at": datetime.utcnow().isoformat(),
+                    "detected_at": utcnow().isoformat(),
                 }
             )
             state['alert_sent'] = True

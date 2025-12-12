@@ -22,6 +22,7 @@ import logging
 import time
 from typing import Dict, Optional, Any
 from datetime import datetime
+from common.utils.time import utcnow
 from common.db import execute, fetch, create_zone_event
 from common.commands import new_command_id
 from prometheus_client import Histogram, Counter, Gauge
@@ -107,7 +108,7 @@ class CommandTracker:
             'zone_id': zone_id,
             'command': command,
             'command_type': command.get('cmd', 'unknown'),
-            'sent_at': datetime.utcnow(),
+            'sent_at': utcnow(),
             'status': 'QUEUED',
             'context': context or {}
         }
@@ -172,7 +173,7 @@ class CommandTracker:
         
         # Обновляем статус
         command_info['status'] = status
-        command_info['completed_at'] = datetime.utcnow()
+        command_info['completed_at'] = utcnow()
         if response:
             command_info['response'] = response
         if error:
@@ -421,7 +422,7 @@ class CommandTracker:
                     'zone_id': zone_id,
                     'command': {'cmd': cmd, 'params': params},
                     'command_type': cmd,
-                    'sent_at': sent_at if isinstance(sent_at, datetime) else datetime.utcnow(),
+                    'sent_at': sent_at if isinstance(sent_at, datetime) else utcnow(),
                     'status': status,
                     'context': {}
                 }

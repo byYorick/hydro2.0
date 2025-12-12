@@ -4,6 +4,7 @@ import logging
 import os
 import httpx
 from datetime import datetime, time
+from common.utils.time import utcnow
 from typing import Optional, Dict, Any, List
 from common.env import get_settings
 from common.mqtt import MqttClient
@@ -308,7 +309,7 @@ async def execute_irrigation_schedule(
         duration_sec = targets.get("irrigation_duration_sec", 60)
         
         # Create IRRIGATION_STARTED event
-        irrigation_start_time = datetime.utcnow()
+        irrigation_start_time = utcnow()
         await create_zone_event(
             zone_id,
             'IRRIGATION_STARTED',
@@ -388,7 +389,7 @@ async def execute_irrigation_schedule(
         await asyncio.sleep(min(duration_sec, 10))  # Max wait 10 seconds for async check
         
         # Calculate volume and create IRRIGATION_FINISHED event
-        irrigation_end_time = datetime.utcnow()
+        irrigation_end_time = utcnow()
         volume = await calculate_irrigation_volume(zone_id, irrigation_start_time, irrigation_end_time)
         
         # Check flow after irrigation

@@ -6,6 +6,7 @@ import asyncio
 import os
 from typing import Optional, Dict, Any, Tuple, List
 from datetime import datetime, timedelta
+from .utils.time import utcnow
 from .db import fetch, execute, create_zone_event
 from .alerts import create_alert, AlertSource, AlertCode
 from .command_orchestrator import send_command
@@ -96,7 +97,7 @@ async def check_dry_run_protection(
     Returns:
         (is_safe, error_message): True если безопасно, False если обнаружен сухой ход
     """
-    now = datetime.utcnow()
+    now = utcnow()
     elapsed_sec = (now - pump_start_time).total_seconds()
     
     # Проверяем только если прошло больше 3 секунд
@@ -347,7 +348,7 @@ async def execute_fill_mode(
     Returns:
         Dict с результатом операции
     """
-    fill_start_time = datetime.utcnow()
+    fill_start_time = utcnow()
     
     # Создаем событие FILL_STARTED
     await create_zone_event(
@@ -370,7 +371,7 @@ async def execute_fill_mode(
                 'status': 'failed',
                 'error': 'no_nodes',
                 'start_time': fill_start_time.isoformat(),
-                'end_time': datetime.utcnow().isoformat()
+                'end_time': utcnow().isoformat()
             }
         )
         return {'success': False, 'error': 'no_nodes'}
@@ -398,7 +399,7 @@ async def execute_fill_mode(
                 'status': 'failed',
                 'error': error_msg,
                 'start_time': fill_start_time.isoformat(),
-                'end_time': datetime.utcnow().isoformat()
+                'end_time': utcnow().isoformat()
             }
         )
         return {'success': False, 'error': error_msg}
@@ -407,13 +408,13 @@ async def execute_fill_mode(
     
     # Мониторим уровень воды каждые 2 секунды
     check_interval = 2.0
-    start_time = datetime.utcnow()
+    start_time = utcnow()
     
     while True:
         await asyncio.sleep(check_interval)
         
         # Проверяем таймаут
-        elapsed = (datetime.utcnow() - start_time).total_seconds()
+        elapsed = (utcnow() - start_time).total_seconds()
         if elapsed > max_duration_sec:
             # Отправляем команду остановки через единый оркестратор
             await send_command(
@@ -433,7 +434,7 @@ async def execute_fill_mode(
                     'status': 'timeout',
                     'elapsed_sec': elapsed,
                     'start_time': fill_start_time.isoformat(),
-                    'end_time': datetime.utcnow().isoformat()
+                    'end_time': utcnow().isoformat()
                 }
             )
             return {'success': False, 'error': 'timeout', 'elapsed_sec': elapsed}
@@ -453,7 +454,7 @@ async def execute_fill_mode(
                     greenhouse_uid=gh_uid,
                 )
                 
-                fill_end_time = datetime.utcnow()
+                fill_end_time = utcnow()
                 await create_zone_event(
                     zone_id,
                     'FILL_FINISHED',
@@ -497,7 +498,7 @@ async def execute_drain_mode(
     Returns:
         Dict с результатом операции
     """
-    drain_start_time = datetime.utcnow()
+    drain_start_time = utcnow()
     
     # Создаем событие DRAIN_STARTED
     await create_zone_event(
@@ -520,7 +521,7 @@ async def execute_drain_mode(
                 'status': 'failed',
                 'error': 'no_nodes',
                 'start_time': drain_start_time.isoformat(),
-                'end_time': datetime.utcnow().isoformat()
+                'end_time': utcnow().isoformat()
             }
         )
         return {'success': False, 'error': 'no_nodes'}
@@ -548,7 +549,7 @@ async def execute_drain_mode(
                 'status': 'failed',
                 'error': error_msg,
                 'start_time': drain_start_time.isoformat(),
-                'end_time': datetime.utcnow().isoformat()
+                'end_time': utcnow().isoformat()
             }
         )
         return {'success': False, 'error': error_msg}
@@ -557,13 +558,13 @@ async def execute_drain_mode(
     
     # Мониторим уровень воды каждые 2 секунды
     check_interval = 2.0
-    start_time = datetime.utcnow()
+    start_time = utcnow()
     
     while True:
         await asyncio.sleep(check_interval)
         
         # Проверяем таймаут
-        elapsed = (datetime.utcnow() - start_time).total_seconds()
+        elapsed = (utcnow() - start_time).total_seconds()
         if elapsed > max_duration_sec:
             # Отправляем команду остановки через единый оркестратор
             await send_command(
@@ -583,7 +584,7 @@ async def execute_drain_mode(
                     'status': 'timeout',
                     'elapsed_sec': elapsed,
                     'start_time': drain_start_time.isoformat(),
-                    'end_time': datetime.utcnow().isoformat()
+                    'end_time': utcnow().isoformat()
                 }
             )
             return {'success': False, 'error': 'timeout', 'elapsed_sec': elapsed}
@@ -603,7 +604,7 @@ async def execute_drain_mode(
                     greenhouse_uid=gh_uid,
                 )
                 
-                drain_end_time = datetime.utcnow()
+                drain_end_time = utcnow()
                 await create_zone_event(
                     zone_id,
                     'DRAIN_FINISHED',
@@ -703,7 +704,7 @@ async def calibrate_flow(
         raise ValueError(f"Water level too low for calibration: {water_level}")
     
     # Запускаем насос
-    calibration_start_time = datetime.utcnow()
+    calibration_start_time = utcnow()
     
     # Отправляем команду запуска насоса через единый оркестратор
     run_result = await send_command(
@@ -733,7 +734,7 @@ async def calibrate_flow(
     # Ждем завершения работы насоса + небольшая задержка для получения всех данных
     await asyncio.sleep(pump_duration_sec + 2)
     
-    calibration_end_time = datetime.utcnow()
+    calibration_end_time = utcnow()
     
     # Получаем данные flow за период калибровки
     flow_rows = await fetch(

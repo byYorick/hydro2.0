@@ -46,7 +46,22 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}/backend/services:${{ github.workspace }}/backend/services/history-logger:${{ github.workspace }}/backend/services/common
         run: |
           cd common/schemas
-          bash run_protocol_check.sh
+          bash run_contract_tests.sh
+      
+      - name: Run chaos tests
+        working-directory: backend/services
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend/services:${{ github.workspace }}/backend/services/history-logger:${{ github.workspace }}/backend/services/common
+        continue-on-error: true
+        run: |
+          pytest common/schemas/test_chaos.py -v --tb=short -m "not slow" || echo "Chaos tests require running services"
+      
+      - name: Run WebSocket events validation tests
+        working-directory: backend/services
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend/services:${{ github.workspace }}/backend/services/history-logger:${{ github.workspace }}/backend/services/common
+        run: |
+          pytest common/schemas/test_websocket_events.py -v --tb=short
       
       - name: Upload test results
         if: failure()

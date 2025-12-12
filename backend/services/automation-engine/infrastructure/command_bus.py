@@ -14,6 +14,7 @@ from .command_validator import CommandValidator
 from .command_tracker import CommandTracker
 from .command_audit import CommandAudit
 from utils.logging_context import get_trace_id
+from .circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,8 @@ class CommandBus:
         command_validator: Optional[CommandValidator] = None,
         command_tracker: Optional[CommandTracker] = None,
         command_audit: Optional[CommandAudit] = None,
-        http_timeout: float = 5.0
+        http_timeout: float = 5.0,
+        api_circuit_breaker: Optional[CircuitBreaker] = None
     ):
         """
         Инициализация Command Bus.
@@ -50,6 +52,7 @@ class CommandBus:
             command_tracker: Трекер команд (опционально)
             command_audit: Аудит команд (опционально)
             http_timeout: Таймаут для HTTP запросов в секундах
+            api_circuit_breaker: Circuit breaker для API (опционально)
         """
         self.mqtt = mqtt  # Deprecated
         self.gh_uid = gh_uid
@@ -59,6 +62,7 @@ class CommandBus:
         self.tracker = command_tracker
         self.audit = command_audit or CommandAudit()
         self.http_timeout = http_timeout
+        self.api_circuit_breaker = api_circuit_breaker
         
         # Долгоживущий HTTP клиент для переиспользования соединений
         self._http_client: Optional[httpx.AsyncClient] = None
@@ -138,27 +142,33 @@ class CommandBus:
             if self.history_logger_token:
                 headers["Authorization"] = f"Bearer {self.history_logger_token}"
             
-            # Отправляем запрос через долгоживущий или временный клиент
-            client = self._get_client()
-            if client is None:
-                # Используем временный клиент в контекстном менеджере
-                async with httpx.AsyncClient(timeout=self.http_timeout) as temp_client:
-                    response = await temp_client.post(
+            # Обертка для HTTP запроса через circuit breaker
+            async def _send_request():
+                client = self._get_client()
+                if client is None:
+                    # Используем временный клиент в контекстном менеджере
+                    async with httpx.AsyncClient(timeout=self.http_timeout) as temp_client:
+                        return await temp_client.post(
+                            f"{self.history_logger_url}/commands",
+                            json=payload,
+                            headers=headers
+                        )
+                else:
+                    # Используем долгоживущий клиент
+                    return await client.post(
                         f"{self.history_logger_url}/commands",
                         json=payload,
                         headers=headers
                     )
-                    latency = time.time() - start_time
-                    COMMAND_REST_LATENCY.observe(latency)
+            
+            # Отправляем запрос через circuit breaker если он настроен
+            if self.api_circuit_breaker:
+                response = await self.api_circuit_breaker.call(_send_request)
             else:
-                # Используем долгоживущий клиент
-                response = await client.post(
-                    f"{self.history_logger_url}/commands",
-                    json=payload,
-                    headers=headers
-                )
-                latency = time.time() - start_time
-                COMMAND_REST_LATENCY.observe(latency)
+                response = await _send_request()
+            
+            latency = time.time() - start_time
+            COMMAND_REST_LATENCY.observe(latency)
                 
             if response.status_code == 200:
                 try:

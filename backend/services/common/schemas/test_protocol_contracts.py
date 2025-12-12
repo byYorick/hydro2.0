@@ -440,3 +440,118 @@ class TestProtocolCompatibility:
         except Exception:
             pass  # Пропускаем если модель недоступна
 
+
+class TestZoneEventsProtocol:
+    """Контрактные тесты для zone_events payload."""
+    
+    @pytest.fixture
+    def zone_events_schema(self):
+        """Загружает схему zone_events."""
+        return load_schema(ZONE_EVENTS_SCHEMA)
+    
+    def test_zone_events_minimal_payload(self, zone_events_schema):
+        """Тест минимального payload события зоны."""
+        import time
+        payload = {
+            "zone_id": 1,
+            "type": "telemetry_updated",
+            "server_ts": int(time.time() * 1000)
+        }
+        
+        validate_against_schema(payload, zone_events_schema)
+    
+    def test_zone_events_full_payload(self, zone_events_schema):
+        """Тест полного payload события зоны."""
+        import time
+        payload = {
+            "id": 123,
+            "zone_id": 1,
+            "type": "command_status",
+            "entity_type": "command",
+            "entity_id": "cmd-123",
+            "payload_json": {
+                "status": "DONE",
+                "message": "Command completed",
+                "ws_event_id": 1234567890
+            },
+            "server_ts": int(time.time() * 1000),
+            "created_at": "2025-01-01T12:00:00Z",
+            "event_id": 1234567890
+        }
+        
+        validate_against_schema(payload, zone_events_schema)
+    
+    def test_zone_events_alert_created(self, zone_events_schema):
+        """Тест payload события alert_created."""
+        import time
+        payload = {
+            "zone_id": 1,
+            "type": "alert_created",
+            "entity_type": "alert",
+            "entity_id": "42",
+            "payload_json": {
+                "code": "PH_LOW",
+                "severity": "medium",
+                "ws_event_id": 1234567891
+            },
+            "server_ts": int(time.time() * 1000)
+        }
+        
+        validate_against_schema(payload, zone_events_schema)
+    
+    def test_zone_events_telemetry_updated(self, zone_events_schema):
+        """Тест payload события telemetry_updated."""
+        import time
+        payload = {
+            "zone_id": 1,
+            "type": "telemetry_updated",
+            "entity_type": "telemetry",
+            "entity_id": None,
+            "payload_json": {
+                "metric_type": "PH",
+                "value": 6.5,
+                "ws_event_id": 1234567892
+            },
+            "server_ts": int(time.time() * 1000)
+        }
+        
+        validate_against_schema(payload, zone_events_schema)
+    
+    def test_zone_events_missing_required_fields(self, zone_events_schema):
+        """Тест отсутствия обязательных полей."""
+        # Отсутствует zone_id
+        payload = {
+            "type": "telemetry_updated",
+            "server_ts": 1234567890
+        }
+        with pytest.raises(AssertionError):
+            validate_against_schema(payload, zone_events_schema)
+        
+        # Отсутствует type
+        payload = {
+            "zone_id": 1,
+            "server_ts": 1234567890
+        }
+        with pytest.raises(AssertionError):
+            validate_against_schema(payload, zone_events_schema)
+        
+        # Отсутствует server_ts
+        payload = {
+            "zone_id": 1,
+            "type": "telemetry_updated"
+        }
+        with pytest.raises(AssertionError):
+            validate_against_schema(payload, zone_events_schema)
+    
+    def test_zone_events_invalid_zone_id(self, zone_events_schema):
+        """Тест невалидного zone_id (должен быть >= 1)."""
+        import time
+        payload = {
+            "zone_id": 0,
+            "type": "telemetry_updated",
+            "server_ts": int(time.time() * 1000)
+        }
+        
+        with pytest.raises(AssertionError):
+            validate_against_schema(payload, zone_events_schema)
+

@@ -4,6 +4,7 @@ Light Controller - управление освещением и фотопери
 """
 from typing import Optional, Dict, Any, List
 from datetime import datetime, time
+from common.utils.time import utcnow
 from common.db import fetch, create_zone_event
 from common.alerts import create_alert, AlertSource, AlertCode
 
@@ -158,7 +159,7 @@ async def check_and_control_lighting(
         Команда для управления освещением или None
     """
     if current_time is None:
-        current_time = datetime.now()
+        current_time = utcnow()
     
     current_hour = current_time.hour
     current_minute = current_time.minute
