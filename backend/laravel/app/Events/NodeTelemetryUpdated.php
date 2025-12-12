@@ -69,28 +69,42 @@ class NodeTelemetryUpdated implements ShouldBroadcast
     }
 
     /**
-     * Записывает событие в zone_events после успешного broadcast.
+     * Записывает событие в zone_events только при значимых изменениях.
+     * 
+     * Использует TelemetryLedgerFilter для фильтрации незначимых изменений
+     * и предотвращения раздувания ledger при высокой частоте телеметрии.
      */
     public function broadcasted(): void
     {
         // Получаем узел для определения zone_id
         $node = DeviceNode::find($this->nodeId);
-        if ($node && $node->zone_id) {
-            $this->recordZoneEvent(
-                zoneId: $node->zone_id,
-                type: 'telemetry_updated',
-                entityType: 'telemetry',
-                entityId: $this->nodeId,
-                payload: [
-                    'channel' => $this->channel,
-                    'metric_type' => $this->metricType,
-                    'value' => $this->value,
-                    'ts' => $this->timestamp,
-                ],
-                eventId: $this->eventId,
-                serverTs: $this->serverTs
-            );
+        if (!$node || !$node->zone_id) {
+            return;
         }
+
+        // Проверяем, нужно ли записывать это событие в ledger
+        // Записываем только значимые изменения (превышающие порог) и не чаще минимального интервала
+        $filter = app(\App\Services\TelemetryLedgerFilter::class);
+        if (!$filter->shouldRecord($node->zone_id, $this->metricType, $this->value)) {
+            // Не записываем - это незначимое изменение или слишком часто
+            return;
+        }
+
+        // Записываем только значимые изменения
+        $this->recordZoneEvent(
+            zoneId: $node->zone_id,
+            type: 'telemetry_updated',
+            entityType: 'telemetry',
+            entityId: $this->nodeId,
+            payload: [
+                'channel' => $this->channel,
+                'metric_type' => $this->metricType,
+                'value' => $this->value,
+                'ts' => $this->timestamp,
+            ],
+            eventId: $this->eventId,
+            serverTs: $this->serverTs
+        );
     }
 }
 
