@@ -44,8 +44,10 @@ class TransactionHelper
                 // Проверяем, является ли это serialization failure
                 $isSerializationFailure = self::isSerializationFailure($e);
                 
-                if ($isSerializationFailure && $attempt < $maxRetries - 1) {
-                    $attempt++;
+                // Инкрементируем счетчик попыток перед проверкой
+                $attempt++;
+                
+                if ($isSerializationFailure && $attempt < $maxRetries) {
                     $delay = $baseDelayMs * (2 ** ($attempt - 1)); // Exponential backoff
                     
                     Log::warning('Transaction serialization failure, retrying', [

@@ -153,7 +153,15 @@ fun GreenhousesScreen(
             }
         }
     ) { padding ->
-        if (state.value.isEmpty()) {
+        var isLoading by remember { mutableStateOf(true) }
+        
+        LaunchedEffect(state.value) {
+            if (state.value.isNotEmpty()) {
+                isLoading = false
+            }
+        }
+        
+        if (isLoading && state.value.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -161,6 +169,34 @@ fun GreenhousesScreen(
                 contentAlignment = Alignment.Center
             ) {
                 CircularProgressIndicator()
+            }
+        } else if (!isLoading && state.value.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "Нет данных",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = "Попробуйте обновить",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Button(onClick = { 
+                        isLoading = true
+                        vm.load() 
+                    }) {
+                        Text("Обновить")
+                    }
+                }
             }
         } else {
             LazyColumn(

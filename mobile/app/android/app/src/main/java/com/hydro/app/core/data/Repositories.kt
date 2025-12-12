@@ -12,8 +12,11 @@ import com.hydro.app.core.domain.Node
 import com.hydro.app.core.domain.TelemetryHistoryPoint
 import com.hydro.app.core.domain.TelemetryLast
 import com.hydro.app.core.domain.Zone
+import com.hydro.app.core.prefs.PreferencesDataSource
+import com.hydro.app.features.auth.data.AuthRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import retrofit2.HttpException
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -26,7 +29,8 @@ import javax.inject.Singleton
 @Singleton
 class GreenhousesRepository @Inject constructor(
     private val api: GreenhousesApi,
-    private val db: HydroDatabase
+    private val db: HydroDatabase,
+    private val authRepository: AuthRepository
 ) {
     /**
      * Получает поток всех теплиц из локальной базы данных.
@@ -43,6 +47,7 @@ class GreenhousesRepository @Inject constructor(
      * Обновляет данные о теплицах из API и сохраняет в локальную базу данных.
      * 
      * В случае ошибки использует кэшированные данные.
+     * При 401 Unauthorized выполняет logout.
      */
     suspend fun refresh() {
         try {
@@ -53,6 +58,14 @@ class GreenhousesRepository @Inject constructor(
             } else {
                 android.util.Log.w("GreenhousesRepository", "API returned error: ${response.message}")
             }
+        } catch (e: HttpException) {
+            if (e.code() == 401) {
+                android.util.Log.w("GreenhousesRepository", "Unauthorized (401) - performing logout")
+                authRepository.logout()
+            } else {
+                android.util.Log.e("GreenhousesRepository", "HTTP error ${e.code()}: ${e.message()}", e)
+            }
+            // Use cached data
         } catch (e: Exception) {
             android.util.Log.e("GreenhousesRepository", "Failed to refresh greenhouses", e)
             // Use cached data
