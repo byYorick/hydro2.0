@@ -5,6 +5,7 @@ import json
 import logging
 import random
 from datetime import datetime
+from .utils.time import utcnow
 from typing import Optional, List
 from dataclasses import dataclass, asdict
 from pydantic import BaseModel
@@ -175,7 +176,7 @@ class TelemetryQueue:
                 return False
             
             # Добавляем в очередь
-            item.enqueued_at = datetime.utcnow()  # Устанавливаем время добавления
+            item.enqueued_at = utcnow()  # Устанавливаем время добавления
             await self._client.rpush(self.QUEUE_KEY, item.to_json())
             return True
             
@@ -295,7 +296,7 @@ class TelemetryQueue:
                 return None
             
             # Вычисляем возраст
-            age = (datetime.utcnow() - oldest_item.enqueued_at).total_seconds()
+            age = (utcnow() - oldest_item.enqueued_at).total_seconds()
             return max(0.0, age)  # Не возвращаем отрицательные значения
             
         except Exception as e:

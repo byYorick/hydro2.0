@@ -4,6 +4,7 @@ import logging
 import os
 import httpx
 from datetime import datetime, time
+from common.utils.time import utcnow
 from typing import Optional, Dict, Any, List
 from common.env import get_settings
 from common.mqtt import MqttClient
@@ -308,7 +309,7 @@ async def execute_irrigation_schedule(
         duration_sec = targets.get("irrigation_duration_sec", 60)
         
         # Create IRRIGATION_STARTED event
-        irrigation_start_time = datetime.utcnow()
+        irrigation_start_time = utcnow()
         await create_zone_event(
             zone_id,
             'IRRIGATION_STARTED',
@@ -341,11 +342,44 @@ async def execute_irrigation_schedule(
             
             # Добавляем обработку ошибок для предотвращения утечек
             def log_task_error(t):
+                """Callback для логирования ошибок в задачах мониторинга."""
                 try:
                     if t.done() and t.exception():
-                        logger.warning(f"Pump safety monitoring task failed: {t.exception()}", exc_info=True)
-                except Exception:
-                    pass
+                        exc = t.exception()
+                        logger.error(
+                            f"Callback failure: Pump safety monitoring task failed for zone {zone_id}, "
+                            f"node {node_info['node_uid']}, channel {node_info['channel']}: {exc}",
+                            exc_info=True,
+                            extra={
+                                'zone_id': zone_id,
+                                'node_uid': node_info['node_uid'],
+                                'channel': node_info['channel'],
+                                'error_type': type(exc).__name__,
+                                'error_message': str(exc)
+                            }
+                        )
+                        # Создаем событие для observability
+                        asyncio.create_task(create_zone_event(
+                            zone_id,
+                            'PUMP_MONITORING_CALLBACK_FAILURE',
+                            {
+                                'node_uid': node_info['node_uid'],
+                                'channel': node_info['channel'],
+                                'error': str(exc),
+                                'error_type': type(exc).__name__
+                            }
+                        ))
+                except Exception as callback_error:
+                    # Даже если сам callback упал, логируем это
+                    logger.critical(
+                        f"Critical: Callback error handler itself failed: {callback_error}",
+                        exc_info=True,
+                        extra={
+                            'zone_id': zone_id,
+                            'original_task': str(t),
+                            'callback_error': str(callback_error)
+                        }
+                    )
             
             task.add_done_callback(log_task_error)
         
@@ -355,7 +389,7 @@ async def execute_irrigation_schedule(
         await asyncio.sleep(min(duration_sec, 10))  # Max wait 10 seconds for async check
         
         # Calculate volume and create IRRIGATION_FINISHED event
-        irrigation_end_time = datetime.utcnow()
+        irrigation_end_time = utcnow()
         volume = await calculate_irrigation_volume(zone_id, irrigation_start_time, irrigation_end_time)
         
         # Check flow after irrigation
@@ -382,6 +416,16 @@ async def execute_irrigation_schedule(
             {"zone_id": zone_id, "nodes_count": len(nodes), "volume_l": volume}
         )
     except Exception as e:
+        logger.error(
+            f"Callback failure: Irrigation schedule execution failed for zone {zone_id}: {e}",
+            exc_info=True,
+            extra={
+                'zone_id': zone_id,
+                'task_name': task_name,
+                'error_type': type(e).__name__,
+                'error_message': str(e)
+            }
+        )
         await create_scheduler_log(task_name, "failed", {"zone_id": zone_id, "error": str(e)})
 
 
@@ -416,6 +460,16 @@ async def execute_lighting_schedule(
         SCHEDULE_EXECUTIONS.labels(zone_id=zone_id, task_type="lighting").inc()
         await create_scheduler_log(task_name, "completed", {"zone_id": zone_id, "command": cmd, "nodes_count": len(nodes)})
     except Exception as e:
+        logger.error(
+            f"Callback failure: Lighting schedule execution failed for zone {zone_id}: {e}",
+            exc_info=True,
+            extra={
+                'zone_id': zone_id,
+                'task_name': task_name,
+                'error_type': type(e).__name__,
+                'error_message': str(e)
+            }
+        )
         await create_scheduler_log(task_name, "failed", {"zone_id": zone_id, "error": str(e)})
 
 
@@ -457,7 +511,30 @@ async def check_water_changes(mqtt: MqttClient):
                     # Продолжаем смену воды
                     await execute_water_change(zone_id, mqtt, gh_uid)
         except Exception as e:
-            logger.error(f"Zone {zone_id}: Error checking water change: {e}")
+            logger.error(
+                f"Callback failure: Error checking water change for zone {zone_id}: {e}",
+                exc_info=True,
+                extra={
+                    'zone_id': zone_id,
+                    'error_type': type(e).__name__,
+                    'error_message': str(e)
+                }
+            )
+            # Создаем событие для observability
+            try:
+                await create_zone_event(
+                    zone_id,
+                    'WATER_CHANGE_CHECK_FAILURE',
+                    {
+                        'error': str(e),
+                        'error_type': type(e).__name__
+                    }
+                )
+            except Exception as event_error:
+                logger.warning(
+                    f"Failed to create zone event for water change check failure: {event_error}",
+                    extra={'zone_id': zone_id, 'original_error': str(e)}
+                )
 
 
 async def check_and_execute_schedules():

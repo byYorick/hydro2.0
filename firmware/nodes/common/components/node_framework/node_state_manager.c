@@ -8,6 +8,8 @@
 #include "node_utils.h"
 #include "mqtt_manager.h"
 #include "config_storage.h"
+#include "esp_efuse.h"
+#include "esp_mac.h"
 #include "cJSON.h"
 #include <stdlib.h>
 #include "esp_log.h"
@@ -182,17 +184,32 @@ esp_err_t node_state_manager_report_error(
                     // Публикуем в топик ошибок: hydro/{gh}/{zone}/{node}/error
                     char topic[256];  // Увеличенный размер для безопасности
                     char gh_uid[64], zone_uid[64];
+                    char hardware_id[32] = {0};
+                    
+                    // Пытаемся получить hardware_id для fallback топика
+                    esp_err_t hw_id_err = node_utils_get_hardware_id(hardware_id, sizeof(hardware_id));
+                    
                     if (config_storage_get_gh_uid(gh_uid, sizeof(gh_uid)) == ESP_OK &&
                         config_storage_get_zone_uid(zone_uid, sizeof(zone_uid)) == ESP_OK) {
                         int len = snprintf(topic, sizeof(topic), "hydro/%s/%s/%s/error", 
                                           gh_uid, zone_uid, node_id);
                         if (len < 0 || len >= (int)sizeof(topic)) {
-                            ESP_LOGW(TAG, "Topic too long, using fallback");
-                            snprintf(topic, sizeof(topic), "hydro/+/+/%s/error", node_id);
+                            ESP_LOGW(TAG, "Topic too long, using temp fallback");
+                            // Fallback: используем temp топик с hardware_id или node_id
+                            if (hw_id_err == ESP_OK && hardware_id[0] != '\0') {
+                                snprintf(topic, sizeof(topic), "hydro/gh-temp/zn-temp/%s/error", hardware_id);
+                            } else {
+                                snprintf(topic, sizeof(topic), "hydro/gh-temp/zn-temp/%s/error", node_id);
+                            }
                         }
                     } else {
-                        // Fallback: используем только node_id
-                        snprintf(topic, sizeof(topic), "hydro/+/+/%s/error", node_id);
+                        // Fallback: используем temp топик с hardware_id или node_id
+                        ESP_LOGW(TAG, "Config not available, using temp error topic");
+                        if (hw_id_err == ESP_OK && hardware_id[0] != '\0') {
+                            snprintf(topic, sizeof(topic), "hydro/gh-temp/zn-temp/%s/error", hardware_id);
+                        } else {
+                            snprintf(topic, sizeof(topic), "hydro/gh-temp/zn-temp/%s/error", node_id);
+                        }
                     }
                     
                     mqtt_manager_publish_raw(topic, json_str, 1, 0);  // QoS=1 для надежности

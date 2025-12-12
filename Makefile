@@ -18,4 +18,9 @@ up-dev:
 down-dev:
 	@echo "Stopping dev docker-compose (placeholder)"
 
+.PHONY: protocol-check
+protocol-check:
+	@echo "Running protocol contract tests..."
+	@cd backend/services/common/schemas && bash run_contract_tests.sh
+
 

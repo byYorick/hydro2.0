@@ -14,6 +14,7 @@ import httpx
 import json
 from .db import execute, fetch
 from .env import get_settings
+from .alert_queue import send_alert_to_laravel
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +147,7 @@ class NodeErrorHandler:
         details: Optional[Dict[str, Any]] = None
     ) -> None:
         """
-        Создание Alert напрямую в БД (Laravel API не поддерживает POST для alerts).
+        Создание Alert через Laravel API с персистентной очередью для ретраев.
         
         Args:
             node_uid: UID узла
@@ -168,16 +169,19 @@ class NodeErrorHandler:
                 node_uid
             )
             
+            node_row = None
+            zone_id = None
+            
+            if node_rows:
+                node_row = node_rows[0]
+                zone_id = node_row.get('zone_id')
+            
+            # Разрешаем создание алертов даже для unassigned hardware (zone_id = null)
+            # Это важно для временных ошибок до привязки узла к зоне
             if not node_rows:
-                logger.warning(f"[ERROR_HANDLER] Node {node_uid} not found in database, cannot create alert")
-                return
-            
-            node_row = node_rows[0]
-            zone_id = node_row.get('zone_id')
-            
-            if not zone_id:
-                logger.warning(f"[ERROR_HANDLER] Node {node_uid} has no zone_id, cannot create alert")
-                return
+                logger.info(f"[ERROR_HANDLER] Node {node_uid} not found in database, creating alert with zone_id=null")
+            elif not zone_id:
+                logger.info(f"[ERROR_HANDLER] Node {node_uid} has no zone_id (unassigned), creating alert with zone_id=null")
             
             # Структура alerts: zone_id, source, code, type, details, status
             # source: 'biz' или 'infra' (для ошибок нод используем 'infra')
@@ -188,30 +192,41 @@ class NodeErrorHandler:
             alert_code = f"node_error_{component}_{error_code}"
             alert_type = "node_error"
             
-            # Создаем Alert напрямую в БД
-            await execute(
-                """
-                INSERT INTO alerts (
-                    zone_id, source, code, type, status, details, created_at
-                )
-                VALUES ($1, $2, $3, $4, $5, $6, NOW())
-                """,
-                zone_id,
-                "infra",  # Ошибки нод - это инфраструктурные ошибки
-                alert_code,
-                alert_type,
-                "ACTIVE",
-                json.dumps({
-                    "node_uid": node_uid,
-                    "component": component,
-                    "error_code": error_code,
-                    "level": level,
-                    "message": message,
-                    "details": details or {}
-                })
+            # Создаем Alert через Laravel API (с автоматической очередью при ошибках)
+            alert_details = {
+                "node_uid": node_uid,
+                "component": component,
+                "error_code": error_code,
+                "level": level,
+                "message": message,
+                "details": details or {}
+            }
+            
+            # Извлекаем ts_device из details, если есть
+            ts_device = None
+            if details and isinstance(details, dict):
+                ts_device = details.get("ts") or details.get("ts_device")
+                if ts_device and isinstance(ts_device, (int, float)):
+                    # Конвертируем Unix timestamp в ISO строку
+                    from datetime import datetime, timezone
+                    ts_device = datetime.fromtimestamp(ts_device, tz=timezone.utc).isoformat()
+            
+            success = await send_alert_to_laravel(
+                zone_id=zone_id,
+                source="infra",  # Ошибки нод - это инфраструктурные ошибки
+                code=alert_code,
+                type=alert_type,
+                status="ACTIVE",
+                details=alert_details,
+                node_uid=node_uid,
+                severity=level,  # level может быть warning, error, critical
+                ts_device=ts_device
             )
             
-            logger.info(f"[ERROR_HANDLER] Alert created for node {node_uid}: {error_code}")
+            if success:
+                logger.info(f"[ERROR_HANDLER] Alert created for node {node_uid}: {error_code}")
+            else:
+                logger.info(f"[ERROR_HANDLER] Alert queued for retry for node {node_uid}: {error_code}")
         
         except Exception as e:
             logger.error(

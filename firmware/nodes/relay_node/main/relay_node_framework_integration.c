@@ -97,7 +97,8 @@ static esp_err_t relay_node_init_channel_callback(
     return ESP_ERR_NOT_SUPPORTED;
 }
 
-// Обработчик команды set_state
+// Обработчик команды set_state с командным автоматом
+// Состояния: ACCEPTED -> DONE/FAILED
 static esp_err_t handle_set_state(
     const char *channel,
     const cJSON *params,
@@ -108,6 +109,13 @@ static esp_err_t handle_set_state(
 
     if (channel == NULL || params == NULL || response == NULL) {
         return ESP_ERR_INVALID_ARG;
+    }
+
+    // Извлекаем cmd_id из params
+    cJSON *cmd_id_item = cJSON_GetObjectItem(params, "cmd_id");
+    const char *cmd_id = NULL;
+    if (cmd_id_item && cJSON_IsString(cmd_id_item)) {
+        cmd_id = cmd_id_item->valuestring;
     }
 
     cJSON *state_item = cJSON_GetObjectItem(params, "state");
@@ -121,7 +129,7 @@ static esp_err_t handle_set_state(
     } else {
         ESP_LOGW(TAG, "set_state invalid params: channel=%s, state json type=%d", channel, state_item ? state_item->type : -1);
         *response = node_command_handler_create_response(
-            NULL,
+            cmd_id,
             "ERROR",
             "invalid_params",
             "Missing or invalid state",
@@ -129,31 +137,49 @@ static esp_err_t handle_set_state(
         );
         return ESP_ERR_INVALID_ARG;
     }
+    
+    // Шаг 1: Отправляем ACCEPTED сразу при принятии команды
+    if (cmd_id) {
+        cJSON *accepted_response = node_command_handler_create_response(cmd_id, "ACCEPTED", NULL, NULL, NULL);
+        if (accepted_response) {
+            char *json_str = cJSON_PrintUnformatted(accepted_response);
+            if (json_str) {
+                mqtt_manager_publish_command_response(channel, json_str);
+                free(json_str);
+            }
+            cJSON_Delete(accepted_response);
+        }
+    }
+    
     relay_state_t relay_state = (state == 0) ? RELAY_STATE_OPEN : RELAY_STATE_CLOSED;
 
+    // Шаг 2: Выполняем команду
     esp_err_t err = relay_driver_set_state(channel, relay_state);
+    
+    // Шаг 3: Отправляем финальный ответ DONE или FAILED
+    const char *final_status;
+    const char *error_code = NULL;
+    const char *error_message = NULL;
+    
     if (err != ESP_OK) {
-        node_state_manager_report_error(ERROR_LEVEL_ERROR, "relay_driver", err, "Failed to set relay state");
-        *response = node_command_handler_create_response(
-            NULL,
-            "ERROR",
-            "relay_error",
-            "Failed to set relay state",
-            NULL
-        );
-        return err;
+        final_status = "FAILED";
+        error_code = "relay_error";
+        error_message = "Failed to set relay state";
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "relay_driver", err, error_message);
+    } else {
+        final_status = "DONE";
     }
 
     *response = node_command_handler_create_response(
-        NULL,
-        "ACK",
-        NULL,
-        NULL,
+        cmd_id,
+        final_status,
+        error_code,
+        error_message,
         NULL
     );
 
-    ESP_LOGI(TAG, "Relay %s set to state %d", channel, state);
-    return ESP_OK;
+    ESP_LOGI(TAG, "Relay %s set to state %d (%s)", channel, state, final_status);
+    return err;
 }
 
 // Обработчик команды toggle

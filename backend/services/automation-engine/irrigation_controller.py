@@ -4,8 +4,10 @@ Irrigation Controller - управление поливом и рециркул�
 """
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta, timezone
+from common.utils.time import utcnow
 from common.db import fetch, create_zone_event
 from common.water_flow import check_water_level
+from alerts_manager import ensure_alert
 
 
 async def get_last_irrigation_time(zone_id: int) -> Optional[datetime]:
@@ -31,10 +33,33 @@ async def get_last_irrigation_time(zone_id: int) -> Optional[datetime]:
     return None
 
 
+def get_irrigation_binding(bindings: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """
+    Получить binding для полива по ролям.
+    
+    Args:
+        bindings: Dict[role, binding_info] из InfrastructureRepository
+    
+    Returns:
+        binding_info для полива или None
+    """
+    # Ищем по ролям: main_pump, irrigation_pump, pump
+    for role in ['main_pump', 'irrigation_pump', 'pump']:
+        if role in bindings and bindings[role]['direction'] == 'actuator':
+            return {
+                'node_id': bindings[role]['node_id'],
+                'node_uid': bindings[role]['node_uid'],
+                'channel': bindings[role]['channel'],
+                'asset_type': bindings[role]['asset_type'],
+            }
+    return None
+
+
 async def check_and_control_irrigation(
     zone_id: int,
     targets: Dict[str, Any],
-    telemetry: Dict[str, Optional[float]]
+    telemetry: Dict[str, Optional[float]],
+    bindings: Dict[str, Dict[str, Any]]
 ) -> Optional[Dict[str, Any]]:
     """
     Проверка и управление поливом зоны.
@@ -45,6 +70,7 @@ async def check_and_control_irrigation(
         zone_id: ID зоны
         targets: Целевые значения из рецепта (irrigation_interval_sec, irrigation_duration_sec)
         telemetry: Текущие значения телеметрии (не используется, но для совместимости)
+        bindings: Dict[role, binding_info] из InfrastructureRepository
     
     Returns:
         Команда для запуска полива или None
@@ -59,6 +85,16 @@ async def check_and_control_irrigation(
     
     irrigation_interval_sec = int(irrigation_interval_sec)
     
+    # Получаем binding для полива
+    pump_binding = get_irrigation_binding(bindings)
+    if not pump_binding:
+        # Нет binding для полива - создаем alert
+        await ensure_alert(zone_id, 'MISSING_BINDING', {
+            'binding_role': 'main_pump',
+            'required_for': 'irrigation_control',
+        })
+        return None
+    
     # Получаем время последнего полива
     last_irrigation_time = await get_last_irrigation_time(zone_id)
     
@@ -68,12 +104,12 @@ async def check_and_control_irrigation(
         return None
     
     # Проверяем, прошло ли достаточно времени
-    now = datetime.utcnow()
-    if last_irrigation_time.tzinfo:
-        # Если есть timezone, используем его
-        if now.tzinfo is None:
-            from datetime import timezone
-            now = now.replace(tzinfo=timezone.utc)
+    now = utcnow()
+    # Приводим last_irrigation_time к aware UTC для корректного сравнения
+    if last_irrigation_time.tzinfo is None:
+        last_irrigation_time = last_irrigation_time.replace(tzinfo=timezone.utc)
+    elif last_irrigation_time.tzinfo != timezone.utc:
+        last_irrigation_time = last_irrigation_time.astimezone(timezone.utc)
     
     elapsed_sec = (now - last_irrigation_time).total_seconds()
     
@@ -87,28 +123,10 @@ async def check_and_control_irrigation(
         # Уровень воды низкий - не запускаем полив
         return None
     
-    # Получаем узлы для полива
-    rows = await fetch(
-        """
-        SELECT n.id, n.uid, n.type, nc.channel
-        FROM nodes n
-        LEFT JOIN node_channels nc ON nc.node_id = n.id
-        WHERE n.zone_id = $1 AND n.type = 'irrig' AND n.status = 'online'
-        LIMIT 1
-        """,
-        zone_id,
-    )
-    
-    if not rows:
-        # Нет узлов для полива
-        return None
-    
-    node_info = rows[0]
-    
     # Возвращаем команду для запуска полива
     return {
-        'node_uid': node_info["uid"],
-        'channel': node_info["channel"] or "default",
+        'node_uid': pump_binding['node_uid'],
+        'channel': pump_binding['channel'],
         'cmd': 'irrigate',
         'params': {
             'duration_sec': irrigation_duration_sec
@@ -146,10 +164,33 @@ async def get_last_recirculation_time(zone_id: int) -> Optional[datetime]:
     return None
 
 
+def get_recirculation_binding(bindings: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """
+    Получить binding для рециркуляции по ролям.
+    
+    Args:
+        bindings: Dict[role, binding_info] из InfrastructureRepository
+    
+    Returns:
+        binding_info для рециркуляции или None
+    """
+    # Ищем по ролям: recirculation_pump, recirculation
+    for role in ['recirculation_pump', 'recirculation']:
+        if role in bindings and bindings[role]['direction'] == 'actuator':
+            return {
+                'node_id': bindings[role]['node_id'],
+                'node_uid': bindings[role]['node_uid'],
+                'channel': bindings[role]['channel'],
+                'asset_type': bindings[role]['asset_type'],
+            }
+    return None
+
+
 async def check_and_control_recirculation(
     zone_id: int,
     targets: Dict[str, Any],
-    telemetry: Dict[str, Optional[float]]
+    telemetry: Dict[str, Optional[float]],
+    bindings: Dict[str, Dict[str, Any]]
 ) -> Optional[Dict[str, Any]]:
     """
     Проверка и управление рециркуляцией воды.
@@ -160,6 +201,7 @@ async def check_and_control_recirculation(
         zone_id: ID зоны
         targets: Целевые значения из рецепта (recirculation_enabled, recirculation_interval_min, recirculation_duration_sec)
         telemetry: Текущие значения телеметрии (не используется, но для совместимости с другими контроллерами)
+        bindings: Dict[role, binding_info] из InfrastructureRepository
     
     Returns:
         Команда для запуска рециркуляции или None
@@ -181,20 +223,28 @@ async def check_and_control_recirculation(
     recirculation_interval_min = int(recirculation_interval_min)
     recirculation_duration_sec = int(recirculation_duration_sec)
     
+    # Получаем binding для рециркуляции
+    recirculation_binding = get_recirculation_binding(bindings)
+    if not recirculation_binding:
+        # Нет binding для рециркуляции - создаем alert
+        await ensure_alert(zone_id, 'MISSING_BINDING', {
+            'binding_role': 'recirculation_pump',
+            'required_for': 'recirculation_control',
+        })
+        return None
+    
     # Получаем время последней рециркуляции
     last_recirculation_time = await get_last_recirculation_time(zone_id)
     
-    now = datetime.utcnow()
-    if now.tzinfo is None:
-        now = now.replace(tzinfo=timezone.utc)
+    now = utcnow()
     
     if last_recirculation_time is not None:
         # Проверяем, прошло ли достаточно времени
-        # Приводим last_recirculation_time к тому же timezone, что и now
+        # Приводим last_recirculation_time к aware UTC для корректного сравнения
         if last_recirculation_time.tzinfo is None:
             last_recirculation_time = last_recirculation_time.replace(tzinfo=timezone.utc)
-        elif now.tzinfo is None:
-            now = now.replace(tzinfo=timezone.utc)
+        elif last_recirculation_time.tzinfo != timezone.utc:
+            last_recirculation_time = last_recirculation_time.astimezone(timezone.utc)
         
         elapsed_min = (now - last_recirculation_time).total_seconds() / 60.0
         
@@ -202,25 +252,6 @@ async def check_and_control_recirculation(
             # Еще не прошло достаточно времени
             return None
     # Если рециркуляции еще не было, можно запустить сразу
-    
-    # Получаем узлы для рециркуляции (тип recirculation или канал recirculation_pump)
-    rows = await fetch(
-        """
-        SELECT n.id, n.uid, n.type, nc.channel
-        FROM nodes n
-        LEFT JOIN node_channels nc ON nc.node_id = n.id
-        WHERE n.zone_id = $1 AND n.status = 'online'
-          AND (n.type = 'recirculation' OR nc.channel = 'recirculation_pump')
-        LIMIT 1
-        """,
-        zone_id,
-    )
-    
-    if not rows:
-        # Нет узлов для рециркуляции
-        return None
-    
-    node_info = rows[0]
     
     # Проверяем уровень воды перед запуском рециркуляции
     water_level_ok, water_level = await check_water_level(zone_id)
@@ -230,8 +261,8 @@ async def check_and_control_recirculation(
     
     # Возвращаем команду для запуска рециркуляции
     return {
-        'node_uid': node_info["uid"],
-        'channel': node_info["channel"] or "recirculation_pump",
+        'node_uid': recirculation_binding['node_uid'],
+        'channel': recirculation_binding['channel'],
         'cmd': 'recirculate',
         'params': {
             'duration_sec': recirculation_duration_sec

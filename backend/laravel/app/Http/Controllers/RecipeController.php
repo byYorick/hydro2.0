@@ -55,6 +55,89 @@ class RecipeController extends Controller
         return response()->json(['status' => 'ok', 'data' => $recipe]);
     }
 
+    /**
+     * Получить stage-map рецепта
+     */
+    public function getStageMap(Recipe $recipe): JsonResponse
+    {
+        $recipe->load('phases');
+        
+        // Получаем stage-map из metadata или генерируем автоматически
+        $stageMap = $recipe->metadata['stage_map'] ?? null;
+        
+        // Если нет stage-map, генерируем автоматически на основе названий фаз
+        if (!$stageMap && $recipe->phases->count() > 0) {
+            $stageMap = [];
+            foreach ($recipe->phases as $phase) {
+                $stageMap[] = [
+                    'phase_index' => $phase->phase_index,
+                    'phase_name' => $phase->name,
+                    'stage' => $this->inferStageFromPhaseName($phase->name, $phase->phase_index),
+                ];
+            }
+        }
+        
+        return response()->json([
+            'status' => 'ok',
+            'data' => [
+                'recipe_id' => $recipe->id,
+                'stage_map' => $stageMap,
+            ],
+        ]);
+    }
+
+    /**
+     * Обновить stage-map рецепта
+     */
+    public function updateStageMap(Request $request, Recipe $recipe): JsonResponse
+    {
+        $data = $request->validate([
+            'stage_map' => ['required', 'array'],
+            'stage_map.*.phase_index' => ['required', 'integer'],
+            'stage_map.*.stage' => ['required', 'string', 'in:planting,rooting,veg,flowering,harvest'],
+        ]);
+
+        $metadata = $recipe->metadata ?? [];
+        $metadata['stage_map'] = $data['stage_map'];
+        $recipe->update(['metadata' => $metadata]);
+
+        return response()->json([
+            'status' => 'ok',
+            'data' => [
+                'recipe_id' => $recipe->id,
+                'stage_map' => $data['stage_map'],
+            ],
+        ]);
+    }
+
+    /**
+     * Автоматически определить стадию на основе названия фазы
+     */
+    private function inferStageFromPhaseName(string $phaseName, int $phaseIndex): string
+    {
+        $normalized = strtolower(trim($phaseName));
+        
+        $mapping = [
+            'planting' => ['посадка', 'посев', 'germination', 'germ', 'seed', 'семена'],
+            'rooting' => ['укоренение', 'rooting', 'root', 'seedling', 'рассада', 'ростки'],
+            'veg' => ['вега', 'вегетация', 'vegetative', 'veg', 'growth', 'рост', 'вегетативный'],
+            'flowering' => ['цветение', 'flowering', 'flower', 'bloom', 'blooming', 'цвет'],
+            'harvest' => ['сбор', 'harvest', 'finishing', 'finish', 'созревание', 'урожай'],
+        ];
+
+        foreach ($mapping as $stage => $keywords) {
+            foreach ($keywords as $keyword) {
+                if (str_contains($normalized, $keyword)) {
+                    return $stage;
+                }
+            }
+        }
+
+        // Fallback по индексу
+        $defaultStages = ['planting', 'rooting', 'veg', 'flowering', 'harvest'];
+        return $defaultStages[min($phaseIndex, count($defaultStages) - 1)] ?? 'veg';
+    }
+
     public function update(Request $request, Recipe $recipe): JsonResponse
     {
         $data = $request->validate([

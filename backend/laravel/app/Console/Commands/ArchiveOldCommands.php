@@ -23,8 +23,9 @@ class ArchiveOldCommands extends ConsoleCommand
         $this->info("Архивирование команд старше {$days} дней (до {$cutoffDate->toDateTimeString()})...");
 
         // Получаем команды для архивирования
+        // Не архивируем команды в статусе QUEUED (ожидающие отправки)
         $commands = Command::where('created_at', '<', $cutoffDate)
-            ->where('status', '!=', 'pending') // Не архивируем pending команды
+            ->where('status', '!=', Command::STATUS_QUEUED)
             ->get();
 
         $archivedCount = 0;

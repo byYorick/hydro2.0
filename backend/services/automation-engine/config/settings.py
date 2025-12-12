@@ -60,6 +60,9 @@ class AutomationSettings:
     # Максимальный возраст данных телеметрии для корректировки (в минутах)
     TELEMETRY_MAX_AGE_MINUTES: int = 30  # Не корректировать если данные старше 30 минут
     
+    # Порог для алерта о подряд пропусках проверки свежести
+    FRESHNESS_CHECK_FAILED_ALERT_THRESHOLD: int = 5  # Количество подряд пропусков перед alert
+    
     # Пороги для критических отклонений
     PH_TOO_HIGH_THRESHOLD: float = 0.3
     PH_TOO_LOW_THRESHOLD: float = -0.3

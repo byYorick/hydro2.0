@@ -6,8 +6,10 @@ import asyncio
 import os
 from typing import Optional, Dict, Any, Tuple, List
 from datetime import datetime, timedelta
+from .utils.time import utcnow
 from .db import fetch, execute, create_zone_event
 from .alerts import create_alert, AlertSource, AlertCode
+from .command_orchestrator import send_command
 try:
     import httpx
     HTTPX_AVAILABLE = True
@@ -95,7 +97,7 @@ async def check_dry_run_protection(
     Returns:
         (is_safe, error_message): True если безопасно, False если обнаружен сухой ход
     """
-    now = datetime.utcnow()
+    now = utcnow()
     elapsed_sec = (now - pump_start_time).total_seconds()
     
     # Проверяем только если прошло больше 3 секунд
@@ -326,8 +328,8 @@ async def get_irrigation_nodes(zone_id: int) -> List[Dict[str, Any]]:
 async def execute_fill_mode(
     zone_id: int,
     target_level: float,
-    mqtt_client: Any,  # MqttClient
-    gh_uid: str,
+    mqtt_client: Any = None,  # Deprecated, не используется
+    gh_uid: Optional[str] = None,  # Опционально, будет получен из БД
     max_duration_sec: int = 300  # Максимальная длительность 5 минут
 ) -> Dict[str, Any]:
     """
@@ -339,14 +341,14 @@ async def execute_fill_mode(
     Args:
         zone_id: ID зоны
         target_level: Целевой уровень воды (0.0-1.0)
-        mqtt_client: MQTT клиент для отправки команд
-        gh_uid: UID теплицы
+        mqtt_client: Deprecated, не используется (для обратной совместимости)
+        gh_uid: UID теплицы (опционально, будет получен из БД)
         max_duration_sec: Максимальная длительность операции (защита от зависания)
     
     Returns:
         Dict с результатом операции
     """
-    fill_start_time = datetime.utcnow()
+    fill_start_time = utcnow()
     
     # Создаем событие FILL_STARTED
     await create_zone_event(
@@ -369,31 +371,60 @@ async def execute_fill_mode(
                 'status': 'failed',
                 'error': 'no_nodes',
                 'start_time': fill_start_time.isoformat(),
-                'end_time': datetime.utcnow().isoformat()
+                'end_time': utcnow().isoformat()
             }
         )
         return {'success': False, 'error': 'no_nodes'}
     
     node_info = nodes[0]
     
-    # Отправляем команду fill
-    payload = {"cmd": "fill", "params": {"target_level": target_level}}
-    topic = f"hydro/{gh_uid}/zn-{zone_id}/{node_info['node_uid']}/{node_info['channel']}/command"
-    mqtt_client.publish_json(topic, payload, qos=1, retain=False)
+    # Отправляем команду fill через единый оркестратор
+    fill_result = await send_command(
+        zone_id=zone_id,
+        node_uid=node_info['node_uid'],
+        channel=node_info['channel'],
+        cmd="fill",
+        params={"target_level": target_level},
+        greenhouse_uid=gh_uid,
+        deadline_ms=int((fill_start_time.timestamp() + max_duration_sec) * 1000),
+    )
+    
+    if fill_result.get("status") != "sent":
+        error_msg = fill_result.get("error", "Failed to send fill command")
+        await create_zone_event(
+            zone_id,
+            'FILL_FINISHED',
+            {
+                'target_level': target_level,
+                'status': 'failed',
+                'error': error_msg,
+                'start_time': fill_start_time.isoformat(),
+                'end_time': utcnow().isoformat()
+            }
+        )
+        return {'success': False, 'error': error_msg}
+    
+    fill_cmd_id = fill_result["cmd_id"]
     
     # Мониторим уровень воды каждые 2 секунды
     check_interval = 2.0
-    start_time = datetime.utcnow()
+    start_time = utcnow()
     
     while True:
         await asyncio.sleep(check_interval)
         
         # Проверяем таймаут
-        elapsed = (datetime.utcnow() - start_time).total_seconds()
+        elapsed = (utcnow() - start_time).total_seconds()
         if elapsed > max_duration_sec:
-            # Отправляем команду остановки
-            stop_payload = {"cmd": "stop"}
-            mqtt_client.publish_json(topic, stop_payload, qos=1, retain=False)
+            # Отправляем команду остановки через единый оркестратор
+            await send_command(
+                zone_id=zone_id,
+                node_uid=node_info['node_uid'],
+                channel=node_info['channel'],
+                cmd="stop",
+                params={},
+                greenhouse_uid=gh_uid,
+            )
             
             await create_zone_event(
                 zone_id,
@@ -403,7 +434,7 @@ async def execute_fill_mode(
                     'status': 'timeout',
                     'elapsed_sec': elapsed,
                     'start_time': fill_start_time.isoformat(),
-                    'end_time': datetime.utcnow().isoformat()
+                    'end_time': utcnow().isoformat()
                 }
             )
             return {'success': False, 'error': 'timeout', 'elapsed_sec': elapsed}
@@ -413,11 +444,17 @@ async def execute_fill_mode(
         
         if current_level is not None:
             if current_level >= target_level:
-                # Достигли целевого уровня - останавливаем
-                stop_payload = {"cmd": "stop"}
-                mqtt_client.publish_json(topic, stop_payload, qos=1, retain=False)
+                # Достигли целевого уровня - останавливаем через единый оркестратор
+                await send_command(
+                    zone_id=zone_id,
+                    node_uid=node_info['node_uid'],
+                    channel=node_info['channel'],
+                    cmd="stop",
+                    params={},
+                    greenhouse_uid=gh_uid,
+                )
                 
-                fill_end_time = datetime.utcnow()
+                fill_end_time = utcnow()
                 await create_zone_event(
                     zone_id,
                     'FILL_FINISHED',
@@ -441,8 +478,8 @@ async def execute_fill_mode(
 async def execute_drain_mode(
     zone_id: int,
     target_level: float,
-    mqtt_client: Any,  # MqttClient
-    gh_uid: str,
+    mqtt_client: Any = None,  # Deprecated, не используется
+    gh_uid: Optional[str] = None,  # Опционально, будет получен из БД
     max_duration_sec: int = 300  # Максимальная длительность 5 минут
 ) -> Dict[str, Any]:
     """
@@ -454,14 +491,14 @@ async def execute_drain_mode(
     Args:
         zone_id: ID зоны
         target_level: Целевой уровень воды (0.0-1.0)
-        mqtt_client: MQTT клиент для отправки команд
-        gh_uid: UID теплицы
+        mqtt_client: Deprecated, не используется (для обратной совместимости)
+        gh_uid: UID теплицы (опционально, будет получен из БД)
         max_duration_sec: Максимальная длительность операции (защита от зависания)
     
     Returns:
         Dict с результатом операции
     """
-    drain_start_time = datetime.utcnow()
+    drain_start_time = utcnow()
     
     # Создаем событие DRAIN_STARTED
     await create_zone_event(
@@ -484,31 +521,60 @@ async def execute_drain_mode(
                 'status': 'failed',
                 'error': 'no_nodes',
                 'start_time': drain_start_time.isoformat(),
-                'end_time': datetime.utcnow().isoformat()
+                'end_time': utcnow().isoformat()
             }
         )
         return {'success': False, 'error': 'no_nodes'}
     
     node_info = nodes[0]
     
-    # Отправляем команду drain
-    payload = {"cmd": "drain", "params": {"target_level": target_level}}
-    topic = f"hydro/{gh_uid}/zn-{zone_id}/{node_info['node_uid']}/{node_info['channel']}/command"
-    mqtt_client.publish_json(topic, payload, qos=1, retain=False)
+    # Отправляем команду drain через единый оркестратор
+    drain_result = await send_command(
+        zone_id=zone_id,
+        node_uid=node_info['node_uid'],
+        channel=node_info['channel'],
+        cmd="drain",
+        params={"target_level": target_level},
+        greenhouse_uid=gh_uid,
+        deadline_ms=int((drain_start_time.timestamp() + max_duration_sec) * 1000),
+    )
+    
+    if drain_result.get("status") != "sent":
+        error_msg = drain_result.get("error", "Failed to send drain command")
+        await create_zone_event(
+            zone_id,
+            'DRAIN_FINISHED',
+            {
+                'target_level': target_level,
+                'status': 'failed',
+                'error': error_msg,
+                'start_time': drain_start_time.isoformat(),
+                'end_time': utcnow().isoformat()
+            }
+        )
+        return {'success': False, 'error': error_msg}
+    
+    drain_cmd_id = drain_result["cmd_id"]
     
     # Мониторим уровень воды каждые 2 секунды
     check_interval = 2.0
-    start_time = datetime.utcnow()
+    start_time = utcnow()
     
     while True:
         await asyncio.sleep(check_interval)
         
         # Проверяем таймаут
-        elapsed = (datetime.utcnow() - start_time).total_seconds()
+        elapsed = (utcnow() - start_time).total_seconds()
         if elapsed > max_duration_sec:
-            # Отправляем команду остановки
-            stop_payload = {"cmd": "stop"}
-            mqtt_client.publish_json(topic, stop_payload, qos=1, retain=False)
+            # Отправляем команду остановки через единый оркестратор
+            await send_command(
+                zone_id=zone_id,
+                node_uid=node_info['node_uid'],
+                channel=node_info['channel'],
+                cmd="stop",
+                params={},
+                greenhouse_uid=gh_uid,
+            )
             
             await create_zone_event(
                 zone_id,
@@ -518,7 +584,7 @@ async def execute_drain_mode(
                     'status': 'timeout',
                     'elapsed_sec': elapsed,
                     'start_time': drain_start_time.isoformat(),
-                    'end_time': datetime.utcnow().isoformat()
+                    'end_time': utcnow().isoformat()
                 }
             )
             return {'success': False, 'error': 'timeout', 'elapsed_sec': elapsed}
@@ -528,11 +594,17 @@ async def execute_drain_mode(
         
         if current_level is not None:
             if current_level <= target_level:
-                # Достигли целевого уровня - останавливаем
-                stop_payload = {"cmd": "stop"}
-                mqtt_client.publish_json(topic, stop_payload, qos=1, retain=False)
+                # Достигли целевого уровня - останавливаем через единый оркестратор
+                await send_command(
+                    zone_id=zone_id,
+                    node_uid=node_info['node_uid'],
+                    channel=node_info['channel'],
+                    cmd="stop",
+                    params={},
+                    greenhouse_uid=gh_uid,
+                )
                 
-                drain_end_time = datetime.utcnow()
+                drain_end_time = utcnow()
                 await create_zone_event(
                     zone_id,
                     'DRAIN_FINISHED',
@@ -557,8 +629,8 @@ async def calibrate_flow(
     zone_id: int,
     node_id: int,
     channel: str,
-    mqtt_client: Any,  # MqttClient
-    gh_uid: str,
+    mqtt_client: Any = None,  # Deprecated, не используется
+    gh_uid: Optional[str] = None,  # Опционально, будет получен из БД
     pump_duration_sec: int = 10
 ) -> Dict[str, Any]:
     """
@@ -632,12 +704,20 @@ async def calibrate_flow(
         raise ValueError(f"Water level too low for calibration: {water_level}")
     
     # Запускаем насос
-    calibration_start_time = datetime.utcnow()
+    calibration_start_time = utcnow()
     
-    # Публикуем команду запуска насоса через MQTT
-    payload = {"cmd": "run", "params": {"sec": pump_duration_sec}}
-    topic = f"hydro/{gh_uid}/zn-{zone_id}/{pump_node_uid}/{pump_channel}/command"
-    mqtt_client.publish_json(topic, payload, qos=1, retain=False)
+    # Отправляем команду запуска насоса через единый оркестратор
+    run_result = await send_command(
+        zone_id=zone_id,
+        node_uid=pump_node_uid,
+        channel=pump_channel,
+        cmd="run",
+        params={"sec": pump_duration_sec},
+        greenhouse_uid=gh_uid,
+    )
+    
+    if run_result.get("status") != "sent":
+        raise RuntimeError(f"Failed to send pump run command: {run_result.get('error')}")
     
     # Создаем событие начала калибровки
     await create_zone_event(
@@ -654,7 +734,7 @@ async def calibrate_flow(
     # Ждем завершения работы насоса + небольшая задержка для получения всех данных
     await asyncio.sleep(pump_duration_sec + 2)
     
-    calibration_end_time = datetime.utcnow()
+    calibration_end_time = utcnow()
     
     # Получаем данные flow за период калибровки
     flow_rows = await fetch(

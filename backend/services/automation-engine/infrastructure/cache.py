@@ -6,6 +6,7 @@ import asyncio
 import logging
 from typing import Dict, Any, Optional, Callable, Awaitable
 from datetime import datetime, timedelta
+from common.utils.time import utcnow
 from functools import wraps
 
 logger = logging.getLogger(__name__)
@@ -42,7 +43,7 @@ class ZoneDataCache:
         Returns:
             Данные зоны
         """
-        now = datetime.utcnow()
+        now = utcnow()
         
         # Проверяем кеш
         if zone_id in self.cache:

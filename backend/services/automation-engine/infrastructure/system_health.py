@@ -5,6 +5,7 @@ import logging
 import time
 from typing import Dict, Any, Optional
 from datetime import datetime
+from common.utils.time import utcnow
 from common.db import fetch
 from common.mqtt import MqttClient
 from prometheus_client import Gauge
@@ -59,7 +60,7 @@ class SystemHealthMonitor:
         """
         health = {
             'status': 'healthy',
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': utcnow().isoformat(),
             'components': {}
         }
         
@@ -126,7 +127,7 @@ class SystemHealthMonitor:
             return {
                 'status': status,
                 'latency_ms': round(latency_ms, 2),
-                'last_check': datetime.utcnow().isoformat()
+                'last_check': utcnow().isoformat()
             }
         except Exception as e:
             logger.warning(f"Database health check failed: {e}", exc_info=True)
@@ -135,7 +136,7 @@ class SystemHealthMonitor:
             return {
                 'status': 'critical',
                 'error': str(e),
-                'last_check': datetime.utcnow().isoformat()
+                'last_check': utcnow().isoformat()
             }
     
     async def _check_mqtt(self) -> Dict[str, Any]:
@@ -148,14 +149,14 @@ class SystemHealthMonitor:
             return {
                 'status': status,
                 'connected': is_connected,
-                'last_check': datetime.utcnow().isoformat()
+                'last_check': utcnow().isoformat()
             }
         except Exception as e:
             logger.warning(f"MQTT health check failed: {e}", exc_info=True)
             return {
                 'status': 'critical',
                 'error': str(e),
-                'last_check': datetime.utcnow().isoformat()
+                'last_check': utcnow().isoformat()
             }
     
     async def check_laravel_api(self, base_url: str, token: str) -> Dict[str, Any]:
@@ -195,7 +196,7 @@ class SystemHealthMonitor:
                 'status': status,
                 'latency_ms': round(latency_ms, 2),
                 'http_status': response.status_code,
-                'last_check': datetime.utcnow().isoformat()
+                'last_check': utcnow().isoformat()
             }
         except Exception as e:
             logger.warning(f"Laravel API health check failed: {e}", exc_info=True)
@@ -204,7 +205,7 @@ class SystemHealthMonitor:
             return {
                 'status': 'critical',
                 'error': str(e),
-                'last_check': datetime.utcnow().isoformat()
+                'last_check': utcnow().isoformat()
             }
 
 

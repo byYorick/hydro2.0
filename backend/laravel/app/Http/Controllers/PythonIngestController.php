@@ -100,6 +100,27 @@ class PythonIngestController extends Controller
         }
         $tsValue = $data['ts'] ?? null;
         $timestamp = $tsValue ? Carbon::parse($tsValue) : now();
+        
+        // Проверка на искаженное время: если timestamp отклоняется от серверного более чем на 5 минут,
+        // используем серверное время для обеспечения единой временной линии
+        if ($tsValue) {
+            $serverTime = now();
+            $deviceTime = $timestamp;
+            $driftSeconds = abs($serverTime->diffInSeconds($deviceTime, false));
+            $maxDriftSeconds = 300; // 5 минут
+            
+            if ($driftSeconds > $maxDriftSeconds) {
+                Log::warning('PythonIngestController: Device timestamp is skewed, using server time', [
+                    'device_ts' => $deviceTime->toIso8601String(),
+                    'server_ts' => $serverTime->toIso8601String(),
+                    'drift_sec' => $driftSeconds,
+                    'max_drift_sec' => $maxDriftSeconds,
+                    'node_id' => $nodeId,
+                    'zone_id' => $data['zone_id'],
+                ]);
+                $timestamp = $serverTime;
+            }
+        }
 
         // Формируем запрос для history-logger
         // Передаём zone_id напрямую (в таблице zones нет uid)
@@ -162,22 +183,124 @@ class PythonIngestController extends Controller
         $this->ensureToken($request);
         $data = $request->validate([
             'cmd_id' => ['required', 'string', 'max:64'],
-            'status' => ['required', 'string', 'in:accepted,completed,failed,ack'],
+            'status' => ['required', 'string', 'in:SENT,ACCEPTED,DONE,FAILED,TIMEOUT,SEND_FAILED,accepted,completed,failed,ack,timeout'],
             'details' => ['nullable', 'array'],
         ]);
+
+        // Нормализуем статус в новые значения: SENT/ACCEPTED/DONE/FAILED
+        // Поддерживаем старые значения для обратной совместимости
+        $normalizedStatus = match (strtoupper($data['status'])) {
+            'SENT' => \App\Models\Command::STATUS_SENT,
+            'ACCEPTED', 'ACK' => \App\Models\Command::STATUS_ACCEPTED,
+            'DONE', 'COMPLETED', 'OK', 'SUCCESS' => \App\Models\Command::STATUS_DONE,
+            'FAILED', 'ERROR', 'REJECTED' => \App\Models\Command::STATUS_FAILED,
+            'TIMEOUT' => \App\Models\Command::STATUS_TIMEOUT,
+            'SEND_FAILED' => \App\Models\Command::STATUS_SEND_FAILED,
+            default => strtoupper($data['status']), // Используем как есть, если это новый статус
+        };
 
         // Обновляем статус команды в БД, чтобы фронт получил broadcast (CommandObserver)
         $command = \App\Models\Command::where('cmd_id', $data['cmd_id'])->latest('id')->first();
         if ($command) {
-            $updates = ['status' => $data['status']];
+            // State machine guard: проверяем валидность перехода статуса
+            $currentStatus = $command->status;
+            $newStatus = $normalizedStatus;
+            
+            // Определяем конечные статусы (нельзя изменять)
+            $finalStatuses = [
+                \App\Models\Command::STATUS_DONE,
+                \App\Models\Command::STATUS_FAILED,
+                \App\Models\Command::STATUS_TIMEOUT,
+                \App\Models\Command::STATUS_SEND_FAILED,
+            ];
+            
+            // Если команда уже в конечном статусе, не обновляем (запрет отката)
+            if (in_array($currentStatus, $finalStatuses)) {
+                Log::info('commandAck: Command already in final status, skipping update', [
+                    'cmd_id' => $data['cmd_id'],
+                    'current_status' => $currentStatus,
+                    'attempted_status' => $newStatus,
+                ]);
+                
+                return Response::json([
+                    'status' => 'ok',
+                    'message' => 'Command already in final status',
+                ]);
+            }
+            
+            // Проверяем переходы: запрещаем откат (например, DONE нельзя заменить на SENT)
+            $isRollback = false;
+            
+            // Запрет перехода назад: если текущий статус более продвинутый, чем новый
+            $statusOrder = [
+                \App\Models\Command::STATUS_QUEUED => 0,
+                \App\Models\Command::STATUS_SEND_FAILED => 1,
+                \App\Models\Command::STATUS_SENT => 2,
+                \App\Models\Command::STATUS_ACCEPTED => 3,
+                \App\Models\Command::STATUS_DONE => 4,
+                \App\Models\Command::STATUS_FAILED => 4,
+                \App\Models\Command::STATUS_TIMEOUT => 4,
+            ];
+            
+            $currentOrder = $statusOrder[$currentStatus] ?? 0;
+            $newOrder = $statusOrder[$newStatus] ?? 0;
+            
+            // Запрещаем откат (кроме повторной отправки из SEND_FAILED в SENT)
+            if ($newOrder < $currentOrder && !($currentStatus === \App\Models\Command::STATUS_SEND_FAILED && $newStatus === \App\Models\Command::STATUS_SENT)) {
+                $isRollback = true;
+            }
+            
+            if ($isRollback) {
+                Log::warning('commandAck: Status rollback prevented by state machine guard', [
+                    'cmd_id' => $data['cmd_id'],
+                    'current_status' => $currentStatus,
+                    'attempted_status' => $newStatus,
+                ]);
+                
+                return Response::json([
+                    'status' => 'ok',
+                    'message' => 'Status rollback prevented',
+                ]);
+            }
+            
+            $updates = ['status' => $normalizedStatus];
+            
+            // Добавляем детали из details если есть
+            $details = $data['details'] ?? [];
+            if (isset($details['error_code'])) {
+                $updates['error_code'] = $details['error_code'];
+            }
+            if (isset($details['error_message'])) {
+                $updates['error_message'] = $details['error_message'];
+            }
+            if (isset($details['result_code'])) {
+                $updates['result_code'] = $details['result_code'];
+            }
+            if (isset($details['duration_ms'])) {
+                $updates['duration_ms'] = $details['duration_ms'];
+            }
 
-            if (in_array($data['status'], ['accepted', 'ack']) && ! $command->ack_at) {
+            // SENT - команда отправлена в MQTT (подтверждение корреляции)
+            if ($normalizedStatus === \App\Models\Command::STATUS_SENT && ! $command->sent_at) {
+                $updates['sent_at'] = now();
+            }
+            
+            // ACCEPTED - команда принята к выполнению
+            if ($normalizedStatus === \App\Models\Command::STATUS_ACCEPTED && ! $command->ack_at) {
                 $updates['ack_at'] = now();
             }
-            if ($data['status'] === 'completed' && ! $command->ack_at) {
+            
+            // DONE - команда успешно выполнена
+            if ($normalizedStatus === \App\Models\Command::STATUS_DONE && ! $command->ack_at) {
                 $updates['ack_at'] = now();
             }
-            if ($data['status'] === 'failed') {
+            
+            // FAILED/TIMEOUT/SEND_FAILED - команда завершилась с ошибкой
+            if (in_array($normalizedStatus, [
+                \App\Models\Command::STATUS_FAILED,
+                \App\Models\Command::STATUS_TIMEOUT,
+                \App\Models\Command::STATUS_SEND_FAILED
+            ]) && ! $command->failed_at) {
                 $updates['failed_at'] = now();
             }
 
@@ -185,11 +308,14 @@ class PythonIngestController extends Controller
 
             // Дополнительно сразу шлем событие с деталями ошибки/статуса, чтобы фронт получил уведомление
             $zoneId = $command->zone_id;
-            $details = $data['details'] ?? [];
             $errorMessage = $details['error_message'] ?? $details['error_code'] ?? null;
             $message = $details['message'] ?? null;
 
-            if ($data['status'] === 'failed') {
+            if (in_array($normalizedStatus, [
+                \App\Models\Command::STATUS_FAILED,
+                \App\Models\Command::STATUS_TIMEOUT,
+                \App\Models\Command::STATUS_SEND_FAILED
+            ])) {
                 event(new \App\Events\CommandFailed(
                     commandId: $command->cmd_id,
                     message: $message ?? 'Command failed',
@@ -199,7 +325,7 @@ class PythonIngestController extends Controller
             } else {
                 event(new \App\Events\CommandStatusUpdated(
                     commandId: $command->cmd_id,
-                    status: $data['status'],
+                    status: $normalizedStatus,
                     message: $message ?? 'Command status updated',
                     error: $errorMessage,
                     zoneId: $zoneId
@@ -209,6 +335,7 @@ class PythonIngestController extends Controller
             Log::warning('commandAck: Command not found for cmd_id', [
                 'cmd_id' => $data['cmd_id'],
                 'status' => $data['status'],
+                'normalized_status' => $normalizedStatus,
             ]);
         }
 
@@ -246,5 +373,72 @@ class PythonIngestController extends Controller
         ));
 
         return Response::json(['status' => 'ok']);
+    }
+
+    public function alerts(Request $request)
+    {
+        $this->ensureToken($request);
+        $data = $request->validate([
+            'zone_id' => ['nullable', 'integer'],
+            'node_uid' => ['nullable', 'string', 'max:100'],
+            'hardware_id' => ['nullable', 'string', 'max:100'],
+            'source' => ['required', 'string', 'in:biz,infra'],
+            'code' => ['required', 'string', 'max:64'],
+            'type' => ['required', 'string', 'max:64'],
+            'severity' => ['nullable', 'string', 'max:32'],
+            'details' => ['nullable', 'array'],
+            'ts_device' => ['nullable', 'date'],
+        ]);
+        
+        // Валидируем zone_id отдельно, если он указан (для unassigned hardware разрешаем null)
+        if (isset($data['zone_id']) && $data['zone_id'] !== null) {
+            $zoneExists = \App\Models\Zone::where('id', $data['zone_id'])->exists();
+            if (!$zoneExists) {
+                return Response::json([
+                    'status' => 'error',
+                    'message' => 'Zone not found',
+                ], 422);
+            }
+        }
+
+        try {
+            $alertService = app(\App\Services\AlertService::class);
+            
+            // Используем createOrUpdateActive для дедупликации
+            $result = $alertService->createOrUpdateActive([
+                'zone_id' => $data['zone_id'] ?? null,
+                'source' => $data['source'],
+                'code' => $data['code'],
+                'type' => $data['type'],
+                'details' => $data['details'] ?? null,
+                'severity' => $data['severity'] ?? null,
+                'node_uid' => $data['node_uid'] ?? null,
+                'hardware_id' => $data['hardware_id'] ?? null,
+                'ts_device' => $data['ts_device'] ?? null,
+            ]);
+
+            $alert = $result['alert'];
+            $serverTs = now()->toIso8601String();
+
+            return Response::json([
+                'status' => 'ok',
+                'data' => [
+                    'alert_id' => $alert->id,
+                    'event_id' => $result['event_id'],
+                    'server_ts' => $serverTs,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('PythonIngestController: Failed to create/update alert', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'data' => $data,
+            ]);
+
+            return Response::json([
+                'status' => 'error',
+                'message' => 'Failed to create/update alert: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 }

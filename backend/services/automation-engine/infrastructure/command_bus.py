@@ -14,6 +14,7 @@ from .command_validator import CommandValidator
 from .command_tracker import CommandTracker
 from .command_audit import CommandAudit
 from utils.logging_context import get_trace_id
+from .circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,9 @@ class CommandBus:
         history_logger_token: Optional[str] = None,
         command_validator: Optional[CommandValidator] = None,
         command_tracker: Optional[CommandTracker] = None,
-        command_audit: Optional[CommandAudit] = None
+        command_audit: Optional[CommandAudit] = None,
+        http_timeout: float = 5.0,
+        api_circuit_breaker: Optional[CircuitBreaker] = None
     ):
         """
         Инициализация Command Bus.
@@ -48,6 +51,8 @@ class CommandBus:
             command_validator: Валидатор команд (опционально)
             command_tracker: Трекер команд (опционально)
             command_audit: Аудит команд (опционально)
+            http_timeout: Таймаут для HTTP запросов в секундах
+            api_circuit_breaker: Circuit breaker для API (опционально)
         """
         self.mqtt = mqtt  # Deprecated
         self.gh_uid = gh_uid
@@ -56,6 +61,40 @@ class CommandBus:
         self.validator = command_validator or CommandValidator()
         self.tracker = command_tracker
         self.audit = command_audit or CommandAudit()
+        self.http_timeout = http_timeout
+        self.api_circuit_breaker = api_circuit_breaker
+        
+        # Долгоживущий HTTP клиент для переиспользования соединений
+        self._http_client: Optional[httpx.AsyncClient] = None
+    
+    async def start(self):
+        """Инициализировать долгоживущий HTTP клиент."""
+        if self._http_client is None:
+            self._http_client = httpx.AsyncClient(
+                timeout=self.http_timeout,
+                limits=httpx.Limits(max_keepalive_connections=10, max_connections=20)
+            )
+            logger.debug("CommandBus HTTP client initialized")
+    
+    async def stop(self):
+        """Закрыть HTTP клиент и освободить ресурсы."""
+        if self._http_client is not None:
+            await self._http_client.aclose()
+            self._http_client = None
+            logger.debug("CommandBus HTTP client closed")
+    
+    def _get_client(self):
+        """
+        Получить HTTP клиент.
+        
+        Returns:
+            httpx.AsyncClient если долгоживущий клиент инициализирован
+            None если нужно использовать временный клиент в контекстном менеджере
+        """
+        if self._http_client is None:
+            logger.warning("CommandBus HTTP client not initialized, using temporary client")
+            return None
+        return self._http_client
     
     async def publish_command(
         self,
@@ -103,47 +142,64 @@ class CommandBus:
             if self.history_logger_token:
                 headers["Authorization"] = f"Bearer {self.history_logger_token}"
             
-            # Отправляем запрос
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.post(
-                    f"{self.history_logger_url}/commands",
-                    json=payload,
-                    headers=headers
-                )
-                
-                latency = time.time() - start_time
-                COMMAND_REST_LATENCY.observe(latency)
-                
-                if response.status_code == 200:
-                    try:
-                        result = response.json()
-                        cmd_id = result.get("data", {}).get("command_id")
-                        logger.debug(
-                            f"Zone {zone_id}: Command {cmd} sent successfully via REST, cmd_id: {cmd_id}",
-                            extra={"zone_id": zone_id, "cmd_id": cmd_id, "trace_id": trace_id}
+            # Обертка для HTTP запроса через circuit breaker
+            async def _send_request():
+                client = self._get_client()
+                if client is None:
+                    # Используем временный клиент в контекстном менеджере
+                    async with httpx.AsyncClient(timeout=self.http_timeout) as temp_client:
+                        return await temp_client.post(
+                            f"{self.history_logger_url}/commands",
+                            json=payload,
+                            headers=headers
                         )
-                        COMMANDS_SENT.labels(zone_id=str(zone_id), metric=cmd).inc()
-                        return True
-                    except Exception as e:
-                        error_type = "json_decode_error"
-                        REST_PUBLISH_ERRORS.labels(error_type=error_type).inc()
-                        logger.error(
-                            f"Zone {zone_id}: Failed to parse response JSON: {e}",
-                            extra={"zone_id": zone_id, "trace_id": trace_id}
-                        )
-                        return False
                 else:
-                    try:
-                        error_msg = response.text
-                    except Exception:
-                        error_msg = f"HTTP {response.status_code}"
-                    error_type = f"http_{response.status_code}"
+                    # Используем долгоживущий клиент
+                    return await client.post(
+                        f"{self.history_logger_url}/commands",
+                        json=payload,
+                        headers=headers
+                    )
+            
+            # Отправляем запрос через circuit breaker если он настроен
+            if self.api_circuit_breaker:
+                response = await self.api_circuit_breaker.call(_send_request)
+            else:
+                response = await _send_request()
+            
+            latency = time.time() - start_time
+            COMMAND_REST_LATENCY.observe(latency)
+                
+            if response.status_code == 200:
+                try:
+                    result = response.json()
+                    cmd_id = result.get("data", {}).get("command_id")
+                    logger.debug(
+                        f"Zone {zone_id}: Command {cmd} sent successfully via REST, cmd_id: {cmd_id}",
+                        extra={"zone_id": zone_id, "cmd_id": cmd_id, "trace_id": trace_id}
+                    )
+                    COMMANDS_SENT.labels(zone_id=str(zone_id), metric=cmd).inc()
+                    return True
+                except Exception as e:
+                    error_type = "json_decode_error"
                     REST_PUBLISH_ERRORS.labels(error_type=error_type).inc()
                     logger.error(
-                        f"Zone {zone_id}: Failed to publish command {cmd} via REST: {response.status_code} - {error_msg}",
+                        f"Zone {zone_id}: Failed to parse response JSON: {e}",
                         extra={"zone_id": zone_id, "trace_id": trace_id}
                     )
                     return False
+            else:
+                try:
+                    error_msg = response.text
+                except Exception:
+                    error_msg = f"HTTP {response.status_code}"
+                error_type = f"http_{response.status_code}"
+                REST_PUBLISH_ERRORS.labels(error_type=error_type).inc()
+                logger.error(
+                    f"Zone {zone_id}: Failed to publish command {cmd} via REST: {response.status_code} - {error_msg}",
+                    extra={"zone_id": zone_id, "trace_id": trace_id}
+                )
+                return False
                     
         except httpx.TimeoutException as e:
             error_type = "timeout"
@@ -215,13 +271,24 @@ class CommandBus:
             try:
                 cmd_id = await self.tracker.track_command(zone_id, command, context)
                 # Добавляем cmd_id в команду для ответа
-                if 'params' not in command:
+                # ВАЖНО: если params был None, создаём пустой dict
+                if 'params' not in command or command['params'] is None:
                     command['params'] = {}
+                # Гарантированно передаём cmd_id в params
                 command['params']['cmd_id'] = cmd_id
+                # ВАЖНО: обновляем локальную переменную params после добавления cmd_id
+                # чтобы cmd_id дошел до history-logger через publish_command()
+                params = command['params']
             except Exception as e:
                 logger.warning(f"Zone {zone_id}: Failed to track command: {e}", exc_info=True)
+                # Если tracker не сработал, используем исходные params (могут быть None)
+                params = command.get('params')
+        else:
+            # Если tracker не настроен, используем исходные params
+            params = command.get('params')
         
         # Публикация команды
+        # params гарантированно содержит cmd_id, если tracker вернул cmd_id
         success = await self.publish_command(zone_id, node_uid, channel, cmd, params)
         
         # Аудит команды (даже если не удалось отправить)

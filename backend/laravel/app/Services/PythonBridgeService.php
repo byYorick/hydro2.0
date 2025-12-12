@@ -22,7 +22,7 @@ class PythonBridgeService
             'zone_id' => $zone->id,
             'cmd' => $payload['type'] ?? ($payload['cmd'] ?? 'unknown'),
             'params' => $payload['params'] ?? [],
-            'status' => 'pending',
+            'status' => Command::STATUS_QUEUED,
             'cmd_id' => $cmdId,
         ]);
         $ghUid = optional($zone->greenhouse)->uid ?? 'gh-1';
@@ -175,7 +175,7 @@ class PythonBridgeService
             'channel' => $payload['channel'] ?? null,
             'cmd' => $payload['type'] ?? ($payload['cmd'] ?? 'unknown'),
             'params' => $payload['params'] ?? [],
-            'status' => 'pending',
+            'status' => Command::STATUS_QUEUED,
             'cmd_id' => $cmdId,
         ]);
         $zoneId = $node->zone_id ?? ($payload['zone_id'] ?? null);
@@ -488,8 +488,11 @@ class PythonBridgeService
     {
         try {
             $command->update([
-                'status' => 'failed',
+                'status' => Command::STATUS_SEND_FAILED,
                 'failed_at' => now(),
+                'error_code' => 'SEND_FAILED',
+                'error_message' => $error,
+                'result_code' => 1,
             ]);
 
             Log::info('PythonBridgeService: Command marked as failed', [

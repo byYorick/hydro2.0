@@ -4,6 +4,7 @@
 import logging
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, timedelta
+from common.utils.time import utcnow
 from common.db import fetch
 
 logger = logging.getLogger(__name__)
@@ -20,9 +21,9 @@ async def calibrate_ph_model(zone_id: int, days: int = 7) -> Dict[str, float]:
     Returns:
         Словарь с параметрами: buffer_capacity, natural_drift, correction_rate
     """
-    cutoff_date = datetime.utcnow() - timedelta(days=days)
+    cutoff_date = utcnow() - timedelta(days=days)
     
-    # Получаем историю pH
+    # Получаем историю pH (только валидные значения)
     ph_samples = await fetch(
         """
         SELECT ts, value
@@ -30,6 +31,9 @@ async def calibrate_ph_model(zone_id: int, days: int = 7) -> Dict[str, float]:
         WHERE zone_id = $1
           AND metric_type = 'PH'
           AND ts >= $2
+          AND value IS NOT NULL
+          AND value >= 0.0
+          AND value <= 14.0
         ORDER BY ts ASC
         """,
         zone_id,
@@ -44,7 +48,8 @@ async def calibrate_ph_model(zone_id: int, days: int = 7) -> Dict[str, float]:
             "correction_rate": 0.05,
         }
     
-    # Получаем команды дозирования кислоты/щелочи
+    # Получаем команды дозирования кислоты/щелочи (только успешно выполненные)
+    # Используем только команды со статусом DONE и result_code=0 для гарантии качества данных
     dosing_commands = await fetch(
         """
         SELECT created_at, params
@@ -52,7 +57,9 @@ async def calibrate_ph_model(zone_id: int, days: int = 7) -> Dict[str, float]:
         WHERE zone_id = $1
           AND cmd IN ('run_pump', 'dose')
           AND channel IN ('pump_acid', 'pump_base', 'pump_ph_up', 'pump_ph_down')
-          AND status = 'ack'
+          AND status = 'DONE'
+          AND result_code = 0
+          AND created_at IS NOT NULL
           AND created_at >= $2
         ORDER BY created_at ASC
         """,
@@ -144,9 +151,9 @@ async def calibrate_ec_model(zone_id: int, days: int = 7) -> Dict[str, float]:
     Returns:
         Словарь с параметрами: evaporation_rate, dilution_rate, nutrient_addition_rate
     """
-    cutoff_date = datetime.utcnow() - timedelta(days=days)
+    cutoff_date = utcnow() - timedelta(days=days)
     
-    # Получаем историю EC
+    # Получаем историю EC (только валидные значения)
     ec_samples = await fetch(
         """
         SELECT ts, value
@@ -154,6 +161,9 @@ async def calibrate_ec_model(zone_id: int, days: int = 7) -> Dict[str, float]:
         WHERE zone_id = $1
           AND metric_type = 'EC'
           AND ts >= $2
+          AND value IS NOT NULL
+          AND value >= 0.0
+          AND value <= 10.0
         ORDER BY ts ASC
         """,
         zone_id,
@@ -168,7 +178,8 @@ async def calibrate_ec_model(zone_id: int, days: int = 7) -> Dict[str, float]:
             "nutrient_addition_rate": 0.03,
         }
     
-    # Получаем команды дозирования питательных веществ
+    # Получаем команды дозирования питательных веществ (только успешно выполненные)
+    # Используем только команды со статусом DONE и result_code=0 для гарантии качества данных
     nutrient_commands = await fetch(
         """
         SELECT created_at, params
@@ -176,7 +187,9 @@ async def calibrate_ec_model(zone_id: int, days: int = 7) -> Dict[str, float]:
         WHERE zone_id = $1
           AND cmd IN ('run_pump', 'dose')
           AND channel IN ('pump_nutrient', 'pump_ec_up')
-          AND status = 'ack'
+          AND status = 'DONE'
+          AND result_code = 0
+          AND created_at IS NOT NULL
           AND created_at >= $2
         ORDER BY created_at ASC
         """,
@@ -269,9 +282,9 @@ async def calibrate_climate_model(zone_id: int, days: int = 7) -> Dict[str, floa
     Returns:
         Словарь с параметрами: heat_loss_rate, humidity_decay_rate, ventilation_cooling
     """
-    cutoff_date = datetime.utcnow() - timedelta(days=days)
+    cutoff_date = utcnow() - timedelta(days=days)
     
-    # Получаем историю температуры и влажности
+    # Получаем историю температуры и влажности (только валидные значения)
     temp_samples = await fetch(
         """
         SELECT ts, value
@@ -279,6 +292,9 @@ async def calibrate_climate_model(zone_id: int, days: int = 7) -> Dict[str, floa
         WHERE zone_id = $1
           AND metric_type = 'TEMP_AIR'
           AND ts >= $2
+          AND value IS NOT NULL
+          AND value >= -10.0
+          AND value <= 50.0
         ORDER BY ts ASC
         """,
         zone_id,
@@ -292,6 +308,9 @@ async def calibrate_climate_model(zone_id: int, days: int = 7) -> Dict[str, floa
         WHERE zone_id = $1
           AND metric_type = 'HUMIDITY'
           AND ts >= $2
+          AND value IS NOT NULL
+          AND value >= 0.0
+          AND value <= 100.0
         ORDER BY ts ASC
         """,
         zone_id,
@@ -381,7 +400,7 @@ async def calibrate_zone_models(zone_id: int, days: int = 7) -> Dict[str, Any]:
     
     result = {
         "zone_id": zone_id,
-        "calibrated_at": datetime.utcnow().isoformat(),
+        "calibrated_at": utcnow().isoformat(),
         "data_period_days": days,
         "models": {
             "ph": ph_params,

@@ -234,6 +234,9 @@ class NodeRegistryService
                     
                     $node->save();
                     
+                    // Привязываем накопленные ошибки по hardware_id
+                    $this->attachUnassignedErrors($node);
+                    
                     // Очищаем кеш списка устройств и статистики для всех пользователей
                     // Вместо Cache::flush() используем более безопасную очистку только связанных ключей
                     // Это предотвращает DoS через частые node_hello запросы
@@ -395,5 +398,217 @@ class NodeRegistryService
         
         // В будущем можно добавить поиск по uid, если он появится в таблице zones
         return null;
+    }
+    
+    /**
+     * Привязать накопленные ошибки неназначенного узла к зарегистрированному узлу.
+     * 
+     * После успешного attach:
+     * - Создает alerts для каждой ошибки
+     * - Архивирует записи в unassigned_node_errors_archive
+     * - Создает zone_event для прозрачности
+     * 
+     * @param DeviceNode $node Зарегистрированный узел
+     */
+    protected function attachUnassignedErrors(DeviceNode $node): void
+    {
+        if (!$node->hardware_id) {
+            return;
+        }
+        
+        try {
+            // Получаем все непривязанные ошибки для этого hardware_id
+            $errors = DB::table('unassigned_node_errors')
+                ->where('hardware_id', $node->hardware_id)
+                ->whereNull('node_id')
+                ->get();
+            
+            if ($errors->isEmpty()) {
+                return;
+            }
+            
+            $alertsCreated = 0;
+            
+            // Если у ноды есть zone_id, создаем alerts для ошибок
+            if ($node->zone_id) {
+                $alertService = app(\App\Services\AlertService::class);
+                
+                foreach ($errors as $error) {
+                    // Определяем source и code для алерта
+                    // Используем infra_node_error как базовый код, добавляем error_code если есть
+                    $alertCode = 'infra_node_error';
+                    if ($error->error_code) {
+                        $alertCode = 'infra_node_error_' . str_replace('-', '_', $error->error_code);
+                    }
+                    
+                    // Преобразуем даты из строк в ISO8601 формат если нужно
+                    $firstSeenAt = $error->first_seen_at;
+                    if (is_string($firstSeenAt)) {
+                        $firstSeenAt = \Carbon\Carbon::parse($firstSeenAt)->toIso8601String();
+                    } elseif ($firstSeenAt instanceof \Carbon\Carbon || $firstSeenAt instanceof \DateTime) {
+                        $firstSeenAt = $firstSeenAt->toIso8601String();
+                    }
+                    
+                    $lastSeenAt = $error->last_seen_at;
+                    if (is_string($lastSeenAt)) {
+                        $lastSeenAt = \Carbon\Carbon::parse($lastSeenAt)->toIso8601String();
+                    } elseif ($lastSeenAt instanceof \Carbon\Carbon || $lastSeenAt instanceof \DateTime) {
+                        $lastSeenAt = $lastSeenAt->toIso8601String();
+                    }
+                    
+                    // Создаем или обновляем алерт с сохранением count, first_seen_at, last_seen_at
+                    // Проверяем, существует ли уже активный алерт с таким code
+                    $existingAlert = \App\Models\Alert::where('zone_id', $node->zone_id)
+                        ->where('code', $alertCode)
+                        ->where('status', 'ACTIVE')
+                        ->first();
+                    
+                    if ($existingAlert) {
+                        // Обновляем существующий алерт, сохраняя максимальный count и earliest first_seen_at
+                        $existingDetails = $existingAlert->details ?? [];
+                        $existingCount = $existingDetails['count'] ?? 0;
+                        $newCount = max($existingCount, $error->count ?? 1);
+                        
+                        // Сохраняем earliest first_seen_at
+                        $existingFirstSeenAt = $existingDetails['first_seen_at'] ?? null;
+                        if ($existingFirstSeenAt && $firstSeenAt) {
+                            try {
+                                $existingFirstSeen = \Carbon\Carbon::parse($existingFirstSeenAt);
+                                $newFirstSeen = \Carbon\Carbon::parse($firstSeenAt);
+                                if ($newFirstSeen->lt($existingFirstSeen)) {
+                                    $firstSeenAt = $newFirstSeen->toIso8601String();
+                                } else {
+                                    $firstSeenAt = $existingFirstSeenAt;
+                                }
+                            } catch (\Exception $e) {
+                                // Если не удалось распарсить, используем новый
+                            }
+                        }
+                        
+                        $alertService->createOrUpdateActive([
+                            'zone_id' => $node->zone_id,
+                            'source' => 'infra',
+                            'code' => $alertCode,
+                            'type' => 'Node Error: ' . ($error->error_message ?: 'Unknown error'),
+                            'severity' => $error->severity ?? 'ERROR',
+                            'details' => [
+                                'error_message' => $error->error_message,
+                                'error_code' => $error->error_code,
+                                'severity' => $error->severity ?? 'ERROR',
+                                'node_uid' => $node->uid,
+                                'hardware_id' => $node->hardware_id,
+                                'count' => $newCount, // Используем максимальный count
+                                'first_seen_at' => $firstSeenAt,
+                                'last_seen_at' => $lastSeenAt,
+                                'topic' => $error->topic,
+                                'payload' => $error->last_payload,
+                            ],
+                        ]);
+                    } else {
+                        // Создаем новый алерт напрямую через модель, чтобы сохранить исходный count
+                        \App\Models\Alert::create([
+                            'zone_id' => $node->zone_id,
+                            'source' => 'infra',
+                            'code' => $alertCode,
+                            'type' => 'Node Error: ' . ($error->error_message ?: 'Unknown error'),
+                            'severity' => $error->severity ?? 'ERROR',
+                            'status' => 'ACTIVE',
+                            'details' => [
+                                'error_message' => $error->error_message,
+                                'error_code' => $error->error_code,
+                                'severity' => $error->severity ?? 'ERROR',
+                                'node_uid' => $node->uid,
+                                'hardware_id' => $node->hardware_id,
+                                'count' => $error->count ?? 1, // Сохраняем исходный count
+                                'first_seen_at' => $firstSeenAt,
+                                'last_seen_at' => $lastSeenAt,
+                                'topic' => $error->topic,
+                                'payload' => $error->last_payload,
+                            ],
+                        ]);
+                    }
+                    $alertsCreated++;
+                }
+                
+                Log::info('Created alerts from unassigned errors', [
+                    'node_id' => $node->id,
+                    'zone_id' => $node->zone_id,
+                    'hardware_id' => $node->hardware_id,
+                    'errors_count' => $errors->count(),
+                    'alerts_created' => $alertsCreated,
+                ]);
+                
+                // Архивируем ошибки только после успешного создания alerts (когда есть zone_id)
+                // Проверяем наличие таблицы архива перед архивированием
+                if (DB::getSchemaBuilder()->hasTable('unassigned_node_errors_archive')) {
+                    foreach ($errors as $error) {
+                    DB::table('unassigned_node_errors_archive')->insert([
+                        'hardware_id' => $error->hardware_id,
+                        'error_message' => $error->error_message,
+                        'error_code' => $error->error_code,
+                        'severity' => $error->severity,
+                        'topic' => $error->topic,
+                        'last_payload' => $error->last_payload,
+                        'count' => $error->count,
+                        'first_seen_at' => $error->first_seen_at,
+                        'last_seen_at' => $error->last_seen_at,
+                        'node_id' => $node->id,
+                        'attached_at' => now(),
+                        'attached_zone_id' => $node->zone_id,
+                        'archived_at' => now(),
+                    ]);
+                    }
+                }
+                
+                // Удаляем записи из unassigned_node_errors только после успешного архивирования
+                $deleted = DB::table('unassigned_node_errors')
+                    ->where('hardware_id', $node->hardware_id)
+                    ->whereNull('node_id')
+                    ->delete();
+                
+                if ($deleted > 0) {
+                    Log::info('Archived and removed unassigned errors', [
+                        'node_id' => $node->id,
+                        'hardware_id' => $node->hardware_id,
+                        'errors_archived' => $deleted,
+                    ]);
+                    
+                    // Создаем zone_event для прозрачности операции
+                    try {
+                        // Используем DB::table для zone_events, так как структура изменена (payload_json вместо details)
+                        DB::table('zone_events')->insert([
+                            'zone_id' => $node->zone_id,
+                            'type' => 'unassigned_attached',
+                            'entity_type' => 'unassigned_error',
+                            'entity_id' => (string) $node->id,
+                            'payload_json' => json_encode([
+                                'node_id' => $node->id,
+                                'node_uid' => $node->uid,
+                                'hardware_id' => $node->hardware_id,
+                                'errors_count' => $deleted,
+                                'alerts_created' => $alertsCreated,
+                            ]),
+                            'server_ts' => now()->timestamp * 1000,
+                            'created_at' => now(),
+                        ]);
+                    } catch (\Exception $e) {
+                        // Логируем ошибку создания zone_event, но не прерываем процесс
+                        Log::warning('Failed to create zone_event for unassigned_attached', [
+                            'node_id' => $node->id,
+                            'zone_id' => $node->zone_id,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                }
+            }
+            
+        } catch (\Exception $e) {
+            Log::warning('Failed to attach unassigned errors to node', [
+                'node_id' => $node->id,
+                'hardware_id' => $node->hardware_id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
     }
 }

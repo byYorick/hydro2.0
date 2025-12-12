@@ -54,7 +54,7 @@ class CommandStatusControllerTest extends TestCase
             'cmd_id' => 'test-cmd-1',
             'zone_id' => $zone->id,
             'cmd' => 'FORCE_IRRIGATION',
-            'status' => 'pending',
+            'status' => Command::STATUS_QUEUED,
         ]);
 
         $response = $this->withHeader('Authorization', 'Bearer ' . $token)
@@ -65,7 +65,7 @@ class CommandStatusControllerTest extends TestCase
                 'status' => 'ok',
                 'data' => [
                     'cmd_id' => $command->cmd_id,
-                    'status' => 'pending',
+                    'status' => Command::STATUS_QUEUED,
                 ],
             ]);
     }
@@ -109,7 +109,7 @@ class CommandStatusControllerTest extends TestCase
             'cmd_id' => 'test-cmd-3',
             'node_id' => $node->id,
             'cmd' => 'FORCE_PH_CONTROL',
-            'status' => 'pending',
+            'status' => Command::STATUS_QUEUED,
         ]);
 
         $response = $this->withHeader('Authorization', 'Bearer ' . $token)
@@ -120,7 +120,7 @@ class CommandStatusControllerTest extends TestCase
                 'status' => 'ok',
                 'data' => [
                     'cmd_id' => $command->cmd_id,
-                    'status' => 'pending',
+                    'status' => Command::STATUS_QUEUED,
                 ],
             ]);
     }
@@ -135,7 +135,7 @@ class CommandStatusControllerTest extends TestCase
         $command = Command::create([
             'cmd_id' => 'test-cmd-4',
             'cmd' => 'SYSTEM_COMMAND',
-            'status' => 'pending',
+            'status' => Command::STATUS_QUEUED,
         ]);
 
         $response = $this->withHeader('Authorization', 'Bearer ' . $token)

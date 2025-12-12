@@ -4,6 +4,7 @@ System State Logger - логирование состояния системы �
 import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime
+from common.utils.time import utcnow
 from infrastructure.command_tracker import CommandTracker
 from services.zone_automation_service import ZoneAutomationService
 from infrastructure.circuit_breaker import CircuitBreaker
@@ -32,7 +33,7 @@ async def log_system_state(
     """
     try:
         state: Dict[str, Any] = {
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': utcnow().isoformat(),
             'zones': {
                 'total': len(zones),
                 'active': len([z for z in zones if z.get('status') == 'active']),

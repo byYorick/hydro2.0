@@ -21,6 +21,11 @@ use App\Http\Controllers\ZoneCommandController;
 use App\Http\Controllers\ZoneController;
 use App\Http\Controllers\ZonePidConfigController;
 use App\Http\Controllers\ZonePidLogController;
+use App\Http\Controllers\ZoneInfrastructureController;
+use App\Http\Controllers\UnassignedNodeErrorController;
+use App\Http\Controllers\PipelineHealthController;
+use App\Http\Controllers\GrowCycleController;
+use App\Http\Controllers\PlantController;
 use Illuminate\Support\Facades\Route;
 
 // Auth роуты с более строгим rate limiting для предотвращения брутфорса
@@ -63,18 +68,35 @@ Route::middleware([
     // Read-only endpoints (viewer+)
     Route::get('greenhouses', [GreenhouseController::class, 'index']);
     Route::get('greenhouses/{greenhouse}', [GreenhouseController::class, 'show']);
+    Route::get('greenhouses/{greenhouse}/dashboard', [GreenhouseController::class, 'dashboard']);
     Route::get('zones', [ZoneController::class, 'index']);
     Route::get('zones/{zone}', [ZoneController::class, 'show']);
     Route::get('zones/{zone}/health', [ZoneController::class, 'health']);
     Route::get('zones/{zone}/cycles', [ZoneController::class, 'cycles']);
+    Route::get('zones/{zone}/unassigned-errors', [ZoneController::class, 'unassignedErrors']);
+    Route::get('zones/{zone}/events', [ZoneController::class, 'events']);
+    Route::get('zones/{zone}/snapshot', [ZoneController::class, 'snapshot']);
+    Route::get('zones/{zone}/infrastructure', [ZoneInfrastructureController::class, 'show']);
+    Route::get('zones/{zone}/grow-cycle', [GrowCycleController::class, 'getActive']);
+    Route::get('greenhouses/{greenhouse}/grow-cycles', [GrowCycleController::class, 'indexByGreenhouse']);
     Route::get('nodes', [NodeController::class, 'index']);
     Route::get('nodes/{node}', [NodeController::class, 'show']);
     Route::get('nodes/{node}/config', [NodeController::class, 'getConfig']);
     Route::get('nodes/{node}/lifecycle/allowed-transitions', [NodeController::class, 'getAllowedTransitions']);
+    Route::get('unassigned-node-errors', [UnassignedNodeErrorController::class, 'index']);
+    Route::get('unassigned-node-errors/stats', [UnassignedNodeErrorController::class, 'stats']);
+    Route::get('unassigned-node-errors/{hardwareId}', [UnassignedNodeErrorController::class, 'show']);
     Route::get('recipes', [RecipeController::class, 'index']);
     Route::get('recipes/{recipe}', [RecipeController::class, 'show']);
+    Route::get('recipes/{recipe}/stage-map', [RecipeController::class, 'getStageMap']);
     Route::get('presets', [PresetController::class, 'index']);
     Route::get('presets/{preset}', [PresetController::class, 'show']);
+    Route::get('plants', [PlantController::class, 'index']);
+    Route::get('plants/{plant}', [PlantController::class, 'show']);
+    
+    // Grow Cycle Wizard endpoints
+    Route::get('grow-cycle-wizard/data', [\App\Http\Controllers\GrowCycleWizardController::class, 'getWizardData']);
+    Route::get('grow-cycle-wizard/zone/{zone}', [\App\Http\Controllers\GrowCycleWizardController::class, 'getZoneData']);
 
     // Mutating endpoints (operator+)
     Route::middleware('role:operator,admin,agronomist,engineer')->group(function () {
@@ -97,6 +119,22 @@ Route::middleware([
         Route::post('zones/{zone}/fill', [ZoneController::class, 'fill']);
         Route::post('zones/{zone}/drain', [ZoneController::class, 'drain']);
         Route::post('zones/{zone}/calibrate-flow', [ZoneController::class, 'calibrateFlow']);
+        Route::put('zones/{zone}/infrastructure', [ZoneInfrastructureController::class, 'update']);
+        Route::post('zones/{zone}/infrastructure/bindings', [ZoneInfrastructureController::class, 'storeBinding']);
+        Route::delete('zones/{zone}/infrastructure/bindings/{zoneChannelBinding}', [ZoneInfrastructureController::class, 'destroyBinding']);
+
+        // Grow Cycle operations
+        Route::post('zones/{zone}/grow-cycles', [\App\Http\Controllers\GrowCycleController::class, 'store']);
+        Route::get('zones/{zone}/grow-cycle', [\App\Http\Controllers\GrowCycleController::class, 'show']);
+        Route::post('zones/{zone}/grow-cycle/change-recipe', [\App\Http\Controllers\GrowCycleController::class, 'changeRecipe']);
+        Route::post('grow-cycles/{growCycle}/advance-stage', [\App\Http\Controllers\GrowCycleController::class, 'advanceStage']);
+        
+        // Grow Cycle control operations (new format with grow-cycles/{id})
+        Route::post('grow-cycles/{growCycle}/pause', [GrowCycleController::class, 'pause']);
+        Route::post('grow-cycles/{growCycle}/resume', [GrowCycleController::class, 'resume']);
+        Route::post('grow-cycles/{growCycle}/harvest', [GrowCycleController::class, 'harvest']);
+        Route::post('grow-cycles/{growCycle}/abort', [GrowCycleController::class, 'abort']);
+
 
         // Nodes
         Route::post('nodes', [NodeController::class, 'store']);
@@ -114,6 +152,7 @@ Route::middleware([
         Route::put('recipes/{recipe}', [RecipeController::class, 'update']);
         Route::patch('recipes/{recipe}', [RecipeController::class, 'update']);
         Route::delete('recipes/{recipe}', [RecipeController::class, 'destroy']);
+        Route::put('recipes/{recipe}/stage-map', [RecipeController::class, 'updateStageMap']);
         Route::post('recipes/{recipe}/phases', [RecipePhaseController::class, 'store']);
         Route::patch('recipe-phases/{recipePhase}', [RecipePhaseController::class, 'update']);
         Route::delete('recipe-phases/{recipePhase}', [RecipePhaseController::class, 'destroy']);
@@ -133,6 +172,9 @@ Route::middleware([
 
         // Alerts (operator+)
         Route::patch('alerts/{alert}/ack', [AlertController::class, 'ack']);
+        
+        // Grow Cycle Wizard (operator+)
+        Route::post('grow-cycle-wizard/create', [\App\Http\Controllers\GrowCycleWizardController::class, 'createGrowCycle']);
 
         // AI endpoints (operator+)
         Route::post('ai/predict', [AiController::class, 'predict']);
@@ -169,6 +211,12 @@ Route::middleware([
     Route::get('nodes/{id}/telemetry/history', [TelemetryController::class, 'nodeHistory']);
     Route::get('telemetry/aggregates', [TelemetryController::class, 'aggregates']);
 
+    // Sync endpoints for WebSocket reconnection (viewer+)
+    Route::get('sync/telemetry', [\App\Http\Controllers\SyncController::class, 'telemetry']);
+    Route::get('sync/commands', [\App\Http\Controllers\SyncController::class, 'commands']);
+    Route::get('sync/alerts', [\App\Http\Controllers\SyncController::class, 'alerts']);
+    Route::get('sync/full', [\App\Http\Controllers\SyncController::class, 'full']);
+
     // Service logs (admin/operator/engineer)
     Route::middleware(['role:admin,operator,engineer', 'throttle:60,1'])
         ->get('logs/service', [ServiceLogController::class, 'index']);
@@ -181,6 +229,9 @@ Route::middleware([
     Route::get('alerts/{alert}', [AlertController::class, 'show']);
     // SSE stream с ограничением подключений для предотвращения DoS (максимум 5 подключений на пользователя в минуту)
     Route::get('alerts/stream', [AlertStreamController::class, 'stream'])->middleware('throttle:5,1');
+    
+    // Pipeline Health (viewer+)
+    Route::get('pipeline/health', [PipelineHealthController::class, 'pipelineHealth']);
 
     // Simulations status (viewer+)
     Route::get('simulations/{jobId}', [SimulationController::class, 'show']);
@@ -200,6 +251,7 @@ Route::prefix('python')->middleware('throttle:120,1')->group(function () {
     Route::post('ingest/telemetry', [PythonIngestController::class, 'telemetry']);
     Route::post('commands/ack', [PythonIngestController::class, 'commandAck']);
     Route::post('broadcast/telemetry', [PythonIngestController::class, 'broadcastTelemetry']);
+    Route::post('alerts', [PythonIngestController::class, 'alerts']);
     Route::post('logs', [ServiceLogController::class, 'store'])->middleware('verify.python.service');
 });
 

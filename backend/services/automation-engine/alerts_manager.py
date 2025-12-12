@@ -19,6 +19,7 @@ ALERT_TYPE_MAPPING: Dict[str, Tuple[str, str]] = {
     'NO_FLOW': (AlertSource.BIZ.value, AlertCode.BIZ_NO_FLOW.value),
     'WATER_LEVEL_LOW': (AlertSource.BIZ.value, AlertCode.BIZ_DRY_RUN.value),
     'LIGHT_FAILURE': (AlertSource.BIZ.value, AlertCode.BIZ_LIGHT_FAILURE.value),
+    'MISSING_BINDING': (AlertSource.BIZ.value, AlertCode.BIZ_CONFIG_ERROR.value),
 }
 
 

@@ -567,11 +567,13 @@ async function checkCommandStatus(cmdId: number, maxAttempts = 30): Promise<{ su
       
       if (response.data?.status === 'ok' && response.data?.data) {
         const cmdStatus = response.data.data.status
-        if (cmdStatus === 'ack') {
-          return { success: true, status: 'ack' }
-        } else if (cmdStatus === 'failed') {
-          return { success: false, status: 'failed' }
-        } else if (cmdStatus === 'pending') {
+        // Используем новые статусы из единого контракта
+        const normalizedStatus = normalizeStatus(cmdStatus)
+        if (normalizedStatus === 'DONE') {
+          return { success: true, status: 'DONE' }
+        } else if (['FAILED', 'TIMEOUT', 'SEND_FAILED'].includes(normalizedStatus)) {
+          return { success: false, status: normalizedStatus }
+        } else if (normalizedStatus === 'QUEUED' || normalizedStatus === 'SENT' || normalizedStatus === 'ACCEPTED') {
           // Продолжаем ожидание
           await new Promise(resolve => setTimeout(resolve, 500))
           continue

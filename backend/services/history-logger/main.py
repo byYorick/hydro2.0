@@ -6,6 +6,7 @@ import signal
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
+from common.utils.time import utcnow
 from typing import Optional, List, Union, Dict, Any
 import httpx
 
@@ -15,13 +16,38 @@ from pydantic import BaseModel, Field
 from collections import defaultdict
 import time
 
-from common.db import execute, fetch, upsert_telemetry_last, create_zone_event
+from common.db import execute, fetch, upsert_telemetry_last, create_zone_event, upsert_unassigned_node_error, get_pool
+from common.commands import mark_command_sent, mark_command_send_failed
 from common.redis_queue import TelemetryQueue, TelemetryQueueItem, close_redis_client
 from common.mqtt import MqttClient, AsyncMqttClient, get_mqtt_client
 from common.env import get_settings
 from common.water_flow import execute_fill_mode, execute_drain_mode, calibrate_flow
 from common.service_logs import send_service_log
 from common.error_handler import get_error_handler
+from common.command_status_queue import (
+    normalize_status,
+    send_status_to_laravel,
+    retry_worker as command_retry_worker,
+    get_status_queue,
+)
+from common.alert_queue import (
+    retry_worker as alert_retry_worker,
+    get_alert_queue,
+)
+from common.pipeline_metrics import (
+    update_queue_metrics,
+    update_mqtt_health,
+    update_db_health,
+    update_queue_health,
+)
+from common.infra_monitor import (
+    check_mqtt_health,
+    check_db_health,
+    check_service_health,
+)
+from common.http_client_pool import (
+    close_http_client as close_unified_http_client,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +73,14 @@ async def lifespan(app: FastAPI):
     task = asyncio.create_task(process_telemetry_queue())
     background_tasks.append(task)
     
+    # Запуск воркера для ретраев статусов команд
+    command_retry_task = asyncio.create_task(command_retry_worker(interval=30.0, shutdown_event=shutdown_event))
+    background_tasks.append(command_retry_task)
+    
+    # Запуск воркера для ретраев алертов
+    alert_retry_task = asyncio.create_task(alert_retry_worker(interval=30.0, shutdown_event=shutdown_event))
+    background_tasks.append(alert_retry_task)
+    
     # Подключение к MQTT
     mqtt = await get_mqtt_client()
     # Формат топика согласно документации: hydro/{gh}/{zone}/{node}/{channel}/telemetry
@@ -65,6 +99,8 @@ async def lifespan(app: FastAPI):
     await mqtt.subscribe("hydro/+/+/+/config_response", handle_config_response)
     # Подписка на command_response для обновления статусов команд (уведомления на фронт)
     await mqtt.subscribe("hydro/+/+/+/+/command_response", handle_command_response)
+    # Подписка на time_request для синхронизации времени устройств
+    await mqtt.subscribe("hydro/time/request", handle_time_request)
     
     logger.info("History Logger service started")
     logger.info("Subscribed to MQTT topics: hydro/+/+/+/+/telemetry, hydro/+/+/+/heartbeat, hydro/+/+/+/status, hydro/+/+/+/diagnostics, hydro/+/+/+/error, hydro/node_hello, hydro/+/+/+/node_hello, hydro/+/+/+/config_response, hydro/+/+/+/+/command_response")
@@ -99,6 +135,9 @@ async def lifespan(app: FastAPI):
     
     # Закрываем Redis клиент
     await close_redis_client()
+    
+    # Закрываем единый HTTP клиент
+    await close_unified_http_client()
     
     logger.info("History Logger service stopped")
     send_service_log(
@@ -148,8 +187,97 @@ async def log_requests(request: Request, call_next):
 
 @app.get("/health")
 async def health():
-    """Health check endpoint."""
-    return {"status": "ok"}
+    """
+    Health check endpoint с проверкой компонентов.
+    
+    Returns:
+        Статус здоровья сервиса и его компонентов
+    """
+    health_status = {
+        "status": "ok",
+        "components": {}
+    }
+    
+    # Проверка БД
+    db_ok = False
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.fetchval("SELECT 1")
+        db_ok = True
+        update_db_health(True)
+        await check_db_health(True)
+    except Exception as e:
+        logger.warning(f"DB health check failed: {e}")
+        update_db_health(False)
+        await check_db_health(False)
+        health_status["status"] = "degraded"
+    
+    health_status["components"]["db"] = "ok" if db_ok else "fail"
+    
+    # Проверка MQTT
+    mqtt_ok = False
+    try:
+        mqtt = await get_mqtt_client()
+        if mqtt and hasattr(mqtt, 'is_connected') and mqtt.is_connected():
+            mqtt_ok = True
+            update_mqtt_health(True)
+            await check_mqtt_health(True)
+        else:
+            update_mqtt_health(False)
+            await check_mqtt_health(False)
+            health_status["status"] = "degraded"
+    except Exception as e:
+        logger.warning(f"MQTT health check failed: {e}")
+        update_mqtt_health(False)
+        await check_mqtt_health(False)
+        health_status["status"] = "degraded"
+    
+    health_status["components"]["mqtt"] = "ok" if mqtt_ok else "fail"
+    
+    # Проверка очередей
+    try:
+        # Метрики очереди алертов
+        alert_queue = await get_alert_queue()
+        alert_metrics = await alert_queue.get_queue_metrics()
+        update_queue_metrics('alerts', alert_metrics['size'], alert_metrics['oldest_age_seconds'])
+        
+        # Проверяем здоровье очереди алертов (здорова если размер < 1000 и возраст < 1 часа)
+        alerts_healthy = alert_metrics['size'] < 1000 and alert_metrics['oldest_age_seconds'] < 3600
+        update_queue_health('alerts', alerts_healthy)
+        health_status["components"]["queue_alerts"] = {
+            "status": "ok" if alerts_healthy else "degraded",
+            "size": alert_metrics['size'],
+            "oldest_age_seconds": alert_metrics['oldest_age_seconds'],
+            "dlq_size": alert_metrics.get('dlq_size', 0),
+            "success_rate": alert_metrics.get('success_rate', 1.0),
+        }
+        
+        # Метрики очереди статусов
+        status_queue = await get_status_queue()
+        status_metrics = await status_queue.get_queue_metrics()
+        update_queue_metrics('status_updates', status_metrics['size'], status_metrics['oldest_age_seconds'])
+        
+        # Проверяем здоровье очереди статусов
+        status_healthy = status_metrics['size'] < 1000 and status_metrics['oldest_age_seconds'] < 3600
+        update_queue_health('status_updates', status_healthy)
+        health_status["components"]["queue_status_updates"] = {
+            "status": "ok" if status_healthy else "degraded",
+            "size": status_metrics['size'],
+            "oldest_age_seconds": status_metrics['oldest_age_seconds'],
+            "dlq_size": status_metrics.get('dlq_size', 0),
+            "success_rate": status_metrics.get('success_rate', 1.0),
+        }
+        
+        if not alerts_healthy or not status_healthy:
+            health_status["status"] = "degraded"
+    except Exception as e:
+        logger.warning(f"Queue health check failed: {e}")
+        health_status["components"]["queue_alerts"] = "unknown"
+        health_status["components"]["queue_status_updates"] = "unknown"
+        health_status["status"] = "degraded"
+    
+    return health_status
 
 
 @app.get("/metrics")
@@ -157,6 +285,238 @@ def metrics():
     """Prometheus metrics endpoint."""
     metrics_data = generate_latest()
     return Response(content=metrics_data.decode('utf-8') if isinstance(metrics_data, bytes) else metrics_data, media_type=CONTENT_TYPE_LATEST)
+
+
+# DLQ Management Endpoints
+
+@app.get("/api/dlq/alerts")
+async def list_alerts_dlq(limit: int = 100, offset: int = 0):
+    """
+    Получить список элементов из DLQ алертов.
+    
+    Args:
+        limit: Максимальное количество записей (по умолчанию 100)
+        offset: Смещение для пагинации (по умолчанию 0)
+        
+    Returns:
+        Список элементов DLQ с метаданными
+    """
+    try:
+        alert_queue = await get_alert_queue()
+        items = await alert_queue.list_dlq(limit=limit, offset=offset)
+        metrics = await alert_queue.get_queue_metrics()
+        
+        return {
+            "items": items,
+            "total": metrics.get('dlq_size', 0),
+            "limit": limit,
+            "offset": offset
+        }
+    except Exception as e:
+        logger.error(f"Failed to list alerts DLQ: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/dlq/alerts/{dlq_id}/replay")
+async def replay_alert_dlq(dlq_id: int):
+    """
+    Переместить элемент из DLQ алертов обратно в очередь для повторной попытки.
+    
+    Args:
+        dlq_id: ID элемента в DLQ
+        
+    Returns:
+        Результат операции
+    """
+    try:
+        alert_queue = await get_alert_queue()
+        success = await alert_queue.replay_dlq_item(dlq_id)
+        
+        if not success:
+            raise HTTPException(status_code=404, detail=f"DLQ item {dlq_id} not found")
+        
+        return {"success": True, "message": f"Alert DLQ item {dlq_id} replayed successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to replay alert DLQ item {dlq_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/dlq/alerts/{dlq_id}")
+async def purge_alert_dlq_item(dlq_id: int):
+    """
+    Удалить элемент из DLQ алертов.
+    
+    Args:
+        dlq_id: ID элемента в DLQ
+        
+    Returns:
+        Результат операции
+    """
+    try:
+        alert_queue = await get_alert_queue()
+        success = await alert_queue.purge_dlq_item(dlq_id)
+        
+        if not success:
+            raise HTTPException(status_code=404, detail=f"DLQ item {dlq_id} not found")
+        
+        return {"success": True, "message": f"Alert DLQ item {dlq_id} purged successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to purge alert DLQ item {dlq_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/dlq/alerts")
+async def purge_all_alerts_dlq():
+    """
+    Удалить все элементы из DLQ алертов.
+    
+    Returns:
+        Количество удаленных элементов
+    """
+    try:
+        alert_queue = await get_alert_queue()
+        count = await alert_queue.purge_dlq_all()
+        
+        return {"success": True, "message": f"Purged {count} alert DLQ items"}
+    except Exception as e:
+        logger.error(f"Failed to purge all alerts DLQ: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/dlq/status-updates")
+async def list_status_updates_dlq(limit: int = 100, offset: int = 0):
+    """
+    Получить список элементов из DLQ статусов команд.
+    
+    Args:
+        limit: Максимальное количество записей (по умолчанию 100)
+        offset: Смещение для пагинации (по умолчанию 0)
+        
+    Returns:
+        Список элементов DLQ с метаданными
+    """
+    try:
+        status_queue = await get_status_queue()
+        items = await status_queue.list_dlq(limit=limit, offset=offset)
+        metrics = await status_queue.get_queue_metrics()
+        
+        return {
+            "items": items,
+            "total": metrics.get('dlq_size', 0),
+            "limit": limit,
+            "offset": offset
+        }
+    except Exception as e:
+        logger.error(f"Failed to list status updates DLQ: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/dlq/status-updates/{dlq_id}/replay")
+async def replay_status_update_dlq(dlq_id: int):
+    """
+    Переместить элемент из DLQ статусов команд обратно в очередь для повторной попытки.
+    
+    Args:
+        dlq_id: ID элемента в DLQ
+        
+    Returns:
+        Результат операции
+    """
+    try:
+        status_queue = await get_status_queue()
+        success = await status_queue.replay_dlq_item(dlq_id)
+        
+        if not success:
+            raise HTTPException(status_code=404, detail=f"DLQ item {dlq_id} not found")
+        
+        return {"success": True, "message": f"Status update DLQ item {dlq_id} replayed successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to replay status update DLQ item {dlq_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/dlq/status-updates/{dlq_id}")
+async def purge_status_update_dlq_item(dlq_id: int):
+    """
+    Удалить элемент из DLQ статусов команд.
+    
+    Args:
+        dlq_id: ID элемента в DLQ
+        
+    Returns:
+        Результат операции
+    """
+    try:
+        status_queue = await get_status_queue()
+        success = await status_queue.purge_dlq_item(dlq_id)
+        
+        if not success:
+            raise HTTPException(status_code=404, detail=f"DLQ item {dlq_id} not found")
+        
+        return {"success": True, "message": f"Status update DLQ item {dlq_id} purged successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to purge status update DLQ item {dlq_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/dlq/status-updates")
+async def purge_all_status_updates_dlq():
+    """
+    Удалить все элементы из DLQ статусов команд.
+    
+    Returns:
+        Количество удаленных элементов
+    """
+    try:
+        status_queue = await get_status_queue()
+        count = await status_queue.purge_dlq_all()
+        
+        return {"success": True, "message": f"Purged {count} status update DLQ items"}
+    except Exception as e:
+        logger.error(f"Failed to purge all status updates DLQ: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/dlq/metrics")
+async def get_dlq_metrics():
+    """
+    Получить метрики всех DLQ очередей.
+    
+    Returns:
+        Метрики для всех очередей: oldest_age, size, dlq_size, success_rate
+    """
+    try:
+        alert_queue = await get_alert_queue()
+        status_queue = await get_status_queue()
+        
+        alert_metrics = await alert_queue.get_queue_metrics()
+        status_metrics = await status_queue.get_queue_metrics()
+        
+        return {
+            "alerts": {
+                "size": alert_metrics.get('size', 0),
+                "oldest_age_seconds": alert_metrics.get('oldest_age_seconds', 0.0),
+                "dlq_size": alert_metrics.get('dlq_size', 0),
+                "success_rate": alert_metrics.get('success_rate', 1.0),
+            },
+            "status_updates": {
+                "size": status_metrics.get('size', 0),
+                "oldest_age_seconds": status_metrics.get('oldest_age_seconds', 0.0),
+                "dlq_size": status_metrics.get('dlq_size', 0),
+                "success_rate": status_metrics.get('success_rate', 1.0),
+            }
+        }
+    except Exception as e:
+        logger.error(f"Failed to get DLQ metrics: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 TELEM_RECEIVED = Counter("telemetry_received_total",
                          "Total telemetry messages received")
@@ -239,6 +599,29 @@ shutdown_event = asyncio.Event()
 
 # Background tasks для отслеживания при shutdown
 background_tasks: List[asyncio.Task] = []
+
+# Backoff состояние для telemetry broadcast (отслеживание последовательных ошибок)
+_broadcast_error_count = 0
+_broadcast_last_error_time: Optional[float] = None
+_broadcast_backoff_until: Optional[float] = None
+
+
+def _calculate_broadcast_backoff(error_count: int, base_delay: float = 1.0, max_delay: float = 60.0) -> float:
+    """
+    Вычисляет задержку для exponential backoff при ошибках broadcast.
+    
+    Args:
+        error_count: Количество последовательных ошибок
+        base_delay: Базовая задержка в секундах
+        max_delay: Максимальная задержка в секундах
+        
+    Returns:
+        Задержка в секундах
+    """
+    if error_count == 0:
+        return 0.0
+    delay = base_delay * (2 ** min(error_count - 1, 6))  # Ограничиваем экспоненту
+    return min(delay, max_delay)
 
 # Rate limiting для HTTP ingest endpoint
 # Простой in-memory rate limiter (можно улучшить через Redis для распределенных систем)
@@ -460,7 +843,12 @@ async def handle_telemetry(topic: str, payload: bytes):
     # Создаём модель для очереди
     # Проверка валидности ts: должен быть > 1_000_000_000 (примерно 2001-09-09)
     # Если ts невалиден (аптайм несинхронизированной ноды), используем серверное время
+    # Также проверяем отклонение от серверного времени (искаженное время)
     MIN_VALID_TIMESTAMP = 1_000_000_000  # 2001-09-09 01:46:40 UTC
+    MAX_TIMESTAMP_DRIFT_SEC = 300  # Максимальное допустимое отклонение: 5 минут
+    server_time = utcnow()
+    server_timestamp = server_time.timestamp()
+    
     ts = None
     if validated_data.ts:
         try:
@@ -469,7 +857,23 @@ async def handle_telemetry(topic: str, payload: bytes):
                 ts_value = float(validated_data.ts)
                 # Проверяем что ts разумный (не аптайм несинхронизированной ноды)
                 if ts_value >= MIN_VALID_TIMESTAMP:
-                    ts = datetime.fromtimestamp(ts_value)
+                    # Проверяем отклонение от серверного времени
+                    drift = abs(ts_value - server_timestamp)
+                    if drift <= MAX_TIMESTAMP_DRIFT_SEC:
+                        ts = datetime.fromtimestamp(ts_value)
+                    else:
+                        logger.warning(
+                            "Timestamp from device is skewed (drift too large), using server time",
+                            extra={
+                                "device_ts": ts_value,
+                                "server_ts": server_timestamp,
+                                "drift_sec": drift,
+                                "max_drift_sec": MAX_TIMESTAMP_DRIFT_SEC,
+                                "topic": topic,
+                                "node_uid": node_uid,
+                                "zone_uid": zone_uid
+                            }
+                        )
                 else:
                     logger.warning(
                         "Invalid timestamp from firmware (likely uptime), using server time",
@@ -495,6 +899,23 @@ async def handle_telemetry(topic: str, payload: bytes):
                         }
                     )
                     ts = None
+                else:
+                    # Проверяем отклонение от серверного времени
+                    drift = abs(ts_timestamp - server_timestamp)
+                    if drift > MAX_TIMESTAMP_DRIFT_SEC:
+                        logger.warning(
+                            "Timestamp from device is skewed (drift too large), using server time",
+                            extra={
+                                "device_ts": ts_timestamp,
+                                "server_ts": server_timestamp,
+                                "drift_sec": drift,
+                                "max_drift_sec": MAX_TIMESTAMP_DRIFT_SEC,
+                                "topic": topic,
+                                "node_uid": node_uid,
+                                "zone_uid": zone_uid
+                            }
+                        )
+                        ts = None
         except Exception as e:
             logger.warning(
                 "Failed to parse timestamp, using server time",
@@ -509,7 +930,7 @@ async def handle_telemetry(topic: str, payload: bytes):
     
     # Если ts невалиден или отсутствует, используем серверное время
     if ts is None:
-        ts = datetime.utcnow()
+        ts = server_time
 
     # Используем metric_type (обязательное поле)
     metric_type = validated_data.metric_type
@@ -541,7 +962,7 @@ async def handle_telemetry(topic: str, payload: bytes):
         ts=ts,
         raw=filtered_raw,  # Сохраняем отфильтрованные данные
         channel=channel_name,
-        enqueued_at=datetime.utcnow()  # Время добавления в очередь для трекинга возраста
+        enqueued_at=utcnow()  # Время добавления в очередь для трекинга возраста
     )
 
     # Минимальное логирование: телеметрия принята
@@ -882,7 +1303,7 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
         param_index = 1
         
         for sample in group_samples:
-            ts = sample.ts or datetime.utcnow()
+            ts = sample.ts or utcnow()
             value = sample.value
             
             # Добавляем ts в плейсхолдеры (6 параметров: zone_id, node_id, metric_type, channel, value, ts)
@@ -967,7 +1388,7 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
                         channel=channel or '',
                         metric_type=metric_type,
                         value=latest_sample.value,
-                        timestamp=latest_sample.ts or datetime.utcnow()
+                        timestamp=latest_sample.ts or utcnow()
                     ))
                     # Добавляем callback для логирования критических ошибок (не exceptions, которые уже обработаны).
                     def log_task_error(t):
@@ -1049,10 +1470,23 @@ async def _broadcast_telemetry_to_laravel(
     """
     Вызывает Laravel API для broadcast телеметрии через WebSocket.
     Выполняется асинхронно в фоне, чтобы не блокировать основной процесс.
+    Использует глобальный httpx.AsyncClient для переиспользования соединений.
     """
+    global _broadcast_error_count, _broadcast_last_error_time, _broadcast_backoff_until
+    
     # Проверяем shutdown в начале функции, чтобы быстро выйти если shutdown начался.
     if shutdown_event.is_set():
         logger.debug("[BROADCAST] Shutdown in progress, skipping telemetry broadcast")
+        return
+    
+    # Проверяем backoff: если мы в режиме backoff, пропускаем запрос
+    current_time = time.time()
+    if _broadcast_backoff_until is not None and current_time < _broadcast_backoff_until:
+        logger.debug(
+            f"[BROADCAST] In backoff mode, skipping broadcast. "
+            f"Backoff until: {_broadcast_backoff_until:.2f}, current: {current_time:.2f}, "
+            f"error_count: {_broadcast_error_count}"
+        )
         return
     
     s = get_settings()
@@ -1071,7 +1505,7 @@ async def _broadcast_telemetry_to_laravel(
     
     try:
         # Конвертируем timestamp в миллисекунды с правильной обработкой timezone.
-        # datetime.utcnow() создает naive datetime, но timestamp() требует aware datetime.
+        # utcnow() создает aware datetime с timezone.utc.
         if isinstance(timestamp, datetime):
             # Если datetime naive (без timezone), считаем его UTC.
             if timestamp.tzinfo is None:
@@ -1093,42 +1527,89 @@ async def _broadcast_telemetry_to_laravel(
             'timestamp': timestamp_ms,
         }
         
-        API_TIMEOUT = s.laravel_api_timeout_sec if hasattr(s, 'laravel_api_timeout_sec') else 5.0
-        
         # Проверяем shutdown перед HTTP запросом, чтобы не делать запросы после shutdown.
         if shutdown_event.is_set():
             logger.debug("[BROADCAST] Shutdown in progress, skipping HTTP request")
             return
         
-        async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
-            api_start = time.time()
-            response = await client.post(
-                f"{laravel_url}/api/python/broadcast/telemetry",
-                json=api_data,
-                headers={
-                    'Authorization': f'Bearer {ingest_token}',
-                    'Content-Type': 'application/json',
+        # Используем единый HTTP клиент с semaphore для backpressure
+        from common.http_client_pool import make_request
+        api_start = time.time()
+        response = await make_request(
+            'post',
+            f"{laravel_url}/api/python/broadcast/telemetry",
+            endpoint='telemetry_broadcast',
+            json=api_data,
+            headers={
+                'Authorization': f'Bearer {ingest_token}',
+                'Content-Type': 'application/json',
+            }
+        )
+        api_duration = time.time() - api_start
+        LARAVEL_API_DURATION.observe(api_duration)
+        
+        if response.status_code == 200:
+            # Успешный запрос - сбрасываем счетчик ошибок и backoff
+            if _broadcast_error_count > 0:
+                logger.info(
+                    f"[BROADCAST] Success after {_broadcast_error_count} errors, "
+                    f"resetting error count and backoff"
+                )
+            _broadcast_error_count = 0
+            _broadcast_backoff_until = None
+            logger.info(f"[BROADCAST] Telemetry broadcasted successfully: node_id={node_id}, metric={metric_type}, value={value}")
+        else:
+            # Ошибка HTTP статуса - увеличиваем счетчик ошибок
+            _broadcast_error_count += 1
+            _broadcast_last_error_time = current_time
+            backoff_delay = _calculate_broadcast_backoff(_broadcast_error_count)
+            _broadcast_backoff_until = current_time + backoff_delay
+            
+            logger.warning(
+                f"[BROADCAST] Failed to broadcast telemetry: status={response.status_code}, "
+                f"error_count={_broadcast_error_count}, backoff={backoff_delay:.2f}s",
+                extra={
+                    'node_id': node_id,
+                    'metric_type': metric_type,
+                    'status_code': response.status_code,
+                    'response': response.text[:200],
+                    'error_count': _broadcast_error_count,
+                    'backoff_seconds': backoff_delay
                 }
             )
-            api_duration = time.time() - api_start
-            LARAVEL_API_DURATION.observe(api_duration)
-            
-            if response.status_code == 200:
-                logger.info(f"[BROADCAST] Telemetry broadcasted successfully: node_id={node_id}, metric={metric_type}, value={value}")
-            else:
-                logger.warning(
-                    f"[BROADCAST] Failed to broadcast telemetry: status={response.status_code}",
-                    extra={
-                        'node_id': node_id,
-                        'metric_type': metric_type,
-                        'status_code': response.status_code,
-                        'response': response.text[:200]
-                    }
-                )
-    except httpx.TimeoutException as e:
-        logger.warning(f"[BROADCAST] Timeout broadcasting telemetry: {e}", extra={'node_id': node_id})
+    except (httpx.TimeoutException, httpx.RequestError, httpx.NetworkError) as e:
+        # Сетевые ошибки - увеличиваем счетчик ошибок
+        _broadcast_error_count += 1
+        _broadcast_last_error_time = current_time
+        backoff_delay = _calculate_broadcast_backoff(_broadcast_error_count)
+        _broadcast_backoff_until = current_time + backoff_delay
+        
+        logger.warning(
+            f"[BROADCAST] Network error broadcasting telemetry: {e}, "
+            f"error_count={_broadcast_error_count}, backoff={backoff_delay:.2f}s",
+            extra={
+                'node_id': node_id,
+                'error_count': _broadcast_error_count,
+                'backoff_seconds': backoff_delay
+            }
+        )
     except Exception as e:
-        logger.warning(f"[BROADCAST] Error broadcasting telemetry: {e}", extra={'node_id': node_id}, exc_info=True)
+        # Неожиданные ошибки - также увеличиваем счетчик
+        _broadcast_error_count += 1
+        _broadcast_last_error_time = current_time
+        backoff_delay = _calculate_broadcast_backoff(_broadcast_error_count)
+        _broadcast_backoff_until = current_time + backoff_delay
+        
+        logger.warning(
+            f"[BROADCAST] Error broadcasting telemetry: {e}, "
+            f"error_count={_broadcast_error_count}, backoff={backoff_delay:.2f}s",
+            extra={
+                'node_id': node_id,
+                'error_count': _broadcast_error_count,
+                'backoff_seconds': backoff_delay
+            },
+            exc_info=True
+        )
 
 
 async def process_telemetry_queue():
@@ -1139,7 +1620,7 @@ async def process_telemetry_queue():
     global telemetry_queue
 
     s = get_settings()
-    last_flush = datetime.utcnow()
+    last_flush = utcnow()
 
     logger.info("Starting telemetry queue processor")
 
@@ -1166,7 +1647,7 @@ async def process_telemetry_queue():
                 # Если очередь пуста или элементы не имеют enqueued_at, устанавливаем 0
                 TELEMETRY_QUEUE_AGE.set(0.0)
             
-            time_since_flush = (datetime.utcnow() - last_flush).total_seconds() * 1000
+            time_since_flush = (utcnow() - last_flush).total_seconds() * 1000
 
             should_flush = (
                 queue_size >= s.telemetry_batch_size or
@@ -1198,7 +1679,7 @@ async def process_telemetry_queue():
 
                     # Обрабатываем батч
                     await process_telemetry_batch(samples)
-                    last_flush = datetime.utcnow()
+                    last_flush = utcnow()
 
             # Небольшая задержка перед следующей проверкой
             await asyncio.sleep(s.queue_check_interval_sec)
@@ -1620,6 +2101,7 @@ async def handle_error(topic: str, payload: bytes):
     """
     Обработчик error сообщений от узлов ESP32.
     Обрабатывает немедленные ошибки через общий компонент error_handler.
+    Для temp-топиков (gh-temp/zn-temp) записывает ошибки в unassigned_node_errors.
     """
     logger.info(f"[ERROR] ===== START processing error =====")
     logger.info(f"[ERROR] Topic: {topic}, payload length: {len(payload)}")
@@ -1629,6 +2111,46 @@ async def handle_error(topic: str, payload: bytes):
         logger.warning(f"[ERROR] Invalid JSON in error from topic {topic}")
         return
     
+    # Проверяем, является ли это temp-топиком
+    gh_uid = _extract_gh_uid(topic)
+    zone_uid = _extract_zone_uid(topic)
+    is_temp_topic = (gh_uid == "gh-temp" and zone_uid == "zn-temp")
+    
+    if is_temp_topic:
+        # Это temp-топик - извлекаем hardware_id вместо node_uid
+        hardware_id = _extract_node_uid(topic)  # В temp-топике на позиции node_uid находится hardware_id
+        if not hardware_id:
+            logger.warning(f"[ERROR] Could not extract hardware_id from temp topic {topic}")
+            return
+        
+        level = data.get("level", "ERROR")
+        component = data.get("component", "unknown")
+        error_code = data.get("error_code")
+        error_message = data.get("message", data.get("error", "Unknown error"))
+        
+        logger.info(
+            f"[ERROR] Processing error for unassigned node (hardware_id: {hardware_id}), "
+            f"level: {level}, component: {component}, error_code: {error_code}"
+        )
+        
+        # Записываем ошибку в таблицу unassigned_node_errors
+        try:
+            await upsert_unassigned_node_error(
+                hardware_id=hardware_id,
+                error_message=error_message,
+                error_code=error_code,
+                severity=level,
+                topic=topic,
+                last_payload=data
+            )
+            logger.info(f"[ERROR] Saved error for unassigned node hardware_id={hardware_id}")
+        except Exception as e:
+            logger.error(f"[ERROR] Failed to save unassigned node error: {e}", exc_info=True)
+        
+        ERROR_RECEIVED.labels(node_uid=f"unassigned-{hardware_id}", level=level.lower()).inc()
+        return
+    
+    # Обычная обработка для привязанных узлов
     node_uid = _extract_node_uid(topic)
     if not node_uid:
         logger.warning(f"[ERROR] Could not extract node_uid from topic {topic}")
@@ -1643,9 +2165,85 @@ async def handle_error(topic: str, payload: bytes):
         f"level: {level}, component: {component}, error_code: {error_code}"
     )
     
-    # Используем общий компонент для обработки
-    error_handler = get_error_handler()
-    await error_handler.handle_error(node_uid, data)
+    # Проверяем, существует ли узел в БД
+    try:
+        node_rows = await fetch(
+            """
+            SELECT n.id, n.hardware_id, n.zone_id
+            FROM nodes n
+            WHERE n.uid = $1
+            """,
+            node_uid
+        )
+        
+        if not node_rows or len(node_rows) == 0:
+            # Узел не найден - записываем в unassigned_node_errors
+            # Пытаемся извлечь hardware_id из topic (может быть в формате hydro/gh/zn/{hardware_id}/error)
+            # Или из payload если он там есть
+            hardware_id_from_topic = node_uid  # node_uid может быть hardware_id если узел не зарегистрирован
+            hardware_id_from_payload = data.get("hardware_id")
+            hardware_id = hardware_id_from_payload or hardware_id_from_topic
+            
+            error_message = data.get("message", data.get("error", "Unknown error"))
+            
+            logger.info(
+                f"[ERROR] Node not found in DB, saving to unassigned errors: "
+                f"node_uid={node_uid}, hardware_id={hardware_id}"
+            )
+            
+            try:
+                await upsert_unassigned_node_error(
+                    hardware_id=hardware_id,
+                    error_message=error_message,
+                    error_code=error_code,
+                    severity=level,
+                    topic=topic,
+                    last_payload=data
+                )
+                logger.info(f"[ERROR] Saved error for unassigned node hardware_id={hardware_id}")
+            except Exception as e:
+                logger.error(f"[ERROR] Failed to save unassigned node error: {e}", exc_info=True)
+            
+            ERROR_RECEIVED.labels(node_uid=f"unassigned-{hardware_id}", level=level.lower()).inc()
+            return
+        
+        # Узел найден - используем обычную обработку
+        node = node_rows[0]
+        zone_id = node.get("zone_id")
+        
+        if not zone_id:
+            # Узел не привязан к зоне - записываем в unassigned_node_errors по hardware_id
+            hardware_id = node.get("hardware_id")
+            if hardware_id:
+                error_message = data.get("message", data.get("error", "Unknown error"))
+                logger.info(
+                    f"[ERROR] Node not assigned to zone, saving to unassigned errors: "
+                    f"node_uid={node_uid}, hardware_id={hardware_id}, node_id={node['id']}"
+                )
+                try:
+                    await upsert_unassigned_node_error(
+                        hardware_id=hardware_id,
+                        error_message=error_message,
+                        error_code=error_code,
+                        severity=level,
+                        topic=topic,
+                        last_payload=data
+                    )
+                    logger.info(f"[ERROR] Saved error for unassigned node hardware_id={hardware_id}")
+                except Exception as e:
+                    logger.error(f"[ERROR] Failed to save unassigned node error: {e}", exc_info=True)
+                ERROR_RECEIVED.labels(node_uid=f"unassigned-{hardware_id}", level=level.lower()).inc()
+                return
+        
+        # Узел найден и привязан к зоне - используем обычную обработку
+        error_handler = get_error_handler()
+        await error_handler.handle_error(node_uid, data)
+        
+    except Exception as e:
+        logger.error(f"[ERROR] Error checking node in DB: {e}", exc_info=True)
+        # При ошибке БД всё равно пытаемся обработать через error_handler
+        error_handler = get_error_handler()
+        await error_handler.handle_error(node_uid, data)
     
     ERROR_RECEIVED.labels(node_uid=node_uid, level=level.lower()).inc()
 
@@ -2159,7 +2757,7 @@ def _auth_ingest(request: Request):
 async def handle_command_response(topic: str, payload: bytes):
     """
     Обработчик command_response сообщений от узлов.
-    Обновляет статус команды через Laravel API, чтобы фронт получил уведомление (CommandFailed/CommandStatusUpdated).
+    Обновляет статус команды через Laravel API с использованием надёжной доставки.
     """
     try:
         logger.info(f"[COMMAND_RESPONSE] Received message on topic {topic}, payload length: {len(payload)}")
@@ -2170,7 +2768,7 @@ async def handle_command_response(topic: str, payload: bytes):
             return
 
         cmd_id = data.get("cmd_id")
-        raw_status = str(data.get("status", "")).upper()
+        raw_status = data.get("status", "")
         node_uid = _extract_node_uid(topic)
         channel = _extract_channel_from_topic(topic)
         gh_uid = _extract_gh_uid(topic)
@@ -2180,38 +2778,72 @@ async def handle_command_response(topic: str, payload: bytes):
             COMMAND_RESPONSE_ERROR.inc()
             return
 
-        # Маппинг статусов прошивки -> статус в Laravel
-        if raw_status in ("ACK", "ACCEPTED", "COMPLETED", "OK", "SUCCESS", "DONE"):
-            mapped_status = "ack"
-        elif raw_status in ("ERROR", "FAILED"):
-            mapped_status = "failed"
-        else:
-            logger.warning(f"[COMMAND_RESPONSE] Unknown status '{raw_status}' for cmd_id={cmd_id}")
+        # Нормализуем статус в ACCEPTED/DONE/FAILED
+        normalized_status = normalize_status(raw_status)
+        if not normalized_status:
+            logger.warning(
+                f"[COMMAND_RESPONSE] Unknown status '{raw_status}' for cmd_id={cmd_id}, "
+                f"node_uid={node_uid}, channel={channel}"
+            )
             COMMAND_RESPONSE_ERROR.inc()
             return
 
         COMMAND_RESPONSE_RECEIVED.inc()
 
-        s = get_settings()
-        laravel_url = s.laravel_api_url if hasattr(s, 'laravel_api_url') else None
-        ingest_token = s.history_logger_api_token if hasattr(s, 'history_logger_api_token') and s.history_logger_api_token else (s.ingest_token if hasattr(s, 'ingest_token') and s.ingest_token else None)
+        # Проверяем наличие команды в БД. Если отсутствует - создаём stub record.
+        # Это защищает от потери cmd_id при быстром ответе ноды (response раньше SENT).
+        try:
+            existing_cmd = await fetch("SELECT status FROM commands WHERE cmd_id = $1", cmd_id)
+            if not existing_cmd:
+                # Команда отсутствует - создаём stub record через UPSERT
+                # Получаем node_id и zone_id из node_uid
+                node_id = None
+                zone_id = None
+                cmd_name = None
+                
+                if node_uid:
+                    node_rows = await fetch(
+                        "SELECT id, zone_id FROM nodes WHERE uid = $1",
+                        node_uid
+                    )
+                    if node_rows:
+                        node_id = node_rows[0]["id"]
+                        zone_id = node_rows[0]["zone_id"]
+                
+                # Определяем cmd из details или используем "unknown"
+                # Если cmd_name не указан, используем пустую строку (не NULL, т.к. поле NOT NULL)
+                cmd_name = "unknown"
+                
+                # Статус ставим в зависимости от normalized_status
+                status_value = normalized_status.value if hasattr(normalized_status, 'value') else str(normalized_status)
+                
+                # UPSERT stub record с origin='device' (помечаем как полученную от устройства)
+                await execute(
+                    """
+                    INSERT INTO commands (zone_id, node_id, channel, cmd, params, status, cmd_id, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+                    ON CONFLICT (cmd_id) DO UPDATE SET
+                        status = EXCLUDED.status,
+                        updated_at = NOW()
+                    """,
+                    zone_id, node_id, channel, cmd_name, {}, status_value, cmd_id
+                )
+                logger.info(
+                    f"[COMMAND_RESPONSE] Created stub record for cmd_id={cmd_id}, "
+                    f"status={status_value}, node_uid={node_uid}, channel={channel}, origin=device"
+                )
+        except Exception as e:
+            logger.warning(
+                f"[COMMAND_RESPONSE] Failed to ensure stub record for cmd_id={cmd_id}: {e}",
+                exc_info=True
+            )
+            # Продолжаем обработку даже при ошибке создания stub record
 
-        if not laravel_url:
-            logger.error("[COMMAND_RESPONSE] Laravel API URL not configured, cannot update command status")
-            COMMAND_RESPONSE_ERROR.inc()
-            return
-
-        headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        }
-        if ingest_token:
-            headers["Authorization"] = f"Bearer {ingest_token}"
-
+        # Формируем детали для отправки
         details = {
             "error_code": data.get("error_code"),
             "error_message": data.get("error_message"),
-            "raw_status": raw_status,
+            "raw_status": str(raw_status),
             "node_uid": node_uid,
             "channel": channel,
             "gh_uid": gh_uid,
@@ -2219,31 +2851,95 @@ async def handle_command_response(topic: str, payload: bytes):
         # Убираем None значения
         details = {k: v for k, v in details.items() if v is not None}
 
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.post(
-                    f"{laravel_url}/api/python/commands/ack",
-                    headers=headers,
-                    json={
-                        "cmd_id": cmd_id,
-                        "status": mapped_status,
-                        "details": details or None,
-                    },
-                )
-
-            if resp.status_code != 200:
-                logger.warning(f"[COMMAND_RESPONSE] Laravel responded with {resp.status_code}: {resp.text[:200]}")
-                COMMAND_RESPONSE_ERROR.inc()
-            else:
-                logger.info(
-                    f"[COMMAND_RESPONSE] Status '{mapped_status}' pushed to Laravel for cmd_id={cmd_id}, node_uid={node_uid}, channel={channel}"
-                )
-        except Exception as e:
-            logger.error(f"[COMMAND_RESPONSE] Error sending status to Laravel: {e}", exc_info=True)
-            COMMAND_RESPONSE_ERROR.inc()
+        # Отправляем статус через надёжную систему доставки
+        # (автоматически сохранит в очередь при ошибке)
+        success = await send_status_to_laravel(cmd_id, normalized_status, details)
+        
+        if success:
+            logger.info(
+                f"[COMMAND_RESPONSE] Status '{normalized_status.value}' delivered to Laravel "
+                f"for cmd_id={cmd_id}, node_uid={node_uid}, channel={channel}"
+            )
+        else:
+            logger.info(
+                f"[COMMAND_RESPONSE] Status '{normalized_status.value}' queued for retry "
+                f"for cmd_id={cmd_id}, node_uid={node_uid}, channel={channel}"
+            )
+            
     except Exception as e:
         logger.error(f"[COMMAND_RESPONSE] Unexpected error processing message: {e}", exc_info=True)
         COMMAND_RESPONSE_ERROR.inc()
+
+
+async def handle_time_request(topic: str, payload: bytes):
+    """
+    Обработчик запросов времени от устройств (time_request).
+    Отправляет команду set_time с текущим серверным временем.
+    
+    Топик: hydro/time/request
+    Payload: {"message_type": "time_request", "uptime": <seconds>}
+    
+    Для отправки команды set_time нужно знать node_uid, gh_uid, zone_uid.
+    Так как топик hydro/time/request не содержит эту информацию,
+    мы используем временный топик с hardware_id или пытаемся найти устройство по MAC.
+    """
+    try:
+        data = _parse_json(payload)
+        if not data or not isinstance(data, dict):
+            logger.warning(f"[TIME_REQUEST] Invalid JSON in time_request from topic {topic}")
+            return
+        
+        # Получаем текущее серверное время (Unix timestamp в секундах)
+        server_time = int(utcnow().timestamp())
+        
+        # Получаем MQTT клиент для публикации команды
+        mqtt = await get_mqtt_client()
+        
+        # Пробуем найти устройство в БД по hardware_id или другим признакам
+        # Если не найдем, используем временный топик
+        node_uid = None
+        gh_uid = None
+        zone_uid = None
+        
+        # Пытаемся найти устройство в БД
+        # Для этого нужно знать hardware_id из payload или другую информацию
+        # Пока используем временный топик, который будет работать для всех устройств
+        
+        # Формируем команду set_time
+        command_payload = {
+            "cmd": "set_time",
+            "cmd_id": f"time_sync_{uuid.uuid4().hex[:8]}",
+            "params": {
+                "unix_ts": server_time
+            }
+        }
+        
+        # Публикуем в широковещательный топик для всех устройств, которые запросили время
+        # Устройства должны подписаться на hydro/time/response или использовать другой механизм
+        # Временно используем временный топик, который устройство может использовать
+        # для получения времени при первом подключении
+        
+        # Альтернативный подход: публикуем в топик, на который подписаны все устройства
+        # Используем топик hydro/time/response для широковещательной рассылки времени
+        broadcast_topic = "hydro/time/response"
+        response_payload = {
+            "message_type": "time_response",
+            "unix_ts": server_time,
+            "server_time": server_time
+        }
+        
+        # Публикуем ответ
+        mqtt._client.publish_json(broadcast_topic, response_payload, qos=1, retain=False)
+        logger.info(
+            f"[TIME_REQUEST] Sent time response: server_time={server_time}, "
+            f"topic={broadcast_topic}"
+        )
+        
+        # Также пытаемся отправить команду set_time напрямую, если знаем node_uid
+        # Это можно сделать через mqtt-bridge API, но для простоты используем широковещательный ответ
+        
+    except Exception as e:
+        logger.error(f"[TIME_REQUEST] Unexpected error processing time_request: {e}", exc_info=True)
     # В dev окружении: если токен настроен, он обязателен
     if s.history_logger_api_token:
         token = request.headers.get("Authorization", "")
@@ -2578,23 +3274,67 @@ async def publish_zone_command(
     # Получаем MQTT клиент
     mqtt = await get_mqtt_client()
     
+    # Проверяем статус команды перед публикацией (идемпотентность)
+    # Если команда уже в терминальном статусе (ack/done/failed), не публикуем повторно
     try:
-        logger.info(f"Publishing command for zone {zone_id}, node {req.node_uid}, channel {req.channel}, cmd_id: {cmd_id}")
-        await publish_command_mqtt(
-            mqtt,
-            req.greenhouse_uid,
-            zone_id,
-            req.node_uid,
-            req.channel,
-            payload,
-            hardware_id=req.hardware_id,
-            zone_uid=zone_uid
-        )
-        logger.info(f"Command published successfully for zone {zone_id}, node {req.node_uid}")
-        return {"status": "ok", "data": {"command_id": cmd_id}}
+        existing_cmd = await fetch("SELECT status FROM commands WHERE cmd_id = $1", cmd_id)
+        if existing_cmd:
+            cmd_status = existing_cmd[0].get("status", "").lower()
+            # Терминальные статусы: ack, done, failed
+            if cmd_status in ("ack", "done", "failed"):
+                logger.info(
+                    f"[IDEMPOTENCY] Command {cmd_id} already in terminal status '{cmd_status}', "
+                    f"skipping republish to prevent duplicate physical actions"
+                )
+                return {
+                    "status": "ok",
+                    "data": {
+                        "command_id": cmd_id,
+                        "message": f"Command already in terminal status: {cmd_status}",
+                        "skipped": True
+                    }
+                }
+        else:
+            # Команда не существует - создаем со статусом QUEUED
+            node_rows = await fetch("SELECT id FROM nodes WHERE uid = $1 AND zone_id = $2", req.node_uid, zone_id)
+            node_id = node_rows[0]["id"] if node_rows else None
+            await execute(
+                """
+                INSERT INTO commands (zone_id, node_id, channel, cmd, params, status, cmd_id, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, 'QUEUED', $6, NOW(), NOW())
+                ON CONFLICT (cmd_id) DO NOTHING
+                """,
+                zone_id, node_id, req.channel, req.get_command_name(), req.params or {}, cmd_id
+            )
     except Exception as e:
-        logger.error(f"Failed to publish command for zone {zone_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to publish command: {str(e)}")
+        logger.warning(f"Failed to check/ensure command in DB: {e}")
+    
+    # Публикуем с ретраями
+    max_retries = 3
+    retry_delays = [0.5, 1.0, 2.0]
+    publish_success = False
+    last_error = None
+    
+    for attempt in range(max_retries):
+        try:
+            await publish_command_mqtt(mqtt, req.greenhouse_uid, zone_id, req.node_uid, req.channel, payload, hardware_id=req.hardware_id, zone_uid=zone_uid)
+            publish_success = True
+            break
+        except Exception as e:
+            last_error = e
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_delays[attempt])
+    
+    if publish_success:
+        await mark_command_sent(cmd_id, allow_resend=True)
+        try:
+            await send_status_to_laravel(cmd_id, "SENT", {"zone_id": zone_id, "node_uid": req.node_uid, "channel": req.channel})
+        except Exception:
+            pass
+        return {"status": "ok", "data": {"command_id": cmd_id}}
+    else:
+        await mark_command_send_failed(cmd_id, str(last_error))
+        raise HTTPException(status_code=500, detail=f"Failed to publish command: {str(last_error)}")
 
 
 @app.post("/nodes/{node_uid}/commands")
@@ -2633,23 +3373,67 @@ async def publish_node_command(
     # Получаем MQTT клиент
     mqtt = await get_mqtt_client()
     
+    # Проверяем статус команды перед публикацией (идемпотентность)
+    # Если команда уже в терминальном статусе (ack/done/failed), не публикуем повторно
     try:
-        logger.info(f"Publishing command for node {node_uid}, zone {req.zone_id}, channel {req.channel}, cmd_id: {cmd_id}")
-        await publish_command_mqtt(
-            mqtt,
-            req.greenhouse_uid,
-            req.zone_id,
-            node_uid,
-            req.channel,
-            payload,
-            hardware_id=req.hardware_id,
-            zone_uid=zone_uid
-        )
-        logger.info(f"Command published successfully for node {node_uid}")
-        return {"status": "ok", "data": {"command_id": cmd_id}}
+        existing_cmd = await fetch("SELECT status FROM commands WHERE cmd_id = $1", cmd_id)
+        if existing_cmd:
+            cmd_status = existing_cmd[0].get("status", "").lower()
+            # Терминальные статусы: ack, done, failed
+            if cmd_status in ("ack", "done", "failed"):
+                logger.info(
+                    f"[IDEMPOTENCY] Command {cmd_id} already in terminal status '{cmd_status}', "
+                    f"skipping republish to prevent duplicate physical actions"
+                )
+                return {
+                    "status": "ok",
+                    "data": {
+                        "command_id": cmd_id,
+                        "message": f"Command already in terminal status: {cmd_status}",
+                        "skipped": True
+                    }
+                }
+        else:
+            # Команда не существует - создаем со статусом QUEUED
+            node_rows = await fetch("SELECT id FROM nodes WHERE uid = $1 AND zone_id = $2", node_uid, req.zone_id)
+            node_id = node_rows[0]["id"] if node_rows else None
+            await execute(
+                """
+                INSERT INTO commands (zone_id, node_id, channel, cmd, params, status, cmd_id, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, 'QUEUED', $6, NOW(), NOW())
+                ON CONFLICT (cmd_id) DO NOTHING
+                """,
+                req.zone_id, node_id, req.channel, req.get_command_name(), req.params or {}, cmd_id
+            )
     except Exception as e:
-        logger.error(f"Failed to publish command for node {node_uid}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to publish command: {str(e)}")
+        logger.warning(f"Failed to check/ensure command in DB: {e}")
+    
+    # Публикуем с ретраями
+    max_retries = 3
+    retry_delays = [0.5, 1.0, 2.0]
+    publish_success = False
+    last_error = None
+    
+    for attempt in range(max_retries):
+        try:
+            await publish_command_mqtt(mqtt, req.greenhouse_uid, req.zone_id, node_uid, req.channel, payload, hardware_id=req.hardware_id, zone_uid=zone_uid)
+            publish_success = True
+            break
+        except Exception as e:
+            last_error = e
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_delays[attempt])
+    
+    if publish_success:
+        await mark_command_sent(cmd_id, allow_resend=True)
+        try:
+            await send_status_to_laravel(cmd_id, "SENT", {"zone_id": req.zone_id, "node_uid": node_uid, "channel": req.channel})
+        except Exception:
+            pass
+        return {"status": "ok", "data": {"command_id": cmd_id}}
+    else:
+        await mark_command_send_failed(cmd_id, str(last_error))
+        raise HTTPException(status_code=500, detail=f"Failed to publish command: {str(last_error)}")
 
 
 @app.post("/commands")
@@ -2684,13 +3468,22 @@ async def publish_command(
     if hasattr(s, 'mqtt_zone_format') and s.mqtt_zone_format == "uid":
         zone_uid = await _get_zone_uid_from_id(req.zone_id)
     
+    # Извлекаем cmd_id из params, если он не передан напрямую
+    cmd_id = req.cmd_id
+    if not cmd_id and req.params and 'cmd_id' in req.params:
+        cmd_id = req.params.get('cmd_id')
+        # Удаляем cmd_id из params, чтобы не дублировать его в payload
+        params_without_cmd_id = {k: v for k, v in req.params.items() if k != 'cmd_id'}
+    else:
+        params_without_cmd_id = req.params
+    
     # Создаем payload для команды
     try:
         payload = _create_command_payload(
             cmd_type=req.type, 
             cmd=req.cmd, 
-            cmd_id=req.cmd_id, 
-            params=req.params
+            cmd_id=cmd_id, 
+            params=params_without_cmd_id
         )
         cmd_id = payload["cmd_id"]
     except ValueError as e:
@@ -2712,21 +3505,149 @@ async def publish_command(
         extra=log_context
     )
     
-    # Получаем MQTT клиент
-    mqtt = await get_mqtt_client()
-    
+    # ШАГ 1: Проверяем статус команды перед публикацией (идемпотентность)
+    # Если команда уже в терминальном статусе (ack/done/failed), не публикуем повторно
     try:
-        await publish_command_mqtt(
-            mqtt,
-            req.greenhouse_uid,
-            req.zone_id,
-            req.node_uid,
-            req.channel,
-            payload,
-            hardware_id=req.hardware_id,
-            zone_uid=zone_uid
+        # Проверяем, существует ли команда в БД и её статус
+        existing_cmd = await fetch(
+            """
+            SELECT status FROM commands WHERE cmd_id = $1
+            """,
+            cmd_id
         )
-        logger.info(f"Command published successfully: {log_context}")
+        
+        if existing_cmd:
+            cmd_status = existing_cmd[0].get("status", "").lower()
+            # Терминальные статусы: ack, done, failed
+            if cmd_status in ("ack", "done", "failed"):
+                logger.info(
+                    f"[IDEMPOTENCY] Command {cmd_id} already in terminal status '{cmd_status}', "
+                    f"skipping republish to prevent duplicate physical actions"
+                )
+                return {
+                    "status": "ok",
+                    "data": {
+                        "command_id": cmd_id,
+                        "message": f"Command already in terminal status: {cmd_status}",
+                        "skipped": True
+                    }
+                }
+        
+        if not existing_cmd:
+            # Команда не существует - создаем её со статусом QUEUED
+            # Получаем node_id из node_uid
+            node_rows = await fetch(
+                """
+                SELECT id FROM nodes WHERE uid = $1 AND zone_id = $2
+                """,
+                req.node_uid,
+                req.zone_id
+            )
+            node_id = node_rows[0]["id"] if node_rows else None
+            
+            await execute(
+                """
+                INSERT INTO commands (zone_id, node_id, channel, cmd, params, status, cmd_id, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, 'QUEUED', $6, NOW(), NOW())
+                ON CONFLICT (cmd_id) DO NOTHING
+                """,
+                req.zone_id,
+                node_id,
+                req.channel,
+                req.get_command_name(),
+                params_without_cmd_id,
+                cmd_id
+            )
+            logger.info(f"Command {cmd_id} created in DB with status QUEUED")
+        else:
+            current_status = existing_cmd[0]["status"]
+            if current_status not in ('QUEUED', 'SEND_FAILED'):
+                logger.warning(
+                    f"Command {cmd_id} already exists with status {current_status}, "
+                    f"cannot republish. Skipping."
+                )
+                return {
+                    "status": "ok",
+                    "data": {
+                        "command_id": cmd_id,
+                        "zone_id": req.zone_id,
+                        "node_uid": req.node_uid,
+                        "channel": req.channel,
+                        "note": f"Command already exists with status {current_status}"
+                    }
+                }
+    except Exception as e:
+        logger.error(f"Failed to ensure command in DB: {e}", exc_info=True, extra=log_context)
+        # Продолжаем выполнение, возможно команда уже существует
+    
+    # ШАГ 2: Публикуем команду в MQTT с ретраями и backoff
+    mqtt = await get_mqtt_client()
+    max_retries = 3
+    retry_delays = [0.5, 1.0, 2.0]  # Exponential backoff
+    
+    publish_success = False
+    last_error = None
+    
+    for attempt in range(max_retries):
+        try:
+            await publish_command_mqtt(
+                mqtt,
+                req.greenhouse_uid,
+                req.zone_id,
+                req.node_uid,
+                req.channel,
+                payload,
+                hardware_id=req.hardware_id,
+                zone_uid=zone_uid
+            )
+            publish_success = True
+            logger.info(f"Command published successfully (attempt {attempt + 1}/{max_retries}): {log_context}")
+            break
+        except Exception as e:
+            last_error = e
+            if attempt < max_retries - 1:
+                delay = retry_delays[attempt]
+                logger.warning(
+                    f"Failed to publish command (attempt {attempt + 1}/{max_retries}): {e}. "
+                    f"Retrying in {delay}s...",
+                    extra=log_context
+                )
+                await asyncio.sleep(delay)
+            else:
+                logger.error(
+                    f"Failed to publish command after {max_retries} attempts: {e}",
+                    exc_info=True,
+                    extra=log_context
+                )
+    
+    # ШАГ 3: Обновляем статус команды в БД
+    if publish_success:
+        # Обновляем статус на SENT только после успешной публикации
+        try:
+            await mark_command_sent(cmd_id, allow_resend=True)
+            logger.info(f"Command {cmd_id} status updated to SENT")
+            
+            # ШАГ 4: Отправляем подтверждение корреляции в backend через command_status_queue
+            # Это гарантирует, что backend получит уведомление о статусе SENT
+            try:
+                await send_status_to_laravel(
+                    cmd_id=cmd_id,
+                    status="SENT",
+                    details={
+                        "zone_id": req.zone_id,
+                        "node_uid": req.node_uid,
+                        "channel": req.channel,
+                        "command": req.get_command_name(),
+                        "published_at": utcnow().isoformat()
+                    }
+                )
+                logger.debug(f"Correlation ACK sent for command {cmd_id} (status: SENT)")
+            except Exception as e:
+                # Ошибка отправки ACK не критична - команда уже в БД со статусом SENT
+                # Воркер ретраев доставит статус позже
+                logger.warning(f"Failed to send correlation ACK for command {cmd_id}: {e}")
+        except Exception as e:
+            logger.error(f"Failed to update command status to SENT: {e}", exc_info=True, extra=log_context)
         
         # Метрики
         COMMANDS_SENT.labels(zone_id=str(req.zone_id), metric=req.get_command_name()).inc()
@@ -2740,10 +3661,19 @@ async def publish_command(
                 "channel": req.channel
             }
         }
-    except Exception as e:
-        logger.error(f"Failed to publish command: {e}", exc_info=True, extra=log_context)
-        MQTT_PUBLISH_ERRORS.labels(error_type=type(e).__name__).inc()
-        raise HTTPException(status_code=500, detail=f"Failed to publish command: {str(e)}")
+    else:
+        # Публикация не удалась - обновляем статус на SEND_FAILED
+        try:
+            await mark_command_send_failed(cmd_id, str(last_error))
+            logger.error(f"Command {cmd_id} status updated to SEND_FAILED")
+        except Exception as e:
+            logger.error(f"Failed to update command status to SEND_FAILED: {e}", exc_info=True)
+        
+        MQTT_PUBLISH_ERRORS.labels(error_type=type(last_error).__name__).inc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to publish command after {max_retries} attempts: {str(last_error)}"
+        )
 
 
 class FillDrainRequest(BaseModel):
@@ -3044,7 +3974,7 @@ async def ingest_telemetry(request: Request):
         
         # Если ts невалиден или отсутствует, используем серверное время
         if ts is None:
-            ts = datetime.utcnow()
+            ts = utcnow()
         
         # Извлекаем zone_id из zone_uid если нужно (будет резолвлен в process_telemetry_batch с учетом gh_uid)
         zone_uid = validated_data.zone_uid

@@ -1,7 +1,7 @@
 /**
  * Composable для отправки команд зонам и узлам
  */
-import { ref, computed, type Ref, type ComputedRef } from 'vue'
+import { ref, computed, onMounted, onUnmounted, type Ref, type ComputedRef } from 'vue'
 import { router } from '@inertiajs/vue3'
 import { useApi, type ToastHandler } from './useApi'
 import { useErrorHandler } from './useErrorHandler'
@@ -19,10 +19,26 @@ interface PendingCommandInternal {
 }
 
 function normalizeStatus(status: CommandStatus | string): CommandStatus {
-  // MQTT/bridge присылает 'ack' как успешное выполнение
-  if (status === 'ack') return 'completed'
-  if (status === 'accepted') return 'executing'
-  return (status as CommandStatus) || 'unknown'
+  // Нормализация статусов: маппинг старых значений на новые
+  const statusUpper = String(status).toUpperCase()
+  
+  // Новые статусы (используем как есть)
+  if (['QUEUED', 'SENT', 'ACCEPTED', 'DONE', 'FAILED', 'TIMEOUT', 'SEND_FAILED'].includes(statusUpper)) {
+    return statusUpper as CommandStatus
+  }
+  
+  // Маппинг старых статусов на новые (для обратной совместимости)
+  const legacyMap: Record<string, CommandStatus> = {
+    'PENDING': 'QUEUED',
+    'ACK': 'DONE',           // ack -> DONE (команда выполнена)
+    'ACCEPTED': 'ACCEPTED',  // accepted -> ACCEPTED
+    'COMPLETED': 'DONE',     // completed -> DONE
+    'EXECUTING': 'ACCEPTED', // executing -> ACCEPTED (команда выполняется)
+    'FAILED': 'FAILED',      // failed -> FAILED
+    'SENT': 'SENT',          // sent -> SENT
+  }
+  
+  return legacyMap[statusUpper] || 'unknown'
 }
 
 /**
@@ -276,7 +292,7 @@ export function useCommands(showToast?: ToastHandler) {
     const now = Date.now()
     for (const [id, command] of pendingCommands.value.entries()) {
       if (
-        (command.status === 'completed' || command.status === 'failed') &&
+        (['DONE', 'FAILED', 'TIMEOUT', 'SEND_FAILED', 'completed', 'failed'].includes(command.status)) &&
         (now - command.timestamp) > maxAge
       ) {
         pendingCommands.value.delete(id)
@@ -321,6 +337,77 @@ export function useCommands(showToast?: ToastHandler) {
       }
     }, RELOAD_DEBOUNCE_MS))
   }
+
+  // Обработчик события reconciliation для обновления статусов команд при переподключении
+  function handleReconciliation(event: CustomEvent) {
+    const { commands } = event.detail || {}
+    
+    if (!commands || !Array.isArray(commands)) {
+      return
+    }
+
+    logger.debug('[useCommands] Processing reconciliation commands data', {
+      count: commands.length,
+    })
+
+    // Обновляем статусы команд из snapshot
+    for (const cmd of commands) {
+      if (!cmd.cmd_id) continue
+      
+      const commandId = cmd.cmd_id
+      const status = normalizeStatus(cmd.status || 'unknown')
+      
+      // Обновляем только если команда еще не завершена или статус изменился
+      if (pendingCommands.value.has(commandId)) {
+        const existing = pendingCommands.value.get(commandId)!
+        if (existing.status !== status) {
+          pendingCommands.value.set(commandId, {
+            ...existing,
+            status,
+            message: cmd.error_message,
+            timestamp: cmd.ack_at || cmd.sent_at || cmd.created_at || Date.now(),
+          })
+          logger.debug('[useCommands] Updated command status from reconciliation', {
+            commandId,
+            oldStatus: existing.status,
+            newStatus: status,
+          })
+        }
+      } else if (!['DONE', 'FAILED', 'TIMEOUT'].includes(status)) {
+        // Добавляем активные команды, которых еще нет в pendingCommands
+        pendingCommands.value.set(commandId, {
+          status,
+          zoneId: cmd.zone_id,
+          nodeId: cmd.node_id,
+          type: cmd.type || 'unknown',
+          timestamp: cmd.ack_at || cmd.sent_at || cmd.created_at || Date.now(),
+          message: cmd.error_message,
+        })
+        logger.debug('[useCommands] Added command from reconciliation', {
+          commandId,
+          status,
+        })
+      }
+    }
+
+    logger.info('[useCommands] Reconciliation completed', {
+      commandsProcessed: commands.length,
+      pendingCount: pendingCommands.value.size,
+    })
+  }
+
+  // Подписываемся на событие reconciliation при монтировании
+  onMounted(() => {
+    if (typeof window !== 'undefined') {
+      window.addEventListener('ws:reconciliation:commands', handleReconciliation as EventListener)
+    }
+  })
+
+  onUnmounted(() => {
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('ws:reconciliation:commands', handleReconciliation as EventListener)
+    }
+  })
 
   return {
     loading: computed(() => loading.value) as ComputedRef<boolean>,

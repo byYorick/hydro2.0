@@ -25,7 +25,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT COUNT(*) as value FROM commands WHERE status = 'pending'",
+          "rawSql": "SELECT COUNT(*) as value FROM commands WHERE status = 'QUEUED'",
           "format": "table",
           "refId": "A"
         }
@@ -52,7 +52,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT DATE_TRUNC('hour', created_at) as time, (COUNT(*) FILTER (WHERE status = 'ack') * 100.0 / NULLIF(COUNT(*), 0))::float as value FROM commands WHERE created_at >= NOW() - INTERVAL '7 days' AND created_at <= NOW() GROUP BY time ORDER BY time",
+          "rawSql": "SELECT DATE_TRUNC('hour', created_at) as time, (COUNT(*) FILTER (WHERE status = 'DONE') * 100.0 / NULLIF(COUNT(*), 0))::float as value FROM commands WHERE created_at >= NOW() - INTERVAL '7 days' AND created_at <= NOW() GROUP BY time ORDER BY time",
           "format": "time_series",
           "refId": "A"
         }

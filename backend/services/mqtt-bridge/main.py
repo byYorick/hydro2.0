@@ -1,10 +1,12 @@
 from fastapi import FastAPI, Path
 from fastapi import HTTPException, Request
 from fastapi import Body, Response
+from contextlib import asynccontextmanager
 from pydantic import BaseModel, Field
 from typing import Optional
 import logging
 import os
+import asyncio
 from common.schemas import CommandRequest
 from common.commands import new_command_id, mark_command_sent
 from publisher import Publisher
@@ -26,27 +28,64 @@ logger = logging.getLogger(__name__)
 
 REQ_COUNTER = Counter("bridge_requests_total", "Bridge HTTP requests", ["path"])
 
-app = FastAPI(title="MQTT Bridge", version="0.1.2")
+# Глобальная переменная для Publisher
+publisher: Optional[Publisher] = None
 
-# Создаем Publisher при старте приложения
-try:
-    publisher = Publisher()
-    logger.info("Publisher initialized successfully, MQTT connected: %s", publisher._mqtt.is_connected())
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager для управления startup и shutdown событиями."""
+    global publisher
+    
+    # Startup
+    logger.info("Starting MQTT Bridge service")
     send_service_log(
         service="mqtt-bridge",
         level="info",
-        message="MQTT Bridge started",
-        context={"mqtt_connected": bool(publisher._mqtt.is_connected())},
+        message="MQTT Bridge service starting",
+        context={"stage": "startup"},
     )
-except Exception as e:
-    logger.error(f"Failed to initialize Publisher: {e}", exc_info=True)
+    
+    try:
+        publisher = Publisher()
+        publisher.start()  # Запускаем подключение и фоновые ретраи
+        logger.info("Publisher initialized, MQTT connection in progress...")
+        send_service_log(
+            service="mqtt-bridge",
+            level="info",
+            message="MQTT Bridge Publisher initialized",
+            context={"mqtt_ready": publisher.is_ready()},
+        )
+    except Exception as e:
+        logger.error(f"Failed to initialize Publisher: {e}", exc_info=True)
+        send_service_log(
+            service="mqtt-bridge",
+            level="critical",
+            message=f"Failed to initialize Publisher: {e}",
+            context={"error": str(e)},
+        )
+        publisher = None
+    
+    yield
+    
+    # Shutdown
+    logger.info("Stopping MQTT Bridge service")
+    if publisher:
+        try:
+            publisher.stop()
+        except Exception as e:
+            logger.error(f"Error stopping Publisher: {e}", exc_info=True)
+    
+    logger.info("MQTT Bridge service stopped")
     send_service_log(
         service="mqtt-bridge",
-        level="critical",
-        message=f"Failed to initialize Publisher: {e}",
-        context={"error": str(e)},
+        level="info",
+        message="MQTT Bridge service stopped",
+        context={"stage": "shutdown"},
     )
-    publisher = None
+
+
+app = FastAPI(title="MQTT Bridge", version="0.1.3", lifespan=lifespan)
 
 
 def _auth(request: Request):
@@ -125,8 +164,17 @@ async def send_zone_command(
 ):
     _auth(request)
     REQ_COUNTER.labels(path="/bridge/zones/{zone_id}/commands").inc()
+    
+    # Проверяем готовность bridge
+    if not publisher or not publisher.is_ready():
+        raise HTTPException(
+            status_code=503,
+            detail="bridge_not_ready"
+        )
+    
     if not (req.greenhouse_uid and req.node_uid and req.channel):
         raise HTTPException(status_code=400, detail="greenhouse_uid, node_uid and channel are required")
+    
     # Use cmd_id from Laravel if provided, otherwise generate new one
     cmd_id = req.cmd_id or new_command_id()
     payload = {"cmd": req.type, "cmd_id": cmd_id, **({"params": req.params} if req.params else {})}
@@ -152,9 +200,41 @@ async def send_zone_command(
         else:
             logger.warning(f"Zone {zone_id} not found, using zn-{zone_id} as fallback")
     
-    publisher.publish_command(req.greenhouse_uid, zone_id, req.node_uid, req.channel, payload, hardware_id=hardware_id, zone_uid=zone_uid)
-    await mark_command_sent(cmd_id)
-    return {"status": "ok", "data": {"command_id": cmd_id}}
+    # Получаем node_preconfig из БД (lifecycle_state = REGISTERED_BACKEND)
+    node_preconfig = False
+    if req.node_uid:
+        node_rows = await fetch(
+            """
+            SELECT lifecycle_state
+            FROM nodes
+            WHERE uid = $1
+            """,
+            req.node_uid,
+        )
+        if node_rows and len(node_rows) > 0:
+            lifecycle_state = node_rows[0].get("lifecycle_state")
+            # Узлы в состоянии REGISTERED_BACKEND еще не получили конфигурацию
+            node_preconfig = (lifecycle_state == "REGISTERED_BACKEND")
+    
+    # Публикуем команду - только после успешной публикации вызываем mark_command_sent
+    try:
+        publisher.publish_command(
+            req.greenhouse_uid, 
+            zone_id, 
+            req.node_uid, 
+            req.channel, 
+            payload, 
+            hardware_id=hardware_id, 
+            zone_uid=zone_uid,
+            node_preconfig=node_preconfig
+        )
+        # Команда успешно опубликована - помечаем как sent
+        await mark_command_sent(cmd_id)
+        return {"status": "ok", "data": {"command_id": cmd_id}}
+    except Exception as e:
+        logger.error(f"Failed to publish command {cmd_id}: {e}", exc_info=True)
+        # Команда НЕ опубликована - НЕ вызываем mark_command_sent
+        raise HTTPException(status_code=500, detail=f"Failed to publish command: {str(e)}")
 
 
 @app.post("/bridge/nodes/{node_uid}/commands")
@@ -165,8 +245,17 @@ async def send_node_command(
 ):
     _auth(request)
     REQ_COUNTER.labels(path="/bridge/nodes/{node_uid}/commands").inc()
+    
+    # Проверяем готовность bridge
+    if not publisher or not publisher.is_ready():
+        raise HTTPException(
+            status_code=503,
+            detail="bridge_not_ready"
+        )
+    
     if not (req.greenhouse_uid and req.zone_id and req.channel):
         raise HTTPException(status_code=400, detail="greenhouse_uid, zone_id and channel are required")
+    
     # Use cmd_id from Laravel if provided, otherwise generate new one
     cmd_id = req.cmd_id or new_command_id()
     payload = {"cmd": req.type, "cmd_id": cmd_id, **({"params": req.params} if req.params else {})}
@@ -192,9 +281,40 @@ async def send_node_command(
         else:
             logger.warning(f"Zone {req.zone_id} not found, using zn-{req.zone_id} as fallback")
     
-    publisher.publish_command(req.greenhouse_uid, req.zone_id, node_uid, req.channel, payload, hardware_id=hardware_id, zone_uid=zone_uid)
-    await mark_command_sent(cmd_id)
-    return {"status": "ok", "data": {"command_id": cmd_id}}
+    # Получаем node_preconfig из БД (lifecycle_state = REGISTERED_BACKEND)
+    node_preconfig = False
+    node_rows = await fetch(
+        """
+        SELECT lifecycle_state
+        FROM nodes
+        WHERE uid = $1
+        """,
+        node_uid,
+    )
+    if node_rows and len(node_rows) > 0:
+        lifecycle_state = node_rows[0].get("lifecycle_state")
+        # Узлы в состоянии REGISTERED_BACKEND еще не получили конфигурацию
+        node_preconfig = (lifecycle_state == "REGISTERED_BACKEND")
+    
+    # Публикуем команду - только после успешной публикации вызываем mark_command_sent
+    try:
+        publisher.publish_command(
+            req.greenhouse_uid, 
+            req.zone_id, 
+            node_uid, 
+            req.channel, 
+            payload, 
+            hardware_id=hardware_id, 
+            zone_uid=zone_uid,
+            node_preconfig=node_preconfig
+        )
+        # Команда успешно опубликована - помечаем как sent
+        await mark_command_sent(cmd_id)
+        return {"status": "ok", "data": {"command_id": cmd_id}}
+    except Exception as e:
+        logger.error(f"Failed to publish command {cmd_id}: {e}", exc_info=True)
+        # Команда НЕ опубликована - НЕ вызываем mark_command_sent
+        raise HTTPException(status_code=500, detail=f"Failed to publish command: {str(e)}")
 
 
 class FillDrainRequest(BaseModel):
@@ -324,6 +444,13 @@ async def publish_node_config(
     _auth(request)
     REQ_COUNTER.labels(path="/bridge/nodes/{node_uid}/config").inc()
     
+    # Проверяем готовность bridge
+    if not publisher or not publisher.is_ready():
+        raise HTTPException(
+            status_code=503,
+            detail="bridge_not_ready"
+        )
+    
     # Получаем zone_id и gh_uid из запроса или из БД
     zone_id = req.zone_id
     gh_uid = req.greenhouse_uid
@@ -332,7 +459,7 @@ async def publish_node_config(
     if not zone_id or not gh_uid:
         rows = await fetch(
             """
-            SELECT n.zone_id, g.uid as gh_uid
+            SELECT n.zone_id, g.uid as gh_uid, n.lifecycle_state
             FROM nodes n
             LEFT JOIN zones z ON n.zone_id = z.id
             LEFT JOIN greenhouses g ON z.greenhouse_id = g.id
@@ -351,15 +478,26 @@ async def publish_node_config(
     if not gh_uid:
         raise HTTPException(status_code=400, detail="greenhouse_uid is required (zone must have a greenhouse)")
     
-    # Публикуем конфиг
-    if not publisher:
-        raise HTTPException(status_code=500, detail="Publisher not initialized")
+    # Получаем node_preconfig из БД (lifecycle_state = REGISTERED_BACKEND)
+    node_preconfig = False
+    node_rows = await fetch(
+        """
+        SELECT lifecycle_state
+        FROM nodes
+        WHERE uid = $1
+        """,
+        node_uid,
+    )
+    if node_rows and len(node_rows) > 0:
+        lifecycle_state = node_rows[0].get("lifecycle_state")
+        # Узлы в состоянии REGISTERED_BACKEND еще не получили конфигурацию
+        node_preconfig = (lifecycle_state == "REGISTERED_BACKEND")
     
     try:
-        logger.info(f"Publishing config for node {node_uid}, zone_id: {zone_id}, gh_uid: {gh_uid}, hardware_id: {req.hardware_id}")
+        logger.info(f"Publishing config for node {node_uid}, zone_id: {zone_id}, gh_uid: {gh_uid}, hardware_id: {req.hardware_id}, node_preconfig: {node_preconfig}")
         # Преобразуем Pydantic модель в dict для публикации
         config_dict = req.config.dict() if hasattr(req.config, 'dict') else req.config.model_dump() if hasattr(req.config, 'model_dump') else dict(req.config)
-        publisher.publish_config(gh_uid, zone_id, node_uid, config_dict, hardware_id=req.hardware_id)
+        publisher.publish_config(gh_uid, zone_id, node_uid, config_dict, hardware_id=req.hardware_id, node_preconfig=node_preconfig)
         logger.info(f"Config published successfully for node {node_uid}")
         return {"status": "ok", "data": {"published": True, "topic": f"hydro/{gh_uid}/zn-{zone_id}/{node_uid}/config"}}
     except Exception as e:

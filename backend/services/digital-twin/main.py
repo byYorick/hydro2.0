@@ -8,6 +8,7 @@ import os
 from typing import Dict, Any, List, Optional
 from fastapi import Query
 from datetime import datetime, timedelta
+from common.utils.time import utcnow
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -91,7 +92,7 @@ async def simulate_zone(request: SimulationRequest) -> Dict[str, Any]:
 
         # Результаты симуляции
         points = []
-        start_time = datetime.utcnow()
+        start_time = utcnow()
         current_time = start_time
         end_time = current_time + timedelta(hours=request.duration_hours)
         step_delta = timedelta(minutes=request.step_minutes)

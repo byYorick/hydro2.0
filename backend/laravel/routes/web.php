@@ -1258,6 +1258,12 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 $zone->recipeInstance->load('recipe');
             }
 
+            // Загружаем активный цикл выращивания
+            $activeGrowCycle = \App\Models\GrowCycle::where('zone_id', $zone->id)
+                ->whereIn('status', ['PLANNED', 'RUNNING', 'PAUSED'])
+                ->latest('started_at')
+                ->first();
+
             // Логируем данные перед отправкой в Inertia
             \Log::info('Sending zone data to Inertia', [
                 'zone_id' => $zone->id,
@@ -1280,11 +1286,24 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 'targets' => $targets,
                 'current_phase' => $currentPhaseNormalized,
                 'active_cycle' => $activeCycle,
+                'active_grow_cycle' => $activeGrowCycle,
                 'devices' => $devices,
                 'events' => $events,
                 'cycles' => $cycles,
             ]);
         })->name('zones.show');
+
+        /**
+         * Grow Cycle Wizard - мастер запуска цикла выращивания
+         *
+         * Inertia Props:
+         * - auth: { user: { role: 'viewer'|'operator'|'admin'|'agronomist' } }
+         */
+        Route::get('/grow-cycle-wizard', function () {
+            return Inertia::render('GrowCycles/Wizard', [
+                'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
+            ]);
+        })->name('grow-cycles.wizard');
     });
 
     /**
