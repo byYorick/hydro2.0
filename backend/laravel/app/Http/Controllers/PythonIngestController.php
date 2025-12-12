@@ -100,6 +100,27 @@ class PythonIngestController extends Controller
         }
         $tsValue = $data['ts'] ?? null;
         $timestamp = $tsValue ? Carbon::parse($tsValue) : now();
+        
+        // Проверка на искаженное время: если timestamp отклоняется от серверного более чем на 5 минут,
+        // используем серверное время для обеспечения единой временной линии
+        if ($tsValue) {
+            $serverTime = now();
+            $deviceTime = $timestamp;
+            $driftSeconds = abs($serverTime->diffInSeconds($deviceTime, false));
+            $maxDriftSeconds = 300; // 5 минут
+            
+            if ($driftSeconds > $maxDriftSeconds) {
+                Log::warning('PythonIngestController: Device timestamp is skewed, using server time', [
+                    'device_ts' => $deviceTime->toIso8601String(),
+                    'server_ts' => $serverTime->toIso8601String(),
+                    'drift_sec' => $driftSeconds,
+                    'max_drift_sec' => $maxDriftSeconds,
+                    'node_id' => $nodeId,
+                    'zone_id' => $data['zone_id'],
+                ]);
+                $timestamp = $serverTime;
+            }
+        }
 
         // Формируем запрос для history-logger
         // Передаём zone_id напрямую (в таблице zones нет uid)
@@ -162,17 +183,19 @@ class PythonIngestController extends Controller
         $this->ensureToken($request);
         $data = $request->validate([
             'cmd_id' => ['required', 'string', 'max:64'],
-            'status' => ['required', 'string', 'in:ACCEPTED,DONE,FAILED,TIMEOUT,SEND_FAILED,accepted,completed,failed,ack,timeout'],
+            'status' => ['required', 'string', 'in:SENT,ACCEPTED,DONE,FAILED,TIMEOUT,SEND_FAILED,accepted,completed,failed,ack,timeout'],
             'details' => ['nullable', 'array'],
         ]);
 
-        // Нормализуем статус в новые значения: ACCEPTED/DONE/FAILED
+        // Нормализуем статус в новые значения: SENT/ACCEPTED/DONE/FAILED
         // Поддерживаем старые значения для обратной совместимости
         $normalizedStatus = match (strtoupper($data['status'])) {
+            'SENT' => \App\Models\Command::STATUS_SENT,
             'ACCEPTED', 'ACK' => \App\Models\Command::STATUS_ACCEPTED,
             'DONE', 'COMPLETED', 'OK', 'SUCCESS' => \App\Models\Command::STATUS_DONE,
             'FAILED', 'ERROR', 'REJECTED' => \App\Models\Command::STATUS_FAILED,
             'TIMEOUT' => \App\Models\Command::STATUS_TIMEOUT,
+            'SEND_FAILED' => \App\Models\Command::STATUS_SEND_FAILED,
             default => strtoupper($data['status']), // Используем как есть, если это новый статус
         };
 
@@ -196,6 +219,11 @@ class PythonIngestController extends Controller
                 $updates['duration_ms'] = $details['duration_ms'];
             }
 
+            // SENT - команда отправлена в MQTT (подтверждение корреляции)
+            if ($normalizedStatus === \App\Models\Command::STATUS_SENT && ! $command->sent_at) {
+                $updates['sent_at'] = now();
+            }
+            
             // ACCEPTED - команда принята к выполнению
             if ($normalizedStatus === \App\Models\Command::STATUS_ACCEPTED && ! $command->ack_at) {
                 $updates['ack_at'] = now();
@@ -290,13 +318,24 @@ class PythonIngestController extends Controller
     {
         $this->ensureToken($request);
         $data = $request->validate([
-            'zone_id' => ['nullable', 'integer', 'exists:zones,id'],
+            'zone_id' => ['nullable', 'integer'],
             'source' => ['required', 'string', 'in:biz,infra'],
             'code' => ['required', 'string', 'max:64'],
             'type' => ['required', 'string', 'max:64'],
             'status' => ['required', 'string', 'in:ACTIVE,RESOLVED'],
             'details' => ['nullable', 'array'],
         ]);
+        
+        // Валидируем zone_id отдельно, если он указан (для unassigned hardware разрешаем null)
+        if (isset($data['zone_id']) && $data['zone_id'] !== null) {
+            $zoneExists = \App\Models\Zone::where('id', $data['zone_id'])->exists();
+            if (!$zoneExists) {
+                return Response::json([
+                    'status' => 'error',
+                    'message' => 'Zone not found',
+                ], 422);
+            }
+        }
 
         try {
             $alertService = app(\App\Services\AlertService::class);

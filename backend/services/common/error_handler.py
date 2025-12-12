@@ -169,16 +169,19 @@ class NodeErrorHandler:
                 node_uid
             )
             
+            node_row = None
+            zone_id = None
+            
+            if node_rows:
+                node_row = node_rows[0]
+                zone_id = node_row.get('zone_id')
+            
+            # Разрешаем создание алертов даже для unassigned hardware (zone_id = null)
+            # Это важно для временных ошибок до привязки узла к зоне
             if not node_rows:
-                logger.warning(f"[ERROR_HANDLER] Node {node_uid} not found in database, cannot create alert")
-                return
-            
-            node_row = node_rows[0]
-            zone_id = node_row.get('zone_id')
-            
-            if not zone_id:
-                logger.warning(f"[ERROR_HANDLER] Node {node_uid} has no zone_id, cannot create alert")
-                return
+                logger.info(f"[ERROR_HANDLER] Node {node_uid} not found in database, creating alert with zone_id=null")
+            elif not zone_id:
+                logger.info(f"[ERROR_HANDLER] Node {node_uid} has no zone_id (unassigned), creating alert with zone_id=null")
             
             # Структура alerts: zone_id, source, code, type, details, status
             # source: 'biz' или 'infra' (для ошибок нод используем 'infra')

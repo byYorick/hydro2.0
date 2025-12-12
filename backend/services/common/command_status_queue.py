@@ -10,7 +10,7 @@
 import asyncio
 import json
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Union
 from datetime import datetime, timedelta
 from enum import Enum
 
@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 class CommandStatus(str, Enum):
     """Нормализованные статусы команд."""
+    SENT = "SENT"  # Команда отправлена в MQTT (подтверждение корреляции)
     ACCEPTED = "ACCEPTED"
     DONE = "DONE"
     FAILED = "FAILED"
@@ -73,7 +74,7 @@ class StatusUpdateQueue:
                 CREATE TABLE IF NOT EXISTS pending_status_updates (
                     id BIGSERIAL PRIMARY KEY,
                     cmd_id VARCHAR(64) NOT NULL,
-                    status VARCHAR(16) NOT NULL CHECK (status IN ('ACCEPTED', 'DONE', 'FAILED')),
+                    status VARCHAR(16) NOT NULL CHECK (status IN ('SENT', 'ACCEPTED', 'DONE', 'FAILED')),
                     details JSONB,
                     retry_count INTEGER DEFAULT 0,
                     next_retry_at TIMESTAMP WITH TIME ZONE,
@@ -102,7 +103,7 @@ class StatusUpdateQueue:
     async def enqueue(
         self,
         cmd_id: str,
-        status: CommandStatus,
+        status: Union[CommandStatus, str],
         details: Optional[Dict[str, Any]] = None
     ) -> bool:
         """
@@ -110,13 +111,16 @@ class StatusUpdateQueue:
         
         Args:
             cmd_id: Идентификатор команды
-            status: Нормализованный статус
+            status: Нормализованный статус (enum или строка)
             details: Дополнительные детали (error_code, error_message, etc.)
             
         Returns:
             True если успешно добавлено, False если уже существует
         """
         await self.ensure_table()
+        
+        # Поддержка как enum, так и строки
+        status_value = status.value if isinstance(status, CommandStatus) else str(status)
         
         pool = await get_pool()
         async with pool.acquire() as conn:
@@ -131,7 +135,7 @@ class StatusUpdateQueue:
                         retry_count = 0,
                         next_retry_at = NOW(),
                         updated_at = NOW()
-                """, cmd_id, status.value, details_json)
+                """, cmd_id, status_value, details_json)
                 return True
             except Exception as e:
                 logger.error(f"Failed to enqueue status update: {e}", exc_info=True)
@@ -229,7 +233,7 @@ async def close_http_client():
 
 async def send_status_to_laravel(
     cmd_id: str,
-    status: CommandStatus,
+    status: Union[CommandStatus, str],
     details: Optional[Dict[str, Any]] = None
 ) -> bool:
     """
@@ -268,9 +272,12 @@ async def send_status_to_laravel(
     if ingest_token:
         headers["Authorization"] = f"Bearer {ingest_token}"
     
+    # Поддержка как enum, так и строки
+    status_value = status.value if isinstance(status, CommandStatus) else str(status)
+    
     payload = {
         "cmd_id": cmd_id,
-        "status": status.value,
+        "status": status_value,
         "details": details or None,
     }
     
@@ -284,7 +291,7 @@ async def send_status_to_laravel(
         
         if resp.status_code == 200:
             logger.info(
-                f"[STATUS_DELIVERY] Status '{status.value}' delivered to Laravel "
+                f"[STATUS_DELIVERY] Status '{status_value}' delivered to Laravel "
                 f"for cmd_id={cmd_id}"
             )
             return True

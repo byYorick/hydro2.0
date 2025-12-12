@@ -279,6 +279,57 @@ function scheduleEchoInitialization(force = false) {
 }
 
 // Обработчик события teardown от echoClient.ts
+// Обработчик события reconciliation для синхронизации данных при переподключении
+window.addEventListener('ws:reconciliation', (event: CustomEvent) => {
+  const { telemetry, commands, alerts } = event.detail || {}
+  
+  logger.info('[bootstrap.js] Processing reconciliation data', {
+    telemetryCount: telemetry?.length || 0,
+    commandsCount: commands?.length || 0,
+    alertsCount: alerts?.length || 0,
+  })
+
+  // Обновляем алерты через store
+  if (alerts && Array.isArray(alerts)) {
+    try {
+      // Динамически импортируем store, чтобы избежать циклических зависимостей
+      import('./stores/alerts').then(({ useAlertsStore }) => {
+        const alertsStore = useAlertsStore()
+        // Обновляем только активные алерты из snapshot
+        const activeAlerts = alerts.filter((a: any) => a.status === 'ACTIVE' || a.status === 'active')
+        alertsStore.setAll(activeAlerts)
+        logger.debug('[bootstrap.js] Alerts updated from reconciliation', {
+          count: activeAlerts.length,
+        })
+      }).catch((err) => {
+        logger.warn('[bootstrap.js] Failed to update alerts from reconciliation', {
+          error: err instanceof Error ? err.message : String(err),
+        })
+      })
+    } catch (err) {
+      logger.warn('[bootstrap.js] Error processing alerts reconciliation', {
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
+
+  // Уведомляем composables о необходимости обновления телеметрии и команд
+  // Они сами решат, нужно ли обновлять данные на основе текущего состояния
+  if (typeof window !== 'undefined' && window.dispatchEvent) {
+    // Создаем отдельные события для каждого типа данных
+    if (telemetry && Array.isArray(telemetry)) {
+      window.dispatchEvent(new CustomEvent('ws:reconciliation:telemetry', {
+        detail: { telemetry },
+      }))
+    }
+    if (commands && Array.isArray(commands)) {
+      window.dispatchEvent(new CustomEvent('ws:reconciliation:commands', {
+        detail: { commands },
+      }))
+    }
+  }
+})
+
 window.addEventListener('echo:teardown', () => {
   logger.debug('[bootstrap.js] Echo teardown event received, resetting flags', {});
   echoInitialized = false;

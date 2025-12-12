@@ -16,6 +16,7 @@ from collections import defaultdict
 import time
 
 from common.db import execute, fetch, upsert_telemetry_last, create_zone_event
+from common.commands import mark_command_sent, mark_command_send_failed
 from common.redis_queue import TelemetryQueue, TelemetryQueueItem, close_redis_client
 from common.mqtt import MqttClient, AsyncMqttClient, get_mqtt_client
 from common.env import get_settings
@@ -83,6 +84,8 @@ async def lifespan(app: FastAPI):
     await mqtt.subscribe("hydro/+/+/+/config_response", handle_config_response)
     # Подписка на command_response для обновления статусов команд (уведомления на фронт)
     await mqtt.subscribe("hydro/+/+/+/+/command_response", handle_command_response)
+    # Подписка на time_request для синхронизации времени устройств
+    await mqtt.subscribe("hydro/time/request", handle_time_request)
     
     logger.info("History Logger service started")
     logger.info("Subscribed to MQTT topics: hydro/+/+/+/+/telemetry, hydro/+/+/+/heartbeat, hydro/+/+/+/status, hydro/+/+/+/diagnostics, hydro/+/+/+/error, hydro/node_hello, hydro/+/+/+/node_hello, hydro/+/+/+/config_response, hydro/+/+/+/+/command_response")
@@ -538,7 +541,12 @@ async def handle_telemetry(topic: str, payload: bytes):
     # Создаём модель для очереди
     # Проверка валидности ts: должен быть > 1_000_000_000 (примерно 2001-09-09)
     # Если ts невалиден (аптайм несинхронизированной ноды), используем серверное время
+    # Также проверяем отклонение от серверного времени (искаженное время)
     MIN_VALID_TIMESTAMP = 1_000_000_000  # 2001-09-09 01:46:40 UTC
+    MAX_TIMESTAMP_DRIFT_SEC = 300  # Максимальное допустимое отклонение: 5 минут
+    server_time = datetime.utcnow()
+    server_timestamp = server_time.timestamp()
+    
     ts = None
     if validated_data.ts:
         try:
@@ -547,7 +555,23 @@ async def handle_telemetry(topic: str, payload: bytes):
                 ts_value = float(validated_data.ts)
                 # Проверяем что ts разумный (не аптайм несинхронизированной ноды)
                 if ts_value >= MIN_VALID_TIMESTAMP:
-                    ts = datetime.fromtimestamp(ts_value)
+                    # Проверяем отклонение от серверного времени
+                    drift = abs(ts_value - server_timestamp)
+                    if drift <= MAX_TIMESTAMP_DRIFT_SEC:
+                        ts = datetime.fromtimestamp(ts_value)
+                    else:
+                        logger.warning(
+                            "Timestamp from device is skewed (drift too large), using server time",
+                            extra={
+                                "device_ts": ts_value,
+                                "server_ts": server_timestamp,
+                                "drift_sec": drift,
+                                "max_drift_sec": MAX_TIMESTAMP_DRIFT_SEC,
+                                "topic": topic,
+                                "node_uid": node_uid,
+                                "zone_uid": zone_uid
+                            }
+                        )
                 else:
                     logger.warning(
                         "Invalid timestamp from firmware (likely uptime), using server time",
@@ -573,6 +597,23 @@ async def handle_telemetry(topic: str, payload: bytes):
                         }
                     )
                     ts = None
+                else:
+                    # Проверяем отклонение от серверного времени
+                    drift = abs(ts_timestamp - server_timestamp)
+                    if drift > MAX_TIMESTAMP_DRIFT_SEC:
+                        logger.warning(
+                            "Timestamp from device is skewed (drift too large), using server time",
+                            extra={
+                                "device_ts": ts_timestamp,
+                                "server_ts": server_timestamp,
+                                "drift_sec": drift,
+                                "max_drift_sec": MAX_TIMESTAMP_DRIFT_SEC,
+                                "topic": topic,
+                                "node_uid": node_uid,
+                                "zone_uid": zone_uid
+                            }
+                        )
+                        ts = None
         except Exception as e:
             logger.warning(
                 "Failed to parse timestamp, using server time",
@@ -587,7 +628,7 @@ async def handle_telemetry(topic: str, payload: bytes):
     
     # Если ts невалиден или отсутствует, используем серверное время
     if ts is None:
-        ts = datetime.utcnow()
+        ts = server_time
 
     # Используем metric_type (обязательное поле)
     metric_type = validated_data.metric_type
@@ -2399,6 +2440,77 @@ async def handle_command_response(topic: str, payload: bytes):
     except Exception as e:
         logger.error(f"[COMMAND_RESPONSE] Unexpected error processing message: {e}", exc_info=True)
         COMMAND_RESPONSE_ERROR.inc()
+
+
+async def handle_time_request(topic: str, payload: bytes):
+    """
+    Обработчик запросов времени от устройств (time_request).
+    Отправляет команду set_time с текущим серверным временем.
+    
+    Топик: hydro/time/request
+    Payload: {"message_type": "time_request", "uptime": <seconds>}
+    
+    Для отправки команды set_time нужно знать node_uid, gh_uid, zone_uid.
+    Так как топик hydro/time/request не содержит эту информацию,
+    мы используем временный топик с hardware_id или пытаемся найти устройство по MAC.
+    """
+    try:
+        data = _parse_json(payload)
+        if not data or not isinstance(data, dict):
+            logger.warning(f"[TIME_REQUEST] Invalid JSON in time_request from topic {topic}")
+            return
+        
+        # Получаем текущее серверное время (Unix timestamp в секундах)
+        server_time = int(datetime.utcnow().timestamp())
+        
+        # Получаем MQTT клиент для публикации команды
+        mqtt = await get_mqtt_client()
+        
+        # Пробуем найти устройство в БД по hardware_id или другим признакам
+        # Если не найдем, используем временный топик
+        node_uid = None
+        gh_uid = None
+        zone_uid = None
+        
+        # Пытаемся найти устройство в БД
+        # Для этого нужно знать hardware_id из payload или другую информацию
+        # Пока используем временный топик, который будет работать для всех устройств
+        
+        # Формируем команду set_time
+        command_payload = {
+            "cmd": "set_time",
+            "cmd_id": f"time_sync_{uuid.uuid4().hex[:8]}",
+            "params": {
+                "unix_ts": server_time
+            }
+        }
+        
+        # Публикуем в широковещательный топик для всех устройств, которые запросили время
+        # Устройства должны подписаться на hydro/time/response или использовать другой механизм
+        # Временно используем временный топик, который устройство может использовать
+        # для получения времени при первом подключении
+        
+        # Альтернативный подход: публикуем в топик, на который подписаны все устройства
+        # Используем топик hydro/time/response для широковещательной рассылки времени
+        broadcast_topic = "hydro/time/response"
+        response_payload = {
+            "message_type": "time_response",
+            "unix_ts": server_time,
+            "server_time": server_time
+        }
+        
+        # Публикуем ответ
+        mqtt._client.publish_json(broadcast_topic, response_payload, qos=1, retain=False)
+        logger.info(
+            f"[TIME_REQUEST] Sent time response: server_time={server_time}, "
+            f"topic={broadcast_topic}"
+        )
+        
+        # Также пытаемся отправить команду set_time напрямую, если знаем node_uid
+        # Это можно сделать через mqtt-bridge API, но для простоты используем широковещательный ответ
+        
+    except Exception as e:
+        logger.error(f"[TIME_REQUEST] Unexpected error processing time_request: {e}", exc_info=True)
     # В dev окружении: если токен настроен, он обязателен
     if s.history_logger_api_token:
         token = request.headers.get("Authorization", "")
@@ -2733,23 +2845,49 @@ async def publish_zone_command(
     # Получаем MQTT клиент
     mqtt = await get_mqtt_client()
     
+    # Убеждаемся, что команда существует в БД со статусом QUEUED
     try:
-        logger.info(f"Publishing command for zone {zone_id}, node {req.node_uid}, channel {req.channel}, cmd_id: {cmd_id}")
-        await publish_command_mqtt(
-            mqtt,
-            req.greenhouse_uid,
-            zone_id,
-            req.node_uid,
-            req.channel,
-            payload,
-            hardware_id=req.hardware_id,
-            zone_uid=zone_uid
-        )
-        logger.info(f"Command published successfully for zone {zone_id}, node {req.node_uid}")
-        return {"status": "ok", "data": {"command_id": cmd_id}}
+        existing_cmd = await fetch("SELECT status FROM commands WHERE cmd_id = $1", cmd_id)
+        if not existing_cmd:
+            node_rows = await fetch("SELECT id FROM nodes WHERE uid = $1 AND zone_id = $2", req.node_uid, zone_id)
+            node_id = node_rows[0]["id"] if node_rows else None
+            await execute(
+                """
+                INSERT INTO commands (zone_id, node_id, channel, cmd, params, status, cmd_id, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, 'QUEUED', $6, NOW(), NOW())
+                ON CONFLICT (cmd_id) DO NOTHING
+                """,
+                zone_id, node_id, req.channel, req.get_command_name(), req.params or {}, cmd_id
+            )
     except Exception as e:
-        logger.error(f"Failed to publish command for zone {zone_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to publish command: {str(e)}")
+        logger.warning(f"Failed to ensure command in DB: {e}")
+    
+    # Публикуем с ретраями
+    max_retries = 3
+    retry_delays = [0.5, 1.0, 2.0]
+    publish_success = False
+    last_error = None
+    
+    for attempt in range(max_retries):
+        try:
+            await publish_command_mqtt(mqtt, req.greenhouse_uid, zone_id, req.node_uid, req.channel, payload, hardware_id=req.hardware_id, zone_uid=zone_uid)
+            publish_success = True
+            break
+        except Exception as e:
+            last_error = e
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_delays[attempt])
+    
+    if publish_success:
+        await mark_command_sent(cmd_id, allow_resend=True)
+        try:
+            await send_status_to_laravel(cmd_id, "SENT", {"zone_id": zone_id, "node_uid": req.node_uid, "channel": req.channel})
+        except Exception:
+            pass
+        return {"status": "ok", "data": {"command_id": cmd_id}}
+    else:
+        await mark_command_send_failed(cmd_id, str(last_error))
+        raise HTTPException(status_code=500, detail=f"Failed to publish command: {str(last_error)}")
 
 
 @app.post("/nodes/{node_uid}/commands")
@@ -2788,23 +2926,49 @@ async def publish_node_command(
     # Получаем MQTT клиент
     mqtt = await get_mqtt_client()
     
+    # Убеждаемся, что команда существует в БД со статусом QUEUED
     try:
-        logger.info(f"Publishing command for node {node_uid}, zone {req.zone_id}, channel {req.channel}, cmd_id: {cmd_id}")
-        await publish_command_mqtt(
-            mqtt,
-            req.greenhouse_uid,
-            req.zone_id,
-            node_uid,
-            req.channel,
-            payload,
-            hardware_id=req.hardware_id,
-            zone_uid=zone_uid
-        )
-        logger.info(f"Command published successfully for node {node_uid}")
-        return {"status": "ok", "data": {"command_id": cmd_id}}
+        existing_cmd = await fetch("SELECT status FROM commands WHERE cmd_id = $1", cmd_id)
+        if not existing_cmd:
+            node_rows = await fetch("SELECT id FROM nodes WHERE uid = $1 AND zone_id = $2", node_uid, req.zone_id)
+            node_id = node_rows[0]["id"] if node_rows else None
+            await execute(
+                """
+                INSERT INTO commands (zone_id, node_id, channel, cmd, params, status, cmd_id, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, 'QUEUED', $6, NOW(), NOW())
+                ON CONFLICT (cmd_id) DO NOTHING
+                """,
+                req.zone_id, node_id, req.channel, req.get_command_name(), req.params or {}, cmd_id
+            )
     except Exception as e:
-        logger.error(f"Failed to publish command for node {node_uid}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to publish command: {str(e)}")
+        logger.warning(f"Failed to ensure command in DB: {e}")
+    
+    # Публикуем с ретраями
+    max_retries = 3
+    retry_delays = [0.5, 1.0, 2.0]
+    publish_success = False
+    last_error = None
+    
+    for attempt in range(max_retries):
+        try:
+            await publish_command_mqtt(mqtt, req.greenhouse_uid, req.zone_id, node_uid, req.channel, payload, hardware_id=req.hardware_id, zone_uid=zone_uid)
+            publish_success = True
+            break
+        except Exception as e:
+            last_error = e
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_delays[attempt])
+    
+    if publish_success:
+        await mark_command_sent(cmd_id, allow_resend=True)
+        try:
+            await send_status_to_laravel(cmd_id, "SENT", {"zone_id": req.zone_id, "node_uid": node_uid, "channel": req.channel})
+        except Exception:
+            pass
+        return {"status": "ok", "data": {"command_id": cmd_id}}
+    else:
+        await mark_command_send_failed(cmd_id, str(last_error))
+        raise HTTPException(status_code=500, detail=f"Failed to publish command: {str(last_error)}")
 
 
 @app.post("/commands")
@@ -2876,21 +3040,132 @@ async def publish_command(
         extra=log_context
     )
     
-    # Получаем MQTT клиент
-    mqtt = await get_mqtt_client()
-    
+    # ШАГ 1: Убеждаемся, что команда существует в БД со статусом QUEUED
+    # Это гарантирует, что команда уже создана до публикации в MQTT
     try:
-        await publish_command_mqtt(
-            mqtt,
-            req.greenhouse_uid,
-            req.zone_id,
-            req.node_uid,
-            req.channel,
-            payload,
-            hardware_id=req.hardware_id,
-            zone_uid=zone_uid
+        # Проверяем, существует ли команда в БД
+        existing_cmd = await fetch(
+            """
+            SELECT status FROM commands WHERE cmd_id = $1
+            """,
+            cmd_id
         )
-        logger.info(f"Command published successfully: {log_context}")
+        
+        if not existing_cmd:
+            # Команда не существует - создаем её со статусом QUEUED
+            # Получаем node_id из node_uid
+            node_rows = await fetch(
+                """
+                SELECT id FROM nodes WHERE uid = $1 AND zone_id = $2
+                """,
+                req.node_uid,
+                req.zone_id
+            )
+            node_id = node_rows[0]["id"] if node_rows else None
+            
+            await execute(
+                """
+                INSERT INTO commands (zone_id, node_id, channel, cmd, params, status, cmd_id, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, 'QUEUED', $6, NOW(), NOW())
+                ON CONFLICT (cmd_id) DO NOTHING
+                """,
+                req.zone_id,
+                node_id,
+                req.channel,
+                req.get_command_name(),
+                params_without_cmd_id,
+                cmd_id
+            )
+            logger.info(f"Command {cmd_id} created in DB with status QUEUED")
+        else:
+            current_status = existing_cmd[0]["status"]
+            if current_status not in ('QUEUED', 'SEND_FAILED'):
+                logger.warning(
+                    f"Command {cmd_id} already exists with status {current_status}, "
+                    f"cannot republish. Skipping."
+                )
+                return {
+                    "status": "ok",
+                    "data": {
+                        "command_id": cmd_id,
+                        "zone_id": req.zone_id,
+                        "node_uid": req.node_uid,
+                        "channel": req.channel,
+                        "note": f"Command already exists with status {current_status}"
+                    }
+                }
+    except Exception as e:
+        logger.error(f"Failed to ensure command in DB: {e}", exc_info=True, extra=log_context)
+        # Продолжаем выполнение, возможно команда уже существует
+    
+    # ШАГ 2: Публикуем команду в MQTT с ретраями и backoff
+    mqtt = await get_mqtt_client()
+    max_retries = 3
+    retry_delays = [0.5, 1.0, 2.0]  # Exponential backoff
+    
+    publish_success = False
+    last_error = None
+    
+    for attempt in range(max_retries):
+        try:
+            await publish_command_mqtt(
+                mqtt,
+                req.greenhouse_uid,
+                req.zone_id,
+                req.node_uid,
+                req.channel,
+                payload,
+                hardware_id=req.hardware_id,
+                zone_uid=zone_uid
+            )
+            publish_success = True
+            logger.info(f"Command published successfully (attempt {attempt + 1}/{max_retries}): {log_context}")
+            break
+        except Exception as e:
+            last_error = e
+            if attempt < max_retries - 1:
+                delay = retry_delays[attempt]
+                logger.warning(
+                    f"Failed to publish command (attempt {attempt + 1}/{max_retries}): {e}. "
+                    f"Retrying in {delay}s...",
+                    extra=log_context
+                )
+                await asyncio.sleep(delay)
+            else:
+                logger.error(
+                    f"Failed to publish command after {max_retries} attempts: {e}",
+                    exc_info=True,
+                    extra=log_context
+                )
+    
+    # ШАГ 3: Обновляем статус команды в БД
+    if publish_success:
+        # Обновляем статус на SENT только после успешной публикации
+        try:
+            await mark_command_sent(cmd_id, allow_resend=True)
+            logger.info(f"Command {cmd_id} status updated to SENT")
+            
+            # ШАГ 4: Отправляем подтверждение корреляции в backend через command_status_queue
+            # Это гарантирует, что backend получит уведомление о статусе SENT
+            try:
+                await send_status_to_laravel(
+                    cmd_id=cmd_id,
+                    status="SENT",
+                    details={
+                        "zone_id": req.zone_id,
+                        "node_uid": req.node_uid,
+                        "channel": req.channel,
+                        "command": req.get_command_name(),
+                        "published_at": datetime.utcnow().isoformat()
+                    }
+                )
+                logger.debug(f"Correlation ACK sent for command {cmd_id} (status: SENT)")
+            except Exception as e:
+                # Ошибка отправки ACK не критична - команда уже в БД со статусом SENT
+                # Воркер ретраев доставит статус позже
+                logger.warning(f"Failed to send correlation ACK for command {cmd_id}: {e}")
+        except Exception as e:
+            logger.error(f"Failed to update command status to SENT: {e}", exc_info=True, extra=log_context)
         
         # Метрики
         COMMANDS_SENT.labels(zone_id=str(req.zone_id), metric=req.get_command_name()).inc()
@@ -2904,10 +3179,19 @@ async def publish_command(
                 "channel": req.channel
             }
         }
-    except Exception as e:
-        logger.error(f"Failed to publish command: {e}", exc_info=True, extra=log_context)
-        MQTT_PUBLISH_ERRORS.labels(error_type=type(e).__name__).inc()
-        raise HTTPException(status_code=500, detail=f"Failed to publish command: {str(e)}")
+    else:
+        # Публикация не удалась - обновляем статус на SEND_FAILED
+        try:
+            await mark_command_send_failed(cmd_id, str(last_error))
+            logger.error(f"Command {cmd_id} status updated to SEND_FAILED")
+        except Exception as e:
+            logger.error(f"Failed to update command status to SEND_FAILED: {e}", exc_info=True)
+        
+        MQTT_PUBLISH_ERRORS.labels(error_type=type(last_error).__name__).inc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to publish command after {max_retries} attempts: {str(last_error)}"
+        )
 
 
 class FillDrainRequest(BaseModel):

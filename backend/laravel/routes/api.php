@@ -173,6 +173,12 @@ Route::middleware([
     Route::get('nodes/{id}/telemetry/history', [TelemetryController::class, 'nodeHistory']);
     Route::get('telemetry/aggregates', [TelemetryController::class, 'aggregates']);
 
+    // Sync endpoints for WebSocket reconnection (viewer+)
+    Route::get('sync/telemetry', [\App\Http\Controllers\SyncController::class, 'telemetry']);
+    Route::get('sync/commands', [\App\Http\Controllers\SyncController::class, 'commands']);
+    Route::get('sync/alerts', [\App\Http\Controllers\SyncController::class, 'alerts']);
+    Route::get('sync/full', [\App\Http\Controllers\SyncController::class, 'full']);
+
     // Service logs (admin/operator/engineer)
     Route::middleware(['role:admin,operator,engineer', 'throttle:60,1'])
         ->get('logs/service', [ServiceLogController::class, 'index']);

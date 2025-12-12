@@ -21,6 +21,7 @@
 #include "esp_mac.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "cJSON.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -686,6 +687,14 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                 ESP_LOGE(TAG, "Failed to subscribe to %s (msg_id=%d)", command_topic, cmd_sub_msg_id);
             }
             
+            // Подписка на time/response для получения синхронизации времени от сервера
+            int time_sub_msg_id = esp_mqtt_client_subscribe(s_mqtt_client, "hydro/time/response", 1);
+            if (time_sub_msg_id >= 0) {
+                ESP_LOGI(TAG, "Subscribed to hydro/time/response (msg_id=%d)", time_sub_msg_id);
+            } else {
+                ESP_LOGW(TAG, "Failed to subscribe to hydro/time/response (msg_id=%d)", time_sub_msg_id);
+            }
+            
             // Также подписываемся на временный топик команд для узлов, которые еще не получили конфигурацию
             // Это позволяет получить команды даже если нода использует временные идентификаторы
             // Используем hardware_id (MAC адрес) для временного топика, чтобы избежать конфликтов при одинаковом node_uid
@@ -717,6 +726,11 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                     }
                 }
             }
+            
+            // Запрос времени у сервера для синхронизации часов устройства
+            // Это обеспечивает единую временную линию между устройствами и бэкендом
+            node_utils_request_time();
+            ESP_LOGI(TAG, "Requested time synchronization from server");
 
             // Вызов callback подключения
             if (s_connection_cb) {
@@ -846,7 +860,31 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
             // Согласно MQTT_SPEC_FULL.md раздел 2:
             // - Config: hydro/{gh}/{zone}/{node}/config
             // - Command: hydro/{gh}/{zone}/{node}/{channel}/command
-            if (strstr(topic, "/config") != NULL) {
+            // - Time Response: hydro/time/response (для синхронизации времени)
+            if (strcmp(topic, "hydro/time/response") == 0) {
+                // Time response топик - обрабатываем синхронизацию времени
+                ESP_LOGI(TAG, "Time response message received, len=%d", event->data_len);
+                
+                // Парсим JSON для получения unix_ts
+                cJSON *json = cJSON_Parse(data);
+                if (json) {
+                    cJSON *unix_ts_item = cJSON_GetObjectItem(json, "unix_ts");
+                    if (unix_ts_item && cJSON_IsNumber(unix_ts_item)) {
+                        int64_t unix_ts = (int64_t)cJSON_GetNumberValue(unix_ts_item);
+                        esp_err_t err = node_utils_set_time(unix_ts);
+                        if (err == ESP_OK) {
+                            ESP_LOGI(TAG, "Time synchronized successfully: %lld", (long long)unix_ts);
+                        } else {
+                            ESP_LOGE(TAG, "Failed to set time: %s", esp_err_to_name(err));
+                        }
+                    } else {
+                        ESP_LOGW(TAG, "Invalid time response format: missing or invalid unix_ts");
+                    }
+                    cJSON_Delete(json);
+                } else {
+                    ESP_LOGW(TAG, "Failed to parse time response JSON");
+                }
+            } else if (strstr(topic, "/config") != NULL) {
                 // Config топик - вызываем callback для обработки конфигурации
                 ESP_LOGI(TAG, "Config message received on topic: %s, len=%d", topic, event->data_len);
                 if (s_config_cb) {

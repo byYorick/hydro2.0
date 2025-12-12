@@ -2,6 +2,7 @@ import Echo from 'laravel-echo'
 import Pusher from 'pusher-js'
 import { logger } from './logger'
 import { readBooleanEnv } from './env'
+import axios from 'axios'
 
 type WsState = 'connecting' | 'connected' | 'disconnected' | 'unavailable' | 'failed'
 type StateListener = (state: WsState) => void
@@ -33,6 +34,8 @@ let lastError: ConnectionError | null = null
 let isReconnecting = false
 let connectionHandlers: ConnectionHandler[] = []
 let connectingStartTime = 0 // Отслеживание времени начала подключения (объявлено на уровне модуля)
+let lastSyncTimestamp: number | null = null // Время последней синхронизации
+let isSyncing = false // Флаг для предотвращения параллельных синхронизаций
 
 // Хранилище активных таймеров для отмены при новом подключении/teardown
 interface ActiveTimer {
@@ -668,6 +671,12 @@ function bindConnectionEvents(connection: any): void {
         })
         emitState('connected')
         clearActiveTimers()
+        
+        // Запускаем синхронизацию данных при переподключении
+        // Используем небольшую задержку, чтобы дать время подписаться на каналы
+        setTimeout(() => {
+          performReconciliation()
+        }, 500)
       },
     },
     {
@@ -1128,6 +1137,82 @@ export function getConnectionState(): {
     protocol,
     port,
     host,
+  }
+}
+
+/**
+ * Выполняет синхронизацию данных при переподключении WebSocket.
+ * 
+ * Получает snapshots телеметрии, команд и алертов через API
+ * и уведомляет composables о необходимости обновления данных.
+ */
+async function performReconciliation(): Promise<void> {
+  // Предотвращаем параллельные синхронизации
+  if (isSyncing) {
+    logger.debug('[echoClient] Reconciliation already in progress, skipping')
+    return
+  }
+
+  // Проверяем, что прошло достаточно времени с последней синхронизации
+  const now = Date.now()
+  const MIN_SYNC_INTERVAL = 5000 // Минимум 5 секунд между синхронизациями
+  if (lastSyncTimestamp && now - lastSyncTimestamp < MIN_SYNC_INTERVAL) {
+    logger.debug('[echoClient] Reconciliation skipped: too soon after last sync', {
+      timeSinceLastSync: now - lastSyncTimestamp,
+      minInterval: MIN_SYNC_INTERVAL,
+    })
+    return
+  }
+
+  isSyncing = true
+  lastSyncTimestamp = now
+
+  try {
+    logger.info('[echoClient] Starting data reconciliation after reconnect')
+
+    // Получаем полный snapshot данных
+    const apiUrl = import.meta.env.VITE_API_URL || '/api'
+    const response = await axios.get(`${apiUrl}/sync/full`, {
+      timeout: 10000, // 10 секунд таймаут
+      headers: {
+        'Accept': 'application/json',
+      },
+    })
+
+    if (response.data?.status === 'ok' && response.data?.data) {
+      const { telemetry, commands, alerts } = response.data.data
+
+      logger.info('[echoClient] Reconciliation completed', {
+        telemetryCount: telemetry?.length || 0,
+        commandsCount: commands?.length || 0,
+        alertsCount: alerts?.length || 0,
+        timestamp: response.data.timestamp,
+      })
+
+      // Уведомляем composables о необходимости обновления данных
+      // Используем CustomEvent для передачи данных
+      if (typeof window !== 'undefined' && window.dispatchEvent) {
+        window.dispatchEvent(new CustomEvent('ws:reconciliation', {
+          detail: {
+            telemetry: telemetry || [],
+            commands: commands || [],
+            alerts: alerts || [],
+            timestamp: response.data.timestamp,
+          },
+        }))
+      }
+    } else {
+      logger.warn('[echoClient] Reconciliation failed: invalid response format', {
+        status: response.data?.status,
+      })
+    }
+  } catch (error) {
+    logger.error('[echoClient] Reconciliation failed', {
+      error: error instanceof Error ? error.message : String(error),
+    })
+    // Не блокируем работу приложения при ошибке синхронизации
+  } finally {
+    isSyncing = false
   }
 }
 

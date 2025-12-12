@@ -1,7 +1,7 @@
 /**
  * Composable для отправки команд зонам и узлам
  */
-import { ref, computed, type Ref, type ComputedRef } from 'vue'
+import { ref, computed, onMounted, onUnmounted, type Ref, type ComputedRef } from 'vue'
 import { router } from '@inertiajs/vue3'
 import { useApi, type ToastHandler } from './useApi'
 import { useErrorHandler } from './useErrorHandler'
@@ -337,6 +337,77 @@ export function useCommands(showToast?: ToastHandler) {
       }
     }, RELOAD_DEBOUNCE_MS))
   }
+
+  // Обработчик события reconciliation для обновления статусов команд при переподключении
+  function handleReconciliation(event: CustomEvent) {
+    const { commands } = event.detail || {}
+    
+    if (!commands || !Array.isArray(commands)) {
+      return
+    }
+
+    logger.debug('[useCommands] Processing reconciliation commands data', {
+      count: commands.length,
+    })
+
+    // Обновляем статусы команд из snapshot
+    for (const cmd of commands) {
+      if (!cmd.cmd_id) continue
+      
+      const commandId = cmd.cmd_id
+      const status = normalizeStatus(cmd.status || 'unknown')
+      
+      // Обновляем только если команда еще не завершена или статус изменился
+      if (pendingCommands.value.has(commandId)) {
+        const existing = pendingCommands.value.get(commandId)!
+        if (existing.status !== status) {
+          pendingCommands.value.set(commandId, {
+            ...existing,
+            status,
+            message: cmd.error_message,
+            timestamp: cmd.ack_at || cmd.sent_at || cmd.created_at || Date.now(),
+          })
+          logger.debug('[useCommands] Updated command status from reconciliation', {
+            commandId,
+            oldStatus: existing.status,
+            newStatus: status,
+          })
+        }
+      } else if (!['DONE', 'FAILED', 'TIMEOUT'].includes(status)) {
+        // Добавляем активные команды, которых еще нет в pendingCommands
+        pendingCommands.value.set(commandId, {
+          status,
+          zoneId: cmd.zone_id,
+          nodeId: cmd.node_id,
+          type: cmd.type || 'unknown',
+          timestamp: cmd.ack_at || cmd.sent_at || cmd.created_at || Date.now(),
+          message: cmd.error_message,
+        })
+        logger.debug('[useCommands] Added command from reconciliation', {
+          commandId,
+          status,
+        })
+      }
+    }
+
+    logger.info('[useCommands] Reconciliation completed', {
+      commandsProcessed: commands.length,
+      pendingCount: pendingCommands.value.size,
+    })
+  }
+
+  // Подписываемся на событие reconciliation при монтировании
+  onMounted(() => {
+    if (typeof window !== 'undefined') {
+      window.addEventListener('ws:reconciliation:commands', handleReconciliation as EventListener)
+    }
+  })
+
+  onUnmounted(() => {
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('ws:reconciliation:commands', handleReconciliation as EventListener)
+    }
+  })
 
   return {
     loading: computed(() => loading.value) as ComputedRef<boolean>,
