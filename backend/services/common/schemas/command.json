@@ -1,0 +1,52 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Command",
+  "description": "Единый контракт команды для всех сервисов",
+  "type": "object",
+  "required": ["cmd_id", "cmd", "ts"],
+  "properties": {
+    "cmd_id": {
+      "type": "string",
+      "description": "Уникальный идентификатор команды (UUID или correlation_id)",
+      "pattern": "^[a-zA-Z0-9_-]+$",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "correlation_id": {
+      "type": "string",
+      "description": "Альтернативное поле для cmd_id (для обратной совместимости)",
+      "pattern": "^[a-zA-Z0-9_-]+$",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "cmd": {
+      "type": "string",
+      "description": "Тип команды (например: dose, run_pump, calibrate_ph)",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "params": {
+      "type": "object",
+      "description": "Параметры команды",
+      "additionalProperties": true,
+      "default": {}
+    },
+    "deadline_ms": {
+      "type": "integer",
+      "description": "Дедлайн выполнения команды в миллисекундах (Unix timestamp)",
+      "minimum": 0
+    },
+    "attempt": {
+      "type": "integer",
+      "description": "Номер попытки выполнения команды (начинается с 1)",
+      "minimum": 1,
+      "default": 1
+    },
+    "ts": {
+      "type": "integer",
+      "description": "Unix timestamp создания команды в миллисекундах",
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false
+}

@@ -106,10 +106,13 @@ cJSON *node_command_handler_create_response(
 /**
  * @brief Проверка, была ли команда уже обработана (защита от дубликатов)
  * 
+ * Использует LRU кеш per channel для отслеживания последних N cmd_id.
+ * 
  * @param cmd_id ID команды
+ * @param channel Имя канала (может быть NULL для "default")
  * @return true если команда уже обработана
  */
-bool node_command_handler_is_duplicate(const char *cmd_id);
+bool node_command_handler_is_duplicate(const char *cmd_id, const char *channel);
 
 /**
  * @brief Инициализация встроенных обработчиков команд

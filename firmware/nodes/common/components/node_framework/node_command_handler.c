@@ -33,8 +33,12 @@ typedef struct {
 } command_handler_entry_t;
 
 // Кеш для защиты от дубликатов команд
-#define CMD_ID_CACHE_SIZE 20
+// ВАЖНО: Дедуп работает глобально по cmd_id (независимо от channel и топика)
+// Это защищает от двойной подписки: если команда придет из temp-topic и main-topic,
+// она будет обработана только один раз
+#define CMD_ID_CACHE_SIZE 50  // Увеличено для глобального дедупа
 #define CMD_ID_TTL_MS 60000  // 60 секунд TTL
+#define MAX_CHANNEL_NAME_LEN 64
 
 typedef struct {
     char cmd_id[64];
@@ -42,21 +46,43 @@ typedef struct {
     bool valid;
 } cmd_id_cache_entry_t;
 
+// Глобальный кеш для дедупа по cmd_id (независимо от channel)
+// Это защищает от двойной подписки на temp и main топики
+static struct {
+    cmd_id_cache_entry_t global_cache[CMD_ID_CACHE_SIZE];
+    size_t lru_index;  // Индекс для LRU (круговой буфер)
+    SemaphoreHandle_t cache_mutex;
+} s_global_cmd_cache = {0};
+
+// Per-channel кеш (для обратной совместимости и дополнительной защиты)
+typedef struct {
+    char channel[MAX_CHANNEL_NAME_LEN];
+    cmd_id_cache_entry_t entries[CMD_ID_CACHE_SIZE];
+    size_t lru_index;  // Индекс для LRU (круговой буфер)
+} channel_cache_t;
+
+#define MAX_CHANNEL_CACHES 16  // Максимум каналов с кешем
+
 static struct {
     command_handler_entry_t handlers[NODE_COMMAND_HANDLER_MAX];
     size_t handler_count;
     SemaphoreHandle_t mutex;
     
-    cmd_id_cache_entry_t cmd_id_cache[CMD_ID_CACHE_SIZE];
-    SemaphoreHandle_t cache_mutex;
+    // LRU кеш per channel (для обратной совместимости)
+    channel_cache_t channel_caches[MAX_CHANNEL_CACHES];
+    size_t channel_cache_count;
+    SemaphoreHandle_t channel_cache_mutex;
 } s_command_handler = {0};
 
 static void init_mutexes(void) {
     if (s_command_handler.mutex == NULL) {
         s_command_handler.mutex = xSemaphoreCreateMutex();
     }
-    if (s_command_handler.cache_mutex == NULL) {
-        s_command_handler.cache_mutex = xSemaphoreCreateMutex();
+    if (s_command_handler.channel_cache_mutex == NULL) {
+        s_command_handler.channel_cache_mutex = xSemaphoreCreateMutex();
+    }
+    if (s_global_cmd_cache.cache_mutex == NULL) {
+        s_global_cmd_cache.cache_mutex = xSemaphoreCreateMutex();
     }
 }
 
@@ -462,9 +488,25 @@ void node_command_handler_process(
         ESP_LOGW(TAG, "Command without HMAC fields (ts/sig): cmd=%s, cmd_id=%s (backward compatibility mode)", cmd, cmd_id);
     }
 
-    // Проверка на дубликат
-    if (node_command_handler_is_duplicate(cmd_id)) {
-        ESP_LOGW(TAG, "Duplicate command ignored: %s (id: %s)", cmd, cmd_id);
+    // Проверка на дубликат (per channel)
+    if (node_command_handler_is_duplicate(cmd_id, channel)) {
+        ESP_LOGW(TAG, "Duplicate command ignored: %s (id: %s, channel: %s)", cmd, cmd_id, channel ? channel : "default");
+        // Отправляем ответ с тем же cmd_id, но без повторного выполнения
+        cJSON *response = node_command_handler_create_response(
+            cmd_id,
+            "ACK",
+            NULL,
+            "Command already processed (duplicate)",
+            NULL
+        );
+        if (response) {
+            char *json_str = cJSON_PrintUnformatted(response);
+            if (json_str) {
+                mqtt_manager_publish_command_response(channel ? channel : "default", json_str);
+                free(json_str);
+            }
+            cJSON_Delete(response);
+        }
         cJSON_Delete(json);
         return;
     }
@@ -524,12 +566,16 @@ void node_command_handler_process(
 
         if (params_obj && cJSON_IsObject(params_obj)) {
             params = cJSON_Duplicate(params_obj, 1);
+            // Добавляем cmd_id в params для обработчиков (нужно для командного автомата)
+            if (params && cmd_id) {
+                cJSON_AddStringToObject(params, "cmd_id", cmd_id);
+            }
         } else {
             // Fallback на старый формат: копируем весь объект и убираем служебные поля
             params = cJSON_Duplicate(json, 1);
             if (params) {
                 cJSON_DeleteItemFromObject(params, "cmd");
-                cJSON_DeleteItemFromObject(params, "cmd_id");
+                // cmd_id оставляем в params для обработчиков
             }
         }
 
@@ -728,49 +774,89 @@ cJSON *node_command_handler_create_response(
     return response;
 }
 
-bool node_command_handler_is_duplicate(const char *cmd_id) {
+/**
+ * @brief Найти или создать кеш для канала
+ * @note Эта функция используется для обратной совместимости.
+ * Основной дедуп теперь работает глобально по cmd_id.
+ */
+static channel_cache_t *find_or_create_channel_cache(const char *channel) {
+    if (channel == NULL || s_command_handler.channel_cache_mutex == NULL) {
+        return NULL;
+    }
+
+    const char *channel_name = (channel[0] != '\0') ? channel : "default";
+    
+    // Ищем существующий кеш для канала
+    for (size_t i = 0; i < s_command_handler.channel_cache_count; i++) {
+        if (strcmp(s_command_handler.channel_caches[i].channel, channel_name) == 0) {
+            return &s_command_handler.channel_caches[i];
+        }
+    }
+
+    // Создаем новый кеш для канала, если есть место
+    if (s_command_handler.channel_cache_count < MAX_CHANNEL_CACHES) {
+        channel_cache_t *cache = &s_command_handler.channel_caches[s_command_handler.channel_cache_count];
+        strncpy(cache->channel, channel_name, MAX_CHANNEL_NAME_LEN - 1);
+        cache->channel[MAX_CHANNEL_NAME_LEN - 1] = '\0';
+        memset(cache->entries, 0, sizeof(cache->entries));
+        cache->lru_index = 0;
+        s_command_handler.channel_cache_count++;
+        return cache;
+    }
+
+    // Если нет места, используем первый кеш (простое решение)
+    // В реальности можно использовать LRU для самих каналов, но для простоты используем первый
+    if (s_command_handler.channel_cache_count > 0) {
+        return &s_command_handler.channel_caches[0];
+    }
+
+    return NULL;
+}
+
+bool node_command_handler_is_duplicate(const char *cmd_id, const char *channel) {
     if (cmd_id == NULL) {
         return false;
     }
 
     init_mutexes();
 
-    if (s_command_handler.cache_mutex == NULL) {
+    if (s_global_cmd_cache.cache_mutex == NULL) {
         return false;
     }
 
     uint64_t current_time_ms = esp_timer_get_time() / 1000;
 
-    if (xSemaphoreTake(s_command_handler.cache_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
-        // Проверяем кеш
+    // ГЛОБАЛЬНЫЙ ДЕДУП: проверяем cmd_id независимо от channel и топика
+    // Это защищает от двойной подписки: если команда придет из temp-topic и main-topic,
+    // она будет обработана только один раз
+    if (xSemaphoreTake(s_global_cmd_cache.cache_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        // Проверяем глобальный кеш
         for (size_t i = 0; i < CMD_ID_CACHE_SIZE; i++) {
-            if (s_command_handler.cmd_id_cache[i].valid) {
+            if (s_global_cmd_cache.global_cache[i].valid) {
                 // Проверяем TTL
-                if (current_time_ms - s_command_handler.cmd_id_cache[i].timestamp_ms > CMD_ID_TTL_MS) {
-                    s_command_handler.cmd_id_cache[i].valid = false;
+                if (current_time_ms - s_global_cmd_cache.global_cache[i].timestamp_ms > CMD_ID_TTL_MS) {
+                    s_global_cmd_cache.global_cache[i].valid = false;
                     continue;
                 }
 
-                // Проверяем совпадение cmd_id
-                if (strcmp(s_command_handler.cmd_id_cache[i].cmd_id, cmd_id) == 0) {
-                    xSemaphoreGive(s_command_handler.cache_mutex);
-                    return true;
+                // Проверяем совпадение cmd_id (глобально, независимо от channel)
+                if (strcmp(s_global_cmd_cache.global_cache[i].cmd_id, cmd_id) == 0) {
+                    xSemaphoreGive(s_global_cmd_cache.cache_mutex);
+                    ESP_LOGD(TAG, "Duplicate command detected (global dedup): cmd_id=%s", cmd_id);
+                    return true;  // Дубликат найден
                 }
             }
         }
 
-        // Добавляем в кеш
-        for (size_t i = 0; i < CMD_ID_CACHE_SIZE; i++) {
-            if (!s_command_handler.cmd_id_cache[i].valid) {
-                strncpy(s_command_handler.cmd_id_cache[i].cmd_id, cmd_id, 63);
-                s_command_handler.cmd_id_cache[i].cmd_id[63] = '\0';
-                s_command_handler.cmd_id_cache[i].timestamp_ms = current_time_ms;
-                s_command_handler.cmd_id_cache[i].valid = true;
-                break;
-            }
-        }
+        // Добавляем в глобальный кеш (LRU: перезаписываем старую запись)
+        size_t idx = s_global_cmd_cache.lru_index % CMD_ID_CACHE_SIZE;
+        strncpy(s_global_cmd_cache.global_cache[idx].cmd_id, cmd_id, 63);
+        s_global_cmd_cache.global_cache[idx].cmd_id[63] = '\0';
+        s_global_cmd_cache.global_cache[idx].timestamp_ms = current_time_ms;
+        s_global_cmd_cache.global_cache[idx].valid = true;
+        s_global_cmd_cache.lru_index = (s_global_cmd_cache.lru_index + 1) % CMD_ID_CACHE_SIZE;
 
-        xSemaphoreGive(s_command_handler.cache_mutex);
+        xSemaphoreGive(s_global_cmd_cache.cache_mutex);
     }
 
     return false;

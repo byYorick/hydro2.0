@@ -162,22 +162,35 @@ class PythonIngestController extends Controller
         $this->ensureToken($request);
         $data = $request->validate([
             'cmd_id' => ['required', 'string', 'max:64'],
-            'status' => ['required', 'string', 'in:accepted,completed,failed,ack'],
+            'status' => ['required', 'string', 'in:ACCEPTED,DONE,FAILED,accepted,completed,failed,ack'],
             'details' => ['nullable', 'array'],
         ]);
+
+        // Нормализуем статус: поддерживаем старые значения для обратной совместимости
+        $normalizedStatus = match (strtoupper($data['status'])) {
+            'ACCEPTED', 'ACK' => 'accepted',
+            'DONE', 'COMPLETED' => 'completed',
+            'FAILED' => 'failed',
+            default => $data['status'],
+        };
 
         // Обновляем статус команды в БД, чтобы фронт получил broadcast (CommandObserver)
         $command = \App\Models\Command::where('cmd_id', $data['cmd_id'])->latest('id')->first();
         if ($command) {
-            $updates = ['status' => $data['status']];
+            $updates = ['status' => $normalizedStatus];
 
-            if (in_array($data['status'], ['accepted', 'ack']) && ! $command->ack_at) {
+            // ACCEPTED - команда принята к выполнению
+            if ($normalizedStatus === 'accepted' && ! $command->ack_at) {
                 $updates['ack_at'] = now();
             }
-            if ($data['status'] === 'completed' && ! $command->ack_at) {
+            
+            // DONE/COMPLETED - команда успешно выполнена
+            if ($normalizedStatus === 'completed' && ! $command->ack_at) {
                 $updates['ack_at'] = now();
             }
-            if ($data['status'] === 'failed') {
+            
+            // FAILED - команда завершилась с ошибкой
+            if ($normalizedStatus === 'failed') {
                 $updates['failed_at'] = now();
             }
 
@@ -189,7 +202,7 @@ class PythonIngestController extends Controller
             $errorMessage = $details['error_message'] ?? $details['error_code'] ?? null;
             $message = $details['message'] ?? null;
 
-            if ($data['status'] === 'failed') {
+            if ($normalizedStatus === 'failed') {
                 event(new \App\Events\CommandFailed(
                     commandId: $command->cmd_id,
                     message: $message ?? 'Command failed',
@@ -199,7 +212,7 @@ class PythonIngestController extends Controller
             } else {
                 event(new \App\Events\CommandStatusUpdated(
                     commandId: $command->cmd_id,
-                    status: $data['status'],
+                    status: $normalizedStatus,
                     message: $message ?? 'Command status updated',
                     error: $errorMessage,
                     zoneId: $zoneId
@@ -209,6 +222,7 @@ class PythonIngestController extends Controller
             Log::warning('commandAck: Command not found for cmd_id', [
                 'cmd_id' => $data['cmd_id'],
                 'status' => $data['status'],
+                'normalized_status' => $normalizedStatus,
             ]);
         }
 

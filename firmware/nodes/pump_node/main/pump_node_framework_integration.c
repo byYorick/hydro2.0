@@ -46,7 +46,9 @@ static esp_err_t pump_node_init_channel_callback(const char *channel_name, const
 }
 
 /**
- * @brief Обработчик команды run_pump
+ * @brief Обработчик команды run_pump с командным автоматом
+ * 
+ * Состояния: ACCEPTED -> DONE/FAILED
  */
 static esp_err_t handle_run_pump(const char *channel, const cJSON *params, cJSON **response, void *user_ctx) {
     (void)user_ctx;
@@ -55,25 +57,51 @@ static esp_err_t handle_run_pump(const char *channel, const cJSON *params, cJSON
         return ESP_ERR_INVALID_ARG;
     }
     
+    // Извлекаем cmd_id из params (он будет добавлен позже в node_command_handler_process)
+    // Но для промежуточного ответа нам нужен cmd_id, поэтому получаем его из params
+    cJSON *cmd_id_item = cJSON_GetObjectItem(params, "cmd_id");
+    const char *cmd_id = NULL;
+    if (cmd_id_item && cJSON_IsString(cmd_id_item)) {
+        cmd_id = cmd_id_item->valuestring;
+    }
+    
     cJSON *duration_item = cJSON_GetObjectItem(params, "duration_ms");
     if (!cJSON_IsNumber(duration_item)) {
-        *response = node_command_handler_create_response(NULL, "ERROR", "missing_duration", "duration_ms is required", NULL);
+        *response = node_command_handler_create_response(cmd_id, "ERROR", "missing_duration", "duration_ms is required", NULL);
         return ESP_ERR_INVALID_ARG;
     }
     
     int duration_ms = (int)cJSON_GetNumberValue(duration_item);
     ESP_LOGI(TAG, "Running pump on channel %s for %d ms", channel, duration_ms);
     
-    // Реальная логика управления насосом через pump_driver
+    // Шаг 1: Отправляем ACCEPTED сразу при принятии команды
+    if (cmd_id) {
+        cJSON *accepted_response = node_command_handler_create_response(cmd_id, "ACCEPTED", NULL, NULL, NULL);
+        if (accepted_response) {
+            char *json_str = cJSON_PrintUnformatted(accepted_response);
+            if (json_str) {
+                mqtt_manager_publish_command_response(channel, json_str);
+                free(json_str);
+            }
+            cJSON_Delete(accepted_response);
+        }
+    }
+    
+    // Шаг 2: Выполняем команду (может занять время из-за проверки тока INA209)
     // pump_driver автоматически проверяет ток через INA209 при запуске
     esp_err_t err = pump_driver_run(channel, duration_ms);
     
-    // cmd_id будет добавлен автоматически в node_command_handler_process
+    // Шаг 3: Отправляем финальный ответ DONE или FAILED
+    const char *final_status;
+    const char *error_code = NULL;
+    const char *error_message = NULL;
+    
     if (err == ESP_OK) {
-        *response = node_command_handler_create_response(NULL, "ACK", NULL, NULL, NULL);
+        final_status = "DONE";
     } else {
-        const char *error_code = "pump_driver_failed";
-        const char *error_message = esp_err_to_name(err);
+        final_status = "FAILED";
+        error_code = "pump_driver_failed";
+        error_message = esp_err_to_name(err);
         
         // Определяем тип ошибки на основе кода ошибки
         if (err == ESP_ERR_INVALID_RESPONSE) {
@@ -86,9 +114,10 @@ static esp_err_t handle_run_pump(const char *channel, const cJSON *params, cJSON
         
         // Отправляем ошибку на сервер
         node_state_manager_report_error(ERROR_LEVEL_ERROR, "pump_driver", err, error_message);
-        
-        *response = node_command_handler_create_response(NULL, "ERROR", error_code, error_message, NULL);
     }
+    
+    // Создаем финальный ответ
+    *response = node_command_handler_create_response(cmd_id, final_status, error_code, error_message, NULL);
     
     // Добавляем health информацию в ответ
     if (*response != NULL) {

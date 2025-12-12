@@ -22,6 +22,11 @@ CLEANUP_RUNS = Counter("cleanup_runs_total", "Cleanup runs")
 CLEANUP_DELETED = Counter("cleanup_deleted_total", "Deleted records", ["table"])
 CLEANUP_LAT = Histogram("cleanup_seconds", "Cleanup duration seconds")
 
+# Error backoff state
+_error_count = 0
+_last_error_time: Optional[datetime] = None
+_backoff_until: Optional[datetime] = None
+
 
 async def get_last_ts(aggregation_type: str) -> Optional[datetime]:
     """
@@ -68,6 +73,87 @@ async def update_last_ts(aggregation_type: str, last_ts: datetime) -> None:
     )
 
 
+async def _check_error_backoff() -> bool:
+    """
+    Проверить, нужно ли применять backoff из-за серии ошибок.
+    
+    Returns:
+        True если нужно применить backoff, False если можно продолжать
+    """
+    global _error_count, _last_error_time, _backoff_until
+    
+    now = datetime.utcnow()
+    
+    # Если есть активный backoff, проверяем, не истек ли он
+    if _backoff_until and now < _backoff_until:
+        remaining = (_backoff_until - now).total_seconds()
+        logger.warning(
+            f"Error backoff active: skipping aggregation, {remaining:.1f}s remaining",
+            extra={
+                'backoff_until': _backoff_until.isoformat(),
+                'error_count': _error_count
+            }
+        )
+        return True
+    
+    # Если backoff истек, сбрасываем счетчик
+    if _backoff_until and now >= _backoff_until:
+        logger.info(
+            f"Error backoff expired, resetting error count",
+            extra={'previous_error_count': _error_count}
+        )
+        _error_count = 0
+        _backoff_until = None
+    
+    return False
+
+
+async def _record_error() -> None:
+    """
+    Записать ошибку и применить backoff при серии исключений.
+    """
+    global _error_count, _last_error_time, _backoff_until
+    
+    _error_count += 1
+    _last_error_time = datetime.utcnow()
+    
+    # Применяем exponential backoff при серии ошибок
+    # Пороги: 3 ошибки -> 30s, 5 ошибок -> 2min, 10 ошибок -> 10min
+    if _error_count >= 10:
+        backoff_seconds = 600  # 10 минут
+    elif _error_count >= 5:
+        backoff_seconds = 120  # 2 минуты
+    elif _error_count >= 3:
+        backoff_seconds = 30  # 30 секунд
+    else:
+        backoff_seconds = 0
+    
+    if backoff_seconds > 0:
+        _backoff_until = datetime.utcnow() + timedelta(seconds=backoff_seconds)
+        logger.error(
+            f"Error backoff activated: {_error_count} consecutive errors, "
+            f"backing off for {backoff_seconds}s to reduce infrastructure pressure",
+            extra={
+                'error_count': _error_count,
+                'backoff_seconds': backoff_seconds,
+                'backoff_until': _backoff_until.isoformat()
+            }
+        )
+
+
+async def _record_success() -> None:
+    """Сбросить счетчик ошибок при успешной операции."""
+    global _error_count, _backoff_until
+    
+    if _error_count > 0:
+        logger.info(
+            f"Aggregation succeeded, resetting error count (was {_error_count})",
+            extra={'previous_error_count': _error_count}
+        )
+        _error_count = 0
+        _backoff_until = None
+
+
 async def aggregate_1m() -> int:
     """
     Агрегировать телеметрию по 1 минуте.
@@ -75,6 +161,10 @@ async def aggregate_1m() -> int:
     Returns:
         Количество созданных записей
     """
+    # Проверяем error backoff перед началом агрегации
+    if await _check_error_backoff():
+        return 0
+    
     with AGGREGATION_LAT.labels(type="1m").time():
         try:
             last_ts = await get_last_ts("1m")
@@ -162,10 +252,22 @@ async def aggregate_1m() -> int:
             AGGREGATION_RECORDS.labels(type="1m").inc(count)
             logger.info(f"Aggregated 1m: {count} records")
             
+            # Сбрасываем счетчик ошибок при успехе
+            await _record_success()
+            
             return count
         except Exception as e:
             AGGREGATION_ERRORS.labels(type="1m").inc()
-            logger.error(f"Error aggregating 1m: {e}")
+            await _record_error()
+            logger.error(
+                f"Error aggregating 1m: {e}",
+                exc_info=True,
+                extra={
+                    'error_type': type(e).__name__,
+                    'error_message': str(e),
+                    'consecutive_errors': _error_count
+                }
+            )
             return 0
 
 
@@ -176,6 +278,10 @@ async def aggregate_1h() -> int:
     Returns:
         Количество созданных записей
     """
+    # Проверяем error backoff перед началом агрегации
+    if await _check_error_backoff():
+        return 0
+    
     with AGGREGATION_LAT.labels(type="1h").time():
         try:
             last_ts = await get_last_ts("1h")
@@ -261,10 +367,22 @@ async def aggregate_1h() -> int:
             AGGREGATION_RECORDS.labels(type="1h").inc(count)
             logger.info(f"Aggregated 1h: {count} records")
             
+            # Сбрасываем счетчик ошибок при успехе
+            await _record_success()
+            
             return count
         except Exception as e:
             AGGREGATION_ERRORS.labels(type="1h").inc()
-            logger.error(f"Error aggregating 1h: {e}")
+            await _record_error()
+            logger.error(
+                f"Error aggregating 1h: {e}",
+                exc_info=True,
+                extra={
+                    'error_type': type(e).__name__,
+                    'error_message': str(e),
+                    'consecutive_errors': _error_count
+                }
+            )
             return 0
 
 
@@ -275,6 +393,10 @@ async def aggregate_daily() -> int:
     Returns:
         Количество созданных записей
     """
+    # Проверяем error backoff перед началом агрегации
+    if await _check_error_backoff():
+        return 0
+    
     with AGGREGATION_LAT.labels(type="daily").time():
         try:
             last_ts = await get_last_ts("daily")
@@ -327,10 +449,22 @@ async def aggregate_daily() -> int:
             AGGREGATION_RECORDS.labels(type="daily").inc(count)
             logger.info(f"Aggregated daily: {count} records")
             
+            # Сбрасываем счетчик ошибок при успехе
+            await _record_success()
+            
             return count
         except Exception as e:
             AGGREGATION_ERRORS.labels(type="daily").inc()
-            logger.error(f"Error aggregating daily: {e}")
+            await _record_error()
+            logger.error(
+                f"Error aggregating daily: {e}",
+                exc_info=True,
+                extra={
+                    'error_type': type(e).__name__,
+                    'error_message': str(e),
+                    'consecutive_errors': _error_count
+                }
+            )
             return 0
 
 
@@ -426,7 +560,14 @@ async def cleanup_old_data():
                 '1h_deleted': deleted_1h_count,
             }
         except Exception as e:
-            logger.error(f"Error cleaning up old data: {e}", exc_info=True)
+            logger.error(
+                f"Error cleaning up old data: {e}",
+                exc_info=True,
+                extra={
+                    'error_type': type(e).__name__,
+                    'error_message': str(e)
+                }
+            )
             return None
 
 
@@ -456,10 +597,30 @@ async def main():
             if (now - last_cleanup).total_seconds() >= cleanup_interval_seconds:
                 await cleanup_old_data()
                 last_cleanup = now
+            
+            # Сбрасываем счетчик ошибок при успешном цикле
+            await _record_success()
         except Exception as e:
-            logger.error(f"Error in aggregation cycle: {e}")
+            await _record_error()
+            logger.error(
+                f"Error in aggregation cycle: {e}",
+                exc_info=True,
+                extra={
+                    'error_type': type(e).__name__,
+                    'error_message': str(e),
+                    'consecutive_errors': _error_count
+                }
+            )
         
-        await asyncio.sleep(aggregation_interval_seconds)
+        # Применяем backoff: если активен, используем его вместо обычного интервала
+        if _backoff_until and datetime.utcnow() < _backoff_until:
+            backoff_remaining = (_backoff_until - datetime.utcnow()).total_seconds()
+            # Ждем до окончания backoff или минимальный интервал
+            sleep_time = min(backoff_remaining, aggregation_interval_seconds)
+            if sleep_time > 0:
+                await asyncio.sleep(sleep_time)
+        else:
+            await asyncio.sleep(aggregation_interval_seconds)
 
 
 if __name__ == "__main__":

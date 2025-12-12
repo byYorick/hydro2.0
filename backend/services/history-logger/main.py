@@ -22,6 +22,12 @@ from common.env import get_settings
 from common.water_flow import execute_fill_mode, execute_drain_mode, calibrate_flow
 from common.service_logs import send_service_log
 from common.error_handler import get_error_handler
+from common.command_status_queue import (
+    normalize_status,
+    send_status_to_laravel,
+    retry_worker,
+    close_http_client,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +52,10 @@ async def lifespan(app: FastAPI):
     # Запуск фоновой задачи обработки очереди и отслеживание для graceful shutdown
     task = asyncio.create_task(process_telemetry_queue())
     background_tasks.append(task)
+    
+    # Запуск воркера для ретраев статусов команд
+    retry_task = asyncio.create_task(retry_worker(interval=30.0, shutdown_event=shutdown_event))
+    background_tasks.append(retry_task)
     
     # Подключение к MQTT
     mqtt = await get_mqtt_client()
@@ -99,6 +109,9 @@ async def lifespan(app: FastAPI):
     
     # Закрываем Redis клиент
     await close_redis_client()
+    
+    # Закрываем HTTP клиент для статусов команд
+    await close_http_client()
     
     logger.info("History Logger service stopped")
     send_service_log(
@@ -2159,7 +2172,7 @@ def _auth_ingest(request: Request):
 async def handle_command_response(topic: str, payload: bytes):
     """
     Обработчик command_response сообщений от узлов.
-    Обновляет статус команды через Laravel API, чтобы фронт получил уведомление (CommandFailed/CommandStatusUpdated).
+    Обновляет статус команды через Laravel API с использованием надёжной доставки.
     """
     try:
         logger.info(f"[COMMAND_RESPONSE] Received message on topic {topic}, payload length: {len(payload)}")
@@ -2170,7 +2183,7 @@ async def handle_command_response(topic: str, payload: bytes):
             return
 
         cmd_id = data.get("cmd_id")
-        raw_status = str(data.get("status", "")).upper()
+        raw_status = data.get("status", "")
         node_uid = _extract_node_uid(topic)
         channel = _extract_channel_from_topic(topic)
         gh_uid = _extract_gh_uid(topic)
@@ -2180,38 +2193,23 @@ async def handle_command_response(topic: str, payload: bytes):
             COMMAND_RESPONSE_ERROR.inc()
             return
 
-        # Маппинг статусов прошивки -> статус в Laravel
-        if raw_status in ("ACK", "ACCEPTED", "COMPLETED", "OK", "SUCCESS", "DONE"):
-            mapped_status = "ack"
-        elif raw_status in ("ERROR", "FAILED"):
-            mapped_status = "failed"
-        else:
-            logger.warning(f"[COMMAND_RESPONSE] Unknown status '{raw_status}' for cmd_id={cmd_id}")
+        # Нормализуем статус в ACCEPTED/DONE/FAILED
+        normalized_status = normalize_status(raw_status)
+        if not normalized_status:
+            logger.warning(
+                f"[COMMAND_RESPONSE] Unknown status '{raw_status}' for cmd_id={cmd_id}, "
+                f"node_uid={node_uid}, channel={channel}"
+            )
             COMMAND_RESPONSE_ERROR.inc()
             return
 
         COMMAND_RESPONSE_RECEIVED.inc()
 
-        s = get_settings()
-        laravel_url = s.laravel_api_url if hasattr(s, 'laravel_api_url') else None
-        ingest_token = s.history_logger_api_token if hasattr(s, 'history_logger_api_token') and s.history_logger_api_token else (s.ingest_token if hasattr(s, 'ingest_token') and s.ingest_token else None)
-
-        if not laravel_url:
-            logger.error("[COMMAND_RESPONSE] Laravel API URL not configured, cannot update command status")
-            COMMAND_RESPONSE_ERROR.inc()
-            return
-
-        headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        }
-        if ingest_token:
-            headers["Authorization"] = f"Bearer {ingest_token}"
-
+        # Формируем детали для отправки
         details = {
             "error_code": data.get("error_code"),
             "error_message": data.get("error_message"),
-            "raw_status": raw_status,
+            "raw_status": str(raw_status),
             "node_uid": node_uid,
             "channel": channel,
             "gh_uid": gh_uid,
@@ -2219,28 +2217,21 @@ async def handle_command_response(topic: str, payload: bytes):
         # Убираем None значения
         details = {k: v for k, v in details.items() if v is not None}
 
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.post(
-                    f"{laravel_url}/api/python/commands/ack",
-                    headers=headers,
-                    json={
-                        "cmd_id": cmd_id,
-                        "status": mapped_status,
-                        "details": details or None,
-                    },
-                )
-
-            if resp.status_code != 200:
-                logger.warning(f"[COMMAND_RESPONSE] Laravel responded with {resp.status_code}: {resp.text[:200]}")
-                COMMAND_RESPONSE_ERROR.inc()
-            else:
-                logger.info(
-                    f"[COMMAND_RESPONSE] Status '{mapped_status}' pushed to Laravel for cmd_id={cmd_id}, node_uid={node_uid}, channel={channel}"
-                )
-        except Exception as e:
-            logger.error(f"[COMMAND_RESPONSE] Error sending status to Laravel: {e}", exc_info=True)
-            COMMAND_RESPONSE_ERROR.inc()
+        # Отправляем статус через надёжную систему доставки
+        # (автоматически сохранит в очередь при ошибке)
+        success = await send_status_to_laravel(cmd_id, normalized_status, details)
+        
+        if success:
+            logger.info(
+                f"[COMMAND_RESPONSE] Status '{normalized_status.value}' delivered to Laravel "
+                f"for cmd_id={cmd_id}, node_uid={node_uid}, channel={channel}"
+            )
+        else:
+            logger.info(
+                f"[COMMAND_RESPONSE] Status '{normalized_status.value}' queued for retry "
+                f"for cmd_id={cmd_id}, node_uid={node_uid}, channel={channel}"
+            )
+            
     except Exception as e:
         logger.error(f"[COMMAND_RESPONSE] Unexpected error processing message: {e}", exc_info=True)
         COMMAND_RESPONSE_ERROR.inc()
@@ -2684,13 +2675,22 @@ async def publish_command(
     if hasattr(s, 'mqtt_zone_format') and s.mqtt_zone_format == "uid":
         zone_uid = await _get_zone_uid_from_id(req.zone_id)
     
+    # Извлекаем cmd_id из params, если он не передан напрямую
+    cmd_id = req.cmd_id
+    if not cmd_id and req.params and 'cmd_id' in req.params:
+        cmd_id = req.params.get('cmd_id')
+        # Удаляем cmd_id из params, чтобы не дублировать его в payload
+        params_without_cmd_id = {k: v for k, v in req.params.items() if k != 'cmd_id'}
+    else:
+        params_without_cmd_id = req.params
+    
     # Создаем payload для команды
     try:
         payload = _create_command_payload(
             cmd_type=req.type, 
             cmd=req.cmd, 
-            cmd_id=req.cmd_id, 
-            params=req.params
+            cmd_id=cmd_id, 
+            params=params_without_cmd_id
         )
         cmd_id = payload["cmd_id"]
     except ValueError as e:

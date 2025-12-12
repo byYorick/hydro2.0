@@ -552,7 +552,13 @@ async def main():
     
     # Инициализация Command Tracker
     global _command_tracker
-    _command_tracker = CommandTracker(command_timeout=300)
+    _command_tracker = CommandTracker(command_timeout=300, poll_interval=5)
+    
+    # Восстанавливаем pending команды из БД после рестарта
+    await _command_tracker.restore_pending_commands()
+    
+    # Запускаем периодическую проверку статусов команд из БД
+    await _command_tracker.start_polling()
     
     # Инициализация Command Validator
     command_validator = CommandValidator()
@@ -581,21 +587,9 @@ async def main():
     
     health_task = asyncio.create_task(health_check_loop())
     
-    # Подписка на ответы команд
-    async def handle_command_response(topic: str, payload: bytes):
-        try:
-            data = json.loads(payload.decode())
-            cmd_id = data.get('cmd_id')
-            success = data.get('status') == 'ok'
-            response = data.get('response')
-            error = data.get('error')
-            
-            if cmd_id and _command_tracker:
-                await _command_tracker.confirm_command(cmd_id, success, response, error)
-        except Exception as e:
-            logger.error(f"Error handling command response: {e}", exc_info=True)
-    
-    mqtt.subscribe("hydro/+/+/+/+/command_response", handle_command_response)
+    # Убрана подписка на command_response - статусы команд теперь отслеживаются через БД (таблица commands)
+    # history-logger обрабатывает command_response и обновляет статусы через Laravel API
+    # CommandTracker периодически проверяет статусы из БД
     
     try:
         async with httpx.AsyncClient() as client:
@@ -778,12 +772,12 @@ async def main():
             except Exception as e:
                 logger.error(f"Error saving PID state: {e}", exc_info=True)
         
-        # 3. Очищаем старые команды из трекера
+        # 3. Останавливаем polling статусов команд
         if _command_tracker:
             try:
-                await _command_tracker.cleanup_old_commands(max_age_hours=24)
+                await _command_tracker.stop_polling()
             except Exception as e:
-                logger.warning(f"Failed to cleanup old commands: {e}")
+                logger.warning(f"Failed to stop command polling: {e}")
         
         # 4. Закрываем соединения
         try:

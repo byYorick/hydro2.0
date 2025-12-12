@@ -10,6 +10,7 @@ from .db import fetch, execute, create_zone_event
 from .alerts import create_alert, AlertSource, AlertCode
 from .water_flow import check_water_level, check_flow, execute_fill_mode, execute_drain_mode
 from .pump_safety import can_run_pump, check_pump_stuck_on
+from .command_orchestrator import send_command
 
 logger = logging.getLogger(__name__)
 
@@ -224,8 +225,8 @@ def in_schedule_window(now: datetime, schedule: List[Dict[str, str]]) -> bool:
 
 async def tick_recirculation(
     zone_id: int,
-    mqtt_client: Any,  # MqttClient
-    gh_uid: str,
+    mqtt_client: Any = None,  # Deprecated, не используется
+    gh_uid: Optional[str] = None,  # Опционально, будет получен из БД
     now: Optional[datetime] = None
 ) -> Optional[Dict[str, Any]]:
     """
@@ -389,6 +390,8 @@ async def tick_recirculation(
         event_details['pump_start_time'] = now.isoformat()
         event_details['monitor_no_flow'] = True
     
+    # Возвращаем информацию о команде для отправки через оркестратор
+    # Вызывающий код должен использовать send_command() для отправки
     return {
         'node_uid': node_info["uid"],
         'channel': pump_channel,
@@ -398,7 +401,9 @@ async def tick_recirculation(
             'reason': 'recirculation_control'
         },
         'event_type': 'RECIRCULATION_STATE_CHANGED',
-        'event_details': event_details
+        'event_details': event_details,
+        'zone_id': zone_id,
+        'greenhouse_uid': gh_uid
     }
 
 
@@ -497,8 +502,8 @@ async def check_water_change_required(zone_id: int) -> Tuple[bool, Optional[str]
 
 async def execute_water_change(
     zone_id: int,
-    mqtt_client: Any,  # MqttClient
-    gh_uid: str
+    mqtt_client: Any = None,  # Deprecated, не используется
+    gh_uid: Optional[str] = None  # Опционально, будет получен из БД
 ) -> Dict[str, Any]:
     """
     Выполнить смену воды для зоны.
@@ -551,10 +556,15 @@ async def execute_water_change(
         if rows:
             node_info = rows[0]
             pump_channel = node_info.get("channel") or "pump_recirc"
-            # Отключаем насос (для NC - размыкаем реле)
-            payload = {"cmd": "set_relay_state", "params": {"state": "OPEN"}}
-            topic = f"hydro/{gh_uid}/zn-{zone_id}/{node_info['uid']}/{pump_channel}/command"
-            mqtt_client.publish_json(topic, payload, qos=1, retain=False)
+            # Отключаем насос (для NC - размыкаем реле) через единый оркестратор
+            await send_command(
+                zone_id=zone_id,
+                node_uid=node_info['uid'],
+                channel=pump_channel,
+                cmd="set_relay_state",
+                params={"state": "OPEN"},
+                greenhouse_uid=gh_uid,
+            )
         
         # Запускаем drain
         drain_result = await execute_drain_mode(
