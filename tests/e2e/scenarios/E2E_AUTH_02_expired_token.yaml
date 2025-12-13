@@ -1,0 +1,57 @@
+# E2E_AUTH_02: Expired Token - Проверка автоматического re-auth при 401
+# DoD: подменить токен на невалидный, убедиться что API → 401, runner делает re-auth, повторный запрос проходит
+
+name: E2E_AUTH_02_expired_token
+description: |
+  Проверяет автоматическое обновление токена при 401 ошибке:
+  - Устанавливаем невалидный токен в AuthClient
+  - Вызываем защищённый API endpoint
+  - API возвращает 401
+  - APIClient автоматически обновляет токен через AuthClient
+  - Повторный запрос проходит успешно
+
+setup:
+  prerequisites:
+    - backend: Laravel is running
+
+steps:
+  # Шаг 1: Сначала получаем валидный токен через API
+  - name: Get valid token
+    api.get:
+      path: /api/zones
+      save: initial_response
+
+  # Шаг 2: Подменяем токен на невалидный в AuthClient
+  # Это симулирует ситуацию когда токен истек
+  - name: Invalidate token
+    invalidate_auth_token:
+    # Этот шаг установит невалидный токен в AuthClient
+    
+  # Шаг 3: Вызываем защищённый API с невалидным токеном
+  # APIClient должен автоматически обновить токен при 401
+  - name: Call API with invalid token (should trigger re-auth)
+    api.get:
+      path: /api/zones
+      save: reauth_response
+    # APIClient автоматически обновит токен при 401 и повторит запрос
+
+assertions:
+  - name: initial_request_succeeded
+    type: json_assertion
+    data: ${initial_response}
+    expected:
+      - field: data
+        operator: is_not_null
+
+  - name: reauth_request_succeeded
+    type: json_assertion
+    data: ${reauth_response}
+    expected:
+      - field: data
+        operator: is_not_null
+
+  - name: token_was_refreshed
+    type: custom
+    # Проверяем что токен был обновлен (новый токен != старому)
+    # Это проверяется через логи или внутреннее состояние AuthClient
+

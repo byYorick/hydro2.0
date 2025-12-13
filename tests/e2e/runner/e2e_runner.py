@@ -15,7 +15,8 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 from urllib.parse import urlparse
 
-from .api_client import APIClient
+from .api_client import APIClient, AuthenticationError
+from .auth_client import AuthClient
 from .ws_client import WSClient
 from .db_probe import DBProbe
 from .mqtt_probe import MQTTProbe
@@ -42,8 +43,26 @@ class E2ERunner:
         config = config or {}
         
         # Конфигурация из переменных окружения или значений по умолчанию
-        self.api_url = config.get("api_url") or os.getenv("LARAVEL_URL", "http://localhost:8080")
-        self.api_token = config.get("api_token") or os.getenv("LARAVEL_API_TOKEN")
+        self.api_url = config.get("api_url") or os.getenv("LARAVEL_URL", "http://localhost:8081")
+        
+        # Инициализируем AuthClient (singleton)
+        auth_email = config.get("auth_email", "e2e@test.local")
+        auth_role = config.get("auth_role", "admin")
+        self.auth_client = AuthClient(
+            api_url=self.api_url,
+            email=auth_email,
+            role=auth_role
+        )
+        
+        # Старый способ через api_token - используется только если явно указан через config
+        # Переменная окружения LARAVEL_API_TOKEN игнорируется, чтобы использовать AuthClient
+        # Это обеспечивает автоматическое управление токенами и обновление при 401
+        self.api_token = config.get("api_token")  # Только из config, не из env
+        if self.api_token:
+            logger.info(f"E2E Runner: api_token provided in config (length: {len(self.api_token)}), using it instead of AuthClient")
+        else:
+            logger.info(f"E2E Runner: Using AuthClient for automatic token management (LARAVEL_API_TOKEN from env will be ignored)")
+        
         self.ws_url = config.get("ws_url") or os.getenv("WS_URL", "ws://localhost:6002/app/local")
         # Используем DATABASE_URL если есть, иначе формируем из переменных
         self.db_path = config.get("db_path") or os.getenv("DATABASE_URL") or os.getenv("DB_DATABASE")
@@ -67,14 +86,32 @@ class E2ERunner:
         """Инициализация клиентов."""
         logger.info("Setting up E2E runner...")
         
+        # Получаем токен через AuthClient (если не был предоставлен явно в config)
+        token = None
+        if not self.api_token:
+            try:
+                token = await self.auth_client.get_token()
+                logger.info(f"✓ Token obtained via AuthClient (length: {len(token)})")
+            except Exception as e:
+                logger.error(f"Failed to get token via AuthClient: {e}")
+                raise RuntimeError("Cannot proceed without authentication token") from e
+        else:
+            token = self.api_token
+            logger.info(f"Using provided api_token from config (length: {len(token)})")
+        
+        # Создаем APIClient с AuthClient для автоматического управления токенами
         self.api = APIClient(
             base_url=self.api_url,
-            api_token=self.api_token
+            api_token=token if self.api_token else None,  # Передаем токен только если был явно указан
+            auth_client=self.auth_client if not self.api_token else None  # AuthClient только если не используется явный токен
         )
         
+        # Для WebSocket используем AuthClient для автоматического получения токена
         self.ws = WSClient(
             ws_url=self.ws_url,
-            api_token=self.api_token
+            api_token=token if self.api_token else None,  # Токен только если был явно указан
+            auth_client=self.auth_client if not self.api_token else None,  # AuthClient для автоматического управления
+            api_url=self.api_url
         )
         
         self.db = DBProbe(db_path=self.db_path)
@@ -310,11 +347,63 @@ class E2ERunner:
             elif step_type == "set":
                 # Сохранить значение в контекст
                 for key, value in step_config.items():
-                    self.context[key] = self._resolve_variables(value)
+                    resolved_value = self._resolve_variables(value)
+                    self.context[key] = resolved_value
+                    logger.info(f"Set context variable '{key}' = {resolved_value} (type: {type(resolved_value).__name__})")
                 result = self.context
             elif step_type == "sleep":
                 await asyncio.sleep(float(step_config))
                 result = None
+            elif step_type == "invalidate_auth_token":
+                # Инвалидирует токен в AuthClient для тестирования re-auth
+                if not self.auth_client:
+                    raise RuntimeError("Cannot invalidate token: AuthClient not initialized")
+                # Устанавливаем невалидный токен
+                self.auth_client.__class__._token = "invalid_token_for_testing"
+                self.auth_client.__class__._token_expires_at = None
+                logger.info("Token invalidated for testing re-auth")
+                result = {"token_invalidated": True}
+            elif step_type == "create_ws_client_without_token":
+                # Создает WSClient без токена для тестирования ошибок авторизации
+                from runner.ws_client import WSClient
+                self.ws_no_auth = WSClient(
+                    ws_url=self.ws_url,
+                    api_token=None,
+                    auth_client=None,
+                    api_url=self.api_url
+                )
+                logger.info("Created WSClient without token for testing")
+                result = {"ws_no_auth_created": True}
+            elif step_type == "ws_subscribe_without_auth":
+                # Попытка подписки на приватный канал без токена (для тестирования ошибки)
+                channel = step_config.get("channel")
+                expect_error = step_config.get("expect_error", False)
+                expected_error_message = step_config.get("expected_error_message", "")
+                
+                if not hasattr(self, 'ws_no_auth'):
+                    raise RuntimeError("ws_no_auth client not created. Use 'create_ws_client_without_token' step first")
+                
+                # Подключаемся к WebSocket сначала
+                if not self.ws_no_auth.connected:
+                    await self.ws_no_auth.connect()
+                
+                try:
+                    await self.ws_no_auth.subscribe(channel)
+                    # Если подписка прошла без ошибки, но мы ожидали ошибку
+                    if expect_error:
+                        raise AssertionError(f"Expected error when subscribing to {channel} without token, but subscription succeeded")
+                    result = {"subscribed": channel}
+                except RuntimeError as e:
+                    error_msg = str(e)
+                    logger.info(f"Expected error occurred: {error_msg}")
+                    if "save" in step_config:
+                        self.context[step_config.get("save", "subscription_error")] = error_msg
+                    if expect_error:
+                        if expected_error_message and expected_error_message.lower() not in error_msg.lower():
+                            raise AssertionError(f"Expected error message to contain '{expected_error_message}', but got: {error_msg}")
+                        result = {"error": error_msg, "expected": True}
+                    else:
+                        raise
             else:
                 raise ValueError(f"Unknown step type: {step_type}")
             
@@ -374,9 +463,15 @@ class E2ERunner:
         elif action == "wait_event":
             event_type = config["event"]
             timeout = config.get("timeout", 10.0)
-            result = await self.ws.wait_event(event_type, timeout=timeout)
-            if result is None:
+            filter_dict = config.get("filter", {})
+            optional = config.get("optional", False)
+            logger.info(f"ws.wait_event: Waiting for event '{event_type}' with filter {filter_dict}, timeout={timeout}s, optional={optional}")
+            result = await self.ws.wait_event(event_type, timeout=timeout, filter=filter_dict)
+            if result is None and not optional:
+                logger.error(f"ws.wait_event: Timeout waiting for event '{event_type}' after {timeout}s")
                 raise TimeoutError(f"Timeout waiting for WebSocket event: {event_type}")
+            if result:
+                logger.info(f"ws.wait_event: Received event '{event_type}': {result.get('event')} on channel {result.get('channel')}")
             return result
         else:
             raise ValueError(f"Unknown WS action: {action}")
@@ -391,9 +486,18 @@ class E2ERunner:
             timeout = config.get("timeout", 10.0)
             expected_rows = config.get("expected_rows")
             
+            # Разрешаем переменные в params
+            resolved_params = {}
+            for k, v in params.items():
+                resolved_value = self._resolve_variables(v)
+                resolved_params[k] = resolved_value
+                logger.debug(f"db.wait: Resolved param '{k}': {v} -> {resolved_value}")
+            
+            logger.info(f"db.wait: Executing wait with query: {query}, params: {resolved_params}, expected_rows: {expected_rows}, timeout: {timeout}s")
+            
             return await self.db.wait(
                 query,
-                params=params,
+                params=resolved_params,
                 timeout=timeout,
                 expected_rows=expected_rows
             )
@@ -853,6 +957,46 @@ class E2ERunner:
             # Просто игнорируем, т.к. в текущей реализации нет явной отписки
             logger.info("websocket_unsubscribe (noop)")
             return
+        if step_type == "create_ws_client_without_token":
+            # Создает WSClient без токена для тестирования ошибок авторизации
+            from runner.ws_client import WSClient
+            self.ws_no_auth = WSClient(
+                ws_url=self.ws_url,
+                api_token=None,
+                auth_client=None,
+                api_url=self.api_url
+            )
+            logger.info("Created WSClient without token for testing")
+            return {"ws_no_auth_created": True}
+        if step_type == "ws_subscribe_without_auth":
+            # Попытка подписки на приватный канал без токена (для тестирования ошибки)
+            channel = cfg["channel"]
+            expect_error = cfg.get("expect_error", False)
+            expected_error_message = cfg.get("expected_error_message", "")
+            
+            if not hasattr(self, 'ws_no_auth'):
+                raise RuntimeError("ws_no_auth client not created. Use 'create_ws_client_without_token' step first")
+            
+            # Подключаемся к WebSocket сначала
+            if not self.ws_no_auth.connected:
+                await self.ws_no_auth.connect()
+            
+            try:
+                await self.ws_no_auth.subscribe(channel)
+                # Если подписка прошла без ошибки, но мы ожидали ошибку
+                if expect_error:
+                    raise AssertionError(f"Expected error when subscribing to {channel} without token, but subscription succeeded")
+                return {"subscribed": channel}
+            except RuntimeError as e:
+                error_msg = str(e)
+                logger.info(f"Expected error occurred: {error_msg}")
+                if "save" in cfg:
+                    self.context[cfg.get("save", "subscription_error")] = error_msg
+                if expect_error:
+                    if expected_error_message and expected_error_message.lower() not in error_msg.lower():
+                        raise AssertionError(f"Expected error message to contain '{expected_error_message}', but got: {error_msg}")
+                    return {"error": error_msg, "expected": True}
+                raise
 
         # DB query in actions (rare)
         if step_type == "database_query":

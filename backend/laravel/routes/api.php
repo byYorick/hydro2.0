@@ -4,6 +4,7 @@ use App\Http\Controllers\AiController;
 use App\Http\Controllers\AlertController;
 use App\Http\Controllers\AlertStreamController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\E2EAuthController;
 use App\Http\Controllers\GreenhouseController;
 use App\Http\Controllers\NodeCommandController;
 use App\Http\Controllers\NodeController;
@@ -48,9 +49,14 @@ Route::get('system/health', [SystemController::class, 'health'])
         'throttle:300,1',
     ]);
 
+// E2E Auth Bootstrap endpoint - создание пользователя и токена для E2E тестов
+// Проверка окружения выполняется в контроллере
+Route::post('e2e/auth/token', [E2EAuthController::class, 'createToken'])
+    ->middleware('throttle:10,1');
+
 // Debug endpoint for E2E: verify that Authorization header reaches PHP/Laravel through nginx/FastCGI.
 // Only enabled in testing environment.
-if (app()->environment('testing')) {
+if (app()->environment('testing', 'e2e')) {
     Route::get('system/auth-debug', function (Request $request) {
         $bearer = $request->bearerToken();
         $authHeader = $request->header('Authorization');

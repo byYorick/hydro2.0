@@ -1,8 +1,7 @@
 version: '3.8'
 networks:
   backend:
-    external: true
-    name: backend_default
+    driver: bridge
 services:
   postgres:
     image: timescale/timescaledb:latest-pg16
@@ -79,7 +78,7 @@ services:
     - PHP_DISPLAY_ERRORS=On
     - BROADCAST_CONNECTION=reverb
     - BROADCAST_CONNECTION_TESTING=reverb
-    - QUEUE_CONNECTION=redis
+    - QUEUE_CONNECTION=sync
     - DB_CONNECTION=pgsql
     - DB_HOST=postgres
     - DB_PORT=5432
@@ -154,6 +153,7 @@ services:
     - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
     - REDIS_HOST=redis
     - REDIS_PORT=6379
+    - MQTT_ZONE_FORMAT=uid
     depends_on:
       mosquitto:
         condition: service_healthy

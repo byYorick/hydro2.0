@@ -180,12 +180,21 @@ class PythonIngestController extends Controller
 
     public function commandAck(Request $request)
     {
+        Log::info('[COMMAND_ACK] STEP 1: Received commandAck request', [
+            'cmd_id' => $request->input('cmd_id'),
+            'status' => $request->input('status'),
+        ]);
+        
         $this->ensureToken($request);
+        Log::info('[COMMAND_ACK] STEP 2: Token validated');
+        
         $data = $request->validate([
             'cmd_id' => ['required', 'string', 'max:64'],
             'status' => ['required', 'string', 'in:SENT,ACCEPTED,DONE,FAILED,TIMEOUT,SEND_FAILED,accepted,completed,failed,ack,timeout'],
             'details' => ['nullable', 'array'],
         ]);
+        
+        Log::info('[COMMAND_ACK] STEP 3: Request validated', ['data' => $data]);
 
         // Нормализуем статус в новые значения: SENT/ACCEPTED/DONE/FAILED
         // Поддерживаем старые значения для обратной совместимости
@@ -198,10 +207,21 @@ class PythonIngestController extends Controller
             'SEND_FAILED' => \App\Models\Command::STATUS_SEND_FAILED,
             default => strtoupper($data['status']), // Используем как есть, если это новый статус
         };
+        
+        Log::info('[COMMAND_ACK] STEP 4: Status normalized', [
+            'original_status' => $data['status'],
+            'normalized_status' => $normalizedStatus,
+        ]);
 
         // Обновляем статус команды в БД, чтобы фронт получил broadcast (CommandObserver)
+        Log::info('[COMMAND_ACK] STEP 5: Looking up command in database', ['cmd_id' => $data['cmd_id']]);
         $command = \App\Models\Command::where('cmd_id', $data['cmd_id'])->latest('id')->first();
         if ($command) {
+            Log::info('[COMMAND_ACK] STEP 5.1: Command found', [
+                'cmd_id' => $data['cmd_id'],
+                'command_id' => $command->id,
+                'current_status' => $command->status,
+            ]);
             // State machine guard: проверяем валидность перехода статуса
             $currentStatus = $command->status;
             $newStatus = $normalizedStatus;
@@ -304,18 +324,35 @@ class PythonIngestController extends Controller
                 $updates['failed_at'] = now();
             }
 
+            Log::info('[COMMAND_ACK] STEP 8: Updating command in database', [
+                'cmd_id' => $data['cmd_id'],
+                'updates' => $updates,
+            ]);
+            
             $command->update($updates);
+            
+            Log::info('[COMMAND_ACK] STEP 8.1: Command updated successfully', [
+                'cmd_id' => $data['cmd_id'],
+                'new_status' => $command->fresh()->status,
+            ]);
 
             // Дополнительно сразу шлем событие с деталями ошибки/статуса, чтобы фронт получил уведомление
             $zoneId = $command->zone_id;
             $errorMessage = $details['error_message'] ?? $details['error_code'] ?? null;
             $message = $details['message'] ?? null;
 
+            Log::info('[COMMAND_ACK] STEP 9: Dispatching WebSocket event', [
+                'cmd_id' => $data['cmd_id'],
+                'normalized_status' => $normalizedStatus,
+                'zone_id' => $zoneId,
+            ]);
+
             if (in_array($normalizedStatus, [
                 \App\Models\Command::STATUS_FAILED,
                 \App\Models\Command::STATUS_TIMEOUT,
                 \App\Models\Command::STATUS_SEND_FAILED
             ])) {
+                Log::info('[COMMAND_ACK] STEP 9.1: Dispatching CommandFailed event');
                 event(new \App\Events\CommandFailed(
                     commandId: $command->cmd_id,
                     message: $message ?? 'Command failed',
@@ -323,6 +360,7 @@ class PythonIngestController extends Controller
                     zoneId: $zoneId
                 ));
             } else {
+                Log::info('[COMMAND_ACK] STEP 9.2: Dispatching CommandStatusUpdated event');
                 event(new \App\Events\CommandStatusUpdated(
                     commandId: $command->cmd_id,
                     status: $normalizedStatus,
@@ -331,14 +369,17 @@ class PythonIngestController extends Controller
                     zoneId: $zoneId
                 ));
             }
+            
+            Log::info('[COMMAND_ACK] STEP 10: Event dispatched, returning success');
         } else {
-            Log::warning('commandAck: Command not found for cmd_id', [
+            Log::warning('[COMMAND_ACK] STEP 5.2: Command not found for cmd_id', [
                 'cmd_id' => $data['cmd_id'],
                 'status' => $data['status'],
                 'normalized_status' => $normalizedStatus,
             ]);
         }
 
+        Log::info('[COMMAND_ACK] STEP 11: Returning response');
         return Response::json(['status' => 'ok']);
     }
 

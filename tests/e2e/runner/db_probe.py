@@ -146,15 +146,19 @@ class DBProbe:
         start_time = time.time()
         params = params or {}
         
+        logger.info(f"db.wait: Starting wait for query: {query} with params: {params}, timeout: {timeout}s")
+        
         while True:
             elapsed = time.time() - start_time
             if elapsed >= timeout:
+                logger.warning(f"db.wait: Timeout after {elapsed:.2f}s for query: {query} with params: {params}")
                 raise TimeoutError(f"Timeout waiting for DB condition: {query}")
 
             result: List[Dict[str, Any]] = []
 
             if self._backend == "postgres":
                 q, args = self._convert_named_params(query, params, backend="postgres")
+                logger.debug(f"db.wait: Executing query: {q} with args: {args}")
                 cur = self.pg_conn.cursor()
                 cur.execute(q, args)
                 rows = cur.fetchall()
@@ -163,20 +167,33 @@ class DBProbe:
             else:
                 cursor = self.connection.cursor()
                 sqlite_query, sqlite_params = self._convert_named_params(query, params, backend="sqlite")
+                logger.debug(f"db.wait: Executing query: {sqlite_query} with params: {sqlite_params}")
                 cursor.execute(sqlite_query, sqlite_params)
                 rows = cursor.fetchall()
                 result = [dict(row) for row in rows]
             
+            logger.debug(f"db.wait: Query returned {len(result)} rows: {result}")
+            
             # Проверяем условия
-            if expected_rows is not None and len(result) != expected_rows:
-                await asyncio.sleep(0.5)
-                continue
-            
-            if condition is None or condition(result):
-                logger.debug(f"DB wait condition met: {query}")
+            if expected_rows is not None:
+                if len(result) == expected_rows:
+                    logger.info(f"db.wait: Condition met - got {len(result)} rows (expected {expected_rows})")
+                    return result
+                else:
+                    logger.debug(f"db.wait: Waiting - got {len(result)} rows, expected {expected_rows} (elapsed: {elapsed:.2f}s)")
+            elif condition is not None:
+                if condition(result):
+                    logger.info(f"db.wait: Condition met - custom condition returned True")
+                    return result
+                else:
+                    logger.debug(f"db.wait: Waiting - custom condition returned False (elapsed: {elapsed:.2f}s)")
+            elif len(result) > 0:
+                logger.info(f"db.wait: Condition met - got {len(result)} rows")
                 return result
+            else:
+                logger.debug(f"db.wait: Waiting - no rows returned yet (elapsed: {elapsed:.2f}s)")
             
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.1)
     
     def query(self, query: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """

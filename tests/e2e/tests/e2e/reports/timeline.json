@@ -1,11 +1,11 @@
 {
   "test_suite": "E02_command_happy",
-  "generated_at": "2025-12-12T22:25:53.075021",
+  "generated_at": "2025-12-13T09:03:29.683617",
   "test_cases": [
     {
       "name": "Check system health",
       "status": "passed",
-      "duration": 0.10132217407226562,
+      "duration": 0.055115699768066406,
       "error_message": null,
       "steps": [
         {
@@ -13,12 +13,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-12T22:25:51.757458"
+      "timestamp": "2025-12-13T09:02:58.344704"
     },
     {
       "name": "Get zones",
       "status": "passed",
-      "duration": 0.06871223449707031,
+      "duration": 0.05784964561462402,
       "error_message": null,
       "steps": [
         {
@@ -26,12 +26,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-12T22:25:51.826175"
+      "timestamp": "2025-12-13T09:02:58.402558"
     },
     {
       "name": "Get nodes",
       "status": "passed",
-      "duration": 0.06795287132263184,
+      "duration": 0.05702853202819824,
       "error_message": null,
       "steps": [
         {
@@ -39,25 +39,25 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-12T22:25:51.894133"
+      "timestamp": "2025-12-13T09:02:58.459591"
     },
     {
-      "name": "Find test node",
+      "name": "Find test zone and node",
       "status": "passed",
-      "duration": 0.00019311904907226562,
+      "duration": 0.00021314620971679688,
       "error_message": null,
       "steps": [
         {
-          "name": "Find test node",
+          "name": "Find test zone and node",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-12T22:25:51.894331"
+      "timestamp": "2025-12-13T09:02:58.459808"
     },
     {
       "name": "Subscribe to command channel",
       "status": "passed",
-      "duration": 0.10098600387573242,
+      "duration": 0.17553043365478516,
       "error_message": null,
       "steps": [
         {
@@ -65,12 +65,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-12T22:25:51.995322"
+      "timestamp": "2025-12-13T09:02:58.635342"
     },
     {
       "name": "Subscribe to zone channel",
       "status": "passed",
-      "duration": 0.07780838012695312,
+      "duration": 0.17436695098876953,
       "error_message": null,
       "steps": [
         {
@@ -78,12 +78,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-12T22:25:52.073135"
+      "timestamp": "2025-12-13T09:02:58.809713"
     },
     {
       "name": "Send command to node",
       "status": "passed",
-      "duration": 0.0896446704864502,
+      "duration": 0.21052169799804688,
       "error_message": null,
       "steps": [
         {
@@ -91,12 +91,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-12T22:25:52.162784"
+      "timestamp": "2025-12-13T09:02:59.020240"
     },
     {
       "name": "Save command ID",
       "status": "passed",
-      "duration": 6.198883056640625e-05,
+      "duration": 0.00010418891906738281,
       "error_message": null,
       "steps": [
         {
@@ -104,62 +104,88 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-12T22:25:52.162849"
+      "timestamp": "2025-12-13T09:02:59.020348"
     },
     {
-      "name": "Wait for command status update (SENT)",
+      "name": "Wait for command status update (SENT or ACCEPTED)",
       "status": "passed",
-      "duration": 0.9025578498840332,
+      "duration": 0.6030137538909912,
       "error_message": null,
       "steps": [
         {
-          "name": "Wait for command status update (SENT)",
+          "name": "Wait for command status update (SENT or ACCEPTED)",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-12T22:25:53.065411"
+      "timestamp": "2025-12-13T09:02:59.623366"
     },
     {
-      "name": "Check command status in DB",
+      "name": "Check command status in DB (wait for SENT or ACCEPTED)",
       "status": "passed",
-      "duration": 0.009011030197143555,
+      "duration": 0.009954452514648438,
       "error_message": null,
       "steps": [
         {
-          "name": "Check command status in DB",
+          "name": "Check command status in DB (wait for SENT or ACCEPTED)",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-12T22:25:53.074426"
+      "timestamp": "2025-12-13T09:02:59.633324"
     },
     {
-      "name": "Assert command status is SENT",
+      "name": "Assert command status is SENT or ACCEPTED",
+      "status": "passed",
+      "duration": 7.224082946777344e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "Assert command status is SENT or ACCEPTED",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-13T09:02:59.633400"
+    },
+    {
+      "name": "Wait for command acceptance (ACCEPTED) if not already",
+      "status": "passed",
+      "duration": 10.023226976394653,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "Wait for command acceptance (ACCEPTED) if not already",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-13T09:03:09.656631"
+    },
+    {
+      "name": "Check command status is ACCEPTED or DONE (if ACCEPTED not received, skip to DONE)",
       "status": "failed",
-      "duration": 0.00016069412231445312,
-      "error_message": "Expected SENT, but got QUEUED",
+      "duration": 20.026517152786255,
+      "error_message": "Timeout waiting for DB condition: SELECT status FROM commands WHERE cmd_id = :cmd_id AND status IN ('ACCEPTED', 'DONE', 'ACK')",
       "steps": [
         {
-          "name": "Assert command status is SENT",
+          "name": "Check command status is ACCEPTED or DONE (if ACCEPTED not received, skip to DONE)",
           "status": "failed",
-          "error": "Expected SENT, but got QUEUED"
+          "error": "Timeout waiting for DB condition: SELECT status FROM commands WHERE cmd_id = :cmd_id AND status IN ('ACCEPTED', 'DONE', 'ACK')"
         }
       ],
-      "timestamp": "2025-12-12T22:25:53.074611"
+      "timestamp": "2025-12-13T09:03:29.683172"
     }
   ],
   "timeline": [
     {
-      "timestamp": "2025-12-12T22:25:51.656347",
+      "timestamp": "2025-12-13T09:02:58.289778",
       "type": "api.get",
       "description": "Executing Check system health",
       "data": {}
     },
     {
-      "timestamp": "2025-12-12T22:25:51.757446",
+      "timestamp": "2025-12-13T09:02:58.344694",
       "type": "api.get",
       "description": "Completed Check system health",
       "data": {
-        "duration": 0.10108804702758789,
+        "duration": 0.054906368255615234,
         "result": {
           "status": "ok",
           "data": {
@@ -176,7 +202,7 @@
             }
           },
           "meta": {
-            "timestamp": "2025-12-12T19:25:51+00:00",
+            "timestamp": "2025-12-13T06:02:58+00:00",
             "db_error": null,
             "checks": {
               "db_timeout": "2s",
@@ -189,17 +215,17 @@
       }
     },
     {
-      "timestamp": "2025-12-12T22:25:51.757509",
+      "timestamp": "2025-12-13T09:02:58.344753",
       "type": "api.get",
       "description": "Executing Get zones",
       "data": {}
     },
     {
-      "timestamp": "2025-12-12T22:25:51.826167",
+      "timestamp": "2025-12-13T09:02:58.402550",
       "type": "api.get",
       "description": "Completed Get zones",
       "data": {
-        "duration": 0.06864452362060547,
+        "duration": 0.05778813362121582,
         "result": {
           "status": "ok",
           "data": {
@@ -220,7 +246,7 @@
                 "health_status": null,
                 "uid": "zn-test-1",
                 "settings": null,
-                "nodes_count": 1,
+                "nodes_count": 2,
                 "greenhouse": {
                   "id": 1,
                   "name": "E2E Greenhouse"
@@ -263,22 +289,44 @@
       }
     },
     {
-      "timestamp": "2025-12-12T22:25:51.826221",
+      "timestamp": "2025-12-13T09:02:58.402604",
       "type": "api.get",
       "description": "Executing Get nodes",
       "data": {}
     },
     {
-      "timestamp": "2025-12-12T22:25:51.894122",
+      "timestamp": "2025-12-13T09:02:58.459579",
       "type": "api.get",
       "description": "Completed Get nodes",
       "data": {
-        "duration": 0.06789493560791016,
+        "duration": 0.05696892738342285,
         "result": {
           "status": "ok",
           "data": {
             "current_page": 1,
             "data": [
+              {
+                "id": 2,
+                "uid": "nd-ph-esp32una",
+                "name": null,
+                "type": "ph",
+                "zone_id": 1,
+                "status": "offline",
+                "lifecycle_state": "REGISTERED_BACKEND",
+                "fw_version": "2.0.0-sim",
+                "hardware_revision": null,
+                "hardware_id": "esp32-unassigned-001",
+                "validated": true,
+                "first_seen_at": "2025-12-12T19:51:42.000000Z",
+                "created_at": "2025-12-12T19:51:42.000000Z",
+                "updated_at": "2025-12-13T06:00:16.000000Z",
+                "zone": {
+                  "id": 1,
+                  "name": "E2E Zone 1",
+                  "status": "offline"
+                },
+                "channels": []
+              },
               {
                 "id": 1,
                 "uid": "nd-ph-test-1",
@@ -293,7 +341,7 @@
                 "validated": false,
                 "first_seen_at": null,
                 "created_at": "2025-12-12T18:45:42.000000Z",
-                "updated_at": "2025-12-12T19:25:34.000000Z",
+                "updated_at": "2025-12-13T06:02:34.000000Z",
                 "zone": {
                   "id": 1,
                   "name": "E2E Zone 1",
@@ -301,12 +349,28 @@
                 },
                 "channels": [
                   {
-                    "id": 5,
+                    "id": 1,
                     "node_id": 1,
-                    "channel": "air_rh",
+                    "channel": "ph",
                     "type": "sensor",
-                    "metric": "AIR_RH",
-                    "unit": "%"
+                    "metric": "PH",
+                    "unit": "pH"
+                  },
+                  {
+                    "id": 2,
+                    "node_id": 1,
+                    "channel": "ec",
+                    "type": "sensor",
+                    "metric": "EC",
+                    "unit": "mS/cm"
+                  },
+                  {
+                    "id": 3,
+                    "node_id": 1,
+                    "channel": "solution_temp_c",
+                    "type": "sensor",
+                    "metric": "SOLUTION_TEMP_C",
+                    "unit": "C"
                   },
                   {
                     "id": 4,
@@ -317,20 +381,28 @@
                     "unit": "C"
                   },
                   {
+                    "id": 5,
+                    "node_id": 1,
+                    "channel": "air_rh",
+                    "type": "sensor",
+                    "metric": "AIR_RH",
+                    "unit": "%"
+                  },
+                  {
+                    "id": 6,
+                    "node_id": 1,
+                    "channel": "main_pump",
+                    "type": "actuator",
+                    "metric": "RELAY",
+                    "unit": "bool"
+                  },
+                  {
                     "id": 7,
                     "node_id": 1,
                     "channel": "drain_pump",
                     "type": "actuator",
                     "metric": "RELAY",
                     "unit": "bool"
-                  },
-                  {
-                    "id": 2,
-                    "node_id": 1,
-                    "channel": "ec",
-                    "type": "sensor",
-                    "metric": "EC",
-                    "unit": "mS/cm"
                   },
                   {
                     "id": 8,
@@ -357,36 +429,12 @@
                     "unit": "bool"
                   },
                   {
-                    "id": 6,
-                    "node_id": 1,
-                    "channel": "main_pump",
-                    "type": "actuator",
-                    "metric": "RELAY",
-                    "unit": "bool"
-                  },
-                  {
                     "id": 11,
                     "node_id": 1,
                     "channel": "mister",
                     "type": "actuator",
                     "metric": "RELAY",
                     "unit": "bool"
-                  },
-                  {
-                    "id": 1,
-                    "node_id": 1,
-                    "channel": "ph",
-                    "type": "sensor",
-                    "metric": "PH",
-                    "unit": "pH"
-                  },
-                  {
-                    "id": 3,
-                    "node_id": 1,
-                    "channel": "solution_temp_c",
-                    "type": "sensor",
-                    "metric": "SOLUTION_TEMP_C",
-                    "unit": "C"
                   }
                 ]
               }
@@ -419,30 +467,30 @@
             "path": "http://localhost:8081/api/nodes",
             "per_page": 25,
             "prev_page_url": null,
-            "to": 1,
-            "total": 1
+            "to": 2,
+            "total": 2
           }
         }
       }
     },
     {
-      "timestamp": "2025-12-12T22:25:51.894311",
+      "timestamp": "2025-12-13T09:02:58.459752",
       "type": "set",
-      "description": "Executing Find test node",
+      "description": "Executing Find test zone and node",
       "data": {
         "test_zone_id": "1",
-        "test_node_id": "1"
+        "test_node_id": "2"
       }
     },
     {
-      "timestamp": "2025-12-12T22:25:51.894327",
+      "timestamp": "2025-12-13T09:02:58.459804",
       "type": "set",
-      "description": "Completed Find test node",
+      "description": "Completed Find test zone and node",
       "data": {
-        "duration": 1.0728836059570312e-05,
+        "duration": 4.887580871582031e-05,
         "result": {
-          "TIMESTAMP_S": 1765567551,
-          "TIMESTAMP_MS": 1765567551000,
+          "TIMESTAMP_S": 1765605778,
+          "TIMESTAMP_MS": 1765605778000,
           "health": {
             "status": "ok",
             "data": {
@@ -459,7 +507,7 @@
               }
             },
             "meta": {
-              "timestamp": "2025-12-12T19:25:51+00:00",
+              "timestamp": "2025-12-13T06:02:58+00:00",
               "db_error": null,
               "checks": {
                 "db_timeout": "2s",
@@ -489,7 +537,7 @@
                   "health_status": null,
                   "uid": "zn-test-1",
                   "settings": null,
-                  "nodes_count": 1,
+                  "nodes_count": 2,
                   "greenhouse": {
                     "id": 1,
                     "name": "E2E Greenhouse"
@@ -535,6 +583,28 @@
               "current_page": 1,
               "data": [
                 {
+                  "id": 2,
+                  "uid": "nd-ph-esp32una",
+                  "name": null,
+                  "type": "ph",
+                  "zone_id": 1,
+                  "status": "offline",
+                  "lifecycle_state": "REGISTERED_BACKEND",
+                  "fw_version": "2.0.0-sim",
+                  "hardware_revision": null,
+                  "hardware_id": "esp32-unassigned-001",
+                  "validated": true,
+                  "first_seen_at": "2025-12-12T19:51:42.000000Z",
+                  "created_at": "2025-12-12T19:51:42.000000Z",
+                  "updated_at": "2025-12-13T06:00:16.000000Z",
+                  "zone": {
+                    "id": 1,
+                    "name": "E2E Zone 1",
+                    "status": "offline"
+                  },
+                  "channels": []
+                },
+                {
                   "id": 1,
                   "uid": "nd-ph-test-1",
                   "name": "E2E Node (pH)",
@@ -548,7 +618,7 @@
                   "validated": false,
                   "first_seen_at": null,
                   "created_at": "2025-12-12T18:45:42.000000Z",
-                  "updated_at": "2025-12-12T19:25:34.000000Z",
+                  "updated_at": "2025-12-13T06:02:34.000000Z",
                   "zone": {
                     "id": 1,
                     "name": "E2E Zone 1",
@@ -556,12 +626,28 @@
                   },
                   "channels": [
                     {
-                      "id": 5,
+                      "id": 1,
                       "node_id": 1,
-                      "channel": "air_rh",
+                      "channel": "ph",
                       "type": "sensor",
-                      "metric": "AIR_RH",
-                      "unit": "%"
+                      "metric": "PH",
+                      "unit": "pH"
+                    },
+                    {
+                      "id": 2,
+                      "node_id": 1,
+                      "channel": "ec",
+                      "type": "sensor",
+                      "metric": "EC",
+                      "unit": "mS/cm"
+                    },
+                    {
+                      "id": 3,
+                      "node_id": 1,
+                      "channel": "solution_temp_c",
+                      "type": "sensor",
+                      "metric": "SOLUTION_TEMP_C",
+                      "unit": "C"
                     },
                     {
                       "id": 4,
@@ -572,20 +658,28 @@
                       "unit": "C"
                     },
                     {
+                      "id": 5,
+                      "node_id": 1,
+                      "channel": "air_rh",
+                      "type": "sensor",
+                      "metric": "AIR_RH",
+                      "unit": "%"
+                    },
+                    {
+                      "id": 6,
+                      "node_id": 1,
+                      "channel": "main_pump",
+                      "type": "actuator",
+                      "metric": "RELAY",
+                      "unit": "bool"
+                    },
+                    {
                       "id": 7,
                       "node_id": 1,
                       "channel": "drain_pump",
                       "type": "actuator",
                       "metric": "RELAY",
                       "unit": "bool"
-                    },
-                    {
-                      "id": 2,
-                      "node_id": 1,
-                      "channel": "ec",
-                      "type": "sensor",
-                      "metric": "EC",
-                      "unit": "mS/cm"
                     },
                     {
                       "id": 8,
@@ -612,36 +706,12 @@
                       "unit": "bool"
                     },
                     {
-                      "id": 6,
-                      "node_id": 1,
-                      "channel": "main_pump",
-                      "type": "actuator",
-                      "metric": "RELAY",
-                      "unit": "bool"
-                    },
-                    {
                       "id": 11,
                       "node_id": 1,
                       "channel": "mister",
                       "type": "actuator",
                       "metric": "RELAY",
                       "unit": "bool"
-                    },
-                    {
-                      "id": 1,
-                      "node_id": 1,
-                      "channel": "ph",
-                      "type": "sensor",
-                      "metric": "PH",
-                      "unit": "pH"
-                    },
-                    {
-                      "id": 3,
-                      "node_id": 1,
-                      "channel": "solution_temp_c",
-                      "type": "sensor",
-                      "metric": "SOLUTION_TEMP_C",
-                      "unit": "C"
                     }
                   ]
                 }
@@ -674,29 +744,29 @@
               "path": "http://localhost:8081/api/nodes",
               "per_page": 25,
               "prev_page_url": null,
-              "to": 1,
-              "total": 1
+              "to": 2,
+              "total": 2
             }
           },
           "test_zone_id": "1",
-          "test_node_id": "1",
+          "test_node_id": "2",
           "command_response": {
             "status": "ok",
             "data": {
-              "command_id": "96bc6911-0e5d-4548-b73e-01573a571d3f"
+              "command_id": "174e9783-3668-4754-8295-3b5048dfcb12"
             }
           },
-          "command_id": "96bc6911-0e5d-4548-b73e-01573a571d3f",
+          "command_id": "174e9783-3668-4754-8295-3b5048dfcb12",
           "command_status": [
             {
-              "status": "QUEUED"
+              "status": "SENT"
             }
           ]
         }
       }
     },
     {
-      "timestamp": "2025-12-12T22:25:51.894379",
+      "timestamp": "2025-12-13T09:02:58.459837",
       "type": "ws.subscribe",
       "description": "Executing Subscribe to command channel",
       "data": {
@@ -704,18 +774,18 @@
       }
     },
     {
-      "timestamp": "2025-12-12T22:25:51.995313",
+      "timestamp": "2025-12-13T09:02:58.635333",
       "type": "ws.subscribe",
       "description": "Completed Subscribe to command channel",
       "data": {
-        "duration": 0.10092735290527344,
+        "duration": 0.1754910945892334,
         "result": {
           "subscribed": "private-commands.1"
         }
       }
     },
     {
-      "timestamp": "2025-12-12T22:25:51.995376",
+      "timestamp": "2025-12-13T09:02:58.635395",
       "type": "ws.subscribe",
       "description": "Executing Subscribe to zone channel",
       "data": {
@@ -723,18 +793,18 @@
       }
     },
     {
-      "timestamp": "2025-12-12T22:25:52.073127",
+      "timestamp": "2025-12-13T09:02:58.809704",
       "type": "ws.subscribe",
       "description": "Completed Subscribe to zone channel",
       "data": {
-        "duration": 0.0777442455291748,
+        "duration": 0.17430377006530762,
         "result": {
           "subscribed": "private-hydro.zones.1"
         }
       }
     },
     {
-      "timestamp": "2025-12-12T22:25:52.073200",
+      "timestamp": "2025-12-13T09:02:58.809771",
       "type": "api.post",
       "description": "Executing Send command to node",
       "data": {
@@ -748,36 +818,36 @@
       }
     },
     {
-      "timestamp": "2025-12-12T22:25:52.162775",
+      "timestamp": "2025-12-13T09:02:59.020230",
       "type": "api.post",
       "description": "Completed Send command to node",
       "data": {
-        "duration": 0.089569091796875,
+        "duration": 0.21045446395874023,
         "result": {
           "status": "ok",
           "data": {
-            "command_id": "96bc6911-0e5d-4548-b73e-01573a571d3f"
+            "command_id": "174e9783-3668-4754-8295-3b5048dfcb12"
           }
         }
       }
     },
     {
-      "timestamp": "2025-12-12T22:25:52.162837",
+      "timestamp": "2025-12-13T09:02:59.020302",
       "type": "set",
       "description": "Executing Save command ID",
       "data": {
-        "command_id": "96bc6911-0e5d-4548-b73e-01573a571d3f"
+        "command_id": "174e9783-3668-4754-8295-3b5048dfcb12"
       }
     },
     {
-      "timestamp": "2025-12-12T22:25:52.162846",
+      "timestamp": "2025-12-13T09:02:59.020343",
       "type": "set",
       "description": "Completed Save command ID",
       "data": {
-        "duration": 6.198883056640625e-06,
+        "duration": 3.719329833984375e-05,
         "result": {
-          "TIMESTAMP_S": 1765567551,
-          "TIMESTAMP_MS": 1765567551000,
+          "TIMESTAMP_S": 1765605778,
+          "TIMESTAMP_MS": 1765605778000,
           "health": {
             "status": "ok",
             "data": {
@@ -794,7 +864,7 @@
               }
             },
             "meta": {
-              "timestamp": "2025-12-12T19:25:51+00:00",
+              "timestamp": "2025-12-13T06:02:58+00:00",
               "db_error": null,
               "checks": {
                 "db_timeout": "2s",
@@ -824,7 +894,7 @@
                   "health_status": null,
                   "uid": "zn-test-1",
                   "settings": null,
-                  "nodes_count": 1,
+                  "nodes_count": 2,
                   "greenhouse": {
                     "id": 1,
                     "name": "E2E Greenhouse"
@@ -870,6 +940,28 @@
               "current_page": 1,
               "data": [
                 {
+                  "id": 2,
+                  "uid": "nd-ph-esp32una",
+                  "name": null,
+                  "type": "ph",
+                  "zone_id": 1,
+                  "status": "offline",
+                  "lifecycle_state": "REGISTERED_BACKEND",
+                  "fw_version": "2.0.0-sim",
+                  "hardware_revision": null,
+                  "hardware_id": "esp32-unassigned-001",
+                  "validated": true,
+                  "first_seen_at": "2025-12-12T19:51:42.000000Z",
+                  "created_at": "2025-12-12T19:51:42.000000Z",
+                  "updated_at": "2025-12-13T06:00:16.000000Z",
+                  "zone": {
+                    "id": 1,
+                    "name": "E2E Zone 1",
+                    "status": "offline"
+                  },
+                  "channels": []
+                },
+                {
                   "id": 1,
                   "uid": "nd-ph-test-1",
                   "name": "E2E Node (pH)",
@@ -883,7 +975,7 @@
                   "validated": false,
                   "first_seen_at": null,
                   "created_at": "2025-12-12T18:45:42.000000Z",
-                  "updated_at": "2025-12-12T19:25:34.000000Z",
+                  "updated_at": "2025-12-13T06:02:34.000000Z",
                   "zone": {
                     "id": 1,
                     "name": "E2E Zone 1",
@@ -891,12 +983,28 @@
                   },
                   "channels": [
                     {
-                      "id": 5,
+                      "id": 1,
                       "node_id": 1,
-                      "channel": "air_rh",
+                      "channel": "ph",
                       "type": "sensor",
-                      "metric": "AIR_RH",
-                      "unit": "%"
+                      "metric": "PH",
+                      "unit": "pH"
+                    },
+                    {
+                      "id": 2,
+                      "node_id": 1,
+                      "channel": "ec",
+                      "type": "sensor",
+                      "metric": "EC",
+                      "unit": "mS/cm"
+                    },
+                    {
+                      "id": 3,
+                      "node_id": 1,
+                      "channel": "solution_temp_c",
+                      "type": "sensor",
+                      "metric": "SOLUTION_TEMP_C",
+                      "unit": "C"
                     },
                     {
                       "id": 4,
@@ -907,20 +1015,28 @@
                       "unit": "C"
                     },
                     {
+                      "id": 5,
+                      "node_id": 1,
+                      "channel": "air_rh",
+                      "type": "sensor",
+                      "metric": "AIR_RH",
+                      "unit": "%"
+                    },
+                    {
+                      "id": 6,
+                      "node_id": 1,
+                      "channel": "main_pump",
+                      "type": "actuator",
+                      "metric": "RELAY",
+                      "unit": "bool"
+                    },
+                    {
                       "id": 7,
                       "node_id": 1,
                       "channel": "drain_pump",
                       "type": "actuator",
                       "metric": "RELAY",
                       "unit": "bool"
-                    },
-                    {
-                      "id": 2,
-                      "node_id": 1,
-                      "channel": "ec",
-                      "type": "sensor",
-                      "metric": "EC",
-                      "unit": "mS/cm"
                     },
                     {
                       "id": 8,
@@ -947,36 +1063,12 @@
                       "unit": "bool"
                     },
                     {
-                      "id": 6,
-                      "node_id": 1,
-                      "channel": "main_pump",
-                      "type": "actuator",
-                      "metric": "RELAY",
-                      "unit": "bool"
-                    },
-                    {
                       "id": 11,
                       "node_id": 1,
                       "channel": "mister",
                       "type": "actuator",
                       "metric": "RELAY",
                       "unit": "bool"
-                    },
-                    {
-                      "id": 1,
-                      "node_id": 1,
-                      "channel": "ph",
-                      "type": "sensor",
-                      "metric": "PH",
-                      "unit": "pH"
-                    },
-                    {
-                      "id": 3,
-                      "node_id": 1,
-                      "channel": "solution_temp_c",
-                      "type": "sensor",
-                      "metric": "SOLUTION_TEMP_C",
-                      "unit": "C"
                     }
                   ]
                 }
@@ -1009,91 +1101,140 @@
               "path": "http://localhost:8081/api/nodes",
               "per_page": 25,
               "prev_page_url": null,
-              "to": 1,
-              "total": 1
+              "to": 2,
+              "total": 2
             }
           },
           "test_zone_id": "1",
-          "test_node_id": "1",
+          "test_node_id": "2",
           "command_response": {
             "status": "ok",
             "data": {
-              "command_id": "96bc6911-0e5d-4548-b73e-01573a571d3f"
+              "command_id": "174e9783-3668-4754-8295-3b5048dfcb12"
             }
           },
-          "command_id": "96bc6911-0e5d-4548-b73e-01573a571d3f",
+          "command_id": "174e9783-3668-4754-8295-3b5048dfcb12",
           "command_status": [
             {
-              "status": "QUEUED"
+              "status": "SENT"
             }
           ]
         }
       }
     },
     {
-      "timestamp": "2025-12-12T22:25:52.162880",
+      "timestamp": "2025-12-13T09:02:59.020385",
       "type": "ws.wait_event",
-      "description": "Executing Wait for command status update (SENT)",
+      "description": "Executing Wait for command status update (SENT or ACCEPTED)",
       "data": {
-        "event": "CommandStatusUpdated",
-        "timeout": 5.0
+        "event": ".App\\Events\\CommandStatusUpdated",
+        "timeout": 15.0
       }
     },
     {
-      "timestamp": "2025-12-12T22:25:53.065394",
+      "timestamp": "2025-12-13T09:02:59.623356",
       "type": "ws.wait_event",
-      "description": "Completed Wait for command status update (SENT)",
+      "description": "Completed Wait for command status update (SENT or ACCEPTED)",
       "data": {
-        "duration": 0.9025089740753174,
+        "duration": 0.6029646396636963,
         "result": {
           "event": "CommandStatusUpdated",
-          "data": "{\"commandId\":\"96bc6911-0e5d-4548-b73e-01573a571d3f\",\"status\":\"QUEUED\",\"message\":\"Command created\",\"error\":null,\"zoneId\":1,\"event_id\":1765567552000000237,\"server_ts\":1765567552000}",
+          "data": "{\"commandId\":\"174e9783-3668-4754-8295-3b5048dfcb12\",\"status\":\"SENT\",\"message\":\"Command status updated\",\"error\":null,\"zoneId\":1,\"event_id\":1765605779000009913,\"server_ts\":1765605779000}",
           "channel": "private-commands.1"
         }
       }
     },
     {
-      "timestamp": "2025-12-12T22:25:53.065512",
+      "timestamp": "2025-12-13T09:02:59.623418",
       "type": "db.wait",
-      "description": "Executing Check command status in DB",
+      "description": "Executing Check command status in DB (wait for SENT or ACCEPTED)",
       "data": {
-        "query": "SELECT status FROM commands WHERE cmd_id = :cmd_id",
+        "query": "SELECT status FROM commands WHERE cmd_id = :cmd_id AND status IN ('SENT', 'ACCEPTED')",
         "params": {
-          "cmd_id": "96bc6911-0e5d-4548-b73e-01573a571d3f"
+          "cmd_id": "174e9783-3668-4754-8295-3b5048dfcb12"
         },
-        "timeout": 5.0,
+        "timeout": 15.0,
         "expected_rows": 1
       }
     },
     {
-      "timestamp": "2025-12-12T22:25:53.074411",
+      "timestamp": "2025-12-13T09:02:59.633314",
       "type": "db.wait",
-      "description": "Completed Check command status in DB",
+      "description": "Completed Check command status in DB (wait for SENT or ACCEPTED)",
       "data": {
-        "duration": 0.008893728256225586,
+        "duration": 0.009890556335449219,
         "result": [
           {
-            "status": "QUEUED"
+            "status": "SENT"
           }
         ]
       }
     },
     {
-      "timestamp": "2025-12-12T22:25:53.074527",
-      "type": "assert.equals",
-      "description": "Executing Assert command status is SENT",
+      "timestamp": "2025-12-13T09:02:59.633388",
+      "type": "assert.contains",
+      "description": "Executing Assert command status is SENT or ACCEPTED",
       "data": {
-        "actual": "QUEUED",
-        "expected": "SENT"
+        "container": [
+          "SENT",
+          "ACCEPTED"
+        ],
+        "item": "SENT",
+        "message": "Expected SENT or ACCEPTED, but got SENT"
       }
     },
     {
-      "timestamp": "2025-12-12T22:25:53.074586",
-      "type": "assert.equals",
-      "description": "Failed Assert command status is SENT",
+      "timestamp": "2025-12-13T09:02:59.633398",
+      "type": "assert.contains",
+      "description": "Completed Assert command status is SENT or ACCEPTED",
       "data": {
-        "duration": 2.0503997802734375e-05,
-        "error": "Expected SENT, but got QUEUED"
+        "duration": 6.198883056640625e-06,
+        "result": true
+      }
+    },
+    {
+      "timestamp": "2025-12-13T09:02:59.633435",
+      "type": "ws.wait_event",
+      "description": "Executing Wait for command acceptance (ACCEPTED) if not already",
+      "data": {
+        "event": ".App\\Events\\CommandStatusUpdated",
+        "timeout": 10.0,
+        "filter": {
+          "status": "ACCEPTED",
+          "commandId": "174e9783-3668-4754-8295-3b5048dfcb12"
+        },
+        "optional": true
+      }
+    },
+    {
+      "timestamp": "2025-12-13T09:03:09.656620",
+      "type": "ws.wait_event",
+      "description": "Completed Wait for command acceptance (ACCEPTED) if not already",
+      "data": {
+        "duration": 10.023179531097412,
+        "result": null
+      }
+    },
+    {
+      "timestamp": "2025-12-13T09:03:09.656687",
+      "type": "db.wait",
+      "description": "Executing Check command status is ACCEPTED or DONE (if ACCEPTED not received, skip to DONE)",
+      "data": {
+        "query": "SELECT status FROM commands WHERE cmd_id = :cmd_id AND status IN ('ACCEPTED', 'DONE', 'ACK')",
+        "params": {
+          "cmd_id": "174e9783-3668-4754-8295-3b5048dfcb12"
+        },
+        "timeout": 20.0,
+        "expected_rows": 1
+      }
+    },
+    {
+      "timestamp": "2025-12-13T09:03:29.683141",
+      "type": "db.wait",
+      "description": "Failed Check command status is ACCEPTED or DONE (if ACCEPTED not received, skip to DONE)",
+      "data": {
+        "duration": 20.02641463279724,
+        "error": "Timeout waiting for DB condition: SELECT status FROM commands WHERE cmd_id = :cmd_id AND status IN ('ACCEPTED', 'DONE', 'ACK')"
       }
     }
   ],
@@ -1106,7 +1247,7 @@
             "data": "{}",
             "channel": "private-commands.1"
           },
-          "timestamp": "2025-12-12T22:25:52.018761"
+          "timestamp": "2025-12-13T09:02:58.538027"
         },
         {
           "data": {
@@ -1114,15 +1255,15 @@
             "data": "{}",
             "channel": "private-hydro.zones.1"
           },
-          "timestamp": "2025-12-12T22:25:52.077454"
+          "timestamp": "2025-12-13T09:02:58.713391"
         },
         {
           "data": {
             "event": "CommandStatusUpdated",
-            "data": "{\"commandId\":\"96bc6911-0e5d-4548-b73e-01573a571d3f\",\"status\":\"QUEUED\",\"message\":\"Command created\",\"error\":null,\"zoneId\":1,\"event_id\":1765567552000000237,\"server_ts\":1765567552000}",
+            "data": "{\"commandId\":\"174e9783-3668-4754-8295-3b5048dfcb12\",\"status\":\"SENT\",\"message\":\"Command status updated\",\"error\":null,\"zoneId\":1,\"event_id\":1765605779000009913,\"server_ts\":1765605779000}",
             "channel": "private-commands.1"
           },
-          "timestamp": "2025-12-12T22:25:53.031242"
+          "timestamp": "2025-12-13T09:02:59.603995"
         }
       ],
       "mqtt_messages": [],

@@ -11,6 +11,7 @@ use Illuminate\Http\Client\TimeoutException;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class PythonBridgeService
@@ -169,10 +170,14 @@ class PythonBridgeService
     public function sendNodeCommand(DeviceNode $node, array $payload): string
     {
         $cmdId = Str::uuid()->toString();
+        
+        // Получаем channel из payload или из params (для обратной совместимости)
+        $channel = $payload['channel'] ?? ($payload['params']['channel'] ?? null);
+        
         $command = Command::create([
             'zone_id' => $node->zone_id,
             'node_id' => $node->id,
-            'channel' => $payload['channel'] ?? null,
+            'channel' => $channel,
             'cmd' => $payload['type'] ?? ($payload['cmd'] ?? 'unknown'),
             'params' => $payload['params'] ?? [],
             'status' => Command::STATUS_QUEUED,
@@ -215,6 +220,20 @@ class PythonBridgeService
             $zoneUid = $node->zone->uid;
         }
         
+        // Получаем channel из payload, params, или из command
+        $channel = $payload['channel'] ?? ($payload['params']['channel'] ?? null) ?? $command->channel;
+        if (!$channel) {
+            $error = 'Channel is required for node command';
+            Log::error('PythonBridgeService: '.$error, [
+                'node_id' => $node->id,
+                'node_uid' => $node->uid,
+                'cmd_id' => $cmdId,
+                'payload' => $payload,
+            ]);
+            $this->markCommandFailed($command, $error);
+            throw new \InvalidArgumentException($error);
+        }
+        
         $requestData = [
             'type' => $command->cmd,
             'params' => $params,
@@ -223,7 +242,7 @@ class PythonBridgeService
             'zone_uid' => $zoneUid, // Передаем zone_uid
             'node_uid' => $node->uid,
             'hardware_id' => $node->hardware_id, // Передаем hardware_id для временного топика
-            'channel' => $payload['channel'] ?? null,
+            'channel' => $channel,
             'cmd_id' => $cmdId, // Pass Laravel's cmd_id to Python service
         ];
         
@@ -482,13 +501,23 @@ class PythonBridgeService
     private function markCommandFailed(Command $command, string $error): void
     {
         try {
-            $command->update([
+            $updateData = [
                 'status' => Command::STATUS_SEND_FAILED,
                 'failed_at' => now(),
-                'error_code' => 'SEND_FAILED',
-                'error_message' => $error,
-                'result_code' => 1,
-            ]);
+            ];
+            
+            // Проверяем, существуют ли поля error_code и error_message в таблице
+            if (Schema::hasColumn('commands', 'error_code')) {
+                $updateData['error_code'] = 'SEND_FAILED';
+            }
+            if (Schema::hasColumn('commands', 'error_message')) {
+                $updateData['error_message'] = $error;
+            }
+            if (Schema::hasColumn('commands', 'result_code')) {
+                $updateData['result_code'] = 1;
+            }
+            
+            $command->update($updateData);
 
             Log::info('PythonBridgeService: Command marked as failed', [
                 'cmd_id' => $command->cmd_id,

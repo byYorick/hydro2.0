@@ -1374,7 +1374,7 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
                         'ts': new_ts
                     }
             
-            # Broadcast телеметрии через Laravel WebSocket для real-time обновления графиков.
+            # Broadcast телеметрии через Laravel API (Laravel отправляет через WebSocket клиентам).
             # Проверяем shutdown перед созданием задачи, чтобы не создавать задачи после начала shutdown.
             logger.info(f"[BROADCAST] After upsert: node_id={node_id}, shutdown={shutdown_event.is_set()}, group_samples={len(group_samples)}")
             if node_id and not shutdown_event.is_set():
@@ -1468,7 +1468,9 @@ async def _broadcast_telemetry_to_laravel(
     timestamp: datetime
 ):
     """
-    Вызывает Laravel API для broadcast телеметрии через WebSocket.
+    Вызывает Laravel API для broadcast телеметрии.
+    Laravel сам отправляет данные клиентам через WebSocket (Reverb).
+    History-logger НЕ подключается к WebSocket напрямую, только через HTTP API Laravel.
     Выполняется асинхронно в фоне, чтобы не блокировать основной процесс.
     Использует глобальный httpx.AsyncClient для переиспользования соединений.
     """
@@ -3416,20 +3418,58 @@ async def publish_node_command(
     
     for attempt in range(max_retries):
         try:
+            logger.info(f"[COMMAND_PUBLISH] Attempt {attempt + 1}/{max_retries} to publish command {cmd_id} to MQTT")
             await publish_command_mqtt(mqtt, req.greenhouse_uid, req.zone_id, node_uid, req.channel, payload, hardware_id=req.hardware_id, zone_uid=zone_uid)
             publish_success = True
+            logger.info(f"[COMMAND_PUBLISH] Command {cmd_id} published successfully on attempt {attempt + 1}")
             break
         except Exception as e:
             last_error = e
+            logger.warning(f"[COMMAND_PUBLISH] Failed to publish command {cmd_id} on attempt {attempt + 1}: {e}")
             if attempt < max_retries - 1:
                 await asyncio.sleep(retry_delays[attempt])
     
+    logger.info(f"[COMMAND_PUBLISH] STEP 1: After publish loop: publish_success={publish_success}, cmd_id={cmd_id}, last_error={last_error}")
+    
     if publish_success:
+        logger.info(f"[COMMAND_PUBLISH] STEP 2: Command {cmd_id} published successfully to MQTT, starting status update to SENT")
+        logger.info(f"[COMMAND_PUBLISH] STEP 2.1: Command details: node_uid={node_uid}, zone_id={req.zone_id}, channel={req.channel}")
+        
+        # Проверяем статус команды перед обновлением
+        logger.info(f"[COMMAND_PUBLISH] STEP 3: Checking command status in DB before update, cmd_id={cmd_id}")
+        try:
+            from common.db import fetch
+            current_cmd = await fetch("SELECT status, sent_at, updated_at FROM commands WHERE cmd_id = $1", cmd_id)
+            if current_cmd:
+                logger.info(f"[COMMAND_PUBLISH] STEP 3.1: Command {cmd_id} found in DB: status={current_cmd[0].get('status')}, sent_at={current_cmd[0].get('sent_at')}, updated_at={current_cmd[0].get('updated_at')}")
+            else:
+                logger.warning(f"[COMMAND_PUBLISH] STEP 3.2: Command {cmd_id} NOT FOUND in database before mark_command_sent!")
+        except Exception as e:
+            logger.error(f"[COMMAND_PUBLISH] STEP 3.3: ERROR checking command status before update: {e}", exc_info=True)
+        
+        logger.info(f"[COMMAND_PUBLISH] STEP 4: Calling mark_command_sent for cmd_id={cmd_id}, allow_resend=True")
         await mark_command_sent(cmd_id, allow_resend=True)
+        logger.info(f"[COMMAND_PUBLISH] STEP 4.1: mark_command_sent completed for cmd_id={cmd_id}")
+        
+        # Проверяем статус команды после обновления
+        logger.info(f"[COMMAND_PUBLISH] STEP 5: Checking command status in DB after mark_command_sent, cmd_id={cmd_id}")
+        try:
+            updated_cmd = await fetch("SELECT status, sent_at, updated_at FROM commands WHERE cmd_id = $1", cmd_id)
+            if updated_cmd:
+                logger.info(f"[COMMAND_PUBLISH] STEP 5.1: Command {cmd_id} status after mark_command_sent: status={updated_cmd[0].get('status')}, sent_at={updated_cmd[0].get('sent_at')}, updated_at={updated_cmd[0].get('updated_at')}")
+            else:
+                logger.error(f"[COMMAND_PUBLISH] STEP 5.2: Command {cmd_id} NOT FOUND in database after mark_command_sent!")
+        except Exception as e:
+            logger.error(f"[COMMAND_PUBLISH] STEP 5.3: ERROR checking command status after update: {e}", exc_info=True)
+        
+        logger.info(f"[COMMAND_PUBLISH] STEP 6: Sending SENT status to Laravel for cmd_id={cmd_id}")
         try:
             await send_status_to_laravel(cmd_id, "SENT", {"zone_id": req.zone_id, "node_uid": node_uid, "channel": req.channel})
-        except Exception:
-            pass
+            logger.info(f"[COMMAND_PUBLISH] STEP 6.1: Command {cmd_id} SENT status successfully sent to Laravel")
+        except Exception as e:
+            logger.error(f"[COMMAND_PUBLISH] STEP 6.2: ERROR sending SENT status to Laravel for command {cmd_id}: {e}", exc_info=True)
+        
+        logger.info(f"[COMMAND_PUBLISH] STEP 7: Returning success response for cmd_id={cmd_id}")
         return {"status": "ok", "data": {"command_id": cmd_id}}
     else:
         await mark_command_send_failed(cmd_id, str(last_error))

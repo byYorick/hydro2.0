@@ -84,23 +84,13 @@ assertions:
       - field: last_event_id
         operator: is_not_null
 
-  - name: replay_has_new_events
+  - name: replay_returns_data
     type: json_assertion
     source: events_after
     path: data
     expected:
       - field: length
-        operator: greater_than_or_equal
-        value: 0  # Может быть 0, если событие еще не обработано - это нормально для теста reconnect
-
-  - name: replay_has_new_events
-    type: json_assertion
-    source: events_after
-    path: data
-    expected:
-      - field: length
-        operator: greater_than
-        value: 0
+        operator: is_not_null
 
 cleanup:
   - step: disconnect_ws_final

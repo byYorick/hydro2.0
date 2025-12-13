@@ -315,6 +315,7 @@ class CommandHandler:
     ):
         """Выполнить команду асинхронно."""
         try:
+            logger.info(f"Executing command {state.cmd_id} (cmd={state.cmd}, channel={state.channel})")
             # Для команды hil_request_telemetry выполняем публикацию напрямую
             if state.cmd == "hil_request_telemetry" and self.telemetry_publisher:
                 try:
@@ -328,7 +329,9 @@ class CommandHandler:
                     response_payload = {"error": f"Failed to publish telemetry: {str(e)}"}
             else:
                 # Выполняем команду через state machine
+                logger.info(f"Executing command via state machine: {state.cmd_id}")
                 final_status, response_payload = await self.state_machine.execute_command(state, executor)
+                logger.info(f"Command {state.cmd_id} executed, final_status={final_status}, response_payload={response_payload}")
             
             # Сохраняем в кеш для идемпотентности
             self.cache.put(state.cmd_id, final_status, response_payload)
@@ -337,12 +340,15 @@ class CommandHandler:
             status_str = self._status_to_string(final_status)
             details = response_payload.get("details", "OK") if response_payload else "OK"
             
+            logger.info(f"Sending final response for command {state.cmd_id}: status={status_str}, details={details}")
+            
             # Проверяем негативные режимы
             if self.state_machine.should_drop_response(state.cmd_id):
                 logger.info(f"Dropping response for command {state.cmd_id}")
                 return
             
             await self._send_response(state.channel, state.cmd_id, status_str, details, response_payload)
+            logger.info(f"Final response sent for command {state.cmd_id}: {status_str}")
             
             # Дублируем ответ, если нужно
             if self.state_machine.should_duplicate_response(state.cmd_id):

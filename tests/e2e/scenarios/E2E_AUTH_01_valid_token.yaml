@@ -1,0 +1,45 @@
+# E2E_AUTH_01: Valid Token - Проверка работы валидного токена
+# DoD: получить токен, вызвать защищённый API, подключиться к WS, получить событие
+
+name: E2E_AUTH_01_valid_token
+description: |
+  Проверяет работу авторизации с валидным токеном:
+  - Получение токена через AuthClient
+  - Вызов защищённого API endpoint
+  - Подключение к WebSocket
+  - Подписка на приватный канал
+  - Получение WebSocket события
+
+setup:
+  prerequisites:
+    - database: zones table exists
+    - backend: Laravel is running
+    - websocket: WebSocket server is running
+
+actions:
+  # Шаг 1: Проверка что AuthClient может получить токен
+  - step: verify_auth_client_can_get_token
+    type: api_get
+    path: /api/zones
+    save: zones_response
+
+  # Шаг 2: Подключение к WebSocket с валидным токеном
+  - step: connect_websocket
+    type: websocket_connect
+    # Подключение автоматически использует токен из AuthClient
+
+  # Шаг 3: Подписка на приватный канал (требует авторизации)
+  - step: get_zone_id
+    type: set
+    test_zone_id: ${zones_response.data.data[0].id}
+
+  - step: subscribe_to_zone_channel
+    type: websocket_subscribe
+    channel: private-hydro.zones.${test_zone_id}
+    # Подписка автоматически использует /broadcasting/auth с токеном
+
+# Assertions: Все проверки выполнены в шагах
+# - API запрос успешно выполнен (HTTP 200)
+# - WebSocket подключен
+# - Подписка на приватный канал успешна (подтверждение получено)
+

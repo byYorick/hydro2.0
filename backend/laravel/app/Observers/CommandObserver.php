@@ -15,18 +15,29 @@ class CommandObserver
      */
     public function created(Command $command): void
     {
+        Log::info('[COMMAND_OBSERVER] STEP 1: created() called', [
+            'command_id' => $command->cmd_id,
+            'status' => $command->status ?? Command::STATUS_QUEUED,
+            'zone_id' => $command->zone_id,
+        ]);
+        
         // Отправляем событие о создании команды
         try {
+            Log::info('[COMMAND_OBSERVER] STEP 2: Dispatching CommandStatusUpdated event on create');
             event(new CommandStatusUpdated(
                 commandId: $command->cmd_id,
                 status: $command->status ?? Command::STATUS_QUEUED,
                 message: 'Command created',
                 zoneId: $command->zone_id
             ));
+            Log::info('[COMMAND_OBSERVER] STEP 3: CommandStatusUpdated event dispatched on create', [
+                'command_id' => $command->cmd_id,
+            ]);
         } catch (\Exception $e) {
-            Log::error('Failed to broadcast CommandStatusUpdated on create', [
+            Log::error('[COMMAND_OBSERVER] STEP 3: ERROR - Failed to broadcast CommandStatusUpdated on create', [
                 'command_id' => $command->cmd_id,
                 'error' => $e->getMessage(),
+                'exception' => get_class($e),
             ]);
         }
     }
@@ -36,8 +47,26 @@ class CommandObserver
      */
     public function updated(Command $command): void
     {
+        Log::info('[COMMAND_OBSERVER] STEP 1: updated() called', [
+            'command_id' => $command->cmd_id,
+            'current_status' => $command->status,
+        ]);
+        
         // Проверяем, изменился ли статус
-        if ($command->wasChanged('status')) {
+        $wasChanged = $command->wasChanged('status');
+        Log::info('[COMMAND_OBSERVER] STEP 2: Checking if status changed', [
+            'command_id' => $command->cmd_id,
+            'wasChanged' => $wasChanged,
+            'current_status' => $command->status,
+            'original_status' => $command->getOriginal('status'),
+            'dirty' => $command->getDirty(),
+            'changes' => $command->getChanges(),
+        ]);
+        
+        if ($wasChanged) {
+            Log::info('[COMMAND_OBSERVER] STEP 3: Status changed, processing event', [
+                'command_id' => $command->cmd_id,
+            ]);
             $oldStatus = $command->getOriginal('status');
             $newStatus = $command->status;
 
@@ -61,12 +90,22 @@ class CommandObserver
                         default => 'Command status updated',
                     };
 
+                    Log::info('[COMMAND_OBSERVER] STEP 4: Dispatching CommandStatusUpdated event', [
+                        'command_id' => $command->cmd_id,
+                        'status' => $newStatus,
+                        'zone_id' => $command->zone_id,
+                        'message' => $message,
+                    ]);
                     event(new CommandStatusUpdated(
                         commandId: $command->cmd_id,
                         status: $newStatus,
                         message: $message,
                         zoneId: $command->zone_id
                     ));
+                    Log::info('[COMMAND_OBSERVER] STEP 5: CommandStatusUpdated event dispatched successfully', [
+                        'command_id' => $command->cmd_id,
+                        'status' => $newStatus,
+                    ]);
                 }
             } catch (\Exception $e) {
                 Log::error('Failed to broadcast command event on update', [

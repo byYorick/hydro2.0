@@ -1,0 +1,40 @@
+# E2E_AUTH_03: WS Forbidden - Проверка что WS без токена падает с понятной ошибкой
+# DoD: попытка подписки без токена, ожидание FAIL с понятной ошибкой
+
+name: E2E_AUTH_03_ws_forbidden
+description: |
+  Проверяет что WebSocket подписка на приватный канал без токена завершается с ошибкой:
+  - Подключение к WebSocket БЕЗ токена (auth_client=None)
+  - Попытка подписки на приватный канал
+  - Ожидается RuntimeError с понятным сообщением об ошибке авторизации
+
+setup:
+  prerequisites:
+    - backend: Laravel is running
+    - websocket: WebSocket server is running
+
+steps:
+  # Шаг 1: Получаем zone_id для подписки
+  - name: Get zone ID
+    api.get:
+      path: /api/zones
+      save: zones_response
+
+  - name: Extract zone ID
+    set:
+      test_zone_id: ${zones_response.data.data[0].id}
+
+  # Шаг 2: Создаем WSClient БЕЗ токена (для тестирования ошибки)
+  # Это симулирует ситуацию когда токен не был предоставлен
+  - name: Create WSClient without token
+    create_ws_client_without_token: {}
+
+  # Шаг 3: Попытка подписки на приватный канал БЕЗ токена
+  # Это должно вызвать RuntimeError с понятным сообщением
+  - name: Try to subscribe without token (should fail)
+    ws_subscribe_without_auth:
+      channel: private-hydro.zones.${test_zone_id}
+      expect_error: true
+      expected_error_message: "required"
+      save: subscription_error
+

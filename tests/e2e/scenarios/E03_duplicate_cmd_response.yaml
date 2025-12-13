@@ -49,16 +49,32 @@ actions:
     config_ref: node_sim.config
     wait_seconds: 3
 
+  # Шаг 1.5: Получаем zone_id и node_id из API (если не установлены автоматически)
+  - step: get_zones
+    type: api_get
+    endpoint: "/api/zones"
+    save: zones
+  
+  - step: get_nodes
+    type: api_get
+    endpoint: "/api/nodes"
+    save: nodes
+
+  - step: find_test_zone_and_node
+    type: set
+    test_zone_id: ${zones.data.data[0].id}
+    test_node_id: ${nodes.data.data[0].id}
+
   # Шаг 2: Подписка на WebSocket канал команд зоны
   - step: subscribe_ws_commands
     type: websocket_subscribe
-    channel: "private-commands.{zone_id}"
+    channel: "private-commands.${test_zone_id}"
     wait_seconds: 1
 
   # Шаг 3: Отправка команды через API
   - step: send_command
     type: api_post
-    endpoint: "/api/nodes/{node_id}/commands"
+    endpoint: "/api/nodes/${test_node_id}/commands"
     payload:
       cmd: "set_relay_state"
       params:
@@ -128,7 +144,7 @@ assertions:
   # Проверка 3: WebSocket событие CommandStatusUpdated отправлено один раз
   - name: ws_event_sent_once
     type: websocket_event_count
-    channel: "private-commands.{zone_id}"
+    channel: "private-commands.${test_zone_id}"
     event_type: ".App\\Events\\CommandStatusUpdated"
     timeout: 10.0
     filter:

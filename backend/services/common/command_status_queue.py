@@ -534,14 +534,18 @@ async def send_status_to_laravel(
     Returns:
         True если успешно отправлено, False если сохранено в очередь
     """
+    logger.info(f"[STATUS_DELIVERY] STEP 1: Starting send_status_to_laravel for cmd_id={cmd_id}, status={status}, details={details}")
+    
     s = get_settings()
     laravel_url = s.laravel_api_url if hasattr(s, 'laravel_api_url') else None
     
+    logger.info(f"[STATUS_DELIVERY] STEP 2: Checking Laravel API URL: {laravel_url}")
     if not laravel_url:
-        logger.error("[STATUS_DELIVERY] Laravel API URL not configured")
+        logger.error("[STATUS_DELIVERY] STEP 2.1: ERROR - Laravel API URL not configured")
         # Сохраняем в очередь для ретрая после настройки
         queue = await get_status_queue()
         await queue.enqueue(cmd_id, status, details)
+        logger.info(f"[STATUS_DELIVERY] STEP 2.2: Status saved to retry queue for cmd_id={cmd_id}")
         return False
     
     ingest_token = (
@@ -549,6 +553,8 @@ async def send_status_to_laravel(
         if hasattr(s, 'history_logger_api_token') and s.history_logger_api_token 
         else (s.ingest_token if hasattr(s, 'ingest_token') and s.ingest_token else None)
     )
+    
+    logger.info(f"[STATUS_DELIVERY] STEP 3: Ingest token configured: {bool(ingest_token)}")
     
     headers = {
         "Content-Type": "application/json",
@@ -566,6 +572,9 @@ async def send_status_to_laravel(
         "details": details or None,
     }
     
+    logger.info(f"[STATUS_DELIVERY] STEP 4: Prepared payload: cmd_id={cmd_id}, status={status_value}, details={details}")
+    logger.info(f"[STATUS_DELIVERY] STEP 5: Sending POST request to {laravel_url}/api/python/commands/ack")
+    
     try:
         resp = await make_request(
             'post',
@@ -575,25 +584,28 @@ async def send_status_to_laravel(
             json=payload,
         )
         
+        logger.info(f"[STATUS_DELIVERY] STEP 6: Received response: status_code={resp.status_code}")
+        
         if resp.status_code == 200:
             logger.info(
-                f"[STATUS_DELIVERY] Status '{status_value}' delivered to Laravel "
+                f"[STATUS_DELIVERY] STEP 6.1: SUCCESS - Status '{status_value}' delivered to Laravel "
                 f"for cmd_id={cmd_id}"
             )
             return True
         else:
             logger.warning(
-                f"[STATUS_DELIVERY] Laravel responded with {resp.status_code}: "
+                f"[STATUS_DELIVERY] STEP 6.2: ERROR - Laravel responded with {resp.status_code}: "
                 f"{resp.text[:200]}"
             )
             # Сохраняем в очередь для ретрая
             queue = await get_status_queue()
             await queue.enqueue(cmd_id, status, details)
+            logger.info(f"[STATUS_DELIVERY] STEP 6.3: Status saved to retry queue for cmd_id={cmd_id}")
             return False
             
     except Exception as e:
         logger.error(
-            f"[STATUS_DELIVERY] Unexpected error sending status to Laravel: {e}",
+            f"[STATUS_DELIVERY] STEP 6.4: EXCEPTION - Unexpected error sending status to Laravel: {e}",
             exc_info=True
         )
         # Сохраняем в очередь для ретрая

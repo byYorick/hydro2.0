@@ -135,16 +135,19 @@ run_scenario() {
     
     # Определяем Python интерпретатор
     local PYTHON_BIN="python3"
-    if [ -d "$PROJECT_ROOT/.venv" ] && [ -f "$PROJECT_ROOT/.venv/bin/python3" ]; then
+    # Проверяем venv в E2E директории
+    if [ -d "$E2E_DIR/venv" ] && [ -f "$E2E_DIR/venv/bin/python3" ]; then
+        PYTHON_BIN="$E2E_DIR/venv/bin/python3"
+    elif [ -d "$PROJECT_ROOT/.venv" ] && [ -f "$PROJECT_ROOT/.venv/bin/python3" ]; then
         PYTHON_BIN="$PROJECT_ROOT/.venv/bin/python3"
     else
-        # Создаем venv если его нет
-        if [ ! -d "$PROJECT_ROOT/.venv" ]; then
+        # Создаем venv в E2E директории если его нет
+        if [ ! -d "$E2E_DIR/venv" ]; then
             log_info "Создание venv и установка зависимостей..."
-            python3 -m venv "$PROJECT_ROOT/.venv"
-            "$PROJECT_ROOT/.venv/bin/pip" install -q -r "$E2E_DIR/requirements.txt"
+            python3 -m venv "$E2E_DIR/venv"
+            "$E2E_DIR/venv/bin/pip" install -q -r "$E2E_DIR/requirements.txt"
         fi
-        PYTHON_BIN="$PROJECT_ROOT/.venv/bin/python3"
+        PYTHON_BIN="$E2E_DIR/venv/bin/python3"
     fi
     
     # Запуск сценария
@@ -189,25 +192,22 @@ main() {
             check_services_health
             ;;
         "test"|"run")
-            # Получаем токен для API
-            log_info "Получение API токена..."
-            LOGIN_RESPONSE=$(curl -sS -X POST "$LARAVEL_URL/api/auth/login" \
-                -H "Accept: application/json" \
-                -H "Content-Type: application/json" \
-                -d '{"email":"e2e@example.com","password":"e2e"}')
-            
-            E2E_TOKEN=$(echo "$LOGIN_RESPONSE" | python3 -c "import json,sys; print((json.load(sys.stdin).get('data') or {}).get('token',''))")
-            
-            if [ -z "$E2E_TOKEN" ]; then
-                log_error "Не удалось получить API токен. Ответ: $LOGIN_RESPONSE"
-                exit 1
+            # AuthClient теперь автоматически получает токен, поэтому LARAVEL_API_TOKEN не требуется
+            # Оставляем только для обратной совместимости или если явно указан пользователем
+            if [ -n "$LARAVEL_API_TOKEN" ]; then
+                log_info "LARAVEL_API_TOKEN установлен, будет использован вместо AuthClient (для обратной совместимости)"
+                log_warn "Рекомендуется не устанавливать LARAVEL_API_TOKEN - AuthClient автоматически получит токен"
+            else
+                log_info "Используется AuthClient для автоматического управления токенами"
+                log_info "Токен будет получен автоматически при запуске тестов"
             fi
+            # Не устанавливаем LARAVEL_API_TOKEN, чтобы AuthClient работал автоматически
             
-            export LARAVEL_API_TOKEN="$E2E_TOKEN"
             export DATABASE_URL="postgresql://${DB_USERNAME}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_DATABASE}"
             export DB_HOST DB_PORT DB_DATABASE DB_USERNAME DB_PASSWORD
+            export WS_URL="${WS_URL:-ws://localhost:6002/app/local}"
             
-            log_info "API токен получен ✓"
+            log_info "Используем API токен: ${LARAVEL_API_TOKEN:0:10}..."
             
             # Запуск обязательных сценариев
             SCENARIOS=(

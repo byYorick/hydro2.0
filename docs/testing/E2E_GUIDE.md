@@ -34,6 +34,47 @@ python -m runner.e2e_runner scenarios/E01_bootstrap.yaml
 python -m runner.e2e_runner scenarios/E01_bootstrap.yaml --verbose
 ```
 
+## E2E Auth Bootstrap
+
+Для автоматического получения токена для E2E тестов доступны два способа:
+
+### 1. Artisan команда (рекомендуется)
+
+```bash
+# В контейнере Laravel
+docker-compose -f docker-compose.e2e.yml exec laravel php artisan e2e:auth-bootstrap
+
+# Или с параметрами
+docker-compose -f docker-compose.e2e.yml exec laravel php artisan e2e:auth-bootstrap --email=e2e@test.local --role=admin
+```
+
+Команда создаёт пользователя `e2e@test.local` (если его нет) и выводит токен в stdout.
+
+### 2. API endpoint (только в testing окружении)
+
+```bash
+curl -X POST http://localhost:8081/api/e2e/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{"email":"e2e@test.local","role":"admin"}'
+```
+
+Ответ:
+```json
+{
+  "status": "ok",
+  "data": {
+    "token": "...",
+    "user": {
+      "id": 1,
+      "email": "e2e@test.local",
+      "role": "admin"
+    }
+  }
+}
+```
+
+**Примечание:** Оба метода автоматически используются в `run_e2e.sh` при запуске тестов.
+
 ## Переменные окружения
 
 ### Обязательные переменные
@@ -41,7 +82,7 @@ python -m runner.e2e_runner scenarios/E01_bootstrap.yaml --verbose
 ```bash
 # Laravel API
 LARAVEL_URL=http://localhost:8081
-LARAVEL_API_TOKEN=dev-token-12345
+LARAVEL_API_TOKEN=dev-token-12345  # Автоматически получается через e2e:auth-bootstrap
 
 # База данных
 DB_CONNECTION=pgsql
