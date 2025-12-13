@@ -13,7 +13,7 @@ setup:
     config:
       mqtt:
         host: ${MQTT_HOST:-localhost}
-        port: ${MQTT_PORT:-1883}
+        port: ${MQTT_PORT:-1884}
       node:
         gh_uid: gh-test-1
         zone_uid: zn-test-1
@@ -65,7 +65,7 @@ assertions:
       SELECT COUNT(*) as cmd_count
       FROM commands
       WHERE zone_id = :zone_id
-      AND (cmd LIKE '%ph%' OR cmd LIKE '%ec%' OR cmd LIKE '%dose%' OR cmd LIKE '%correction%')
+      AND (cmd LIKE '%%ph%%' OR cmd LIKE '%%ec%%' OR cmd LIKE '%%dose%%' OR cmd LIKE '%%correction%%')
       AND created_at > NOW() - INTERVAL '2 minutes'
     params:
       zone_id: ${zone_id}
@@ -82,7 +82,7 @@ assertions:
       SELECT COUNT(*) as event_count
       FROM zone_events
       WHERE zone_id = :zone_id
-      AND (type LIKE '%SKIP%' OR type LIKE '%STALE%')
+      AND (type LIKE '%%SKIP%%' OR type LIKE '%%STALE%%')
       AND created_at > NOW() - INTERVAL '2 minutes'
     params:
       zone_id: ${zone_id}

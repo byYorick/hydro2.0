@@ -14,7 +14,7 @@ import subprocess
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from datetime import datetime
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
 
 from .api_client import APIClient, AuthenticationError
 from .auth_client import AuthClient
@@ -68,7 +68,8 @@ class E2ERunner:
         # Используем DATABASE_URL если есть, иначе формируем из переменных
         self.db_path = config.get("db_path") or os.getenv("DATABASE_URL") or os.getenv("DB_DATABASE")
         self.mqtt_host = config.get("mqtt_host") or os.getenv("MQTT_HOST", "localhost")
-        self.mqtt_port = config.get("mqtt_port") or int(os.getenv("MQTT_PORT", "1883"))
+        # Выравниваем дефолтный порт под docker-compose.e2e.yml (1884 -> 1883 внутри)
+        self.mqtt_port = config.get("mqtt_port") or int(os.getenv("MQTT_PORT", "1884"))
         self.mqtt_user = config.get("mqtt_user") or os.getenv("MQTT_USER")
         self.mqtt_pass = config.get("mqtt_pass") or os.getenv("MQTT_PASS")
         
@@ -91,6 +92,8 @@ class E2ERunner:
         
         # Отслеживание остановленных сервисов для автоматического восстановления
         self._stopped_services: List[str] = []
+        # Отмечаем, запускали ли инфраструктуру сами, чтобы корректно чистить
+        self._infra_started_by_runner = False
     
     async def setup(self):
         """Инициализация клиентов."""
@@ -171,6 +174,13 @@ class E2ERunner:
             self.db.disconnect()
         if self.api:
             await self.api.close()
+        
+        # Если мы сами поднимали инфраструктуру, останавливаем node-sim для чистоты (остальное оставляем)
+        if self._infra_started_by_runner:
+            try:
+                await self._fault_inject("node-sim", "stop", None)
+            except Exception:
+                pass
     
     async def _fault_inject(self, service: str, action: str, duration_s: Optional[float] = None):
         """
@@ -193,6 +203,7 @@ class E2ERunner:
             "automation-engine": "automation-engine",
             "redis": "redis",
             "reverb": "reverb",
+            "node-sim": "node-sim",
         }
         compose_service = service_map.get(service, service)
         
@@ -275,6 +286,7 @@ class E2ERunner:
             "automation-engine": "automation-engine",
             "redis": "redis",
             "reverb": "reverb",
+            "node-sim": "node-sim",
         }
         compose_service = service_map.get(service, service)
         
@@ -312,6 +324,178 @@ class E2ERunner:
             await self._fault_restore(service)
         except Exception as e:
             logger.warning(f"[FAULT_INJECT] Auto-restore failed for {service}: {e}")
+
+    def _ensure_infra_started(self):
+        """
+        Поднять docker-compose инфраструктуру, если она еще не запущена.
+        
+        Использует COMPOSE_FILE (по умолчанию tests/e2e/docker-compose.e2e.yml).
+        Можно отключить через env E2E_SKIP_COMPOSE_UP=1.
+        """
+        if os.getenv("E2E_SKIP_COMPOSE_UP") == "1":
+            logger.info("E2E_SKIP_COMPOSE_UP=1, пропускаем docker-compose up")
+            return
+
+        compose_file = self.compose_file
+        compose_dir = os.path.dirname(compose_file) if os.path.dirname(compose_file) else os.getcwd()
+
+        # Быстрая проверка: порт Postgres слушает именно в docker-compose сети
+        # Если на localhost:POSTGRES_PORT уже что-то есть, проверяем env marker E2E_EXPECT_COMPOSE=1
+        try:
+            import socket
+            with socket.create_connection(("127.0.0.1", int(os.getenv("POSTGRES_PORT", "5433"))), timeout=1):
+                if os.getenv("E2E_EXPECT_COMPOSE") == "1":
+                    logger.info("E2E_EXPECT_COMPOSE=1, форсим docker-compose up даже при доступном Postgres")
+                else:
+                    logger.info("PostgreSQL уже доступен, docker-compose up пропущен")
+                    return
+        except Exception:
+            pass
+
+        services = [
+            "postgres",
+            "redis",
+            "mosquitto",
+            "laravel",
+            "reverb",
+            "history-logger",
+            "mqtt-bridge",
+            "automation-engine",
+            "node-sim",
+        ]
+
+        logger.info(f"docker-compose up -d для сервисов: {', '.join(services)}")
+        try:
+            result = subprocess.run(
+                ["docker-compose", "-f", compose_file, "up", "-d", *services],
+                cwd=compose_dir,
+                capture_output=True,
+                text=True,
+                timeout=180,
+            )
+            if result.returncode != 0:
+                logger.error(f"docker-compose up failed: {result.stderr}")
+                raise RuntimeError(f"docker-compose up failed: {result.stderr}")
+            self._infra_started_by_runner = True
+            logger.info("✓ docker-compose инфраструктура поднята")
+            # Ждем готовности ключевых сервисов
+            time.sleep(5)
+            self._wait_infra_health(compose_file, compose_dir)
+            self._run_migrations()
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("docker-compose up timed out")
+        except Exception as e:
+            logger.error(f"Ошибка при docker-compose up: {e}")
+            raise
+
+    def _wait_infra_health(self, compose_file: str, compose_dir: str, timeout: float = 60.0):
+        """
+        Ожидание готовности основных сервисов после docker-compose up.
+        Проверяем postgres, redis, mosquitto, laravel.
+        """
+        start = time.time()
+        services_ok = {"postgres": False, "redis": False, "mosquitto": False, "laravel": False}
+        while time.time() - start < timeout:
+            all_ok = True
+            # postgres
+            if not services_ok["postgres"]:
+                try:
+                    import socket
+                    with socket.create_connection(("127.0.0.1", int(os.getenv("POSTGRES_PORT", "5433"))), timeout=1):
+                        services_ok["postgres"] = True
+                        logger.info("Health: postgres ready")
+                except Exception:
+                    all_ok = False
+            # redis
+            if not services_ok["redis"]:
+                try:
+                    result = subprocess.run(
+                        ["docker-compose", "-f", compose_file, "exec", "-T", "redis", "redis-cli", "ping"],
+                        cwd=compose_dir,
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                    if result.returncode == 0 and "PONG" in result.stdout:
+                        services_ok["redis"] = True
+                        logger.info("Health: redis ready")
+                    else:
+                        all_ok = False
+                except Exception:
+                    all_ok = False
+            # mosquitto
+            if not services_ok["mosquitto"]:
+                try:
+                    result = subprocess.run(
+                        ["docker-compose", "-f", compose_file, "exec", "-T", "mosquitto", "mosquitto_sub", "-h", "localhost", "-p", "1883", "-t", "$SYS/#", "-C", "1"],
+                        cwd=compose_dir,
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                    if result.returncode == 0:
+                        services_ok["mosquitto"] = True
+                        logger.info("Health: mosquitto ready")
+                    else:
+                        all_ok = False
+                except Exception:
+                    all_ok = False
+            # laravel health
+            if not services_ok["laravel"]:
+                try:
+                    import httpx
+                    resp = httpx.get(os.getenv("LARAVEL_URL", "http://localhost:8081") + "/api/system/health", timeout=2.0)
+                    if resp.status_code == 200:
+                        services_ok["laravel"] = True
+                        logger.info("Health: laravel ready")
+                    else:
+                        all_ok = False
+                except Exception:
+                    all_ok = False
+
+            if all_ok:
+                return
+            time.sleep(2)
+        logger.warning(f"Health wait timed out after {timeout}s, statuses: {services_ok}")
+    
+    def _run_migrations(self):
+        """
+        Выполнить php artisan migrate:fresh --seed если база пуста.
+        """
+        compose_file = self.compose_file
+        compose_dir = os.path.dirname(compose_file) if os.path.dirname(compose_file) else os.getcwd()
+        try:
+            # Пробуем запросить одну таблицу; если нет — запускаем миграции
+            import psycopg
+            dsn = self.db_path or os.getenv("DATABASE_URL")
+            if not dsn:
+                db_host = os.getenv("DB_HOST", "localhost")
+                db_port = os.getenv("DB_PORT", "5433")
+                db_name = os.getenv("DB_DATABASE", "hydro_e2e")
+                db_user = os.getenv("DB_USERNAME", "hydro")
+                db_pass = os.getenv("DB_PASSWORD", "hydro_e2e")
+                dsn = f"postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
+            with psycopg.connect(dsn) as conn:
+                with conn.cursor() as cur:
+                    cur.execute("select 1 from information_schema.tables where table_name='migrations'")
+                    if cur.fetchone():
+                        return
+        except Exception:
+            # Если не удалось подключиться или таблицы нет — пробуем миграции
+            pass
+
+        logger.info("Running migrations in laravel container (migrate:fresh --seed)...")
+        result = subprocess.run(
+            ["docker-compose", "-f", compose_file, "exec", "-T", "laravel", "php", "artisan", "migrate:fresh", "--seed"],
+            cwd=compose_dir,
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        if result.returncode != 0:
+            logger.error(f"Migrations failed: {result.stderr}")
+            raise RuntimeError(f"Migrations failed: {result.stderr}")
+        logger.info("✓ Migrations completed")
 
     def _api_items(self, response: Any) -> List[Dict[str, Any]]:
         """
@@ -895,6 +1079,7 @@ class E2ERunner:
             step_name = action.get("step", action.get("name", f"Action {i+1}"))
             step_type = action.get("type")
             wait_seconds = float(action.get("wait_seconds", 0) or 0)
+            optional = bool(action.get("optional", False))
 
             action_cfg = {k: v for k, v in action.items() if k not in ("step", "name", "type", "wait_seconds", "config_ref")}
             action_cfg = self._resolve_variables(action_cfg)
@@ -931,6 +1116,16 @@ class E2ERunner:
             except Exception as e:
                 duration = time.time() - step_start_time
                 error_msg = str(e)
+                if optional:
+                    logger.warning(f"Optional action '{step_name}' ({step_type}) failed: {error_msg}")
+                    self.reporter.add_test_case(
+                        name=step_name,
+                        status="skipped",
+                        duration=duration,
+                        error_message=error_msg,
+                        steps=[{"name": step_name, "status": "skipped", "error": error_msg}]
+                    )
+                    continue
                 logger.error(f"Action '{step_name}' ({step_type}) failed: {error_msg}")
                 self.reporter.add_test_case(
                     name=step_name,
@@ -947,6 +1142,7 @@ class E2ERunner:
         for i, assertion in enumerate(assertions):
             name = assertion.get("name", f"Assertion {i+1}")
             a_type = assertion.get("type")
+            optional = bool(assertion.get("optional", False))
             step_start_time = time.time()
             try:
                 await self._execute_assertion(a_type, assertion)
@@ -960,6 +1156,16 @@ class E2ERunner:
             except Exception as e:
                 duration = time.time() - step_start_time
                 error_msg = str(e)
+                if optional:
+                    logger.warning(f"Optional assertion '{name}' skipped due to error: {error_msg}")
+                    self.reporter.add_test_case(
+                        name=name,
+                        status="skipped",
+                        duration=duration,
+                        error_message=error_msg,
+                        steps=[{"name": name, "status": "skipped", "error": error_msg}]
+                    )
+                    continue
                 logger.error(f"Assertion '{name}' failed: {error_msg}")
                 self.reporter.add_test_case(
                     name=name,
@@ -1010,10 +1216,27 @@ class E2ERunner:
             for k, v in cfg.items():
                 self.context[k] = self._resolve_variables(v)
             return
-
-        # Simulator control (compose already runs it; keep as no-op)
-        if step_type in ("start_simulator", "stop_simulator"):
-            logger.info(f"Simulator step '{step_type}' (noop in this runner)")
+        # Simulator control (delegate to docker-compose node-sim service)
+        if step_type == "start_simulator":
+            # При необходимости создаем временный конфиг node-sim и монтируем через NODE_SIM_CONFIG
+            cfg_ref = raw.get("config_ref")
+            if cfg_ref:
+                # cfg_ref формат: dotted path, например node_sim.config (или setup.node_sim.config)
+                sim_cfg = self._resolve_variable_expression(cfg_ref)
+                if not sim_cfg and "setup" in self.context:
+                    sim_cfg = self._resolve_variable_expression(f"setup.{cfg_ref}")
+                if sim_cfg:
+                    import tempfile, yaml
+                    tmp = tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".yaml")
+                    yaml.safe_dump(sim_cfg, tmp)
+                    tmp.flush()
+                    self.context["_node_sim_config_path"] = tmp.name
+                    os.environ["NODE_SIM_CONFIG"] = tmp.name
+                    logger.info(f"Generated node-sim config at {tmp.name}")
+            await self._fault_restore("node-sim")
+            return
+        if step_type == "stop_simulator":
+            await self._fault_inject("node-sim", "stop", None)
             return
         
         # Fault injection (docker-compose services)
@@ -1101,7 +1324,23 @@ class E2ERunner:
             if step_type == "api_get":
                 res = await self.api.get(endpoint, params=cfg.get("params"))
             elif step_type == "api_post":
-                res = await self.api.post(endpoint, json=payload)
+                expected_status = cfg.get("expected_status")
+                # Если указан expected_status, делаем запрос напрямую через httpx
+                # чтобы получить ответ даже при ошибке
+                if expected_status:
+                    import httpx
+                    headers = await self.api._get_headers()
+                    url = urljoin(self.api.base_url + "/", endpoint.lstrip("/"))
+                    async with httpx.AsyncClient(timeout=self.api.timeout) as client:
+                        response = await client.post(url, json=payload, headers=headers)
+                        self.api._last_response = response
+                        if response.status_code == expected_status:
+                            res = response.json()
+                        else:
+                            response.raise_for_status()
+                            res = response.json()
+                else:
+                    res = await self.api.post(endpoint, json=payload)
             elif step_type == "api_put":
                 res = await self.api.put(endpoint, json=payload)
             elif step_type == "api_patch":
@@ -1109,7 +1348,7 @@ class E2ERunner:
                 res = await self.api.request("PATCH", endpoint, json=payload)
             else:
                 res = await self.api.delete(endpoint)
-            # Проверяем expected_status, если указан
+            # Проверяем expected_status, если указан (для случаев когда не было ошибки)
             expected_status = cfg.get("expected_status")
             if expected_status:
                 last_response = self.api.get_last_response()
@@ -1180,8 +1419,12 @@ class E2ERunner:
             if not self.auth_client:
                 raise RuntimeError("Cannot invalidate token: AuthClient not initialized")
             # Устанавливаем невалидный токен напрямую
-            self.auth_client._token = "invalid_token_for_testing"
-            self.auth_client._token_expires_at = None
+            cls = self.auth_client.__class__
+            cls._token = "invalid_token_for_testing"
+            cls._token_expires_at = None
+            # Дублируем на инстансе для совместимости
+            self.auth_client._token = cls._token
+            self.auth_client._token_expires_at = cls._token_expires_at
             logger.info("Token invalidated for testing re-auth")
             return
         
@@ -1294,6 +1537,14 @@ class E2ERunner:
             self._assert_row_expected(row0, expected)
             return
 
+        if a_type in ("db.wait", "db_wait"):
+            query = self._resolve_variables(assertion.get("query"))
+            params = self._resolve_variables(assertion.get("params", {}))
+            timeout = float(assertion.get("timeout", 10.0))
+            expected_rows = assertion.get("expected_rows")
+            rows = await self.db.wait(query, params=params, timeout=timeout, expected_rows=expected_rows)
+            return rows
+
         if a_type == "websocket_event":
             event_type = assertion.get("event_type") or assertion.get("event")
             timeout = float(assertion.get("timeout_seconds", assertion.get("timeout", 10.0)))
@@ -1370,31 +1621,76 @@ class E2ERunner:
             return
 
         if a_type == "json_assertion":
-            source = assertion.get("source")
-            path = assertion.get("path")
+            # Поддерживаем как source/path, так и прямые data:
+            target = assertion.get("data")
+            if target is None:
+                source = assertion.get("source")
+                path = assertion.get("path")
+                target = self._extract_json_path(self.context.get(source), path)
+            else:
+                target = self._resolve_variables(target)
             expected = assertion.get("expected", [])
-            target = self._extract_json_path(self.context.get(source), path)
             # basic length checks and field checks
             for rule in expected:
                 field = rule.get("field")
                 operator = rule.get("operator")
-                value = rule.get("value")
+                value = self._resolve_variables(rule.get("value"))
+                rule_optional = bool(rule.get("optional", False))
+
+                # Выбираем значение поля
+                field_value = None
                 if field == "length":
-                    actual = len(target) if target is not None else 0
-                    if operator == "greater_than" and not (actual > value):
-                        raise AssertionError(f"Expected length > {value}, got {actual}")
-                elif field and operator:
-                    # Extract field value from target
-                    field_value = self._extract_json_path(target, field) if isinstance(target, dict) else None
-                    if operator == "is_not_null":
-                        if field_value is None:
-                            raise AssertionError(f"Expected field {field} to be not null")
-                    elif operator == "equals":
-                        if str(field_value) != str(value):
-                            raise AssertionError(f"Expected {field} = {value}, got {field_value}")
-                    elif operator == "greater_than":
-                        if not (float(field_value) > float(value)):
-                            raise AssertionError(f"Expected {field} > {value}, got {field_value}")
+                    field_value = len(target) if target is not None else 0
+                elif field:
+                    field_value = self._extract_json_path(target, field) if isinstance(target, (dict, list)) else None
+
+                try:
+                    if field == "length":
+                        actual = field_value
+                        if operator == "greater_than" and not (actual > value):
+                            raise AssertionError(f"Expected length > {value}, got {actual}")
+                        if operator == "equals" and not (actual == value):
+                            raise AssertionError(f"Expected length = {value}, got {actual}")
+                    elif field and operator:
+                        if operator == "is_not_null":
+                            if field_value is None:
+                                raise AssertionError(f"Expected field {field} to be not null")
+                        elif operator == "equals":
+                            if str(field_value) != str(value):
+                                raise AssertionError(f"Expected {field} = {value}, got {field_value}")
+                        elif operator == "greater_than":
+                            if not (float(field_value) > float(value)):
+                                raise AssertionError(f"Expected {field} > {value}, got {field_value}")
+                        elif operator == "greater_than_or_equal":
+                            if not (float(field_value) >= float(value)):
+                                raise AssertionError(f"Expected {field} >= {value}, got {field_value}")
+                        elif operator == "less_than":
+                            if not (float(field_value) < float(value)):
+                                raise AssertionError(f"Expected {field} < {value}, got {field_value}")
+                        elif operator == "in":
+                            if field_value not in value:
+                                raise AssertionError(f"Expected {field} in {value}, got {field_value}")
+                        elif operator == "is_type":
+                            type_map = {
+                                "list": list,
+                                "dict": dict,
+                                "str": str,
+                                "int": int,
+                                "float": float,
+                                "bool": bool,
+                            }
+                            expected_type = type_map.get(str(value).lower(), None)
+                            if expected_type and not isinstance(field_value if field else target, expected_type):
+                                raise AssertionError(f"Expected {field or 'value'} to be of type {value}")
+                        else:
+                            raise AssertionError(f"Unsupported operator in json_assertion: {operator}")
+                    else:
+                        # нет правила — ничего не делаем
+                        continue
+                except AssertionError:
+                    if rule_optional:
+                        continue
+                    raise
             return
 
         raise ValueError(f"Unknown assertion type: {a_type}")
@@ -1461,4 +1757,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-

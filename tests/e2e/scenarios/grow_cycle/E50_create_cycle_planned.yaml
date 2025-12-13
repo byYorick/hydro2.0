@@ -23,7 +23,7 @@ actions:
     type: api_post
     endpoint: /api/recipes
     payload:
-      name: test-recipe-e50
+      name: test-recipe-e50-${TIMESTAMP_S}
       description: Test recipe for E50
     save: recipe_response
 
@@ -33,6 +33,10 @@ actions:
     payload:
       recipe_id: ${recipe_response.data.id}
     save: attach_response
+
+  - step: set_ids_for_cleanup
+    type: set
+    recipe_id: ${recipe_response.data.id}
 
   # Устанавливаем статус зоны на PLANNED (если не установлен автоматически)
   - step: set_zone_status_planned
@@ -67,3 +71,16 @@ assertions:
     params:
       zone_id: ${zone_id}
     expected_rows: 1
+
+cleanup:
+  - step: detach_recipe
+    type: api_post
+    endpoint: /api/zones/${zone_id}/detach-recipe
+    payload:
+      recipe_id: ${recipe_id}
+    optional: true
+
+  - step: delete_recipe
+    type: api_delete
+    endpoint: /api/recipes/${recipe_id}
+    optional: true

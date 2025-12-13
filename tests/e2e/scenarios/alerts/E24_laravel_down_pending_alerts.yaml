@@ -16,7 +16,7 @@ setup:
     config:
       mqtt:
         host: ${MQTT_HOST:-localhost}
-        port: ${MQTT_PORT:-1883}
+        port: ${MQTT_PORT:-1884}
         username: ${MQTT_USER:-null}
         password: ${MQTT_PASS:-null}
       node:
@@ -56,14 +56,18 @@ actions:
     endpoint: "/api/system/health"
     wait_seconds: 1
 
-  # Шаг 3: Узел публикует несколько ошибок
-  # Примечание: В реальном сценарии Laravel был бы остановлен, но в E2E окружении
-  # мы проверяем, что ошибки обрабатываются через очередь
-  # Формат: error_code формирует код алерта как node_error_{component}_{error_code}
+  # Шаг 3: Останавливаем Laravel, чтобы ошибки копились в pending_alerts
+  - step: stop_laravel
+    type: fault.inject
+    service: laravel
+    action: stop
+    duration_s: 10
+
+  # Шаг 4: Узел публикует несколько ошибок во время простоя Laravel
   - step: node_publishes_errors_during_down
     type: mqtt_publish_multiple
     messages:
-      - topic: "hydro/gh-test-1/zn-test-1/nd-ph-esp32una/error"
+      - topic: "hydro/gh-test-1/zn-test-1/nd-ph-test-1/error"
         payload:
           error_code: "SENSOR_FAILURE_1"
           component: "sensor"
@@ -71,7 +75,7 @@ actions:
           level: "ERROR"
           ts: ${TIMESTAMP_MS}
         qos: 1
-      - topic: "hydro/gh-test-1/zn-test-1/nd-ph-esp32una/error"
+      - topic: "hydro/gh-test-1/zn-test-1/nd-ph-test-1/error"
         payload:
           error_code: "SENSOR_FAILURE_2"
           component: "sensor"
@@ -79,7 +83,7 @@ actions:
           level: "ERROR"
           ts: ${TIMESTAMP_MS}
         qos: 1
-      - topic: "hydro/gh-test-1/zn-test-1/nd-ph-esp32una/error"
+      - topic: "hydro/gh-test-1/zn-test-1/nd-ph-test-1/error"
         payload:
           error_code: "PUMP_ERROR"
           component: "pump"
@@ -89,10 +93,15 @@ actions:
         qos: 1
     wait_seconds: 5
 
-  # Шаг 4: Ожидание обработки очереди (worker обрабатывает задачи)
+  # Шаг 5: Запускаем Laravel обратно
+  - step: restore_laravel
+    type: fault.restore
+    service: laravel
+
+  # Шаг 6: Ожидание обработки очереди после восстановления
   - step: wait_queue_processing
     type: sleep
-    seconds: 10
+    seconds: 15
 
 assertions:
   # Проверка 1: Все накопленные ошибки обработаны

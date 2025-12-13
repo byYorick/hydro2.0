@@ -13,7 +13,7 @@ setup:
     config:
       mqtt:
         host: ${MQTT_HOST:-localhost}
-        port: ${MQTT_PORT:-1883}
+        port: ${MQTT_PORT:-1884}
       node:
         gh_uid: gh-test-1
         zone_uid: zn-test-1
@@ -99,7 +99,7 @@ actions:
 
   # Проверяем, что alert был создан после replay
   - step: wait_for_alert_created
-    type: db.wait
+    type: database_query
     query: |
       SELECT id, status, code
       FROM alerts
@@ -132,5 +132,4 @@ cleanup:
   - step: ensure_laravel_running
     type: fault.restore
     service: laravel
-
 

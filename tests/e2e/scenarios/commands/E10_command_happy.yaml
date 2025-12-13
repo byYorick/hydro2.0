@@ -1,4 +1,4 @@
-name: E02_command_happy
+name: E10_command_happy
 description: Тест успешного выполнения команды узлу
 
 steps:

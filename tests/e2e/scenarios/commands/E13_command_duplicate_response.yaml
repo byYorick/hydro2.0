@@ -1,7 +1,7 @@
-# E03: Duplicate Command Response - Дублирующиеся ответы не ломают статус
+# E13: Duplicate Command Response - Дублирующиеся ответы не ломают статус
 # DoD: duplicate responses не ломают статус
 
-name: E03_duplicate_cmd_response
+name: E13_duplicate_cmd_response
 description: |
   Проверяет устойчивость к дублирующимся ответам от узла:
   - Команда отправляется
@@ -15,7 +15,7 @@ setup:
     config:
       mqtt:
         host: ${MQTT_HOST:-localhost}
-        port: ${MQTT_PORT:-1883}
+        port: ${MQTT_PORT:-1884}
         username: ${MQTT_USER:-null}
         password: ${MQTT_PASS:-null}
       node:

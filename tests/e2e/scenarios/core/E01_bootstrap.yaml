@@ -15,7 +15,7 @@ setup:
     config:
       mqtt:
         host: ${MQTT_HOST:-localhost}
-        port: ${MQTT_PORT:-1883}
+        port: ${MQTT_PORT:-1884}
         username: ${MQTT_USER:-null}
         password: ${MQTT_PASS:-null}
       node:
@@ -67,7 +67,9 @@ actions:
 
   # Шаг 3: Ждем публикации телеметрии от node-sim (он работает автоматически)
   # node-sim публикует телеметрию каждые 5 секунд, ждем минимум одну публикацию
-    wait_seconds: 8
+  - step: wait_for_telemetry_publish
+    type: sleep
+    seconds: 8
 
 assertions:
   # Проверка 1: Телеметрия в БД
@@ -124,4 +126,3 @@ assertions:
 cleanup:
   - step: stop_node_simulator
     type: stop_simulator
-

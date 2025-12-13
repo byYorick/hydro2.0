@@ -34,7 +34,6 @@ actions:
     type: api_post
     endpoint: /api/zones/${zone_id}/start
     payload: {}
-    optional: true
     save: start_response
 
 assertions:
@@ -57,6 +56,4 @@ assertions:
       - field: warnings
         operator: is_type
         value: list
-        optional: true
-
 

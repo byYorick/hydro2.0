@@ -1,7 +1,7 @@
-# E04: Error Alert - Ошибка → alert ACTIVE + WS + dedup
+# E20: Error Alert - Ошибка → alert ACTIVE + WS + dedup
 # DoD: error → alert ACTIVE + WS + dedup
 
-name: E04_error_alert
+name: E20_error_to_alert_realtime
 description: |
   Проверяет создание алерта при ошибке:
   - Узел публикует ошибку через MQTT
@@ -15,7 +15,7 @@ setup:
     config:
       mqtt:
         host: ${MQTT_HOST:-localhost}
-        port: ${MQTT_PORT:-1883}
+        port: ${MQTT_PORT:-1884}
         username: ${MQTT_USER:-null}
         password: ${MQTT_PASS:-null}
       node:

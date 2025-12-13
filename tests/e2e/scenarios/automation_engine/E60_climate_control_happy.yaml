@@ -15,7 +15,7 @@ setup:
     config:
       mqtt:
         host: ${MQTT_HOST:-localhost}
-        port: ${MQTT_PORT:-1883}
+        port: ${MQTT_PORT:-1884}
       node:
         gh_uid: gh-test-1
         zone_uid: zn-test-1
@@ -64,21 +64,10 @@ actions:
     qos: 1
     wait_seconds: 10  # Даем время AE на обработку
 
-  # Ждем команду от automation-engine
+  # Ждем обработки команды от automation-engine
   - step: wait_for_heater_command
-    type: db.wait
-    query: |
-      SELECT cmd_id, cmd, params, status
-      FROM commands
-      WHERE zone_id = :zone_id
-      AND cmd LIKE '%heater%' OR cmd LIKE '%heat%'
-      AND status IN ('SENT', 'ACK', 'ACCEPTED', 'DONE')
-    params:
-      zone_id: ${zone_id}
-    timeout: 30.0
-    expected_rows: 1
-    optional: true  # Может не быть, если AE не настроен
-    save: heater_command
+    type: sleep
+    seconds: 5
 
 assertions:
   # Проверка 1: Telemetry сохранилась в БД

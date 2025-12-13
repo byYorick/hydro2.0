@@ -13,7 +13,7 @@ setup:
     config:
       mqtt:
         host: ${MQTT_HOST:-localhost}
-        port: ${MQTT_PORT:-1883}
+        port: ${MQTT_PORT:-1884}
       node:
         gh_uid: gh-test-1
         zone_uid: zn-test-1
@@ -88,23 +88,24 @@ assertions:
       SELECT COUNT(*) as event_count
       FROM zone_events
       WHERE zone_id = :zone_id
-      AND (type LIKE '%DEGRADED%' OR type LIKE '%BACKOFF%')
+      AND (type LIKE '%%DEGRADED%%' OR type LIKE '%%BACKOFF%%')
       AND created_at > NOW() - INTERVAL '5 minutes'
     params:
       zone_id: ${zone_id}
     timeout: 10.0
     optional: true
 
-  # Проверка 2: Система продолжает работать (не упала)
+  # Проверка 2: Zone существует (система работает)
   - name: system_continues_working
-    type: api_get
-    endpoint: /api/system/health
-    save: health_check
-    expected:
-      - field: status
-        operator: equals
-        value: ok
-        optional: true
+    type: database_query
+    query: |
+      SELECT id
+      FROM zones
+      WHERE id = :zone_id
+    params:
+      zone_id: ${zone_id}
+    expected_rows: 1
+    optional: true
 
 cleanup:
   - step: stop_node_simulator

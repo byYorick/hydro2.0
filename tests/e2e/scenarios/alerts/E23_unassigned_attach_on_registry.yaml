@@ -15,7 +15,7 @@ setup:
     config:
       mqtt:
         host: ${MQTT_HOST:-localhost}
-        port: ${MQTT_PORT:-1883}
+        port: ${MQTT_PORT:-1884}
         username: ${MQTT_USER:-null}
         password: ${MQTT_PASS:-null}
       node:

@@ -1,4 +1,4 @@
-name: E07_ws_reconnect_snapshot_replay
+name: E31_reconnect_replay_gap
 description: |
   Проверяет механизм "snapshot + replay" для восстановления клиента после разрыва WS:
   - Берём snapshot (last_event_id)
@@ -12,7 +12,7 @@ setup:
     config:
       mqtt:
         host: ${MQTT_HOST:-localhost}
-        port: ${MQTT_PORT:-1883}
+        port: ${MQTT_PORT:-1884}
       node:
         gh_uid: gh-test-1
         zone_uid: zn-test-1

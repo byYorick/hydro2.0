@@ -51,4 +51,12 @@ assertions:
       SELECT 1 as check_dummy
     expected_rows: 1
 
+  # Проверка: last_event_id в snapshot соответствует максимальному id zone_events
+  - name: last_event_id_matches_db
+    type: json_assertion
+    data: ${snapshot_response}
+    expected:
+      - field: data.last_event_id
+        operator: equals
+        value: ${max_event_id_db[0].max_event_id}
 

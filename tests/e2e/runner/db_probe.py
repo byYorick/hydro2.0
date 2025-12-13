@@ -45,7 +45,8 @@ class DBProbe:
         
         # Приоритет 2: PostgreSQL переменные окружения
         db_host = os.getenv("DB_HOST", "localhost")
-        db_port = os.getenv("DB_PORT", "5432")
+        # Выравниваем дефолт с docker-compose.e2e.yml (5433->5432 inside container)
+        db_port = os.getenv("DB_PORT", "5433")
         db_name = os.getenv("DB_DATABASE", "hydro_e2e")
         db_user = os.getenv("DB_USERNAME", "hydro")
         db_pass = os.getenv("DB_PASSWORD", "hydro_e2e")
@@ -248,4 +249,3 @@ class DBProbe:
         sqlite_query, sqlite_params = self._convert_named_params(query, params, backend="sqlite")
         cursor.execute(sqlite_query, sqlite_params)
         self.connection.commit()
-

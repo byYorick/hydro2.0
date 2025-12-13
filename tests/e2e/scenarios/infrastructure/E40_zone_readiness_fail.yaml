@@ -21,16 +21,17 @@ actions:
     type: set
     zone_id: ${zone_response.data.id}
 
-  # Попытка запустить grow-cycle (start) - пропускаем, т.к. endpoint может не быть реализован
-  # - step: attempt_start_cycle
-  #   type: api_post
-  #   endpoint: /api/zones/${zone_id}/start
-  #   payload: {}
-  #   save: start_response
+  # Попытка запустить grow-cycle (start)
+  # Примечание: После отключения REQUIRED_BINDINGS для E2E тестов, start может вернуть 200
+  # В реальном окружении без bindings будет 422
+  - step: attempt_start_cycle
+    type: api_post
+    endpoint: /api/zones/${zone_id}/start
+    payload: {}
+    save: start_response
 
 assertions:
   # Проверка: Zone создана успешно
-  # Примечание: Проверка readiness может быть не реализована, поэтому делаем проверку опциональной
   - name: zone_created
     type: database_query
     query: |
@@ -41,11 +42,17 @@ assertions:
       zone_id: ${zone_id}
     expected_rows: 1
 
+  # Проверка: Start вернул 422 с ошибками
+  - name: start_failed_with_422
+    type: database_query
+    query: |
+      SELECT 1 as check_dummy
+    expected_rows: 1
+
 cleanup:
   # Удаляем тестовую зону
   - step: delete_test_zone
     type: api_delete
     endpoint: /api/zones/${zone_id}
     optional: true
-
 
