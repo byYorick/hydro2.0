@@ -54,6 +54,7 @@ actions:
     type: set
     zone_id: ${zones_response.data.data[0].id}
 
+
   # Шаг 2: Запуск симулятора узла
   - step: start_node_simulator
     type: start_simulator
@@ -94,30 +95,44 @@ actions:
 
 assertions:
   # Проверка 1: Алерт создан в БД со статусом ACTIVE
-  # ВАЖНО: Из-за бага в history-logger (column "error_count" does not exist) алерт НЕ создается
-  # Эта проверка временно отключена - будет включена после исправления бага в backend
-  # TODO: Исправить баг в history-logger/error_handler.py - добавить колонку error_count или убрать её использование
-  # - name: alert_created_active
-  #   type: db.wait
-  #   query: |
-  #     SELECT id, status, code, type, zone_id, created_at
-  #     FROM alerts
-  #     WHERE zone_id = :zone_id
-  #     AND status = 'ACTIVE'
-  #     AND created_at > NOW() - INTERVAL '1 minute'
-  #     ORDER BY created_at DESC
-  #     LIMIT 1
-  #   params:
-  #     zone_id: ${zone_id}
-  #   timeout: 20.0
-  #   expected_rows: 1
+  # Примечание: Код алерта может отличаться от error_code в MQTT сообщении
+  # Баг с отсутствием error_count исправлен - код теперь обрабатывает отсутствие колонок gracefully
+  # Используем database_query - он сам ждет через db.wait внутри, если указан timeout
+  # Экранируем % в LIKE паттернах как %%
+  - name: alert_created_active
+    type: database_query
+    query: |
+      SELECT id, status, code, type, zone_id, created_at
+      FROM alerts
+      WHERE zone_id = :zone_id
+      AND status = 'ACTIVE'
+      AND (code LIKE '%%infra_sensor_stuck_i2c%%' OR code LIKE '%%sensor%%stuck%%' OR code LIKE '%%node_error%%')
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+    timeout: 20.0
+    expected_rows: 1
+    expected:
+      - field: status
+        operator: equals
+        value: "ACTIVE"
 
-  # Проверка 2: Ошибка обработана (хотя бы зарегистрирована в логах или БД)
-  # Проверяем, что ошибка была получена через MQTT (проверяем наличие ошибки в node_errors или подобной таблице)
-  # Временно: просто проверяем, что ошибка была опубликована (это уже сделано в actions)
-  - name: error_published_and_processed
-    type: custom
-    message: "Ошибка была опубликована через MQTT (проверено в actions). Проверка создания алерта пропущена из-за бага в backend."
+  # Проверка 2: Алерт существует (dedup может не работать для разных error_code, проверяем что хотя бы один создан)
+  - name: alert_exists
+    type: database_query
+    query: |
+      SELECT COUNT(*) as alert_count
+      FROM alerts
+      WHERE zone_id = :zone_id
+      AND (code LIKE '%%infra_sensor_stuck_i2c%%' OR code LIKE '%%sensor%%stuck%%' OR code LIKE '%%node_error%%')
+      AND status = 'ACTIVE'
+    params:
+      zone_id: ${zone_id}
+    expected:
+      - field: alert_count
+        operator: greater_than_or_equal
+        value: 1
 
 cleanup:
   - step: stop_node_simulator

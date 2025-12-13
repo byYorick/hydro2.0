@@ -204,6 +204,11 @@ run_scenario() {
     local scenario=$1
     local scenario_path="scenarios/${scenario}.yaml"
     
+    # Поддержка новой структуры с подпапками (например, core/E01_bootstrap)
+    if [[ "$scenario" == *"/"* ]]; then
+        scenario_path="scenarios/${scenario}.yaml"
+    fi
+    
     if [ ! -f "$scenario_path" ]; then
         log_error "Сценарий не найден: $scenario_path"
         return 1
@@ -287,16 +292,53 @@ main() {
             
             log_info "Используем API токен: ${LARAVEL_API_TOKEN:0:10}..."
             
-            # Запуск обязательных сценариев (матрица сценариев минимум)
+            # Запуск всех сценариев кроме CHAOS (core + commands + alerts + snapshot + infra + grow_cycle + automation_engine)
             SCENARIOS=(
-                "E01_bootstrap"
-                "E02_command_happy"
-                "E04_error_alert"
-                "E05_unassigned_attach"
-                "E07_ws_reconnect_snapshot_replay"
+                # CORE
+                "core/E01_bootstrap"
+                "core/E02_auth_ws_api"
+                
+                # COMMANDS
+                "commands/E10_command_happy"
+                "commands/E11_command_failed"
+                "commands/E12_command_timeout"
+                "commands/E13_command_duplicate_response"
+                "commands/E14_command_response_before_sent"
+                
+                # ALERTS
+                "alerts/E20_error_to_alert_realtime"
+                "alerts/E21_alert_dedup_count"
+                "alerts/E22_unassigned_error_capture"
+                "alerts/E23_unassigned_attach_on_registry"
+                "alerts/E24_laravel_down_pending_alerts"
+                "alerts/E25_dlq_replay"
+                
+                # SNAPSHOT
+                "snapshot/E30_snapshot_contains_last_event_id"
+                "snapshot/E31_reconnect_replay_gap"
+                "snapshot/E32_out_of_order_guard"
+                
+                # INFRASTRUCTURE
+                "infrastructure/E40_zone_readiness_fail"
+                "infrastructure/E41_zone_readiness_warn_start_anyway"
+                "infrastructure/E42_bindings_role_resolution"
+                
+                # GROW CYCLE
+                "grow_cycle/E50_create_cycle_planned"
+                "grow_cycle/E51_start_cycle_running"
+                "grow_cycle/E52_stage_progress_timeline"
+                "grow_cycle/E53_manual_advance_stage"
+                "grow_cycle/E54_pause_resume_harvest"
+                
+                # AUTOMATION ENGINE
+                "automation_engine/E60_climate_control_happy"
+                "automation_engine/E61_fail_closed_corrections"
+                "automation_engine/E62_controller_fault_isolation"
+                "automation_engine/E63_backoff_on_errors"
             )
             
-            log_info "Запуск обязательных E2E сценариев (матрица минимум)..."
+            log_info "Запуск полного набора E2E сценариев (${#SCENARIOS[@]} сценариев, без CHAOS)..."
+            log_info "Для CHAOS тестов используйте: ./tools/testing/run_e2e_chaos.sh"
             
             PASSED=0
             FAILED=0

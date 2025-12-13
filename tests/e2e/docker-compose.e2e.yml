@@ -1,7 +1,10 @@
-version: '3.8'
+# version: '3.8'  # Устарело в новых версиях docker-compose
 networks:
   backend:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
 services:
   postgres:
     image: timescale/timescaledb:latest-pg16

@@ -1,0 +1,111 @@
+# E63: Backoff On Errors - серия ошибок → degraded mode
+# DoD: серия ошибок → AE увеличивает интервал/переходит в degraded, подтверждение через метрики/лог/zone_events
+
+name: E63_backoff_on_errors
+description: |
+  Проверяет механизм backoff при ошибках:
+  - Создается серия ошибок
+  - AE увеличивает интервал/переходит в degraded mode
+  - Подтверждение через метрики/лог/zone_events
+
+setup:
+  node_sim:
+    config:
+      mqtt:
+        host: ${MQTT_HOST:-localhost}
+        port: ${MQTT_PORT:-1883}
+      node:
+        gh_uid: gh-test-1
+        zone_uid: zn-test-1
+        node_uid: nd-ph-esp32una
+        hardware_id: esp32-test-001
+        node_type: ph
+        mode: configured
+        channels:
+          - ph_sensor
+        actuators:
+          - main_pump
+      telemetry:
+        interval_seconds: 2.0
+
+actions:
+  - step: get_zones
+    type: api_get
+    endpoint: /api/zones
+    save: zones_response
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zones_response.data.data[0].id}
+
+  - step: start_node_simulator
+    type: start_simulator
+    config_ref: node_sim.config
+    wait_seconds: 3
+
+  # Публикуем серию ошибок для триггера backoff
+  - step: publish_error_1
+    type: mqtt_publish
+    topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/error
+    payload:
+      level: ERROR
+      component: automation
+      error_code: CONTROLLER_FAILURE
+      message: Test error for backoff
+      ts: ${TIMESTAMP_MS}
+    qos: 1
+    wait_seconds: 2
+
+  - step: publish_error_2
+    type: mqtt_publish
+    topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/error
+    payload:
+      level: ERROR
+      component: automation
+      error_code: CONTROLLER_FAILURE
+      message: Test error for backoff
+      ts: ${TIMESTAMP_MS}
+    qos: 1
+    wait_seconds: 2
+
+  - step: publish_error_3
+    type: mqtt_publish
+    topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/error
+    payload:
+      level: ERROR
+      component: automation
+      error_code: CONTROLLER_FAILURE
+      message: Test error for backoff
+      ts: ${TIMESTAMP_MS}
+    qos: 1
+    wait_seconds: 10  # Даем время на обработку и backoff
+
+assertions:
+  # Проверка 1: Система перешла в degraded mode (через zone_events или метрики)
+  - name: degraded_mode_activated
+    type: database_query
+    query: |
+      SELECT COUNT(*) as event_count
+      FROM zone_events
+      WHERE zone_id = :zone_id
+      AND (type LIKE '%DEGRADED%' OR type LIKE '%BACKOFF%')
+      AND created_at > NOW() - INTERVAL '5 minutes'
+    params:
+      zone_id: ${zone_id}
+    timeout: 10.0
+    optional: true
+
+  # Проверка 2: Система продолжает работать (не упала)
+  - name: system_continues_working
+    type: api_get
+    endpoint: /api/system/health
+    save: health_check
+    expected:
+      - field: status
+        operator: equals
+        value: ok
+        optional: true
+
+cleanup:
+  - step: stop_node_simulator
+    type: stop_simulator

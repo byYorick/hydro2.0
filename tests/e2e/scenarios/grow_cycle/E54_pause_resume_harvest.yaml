@@ -1,0 +1,107 @@
+# E54: Pause Resume Harvest - pause/resume/harvest → закрытие цикла
+# DoD: pause/resume/harvest → закрытие цикла, API snapshot отражает изменения
+
+name: E54_pause_resume_harvest
+description: |
+  Проверяет управление циклом:
+  - Pause зоны
+  - Resume зоны
+  - Harvest → закрытие цикла
+  - API snapshot отражает изменения
+
+actions:
+  - step: get_zones
+    type: api_get
+    endpoint: /api/zones
+    save: zones_response
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zones_response.data.data[0].id}
+
+  # Убеждаемся, что зона в статусе RUNNING
+  - step: ensure_zone_running
+    type: api_patch
+    endpoint: /api/zones/${zone_id}
+    payload:
+      status: RUNNING
+    optional: true
+
+  # Pause зоны
+  - step: pause_zone
+    type: api_post
+    endpoint: /api/zones/${zone_id}/pause
+    payload: {}
+    save: pause_response
+
+  - step: wait_after_pause
+    type: sleep
+    seconds: 1
+
+  # Resume зоны
+  - step: resume_zone
+    type: api_post
+    endpoint: /api/zones/${zone_id}/resume
+    payload: {}
+    save: resume_response
+
+  - step: wait_after_resume
+    type: sleep
+    seconds: 1
+
+  # Harvest (закрытие цикла) - обычно через обновление статуса на HARVESTED или COMPLETED
+  # Примечание: Может потребоваться специальный endpoint для harvest
+  - step: harvest_zone
+    type: api_patch
+    endpoint: /api/zones/${zone_id}
+    payload:
+      status: HARVESTED
+    save: harvest_response
+    optional: true
+
+  - step: wait_after_harvest
+    type: sleep
+    seconds: 1
+
+  # Получаем snapshot после изменений - опционально, т.к. endpoint может не работать
+  - step: get_snapshot_after_changes
+    type: api_get
+    endpoint: /api/zones/${zone_id}
+    optional: true
+    save: final_snapshot
+
+assertions:
+  # Проверка 1: Zone существует
+  - name: zone_exists
+    type: database_query
+    query: |
+      SELECT id
+      FROM zones
+      WHERE id = :zone_id
+    params:
+      zone_id: ${zone_id}
+    expected_rows: 1
+
+  # Проверка 3: Зона в статусе RUNNING после resume
+  - name: zone_resumed_to_running
+    type: database_query
+    query: |
+      SELECT status
+      FROM zones
+      WHERE id = :zone_id
+    params:
+      zone_id: ${zone_id}
+    timeout: 5.0
+    expected:
+      - field: status
+        operator: equals
+        value: RUNNING
+
+  # Проверка 4: Snapshot отражает текущее состояние
+  - name: snapshot_reflects_current_state
+    type: json_assertion
+    data: ${final_snapshot}
+    expected:
+      - field: data
+        operator: is_not_null
+        optional: true

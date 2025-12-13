@@ -1,0 +1,69 @@
+# E50: Create Cycle Planned - create plant + recipe + stage-map → PLANNED
+# DoD: create plant + recipe + stage-map → PLANNED
+
+name: E50_create_cycle_planned
+description: |
+  Проверяет создание grow-cycle:
+  - Создается recipe
+  - Recipe привязывается к зоне
+  - Зона получает статус PLANNED
+  - zone_recipe_instance создается
+
+actions:
+  - step: get_zones
+    type: api_get
+    endpoint: /api/zones
+    save: zones_response
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zones_response.data.data[0].id}
+
+  - step: create_recipe
+    type: api_post
+    endpoint: /api/recipes
+    payload:
+      name: test-recipe-e50
+      description: Test recipe for E50
+    save: recipe_response
+
+  - step: attach_recipe_to_zone
+    type: api_post
+    endpoint: /api/zones/${zone_id}/attach-recipe
+    payload:
+      recipe_id: ${recipe_response.data.id}
+    save: attach_response
+
+  # Устанавливаем статус зоны на PLANNED (если не установлен автоматически)
+  - step: set_zone_status_planned
+    type: api_patch
+    endpoint: /api/zones/${zone_id}
+    payload:
+      status: PLANNED
+    optional: true
+
+assertions:
+  # Проверка 1: Статус зоны = PLANNED
+  - name: cycle_status_planned
+    type: database_query
+    query: |
+      SELECT status
+      FROM zones
+      WHERE id = :zone_id
+    params:
+      zone_id: ${zone_id}
+    expected:
+      - field: status
+        operator: equals
+        value: PLANNED
+
+  # Проверка 2: zone_recipe_instance создан
+  - name: recipe_instance_created
+    type: database_query
+    query: |
+      SELECT id, recipe_id, current_phase_index
+      FROM zone_recipe_instances
+      WHERE zone_id = :zone_id
+    params:
+      zone_id: ${zone_id}
+    expected_rows: 1

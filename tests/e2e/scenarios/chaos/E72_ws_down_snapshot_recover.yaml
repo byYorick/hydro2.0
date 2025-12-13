@@ -1,0 +1,109 @@
+# E72: WS Down Snapshot Recover - WS down → snapshot+replay догоняют
+# DoD: WS down → snapshot+replay догоняют
+
+name: E72_ws_down_snapshot_recover
+description: |
+  Проверяет восстановление после падения WebSocket:
+  - WebSocket сервер останавливается
+  - Создаются события во время простоя
+  - WebSocket восстанавливается
+  - Snapshot+replay догоняют все события
+
+actions:
+  - step: get_zones
+    type: api_get
+    endpoint: /api/zones
+    save: zones_response
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zones_response.data.data[0].id}
+
+  # Получаем начальный snapshot
+  - step: get_initial_snapshot
+    type: api_get
+    endpoint: /api/zones/${zone_id}
+    save: snapshot_before
+
+  - step: set_initial_last_event_id
+    type: set
+    initial_last_event_id: ${snapshot_before.data.last_event_id}
+
+  # Подключаемся к WebSocket
+  - step: connect_websocket
+    type: websocket_connect
+
+  - step: subscribe_zone_channel
+    type: websocket_subscribe
+    channel: private-hydro.zones.${zone_id}
+
+  # Останавливаем WebSocket сервер (reverb)
+  - step: stop_reverb
+    type: fault.inject
+    service: reverb
+    action: stop
+
+  - step: wait_during_ws_down
+    type: sleep
+    seconds: 3
+
+  # Создаем события во время простоя WS (через команду или ошибку)
+  - step: create_event_during_ws_down
+    type: api_post
+    endpoint: /api/zones/${zone_id}/commands
+    payload:
+      cmd: set_relay_state
+      channel: main_pump
+      params:
+        state: true
+    save: command_during_ws_down
+    optional: true
+
+  # Восстанавливаем WebSocket
+  - step: restore_reverb
+    type: fault.restore
+    service: reverb
+
+  - step: wait_after_restore
+    type: sleep
+    seconds: 5
+
+  # Получаем новый snapshot
+  - step: get_final_snapshot
+    type: api_get
+    endpoint: /api/zones/${zone_id}
+    save: snapshot_after
+
+  # Запрашиваем события после initial_last_event_id
+  - step: get_missed_events
+    type: api_get
+    endpoint: /api/zones/${zone_id}/events
+    params:
+      after_id: ${initial_last_event_id}
+    save: missed_events
+
+assertions:
+  # Проверка 1: Новый snapshot имеет больший last_event_id
+  - name: snapshot_updated
+    type: json_assertion
+    data: ${snapshot_after}
+    expected:
+      - field: data.last_event_id
+        operator: greater_than
+        value: ${initial_last_event_id}
+        optional: true
+
+  # Проверка 2: События получены через replay
+  - name: events_received_via_replay
+    type: json_assertion
+    data: ${missed_events}
+    expected:
+      - field: data
+        operator: is_type
+        value: list
+
+cleanup:
+  - step: ensure_reverb_running
+    type: fault.restore
+    service: reverb
+    optional: true

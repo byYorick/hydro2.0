@@ -10,6 +10,7 @@ import sys
 import os
 import time
 import re
+import subprocess
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from datetime import datetime
@@ -81,6 +82,15 @@ class E2ERunner:
         
         # Контекст для хранения переменных между шагами
         self.context: Dict[str, Any] = {}
+        
+        # Путь к docker-compose файлу для fault injection
+        self.compose_file = config.get("compose_file") or os.getenv(
+            "COMPOSE_FILE", 
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), "docker-compose.e2e.yml")
+        )
+        
+        # Отслеживание остановленных сервисов для автоматического восстановления
+        self._stopped_services: List[str] = []
     
     async def setup(self):
         """Инициализация клиентов."""
@@ -146,6 +156,13 @@ class E2ERunner:
         """Очистка ресурсов."""
         logger.info("Tearing down E2E runner...")
         
+        # Восстанавливаем все остановленные сервисы
+        for service in list(self._stopped_services):
+            try:
+                await self._fault_restore(service)
+            except Exception as e:
+                logger.warning(f"Failed to restore service {service} during teardown: {e}")
+        
         if self.ws:
             await self.ws.disconnect()
         if self.mqtt:
@@ -154,6 +171,147 @@ class E2ERunner:
             self.db.disconnect()
         if self.api:
             await self.api.close()
+    
+    async def _fault_inject(self, service: str, action: str, duration_s: Optional[float] = None):
+        """
+        Выполнить fault injection для Docker сервиса.
+        
+        Args:
+            service: Имя сервиса (laravel, mosquitto, postgres, history-logger, automation-engine)
+            action: Действие (stop, start, pause, unpause)
+            duration_s: Длительность в секундах (для stop, после которой нужно восстановить)
+        """
+        compose_file = self.compose_file
+        compose_dir = os.path.dirname(compose_file) if os.path.dirname(compose_file) else os.getcwd()
+        
+        # Маппинг имен сервисов на имена в docker-compose
+        service_map = {
+            "laravel": "laravel",
+            "mosquitto": "mosquitto",
+            "postgres": "postgres",
+            "history-logger": "history-logger",
+            "automation-engine": "automation-engine",
+            "redis": "redis",
+            "reverb": "reverb",
+        }
+        compose_service = service_map.get(service, service)
+        
+        try:
+            if action == "stop":
+                logger.info(f"[FAULT_INJECT] Stopping service: {compose_service}")
+                result = subprocess.run(
+                    ["docker-compose", "-f", compose_file, "stop", compose_service],
+                    cwd=compose_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                if result.returncode != 0:
+                    logger.error(f"[FAULT_INJECT] Failed to stop {compose_service}: {result.stderr}")
+                    raise RuntimeError(f"Failed to stop service {compose_service}: {result.stderr}")
+                self._stopped_services.append(compose_service)
+                logger.info(f"[FAULT_INJECT] ✓ Service {compose_service} stopped")
+                
+                if duration_s:
+                    # Запланировать автоматическое восстановление
+                    asyncio.create_task(self._auto_restore_after_delay(compose_service, duration_s))
+                    
+            elif action == "start":
+                await self._fault_restore(service)
+                
+            elif action == "pause":
+                logger.info(f"[FAULT_INJECT] Pausing service: {compose_service}")
+                result = subprocess.run(
+                    ["docker-compose", "-f", compose_file, "pause", compose_service],
+                    cwd=compose_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                if result.returncode != 0:
+                    logger.error(f"[FAULT_INJECT] Failed to pause {compose_service}: {result.stderr}")
+                    raise RuntimeError(f"Failed to pause service {compose_service}: {result.stderr}")
+                logger.info(f"[FAULT_INJECT] ✓ Service {compose_service} paused")
+                
+            elif action == "unpause":
+                logger.info(f"[FAULT_INJECT] Unpausing service: {compose_service}")
+                result = subprocess.run(
+                    ["docker-compose", "-f", compose_file, "unpause", compose_service],
+                    cwd=compose_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                if result.returncode != 0:
+                    logger.error(f"[FAULT_INJECT] Failed to unpause {compose_service}: {result.stderr}")
+                    raise RuntimeError(f"Failed to unpause service {compose_service}: {result.stderr}")
+                logger.info(f"[FAULT_INJECT] ✓ Service {compose_service} unpaused")
+                
+            else:
+                raise ValueError(f"Unknown fault action: {action}. Use: stop, start, pause, unpause")
+                
+        except subprocess.TimeoutExpired:
+            logger.error(f"[FAULT_INJECT] Timeout while {action}ing service {compose_service}")
+            raise RuntimeError(f"Timeout while {action}ing service {compose_service}")
+        except Exception as e:
+            logger.error(f"[FAULT_INJECT] Error {action}ing service {compose_service}: {e}", exc_info=True)
+            raise
+    
+    async def _fault_restore(self, service: str):
+        """
+        Восстановить сервис после fault injection.
+        
+        Args:
+            service: Имя сервиса
+        """
+        compose_file = self.compose_file
+        compose_dir = os.path.dirname(compose_file) if os.path.dirname(compose_file) else os.getcwd()
+        
+        service_map = {
+            "laravel": "laravel",
+            "mosquitto": "mosquitto",
+            "postgres": "postgres",
+            "history-logger": "history-logger",
+            "automation-engine": "automation-engine",
+            "redis": "redis",
+            "reverb": "reverb",
+        }
+        compose_service = service_map.get(service, service)
+        
+        try:
+            logger.info(f"[FAULT_INJECT] Restoring service: {compose_service}")
+            result = subprocess.run(
+                ["docker-compose", "-f", compose_file, "start", compose_service],
+                cwd=compose_dir,
+                capture_output=True,
+                text=True,
+                timeout=60  # Больше времени для старта
+            )
+            if result.returncode != 0:
+                logger.error(f"[FAULT_INJECT] Failed to start {compose_service}: {result.stderr}")
+                raise RuntimeError(f"Failed to start service {compose_service}: {result.stderr}")
+            
+            if compose_service in self._stopped_services:
+                self._stopped_services.remove(compose_service)
+            
+            # Ждем готовности сервиса
+            await asyncio.sleep(2)
+            logger.info(f"[FAULT_INJECT] ✓ Service {compose_service} restored")
+            
+        except subprocess.TimeoutExpired:
+            logger.error(f"[FAULT_INJECT] Timeout while restoring service {compose_service}")
+            raise RuntimeError(f"Timeout while restoring service {compose_service}")
+        except Exception as e:
+            logger.error(f"[FAULT_INJECT] Error restoring service {compose_service}: {e}", exc_info=True)
+            raise
+    
+    async def _auto_restore_after_delay(self, service: str, delay_s: float):
+        """Автоматически восстановить сервис после задержки."""
+        await asyncio.sleep(delay_s)
+        try:
+            await self._fault_restore(service)
+        except Exception as e:
+            logger.warning(f"[FAULT_INJECT] Auto-restore failed for {service}: {e}")
 
     def _api_items(self, response: Any) -> List[Dict[str, Any]]:
         """
@@ -858,14 +1016,33 @@ class E2ERunner:
             logger.info(f"Simulator step '{step_type}' (noop in this runner)")
             return
         
-        # System control (docker-compose services)
+        # Fault injection (docker-compose services)
+        if step_type in ("fault.inject", "fault_inject"):
+            service = cfg.get("service")
+            action = cfg.get("action", "stop")
+            duration_s = cfg.get("duration_s", None)
+            
+            if not service:
+                raise ValueError("fault.inject requires 'service' parameter")
+            
+            await self._fault_inject(service, action, duration_s)
+            return
+        
+        if step_type in ("fault.restore", "fault_restore"):
+            service = cfg.get("service")
+            if not service:
+                raise ValueError("fault.restore requires 'service' parameter")
+            await self._fault_restore(service)
+            return
+        
+        # Legacy system control (deprecated, use fault.inject instead)
         if step_type == "system_stop":
             service = cfg.get("service")
-            logger.warning(f"system_stop for {service} is not implemented in runner (use docker-compose directly)")
+            await self._fault_inject(service, "stop", None)
             return
         if step_type == "system_start":
             service = cfg.get("service")
-            logger.warning(f"system_start for {service} is not implemented in runner (use docker-compose directly)")
+            await self._fault_restore(service)
             return
         
         # Sleep/wait
@@ -971,7 +1148,7 @@ class E2ERunner:
         if step_type == "ws_subscribe_without_auth":
             # Попытка подписки на приватный канал без токена (для тестирования ошибки)
             channel = cfg["channel"]
-            expect_error = cfg.get("expect_error", False)
+            expect_error = cfg.get("expect_error", True)  # По умолчанию ожидаем ошибку
             expected_error_message = cfg.get("expected_error_message", "")
             
             if not hasattr(self, 'ws_no_auth'):
@@ -998,12 +1175,72 @@ class E2ERunner:
                     return {"error": error_msg, "expected": True}
                 raise
 
+        # Auth token invalidation
+        if step_type == "invalidate_auth_token":
+            if not self.auth_client:
+                raise RuntimeError("Cannot invalidate token: AuthClient not initialized")
+            # Устанавливаем невалидный токен напрямую
+            self.auth_client._token = "invalid_token_for_testing"
+            self.auth_client._token_expires_at = None
+            logger.info("Token invalidated for testing re-auth")
+            return
+        
+        # Create WS client without token
+        if step_type == "create_ws_client_without_token":
+            from .ws_client import WSClient
+            self.ws_no_auth = WSClient(
+                ws_url=self.ws_url,
+                api_token=None,  # Без токена
+                auth_client=None,  # Без auth_client
+                api_url=self.api_url
+            )
+            logger.info("Created WebSocket client without authentication")
+            return
+
+        # WS subscribe without auth (expects error)
+        if step_type == "ws_subscribe_without_auth":
+            channel = cfg.get("channel")
+            expect_error = cfg.get("expect_error", True)  # По умолчанию ожидаем ошибку
+            
+            if not hasattr(self, 'ws_no_auth'):
+                raise RuntimeError("ws_no_auth client not created. Use 'create_ws_client_without_token' step first")
+            
+            # Подключаемся к WebSocket сначала
+            if not self.ws_no_auth.connected:
+                await self.ws_no_auth.connect()
+            
+            try:
+                await self.ws_no_auth.subscribe(channel)
+                # Если подписка прошла без ошибки, но мы ожидали ошибку
+                if expect_error:
+                    raise AssertionError(f"Expected error when subscribing to {channel} without token, but subscription succeeded")
+                return {"subscribed": channel}
+            except RuntimeError as e:
+                error_msg = str(e)
+                logger.info(f"Expected error occurred: {error_msg}")
+                if "save" in cfg:
+                    self.context[cfg.get("save", "subscription_error")] = error_msg
+                if expect_error:
+                    # Это ожидаемая ошибка, не выбрасываем исключение
+                    return {"error": error_msg, "expected": True}
+                raise
+
         # DB query in actions (rare)
         if step_type == "database_query":
             query = cfg["query"]
             params = cfg.get("params", {})
             params = self._resolve_variables(params) if params else {}
             result = self.db.query(query, params=params)
+            if "save" in cfg:
+                self.context[cfg["save"]] = result
+            return result
+
+        # DB execute (DELETE, UPDATE, INSERT)
+        if step_type in ("db.execute", "database_execute"):
+            query = cfg["query"]
+            params = cfg.get("params", {})
+            params = self._resolve_variables(params) if params else {}
+            result = self.db.execute(query, params=params)
             if "save" in cfg:
                 self.context[cfg["save"]] = result
             return result

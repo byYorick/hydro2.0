@@ -590,3 +590,4 @@ docker-compose -f docker-compose.e2e.yml exec laravel env | grep DB
 - [E2E_GUIDE.md](./E2E_GUIDE.md) - Руководство по E2E тестам
 
 
+

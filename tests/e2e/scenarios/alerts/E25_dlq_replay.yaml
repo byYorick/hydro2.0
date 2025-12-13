@@ -1,0 +1,136 @@
+# E25: DLQ Replay - DLQ item → replay → доставлено
+# DoD: создать DLQ item, replay → доставлено
+
+name: E25_dlq_replay
+description: |
+  Проверяет механизм replay из DLQ (Dead Letter Queue):
+  - Создается DLQ item (алерт, который не удалось доставить)
+  - Выполняется replay
+  - Alert доставляется успешно
+
+setup:
+  node_sim:
+    config:
+      mqtt:
+        host: ${MQTT_HOST:-localhost}
+        port: ${MQTT_PORT:-1883}
+      node:
+        gh_uid: gh-test-1
+        zone_uid: zn-test-1
+        node_uid: nd-ph-esp32una
+        hardware_id: esp32-test-001
+        node_type: ph
+        mode: configured
+        channels:
+          - ph_sensor
+        actuators:
+          - main_pump
+      telemetry:
+        interval_seconds: 2.0
+        heartbeat_interval_seconds: 15.0
+
+actions:
+  - step: get_zones
+    type: api_get
+    endpoint: /api/zones
+    save: zones_response
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zones_response.data.data[0].id}
+
+  - step: cleanup_old_alerts
+    type: db.execute
+    query: |
+      DELETE FROM alerts 
+      WHERE zone_id = :zone_id 
+      AND code LIKE '%%node_error_sensor_dlq_test%%'
+    params:
+      zone_id: ${zone_id}
+
+  - step: start_node_simulator
+    type: start_simulator
+    config_ref: node_sim.config
+    wait_seconds: 3
+
+  # Останавливаем Laravel для создания DLQ item
+  # Примечание: fault injection может не работать в контейнере без доступа к docker-compose
+  - step: stop_laravel
+    type: fault.inject
+    service: laravel
+    action: stop
+    optional: true  # Может не работать в контейнере
+
+  # Публикуем ошибку, которая не может быть обработана
+  - step: publish_error_while_laravel_down
+    type: mqtt_publish
+    topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/error
+    payload:
+      level: ERROR
+      component: sensor
+      error_code: dlq_test
+      message: Test error for DLQ replay
+      ts: ${TIMESTAMP_MS}
+    qos: 1
+    wait_seconds: 5
+
+  # Проверяем, что ошибка попала в очередь/DLQ (если доступно через API/DB)
+  # Примечание: Может потребоваться проверка через pending_alerts или другую очередь
+  - step: check_dlq_item
+    type: database_query
+    query: |
+      SELECT COUNT(*) as dlq_count
+      FROM pending_alerts
+      WHERE alert_code LIKE '%%dlq_test%%'
+      OR (payload_json::text LIKE '%%dlq_test%%' AND status = 'failed')
+    timeout: 5.0
+    optional: true  # Если таблица pending_alerts недоступна
+
+  # Восстанавливаем Laravel
+  - step: restore_laravel
+    type: fault.restore
+    service: laravel
+    optional: true  # Может не работать в контейнере
+
+  # Ждем обработки replay
+  - step: wait_for_replay_processing
+    type: sleep
+    seconds: 10
+
+  # Проверяем, что alert был создан после replay
+  - step: wait_for_alert_created
+    type: db.wait
+    query: |
+      SELECT id, status, code
+      FROM alerts
+      WHERE zone_id = :zone_id
+      AND code LIKE '%%node_error_sensor_dlq_test%%'
+      AND status = 'ACTIVE'
+    params:
+      zone_id: ${zone_id}
+    timeout: 30.0
+    expected_rows: 1
+    save: alert_created
+
+assertions:
+  # Проверка 1: Alert создан после replay
+  - name: alert_created_after_replay
+    type: database_query
+    query: |
+      SELECT id, status, code
+      FROM alerts
+      WHERE zone_id = :zone_id
+      AND code LIKE '%%node_error_sensor_dlq_test%%'
+      AND status = 'ACTIVE'
+    params:
+      zone_id: ${zone_id}
+    expected_rows: 1
+
+cleanup:
+  - step: stop_node_simulator
+    type: stop_simulator
+  - step: ensure_laravel_running
+    type: fault.restore
+    service: laravel
+
+

@@ -112,7 +112,7 @@ class AlertService
                     $eventId = DB::table('zone_events')->insertGetId([
                         'zone_id' => $zoneId,
                         'type' => 'ALERT_UPDATED',
-                        'details' => json_encode([
+                        'payload_json' => json_encode([  // Используем payload_json вместо details
                             'alert_id' => $existing->id,
                             'code' => $code,
                             'count' => $existingDetails['count'],
@@ -178,7 +178,7 @@ class AlertService
                     $eventId = DB::table('zone_events')->insertGetId([
                         'zone_id' => $zoneId,
                         'type' => 'ALERT_CREATED',
-                        'details' => json_encode([
+                        'payload_json' => json_encode([  // Используем payload_json вместо details
                             'alert_id' => $alert->id,
                             'code' => $code,
                             'type' => $alert->type,
@@ -222,7 +222,7 @@ class AlertService
                 DB::table('zone_events')->insert([
                     'zone_id' => $alert->zone_id,
                     'type' => 'ALERT_RESOLVED',
-                    'details' => json_encode([
+                    'payload_json' => json_encode([  // Используем payload_json вместо details
                         'alert_id' => $alert->id,
                         'alert_type' => $alert->type,
                         'resolved_at' => $alert->resolved_at->toIso8601String(),

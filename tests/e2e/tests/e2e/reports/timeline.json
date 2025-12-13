@@ -1,11 +1,37 @@
 {
-  "test_suite": "E07_ws_reconnect_snapshot_replay",
-  "generated_at": "2025-12-13T13:04:14.799672",
+  "test_suite": "E60_climate_control_happy",
+  "generated_at": "2025-12-13T18:04:46.102689",
   "test_cases": [
+    {
+      "name": "get_zones",
+      "status": "passed",
+      "duration": 0.06273603439331055,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "get_zones",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-13T18:04:32.913043"
+    },
+    {
+      "name": "set_zone_id",
+      "status": "passed",
+      "duration": 1.239776611328125e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_zone_id",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-13T18:04:32.913149"
+    },
     {
       "name": "start_node_simulator",
       "status": "passed",
-      "duration": 2.001544713973999,
+      "duration": 3.0024492740631104,
       "error_message": null,
       "steps": [
         {
@@ -13,142 +39,78 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-13T13:04:02.469619"
+      "timestamp": "2025-12-13T18:04:35.915609"
     },
     {
-      "name": "connect_ws",
+      "name": "subscribe_zone_channel",
       "status": "passed",
-      "duration": 1.0009620189666748,
+      "duration": 0.16559720039367676,
       "error_message": null,
       "steps": [
         {
-          "name": "connect_ws",
+          "name": "subscribe_zone_channel",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-13T13:04:03.470613"
+      "timestamp": "2025-12-13T18:04:36.081256"
     },
     {
-      "name": "subscribe_ws_zone",
+      "name": "publish_low_temp_telemetry",
       "status": "passed",
-      "duration": 1.1782407760620117,
+      "duration": 10.01032543182373,
       "error_message": null,
       "steps": [
         {
-          "name": "subscribe_ws_zone",
+          "name": "publish_low_temp_telemetry",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-13T13:04:04.649140"
+      "timestamp": "2025-12-13T18:04:46.091635"
     },
     {
-      "name": "fetch_snapshot_before",
+      "name": "wait_for_heater_command",
+      "status": "failed",
+      "duration": 9.298324584960938e-06,
+      "error_message": "Unknown action type: db.wait",
+      "steps": [
+        {
+          "name": "wait_for_heater_command",
+          "status": "failed",
+          "error": "Unknown action type: db.wait"
+        }
+      ],
+      "timestamp": "2025-12-13T18:04:46.091799"
+    },
+    {
+      "name": "telemetry_saved",
       "status": "passed",
-      "duration": 1.0734186172485352,
+      "duration": 0.008368730545043945,
       "error_message": null,
       "steps": [
         {
-          "name": "fetch_snapshot_before",
+          "name": "telemetry_saved",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-13T13:04:05.722612"
+      "timestamp": "2025-12-13T18:04:46.100181"
     },
     {
-      "name": "capture_last_event_id",
+      "name": "command_created_by_ae",
       "status": "passed",
-      "duration": 6.67572021484375e-06,
+      "duration": 0.002154111862182617,
       "error_message": null,
       "steps": [
         {
-          "name": "capture_last_event_id",
+          "name": "command_created_by_ae",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-13T13:04:05.722680"
-    },
-    {
-      "name": "disconnect_ws",
-      "status": "passed",
-      "duration": 1.002924919128418,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "disconnect_ws",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-13T13:04:06.725622"
-    },
-    {
-      "name": "publish_error_during_gap",
-      "status": "passed",
-      "duration": 5.005316972732544,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "publish_error_during_gap",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-13T13:04:11.731014"
-    },
-    {
-      "name": "reconnect_ws",
-      "status": "passed",
-      "duration": 1.003124475479126,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "reconnect_ws",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-13T13:04:12.734164"
-    },
-    {
-      "name": "fetch_events_after_id",
-      "status": "passed",
-      "duration": 2.0629849433898926,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "fetch_events_after_id",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-13T13:04:14.797208"
-    },
-    {
-      "name": "snapshot_has_last_event_id",
-      "status": "passed",
-      "duration": 1.1205673217773438e-05,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "snapshot_has_last_event_id",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-13T13:04:14.797239"
-    },
-    {
-      "name": "replay_returns_data",
-      "status": "passed",
-      "duration": 3.814697265625e-06,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "replay_returns_data",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-13T13:04:14.797248"
+      "timestamp": "2025-12-13T18:04:46.102346"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E07_ws_reconnect_snapshot_replay": {
+    "E60_climate_control_happy": {
       "ws_messages": [
         {
           "data": {
@@ -156,7 +118,7 @@
             "data": "{}",
             "channel": "private-hydro.zones.1"
           },
-          "timestamp": "2025-12-13T13:04:03.551728"
+          "timestamp": "2025-12-13T18:04:35.984909"
         }
       ],
       "mqtt_messages": [],

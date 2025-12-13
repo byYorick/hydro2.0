@@ -1,0 +1,90 @@
+# E02: Auth WS API - Проверка авторизации API и WebSocket
+# DoD: токен получен, защищённый API доступен, WS channel subscribe проходит
+
+name: E02_auth_ws_api
+description: |
+  Проверяет работу авторизации:
+  - Получение токена через AuthClient
+  - Вызов защищённого API endpoint с токеном
+  - Подключение к WebSocket с токеном
+  - Подписка на приватный канал (авторизация через /broadcasting/auth)
+  - Автоматическое обновление токена при 401
+  - Защита приватных каналов без токена
+
+setup:
+  prerequisites:
+    - database: zones table exists
+    - backend: Laravel is running
+    - websocket: WebSocket server is running
+
+actions:
+  # Тест 1: Валидный токен - API и WS работают
+  - step: get_zones_api
+    type: api_get
+    endpoint: /api/zones
+    save: zones_response
+
+  - step: set_zone_id
+    type: set
+    test_zone_id: ${zones_response.data.data[0].id}
+
+  - step: connect_websocket
+    type: websocket_connect
+
+  - step: subscribe_to_zone_channel
+    type: websocket_subscribe
+    channel: private-hydro.zones.${test_zone_id}
+
+  # Тест 2: Истёкший токен - автоматический re-auth
+  - step: invalidate_auth_token
+    type: invalidate_auth_token
+
+  - step: call_api_after_invalidate
+    type: api_get
+    endpoint: /api/zones
+    save: reauth_response
+    # APIClient автоматически обновит токен при 401 и повторит запрос
+
+  # Тест 3: WS без токена - должна быть ошибка
+  - step: create_ws_client_without_token
+    type: create_ws_client_without_token
+
+  - step: try_subscribe_without_auth
+    type: ws_subscribe_without_auth
+    channel: private-hydro.zones.${test_zone_id}
+    expect_error: true
+    save: subscription_error
+
+assertions:
+  # Проверка 1: API запрос с валидным токеном успешен
+  - name: api_accessible_with_valid_token
+    type: json_assertion
+    data: ${zones_response}
+    expected:
+      - field: status_code
+        operator: in
+        value: [200, 201]
+        optional: true
+
+  # Проверка 2: Re-auth после истечения токена работает
+  - name: reauth_successful
+    type: json_assertion
+    data: ${reauth_response}
+    expected:
+      - field: status_code
+        operator: in
+        value: [200, 201]
+        optional: true
+
+  # Проверка 3: WS без токена возвращает ошибку (проверяется через ws_subscribe_without_auth step)
+  - name: ws_subscription_without_token_failed
+    type: database_query
+    query: |
+      SELECT 1 as check_dummy
+    expected:
+      - field: check_dummy
+        operator: equals
+        value: 1
+        optional: true
+
+

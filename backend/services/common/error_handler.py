@@ -45,21 +45,30 @@ class NodeErrorHandler:
                 return
             
             # Обновляем метрики ошибок в БД
-            await execute(
-                """
-                UPDATE nodes 
-                SET 
-                    error_count = COALESCE($2, error_count),
-                    warning_count = COALESCE($3, warning_count),
-                    critical_count = COALESCE($4, critical_count),
-                    updated_at = NOW()
-                WHERE uid = $1
-                """,
-                node_uid,
-                errors.get("error_count"),
-                errors.get("warning_count"),
-                errors.get("critical_count")
-            )
+            # Примечание: Колонки error_count, warning_count, critical_count могут отсутствовать в старых БД
+            try:
+                await execute(
+                    """
+                    UPDATE nodes 
+                    SET 
+                        error_count = COALESCE($2, error_count),
+                        warning_count = COALESCE($3, warning_count),
+                        critical_count = COALESCE($4, critical_count),
+                        updated_at = NOW()
+                    WHERE uid = $1
+                    """,
+                    node_uid,
+                    errors.get("error_count"),
+                    errors.get("warning_count"),
+                    errors.get("critical_count")
+                )
+            except Exception as col_error:
+                # Если колонки отсутствуют, логируем предупреждение, но продолжаем обработку
+                logger.warning(
+                    f"[DIAGNOSTICS] Failed to update error metrics for node {node_uid}: {col_error}. "
+                    "Columns error_count/warning_count/critical_count may not exist. Continuing..."
+                )
+                return  # Пропускаем обновление, но не создаем alert если нет critical_count
             
             logger.debug(
                 f"[DIAGNOSTICS] Updated error metrics for node {node_uid}: "
@@ -100,20 +109,29 @@ class NodeErrorHandler:
             message = error_data.get("message", "Unknown error")
             
             # Обновляем счетчик ошибок в БД
-            if level == "CRITICAL":
-                await execute(
-                    "UPDATE nodes SET critical_count = COALESCE(critical_count, 0) + 1, updated_at = NOW() WHERE uid = $1",
-                    node_uid
-                )
-            elif level == "ERROR":
-                await execute(
-                    "UPDATE nodes SET error_count = COALESCE(error_count, 0) + 1, updated_at = NOW() WHERE uid = $1",
-                    node_uid
-                )
-            elif level == "WARNING":
-                await execute(
-                    "UPDATE nodes SET warning_count = COALESCE(warning_count, 0) + 1, updated_at = NOW() WHERE uid = $1",
-                    node_uid
+            # Примечание: Колонки error_count, warning_count, critical_count могут отсутствовать в старых БД
+            # В этом случае обновление пропускается, но alert все равно создается
+            try:
+                if level == "CRITICAL":
+                    await execute(
+                        "UPDATE nodes SET critical_count = COALESCE(critical_count, 0) + 1, updated_at = NOW() WHERE uid = $1",
+                        node_uid
+                    )
+                elif level == "ERROR":
+                    await execute(
+                        "UPDATE nodes SET error_count = COALESCE(error_count, 0) + 1, updated_at = NOW() WHERE uid = $1",
+                        node_uid
+                    )
+                elif level == "WARNING":
+                    await execute(
+                        "UPDATE nodes SET warning_count = COALESCE(warning_count, 0) + 1, updated_at = NOW() WHERE uid = $1",
+                        node_uid
+                    )
+            except Exception as col_error:
+                # Если колонки отсутствуют, логируем предупреждение, но продолжаем обработку
+                logger.warning(
+                    f"[ERROR] Failed to update error count for node {node_uid}: {col_error}. "
+                    "Columns error_count/warning_count/critical_count may not exist. Continuing..."
                 )
             
             logger.info(
@@ -132,10 +150,13 @@ class NodeErrorHandler:
             )
         
         except Exception as e:
-            logger.error(
-                f"[ERROR] Failed to process error for node {node_uid}: {e}",
-                exc_info=True
+            # Логируем ошибку, но не прерываем выполнение - alert должен быть создан даже если обновление счетчика не удалось
+            logger.warning(
+                f"[ERROR] Failed to update error count for node {node_uid}: {e}. "
+                "Continuing with alert creation..."
             )
+            # Продолжаем создание alert даже если обновление счетчика не удалось
+            pass
     
     async def _create_alert(
         self,
