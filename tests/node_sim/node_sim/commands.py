@@ -301,8 +301,8 @@ class CommandHandler:
             channel=channel
         )
         
-        # Отправляем ACCEPTED сразу
-        await self._send_response(channel, cmd_id, "ACCEPTED", "Command accepted")
+        # Отправляем ACK сразу (по протоколу: ACK = команда принята к выполнению)
+        await self._send_response(channel, cmd_id, "ACK", "Command accepted")
         
         # Выполняем команду асинхронно
         executor = self.command_map[cmd]
@@ -432,9 +432,11 @@ class CommandHandler:
     def _status_to_string(self, status: CommandStatus) -> str:
         """Преобразовать CommandStatus в строку для ответа."""
         if status == CommandStatus.DONE:
-            return "DONE"
+            return "DONE"  # Команда выполнена успешно
+        elif status == CommandStatus.ACCEPTED:
+            return "ACK"  # Команда принята (по протоколу используется ACK)
         elif status == CommandStatus.FAILED:
-            return "FAILED"
+            return "ERROR"  # По протоколу ошибка - это ERROR, не FAILED
         elif status == CommandStatus.INVALID:
             return "INVALID"
         elif status == CommandStatus.BUSY:

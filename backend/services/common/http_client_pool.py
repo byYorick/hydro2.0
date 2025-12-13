@@ -173,10 +173,24 @@ async def make_request(
         # Отслеживаем количество параллельных запросов
         HTTP_CONCURRENT_REQUESTS.inc()
         try:
+            # Логируем начало запроса с деталями
+            headers_info = kwargs.get('headers', {})
+            json_info = kwargs.get('json', {})
+            logger.info(
+                f"[HTTP_CLIENT] Sending request: {method} {url}, endpoint={endpoint}, "
+                f"has_auth_header={bool(headers_info.get('Authorization'))}, "
+                f"json_keys={list(json_info.keys()) if json_info else 'none'}"
+            )
+            
             request_start = asyncio.get_event_loop().time()
             method_func = getattr(client, method.lower())
             response = await method_func(url, **kwargs)
             request_duration = asyncio.get_event_loop().time() - request_start
+            
+            logger.info(
+                f"[HTTP_CLIENT] Received response: {method} {url}, status={response.status_code}, "
+                f"duration={request_duration:.3f}s, endpoint={endpoint}"
+            )
             
             # Метрики
             HTTP_REQUESTS_TOTAL.labels(
@@ -200,8 +214,10 @@ async def make_request(
         except (httpx.TimeoutException, httpx.RequestError, httpx.NetworkError) as e:
             error_type = type(e).__name__
             HTTP_REQUEST_ERRORS.labels(error_type=error_type, endpoint=endpoint).inc()
-            logger.warning(
-                f"[HTTP_CLIENT] Request error: {method} {url}, error={error_type}, endpoint={endpoint}"
+            logger.error(
+                f"[HTTP_CLIENT] Request error: {method} {url}, error={error_type}, "
+                f"endpoint={endpoint}, error_msg={str(e)}",
+                exc_info=True
             )
             raise
         except Exception as e:

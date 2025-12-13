@@ -325,13 +325,41 @@ class PythonBridgeService
 
         for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
             try {
+                Log::info('PythonBridgeService: Sending command request', [
+                    'cmd_id' => $command->cmd_id,
+                    'url' => $url,
+                    'attempt' => $attempt,
+                    'has_token' => !empty($headers['Authorization'] ?? null),
+                ]);
+                
+                // Используем новый HTTP клиент для каждого запроса, чтобы избежать проблем с keep-alive
+                // Отключаем DNS кэширование и принудительно закрываем соединения
                 $response = Http::withHeaders($headers)
                     ->timeout($timeout)
+                    ->withoutVerifying() // Отключаем проверку SSL для внутренних запросов
+                    ->withOptions([
+                        'curl' => [
+                            CURLOPT_TCP_NODELAY => true,
+                            CURLOPT_FRESH_CONNECT => true,
+                            CURLOPT_FORBID_REUSE => true,
+                            CURLOPT_CONNECTTIMEOUT => 5,
+                            CURLOPT_DNS_CACHE_TIMEOUT => 0, // Отключаем DNS кэш
+                            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1, // Явно указываем HTTP/1.1
+                        ],
+                        'allow_redirects' => false, // Отключаем редиректы
+                    ])
                     ->post($url, $data);
+
+                Log::info('PythonBridgeService: Received response from history-logger', [
+                    'cmd_id' => $command->cmd_id,
+                    'url' => $url,
+                    'status' => $response->status(),
+                    'attempt' => $attempt,
+                ]);
 
                 // Проверяем успешность ответа
                 if ($response->successful()) {
-                    Log::debug('PythonBridgeService: Command sent successfully', [
+                    Log::info('PythonBridgeService: Command sent successfully', [
                         'cmd_id' => $command->cmd_id,
                         'url' => $url,
                         'attempt' => $attempt,

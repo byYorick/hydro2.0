@@ -188,9 +188,13 @@ class MqttClient:
             
             # Логируем получение команды
             if '/command' in topic:
-                logger.info(f"Received command on topic: {topic}, payload_len={len(payload)}")
+                logger.info(f"✓ RECEIVED COMMAND on topic: {topic}, payload_len={len(payload)}")
                 if data:
-                    logger.debug(f"Command data: {data}")
+                    cmd_id = data.get('cmd_id', 'unknown')
+                    cmd = data.get('cmd', 'unknown')
+                    logger.info(f"  → cmd_id={cmd_id}, cmd={cmd}, params={data.get('params', {})}")
+                else:
+                    logger.warning(f"  → Failed to parse command JSON: {payload[:100]}")
                 
                 # Вызываем callback если установлен
                 if self._command_callback and data:

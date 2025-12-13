@@ -157,9 +157,12 @@ async def log_requests(request: Request, call_next):
     """Логирование всех входящих HTTP запросов для диагностики."""
     start_time = time.time()
     
-    # Логируем входящий запрос
+    # Логируем входящий запрос с полной информацией
+    client_ip = request.client.host if request.client else 'unknown'
+    full_url = str(request.url)
     logger.info(
-        f"[HTTP_REQUEST] {request.method} {request.url.path} from {request.client.host if request.client else 'unknown'}"
+        f"[HTTP_REQUEST] {request.method} {request.url.path} from {client_ip}, full_url={full_url}, "
+        f"headers_count={len(request.headers)}, has_body={request.headers.get('content-length', '0') != '0'}"
     )
     
     # Логируем заголовки (особенно Authorization для диагностики)
@@ -2762,15 +2765,17 @@ async def handle_command_response(topic: str, payload: bytes):
     Обновляет статус команды через Laravel API с использованием надёжной доставки.
     """
     try:
-        logger.info(f"[COMMAND_RESPONSE] Received message on topic {topic}, payload length: {len(payload)}")
+        logger.info(f"[COMMAND_RESPONSE] STEP 0: Received message on topic {topic}, payload length: {len(payload)}")
         data = _parse_json(payload)
         if not data or not isinstance(data, dict):
-            logger.warning(f"[COMMAND_RESPONSE] Invalid JSON in command_response from topic {topic}")
+            logger.warning(f"[COMMAND_RESPONSE] STEP 0.1: Invalid JSON in command_response from topic {topic}")
             COMMAND_RESPONSE_ERROR.inc()
             return
 
         cmd_id = data.get("cmd_id")
         raw_status = data.get("status", "")
+        
+        logger.info(f"[COMMAND_RESPONSE] STEP 0.2: Parsed command_response: cmd_id={cmd_id}, status={raw_status}, topic={topic}")
         node_uid = _extract_node_uid(topic)
         channel = _extract_channel_from_topic(topic)
         gh_uid = _extract_gh_uid(topic)
@@ -3187,7 +3192,7 @@ async def publish_command_mqtt(
         
         # Публикуем на правильный топик
         topic = f"hydro/{gh_uid}/{zone_segment}/{node_uid}/{channel}/command"
-        logger.info(f"Publishing command to topic: {topic}, node_uid: {node_uid}, channel: {channel}, zone_id: {zone_id}, zone_segment: {zone_segment}")
+        logger.info(f"[MQTT_PUBLISH] Publishing command to topic: {topic}, node_uid: {node_uid}, channel: {channel}, zone_id: {zone_id}, zone_segment: {zone_segment}, cmd_id={payload.get('cmd_id', 'unknown')}")
         
         # Используем базовый MQTT клиент для публикации
         base_client = mqtt_client._client
@@ -3195,8 +3200,9 @@ async def publish_command_mqtt(
         command_json = json_lib.dumps(payload, separators=(",", ":"))
         result = base_client._client.publish(topic, command_json, qos=1, retain=False)
         if result.rc != 0:
+            logger.error(f"[MQTT_PUBLISH] FAILED: MQTT publish failed with rc={result.rc} for topic {topic}, cmd_id={payload.get('cmd_id', 'unknown')}")
             raise RuntimeError(f"MQTT publish failed with rc={result.rc} for topic {topic}")
-        logger.info(f"Command published successfully to {topic}")
+        logger.info(f"[MQTT_PUBLISH] SUCCESS: Command published successfully to {topic}, cmd_id={payload.get('cmd_id', 'unknown')}, payload_size={len(command_json)}")
         
         # Также публикуем на временный топик для узлов, которые еще не получили конфигурацию
         # Узел может быть подписан на временные идентификаторы до получения первой конфигурации
@@ -3349,8 +3355,10 @@ async def publish_node_command(
     Публиковать команду для ноды через history-logger.
     Все общение бэка с нодами должно происходить через history-logger.
     """
+    logger.info(f"[COMMAND_PUBLISH_ENDPOINT] STEP 0: Received command publish request: node_uid={node_uid}, cmd={req.get_command_name()}, channel={req.channel}, zone_id={req.zone_id}, gh_uid={req.greenhouse_uid}")
     # Аутентификация
     _auth_ingest(request)
+    logger.info(f"[COMMAND_PUBLISH_ENDPOINT] STEP 1: Authentication passed for node_uid={node_uid}")
     
     if not (req.greenhouse_uid and req.zone_id and req.channel):
         raise HTTPException(status_code=400, detail="greenhouse_uid, zone_id and channel are required")

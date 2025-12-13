@@ -554,7 +554,7 @@ async def send_status_to_laravel(
         else (s.ingest_token if hasattr(s, 'ingest_token') and s.ingest_token else None)
     )
     
-    logger.info(f"[STATUS_DELIVERY] STEP 3: Ingest token configured: {bool(ingest_token)}")
+    logger.info(f"[STATUS_DELIVERY] STEP 3: Ingest token configured: {bool(ingest_token)}, token_length={len(ingest_token) if ingest_token else 0}")
     
     headers = {
         "Content-Type": "application/json",
@@ -562,6 +562,9 @@ async def send_status_to_laravel(
     }
     if ingest_token:
         headers["Authorization"] = f"Bearer {ingest_token}"
+        logger.info(f"[STATUS_DELIVERY] STEP 3.1: Authorization header set, token_preview={ingest_token[:10]}..." if len(ingest_token) > 10 else f"[STATUS_DELIVERY] STEP 3.1: Authorization header set")
+    else:
+        logger.warning("[STATUS_DELIVERY] STEP 3.2: WARNING - No ingest token configured, request may fail with 401")
     
     # Поддержка как enum, так и строки
     status_value = status.value if isinstance(status, CommandStatus) else str(status)

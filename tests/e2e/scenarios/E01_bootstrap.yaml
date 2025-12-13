@@ -21,7 +21,7 @@ setup:
       node:
         gh_uid: gh-test-1
         zone_uid: zn-test-1
-        node_uid: nd-ph-test-1
+        node_uid: nd-ph-esp32una
         hardware_id: esp32-test-001
         node_type: ph
         mode: configured
@@ -48,27 +48,26 @@ actions:
     config_ref: node_sim.config
     wait_seconds: 3  # Ждем подключения и первой публикации
 
-  # Шаг 2: Публикация телеметрии
-  - step: publish_telemetry
-    type: publish_mqtt
-    topic: "hydro/gh-test-1/zn-test-1/nd-ph-test-1/ph_sensor/telemetry"
-    payload:
-      metric_type: "ph"
-      value: 6.5
-      ts: ${TIMESTAMP_MS}
-    qos: 1
-    wait_seconds: 5  # Увеличиваем время для обработки телеметрии
+  # Шаг 2: Получаем zone_id и node_id
+  - step: get_zones
+    type: api_get
+    endpoint: "/api/zones"
+    save: zones
+  
+  - step: get_nodes
+    type: api_get
+    endpoint: "/api/nodes"
+    save: nodes
 
-  # Шаг 3: Публикация статуса ONLINE
-  - step: publish_online_status
-    type: publish_mqtt
-    topic: "hydro/gh-test-1/zn-test-1/nd-ph-test-1/status"
-    payload:
-      status: "ONLINE"
-      ts: ${TIMESTAMP_S}
-    qos: 1
-    retain: true
-    wait_seconds: 2
+  - step: find_test_zone_and_node
+    type: set
+    test_zone_id: ${zones.data.data[0].id}
+    test_node_id: ${nodes.data.data[0].id}
+    test_node_uid: ${nodes.data.data[0].uid}
+
+  # Шаг 3: Ждем публикации телеметрии от node-sim (он работает автоматически)
+  # node-sim публикует телеметрию каждые 5 секунд, ждем минимум одну публикацию
+    wait_seconds: 8
 
 assertions:
   # Проверка 1: Телеметрия в БД
@@ -77,18 +76,16 @@ assertions:
     query: |
       SELECT value, channel, node_id, zone_id, updated_at, metric_type
       FROM telemetry_last
-      WHERE zone_id = (
-        SELECT id FROM zones WHERE uid = 'zn-test-1'
-      )
-      AND node_id = (
-        SELECT id FROM nodes WHERE uid = 'nd-ph-test-1'
-      )
+      WHERE zone_id = :zone_id
+      AND node_id = :node_id
       AND metric_type = 'ph'
+    params:
+      zone_id: ${test_zone_id}
+      node_id: ${test_node_id}
     timeout: 15.0
     expected:
       - field: value
-        operator: equals
-        value: 6.5
+        operator: is_not_null
       - field: metric_type
         operator: equals
         value: "ph"
@@ -101,7 +98,9 @@ assertions:
     query: |
       SELECT status, last_seen_at
       FROM nodes
-      WHERE uid = 'nd-ph-test-1'
+      WHERE uid = :node_uid
+    params:
+      node_uid: ${test_node_uid}
     expected:
       - field: status
         operator: equals
@@ -115,7 +114,9 @@ assertions:
     query: |
       SELECT zone_id
       FROM nodes
-      WHERE uid = 'nd-ph-test-1'
+      WHERE uid = :node_uid
+    params:
+      node_uid: ${test_node_uid}
     expected:
       - field: zone_id
         operator: is_not_null

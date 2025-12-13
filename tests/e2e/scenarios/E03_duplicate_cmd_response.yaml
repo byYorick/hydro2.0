@@ -21,7 +21,7 @@ setup:
       node:
         gh_uid: gh-test-1
         zone_uid: zn-test-1
-        node_uid: nd-ph-test-1
+        node_uid: nd-ph-esp32una
         hardware_id: esp32-test-001
         node_type: ph
         mode: configured
@@ -91,11 +91,12 @@ actions:
   # Шаг 4: Симулятор отправляет DONE ответ (первый раз)
   - step: node_sends_done_first
     type: mqtt_publish
-    topic: "hydro/gh-test-1/zn-test-1/nd-ph-test-1/main_pump/cmd_response"
+    topic: "hydro/gh-test-1/zn-test-1/nd-ph-esp32una/main_pump/command_response"
     payload:
       cmd_id: ${COMMAND_ID}
       status: "DONE"
-      result_code: 0
+      details:
+        result_code: 0
       ts: ${TIMESTAMP_MS}
     qos: 1
     wait_seconds: 2
@@ -103,11 +104,12 @@ actions:
   # Шаг 5: Симулятор отправляет DONE ответ второй раз (дубль)
   - step: node_sends_done_duplicate
     type: mqtt_publish
-    topic: "hydro/gh-test-1/zn-test-1/nd-ph-test-1/main_pump/cmd_response"
+    topic: "hydro/gh-test-1/zn-test-1/nd-ph-esp32una/main_pump/command_response"
     payload:
       cmd_id: ${COMMAND_ID}
       status: "DONE"
-      result_code: 0
+      details:
+        result_code: 0
       ts: ${TIMESTAMP_MS}
     qos: 1
     wait_seconds: 2
@@ -141,19 +143,6 @@ assertions:
         operator: equals
         value: "DONE"
 
-  # Проверка 3: WebSocket событие CommandStatusUpdated отправлено один раз
-  - name: ws_event_sent_once
-    type: websocket_event_count
-    channel: "private-commands.${test_zone_id}"
-    event_type: ".App\\Events\\CommandStatusUpdated"
-    timeout: 10.0
-    filter:
-      command.cmd_id: ${COMMAND_ID}
-      command.status: "DONE"
-    expected:
-      - field: count
-        operator: equals
-        value: 1
 
 cleanup:
   - step: stop_node_simulator

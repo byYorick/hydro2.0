@@ -20,9 +20,18 @@ class PythonIngestController extends Controller
         $expected = Config::get('services.python_bridge.ingest_token') ?? Config::get('services.python_bridge.token');
         $given = $request->bearerToken();
 
+        Log::info('[COMMAND_ACK_AUTH] Token check', [
+            'has_expected_token' => !empty($expected),
+            'has_given_token' => !empty($given),
+            'expected_token_length' => $expected ? strlen($expected) : 0,
+            'given_token_length' => $given ? strlen($given) : 0,
+            'tokens_match' => $expected && $given ? hash_equals($expected, (string) $given) : false,
+        ]);
+
         // Если токен не настроен, всегда требуем токен (даже в testing)
         // Это обеспечивает безопасность по умолчанию
         if (! $expected) {
+            Log::error('[COMMAND_ACK_AUTH] Token not configured in Laravel');
             throw new \Illuminate\Http\Exceptions\HttpResponseException(
                 response()->json([
                     'status' => 'error',
@@ -32,6 +41,10 @@ class PythonIngestController extends Controller
         }
 
         if (! $given || ! hash_equals($expected, (string) $given)) {
+            Log::warning('[COMMAND_ACK_AUTH] Token validation failed', [
+                'has_given' => !empty($given),
+                'token_match' => $expected && $given ? hash_equals($expected, (string) $given) : false,
+            ]);
             throw new \Illuminate\Http\Exceptions\HttpResponseException(
                 response()->json([
                     'status' => 'error',
@@ -39,6 +52,8 @@ class PythonIngestController extends Controller
                 ], 401)
             );
         }
+        
+        Log::info('[COMMAND_ACK_AUTH] Token validated successfully');
     }
 
     public function telemetry(Request $request)
@@ -180,13 +195,32 @@ class PythonIngestController extends Controller
 
     public function commandAck(Request $request)
     {
+        Log::info('[COMMAND_ACK] STEP 0: commandAck endpoint called', [
+            'method' => $request->method(),
+            'url' => $request->fullUrl(),
+            'ip' => $request->ip(),
+            'headers' => [
+                'authorization' => $request->header('Authorization') ? 'present' : 'missing',
+                'content-type' => $request->header('Content-Type'),
+            ],
+        ]);
+        
         Log::info('[COMMAND_ACK] STEP 1: Received commandAck request', [
             'cmd_id' => $request->input('cmd_id'),
             'status' => $request->input('status'),
+            'has_details' => $request->has('details'),
         ]);
         
-        $this->ensureToken($request);
-        Log::info('[COMMAND_ACK] STEP 2: Token validated');
+        try {
+            $this->ensureToken($request);
+            Log::info('[COMMAND_ACK] STEP 2: Token validated');
+        } catch (\Exception $e) {
+            Log::error('[COMMAND_ACK] STEP 2: Token validation failed', [
+                'error' => $e->getMessage(),
+                'exception' => get_class($e),
+            ]);
+            throw $e;
+        }
         
         $data = $request->validate([
             'cmd_id' => ['required', 'string', 'max:64'],

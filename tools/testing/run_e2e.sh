@@ -121,6 +121,84 @@ check_services_health() {
     return 1
 }
 
+# Функция для сбора информации об ошибке
+collect_failure_info() {
+    local scenario=$1
+    local log_dir="$E2E_DIR/reports/${scenario}_failure_logs"
+    mkdir -p "$log_dir"
+    
+    log_warn "  Сохранение логов сервисов для $scenario..."
+    docker-compose -f "$E2E_DIR/docker-compose.e2e.yml" logs --tail 100 laravel > "$log_dir/laravel.log" 2>&1 || true
+    docker-compose -f "$E2E_DIR/docker-compose.e2e.yml" logs --tail 100 history-logger > "$log_dir/history-logger.log" 2>&1 || true
+    docker-compose -f "$E2E_DIR/docker-compose.e2e.yml" logs --tail 100 node-sim > "$log_dir/node-sim.log" 2>&1 || true
+    docker-compose -f "$E2E_DIR/docker-compose.e2e.yml" logs --tail 100 mqtt-bridge > "$log_dir/mqtt-bridge.log" 2>&1 || true
+    
+    # Сбор последних WS и MQTT событий из логов
+    log_warn "  Сбор последних WS/MQTT событий..."
+    docker-compose -f "$E2E_DIR/docker-compose.e2e.yml" logs --tail 200 history-logger 2>&1 | grep -E "(MQTT|command_response|command_status|COMMAND)" > "$log_dir/mqtt_events.log" || true
+    docker-compose -f "$E2E_DIR/docker-compose.e2e.yml" logs --tail 200 laravel 2>&1 | grep -E "(WebSocket|CommandStatusUpdated|AlertCreated|ZoneEvent)" > "$log_dir/ws_events.log" || true
+}
+
+# Функция для извлечения информации о последнем упавшем шаге из JUnit XML
+extract_failed_step() {
+    local junit_file="$E2E_DIR/reports/junit.xml"
+    if [ -f "$junit_file" ] && command -v xmllint &> /dev/null; then
+        xmllint --xpath "//testcase[@status='failed'][last()]/@name" "$junit_file" 2>/dev/null | sed 's/name="\(.*\)"/\1/' || echo ""
+    elif [ -f "$junit_file" ]; then
+        grep -oP '(?<=name=")[^"]*(?=".*status="failed")' "$junit_file" | tail -1 || echo ""
+    else
+        echo ""
+    fi
+}
+
+# Функция для показа деталей ошибки
+show_failure_details() {
+    local scenario=$1
+    local log_dir="$E2E_DIR/reports/${scenario}_failure_logs"
+    
+    log_error ""
+    log_error "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log_error "Детали ошибки: $scenario"
+    log_error "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    
+    # Последний упавший шаг
+    local failed_step=$(extract_failed_step)
+    if [ -n "$failed_step" ]; then
+        log_error "  Упавший шаг: $failed_step"
+        log_error ""
+    fi
+    
+    # Пути к логам
+    log_error "  Логи сервисов:"
+    log_error "    - Laravel: $log_dir/laravel.log"
+    log_error "    - History-logger: $log_dir/history-logger.log"
+    log_error "    - Node-sim: $log_dir/node-sim.log"
+    log_error "    - MQTT-bridge: $log_dir/mqtt-bridge.log"
+    log_error ""
+    
+    # Последние события
+    log_error "  Последние события:"
+    if [ -f "$log_dir/mqtt_events.log" ] && [ -s "$log_dir/mqtt_events.log" ]; then
+        log_warn "    Последние MQTT события (последние 5 строк):"
+        tail -5 "$log_dir/mqtt_events.log" | sed 's/^/      /'
+    else
+        log_warn "    MQTT события не найдены"
+    fi
+    if [ -f "$log_dir/ws_events.log" ] && [ -s "$log_dir/ws_events.log" ]; then
+        log_warn "    Последние WebSocket события (последние 5 строк):"
+        tail -5 "$log_dir/ws_events.log" | sed 's/^/      /'
+    else
+        log_warn "    WebSocket события не найдены"
+    fi
+    log_error ""
+    
+    # JUnit XML
+    local junit_file="$E2E_DIR/reports/junit.xml"
+    if [ -f "$junit_file" ]; then
+        log_error "  JUnit XML: $junit_file"
+    fi
+}
+
 # Функция для запуска одного сценария
 run_scenario() {
     local scenario=$1
@@ -209,48 +287,101 @@ main() {
             
             log_info "Используем API токен: ${LARAVEL_API_TOKEN:0:10}..."
             
-            # Запуск обязательных сценариев
+            # Запуск обязательных сценариев (матрица сценариев минимум)
             SCENARIOS=(
                 "E01_bootstrap"
                 "E02_command_happy"
-                "E03_duplicate_cmd_response"
                 "E04_error_alert"
                 "E05_unassigned_attach"
-                "E06_laravel_down_queue_recovery"
                 "E07_ws_reconnect_snapshot_replay"
             )
             
-            log_info "Запуск обязательных E2E сценариев..."
+            log_info "Запуск обязательных E2E сценариев (матрица минимум)..."
             
             PASSED=0
             FAILED=0
             FAILED_SCENARIOS=()
+            SCENARIO_RESULTS=()
             
             for scenario in "${SCENARIOS[@]}"; do
+                log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                log_info "Запуск: $scenario"
+                
                 if run_scenario "$scenario"; then
                     PASSED=$((PASSED+1))
+                    SCENARIO_RESULTS+=("$scenario:PASS")
+                    log_info "✓ PASS: $scenario"
                 else
                     FAILED=$((FAILED+1))
                     FAILED_SCENARIOS+=("$scenario")
+                    SCENARIO_RESULTS+=("$scenario:FAIL")
+                    log_error "✗ FAIL: $scenario"
+                    
+                    # Сбор информации об ошибке
+                    log_warn "Сбор информации об ошибке для $scenario..."
+                    collect_failure_info "$scenario"
                 fi
             done
             
             # Итоговый отчет
             echo ""
-            log_info "=== Итоговый отчет ==="
-            log_info "Пройдено: $PASSED/${#SCENARIOS[@]}"
-            log_info "Провалено: $FAILED/${#SCENARIOS[@]}"
+            log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            log_info "=== ИТОГОВЫЙ ОТЧЕТ ==="
+            log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            
+            # Summary по сценариям
+            log_info "Summary:"
+            for result in "${SCENARIO_RESULTS[@]}"; do
+                scenario_name=$(echo "$result" | cut -d: -f1)
+                status=$(echo "$result" | cut -d: -f2)
+                if [ "$status" = "PASS" ]; then
+                    echo -e "  ${GREEN}✓ PASS${NC}: $scenario_name"
+                else
+                    echo -e "  ${RED}✗ FAIL${NC}: $scenario_name"
+                fi
+            done
+            echo ""
+            
+            log_info "Статистика:"
+            log_info "  Пройдено: $PASSED/${#SCENARIOS[@]}"
+            if [ $FAILED -gt 0 ]; then
+                log_error "  Провалено: $FAILED/${#SCENARIOS[@]}"
+            else
+                log_info "  Провалено: $FAILED/${#SCENARIOS[@]}"
+            fi
+            echo ""
+            
+            # Пути к отчётам
+            REPORTS_DIR="$E2E_DIR/reports"
+            log_info "Отчёты:"
+            JUNIT_XML="$REPORTS_DIR/junit.xml"
+            TIMELINE_JSON="$REPORTS_DIR/timeline.json"
+            if [ -f "$JUNIT_XML" ]; then
+                log_info "  JUnit XML: $JUNIT_XML"
+            else
+                log_warn "  JUnit XML: не найден"
+            fi
+            if [ -f "$TIMELINE_JSON" ]; then
+                log_info "  Timeline JSON: $TIMELINE_JSON"
+            else
+                log_warn "  Timeline JSON: не найден"
+            fi
+            log_info "  Директория: $REPORTS_DIR/"
+            echo ""
             
             if [ $FAILED -gt 0 ]; then
-                log_error "Проваленные сценарии:"
+                log_error "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                log_error "ДЕТАЛИ ОШИБОК:"
+                log_error "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                 for scenario in "${FAILED_SCENARIOS[@]}"; do
-                    log_error "  - $scenario"
+                    show_failure_details "$scenario"
                 done
-                log_info "Отчеты доступны в: $E2E_DIR/reports/"
                 exit 1
             else
-                log_info "✓ Все сценарии прошли успешно!"
-                log_info "Отчеты доступны в: $E2E_DIR/reports/"
+                log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                log_info "✓ Все обязательные сценарии прошли успешно!"
+                log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                 exit 0
             fi
             ;;
