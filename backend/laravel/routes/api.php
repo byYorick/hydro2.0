@@ -147,10 +147,12 @@ Route::middleware([
         Route::patch('zones/{zone}', [ZoneController::class, 'update']);
         Route::delete('zones/{zone}', [ZoneController::class, 'destroy']);
         Route::post('zones/{zone}/attach-recipe', [ZoneController::class, 'attachRecipe']);
+        Route::post('zones/{zone}/start', [ZoneController::class, 'start']);
         Route::post('zones/{zone}/change-phase', [ZoneController::class, 'changePhase']);
         Route::post('zones/{zone}/next-phase', [ZoneController::class, 'nextPhase']);
         Route::post('zones/{zone}/pause', [ZoneController::class, 'pause']);
         Route::post('zones/{zone}/resume', [ZoneController::class, 'resume']);
+        Route::post('zones/{zone}/harvest', [ZoneController::class, 'harvest']);
         Route::post('zones/{zone}/fill', [ZoneController::class, 'fill']);
         Route::post('zones/{zone}/drain', [ZoneController::class, 'drain']);
         Route::post('zones/{zone}/calibrate-flow', [ZoneController::class, 'calibrateFlow']);

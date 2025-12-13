@@ -1,37 +1,11 @@
 {
-  "test_suite": "E60_climate_control_happy",
-  "generated_at": "2025-12-13T18:04:46.102689",
+  "test_suite": "E01_bootstrap",
+  "generated_at": "2025-12-13T21:55:32.487185",
   "test_cases": [
-    {
-      "name": "get_zones",
-      "status": "passed",
-      "duration": 0.06273603439331055,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "get_zones",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-13T18:04:32.913043"
-    },
-    {
-      "name": "set_zone_id",
-      "status": "passed",
-      "duration": 1.239776611328125e-05,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_zone_id",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-13T18:04:32.913149"
-    },
     {
       "name": "start_node_simulator",
       "status": "passed",
-      "duration": 3.0024492740631104,
+      "duration": 5.637271404266357,
       "error_message": null,
       "steps": [
         {
@@ -39,88 +13,66 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-13T18:04:35.915609"
+      "timestamp": "2025-12-13T21:55:14.072611"
     },
     {
-      "name": "subscribe_zone_channel",
+      "name": "get_zones",
       "status": "passed",
-      "duration": 0.16559720039367676,
+      "duration": 0.06594610214233398,
       "error_message": null,
       "steps": [
         {
-          "name": "subscribe_zone_channel",
+          "name": "get_zones",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-13T18:04:36.081256"
+      "timestamp": "2025-12-13T21:55:14.138779"
     },
     {
-      "name": "publish_low_temp_telemetry",
+      "name": "get_nodes",
       "status": "passed",
-      "duration": 10.01032543182373,
+      "duration": 0.06355094909667969,
       "error_message": null,
       "steps": [
         {
-          "name": "publish_low_temp_telemetry",
+          "name": "get_nodes",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-13T18:04:46.091635"
+      "timestamp": "2025-12-13T21:55:14.202356"
     },
     {
-      "name": "wait_for_heater_command",
+      "name": "find_test_zone_and_node",
+      "status": "passed",
+      "duration": 8.008111476898193,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "find_test_zone_and_node",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-13T21:55:22.210623"
+    },
+    {
+      "name": "telemetry_in_db",
       "status": "failed",
-      "duration": 9.298324584960938e-06,
-      "error_message": "Unknown action type: db.wait",
+      "duration": 0.0005927085876464844,
+      "error_message": "connection failed: connection to server at \"127.0.0.1\", port 5432 failed: Connection refused\n\tIs the server running on that host and accepting TCP/IP connections?",
       "steps": [
         {
-          "name": "wait_for_heater_command",
+          "name": "telemetry_in_db",
           "status": "failed",
-          "error": "Unknown action type: db.wait"
+          "error": "connection failed: connection to server at \"127.0.0.1\", port 5432 failed: Connection refused\n\tIs the server running on that host and accepting TCP/IP connections?"
         }
       ],
-      "timestamp": "2025-12-13T18:04:46.091799"
-    },
-    {
-      "name": "telemetry_saved",
-      "status": "passed",
-      "duration": 0.008368730545043945,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "telemetry_saved",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-13T18:04:46.100181"
-    },
-    {
-      "name": "command_created_by_ae",
-      "status": "passed",
-      "duration": 0.002154111862182617,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "command_created_by_ae",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-13T18:04:46.102346"
+      "timestamp": "2025-12-13T21:55:22.211316"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E60_climate_control_happy": {
-      "ws_messages": [
-        {
-          "data": {
-            "event": "pusher_internal:subscription_succeeded",
-            "data": "{}",
-            "channel": "private-hydro.zones.1"
-          },
-          "timestamp": "2025-12-13T18:04:35.984909"
-        }
-      ],
+    "E01_bootstrap": {
+      "ws_messages": [],
       "mqtt_messages": [],
       "api_responses": []
     }

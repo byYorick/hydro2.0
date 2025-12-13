@@ -96,7 +96,7 @@ assertions:
       SELECT COUNT(*) as event_count
       FROM zone_events
       WHERE zone_id = :zone_id
-      AND (type LIKE '%PHASE%' OR type LIKE '%ZONE%UPDATED%')
+      AND (type LIKE '%%PHASE%%' OR type LIKE '%%ZONE%%UPDATED%%')
       AND created_at > NOW() - INTERVAL '2 minutes'
     params:
       zone_id: ${zone_id}

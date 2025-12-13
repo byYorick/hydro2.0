@@ -1,0 +1,154 @@
+{
+  "test_suite": "E12_command_timeout",
+  "generated_at": "2025-12-13T19:18:09.533909",
+  "test_cases": [
+    {
+      "name": "start_node_simulator",
+      "status": "skipped",
+      "duration": 0.0031697750091552734,
+      "error_message": "[Errno 2] No such file or directory: 'docker-compose'",
+      "steps": [
+        {
+          "name": "start_node_simulator",
+          "status": "skipped",
+          "error": "[Errno 2] No such file or directory: 'docker-compose'"
+        }
+      ],
+      "timestamp": "2025-12-13T19:18:04.122589"
+    },
+    {
+      "name": "get_zones",
+      "status": "passed",
+      "duration": 0.05965995788574219,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "get_zones",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-13T19:18:04.182497"
+    },
+    {
+      "name": "get_nodes",
+      "status": "passed",
+      "duration": 0.06252145767211914,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "get_nodes",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-13T19:18:04.245040"
+    },
+    {
+      "name": "set_zone_and_node",
+      "status": "passed",
+      "duration": 6.4373016357421875e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_zone_and_node",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-13T19:18:04.245084"
+    },
+    {
+      "name": "subscribe_zone_channel",
+      "status": "passed",
+      "duration": 0.16479039192199707,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "subscribe_zone_channel",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-13T19:18:04.409889"
+    },
+    {
+      "name": "send_command",
+      "status": "passed",
+      "duration": 0.1052401065826416,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "send_command",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-13T19:18:04.515235"
+    },
+    {
+      "name": "set_command_id",
+      "status": "passed",
+      "duration": 4.5299530029296875e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_command_id",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-13T19:18:04.515263"
+    },
+    {
+      "name": "wait_before_check",
+      "status": "passed",
+      "duration": 5.0043625831604,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_before_check",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-13T19:18:09.519634"
+    },
+    {
+      "name": "check_timeout_zone_event",
+      "status": "passed",
+      "duration": 0.010037899017333984,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "check_timeout_zone_event",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-13T19:18:09.529733"
+    },
+    {
+      "name": "command_status_is_timeout_or_sent",
+      "status": "passed",
+      "duration": 0.0026412010192871094,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "command_status_is_timeout_or_sent",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-13T19:18:09.532397"
+    }
+  ],
+  "timeline": [],
+  "artifacts": {
+    "E12_command_timeout": {
+      "ws_messages": [
+        {
+          "data": {
+            "event": "pusher_internal:subscription_succeeded",
+            "data": "{}",
+            "channel": "private-hydro.zones.1"
+          },
+          "timestamp": "2025-12-13T19:18:04.312340"
+        }
+      ],
+      "mqtt_messages": [],
+      "api_responses": []
+    }
+  }
+}

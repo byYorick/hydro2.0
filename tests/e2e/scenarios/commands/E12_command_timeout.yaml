@@ -37,6 +37,7 @@ actions:
     type: start_simulator
     config_ref: node_sim.config
     wait_seconds: 3
+    optional: true  # node-sim уже может быть запущен
 
   - step: get_zones
     type: api_get

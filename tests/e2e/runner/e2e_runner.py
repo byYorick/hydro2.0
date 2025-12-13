@@ -707,7 +707,7 @@ class E2ERunner:
                 result = {"token_invalidated": True}
             elif step_type == "create_ws_client_without_token":
                 # Создает WSClient без токена для тестирования ошибок авторизации
-                from runner.ws_client import WSClient
+                from .ws_client import WSClient
                 self.ws_no_auth = WSClient(
                     ws_url=self.ws_url,
                     api_token=None,
@@ -1375,7 +1375,7 @@ class E2ERunner:
             return
         if step_type == "create_ws_client_without_token":
             # Создает WSClient без токена для тестирования ошибок авторизации
-            from runner.ws_client import WSClient
+            from .ws_client import WSClient
             self.ws_no_auth = WSClient(
                 ws_url=self.ws_url,
                 api_token=None,
