@@ -28,7 +28,7 @@ actions:
   # Получаем snapshot для определения last_event_id
   - step: get_snapshot
     type: api_get
-    endpoint: /api/zones/${zone_id}
+    endpoint: /api/zones/${zone_id}/snapshot
     save: snapshot_response
 
   - step: set_last_event_id
@@ -36,15 +36,6 @@ actions:
     last_event_id: ${snapshot_response.data.last_event_id}
 
   # Создаем новое событие (например, через отправку команды)
-  - step: get_nodes
-    type: api_get
-    endpoint: /api/nodes
-    save: nodes_response
-
-  - step: set_node_id
-    type: set
-    test_node_id: ${nodes_response.data.data[0].id}
-
   - step: get_nodes
     type: api_get
     endpoint: /api/nodes

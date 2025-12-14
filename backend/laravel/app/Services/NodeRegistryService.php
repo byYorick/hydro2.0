@@ -505,13 +505,13 @@ class NodeRegistryService
                             ],
                         ]);
                     } else {
-                        // Создаем новый алерт напрямую через модель, чтобы сохранить исходный count
-                        \App\Models\Alert::create([
+                        // Создаем новый алерт через AlertService для консистентности
+                        // AlertService автоматически установит error_count из details.count
+                        $newAlert = $alertService->create([
                             'zone_id' => $node->zone_id,
                             'source' => 'infra',
                             'code' => $alertCode,
                             'type' => 'Node Error: ' . ($error->error_message ?: 'Unknown error'),
-                            'severity' => $error->severity ?? 'ERROR',
                             'status' => 'ACTIVE',
                             'details' => [
                                 'error_message' => $error->error_message,
@@ -526,16 +526,28 @@ class NodeRegistryService
                                 'payload' => $error->last_payload,
                             ],
                         ]);
+                        
+                        // Устанавливаем error_count напрямую, если колонка существует
+                        if (\Illuminate\Support\Facades\Schema::hasColumn('alerts', 'error_count')) {
+                            $newAlert->error_count = $error->count ?? 1;
+                            $newAlert->save();
+                        }
                     }
                     $alertsCreated++;
                 }
                 
                 Log::info('Created alerts from unassigned errors', [
                     'node_id' => $node->id,
+                    'node_uid' => $node->uid,
                     'zone_id' => $node->zone_id,
                     'hardware_id' => $node->hardware_id,
                     'errors_count' => $errors->count(),
                     'alerts_created' => $alertsCreated,
+                    'errors_details' => $errors->map(fn($e) => [
+                        'error_code' => $e->error_code,
+                        'error_message' => $e->error_message,
+                        'count' => $e->count ?? 1,
+                    ])->toArray(),
                 ]);
                 
                 // Архивируем ошибки только после успешного создания alerts (когда есть zone_id)
@@ -603,12 +615,17 @@ class NodeRegistryService
             }
             
         } catch (\Exception $e) {
-            Log::warning('Failed to attach unassigned errors to node', [
+            Log::error('Failed to attach unassigned errors to node', [
                 'node_id' => $node->id,
+                'node_uid' => $node->uid ?? null,
                 'hardware_id' => $node->hardware_id,
+                'zone_id' => $node->zone_id ?? null,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
+            
+            // Ошибка не должна блокировать привязку узла
+            // Ошибки остаются в unassigned_node_errors и могут быть обработаны позже
         }
     }
 

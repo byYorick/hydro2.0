@@ -9,22 +9,103 @@ use Illuminate\Support\Facades\Log;
 class AlertService
 {
     /**
-     * Создать алерт
+     * Создать алерт.
+     * При ошибке сохраняет в pending_alerts для последующей обработки через DLQ.
      */
     public function create(array $data): Alert
     {
-        return DB::transaction(function () use ($data) {
-            $alert = Alert::create($data);
-            Log::info('Alert created', ['alert_id' => $alert->id, 'type' => $alert->type]);
-            
-            // Dispatch event для realtime обновлений после коммита транзакции
-            // Это предотвращает отправку фантомных алертов при откате транзакции
-            DB::afterCommit(function () use ($alert) {
-                $this->broadcastAlertCreated($alert);
+        try {
+            return DB::transaction(function () use ($data) {
+                $alert = Alert::create($data);
+                Log::info('Alert created', ['alert_id' => $alert->id, 'type' => $alert->type]);
+                
+                // Dispatch event для realtime обновлений после коммита транзакции
+                // Это предотвращает отправку фантомных алертов при откате транзакции
+                DB::afterCommit(function () use ($alert) {
+                    $this->broadcastAlertCreated($alert);
+                });
+                
+                return $alert;
             });
-            
-            return $alert;
-        });
+        } catch (\Exception $e) {
+            // Сохраняем в pending_alerts для обработки через DLQ
+            $this->saveToPendingAlerts($data, $e);
+            throw $e;
+        }
+    }
+
+    /**
+     * Сохранить алерт в pending_alerts для последующей обработки.
+     */
+    private function saveToPendingAlerts(array $alertData, \Exception $e): void
+    {
+        try {
+            DB::table('pending_alerts')->insert([
+                'zone_id' => $alertData['zone_id'] ?? null,
+                'source' => $alertData['source'] ?? 'biz',
+                'code' => $alertData['code'] ?? null,
+                'type' => $alertData['type'] ?? 'unknown',
+                'details' => isset($alertData['details']) ? json_encode($alertData['details']) : null,
+                'status' => 'pending',
+                'attempts' => 0,
+                'max_attempts' => 3,
+                'last_error' => $e->getMessage(),
+                'last_attempt_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            Log::warning('Alert saved to pending_alerts due to creation error', [
+                'error' => $e->getMessage(),
+                'alert_data' => $alertData,
+            ]);
+        } catch (\Exception $saveException) {
+            // Если не удалось сохранить в pending_alerts - логируем критическую ошибку
+            Log::error('Failed to save alert to pending_alerts', [
+                'original_error' => $e->getMessage(),
+                'save_error' => $saveException->getMessage(),
+                'alert_data' => $alertData,
+            ]);
+        }
+    }
+
+    /**
+     * Проверить, должен ли алерт быть заблокирован rate limiting.
+     * 
+     * @param string $errorCode Код ошибки
+     * @param int|null $zoneId ID зоны
+     * @return bool true если алерт должен быть заблокирован
+     */
+    private function shouldRateLimit(string $errorCode, ?int $zoneId): bool
+    {
+        // Если rate limiting отключен - не блокируем
+        if (!config('alerts.rate_limiting.enabled', true)) {
+            return false;
+        }
+
+        // Критичные ошибки не подлежат rate limiting
+        $criticalCodes = config('alerts.rate_limiting.critical_codes', []);
+        if (in_array($errorCode, $criticalCodes)) {
+            return false;
+        }
+
+        // Проверяем количество алертов за последнюю минуту для этой зоны
+        $maxPerMinute = config('alerts.rate_limiting.max_per_minute', 10);
+        $count = Alert::where('zone_id', $zoneId)
+            ->where('created_at', '>', now()->subMinute())
+            ->count();
+
+        if ($count >= $maxPerMinute) {
+            Log::warning('Alert rate limit exceeded', [
+                'code' => $errorCode,
+                'zone_id' => $zoneId,
+                'count' => $count,
+                'max_per_minute' => $maxPerMinute,
+            ]);
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -56,21 +137,46 @@ class AlertService
             }
             
             // Ищем существующий активный алерт по ключу дедупликации
+            // Используем lockForUpdate() для предотвращения race conditions
             $existing = Alert::where('zone_id', $zoneId)
                 ->where('code', $code)
                 ->where('status', 'ACTIVE')
+                ->lockForUpdate()
                 ->first();
+            
+            // Проверка rate limiting (только если алерт не существует - для новых алертов)
+            if (!$existing && $this->shouldRateLimit($code, $zoneId)) {
+                // Rate limit достигнут для нового алерта - логируем и пропускаем создание
+                Log::warning('Alert creation rate limited', [
+                    'code' => $code,
+                    'zone_id' => $zoneId,
+                ]);
+                
+                // Возвращаем null-результат вместо исключения для более мягкой обработки
+                return [
+                    'alert' => null,
+                    'created' => false,
+                    'event_id' => null,
+                    'rate_limited' => true,
+                ];
+            }
             
             $now = now();
             $nowIso = $now->toIso8601String();
             
             if ($existing) {
-                // Обновляем существующий алерт
-                $existingDetails = $existing->details ?? [];
+                // Атомарно увеличиваем счетчик ошибок в БД
+                DB::table('alerts')
+                    ->where('id', $existing->id)
+                    ->increment('error_count');
                 
-                // Увеличиваем счетчик
-                $currentCount = $existingDetails['count'] ?? 0;
-                $existingDetails['count'] = $currentCount + 1;
+                // Получаем обновленное значение error_count
+                $existing->refresh();
+                $currentCount = $existing->error_count ?? 1;
+                
+                // Обновляем details
+                $existingDetails = $existing->details ?? [];
+                $existingDetails['count'] = $currentCount; // Синхронизируем с error_count
                 $existingDetails['last_seen_at'] = $nowIso;
                 
                 // Объединяем новые details с существующими
@@ -103,6 +209,7 @@ class AlertService
                 Log::info('Alert updated', [
                     'alert_id' => $existing->id,
                     'code' => $code,
+                    'error_count' => $currentCount,
                     'count' => $existingDetails['count'],
                 ]);
                 
@@ -115,6 +222,7 @@ class AlertService
                         'payload_json' => json_encode([  // Используем payload_json вместо details
                             'alert_id' => $existing->id,
                             'code' => $code,
+                            'error_count' => $currentCount,
                             'count' => $existingDetails['count'],
                             'updated_at' => $nowIso,
                         ]),
@@ -135,7 +243,7 @@ class AlertService
             } else {
                 // Создаем новый алерт
                 $newDetails = $data['details'] ?? [];
-                $newDetails['count'] = 1;
+                $newDetails['count'] = 1; // Синхронизируем с error_count
                 $newDetails['last_seen_at'] = $nowIso;
                 
                 // Добавляем severity, если указан
@@ -162,6 +270,7 @@ class AlertService
                     'code' => $code,
                     'type' => $data['type'] ?? 'unknown',
                     'status' => 'ACTIVE',
+                    'error_count' => 1, // Начальное значение счетчика
                     'details' => $newDetails,
                     'created_at' => $now,
                 ]);

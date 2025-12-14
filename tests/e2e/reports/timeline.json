@@ -1,25 +1,11 @@
 {
-  "test_suite": "E12_command_timeout",
-  "generated_at": "2025-12-13T19:18:09.533909",
+  "test_suite": "E72_ws_down_snapshot_recover",
+  "generated_at": "2025-12-14T05:17:12.857887",
   "test_cases": [
-    {
-      "name": "start_node_simulator",
-      "status": "skipped",
-      "duration": 0.0031697750091552734,
-      "error_message": "[Errno 2] No such file or directory: 'docker-compose'",
-      "steps": [
-        {
-          "name": "start_node_simulator",
-          "status": "skipped",
-          "error": "[Errno 2] No such file or directory: 'docker-compose'"
-        }
-      ],
-      "timestamp": "2025-12-13T19:18:04.122589"
-    },
     {
       "name": "get_zones",
       "status": "passed",
-      "duration": 0.05965995788574219,
+      "duration": 0.06165766716003418,
       "error_message": null,
       "steps": [
         {
@@ -27,38 +13,65 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-13T19:18:04.182497"
+      "timestamp": "2025-12-14T05:17:04.426729"
     },
     {
-      "name": "get_nodes",
+      "name": "set_zone_id",
       "status": "passed",
-      "duration": 0.06252145767211914,
+      "duration": 4.76837158203125e-06,
       "error_message": null,
       "steps": [
         {
-          "name": "get_nodes",
+          "name": "set_zone_id",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-13T19:18:04.245040"
+      "timestamp": "2025-12-14T05:17:04.426829"
     },
     {
-      "name": "set_zone_and_node",
+      "name": "get_initial_snapshot",
+      "status": "skipped",
+      "duration": 0.06323838233947754,
+      "error_message": "Server error '500 Internal Server Error' for url 'http://laravel/api/zones/1'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500",
+      "steps": [
+        {
+          "name": "get_initial_snapshot",
+          "status": "skipped",
+          "error": "Server error '500 Internal Server Error' for url 'http://laravel/api/zones/1'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+        }
+      ],
+      "timestamp": "2025-12-14T05:17:04.490130"
+    },
+    {
+      "name": "set_initial_last_event_id",
       "status": "passed",
       "duration": 6.4373016357421875e-06,
       "error_message": null,
       "steps": [
         {
-          "name": "set_zone_and_node",
+          "name": "set_initial_last_event_id",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-13T19:18:04.245084"
+      "timestamp": "2025-12-14T05:17:04.490168"
+    },
+    {
+      "name": "connect_websocket",
+      "status": "passed",
+      "duration": 4.76837158203125e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "connect_websocket",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-14T05:17:04.490178"
     },
     {
       "name": "subscribe_zone_channel",
       "status": "passed",
-      "duration": 0.16479039192199707,
+      "duration": 0.16590046882629395,
       "error_message": null,
       "steps": [
         {
@@ -66,77 +79,120 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-13T19:18:04.409889"
+      "timestamp": "2025-12-14T05:17:04.656092"
     },
     {
-      "name": "send_command",
+      "name": "stop_reverb",
+      "status": "skipped",
+      "duration": 0.0018880367279052734,
+      "error_message": "[Errno 2] No such file or directory: 'docker-compose'",
+      "steps": [
+        {
+          "name": "stop_reverb",
+          "status": "skipped",
+          "error": "[Errno 2] No such file or directory: 'docker-compose'"
+        }
+      ],
+      "timestamp": "2025-12-14T05:17:04.658048"
+    },
+    {
+      "name": "wait_during_ws_down",
       "status": "passed",
-      "duration": 0.1052401065826416,
+      "duration": 3.0031096935272217,
       "error_message": null,
       "steps": [
         {
-          "name": "send_command",
+          "name": "wait_during_ws_down",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-13T19:18:04.515235"
+      "timestamp": "2025-12-14T05:17:07.661178"
     },
     {
-      "name": "set_command_id",
+      "name": "create_event_during_ws_down",
+      "status": "skipped",
+      "duration": 0.059734344482421875,
+      "error_message": "Client error '422 Unprocessable Content' for url 'http://laravel/api/zones/1/commands'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/422",
+      "steps": [
+        {
+          "name": "create_event_during_ws_down",
+          "status": "skipped",
+          "error": "Client error '422 Unprocessable Content' for url 'http://laravel/api/zones/1/commands'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/422"
+        }
+      ],
+      "timestamp": "2025-12-14T05:17:07.721007"
+    },
+    {
+      "name": "restore_reverb",
+      "status": "skipped",
+      "duration": 0.0009644031524658203,
+      "error_message": "[Errno 2] No such file or directory: 'docker-compose'",
+      "steps": [
+        {
+          "name": "restore_reverb",
+          "status": "skipped",
+          "error": "[Errno 2] No such file or directory: 'docker-compose'"
+        }
+      ],
+      "timestamp": "2025-12-14T05:17:07.722026"
+    },
+    {
+      "name": "wait_after_restore",
       "status": "passed",
-      "duration": 4.5299530029296875e-06,
+      "duration": 5.005102872848511,
       "error_message": null,
       "steps": [
         {
-          "name": "set_command_id",
+          "name": "wait_after_restore",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-13T19:18:04.515263"
+      "timestamp": "2025-12-14T05:17:12.727149"
     },
     {
-      "name": "wait_before_check",
+      "name": "get_final_snapshot",
+      "status": "skipped",
+      "duration": 0.06354451179504395,
+      "error_message": "Server error '500 Internal Server Error' for url 'http://laravel/api/zones/1'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500",
+      "steps": [
+        {
+          "name": "get_final_snapshot",
+          "status": "skipped",
+          "error": "Server error '500 Internal Server Error' for url 'http://laravel/api/zones/1'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+        }
+      ],
+      "timestamp": "2025-12-14T05:17:12.790785"
+    },
+    {
+      "name": "get_missed_events",
       "status": "passed",
-      "duration": 5.0043625831604,
+      "duration": 0.05942893028259277,
       "error_message": null,
       "steps": [
         {
-          "name": "wait_before_check",
+          "name": "get_missed_events",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-13T19:18:09.519634"
+      "timestamp": "2025-12-14T05:17:12.850247"
     },
     {
-      "name": "check_timeout_zone_event",
+      "name": "zone_exists",
       "status": "passed",
-      "duration": 0.010037899017333984,
+      "duration": 0.006304740905761719,
       "error_message": null,
       "steps": [
         {
-          "name": "check_timeout_zone_event",
+          "name": "zone_exists",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-13T19:18:09.529733"
-    },
-    {
-      "name": "command_status_is_timeout_or_sent",
-      "status": "passed",
-      "duration": 0.0026412010192871094,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "command_status_is_timeout_or_sent",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-13T19:18:09.532397"
+      "timestamp": "2025-12-14T05:17:12.856566"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E12_command_timeout": {
+    "E72_ws_down_snapshot_recover": {
       "ws_messages": [
         {
           "data": {
@@ -144,7 +200,7 @@
             "data": "{}",
             "channel": "private-hydro.zones.1"
           },
-          "timestamp": "2025-12-13T19:18:04.312340"
+          "timestamp": "2025-12-14T05:17:04.558677"
         }
       ],
       "mqtt_messages": [],

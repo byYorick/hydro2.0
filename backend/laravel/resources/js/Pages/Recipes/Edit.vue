@@ -6,12 +6,12 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
             <label for="recipe-name" class="block text-xs text-neutral-400 mb-1">Название</label>
-            <input id="recipe-name" name="name" v-model="form.name" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors.name ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
+            <input id="recipe-name" name="name" v-model="form.name" data-testid="recipe-name-input" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors.name ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
             <div v-if="form.errors.name" class="text-xs text-red-400 mt-1">{{ form.errors.name }}</div>
           </div>
           <div>
             <label for="recipe-description" class="block text-xs text-neutral-400 mb-1">Описание</label>
-            <input id="recipe-description" name="description" v-model="form.description" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors.description ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
+            <input id="recipe-description" name="description" v-model="form.description" data-testid="recipe-description-input" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors.description ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
             <div v-if="form.errors.description" class="text-xs text-red-400 mt-1">{{ form.errors.description }}</div>
           </div>
         </div>

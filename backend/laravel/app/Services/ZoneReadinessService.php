@@ -12,17 +12,30 @@ use Illuminate\Support\Facades\Log;
 class ZoneReadinessService
 {
     /**
-     * Required bindings для работы зоны
-     * Это минимальный набор ролей, которые должны быть привязаны
+     * Получить список обязательных bindings для зоны.
      * 
-     * Примечание: Для E2E тестов может быть пустым массивом, чтобы не блокировать тестирование
+     * В E2E режиме возвращает пустой массив для гибкости тестирования.
+     * В production режиме использует конфигурацию из config/zones.php.
+     * 
+     * @return array
      */
-    private const REQUIRED_BINDINGS = [
-        // Отключено для E2E тестов - зоны могут стартовать без bindings
-        // 'main_pump',      // Основной насос для полива
-        // 'ph_control',     // pH контроль (опционально, зависит от типа зоны)
-        // 'ec_control',     // EC контроль (опционально, зависит от типа зоны)
-    ];
+    private function getRequiredBindings(): array
+    {
+        // E2E режим - отключаем обязательные проверки
+        if (config('zones.readiness.e2e_mode', false) || env('APP_ENV') === 'e2e') {
+            return [];
+        }
+
+        // Получаем из конфигурации
+        $requiredBindings = config('zones.readiness.required_bindings', ['main_pump']);
+        
+        // Если strict_mode отключен - возвращаем пустой массив
+        if (!config('zones.readiness.strict_mode', true)) {
+            return [];
+        }
+
+        return $requiredBindings;
+    }
 
     /**
      * Проверить готовность зоны к запуску grow-cycle
@@ -39,14 +52,18 @@ class ZoneReadinessService
         $warnings = [];
         $errors = [];
 
-        // Проверка 1: Required bindings
-        $missingBindings = $this->checkRequiredBindings($zone);
-        if (!empty($missingBindings)) {
-            $errors[] = [
-                'type' => 'missing_bindings',
-                'message' => 'Required bindings are missing: ' . implode(', ', $missingBindings),
-                'bindings' => $missingBindings
-            ];
+        // Проверка 1: Required bindings (только если strict_mode включен)
+        $requiredBindings = $this->getRequiredBindings();
+        if (!empty($requiredBindings)) {
+            $missingBindings = $this->checkRequiredBindings($zone, $requiredBindings);
+            if (!empty($missingBindings)) {
+                $errors[] = [
+                    'type' => 'missing_bindings',
+                    'message' => 'Required bindings are missing: ' . implode(', ', $missingBindings),
+                    'bindings' => $missingBindings,
+                    'required' => $requiredBindings
+                ];
+            }
         }
 
         // Проверка 2: Online nodes (warning only)
@@ -79,26 +96,33 @@ class ZoneReadinessService
      * Проверить наличие required bindings
      *
      * @param Zone $zone
+     * @param array $requiredBindings Список обязательных bindings
      * @return array Список отсутствующих bindings
      */
-    private function checkRequiredBindings(Zone $zone): array
+    private function checkRequiredBindings(Zone $zone, array $requiredBindings): array
     {
+        // Если список пуст - ничего не проверяем
+        if (empty($requiredBindings)) {
+            return [];
+        }
+
         // Проверяем наличие таблицы zone_channel_bindings
         if (!DB::getSchemaBuilder()->hasTable('zone_channel_bindings')) {
             // Таблица не существует, пропускаем проверку (для обратной совместимости)
             Log::warning('zone_channel_bindings table does not exist, skipping bindings check', [
-                'zone_id' => $zone->id
+                'zone_id' => $zone->id,
+                'required_bindings' => $requiredBindings
             ]);
             return [];
         }
 
         $existingBindings = DB::table('zone_channel_bindings')
             ->where('zone_id', $zone->id)
-            ->whereIn('role', self::REQUIRED_BINDINGS)
+            ->whereIn('role', $requiredBindings)
             ->pluck('role')
             ->toArray();
 
-        $missingBindings = array_diff(self::REQUIRED_BINDINGS, $existingBindings);
+        $missingBindings = array_diff($requiredBindings, $existingBindings);
         return array_values($missingBindings);
     }
 

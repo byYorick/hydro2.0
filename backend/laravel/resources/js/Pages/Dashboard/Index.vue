@@ -46,7 +46,7 @@
           </div>
           <div class="text-3xl font-bold text-neutral-100">{{ dashboard.greenhousesCount }}</div>
         </Card>
-        <Card class="hover:border-neutral-700 transition-all duration-200 hover:shadow-lg">
+        <Card class="hover:border-neutral-700 transition-all duration-200 hover:shadow-lg" data-testid="dashboard-zones-count">
           <div class="flex items-start justify-between mb-2">
             <div class="text-neutral-400 text-xs font-medium uppercase tracking-wide">Зоны</div>
             <div class="w-8 h-8 rounded-lg bg-emerald-900/30 border border-emerald-700/50 flex items-center justify-center">
@@ -90,7 +90,7 @@
             </span>
           </div>
         </Card>
-        <Card class="hover:border-neutral-700 transition-all duration-200 hover:shadow-lg" :class="dashboard.alertsCount > 0 ? 'border-red-800/50' : ''">
+        <Card class="hover:border-neutral-700 transition-all duration-200 hover:shadow-lg" :class="dashboard.alertsCount > 0 ? 'border-red-800/50' : ''" data-testid="dashboard-alerts-count">
           <div class="flex items-start justify-between mb-2">
             <div class="text-neutral-400 text-xs font-medium uppercase tracking-wide">Активные алерты</div>
             <div class="w-8 h-8 rounded-lg flex items-center justify-center" :class="dashboard.alertsCount > 0 ? 'bg-red-900/30 border border-red-700/50' : 'bg-emerald-900/30 border border-emerald-700/50'">
@@ -342,7 +342,7 @@
       </div>
     </template>
     <template #context>
-      <div class="flex flex-col flex-1 min-h-0">
+      <div class="flex flex-col flex-1 min-h-0" data-testid="dashboard-events-panel">
         <div class="flex items-center justify-between mb-3 shrink-0">
           <div class="text-neutral-300 font-medium">Последние события</div>
           <div class="flex items-center gap-1.5 text-xs text-neutral-500">
@@ -356,6 +356,7 @@
           <button
             v-for="kind in ['ALL', 'ALERT', 'WARNING', 'INFO']"
             :key="kind"
+            :data-testid="`dashboard-event-filter-${kind}`"
             @click="eventFilter = kind"
             class="px-2.5 py-1 text-xs rounded-md border transition-all duration-200"
             :class="eventFilter === kind 

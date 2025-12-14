@@ -6,20 +6,20 @@
     <div class="mb-3 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
       <div class="flex items-center gap-2 flex-1 sm:flex-none">
         <label class="text-sm text-neutral-300 shrink-0">Фильтр:</label>
-        <select v-model="onlyActive" class="h-9 flex-1 sm:w-auto sm:min-w-[140px] rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm">
+        <select v-model="onlyActive" data-testid="alerts-filter-active" class="h-9 flex-1 sm:w-auto sm:min-w-[140px] rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm">
           <option :value="true">Только активные</option>
           <option :value="false">Все</option>
         </select>
       </div>
       <div class="flex items-center gap-2 flex-1 sm:flex-none">
         <label class="text-sm text-neutral-300 shrink-0">Зона:</label>
-        <input v-model="zoneQuery" placeholder="Зона..." class="h-9 flex-1 sm:w-56 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
+        <input v-model="zoneQuery" data-testid="alerts-filter-zone" placeholder="Зона..." class="h-9 flex-1 sm:w-56 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
       </div>
     </div>
 
     <div class="rounded-xl border border-neutral-800 overflow-hidden max-h-[720px] flex flex-col">
       <div class="overflow-auto flex-1">
-        <table class="w-full border-collapse">
+        <table class="w-full border-collapse" data-testid="alerts-table">
           <thead class="bg-neutral-900 text-neutral-300 text-sm sticky top-0 z-10">
             <tr>
               <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Тип</th>
@@ -33,6 +33,7 @@
             <tr
               v-for="(a, index) in paginatedAlerts"
               :key="a.id"
+              :data-testid="`alert-row-${a.id}`"
               :class="index % 2 === 0 ? 'bg-neutral-950' : 'bg-neutral-925'"
               class="text-sm border-b border-neutral-900 hover:bg-neutral-900 transition-colors"
             >
@@ -43,7 +44,7 @@
               <td class="px-3 py-2 text-xs text-neutral-400">{{ a.created_at ? new Date(a.created_at).toLocaleString('ru-RU') : '-' }}</td>
               <td class="px-3 py-2 text-xs text-neutral-400">{{ translateStatus(a.status) }}</td>
               <td class="px-3 py-2">
-                <Button size="sm" variant="secondary" @click="onResolve(a)" :disabled="a.status === 'resolved'">Подтвердить</Button>
+                <Button size="sm" variant="secondary" :data-testid="`alert-resolve-btn-${a.id}`" @click="onResolve(a)" :disabled="a.status === 'resolved'">Подтвердить</Button>
               </td>
             </tr>
             <tr v-if="!paginatedAlerts.length">

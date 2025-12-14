@@ -1,7 +1,7 @@
 <template>
   <Modal :open="show" :title="title" @close="$emit('close')">
     
-    <form @submit.prevent="onSubmit" class="space-y-4">
+    <form @submit.prevent="onSubmit" class="space-y-4" data-testid="zone-command-form">
       <!-- Динамические поля на основе actionType -->
       <div v-if="actionType === 'FORCE_IRRIGATION'" class="space-y-3">
         <div>

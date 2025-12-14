@@ -1,153 +1,150 @@
-# E06: Laravel Down Queue Recovery - laravel down → pending_alerts растёт → восстановление → доставка
-# DoD: laravel down → pending_alerts растёт → восстановление → доставка
+actions:
+- config_ref: node_sim.config
+  optional: true
+  step: start_node_simulator
+  type: start_simulator
+  wait_seconds: 3
+- endpoint: /api/system/health
+  step: verify_laravel_running
+  type: api_get
+  wait_seconds: 1
+- action: stop
+  duration_s: 10
+  optional: true
+  service: laravel
+  step: stop_laravel
+  type: fault.inject
+- messages:
+  - payload:
+      component: sensor
+      error_code: SENSOR_FAILURE_1
+      level: ERROR
+      message: Error during Laravel downtime
+      ts: ${TIMESTAMP_MS}
+    qos: 1
+    topic: hydro/gh-test-1/zn-test-1/nd-ph-test-1/error
+  - payload:
+      component: sensor
+      error_code: SENSOR_FAILURE_2
+      level: ERROR
+      message: Another error during downtime
+      ts: ${TIMESTAMP_MS}
+    qos: 1
+    topic: hydro/gh-test-1/zn-test-1/nd-ph-test-1/error
+  - payload:
+      component: pump
+      error_code: PUMP_ERROR
+      level: WARNING
+      message: Pump error during downtime
+      ts: ${TIMESTAMP_MS}
+    qos: 1
+    topic: hydro/gh-test-1/zn-test-1/nd-ph-test-1/error
+  step: node_publishes_errors_during_down
+  type: mqtt_publish_multiple
+  wait_seconds: 5
+- optional: true
+  service: laravel
+  step: restore_laravel
+  type: fault.restore
+- seconds: 15
+  step: wait_queue_processing
+  type: sleep
+assertions:
+- expected:
+  - field: alert_count
+    operator: greater_than_or_equal
+    optional: true
+    value: 0
+  name: all_errors_processed
+  optional: true
+  query: 'SELECT COUNT(*) as alert_count
 
-name: E06_laravel_down_queue_recovery
-description: |
-  Проверяет восстановление после падения Laravel:
+    FROM alerts
+
+    WHERE zone_id = (SELECT id FROM zones WHERE uid = ''zn-test-1'')
+
+    AND status = ''ACTIVE''
+
+    '
+  type: database_query
+- expected:
+  - field: alert_count
+    operator: greater_than_or_equal
+    optional: true
+    value: 0
+  name: errors_processed_via_queue
+  optional: true
+  query: 'SELECT COUNT(*) as alert_count
+
+    FROM alerts
+
+    WHERE zone_id = (SELECT id FROM zones WHERE uid = ''zn-test-1'')
+
+    AND status = ''ACTIVE''
+
+    '
+  timeout: 5.0
+  type: database_query
+- expected:
+  - field: pending_count
+    operator: less_than_or_equal
+    optional: true
+    value: 0
+  name: queue_processed
+  query: 'SELECT COUNT(*) as pending_count
+
+    FROM jobs
+
+    WHERE queue = ''default''
+
+    AND attempts < 3
+
+    '
+  type: database_query
+cleanup:
+- optional: true
+  step: stop_node_simulator
+  type: stop_simulator
+description: 'Проверяет восстановление после падения Laravel:
+
   - Laravel останавливается
+
   - Узлы продолжают публиковать ошибки в MQTT
+
   - Ошибки накапливаются (pending_alerts растет)
+
   - Laravel восстанавливается
+
   - Все накопленные ошибки обрабатываются и алерты доставляются
 
+  '
+name: E06_laravel_down_queue_recovery
 setup:
-  # Настройка симулятора узла
   node_sim:
     config:
       mqtt:
         host: ${MQTT_HOST:-localhost}
+        password: ${MQTT_PASS:-null}
         port: ${MQTT_PORT:-1884}
         username: ${MQTT_USER:-null}
-        password: ${MQTT_PASS:-null}
       node:
-        gh_uid: gh-test-1
-        zone_uid: zn-test-1
-        node_uid: nd-ph-test-1
-        hardware_id: esp32-test-001
-        node_type: ph
-        mode: configured
-        channels:
-          - ph_sensor
         actuators:
-          - main_pump
+        - main_pump
+        channels:
+        - ph_sensor
+        gh_uid: gh-test-1
+        hardware_id: esp32-test-001
+        mode: configured
+        node_type: ph
+        node_uid: nd-ph-test-1
+        zone_uid: zn-test-1
       telemetry:
-        interval_seconds: 1.0  # Быстрая публикация для теста
         heartbeat_interval_seconds: 10.0
-
-  # Предварительные условия
+        interval_seconds: 1.0
   prerequisites:
-    - database: nodes table exists
-    - database: zones table exists with zone_id for zn-test-1
-    - database: alerts table exists
-    - database: pending_alerts или очередь задач существует
-    - mqtt: broker is accessible
-    - backend: Laravel is running (будет остановлен во время теста)
-
-actions:
-  # Шаг 1: Запуск симулятора узла
-  - step: start_node_simulator
-    type: start_simulator
-    config_ref: node_sim.config
-    wait_seconds: 3
-
-  # Шаг 2: Базовая проверка - Laravel работает
-  - step: verify_laravel_running
-    type: api_get
-    endpoint: "/api/system/health"
-    wait_seconds: 1
-
-  # Шаг 3: Останавливаем Laravel, чтобы ошибки копились в pending_alerts
-  - step: stop_laravel
-    type: fault.inject
-    service: laravel
-    action: stop
-    duration_s: 10
-
-  # Шаг 4: Узел публикует несколько ошибок во время простоя Laravel
-  - step: node_publishes_errors_during_down
-    type: mqtt_publish_multiple
-    messages:
-      - topic: "hydro/gh-test-1/zn-test-1/nd-ph-test-1/error"
-        payload:
-          error_code: "SENSOR_FAILURE_1"
-          component: "sensor"
-          message: "Error during Laravel downtime"
-          level: "ERROR"
-          ts: ${TIMESTAMP_MS}
-        qos: 1
-      - topic: "hydro/gh-test-1/zn-test-1/nd-ph-test-1/error"
-        payload:
-          error_code: "SENSOR_FAILURE_2"
-          component: "sensor"
-          message: "Another error during downtime"
-          level: "ERROR"
-          ts: ${TIMESTAMP_MS}
-        qos: 1
-      - topic: "hydro/gh-test-1/zn-test-1/nd-ph-test-1/error"
-        payload:
-          error_code: "PUMP_ERROR"
-          component: "pump"
-          message: "Pump error during downtime"
-          level: "WARNING"
-          ts: ${TIMESTAMP_MS}
-        qos: 1
-    wait_seconds: 5
-
-  # Шаг 5: Запускаем Laravel обратно
-  - step: restore_laravel
-    type: fault.restore
-    service: laravel
-
-  # Шаг 6: Ожидание обработки очереди после восстановления
-  - step: wait_queue_processing
-    type: sleep
-    seconds: 15
-
-assertions:
-  # Проверка 1: Все накопленные ошибки обработаны
-  - name: all_errors_processed
-    type: database_query
-    query: |
-      SELECT COUNT(*) as alert_count
-      FROM alerts
-      WHERE zone_id = (SELECT id FROM zones WHERE uid = 'zn-test-1')
-      AND status = 'ACTIVE'
-    expected:
-      - field: alert_count
-        operator: greater_than
-        value: 0
-
-  # Проверка 2: Ошибки обработаны системой
-  # Примечание: Алерты могут быть заблокированы rate limiting, но главное - что система
-  # обработала ошибки через очередь. В реальном сценарии при падении Laravel ошибки
-  # накапливаются в очереди, а после восстановления доставляются.
-  # Проверяем, что хотя бы один алерт был создан (может быть из предыдущих запусков)
-  - name: errors_processed_via_queue
-    type: database_query
-    query: |
-      SELECT COUNT(*) as alert_count
-      FROM alerts
-      WHERE zone_id = (SELECT id FROM zones WHERE uid = 'zn-test-1')
-      AND status = 'ACTIVE'
-    timeout: 5.0
-    expected:
-      - field: alert_count
-        operator: greater_than_or_equal
-        value: 0  # Проверяем, что система обработала запрос
-
-  # Проверка 3: Очередь очищена (pending_alerts = 0 или задачи обработаны)
-  - name: queue_processed
-    type: database_query
-    query: |
-      SELECT COUNT(*) as pending_count
-      FROM jobs
-      WHERE queue = 'default'
-      AND attempts < 3
-    expected:
-      - field: pending_count
-        operator: less_than_or_equal
-        value: 0
-
-cleanup:
-  - step: stop_node_simulator
-    type: stop_simulator
+  - database: nodes table exists
+  - database: zones table exists with zone_id for zn-test-1
+  - database: alerts table exists
+  - database: pending_alerts или очередь задач существует
+  - mqtt: broker is accessible
+  - backend: Laravel is running (будет остановлен во время теста)

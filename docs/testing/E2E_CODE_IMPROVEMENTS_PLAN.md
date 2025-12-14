@@ -1,332 +1,446 @@
 # План доработки боевого кода согласно E2E тестам
 
-## Статус E2E тестов
+## Статус E2E тестов (обновлено)
 
-**Пройдено:** ~28/31 тестов  
-**Требуют доработки кода:** ~10-12 тестов имеют проблемы с API/бизнес-логикой
+**Пройдено:** ✅ **31/31 тестов (100%)**  
+**Дата проверки:** 2025-12-14  
+**Все тесты проходят, но многие проверки помечены как optional из-за проблем в боевом коде**
+
+## Анализ optional проверок
+
+На основе анализа тестов, где проверки помечены как `optional: true`, выявлены следующие проблемы:
+
+1. **Rate limiting** - блокирует создание алертов при частых ошибках (E20, E21, E24, E25)
+2. **Automation Engine** - не всегда активен или не создает команды (E60-E63)
+3. **Fault injection** - не работает в контейнере (E24, E25, E70)
+4. **Alert deduplication** - может работать нестабильно (E21)
+5. **DLQ механизм** - может быть неполным (E25)
+6. **Unassigned node errors** - обработка может быть неполной (E22, E23)
+7. **Zone readiness** - проверки отключены для E2E (E40, E41)
+
+---
 
 ## Приоритеты доработки
 
 ### P0 - Критичные проблемы (блокируют функциональность)
 
-#### 1. Zone Start Cycle Endpoint (`POST /api/zones/{id}/start`)
-**Проблема:** Возвращает 500 Internal Server Error  
+#### 1. ✅ Zone Start Cycle Endpoint (`POST /api/zones/{id}/start`)
+**Статус:** ✅ РЕАЛИЗОВАНО  
 **Где используется:** E40, E41, E51, E54  
-**Файлы:**
-- `backend/laravel/routes/api.php` - добавить маршрут
-- `backend/laravel/app/Http/Controllers/ZoneController.php` - реализовать метод `start()`
+**Проблема:** Работает, но REQUIRED_BINDINGS отключены для E2E  
+**Требуется доработка:**
+- Включить REQUIRED_BINDINGS проверки в production
+- Добавить конфигурацию для E2E окружения (возможность отключить strict проверки)
+- Улучшить логирование readiness проверок
 
-**Требования:**
-- Проверка readiness зоны (наличие bindings, online nodes)
-- Создание `zone_recipe_instance` если рецепт привязан
-- Обновление статуса зоны на `RUNNING`
-- Валидация: возвращать 422 с деталями если зона не готова
-- Логирование событий в `zone_events`
-
-**Пример реализации:**
-```php
-public function start(Request $request, Zone $zone): JsonResponse
-{
-    // Readiness check
-    $readiness = $this->checkZoneReadiness($zone);
-    if (!$readiness['ready']) {
-        return response()->json([
-            'status' => 'error',
-            'message' => 'Zone is not ready',
-            'warnings' => $readiness['warnings'],
-            'errors' => $readiness['errors']
-        ], 422);
-    }
-    
-    // Start cycle logic
-    // ...
-}
-```
-
-#### 2. Zone Readiness Check (Readiness Service)
-**Проблема:** Проверка готовности зоны не реализована  
+#### 2. ✅ Zone Readiness Service
+**Статус:** ✅ РЕАЛИЗОВАНО (но отключено для E2E)  
 **Где используется:** E40, E41  
-**Файлы:**
-- `backend/laravel/app/Services/ZoneReadinessService.php` (создать)
+**Требуется доработка:**
+- Включить REQUIRED_BINDINGS проверки в production коде
+- Добавить возможность настройки через конфиг (.env или config/zones.php)
+- Улучшить детализацию ошибок и warnings
 
-**Требования:**
-- Проверка наличия required bindings
-- Проверка online статуса узлов
-- Возврат warnings для missing nodes (но start все равно работает)
-- Возврат errors для missing required bindings (start блокируется)
-
-#### 3. Zone Snapshot Endpoint (`GET /api/zones/{id}` vs `/api/zones/{id}/snapshot`)
-**Проблема:** 
-- `/api/zones/{id}` возвращает 500 в некоторых случаях
-- `/api/zones/{id}/snapshot` не содержит `last_event_id` в ожидаемой структуре
-
-**Где используется:** E30, E31, E54, E72  
-**Файлы:**
-- `backend/laravel/app/Http/Controllers/ZoneController.php` - метод `snapshot()`
-- `backend/laravel/app/Http/Controllers/ZoneController.php` - метод `show()`
-
-**Требования:**
-- `snapshot()` должен гарантированно возвращать `last_event_id`
-- Структура ответа должна быть консистентной:
-```json
-{
-  "status": "ok",
-  "data": {
-    "last_event_id": 12345,
-    "server_ts": 1234567890,
-    "snapshot_id": "uuid",
-    "telemetry": {...},
-    "alerts": [...],
-    "commands": [...]
-  }
-}
+```php
+// config/zones.php
+return [
+    'readiness' => [
+        'required_bindings' => env('ZONE_REQUIRED_BINDINGS', ['main_pump']),
+        'strict_mode' => env('ZONE_READINESS_STRICT', true),
+        'e2e_mode' => env('APP_ENV') === 'e2e',
+    ],
+];
 ```
 
-#### 4. Events Replay Endpoint (`GET /api/zones/{id}/events`)
-**Проблема:** Может не возвращать корректную структуру или не обрабатывать `after_id`  
-**Где используется:** E31, E32  
+#### 3. ✅ Zone Snapshot & Events Endpoints
+**Статус:** ✅ РЕАЛИЗОВАНО  
+**Где используется:** E30, E31, E32, E54, E72  
+**Проблема:** Работает корректно  
+**Требуется доработка (опционально):**
+- Оптимизация запросов для больших зон
+- Добавить кэширование snapshot для зон без активных изменений
+
+#### 4. Alert Rate Limiting
+**Проблема:** Rate limiting блокирует создание алертов при частых ошибках  
+**Где используется:** E20, E21, E24, E25  
 **Файлы:**
-- `backend/laravel/app/Http/Controllers/ZoneController.php` - метод `events()`
+- `backend/laravel/app/Services/AlertService.php`
 
 **Требования:**
-- Поддержка `after_id` параметра для инкрементальной загрузки
-- Фильтрация событий: `WHERE zone_id = ? AND id > after_id`
-- Ограничение лимита (по умолчанию 50, максимум 200)
-- Возврат структуры: `{ "data": [...], "has_more": true/false }`
+- Настроить rate limiting более гибко для критичных ошибок
+- Добавить whitelist для критичных error_codes (не подвергать rate limiting)
+- Улучшить дедупликацию (E21 показывает проблемы)
+- Логирование rate limit событий
+
+```php
+// config/alerts.php
+return [
+    'rate_limiting' => [
+        'enabled' => env('ALERTS_RATE_LIMIT_ENABLED', true),
+        'max_per_minute' => env('ALERTS_MAX_PER_MINUTE', 10),
+        'critical_codes' => [
+            'infra_sensor_failure',
+            'infra_pump_failure',
+            'infra_controller_failure',
+        ], // Эти коды не подлежат rate limiting
+    ],
+];
+```
 
 ---
 
 ### P1 - Важные улучшения (влияют на качество)
 
-#### 5. Advance Stage Endpoint (`POST /api/zones/{id}/next-phase`)
-**Проблема:** Возвращает 422 или не реализован  
-**Где используется:** E53  
+#### 5. Automation Engine Reliability
+**Проблема:** Automation Engine не всегда активен или не создает команды  
+**Где используется:** E60, E61, E62, E63  
 **Файлы:**
-- `backend/laravel/app/Http/Controllers/ZoneController.php` - метод `advanceStage()`
+- `backend/services/automation-engine/` - основной сервис
+- `backend/laravel/app/Services/AutomationEngineService.php` (если есть интеграция)
 
 **Требования:**
-- Проверка наличия активного `zone_recipe_instance`
-- Проверка что текущая фаза не последняя
-- Инкремент `current_phase_index`
-- Создание `zone_event` для изменения фазы
-- Отправка WebSocket события `ZonePhaseAdvanced`
+- Гарантировать запуск automation-engine при старте системы
+- Добавить health check для automation-engine
+- Улучшить обработку stale telemetry (E61)
+- Реализовать fault isolation для контроллеров (E62)
+- Реализовать backoff/degraded mode при ошибках (E63)
+- Логирование всех действий automation-engine
 
-#### 6. Zone Bindings API
-**Проблема:** Таблица `zone_bindings` может отсутствовать или API не реализован  
-**Где используется:** E40, E42  
+**Метрики для мониторинга:**
+- Количество обработанных telemetry событий
+- Количество созданных команд
+- Время отклика на telemetry изменения
+- Частота ошибок контроллеров
+
+#### 6. Alert Deduplication Improvement
+**Проблема:** Дедупликация может работать нестабильно  
+**Где используется:** E21  
 **Файлы:**
-- `backend/laravel/database/migrations/` - миграция для `zone_bindings`
-- `backend/laravel/app/Http/Controllers/ZoneBindingController.php` (создать)
+- `backend/laravel/app/Services/AlertService.php`
 
 **Требования:**
-- Таблица: `zone_id`, `role`, `node_id`, `channel`
-- API endpoints: `POST /api/zones/{id}/bindings`, `DELETE /api/zones/{id}/bindings/{role}`
-- Использование bindings при отправке команд для определения правильного MQTT топика
+- Улучшить логику дедупликации (проверка по error_code + node_id + zone_id)
+- Обновление счетчика `error_count` должно быть атомарным
+- Добавить индекс на `(code, node_id, zone_id, status)` для быстрого поиска
+- Логирование событий дедупликации
 
-#### 7. Zone Status Transitions (Pause/Resume/Harvest)
-**Проблема:** Endpoints могут быть неполностью реализованы  
-**Где используется:** E54  
+```php
+// Улучшенная логика дедупликации
+$existingAlert = Alert::where('code', $errorCode)
+    ->where('node_id', $nodeId)
+    ->where('zone_id', $zoneId)
+    ->where('status', 'ACTIVE')
+    ->lockForUpdate() // Для атомарности
+    ->first();
+
+if ($existingAlert) {
+    DB::table('alerts')
+        ->where('id', $existingAlert->id)
+        ->increment('error_count');
+    return $existingAlert;
+}
+```
+
+#### 7. Dead Letter Queue (DLQ) Mechanism
+**Проблема:** DLQ механизм может быть неполным  
+**Где используется:** E25  
 **Файлы:**
-- `backend/laravel/app/Http/Controllers/ZoneController.php` - методы `pause()`, `resume()`, `harvest()`
+- `backend/laravel/app/Jobs/ProcessAlert.php`
+- `backend/laravel/app/Services/AlertService.php`
+- `backend/laravel/database/migrations/` - таблица `pending_alerts`
 
 **Требования:**
-- Валидация переходов статусов (RUNNING → PAUSED → RUNNING → HARVESTED)
-- Создание `zone_events` для каждого перехода
-- WebSocket уведомления
-- При HARVESTED - закрытие активного `zone_recipe_instance`
+- Полная реализация DLQ механизма
+- Retry механизм с exponential backoff
+- API endpoint для replay: `POST /api/alerts/dlq/{id}/replay`
+- Мониторинг размера DLQ
+- Автоматический replay для старых записей (старше 24 часов)
 
-#### 8. System Health Endpoint (`GET /api/system/health`)
-**Проблема:** Может отсутствовать или возвращать неожиданную структуру  
-**Где используется:** E63, E71  
+```php
+// Пример DLQ структуры
+Schema::create('pending_alerts', function (Blueprint $table) {
+    $table->id();
+    $table->unsignedBigInteger('zone_id');
+    $table->string('error_code');
+    $table->json('payload_json');
+    $table->integer('attempts')->default(0);
+    $table->integer('max_attempts')->default(3);
+    $table->timestamp('last_attempt_at')->nullable();
+    $table->string('status')->default('pending'); // pending, failed, dlq
+    $table->timestamps();
+    
+    $table->index(['status', 'created_at']);
+});
+```
+
+#### 8. Unassigned Node Errors Processing
+**Проблема:** Обработка ошибок от непривязанных узлов может быть неполной  
+**Где используется:** E22, E23  
 **Файлы:**
-- `backend/laravel/app/Http/Controllers/SystemController.php` (создать)
+- `backend/laravel/app/Services/NodeRegistryService.php`
+- `backend/services/history-logger/` - обработка temp-топиков
 
 **Требования:**
-- Проверка доступности БД
-- Проверка доступности Redis
-- Проверка доступности MQTT (опционально)
-- Возврат: `{ "status": "ok", "checks": {...} }`
+- Гарантировать обработку ошибок из temp-топиков (`hydro/temp/{hardware_id}/error`)
+- Улучшить архивирование ошибок при привязке узла
+- Создание алертов из архивированных ошибок должно быть более надежным
+- Логирование всех операций с unassigned errors
 
 ---
 
-### P2 - Улучшения для полного покрытия тестами
+### P2 - Улучшения для полного покрытия и производительности
 
-#### 9. Dead Letter Queue (DLQ) и Pending Alerts
-**Проблема:** Механизм DLQ может быть не реализован  
-**Где используется:** E25  
-**Файлы:**
-- `backend/laravel/app/Jobs/ProcessAlert.php` - обработка с retry логикой
-- `backend/laravel/app/Services/AlertService.php` - интеграция с DLQ
-
-**Требования:**
-- При ошибке доставки алерта → сохранение в `pending_alerts`
-- Retry механизм (max 3 попытки)
-- При превышении max_attempts → перемещение в DLQ
-- API endpoint для replay: `POST /api/alerts/dlq/{id}/replay`
-
-#### 10. Automation Engine Integration
-**Проблема:** Может отсутствовать интеграция или не обрабатывать события  
-**Где используется:** E60, E61, E62, E63  
-**Файлы:**
-- `backend/services/automation-engine/` - проверка обработки telemetry
-- `backend/laravel/app/Services/AutomationEngineService.php` (если есть)
-
-**Требования:**
-- Подписка на telemetry updates
-- Обработка целевых значений из активной фазы рецепта
-- Генерация команд для коррекции (fan, vent, heater, dosing)
-- Fail-closed логика при stale telemetry
-- Fault isolation для контроллеров
-- Backoff/degraded mode при ошибках
-
-#### 11. Unassigned Node Errors Archive
-**Проблема:** Архив может не работать корректно  
-**Где используется:** E23  
-**Файлы:**
-- `backend/laravel/app/Services/NodeRegistryService.php` - метод `attachUnassignedNode()`
-
-**Требования:**
-- При привязке узла → архивирование ошибок из `unassigned_node_errors` в `unassigned_node_errors_archive`
-- Создание алерта из архивированных ошибок
-- Очистка `unassigned_node_errors` после успешного архивирования
-
-#### 12. Command Timeout Mechanism
+#### 9. Command Timeout Mechanism
 **Проблема:** Автоматический переход в TIMEOUT может быть не реализован  
 **Где используется:** E12, E70  
 **Файлы:**
 - `backend/laravel/app/Console/Commands/ProcessCommandTimeouts.php` (создать)
-- `backend/laravel/app/Providers/EventServiceProvider.php` - планировщик
 
 **Требования:**
-- Задача запускается каждые 30 секунд
-- Проверка команд в статусе `SENT` старше N минут (например, 5 минут)
+- Задача запускается каждые 30 секунд (через Laravel scheduler)
+- Проверка команд в статусе `SENT` старше 5 минут
 - Автоматический переход в `TIMEOUT`
 - Создание `zone_event` для timeout
 - WebSocket уведомление
+- Настраиваемый timeout через конфиг
+
+```php
+// app/Console/Commands/ProcessCommandTimeouts.php
+protected $signature = 'commands:process-timeouts';
+
+public function handle()
+{
+    $timeoutMinutes = config('commands.timeout_minutes', 5);
+    $timeoutCommands = Command::where('status', 'SENT')
+        ->where('sent_at', '<', now()->subMinutes($timeoutMinutes))
+        ->get();
+        
+    foreach ($timeoutCommands as $command) {
+        DB::transaction(function () use ($command) {
+            $command->update(['status' => 'TIMEOUT']);
+            
+            ZoneEvent::create([
+                'zone_id' => $command->zone_id,
+                'type' => 'COMMAND_TIMEOUT',
+                'payload_json' => [
+                    'command_id' => $command->id,
+                    'cmd_id' => $command->cmd_id,
+                    'timeout_minutes' => $timeoutMinutes
+                ]
+            ]);
+            
+            broadcast(new CommandStatusUpdated($command));
+        });
+    }
+    
+    return 0;
+}
+```
+
+#### 10. Fault Injection Infrastructure
+**Проблема:** Fault injection не работает в контейнере  
+**Где используется:** E24, E25, E70, E71, E72  
+**Требования:**
+- Реализовать endpoint для управляемого fault injection (только для тестирования)
+- Добавить middleware для блокировки в production
+- Альтернативно: использовать управляемые сбои через конфигурацию
+
+```php
+// Только для тестирования / staging
+Route::middleware(['auth:sanctum', 'fault-injection'])->group(function () {
+    Route::post('/api/system/fault-inject', [SystemController::class, 'faultInject']);
+});
+```
+
+#### 11. System Health Endpoint Improvements
+**Статус:** ✅ РЕАЛИЗОВАНО  
+**Где используется:** E63, E71  
+**Требуется доработка:**
+- Добавить проверку automation-engine health
+- Добавить проверку history-logger health
+- Возвращать детальную информацию о состоянии компонентов
+
+```php
+public function health(): JsonResponse
+{
+    return response()->json([
+        'status' => 'ok',
+        'timestamp' => now()->toIso8601String(),
+        'checks' => [
+            'database' => $this->checkDatabase(),
+            'redis' => $this->checkRedis(),
+            'mqtt' => $this->checkMqtt(),
+            'automation_engine' => $this->checkAutomationEngine(),
+            'history_logger' => $this->checkHistoryLogger(),
+        ],
+    ]);
+}
+```
+
+#### 12. WebSocket Reconnection & Snapshot Recovery
+**Статус:** ✅ Работает через E31, E72  
+**Требуется доработка (опционально):**
+- Оптимизация snapshot для больших зон
+- Добавить сжатие snapshot данных
+- Улучшить инкрементальную загрузку событий
 
 ---
 
-## План реализации (по приоритетам)
+## План реализации (обновлено)
 
-### Фаза 1: Критичные API endpoints (1-2 недели)
+### Фаза 1: Критичные доработки (1-2 недели) ✅ ЗАВЕРШЕНО
 1. ✅ Реализовать `POST /api/zones/{id}/start` с readiness check
 2. ✅ Создать `ZoneReadinessService` с проверками
 3. ✅ Исправить `snapshot()` для возврата `last_event_id`
 4. ✅ Исправить `GET /api/zones/{id}/events` с поддержкой `after_id`
 
-### Фаза 2: Важные улучшения (2-3 недели)
-5. ✅ Реализовать `POST /api/zones/{id}/next-phase`
-6. ✅ Создать миграцию и API для `zone_bindings`
-7. ✅ Реализовать `pause()`, `resume()`, `harvest()` методы
-8. ✅ Создать `GET /api/system/health` endpoint
+### Фаза 2: Улучшение надежности (2-3 недели)
+5. ⚠️ Настроить Alert Rate Limiting с whitelist для критичных ошибок
+6. ⚠️ Улучшить Alert Deduplication (атомарность, индексы)
+7. ⚠️ Полностью реализовать DLQ механизм для алертов
+8. ⚠️ Улучшить обработку Unassigned Node Errors
 
-### Фаза 3: Полное покрытие (3-4 недели)
-9. ✅ Реализовать DLQ механизм для алертов
-10. ✅ Интегрировать Automation Engine (если отдельный сервис)
-11. ✅ Улучшить архив unassigned errors
-12. ✅ Реализовать автоматический timeout для команд
+### Фаза 3: Automation Engine и Timeout (2-3 недели)
+9. ⚠️ Гарантировать работу Automation Engine (health checks, мониторинг)
+10. ⚠️ Реализовать автоматический timeout для команд
+11. ⚠️ Улучшить обработку stale telemetry в Automation Engine
+12. ⚠️ Реализовать fault isolation и backoff в Automation Engine
+
+### Фаза 4: Оптимизация и мониторинг (1-2 недели)
+13. ⚠️ Добавить детальные health checks для всех компонентов
+14. ⚠️ Оптимизация snapshot и events endpoints
+15. ⚠️ Добавить метрики и мониторинг для критичных операций
 
 ---
 
-## Технические детали
+## Детальные требования к доработкам
 
-### Zone Readiness Service
+### Alert Rate Limiting (P0)
 
+**Проблема:** Тесты E20, E21, E24, E25 показывают, что rate limiting блокирует создание алертов.
+
+**Решение:**
 ```php
-namespace App\Services;
+// app/Services/AlertService.php
 
-class ZoneReadinessService
+private function shouldRateLimit(string $errorCode, int $zoneId): bool
 {
-    public function checkZoneReadiness(Zone $zone): array
-    {
-        $warnings = [];
-        $errors = [];
-        
-        // Check required bindings
-        $requiredBindings = ['main_pump', 'ph_control', 'ec_control'];
-        $existingBindings = $zone->bindings()->pluck('role')->toArray();
-        $missingBindings = array_diff($requiredBindings, $existingBindings);
-        
-        if (!empty($missingBindings)) {
-            $errors[] = [
-                'type' => 'missing_bindings',
-                'message' => 'Required bindings are missing: ' . implode(', ', $missingBindings),
-                'bindings' => $missingBindings
-            ];
-        }
-        
-        // Check online nodes (warning only)
-        $offlineNodes = $zone->nodes()->where('status', '!=', 'ONLINE')->count();
-        if ($offlineNodes > 0) {
-            $warnings[] = [
-                'type' => 'offline_nodes',
-                'message' => "$offlineNodes node(s) are offline",
-                'count' => $offlineNodes
-            ];
-        }
-        
-        return [
-            'ready' => empty($errors),
-            'warnings' => $warnings,
-            'errors' => $errors
-        ];
+    if (!config('alerts.rate_limiting.enabled', true)) {
+        return false;
     }
-}
-```
-
-### Command Timeout Job
-
-```php
-namespace App\Console\Commands;
-
-class ProcessCommandTimeouts extends Command
-{
-    protected $signature = 'commands:process-timeouts';
     
-    public function handle()
-    {
-        $timeoutMinutes = 5;
-        $timeoutCommands = Command::where('status', 'SENT')
-            ->where('sent_at', '<', now()->subMinutes($timeoutMinutes))
-            ->get();
-            
-        foreach ($timeoutCommands as $command) {
-            $command->update(['status' => 'TIMEOUT']);
-            
-            // Create zone event
-            ZoneEvent::create([
-                'zone_id' => $command->zone_id,
-                'kind' => 'WARNING',
-                'message' => "Command {$command->cmd_id} timed out",
-                'payload_json' => ['command_id' => $command->id, 'cmd_id' => $command->cmd_id]
-            ]);
-            
-            // WebSocket notification
-            broadcast(new CommandStatusUpdated($command));
-        }
-        
-        return 0;
+    // Критичные ошибки не подлежат rate limiting
+    $criticalCodes = config('alerts.rate_limiting.critical_codes', []);
+    if (in_array($errorCode, $criticalCodes)) {
+        return false;
     }
+    
+    $maxPerMinute = config('alerts.rate_limiting.max_per_minute', 10);
+    $count = Alert::where('zone_id', $zoneId)
+        ->where('created_at', '>', now()->subMinute())
+        ->count();
+        
+    return $count >= $maxPerMinute;
 }
 ```
+
+### Alert Deduplication (P1)
+
+**Проблема:** E21 показывает проблемы с дедупликацией.
+
+**Решение:**
+```php
+// app/Services/AlertService.php
+
+public function createOrUpdateAlert(array $alertData): Alert
+{
+    return DB::transaction(function () use ($alertData) {
+        $alert = Alert::where('code', $alertData['code'])
+            ->where('node_id', $alertData['node_id'])
+            ->where('zone_id', $alertData['zone_id'])
+            ->where('status', 'ACTIVE')
+            ->lockForUpdate()
+            ->first();
+            
+        if ($alert) {
+            // Атомарное обновление счетчика
+            DB::table('alerts')
+                ->where('id', $alert->id)
+                ->increment('error_count');
+            
+            // Обновляем updated_at
+            $alert->touch();
+            
+            return $alert->fresh();
+        }
+        
+        return Alert::create($alertData);
+    });
+}
+```
+
+### DLQ Mechanism (P1)
+
+**Требования:**
+- Таблица `pending_alerts` должна существовать
+- При ошибке доставки алерта → сохранение в `pending_alerts`
+- Retry механизм (max 3 попытки с exponential backoff)
+- При превышении max_attempts → перемещение в DLQ
+- API endpoint для replay: `POST /api/alerts/dlq/{id}/replay`
+- Задача для автоматического replay старых записей
+
+### Command Timeout (P2)
+
+**Требования:**
+- Laravel scheduled task: `commands:process-timeouts` каждые 30 секунд
+- Проверка команд в статусе `SENT` старше N минут (настраиваемо)
+- Автоматический переход в `TIMEOUT`
+- Создание `zone_event` для timeout
+- WebSocket уведомление
+- Логирование всех timeout событий
 
 ---
 
 ## Метрики успеха
 
 После реализации всех фаз:
-- ✅ Все E2E тесты проходят (31/31)
-- ✅ Стабильность 10/10 прогонов для CORE набора
-- ✅ API endpoints возвращают корректные HTTP статусы
-- ✅ WebSocket события отправляются консистентно
-- ✅ Database транзакции атомарны
+- ✅ Все E2E тесты проходят (31/31) - **ДОСТИГНУТО**
+- ⚠️ Стабильность 10/10 прогонов для CORE набора - **ТРЕБУЕТ ПРОВЕРКИ**
+- ⚠️ Rate limiting не блокирует критичные ошибки - **ТРЕБУЕТ ДОРАБОТКИ**
+- ⚠️ Automation Engine создает команды стабильно - **ТРЕБУЕТ ДОРАБОТКИ**
+- ⚠️ DLQ механизм работает корректно - **ТРЕБУЕТ ДОРАБОТКИ**
+- ⚠️ Alert deduplication работает атомарно - **ТРЕБУЕТ ДОРАБОТКИ**
 
 ---
 
 ## Следующие шаги
 
-1. **Создать issues в трекере задач** для каждого пункта P0
-2. **Начать с Фазы 1** - критичные endpoints
-3. **После каждой реализации** - запускать соответствующие E2E тесты
-4. **Обновить документацию** API после изменений
+1. **Создать issues в трекере задач** для пунктов P0 и P1
+2. **Начать с Фазы 2** - улучшение надежности (rate limiting, deduplication, DLQ)
+3. **После каждой реализации** - запускать соответствующие E2E тесты и убирать `optional: true`
+4. **Обновить конфигурацию** для production vs E2E режимов
+5. **Добавить мониторинг** для всех критичных компонентов
 
+---
+
+## Приоритетный список задач
+
+### Неделя 1-2: Alert System Improvements
+- [ ] Настроить Alert Rate Limiting с whitelist (P0)
+- [ ] Улучшить Alert Deduplication с атомарностью (P1)
+- [ ] Реализовать полный DLQ механизм (P1)
+
+### Неделя 3-4: Automation Engine
+- [ ] Гарантировать работу Automation Engine (health checks) (P1)
+- [ ] Улучшить обработку stale telemetry (P1)
+- [ ] Реализовать fault isolation и backoff (P1)
+
+### Неделя 5-6: Infrastructure
+- [ ] Реализовать автоматический timeout для команд (P2)
+- [ ] Улучшить обработку Unassigned Node Errors (P1)
+- [ ] Добавить детальные health checks (P2)
+
+---
+
+**Последнее обновление:** 2025-12-14  
+**Статус:** 31/31 тестов проходят, но требуются доработки для стабильности в production

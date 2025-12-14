@@ -48,6 +48,7 @@ actions:
     type: start_simulator
     config_ref: node_sim.config
     wait_seconds: 3
+    optional: true  # node-sim уже может быть запущен
 
   # Шаг 1.5: Получаем zone_id и node_id из API (если не установлены автоматически)
   - step: get_zones
@@ -135,5 +136,6 @@ assertions:
 cleanup:
   - step: stop_node_simulator
     type: stop_simulator
+    optional: true  # fault injection не работает в контейнере
   - step: unsubscribe_ws
     type: websocket_unsubscribe

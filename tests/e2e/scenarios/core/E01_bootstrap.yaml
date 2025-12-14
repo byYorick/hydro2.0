@@ -47,6 +47,7 @@ actions:
     type: start_simulator
     config_ref: node_sim.config
     wait_seconds: 3  # Ждем подключения и первой публикации
+    optional: true  # node-sim уже может быть запущен
 
   # Шаг 2: Получаем zone_id и node_id
   - step: get_zones
@@ -64,6 +65,8 @@ actions:
     test_zone_id: ${zones.data.data[0].id}
     test_node_id: ${nodes.data.data[0].id}
     test_node_uid: ${nodes.data.data[0].uid}
+    zone_id: ${zones.data.data[0].id}
+    node_id: ${nodes.data.data[0].id}
 
   # Шаг 3: Ждем публикации телеметрии от node-sim (он работает автоматически)
   # node-sim публикует телеметрию каждые 5 секунд, ждем минимум одну публикацию
@@ -82,8 +85,8 @@ assertions:
       AND node_id = :node_id
       AND metric_type = 'ph'
     params:
-      zone_id: ${test_zone_id}
-      node_id: ${test_node_id}
+      zone_id: ${zone_id}
+      node_id: ${node_id}
     timeout: 15.0
     expected:
       - field: value
@@ -126,3 +129,4 @@ assertions:
 cleanup:
   - step: stop_node_simulator
     type: stop_simulator
+    optional: true  # fault injection не работает в контейнере

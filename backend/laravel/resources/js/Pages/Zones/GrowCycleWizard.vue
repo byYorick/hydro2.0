@@ -400,8 +400,9 @@
               <h3 class="text-sm font-semibold mb-2">Фазы рецепта</h3>
               <div class="space-y-2">
                 <div
-                  v-for="phase in selectedRecipe.phases"
+                  v-for="(phase, index) in selectedRecipe.phases"
                   :key="phase.id"
+                  :data-testid="`cycle-phase-${index}`"
                   class="p-2 rounded border border-neutral-700 bg-neutral-900 text-sm"
                 >
                   <div class="flex justify-between">

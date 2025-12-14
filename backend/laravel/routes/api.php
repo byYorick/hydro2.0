@@ -209,6 +209,7 @@ Route::middleware([
 
         // Alerts (operator+)
         Route::patch('alerts/{alert}/ack', [AlertController::class, 'ack']);
+        Route::post('alerts/dlq/{id}/replay', [AlertController::class, 'replayDlq']);
         
         // Grow Cycle Wizard (operator+)
         Route::post('grow-cycle-wizard/create', [\App\Http\Controllers\GrowCycleWizardController::class, 'createGrowCycle']);

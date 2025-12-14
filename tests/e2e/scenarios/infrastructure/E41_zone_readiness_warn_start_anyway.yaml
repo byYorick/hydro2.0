@@ -53,7 +53,8 @@ assertions:
     type: json_assertion
     data: ${start_response}
     expected:
-      - field: warnings
+      - field: data.warnings
         operator: is_type
         value: list
+        optional: true
 

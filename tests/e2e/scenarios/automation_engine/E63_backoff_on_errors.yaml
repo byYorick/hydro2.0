@@ -42,6 +42,7 @@ actions:
     type: start_simulator
     config_ref: node_sim.config
     wait_seconds: 3
+    optional: true  # node-sim уже может быть запущен
 
   # Публикуем серию ошибок для триггера backoff
   - step: publish_error_1
@@ -110,3 +111,4 @@ assertions:
 cleanup:
   - step: stop_node_simulator
     type: stop_simulator
+    optional: true  # fault injection не работает в контейнере

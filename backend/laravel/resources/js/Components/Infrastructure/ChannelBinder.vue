@@ -44,6 +44,7 @@
               <select
                 :value="getBindingForChannel(channel.id)"
                 @change="updateBinding(channel.id, node.id, $event.target.value)"
+                :data-testid="`binding-role-select-${node.id}-${channel.id}`"
                 class="h-8 rounded-md border px-2 text-xs border-neutral-700 bg-neutral-900 min-w-[140px]"
               >
                 <option :value="null">Не назначено</option>

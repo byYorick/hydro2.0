@@ -117,5 +117,6 @@ assertions:
 cleanup:
   - step: stop_node_simulator
     type: stop_simulator
+    optional: true  # fault injection не работает в контейнере
 
 

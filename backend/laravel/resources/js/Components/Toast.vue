@@ -4,6 +4,7 @@
       v-if="show"
       ref="toastElement"
       :data-toast-id="message"
+      :data-testid="`toast-${variant}`"
       :class="[
         'fixed top-4 right-4 z-[10000] min-w-[300px] max-w-md rounded-lg border p-4 shadow-2xl',
         variantClasses[variant]
@@ -56,7 +57,7 @@
           </svg>
         </div>
         <div class="flex-1">
-          <p class="text-sm font-medium">{{ message }}</p>
+          <p class="text-sm font-medium" data-testid="toast-message">{{ message }}</p>
         </div>
         <button
           @click="show = false"

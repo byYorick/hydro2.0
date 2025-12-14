@@ -42,14 +42,7 @@ actions:
     type: start_simulator
     config_ref: node_sim.config
     wait_seconds: 3
-  - step: get_zones
-    type: api_get
-    endpoint: /api/zones
-    save: zones_response
-
-  - step: set_zone_id
-    type: set
-    zone_id: ${zones_response.data.data[0].id}
+    optional: true  # node-sim уже может быть запущен
 
   # Примечание: Для теста может потребоваться специальная конфигурация или endpoint
   # для принудительного вызова исключения в контроллере
@@ -86,7 +79,7 @@ assertions:
       SELECT COUNT(*) as event_count
       FROM zone_events
       WHERE zone_id = :zone_id
-      AND type LIKE '%%CONTROLLER%%FAIL%%'
+      AND (type LIKE '%%CONTROLLER%%FAIL%%' OR type LIKE '%%controller%%fail%%')
       AND created_at > NOW() - INTERVAL '2 minutes'
     params:
       zone_id: ${zone_id}

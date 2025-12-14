@@ -1,5 +1,5 @@
 <template>
-  <div class="rounded-xl border border-neutral-800 bg-neutral-925 p-4 hover:border-neutral-700 transition-all duration-200">
+  <div :data-testid="`zone-card-${zone.id}`" class="rounded-xl border border-neutral-800 bg-neutral-925 p-4 hover:border-neutral-700 transition-all duration-200">
     <div class="flex items-center justify-between">
       <div class="flex items-center gap-2 flex-1 min-w-0">
         <button
@@ -24,7 +24,7 @@
         </button>
         <div class="text-sm font-semibold truncate">{{ zone.name }}</div>
       </div>
-      <Badge :variant="variant">{{ translateStatus(zone.status) }}</Badge>
+      <Badge :variant="variant" data-testid="zone-card-status">{{ translateStatus(zone.status) }}</Badge>
     </div>
     
     <div class="mt-2 text-xs text-neutral-300">
@@ -72,7 +72,7 @@
     </div>
 
     <div class="mt-3 flex gap-2">
-      <Link :href="`/zones/${zone.id}`" class="inline-block">
+      <Link :href="`/zones/${zone.id}`" class="inline-block" data-testid="zone-card-link">
         <Button size="sm" variant="secondary">Подробнее</Button>
       </Link>
     </div>

@@ -16,16 +16,16 @@
           </div>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-          <Badge :variant="variant" class="shrink-0">{{ translateStatus(zone.status) }}</Badge>
+          <Badge :variant="variant" class="shrink-0" data-testid="zone-status-badge">{{ translateStatus(zone.status) }}</Badge>
           <template v-if="page.props.auth?.user?.role === 'admin' || page.props.auth?.user?.role === 'operator'">
-            <Button size="sm" variant="secondary" @click="onToggle" :disabled="loading.toggle" class="flex-1 sm:flex-none min-w-[120px]">
+            <Button size="sm" variant="secondary" @click="onToggle" :disabled="loading.toggle" class="flex-1 sm:flex-none min-w-[120px]" :data-testid="zone.status === 'PAUSED' ? 'zone-resume-btn' : 'zone-pause-btn'">
               <template v-if="loading.toggle">
                 <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
               </template>
               <span class="hidden sm:inline">{{ zone.status === 'PAUSED' ? 'Возобновить' : 'Приостановить' }}</span>
               <span class="sm:hidden">{{ zone.status === 'PAUSED' ? '▶' : '⏸' }}</span>
             </Button>
-            <Button size="sm" variant="outline" @click="openActionModal('FORCE_IRRIGATION')" :disabled="loading.irrigate" class="flex-1 sm:flex-none">
+            <Button size="sm" variant="outline" @click="openActionModal('FORCE_IRRIGATION')" :disabled="loading.irrigate" class="flex-1 sm:flex-none" data-testid="zone-command-submit">
               <template v-if="loading.irrigate">
                 <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
               </template>
@@ -110,6 +110,7 @@
                 size="sm"
                 :variant="zone.recipeInstance?.recipe ? 'secondary' : 'primary'"
                 @click="modals.open('attachRecipe')"
+                data-testid="recipe-attach-btn"
               >
                 {{ zone.recipeInstance?.recipe ? 'Изменить рецепт' : 'Привязать рецепт' }}
               </Button>
@@ -281,7 +282,7 @@
       <!-- Events (история событий) -->
       <Card>
         <div class="text-sm font-semibold mb-2">События</div>
-        <div v-if="events.length > 0" class="space-y-1 max-h-[400px] overflow-y-auto">
+        <div v-if="events.length > 0" class="space-y-1 max-h-[400px] overflow-y-auto" data-testid="zone-events-list">
           <div
             v-for="e in events"
             :key="e.id"
