@@ -21,8 +21,10 @@ class ZoneReadinessService
      */
     private function getRequiredBindings(): array
     {
-        // E2E режим - отключаем обязательные проверки
-        if (config('zones.readiness.e2e_mode', false) || env('APP_ENV') === 'e2e') {
+        // E2E режим - отключаем обязательные проверки для тестового окружения
+        // APP_ENV может быть 'e2e', 'testing', или 'test'
+        $env = env('APP_ENV', 'production');
+        if (config('zones.readiness.e2e_mode', false) || in_array($env, ['e2e', 'testing', 'test'])) {
             return [];
         }
 

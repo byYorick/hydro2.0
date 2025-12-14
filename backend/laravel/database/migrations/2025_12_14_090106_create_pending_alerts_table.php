@@ -11,6 +11,10 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (Schema::hasTable('pending_alerts')) {
+            return; // Таблица уже существует
+        }
+
         Schema::create('pending_alerts', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('zone_id')->nullable();

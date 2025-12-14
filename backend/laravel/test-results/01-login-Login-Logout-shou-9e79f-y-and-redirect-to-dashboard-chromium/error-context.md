@@ -1,0 +1,148 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e4]:
+  - complementary [ref=e5]:
+    - generic [ref=e7]: hydro 2.0
+    - navigation [ref=e8]:
+      - navigation [ref=e9]:
+        - link "Панель управления" [ref=e10] [cursor=pointer]:
+          - /url: /
+        - link "Алерты" [ref=e11] [cursor=pointer]:
+          - /url: /alerts
+        - link "Теплицы" [ref=e12] [cursor=pointer]:
+          - /url: /greenhouses
+        - link "Зоны" [ref=e13] [cursor=pointer]:
+          - /url: /zones
+        - link "Устройства" [ref=e14] [cursor=pointer]:
+          - /url: /devices
+        - link "Рецепты" [ref=e15] [cursor=pointer]:
+          - /url: /recipes
+        - link "Растения" [ref=e16] [cursor=pointer]:
+          - /url: /plants
+        - link "Пользователи" [ref=e17] [cursor=pointer]:
+          - /url: /users
+        - link "Логи" [ref=e18] [cursor=pointer]:
+          - /url: /logs
+        - link "Настройки" [ref=e19] [cursor=pointer]:
+          - /url: /settings
+  - main [ref=e20]:
+    - generic [ref=e23]:
+      - generic [ref=e24]:
+        - generic [ref=e28]:
+          - generic [ref=e29]: Core
+          - generic [ref=e30]: Онлайн
+        - generic:
+          - generic: Core Service
+          - generic: "Статус: Онлайн"
+          - generic: "Обновлено: только что"
+      - generic [ref=e31]:
+        - generic [ref=e35]:
+          - generic [ref=e36]: Database
+          - generic [ref=e37]: Онлайн
+        - generic:
+          - generic: Database
+          - generic: "Статус: Онлайн"
+          - generic: "Обновлено: только что"
+      - generic [ref=e38]:
+        - generic [ref=e42]:
+          - generic [ref=e43]: WebSocket
+          - generic [ref=e44]: Подключено
+        - generic:
+          - generic: WebSocket Connection
+          - generic: "Статус: Подключено"
+          - generic: ✓ Соединение активно
+      - generic [ref=e45]:
+        - generic [ref=e49]:
+          - generic [ref=e50]: MQTT
+          - generic [ref=e51]: Онлайн
+        - generic:
+          - generic: MQTT Broker
+          - generic: "Статус: Онлайн"
+          - generic: ✓ Брокер доступен
+      - generic [ref=e52]:
+        - generic [ref=e53]:
+          - generic [ref=e54]: ⚠️
+          - generic [ref=e55]: "0"
+          - generic [ref=e56]: алерт.
+          - generic:
+            - generic: Активные алерты
+            - generic: "Всего: 0"
+            - generic: ✓ Нет активных алертов
+        - button "📊 Сервисы" [ref=e57] [cursor=pointer]:
+          - generic [ref=e58]: 📊
+          - generic [ref=e59]: Сервисы
+    - generic [ref=e60]:
+      - navigation "Breadcrumb" [ref=e61]:
+        - list [ref=e62]:
+          - listitem [ref=e63]:
+            - generic [ref=e64]: Панель управления
+      - generic [ref=e66]:
+        - generic [ref=e67]:
+          - heading "Панель администратора" [level=1] [ref=e68]
+          - generic [ref=e69]:
+            - link "Управление пользователями" [ref=e70] [cursor=pointer]:
+              - /url: /admin/users
+              - button "Управление пользователями" [ref=e71]
+            - link "Системные настройки" [ref=e72] [cursor=pointer]:
+              - /url: /settings
+              - button "Системные настройки" [ref=e73]
+        - generic [ref=e75]:
+          - generic [ref=e76]:
+            - img [ref=e78]
+            - generic [ref=e80]:
+              - generic [ref=e81]: Система
+              - generic [ref=e82]: Онлайн
+          - generic [ref=e83]:
+            - img [ref=e85]
+            - generic [ref=e87]:
+              - generic [ref=e88]: Зоны
+              - generic [ref=e89]: 0 активных
+          - generic [ref=e90]:
+            - img [ref=e92]
+            - generic [ref=e94]:
+              - generic [ref=e95]: Устройства
+              - generic [ref=e96]: 0 онлайн
+          - generic [ref=e97]:
+            - img [ref=e99]
+            - generic [ref=e101]:
+              - generic [ref=e102]: Пользователи
+              - generic [ref=e103]: 0 активных
+        - generic [ref=e104]:
+          - generic [ref=e105]:
+            - heading "Активность пользователей" [level=2] [ref=e106]
+            - link "Полный аудит" [ref=e107] [cursor=pointer]:
+              - /url: /admin/audit
+              - button "Полный аудит" [ref=e108]
+          - generic [ref=e110]: Нет недавних действий
+        - generic [ref=e111]:
+          - heading "Быстрые действия" [level=3] [ref=e112]
+          - generic [ref=e113]:
+            - link "Управление пользователями" [ref=e114] [cursor=pointer]:
+              - /url: /admin/users
+              - button "Управление пользователями" [ref=e115]
+            - link "Системные настройки" [ref=e116] [cursor=pointer]:
+              - /url: /settings
+              - button "Системные настройки" [ref=e117]
+            - link "Просмотр логов" [ref=e118] [cursor=pointer]:
+              - /url: /admin/audit
+              - button "Просмотр логов" [ref=e119]
+            - button "Экспорт данных" [ref=e120] [cursor=pointer]
+    - button "? Администратор" [ref=e123] [cursor=pointer]:
+      - generic [ref=e124]:
+        - generic [ref=e125]: "?"
+        - generic [ref=e127]: Администратор
+        - img [ref=e128]
+  - complementary [ref=e130]:
+    - generic [ref=e132]: События
+    - generic [ref=e136]:
+      - generic [ref=e137]:
+        - generic [ref=e138]: Последние события
+        - generic [ref=e141]: Live
+      - generic [ref=e142]:
+        - button "Все" [ref=e143] [cursor=pointer]
+        - button "ALERT" [ref=e144] [cursor=pointer]
+        - button "WARNING" [ref=e145] [cursor=pointer]
+        - button "INFO" [ref=e146] [cursor=pointer]
+      - generic [ref=e147]: Нет событий
+```
