@@ -1,6 +1,6 @@
 import { APIRequestContext } from '@playwright/test';
 
-const baseURL = process.env.LARAVEL_URL || 'http://localhost:8081';
+const baseURL = process.env.LARAVEL_URL || 'http://localhost:80';
 
 export interface TestGreenhouse {
   id: number;
@@ -43,7 +43,11 @@ export interface TestBinding {
 }
 
 export class APITestHelper {
-  constructor(private request: APIRequestContext, private token?: string) {}
+  constructor(
+    private request: APIRequestContext, 
+    private token?: string,
+    private cookies?: Array<{ name: string; value: string; domain?: string; path?: string }>
+  ) {}
 
   private async getHeaders(): Promise<Record<string, string>> {
     const headers: Record<string, string> = {
@@ -53,6 +57,11 @@ export class APITestHelper {
     };
     if (this.token) {
       headers['Authorization'] = `Bearer ${this.token}`;
+    }
+    if (this.cookies && this.cookies.length > 0) {
+      // Добавляем cookies в заголовок Cookie
+      const cookieHeader = this.cookies.map(c => `${c.name}=${c.value}`).join('; ');
+      headers['Cookie'] = cookieHeader;
     }
     return headers;
   }

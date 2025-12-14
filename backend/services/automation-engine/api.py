@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException, Body, Request
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
 import logging
+import os
 from infrastructure import CommandBus
 
 logger = logging.getLogger(__name__)
@@ -15,6 +16,11 @@ app = FastAPI(title="Automation Engine API")
 # Глобальные переменные для доступа к CommandBus
 _command_bus: Optional[CommandBus] = None
 _gh_uid: str = ""
+
+# Test hooks для детерминированных ошибок (только в test mode)
+_test_mode = os.getenv("AE_TEST_MODE", "0") == "1"
+_test_hooks: Dict[str, Dict[str, Any]] = {}  # zone_id -> {controller: error_type, ...}
+_zone_states_override: Dict[int, Dict[str, Any]] = {}  # zone_id -> {error_streak: int, next_allowed_run_at: datetime}
 
 
 def set_command_bus(command_bus: CommandBus, gh_uid: str):
@@ -84,4 +90,115 @@ async def scheduler_command(request: Request, req: SchedulerCommandRequest = Bod
 async def health():
     """Health check endpoint."""
     return {"status": "ok", "service": "automation-engine"}
+
+
+# Test hooks (только в test mode)
+class TestHookRequest(BaseModel):
+    """Request model для test hooks."""
+    zone_id: int = Field(..., ge=1, description="Zone ID")
+    controller: Optional[str] = Field(None, description="Controller name (climate, ph, ec, irrigation, etc.)")
+    action: str = Field(..., description="Action: inject_error, clear_error, reset_backoff, set_state")
+    error_type: Optional[str] = Field(None, description="Error type for inject_error")
+    state: Optional[Dict[str, Any]] = Field(None, description="State override for set_state")
+
+
+@app.post("/test/hook")
+async def test_hook(req: TestHookRequest = Body(...)):
+    """
+    Test hook для детерминированных ошибок и управления состоянием.
+    Доступен только если AE_TEST_MODE=1.
+    """
+    if not _test_mode:
+        raise HTTPException(status_code=403, detail="Test mode is not enabled (AE_TEST_MODE=0)")
+    
+    zone_id = req.zone_id
+    controller = req.controller
+    action = req.action
+    
+    if action == "inject_error":
+        if not controller or not req.error_type:
+            raise HTTPException(status_code=400, detail="inject_error requires controller and error_type")
+        
+        if zone_id not in _test_hooks:
+            _test_hooks[zone_id] = {}
+        _test_hooks[zone_id][controller] = {"error_type": req.error_type, "active": True}
+        
+        logger.info(f"[TEST_HOOK] Injected error for zone {zone_id}, controller {controller}: {req.error_type}")
+        return {"status": "ok", "message": f"Error injected for zone {zone_id}, controller {controller}"}
+    
+    elif action == "clear_error":
+        if controller:
+            if zone_id in _test_hooks and controller in _test_hooks[zone_id]:
+                del _test_hooks[zone_id][controller]
+                if not _test_hooks[zone_id]:
+                    del _test_hooks[zone_id]
+        else:
+            # Очистить все ошибки для зоны
+            if zone_id in _test_hooks:
+                del _test_hooks[zone_id]
+        
+        logger.info(f"[TEST_HOOK] Cleared errors for zone {zone_id}, controller {controller or 'all'}")
+        return {"status": "ok", "message": f"Errors cleared for zone {zone_id}"}
+    
+    elif action == "reset_backoff":
+        # Сброс backoff состояния для зоны
+        if zone_id in _zone_states_override:
+            _zone_states_override[zone_id] = {
+                "error_streak": 0,
+                "next_allowed_run_at": None
+            }
+        else:
+            _zone_states_override[zone_id] = {
+                "error_streak": 0,
+                "next_allowed_run_at": None
+            }
+        
+        logger.info(f"[TEST_HOOK] Reset backoff for zone {zone_id}")
+        return {"status": "ok", "message": f"Backoff reset for zone {zone_id}"}
+    
+    elif action == "set_state":
+        if not req.state:
+            raise HTTPException(status_code=400, detail="set_state requires state")
+        
+        _zone_states_override[zone_id] = req.state
+        logger.info(f"[TEST_HOOK] Set state for zone {zone_id}: {req.state}")
+        return {"status": "ok", "message": f"State set for zone {zone_id}"}
+    
+    else:
+        raise HTTPException(status_code=400, detail=f"Unknown action: {action}")
+
+
+@app.get("/test/hook/{zone_id}")
+async def get_test_hook(zone_id: int):
+    """Получить текущее состояние test hooks для зоны."""
+    if not _test_mode:
+        raise HTTPException(status_code=403, detail="Test mode is not enabled")
+    
+    hooks = _test_hooks.get(zone_id, {})
+    state = _zone_states_override.get(zone_id, {})
+    
+    return {
+        "status": "ok",
+        "data": {
+            "zone_id": zone_id,
+            "hooks": hooks,
+            "state_override": state
+        }
+    }
+
+
+def get_test_hook_for_zone(zone_id: int, controller: str) -> Optional[Dict[str, Any]]:
+    """Получить test hook для зоны и контроллера (используется в ZoneAutomationService)."""
+    if not _test_mode:
+        return None
+    if zone_id in _test_hooks and controller in _test_hooks[zone_id]:
+        return _test_hooks[zone_id][controller]
+    return None
+
+
+def get_zone_state_override(zone_id: int) -> Optional[Dict[str, Any]]:
+    """Получить override состояния для зоны (используется в ZoneAutomationService)."""
+    if not _test_mode:
+        return None
+    return _zone_states_override.get(zone_id)
 

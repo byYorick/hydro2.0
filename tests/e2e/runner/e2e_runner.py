@@ -99,6 +99,14 @@ class E2ERunner:
         """Инициализация клиентов."""
         logger.info("Setting up E2E runner...")
         
+        # Автоматически поднимаем инфраструктуру, если она не запущена
+        # Этот метод синхронный, но безопасно вызывается из async контекста
+        try:
+            self._ensure_infra_started()
+        except Exception as e:
+            logger.warning(f"Failed to ensure infrastructure is started: {e}")
+            logger.info("Continuing anyway, assuming infrastructure is already running...")
+        
         # Получаем токен через AuthClient (если не был предоставлен явно в config)
         token = None
         if not self.api_token:
@@ -360,7 +368,7 @@ class E2ERunner:
             "reverb",
             "history-logger",
             "mqtt-bridge",
-            "automation-engine",
+            "automation-engine",  # Включаем automation-engine по умолчанию для E2E
             "node-sim",
         ]
 
@@ -1474,6 +1482,12 @@ class E2ERunner:
             params = cfg.get("params", {})
             params = self._resolve_variables(params) if params else {}
             result = self.db.query(query, params=params)
+            # Валидируем expected_rows если указан (DoD требует валидацию результата)
+            expected_rows = cfg.get("expected_rows")
+            if expected_rows is not None:
+                actual_rows = len(result)
+                if actual_rows != expected_rows:
+                    raise AssertionError(f"Expected {expected_rows} rows from database_query, got {actual_rows}")
             if "save" in cfg:
                 self.context[cfg["save"]] = result
             return result
@@ -1519,6 +1533,195 @@ class E2ERunner:
             if "save" in cfg:
                 self.context[cfg["save"]] = result
             return
+
+        # Scrape metrics from automation-engine
+        if step_type == "scrape_metrics":
+            import httpx
+            automation_engine_url = cfg.get("url", "http://localhost:9401")
+            metric_name = cfg.get("metric")
+            timeout = float(cfg.get("timeout", 10.0))
+            
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.get(f"{automation_engine_url}/metrics")
+                if resp.status_code != 200:
+                    raise RuntimeError(f"Failed to scrape metrics: {resp.status_code}")
+                
+                # Парсим Prometheus формат
+                metrics_text = resp.text
+                result = {}
+                
+                if metric_name:
+                    # Ищем конкретную метрику
+                    import re
+                    pattern = rf"^{re.escape(metric_name)}\s+([0-9.]+)"
+                    for line in metrics_text.split("\n"):
+                        match = re.match(pattern, line)
+                        if match:
+                            result[metric_name] = float(match.group(1))
+                            break
+                else:
+                    # Парсим все метрики (упрощенный вариант)
+                    import re
+                    for line in metrics_text.split("\n"):
+                        if line and not line.startswith("#"):
+                            parts = line.split()
+                            if len(parts) >= 2:
+                                metric_key = parts[0].split("{")[0]  # Убираем labels
+                                try:
+                                    result[metric_key] = float(parts[-1])
+                                except ValueError:
+                                    pass
+                
+                if "save" in cfg:
+                    self.context[cfg["save"]] = result
+                return result
+
+        # Wait for zone event
+        if step_type == "wait_zone_event":
+            zone_id = cfg.get("zone_id") or self.context.get("zone_id")
+            event_type = cfg.get("event_type")
+            filter_dict = cfg.get("filter", {})
+            timeout = float(cfg.get("timeout", 30.0))
+            optional = cfg.get("optional", False)
+            
+            if not zone_id:
+                raise ValueError("wait_zone_event requires zone_id")
+            
+            # Используем db.wait для ожидания события в zone_events
+            query = """
+                SELECT id, type, details, created_at
+                FROM zone_events
+                WHERE zone_id = :zone_id
+            """
+            params = {"zone_id": zone_id}
+            
+            if event_type:
+                query += " AND type = :event_type"
+                params["event_type"] = event_type
+            
+            # Добавляем фильтры по details (JSONB)
+            if filter_dict:
+                for key, value in filter_dict.items():
+                    query += f" AND details->>'{key}' = :filter_{key}"
+                    params[f"filter_{key}"] = str(value)
+            
+            query += " ORDER BY created_at DESC LIMIT 1"
+            
+            try:
+                rows = await self.db.wait(query, params=params, timeout=timeout, expected_rows=1)
+                if rows and len(rows) > 0:
+                    event = rows[0]
+                    if "save" in cfg:
+                        self.context[cfg["save"]] = event
+                    return event
+                elif not optional:
+                    raise TimeoutError(f"Timeout waiting for zone event: {event_type or 'any'}")
+                return None
+            except Exception as e:
+                if optional:
+                    return None
+                raise
+
+        # Wait for command
+        if step_type == "wait_command":
+            zone_id = cfg.get("zone_id") or self.context.get("zone_id")
+            command_filter = cfg.get("filter", {})
+            timeout = float(cfg.get("timeout", 30.0))
+            optional = cfg.get("optional", False)
+            
+            if not zone_id:
+                raise ValueError("wait_command requires zone_id")
+            
+            query = """
+                SELECT id, cmd, status, source, created_at, updated_at
+                FROM commands
+                WHERE zone_id = :zone_id
+            """
+            params = {"zone_id": zone_id}
+            
+            # Фильтры
+            if "cmd" in command_filter:
+                query += " AND cmd = :cmd"
+                params["cmd"] = command_filter["cmd"]
+            if "source" in command_filter:
+                query += " AND source = :source"
+                params["source"] = command_filter["source"]
+            if "status" in command_filter:
+                query += " AND status = :status"
+                params["status"] = command_filter["status"]
+            
+            query += " ORDER BY created_at DESC LIMIT 1"
+            
+            try:
+                rows = await self.db.wait(query, params=params, timeout=timeout, expected_rows=1)
+                if rows and len(rows) > 0:
+                    command = rows[0]
+                    if "save" in cfg:
+                        self.context[cfg["save"]] = command
+                    return command
+                elif not optional:
+                    raise TimeoutError("Timeout waiting for command")
+                return None
+            except Exception as e:
+                if optional:
+                    return None
+                raise
+
+        # Automation Engine test hook
+        if step_type == "ae_test_hook":
+            import httpx
+            automation_engine_url = cfg.get("url", "http://automation-engine:9405")
+            zone_id = cfg.get("zone_id") or self.context.get("zone_id")
+            controller = cfg.get("controller")
+            action = cfg.get("action")  # inject_error, clear_error, reset_backoff, set_state
+            error_type = cfg.get("error_type")
+            state = cfg.get("state")
+            
+            if not zone_id:
+                raise ValueError("ae_test_hook requires zone_id")
+            if not action:
+                raise ValueError("ae_test_hook requires action")
+            
+            payload = {
+                "zone_id": zone_id,
+                "action": action,
+            }
+            if controller:
+                payload["controller"] = controller
+            if error_type:
+                payload["error_type"] = error_type
+            if state:
+                payload["state"] = state
+            
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(f"{automation_engine_url}/test/hook", json=payload)
+                if resp.status_code != 200:
+                    raise RuntimeError(f"Test hook failed: {resp.status_code} - {resp.text}")
+                
+                result = resp.json()
+                if "save" in cfg:
+                    self.context[cfg["save"]] = result
+                return result
+
+        # Node-sim fault modes
+        if step_type == "node_sim_fault_mode":
+            # Устанавливает fault mode для node-sim через API или конфиг
+            mode = cfg.get("mode")  # drop, delay, duplicate
+            enabled = cfg.get("enabled", True)
+            delay_ms = cfg.get("delay_ms", 0)
+            
+            # Для node-sim можно использовать HTTP API если он есть, или обновить конфиг
+            # Пока используем упрощенный подход через переменные окружения или конфиг
+            logger.info(f"Setting node-sim fault mode: {mode}, enabled={enabled}, delay_ms={delay_ms}")
+            
+            # Сохраняем в контекст для использования в других шагах
+            self.context["_node_sim_fault_mode"] = {
+                "mode": mode,
+                "enabled": enabled,
+                "delay_ms": delay_ms
+            }
+            
+            return {"mode": mode, "enabled": enabled}
 
         raise ValueError(f"Unknown action type: {step_type}")
 

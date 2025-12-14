@@ -29,287 +29,296 @@
   - main [ref=e20]:
     - generic [ref=e23]:
       - generic [ref=e24]:
-        - generic [ref=e28]:
-          - generic [ref=e29]: Core
-          - generic [ref=e30]: Онлайн
+        - generic [ref=e27]:
+          - generic [ref=e28]: Core
+          - generic [ref=e29]: Неизвестно
         - generic:
           - generic: Core Service
-          - generic: "Статус: Онлайн"
-          - generic: "Обновлено: только что"
-      - generic [ref=e31]:
-        - generic [ref=e35]:
-          - generic [ref=e36]: Database
-          - generic [ref=e37]: Онлайн
+          - generic: "Статус: Неизвестно"
+      - generic [ref=e30]:
+        - generic [ref=e33]:
+          - generic [ref=e34]: Database
+          - generic [ref=e35]: Неизвестно
         - generic:
           - generic: Database
-          - generic: "Статус: Онлайн"
-          - generic: "Обновлено: только что"
-      - generic [ref=e38]:
-        - generic [ref=e42]:
-          - generic [ref=e43]: WebSocket
-          - generic [ref=e44]: Подключено
+          - generic: "Статус: Неизвестно"
+      - generic [ref=e36]:
+        - generic [ref=e40]:
+          - generic [ref=e41]: WebSocket
+          - generic [ref=e42]: Подключено
         - generic:
           - generic: WebSocket Connection
           - generic: "Статус: Подключено"
           - generic:
             - text: ✓ Соединение активно
-            - generic: "Socket ID: 10952799..."
-      - generic [ref=e45]:
-        - generic [ref=e49]:
-          - generic [ref=e50]: MQTT
-          - generic [ref=e51]: Онлайн
+            - generic: "Socket ID: 77403733..."
+      - generic [ref=e43]:
+        - generic [ref=e47]:
+          - generic [ref=e48]: MQTT
+          - generic [ref=e49]: Онлайн
         - generic:
           - generic: MQTT Broker
           - generic: "Статус: Онлайн"
           - generic: ✓ Брокер доступен
-      - generic [ref=e52]:
-        - generic [ref=e53]:
-          - generic [ref=e54]: ⚠️
-          - generic [ref=e55]: "0"
-          - generic [ref=e56]: алерт.
-          - generic:
-            - generic: Активные алерты
-            - generic: "Всего: 0"
-            - generic: ✓ Нет активных алертов
-        - button "📊 Сервисы" [ref=e57] [cursor=pointer]:
-          - generic [ref=e58]: 📊
-          - generic [ref=e59]: Сервисы
-    - generic [ref=e60]:
-      - navigation "Breadcrumb" [ref=e61]:
-        - list [ref=e62]:
-          - listitem [ref=e63]:
-            - link "Панель управления" [ref=e64] [cursor=pointer]:
+      - button "📊 Сервисы" [ref=e51] [cursor=pointer]:
+        - generic [ref=e52]: 📊
+        - generic [ref=e53]: Сервисы
+    - generic [ref=e54]:
+      - navigation "Breadcrumb" [ref=e55]:
+        - list [ref=e56]:
+          - listitem [ref=e57]:
+            - link "Панель управления" [ref=e58] [cursor=pointer]:
               - /url: /
-            - img [ref=e65]
-          - listitem [ref=e67]:
-            - link "Зоны" [ref=e68] [cursor=pointer]:
+            - img [ref=e59]
+          - listitem [ref=e61]:
+            - link "Зоны" [ref=e62] [cursor=pointer]:
               - /url: /zones
-            - img [ref=e69]
-          - listitem [ref=e71]:
-            - generic [ref=e72]: Test Zone 1765720026527
-      - generic [ref=e74]:
-        - generic [ref=e75]:
-          - generic [ref=e76]:
-            - generic [ref=e77]: Test Zone 1765720026527
-            - generic [ref=e78]: Test zone description
-          - generic [ref=e79]:
-            - generic [ref=e80]: Запущено
-            - button "Приостановить" [ref=e81] [cursor=pointer]:
-              - generic [ref=e82]: Приостановить
-            - button "Полить сейчас" [ref=e83] [cursor=pointer]:
-              - generic [ref=e84]: Полить сейчас
-            - button "Следующая фаза" [ref=e85] [cursor=pointer]:
-              - generic [ref=e86]: Следующая фаза
-            - button "Симуляция" [ref=e87] [cursor=pointer]:
-              - generic [ref=e88]: Симуляция
-        - generic [ref=e89]:
-          - generic [ref=e91]:
-            - generic [ref=e92]:
-              - generic [ref=e93]: Устройства зоны
-              - generic [ref=e94]:
-                - button "Сетка" [ref=e95] [cursor=pointer]:
-                  - img [ref=e96]
-                - button "Граф" [ref=e98] [cursor=pointer]:
-                  - img [ref=e99]
-              - button "Привязать узлы" [ref=e101] [cursor=pointer]
-            - generic [ref=e102]:
-              - generic [ref=e103]: 📱
-              - generic [ref=e104]: Нет устройств в зоне
-              - button "Привязать узлы" [ref=e105] [cursor=pointer]
-          - generic [ref=e106]:
-            - generic [ref=e107]:
-              - heading "Ошибки узлов зоны" [level=3] [ref=e108]
-              - generic [ref=e109]: "0"
-            - generic [ref=e110]: Нет ошибок узлов зоны
-          - generic [ref=e111]:
-            - generic [ref=e112]:
-              - generic [ref=e113]: Рецепт
-              - button "Привязать рецепт" [ref=e114] [cursor=pointer]
+            - img [ref=e63]
+          - listitem [ref=e65]:
+            - generic [ref=e66]: Test Zone 1765725358618
+      - generic [ref=e68]:
+        - generic [ref=e69]:
+          - generic [ref=e70]:
+            - generic [ref=e71]: Test Zone 1765725358618
+            - generic [ref=e72]: Test zone description
+          - generic [ref=e73]:
+            - generic [ref=e74]: Запущено
+            - button "Приостановить" [ref=e75] [cursor=pointer]:
+              - generic [ref=e76]: Приостановить
+            - button "Полить сейчас" [ref=e77] [cursor=pointer]:
+              - generic [ref=e78]: Полить сейчас
+            - button "Следующая фаза" [ref=e79] [cursor=pointer]:
+              - generic [ref=e80]: Следующая фаза
+            - button "Симуляция" [ref=e81] [cursor=pointer]:
+              - generic [ref=e82]: Симуляция
+        - generic [ref=e83]:
+          - generic [ref=e85]:
+            - generic [ref=e86]:
+              - generic [ref=e87]: Устройства зоны
+              - generic [ref=e88]:
+                - button "Сетка" [ref=e89] [cursor=pointer]:
+                  - img [ref=e90]
+                - button "Граф" [ref=e92] [cursor=pointer]:
+                  - img [ref=e93]
+              - button "Привязать узлы" [ref=e95] [cursor=pointer]
+            - generic [ref=e96]:
+              - generic [ref=e97]: 📱
+              - generic [ref=e98]: Нет устройств в зоне
+              - button "Привязать узлы" [ref=e99] [cursor=pointer]
+          - generic [ref=e100]:
+            - generic [ref=e101]:
+              - heading "Ошибки узлов зоны" [level=3] [ref=e102]
+              - generic [ref=e103]: "0"
+            - generic [ref=e104]: Too many requests. Please try again later.
+          - generic [ref=e105]:
+            - generic [ref=e106]:
+              - generic [ref=e107]: Рецепт
+              - button "Привязать рецепт" [ref=e108] [cursor=pointer]
+            - generic [ref=e109]:
+              - generic [ref=e110]: Рецепт не привязан
+              - generic [ref=e111]: Привяжите рецепт для автоматического управления фазами выращивания
+        - generic [ref=e112]:
+          - generic [ref=e113]: Циклы
+          - generic [ref=e114]:
             - generic [ref=e115]:
-              - generic [ref=e116]: Рецепт не привязан
-              - generic [ref=e117]: Привяжите рецепт для автоматического управления фазами выращивания
-        - generic [ref=e118]:
-          - generic [ref=e119]: Циклы
-          - generic [ref=e120]:
-            - generic [ref=e121]:
-              - generic [ref=e122]:
-                - generic [ref=e123]: Контроль pH
-                - generic [ref=e124]: Обязательно
-              - generic [ref=e126]: Таргеты для этой фазы не заданы
-              - generic [ref=e127]: "Стратегия: периодическая"
-              - generic [ref=e128]: "Интервал: 5 мин"
-              - generic [ref=e129]:
-                - generic [ref=e130]: "Последний запуск:"
-                - generic [ref=e133]: "-"
-              - generic [ref=e134]:
-                - generic [ref=e135]: "Следующий запуск:"
-                - generic [ref=e136]: Не запланирован
-              - button "Запустить сейчас" [ref=e137] [cursor=pointer]
-            - generic [ref=e138]:
-              - generic [ref=e139]:
-                - generic [ref=e140]: Контроль EC
-                - generic [ref=e141]: Обязательно
-              - generic [ref=e143]: Таргеты для этой фазы не заданы
-              - generic [ref=e144]: "Стратегия: периодическая"
-              - generic [ref=e145]: "Интервал: 5 мин"
-              - generic [ref=e146]:
-                - generic [ref=e147]: "Последний запуск:"
-                - generic [ref=e150]: "-"
-              - generic [ref=e151]:
-                - generic [ref=e152]: "Следующий запуск:"
-                - generic [ref=e153]: Не запланирован
-              - button "Запустить сейчас" [ref=e154] [cursor=pointer]
-            - generic [ref=e155]:
-              - generic [ref=e156]:
-                - generic [ref=e157]: Полив
-                - generic [ref=e158]: Обязательно
-              - generic [ref=e160]: Таргеты для этой фазы не заданы
-              - generic [ref=e161]: "Стратегия: периодическая"
-              - generic [ref=e162]: "Интервал: Не настроено"
-              - generic [ref=e163]:
-                - generic [ref=e164]: "Последний запуск:"
-                - generic [ref=e167]: "-"
-              - generic [ref=e168]:
-                - generic [ref=e169]: "Следующий запуск:"
-                - generic [ref=e170]: Не запланирован
-              - button "Запустить сейчас" [ref=e171] [cursor=pointer]
-            - generic [ref=e172]:
-              - generic [ref=e173]:
-                - generic [ref=e174]: Освещение
-                - generic [ref=e175]: Опционально
-              - generic [ref=e177]: Таргеты для этой фазы не заданы
-              - generic [ref=e178]: "Стратегия: периодическая"
-              - generic [ref=e179]: "Интервал: Не настроено"
-              - generic [ref=e180]:
-                - generic [ref=e181]: "Последний запуск:"
-                - generic [ref=e184]: "-"
-              - generic [ref=e185]:
-                - generic [ref=e186]: "Следующий запуск:"
-                - generic [ref=e187]: Не запланирован
-              - button "Запустить сейчас" [ref=e188] [cursor=pointer]
-            - generic [ref=e189]:
-              - generic [ref=e190]:
-                - generic [ref=e191]: Климат
-                - generic [ref=e192]: Опционально
-              - generic [ref=e194]: Таргеты для этой фазы не заданы
-              - generic [ref=e195]: "Стратегия: периодическая"
-              - generic [ref=e196]: "Интервал: 5 мин"
-              - generic [ref=e197]:
-                - generic [ref=e198]: "Последний запуск:"
-                - generic [ref=e201]: "-"
-              - generic [ref=e202]:
-                - generic [ref=e203]: "Следующий запуск:"
-                - generic [ref=e204]: Не запланирован
-              - button "Запустить сейчас" [ref=e205] [cursor=pointer]
-        - generic [ref=e207]:
-          - generic [ref=e208]:
-            - button "PID Settings" [ref=e209] [cursor=pointer]
-            - button "PID Logs" [ref=e210] [cursor=pointer]
-          - generic [ref=e213]:
-            - generic [ref=e214]:
-              - generic [ref=e215]: Настройки PID
-              - generic [ref=e216]:
-                - button "pH" [ref=e217] [cursor=pointer]
-                - button "EC" [ref=e218] [cursor=pointer]
-            - generic [ref=e219]:
-              - generic [ref=e220]:
-                - generic [ref=e221]:
-                  - generic [ref=e222]: Целевое значение (target)
-                  - spinbutton [ref=e223]: "6"
-                  - paragraph [ref=e224]: "Диапазон: 0-14"
-                - generic [ref=e225]:
-                  - generic [ref=e226]: Мертвая зона (dead_zone)
-                  - spinbutton [ref=e227]: "0.2"
-                  - paragraph [ref=e228]: "Диапазон: 0-2"
-                - generic [ref=e229]:
-                  - generic [ref=e230]: Ближняя зона (close_zone)
-                  - spinbutton [ref=e231]: "0.5"
-                  - paragraph [ref=e232]: Должна быть больше dead_zone
+              - generic [ref=e116]:
+                - generic [ref=e117]: Контроль pH
+                - generic [ref=e118]: Обязательно
+              - generic [ref=e120]: Таргеты для этой фазы не заданы
+              - generic [ref=e121]: "Стратегия: периодическая"
+              - generic [ref=e122]: "Интервал: 5 мин"
+              - generic [ref=e123]:
+                - generic [ref=e124]: "Последний запуск:"
+                - generic [ref=e127]: "-"
+              - generic [ref=e128]:
+                - generic [ref=e129]: "Следующий запуск:"
+                - generic [ref=e130]: Не запланирован
+              - button "Запустить сейчас" [ref=e131] [cursor=pointer]
+            - generic [ref=e132]:
+              - generic [ref=e133]:
+                - generic [ref=e134]: Контроль EC
+                - generic [ref=e135]: Обязательно
+              - generic [ref=e137]: Таргеты для этой фазы не заданы
+              - generic [ref=e138]: "Стратегия: периодическая"
+              - generic [ref=e139]: "Интервал: 5 мин"
+              - generic [ref=e140]:
+                - generic [ref=e141]: "Последний запуск:"
+                - generic [ref=e144]: "-"
+              - generic [ref=e145]:
+                - generic [ref=e146]: "Следующий запуск:"
+                - generic [ref=e147]: Не запланирован
+              - button "Запустить сейчас" [ref=e148] [cursor=pointer]
+            - generic [ref=e149]:
+              - generic [ref=e150]:
+                - generic [ref=e151]: Полив
+                - generic [ref=e152]: Обязательно
+              - generic [ref=e154]: Таргеты для этой фазы не заданы
+              - generic [ref=e155]: "Стратегия: периодическая"
+              - generic [ref=e156]: "Интервал: Не настроено"
+              - generic [ref=e157]:
+                - generic [ref=e158]: "Последний запуск:"
+                - generic [ref=e161]: "-"
+              - generic [ref=e162]:
+                - generic [ref=e163]: "Следующий запуск:"
+                - generic [ref=e164]: Не запланирован
+              - button "Запустить сейчас" [ref=e165] [cursor=pointer]
+            - generic [ref=e166]:
+              - generic [ref=e167]:
+                - generic [ref=e168]: Освещение
+                - generic [ref=e169]: Опционально
+              - generic [ref=e171]: Таргеты для этой фазы не заданы
+              - generic [ref=e172]: "Стратегия: периодическая"
+              - generic [ref=e173]: "Интервал: Не настроено"
+              - generic [ref=e174]:
+                - generic [ref=e175]: "Последний запуск:"
+                - generic [ref=e178]: "-"
+              - generic [ref=e179]:
+                - generic [ref=e180]: "Следующий запуск:"
+                - generic [ref=e181]: Не запланирован
+              - button "Запустить сейчас" [ref=e182] [cursor=pointer]
+            - generic [ref=e183]:
+              - generic [ref=e184]:
+                - generic [ref=e185]: Климат
+                - generic [ref=e186]: Опционально
+              - generic [ref=e188]: Таргеты для этой фазы не заданы
+              - generic [ref=e189]: "Стратегия: периодическая"
+              - generic [ref=e190]: "Интервал: 5 мин"
+              - generic [ref=e191]:
+                - generic [ref=e192]: "Последний запуск:"
+                - generic [ref=e195]: "-"
+              - generic [ref=e196]:
+                - generic [ref=e197]: "Следующий запуск:"
+                - generic [ref=e198]: Не запланирован
+              - button "Запустить сейчас" [ref=e199] [cursor=pointer]
+        - generic [ref=e201]:
+          - generic [ref=e202]:
+            - button "PID Settings" [ref=e203] [cursor=pointer]
+            - button "PID Logs" [ref=e204] [cursor=pointer]
+          - generic [ref=e207]:
+            - generic [ref=e208]:
+              - generic [ref=e209]: Настройки PID
+              - generic [ref=e210]:
+                - button "pH" [ref=e211] [cursor=pointer]
+                - button "EC" [ref=e212] [cursor=pointer]
+            - generic [ref=e213]:
+              - generic [ref=e214]:
+                - generic [ref=e215]:
+                  - generic [ref=e216]: Целевое значение (target)
+                  - spinbutton [ref=e217]: "6"
+                  - paragraph [ref=e218]: "Диапазон: 0-14"
+                - generic [ref=e219]:
+                  - generic [ref=e220]: Мертвая зона (dead_zone)
+                  - spinbutton [ref=e221]: "0.2"
+                  - paragraph [ref=e222]: "Диапазон: 0-2"
+                - generic [ref=e223]:
+                  - generic [ref=e224]: Ближняя зона (close_zone)
+                  - spinbutton [ref=e225]: "0.5"
+                  - paragraph [ref=e226]: Должна быть больше dead_zone
+                - generic [ref=e227]:
+                  - generic [ref=e228]: Дальняя зона (far_zone)
+                  - spinbutton [ref=e229]: "1"
+                  - paragraph [ref=e230]: Должна быть больше close_zone
+              - generic [ref=e231]:
+                - generic [ref=e232]: Коэффициенты для близкой зоны
                 - generic [ref=e233]:
-                  - generic [ref=e234]: Дальняя зона (far_zone)
-                  - spinbutton [ref=e235]: "1"
-                  - paragraph [ref=e236]: Должна быть больше close_zone
-              - generic [ref=e237]:
-                - generic [ref=e238]: Коэффициенты для близкой зоны
-                - generic [ref=e239]:
+                  - generic [ref=e234]:
+                    - generic [ref=e235]: Kp
+                    - spinbutton [ref=e236]: "10"
+                  - generic [ref=e237]:
+                    - generic [ref=e238]: Ki
+                    - spinbutton [ref=e239]: "0"
                   - generic [ref=e240]:
-                    - generic [ref=e241]: Kp
-                    - spinbutton [ref=e242]: "10"
-                  - generic [ref=e243]:
-                    - generic [ref=e244]: Ki
-                    - spinbutton [ref=e245]: "0"
+                    - generic [ref=e241]: Kd
+                    - spinbutton [ref=e242]: "0"
+              - generic [ref=e243]:
+                - generic [ref=e244]: Коэффициенты для дальней зоны
+                - generic [ref=e245]:
                   - generic [ref=e246]:
-                    - generic [ref=e247]: Kd
-                    - spinbutton [ref=e248]: "0"
-              - generic [ref=e249]:
-                - generic [ref=e250]: Коэффициенты для дальней зоны
-                - generic [ref=e251]:
+                    - generic [ref=e247]: Kp
+                    - spinbutton [ref=e248]: "12"
+                  - generic [ref=e249]:
+                    - generic [ref=e250]: Ki
+                    - spinbutton [ref=e251]: "0"
                   - generic [ref=e252]:
-                    - generic [ref=e253]: Kp
-                    - spinbutton [ref=e254]: "12"
-                  - generic [ref=e255]:
-                    - generic [ref=e256]: Ki
-                    - spinbutton [ref=e257]: "0"
-                  - generic [ref=e258]:
-                    - generic [ref=e259]: Kd
-                    - spinbutton [ref=e260]: "0"
-              - generic [ref=e261]:
-                - generic [ref=e262]:
-                  - generic [ref=e263]: Максимальный выход (max_output)
-                  - spinbutton [ref=e264]: "50"
-                - generic [ref=e265]:
-                  - generic [ref=e266]: Минимальный интервал (min_interval_ms)
-                  - spinbutton [ref=e267]: "60000"
-                  - paragraph [ref=e268]: В миллисекундах (1000-3600000)
-                - generic [ref=e269]:
-                  - generic [ref=e270]: Скорость адаптации (adaptation_rate)
-                  - spinbutton [ref=e271]: "0.05"
-                  - paragraph [ref=e272]: "Диапазон: 0-1"
-                - generic [ref=e273]:
-                  - checkbox "Включить автонастройку (autotune)" [ref=e274]
-                  - generic [ref=e275]: Включить автонастройку (autotune)
-              - generic [ref=e276]:
-                - button "Сбросить" [ref=e277] [cursor=pointer]
-                - button "Сохранить" [ref=e278] [cursor=pointer]
-        - generic [ref=e279]:
-          - generic [ref=e280]: События
-          - generic [ref=e281]: Нет событий
+                    - generic [ref=e253]: Kd
+                    - spinbutton [ref=e254]: "0"
+              - generic [ref=e255]:
+                - generic [ref=e256]:
+                  - generic [ref=e257]: Максимальный выход (max_output)
+                  - spinbutton [ref=e258]: "50"
+                - generic [ref=e259]:
+                  - generic [ref=e260]: Минимальный интервал (min_interval_ms)
+                  - spinbutton [ref=e261]: "60000"
+                  - paragraph [ref=e262]: В миллисекундах (1000-3600000)
+                - generic [ref=e263]:
+                  - generic [ref=e264]: Скорость адаптации (adaptation_rate)
+                  - spinbutton [ref=e265]: "0.05"
+                  - paragraph [ref=e266]: "Диапазон: 0-1"
+                - generic [ref=e267]:
+                  - checkbox "Включить автонастройку (autotune)" [ref=e268]
+                  - generic [ref=e269]: Включить автонастройку (autotune)
+              - generic [ref=e270]:
+                - button "Сбросить" [ref=e271] [cursor=pointer]
+                - button "Сохранить" [ref=e272] [cursor=pointer]
+        - generic [ref=e273]:
+          - generic [ref=e274]: События
+          - generic [ref=e275]: Нет событий
     - generic:
-      - generic [ref=e284]:
-        - img [ref=e286]
-        - paragraph [ref=e289]: "Ошибка: Too many requests. Please try again later."
-        - button [ref=e290] [cursor=pointer]:
-          - img [ref=e291]
-      - generic [ref=e297]:
-        - img [ref=e299]
-        - paragraph [ref=e302]: Превышен лимит запросов. Повторная попытка...
-        - button [ref=e303] [cursor=pointer]:
-          - img [ref=e304]
-      - generic [ref=e310]:
-        - img [ref=e312]
-        - paragraph [ref=e315]: "Ошибка: Too many requests. Please try again later."
-        - button [ref=e316] [cursor=pointer]:
-          - img [ref=e317]
-    - button "? Администратор" [ref=e323] [cursor=pointer]:
-      - generic [ref=e324]:
-        - generic [ref=e325]: "?"
-        - generic [ref=e327]: Администратор
-        - img [ref=e328]
-  - complementary [ref=e330]:
-    - generic [ref=e332]: События
-    - generic [ref=e335]:
-      - generic [ref=e336]:
-        - heading "История просмотров" [level=3] [ref=e337]:
-          - img [ref=e338]
+      - generic [ref=e278]:
+        - img [ref=e280]
+        - paragraph [ref=e283]: "Ошибка: Too many requests. Please try again later."
+        - button [ref=e284] [cursor=pointer]:
+          - img [ref=e285]
+      - generic [ref=e291]:
+        - img [ref=e293]
+        - paragraph [ref=e296]: "Ошибка: Too many requests. Please try again later."
+        - button [ref=e297] [cursor=pointer]:
+          - img [ref=e298]
+      - generic [ref=e304]:
+        - img [ref=e306]
+        - paragraph [ref=e309]: "Ошибка: Too many requests. Please try again later."
+        - button [ref=e310] [cursor=pointer]:
+          - img [ref=e311]
+      - generic [ref=e317]:
+        - img [ref=e319]
+        - paragraph [ref=e322]: "Ошибка: Too many requests. Please try again later."
+        - button [ref=e323] [cursor=pointer]:
+          - img [ref=e324]
+      - generic [ref=e330]:
+        - img [ref=e332]
+        - paragraph [ref=e335]: "Ошибка: Too many requests. Please try again later."
+        - button [ref=e336] [cursor=pointer]:
+          - img [ref=e337]
+      - generic [ref=e343]:
+        - img [ref=e345]
+        - paragraph [ref=e348]: Превышен лимит запросов. Повторная попытка...
+        - button [ref=e349] [cursor=pointer]:
+          - img [ref=e350]
+      - generic [ref=e356]:
+        - img [ref=e358]
+        - paragraph [ref=e361]: "Ошибка: Too many requests. Please try again later."
+        - button [ref=e362] [cursor=pointer]:
+          - img [ref=e363]
+    - button "? Администратор" [ref=e369] [cursor=pointer]:
+      - generic [ref=e370]:
+        - generic [ref=e371]: "?"
+        - generic [ref=e373]: Администратор
+        - img [ref=e374]
+  - complementary [ref=e376]:
+    - generic [ref=e378]: События
+    - generic [ref=e381]:
+      - generic [ref=e382]:
+        - heading "История просмотров" [level=3] [ref=e383]:
+          - img [ref=e384]
           - text: История просмотров
-        - button "Очистить" [ref=e340] [cursor=pointer]
-      - generic [ref=e342]:
-        - link "🌱 Test Zone 1765720026527" [ref=e343] [cursor=pointer]:
-          - /url: /zones/17
-          - generic [ref=e344]: 🌱
-          - generic [ref=e345]: Test Zone 1765720026527
-        - generic [ref=e346]:
-          - generic [ref=e347]: только что
-          - button "Удалить из истории" [ref=e348] [cursor=pointer]:
-            - img [ref=e349]
+        - button "Очистить" [ref=e386] [cursor=pointer]
+      - generic [ref=e388]:
+        - link "🌱 Test Zone 1765725358618" [ref=e389] [cursor=pointer]:
+          - /url: /zones/63
+          - generic [ref=e390]: 🌱
+          - generic [ref=e391]: Test Zone 1765725358618
+        - generic [ref=e392]:
+          - generic [ref=e393]: только что
+          - button "Удалить из истории" [ref=e394] [cursor=pointer]:
+            - img [ref=e395]
 ```

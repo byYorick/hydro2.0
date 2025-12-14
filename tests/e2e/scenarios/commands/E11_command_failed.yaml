@@ -112,10 +112,8 @@ actions:
     optional: true
 
 assertions:
-  # Проверка: Команда существует (может быть в разных статусах)
-  # Примечание: Команда может остаться в SENT, если node-sim не обработал FAILED ответ,
-  # или быть в FAILED, если history-logger обработал MQTT сообщение
-  - name: command_exists
+  # Проверка: Команда должна быть в статусе FAILED (DoD требует проверку статуса FAILED)
+  - name: command_status_is_failed
     type: database_query
     query: |
       SELECT status
@@ -123,8 +121,19 @@ assertions:
       WHERE cmd_id = :cmd_id
     params:
       cmd_id: ${command_id}
-    timeout: 5.0
+    timeout: 10.0
     expected_rows: 1
+    expected:
+      - field: status
+        operator: equals
+        value: "FAILED"
+
+  # Проверка: WebSocket событие FAILED отправлено
+  - name: wait_for_failed_ws_event
+    type: websocket_event
+    event_type: ".App\\Events\\CommandStatusUpdated"
+    timeout_seconds: 10.0
+    # Проверка фильтра делается через wait_event, если поддерживается
 
 cleanup:
   - step: stop_node_simulator

@@ -9,8 +9,12 @@ type TestDataFixtures = {
 };
 
 export const test = base.extend<TestDataFixtures>({
-  apiHelper: async ({ request }, use) => {
-    const helper = new APITestHelper(request);
+  apiHelper: async ({ request, context }, use) => {
+    // Получаем cookies из контекста браузера для использования в API запросах
+    const cookies = await context.cookies();
+    
+    // Создаем helper с передачей cookies через функцию
+    const helper = new APITestHelper(request, undefined, cookies);
     await use(helper);
   },
 

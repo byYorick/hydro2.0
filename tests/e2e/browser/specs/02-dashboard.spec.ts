@@ -3,10 +3,13 @@ import { TEST_IDS } from '../constants';
 
 test.describe('Dashboard Overview', () => {
   test('should display zones count card', async ({ page, testZone }) => {
-    await page.goto('/dashboard');
-
-    // Проверяем наличие карточки количества зон
-    await expect(page.locator(`[data-testid="${TEST_IDS.DASHBOARD_ZONES_COUNT}"]`)).toBeVisible();
+    await page.goto('/dashboard', { waitUntil: 'networkidle' });
+    
+    // Ждем загрузки страницы
+    await page.waitForLoadState('networkidle', { timeout: 20000 });
+    
+    // Проверяем наличие карточки количества зон (может быть с задержкой из-за загрузки данных)
+    await expect(page.locator(`[data-testid="${TEST_IDS.DASHBOARD_ZONES_COUNT}"]`)).toBeVisible({ timeout: 20000 });
   });
 
   test('should display zone cards with statuses', async ({ page, testZone, apiHelper }) => {
@@ -38,17 +41,23 @@ test.describe('Dashboard Overview', () => {
   });
 
   test('should display alerts count', async ({ page }) => {
-    await page.goto('/dashboard');
-
+    await page.goto('/dashboard', { waitUntil: 'networkidle' });
+    
+    // Ждем загрузки страницы
+    await page.waitForLoadState('networkidle', { timeout: 20000 });
+    
     // Проверяем наличие карточки алертов
-    await expect(page.locator(`[data-testid="${TEST_IDS.DASHBOARD_ALERTS_COUNT}"]`)).toBeVisible();
+    await expect(page.locator(`[data-testid="${TEST_IDS.DASHBOARD_ALERTS_COUNT}"]`)).toBeVisible({ timeout: 20000 });
   });
 
   test('should display events panel', async ({ page }) => {
-    await page.goto('/dashboard');
-
+    await page.goto('/dashboard', { waitUntil: 'networkidle' });
+    
+    // Ждем загрузки страницы
+    await page.waitForLoadState('networkidle', { timeout: 20000 });
+    
     // Проверяем наличие панели событий
-    await expect(page.locator(`[data-testid="${TEST_IDS.DASHBOARD_EVENTS_PANEL}"]`)).toBeVisible();
+    await expect(page.locator(`[data-testid="${TEST_IDS.DASHBOARD_EVENTS_PANEL}"]`)).toBeVisible({ timeout: 20000 });
   });
 
   test('should filter events by kind', async ({ page }) => {

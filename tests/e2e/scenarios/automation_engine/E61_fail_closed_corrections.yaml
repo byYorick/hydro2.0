@@ -28,14 +28,24 @@ setup:
         interval_seconds: 2.0
 
 actions:
-  - step: get_zones
+  # Получаем зону с UID zn-test-1 из seeder
+  - step: get_automation_zone
     type: api_get
     endpoint: /api/zones
     save: zones_response
 
+  - step: set_zone_id_from_uid
+    type: database_query
+    query: |
+      SELECT id
+      FROM zones
+      WHERE uid = 'zn-test-1'
+      LIMIT 1
+    save: zone_row
+  
   - step: set_zone_id
     type: set
-    zone_id: ${zones_response.data.data[0].id}
+    zone_id: ${zone_row[0].id}
 
   - step: start_node_simulator
     type: start_simulator
@@ -43,20 +53,29 @@ actions:
     wait_seconds: 3
     optional: true  # node-sim уже может быть запущен
 
-  # Публикуем stale telemetry (ts в прошлом - больше часа назад)
+  # Публикуем stale telemetry (ts в прошлом - больше TELEMETRY_MAX_AGE_MINUTES)
   - step: publish_stale_ph_telemetry
     type: mqtt_publish
     topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/ph_sensor/telemetry
     payload:
       value: 6.0
-      ts: ${TIMESTAMP_MS - 7200000}  # 2 часа назад (stale)
+      ts: ${TIMESTAMP_MS - 600000}  # 10 минут назад (stale для E2E с TELEMETRY_MAX_AGE_MINUTES=5)
     qos: 1
-    wait_seconds: 5
+    wait_seconds: 2
+
+  - step: publish_stale_ec_telemetry
+    type: mqtt_publish
+    topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/ec_sensor/telemetry
+    payload:
+      value: 1.2
+      ts: ${TIMESTAMP_MS - 600000}  # 10 минут назад
+    qos: 1
+    wait_seconds: 15  # Даем время AE на обработку
 
   # Ждем обработки (AE должен обнаружить stale и не дозировать)
   - step: wait_ae_processing
     type: sleep
-    seconds: 10
+    seconds: 5
 
 assertions:
   # Проверка 1: Команды дозирования НЕ созданы (fail-closed)
@@ -74,22 +93,58 @@ assertions:
       - field: cmd_count
         operator: less_than_or_equal
         value: 0
-    timeout: 5.0
-    optional: true
+    timeout: 10.0
 
-  # Проверка 2: Создан alert/event о пропуске (опционально)
-  - name: skipped_event_or_alert
+  # Проверка 2: Создан zone_event о пропуске (PH_CORRECTION_SKIPPED_STALE_DATA или CORRECTION_SKIPPED_FRESHNESS_CHECK_FAILED)
+  - name: skipped_event_created
     type: database_query
     query: |
-      SELECT COUNT(*) as event_count
+      SELECT id, type, details
       FROM zone_events
       WHERE zone_id = :zone_id
-      AND (type LIKE '%%SKIP%%' OR type LIKE '%%STALE%%')
+      AND (type LIKE '%%SKIP%%' OR type LIKE '%%STALE%%' OR type LIKE '%%FRESHNESS%%')
       AND created_at > NOW() - INTERVAL '2 minutes'
+      ORDER BY created_at DESC
+      LIMIT 1
     params:
       zone_id: ${zone_id}
-    timeout: 5.0
-    optional: true
+    timeout: 10.0
+    expected_rows: 1
+
+  # Проверка 3: После N пропусков создается alert FRESHNESS_CHECK_FAILED (если порог достигнут)
+  # Создаем несколько stale telemetry для достижения порога
+  - step: publish_stale_ph_2
+    type: mqtt_publish
+    topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/ph_sensor/telemetry
+    payload:
+      value: 6.1
+      ts: ${TIMESTAMP_MS - 600000}
+    qos: 1
+    wait_seconds: 5
+
+  - step: publish_stale_ph_3
+    type: mqtt_publish
+    topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/ph_sensor/telemetry
+    payload:
+      value: 6.2
+      ts: ${TIMESTAMP_MS - 600000}
+    qos: 1
+    wait_seconds: 15
+
+  - name: freshness_alert_created
+    type: database_query
+    query: |
+      SELECT id, type, status
+      FROM alerts
+      WHERE zone_id = :zone_id
+      AND type LIKE '%%FRESHNESS%%'
+      AND created_at > NOW() - INTERVAL '5 minutes'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+    timeout: 20.0
+    optional: true  # Alert создается только после N пропусков подряд (порог = 3)
 
 cleanup:
   - step: stop_node_simulator

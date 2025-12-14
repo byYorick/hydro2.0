@@ -142,17 +142,30 @@ class MQTTProbe:
         import time
         start_time = time.time()
         
+        # Отслеживаем индекс последнего проверенного сообщения, чтобы не проверять старые
+        if not hasattr(self, '_last_checked_message_index'):
+            self._last_checked_message_index = len(self._message_queue)
+        start_index = self._last_checked_message_index
+        
         while True:
             elapsed = time.time() - start_time
             if elapsed >= timeout:
                 logger.warning(f"Timeout waiting for MQTT message on topic: {topic}")
                 return None
             
-            # Проверяем очередь сообщений
-            for msg in self._message_queue:
+            # Проверяем только новые сообщения (после start_index)
+            queue_length = len(self._message_queue)
+            for i in range(start_index, queue_length):
+                msg = self._message_queue[i]
                 if topic is None or msg["topic"] == topic or self._topic_matches(msg["topic"], topic):
                     if condition is None or condition(msg):
+                        # Обновляем индекс последнего проверенного сообщения
+                        self._last_checked_message_index = i + 1
                         return msg
+            
+            # Обновляем индекс после проверки всех новых сообщений
+            if queue_length > start_index:
+                self._last_checked_message_index = queue_length
             
             await asyncio.sleep(0.1)
     

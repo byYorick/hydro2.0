@@ -27,5 +27,10 @@ class DatabaseSeeder extends Seeder
             // PresetSeeder уже выполнен выше
             $this->call(FullServiceTestSeeder::class);
         }
+
+        // Seed E2E automation engine data (only in testing/e2e environment)
+        if (app()->environment('testing', 'e2e')) {
+            $this->call(AutomationEngineE2ESeeder::class);
+        }
     }
 }

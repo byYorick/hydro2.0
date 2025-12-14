@@ -73,15 +73,36 @@ actions:
     type: set
     command_id: ${command_response.data.command_id}
 
-  # Ждем перед проверкой статуса
-  # Примечание: Таймаут команды обычно происходит через 60-90 секунд,
-  # но для теста мы просто проверяем, что команда находится в статусе SENT или TIMEOUT
-  - step: wait_before_check
-    type: sleep
-    seconds: 5
+  # Останавливаем node-sim чтобы гарантировать отсутствие ответа
+  - step: stop_node_simulator_to_force_timeout
+    type: stop_simulator
 
-  # Проверяем наличие zone_event для timeout (опционально)
-  - step: check_timeout_zone_event
+  # Ждем таймаут команды (по умолчанию 5 минут, но для теста используем минимальное время)
+  # Примечание: ProcessCommandTimeouts команда должна обрабатывать timeout каждые 30 секунд
+  # Ждем минимум 60 секунд чтобы гарантировать обработку timeout
+  - step: wait_for_timeout_processing
+    type: sleep
+    seconds: 65
+
+assertions:
+  # Проверка: Команда должна быть в статусе TIMEOUT (DoD требует проверку TIMEOUT)
+  - name: command_status_is_timeout
+    type: database_query
+    query: |
+      SELECT status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+    params:
+      cmd_id: ${command_id}
+    timeout: 10.0
+    expected_rows: 1
+    expected:
+      - field: status
+        operator: equals
+        value: "TIMEOUT"
+
+  # Проверка: zone_event для timeout создан
+  - name: timeout_zone_event_exists
     type: database_query
     query: |
       SELECT id, type
@@ -94,25 +115,12 @@ actions:
     params:
       zone_id: ${test_zone_id}
       cmd_id: ${command_id}
-    optional: true
-
-assertions:
-  # Проверка: Команда существует и находится в статусе SENT или TIMEOUT
-  # Примечание: TIMEOUT происходит только после определенного времени ожидания,
-  # поэтому команда может быть еще в статусе SENT
-  - name: command_status_is_timeout_or_sent
-    type: database_query
-    query: |
-      SELECT status
-      FROM commands
-      WHERE cmd_id = :cmd_id
-    params:
-      cmd_id: ${command_id}
-    timeout: 5.0
+    timeout: 10.0
+    expected_rows: 1
     expected:
-      - field: status
-        operator: in
-        value: ['TIMEOUT', 'SENT']
+      - field: type
+        operator: equals
+        value: "COMMAND_TIMEOUT"
 
 cleanup:
   - step: stop_node_simulator

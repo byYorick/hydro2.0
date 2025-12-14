@@ -45,49 +45,44 @@ steps:
     set:
       command_id: ${command_response.data.command_id}
 
-  # Команда может сразу перейти в ACCEPTED (если node-sim быстро отвечает)
-  # Проверяем статус в БД напрямую (более надежно, чем WebSocket события)
-  - name: Check command status in DB (wait for SENT, ACCEPTED, or ACK)
+  # Ждем финального статуса команды - DONE (DoD требует проверку финализации)
+  - name: Wait for command final status DONE
     db.wait:
-      query: SELECT status FROM commands WHERE cmd_id = :cmd_id AND status IN ('SENT', 'ACCEPTED', 'ACK')
+      query: SELECT status FROM commands WHERE cmd_id = :cmd_id AND status = 'DONE'
       params:
         cmd_id: ${command_id}
-      timeout: 20.0
+      timeout: 30.0
       expected_rows: 1
       save: command_status
 
-  - name: Assert command status is SENT, ACCEPTED, or ACK
-    assert.contains:
-      container: ['SENT', 'ACCEPTED', 'ACK']
-      item: ${command_status[0].status}
-      message: "Expected SENT, ACCEPTED, or ACK, but got ${command_status[0].status}"
+  - name: Assert command status is DONE
+    assert.equals:
+      actual: ${command_status[0].status}
+      expected: "DONE"
+      message: "Expected DONE, but got ${command_status[0].status}"
 
-  # Опционально ждем WebSocket события (могут прийти раньше, чем мы подписались)
-  - name: Wait for command acceptance (ACCEPTED) event if available
+  # Ждем WebSocket события DONE
+  - name: Wait for command DONE event
     ws.wait_event:
       event: ".App\\Events\\CommandStatusUpdated"
-      timeout: 5.0
+      timeout: 10.0
       filter:
         commandId: ${command_id}
-        status: ['ACCEPTED', 'ACK']
-      optional: true
+        status: 'DONE'
 
   - name: Get final command status from API
     api.get:
       path: /api/commands/${command_id}/status
       save: final_command
 
-  - name: Assert command was processed (SENT, ACCEPTED, or ACK)
-    assert.contains:
-      container: ['SENT', 'ACCEPTED', 'ACK']
-      item: ${final_command.data.status}
-      message: "Expected SENT, ACCEPTED, or ACK, but got ${final_command.data.status}"
+  - name: Assert final command status is DONE
+    assert.equals:
+      actual: ${final_command.data.status}
+      expected: "DONE"
+      message: "Expected DONE, but got ${final_command.data.status}"
 
-  # Note: command history query removed to avoid datetime serialization issues
-  # TODO: Fix datetime serialization in db.query results
-
-  - name: Check command recorded in zone_events
-    db.query:
+  - name: Check command recorded in zone_events (must validate result)
+    db.wait:
       query: |
         SELECT id, type, entity_type, entity_id, payload_json
         FROM zone_events
@@ -98,5 +93,12 @@ steps:
       params:
         zone_id: ${test_zone_id}
         cmd_id: ${command_id}
+      timeout: 10.0
       expected_rows: 1
       save: zone_event
+
+  - name: Validate zone_event exists
+    assert.equals:
+      actual: ${zone_event.length}
+      expected: 1
+      message: "Expected exactly 1 zone_event, got ${zone_event.length}"

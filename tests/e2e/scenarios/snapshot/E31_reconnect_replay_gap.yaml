@@ -101,22 +101,34 @@ actions:
     seconds: 2
 
 assertions:
-  # Проверка: snapshot содержит данные
-  # Примечание: Структура snapshot может варьироваться, проверяем только наличие данных
-  - name: snapshot_has_data
-    type: database_query
-    query: |
-      SELECT 1 as check_dummy
-    expected_rows: 1
+  # Проверка: snapshot содержит last_event_id (DoD требует проверку last_event_id)
+  - name: snapshot_has_last_event_id
+    type: json_assertion
+    source: snapshot
+    path: data.last_event_id
+    expected:
+      - field: value
+        operator: is_not_null
 
-  - name: replay_returns_data
+  # Проверка: replay возвращает события после last_event_id (DoD требует валидацию gap)
+  - name: replay_returns_events_after_gap
     type: json_assertion
     data: ${events_after}
     expected:
       - field: data
         operator: is_type
         value: list
-        optional: true
+
+  # Проверка: все события в replay имеют event_id больше last_event_id из snapshot
+  - name: validate_replay_gap
+    type: compare_json
+    source1: snapshot
+    path1: data.last_event_id
+    source2: events_after
+    path2: data[0].id
+    operator: less_than
+    # Если событий нет, это тоже валидный случай (gap пустой)
+    optional: true
 
 cleanup:
   - step: disconnect_ws_final

@@ -287,6 +287,26 @@ class ZoneAutomationService:
         Returns:
             Dict с полями: error_streak, next_allowed_run_at
         """
+        # Проверка test hook для override состояния (только в test mode)
+        try:
+            from api import get_zone_state_override
+            state_override = get_zone_state_override(zone_id)
+            if state_override:
+                # Используем override из test hook
+                logger.debug(
+                    f"[TEST_HOOK] Using state override for zone {zone_id}: {state_override}",
+                    extra={"zone_id": zone_id, "state_override": state_override}
+                )
+                # Обновляем внутреннее состояние
+                if zone_id not in self._zone_states:
+                    self._zone_states[zone_id] = {}
+                self._zone_states[zone_id].update(state_override)
+        except ImportError:
+            # api модуль может быть недоступен
+            pass
+        except Exception as e:
+            logger.debug(f"[TEST_HOOK] Failed to get state override: {e}")
+        
         if zone_id not in self._zone_states:
             self._zone_states[zone_id] = {
                 'error_streak': 0,
@@ -434,6 +454,47 @@ class ZoneAutomationService:
         controller_coro,
         zone_id: int
     ) -> None:
+        """
+        Безопасная обработка контроллера с изоляцией ошибок и поддержкой test hooks.
+        
+        Args:
+            controller_name: Имя контроллера (climate, ph, ec, irrigation, etc.)
+            controller_coro: Корутина для выполнения контроллера
+            zone_id: ID зоны
+        """
+        # Проверка test hook для детерминированных ошибок (только в test mode)
+        try:
+            from api import get_test_hook_for_zone
+            test_hook = get_test_hook_for_zone(zone_id, controller_name)
+            if test_hook and test_hook.get("active"):
+                error_type = test_hook.get("error_type", "ControllerError")
+                logger.warning(
+                    f"[TEST_HOOK] Injecting error for zone {zone_id}, controller {controller_name}: {error_type}",
+                    extra={"zone_id": zone_id, "controller": controller_name, "error_type": error_type}
+                )
+                # Создаем событие о принудительной ошибке
+                await create_zone_event(
+                    zone_id,
+                    'CONTROLLER_FAILED',
+                    {
+                        'controller': controller_name,
+                        'error_type': error_type,
+                        'test_hook': True
+                    }
+                )
+                # Выбрасываем исключение в зависимости от типа
+                if error_type == "ControllerError":
+                    raise RuntimeError(f"[TEST_HOOK] Forced controller error: {controller_name}")
+                elif error_type == "TimeoutError":
+                    raise TimeoutError(f"[TEST_HOOK] Forced timeout: {controller_name}")
+                else:
+                    raise Exception(f"[TEST_HOOK] Forced error ({error_type}): {controller_name}")
+        except ImportError:
+            # api модуль может быть недоступен в некоторых контекстах
+            pass
+        except Exception as e:
+            # Если test hook сам вызвал ошибку, пробрасываем её дальше
+            raise
         """
         Безопасное выполнение контроллера с изоляцией ошибок.
         

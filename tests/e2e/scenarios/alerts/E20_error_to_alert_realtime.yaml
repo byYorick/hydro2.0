@@ -97,9 +97,7 @@ actions:
 
 assertions:
   # Проверка 1: Алерт создан в БД со статусом ACTIVE
-  # Примечание: Код алерта может отличаться от error_code в MQTT сообщении
-  # Баг с отсутствием error_count исправлен - код теперь обрабатывает отсутствие колонок gracefully
-  # Используем database_query - он сам ждет через db.wait внутри, если указан timeout
+  # Проверка: Alert создан (DoD требует проверку создания алерта)
   # Экранируем % в LIKE паттернах как %%
   - name: alert_created_active
     type: database_query
@@ -112,11 +110,33 @@ assertions:
     params:
       zone_id: ${zone_id}
     timeout: 20.0
+    expected_rows: 1
     expected:
       - field: alert_count
         operator: greater_than_or_equal
         value: 1
-    optional: true  # Alert может не создаться из-за rate limiting или dedup
+
+  # Проверка: WebSocket событие AlertCreated отправлено
+  - name: alert_ws_event_sent
+    type: websocket_event
+    event_type: ".App\\Events\\AlertCreated"
+    timeout_seconds: 10.0
+
+  # Проверка: zone_event для алерта создан
+  - name: alert_zone_event_exists
+    type: database_query
+    query: |
+      SELECT id, type
+      FROM zone_events
+      WHERE zone_id = :zone_id
+      AND (type LIKE '%%ALERT%%' OR type LIKE '%%alert%%')
+      AND created_at > NOW() - INTERVAL '1 minute'
+      ORDER BY id DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+    timeout: 10.0
+    expected_rows: 1
 
 cleanup:
   - step: stop_node_simulator

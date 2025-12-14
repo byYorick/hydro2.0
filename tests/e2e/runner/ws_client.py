@@ -293,6 +293,11 @@ class WSClient:
         import time
         start_time = time.time()
         
+        # Отслеживаем индекс последнего проверенного сообщения, чтобы не проверять старые
+        if not hasattr(self, '_last_checked_message_index'):
+            self._last_checked_message_index = len(self._message_queue)
+        start_index = self._last_checked_message_index
+        
         # Нормализуем имя события (может быть полным классом или коротким именем)
         event_type_normalized = event_type
         if "." in event_type:
@@ -308,8 +313,10 @@ class WSClient:
                 logger.debug(f"Recent messages: {[msg.get('data', {}).get('event') for msg in recent_messages]}")
                 return None
             
-            # Проверяем очередь сообщений
-            for msg in self._message_queue:
+            # Проверяем только новые сообщения (после start_index)
+            queue_length = len(self._message_queue)
+            for i in range(start_index, queue_length):
+                msg = self._message_queue[i]
                 data = msg["data"]
                 msg_event = data.get("event", data.get("type"))
                 
@@ -352,7 +359,13 @@ class WSClient:
                             continue
                     
                     if condition is None or condition(data):
+                        # Обновляем индекс последнего проверенного сообщения
+                        self._last_checked_message_index = i + 1
                         return data
+            
+            # Обновляем индекс после проверки всех новых сообщений
+            if queue_length > start_index:
+                self._last_checked_message_index = queue_length
             
             await asyncio.sleep(0.1)
     

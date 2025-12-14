@@ -35,14 +35,30 @@ setup:
         heartbeat_interval_seconds: 15.0
 
 actions:
-  - step: get_zones
+  # Получаем зону с UID zn-test-1 из seeder
+  - step: get_automation_zone
     type: api_get
     endpoint: /api/zones
     save: zones_response
 
+  - step: find_test_zone
+    type: set
+    zone_id: null
+    # Ищем зону с UID zn-test-1
+    _zone_list: ${zones_response.data.data}
+  
+  - step: set_zone_id_from_uid
+    type: database_query
+    query: |
+      SELECT id
+      FROM zones
+      WHERE uid = 'zn-test-1'
+      LIMIT 1
+    save: zone_row
+  
   - step: set_zone_id
     type: set
-    zone_id: ${zones_response.data.data[0].id}
+    zone_id: ${zone_row[0].id}
 
   - step: start_node_simulator
     type: start_simulator
@@ -63,12 +79,49 @@ actions:
       value: 18.0  # Низкая температура (целевая обычно 22-25)
       ts: ${TIMESTAMP_MS}
     qos: 1
-    wait_seconds: 10  # Даем время AE на обработку
+    wait_seconds: 2
 
-  # Ждем обработки команды от automation-engine
-  - step: wait_for_heater_command
-    type: sleep
-    seconds: 5
+  # Публикуем также humidity и co2 для полноты
+  - step: publish_telemetry_rh
+    type: mqtt_publish
+    topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/air_rh/telemetry
+    payload:
+      value: 65.0
+      ts: ${TIMESTAMP_MS}
+    qos: 1
+    wait_seconds: 1
+
+  - step: publish_telemetry_co2
+    type: mqtt_publish
+    topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/co2_ppm/telemetry
+    payload:
+      value: 600.0
+      ts: ${TIMESTAMP_MS}
+    qos: 1
+    wait_seconds: 15  # Даем время AE на обработку (ускоренный цикл = 2s)
+
+  # Ждем команду от automation-engine
+  - step: wait_heater_command
+    type: wait_command
+    zone_id: ${zone_id}
+    filter:
+      cmd: set_relay
+      source: automation
+    timeout: 20.0
+
+  # Ждем zone_event CLIMATE_HEATING_ON
+  - step: wait_climate_event
+    type: wait_zone_event
+    zone_id: ${zone_id}
+    event_type: CLIMATE_HEATING_ON
+    timeout: 20.0
+
+  # Проверяем метрики automation-engine
+  - step: check_metrics
+    type: scrape_metrics
+    url: http://automation-engine:9401
+    metric: automation_commands_sent_total
+    save: metrics
 
 assertions:
   # Проверка 1: Telemetry сохранилась в БД
@@ -83,20 +136,59 @@ assertions:
       zone_id: ${zone_id}
     timeout: 10.0
     expected_rows: 1
-    optional: true
 
-  # Проверка 2: Команда создана (если AE активен)
+  # Проверка 2: Команда создана с source='automation'
   - name: command_created_by_ae
     type: database_query
     query: |
-      SELECT COUNT(*) as cmd_count
+      SELECT id, cmd, status, source, params
       FROM commands
       WHERE zone_id = :zone_id
-      AND created_at > NOW() - INTERVAL '1 minute'
+      AND source = 'automation'
+      AND created_at > NOW() - INTERVAL '2 minutes'
+      ORDER BY created_at DESC
+      LIMIT 1
     params:
       zone_id: ${zone_id}
-    timeout: 5.0
-    optional: true
+    timeout: 10.0
+    expected_rows: 1
+    expected:
+      - field: source
+        operator: equals
+        value: automation
+      - field: cmd
+        operator: in
+        value: [set_relay, heater_on]
+
+  # Проверка 3: Zone event CLIMATE_HEATING_ON создан
+  - name: climate_event_created
+    type: database_query
+    query: |
+      SELECT id, type, details
+      FROM zone_events
+      WHERE zone_id = :zone_id
+      AND type = 'CLIMATE_HEATING_ON'
+      AND created_at > NOW() - INTERVAL '2 minutes'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+    timeout: 10.0
+    expected_rows: 1
+
+  # Проверка 4: WebSocket событие CommandStatusUpdated (опционально, если WS работает)
+  - name: ws_command_event
+    type: websocket_event
+    event_type: CommandStatusUpdated
+    timeout_seconds: 15.0
+    optional: true  # WS может быть недоступен в некоторых окружениях
+
+  # Проверка 5: Метрика automation_commands_sent_total увеличилась (опционально, если метрики доступны)
+  - name: metrics_increased
+    type: assert
+    assert_type: custom
+    condition: ${metrics.automation_commands_sent_total} > 0
+    optional: true  # Метрики могут быть недоступны в некоторых окружениях
 
 cleanup:
   - step: stop_node_simulator

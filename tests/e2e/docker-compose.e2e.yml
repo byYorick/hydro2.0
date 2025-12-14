@@ -264,6 +264,15 @@ services:
     - LARAVEL_API_URL=http://laravel
     - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
     - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
+    # Ускоренные настройки для E2E тестов
+    - MAIN_LOOP_SLEEP_SECONDS=${MAIN_LOOP_SLEEP_SECONDS:-2}
+    - INITIAL_BACKOFF_SECONDS=${INITIAL_BACKOFF_SECONDS:-5}
+    - CONTROLLER_COOLDOWN_SECONDS=${CONTROLLER_COOLDOWN_SECONDS:-10}
+    - TELEMETRY_MAX_AGE_MINUTES=${TELEMETRY_MAX_AGE_MINUTES:-5}
+    - FRESHNESS_CHECK_FAILED_ALERT_THRESHOLD=${FRESHNESS_CHECK_FAILED_ALERT_THRESHOLD:-3}
+    - CONFIG_FETCH_RETRY_SLEEP_SECONDS=${CONFIG_FETCH_RETRY_SLEEP_SECONDS:-2}
+    # Test mode для детерминированных ошибок
+    - AE_TEST_MODE=${AE_TEST_MODE:-0}
     depends_on:
       mosquitto:
         condition: service_healthy
@@ -280,8 +289,9 @@ services:
       timeout: 5s
       retries: 10
       start_period: 60s
-    profiles:
-    - automation
+    # Убираем profiles для автоматического старта в E2E тестах
+    # profiles:
+    # - automation
     networks:
     - backend
   node-sim:

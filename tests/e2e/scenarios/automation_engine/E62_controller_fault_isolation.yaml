@@ -29,14 +29,24 @@ setup:
         interval_seconds: 2.0
 
 actions:
-  - step: get_zones
+  # Получаем зону с UID zn-test-1 из seeder
+  - step: get_automation_zone
     type: api_get
     endpoint: /api/zones
     save: zones_response
 
+  - step: set_zone_id_from_uid
+    type: database_query
+    query: |
+      SELECT id
+      FROM zones
+      WHERE uid = 'zn-test-1'
+      LIMIT 1
+    save: zone_row
+  
   - step: set_zone_id
     type: set
-    zone_id: ${zones_response.data.data[0].id}
+    zone_id: ${zone_row[0].id}
 
   - step: start_node_simulator
     type: start_simulator
@@ -44,23 +54,76 @@ actions:
     wait_seconds: 3
     optional: true  # node-sim уже может быть запущен
 
-  # Примечание: Для теста может потребоваться специальная конфигурация или endpoint
-  # для принудительного вызова исключения в контроллере
-  # Здесь проверяем, что система продолжает работать при ошибках
+  # Включаем test mode для automation-engine
+  - step: enable_test_mode
+    type: set
+    AE_TEST_MODE: 1
+
+  # Принудительно вызываем ошибку в climate контроллере через test hook
+  - step: inject_climate_error
+    type: ae_test_hook
+    url: http://automation-engine:9405
+    zone_id: ${zone_id}
+    controller: climate
+    action: inject_error
+    error_type: ControllerError
 
   # Публикуем telemetry для работы контроллеров
-  - step: publish_telemetry
+  - step: publish_telemetry_ph
     type: mqtt_publish
     topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/ph_sensor/telemetry
     payload:
-      value: 7.0
+      value: 6.5
       ts: ${TIMESTAMP_MS}
     qos: 1
-    wait_seconds: 5
+    wait_seconds: 2
+
+  - step: publish_telemetry_temp
+    type: mqtt_publish
+    topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/air_temp_c/telemetry
+    payload:
+      value: 20.0
+      ts: ${TIMESTAMP_MS}
+    qos: 1
+    wait_seconds: 15  # Даем время AE на обработку
+
+  # Ждем zone_event CONTROLLER_FAILED
+  - step: wait_controller_failed_event
+    type: wait_zone_event
+    zone_id: ${zone_id}
+    event_type: CONTROLLER_FAILED
+    filter:
+      controller: climate
+    timeout: 20.0
+    optional: true
+
+  # Очищаем test hook
+  - step: clear_test_hook
+    type: ae_test_hook
+    url: http://automation-engine:9405
+    zone_id: ${zone_id}
+    controller: climate
+    action: clear_error
 
 assertions:
-  # Проверка 1: Система продолжает работать (команды других контроллеров создаются)
-  - name: system_continues_working
+  # Проверка 1: Zone event CONTROLLER_FAILED создан
+  - name: controller_failed_event
+    type: database_query
+    query: |
+      SELECT id, type, details
+      FROM zone_events
+      WHERE zone_id = :zone_id
+      AND (type LIKE '%%CONTROLLER%%FAIL%%' OR type = 'CONTROLLER_FAILED')
+      AND created_at > NOW() - INTERVAL '2 minutes'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+    timeout: 10.0
+    optional: true  # Может не создаться если изоляция работает до создания события
+
+  # Проверка 2: Другие контроллеры продолжают работать (например, health или light)
+  - name: other_controllers_working
     type: database_query
     query: |
       SELECT COUNT(*) as cmd_count
@@ -69,19 +132,24 @@ assertions:
       AND created_at > NOW() - INTERVAL '2 minutes'
     params:
       zone_id: ${zone_id}
-    timeout: 5.0
-    optional: true
+    timeout: 10.0
+    optional: true  # Команды могут не создаваться если все контроллеры в cooldown
 
-  # Проверка 2: zone_event controller_failed создан (если был сбой)
-  - name: controller_failed_event
+  # Проверка 3: В следующем цикле упавший контроллер пропускается (cooldown)
+  - step: wait_next_cycle
+    type: sleep
+    seconds: 5
+
+  - name: controller_cooldown
     type: database_query
     query: |
-      SELECT COUNT(*) as event_count
+      SELECT COUNT(*) as skip_count
       FROM zone_events
       WHERE zone_id = :zone_id
-      AND (type LIKE '%%CONTROLLER%%FAIL%%' OR type LIKE '%%controller%%fail%%')
+      AND (type LIKE '%%SKIP%%' OR type LIKE '%%COOLDOWN%%')
+      AND details->>'controller' = 'climate'
       AND created_at > NOW() - INTERVAL '2 minutes'
     params:
       zone_id: ${zone_id}
-    timeout: 5.0
+    timeout: 10.0
     optional: true

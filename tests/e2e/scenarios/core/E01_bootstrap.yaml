@@ -42,14 +42,13 @@ setup:
     - backend: Laravel is running
 
 actions:
-  # Шаг 1: Запуск симулятора узла
+  # Шаг 1: Запуск симулятора узла (обязательно)
   - step: start_node_simulator
     type: start_simulator
     config_ref: node_sim.config
     wait_seconds: 3  # Ждем подключения и первой публикации
-    optional: true  # node-sim уже может быть запущен
 
-  # Шаг 2: Получаем zone_id и node_id
+  # Шаг 2: Получаем zone_id и node_id по UID из конфига симулятора
   - step: get_zones
     type: api_get
     endpoint: "/api/zones"
@@ -60,37 +59,45 @@ actions:
     endpoint: "/api/nodes"
     save: nodes
 
+  # Ищем зону и ноду по UID из конфига симулятора (не по индексу)
   - step: find_test_zone_and_node
     type: set
-    test_zone_id: ${zones.data.data[0].id}
-    test_node_id: ${nodes.data.data[0].id}
-    test_node_uid: ${nodes.data.data[0].uid}
-    zone_id: ${zones.data.data[0].id}
-    node_id: ${nodes.data.data[0].id}
+    test_zone_uid: zn-test-1
+    test_node_uid: nd-ph-esp32una
   
-  # Проверяем, что zone_id и node_id установлены
-  - step: verify_ids_set
+  # Шаг 3: Получаем zone_id и node_id по UID (runner должен установить их автоматически, но проверим)
+  # Если zone_id/node_id не установлены автоматически, ищем по UID
+  - step: resolve_ids_by_uid
     type: database_query
     query: |
-      SELECT 1 as check_dummy
-      WHERE :zone_id IS NOT NULL AND :zone_id::text != '' 
-      AND :node_id IS NOT NULL AND :node_id::text != ''
+      SELECT 
+        z.id as zone_id,
+        n.id as node_id
+      FROM nodes n
+      LEFT JOIN zones z ON n.zone_id = z.id
+      WHERE n.uid = :node_uid
+      AND z.uid = :zone_uid
+      LIMIT 1
     params:
-      zone_id: ${zone_id}
-      node_id: ${node_id}
+      node_uid: ${test_node_uid}
+      zone_uid: ${test_zone_uid}
+    timeout: 5.0
     expected_rows: 1
-    optional: true
+    save: id_resolution
 
-  # Шаг 3: Ждем публикации телеметрии от node-sim (он работает автоматически)
-  # node-sim публикует телеметрию каждые 5 секунд, ждем минимум одну публикацию
+  - step: set_resolved_ids
+    type: set
+    zone_id: ${id_resolution[0].zone_id}
+    node_id: ${id_resolution[0].node_id}
+
+  # Шаг 4: Ждем публикации телеметрии от node-sim (он работает автоматически)
+  # node-sim публикует телеметрию каждые 2 секунды, ждем минимум одну публикацию
   - step: wait_for_telemetry_publish
     type: sleep
     seconds: 8
 
 assertions:
-  # Проверка 1: Телеметрия в БД
-  # Используем test_zone_id и test_node_id для надежности
-  # Помечаем как optional, так как телеметрия может появиться с задержкой
+  # Проверка 1: Телеметрия в БД (ОБЯЗАТЕЛЬНАЯ - DoD требует телеметрию в БД)
   - name: telemetry_in_db
     type: database_query
     query: |
@@ -101,8 +108,8 @@ assertions:
       AND metric_type = 'ph'
       LIMIT 1
     params:
-      zone_id: ${test_zone_id}
-      node_id: ${test_node_id}
+      zone_id: ${zone_id}
+      node_id: ${node_id}
     timeout: 20.0
     expected_rows: 1
     expected:
@@ -113,7 +120,6 @@ assertions:
         value: "ph"
       - field: updated_at
         operator: is_not_null
-    optional: true
 
   # Проверка 2: Статус узла ONLINE
   - name: node_status_online
@@ -147,4 +153,3 @@ assertions:
 cleanup:
   - step: stop_node_simulator
     type: stop_simulator
-    optional: true  # fault injection не работает в контейнере

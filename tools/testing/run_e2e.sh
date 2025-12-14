@@ -275,6 +275,8 @@ main() {
             check_services_health
             ;;
         "test"|"run")
+            log_info "Runner автоматически проверит и поднимет Docker инфраструктуру при необходимости"
+            
             # AuthClient теперь автоматически получает токен, поэтому LARAVEL_API_TOKEN не требуется
             # Оставляем только для обратной совместимости или если явно указан пользователем
             if [ -n "$LARAVEL_API_TOKEN" ]; then
@@ -290,7 +292,9 @@ main() {
             export DB_HOST DB_PORT DB_DATABASE DB_USERNAME DB_PASSWORD
             export WS_URL="${WS_URL:-ws://localhost:6002/app/local}"
             
-            log_info "Используем API токен: ${LARAVEL_API_TOKEN:0:10}..."
+            if [ -n "$LARAVEL_API_TOKEN" ]; then
+                log_info "Используем API токен: ${LARAVEL_API_TOKEN:0:10}..."
+            fi
             
             # Запуск всех сценариев кроме CHAOS (core + commands + alerts + snapshot + infra + grow_cycle + automation_engine)
             SCENARIOS=(
@@ -429,15 +433,11 @@ main() {
             ;;
         "all")
             log_info "Полный цикл: запуск инфраструктуры + тесты"
-            docker-compose -f docker-compose.e2e.yml up -d
-            sleep 10
-            if check_services_health; then
-                # Передаем управление в test через bash
-                bash "$SCRIPT_DIR/run_e2e.sh" test
-            else
-                log_error "Не удалось запустить инфраструктуру"
-                exit 1
-            fi
+            log_info "Runner автоматически проверит и поднимет инфраструктуру при необходимости"
+            log_info "Для принудительного запуска используйте: $0 up && $0 test"
+            # Runner сам поднимет инфраструктуру через _ensure_infra_started()
+            # Передаем управление в test
+            bash "$SCRIPT_DIR/run_e2e.sh" test
             ;;
         "logs")
             log_info "Просмотр логов..."

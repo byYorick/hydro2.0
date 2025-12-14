@@ -84,11 +84,11 @@
               - /url: /zones
             - img [ref=e69]
           - listitem [ref=e71]:
-            - generic [ref=e72]: Test Zone 1765720013445
+            - generic [ref=e72]: Test Zone 1765725344327
       - generic [ref=e74]:
         - generic [ref=e75]:
           - generic [ref=e76]:
-            - generic [ref=e77]: Test Zone 1765720013445
+            - generic [ref=e77]: Test Zone 1765725344327
             - generic [ref=e78]: Test zone description
           - generic [ref=e79]:
             - generic [ref=e80]: PLANNED
@@ -286,10 +286,10 @@
           - text: История просмотров
         - button "Очистить" [ref=e301] [cursor=pointer]
       - generic [ref=e303]:
-        - link "🌱 Test Zone 1765720013445" [ref=e304] [cursor=pointer]:
-          - /url: /zones/11
+        - link "🌱 Test Zone 1765725344327" [ref=e304] [cursor=pointer]:
+          - /url: /zones/57
           - generic [ref=e305]: 🌱
-          - generic [ref=e306]: Test Zone 1765720013445
+          - generic [ref=e306]: Test Zone 1765725344327
         - generic [ref=e307]:
           - generic [ref=e308]: только что
           - button "Удалить из истории" [ref=e309] [cursor=pointer]:

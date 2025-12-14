@@ -116,9 +116,9 @@ actions:
     wait_seconds: 2
 
 assertions:
-  # Проверка 1: Команда достигает статуса DONE (или ACCEPTED/ACK) после получения ответов
-  # Используем простую проверку, так как дублирующие ответы не должны ломать систему
-  - name: command_reaches_final_status
+  # Проверка 1: Команда достигает финального статуса DONE (DoD требует проверку финализации)
+  # Дублирующие ответы не должны ломать систему, но финальный статус должен быть DONE
+  - name: command_reaches_final_status_done
     type: database_query
     query: |
       SELECT id, status, updated_at
@@ -126,11 +126,12 @@ assertions:
       WHERE cmd_id = :cmd_id
     params:
       cmd_id: ${COMMAND_ID}
-    timeout: 10.0
+    timeout: 15.0
+    expected_rows: 1
     expected:
       - field: status
-        operator: in
-        value: ["DONE", "ACCEPTED", "ACK", "SENT"]
+        operator: equals
+        value: "DONE"
 
 
 cleanup:

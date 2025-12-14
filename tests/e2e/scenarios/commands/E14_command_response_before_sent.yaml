@@ -102,7 +102,9 @@ actions:
     seconds: 2
 
 assertions:
-  - name: final_status_is_valid
+  # Проверка: Команда достигает финального статуса DONE (DoD требует проверку финализации)
+  # Response before sent не должен ломать систему, но финальный статус должен быть DONE
+  - name: final_status_is_done
     type: database_query
     query: |
       SELECT status
@@ -110,10 +112,12 @@ assertions:
       WHERE cmd_id = :cmd_id
     params:
       cmd_id: ${command_id}
+    timeout: 15.0
+    expected_rows: 1
     expected:
       - field: status
-        operator: in
-        value: ['DONE', 'ACCEPTED', 'ACK', 'SENT']
+        operator: equals
+        value: "DONE"
 
   - name: no_status_corruption
     type: database_query
