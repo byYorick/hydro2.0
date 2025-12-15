@@ -238,6 +238,19 @@ export class APITestHelper {
     }
   }
 
+  async getZone(zoneId: number): Promise<TestZone> {
+    const response = await this.request.get(`${baseURL}/api/zones/${zoneId}`, {
+      headers: await this.getHeaders(),
+    });
+
+    if (!response.ok()) {
+      throw new Error(`Failed to get zone: ${response.status()} ${await response.text()}`);
+    }
+
+    const result = await response.json();
+    return result.data;
+  }
+
   async deleteGreenhouse(id: number): Promise<void> {
     const response = await this.request.delete(`${baseURL}/api/greenhouses/${id}`, {
       headers: await this.getHeaders(),

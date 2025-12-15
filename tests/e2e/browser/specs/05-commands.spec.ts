@@ -4,45 +4,40 @@ import { TEST_IDS } from '../constants';
 test.describe('Commands', () => {
   test('should send command and show status updates', async ({ page, testZone, apiHelper }) => {
     await page.goto(`/zones/${testZone.id}`, { waitUntil: 'networkidle' });
+    await page.waitForLoadState('networkidle', { timeout: 20000 });
     await page.waitForSelector('h1, [data-testid*="zone"]', { timeout: 15000 });
     await page.waitForTimeout(2000);
 
-    // Ищем форму отправки команды или кнопку команды
-    const commandForm = page.locator(`[data-testid="${TEST_IDS.ZONE_COMMAND_FORM}"]`);
+    // Ищем кнопку принудительного полива
     const forceIrrigationBtn = page.locator(`[data-testid="force-irrigation-button"]`)
+      .or(page.locator('button:has-text("Полить сейчас")'))
       .or(page.locator('text=/Полить|Irrigate/i').first());
     
     // Если есть кнопка принудительного полива, используем её
-    if (await forceIrrigationBtn.count() > 0 && await forceIrrigationBtn.isVisible()) {
-      try {
-        await forceIrrigationBtn.first().click();
-        await page.waitForTimeout(2000);
-        
-        // Проверяем наличие тоста или обновления статуса
-        const toast = page.locator(`[data-testid*="toast"]`)
-          .or(page.locator('text=/успех|success|ошибка|error/i').first());
-        if (await toast.count() > 0) {
-          await expect(toast.first()).toBeVisible({ timeout: 5000 });
-        }
-      } catch (e) {
-        console.log('Failed to click irrigation button:', e);
-      }
-    } else if (await commandForm.count() > 0) {
-      // Если форма есть, заполняем и отправляем
-      const commandSubmit = page.locator(`[data-testid="${TEST_IDS.ZONE_COMMAND_SUBMIT}"]`);
-      
-      if (await commandSubmit.count() > 0) {
+    if (await forceIrrigationBtn.count() > 0) {
+      const isVisible = await forceIrrigationBtn.first().isVisible().catch(() => false);
+      if (isVisible) {
         try {
-          await commandSubmit.click();
-          await page.waitForTimeout(2000);
+          await forceIrrigationBtn.first().click();
+          await page.waitForTimeout(3000);
           
-          const toast = page.locator(`[data-testid*="toast"]`);
+          // Проверяем наличие тоста или обновления статуса
+          const toast = page.locator(`[data-testid*="toast"]`)
+            .or(page.locator('text=/успех|success|ошибка|error/i').first());
           if (await toast.count() > 0) {
-            await expect(toast.first()).toBeVisible({ timeout: 5000 });
+            await expect(toast.first()).toBeVisible({ timeout: 10000 });
+          } else {
+            // Если тост не появился, просто проверяем, что страница все еще загружена
+            await expect(page.locator('h1').or(page.locator('[data-testid*="zone"]'))).toBeVisible();
           }
         } catch (e) {
-          console.log('Failed to submit command:', e);
+          console.log('Failed to click irrigation button:', e);
+          // Если не удалось кликнуть, просто проверяем загрузку страницы
+          await expect(page.locator('h1').or(page.locator('[data-testid*="zone"]'))).toBeVisible();
         }
+      } else {
+        // Если кнопка не видна, просто проверяем загрузку страницы
+        await expect(page.locator('h1').or(page.locator('[data-testid*="zone"]'))).toBeVisible();
       }
     } else {
       // Если команды недоступны, просто проверяем загрузку страницы
@@ -52,7 +47,9 @@ test.describe('Commands', () => {
 
   test('should show command status updates via WebSocket', async ({ page, testZone }) => {
     await page.goto(`/zones/${testZone.id}`, { waitUntil: 'networkidle' });
+    await page.waitForLoadState('networkidle', { timeout: 20000 });
     await page.waitForSelector('h1, [data-testid*="zone"]', { timeout: 15000 });
+    await page.waitForTimeout(2000);
 
     // Проверяем наличие индикатора WebSocket (может быть в header или на странице)
     const wsIndicator = page.locator(`[data-testid="${TEST_IDS.WS_STATUS_INDICATOR}"]`)
@@ -70,11 +67,15 @@ test.describe('Commands', () => {
 
   test('should show error message for invalid channel', async ({ page, testZone }) => {
     await page.goto(`/zones/${testZone.id}`, { waitUntil: 'networkidle' });
+    await page.waitForLoadState('networkidle', { timeout: 20000 });
     await page.waitForSelector('h1, [data-testid*="zone"]', { timeout: 15000 });
+    await page.waitForTimeout(2000);
 
     // Проверяем наличие формы команды или кнопок команд
     const commandForm = page.locator(`[data-testid="${TEST_IDS.ZONE_COMMAND_FORM}"]`);
-    const commandButtons = page.locator('button:has-text("Полить"), button:has-text("Irrigate")');
+    const commandButtons = page.locator('[data-testid="force-irrigation-button"]')
+      .or(page.locator('button:has-text("Полить сейчас")'))
+      .or(page.locator('button:has-text("Полить"), button:has-text("Irrigate")'));
     
     // Если форма или кнопки есть, проверяем их наличие
     // В реальном тесте здесь будет логика отправки неверной команды

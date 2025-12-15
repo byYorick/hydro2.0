@@ -1,11 +1,11 @@
 {
-  "test_suite": "E20_error_to_alert_realtime",
-  "generated_at": "2025-12-15T07:42:17.205538",
+  "test_suite": "E05_unassigned_attach",
+  "generated_at": "2025-12-15T07:44:12.732578",
   "test_cases": [
     {
       "name": "get_zones",
       "status": "passed",
-      "duration": 0.06621766090393066,
+      "duration": 0.06647253036499023,
       "error_message": null,
       "steps": [
         {
@@ -13,12 +13,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-15T07:41:55.749214"
+      "timestamp": "2025-12-15T07:43:34.550652"
     },
     {
       "name": "set_zone_id",
       "status": "passed",
-      "duration": 4.76837158203125e-06,
+      "duration": 5.0067901611328125e-06,
       "error_message": null,
       "steps": [
         {
@@ -26,75 +26,157 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-15T07:41:55.749307"
+      "timestamp": "2025-12-15T07:43:34.550751"
     },
     {
-      "name": "subscribe_ws_zone",
+      "name": "start_node_simulator_unassigned",
       "status": "passed",
-      "duration": 1.1811230182647705,
+      "duration": 5.632303953170776,
       "error_message": null,
       "steps": [
         {
-          "name": "subscribe_ws_zone",
+          "name": "start_node_simulator_unassigned",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-15T07:41:56.930446"
+      "timestamp": "2025-12-15T07:43:40.183066"
     },
     {
-      "name": "node_publishes_error",
+      "name": "node_publishes_temp_error",
       "status": "passed",
-      "duration": 5.004932880401611,
+      "duration": 2.0023884773254395,
       "error_message": null,
       "steps": [
         {
-          "name": "node_publishes_error",
+          "name": "node_publishes_temp_error",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-15T07:42:01.935441"
+      "timestamp": "2025-12-15T07:43:42.185516"
     },
     {
-      "name": "node_publishes_error_duplicate",
+      "name": "node_sends_node_hello",
       "status": "passed",
-      "duration": 5.004712343215942,
+      "duration": 2.001901388168335,
       "error_message": null,
       "steps": [
         {
-          "name": "node_publishes_error_duplicate",
+          "name": "node_sends_node_hello",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-15T07:42:06.940221"
+      "timestamp": "2025-12-15T07:43:44.187479"
     },
     {
-      "name": "alert_created_active",
-      "status": "failed",
-      "duration": 0.008237123489379883,
-      "error_message": "Field alert_count: expected >= 1, got 0",
+      "name": "db_lookup_node_id",
+      "status": "passed",
+      "duration": 1.0138792991638184,
+      "error_message": null,
       "steps": [
         {
-          "name": "alert_created_active",
-          "status": "failed",
-          "error": "Field alert_count: expected >= 1, got 0"
+          "name": "db_lookup_node_id",
+          "status": "passed"
         }
       ],
-      "timestamp": "2025-12-15T07:42:06.948513"
+      "timestamp": "2025-12-15T07:43:45.201425"
+    },
+    {
+      "name": "set_node_id",
+      "status": "passed",
+      "duration": 7.62939453125e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_node_id",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-15T07:43:45.201495"
+    },
+    {
+      "name": "assign_node_to_zone_ui",
+      "status": "passed",
+      "duration": 2.102094888687134,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "assign_node_to_zone_ui",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-15T07:43:47.303609"
+    },
+    {
+      "name": "complete_node_binding",
+      "status": "passed",
+      "duration": 5.0837836265563965,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "complete_node_binding",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-15T07:43:52.387452"
+    },
+    {
+      "name": "error_was_registered_or_removed",
+      "status": "passed",
+      "duration": 0.003267526626586914,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "error_was_registered_or_removed",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-15T07:43:52.390746"
+    },
+    {
+      "name": "node_attached_to_zone",
+      "status": "passed",
+      "duration": 0.0006625652313232422,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "node_attached_to_zone",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-15T07:43:52.391418"
+    },
+    {
+      "name": "alert_created_after_attach",
+      "status": "skipped",
+      "duration": 10.076175212860107,
+      "error_message": "Timeout waiting for DB condition: SELECT id, status, code, zone_id, created_at\nFROM alerts\nWHERE zone_id = :zone_id\nAND (code LIKE '%%ERR_UNASSIGNED%%' OR code LIKE '%%unassigned%%')\nORDER BY created_at DESC\nLIMIT 1\n",
+      "steps": [
+        {
+          "name": "alert_created_after_attach",
+          "status": "skipped",
+          "error": "Timeout waiting for DB condition: SELECT id, status, code, zone_id, created_at\nFROM alerts\nWHERE zone_id = :zone_id\nAND (code LIKE '%%ERR_UNASSIGNED%%' OR code LIKE '%%unassigned%%')\nORDER BY created_at DESC\nLIMIT 1\n"
+        }
+      ],
+      "timestamp": "2025-12-15T07:44:02.467635"
+    },
+    {
+      "name": "unassigned_errors_registered",
+      "status": "passed",
+      "duration": 0.0007040500640869141,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "unassigned_errors_registered",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-15T07:44:02.468369"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E20_error_to_alert_realtime": {
-      "ws_messages": [
-        {
-          "data": {
-            "event": "pusher_internal:subscription_succeeded",
-            "data": "{}",
-            "channel": "private-hydro.zones.167"
-          },
-          "timestamp": "2025-12-15T07:41:55.833600"
-        }
-      ],
+    "E05_unassigned_attach": {
+      "ws_messages": [],
       "mqtt_messages": [],
       "api_responses": []
     }
