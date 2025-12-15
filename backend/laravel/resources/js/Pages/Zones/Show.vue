@@ -25,14 +25,14 @@
               <span class="hidden sm:inline">{{ zone.status === 'PAUSED' ? 'Возобновить' : 'Приостановить' }}</span>
               <span class="sm:hidden">{{ zone.status === 'PAUSED' ? '▶' : '⏸' }}</span>
             </Button>
-            <Button size="sm" variant="outline" @click="openActionModal('FORCE_IRRIGATION')" :disabled="loading.irrigate" class="flex-1 sm:flex-none" data-testid="zone-command-submit">
+            <Button size="sm" variant="outline" @click="openActionModal('FORCE_IRRIGATION')" :disabled="loading.irrigate" class="flex-1 sm:flex-none" data-testid="force-irrigation-button">
               <template v-if="loading.irrigate">
                 <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
               </template>
               <span class="hidden sm:inline">Полить сейчас</span>
               <span class="sm:hidden">💧</span>
             </Button>
-            <Button size="sm" @click="onNextPhase" :disabled="loading.nextPhase" class="flex-1 sm:flex-none">
+            <Button size="sm" @click="onNextPhase" :disabled="loading.nextPhase" class="flex-1 sm:flex-none" data-testid="next-phase-button">
               <template v-if="loading.nextPhase">
                 <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
               </template>
@@ -286,6 +286,7 @@
           <div
             v-for="e in events"
             :key="e.id"
+            :data-testid="`zone-event-item-${e.id}`"
             class="text-sm text-neutral-300 flex items-start gap-2 py-1 border-b border-neutral-800 last:border-0"
           >
             <Badge
@@ -333,6 +334,7 @@
       v-if="showAttachRecipeModal"
       :show="showAttachRecipeModal"
       :zone-id="zoneId"
+      data-testid="attach-recipe-modal"
       @close="modals.close('attachRecipe')"
       @attached="onRecipeAttached"
     />

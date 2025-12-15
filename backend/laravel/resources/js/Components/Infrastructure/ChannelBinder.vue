@@ -1,5 +1,5 @@
 <template>
-  <Card>
+  <Card data-testid="channel-binder">
     <div class="space-y-4">
       <div>
         <h3 class="text-sm font-semibold mb-2">Привязка каналов к ролям</h3>
@@ -16,16 +16,18 @@
         <div
           v-for="node in nodes"
           :key="node.id"
+          :data-testid="`node-card-${node.id}`"
           class="p-4 rounded border border-neutral-700 bg-neutral-900"
         >
           <div class="flex items-center justify-between mb-3">
             <div>
-              <div class="font-medium text-sm">{{ node.name }} ({{ node.uid }})</div>
+              <div class="font-medium text-sm" :data-testid="`node-name-${node.id}`">{{ node.name }} ({{ node.uid }})</div>
               <div class="text-xs text-neutral-400">{{ node.type }}</div>
             </div>
             <Badge
               :variant="node.is_online ? 'success' : 'danger'"
               size="sm"
+              :data-testid="`node-status-${node.id}`"
             >
               {{ node.is_online ? 'Online' : 'Offline' }}
             </Badge>
@@ -35,16 +37,17 @@
             <div
               v-for="channel in node.channels"
               :key="channel.id"
+              :data-testid="`channel-item-${channel.id}`"
               class="flex items-center gap-2 p-2 rounded bg-neutral-800"
             >
               <div class="flex-1">
-                <div class="text-xs font-medium">{{ channel.channel }}</div>
+                <div class="text-xs font-medium" :data-testid="`channel-name-${channel.id}`">{{ channel.channel }}</div>
                 <div class="text-xs text-neutral-400">{{ channel.metric }} {{ channel.unit || '' }}</div>
               </div>
               <select
                 :value="getBindingForChannel(channel.id)"
                 @change="updateBinding(channel.id, node.id, $event.target.value)"
-                :data-testid="`binding-role-select-${node.id}-${channel.id}`"
+                :data-testid="`channel-role-select-${channel.id}`"
                 class="h-8 rounded-md border px-2 text-xs border-neutral-700 bg-neutral-900 min-w-[140px]"
               >
                 <option :value="null">Не назначено</option>
@@ -70,6 +73,7 @@
           <div
             v-for="binding in bindings"
             :key="`${binding.node_id}-${binding.channel_id}`"
+            :data-testid="`bound-channel-item-${binding.node_id}-${binding.channel_id}`"
             class="text-xs"
           >
             <span class="text-neutral-300">{{ getNodeName(binding.node_id) }}</span>

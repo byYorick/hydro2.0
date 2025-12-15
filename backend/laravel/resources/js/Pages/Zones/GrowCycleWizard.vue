@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <div class="max-w-4xl mx-auto">
+    <div class="max-w-4xl mx-auto" data-testid="grow-cycle-wizard">
       <div class="mb-6">
         <h1 class="text-2xl font-bold mb-2">Мастер запуска цикла выращивания</h1>
         <p class="text-sm text-neutral-400">Пошаговая настройка цикла от посадки до сбора</p>
@@ -12,6 +12,7 @@
           <div
             v-for="(step, index) in steps"
             :key="index"
+            :data-testid="`wizard-step-${index}`"
             class="flex items-center flex-1"
           >
             <div class="flex items-center">
@@ -62,6 +63,7 @@
                   size="sm"
                   :variant="greenhouseMode === 'select' ? 'primary' : 'secondary'"
                   @click="greenhouseMode = 'select'"
+                  data-testid="greenhouse-mode-select-button"
                 >
                   Выбрать существующую
                 </Button>
@@ -69,6 +71,7 @@
                   size="sm"
                   :variant="greenhouseMode === 'create' ? 'primary' : 'secondary'"
                   @click="greenhouseMode = 'create'"
+                  data-testid="greenhouse-mode-create-button"
                 >
                   Создать новую
                 </Button>
@@ -78,6 +81,7 @@
                 <select
                   v-model="selectedGreenhouseId"
                   class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+                  data-testid="select-greenhouse-dropdown"
                   @change="loadZonesForGreenhouse"
                 >
                   <option :value="null">Выберите теплицу</option>
@@ -96,9 +100,10 @@
                   v-model="newGreenhouse.name"
                   type="text"
                   placeholder="Название теплицы"
+                  data-testid="new-greenhouse-name-input"
                   class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
                 />
-                <Button size="sm" @click="createGreenhouse" :disabled="!newGreenhouse.name.trim() || loading.createGreenhouse">
+                <Button size="sm" @click="createGreenhouse" :disabled="!newGreenhouse.name.trim() || loading.createGreenhouse" data-testid="create-greenhouse-button">
                   {{ loading.createGreenhouse ? 'Создание...' : 'Создать' }}
                 </Button>
               </div>
@@ -112,6 +117,7 @@
                   size="sm"
                   :variant="zoneMode === 'select' ? 'primary' : 'secondary'"
                   @click="zoneMode = 'select'"
+                  data-testid="zone-mode-select-button"
                 >
                   Выбрать существующую
                 </Button>
@@ -119,6 +125,7 @@
                   size="sm"
                   :variant="zoneMode === 'create' ? 'primary' : 'secondary'"
                   @click="zoneMode = 'create'"
+                  data-testid="zone-mode-create-button"
                 >
                   Создать новую
                 </Button>
@@ -128,6 +135,7 @@
                 <select
                   v-model="selectedZoneId"
                   class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+                  data-testid="select-zone-dropdown"
                   @change="loadZoneData"
                 >
                   <option :value="null">Выберите зону</option>
@@ -146,9 +154,10 @@
                   v-model="newZone.name"
                   type="text"
                   placeholder="Название зоны"
+                  data-testid="new-zone-name-input"
                   class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
                 />
-                <Button size="sm" @click="createZone" :disabled="!newZone.name.trim() || loading.createZone">
+                <Button size="sm" @click="createZone" :disabled="!newZone.name.trim() || loading.createZone" data-testid="create-zone-button">
                   {{ loading.createZone ? 'Создание...' : 'Создать' }}
                 </Button>
               </div>
@@ -205,7 +214,7 @@
           </div>
 
           <div class="flex justify-between">
-            <Button variant="secondary" @click="prevStep">Назад</Button>
+            <Button variant="secondary" @click="prevStep" data-testid="wizard-prev-button">Назад</Button>
             <Button
               @click="nextStep"
               :disabled="!hasRequiredInfrastructure"
@@ -269,7 +278,7 @@
           </div>
 
           <div class="flex justify-between">
-            <Button variant="secondary" @click="prevStep">Назад</Button>
+            <Button variant="secondary" @click="prevStep" data-testid="wizard-prev-button">Назад</Button>
             <Button @click="nextStep">Далее</Button>
           </div>
         </div>
@@ -362,7 +371,7 @@
           </div>
 
           <div class="flex justify-between">
-            <Button variant="secondary" @click="prevStep">Назад</Button>
+            <Button variant="secondary" @click="prevStep" data-testid="wizard-prev-button">Назад</Button>
             <Button
               @click="nextStep"
               :disabled="!selectedPlantId"
@@ -382,6 +391,7 @@
               <select
                 v-model="selectedRecipeId"
                 class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+                data-testid="select-recipe-dropdown"
                 @change="onRecipeSelected"
               >
                 <option :value="null">Выберите рецепт</option>
@@ -402,7 +412,7 @@
                 <div
                   v-for="(phase, index) in selectedRecipe.phases"
                   :key="phase.id"
-                  :data-testid="`cycle-phase-${index}`"
+                  :data-testid="`recipe-phase-item-${phase.id || index}`"
                   class="p-2 rounded border border-neutral-700 bg-neutral-900 text-sm"
                 >
                   <div class="flex justify-between">
@@ -415,10 +425,11 @@
           </div>
 
           <div class="flex justify-between">
-            <Button variant="secondary" @click="prevStep">Назад</Button>
+            <Button variant="secondary" @click="prevStep" data-testid="wizard-prev-button">Назад</Button>
             <Button
               @click="nextStep"
               :disabled="!selectedRecipeId"
+              data-testid="wizard-next-button"
             >
               Далее
             </Button>
@@ -467,7 +478,7 @@
           </div>
 
           <div class="flex justify-between">
-            <Button variant="secondary" @click="prevStep">Назад</Button>
+            <Button variant="secondary" @click="prevStep" data-testid="wizard-prev-button">Назад</Button>
             <Button
               @click="nextStep"
               :disabled="!plantingDate || !automationStartDate"
@@ -517,7 +528,7 @@
           </div>
 
           <div class="flex justify-between">
-            <Button variant="secondary" @click="prevStep">Назад</Button>
+            <Button variant="secondary" @click="prevStep" data-testid="wizard-prev-button">Назад</Button>
             <Button
               @click="createGrowCycle"
               :disabled="!zoneReadiness?.ready || loading.createCycle"

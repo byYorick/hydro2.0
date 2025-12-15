@@ -1,11 +1,11 @@
 <template>
-  <div v-if="cycle" class="space-y-4">
+  <div v-if="cycle" class="space-y-4" data-testid="cycle-control-panel">
     <!-- Информация о цикле и текущая стадия -->
     <Card>
       <div class="space-y-3">
         <div class="flex items-center justify-between">
           <div class="text-sm font-semibold">Управление циклом</div>
-          <Badge :variant="getCycleStatusVariant(cycle.status)">
+          <Badge :variant="getCycleStatusVariant(cycle.status)" data-testid="cycle-status-badge">
             {{ getCycleStatusLabel(cycle.status) }}
           </Badge>
         </div>
@@ -57,6 +57,7 @@
             variant="secondary"
             @click="$emit('pause')"
             :disabled="loading"
+            data-testid="cycle-pause-button"
           >
             <template v-if="loading">
               <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
@@ -70,6 +71,7 @@
             variant="secondary"
             @click="$emit('resume')"
             :disabled="loading"
+            data-testid="cycle-resume-button"
           >
             <template v-if="loading">
               <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
@@ -83,6 +85,7 @@
             variant="success"
             @click="$emit('harvest')"
             :disabled="loading"
+            data-testid="cycle-harvest-button"
           >
             <template v-if="loading">
               <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
@@ -124,10 +127,11 @@
           </Button>
         </div>
         
-        <div v-if="events.length > 0" class="space-y-1 max-h-[400px] overflow-y-auto">
+        <div v-if="events.length > 0" class="space-y-1 max-h-[400px] overflow-y-auto" data-testid="cycle-events-section">
           <div
             v-for="event in events"
             :key="event.id"
+            :data-testid="`cycle-event-item-${event.id}`"
             class="text-sm text-neutral-300 flex items-start gap-2 py-2 px-2 rounded border border-neutral-800 hover:border-neutral-700 transition-colors"
           >
             <Badge

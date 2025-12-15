@@ -18,21 +18,21 @@
 
         <div>
           <div class="text-sm font-semibold mb-2">Фазы</div>
-          <div v-for="(p, i) in sortedPhases" :key="p.id || i" class="rounded-lg border border-neutral-800 p-3 mb-2">
+          <div v-for="(p, i) in sortedPhases" :key="p.id || i" :data-testid="`phase-item-${i}`" class="rounded-lg border border-neutral-800 p-3 mb-2">
             <div class="grid grid-cols-1 md:grid-cols-6 gap-2">
               <div>
                 <label :for="`phase-${i}-index`" class="sr-only">Индекс фазы</label>
-                <input :id="`phase-${i}-index`" :name="`phases[${i}][phase_index]`" v-model.number="p.phase_index" type="number" min="0" placeholder="Индекс" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors[`phases.${i}.phase_index`] ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
+                <input :id="`phase-${i}-index`" :name="`phases[${i}][phase_index]`" v-model.number="p.phase_index" type="number" min="0" placeholder="Индекс" :data-testid="`phase-index-input-${i}`" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors[`phases.${i}.phase_index`] ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
                 <div v-if="form.errors[`phases.${i}.phase_index`]" class="text-xs text-red-400 mt-1">{{ form.errors[`phases.${i}.phase_index`] }}</div>
               </div>
               <div>
                 <label :for="`phase-${i}-name`" class="sr-only">Имя фазы</label>
-                <input :id="`phase-${i}-name`" :name="`phases[${i}][name]`" v-model="p.name" placeholder="Имя фазы" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors[`phases.${i}.name`] ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
+                <input :id="`phase-${i}-name`" :name="`phases[${i}][name]`" v-model="p.name" placeholder="Имя фазы" :data-testid="`phase-name-input-${i}`" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors[`phases.${i}.name`] ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
                 <div v-if="form.errors[`phases.${i}.name`]" class="text-xs text-red-400 mt-1">{{ form.errors[`phases.${i}.name`] }}</div>
               </div>
               <div>
                 <label :for="`phase-${i}-duration`" class="sr-only">Длительность (часов)</label>
-                <input :id="`phase-${i}-duration`" :name="`phases[${i}][duration_hours]`" v-model.number="p.duration_hours" type="number" min="1" placeholder="часов" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors[`phases.${i}.duration_hours`] ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
+                <input :id="`phase-${i}-duration`" :name="`phases[${i}][duration_hours]`" v-model.number="p.duration_hours" type="number" min="1" placeholder="часов" :data-testid="`phase-duration-input-${i}`" class="h-9 w-full rounded-md border px-2 text-sm" :class="form.errors[`phases.${i}.duration_hours`] ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'" />
                 <div v-if="form.errors[`phases.${i}.duration_hours`]" class="text-xs text-red-400 mt-1">{{ form.errors[`phases.${i}.duration_hours`] }}</div>
               </div>
               <div>
@@ -68,14 +68,14 @@
               </div>
             </div>
           </div>
-          <Button size="sm" variant="secondary" type="button" @click="onAddPhase">Добавить фазу</Button>
+          <Button size="sm" variant="secondary" type="button" @click="onAddPhase" data-testid="add-phase-button">Добавить фазу</Button>
         </div>
 
         <div class="flex justify-end gap-2">
           <Link href="/recipes">
-            <Button size="sm" variant="secondary" type="button">Отмена</Button>
+            <Button size="sm" variant="secondary" type="button" data-testid="cancel-button">Отмена</Button>
           </Link>
-          <Button size="sm" type="submit" :disabled="form.processing">{{ form.processing ? 'Сохранение...' : 'Сохранить' }}</Button>
+          <Button size="sm" type="submit" :disabled="form.processing" data-testid="save-recipe-button">{{ form.processing ? 'Сохранение...' : 'Сохранить' }}</Button>
         </div>
       </form>
     </Card>

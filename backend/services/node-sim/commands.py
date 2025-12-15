@@ -52,10 +52,18 @@ class CommandHandler:
                 logger.info(f"Subscribed to temp command topic: {topic}")
         else:
             # Обычные топики для всех каналов
+            # Подписываемся на конкретные топики с gh_uid/zone_uid из конфига
             for ch in self.node.channels + self.node.actuators:
                 topic = f"hydro/{self.node.gh_uid}/{self.node.zone_uid}/{self.node.node_uid}/{ch}/command"
                 await self.mqtt.subscribe(topic, self._handle_command)
                 logger.info(f"Subscribed to command topic: {topic}")
+            
+            # Также подписываемся на wildcard для node_uid, чтобы получать команды
+            # даже если gh_uid/zone_uid в БД отличаются от конфига
+            # Это защита от несовпадения UID между конфигом и БД в тестах
+            wildcard_topic = f"hydro/+/+/{self.node.node_uid}/+/command"
+            await self.mqtt.subscribe(wildcard_topic, self._handle_command)
+            logger.info(f"Subscribed to wildcard command topic: {wildcard_topic} (for compatibility)")
     
     async def _handle_command(self, topic: str, payload: bytes):
         """Обработать команду из MQTT."""
