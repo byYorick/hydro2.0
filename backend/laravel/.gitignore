@@ -22,3 +22,7 @@ yarn-error.log
 
 # Vite build artifacts
 **/vite.config.js.timestamp-*.mjs
+
+# Test results and reports (should not be tracked)
+/test-results/
+/tests/e2e/reports/
