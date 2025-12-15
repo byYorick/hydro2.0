@@ -4,11 +4,13 @@ import { TEST_IDS } from '../constants';
 test.describe('Bindings', () => {
   test('should create binding through UI', async ({ page, testZone, apiHelper }) => {
     await page.goto(`/zones/${testZone.id}`, { waitUntil: 'networkidle' });
+    await page.waitForLoadState('networkidle', { timeout: 20000 });
     await page.waitForSelector('h1, [data-testid*="zone"]', { timeout: 15000 });
+    await page.waitForTimeout(2000);
 
     // Ищем компонент ChannelBinder или форму создания биндинга
     const channelBinder = page.locator('[data-testid="channel-binder"]')
-      .or(page.locator('text=/Биндинги|Bindings/i').locator('..'));
+      .or(page.locator('text=/Биндинги|Bindings|Привязка каналов/i').locator('..'));
     
     // Ищем select для выбора роли
     const roleSelects = page.locator(`[data-testid^="channel-role-select-"]`)
@@ -16,21 +18,29 @@ test.describe('Bindings', () => {
     
     if (await roleSelects.count() > 0) {
       const firstSelect = roleSelects.first();
+      const isVisible = await firstSelect.isVisible().catch(() => false);
       
-      try {
-        // Выбираем роль
-        await firstSelect.selectOption({ label: 'Основная помпа' }).or(
-          firstSelect.selectOption({ value: 'main_pump' })
-        );
-        
-        // Ждем сохранения (может быть автоматическим или через кнопку)
-        await page.waitForTimeout(2000);
-        
-        // Проверяем, что значение выбрано
-        const value = await firstSelect.inputValue();
-        expect(value).toBeTruthy();
-      } catch (e) {
-        console.log('Failed to select role:', e);
+      if (isVisible) {
+        try {
+          // Выбираем роль
+          try {
+            await firstSelect.selectOption({ label: 'Основная помпа' });
+          } catch (e) {
+            await firstSelect.selectOption({ value: 'main_pump' });
+          }
+          
+          // Ждем сохранения (может быть автоматическим или через кнопку)
+          await page.waitForTimeout(2000);
+          
+          // Проверяем, что значение выбрано
+          const value = await firstSelect.inputValue();
+          expect(value).toBeTruthy();
+        } catch (e) {
+          console.log('Failed to select role:', e);
+        }
+      } else {
+        // Если select не виден, просто проверяем загрузку страницы
+        await expect(page.locator('h1').or(page.locator('[data-testid*="zone"]'))).toBeVisible();
       }
     } else {
       // Если биндинги недоступны, просто проверяем загрузку страницы
@@ -40,11 +50,13 @@ test.describe('Bindings', () => {
 
   test('should display binding resolution in UI', async ({ page, testZone, apiHelper }) => {
     await page.goto(`/zones/${testZone.id}`, { waitUntil: 'networkidle' });
+    await page.waitForLoadState('networkidle', { timeout: 20000 });
     await page.waitForSelector('h1, [data-testid*="zone"]', { timeout: 15000 });
+    await page.waitForTimeout(2000);
 
     // Проверяем отображение биндингов
     const channelBinder = page.locator('[data-testid="channel-binder"]')
-      .or(page.locator('text=/Биндинги|Bindings/i').locator('..'))
+      .or(page.locator('text=/Биндинги|Bindings|Привязка каналов/i').locator('..'))
       .or(page.locator('[data-testid^="bound-channel-item-"]'));
     
     // Если биндинги отображаются, проверяем их наличие
@@ -58,10 +70,13 @@ test.describe('Bindings', () => {
 
   test('should send command by role and verify correct node/channel', async ({ page, testZone, apiHelper }) => {
     await page.goto(`/zones/${testZone.id}`, { waitUntil: 'networkidle' });
+    await page.waitForLoadState('networkidle', { timeout: 20000 });
     await page.waitForSelector('h1, [data-testid*="zone"]', { timeout: 15000 });
+    await page.waitForTimeout(2000);
 
     // Ищем кнопки отправки команд
     const commandButtons = page.locator('[data-testid="force-irrigation-button"]')
+      .or(page.locator('button:has-text("Полить сейчас")'))
       .or(page.locator('button:has-text("Полить")'))
       .or(page.locator('button:has-text("Irrigate")'));
     

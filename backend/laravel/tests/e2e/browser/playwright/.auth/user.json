@@ -2,20 +2,20 @@
   "cookies": [
     {
       "name": "XSRF-TOKEN",
-      "value": "eyJpdiI6Ii9XOEl1UHdjd2lLaC8rb1djcUNvVHc9PSIsInZhbHVlIjoielFrNmdTcEQySis3TFhkcjc3OU9yckdWSGVGR3BxcEVJODlZKzA2Q2xhemFTdjNOdVk3MjhqdURCSWI5YzhPWnM5MW9CS2VBRFVJL0JLVG55c1ZTR2NSdGhlUCtQcG1abHByaTJjMmpSeVlLVVlZenR1citSL1BURkRoWmRwQ3IiLCJtYWMiOiJmN2Y0MGZjM2IzN2E2YWVkNDJmZWFmNTdlNDAyNTI3YWYzOWE5NTEwOTUxMTYyNDI2MDA3NTE2Y2Y2ZDIwZTlhIiwidGFnIjoiIn0%3D",
+      "value": "eyJpdiI6IlBjSGxIRGovUHJnMDZsSkxtSEl1QlE9PSIsInZhbHVlIjoiK0JySERTejVTRDd4cXh3Rk8vLzlURUFUSlg5YWp5Mm9lb1BFV0lYVU1KT2dROVhkOXd4L1JzelU1dE1SYVd5RU9IYm1MaTVPQlZnZWJTV3NYY1dFazlBOTYrZ1orZSs3NkVzS2J1OWN3alRTMkgyWjFLVnEyU1VxYmJKWE1RNUciLCJtYWMiOiIzMzBmOWE4MDQ2ZTlmOGZiYWE1MjllNzY1YmM1MzgxYjgyMjEzZjRjZmI3MThjZmNlYjAyMzM0ZTU4MDI3NjM4IiwidGFnIjoiIn0%3D",
       "domain": "localhost",
       "path": "/",
-      "expires": 1765780963.495774,
+      "expires": 1765781240.301305,
       "httpOnly": false,
       "secure": false,
       "sameSite": "Lax"
     },
     {
       "name": "laravel_session",
-      "value": "eyJpdiI6IldocUNZQVRLbEdpUEcyU1JkZ1h2OWc9PSIsInZhbHVlIjoibUhXQTNwekJSaVB2TGplWU1XbGk0Vmc4TjVSTVNQWTI0eSs2NDQ4b2RjYkJ6Vy9lMWZ5TDBVak0rZC91SWRlSUx3TUpxUUhtYmdpaXlRdS9DQmJZNmg5eTJoQnExRHdvVUlQd3JKT21uOWFIWXBFNHV6LzVsajlUSGlJZUg1LzUiLCJtYWMiOiIxM2MzYzE4OGE3ZjRlMjUwMGI4NzVhM2FiNDY1MzZkY2E2ZDMxNjM0ZTY0ZDA3YTViZTNmZjJjNmJhNWU3NTA1IiwidGFnIjoiIn0%3D",
+      "value": "eyJpdiI6InFWVDNHc2hUdExTTDJLY1p3WnZkU3c9PSIsInZhbHVlIjoiTzRnT1BMQ2c4SFdCYjErUlJJRDFhWUNueUlWdFFOUm8vUnI5eU5lVUxoREJJZS8wOVhoc3F3S1cxaHFRQTJaMVlPUnVlUFo5Mm9xN2M1SXpTUk9uNnhhak5zeWNCakVwam9FeXl3ZmdCSG5TRGoySTdwdzM3d3RHZmFaenZOUy8iLCJtYWMiOiI0ZGY2NzIxYTVhYmMzYTI3YjgxMWI5OTliNThkNDI2ZTNjZTY2MThmMTI5YWYxMjUyNGIzMTA1MGMwM2NmNTRmIiwidGFnIjoiIn0%3D",
       "domain": "localhost",
       "path": "/",
-      "expires": 1765780963.51352,
+      "expires": 1765781240.321024,
       "httpOnly": true,
       "secure": false,
       "sameSite": "Lax"
@@ -31,7 +31,7 @@
         },
         {
           "name": "pusherTransportNonTLS",
-          "value": "{\"timestamp\":1765773761226,\"transport\":\"ws\",\"latency\":4,\"cacheSkipCount\":0}"
+          "value": "{\"timestamp\":1765774038015,\"transport\":\"ws\",\"latency\":4,\"cacheSkipCount\":0}"
         }
       ]
     }

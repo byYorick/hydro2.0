@@ -35,34 +35,41 @@ test.describe('Grow Cycle Recipe', () => {
       console.log('Failed to attach recipe via API:', e);
       // Если API не работает, пробуем через UI
       await page.goto(`/zones/${testZone.id}`, { waitUntil: 'networkidle' });
+      await page.waitForLoadState('networkidle', { timeout: 20000 });
       await page.waitForSelector('h1, [data-testid*="zone"]', { timeout: 15000 });
       await page.waitForTimeout(2000);
 
       const attachBtn = page.locator(`[data-testid="${TEST_IDS.RECIPE_ATTACH_BTN}"]`)
         .or(page.locator('text=/Привязать рецепт|Attach recipe/i').first());
       
-      if (await attachBtn.count() > 0 && await attachBtn.isVisible()) {
-        await attachBtn.first().click();
-        await page.waitForTimeout(2000);
-
-        const recipeSelect = page.locator('select').or(page.locator(`option:has-text("${testRecipe.name}")`));
-        if (await recipeSelect.count() > 0) {
-          await recipeSelect.first().selectOption({ label: testRecipe.name });
-          await page.waitForTimeout(1000);
-        }
-
-        const confirmBtn = page.locator('button:has-text("Привязать")')
-          .or(page.locator('button:has-text("Сохранить")'))
-          .or(page.locator('button[type="submit"]'));
-        if (await confirmBtn.count() > 0) {
-          await confirmBtn.first().click();
+      if (await attachBtn.count() > 0) {
+        const isVisible = await attachBtn.first().isVisible().catch(() => false);
+        if (isVisible) {
+          await attachBtn.first().click();
           await page.waitForTimeout(2000);
+
+          const recipeSelect = page.locator('[data-testid="attach-recipe-select"]')
+            .or(page.locator('select[name="recipe_id"]'))
+            .or(page.locator(`option:has-text("${testRecipe.name}")`));
+          if (await recipeSelect.count() > 0) {
+            await recipeSelect.first().selectOption({ label: testRecipe.name });
+            await page.waitForTimeout(1000);
+          }
+
+          const confirmBtn = page.locator('button:has-text("Привязать")')
+            .or(page.locator('button:has-text("Сохранить")'))
+            .or(page.locator('button[type="submit"]'));
+          if (await confirmBtn.count() > 0) {
+            await confirmBtn.first().click();
+            await page.waitForTimeout(2000);
+          }
         }
       }
     }
 
     // Ждем обновления страницы
     await page.goto(`/zones/${testZone.id}`, { waitUntil: 'networkidle' });
+    await page.waitForLoadState('networkidle', { timeout: 20000 });
     await page.waitForTimeout(2000);
 
     // Проверяем, что страница загружена (рецепт может быть привязан, но не отображаться явно)
@@ -75,22 +82,29 @@ test.describe('Grow Cycle Recipe', () => {
     // Привязываем рецепт к зоне
     try {
       await apiHelper.attachRecipeToZone(testZone.id, testRecipe.id);
+      await page.waitForTimeout(2000);
     } catch (e) {
       console.log('Failed to attach recipe:', e);
     }
     
     await page.goto(`/zones/${testZone.id}`, { waitUntil: 'networkidle' });
+    await page.waitForLoadState('networkidle', { timeout: 20000 });
     await page.waitForSelector('h1, [data-testid*="zone"]', { timeout: 15000 });
     await page.waitForTimeout(2000);
 
-    // Проверяем наличие фаз рецепта
+    // Проверяем наличие фаз рецепта (может быть в разных форматах)
     const phase0 = page.locator(`[data-testid="${TEST_IDS.CYCLE_PHASE(0)}"]`)
-      .or(page.locator('text=/Фаза|Phase/i').first());
-    const phase1 = page.locator(`[data-testid="${TEST_IDS.CYCLE_PHASE(1)}"]`);
+      .or(page.locator('[data-testid^="recipe-phase-item-"]').first())
+      .or(page.locator('text=/Seedling|Фаза/i').first());
+    const phase1 = page.locator(`[data-testid="${TEST_IDS.CYCLE_PHASE(1)}"]`)
+      .or(page.locator('[data-testid^="recipe-phase-item-"]').nth(1));
 
     // Если фазы отображаются, проверяем их наличие
     if (await phase0.count() > 0) {
       await expect(phase0.first()).toBeVisible({ timeout: 5000 });
+    } else {
+      // Если фазы не найдены, просто проверяем загрузку страницы
+      await expect(page.locator('h1').or(page.locator('[data-testid*="zone"]'))).toBeVisible();
     }
     if (await phase1.count() > 0) {
       await expect(phase1.first()).toBeVisible({ timeout: 5000 });
@@ -101,11 +115,13 @@ test.describe('Grow Cycle Recipe', () => {
     // Привязываем рецепт к зоне
     try {
       await apiHelper.attachRecipeToZone(testZone.id, testRecipe.id);
+      await page.waitForTimeout(2000);
     } catch (e) {
       console.log('Failed to attach recipe:', e);
     }
     
     await page.goto(`/zones/${testZone.id}`, { waitUntil: 'networkidle' });
+    await page.waitForLoadState('networkidle', { timeout: 20000 });
     await page.waitForSelector('h1, [data-testid*="zone"]', { timeout: 15000 });
     await page.waitForTimeout(2000);
 
@@ -119,13 +135,15 @@ test.describe('Grow Cycle Recipe', () => {
     // Привязываем рецепт и запускаем зону
     try {
       await apiHelper.attachRecipeToZone(testZone.id, testRecipe.id);
-      await page.waitForTimeout(1000);
+      await page.waitForTimeout(2000);
       await apiHelper.startZone(testZone.id);
+      await page.waitForTimeout(2000);
     } catch (e) {
       console.log('Failed to setup zone:', e);
     }
     
     await page.goto(`/zones/${testZone.id}`, { waitUntil: 'networkidle' });
+    await page.waitForLoadState('networkidle', { timeout: 20000 });
     await page.waitForSelector('h1, [data-testid*="zone"]', { timeout: 15000 });
     await page.waitForTimeout(2000);
     
@@ -133,6 +151,12 @@ test.describe('Grow Cycle Recipe', () => {
     const statusBadge = page.locator(`[data-testid="${TEST_IDS.ZONE_STATUS_BADGE}"]`)
       .or(page.locator('text=/PLANNED|RUNNING|PAUSED|HARVESTED/i').first());
     await expect(statusBadge.first()).toBeVisible({ timeout: 10000 });
+    
+    // Проверяем наличие элементов прогресса (может быть в разных форматах)
+    const progressElements = page.locator('text=/Прогресс|Progress|Фаза|Phase/i');
+    if (await progressElements.count() > 0) {
+      await expect(progressElements.first()).toBeVisible({ timeout: 5000 });
+    }
   });
 });
 
