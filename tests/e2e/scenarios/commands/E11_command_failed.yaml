@@ -87,7 +87,7 @@ actions:
   # Или публикуем command_response с FAILED вручную
   - step: simulate_failed_response
     type: mqtt_publish
-    topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/command_response
+    topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/main_pump/command_response
     payload:
       cmd_id: ${command_id}
       status: FAILED
@@ -101,7 +101,7 @@ actions:
 
   # Ждем FAILED статус в БД (после симуляции ответа)
   - step: wait_for_failed_status
-    type: db.wait
+    type: db_wait
     query: SELECT status FROM commands WHERE cmd_id = :cmd_id AND status = 'FAILED'
     params:
       cmd_id: ${command_id}

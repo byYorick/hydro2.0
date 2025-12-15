@@ -28,12 +28,24 @@ test.describe('Commands', () => {
             await expect(toast.first()).toBeVisible({ timeout: 10000 });
           } else {
             // Если тост не появился, просто проверяем, что страница все еще загружена
-            await expect(page.locator('h1').or(page.locator('[data-testid*="zone"]'))).toBeVisible();
+            const h1 = page.locator('h1').first();
+            const zoneElement = page.locator('[data-testid*="zone"]').first();
+            const hasH1 = await h1.isVisible().catch(() => false);
+            const hasZone = await zoneElement.isVisible().catch(() => false);
+            if (!hasH1 && !hasZone) {
+              throw new Error('Page elements not found');
+            }
           }
         } catch (e) {
           console.log('Failed to click irrigation button:', e);
           // Если не удалось кликнуть, просто проверяем загрузку страницы
-          await expect(page.locator('h1').or(page.locator('[data-testid*="zone"]'))).toBeVisible();
+          const h1 = page.locator('h1').first();
+          const zoneElement = page.locator('[data-testid*="zone"]').first();
+          const hasH1 = await h1.isVisible().catch(() => false);
+          const hasZone = await zoneElement.isVisible().catch(() => false);
+          if (!hasH1 && !hasZone) {
+            throw new Error('Page elements not found');
+          }
         }
       } else {
         // Если кнопка не видна, просто проверяем загрузку страницы

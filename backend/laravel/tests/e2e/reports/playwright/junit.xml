@@ -1,13 +1,2 @@
-<testsuites id="" name="" tests="1" failures="1" skipped="0" errors="0" time="0.8317789999999999">
-<testsuite name="../playwright/.auth/setup.ts" timestamp="2025-12-14T06:22:02.330Z" hostname="setup" tests="1" failures="1" skipped="0" time="0.007" errors="0">
-<testcase name="authenticate" classname="../playwright/.auth/setup.ts" time="0.007">
-<failure message="setup.ts:5:1 authenticate" type="FAILURE">
-<![CDATA[  [setup] › ../playwright/.auth/setup.ts:5:1 › authenticate ────────────────────────────────────────
-
-    Error: Error reading storage state from ./playwright/.auth/user.json:
-    ENOENT: no such file or directory, open './playwright/.auth/user.json'
-]]>
-</failure>
-</testcase>
-</testsuite>
+<testsuites id="" name="" tests="0" failures="0" skipped="0" errors="0" time="0.3405450000000001">
 </testsuites>

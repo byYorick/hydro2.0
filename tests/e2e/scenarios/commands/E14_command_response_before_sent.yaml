@@ -74,7 +74,7 @@ actions:
   # Сразу после отправки команды отправляем response через MQTT (симулируем быстрый ответ)
   - step: publish_fast_response
     type: mqtt_publish
-    topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/command_response
+    topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/main_pump/command_response
     payload:
       cmd_id: ${command_id}
       status: ACK
@@ -85,7 +85,7 @@ actions:
   # Далее отправляем DONE
   - step: publish_done_response
     type: mqtt_publish
-    topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/command_response
+    topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/main_pump/command_response
     payload:
       cmd_id: ${command_id}
       status: DONE

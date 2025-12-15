@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 """
 E2E Test Runner - выполняет YAML сценарии с проверками API/DB/WS/MQTT.
@@ -203,6 +204,7 @@ class E2ERunner:
         compose_dir = os.path.dirname(compose_file) if os.path.dirname(compose_file) else os.getcwd()
         
         # Маппинг имен сервисов на имена в docker-compose
+        # reverb запускается внутри Laravel контейнера, поэтому маппим на laravel
         service_map = {
             "laravel": "laravel",
             "mosquitto": "mosquitto",
@@ -210,7 +212,7 @@ class E2ERunner:
             "history-logger": "history-logger",
             "automation-engine": "automation-engine",
             "redis": "redis",
-            "reverb": "reverb",
+            "reverb": "laravel",  # Reverb запускается внутри Laravel (REVERB_AUTO_START=true)
             "node-sim": "node-sim",
         }
         compose_service = service_map.get(service, service)
@@ -293,7 +295,7 @@ class E2ERunner:
             "history-logger": "history-logger",
             "automation-engine": "automation-engine",
             "redis": "redis",
-            "reverb": "reverb",
+            "reverb": "laravel",  # Reverb запускается внутри Laravel (REVERB_AUTO_START=true)
             "node-sim": "node-sim",
         }
         compose_service = service_map.get(service, service)
@@ -364,8 +366,7 @@ class E2ERunner:
             "postgres",
             "redis",
             "mosquitto",
-            "laravel",
-            "reverb",
+            "laravel",  # Reverb запускается внутри Laravel контейнера (REVERB_AUTO_START=true)
             "history-logger",
             "mqtt-bridge",
             "automation-engine",  # Включаем automation-engine по умолчанию для E2E
@@ -528,7 +529,7 @@ class E2ERunner:
             return [x for x in data if isinstance(x, dict)]
         return []
     
-    def _resolve_variables(self, value: Any) -> Any:
+    def _resolve_variables(self, value: Any, required_vars: Optional[List[str]] = None) -> Any:
         """
         Разрешить переменные в значении (поддержка ${var} и {{var}}).
         
@@ -540,17 +541,28 @@ class E2ERunner:
         
         Args:
             value: Значение для разрешения
+            required_vars: Список обязательных переменных (если указан, будет выбрасывать ошибку при пустом значении)
             
         Returns:
             Разрешенное значение
+            
+        Raises:
+            ValueError: Если обязательная переменная не разрешена или пуста
         """
         if isinstance(value, str):
             # Поддержка ${var.field[0]} и {{var.field[0]}}
             import re
             pattern = r'\$\{([^}]+)\}|\{\{([^}]+)\}\}'
             
+            # Список обязательных переменных по умолчанию
+            critical_vars = {"zone_id", "node_id", "cmd_id", "command_id", "event_id"}
+            if required_vars:
+                critical_vars.update(required_vars)
+            
             def replace(match):
                 var_expr = match.group(1) or match.group(2)
+                var_name_base = var_expr.split('.')[0].split('[')[0]  # Извлекаем базовое имя переменной
+                
                 # Поддержка ${ENV_VAR:-default}
                 if ":-" in var_expr:
                     env_name, default = var_expr.split(":-", 1)
@@ -562,11 +574,35 @@ class E2ERunner:
                 # Если есть в context - используем context
                 resolved = self._resolve_variable_expression(var_expr)
                 if resolved is not None:
-                    return str(resolved)
+                    resolved_str = str(resolved)
+                    # Проверяем, что обязательная переменная не пуста
+                    # Проверяем на пустую строку и строку "null" (но не на валидные значения типа 0 или False)
+                    if var_name_base in critical_vars:
+                        if resolved_str == "" or resolved_str.lower() == "null":
+                            raise ValueError(
+                                f"Обязательная переменная '{var_expr}' разрешена в пустое значение. "
+                                f"Убедитесь, что предыдущие шаги (API/DB) корректно заполнили контекст. "
+                                f"Текущее значение: {resolved_str!r}"
+                            )
+                    return resolved_str
 
                 # Иначе пробуем env (простое ${ENV_VAR})
                 if var_expr in os.environ:
-                    return str(os.environ[var_expr])
+                    env_value = str(os.environ[var_expr])
+                    if var_name_base in critical_vars and (env_value == "" or env_value.lower() == "null"):
+                        raise ValueError(
+                            f"Обязательная переменная '{var_expr}' из окружения пуста. "
+                            f"Установите корректное значение в переменной окружения {var_expr}."
+                        )
+                    return env_value
+
+                # Если переменная обязательная - выбрасываем ошибку
+                if var_name_base in critical_vars:
+                    raise ValueError(
+                        f"Обязательная переменная '{var_expr}' не найдена в контексте или окружении. "
+                        f"Убедитесь, что предыдущие шаги (API/DB) корректно заполнили контекст. "
+                        f"Доступные переменные в контексте: {list(self.context.keys())}"
+                    )
 
                 return ""
             
@@ -576,16 +612,35 @@ class E2ERunner:
             def repl_brace(m: re.Match) -> str:
                 name = m.group(1)
                 if name in self.context and self.context[name] is not None:
-                    return str(self.context[name])
+                    value_str = str(self.context[name])
+                    # Проверяем обязательные переменные
+                    if name in critical_vars and (value_str == "" or value_str.lower() == "null"):
+                        raise ValueError(
+                            f"Обязательная переменная '{name}' в контексте пуста. "
+                            f"Убедитесь, что предыдущие шаги корректно заполнили контекст."
+                        )
+                    return value_str
                 if name in os.environ and os.environ[name] != "":
-                    return str(os.environ[name])
+                    env_value = str(os.environ[name])
+                    if name in critical_vars and (env_value == "" or env_value.lower() == "null"):
+                        raise ValueError(
+                            f"Обязательная переменная '{name}' из окружения пуста. "
+                            f"Установите корректное значение в переменной окружения {name}."
+                        )
+                    return env_value
+                # Если переменная обязательная - выбрасываем ошибку
+                if name in critical_vars:
+                    raise ValueError(
+                        f"Обязательная переменная '{name}' не найдена в контексте или окружении. "
+                        f"Доступные переменные в контексте: {list(self.context.keys())}"
+                    )
                 return m.group(0)
             out = re.sub(r"\{([A-Za-z_][A-Za-z0-9_]*)\}", repl_brace, out)
             return out
         elif isinstance(value, dict):
-            return {k: self._resolve_variables(v) for k, v in value.items()}
+            return {k: self._resolve_variables(v, required_vars) for k, v in value.items()}
         elif isinstance(value, list):
-            return [self._resolve_variables(item) for item in value]
+            return [self._resolve_variables(item, required_vars) for item in value]
         else:
             return value
     
@@ -634,6 +689,135 @@ class E2ERunner:
         
         return value
     
+    async def _ensure_test_zone_and_node(self):
+        """
+        Гарантирует наличие тестовых greenhouse/zone/node в БД для E2E.
+        Использует значения по умолчанию из node-sim конфига (gh-test-1 / zn-test-1 / nd-ph-esp32una).
+        """
+        gh_uid = "gh-test-1"
+        zone_uid = self.context.get("zone_uid") or "zn-test-1"
+        node_uid = self.context.get("node_uid") or "nd-ph-esp32una"
+        hardware_id = self.context.get("hardware_id") or "esp32-test-001"
+        
+        # Попытаться извлечь из setup.node_sim.config.node
+        node_cfg = (((self.context.get("setup") or {}).get("node_sim") or {}).get("config") or {}).get("node", {})
+        gh_uid = node_cfg.get("gh_uid") or gh_uid
+        zone_uid = node_cfg.get("zone_uid") or zone_uid
+        node_uid = node_cfg.get("node_uid") or node_uid
+        hardware_id = node_cfg.get("hardware_id") or hardware_id
+        
+        # Greenhouse
+        gh_rows = self.db.query(
+            """
+            INSERT INTO greenhouses (uid, name, provisioning_token, created_at, updated_at)
+            VALUES (:uid, :name, :token, NOW(), NOW())
+            ON CONFLICT (uid) DO UPDATE SET name = EXCLUDED.name
+            RETURNING id
+            """,
+            {"uid": gh_uid, "name": "Test Greenhouse", "token": f"prov-{gh_uid}"}
+        )
+        gh_id = gh_rows[0]["id"]
+        
+        # Zone
+        zone_rows = self.db.query(
+            """
+            INSERT INTO zones (uid, name, status, greenhouse_id, created_at, updated_at)
+            VALUES (:uid, :name, :status, :gh_id, NOW(), NOW())
+            ON CONFLICT (uid) DO UPDATE SET greenhouse_id = EXCLUDED.greenhouse_id
+            RETURNING id
+            """,
+            {"uid": zone_uid, "name": "Test Zone", "status": "online", "gh_id": gh_id}
+        )
+        zone_id = zone_rows[0]["id"]
+        self.context["zone_id"] = zone_id
+        self.context["zone_uid"] = zone_uid
+        
+        # Node
+        node_rows = self.db.query(
+            """
+            INSERT INTO nodes (uid, name, type, status, lifecycle_state, zone_id, hardware_id, created_at, updated_at)
+            VALUES (:uid, :name, :type, :status, :lifecycle_state, :zone_id, :hw_id, NOW(), NOW())
+            ON CONFLICT (uid) DO UPDATE SET zone_id = EXCLUDED.zone_id
+            RETURNING id, zone_id
+            """,
+            {
+                "uid": node_uid,
+                "name": "Test Node",
+                "type": node_cfg.get("type") or "ph",
+                "status": "online",
+                "lifecycle_state": "ACTIVE",
+                "zone_id": zone_id,
+                "hw_id": hardware_id,
+            }
+        )
+        node_id = node_rows[0]["id"]
+        self.context["node_id"] = node_id
+        self.context["node_uid"] = node_uid
+    
+    def _validate_critical_params(self, params: Dict[str, Any]):
+        """
+        Проверяет критические параметры (zone_id/node_id/cmd_id и т.п.) на пустые значения,
+        чтобы не выполнять SQL/WS с пустыми bigint/ID параметрами.
+        
+        Args:
+            params: Словарь параметров для валидации
+            
+        Raises:
+            ValueError: Если критический параметр пуст или не установлен
+        """
+        if not params:
+            return
+
+        # Явно критичные имена + простая эвристика по *_id
+        critical_names = {
+            "zone_id",
+            "node_id",
+            "cmd_id",
+            "command_id",
+            "event_id",
+        }
+
+        for key, val in params.items():
+            if key in critical_names or key.endswith("_id"):
+                if val is None or val == "" or str(val).lower() == "null":
+                    # Пытаемся найти значение в контексте для более информативного сообщения
+                    context_val = self.context.get(key)
+                    available_keys = [k for k in self.context.keys() if k.endswith("_id") or k in critical_names]
+                    
+                    raise ValueError(
+                        f"Критический параметр '{key}' пуст или не установлен (значение: {val!r}). "
+                        f"Убедитесь, что предыдущие шаги (API/DB) корректно заполнили контекст "
+                        f"и что в YAML не осталось незаполненных плейсхолдеров (${{{key}}}). "
+                        f"Доступные ID в контексте: {available_keys}. "
+                        f"Контекстное значение для '{key}': {context_val!r}"
+                    )
+    
+    def _validate_ws_channel_name(self, channel: str):
+        """
+        Базовая валидация имени WS-канала перед подпиской.
+        
+        - Канал не должен быть пустым
+        - В канале не должно оставаться плейсхолдеров вида ${...}
+        - Для каналов вида private-hydro.zones.<zone_id> zone_id должен быть непустым и валидным.
+        """
+        if not channel or not str(channel).strip():
+            raise ValueError("WebSocket channel name is empty – проверьте, что zone_id/node_id заданы в контексте.")
+
+        if "${" in channel or "}}" in channel or "{{" in channel:
+            raise ValueError(
+                f"WebSocket channel '{channel}' содержит неразрешённые плейсхолдеры вида '${{...}}'. "
+                "Проверьте, что переменные в сценарии были корректно подставлены."
+            )
+
+        # Простая проверка для паттерна private-hydro.zones.<zone_id>
+        if channel.startswith("private-hydro.zones."):
+            zone_id_part = channel.split(".")[-1]
+            if not zone_id_part or not zone_id_part.isdigit():
+                raise ValueError(
+                    f"WebSocket channel '{channel}' содержит пустой или нечисловой zone_id. "
+                    f"Ожидается private-hydro.zones.<zone_id> с валидным идентификатором зоны."
+                )
+    
     async def execute_step(self, step: Dict[str, Any]) -> Any:
         """
         Выполнить один шаг сценария.
@@ -669,7 +853,15 @@ class E2ERunner:
         step_config = self._resolve_variables(step_config) if step_config else {}
         
         logger.info(f"Executing step '{step_name}': {step_type}")
-        self.reporter.add_timeline_event(step_type or "unknown", f"Executing {step_name}", step_config)
+        
+        # Добавляем в timeline с контекстными переменными
+        timeline_data = dict(step_config)
+        # Добавляем важные переменные контекста для отладки
+        important_vars = {k: v for k, v in self.context.items() if k.endswith("_id") or k in ("zone_uid", "node_uid")}
+        if important_vars:
+            timeline_data["_context"] = important_vars
+        
+        self.reporter.add_timeline_event(step_type or "unknown", f"Executing {step_name}", timeline_data)
         
         start_time = time.time()
         result = None
@@ -791,16 +983,109 @@ class E2ERunner:
         # Разрешаем переменные в path
         path = self._resolve_variables(path)
         
+        result = None
         if method == "get":
-            return await self.api.get(path, params=config.get("params"))
+            result = await self.api.get(path, params=config.get("params"))
         elif method == "post":
-            return await self.api.post(path, json=config.get("json", config.get("data")))
+            result = await self.api.post(path, json=config.get("json", config.get("data")))
         elif method == "put":
-            return await self.api.put(path, json=config.get("json", config.get("data")))
+            result = await self.api.put(path, json=config.get("json", config.get("data")))
         elif method == "delete":
-            return await self.api.delete(path)
+            result = await self.api.delete(path)
         else:
             raise ValueError(f"Unknown API method: {method}")
+        
+        # Автозаполнение zone_id/node_id из API ответов, если контекст пуст
+        self._auto_extract_ids_from_api_response(path, result)
+        
+        return result
+    
+    def _auto_extract_ids_from_api_response(self, path: str, response: Any):
+        """
+        Автоматически извлекает zone_id/node_id из API ответов, если они не установлены в контексте.
+        
+        Args:
+            path: Путь API запроса
+            response: Ответ от API
+        """
+        # Извлекаем список элементов из ответа
+        items = self._api_items(response)
+        
+        # Также пытаемся извлечь единичный объект из ответа (для GET /api/zones/123)
+        single_item = None
+        if isinstance(response, dict):
+            data = response.get("data", response)
+            if isinstance(data, dict) and "id" in data:
+                single_item = data
+        
+        # Автозаполнение zone_id из /api/zones (список зон) или /api/zones/{id} (одна зона)
+        if ("zone_id" not in self.context or self.context.get("zone_id") in (None, "")):
+            zone_to_process = None
+            
+            # Проверяем путь для списка зон
+            if path == "/api/zones" or path.endswith("/api/zones"):
+                # Пытаемся найти zone по zone_uid из setup
+                zone_uid = None
+                node_cfg = (((self.context.get("setup") or {}).get("node_sim") or {}).get("config") or {}).get("node", {})
+                zone_uid = node_cfg.get("zone_uid")
+                
+                for zone in items:
+                    if zone_uid and zone.get("uid") == zone_uid:
+                        zone_to_process = zone
+                        break
+                    elif not zone_uid and zone.get("id"):
+                        # Если zone_uid не указан, берем первый доступный
+                        zone_to_process = zone
+                        break
+            
+            # Проверяем путь для одной зоны (GET /api/zones/{id})
+            elif single_item and "/api/zones/" in path and path != "/api/zones":
+                zone_to_process = single_item
+            
+            # Обрабатываем найденную зону
+            if zone_to_process:
+                zone_id = zone_to_process.get("id")
+                if zone_id:
+                    self.context["zone_id"] = zone_id
+                    if zone_to_process.get("uid"):
+                        self.context["zone_uid"] = zone_to_process.get("uid")
+                    logger.info(f"Auto-extracted zone_id={zone_id} from API response (path: {path})")
+        
+        # Автозаполнение node_id из /api/nodes (список узлов) или /api/nodes/{id} (один узел)
+        if ("node_id" not in self.context or self.context.get("node_id") in (None, "")):
+            node_to_process = None
+            
+            # Проверяем путь для списка узлов
+            if path == "/api/nodes" or path.endswith("/api/nodes"):
+                # Пытаемся найти node по node_uid из setup
+                node_uid = None
+                node_cfg = (((self.context.get("setup") or {}).get("node_sim") or {}).get("config") or {}).get("node", {})
+                node_uid = node_cfg.get("node_uid")
+                
+                for node in items:
+                    if node_uid and node.get("uid") == node_uid:
+                        node_to_process = node
+                        break
+                    elif not node_uid and node.get("id"):
+                        # Если node_uid не указан, берем первый доступный
+                        node_to_process = node
+                        break
+            
+            # Проверяем путь для одного узла (GET /api/nodes/{id})
+            elif single_item and "/api/nodes/" in path and path != "/api/nodes":
+                node_to_process = single_item
+            
+            # Обрабатываем найденный узел
+            if node_to_process:
+                node_id = node_to_process.get("id")
+                if node_id:
+                    self.context["node_id"] = node_id
+                    if node_to_process.get("uid"):
+                        self.context["node_uid"] = node_to_process.get("uid")
+                    # Также извлекаем zone_id если он есть в node
+                    if node_to_process.get("zone_id") and ("zone_id" not in self.context or self.context.get("zone_id") in (None, "")):
+                        self.context["zone_id"] = node_to_process.get("zone_id")
+                    logger.info(f"Auto-extracted node_id={node_id} from API response (path: {path})")
     
     async def _execute_ws_step(self, step_type: str, config: Dict[str, Any]) -> Any:
         """Выполнить WebSocket шаг."""
@@ -808,6 +1093,8 @@ class E2ERunner:
         
         if action == "subscribe":
             channel = config["channel"]
+            # Валидация канала перед подпиской
+            self._validate_ws_channel_name(channel)
             await self.ws.subscribe(channel)
             return {"subscribed": channel}
         elif action == "wait_event":
@@ -843,6 +1130,9 @@ class E2ERunner:
                 resolved_params[k] = resolved_value
                 logger.debug(f"db.wait: Resolved param '{k}': {v} -> {resolved_value}")
             
+            # Проверяем критичные параметры (zone_id/node_id/cmd_id и т.п.) перед SQL
+            self._validate_critical_params(resolved_params)
+
             logger.info(f"db.wait: Executing wait with query: {query}, params: {resolved_params}, expected_rows: {expected_rows}, timeout: {timeout}s")
             
             return await self.db.wait(
@@ -854,7 +1144,14 @@ class E2ERunner:
         elif action == "query":
             query = config["query"]
             params = config.get("params", {})
-            return self.db.query(query, params=params)
+            # Разрешаем переменные и валидируем критичные параметры для обычного query
+            resolved_params = {}
+            for k, v in params.items():
+                resolved_value = self._resolve_variables(v)
+                resolved_params[k] = resolved_value
+                logger.debug(f"db.query: Resolved param '{k}': {v} -> {resolved_value}")
+            self._validate_critical_params(resolved_params)
+            return self.db.query(query, params=resolved_params)
         else:
             raise ValueError(f"Unknown DB action: {action}")
     
@@ -915,18 +1212,23 @@ class E2ERunner:
         if not zone_id:
             # Пытаемся получить zone_id из контекста
             zone_id = self.context.get("zone_id")
-        if zone_id:
-            result = await self.api.get(f"/api/zones/{zone_id}/snapshot")
-            # Сохраняем в контекст
-            self.context["snapshot"] = result
-            # Извлекаем last_event_id для удобства
-            if isinstance(result, dict):
-                data = result.get("data", result)
-                if isinstance(data, dict) and "last_event_id" in data:
-                    self.context["last_event_id"] = data["last_event_id"]
-            return result
-        else:
-            raise ValueError("snapshot.fetch requires zone_id")
+        if not zone_id:
+            raise ValueError(
+                "snapshot.fetch requires zone_id. "
+                "Убедитесь, что zone_id установлен в контексте через API запрос или setup."
+            )
+        
+        result = await self.api.get(f"/api/zones/{zone_id}/snapshot")
+        # Сохраняем в контекст
+        self.context["snapshot"] = result
+        # Извлекаем last_event_id для удобства
+        if isinstance(result, dict):
+            data = result.get("data", result)
+            if isinstance(data, dict) and "last_event_id" in data:
+                last_event_id = data["last_event_id"]
+                self.context["last_event_id"] = last_event_id
+                logger.info(f"Snapshot fetched: zone_id={zone_id}, last_event_id={last_event_id}")
+        return result
     
     async def _execute_events_replay(self, config: Dict[str, Any]) -> Any:
         """Выполнить events.replay - получить события после last_event_id."""
@@ -945,6 +1247,37 @@ class E2ERunner:
         )
         # Сохраняем в контекст
         self.context["events_replay"] = result
+        
+        # Проверяем порядок event_id в событиях (gap detection)
+        if isinstance(result, dict):
+            events = result.get("data", result.get("events", []))
+            if isinstance(events, list) and len(events) > 0:
+                # Фильтруем только int event_id
+                event_ids = [
+                    e.get("id") for e in events 
+                    if isinstance(e, dict) and isinstance(e.get("id"), int)
+                ]
+                if len(event_ids) > 1:
+                    # Проверяем, что event_id монотонно возрастают
+                    for i in range(1, len(event_ids)):
+                        if event_ids[i] <= event_ids[i-1]:
+                            logger.warning(
+                                f"Event ID order violation in replay: event_ids={event_ids}. "
+                                f"Events may be out of order or duplicate."
+                            )
+                            break
+                    # Проверяем gap между after_id и первым событием
+                    if event_ids and after_id is not None:
+                        first_event_id = event_ids[0]
+                        if isinstance(after_id, int) and isinstance(first_event_id, int):
+                            gap = first_event_id - after_id
+                            if gap > 1:
+                                logger.warning(
+                                    f"Event ID gap detected in replay: after_id={after_id}, "
+                                    f"first_event_id={first_event_id}, gap={gap}. "
+                                    f"Some events may be missing."
+                                )
+        
         return result
     
     async def run_scenario(self, scenario_path: str) -> bool:
@@ -1081,6 +1414,13 @@ class E2ERunner:
                 # Если API не готов или не содержит данных - сценарий сам выявит проблему
                 pass
 
+        # Если после setup не найден zone_id, создаём тестовые greenhouse/zone/node в БД
+        if "zone_id" not in self.context or self.context.get("zone_id") in (None, ""):
+            try:
+                await self._ensure_test_zone_and_node()
+            except Exception as e:
+                logger.warning(f"Failed to ensure test zone/node: {e}")
+
         # actions
         actions = scenario.get("actions", [])
         for i, action in enumerate(actions):
@@ -1202,10 +1542,32 @@ class E2ERunner:
         # artifacts + reports
         ws_messages = self.ws.get_messages(50) if self.ws else []
         mqtt_messages = self.mqtt.get_messages(50) if self.mqtt else []
+        
+        # Собираем последние API запросы из timeline
+        # Поддерживаем оба формата: api.get (steps) и api_get (actions)
+        api_requests = [
+            event for event in self.reporter.timeline 
+            if event.get("type", "").startswith("api.") or event.get("type", "").startswith("api_")
+        ][-50:]
+        
+        # Извлекаем важные переменные контекста
+        context_vars = {
+            k: v for k, v in self.context.items() 
+            if k.endswith("_id") or k in ("zone_uid", "node_uid", "last_event_id", "snapshot")
+        }
+        
+        # Добавляем last_event_id из WS если доступен
+        if self.ws and hasattr(self.ws, 'get_last_event_id'):
+            last_event_id = self.ws.get_last_event_id()
+            if last_event_id is not None:
+                context_vars["ws_last_event_id"] = last_event_id
+        
         self.reporter.add_artifacts(
             scenario_name,
             ws_messages=ws_messages,
-            mqtt_messages=mqtt_messages
+            mqtt_messages=mqtt_messages,
+            api_responses=api_requests,
+            context_vars=context_vars
         )
         reports = self.reporter.generate_all()
         logger.info(f"Reports generated: {reports}")
@@ -1349,13 +1711,21 @@ class E2ERunner:
                             res = response.json()
                 else:
                     res = await self.api.post(endpoint, json=payload)
+                # Автозаполнение zone_id/node_id из API ответов
+                self._auto_extract_ids_from_api_response(endpoint, res)
             elif step_type == "api_put":
                 res = await self.api.put(endpoint, json=payload)
+                # Автозаполнение zone_id/node_id из API ответов
+                self._auto_extract_ids_from_api_response(endpoint, res)
             elif step_type == "api_patch":
                 # APIClient doesn't have patch currently; use httpx under the hood
                 res = await self.api.request("PATCH", endpoint, json=payload)
+                # Автозаполнение zone_id/node_id из API ответов
+                self._auto_extract_ids_from_api_response(endpoint, res)
             else:
                 res = await self.api.delete(endpoint)
+                # Автозаполнение zone_id/node_id из API ответов (если DELETE возвращает данные)
+                self._auto_extract_ids_from_api_response(endpoint, res)
             # Проверяем expected_status, если указан (для случаев когда не было ошибки)
             expected_status = cfg.get("expected_status")
             if expected_status:
@@ -1375,6 +1745,8 @@ class E2ERunner:
             return
         if step_type in ("websocket_subscribe", "ws_subscribe"):
             channel = cfg["channel"]
+            # Валидация канала перед подпиской
+            self._validate_ws_channel_name(channel)
             await self.ws.subscribe(channel)
             return
         if step_type == "websocket_unsubscribe":
@@ -1395,6 +1767,8 @@ class E2ERunner:
         if step_type == "ws_subscribe_without_auth":
             # Попытка подписки на приватный канал без токена (для тестирования ошибки)
             channel = cfg["channel"]
+            # Валидация канала даже для негативных сценариев — чтобы отлавливать пустые zone_id
+            self._validate_ws_channel_name(channel)
             expect_error = cfg.get("expect_error", True)  # По умолчанию ожидаем ошибку
             expected_error_message = cfg.get("expected_error_message", "")
             
@@ -1481,6 +1855,7 @@ class E2ERunner:
             query = cfg["query"]
             params = cfg.get("params", {})
             params = self._resolve_variables(params) if params else {}
+            self._validate_critical_params(params)
             result = self.db.query(query, params=params)
             # Валидируем expected_rows если указан (DoD требует валидацию результата)
             expected_rows = cfg.get("expected_rows")
@@ -1491,6 +1866,19 @@ class E2ERunner:
             if "save" in cfg:
                 self.context[cfg["save"]] = result
             return result
+
+        # DB wait in actions (used in command scenarios)
+        if step_type in ("db.wait", "db_wait"):
+            query = cfg["query"]
+            params = cfg.get("params", {})
+            params = self._resolve_variables(params) if params else {}
+            timeout = float(cfg.get("timeout", 10.0))
+            expected_rows = cfg.get("expected_rows")
+            self._validate_critical_params(params)
+            rows = await self.db.wait(query, params=params, timeout=timeout, expected_rows=expected_rows)
+            if "save" in cfg:
+                self.context[cfg["save"]] = rows
+            return rows
 
         # DB execute (DELETE, UPDATE, INSERT)
         if step_type in ("db.execute", "database_execute"):
@@ -1588,6 +1976,7 @@ class E2ERunner:
                 raise ValueError("wait_zone_event requires zone_id")
             
             # Используем db.wait для ожидания события в zone_events
+            # Согласно миграции, таблица zone_events использует поле 'details' (JSONB), а не 'payload_json'
             query = """
                 SELECT id, type, details, created_at
                 FROM zone_events
@@ -1729,9 +2118,56 @@ class E2ERunner:
         if not a_type:
             raise ValueError("Assertion missing 'type'")
 
+        if a_type == "sleep":
+            # Простой assertion-таймаут, чтобы дать системе стабилизироваться
+            seconds = float(assertion.get("seconds", assertion.get("timeout", 0)))
+            if seconds > 0:
+                await asyncio.sleep(seconds)
+            return
+
+        if a_type == "http_request":
+            import httpx
+            method = (assertion.get("method") or "GET").upper()
+            url = self._resolve_variables(assertion.get("url"))
+            timeout = float(assertion.get("timeout", 10.0))
+            expected_status = int(assertion.get("expected_status", 200))
+            save_key = assertion.get("save", "http_assertion_response")
+
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.request(method, url)
+            if resp.status_code != expected_status:
+                raise AssertionError(f"http_request assertion: expected {expected_status}, got {resp.status_code}")
+            try:
+                data = resp.json()
+            except Exception:
+                data = {"text": resp.text}
+            # Сохраняем в контекст по ключу save (как в шагах)
+            self.context[save_key] = {"status_code": resp.status_code, "data": data}
+            return
+
+        if a_type in ("assert", "custom_assert"):
+            # Простейшая поддержка кастомных boolean-условий из YAML
+            condition_expr = assertion.get("condition")
+            if not condition_expr:
+                return
+            # Подставляем значения из контекста через _resolve_variables (Jinja-подобные плейсхолдеры уже раскрыты)
+            resolved = self._resolve_variables(condition_expr)
+            # Ограниченный eval: ожидаем, что resolved уже строка вида "1 >= 0" или булево
+            if isinstance(resolved, bool):
+                ok = resolved
+            else:
+                try:
+                    ok = bool(eval(str(resolved), {"__builtins__": {}}, {}))
+                except Exception as e:
+                    raise AssertionError(f"Failed to evaluate assert condition '{resolved}': {e}")
+            if not ok:
+                raise AssertionError(f"Assertion condition is false: {resolved}")
+            return
+
         if a_type == "database_query":
             query = self._resolve_variables(assertion.get("query"))
             params = self._resolve_variables(assertion.get("params", {}))
+            self._validate_critical_params(params)
             rows = await self.db.wait(query, params=params, timeout=float(assertion.get("timeout", 10.0)), expected_rows=assertion.get("expected_rows"))
             expected = assertion.get("expected", [])
             if not rows:
@@ -1745,6 +2181,7 @@ class E2ERunner:
             params = self._resolve_variables(assertion.get("params", {}))
             timeout = float(assertion.get("timeout", 10.0))
             expected_rows = assertion.get("expected_rows")
+            self._validate_critical_params(params)
             rows = await self.db.wait(query, params=params, timeout=timeout, expected_rows=expected_rows)
             return rows
 

@@ -1,6 +1,6 @@
 import { APIRequestContext } from '@playwright/test';
 
-const baseURL = process.env.LARAVEL_URL || 'http://localhost:80';
+const baseURL = process.env.LARAVEL_URL || 'http://localhost:8081';
 
 export interface TestGreenhouse {
   id: number;
@@ -70,17 +70,36 @@ export class APITestHelper {
       ...data,
     };
 
-    const response = await this.request.post(`${baseURL}/api/greenhouses`, {
-      headers: await this.getHeaders(),
-      data: payload,
-    });
+    // Retry логика для rate limiting
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      if (attempt > 0) {
+        // Ждем перед повтором (экспоненциальная задержка: 2s, 4s, 8s, 16s)
+        const delay = Math.min(2000 * Math.pow(2, attempt - 1), 16000);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
 
-    if (!response.ok()) {
-      throw new Error(`Failed to create greenhouse: ${response.status()} ${await response.text()}`);
+      const response = await this.request.post(`${baseURL}/api/greenhouses`, {
+        headers: await this.getHeaders(),
+        data: payload,
+      });
+
+      if (response.ok()) {
+        const result = await response.json();
+        return result.data;
+      }
+
+      const status = response.status();
+      const text = await response.text();
+      lastError = new Error(`Failed to create greenhouse: ${status} ${text}`);
+
+      // Если это не rate limit, не повторяем
+      if (status !== 429) {
+        throw lastError;
+      }
     }
 
-    const result = await response.json();
-    return result.data;
+    throw lastError || new Error('Failed to create greenhouse after retries');
   }
 
   async createTestRecipe(data?: Partial<TestRecipe>, phases?: TestRecipePhase[]): Promise<TestRecipe> {
@@ -105,10 +124,14 @@ export class APITestHelper {
     // Создаем фазы, если они указаны
     if (phases && phases.length > 0) {
       for (const phase of phases) {
-        await this.request.post(`${baseURL}/api/recipes/${recipe.id}/phases`, {
+        const phaseResponse = await this.request.post(`${baseURL}/api/recipes/${recipe.id}/phases`, {
           headers: await this.getHeaders(),
           data: phase,
         });
+
+        if (!phaseResponse.ok()) {
+          throw new Error(`Failed to create recipe phase: ${phaseResponse.status()} ${await phaseResponse.text()}`);
+        }
       }
     }
 
@@ -124,17 +147,36 @@ export class APITestHelper {
       ...data,
     };
 
-    const response = await this.request.post(`${baseURL}/api/zones`, {
-      headers: await this.getHeaders(),
-      data: payload,
-    });
+    // Retry логика для rate limiting
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      if (attempt > 0) {
+        // Ждем перед повтором (экспоненциальная задержка: 2s, 4s, 8s, 16s)
+        const delay = Math.min(2000 * Math.pow(2, attempt - 1), 16000);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
 
-    if (!response.ok()) {
-      throw new Error(`Failed to create zone: ${response.status()} ${await response.text()}`);
+      const response = await this.request.post(`${baseURL}/api/zones`, {
+        headers: await this.getHeaders(),
+        data: payload,
+      });
+
+      if (response.ok()) {
+        const result = await response.json();
+        return result.data;
+      }
+
+      const status = response.status();
+      const text = await response.text();
+      lastError = new Error(`Failed to create zone: ${status} ${text}`);
+
+      // Если это не rate limit, не повторяем
+      if (status !== 429) {
+        throw lastError;
+      }
     }
 
-    const result = await response.json();
-    return result.data;
+    throw lastError || new Error('Failed to create zone after retries');
   }
 
   async attachRecipeToZone(zoneId: number, recipeId: number, startAt?: string): Promise<void> {
@@ -154,7 +196,7 @@ export class APITestHelper {
   }
 
   async createBinding(zoneId: number, nodeId: number, channelId: number, role: string): Promise<void> {
-    const response = await this.request.post(`${baseURL}/api/zones/${zoneId}/bindings`, {
+    const response = await this.request.post(`${baseURL}/api/zones/${zoneId}/infrastructure/bindings`, {
       headers: await this.getHeaders(),
       data: {
         node_id: nodeId,
@@ -165,36 +207,6 @@ export class APITestHelper {
 
     if (!response.ok()) {
       throw new Error(`Failed to create binding: ${response.status()} ${await response.text()}`);
-    }
-  }
-
-  async startZone(zoneId: number): Promise<void> {
-    const response = await this.request.post(`${baseURL}/api/zones/${zoneId}/start`, {
-      headers: await this.getHeaders(),
-    });
-
-    if (!response.ok()) {
-      throw new Error(`Failed to start zone: ${response.status()} ${await response.text()}`);
-    }
-  }
-
-  async pauseZone(zoneId: number): Promise<void> {
-    const response = await this.request.post(`${baseURL}/api/zones/${zoneId}/pause`, {
-      headers: await this.getHeaders(),
-    });
-
-    if (!response.ok()) {
-      throw new Error(`Failed to pause zone: ${response.status()} ${await response.text()}`);
-    }
-  }
-
-  async resumeZone(zoneId: number): Promise<void> {
-    const response = await this.request.post(`${baseURL}/api/zones/${zoneId}/resume`, {
-      headers: await this.getHeaders(),
-    });
-
-    if (!response.ok()) {
-      throw new Error(`Failed to resume zone: ${response.status()} ${await response.text()}`);
     }
   }
 

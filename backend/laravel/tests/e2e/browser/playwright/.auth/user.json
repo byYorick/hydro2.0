@@ -2,20 +2,20 @@
   "cookies": [
     {
       "name": "XSRF-TOKEN",
-      "value": "eyJpdiI6IlBjSGxIRGovUHJnMDZsSkxtSEl1QlE9PSIsInZhbHVlIjoiK0JySERTejVTRDd4cXh3Rk8vLzlURUFUSlg5YWp5Mm9lb1BFV0lYVU1KT2dROVhkOXd4L1JzelU1dE1SYVd5RU9IYm1MaTVPQlZnZWJTV3NYY1dFazlBOTYrZ1orZSs3NkVzS2J1OWN3alRTMkgyWjFLVnEyU1VxYmJKWE1RNUciLCJtYWMiOiIzMzBmOWE4MDQ2ZTlmOGZiYWE1MjllNzY1YmM1MzgxYjgyMjEzZjRjZmI3MThjZmNlYjAyMzM0ZTU4MDI3NjM4IiwidGFnIjoiIn0%3D",
+      "value": "eyJpdiI6Ii9oVFNUVGE4a3lqY3czbkZzWklGaEE9PSIsInZhbHVlIjoieXg4dkNKbklLcFQrb3VlNmpVbzhsa1VycGgzMWFNTU0wNWdFTnVtdUpZbld2dFNlSFpkazVTdlBaSG5GVWFtUEVKUEhCMlUzTkwwUmlBRXNabnJYNVplRVE0cDlaTmtnZ1ZVMDU2R205cmwyRWdvTHlBRkpoNEFYNU02bHMxMngiLCJtYWMiOiJiN2FmYTY5ODJkMTUyYTQ2MWY3NzkwMzMxZTM1N2I0MWZmNTc2OGNjNzc3M2ZmNmE0OGJiZmQ3MzdmMTEyY2Y0IiwidGFnIjoiIn0%3D",
       "domain": "localhost",
       "path": "/",
-      "expires": 1765781240.301305,
+      "expires": 1765812663.258631,
       "httpOnly": false,
       "secure": false,
       "sameSite": "Lax"
     },
     {
       "name": "laravel_session",
-      "value": "eyJpdiI6InFWVDNHc2hUdExTTDJLY1p3WnZkU3c9PSIsInZhbHVlIjoiTzRnT1BMQ2c4SFdCYjErUlJJRDFhWUNueUlWdFFOUm8vUnI5eU5lVUxoREJJZS8wOVhoc3F3S1cxaHFRQTJaMVlPUnVlUFo5Mm9xN2M1SXpTUk9uNnhhak5zeWNCakVwam9FeXl3ZmdCSG5TRGoySTdwdzM3d3RHZmFaenZOUy8iLCJtYWMiOiI0ZGY2NzIxYTVhYmMzYTI3YjgxMWI5OTliNThkNDI2ZTNjZTY2MThmMTI5YWYxMjUyNGIzMTA1MGMwM2NmNTRmIiwidGFnIjoiIn0%3D",
+      "value": "eyJpdiI6Ik9uenY5dnpjWjkvSS9XUVZmMFlnTmc9PSIsInZhbHVlIjoiWjlIakRPMTZhQThWY0Z5ajI2K1BOc21qZnVmRGJiME9ZUWdTWWgvdW9WUVg1YkhUN2lVRW1SeVNtaWxKMkppZ21oK1U0RXVLdTQ2S25tRElqVnlPVXJ0b2VESjhmMmJ2UzR0ZzZkM3ZLL2xOOC8wdUNmWHJNSmlhS3p5cXRVdGgiLCJtYWMiOiIxNmRhZTBkNzU0ZjA3MTNiZGRhMjdlZmVmZmRiNTY1YzlmMjM5M2M4ZTQ3NzQ4Y2FiNjVkZDI3YThlMDkxOWEzIiwidGFnIjoiIn0%3D",
       "domain": "localhost",
       "path": "/",
-      "expires": 1765781240.321024,
+      "expires": 1765812663.303304,
       "httpOnly": true,
       "secure": false,
       "sameSite": "Lax"
@@ -26,12 +26,16 @@
       "origin": "http://localhost",
       "localStorage": [
         {
+          "name": "dashboard.telemetry.zone",
+          "value": "3"
+        },
+        {
           "name": "dashboard.telemetry.period",
           "value": "24h"
         },
         {
           "name": "pusherTransportNonTLS",
-          "value": "{\"timestamp\":1765774038015,\"transport\":\"ws\",\"latency\":4,\"cacheSkipCount\":0}"
+          "value": "{\"timestamp\":1765805458784,\"transport\":\"ws\",\"latency\":16,\"cacheSkipCount\":0}"
         }
       ]
     }

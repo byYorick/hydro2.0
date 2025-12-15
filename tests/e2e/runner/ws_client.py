@@ -47,6 +47,8 @@ class WSClient:
         self._event_handlers: Dict[str, List[Callable]] = {}
         self._subscribed_channels: List[str] = []
         self._receive_task: Optional[asyncio.Task] = None
+        self._last_event_id: Optional[int] = None  # Для отслеживания порядка event_id
+        self._resubscribe_task: Optional[asyncio.Task] = None  # Задача автопереподписки (для защиты от множественных вызовов)
     
     async def connect(self):
         """
@@ -147,6 +149,25 @@ class WSClient:
                         "timestamp": datetime.now().isoformat()
                     })
                     
+                    # Проверка порядка event_id для событий с event_id
+                    event_data = data.get("data", {})
+                    if isinstance(event_data, str):
+                        try:
+                            event_data = json.loads(event_data)
+                        except (json.JSONDecodeError, TypeError):
+                            event_data = {}
+                    
+                    if isinstance(event_data, dict) and "event_id" in event_data:
+                        event_id = event_data.get("event_id")
+                        if isinstance(event_id, int):
+                            if self._last_event_id is not None and event_id <= self._last_event_id:
+                                logger.warning(
+                                    f"Event ID order violation: received event_id={event_id}, "
+                                    f"but last_event_id={self._last_event_id}. "
+                                    f"Event may be out of order or duplicate."
+                                )
+                            self._last_event_id = max(self._last_event_id or 0, event_id)
+                    
                     # Вызываем обработчики событий
                     event_type = data.get("event", data.get("type"))
                     if event_type and event_type in self._event_handlers:
@@ -167,9 +188,62 @@ class WSClient:
         except websockets.exceptions.ConnectionClosed:
             logger.info("WebSocket connection closed")
             self.connected = False
+            # Автопереподписка после переподключения
+            if self._subscribed_channels and (self._resubscribe_task is None or self._resubscribe_task.done()):
+                logger.info(f"Connection closed, will resubscribe to {len(self._subscribed_channels)} channels on reconnect")
+                try:
+                    loop = asyncio.get_running_loop()
+                    self._resubscribe_task = loop.create_task(self._auto_resubscribe())
+                except RuntimeError:
+                    # Если нет event loop, создаем задачу позже
+                    logger.warning("Cannot create resubscribe task: no event loop")
         except Exception as e:
             logger.error(f"Error receiving WebSocket messages: {e}")
             self.connected = False
+            # Автопереподписка после ошибки
+            if self._subscribed_channels and (self._resubscribe_task is None or self._resubscribe_task.done()):
+                logger.info(f"Connection error, will resubscribe to {len(self._subscribed_channels)} channels on reconnect")
+                try:
+                    loop = asyncio.get_running_loop()
+                    self._resubscribe_task = loop.create_task(self._auto_resubscribe())
+                except RuntimeError:
+                    # Если нет event loop, создаем задачу позже
+                    logger.warning("Cannot create resubscribe task: no event loop")
+    
+    async def _auto_resubscribe(self):
+        """Автоматически переподписаться на все каналы после переподключения."""
+        if not self._subscribed_channels:
+            return
+        
+        # Ждем переподключения
+        max_attempts = 10
+        for attempt in range(max_attempts):
+            if self.connected:
+                break
+            await asyncio.sleep(1)
+        
+        if not self.connected:
+            logger.warning("Cannot auto-resubscribe: WebSocket not reconnected. Channels will remain in queue.")
+            # НЕ очищаем _subscribed_channels, чтобы попробовать переподписаться при следующем переподключении
+            return
+        
+        logger.info(f"Auto-resubscribing to {len(self._subscribed_channels)} channels...")
+        channels_to_resubscribe = list(self._subscribed_channels)
+        successfully_resubscribed = []
+        
+        for channel in channels_to_resubscribe:
+            try:
+                await self.subscribe(channel)
+                successfully_resubscribed.append(channel)
+                logger.info(f"Auto-resubscribed to channel: {channel}")
+            except Exception as e:
+                logger.error(f"Failed to auto-resubscribe to channel {channel}: {e}")
+                # Оставляем неуспешные каналы в списке для повторной попытки
+        
+        # Удаляем только успешно переподписанные каналы
+        for channel in successfully_resubscribed:
+            if channel in self._subscribed_channels:
+                self._subscribed_channels.remove(channel)
     
     async def subscribe(self, channel: str):
         """
@@ -183,7 +257,27 @@ class WSClient:
             
         Raises:
             RuntimeError: Если WebSocket не подключен, нет токена, или авторизация не удалась
+            ValueError: Если channel name пуст или содержит неразрешенные плейсхолдеры
         """
+        # Валидация channel name перед подпиской
+        if not channel or not str(channel).strip():
+            raise ValueError("WebSocket channel name is empty – проверьте, что zone_id/node_id заданы в контексте.")
+        
+        if "${" in channel or "}}" in channel or "{{" in channel:
+            raise ValueError(
+                f"WebSocket channel '{channel}' содержит неразрешённые плейсхолдеры вида '${{...}}'. "
+                "Проверьте, что переменные в сценарии были корректно подставлены."
+            )
+        
+        # Проверка для паттерна private-hydro.zones.<zone_id>
+        if channel.startswith("private-hydro.zones."):
+            zone_id_part = channel.split(".")[-1]
+            if not zone_id_part or not zone_id_part.isdigit():
+                raise ValueError(
+                    f"WebSocket channel '{channel}' содержит пустой или нечисловой zone_id. "
+                    f"Ожидается private-hydro.zones.<zone_id> с валидным идентификатором зоны."
+                )
+        
         if not self.connected or not self.ws:
             raise RuntimeError("WebSocket not connected")
 
@@ -384,6 +478,14 @@ class WSClient:
     def clear_messages(self):
         """Очистить очередь сообщений."""
         self._message_queue.clear()
+    
+    def get_last_event_id(self) -> Optional[int]:
+        """Получить последний обработанный event_id."""
+        return self._last_event_id
+    
+    def reset_event_id_tracking(self):
+        """Сбросить отслеживание event_id (для тестов)."""
+        self._last_event_id = None
     
     async def _wait_subscription_confirmation(self, channel: str) -> bool:
         """

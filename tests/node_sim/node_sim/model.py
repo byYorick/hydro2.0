@@ -5,9 +5,12 @@
 
 import time
 import random
+import logging
 from dataclasses import dataclass, field
 from typing import Dict, Optional, List, Callable
 from enum import Enum
+
+logger = logging.getLogger(__name__)
 
 
 class NodeType(str, Enum):
@@ -251,6 +254,39 @@ class NodeModel:
         
         # Проверяем условие no_flow для насосов
         self._check_no_flow_condition(now)
+    
+    def set_overcurrent_mode(self, enabled: bool, current: Optional[float] = None):
+        """
+        Установить режим перегрузки по току (overcurrent).
+        
+        Args:
+            enabled: Включить режим перегрузки
+            current: Ток в режиме перегрузки (мА), если не указан - используется overcurrent_current
+        """
+        self.overcurrent_mode = enabled
+        if current is not None:
+            self.overcurrent_current = current
+        # Обновляем телеметрию сразу
+        self._update_telemetry()
+        logger.info(f"Overcurrent mode {'enabled' if enabled else 'disabled'}: {self.overcurrent_current}mA")
+    
+    def set_no_flow_mode(self, actuator: str, enabled: bool):
+        """
+        Установить режим отсутствия потока для актуатора (no_flow).
+        
+        Args:
+            actuator: Имя актуатора (main_pump, drain_pump)
+            enabled: Включить режим отсутствия потока
+        """
+        act_state = self.actuator_states.get(actuator)
+        if not act_state:
+            logger.warning(f"Cannot set no_flow mode: actuator {actuator} not found")
+            return
+        
+        act_state.flow_present = not enabled
+        # Обновляем телеметрию
+        self._update_telemetry()
+        logger.info(f"No-flow mode {'enabled' if enabled else 'disabled'} for {actuator}")
     
     def _check_no_flow_condition(self, current_time: float):
         """

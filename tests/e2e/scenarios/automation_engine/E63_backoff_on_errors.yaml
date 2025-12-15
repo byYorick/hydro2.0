@@ -62,7 +62,7 @@ actions:
   # Создаем серию ошибок через test hook (детерминированно)
   - step: inject_error_1
     type: ae_test_hook
-    url: http://automation-engine:9405
+    url: http://localhost:9405
     zone_id: ${zone_id}
     controller: climate
     action: inject_error
@@ -74,7 +74,7 @@ actions:
 
   - step: inject_error_2
     type: ae_test_hook
-    url: http://automation-engine:9405
+    url: http://localhost:9405
     zone_id: ${zone_id}
     controller: climate
     action: inject_error
@@ -86,7 +86,7 @@ actions:
 
   - step: inject_error_3
     type: ae_test_hook
-    url: http://automation-engine:9405
+    url: http://localhost:9405
     zone_id: ${zone_id}
     controller: climate
     action: inject_error
@@ -99,7 +99,8 @@ actions:
   # Проверяем метрики до и после
   - step: check_metrics_before
     type: scrape_metrics
-    url: http://automation-engine:9401
+    # automation-engine метрики проброшены на localhost:9401
+    url: http://localhost:9401
     save: metrics_before
 
   - step: wait_next_cycle_after_backoff
@@ -108,7 +109,7 @@ actions:
 
   - step: check_metrics_after
     type: scrape_metrics
-    url: http://automation-engine:9401
+    url: http://localhost:9401
     save: metrics_after
 
 assertions:
@@ -139,7 +140,8 @@ assertions:
   - step: check_backoff_state
     type: http_request
     method: GET
-    url: http://automation-engine:9405/test/hook/${zone_id}
+    # automation-engine порт 9405 проброшен на хосте, runner обращается через localhost
+    url: http://localhost:9405/test/hook/${zone_id}
     save: hook_state
 
   - name: backoff_state_set
@@ -165,7 +167,7 @@ assertions:
   # Проверка 5: Сброс backoff через test hook
   - step: reset_backoff
     type: ae_test_hook
-    url: http://automation-engine:9405
+    url: http://localhost:9405
     zone_id: ${zone_id}
     action: reset_backoff
 

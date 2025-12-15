@@ -107,9 +107,11 @@ class MultiNodeOrchestrator:
             status_interval_s=telemetry_config.heartbeat_interval_seconds * 2,  # status реже heartbeat
             heartbeat_interval_s=telemetry_config.heartbeat_interval_seconds
         )
+
+        loop = asyncio.get_running_loop()
         
         # Создаем обработчик команд (передаем telemetry_publisher для поддержки hil_request_telemetry)
-        command_handler = CommandHandler(node, mqtt, telemetry_publisher=telemetry)
+        command_handler = CommandHandler(node, mqtt, telemetry_publisher=telemetry, event_loop=loop)
         
         # Настраиваем режим отказов, если указан
         if failure_mode:
@@ -310,4 +312,3 @@ async def create_orchestrator_from_config(config_data: Dict) -> MultiNodeOrchest
         await orchestrator.add_node(node_config, telemetry_config, failure_mode)
     
     return orchestrator
-

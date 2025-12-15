@@ -142,13 +142,34 @@ npx playwright test specs/01-login.spec.ts
 
 ## Подготовка данных
 
-Тесты автоматически создают тестовые данные через API хелперы:
-- Теплицы (Greenhouses)
-- Рецепты с фазами (Recipes)
-- Зоны (Zones)
-- Биндинги (Bindings)
+Тесты автоматически создают тестовые данные через API хелперы (`helpers/api.ts`):
+- **Теплицы (Greenhouses)**: `createTestGreenhouse()` - создает тестовую теплицу с уникальным UID
+- **Рецепты с фазами (Recipes)**: `createTestRecipe()` - создает рецепт с опциональными фазами
+- **Зоны (Zones)**: `createTestZone()` - создает зону в указанной теплице
+- **Биндинги (Bindings)**: `createBinding()` - создает привязку роли к узлу/каналу через `/api/zones/{zoneId}/infrastructure/bindings`
 
-Все тестовые данные автоматически удаляются после завершения теста.
+Все тестовые данные автоматически удаляются после завершения теста через фикстуры (`fixtures/test-data.ts`).
+
+### Использование API хелперов в тестах
+
+```typescript
+import { test, expect } from '../fixtures/test-data';
+
+test('example', async ({ apiHelper, testZone }) => {
+  // apiHelper уже настроен с авторизацией из storageState
+  // testZone автоматически создается и удаляется
+  
+  // Можно создавать дополнительные данные
+  const greenhouse = await apiHelper.createTestGreenhouse();
+  const zone = await apiHelper.createTestZone(greenhouse.id);
+  
+  // Очистка (опционально, если не используете фикстуры)
+  await apiHelper.cleanupTestData({
+    zones: [zone.id],
+    greenhouses: [greenhouse.id],
+  });
+});
+```
 
 ## data-testid атрибуты
 

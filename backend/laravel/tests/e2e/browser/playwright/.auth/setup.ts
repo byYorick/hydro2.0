@@ -5,15 +5,19 @@ const authFile = './playwright/.auth/user.json';
 setup('authenticate', async ({ page }) => {
   const email = process.env.E2E_AUTH_EMAIL || 'admin@example.com';
   const password = process.env.E2E_AUTH_PASSWORD || 'password';
-  const baseURL = process.env.LARAVEL_URL || 'http://localhost:80';
+  const baseURL = process.env.LARAVEL_URL || 'http://localhost:8081';
 
   // Переходим на страницу логина
-  await page.goto(`${baseURL}/login`, { waitUntil: 'networkidle' });
+  await page.goto(`${baseURL}/login`, { waitUntil: 'domcontentloaded' });
   
-  // Ждем загрузки формы
-  await page.waitForSelector('[data-testid="login-form"]', { timeout: 15000 });
-  await page.waitForSelector('[data-testid="login-email"]', { timeout: 5000 });
-  await page.waitForSelector('[data-testid="login-password"]', { timeout: 5000 });
+  // Ждем загрузки JavaScript и формы (Inertia.js может загружаться асинхронно)
+  await page.waitForLoadState('networkidle', { timeout: 30000 });
+  await page.waitForTimeout(2000); // Дополнительная задержка для Vue компонентов
+  
+  // Ждем загрузки формы (используем более гибкий селектор)
+  await page.waitForSelector('[data-testid="login-form"], form[action*="login"], input[type="email"][name="email"]', { timeout: 30000 });
+  await page.waitForSelector('[data-testid="login-email"], input[type="email"][name="email"]', { timeout: 10000 });
+  await page.waitForSelector('[data-testid="login-password"], input[type="password"][name="password"]', { timeout: 10000 });
 
   // Заполняем форму
   await page.fill('[data-testid="login-email"]', email);

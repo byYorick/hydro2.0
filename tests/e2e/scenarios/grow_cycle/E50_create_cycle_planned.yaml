@@ -73,11 +73,15 @@ assertions:
     expected_rows: 1
 
 cleanup:
-  - step: detach_recipe
-    type: api_post
-    endpoint: /api/zones/${zone_id}/detach-recipe
-    payload:
-      recipe_id: ${recipe_id}
+  # Примечание: detach-recipe endpoint не реализован в backend
+  # Вместо этого можно удалить recipe_instance через БД или оставить cleanup опциональным
+  - step: detach_recipe_via_db
+    type: database_execute
+    query: |
+      DELETE FROM zone_recipe_instances
+      WHERE zone_id = :zone_id
+    params:
+      zone_id: ${zone_id}
     optional: true
 
   - step: delete_recipe

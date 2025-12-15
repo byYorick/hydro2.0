@@ -92,7 +92,7 @@ actions:
     type: api_get
     endpoint: /api/zones/${zone_id}/events
     params:
-      after_id: ${last_event_id_before}
+      after_id: ${last_event_id_before:-0}  # fallback если last_event_id отсутствует
       limit: 50
     save: events_after
 
@@ -115,9 +115,9 @@ assertions:
   # Проверка: replay возвращает события после last_event_id (DoD требует валидацию gap)
   - name: replay_returns_events_after_gap
     type: json_assertion
-    data: ${events_after}
+    source: events_after
     expected:
-      - field: data
+      - field: data.data
         operator: is_type
         value: list
 
@@ -128,7 +128,7 @@ assertions:
     source1: snapshot_before
     path1: data.last_event_id
     source2: events_after
-    path2: data[0].id
+    path2: data.data[0].id
     operator: less_than
     # Если событий нет или last_event_id был null, это тоже валидный случай (gap пустой)
     optional: true

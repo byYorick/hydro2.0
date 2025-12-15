@@ -1,50 +1,11 @@
 {
-  "test_suite": "E63_backoff_on_errors",
-  "generated_at": "2025-12-15T07:48:28.739869",
+  "test_suite": "E31_reconnect_replay_gap",
+  "generated_at": "2025-12-15T16:19:18.018795",
   "test_cases": [
-    {
-      "name": "get_automation_zone",
-      "status": "passed",
-      "duration": 0.061930179595947266,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "get_automation_zone",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-15T07:48:12.818931"
-    },
-    {
-      "name": "set_zone_id_from_uid",
-      "status": "passed",
-      "duration": 0.007995843887329102,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_zone_id_from_uid",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-15T07:48:12.826952"
-    },
-    {
-      "name": "set_zone_id",
-      "status": "passed",
-      "duration": 5.0067901611328125e-06,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_zone_id",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-15T07:48:12.827074"
-    },
     {
       "name": "start_node_simulator",
       "status": "passed",
-      "duration": 5.637343406677246,
+      "duration": 4.792331218719482,
       "error_message": null,
       "steps": [
         {
@@ -52,84 +13,251 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-15T07:48:18.464429"
+      "timestamp": "2025-12-15T16:18:56.146574"
     },
     {
-      "name": "enable_test_mode",
+      "name": "get_zone_id",
       "status": "passed",
-      "duration": 4.5299530029296875e-06,
+      "duration": 0.08993291854858398,
       "error_message": null,
       "steps": [
         {
-          "name": "enable_test_mode",
+          "name": "get_zone_id",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-15T07:48:18.464457"
+      "timestamp": "2025-12-15T16:18:56.237056"
     },
     {
-      "name": "inject_error_1",
-      "status": "failed",
-      "duration": 1.0251998901367188e-05,
-      "error_message": "ae_test_hook requires zone_id",
+      "name": "set_zone_id",
+      "status": "passed",
+      "duration": 5.245208740234375e-06,
+      "error_message": null,
       "steps": [
         {
-          "name": "inject_error_1",
-          "status": "failed",
-          "error": "ae_test_hook requires zone_id"
+          "name": "set_zone_id",
+          "status": "passed"
         }
       ],
-      "timestamp": "2025-12-15T07:48:18.464580"
+      "timestamp": "2025-12-15T16:18:56.237103"
     },
     {
-      "name": "backoff_event_created",
+      "name": "connect_ws",
+      "status": "passed",
+      "duration": 6.67572021484375e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "connect_ws",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-15T16:18:56.237116"
+    },
+    {
+      "name": "wait_after_connect",
+      "status": "passed",
+      "duration": 1.000427484512329,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_after_connect",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-15T16:18:57.237554"
+    },
+    {
+      "name": "subscribe_ws_zone",
+      "status": "passed",
+      "duration": 0.21151185035705566,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "subscribe_ws_zone",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-15T16:18:57.449125"
+    },
+    {
+      "name": "wait_after_subscribe",
+      "status": "passed",
+      "duration": 1.0006768703460693,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_after_subscribe",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-15T16:18:58.449822"
+    },
+    {
+      "name": "fetch_snapshot_before",
+      "status": "passed",
+      "duration": 0.10801243782043457,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "fetch_snapshot_before",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-15T16:18:58.557893"
+    },
+    {
+      "name": "capture_last_event_id",
+      "status": "passed",
+      "duration": 5.7220458984375e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "capture_last_event_id",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-15T16:18:58.557941"
+    },
+    {
+      "name": "disconnect_ws",
+      "status": "passed",
+      "duration": 0.003360271453857422,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "disconnect_ws",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-15T16:18:58.561310"
+    },
+    {
+      "name": "wait_after_disconnect",
+      "status": "passed",
+      "duration": 1.001115322113037,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_after_disconnect",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-15T16:18:59.562447"
+    },
+    {
+      "name": "publish_error_during_gap",
+      "status": "passed",
+      "duration": 5.005025386810303,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "publish_error_during_gap",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-15T16:19:04.567548"
+    },
+    {
+      "name": "reconnect_ws",
+      "status": "passed",
+      "duration": 0.0030281543731689453,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "reconnect_ws",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-15T16:19:04.570610"
+    },
+    {
+      "name": "wait_after_reconnect",
+      "status": "passed",
+      "duration": 1.0009710788726807,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_after_reconnect",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-15T16:19:05.571609"
+    },
+    {
+      "name": "fetch_events_after_id",
+      "status": "passed",
+      "duration": 0.0956716537475586,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "fetch_events_after_id",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-15T16:19:05.667422"
+    },
+    {
+      "name": "wait_after_replay",
+      "status": "passed",
+      "duration": 2.002187967300415,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_after_replay",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-15T16:19:07.669642"
+    },
+    {
+      "name": "snapshot_has_last_event_id",
       "status": "skipped",
-      "duration": 0.00106048583984375,
-      "error_message": "column \"details\" does not exist\nLINE 1: SELECT id, type, details\n                         ^",
+      "duration": 2.1696090698242188e-05,
+      "error_message": "Expected field value to be not null",
       "steps": [
         {
-          "name": "backoff_event_created",
+          "name": "snapshot_has_last_event_id",
           "status": "skipped",
-          "error": "column \"details\" does not exist\nLINE 1: SELECT id, type, details\n                         ^"
+          "error": "Expected field value to be not null"
         }
       ],
-      "timestamp": "2025-12-15T07:48:18.465740"
+      "timestamp": "2025-12-15T16:19:07.669780"
     },
     {
-      "name": "error_metrics_increased",
-      "status": "skipped",
-      "duration": 4.0531158447265625e-06,
-      "error_message": "Unknown assertion type: assert",
-      "steps": [
-        {
-          "name": "error_metrics_increased",
-          "status": "skipped",
-          "error": "Unknown assertion type: assert"
-        }
-      ],
-      "timestamp": "2025-12-15T07:48:18.465790"
-    },
-    {
-      "name": "Assertion 3",
+      "name": "replay_returns_events_after_gap",
       "status": "failed",
-      "duration": 1.9073486328125e-06,
-      "error_message": "Unknown assertion type: http_request",
+      "duration": 2.4318695068359375e-05,
+      "error_message": "Expected data.data to be of type list",
       "steps": [
         {
-          "name": "Assertion 3",
+          "name": "replay_returns_events_after_gap",
           "status": "failed",
-          "error": "Unknown assertion type: http_request"
+          "error": "Expected data.data to be of type list"
         }
       ],
-      "timestamp": "2025-12-15T07:48:18.465819"
+      "timestamp": "2025-12-15T16:19:07.669852"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E63_backoff_on_errors": {
-      "ws_messages": [],
+    "E31_reconnect_replay_gap": {
+      "ws_messages": [
+        {
+          "data": {
+            "event": "pusher_internal:subscription_succeeded",
+            "data": "{}",
+            "channel": "private-hydro.zones.98"
+          },
+          "timestamp": "2025-12-15T16:18:57.360782"
+        }
+      ],
       "mqtt_messages": [],
-      "api_responses": []
+      "api_responses": [],
+      "context_vars": {
+        "zone_id": "98",
+        "node_id": 1
+      }
     }
   }
 }
