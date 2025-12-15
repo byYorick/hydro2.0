@@ -33,9 +33,22 @@ actions:
     endpoint: /api/zones
     save: zones_response
 
+  # Берём zone_id по uid из setup (zn-test-1), чтобы избежать случайных/неконсистентных зон
+  - step: fetch_zone_id_from_db
+    type: db_wait
+    query: |
+      SELECT id
+      FROM zones
+      WHERE uid = 'zn-test-1'
+      ORDER BY id DESC
+      LIMIT 1
+    timeout: 10.0
+    expected_rows: 1
+    save: zone_row
+
   - step: set_zone_id
     type: set
-    zone_id: ${zones_response.data.data[0].id}
+    zone_id: ${zone_row[0].id}
 
   - step: connect_ws
     type: websocket_connect
@@ -116,9 +129,9 @@ assertions:
   - name: replay_returns_events_after_gap
     type: json_assertion
     source: events_after
+    path: data
     expected:
-      - field: data.data
-        operator: is_type
+      - operator: is_type
         value: list
 
   # Проверка: все события в replay имеют event_id больше last_event_id из snapshot
@@ -128,7 +141,7 @@ assertions:
     source1: snapshot_before
     path1: data.last_event_id
     source2: events_after
-    path2: data.data[0].id
+    path2: data[0].event_id
     operator: less_than
     # Если событий нет или last_event_id был null, это тоже валидный случай (gap пустой)
     optional: true
