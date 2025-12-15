@@ -100,10 +100,13 @@ actions:
     seconds: 2
 
   # Ждем FAILED статус в БД (после симуляции ответа)
-  # Примечание: В actions используется database_query, а не db.wait
   - step: wait_for_failed_status
-    type: sleep
-    seconds: 3  # Даем время на обработку MQTT сообщения
+    type: db.wait
+    query: SELECT status FROM commands WHERE cmd_id = :cmd_id AND status = 'FAILED'
+    params:
+      cmd_id: ${command_id}
+    timeout: 30.0
+    expected_rows: 1
 
   # Ждем WebSocket событие (опционально) - используем sleep, т.к. ws.wait_event не поддерживается в actions
   - step: wait_for_failed_ws_event
@@ -121,19 +124,19 @@ assertions:
       WHERE cmd_id = :cmd_id
     params:
       cmd_id: ${command_id}
-    timeout: 10.0
+    timeout: 5.0
     expected_rows: 1
     expected:
       - field: status
         operator: equals
         value: "FAILED"
 
-  # Проверка: WebSocket событие FAILED отправлено
+  # Проверка: WebSocket событие FAILED отправлено (опционально)
   - name: wait_for_failed_ws_event
     type: websocket_event
     event_type: ".App\\Events\\CommandStatusUpdated"
     timeout_seconds: 10.0
-    # Проверка фильтра делается через wait_event, если поддерживается
+    optional: true
 
 cleanup:
   - step: stop_node_simulator

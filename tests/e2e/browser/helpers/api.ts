@@ -45,8 +45,7 @@ export interface TestBinding {
 export class APITestHelper {
   constructor(
     private request: APIRequestContext, 
-    private token?: string,
-    private cookies?: Array<{ name: string; value: string; domain?: string; path?: string }>
+    private token?: string
   ) {}
 
   private async getHeaders(): Promise<Record<string, string>> {
@@ -58,11 +57,7 @@ export class APITestHelper {
     if (this.token) {
       headers['Authorization'] = `Bearer ${this.token}`;
     }
-    if (this.cookies && this.cookies.length > 0) {
-      // Добавляем cookies в заголовок Cookie
-      const cookieHeader = this.cookies.map(c => `${c.name}=${c.value}`).join('; ');
-      headers['Cookie'] = cookieHeader;
-    }
+    // Cookies автоматически передаются через storageState в APIRequestContext
     return headers;
   }
 
@@ -170,6 +165,36 @@ export class APITestHelper {
 
     if (!response.ok()) {
       throw new Error(`Failed to create binding: ${response.status()} ${await response.text()}`);
+    }
+  }
+
+  async startZone(zoneId: number): Promise<void> {
+    const response = await this.request.post(`${baseURL}/api/zones/${zoneId}/start`, {
+      headers: await this.getHeaders(),
+    });
+
+    if (!response.ok()) {
+      throw new Error(`Failed to start zone: ${response.status()} ${await response.text()}`);
+    }
+  }
+
+  async pauseZone(zoneId: number): Promise<void> {
+    const response = await this.request.post(`${baseURL}/api/zones/${zoneId}/pause`, {
+      headers: await this.getHeaders(),
+    });
+
+    if (!response.ok()) {
+      throw new Error(`Failed to pause zone: ${response.status()} ${await response.text()}`);
+    }
+  }
+
+  async resumeZone(zoneId: number): Promise<void> {
+    const response = await this.request.post(`${baseURL}/api/zones/${zoneId}/resume`, {
+      headers: await this.getHeaders(),
+    });
+
+    if (!response.ok()) {
+      throw new Error(`Failed to resume zone: ${response.status()} ${await response.text()}`);
     }
   }
 

@@ -11,7 +11,7 @@
           <div class="text-neutral-400 text-sm mb-1">Система</div>
           <div class="text-2xl font-bold text-emerald-400">✅ Онлайн</div>
         </div>
-        <div>
+        <div data-testid="dashboard-zones-count">
           <div class="text-neutral-400 text-sm mb-1">Зоны</div>
           <div class="text-2xl font-bold">{{ totalZonesCount }}</div>
           <div class="text-xs text-neutral-400 mt-1">
@@ -28,7 +28,7 @@
             </span>
           </div>
         </div>
-        <div>
+        <div data-testid="dashboard-alerts-count">
           <div class="text-neutral-400 text-sm mb-1">Активные алерты</div>
           <div class="text-2xl font-bold" :class="activeAlertsCount > 0 ? 'text-red-400' : 'text-emerald-400'">
             {{ activeAlertsCount }}

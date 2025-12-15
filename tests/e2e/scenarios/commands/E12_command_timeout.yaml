@@ -77,12 +77,13 @@ actions:
   - step: stop_node_simulator_to_force_timeout
     type: stop_simulator
 
-  # Ждем таймаут команды (по умолчанию 5 минут, но для теста используем минимальное время)
-  # Примечание: ProcessCommandTimeouts команда должна обрабатывать timeout каждые 30 секунд
-  # Ждем минимум 60 секунд чтобы гарантировать обработку timeout
+  # Ждем таймаут команды
+  # ProcessCommandTimeouts запускается каждые 30 секунд
+  # В E2E окружении COMMAND_TIMEOUT_MINUTES=1 (установлено в docker-compose.e2e.yml)
+  # Ждем минимум 90 секунд (1 минута timeout + 2 цикла обработки scheduler каждые 30 сек)
   - step: wait_for_timeout_processing
     type: sleep
-    seconds: 65
+    seconds: 90
 
 assertions:
   # Проверка: Команда должна быть в статусе TIMEOUT (DoD требует проверку TIMEOUT)

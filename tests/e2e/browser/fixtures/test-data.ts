@@ -1,4 +1,4 @@
-import { test as base, APIRequestContext } from '@playwright/test';
+import { test as base, request as playwrightRequest } from '@playwright/test';
 import { APITestHelper, TestGreenhouse, TestRecipe, TestZone, TestRecipePhase } from '../helpers/api';
 
 type TestDataFixtures = {
@@ -9,13 +9,20 @@ type TestDataFixtures = {
 };
 
 export const test = base.extend<TestDataFixtures>({
-  apiHelper: async ({ request, context }, use) => {
-    // Получаем cookies из контекста браузера для использования в API запросах
-    const cookies = await context.cookies();
+  apiHelper: async ({ context }, use) => {
+    // Получаем storageState из контекста браузера
+    const storageState = await context.storageState();
     
-    // Создаем helper с передачей cookies через функцию
-    const helper = new APITestHelper(request, undefined, cookies);
+    // Создаем новый APIRequestContext с storageState для передачи cookies
+    const apiRequest = await playwrightRequest.newContext({
+      storageState: storageState,
+    });
+    
+    const helper = new APITestHelper(apiRequest);
     await use(helper);
+    
+    // Закрываем request context после использования
+    await apiRequest.dispose();
   },
 
   testGreenhouse: async ({ apiHelper }, use) => {

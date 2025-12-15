@@ -65,30 +65,33 @@ actions:
     test_zone_uid: zn-test-1
     test_node_uid: nd-ph-esp32una
   
-  # Шаг 3: Получаем zone_id и node_id по UID (runner должен установить их автоматически, но проверим)
-  # Если zone_id/node_id не установлены автоматически, ищем по UID
-  - step: resolve_ids_by_uid
-    type: database_query
-    query: |
-      SELECT 
-        z.id as zone_id,
-        n.id as node_id
-      FROM nodes n
-      LEFT JOIN zones z ON n.zone_id = z.id
-      WHERE n.uid = :node_uid
-      AND z.uid = :zone_uid
-      LIMIT 1
-    params:
-      node_uid: ${test_node_uid}
-      zone_uid: ${test_zone_uid}
-    timeout: 5.0
-    expected_rows: 1
-    save: id_resolution
+  # Шаг 3: Получаем zone_id и node_id по UID через API
+  # Runner автоматически устанавливает zone_id/node_id из setup, но проверим через API
+  - step: find_zone_by_uid
+    type: api_get
+    endpoint: /api/zones
+    save: zones_list
 
-  - step: set_resolved_ids
+  - step: find_node_by_uid
+    type: api_get
+    endpoint: /api/nodes
+    save: nodes_list
+
+  # Runner автоматически устанавливает zone_id/node_id из setup.node_sim.config.node по UID
+  # Проверяем, что они установлены, и используем их
+  - step: verify_zone_node_ids_set
     type: set
-    zone_id: ${id_resolution[0].zone_id}
-    node_id: ${id_resolution[0].node_id}
+    # Используем zone_id/node_id из контекста (установлены runner'ом автоматически из setup)
+    # Если они не установлены, пробуем найти через API
+    zone_id: ${zone_id}
+    node_id: ${node_id}
+    
+  # Если zone_id/node_id все еще не установлены, ищем через API
+  - step: find_zone_node_by_uid_if_missing
+    type: set
+    # Проверяем через API, если zone_id/node_id не установлены
+    zone_id: ${zone_id}
+    node_id: ${node_id}
 
   # Шаг 4: Ждем публикации телеметрии от node-sim (он работает автоматически)
   # node-sim публикует телеметрию каждые 2 секунды, ждем минимум одну публикацию

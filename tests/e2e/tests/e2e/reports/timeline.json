@@ -1,11 +1,11 @@
 {
-  "test_suite": "E11_command_failed",
-  "generated_at": "2025-12-14T18:42:03.423983",
+  "test_suite": "E13_duplicate_cmd_response",
+  "generated_at": "2025-12-15T07:23:53.811180",
   "test_cases": [
     {
       "name": "start_node_simulator",
       "status": "passed",
-      "duration": 5.644086122512817,
+      "duration": 5.6982738971710205,
       "error_message": null,
       "steps": [
         {
@@ -13,12 +13,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-14T18:41:45.404621"
+      "timestamp": "2025-12-15T07:23:36.029483"
     },
     {
       "name": "get_zones",
       "status": "passed",
-      "duration": 0.08417487144470215,
+      "duration": 0.07647204399108887,
       "error_message": null,
       "steps": [
         {
@@ -26,12 +26,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-14T18:41:45.489024"
+      "timestamp": "2025-12-15T07:23:36.106189"
     },
     {
       "name": "get_nodes",
       "status": "passed",
-      "duration": 0.08301353454589844,
+      "duration": 0.06734132766723633,
       "error_message": null,
       "steps": [
         {
@@ -39,64 +39,51 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-14T18:41:45.572090"
+      "timestamp": "2025-12-15T07:23:36.173569"
     },
     {
-      "name": "set_zone_and_node",
+      "name": "find_test_zone_and_node",
       "status": "passed",
-      "duration": 1.1444091796875e-05,
+      "duration": 6.4373016357421875e-06,
       "error_message": null,
       "steps": [
         {
-          "name": "set_zone_and_node",
+          "name": "find_test_zone_and_node",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-14T18:41:45.572167"
+      "timestamp": "2025-12-15T07:23:36.173620"
     },
     {
-      "name": "subscribe_zone_channel",
+      "name": "subscribe_ws_commands",
       "status": "passed",
-      "duration": 0.20895934104919434,
+      "duration": 1.1871721744537354,
       "error_message": null,
       "steps": [
         {
-          "name": "subscribe_zone_channel",
+          "name": "subscribe_ws_commands",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-14T18:41:45.781143"
+      "timestamp": "2025-12-15T07:23:37.360808"
     },
     {
-      "name": "subscribe_commands_channel",
+      "name": "send_command",
       "status": "passed",
-      "duration": 0.2055513858795166,
+      "duration": 2.1697750091552734,
       "error_message": null,
       "steps": [
         {
-          "name": "subscribe_commands_channel",
+          "name": "send_command",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-14T18:41:45.986740"
-    },
-    {
-      "name": "send_command_that_fails",
-      "status": "passed",
-      "duration": 0.15697383880615234,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "send_command_that_fails",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-14T18:41:46.143758"
+      "timestamp": "2025-12-15T07:23:39.530644"
     },
     {
       "name": "set_command_id",
       "status": "passed",
-      "duration": 3.814697265625e-06,
+      "duration": 5.4836273193359375e-06,
       "error_message": null,
       "steps": [
         {
@@ -104,110 +91,72 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-14T18:41:46.143786"
+      "timestamp": "2025-12-15T07:23:39.530696"
     },
     {
-      "name": "simulate_failed_response",
+      "name": "node_sends_done_first",
       "status": "passed",
-      "duration": 0.00013184547424316406,
+      "duration": 2.0022947788238525,
       "error_message": null,
       "steps": [
         {
-          "name": "simulate_failed_response",
+          "name": "node_sends_done_first",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-14T18:41:46.143937"
+      "timestamp": "2025-12-15T07:23:41.533013"
     },
     {
-      "name": "wait_after_mqtt_publish",
+      "name": "node_sends_done_duplicate",
       "status": "passed",
-      "duration": 2.0016605854034424,
+      "duration": 2.0023741722106934,
       "error_message": null,
       "steps": [
         {
-          "name": "wait_after_mqtt_publish",
+          "name": "node_sends_done_duplicate",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-14T18:41:48.145607"
+      "timestamp": "2025-12-15T07:23:43.535464"
     },
     {
-      "name": "wait_for_failed_status",
+      "name": "command_reaches_final_status_done",
       "status": "passed",
-      "duration": 3.003115653991699,
+      "duration": 0.009583711624145508,
       "error_message": null,
       "steps": [
         {
-          "name": "wait_for_failed_status",
+          "name": "command_reaches_final_status_done",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-14T18:41:51.148747"
+      "timestamp": "2025-12-15T07:23:43.545075"
     },
     {
-      "name": "wait_for_failed_ws_event",
+      "name": "assert_status_is_done",
       "status": "passed",
-      "duration": 2.002081871032715,
+      "duration": 0.0005486011505126953,
       "error_message": null,
       "steps": [
         {
-          "name": "wait_for_failed_ws_event",
+          "name": "assert_status_is_done",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-14T18:41:53.150855"
-    },
-    {
-      "name": "command_status_is_failed",
-      "status": "failed",
-      "duration": 0.008965253829956055,
-      "error_message": "Field status: expected FAILED, got SENT",
-      "steps": [
-        {
-          "name": "command_status_is_failed",
-          "status": "failed",
-          "error": "Field status: expected FAILED, got SENT"
-        }
-      ],
-      "timestamp": "2025-12-14T18:41:53.159881"
+      "timestamp": "2025-12-15T07:23:43.545634"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E11_command_failed": {
+    "E13_duplicate_cmd_response": {
       "ws_messages": [
         {
           "data": {
             "event": "pusher_internal:subscription_succeeded",
             "data": "{}",
-            "channel": "private-hydro.zones.64"
+            "channel": "private-commands.167"
           },
-          "timestamp": "2025-12-14T18:41:45.686707"
-        },
-        {
-          "data": {
-            "event": "pusher_internal:subscription_succeeded",
-            "data": "{}",
-            "channel": "private-commands.64"
-          },
-          "timestamp": "2025-12-14T18:41:45.890433"
-        },
-        {
-          "data": {
-            "event": "CommandStatusUpdated",
-            "data": "{\"commandId\":\"18d7e319-c94c-4c58-9155-fde9d9beaa72\",\"status\":\"QUEUED\",\"message\":\"Command created\",\"error\":null,\"zoneId\":64,\"event_id\":1765726906000047651,\"server_ts\":1765726906000}",
-            "channel": "private-commands.64"
-          },
-          "timestamp": "2025-12-14T18:41:46.058063"
-        },
-        {
-          "data": {
-            "event": "CommandStatusUpdated",
-            "data": "{\"commandId\":\"18d7e319-c94c-4c58-9155-fde9d9beaa72\",\"status\":\"SENT\",\"message\":\"Command status updated\",\"error\":null,\"zoneId\":64,\"event_id\":1765726906000047652,\"server_ts\":1765726906000}",
-            "channel": "private-commands.64"
-          },
-          "timestamp": "2025-12-14T18:41:46.136241"
+          "timestamp": "2025-12-15T07:23:36.262389"
         }
       ],
       "mqtt_messages": [],

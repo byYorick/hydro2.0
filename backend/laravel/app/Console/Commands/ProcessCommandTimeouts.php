@@ -73,8 +73,9 @@ class ProcessCommandTimeouts extends Command
                     }
 
                     // Отправляем WebSocket уведомление
+                    // commandId должен быть cmd_id (строка), а не id (integer)
                     event(new CommandStatusUpdated(
-                        commandId: $command->id,
+                        commandId: $command->cmd_id ?? (string)$command->id,
                         status: 'TIMEOUT',
                         message: "Command timed out after {$timeoutMinutes} minutes",
                         error: null,

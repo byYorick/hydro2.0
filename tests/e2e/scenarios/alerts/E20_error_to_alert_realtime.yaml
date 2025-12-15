@@ -44,7 +44,7 @@ setup:
     - websocket: WebSocket server is running
 
 actions:
-  # Шаг 1: Получаем zone_id
+  # Шаг 1: Получаем zone_id (runner автоматически устанавливает zone_id из setup)
   - step: get_zones
     type: api_get
     endpoint: "/api/zones"
@@ -52,16 +52,8 @@ actions:
   
   - step: set_zone_id
     type: set
-    zone_id: ${zones_response.data.data[0].id}
-
-
-  # Шаг 2: Запуск симулятора узла
-  - step: start_node_simulator
-    type: start_simulator
-    config_ref: node_sim.config
-    wait_seconds: 3
-    optional: true  # node-sim уже может быть запущен
-    optional: true  # node-sim уже может быть запущен
+    # Используем zone_id из контекста (установлен runner'ом из setup.node_sim.config.node.zone_uid)
+    zone_id: ${zone_id}
 
   # Шаг 3: Подписка на WebSocket канал зоны
   - step: subscribe_ws_zone

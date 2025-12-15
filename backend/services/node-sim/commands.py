@@ -68,11 +68,23 @@ class CommandHandler:
             params = data.get("params", {})
             deadline_ms = data.get("deadline_ms")
             
+            # Извлекаем channel из топика: hydro/{gh}/{zone}/{node}/{channel}/command
+            # Или из params, если указан там
+            channel = params.get("channel")
+            if not channel:
+                # Пытаемся извлечь из топика
+                parts = topic.split("/")
+                if len(parts) >= 5 and parts[-1] == "command":
+                    channel = parts[-2]  # Предпоследний элемент
+                else:
+                    # Fallback на первый актуатор
+                    channel = self.node.actuators[0] if self.node.actuators else "pump_1"
+            
             if not cmd_id or not cmd:
                 logger.warning(f"Invalid command format: {data}")
                 return
             
-            logger.info(f"Received command: {cmd_id}, cmd={cmd}, params={params}")
+            logger.info(f"Received command: {cmd_id}, cmd={cmd}, channel={channel}, params={params}")
             
             # Обрабатываем команду через state machine
             state = await self.state_machine.process_command(
@@ -82,6 +94,9 @@ class CommandHandler:
                 deadline_ms=deadline_ms,
                 executor=self._execute_command
             )
+            
+            # Сохраняем channel в state для использования при отправке ответа
+            state.channel = channel
             
             # Отправляем ACCEPTED быстро
             await self._send_response(state, "ACCEPTED")
@@ -109,7 +124,8 @@ class CommandHandler:
         try:
             if cmd == "run_pump":
                 return await self._execute_run_pump(params)
-            elif cmd == "set_relay":
+            elif cmd == "set_relay" or cmd == "set_relay_state":
+                # Поддержка как set_relay, так и set_relay_state для совместимости
                 return await self._execute_set_relay(params)
             elif cmd == "set_pwm":
                 return await self._execute_set_pwm(params)
@@ -168,19 +184,19 @@ class CommandHandler:
         Отправить ответ на команду.
         
         Args:
-            state: Состояние команды
+            state: Состояние команды (с атрибутом channel)
             status: Статус ответа (ACCEPTED, DONE, FAILED)
         """
+        # Используем channel из state (сохранен при обработке команды)
+        channel = getattr(state, 'channel', None) or self.node.actuators[0] if self.node.actuators else "pump_1"
+        
         # Определяем топик для ответа
         if self.node.mode.value == "preconfig":
-            # Используем temp топик (берем первый канал для определения структуры)
-            # В реальности нужно извлекать channel из исходной команды
-            ch = self.node.actuators[0] if self.node.actuators else "pump_1"
-            topic = temp_command_topic(self.node.hardware_id, ch).replace("/command", "/command_response")
+            # Используем temp топик
+            topic = temp_command_topic(self.node.hardware_id, channel).replace("/command", "/command_response")
         else:
-            # Используем обычный топик (тоже нужно извлекать channel)
-            ch = self.node.actuators[0] if self.node.actuators else "pump_1"
-            topic = command_response_topic(self.node.gh_uid, self.node.zone_uid, self.node.node_uid, ch)
+            # Используем обычный топик с правильным channel
+            topic = command_response_topic(self.node.gh_uid, self.node.zone_uid, self.node.node_uid, channel)
         
         # Формируем payload
         payload = {

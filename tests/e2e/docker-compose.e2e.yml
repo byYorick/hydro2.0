@@ -88,6 +88,7 @@ services:
     - DB_DATABASE=${POSTGRES_DB:-hydro_e2e}
     - DB_USERNAME=${POSTGRES_USER:-hydro}
     - DB_PASSWORD=${POSTGRES_PASSWORD:-hydro_e2e}
+    - COMMAND_TIMEOUT_MINUTES=1
     - REDIS_HOST=redis
     - REDIS_PORT=6379
     - REVERB_APP_ID=app

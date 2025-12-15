@@ -119,14 +119,28 @@ assertions:
   # Проверка 1: Команда достигает финального статуса DONE (DoD требует проверку финализации)
   # Дублирующие ответы не должны ломать систему, но финальный статус должен быть DONE
   - name: command_reaches_final_status_done
-    type: database_query
+    type: db.wait
     query: |
       SELECT id, status, updated_at
       FROM commands
       WHERE cmd_id = :cmd_id
+      AND status = 'DONE'
     params:
       cmd_id: ${COMMAND_ID}
-    timeout: 15.0
+    timeout: 90.0
+    expected_rows: 1
+    save: command_status
+
+  # Проверка статуса через database_query (более надежно)
+  - name: assert_status_is_done
+    type: database_query
+    query: |
+      SELECT status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+    params:
+      cmd_id: ${COMMAND_ID}
+    timeout: 5.0
     expected_rows: 1
     expected:
       - field: status

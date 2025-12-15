@@ -105,6 +105,20 @@ assertions:
   # Проверка: Команда достигает финального статуса DONE (DoD требует проверку финализации)
   # Response before sent не должен ломать систему, но финальный статус должен быть DONE
   - name: final_status_is_done
+    type: db.wait
+    query: |
+      SELECT status
+      FROM commands
+      WHERE cmd_id = :cmd_id
+      AND status = 'DONE'
+    params:
+      cmd_id: ${command_id}
+    timeout: 90.0
+    expected_rows: 1
+    save: command_status
+
+  # Проверка статуса через database_query (более надежно)
+  - name: assert_status_is_done
     type: database_query
     query: |
       SELECT status
@@ -112,7 +126,7 @@ assertions:
       WHERE cmd_id = :cmd_id
     params:
       cmd_id: ${command_id}
-    timeout: 15.0
+    timeout: 5.0
     expected_rows: 1
     expected:
       - field: status

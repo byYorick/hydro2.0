@@ -36,6 +36,7 @@ class CommandState:
         self.error_code: Optional[str] = None
         self.error_message: Optional[str] = None
         self.execution_task: Optional[asyncio.Task] = None
+        self.channel: Optional[str] = None  # Channel из топика команды (для формирования топика ответа)
     
     def accept(self):
         """Принять команду."""
