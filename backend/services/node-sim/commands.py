@@ -106,12 +106,8 @@ class CommandHandler:
             # Сохраняем channel в state для использования при отправке ответа
             state.channel = channel
             
-            # Отправляем ACCEPTED быстро
+            # Отправляем ACCEPTED быстро (подтверждение приёма команды)
             await self._send_response(state, "ACCEPTED")
-            
-            # Ждем завершения выполнения и отправляем DONE/FAILED
-            if state.execution_task:
-                asyncio.create_task(self._wait_and_send_final_response(state))
         
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON in command: {e}")
@@ -131,17 +127,18 @@ class CommandHandler:
         """
         try:
             if cmd == "run_pump":
-                return await self._execute_run_pump(params)
+                ok = await self._execute_run_pump(params)
             elif cmd == "set_relay" or cmd == "set_relay_state":
                 # Поддержка как set_relay, так и set_relay_state для совместимости
-                return await self._execute_set_relay(params)
+                ok = await self._execute_set_relay(params)
             elif cmd == "set_pwm":
-                return await self._execute_set_pwm(params)
+                ok = await self._execute_set_pwm(params)
             elif cmd == "calibrate":
-                return await self._execute_calibrate(params)
+                ok = await self._execute_calibrate(params)
             else:
                 logger.warning(f"Unknown command: {cmd}")
-                return False
+                ok = False
+            return ok
         except Exception as e:
             logger.error(f"Error executing command {cmd}: {e}", exc_info=True)
             return False
@@ -233,16 +230,12 @@ class CommandHandler:
             logger.info(f"Sent duplicate command_response: {state.cmd_id}")
     
     async def _wait_and_send_final_response(self, state):
-        """Дождаться завершения команды и отправить финальный ответ."""
+        """Совместимость: больше не используется, финальный ответ отправляется из _execute_command."""
         try:
-            if state.execution_task:
-                await state.execution_task
-            
-            # Отправляем финальный ответ
             if state.status == CommandStatus.DONE:
                 await self._send_response(state, "DONE")
             elif state.status == CommandStatus.FAILED:
                 await self._send_response(state, "FAILED")
         except Exception as e:
-            logger.error(f"Error waiting for command completion: {e}", exc_info=True)
+            logger.error(f"Error sending final response: {e}", exc_info=True)
 

@@ -78,6 +78,7 @@ class CommandHandler:
     - Идемпотентность через LRU cache
     - State machine для управления статусами
     - Негативные режимы
+    - Мониторинг доставленных команд (cmd_id, тайминги, статистика)
     """
     
     def __init__(self, node, mqtt_client, event_loop=None, telemetry_publisher=None):
@@ -95,7 +96,19 @@ class CommandHandler:
         self.telemetry_publisher = telemetry_publisher
         self.state_machine = CommandStateMachine()
         self.cache = LRUCommandCache(maxsize=1000)
+        # Храним event loop, чтобы планировать async задачи из MQTT-потока без создания временных loop
         self._event_loop = event_loop
+        
+        # Мониторинг команд: статистика доставленных команд
+        self._command_stats = {
+            "total_received": 0,
+            "total_delivered": 0,
+            "total_dropped": 0,
+            "total_duplicated": 0,
+            "total_failed": 0,
+            "commands_by_status": {},
+            "avg_response_time_ms": 0.0,
+        }
         
         # Внутреннее состояние для команд
         self.relay_states: Dict[str, bool] = {}  # channel -> state
@@ -125,6 +138,12 @@ class CommandHandler:
     
     async def start(self):
         """Запустить обработчик команд."""
+        # Сохраняем текущий loop, чтобы использовать его из MQTT callback-потока
+        if self._event_loop is None:
+            try:
+                self._event_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                self._event_loop = None
         # Получаем список каналов (комбинация sensors и actuators)
         channels = set()
         if hasattr(self.node, 'channels') and self.node.channels:
@@ -244,7 +263,13 @@ class CommandHandler:
             params = data.get("params", {})
             exec_time_ms = data.get("exec_time_ms", 100)  # По умолчанию 100ms
             
-            logger.info(f"Received command: {cmd} (cmd_id={cmd_id}, channel={channel})")
+            # Мониторинг: увеличиваем счетчик полученных команд
+            self._command_stats["total_received"] += 1
+            
+            logger.info(
+                f"Received command: {cmd} (cmd_id={cmd_id}, channel={channel}, "
+                f"exec_time_ms={exec_time_ms}, total_received={self._command_stats['total_received']})"
+            )
             
             # Проверяем кеш для идемпотентности
             cached = self.cache.get(cmd_id)
@@ -314,8 +339,12 @@ class CommandHandler:
         executor: Callable[[str, Dict[str, Any]], tuple[CommandStatus, Optional[Dict[str, Any]]]]
     ):
         """Выполнить команду асинхронно."""
+        execution_start_ms = current_timestamp_ms()
         try:
-            logger.info(f"Executing command {state.cmd_id} (cmd={state.cmd}, channel={state.channel})")
+            logger.info(
+                f"Executing command {state.cmd_id} (cmd={state.cmd}, channel={state.channel}, "
+                f"accepted_at={state.accepted_at_ms}ms)"
+            )
             # Для команды hil_request_telemetry выполняем публикацию напрямую
             if state.cmd == "hil_request_telemetry" and self.telemetry_publisher:
                 try:
@@ -336,31 +365,75 @@ class CommandHandler:
             # Сохраняем в кеш для идемпотентности
             self.cache.put(state.cmd_id, final_status, response_payload)
             
-            # Отправляем финальный ответ
+            # Вычисляем время выполнения команды
+            execution_time_ms = current_timestamp_ms() - execution_start_ms
+            response_time_ms = (state.done_at_ms or current_timestamp_ms()) - state.accepted_at_ms
+            
+            # Обновляем статистику
             status_str = self._status_to_string(final_status)
+            self._command_stats["commands_by_status"][status_str] = \
+                self._command_stats["commands_by_status"].get(status_str, 0) + 1
+            
+            # Отправляем финальный ответ
             details = response_payload.get("details", "OK") if response_payload else "OK"
             
-            logger.info(f"Sending final response for command {state.cmd_id}: status={status_str}, details={details}")
+            logger.info(
+                f"Sending final response for command {state.cmd_id}: status={status_str}, "
+                f"details={details}, execution_time={execution_time_ms}ms, "
+                f"response_time={response_time_ms}ms"
+            )
             
             # Проверяем негативные режимы
             if self.state_machine.should_drop_response(state.cmd_id):
-                logger.info(f"Dropping response for command {state.cmd_id}")
+                logger.warning(
+                    f"Dropping response for command {state.cmd_id} "
+                    f"(execution_time={execution_time_ms}ms, response_time={response_time_ms}ms)"
+                )
+                self._command_stats["total_dropped"] += 1
                 return
             
             await self._send_response(state.channel, state.cmd_id, status_str, details, response_payload)
-            logger.info(f"Final response sent for command {state.cmd_id}: {status_str}")
+            self._command_stats["total_delivered"] += 1
+            
+            # Обновляем среднее время ответа
+            total_delivered = self._command_stats["total_delivered"]
+            current_avg = self._command_stats["avg_response_time_ms"]
+            self._command_stats["avg_response_time_ms"] = \
+                (current_avg * (total_delivered - 1) + response_time_ms) / total_delivered
+            
+            logger.info(
+                f"Final response sent for command {state.cmd_id}: {status_str} "
+                f"(response_time={response_time_ms}ms, avg_response_time={self._command_stats['avg_response_time_ms']:.1f}ms)"
+            )
             
             # Дублируем ответ, если нужно
             if self.state_machine.should_duplicate_response(state.cmd_id):
                 logger.info(f"Duplicating response for command {state.cmd_id}")
+                self._command_stats["total_duplicated"] += 1
                 await asyncio.sleep(0.1)  # Небольшая задержка перед дубликатом
                 await self._send_response(state.channel, state.cmd_id, status_str, details, response_payload)
         
         except Exception as e:
-            logger.error(f"Error executing command {state.cmd_id}: {e}", exc_info=True)
+            execution_time_ms = current_timestamp_ms() - execution_start_ms
+            logger.error(
+                f"Error executing command {state.cmd_id}: {e} "
+                f"(execution_time={execution_time_ms}ms)", exc_info=True
+            )
             # Сохраняем ошибку в кеш
             self.cache.put(state.cmd_id, CommandStatus.FAILED, {"error": str(e)})
+            self._command_stats["total_failed"] += 1
+            self._command_stats["commands_by_status"]["ERROR"] = \
+                self._command_stats["commands_by_status"].get("ERROR", 0) + 1
             await self._send_error_response(state.channel, state.cmd_id, "ERROR", str(e))
+    
+    def get_command_stats(self) -> Dict[str, Any]:
+        """
+        Получить статистику доставленных команд.
+        
+        Returns:
+            Словарь со статистикой команд
+        """
+        return dict(self._command_stats)
     
     async def _send_response(
         self,
@@ -394,9 +467,10 @@ class CommandHandler:
     def _schedule_async(self, coro):
         """Запланировать выполнение async функции."""
         try:
-            loop = self._event_loop or asyncio.get_event_loop()
+            loop = self._event_loop or asyncio.get_running_loop()
             if loop.is_running():
-                asyncio.create_task(coro)
+                # run_coroutine_threadsafe безопасно вызывается из MQTT-потока
+                asyncio.run_coroutine_threadsafe(coro, loop)
             else:
                 loop.run_until_complete(coro)
         except RuntimeError:

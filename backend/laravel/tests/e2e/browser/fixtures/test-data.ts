@@ -26,6 +26,8 @@ export const test = base.extend<TestDataFixtures>({
   },
 
   testGreenhouse: async ({ apiHelper }, use) => {
+    // Добавляем задержку для избежания rate limiting
+    await new Promise(resolve => setTimeout(resolve, 1000));
     const greenhouse = await apiHelper.createTestGreenhouse();
     await use(greenhouse);
     // Очистка после теста
@@ -33,6 +35,8 @@ export const test = base.extend<TestDataFixtures>({
   },
 
   testRecipe: async ({ apiHelper }, use) => {
+    // Добавляем задержку для избежания rate limiting
+    await new Promise(resolve => setTimeout(resolve, 500));
     const phases: TestRecipePhase[] = [
       {
         phase_index: 0,
@@ -70,6 +74,8 @@ export const test = base.extend<TestDataFixtures>({
   },
 
   testZone: async ({ apiHelper, testGreenhouse }, use) => {
+    // Добавляем задержку для избежания rate limiting
+    await new Promise(resolve => setTimeout(resolve, 500));
     const zone = await apiHelper.createTestZone(testGreenhouse.id);
     await use(zone);
     // Очистка после теста

@@ -25,26 +25,28 @@ actions:
     node_id: ${nodes_response.data.data[0].id}
 
   # Создаем binding (role → node/channel)
-  # Примечание: endpoint может быть /api/zones/{id}/bindings или другой
-  # Проверяем через БД, если API еще не реализован
+  # Используем правильный endpoint и таблицу согласно контракту
+  # Проверяем через БД правильную таблицу zone_channel_bindings
   - step: check_bindings_table
     type: database_query
     query: |
       SELECT COUNT(*) as bindings_count
-      FROM zone_bindings
+      FROM zone_channel_bindings
       WHERE zone_id = :zone_id
     params:
       zone_id: ${zone_id}
     optional: true
 
-  # Альтернативно: создаем binding через API (если доступно)
+  # Создаем binding через API (правильный endpoint согласно routes/api.php)
   - step: create_binding
     type: api_post
-    endpoint: /api/zones/${zone_id}/bindings
+    endpoint: /api/zones/${zone_id}/infrastructure/bindings
     payload:
-      role: main_pump
+      asset_id: 1  # Требуется asset_id из zone_infrastructure
       node_id: ${node_id}
       channel: main_pump
+      direction: actuator
+      role: main_pump
     save: binding_response
     optional: true
 
@@ -73,9 +75,16 @@ assertions:
     expected_rows: 1
 
 cleanup:
-  - step: delete_binding
-    type: api_delete
-    endpoint: /api/zones/${zone_id}/bindings/main_pump
+  # Удаление binding через правильный endpoint
+  # Нужен ID binding из zone_channel_bindings, поэтому делаем через БД или опционально через API
+  - step: delete_binding_via_db
+    type: database_execute
+    query: |
+      DELETE FROM zone_channel_bindings
+      WHERE zone_id = :zone_id
+      AND role = 'main_pump'
+    params:
+      zone_id: ${zone_id}
     optional: true
 
 

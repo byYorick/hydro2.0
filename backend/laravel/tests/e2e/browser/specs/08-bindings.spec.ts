@@ -40,11 +40,23 @@ test.describe('Bindings', () => {
         }
       } else {
         // Если select не виден, просто проверяем загрузку страницы
-        await expect(page.locator('h1').or(page.locator('[data-testid*="zone"]'))).toBeVisible();
+        const h1 = page.locator('h1').first();
+        const zoneElement = page.locator('[data-testid*="zone"]').first();
+        const hasH1 = await h1.isVisible().catch(() => false);
+        const hasZone = await zoneElement.isVisible().catch(() => false);
+        if (!hasH1 && !hasZone) {
+          throw new Error('Page elements not found');
+        }
       }
     } else {
       // Если биндинги недоступны, просто проверяем загрузку страницы
-      await expect(page.locator('h1').or(page.locator('[data-testid*="zone"]'))).toBeVisible();
+      const h1 = page.locator('h1').first();
+      const zoneElement = page.locator('[data-testid*="zone"]').first();
+      const hasH1 = await h1.isVisible().catch(() => false);
+      const hasZone = await zoneElement.isVisible().catch(() => false);
+      if (!hasH1 && !hasZone) {
+        throw new Error('Page elements not found');
+      }
     }
   });
 
@@ -64,7 +76,13 @@ test.describe('Bindings', () => {
       await expect(channelBinder.first()).toBeVisible({ timeout: 5000 });
     } else {
       // Если биндинги не найдены, просто проверяем загрузку страницы
-      await expect(page.locator('h1').or(page.locator('[data-testid*="zone"]'))).toBeVisible();
+      const h1 = page.locator('h1').first();
+      const zoneElement = page.locator('[data-testid*="zone"]').first();
+      const hasH1 = await h1.isVisible().catch(() => false);
+      const hasZone = await zoneElement.isVisible().catch(() => false);
+      if (!hasH1 && !hasZone) {
+        throw new Error('Page elements not found');
+      }
     }
   });
 
@@ -85,7 +103,13 @@ test.describe('Bindings', () => {
       await expect(commandButtons.first()).toBeVisible({ timeout: 5000 });
     } else {
       // Если команды недоступны, просто проверяем загрузку страницы
-      await expect(page.locator('h1').or(page.locator('[data-testid*="zone"]'))).toBeVisible();
+      const h1 = page.locator('h1').first();
+      const zoneElement = page.locator('[data-testid*="zone"]').first();
+      const hasH1 = await h1.isVisible().catch(() => false);
+      const hasZone = await zoneElement.isVisible().catch(() => false);
+      if (!hasH1 && !hasZone) {
+        throw new Error('Page elements not found');
+      }
     }
   });
 });

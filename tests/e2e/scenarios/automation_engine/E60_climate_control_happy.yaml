@@ -119,7 +119,7 @@ actions:
   # Проверяем метрики automation-engine
   - step: check_metrics
     type: scrape_metrics
-    url: http://automation-engine:9401
+    url: http://localhost:9401
     metric: automation_commands_sent_total
     save: metrics
 

@@ -1,37 +1,24 @@
 {
-  "test_suite": "E63_backoff_on_errors",
-  "generated_at": "2025-12-15T07:48:28.739869",
+  "test_suite": "E32_out_of_order_guard",
+  "generated_at": "2025-12-15T16:45:42.510057",
   "test_cases": [
     {
-      "name": "get_automation_zone",
+      "name": "get_zones",
       "status": "passed",
-      "duration": 0.061930179595947266,
+      "duration": 0.09139537811279297,
       "error_message": null,
       "steps": [
         {
-          "name": "get_automation_zone",
+          "name": "get_zones",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-15T07:48:12.818931"
-    },
-    {
-      "name": "set_zone_id_from_uid",
-      "status": "passed",
-      "duration": 0.007995843887329102,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_zone_id_from_uid",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-15T07:48:12.826952"
+      "timestamp": "2025-12-15T16:45:36.019719"
     },
     {
       "name": "set_zone_id",
       "status": "passed",
-      "duration": 5.0067901611328125e-06,
+      "duration": 8.821487426757812e-06,
       "error_message": null,
       "steps": [
         {
@@ -39,97 +26,180 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-15T07:48:12.827074"
+      "timestamp": "2025-12-15T16:45:36.020237"
     },
     {
-      "name": "start_node_simulator",
+      "name": "get_snapshot",
       "status": "passed",
-      "duration": 5.637343406677246,
+      "duration": 0.1042177677154541,
       "error_message": null,
       "steps": [
         {
-          "name": "start_node_simulator",
+          "name": "get_snapshot",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-15T07:48:18.464429"
+      "timestamp": "2025-12-15T16:45:36.124484"
     },
     {
-      "name": "enable_test_mode",
+      "name": "set_last_event_id",
       "status": "passed",
-      "duration": 4.5299530029296875e-06,
+      "duration": 5.7220458984375e-06,
       "error_message": null,
       "steps": [
         {
-          "name": "enable_test_mode",
+          "name": "set_last_event_id",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-15T07:48:18.464457"
+      "timestamp": "2025-12-15T16:45:36.124537"
     },
     {
-      "name": "inject_error_1",
-      "status": "failed",
-      "duration": 1.0251998901367188e-05,
-      "error_message": "ae_test_hook requires zone_id",
+      "name": "get_nodes",
+      "status": "passed",
+      "duration": 0.08725571632385254,
+      "error_message": null,
       "steps": [
         {
-          "name": "inject_error_1",
-          "status": "failed",
-          "error": "ae_test_hook requires zone_id"
+          "name": "get_nodes",
+          "status": "passed"
         }
       ],
-      "timestamp": "2025-12-15T07:48:18.464580"
+      "timestamp": "2025-12-15T16:45:36.211808"
     },
     {
-      "name": "backoff_event_created",
-      "status": "skipped",
-      "duration": 0.00106048583984375,
-      "error_message": "column \"details\" does not exist\nLINE 1: SELECT id, type, details\n                         ^",
+      "name": "set_node_id",
+      "status": "passed",
+      "duration": 4.76837158203125e-06,
+      "error_message": null,
       "steps": [
         {
-          "name": "backoff_event_created",
-          "status": "skipped",
-          "error": "column \"details\" does not exist\nLINE 1: SELECT id, type, details\n                         ^"
+          "name": "set_node_id",
+          "status": "passed"
         }
       ],
-      "timestamp": "2025-12-15T07:48:18.465740"
+      "timestamp": "2025-12-15T16:45:36.211862"
     },
     {
-      "name": "error_metrics_increased",
-      "status": "skipped",
-      "duration": 4.0531158447265625e-06,
-      "error_message": "Unknown assertion type: assert",
+      "name": "send_command_to_create_event",
+      "status": "passed",
+      "duration": 0.18737053871154785,
+      "error_message": null,
       "steps": [
         {
-          "name": "error_metrics_increased",
-          "status": "skipped",
-          "error": "Unknown assertion type: assert"
+          "name": "send_command_to_create_event",
+          "status": "passed"
         }
       ],
-      "timestamp": "2025-12-15T07:48:18.465790"
+      "timestamp": "2025-12-15T16:45:36.399258"
     },
     {
-      "name": "Assertion 3",
-      "status": "failed",
-      "duration": 1.9073486328125e-06,
-      "error_message": "Unknown assertion type: http_request",
+      "name": "wait_after_command",
+      "status": "passed",
+      "duration": 2.0016674995422363,
+      "error_message": null,
       "steps": [
         {
-          "name": "Assertion 3",
-          "status": "failed",
-          "error": "Unknown assertion type: http_request"
+          "name": "wait_after_command",
+          "status": "passed"
         }
       ],
-      "timestamp": "2025-12-15T07:48:18.465819"
+      "timestamp": "2025-12-15T16:45:38.400969"
+    },
+    {
+      "name": "wait_for_new_event",
+      "status": "passed",
+      "duration": 3.002617359161377,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_for_new_event",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-15T16:45:41.403721"
+    },
+    {
+      "name": "set_new_last_event_id",
+      "status": "passed",
+      "duration": 1.1920928955078125e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_new_last_event_id",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-15T16:45:41.403803"
+    },
+    {
+      "name": "get_events_after_old_id",
+      "status": "passed",
+      "duration": 0.09908652305603027,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "get_events_after_old_id",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-15T16:45:41.502933"
+    },
+    {
+      "name": "wait_processing",
+      "status": "passed",
+      "duration": 1.0011096000671387,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_processing",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-15T16:45:42.504064"
+    },
+    {
+      "name": "events_received",
+      "status": "passed",
+      "duration": 5.269050598144531e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "events_received",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-15T16:45:42.504140"
+    },
+    {
+      "name": "zone_exists",
+      "status": "passed",
+      "duration": 0.0036084651947021484,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "zone_exists",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-15T16:45:42.507777"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E63_backoff_on_errors": {
+    "E32_out_of_order_guard": {
       "ws_messages": [],
       "mqtt_messages": [],
-      "api_responses": []
+      "api_responses": [],
+      "context_vars": {
+        "zone_id": "202",
+        "zone_uid": "zn-test-1",
+        "node_id": 1,
+        "node_uid": "nd-ph-esp32una",
+        "last_event_id": "191",
+        "test_node_id": "5",
+        "new_last_event_id": "191"
+      }
     }
   }
 }

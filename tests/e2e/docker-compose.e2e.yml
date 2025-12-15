@@ -293,6 +293,9 @@ services:
     # Убираем profiles для автоматического старта в E2E тестах
     # profiles:
     # - automation
+    ports:
+    - "9401:9401"
+    - "9405:9405"
     networks:
     - backend
   node-sim:

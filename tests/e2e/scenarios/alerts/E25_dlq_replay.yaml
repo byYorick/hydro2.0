@@ -37,7 +37,7 @@ actions:
 
     FROM pending_alerts
 
-    WHERE (payload_json::text LIKE ''%%dlq_test%%'' OR payload_json::text LIKE ''%%node_error%%'')
+    WHERE (details::text LIKE ''%%dlq_test%%'' OR details::text LIKE ''%%node_error%%'')
 
     AND status IN (''pending'', ''failed'')
 

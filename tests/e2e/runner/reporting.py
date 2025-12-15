@@ -85,7 +85,8 @@ class TestReporter:
         name: str,
         ws_messages: Optional[List[Dict[str, Any]]] = None,
         mqtt_messages: Optional[List[Dict[str, Any]]] = None,
-        api_responses: Optional[List[Dict[str, Any]]] = None
+        api_responses: Optional[List[Dict[str, Any]]] = None,
+        context_vars: Optional[Dict[str, Any]] = None
     ):
         """
         Добавить артефакты (последние сообщения).
@@ -95,11 +96,13 @@ class TestReporter:
             ws_messages: Последние WebSocket сообщения
             mqtt_messages: Последние MQTT сообщения
             api_responses: Последние API ответы
+            context_vars: Переменные контекста (zone_id, node_id и т.п.)
         """
         self.artifacts[name] = {
             "ws_messages": (ws_messages or [])[-50:],  # Последние 50
             "mqtt_messages": (mqtt_messages or [])[-50:],  # Последние 50
-            "api_responses": (api_responses or [])[-50:]  # Последние 50
+            "api_responses": (api_responses or [])[-50:],  # Последние 50
+            "context_vars": context_vars or {}  # Переменные контекста
         }
     
     def generate_junit_xml(self, filename: str = "junit.xml") -> str:

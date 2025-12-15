@@ -36,6 +36,9 @@ async def run_simulator(config: SimConfig):
         logger.error(f"Failed to import components: {e}")
         logger.error("Make sure all dependencies are installed: pip install -r requirements.txt")
         sys.exit(1)
+
+    # Захватываем текущий event loop, чтобы передать его в обработчики
+    event_loop = asyncio.get_running_loop()
     
     # Создаем MQTT клиент
     mqtt = MqttClient(
@@ -84,7 +87,7 @@ async def run_simulator(config: SimConfig):
     )
     
     # Создаем обработчик команд (передаем telemetry_publisher для поддержки hil_request_telemetry)
-    command_handler = CommandHandler(node, mqtt, telemetry_publisher=telemetry)
+    command_handler = CommandHandler(node, mqtt, telemetry_publisher=telemetry, event_loop=event_loop)
     if config.failure_mode:
         from .state_machine import FailureMode
         failure_mode = FailureMode(
@@ -198,7 +201,6 @@ async def run_scenario(config: SimConfig, scenario_name: str):
         from .commands import CommandHandler
         from .telemetry import TelemetryPublisher
         from .errors import ErrorPublisher, create_error_callback, create_overcurrent_error
-        
         # Создаем MQTT клиент
         mqtt = MqttClient(
             host=config.mqtt.host,
@@ -210,6 +212,7 @@ async def run_scenario(config: SimConfig, scenario_name: str):
             ca_certs=config.mqtt.ca_certs,
             keepalive=config.mqtt.keepalive
         )
+        loop = asyncio.get_running_loop()
         
         # Подключаемся к MQTT
         try:
@@ -252,7 +255,7 @@ async def run_scenario(config: SimConfig, scenario_name: str):
         node.register_error_callback(create_error_callback(error_publisher))
         
         # Создаем обработчик команд
-        command_handler = CommandHandler(node, mqtt)
+        command_handler = CommandHandler(node, mqtt, event_loop=loop)
         
         # Создаем публикатор телеметрии
         telemetry = TelemetryPublisher(
@@ -270,7 +273,7 @@ async def run_scenario(config: SimConfig, scenario_name: str):
         )
         
         # Создаем обработчик команд (передаем telemetry_publisher для поддержки hil_request_telemetry)
-        command_handler = CommandHandler(node, mqtt, telemetry_publisher=telemetry)
+        command_handler = CommandHandler(node, mqtt, telemetry_publisher=telemetry, event_loop=loop)
         
         # Запускаем компоненты
         try:
@@ -419,4 +422,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
