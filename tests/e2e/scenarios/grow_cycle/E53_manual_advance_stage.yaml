@@ -19,7 +19,61 @@ actions:
     type: set
     zone_id: ${zones_response.data.data[0].id}
 
-  # Проверяем, что у зоны есть рецепт
+  - step: create_recipe
+    type: api_post
+    endpoint: /api/recipes
+    payload:
+      name: test-recipe-e53-${TIMESTAMP_S}
+      description: Test recipe for E53
+    save: recipe_response
+
+  - step: add_phase_0
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/phases
+    payload:
+      phase_index: 0
+      name: Planting
+      duration_hours: 24
+      targets:
+        ph:
+          min: 5.5
+          max: 6.5
+        ec: 1.5
+        temp_air: 22
+        humidity_air: 60
+        light_hours: 16
+
+  - step: add_phase_1
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/phases
+    payload:
+      phase_index: 1
+      name: Veg
+      duration_hours: 48
+      targets:
+        ph:
+          min: 5.6
+          max: 6.6
+        ec: 1.8
+        temp_air: 23
+        humidity_air: 55
+        light_hours: 18
+
+  - step: attach_recipe
+    type: api_post
+    endpoint: /api/zones/${zone_id}/attach-recipe
+    payload:
+      recipe_id: ${recipe_response.data.id}
+
+  - step: start_cycle
+    type: api_post
+    endpoint: /api/zones/${zone_id}/start
+    payload: {}
+
+  - step: subscribe_zone_channel
+    type: websocket_subscribe
+    channel: private-hydro.zones.${zone_id}
+
   - step: get_recipe_instance
     type: database_query
     query: |
@@ -34,18 +88,12 @@ actions:
     type: set
     initial_phase_index: ${recipe_instance[0].current_phase_index}
 
-  - step: subscribe_zone_channel
-    type: websocket_subscribe
-    channel: private-hydro.zones.${zone_id}
-
   # Выполняем advance stage через API
-  # Примечание: может вернуть 422 если уже на последней фазе - делаем опциональным
   - step: advance_stage
     type: api_post
     endpoint: /api/zones/${zone_id}/next-phase
     payload: {}
     save: advance_response
-    optional: true
 
   - step: wait_processing
     type: sleep
@@ -85,9 +133,8 @@ assertions:
       zone_id: ${zone_id}
     expected:
       - field: current_phase_index
-        operator: greater_than_or_equal
+        operator: greater_than
         value: ${initial_phase_index}
-    optional: true  # Опционально, т.к. может быть уже на последней фазе
 
   # Проверка 3: zone_event создан для изменения фазы (опционально)
   - name: zone_event_created
@@ -101,4 +148,7 @@ assertions:
     params:
       zone_id: ${zone_id}
     timeout: 10.0
-    optional: true
+    expected:
+      - field: event_count
+        operator: greater_than_or_equal
+        value: 1

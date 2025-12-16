@@ -1,5 +1,6 @@
 import asyncio
 import json
+from datetime import datetime, timezone
 from typing import Any, Optional, Dict
 
 import asyncpg
@@ -8,6 +9,27 @@ from .env import get_settings
 
 
 _pool: Optional[asyncpg.pool.Pool] = None
+
+
+async def _init_connection(conn: asyncpg.Connection) -> None:
+    """
+    Настраиваем кодеки JSON/JSONB один раз для каждого подключения.
+    Это позволяет безопасно передавать dict/list прямо в запросы без предварительного json.dumps.
+    """
+    await conn.set_type_codec(
+        "json",
+        encoder=json.dumps,
+        decoder=json.loads,
+        schema="pg_catalog",
+        format="text",
+    )
+    await conn.set_type_codec(
+        "jsonb",
+        encoder=json.dumps,
+        decoder=json.loads,
+        schema="pg_catalog",
+        format="text",
+    )
 
 
 async def get_pool() -> asyncpg.pool.Pool:
@@ -22,6 +44,7 @@ async def get_pool() -> asyncpg.pool.Pool:
             password=s.pg_pass,
             min_size=1,
             max_size=10,
+            init=_init_connection,
         )
     return _pool
 
@@ -38,26 +61,31 @@ async def fetch(query: str, *args: Any):
         return await conn.fetch(query, *args)
 
 
-async def upsert_telemetry_last(zone_id: int, metric_type: str, node_id: Optional[int], channel: Optional[str], value: Optional[float]):
+async def upsert_telemetry_last(zone_id: int, metric_type: str, node_id: Optional[int], channel: Optional[str], value: Optional[float], ts: Optional[datetime] = None):
     """
     Обновить или вставить последнее значение телеметрии.
     Использует (zone_id, metric_type) как уникальный ключ (текущая структура таблицы).
     Если node_id указан, он также обновляется.
     """
     actual_node_id = node_id if node_id is not None else -1
+    sample_ts = ts
+    if sample_ts and getattr(sample_ts, "tzinfo", None):
+        sample_ts = sample_ts.astimezone(timezone.utc).replace(tzinfo=None)
+    if not sample_ts:
+        sample_ts = datetime.utcnow()
     
     await execute(
         """
         INSERT INTO telemetry_last (zone_id, node_id, metric_type, channel, value, updated_at)
-        VALUES ($1, $2, $3, $4, $5, NOW())
+        VALUES ($1, $2, $3, $4, $5, $6)
         ON CONFLICT (zone_id, metric_type)
         DO UPDATE SET 
             node_id = EXCLUDED.node_id,
             channel = EXCLUDED.channel, 
             value = EXCLUDED.value, 
-            updated_at = NOW()
+            updated_at = EXCLUDED.updated_at
         """,
-        zone_id, actual_node_id, metric_type, channel, value
+        zone_id, actual_node_id, metric_type, channel, value, sample_ts
     )
 
 
@@ -149,7 +177,7 @@ async def create_zone_event(zone_id: int, event_type: str, details: Optional[Dic
     details_json = json.dumps(details) if details else None
     await execute(
         """
-        INSERT INTO zone_events (zone_id, type, details, created_at)
+        INSERT INTO zone_events (zone_id, type, payload_json, created_at)
         VALUES ($1, $2, $3, NOW())
         """,
         zone_id, event_type, details_json
@@ -178,5 +206,3 @@ async def create_scheduler_log(task_name: str, status: str, details: Optional[Di
         """,
         task_name, status, details_json
     )
-
-

@@ -25,7 +25,8 @@ setup:
           - ph_sensor
           - ec_sensor
       telemetry:
-        interval_seconds: 2.0
+        # Подавляем авто-телеметрию, чтобы последняя запись оставалась устаревшей
+        interval_seconds: 300.0
 
 actions:
   # Получаем зону с UID zn-test-1 из seeder
@@ -47,6 +48,23 @@ actions:
     type: set
     zone_id: ${zone_row[0].id}
 
+  - step: enable_capabilities
+    type: database_execute
+    query: |
+      UPDATE zones
+      SET capabilities = jsonb_build_object(
+        'ph_control', true,
+        'ec_control', true,
+        'climate_control', true,
+        'light_control', true,
+        'irrigation_control', true,
+        'recirculation', true,
+        'flow_sensor', true
+      )
+      WHERE id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
   - step: start_node_simulator
     type: start_simulator
     config_ref: node_sim.config
@@ -58,6 +76,7 @@ actions:
     type: mqtt_publish
     topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/ph_sensor/telemetry
     payload:
+      metric_type: ph
       value: 6.0
       ts: ${TIMESTAMP_MS - 600000}  # 10 минут назад (stale для E2E с TELEMETRY_MAX_AGE_MINUTES=5)
     qos: 1
@@ -67,6 +86,7 @@ actions:
     type: mqtt_publish
     topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/ec_sensor/telemetry
     payload:
+      metric_type: ec
       value: 1.2
       ts: ${TIMESTAMP_MS - 600000}  # 10 минут назад
     qos: 1
@@ -76,6 +96,43 @@ actions:
   - step: wait_ae_processing
     type: sleep
     seconds: 5
+
+  # Дополнительные stale события для достижения порога алерта
+  - step: publish_stale_ph_2
+    type: mqtt_publish
+    topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/ph_sensor/telemetry
+    payload:
+      metric_type: ph
+      value: 6.1
+      ts: ${TIMESTAMP_MS - 600000}
+    qos: 1
+    wait_seconds: 5
+
+  - step: publish_stale_ph_3
+    type: mqtt_publish
+    topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/ph_sensor/telemetry
+    payload:
+      metric_type: ph
+      value: 6.2
+      ts: ${TIMESTAMP_MS - 600000}
+    qos: 1
+    wait_seconds: 15
+
+  # Останавливаем симулятор, чтобы новая свежая телеметрия не перезаписала устаревший ts
+  - step: stop_node_simulator_after_stale
+    type: stop_simulator
+    optional: true
+
+  # Финальный контрольный publish со старыми данными после остановки симулятора
+  - step: publish_stale_ph_final
+    type: mqtt_publish
+    topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/ph_sensor/telemetry
+    payload:
+      metric_type: ph
+      value: 6.25
+      ts: ${TIMESTAMP_MS - 600000}
+    qos: 1
+    wait_seconds: 5
 
 assertions:
   # Проверка 1: Команды дозирования НЕ созданы (fail-closed)
@@ -111,26 +168,7 @@ assertions:
     timeout: 10.0
     expected_rows: 1
 
-  # Проверка 3: После N пропусков создается alert FRESHNESS_CHECK_FAILED (если порог достигнут)
-  # Создаем несколько stale telemetry для достижения порога
-  - step: publish_stale_ph_2
-    type: mqtt_publish
-    topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/ph_sensor/telemetry
-    payload:
-      value: 6.1
-      ts: ${TIMESTAMP_MS - 600000}
-    qos: 1
-    wait_seconds: 5
-
-  - step: publish_stale_ph_3
-    type: mqtt_publish
-    topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/ph_sensor/telemetry
-    payload:
-      value: 6.2
-      ts: ${TIMESTAMP_MS - 600000}
-    qos: 1
-    wait_seconds: 15
-
+  # Проверка 3: Alert freshness (опционально)
   - name: freshness_alert_created
     type: database_query
     query: |

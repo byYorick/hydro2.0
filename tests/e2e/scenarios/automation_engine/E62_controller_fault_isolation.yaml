@@ -48,6 +48,23 @@ actions:
     type: set
     zone_id: ${zone_row[0].id}
 
+  - step: enable_capabilities
+    type: database_execute
+    query: |
+      UPDATE zones
+      SET capabilities = jsonb_build_object(
+        'ph_control', true,
+        'ec_control', true,
+        'climate_control', true,
+        'light_control', true,
+        'irrigation_control', true,
+        'recirculation', true,
+        'flow_sensor', true
+      )
+      WHERE id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
   - step: start_node_simulator
     type: start_simulator
     config_ref: node_sim.config
@@ -73,6 +90,7 @@ actions:
     type: mqtt_publish
     topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/ph_sensor/telemetry
     payload:
+      metric_type: ph
       value: 6.5
       ts: ${TIMESTAMP_MS}
     qos: 1
@@ -82,6 +100,7 @@ actions:
     type: mqtt_publish
     topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/air_temp_c/telemetry
     payload:
+      metric_type: air_temp_c
       value: 20.0
       ts: ${TIMESTAMP_MS}
     qos: 1
@@ -121,7 +140,7 @@ assertions:
     params:
       zone_id: ${zone_id}
     timeout: 10.0
-    optional: true  # Может не создаться если изоляция работает до создания события
+    optional: false
 
   # Проверка 2: Другие контроллеры продолжают работать (например, health или light)
   - name: other_controllers_working

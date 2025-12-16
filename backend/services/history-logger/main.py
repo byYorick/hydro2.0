@@ -5,7 +5,7 @@ import os
 import signal
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from common.utils.time import utcnow
 from typing import Optional, List, Union, Dict, Any
 import httpx
@@ -849,22 +849,33 @@ async def handle_telemetry(topic: str, payload: bytes):
     # Также проверяем отклонение от серверного времени (искаженное время)
     MIN_VALID_TIMESTAMP = 1_000_000_000  # 2001-09-09 01:46:40 UTC
     MAX_TIMESTAMP_DRIFT_SEC = 300  # Максимальное допустимое отклонение: 5 минут
-    server_time = utcnow()
-    server_timestamp = server_time.timestamp()
+    server_timestamp = time.time()
+    server_time = datetime.utcfromtimestamp(server_timestamp)
+    
+    raw_ts = validated_data.ts
+    # Поддерживаем числовые строки (например, после eval выражений)
+    if isinstance(raw_ts, str):
+        stripped_ts = raw_ts.strip()
+        try:
+            if stripped_ts.replace(".", "", 1).isdigit():
+                raw_ts = float(stripped_ts)
+        except Exception:
+            pass
     
     ts = None
-    if validated_data.ts:
+    if raw_ts:
         try:
             ts_value = None
-            if isinstance(validated_data.ts, (int, float)):
-                ts_value = float(validated_data.ts)
+            if isinstance(raw_ts, (int, float)):
+                ts_value = float(raw_ts)
+                # Поддерживаем timestamp в миллисекундах
+                if ts_value > 1_000_000_000_000:
+                    ts_value = ts_value / 1000.0
                 # Проверяем что ts разумный (не аптайм несинхронизированной ноды)
                 if ts_value >= MIN_VALID_TIMESTAMP:
                     # Проверяем отклонение от серверного времени
-                    drift = abs(ts_value - server_timestamp)
-                    if drift <= MAX_TIMESTAMP_DRIFT_SEC:
-                        ts = datetime.fromtimestamp(ts_value)
-                    else:
+                    drift = ts_value - server_timestamp
+                    if drift > MAX_TIMESTAMP_DRIFT_SEC:
                         logger.warning(
                             "Timestamp from device is skewed (drift too large), using server time",
                             extra={
@@ -877,6 +888,23 @@ async def handle_telemetry(topic: str, payload: bytes):
                                 "zone_uid": zone_uid
                             }
                         )
+                        ts = server_time
+                    else:
+                        # Если timestamp сильно в прошлом, все равно используем его (стейл данные)
+                        if drift < -MAX_TIMESTAMP_DRIFT_SEC:
+                            logger.warning(
+                                "Timestamp from device is older than expected, preserving for freshness checks",
+                                extra={
+                                    "device_ts": ts_value,
+                                    "server_ts": server_timestamp,
+                                    "drift_sec": drift,
+                                    "max_drift_sec": MAX_TIMESTAMP_DRIFT_SEC,
+                                    "topic": topic,
+                                    "node_uid": node_uid,
+                                    "zone_uid": zone_uid
+                                }
+                            )
+                        ts = datetime.fromtimestamp(ts_value)
                 else:
                     logger.warning(
                         "Invalid timestamp from firmware (likely uptime), using server time",
@@ -887,8 +915,8 @@ async def handle_telemetry(topic: str, payload: bytes):
                             "zone_uid": zone_uid
                         }
                     )
-            elif isinstance(validated_data.ts, str):
-                ts = datetime.fromisoformat(validated_data.ts.replace('Z', '+00:00'))
+            elif isinstance(raw_ts, str):
+                ts = datetime.fromisoformat(raw_ts.replace('Z', '+00:00'))
                 # Проверяем что ts разумный
                 ts_timestamp = ts.timestamp()
                 if ts_timestamp < MIN_VALID_TIMESTAMP:
@@ -904,7 +932,7 @@ async def handle_telemetry(topic: str, payload: bytes):
                     ts = None
                 else:
                     # Проверяем отклонение от серверного времени
-                    drift = abs(ts_timestamp - server_timestamp)
+                    drift = ts_timestamp - server_timestamp
                     if drift > MAX_TIMESTAMP_DRIFT_SEC:
                         logger.warning(
                             "Timestamp from device is skewed (drift too large), using server time",
@@ -919,6 +947,19 @@ async def handle_telemetry(topic: str, payload: bytes):
                             }
                         )
                         ts = None
+                    elif drift < -MAX_TIMESTAMP_DRIFT_SEC:
+                        logger.warning(
+                            "Timestamp from device is older than expected (string), preserving for freshness checks",
+                            extra={
+                                "device_ts": ts_timestamp,
+                                "server_ts": server_timestamp,
+                                "drift_sec": drift,
+                                "max_drift_sec": MAX_TIMESTAMP_DRIFT_SEC,
+                                "topic": topic,
+                                "node_uid": node_uid,
+                                "zone_uid": zone_uid
+                            }
+                        )
         except Exception as e:
             logger.warning(
                 "Failed to parse timestamp, using server time",
@@ -1059,6 +1100,8 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
 
     start_time = time.time()
     s = get_settings()
+    max_age_minutes = float(os.getenv("TELEMETRY_MAX_AGE_MINUTES", "30"))
+    max_age_seconds = max_age_minutes * 60
     
     # Обновляем кеш если устарел
     global _cache_last_update, _cache_ttl
@@ -1286,6 +1329,30 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
                 TELEMETRY_DROPPED.labels(reason="node_zone_mismatch").inc()
                 continue
         
+        # Проверяем устаревшие данные телеметрии (stale) по ts с учетом max_age
+        sample_ts = sample.ts
+        if sample_ts:
+            if getattr(sample_ts, "tzinfo", None):
+                sample_ts = sample_ts.astimezone(timezone.utc)
+            else:
+                sample_ts = sample_ts.replace(tzinfo=timezone.utc)
+            age_seconds = (utcnow() - sample_ts).total_seconds()
+            if age_seconds > max_age_seconds:
+                try:
+                    await create_zone_event(
+                        zone_id,
+                        "TELEMETRY_STALE",
+                        {
+                            "metric_type": sample.metric_type,
+                            "age_minutes": age_seconds / 60,
+                            "max_age_minutes": max_age_minutes,
+                            "node_uid": sample.node_uid,
+                            "channel": sample.channel
+                        }
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to create TELEMETRY_STALE event: {e}", exc_info=True)
+    
         key = (zone_id, sample.metric_type, node_id, sample.channel)
         if key not in grouped:
             grouped[key] = []
@@ -1421,12 +1488,18 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
                 node_id = update_data['node_id'] if update_data['node_id'] is not None else -1
                 channel = update_data['channel']
                 value = update_data['value']
+                sample_ts = update_data.get('ts')
+                if sample_ts and getattr(sample_ts, "tzinfo", None):
+                    # Приводим к UTC и убираем tzinfo для совместимости с timestamp without time zone
+                    sample_ts = sample_ts.astimezone(timezone.utc).replace(tzinfo=None)
+                if not sample_ts:
+                    sample_ts = utcnow()
                 
                 values_list.append(
-                    f"(${param_index}, ${param_index + 1}, ${param_index + 2}, ${param_index + 3}, ${param_index + 4}, NOW())"
+                    f"(${param_index}, ${param_index + 1}, ${param_index + 2}, ${param_index + 3}, ${param_index + 4}, ${param_index + 5})"
                 )
-                params_list.extend([zone_id, node_id, metric_type, channel, value])
-                param_index += 5
+                params_list.extend([zone_id, node_id, metric_type, channel, value, sample_ts])
+                param_index += 6
             
             if values_list:
                 query = f"""
@@ -1437,7 +1510,7 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
                         node_id = EXCLUDED.node_id,
                         channel = EXCLUDED.channel,
                         value = EXCLUDED.value,
-                        updated_at = NOW()
+                        updated_at = EXCLUDED.updated_at
                 """
                 await execute(query, *params_list)
                 logger.debug(f"Batch upserted {len(telemetry_last_updates)} telemetry_last records")
@@ -1451,7 +1524,8 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
                         metric_type,
                         update_data['node_id'],
                         update_data['channel'],
-                        update_data['value']
+                        update_data['value'],
+                        update_data.get('ts')
                     )
                 except Exception as e2:
                     logger.error(f"Failed to upsert telemetry_last for zone_id={zone_id}, metric_type={metric_type}: {e2}")
@@ -2827,13 +2901,14 @@ async def handle_command_response(topic: str, payload: bytes):
                 # UPSERT stub record с origin='device' (помечаем как полученную от устройства)
                 await execute(
                     """
-                    INSERT INTO commands (zone_id, node_id, channel, cmd, params, status, cmd_id, created_at, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+                    INSERT INTO commands (zone_id, node_id, channel, cmd, params, status, source, cmd_id, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
                     ON CONFLICT (cmd_id) DO UPDATE SET
                         status = EXCLUDED.status,
+                        source = COALESCE(commands.source, EXCLUDED.source),
                         updated_at = NOW()
                     """,
-                    zone_id, node_id, channel, cmd_name, {}, status_value, cmd_id
+                    zone_id, node_id, channel, cmd_name, {}, status_value, "device", cmd_id
                 )
                 logger.info(
                     f"[COMMAND_RESPONSE] Created stub record for cmd_id={cmd_id}, "
@@ -3232,6 +3307,7 @@ class CommandRequest(BaseModel):
     type: Optional[str] = Field(None, max_length=64, description="Command type (legacy)")
     cmd: Optional[str] = Field(None, max_length=64, description="Command name (new format)")
     params: Dict[str, Any] = Field(default_factory=dict, description="Command parameters")
+    source: Optional[str] = Field(None, max_length=64, description="Command source (automation/api/device)")
     node_uid: Optional[str] = Field(None, max_length=128, description="Node UID")
     channel: Optional[str] = Field(None, max_length=64, description="Channel name")
     greenhouse_uid: Optional[str] = Field(None, max_length=128, description="Greenhouse UID")
@@ -3271,6 +3347,7 @@ async def publish_zone_command(
     s = get_settings()
     if hasattr(s, 'mqtt_zone_format') and s.mqtt_zone_format == "uid":
         zone_uid = await _get_zone_uid_from_id(zone_id)
+    command_source = req.source or "api"
     
     # Создаем payload для команды
     try:
@@ -3285,9 +3362,15 @@ async def publish_zone_command(
     # Проверяем статус команды перед публикацией (идемпотентность)
     # Если команда уже в терминальном статусе (ack/done/failed), не публикуем повторно
     try:
-        existing_cmd = await fetch("SELECT status FROM commands WHERE cmd_id = $1", cmd_id)
+        existing_cmd = await fetch("SELECT status, source FROM commands WHERE cmd_id = $1", cmd_id)
         if existing_cmd:
             cmd_status = existing_cmd[0].get("status", "").lower()
+            # Если команда уже есть, но без source - задаем его (для обратной совместимости)
+            if not existing_cmd[0].get("source") and command_source:
+                try:
+                    await execute("UPDATE commands SET source = $1 WHERE cmd_id = $2", command_source, cmd_id)
+                except Exception:
+                    logger.warning(f"[COMMAND_PUBLISH] Failed to backfill source for command {cmd_id}")
             # Терминальные статусы: ack, done, failed
             if cmd_status in ("ack", "done", "failed"):
                 logger.info(
@@ -3308,11 +3391,11 @@ async def publish_zone_command(
             node_id = node_rows[0]["id"] if node_rows else None
             await execute(
                 """
-                INSERT INTO commands (zone_id, node_id, channel, cmd, params, status, cmd_id, created_at, updated_at)
-                VALUES ($1, $2, $3, $4, $5, 'QUEUED', $6, NOW(), NOW())
+                INSERT INTO commands (zone_id, node_id, channel, cmd, params, status, source, cmd_id, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, 'QUEUED', $6, $7, NOW(), NOW())
                 ON CONFLICT (cmd_id) DO NOTHING
                 """,
-                zone_id, node_id, req.channel, req.get_command_name(), req.params or {}, cmd_id
+                zone_id, node_id, req.channel, req.get_command_name(), req.params or {}, command_source, cmd_id
             )
     except Exception as e:
         logger.warning(f"Failed to check/ensure command in DB: {e}")
@@ -3372,6 +3455,7 @@ async def publish_node_command(
     s = get_settings()
     if hasattr(s, 'mqtt_zone_format') and s.mqtt_zone_format == "uid" and req.zone_id:
         zone_uid = await _get_zone_uid_from_id(req.zone_id)
+    command_source = req.source or "api"
     
     # Создаем payload для команды
     try:
@@ -3386,9 +3470,14 @@ async def publish_node_command(
     # Проверяем статус команды перед публикацией (идемпотентность)
     # Если команда уже в терминальном статусе (ack/done/failed), не публикуем повторно
     try:
-        existing_cmd = await fetch("SELECT status FROM commands WHERE cmd_id = $1", cmd_id)
+        existing_cmd = await fetch("SELECT status, source FROM commands WHERE cmd_id = $1", cmd_id)
         if existing_cmd:
             cmd_status = existing_cmd[0].get("status", "").lower()
+            if not existing_cmd[0].get("source") and command_source:
+                try:
+                    await execute("UPDATE commands SET source = $1 WHERE cmd_id = $2", command_source, cmd_id)
+                except Exception:
+                    logger.warning(f"[COMMAND_PUBLISH] Failed to backfill source for command {cmd_id}")
             # Терминальные статусы: ack, done, failed
             if cmd_status in ("ack", "done", "failed"):
                 logger.info(
@@ -3409,11 +3498,11 @@ async def publish_node_command(
             node_id = node_rows[0]["id"] if node_rows else None
             await execute(
                 """
-                INSERT INTO commands (zone_id, node_id, channel, cmd, params, status, cmd_id, created_at, updated_at)
-                VALUES ($1, $2, $3, $4, $5, 'QUEUED', $6, NOW(), NOW())
+                INSERT INTO commands (zone_id, node_id, channel, cmd, params, status, source, cmd_id, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, 'QUEUED', $6, $7, NOW(), NOW())
                 ON CONFLICT (cmd_id) DO NOTHING
                 """,
-                req.zone_id, node_id, req.channel, req.get_command_name(), req.params or {}, cmd_id
+                req.zone_id, node_id, req.channel, req.get_command_name(), req.params or {}, command_source, cmd_id
             )
     except Exception as e:
         logger.warning(f"Failed to check/ensure command in DB: {e}")
@@ -3515,6 +3604,7 @@ async def publish_command(
     s = get_settings()
     if hasattr(s, 'mqtt_zone_format') and s.mqtt_zone_format == "uid":
         zone_uid = await _get_zone_uid_from_id(req.zone_id)
+    command_source = req.source or "api"
     
     # Извлекаем cmd_id из params, если он не передан напрямую
     cmd_id = req.cmd_id
@@ -3543,7 +3633,8 @@ async def publish_command(
         "node_uid": req.node_uid,
         "channel": req.channel,
         "cmd_id": cmd_id,
-        "command": req.get_command_name()
+        "command": req.get_command_name(),
+        "source": command_source
     }
     if req.trace_id:
         log_context["trace_id"] = req.trace_id
@@ -3559,13 +3650,18 @@ async def publish_command(
         # Проверяем, существует ли команда в БД и её статус
         existing_cmd = await fetch(
             """
-            SELECT status FROM commands WHERE cmd_id = $1
+            SELECT status, source FROM commands WHERE cmd_id = $1
             """,
             cmd_id
         )
         
         if existing_cmd:
             cmd_status = existing_cmd[0].get("status", "").lower()
+            if not existing_cmd[0].get("source") and command_source:
+                try:
+                    await execute("UPDATE commands SET source = $1 WHERE cmd_id = $2", command_source, cmd_id)
+                except Exception:
+                    logger.warning(f"[COMMAND_PUBLISH] Failed to backfill source for command {cmd_id}")
             # Терминальные статусы: ack, done, failed
             if cmd_status in ("ack", "done", "failed"):
                 logger.info(
@@ -3595,8 +3691,8 @@ async def publish_command(
             
             await execute(
                 """
-                INSERT INTO commands (zone_id, node_id, channel, cmd, params, status, cmd_id, created_at, updated_at)
-                VALUES ($1, $2, $3, $4, $5, 'QUEUED', $6, NOW(), NOW())
+                INSERT INTO commands (zone_id, node_id, channel, cmd, params, status, source, cmd_id, created_at, updated_at)
+                VALUES ($1, $2, $3, $4, $5, 'QUEUED', $6, $7, NOW(), NOW())
                 ON CONFLICT (cmd_id) DO NOTHING
                 """,
                 req.zone_id,
@@ -3604,6 +3700,7 @@ async def publish_command(
                 req.channel,
                 req.get_command_name(),
                 params_without_cmd_id,
+                command_source,
                 cmd_id
             )
             logger.info(f"Command {cmd_id} created in DB with status QUEUED")

@@ -92,11 +92,17 @@ async def check_and_control_climate(
         Список команд для отправки узлам
     """
     commands: List[Dict[str, Any]] = []
+
+    def _first_metric(keys: List[str]) -> Optional[Any]:
+        for key in keys:
+            if key in telemetry and telemetry.get(key) is not None:
+                return telemetry.get(key)
+        return None
     
-    # Получаем текущие значения
-    temp_air = telemetry.get("TEMP_AIR") or telemetry.get("temp_air")
-    humidity = telemetry.get("HUMIDITY") or telemetry.get("humidity")
-    co2 = telemetry.get("CO2") or telemetry.get("co2")
+    # Получаем текущие значения (поддерживаем разные названия метрик)
+    temp_air = _first_metric(["TEMP_AIR", "temp_air", "air_temp_c"])
+    humidity = _first_metric(["HUMIDITY", "humidity", "humidity_air", "air_rh"])
+    co2 = _first_metric(["CO2", "co2", "co2_ppm"])
     
     # Получаем целевые значения
     target_temp = targets.get("temp_air")
@@ -307,4 +313,3 @@ async def check_humidity_alerts(zone_id: int, humidity: float, target_humidity: 
             'target_humidity': target_humidity,
             'diff': target_humidity - humidity
         })
-

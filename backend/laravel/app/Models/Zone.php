@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\GrowCycleStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -93,6 +94,17 @@ class Zone extends Model
     public function growCycles(): HasMany
     {
         return $this->hasMany(GrowCycle::class);
+    }
+
+    public function activeGrowCycle(): HasOne
+    {
+        return $this->hasOne(GrowCycle::class)
+            ->whereIn('status', [
+                GrowCycleStatus::PLANNED,
+                GrowCycleStatus::RUNNING,
+                GrowCycleStatus::PAUSED,
+            ])
+            ->latest('started_at');
     }
 
     public function infrastructure(): HasMany

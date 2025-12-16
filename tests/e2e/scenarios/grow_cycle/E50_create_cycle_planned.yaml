@@ -27,6 +27,38 @@ actions:
       description: Test recipe for E50
     save: recipe_response
 
+  - step: add_phase_0
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/phases
+    payload:
+      phase_index: 0
+      name: Planting
+      duration_hours: 24
+      targets:
+        ph:
+          min: 5.5
+          max: 6.5
+        ec: 1.5
+        temp_air: 22
+        humidity_air: 60
+        light_hours: 16
+
+  - step: add_phase_1
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/phases
+    payload:
+      phase_index: 1
+      name: Veg
+      duration_hours: 48
+      targets:
+        ph:
+          min: 5.6
+          max: 6.6
+        ec: 1.8
+        temp_air: 23
+        humidity_air: 55
+        light_hours: 18
+
   - step: attach_recipe_to_zone
     type: api_post
     endpoint: /api/zones/${zone_id}/attach-recipe

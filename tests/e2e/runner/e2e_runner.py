@@ -596,6 +596,14 @@ class E2ERunner:
                         )
                     return env_value
 
+                # Пробуем вычислить выражение (простые арифметические операции)
+                try:
+                    eval_context = {**self.context, **os.environ}
+                    evaluated = eval(var_expr, {"__builtins__": {}}, eval_context)
+                    return str(evaluated)
+                except Exception:
+                    pass
+
                 # Если переменная обязательная - выбрасываем ошибку
                 if var_name_base in critical_vars:
                     raise ValueError(
@@ -1650,6 +1658,25 @@ class E2ERunner:
             payload = cfg.get("payload", {})
             qos = int(cfg.get("qos", 1))
             retain = bool(cfg.get("retain", False))
+            
+            def _coerce_numbers(val):
+                if isinstance(val, str):
+                    try:
+                        # Поддержка целых/float строк (включая отрицательные)
+                        if re.fullmatch(r"-?\d+", val):
+                            return int(val)
+                        if re.fullmatch(r"-?\d+\.\d+", val):
+                            return float(val)
+                    except Exception:
+                        return val
+                    return val
+                if isinstance(val, dict):
+                    return {k: _coerce_numbers(v) for k, v in val.items()}
+                if isinstance(val, list):
+                    return [_coerce_numbers(v) for v in val]
+                return val
+
+            payload = _coerce_numbers(payload)
             self.mqtt.publish_json(topic, payload, qos=qos, retain=retain)
             return
         if step_type == "mqtt_publish_multiple":

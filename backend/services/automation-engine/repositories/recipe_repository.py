@@ -1,6 +1,7 @@
 """
 Recipe Repository - доступ к рецептам и фазам.
 """
+import json
 from typing import Dict, Any, Optional, List
 from common.db import fetch
 from infrastructure.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
@@ -170,9 +171,20 @@ class RecipeRepository:
             }
         
         result = rows[0]
-        zone_info = result.get("zone_info") or {}
+        
+        # asyncpg возвращает json/jsonb поля как строки, поэтому нормализуем
+        zone_info_raw = result.get("zone_info") or {}
+        if isinstance(zone_info_raw, str):
+            zone_info_raw = json.loads(zone_info_raw)
+        zone_info = zone_info_raw or {}
+        
         telemetry_raw = result.get("telemetry") or {}
+        if isinstance(telemetry_raw, str):
+            telemetry_raw = json.loads(telemetry_raw)
+        
         nodes_list = result.get("nodes") or []
+        if isinstance(nodes_list, str):
+            nodes_list = json.loads(nodes_list)
         
         # Преобразуем телеметрию: извлекаем value и updated_at из объектов
         # Формат: {"PH": {"value": 6.5, "updated_at": "2024-01-01T12:00:00"}, ...}
@@ -322,6 +334,8 @@ class RecipeRepository:
         for row in rows:
             zone_id = row['zone_id']
             zone_data = row['zone_data']
+            if isinstance(zone_data, str):
+                zone_data = json.loads(zone_data)
             
             # Обрабатываем телеметрию
             telemetry_raw = zone_data.get('telemetry', {})
@@ -353,4 +367,3 @@ class RecipeRepository:
                 }
         
         return result
-

@@ -36,6 +36,7 @@ async def test_publish_command_success():
         assert call_args[1]["json"]["node_uid"] == "nd-irrig-1"
         assert call_args[1]["json"]["channel"] == "default"
         assert call_args[1]["json"]["params"] == {"duration": 60}
+        assert call_args[1]["json"]["source"] == "automation"
         assert "Authorization" in call_args[1]["headers"]
         assert call_args[1]["headers"]["Authorization"] == "Bearer test-token"
 

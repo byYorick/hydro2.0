@@ -1,24 +1,37 @@
 {
-  "test_suite": "E32_out_of_order_guard",
-  "generated_at": "2025-12-15T16:45:42.510057",
+  "test_suite": "E62_controller_fault_isolation",
+  "generated_at": "2025-12-16T10:27:56.480827",
   "test_cases": [
     {
-      "name": "get_zones",
+      "name": "get_automation_zone",
       "status": "passed",
-      "duration": 0.09139537811279297,
+      "duration": 0.0697026252746582,
       "error_message": null,
       "steps": [
         {
-          "name": "get_zones",
+          "name": "get_automation_zone",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-15T16:45:36.019719"
+      "timestamp": "2025-12-16T10:27:28.755822"
+    },
+    {
+      "name": "set_zone_id_from_uid",
+      "status": "passed",
+      "duration": 0.007821321487426758,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_zone_id_from_uid",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-16T10:27:28.763674"
     },
     {
       "name": "set_zone_id",
       "status": "passed",
-      "duration": 8.821487426757812e-06,
+      "duration": 5.7220458984375e-06,
       "error_message": null,
       "steps": [
         {
@@ -26,179 +39,174 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-15T16:45:36.020237"
+      "timestamp": "2025-12-16T10:27:28.763805"
     },
     {
-      "name": "get_snapshot",
+      "name": "enable_capabilities",
       "status": "passed",
-      "duration": 0.1042177677154541,
+      "duration": 0.0021462440490722656,
       "error_message": null,
       "steps": [
         {
-          "name": "get_snapshot",
+          "name": "enable_capabilities",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-15T16:45:36.124484"
+      "timestamp": "2025-12-16T10:27:28.765972"
     },
     {
-      "name": "set_last_event_id",
+      "name": "start_node_simulator",
       "status": "passed",
-      "duration": 5.7220458984375e-06,
+      "duration": 5.642771482467651,
       "error_message": null,
       "steps": [
         {
-          "name": "set_last_event_id",
+          "name": "start_node_simulator",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-15T16:45:36.124537"
+      "timestamp": "2025-12-16T10:27:34.408770"
     },
     {
-      "name": "get_nodes",
+      "name": "enable_test_mode",
       "status": "passed",
-      "duration": 0.08725571632385254,
+      "duration": 7.62939453125e-06,
       "error_message": null,
       "steps": [
         {
-          "name": "get_nodes",
+          "name": "enable_test_mode",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-15T16:45:36.211808"
+      "timestamp": "2025-12-16T10:27:34.408812"
     },
     {
-      "name": "set_node_id",
+      "name": "inject_climate_error",
       "status": "passed",
-      "duration": 4.76837158203125e-06,
+      "duration": 0.026463985443115234,
       "error_message": null,
       "steps": [
         {
-          "name": "set_node_id",
+          "name": "inject_climate_error",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-15T16:45:36.211862"
+      "timestamp": "2025-12-16T10:27:34.435338"
     },
     {
-      "name": "send_command_to_create_event",
+      "name": "publish_telemetry_ph",
       "status": "passed",
-      "duration": 0.18737053871154785,
+      "duration": 2.0022406578063965,
       "error_message": null,
       "steps": [
         {
-          "name": "send_command_to_create_event",
+          "name": "publish_telemetry_ph",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-15T16:45:36.399258"
+      "timestamp": "2025-12-16T10:27:36.437614"
     },
     {
-      "name": "wait_after_command",
+      "name": "publish_telemetry_temp",
       "status": "passed",
-      "duration": 2.0016674995422363,
+      "duration": 15.00409460067749,
       "error_message": null,
       "steps": [
         {
-          "name": "wait_after_command",
+          "name": "publish_telemetry_temp",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-15T16:45:38.400969"
+      "timestamp": "2025-12-16T10:27:51.441771"
     },
     {
-      "name": "wait_for_new_event",
+      "name": "wait_controller_failed_event",
       "status": "passed",
-      "duration": 3.002617359161377,
+      "duration": 0.003551959991455078,
       "error_message": null,
       "steps": [
         {
-          "name": "wait_for_new_event",
+          "name": "wait_controller_failed_event",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-15T16:45:41.403721"
+      "timestamp": "2025-12-16T10:27:51.445392"
     },
     {
-      "name": "set_new_last_event_id",
+      "name": "clear_test_hook",
       "status": "passed",
-      "duration": 1.1920928955078125e-05,
+      "duration": 0.025196313858032227,
       "error_message": null,
       "steps": [
         {
-          "name": "set_new_last_event_id",
+          "name": "clear_test_hook",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-15T16:45:41.403803"
+      "timestamp": "2025-12-16T10:27:51.470630"
     },
     {
-      "name": "get_events_after_old_id",
+      "name": "controller_failed_event",
       "status": "passed",
-      "duration": 0.09908652305603027,
+      "duration": 0.0013551712036132812,
       "error_message": null,
       "steps": [
         {
-          "name": "get_events_after_old_id",
+          "name": "controller_failed_event",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-15T16:45:41.502933"
+      "timestamp": "2025-12-16T10:27:51.472001"
     },
     {
-      "name": "wait_processing",
+      "name": "other_controllers_working",
       "status": "passed",
-      "duration": 1.0011096000671387,
+      "duration": 0.0025725364685058594,
       "error_message": null,
       "steps": [
         {
-          "name": "wait_processing",
+          "name": "other_controllers_working",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-15T16:45:42.504064"
+      "timestamp": "2025-12-16T10:27:51.474584"
     },
     {
-      "name": "events_received",
+      "name": "Assertion 3",
       "status": "passed",
-      "duration": 5.269050598144531e-05,
+      "duration": 5.004731178283691,
       "error_message": null,
       "steps": [
         {
-          "name": "events_received",
+          "name": "Assertion 3",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-15T16:45:42.504140"
+      "timestamp": "2025-12-16T10:27:56.479329"
     },
     {
-      "name": "zone_exists",
+      "name": "controller_cooldown",
       "status": "passed",
-      "duration": 0.0036084651947021484,
+      "duration": 0.0010831356048583984,
       "error_message": null,
       "steps": [
         {
-          "name": "zone_exists",
+          "name": "controller_cooldown",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-15T16:45:42.507777"
+      "timestamp": "2025-12-16T10:27:56.480431"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E32_out_of_order_guard": {
+    "E62_controller_fault_isolation": {
       "ws_messages": [],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
-        "zone_id": "202",
-        "zone_uid": "zn-test-1",
-        "node_id": 1,
-        "node_uid": "nd-ph-esp32una",
-        "last_event_id": "191",
-        "test_node_id": "5",
-        "new_last_event_id": "191"
+        "zone_id": "225",
+        "node_id": 1
       }
     }
   }

@@ -58,7 +58,7 @@ class AutomationSettings:
     EC_PID_ADAPTATION_RATE: float = 0.05
     
     # Максимальный возраст данных телеметрии для корректировки (в минутах)
-    TELEMETRY_MAX_AGE_MINUTES: int = 30  # Не корректировать если данные старше 30 минут
+    TELEMETRY_MAX_AGE_MINUTES: int = int(os.getenv("TELEMETRY_MAX_AGE_MINUTES", "30"))  # Не корректировать если данные старше 30 минут
     
     # Порог для алерта о подряд пропусках проверки свежести
     FRESHNESS_CHECK_FAILED_ALERT_THRESHOLD: int = 5  # Количество подряд пропусков перед alert

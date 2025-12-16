@@ -25,7 +25,6 @@ actions:
     endpoint: /api/zones/${zone_id}
     payload:
       status: RUNNING
-    optional: true
 
   # Pause зоны
   - step: pause_zone
@@ -64,7 +63,6 @@ actions:
   - step: get_snapshot_after_changes
     type: api_get
     endpoint: /api/zones/${zone_id}
-    optional: true
     save: final_snapshot
 
 assertions:
@@ -99,4 +97,3 @@ assertions:
     query: |
       SELECT 1 as check_dummy
     expected_rows: 1
-    optional: true

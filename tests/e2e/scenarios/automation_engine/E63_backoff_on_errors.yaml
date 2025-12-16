@@ -48,6 +48,23 @@ actions:
     type: set
     zone_id: ${zone_row[0].id}
 
+  - step: enable_capabilities
+    type: database_execute
+    query: |
+      UPDATE zones
+      SET capabilities = jsonb_build_object(
+        'ph_control', true,
+        'ec_control', true,
+        'climate_control', true,
+        'light_control', true,
+        'irrigation_control', true,
+        'recirculation', true,
+        'flow_sensor', true
+      )
+      WHERE id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
   - step: start_node_simulator
     type: start_simulator
     config_ref: node_sim.config

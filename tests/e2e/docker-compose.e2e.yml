@@ -153,6 +153,7 @@ services:
     - LARAVEL_API_URL=http://laravel
     - PY_API_TOKEN=${PY_API_TOKEN:-dev-token-12345}
     - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:-dev-token-12345}
+    - TELEMETRY_MAX_AGE_MINUTES=${TELEMETRY_MAX_AGE_MINUTES:-5}
     - HISTORY_LOGGER_API_TOKEN=${HISTORY_LOGGER_API_TOKEN:-${PY_INGEST_TOKEN:-dev-token-12345}}
     - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
     - REDIS_HOST=redis
@@ -273,7 +274,7 @@ services:
     - FRESHNESS_CHECK_FAILED_ALERT_THRESHOLD=${FRESHNESS_CHECK_FAILED_ALERT_THRESHOLD:-3}
     - CONFIG_FETCH_RETRY_SLEEP_SECONDS=${CONFIG_FETCH_RETRY_SLEEP_SECONDS:-2}
     # Test mode для детерминированных ошибок
-    - AE_TEST_MODE=${AE_TEST_MODE:-0}
+    - AE_TEST_MODE=${AE_TEST_MODE:-1}
     depends_on:
       mosquitto:
         condition: service_healthy

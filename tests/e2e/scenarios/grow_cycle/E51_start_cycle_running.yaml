@@ -23,7 +23,6 @@ actions:
   - step: get_zone_details
     type: api_get
     endpoint: /api/zones/${zone_id}
-    optional: true
     save: zone_details
 
   # Проверяем, есть ли у зоны рецепт
@@ -35,7 +34,6 @@ actions:
       WHERE zone_id = :zone_id
     params:
       zone_id: ${zone_id}
-    optional: true
     save: existing_instance
 
   # Если рецепта нет, создаем и привязываем
@@ -46,7 +44,38 @@ actions:
       name: test-recipe-e51
       description: Test recipe for E51
     save: recipe_response
-    optional: true
+
+  - step: add_phase_0
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/phases
+    payload:
+      phase_index: 0
+      name: Planting
+      duration_hours: 24
+      targets:
+        ph:
+          min: 5.5
+          max: 6.5
+        ec: 1.5
+        temp_air: 22
+        humidity_air: 60
+        light_hours: 16
+
+  - step: add_phase_1
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/phases
+    payload:
+      phase_index: 1
+      name: Veg
+      duration_hours: 48
+      targets:
+        ph:
+          min: 5.6
+          max: 6.6
+        ec: 1.8
+        temp_air: 23
+        humidity_air: 55
+        light_hours: 18
 
   - step: attach_recipe_if_needed
     type: api_post
@@ -54,12 +83,10 @@ actions:
     payload:
       recipe_id: ${recipe_response.data.id}
     save: attach_response
-    optional: true
 
   - step: set_recipe_id
     type: set
     recipe_id: ${recipe_response.data.id if recipe_response else existing_instance[0].recipe_id}
-    optional: true
 
   # Обновляем статус зоны на PLANNED если нужно
   - step: set_zone_planned
@@ -68,7 +95,6 @@ actions:
     payload:
       status: PLANNED
     save: zone_update_response
-    optional: true
 
   # Запускаем цикл через start endpoint
   # Примечание: может вернуть 422 если нет bindings - делаем опциональным
@@ -77,7 +103,6 @@ actions:
     endpoint: /api/zones/${zone_id}/start
     payload: {}
     save: start_response
-    optional: true
 
 assertions:
   # Проверка 0: Start либо успешен (200), либо вернул 422 (нет bindings) - в любом случае проверяем дальше
@@ -86,7 +111,6 @@ assertions:
     query: |
       SELECT 1 as check_dummy
     expected_rows: 1
-    optional: true
 
   # Проверка 1: Статус зоны обновлен (может быть RUNNING или остался PLANNED если нет bindings)
   - name: zone_status_updated

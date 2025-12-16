@@ -114,7 +114,7 @@ class SystemHealthMonitor:
         """Проверка доступности БД."""
         try:
             start = time.time()
-            rows = await fetch("SELECT 1 as test", timeout=5.0)
+            rows = await fetch("SELECT 1 as test")
             latency_ms = (time.time() - start) * 1000
             
             if rows and len(rows) > 0:
@@ -207,5 +207,4 @@ class SystemHealthMonitor:
                 'error': str(e),
                 'last_check': utcnow().isoformat()
             }
-
 

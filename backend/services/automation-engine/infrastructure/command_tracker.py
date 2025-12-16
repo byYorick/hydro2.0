@@ -398,8 +398,10 @@ class CommandTracker:
                 SELECT cmd_id, zone_id, cmd, params, status, sent_at, created_at
                 FROM commands
                 WHERE status IN ('QUEUED', 'SENT', 'ACCEPTED')
-                AND (sent_at IS NOT NULL AND sent_at > NOW() - INTERVAL '%s seconds')
-                OR (sent_at IS NULL AND created_at > NOW() - INTERVAL '%s seconds')
+                AND (
+                    (sent_at IS NOT NULL AND sent_at > NOW() - ($1 * INTERVAL '1 second'))
+                    OR (sent_at IS NULL AND created_at > NOW() - ($2 * INTERVAL '1 second'))
+                )
                 ORDER BY created_at DESC
                 LIMIT 1000
                 """,
@@ -520,5 +522,4 @@ class CommandTracker:
         """
         # Очистка команд выполняется через Laravel, не нужно делать это здесь
         logger.debug("Command cleanup is handled by Laravel (archiving to commands_archive)")
-
 

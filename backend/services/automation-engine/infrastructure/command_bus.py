@@ -34,6 +34,7 @@ class CommandBus:
         gh_uid: str = "",
         history_logger_url: Optional[str] = None,
         history_logger_token: Optional[str] = None,
+        command_source: Optional[str] = None,
         command_validator: Optional[CommandValidator] = None,
         command_tracker: Optional[CommandTracker] = None,
         command_audit: Optional[CommandAudit] = None,
@@ -58,6 +59,7 @@ class CommandBus:
         self.gh_uid = gh_uid
         self.history_logger_url = history_logger_url or os.getenv("HISTORY_LOGGER_URL", "http://history-logger:9300")
         self.history_logger_token = history_logger_token or os.getenv("HISTORY_LOGGER_API_TOKEN") or os.getenv("PY_INGEST_TOKEN")
+        self.command_source = command_source or os.getenv("COMMAND_SOURCE", "automation")
         self.validator = command_validator or CommandValidator()
         self.tracker = command_tracker
         self.audit = command_audit or CommandAudit()
@@ -131,6 +133,7 @@ class CommandBus:
                 "zone_id": zone_id,
                 "node_uid": node_uid,
                 "channel": channel,
+                "source": self.command_source,
             }
             if params:
                 payload["params"] = params
@@ -302,4 +305,3 @@ class CommandBus:
             await self.tracker.confirm_command(cmd_id, False, error='publish_failed')
         
         return success
-
