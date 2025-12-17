@@ -309,14 +309,13 @@ on_command_received for pump_channel:
 ## 5.1. Стандартный JSON
 ```json
 {
- "node_id": "nd-ph-1",
- "channel": "ph_sensor",
- "metric_type": "PH",
+ "metric_type": "ph",
  "value": 5.82,
- "raw": 1463,
  "ts": 1710012567
 }
 ```
+
+> **Важно:** Формат соответствует эталону node-sim. Поля `node_id` и `channel` не включаются в JSON, так как они уже есть в топике. `metric_type` в lowercase, `ts` в секундах.
 
 ## 5.2. Правила:
 - отправка с QoS=1

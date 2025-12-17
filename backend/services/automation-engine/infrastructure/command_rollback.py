@@ -99,42 +99,40 @@ class CommandRollback:
             original_command = json.loads(original_command)
         
         cmd = original_command.get('cmd')
-        
-        if cmd == 'adjust_ph':
-            # Откат: дозируем противоположное вещество с уменьшенной дозой
-            params = original_command.get('params', {})
-            original_type = params.get('type')
-            amount = params.get('amount', 0)
-            
-            if original_type == 'add_acid':
-                rollback_type = 'add_base'
-            elif original_type == 'add_base':
-                rollback_type = 'add_acid'
-            else:
-                return None
-            
-            return {
-                'node_uid': original_command['node_uid'],
-                'channel': original_command['channel'],
-                'cmd': 'adjust_ph',
-                'params': {
-                    'amount': amount * 0.5,  # 50% откат
-                    'type': rollback_type
-                },
-                'event_type': 'PH_ROLLBACK',
-                'event_details': {
-                    'original_type': original_type,
-                    'rollback_type': rollback_type,
-                    'original_amount': amount,
-                    'rollback_amount': amount * 0.5
+        params = original_command.get('params', {}) or {}
+        correction_type = params.get('type')
+
+        if cmd in ('dose', 'run_pump'):
+            # Откат pH: дозируем противоположное вещество с уменьшенной дозой
+            if correction_type in ('add_acid', 'add_base'):
+                amount = params.get('dose_ml') or params.get('amount') or 0
+                duration_ms = params.get('duration_ms')
+
+                rollback_type = 'add_base' if correction_type == 'add_acid' else 'add_acid'
+                rollback_params = {'type': rollback_type}
+
+                if amount:
+                    rollback_params['dose_ml'] = amount * 0.5
+                if duration_ms:
+                    rollback_params['duration_ms'] = int(duration_ms * 0.5)
+
+                return {
+                    'node_uid': original_command['node_uid'],
+                    'channel': original_command.get('channel', 'default'),
+                    'cmd': cmd,
+                    'params': rollback_params,
+                    'event_type': 'PH_ROLLBACK',
+                    'event_details': {
+                        'original_type': correction_type,
+                        'rollback_type': rollback_type,
+                        'original_amount': amount,
+                        'rollback_amount': amount * 0.5 if amount else None,
+                        'original_duration_ms': duration_ms,
+                        'rollback_duration_ms': int(duration_ms * 0.5) if duration_ms else None
+                    }
                 }
-            }
-        
-        elif cmd == 'adjust_ec':
-            # Откат для EC сложнее, так как нужно знать, что было добавлено
-            # Для простоты не делаем откат для EC
+            # Для EC откат пока не выполняем
             return None
         
         # Для других команд откат не требуется
         return None
-

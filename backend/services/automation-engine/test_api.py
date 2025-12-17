@@ -42,8 +42,8 @@ async def test_scheduler_command_success(client, mock_command_bus):
         "zone_id": 1,
         "node_uid": "nd-irrig-1",
         "channel": "default",
-        "cmd": "irrigate",
-        "params": {"duration": 60}
+        "cmd": "run_pump",
+        "params": {"duration_ms": 60000}
     }
     
     response = client.post("/scheduler/command", json=payload)
@@ -53,14 +53,14 @@ async def test_scheduler_command_success(client, mock_command_bus):
     assert data["data"]["zone_id"] == 1
     assert data["data"]["node_uid"] == "nd-irrig-1"
     assert data["data"]["channel"] == "default"
-    assert data["data"]["cmd"] == "irrigate"
+    assert data["data"]["cmd"] == "run_pump"
     
     mock_command_bus.publish_command.assert_called_once_with(
         zone_id=1,
         node_uid="nd-irrig-1",
         channel="default",
-        cmd="irrigate",
-        params={"duration": 60}
+        cmd="run_pump",
+        params={"duration_ms": 60000}
     )
 
 
@@ -74,7 +74,7 @@ async def test_scheduler_command_failed(client, mock_command_bus):
         "zone_id": 1,
         "node_uid": "nd-irrig-1",
         "channel": "default",
-        "cmd": "irrigate"
+        "cmd": "run_pump"
     }
     
     response = client.post("/scheduler/command", json=payload)
@@ -91,7 +91,7 @@ async def test_scheduler_command_not_initialized(client):
         "zone_id": 1,
         "node_uid": "nd-irrig-1",
         "channel": "default",
-        "cmd": "irrigate"
+        "cmd": "run_pump"
     }
     
     response = client.post("/scheduler/command", json=payload)
@@ -121,7 +121,7 @@ def test_scheduler_command_invalid_zone_id(client, mock_command_bus):
         "zone_id": 0,  # Invalid: must be >= 1
         "node_uid": "nd-irrig-1",
         "channel": "default",
-        "cmd": "irrigate"
+        "cmd": "run_pump"
     }
     
     response = client.post("/scheduler/command", json=payload)
@@ -136,7 +136,7 @@ def test_scheduler_command_empty_strings(client, mock_command_bus):
         "zone_id": 1,
         "node_uid": "",  # Invalid: min_length=1
         "channel": "default",
-        "cmd": "irrigate"
+        "cmd": "run_pump"
     }
     
     response = client.post("/scheduler/command", json=payload)
@@ -153,7 +153,7 @@ async def test_scheduler_command_exception(client, mock_command_bus):
         "zone_id": 1,
         "node_uid": "nd-irrig-1",
         "channel": "default",
-        "cmd": "irrigate"
+        "cmd": "run_pump"
     }
     
     response = client.post("/scheduler/command", json=payload)
@@ -185,4 +185,3 @@ async def test_scheduler_command_without_params(client, mock_command_bus):
         cmd="set_relay",
         params={}  # Пустой dict по умолчанию
     )
-

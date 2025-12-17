@@ -53,7 +53,8 @@ class CorrectionController:
         telemetry: Dict[str, Optional[float]],
         telemetry_timestamps: Optional[Dict[str, Any]] = None,
         nodes: Dict[str, Dict[str, Any]] = None,
-        water_level_ok: bool = True
+        water_level_ok: bool = True,
+        actuators: Optional[Dict[str, Dict[str, Any]]] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Проверка и корректировка параметра (pH или EC).
@@ -229,11 +230,13 @@ class CorrectionController:
         if not water_level_ok:
             return None
         
-        # Находим узел для корректировки
-        if not nodes:
-            return None
-        irrig_node = self._find_irrigation_node(nodes)
-        if not irrig_node:
+        # Находим actuator для корректировки
+        actuator = self._select_actuator(
+            correction_type=self._determine_correction_type(diff),
+            actuators=actuators,
+            nodes=nodes
+        )
+        if not actuator:
             return None
         
         # Определяем тип корректировки и количество
@@ -289,15 +292,14 @@ class CorrectionController:
             )
             return None
         
+        payload = self._build_correction_command(actuator, correction_type, amount)
+
         # Формируем команду
         command = {
-            'node_uid': irrig_node['node_uid'],
-            'channel': irrig_node['channel'],
-            'cmd': f'adjust_{target_key}',
-            'params': {
-                'amount': amount,
-                'type': correction_type
-            },
+            'node_uid': actuator['node_uid'],
+            'channel': actuator['channel'],
+            'cmd': payload['cmd'],
+            'params': payload['params'],
             'event_type': self._get_correction_event_type(),
             'event_details': {
                 'correction_type': correction_type,
@@ -305,6 +307,7 @@ class CorrectionController:
                 f'target_{target_key}': target_val,
                 'diff': diff,
                 'dose_ml': amount,
+                'binding_role': actuator.get('role'),
                 'pid_zone': pid.get_zone().value,
                 'pid_dt_seconds': dt_seconds
             },
@@ -519,10 +522,68 @@ class CorrectionController:
             adaptation_rate=settings.EC_PID_ADAPTATION_RATE,
         )
     
+    def _select_actuator(
+        self,
+        correction_type: str,
+        actuators: Optional[Dict[str, Dict[str, Any]]],
+        nodes: Optional[Dict[str, Dict[str, Any]]]
+    ) -> Optional[Dict[str, Any]]:
+        """Выбрать actuator по роли (acid/base/nutrient) с fallback на legacy irrig node."""
+        role_order: list[str] = []
+        if self.correction_type == CorrectionType.PH:
+            role_order = ["ph_base_pump"] if correction_type == "add_base" else ["ph_acid_pump"]
+        else:
+            # EC: добавляем удобрения, dilute пока не поддерживаем отдельным actuator
+            if correction_type == "add_nutrients":
+                role_order = ["ec_nutrient_pump"]
+            else:
+                # Для dilute нет корректного actuator — пропускаем, чтобы не совершать неверное действие
+                return None
+
+        if actuators:
+            for role in role_order:
+                if role in actuators:
+                    return actuators[role]
+
+        if nodes:
+            return self._find_irrigation_node(nodes)
+
+        return None
+
+    def _build_correction_command(
+        self,
+        actuator: Dict[str, Any],
+        correction_type: str,
+        amount_ml: float
+    ) -> Dict[str, Any]:
+        """
+        Собрать payload команды дозирования для actuator.
+
+        Возвращает словарь с cmd и params (поддерживает dose или run_pump).
+        """
+        role = (actuator.get("role") or "").lower()
+        # pH насосы умеют dose, остальным даем run_pump
+        use_dose = role.startswith("ph_")
+        params: Dict[str, Any] = {"type": correction_type, "dose_ml": amount_ml}
+
+        if use_dose:
+            cmd = "dose"
+        else:
+            cmd = "run_pump"
+            ml_per_sec = actuator.get("ml_per_sec") or 1.0
+            try:
+                ml_per_sec = float(ml_per_sec)
+            except (TypeError, ValueError):
+                ml_per_sec = 1.0
+            duration_ms = max(1, int((amount_ml / ml_per_sec) * 1000))
+            params["duration_ms"] = duration_ms
+
+        return {"cmd": cmd, "params": params}
+
     def _find_irrigation_node(self, nodes: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        """Найти узел для полива/дозирования."""
-        for key, node_info in nodes.items():
-            if node_info["type"] == "irrig":
+        """Legacy fallback: найти узел для полива/дозирования по типу irrig."""
+        for node_info in nodes.values():
+            if node_info.get("type") == "irrig":
                 return node_info
         return None
     

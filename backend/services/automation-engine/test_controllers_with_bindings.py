@@ -217,7 +217,8 @@ async def test_check_and_control_irrigation_with_bindings():
             assert result is not None
             assert result["node_uid"] == "nd-irrig-1"
             assert result["channel"] == "pump_1"
-            assert result["cmd"] == "irrigate"
+            assert result["cmd"] == "run_pump"
+            assert result["params"]["duration_ms"] == 60000
 
 
 @pytest.mark.asyncio
@@ -369,4 +370,3 @@ async def test_check_and_control_lighting_missing_binding():
                 "required_for": "light_control",
             }
         )
-

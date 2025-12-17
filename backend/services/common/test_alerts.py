@@ -10,9 +10,11 @@ from common.alerts import AlertSource, AlertCode, create_alert
 async def test_create_alert_with_all_fields():
     """Test creating alert with all fields when no existing alert."""
     with patch("common.alerts.fetch") as mock_fetch, \
-         patch("common.alerts.execute") as mock_execute:
+         patch("common.alerts.execute") as mock_execute, \
+         patch("common.alerts.send_alert_to_laravel", new_callable=AsyncMock) as mock_send:
         # Нет существующих алертов
         mock_fetch.return_value = []
+        mock_send.return_value = True
         
         await create_alert(
             zone_id=1,
@@ -47,9 +49,11 @@ async def test_create_alert_with_all_fields():
 async def test_create_alert_without_details():
     """Test creating alert without details when no existing alert."""
     with patch("common.alerts.fetch") as mock_fetch, \
-         patch("common.alerts.execute") as mock_execute:
+         patch("common.alerts.execute") as mock_execute, \
+         patch("common.alerts.send_alert_to_laravel", new_callable=AsyncMock) as mock_send:
         # Нет существующих алертов
         mock_fetch.return_value = []
+        mock_send.return_value = True
         
         await create_alert(
             zone_id=1,
@@ -71,9 +75,11 @@ async def test_create_alert_without_details():
 async def test_create_alert_with_null_zone_id():
     """Test creating alert with null zone_id (global alert)."""
     with patch("common.alerts.fetch") as mock_fetch, \
-         patch("common.alerts.execute") as mock_execute:
+         patch("common.alerts.execute") as mock_execute, \
+         patch("common.alerts.send_alert_to_laravel", new_callable=AsyncMock) as mock_send:
         # Нет существующих алертов
         mock_fetch.return_value = []
+        mock_send.return_value = True
         
         await create_alert(
             zone_id=None,
@@ -119,7 +125,8 @@ def test_alert_code_enum():
 async def test_create_alert_deduplicates_existing():
     """Test that create_alert updates existing alert instead of creating new one."""
     with patch("common.alerts.fetch") as mock_fetch, \
-         patch("common.alerts.execute") as mock_execute:
+         patch("common.alerts.execute") as mock_execute, \
+         patch("common.alerts.send_alert_to_laravel", new_callable=AsyncMock) as mock_send:
         # Существует активный алерт
         existing_alert = {
             "id": 123,
@@ -163,7 +170,8 @@ async def test_create_alert_deduplicates_existing():
 async def test_create_alert_suppression_window():
     """Test that suppression_window prevents updates if last_seen_at is recent."""
     with patch("common.alerts.fetch") as mock_fetch, \
-         patch("common.alerts.execute") as mock_execute:
+         patch("common.alerts.execute") as mock_execute, \
+         patch("common.alerts.send_alert_to_laravel", new_callable=AsyncMock) as mock_send:
         # Существует активный алерт с недавним last_seen_at
         now = datetime.now(timezone.utc)
         recent_time = (now.replace(microsecond=0)).isoformat()
@@ -175,6 +183,7 @@ async def test_create_alert_suppression_window():
             }
         }
         mock_fetch.return_value = [existing_alert]
+        mock_send.return_value = True
         
         # Пытаемся создать алерт с окном подавления 60 секунд
         await create_alert(
@@ -196,7 +205,8 @@ async def test_create_alert_suppression_window():
 async def test_create_alert_suppression_window_expired():
     """Test that suppression_window allows updates if last_seen_at is old."""
     with patch("common.alerts.fetch") as mock_fetch, \
-         patch("common.alerts.execute") as mock_execute:
+         patch("common.alerts.execute") as mock_execute, \
+         patch("common.alerts.send_alert_to_laravel", new_callable=AsyncMock) as mock_send:
         # Существует активный алерт со старым last_seen_at
         old_time = "2024-01-01T12:00:00+00:00"
         existing_alert = {
@@ -207,6 +217,7 @@ async def test_create_alert_suppression_window_expired():
             }
         }
         mock_fetch.return_value = [existing_alert]
+        mock_send.return_value = True
         
         # Пытаемся создать алерт с окном подавления 60 секунд
         await create_alert(
@@ -231,9 +242,11 @@ async def test_create_alert_suppression_window_expired():
 async def test_create_alert_deduplication_key_zone_code_status():
     """Test that deduplication uses (zone_id, code, status=ACTIVE) as key."""
     with patch("common.alerts.fetch") as mock_fetch, \
-         patch("common.alerts.execute") as mock_execute:
+         patch("common.alerts.execute") as mock_execute, \
+         patch("common.alerts.send_alert_to_laravel", new_callable=AsyncMock) as mock_send:
         # Первый вызов - создает новый алерт
         mock_fetch.return_value = []
+        mock_send.return_value = True
         await create_alert(
             zone_id=1,
             source=AlertSource.BIZ.value,
@@ -263,4 +276,3 @@ async def test_create_alert_deduplication_key_zone_code_status():
         assert "zone_id IS NOT DISTINCT FROM" in second_call[0][0]
         assert second_call[0][1] == 1  # zone_id
         assert second_call[0][2] == AlertCode.BIZ_NO_FLOW.value  # code
-

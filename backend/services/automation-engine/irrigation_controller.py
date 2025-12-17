@@ -59,7 +59,8 @@ async def check_and_control_irrigation(
     zone_id: int,
     targets: Dict[str, Any],
     telemetry: Dict[str, Optional[float]],
-    bindings: Dict[str, Dict[str, Any]]
+    bindings: Dict[str, Dict[str, Any]],
+    actuators: Optional[Dict[str, Dict[str, Any]]] = None
 ) -> Optional[Dict[str, Any]]:
     """
     Проверка и управление поливом зоны.
@@ -85,8 +86,15 @@ async def check_and_control_irrigation(
     
     irrigation_interval_sec = int(irrigation_interval_sec)
     
-    # Получаем binding для полива
-    pump_binding = get_irrigation_binding(bindings)
+    # Получаем binding для полива (сначала через резолвер ролей, потом fallback)
+    pump_binding = None
+    if actuators:
+        for role in ['irrigation_pump', 'main_pump', 'pump']:
+            if role in actuators:
+                pump_binding = actuators[role]
+                break
+    if not pump_binding:
+        pump_binding = get_irrigation_binding(bindings)
     if not pump_binding:
         # Нет binding для полива - создаем alert
         await ensure_alert(zone_id, 'MISSING_BINDING', {
@@ -127,14 +135,15 @@ async def check_and_control_irrigation(
     return {
         'node_uid': pump_binding['node_uid'],
         'channel': pump_binding['channel'],
-        'cmd': 'irrigate',
+        'cmd': 'run_pump',
         'params': {
-            'duration_sec': irrigation_duration_sec
+            'duration_ms': int(irrigation_duration_sec * 1000)
         },
         'event_type': 'IRRIGATION_STARTED',
         'event_details': {
             'interval_sec': irrigation_interval_sec,
             'duration_sec': irrigation_duration_sec,
+            'duration_ms': int(irrigation_duration_sec * 1000),
             'last_irrigation_time': last_irrigation_time.isoformat(),
             'elapsed_sec': elapsed_sec
         }
@@ -190,7 +199,8 @@ async def check_and_control_recirculation(
     zone_id: int,
     targets: Dict[str, Any],
     telemetry: Dict[str, Optional[float]],
-    bindings: Dict[str, Dict[str, Any]]
+    bindings: Dict[str, Dict[str, Any]],
+    actuators: Optional[Dict[str, Dict[str, Any]]] = None
 ) -> Optional[Dict[str, Any]]:
     """
     Проверка и управление рециркуляцией воды.
@@ -223,8 +233,12 @@ async def check_and_control_recirculation(
     recirculation_interval_min = int(recirculation_interval_min)
     recirculation_duration_sec = int(recirculation_duration_sec)
     
-    # Получаем binding для рециркуляции
-    recirculation_binding = get_recirculation_binding(bindings)
+    # Получаем binding для рециркуляции (role resolver + fallback)
+    recirculation_binding = None
+    if actuators and 'recirculation_pump' in actuators:
+        recirculation_binding = actuators['recirculation_pump']
+    if not recirculation_binding:
+        recirculation_binding = get_recirculation_binding(bindings)
     if not recirculation_binding:
         # Нет binding для рециркуляции - создаем alert
         await ensure_alert(zone_id, 'MISSING_BINDING', {
@@ -263,16 +277,16 @@ async def check_and_control_recirculation(
     return {
         'node_uid': recirculation_binding['node_uid'],
         'channel': recirculation_binding['channel'],
-        'cmd': 'recirculate',
+        'cmd': 'run_pump',
         'params': {
-            'duration_sec': recirculation_duration_sec
+            'duration_ms': int(recirculation_duration_sec * 1000)
         },
         'event_type': 'RECIRCULATION_CYCLE',
         'event_details': {
             'interval_min': recirculation_interval_min,
             'duration_sec': recirculation_duration_sec,
+            'duration_ms': int(recirculation_duration_sec * 1000),
             'last_recirculation_time': last_recirculation_time.isoformat() if last_recirculation_time else None,
             'elapsed_min': (now - last_recirculation_time).total_seconds() / 60.0 if last_recirculation_time else None
         }
     }
-

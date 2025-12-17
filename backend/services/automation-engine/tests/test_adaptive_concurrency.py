@@ -15,7 +15,7 @@ from main import (
     process_zones_parallel,
 )
 from services import ZoneAutomationService
-from repositories import ZoneRepository, TelemetryRepository, NodeRepository, RecipeRepository
+from repositories import ZoneRepository, TelemetryRepository, NodeRepository, RecipeRepository, GrowCycleRepository, InfrastructureRepository
 from infrastructure import CommandBus
 
 
@@ -71,11 +71,15 @@ async def test_optimal_concurrency_metric():
     telemetry_repo = MagicMock(spec=TelemetryRepository)
     node_repo = MagicMock(spec=NodeRepository)
     recipe_repo = MagicMock(spec=RecipeRepository)
+    grow_cycle_repo = MagicMock(spec=GrowCycleRepository)
+    infrastructure_repo = MagicMock(spec=InfrastructureRepository)
     mqtt = MagicMock()
     command_bus = CommandBus(mqtt, "gh-1")
+    grow_cycle_repo.get_active_grow_cycle = AsyncMock(return_value=None)
+    infrastructure_repo.get_zone_bindings_by_role = AsyncMock(return_value={})
     
     zone_service = ZoneAutomationService(
-        zone_repo, telemetry_repo, node_repo, recipe_repo, command_bus
+        zone_repo, telemetry_repo, node_repo, recipe_repo, grow_cycle_repo, infrastructure_repo, command_bus
     )
     
     # Мокаем process_zone
@@ -106,11 +110,15 @@ async def test_zone_processing_errors_metric():
     telemetry_repo = MagicMock(spec=TelemetryRepository)
     node_repo = MagicMock(spec=NodeRepository)
     recipe_repo = MagicMock(spec=RecipeRepository)
+    grow_cycle_repo = MagicMock(spec=GrowCycleRepository)
+    infrastructure_repo = MagicMock(spec=InfrastructureRepository)
     mqtt = MagicMock()
     command_bus = CommandBus(mqtt, "gh-1")
+    grow_cycle_repo.get_active_grow_cycle = AsyncMock(return_value=None)
+    infrastructure_repo.get_zone_bindings_by_role = AsyncMock(return_value={})
     
     zone_service = ZoneAutomationService(
-        zone_repo, telemetry_repo, node_repo, recipe_repo, command_bus
+        zone_repo, telemetry_repo, node_repo, recipe_repo, grow_cycle_repo, infrastructure_repo, command_bus
     )
     
     # Мокаем process_zone чтобы выбрасывал ошибку
@@ -140,11 +148,15 @@ async def test_zone_processing_time_metric():
     telemetry_repo = MagicMock(spec=TelemetryRepository)
     node_repo = MagicMock(spec=NodeRepository)
     recipe_repo = MagicMock(spec=RecipeRepository)
+    grow_cycle_repo = MagicMock(spec=GrowCycleRepository)
+    infrastructure_repo = MagicMock(spec=InfrastructureRepository)
     mqtt = MagicMock()
     command_bus = CommandBus(mqtt, "gh-1")
+    grow_cycle_repo.get_active_grow_cycle = AsyncMock(return_value=None)
+    infrastructure_repo.get_zone_bindings_by_role = AsyncMock(return_value={})
     
     zone_service = ZoneAutomationService(
-        zone_repo, telemetry_repo, node_repo, recipe_repo, command_bus
+        zone_repo, telemetry_repo, node_repo, recipe_repo, grow_cycle_repo, infrastructure_repo, command_bus
     )
     
     # Мокаем process_zone с задержкой
@@ -167,4 +179,3 @@ async def test_zone_processing_time_metric():
         # Проверяем, что метрика времени была обновлена
         assert results['success'] == 1
         assert mock_time.observe.called
-

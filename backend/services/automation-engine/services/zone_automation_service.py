@@ -29,6 +29,7 @@ from infrastructure.circuit_breaker import CircuitBreakerOpenError
 from services.pid_state_manager import PidStateManager
 from prometheus_client import Histogram, Counter
 from services.pid_config_service import invalidate_cache
+from actuator_registry import ActuatorRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,7 @@ class ZoneAutomationService:
         self.infrastructure_repo = infrastructure_repo
         self.command_bus = command_bus
         self.pid_state_manager = pid_state_manager or PidStateManager()
+        self.actuator_registry = ActuatorRegistry()
         
         # Инициализация контроллеров корректировки с менеджером состояния
         self.ph_controller = CorrectionController(CorrectionType.PH, self.pid_state_manager)
@@ -162,6 +164,7 @@ class ZoneAutomationService:
                 
                 # Получаем bindings для зоны
                 bindings = await self.infrastructure_repo.get_zone_bindings_by_role(zone_id)
+                actuators = self.actuator_registry.resolve(zone_id, bindings, nodes)
             except CircuitBreakerOpenError:
                 # Circuit breaker открыт - переходим в спокойный режим
                 logger.warning(
@@ -218,21 +221,21 @@ class ZoneAutomationService:
             # 3. Irrigation Controller
             await self._safe_process_controller(
                 'irrigation',
-                self._process_irrigation_controller(zone_id, targets, telemetry, capabilities, water_level_ok, bindings),
+                self._process_irrigation_controller(zone_id, targets, telemetry, capabilities, water_level_ok, bindings, actuators),
                 zone_id
             )
             
             # 4. Recirculation Controller
             await self._safe_process_controller(
                 'recirculation',
-                self._process_recirculation_controller(zone_id, targets, telemetry, capabilities, water_level_ok, bindings),
+                self._process_recirculation_controller(zone_id, targets, telemetry, capabilities, water_level_ok, bindings, actuators),
                 zone_id
             )
             
             # 5. pH/EC Correction Controllers
             await self._safe_process_controller(
                 'correction',
-                self._process_correction_controllers(zone_id, targets, telemetry, nodes, capabilities, water_level_ok),
+                self._process_correction_controllers(zone_id, targets, telemetry, nodes, capabilities, water_level_ok, bindings, actuators),
                 zone_id
             )
             
@@ -620,13 +623,14 @@ class ZoneAutomationService:
         telemetry: Dict[str, Optional[float]],
         capabilities: Dict[str, bool],
         water_level_ok: bool,
-        bindings: Dict[str, Dict[str, Any]]
+        bindings: Dict[str, Dict[str, Any]],
+        actuators: Dict[str, Dict[str, Any]]
     ) -> None:
         """Обработка контроллера полива."""
         if not capabilities.get("irrigation_control", False):
             return
         
-        irrigation_cmd = await check_and_control_irrigation(zone_id, targets, telemetry, bindings)
+        irrigation_cmd = await check_and_control_irrigation(zone_id, targets, telemetry, bindings, actuators)
         
         # Проверка безопасности перед запуском насоса
         if irrigation_cmd:
@@ -654,13 +658,14 @@ class ZoneAutomationService:
         telemetry: Dict[str, Optional[float]],
         capabilities: Dict[str, bool],
         water_level_ok: bool,
-        bindings: Dict[str, Dict[str, Any]]
+        bindings: Dict[str, Dict[str, Any]],
+        actuators: Dict[str, Dict[str, Any]]
     ) -> None:
         """Обработка контроллера рециркуляции."""
         if not capabilities.get("recirculation", False):
             return
         
-        recirculation_cmd = await check_and_control_recirculation(zone_id, targets, telemetry, bindings)
+        recirculation_cmd = await check_and_control_recirculation(zone_id, targets, telemetry, bindings, actuators)
         if recirculation_cmd:
             if recirculation_cmd.get('event_type'):
                 await create_zone_event(zone_id, recirculation_cmd['event_type'], recirculation_cmd.get('event_details', {}))
@@ -679,7 +684,9 @@ class ZoneAutomationService:
         telemetry: Dict[str, Optional[float]],
         nodes: Dict[str, Dict[str, Any]],
         capabilities: Dict[str, bool],
-        water_level_ok: bool
+        water_level_ok: bool,
+        bindings: Dict[str, Dict[str, Any]],
+        actuators: Dict[str, Dict[str, Any]]
     ) -> None:
         """Обработка контроллеров корректировки pH/EC."""
         # Получаем telemetry_timestamps из zone_data (передается через process_zone)
@@ -688,7 +695,7 @@ class ZoneAutomationService:
         # pH Correction
         if capabilities.get("ph_control", False):
             ph_cmd = await self.ph_controller.check_and_correct(
-                zone_id, targets, telemetry, telemetry_timestamps, nodes, water_level_ok
+                zone_id, targets, telemetry, telemetry_timestamps, nodes, water_level_ok, actuators
             )
             if ph_cmd:
                 # Получаем PID для контекста
@@ -704,7 +711,7 @@ class ZoneAutomationService:
         # EC Correction
         if capabilities.get("ec_control", False):
             ec_cmd = await self.ec_controller.check_and_correct(
-                zone_id, targets, telemetry, telemetry_timestamps, nodes, water_level_ok
+                zone_id, targets, telemetry, telemetry_timestamps, nodes, water_level_ok, actuators
             )
             if ec_cmd:
                 # Получаем PID для контекста
@@ -788,4 +795,3 @@ class ZoneAutomationService:
                             self.ec_controller._last_pid_tick.pop(zone_id, None)
         except Exception as e:
             logger.warning(f"Failed to check PID config updates for zone {zone_id}: {e}", exc_info=True)
-

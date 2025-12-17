@@ -31,33 +31,28 @@ class CommandValidator:
             if field not in command:
                 return False, f"Missing required field: {field}"
         
-        # Проверка типа команды
         cmd = command.get('cmd')
-        if cmd not in ['adjust_ph', 'adjust_ec']:
-            return False, f"Invalid command type: {cmd}"
+        if cmd not in ['dose', 'run_pump']:
+            return False, f"Invalid command type for correction: {cmd}"
         
         # Проверка параметров
         params = command.get('params', {})
         if not isinstance(params, dict):
             return False, "Params must be a dictionary"
         
-        amount = params.get('amount')
-        if amount is None:
-            return False, "Missing 'amount' in params"
-        
-        try:
-            amount = float(amount)
-        except (ValueError, TypeError):
-            return False, f"Invalid amount type: {amount}"
-        
-        if amount <= 0:
-            return False, f"Amount must be positive, got {amount}"
-        
-        # Максимальная доза зависит от типа
-        max_amount = self.settings.PH_PID_MAX_OUTPUT if cmd == 'adjust_ph' else self.settings.EC_PID_MAX_OUTPUT
-        if amount > max_amount:
-            return False, f"Amount too high: {amount}ml (max: {max_amount}ml)"
-        
+        amount = params.get('dose_ml') or params.get('amount')
+        if amount is not None:
+            try:
+                amount = float(amount)
+            except (ValueError, TypeError):
+                return False, f"Invalid amount type: {amount}"
+            if amount <= 0:
+                return False, f"Amount must be positive, got {amount}"
+            # Максимальная доза зависит от типа
+            max_amount = self.settings.PH_PID_MAX_OUTPUT if params.get('type') in ['add_acid', 'add_base'] else self.settings.EC_PID_MAX_OUTPUT
+            if amount > max_amount:
+                return False, f"Amount too high: {amount}ml (max: {max_amount}ml)"
+
         # Проверка типа корректировки
         correction_type = params.get('type')
         valid_types = ['add_acid', 'add_base', 'add_nutrients', 'dilute']
@@ -65,89 +60,88 @@ class CommandValidator:
             return False, f"Invalid correction type: {correction_type}. Valid: {valid_types}"
         
         # Проверка соответствия типа команде
-        if cmd == 'adjust_ph' and correction_type not in ['add_acid', 'add_base']:
+        if correction_type in ['add_acid', 'add_base'] and self.settings.PH_PID_MAX_OUTPUT <= 0:
+            return False, "PH PID max output is not configured"
+        if correction_type in ['add_nutrients', 'dilute'] and self.settings.EC_PID_MAX_OUTPUT <= 0:
+            return False, "EC PID max output is not configured"
+
+        if correction_type in ['add_acid', 'add_base'] and cmd not in ['dose', 'run_pump']:
             return False, f"Invalid correction type for pH: {correction_type}"
-        if cmd == 'adjust_ec' and correction_type not in ['add_nutrients', 'dilute']:
+        if correction_type in ['add_nutrients', 'dilute'] and cmd not in ['dose', 'run_pump']:
             return False, f"Invalid correction type for EC: {correction_type}"
+
+        # Если используем run_pump, валидируем длительность
+        if cmd == 'run_pump':
+            duration_ms = params.get('duration_ms')
+            if duration_ms is None:
+                return False, "Missing 'duration_ms' in params for run_pump"
+            try:
+                duration_ms = int(duration_ms)
+            except (ValueError, TypeError):
+                return False, f"Invalid duration_ms type: {duration_ms}"
+            if duration_ms <= 0:
+                return False, f"Duration must be positive, got {duration_ms}"
         
         return True, None
     
-    def validate_irrigation_command(self, command: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
-        """
-        Валидация команды полива.
-        
-        Args:
-            command: Команда для валидации
-        
-        Returns:
-            Tuple[is_valid, error_message]
-        """
-        # Проверка обязательных полей
+    def validate_run_pump_command(self, command: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
+        """Валидация команды run_pump (ирригация/рециркуляция/дозирование)."""
         if 'node_uid' not in command:
             return False, "Missing required field: node_uid"
-        if 'cmd' not in command or command['cmd'] != 'irrigate':
-            return False, "Invalid command type for irrigation"
-        
-        # Проверка параметров
+        if command.get('cmd') != 'run_pump':
+            return False, "Invalid command type, expected run_pump"
+
         params = command.get('params', {})
         if not isinstance(params, dict):
             return False, "Params must be a dictionary"
-        
-        duration = params.get('duration_sec')
-        if duration is None:
-            return False, "Missing 'duration_sec' in params"
-        
+
+        duration_ms = params.get('duration_ms')
+        if duration_ms is None:
+            return False, "Missing 'duration_ms' in params"
         try:
-            duration = int(duration)
+            duration_ms = int(duration_ms)
         except (ValueError, TypeError):
-            return False, f"Invalid duration type: {duration}"
-        
-        if duration <= 0:
-            return False, f"Duration must be positive, got {duration}"
-        
-        # Максимальная длительность полива: 1 час
-        if duration > 3600:
-            return False, f"Duration too long: {duration}s (max: 3600s)"
-        
+            return False, f"Invalid duration_ms type: {duration_ms}"
+        if duration_ms <= 0:
+            return False, f"Duration must be positive, got {duration_ms}"
+        # Жесткий лимит: не больше 1 часа работы
+        if duration_ms > 3_600_000:
+            return False, f"Duration too long: {duration_ms}ms (max: 3600000ms)"
+
+        # При наличии correction type проверяем допустимость
+        if 'type' in params:
+            valid_types = ['add_acid', 'add_base', 'add_nutrients', 'dilute']
+            if params['type'] not in valid_types:
+                return False, f"Invalid correction type: {params['type']}"
+
         return True, None
-    
-    def validate_recirculation_command(self, command: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
-        """
-        Валидация команды рециркуляции.
-        
-        Args:
-            command: Команда для валидации
-        
-        Returns:
-            Tuple[is_valid, error_message]
-        """
-        # Проверка обязательных полей
+
+    def validate_dose_command(self, command: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
+        """Валидация dose (ph/ec насосы)."""
         if 'node_uid' not in command:
             return False, "Missing required field: node_uid"
-        if 'cmd' not in command or command['cmd'] != 'recirculate':
-            return False, "Invalid command type for recirculation"
-        
-        # Проверка параметров
+        if command.get('cmd') != 'dose':
+            return False, "Invalid command type, expected dose"
+
         params = command.get('params', {})
         if not isinstance(params, dict):
             return False, "Params must be a dictionary"
-        
-        duration = params.get('duration_sec')
-        if duration is None:
-            return False, "Missing 'duration_sec' in params"
-        
+
+        dose_ml = params.get('dose_ml') or params.get('amount')
+        if dose_ml is None:
+            return False, "Missing 'dose_ml' in params"
         try:
-            duration = int(duration)
+            dose_ml = float(dose_ml)
         except (ValueError, TypeError):
-            return False, f"Invalid duration type: {duration}"
-        
-        if duration <= 0:
-            return False, f"Duration must be positive, got {duration}"
-        
-        # Максимальная длительность рециркуляции: 30 минут
-        if duration > 1800:
-            return False, f"Duration too long: {duration}s (max: 1800s)"
-        
+            return False, f"Invalid dose_ml type: {dose_ml}"
+        if dose_ml <= 0:
+            return False, f"Dose must be positive, got {dose_ml}"
+
+        if 'type' in params:
+            valid_types = ['add_acid', 'add_base', 'add_nutrients', 'dilute']
+            if params['type'] not in valid_types:
+                return False, f"Invalid correction type: {params['type']}"
+
         return True, None
     
     def validate_climate_command(self, command: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
@@ -242,12 +236,14 @@ class CommandValidator:
         cmd = command.get('cmd', '')
         
         # Выбираем валидатор по типу команды
-        if cmd.startswith('adjust_'):
-            return self.validate_correction_command(command)
-        elif cmd == 'irrigate':
-            return self.validate_irrigation_command(command)
-        elif cmd == 'recirculate':
-            return self.validate_recirculation_command(command)
+        if cmd in ['dose']:
+            return self.validate_dose_command(command)
+        elif cmd == 'run_pump':
+            # Если передан correction type, валидируем как корректировку
+            params = command.get('params', {})
+            if isinstance(params, dict) and params.get('type') in ['add_acid', 'add_base', 'add_nutrients', 'dilute']:
+                return self.validate_correction_command(command)
+            return self.validate_run_pump_command(command)
         elif cmd == 'set_relay':
             # Может быть климат или свет
             event_type = command.get('event_type', '')
@@ -266,5 +262,4 @@ class CommandValidator:
             if 'cmd' not in command:
                 return False, "Missing required field: cmd"
             return True, None
-
 

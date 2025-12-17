@@ -48,16 +48,18 @@ async def test_correction_controller_uses_pid_config_from_db():
                 with patch('correction_controller.record_correction', new_callable=AsyncMock):
                     targets = {'ph': 6.0}
                     telemetry = {'PH': 6.8}  # Отклонение 0.8
-                    nodes = {
-                        'irrig:default': {
+                    nodes = {}
+                    actuators = {
+                        'ph_acid_pump': {
                             'node_uid': 'test-node',
                             'channel': 'pump_acid',
-                            'type': 'irrig',
+                            'role': 'ph_acid_pump'
                         }
                     }
                     
+                    telemetry_ts = {'PH': datetime.utcnow().replace(tzinfo=None)}
                     result = await controller.check_and_correct(
-                        zone_id, targets, telemetry, nodes=nodes, water_level_ok=True
+                        zone_id, targets, telemetry, telemetry_ts, nodes=nodes, water_level_ok=True, actuators=actuators
                     )
                     
                     # Проверяем, что конфиг был загружен из БД
@@ -89,19 +91,20 @@ async def test_pid_output_event_created():
                 with patch('correction_controller.record_correction', new_callable=AsyncMock):
                     targets = {'ph': 6.0}
                     telemetry = {'PH': 7.0}  # Большое отклонение
-                    nodes = {
-                        'irrig:default': {
+                    nodes = {}
+                    actuators = {
+                        'ph_acid_pump': {
                             'node_uid': 'test-node',
                             'channel': 'pump_acid',
-                            'type': 'irrig',
+                            'role': 'ph_acid_pump'
                         }
                     }
                     
+                    telemetry_ts = {'PH': datetime.utcnow().replace(tzinfo=None)}
                     await controller.check_and_correct(
-                        zone_id, targets, telemetry, nodes=nodes, water_level_ok=True
+                        zone_id, targets, telemetry, telemetry_ts, nodes=nodes, water_level_ok=True, actuators=actuators
                     )
                     
                     # Проверяем, что create_zone_event был вызван
                     # (может быть вызван для PID_OUTPUT или других событий)
                     assert create_event_mock.called
-

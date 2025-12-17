@@ -66,6 +66,7 @@ Backend ⇄ MQTT Broker ⇄ ESP32 Nodes
 hydro/{gh}/{zone}/{node}/status
 hydro/{gh}/{zone}/{node}/lwt
 hydro/{gh}/{zone}/{node}/heartbeat
+hydro/{gh}/{zone}/{node}/error
 hydro/{gh}/{zone}/{node}/config
 hydro/{gh}/{zone}/{node}/config_response
 hydro/{gh}/{zone}/{node}/{channel}/telemetry
@@ -168,17 +169,28 @@ Backend подписывается на топик `hydro/+/+/+/config_response`
 ## 7.1. Payload
 ```json
 {
- "node_id": "nd-ph-1",
- "channel": "ph_sensor",
- "metric_type": "PH",
+ "metric_type": "ph",
  "value": 5.83,
- "raw": 1460,
  "ts": 1710012345
 }
 ```
 
+**Обязательные поля:**
+- `metric_type` (string, lowercase) — тип метрики: `ph`, `ec`, `air_temp_c`, `air_rh` и т.д.
+- `value` (number) — значение метрики
+- `ts` (integer) — UTC timestamp в секундах
+
+**Опциональные поля:**
+- `unit` (string) — единица измерения
+- `raw` (integer) — сырое значение сенсора
+- `stub` (boolean) — флаг симулированного значения
+- `stable` (boolean) — флаг стабильности значения
+
+> **Важно:** Формат соответствует эталону node-sim. Поля `node_id` и `channel` не включаются в JSON, так как они уже есть в топике.
+
 ## 7.2. Требования
 - QoS=1
+- Retain=false
 - Узел обязан публиковать telemetry регулярно.
 - Узел обязан фильтровать шумы (медиана/усреднение).
 - Backend обязан сохранять sample в TSDB и кэшировать.
@@ -248,12 +260,20 @@ Payload:
 ## 9.1. Payload
 ```json
 {
- "uptime": 55100,
- "heap": 102300,
- "rssi": -56,
- "ts": 1710012900
+ "uptime": 3600,
+ "free_heap": 102300,
+ "rssi": -56
 }
 ```
+
+**Обязательные поля:**
+- `uptime` (integer) — время работы узла в секундах
+- `free_heap` (integer) — свободная память в байтах
+
+**Опциональные поля:**
+- `rssi` (integer) — сила сигнала Wi-Fi в dBm
+
+> **Важно:** Поле `ts` **не включается** в heartbeat согласно эталону node-sim.
 
 Backend обязан сохранять heartbeat для диагностики.
 
@@ -326,11 +346,12 @@ sig = HMAC_SHA256(node_secret, cmd + '|' + ts)
 {
  "cmd_id": "cmd-9123",
  "status": "ERROR",
- "ts": 1710012930,
- "error_code": "cooldown_active",
- "error_message": "Pump is in cooldown period"
+ "details": "Pump is in cooldown period",
+ "ts": 1710012930123
 }
 ```
+
+**Важно:** Поле `ts` содержит UTC timestamp в **миллисекундах** (не секундах).
 
 ## 11.3. Ошибки валидации HMAC
 
@@ -339,9 +360,8 @@ sig = HMAC_SHA256(node_secret, cmd + '|' + ts)
 {
  "cmd_id": "cmd-9123",
  "status": "ERROR",
- "ts": 1710012930,
- "error_code": "invalid_signature",
- "error_message": "Command HMAC signature verification failed"
+ "details": "Command HMAC signature verification failed",
+ "ts": 1710012930123
 }
 ```
 
@@ -350,9 +370,8 @@ sig = HMAC_SHA256(node_secret, cmd + '|' + ts)
 {
  "cmd_id": "cmd-9123",
  "status": "ERROR",
- "ts": 1710012930,
- "error_code": "timestamp_expired",
- "error_message": "Command timestamp is outside acceptable range"
+ "details": "Command timestamp is outside acceptable range",
+ "ts": 1710012930123
 }
 ```
 

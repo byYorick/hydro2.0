@@ -25,17 +25,17 @@ async def test_publish_command_success():
             history_logger_url="http://history-logger:9300",
             history_logger_token="test-token"
         )
-        result = await command_bus.publish_command(1, "nd-irrig-1", "default", "irrigate", {"duration": 60})
+        result = await command_bus.publish_command(1, "nd-irrig-1", "default", "run_pump", {"duration_ms": 60000})
         
         assert result is True
         mock_client.post.assert_called_once()
         call_args = mock_client.post.call_args
         assert call_args[0][0] == "http://history-logger:9300/commands"
-        assert call_args[1]["json"]["cmd"] == "irrigate"
+        assert call_args[1]["json"]["cmd"] == "run_pump"
         assert call_args[1]["json"]["zone_id"] == 1
         assert call_args[1]["json"]["node_uid"] == "nd-irrig-1"
         assert call_args[1]["json"]["channel"] == "default"
-        assert call_args[1]["json"]["params"] == {"duration": 60}
+        assert call_args[1]["json"]["params"] == {"duration_ms": 60000}
         assert call_args[1]["json"]["source"] == "automation"
         assert "Authorization" in call_args[1]["headers"]
         assert call_args[1]["headers"]["Authorization"] == "Bearer test-token"
@@ -60,7 +60,7 @@ async def test_publish_command_http_error():
             gh_uid="gh-1",
             history_logger_url="http://history-logger:9300"
         )
-        result = await command_bus.publish_command(1, "nd-irrig-1", "default", "irrigate")
+        result = await command_bus.publish_command(1, "nd-irrig-1", "default", "run_pump")
         
         assert result is False
 
@@ -80,7 +80,7 @@ async def test_publish_command_timeout():
             gh_uid="gh-1",
             history_logger_url="http://history-logger:9300"
         )
-        result = await command_bus.publish_command(1, "nd-irrig-1", "default", "irrigate")
+        result = await command_bus.publish_command(1, "nd-irrig-1", "default", "run_pump")
         
         assert result is False
 
@@ -100,7 +100,7 @@ async def test_publish_command_request_error():
             gh_uid="gh-1",
             history_logger_url="http://history-logger:9300"
         )
-        result = await command_bus.publish_command(1, "nd-irrig-1", "default", "irrigate")
+        result = await command_bus.publish_command(1, "nd-irrig-1", "default", "run_pump")
         
         assert result is False
 
@@ -124,7 +124,7 @@ async def test_publish_command_json_decode_error():
             gh_uid="gh-1",
             history_logger_url="http://history-logger:9300"
         )
-        result = await command_bus.publish_command(1, "nd-irrig-1", "default", "irrigate")
+        result = await command_bus.publish_command(1, "nd-irrig-1", "default", "run_pump")
         
         assert result is False
 
@@ -148,12 +148,12 @@ async def test_publish_controller_command():
             gh_uid="gh-1",
             history_logger_url="http://history-logger:9300"
         )
-        # Используем правильный формат для команды irrigate: duration_sec вместо duration
+        # Используем правильный формат для команды run_pump: duration_ms
         command = {
             'node_uid': 'nd-irrig-1',
             'channel': 'default',
-            'cmd': 'irrigate',
-            'params': {'duration_sec': 60}
+            'cmd': 'run_pump',
+            'params': {'duration_ms': 60000}
         }
         
         result = await command_bus.publish_controller_command(1, command)
@@ -172,7 +172,7 @@ async def test_publish_controller_command_invalid():
     )
     
     # Missing node_uid
-    command = {'channel': 'default', 'cmd': 'irrigate'}
+    command = {'channel': 'default', 'cmd': 'run_pump'}
     result = await command_bus.publish_controller_command(1, command)
     assert result is False
     
@@ -201,7 +201,7 @@ async def test_publish_command_with_params():
             gh_uid="gh-1",
             history_logger_url="http://history-logger:9300"
         )
-        params = {"duration": 60, "intensity": 80}
+        params = {"duration_ms": 60000, "intensity": 80}
         result = await command_bus.publish_command(1, "nd-light-1", "white_light", "set_pwm", params)
         
         assert result is True
@@ -261,7 +261,7 @@ async def test_publish_command_with_trace_id():
             gh_uid="gh-1",
             history_logger_url="http://history-logger:9300"
         )
-        result = await command_bus.publish_command(1, "nd-irrig-1", "default", "irrigate")
+        result = await command_bus.publish_command(1, "nd-irrig-1", "default", "run_pump")
         
         assert result is True
         call_args = mock_client.post.call_args
@@ -288,7 +288,7 @@ async def test_publish_command_without_token():
             history_logger_url="http://history-logger:9300",
             history_logger_token=None
         )
-        result = await command_bus.publish_command(1, "nd-irrig-1", "default", "irrigate")
+        result = await command_bus.publish_command(1, "nd-irrig-1", "default", "run_pump")
         
         assert result is True
         call_args = mock_client.post.call_args
@@ -321,12 +321,12 @@ async def test_publish_controller_command_without_params_preserves_cmd_id():
             command_tracker=tracker
         )
         
-        # Команда БЕЗ params
+        # Команда с валидными params (cmd_id должен добавиться)
         command = {
             'node_uid': 'nd-relay-1',
             'channel': 'default',
             'cmd': 'set_relay',
-            # params отсутствует
+            'params': {'state': True},
         }
         
         result = await command_bus.publish_controller_command(1, command)
