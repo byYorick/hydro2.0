@@ -1,11 +1,11 @@
 {
-  "test_suite": "E62_controller_fault_isolation",
-  "generated_at": "2025-12-16T10:27:56.480827",
+  "test_suite": "E63_backoff_on_errors",
+  "generated_at": "2025-12-16T11:54:33.973432",
   "test_cases": [
     {
       "name": "get_automation_zone",
       "status": "passed",
-      "duration": 0.0697026252746582,
+      "duration": 0.06374812126159668,
       "error_message": null,
       "steps": [
         {
@@ -13,12 +13,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-16T10:27:28.755822"
+      "timestamp": "2025-12-16T11:53:44.842050"
     },
     {
       "name": "set_zone_id_from_uid",
       "status": "passed",
-      "duration": 0.007821321487426758,
+      "duration": 0.00835108757019043,
       "error_message": null,
       "steps": [
         {
@@ -26,7 +26,7 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-16T10:27:28.763674"
+      "timestamp": "2025-12-16T11:53:44.850440"
     },
     {
       "name": "set_zone_id",
@@ -39,12 +39,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-16T10:27:28.763805"
+      "timestamp": "2025-12-16T11:53:44.850561"
     },
     {
       "name": "enable_capabilities",
       "status": "passed",
-      "duration": 0.0021462440490722656,
+      "duration": 0.002108335494995117,
       "error_message": null,
       "steps": [
         {
@@ -52,12 +52,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-16T10:27:28.765972"
+      "timestamp": "2025-12-16T11:53:44.852691"
     },
     {
       "name": "start_node_simulator",
       "status": "passed",
-      "duration": 5.642771482467651,
+      "duration": 5.638817548751831,
       "error_message": null,
       "steps": [
         {
@@ -65,12 +65,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-16T10:27:34.408770"
+      "timestamp": "2025-12-16T11:53:50.491530"
     },
     {
       "name": "enable_test_mode",
       "status": "passed",
-      "duration": 7.62939453125e-06,
+      "duration": 5.245208740234375e-06,
       "error_message": null,
       "steps": [
         {
@@ -78,129 +78,234 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-16T10:27:34.408812"
+      "timestamp": "2025-12-16T11:53:50.491561"
     },
     {
-      "name": "inject_climate_error",
+      "name": "inject_error_1",
       "status": "passed",
-      "duration": 0.026463985443115234,
+      "duration": 0.024169206619262695,
       "error_message": null,
       "steps": [
         {
-          "name": "inject_climate_error",
+          "name": "inject_error_1",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-16T10:27:34.435338"
+      "timestamp": "2025-12-16T11:53:50.515773"
     },
     {
-      "name": "publish_telemetry_ph",
+      "name": "wait_cycle_1",
       "status": "passed",
-      "duration": 2.0022406578063965,
+      "duration": 3.002589702606201,
       "error_message": null,
       "steps": [
         {
-          "name": "publish_telemetry_ph",
+          "name": "wait_cycle_1",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-16T10:27:36.437614"
+      "timestamp": "2025-12-16T11:53:53.518380"
     },
     {
-      "name": "publish_telemetry_temp",
+      "name": "inject_error_2",
       "status": "passed",
-      "duration": 15.00409460067749,
+      "duration": 0.02485370635986328,
       "error_message": null,
       "steps": [
         {
-          "name": "publish_telemetry_temp",
+          "name": "inject_error_2",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-16T10:27:51.441771"
+      "timestamp": "2025-12-16T11:53:53.543296"
     },
     {
-      "name": "wait_controller_failed_event",
+      "name": "wait_cycle_2",
       "status": "passed",
-      "duration": 0.003551959991455078,
+      "duration": 3.0030837059020996,
       "error_message": null,
       "steps": [
         {
-          "name": "wait_controller_failed_event",
+          "name": "wait_cycle_2",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-16T10:27:51.445392"
+      "timestamp": "2025-12-16T11:53:56.546399"
     },
     {
-      "name": "clear_test_hook",
+      "name": "inject_error_3",
       "status": "passed",
-      "duration": 0.025196313858032227,
+      "duration": 0.02527475357055664,
       "error_message": null,
       "steps": [
         {
-          "name": "clear_test_hook",
+          "name": "inject_error_3",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-16T10:27:51.470630"
+      "timestamp": "2025-12-16T11:53:56.571728"
     },
     {
-      "name": "controller_failed_event",
+      "name": "wait_backoff",
       "status": "passed",
-      "duration": 0.0013551712036132812,
+      "duration": 15.00723934173584,
       "error_message": null,
       "steps": [
         {
-          "name": "controller_failed_event",
+          "name": "wait_backoff",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-16T10:27:51.472001"
+      "timestamp": "2025-12-16T11:54:11.578985"
     },
     {
-      "name": "other_controllers_working",
+      "name": "check_metrics_before",
       "status": "passed",
-      "duration": 0.0025725364685058594,
+      "duration": 0.02774500846862793,
       "error_message": null,
       "steps": [
         {
-          "name": "other_controllers_working",
+          "name": "check_metrics_before",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-16T10:27:51.474584"
+      "timestamp": "2025-12-16T11:54:11.606770"
     },
     {
-      "name": "Assertion 3",
+      "name": "wait_next_cycle_after_backoff",
       "status": "passed",
-      "duration": 5.004731178283691,
+      "duration": 10.01010513305664,
       "error_message": null,
       "steps": [
         {
-          "name": "Assertion 3",
+          "name": "wait_next_cycle_after_backoff",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-16T10:27:56.479329"
+      "timestamp": "2025-12-16T11:54:21.616891"
     },
     {
-      "name": "controller_cooldown",
+      "name": "check_metrics_after",
       "status": "passed",
-      "duration": 0.0010831356048583984,
+      "duration": 0.025394439697265625,
       "error_message": null,
       "steps": [
         {
-          "name": "controller_cooldown",
+          "name": "check_metrics_after",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-16T10:27:56.480431"
+      "timestamp": "2025-12-16T11:54:21.642338"
+    },
+    {
+      "name": "set_metrics_defaults",
+      "status": "passed",
+      "duration": 8.106231689453125e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_metrics_defaults",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-16T11:54:21.642611"
+    },
+    {
+      "name": "check_backoff_state",
+      "status": "passed",
+      "duration": 0.02555108070373535,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "check_backoff_state",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-16T11:54:21.668183"
+    },
+    {
+      "name": "set_backoff_state_vars",
+      "status": "passed",
+      "duration": 5.4836273193359375e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_backoff_state_vars",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-16T11:54:21.668390"
+    },
+    {
+      "name": "backoff_event_created",
+      "status": "passed",
+      "duration": 0.0034279823303222656,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "backoff_event_created",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-16T11:54:21.671830"
+    },
+    {
+      "name": "error_metrics_increased",
+      "status": "passed",
+      "duration": 5.9604644775390625e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "error_metrics_increased",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-16T11:54:21.671902"
+    },
+    {
+      "name": "degraded_mode_safety_only",
+      "status": "passed",
+      "duration": 0.002067089080810547,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "degraded_mode_safety_only",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-16T11:54:21.673974"
+    },
+    {
+      "name": "backoff_reset_works",
+      "status": "passed",
+      "duration": 0.0005731582641601562,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "backoff_reset_works",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-16T11:54:21.674554"
+    },
+    {
+      "name": "backoff_state_set",
+      "status": "skipped",
+      "duration": 4.172325134277344e-05,
+      "error_message": "Failed to evaluate assert condition ' is not None': invalid syntax (<string>, line 1)",
+      "steps": [
+        {
+          "name": "backoff_state_set",
+          "status": "skipped",
+          "error": "Failed to evaluate assert condition ' is not None': invalid syntax (<string>, line 1)"
+        }
+      ],
+      "timestamp": "2025-12-16T11:54:21.674640"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E62_controller_fault_isolation": {
+    "E63_backoff_on_errors": {
       "ws_messages": [],
       "mqtt_messages": [],
       "api_responses": [],

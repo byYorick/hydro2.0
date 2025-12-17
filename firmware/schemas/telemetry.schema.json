@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Telemetry Message Schema",
+  "description": "Schema for telemetry messages published by firmware nodes",
+  "type": "object",
+  "required": ["metric_type", "value", "ts"],
+  "properties": {
+    "metric_type": {
+      "type": "string",
+      "description": "Type of metric (lowercase, matches channel)",
+      "enum": [
+        "ph",
+        "ec",
+        "air_temp_c",
+        "air_rh",
+        "co2_ppm",
+        "ina209_ma",
+        "flow_present",
+        "solution_temp_c",
+        "light_level"
+      ]
+    },
+    "value": {
+      "type": "number",
+      "description": "Metric value"
+    },
+    "ts": {
+      "type": "integer",
+      "description": "UTC timestamp in seconds (Unix timestamp)"
+    },
+    "unit": {
+      "type": "string",
+      "description": "Unit of measurement (optional)"
+    },
+    "raw": {
+      "type": "integer",
+      "description": "Raw sensor value (optional)"
+    },
+    "stub": {
+      "type": "boolean",
+      "description": "Flag indicating simulated value (optional)"
+    },
+    "stable": {
+      "type": "boolean",
+      "description": "Flag indicating value stability (optional)"
+    }
+  },
+  "additionalProperties": false
+}
+

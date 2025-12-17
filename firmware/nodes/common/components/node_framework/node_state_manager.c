@@ -172,12 +172,34 @@ esp_err_t node_state_manager_report_error(
         if (config_storage_get_node_id(node_id, sizeof(node_id)) == ESP_OK) {
             cJSON *error_json = cJSON_CreateObject();
             if (error_json) {
-                cJSON_AddStringToObject(error_json, "level", level_str);
+                // Формат согласно эталону node-sim: level, component, error_code, message, details?, ts?
+                // Маппинг level: CRITICAL → ERROR (эталон не поддерживает CRITICAL, только ERROR/WARNING/INFO)
+                const char *ethernet_level = level_str;
+                if (strcmp(level_str, "CRITICAL") == 0) {
+                    ethernet_level = "ERROR";
+                } else if (strcmp(level_str, "UNKNOWN") == 0) {
+                    ethernet_level = "ERROR";
+                }
+                
+                cJSON_AddStringToObject(error_json, "level", ethernet_level);
                 cJSON_AddStringToObject(error_json, "component", component);
-                cJSON_AddStringToObject(error_json, "error_code", esp_err_to_name(error_code));
-                cJSON_AddNumberToObject(error_json, "error_code_num", error_code);
+                // error_code должен быть строковым кодом (например, "infra_overcurrent")
+                // Пока используем esp_err_to_name как fallback, но лучше использовать строковые коды
+                char error_code_str[32];
+                snprintf(error_code_str, sizeof(error_code_str), "esp_%s", esp_err_to_name(error_code));
+                cJSON_AddStringToObject(error_json, "error_code", error_code_str);
                 cJSON_AddStringToObject(error_json, "message", message ? message : "Unknown error");
-                cJSON_AddNumberToObject(error_json, "ts", (double)node_utils_get_timestamp_seconds());
+                // ts опционально в миллисекундах согласно эталону
+                int64_t ts_ms = node_utils_get_timestamp_seconds() * 1000;
+                cJSON_AddNumberToObject(error_json, "ts", (double)ts_ms);
+                
+                // details опционально - добавляем error_code_num и исходный level для диагностики
+                cJSON *details = cJSON_CreateObject();
+                if (details) {
+                    cJSON_AddNumberToObject(details, "error_code_num", error_code);
+                    cJSON_AddStringToObject(details, "original_level", level_str);
+                    cJSON_AddItemToObject(error_json, "details", details);
+                }
                 
                 char *json_str = cJSON_PrintUnformatted(error_json);
                 if (json_str) {

@@ -1,0 +1,20 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Status Message Schema",
+  "description": "Schema for status messages published by firmware nodes",
+  "type": "object",
+  "required": ["status", "ts"],
+  "properties": {
+    "status": {
+      "type": "string",
+      "description": "Node status",
+      "enum": ["ONLINE", "OFFLINE"]
+    },
+    "ts": {
+      "type": "integer",
+      "description": "UTC timestamp in seconds (Unix timestamp)"
+    }
+  },
+  "additionalProperties": false
+}
+

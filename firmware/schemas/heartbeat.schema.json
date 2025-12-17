@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Heartbeat Message Schema",
+  "description": "Schema for heartbeat messages published by firmware nodes",
+  "type": "object",
+  "required": ["uptime", "free_heap"],
+  "properties": {
+    "uptime": {
+      "type": "integer",
+      "description": "Uptime in seconds",
+      "minimum": 0
+    },
+    "free_heap": {
+      "type": "integer",
+      "description": "Free heap memory in bytes",
+      "minimum": 0
+    },
+    "rssi": {
+      "type": "integer",
+      "description": "WiFi RSSI signal strength (optional)",
+      "minimum": -100,
+      "maximum": 0
+    }
+  },
+  "additionalProperties": false
+}
+

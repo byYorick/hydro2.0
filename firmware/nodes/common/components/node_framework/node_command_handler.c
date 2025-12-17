@@ -795,7 +795,9 @@ cJSON *node_command_handler_create_response(
         cJSON_AddStringToObject(response, "status", status);
     }
 
-    cJSON_AddNumberToObject(response, "ts", (double)node_utils_get_timestamp_seconds());
+    // ts в миллисекундах согласно эталону node-sim
+    int64_t ts_ms = node_utils_get_timestamp_seconds() * 1000;
+    cJSON_AddNumberToObject(response, "ts", (double)ts_ms);
 
     if (error_code && strcmp(status, "ERROR") == 0) {
         cJSON_AddStringToObject(response, "error_code", error_code);
