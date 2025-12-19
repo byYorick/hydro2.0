@@ -503,7 +503,7 @@ const onTestPump = async (channelName: string, channelType: string): Promise<voi
   
   testingChannels.value.add(channelName)
   const channelLabel = getChannelLabel(channelName, channelType)
-  showToast(`Запуск теста: ${channelLabel}...`, 'info', TOAST_TIMEOUT.SHORT)
+  showToast(`Команда отправлена: ${channelLabel}`, 'info', TOAST_TIMEOUT.SHORT)
   
   try {
     // Для релейной ноды вместо run_pump отправляем set_state
@@ -518,7 +518,7 @@ const onTestPump = async (channelName: string, channelType: string): Promise<voi
     
     if (isRelayNode) {
       commandType = 'set_state'
-      params = { state: 1 }
+      params = { state: 1, duration_ms: 3000 }
     } else if (isValve) {
       commandType = 'set_relay'
       params = { state: true, duration_ms: 3000 }
@@ -536,10 +536,16 @@ const onTestPump = async (channelName: string, channelType: string): Promise<voi
     if (response.data?.status === 'ok' && response.data?.data?.command_id) {
       const cmdId = response.data.data.command_id
       // Ожидаем ответа от ноды
-      const result = await checkCommandStatus(cmdId, 30) // Максимум 30 секунд
+      let executionNotified = false
+      const result = await checkCommandStatus(cmdId, 30, (status) => {
+        if (status === 'ACCEPTED' && !executionNotified) {
+          executionNotified = true
+          showToast(`Выполнение: ${channelLabel}...`, 'info', TOAST_TIMEOUT.NORMAL)
+        }
+      }) // Максимум 30 секунд
       
       if (result.success) {
-        showToast(`Тест ${channelLabel} выполнен успешно!`, 'success', TOAST_TIMEOUT.LONG)
+        showToast(`Выполнено: ${channelLabel}`, 'success', TOAST_TIMEOUT.LONG)
       } else {
         const detail = formatCommandError(result.status, result.errorMessage, result.errorCode)
         showToast(`Ошибка теста ${channelLabel}: ${detail}`, 'error', TOAST_TIMEOUT.LONG)
@@ -591,13 +597,18 @@ function getChannelLabel(channelName, channelType) {
 }
 
 // Функция для проверки статуса команды
-async function checkCommandStatus(cmdId: number, maxAttempts = 30): Promise<{
+async function checkCommandStatus(
+  cmdId: number,
+  maxAttempts = 30,
+  onStatusChange?: (status: string) => void
+): Promise<{
   success: boolean
   status: string
   error?: string
   errorCode?: string
   errorMessage?: string
 }> {
+  let lastStatus: string | null = null
   for (let i = 0; i < maxAttempts; i++) {
     try {
       const response = await api.get<{
@@ -617,6 +628,12 @@ async function checkCommandStatus(cmdId: number, maxAttempts = 30): Promise<{
         const cmdStatus = response.data.data.status
         // Используем новые статусы из единого контракта
         const normalizedStatus = normalizeStatus(cmdStatus)
+        if (normalizedStatus !== lastStatus) {
+          lastStatus = normalizedStatus
+          if (onStatusChange) {
+            onStatusChange(normalizedStatus)
+          }
+        }
         if (normalizedStatus === 'DONE') {
           return { success: true, status: 'DONE' }
         } else if (['FAILED', 'TIMEOUT', 'SEND_FAILED'].includes(normalizedStatus)) {

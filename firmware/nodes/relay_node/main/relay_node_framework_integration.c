@@ -19,10 +19,26 @@
 #include "config_storage.h"
 #include "esp_log.h"
 #include "esp_err.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/timers.h"
 #include "cJSON.h"
 #include <string.h>
 
 static const char *TAG = "relay_node_fw";
+
+#define RELAY_NODE_MAX_AUTO_OFF_CHANNELS 16
+#define RELAY_NODE_MAX_CHANNEL_NAME_LEN 64
+#define RELAY_NODE_MAX_CMD_ID_LEN 64
+#define RELAY_NODE_MAX_AUTO_OFF_DURATION_MS 300000U
+
+typedef struct {
+    char channel_name[RELAY_NODE_MAX_CHANNEL_NAME_LEN];
+    char cmd_id[RELAY_NODE_MAX_CMD_ID_LEN];
+    TimerHandle_t timer;
+    bool in_use;
+} relay_node_auto_off_entry_t;
+
+static relay_node_auto_off_entry_t s_auto_off_entries[RELAY_NODE_MAX_AUTO_OFF_CHANNELS] = {0};
 
 // Forward declaration для callback safe_mode
 static esp_err_t relay_node_disable_actuators_in_safe_mode(void *user_ctx);
@@ -36,6 +52,118 @@ static void relay_node_build_error_details(
     const char **error_message_out,
     cJSON **extra_out
 );
+
+static void relay_node_auto_off_timer_cb(TimerHandle_t timer) {
+    relay_node_auto_off_entry_t *entry = (relay_node_auto_off_entry_t *) pvTimerGetTimerID(timer);
+    if (!entry || !entry->channel_name[0]) {
+        return;
+    }
+
+    esp_err_t err = relay_driver_set_state(entry->channel_name, RELAY_STATE_OPEN);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Auto-off failed for channel %s: %s",
+                 entry->channel_name, esp_err_to_name(err));
+    } else {
+        ESP_LOGI(TAG, "Auto-off: relay %s opened", entry->channel_name);
+    }
+
+    if (entry->cmd_id[0]) {
+        cJSON *done_response = node_command_handler_create_response(
+            entry->cmd_id,
+            "DONE",
+            NULL,
+            NULL,
+            NULL
+        );
+        if (done_response) {
+            char *json_str = cJSON_PrintUnformatted(done_response);
+            if (json_str) {
+                mqtt_manager_publish_command_response(entry->channel_name, json_str);
+                free(json_str);
+            }
+            cJSON_Delete(done_response);
+        }
+        node_command_handler_cache_final_status(entry->cmd_id, entry->channel_name, "DONE");
+        entry->cmd_id[0] = '\0';
+    }
+}
+
+static relay_node_auto_off_entry_t *relay_node_get_auto_off_entry(const char *channel, bool create) {
+    if (!channel || !channel[0]) {
+        return NULL;
+    }
+
+    for (size_t i = 0; i < RELAY_NODE_MAX_AUTO_OFF_CHANNELS; i++) {
+        if (s_auto_off_entries[i].in_use &&
+            strcmp(s_auto_off_entries[i].channel_name, channel) == 0) {
+            return &s_auto_off_entries[i];
+        }
+    }
+
+    if (!create) {
+        return NULL;
+    }
+
+    for (size_t i = 0; i < RELAY_NODE_MAX_AUTO_OFF_CHANNELS; i++) {
+        if (!s_auto_off_entries[i].in_use) {
+            relay_node_auto_off_entry_t *entry = &s_auto_off_entries[i];
+            entry->in_use = true;
+            strncpy(entry->channel_name, channel, sizeof(entry->channel_name) - 1);
+            entry->channel_name[sizeof(entry->channel_name) - 1] = '\0';
+            return entry;
+        }
+    }
+
+    ESP_LOGW(TAG, "Auto-off table full, cannot schedule for channel %s", channel);
+    return NULL;
+}
+
+static void relay_node_schedule_auto_off(const char *channel, const char *cmd_id, uint32_t duration_ms) {
+    relay_node_auto_off_entry_t *entry = relay_node_get_auto_off_entry(channel, true);
+    if (!entry) {
+        return;
+    }
+
+    if (cmd_id && cmd_id[0]) {
+        strncpy(entry->cmd_id, cmd_id, sizeof(entry->cmd_id) - 1);
+        entry->cmd_id[sizeof(entry->cmd_id) - 1] = '\0';
+    } else {
+        entry->cmd_id[0] = '\0';
+    }
+
+    if (!entry->timer) {
+        entry->timer = xTimerCreate("relay_off",
+                                    pdMS_TO_TICKS(1000),
+                                    pdFALSE,
+                                    entry,
+                                    relay_node_auto_off_timer_cb);
+        if (!entry->timer) {
+            ESP_LOGW(TAG, "Failed to create auto-off timer for channel %s", channel);
+            return;
+        }
+    }
+
+    if (xTimerChangePeriod(entry->timer, pdMS_TO_TICKS(duration_ms), 0) != pdPASS) {
+        ESP_LOGW(TAG, "Failed to set auto-off timer for channel %s", channel);
+        return;
+    }
+
+    if (xTimerStart(entry->timer, 0) != pdPASS) {
+        ESP_LOGW(TAG, "Failed to start auto-off timer for channel %s", channel);
+    }
+}
+
+static void relay_node_cancel_auto_off(const char *channel, bool clear_cmd_id) {
+    relay_node_auto_off_entry_t *entry = relay_node_get_auto_off_entry(channel, false);
+    if (!entry || !entry->timer) {
+        return;
+    }
+
+    xTimerStop(entry->timer, 0);
+    if (clear_cmd_id) {
+        entry->cmd_id[0] = '\0';
+    }
+}
 
 static cJSON *relay_node_copy_channels_from_config(void) {
     static char config_json[CONFIG_STORAGE_MAX_JSON_SIZE];
@@ -266,7 +394,21 @@ static esp_err_t handle_set_state(
         );
         return ESP_ERR_INVALID_ARG;
     }
+
+    cJSON *duration_item = cJSON_GetObjectItem(params, "duration_ms");
+    uint32_t duration_ms = 0;
+    if (cJSON_IsNumber(duration_item)) {
+        duration_ms = (uint32_t) cJSON_GetNumberValue(duration_item);
+    } else if (cJSON_IsString(duration_item) && duration_item->valuestring) {
+        duration_ms = (uint32_t) atoi(duration_item->valuestring);
+    }
+
+    if (duration_ms > RELAY_NODE_MAX_AUTO_OFF_DURATION_MS) {
+        duration_ms = RELAY_NODE_MAX_AUTO_OFF_DURATION_MS;
+    }
     
+    bool use_delayed_done = (state == 1 && duration_ms > 0);
+
     // Шаг 1: Отправляем ACCEPTED сразу при принятии команды
     if (cmd_id) {
         cJSON *accepted_response = node_command_handler_create_response(cmd_id, "ACCEPTED", NULL, NULL, NULL);
@@ -303,8 +445,15 @@ static esp_err_t handle_set_state(
             &error_details
         );
         node_state_manager_report_error(ERROR_LEVEL_ERROR, "relay_driver", err, error_message);
+        relay_node_cancel_auto_off(channel, true);
     } else {
-        final_status = "DONE";
+        if (use_delayed_done) {
+            final_status = "ACCEPTED";
+            relay_node_schedule_auto_off(channel, cmd_id, duration_ms);
+        } else {
+            final_status = "DONE";
+            relay_node_cancel_auto_off(channel, true);
+        }
     }
 
     *response = node_command_handler_create_response(

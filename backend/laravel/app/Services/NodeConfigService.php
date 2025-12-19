@@ -75,7 +75,9 @@ class NodeConfigService
         if ($node->channels->isEmpty()) {
             $nodeConfig = $node->config ?? [];
             if (isset($nodeConfig['channels']) && is_array($nodeConfig['channels'])) {
-                return $nodeConfig['channels'];
+                return array_map(function ($entry) {
+                    return is_array($entry) ? $this->stripForbiddenChannelFields($entry) : $entry;
+                }, $nodeConfig['channels']);
             }
 
             return [];
@@ -85,6 +87,7 @@ class NodeConfigService
 
         foreach ($node->channels as $channel) {
             $config = is_array($channel->config) ? $channel->config : [];
+            $config = $this->stripForbiddenChannelFields($config);
 
             $entry = $config;
             $entry['name'] = $channel->channel;
@@ -107,6 +110,19 @@ class NodeConfigService
         }
 
         return $channels;
+    }
+
+    private function stripForbiddenChannelFields(array $config): array
+    {
+        unset($config['gpio'], $config['pin']);
+
+        foreach ($config as $key => $value) {
+            if (is_array($value)) {
+                $config[$key] = $this->stripForbiddenChannelFields($value);
+            }
+        }
+
+        return $config;
     }
     
     /**

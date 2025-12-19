@@ -109,6 +109,14 @@ esp_err_t relay_driver_init(const relay_channel_config_t *channels, size_t chann
         channel->active_high = channels[i].active_high;
         channel->current_state = RELAY_STATE_OPEN; // По умолчанию разомкнуто
         channel->initialized = true;
+
+        if (!channel->active_high) {
+            esp_err_t pull_err = gpio_set_pull_mode(channel->gpio_pin, GPIO_PULLUP_ONLY);
+            if (pull_err != ESP_OK) {
+                ESP_LOGW(TAG, "Failed to enable pull-up on GPIO %d: %s",
+                         channel->gpio_pin, esp_err_to_name(pull_err));
+            }
+        }
         
         // Устанавливаем начальное состояние (разомкнуто)
         relay_driver_set_gpio_state(channel->gpio_pin, false, channel->active_high);
@@ -182,16 +190,15 @@ esp_err_t relay_driver_init_from_config(void) {
                         bool resolved_active_high = true;
                         relay_type_t resolved_relay_type = RELAY_TYPE_NO;
 
+                        bool hw_resolved = relay_driver_resolve_hw_gpio(
+                            name_item->valuestring,
+                            &resolved_gpio,
+                            &resolved_active_high,
+                            &resolved_relay_type
+                        );
+
                         if (gpio_item != NULL && cJSON_IsNumber(gpio_item)) {
                             resolved_gpio = (int)cJSON_GetNumberValue(gpio_item);
-                        } else {
-                            // GPIO не пришёл из конфига — пытаемся взять из аппаратной карты прошивки
-                            relay_driver_resolve_hw_gpio(
-                                name_item->valuestring,
-                                &resolved_gpio,
-                                &resolved_active_high,
-                                &resolved_relay_type
-                            );
                         }
 
                         if (resolved_gpio < 0) {
@@ -205,7 +212,7 @@ esp_err_t relay_driver_init_from_config(void) {
                         channel_names[relay_count][RELAY_DRIVER_MAX_STRING_LEN - 1] = '\0';
                         relay_cfg->channel_name = channel_names[relay_count];
                         relay_cfg->gpio_pin = resolved_gpio;
-                        relay_cfg->active_high = resolved_active_high; // По умолчанию active high, можно переопределить картой
+                        relay_cfg->active_high = resolved_active_high;
                         
                         // Определяем тип реле из fail_safe_mode или по умолчанию NO
                         if (fail_safe_item != NULL && cJSON_IsString(fail_safe_item)) {
