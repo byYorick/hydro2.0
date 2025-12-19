@@ -4,7 +4,7 @@
     <Card 
       v-if="targets.ph"
       :class="[
-        'transition-all duration-300 hover:border-opacity-80',
+        'transition-all duration-300 hover:border-emerald-300/50 hover:shadow-[0_15px_40px_rgba(48,240,201,0.15)]',
         getCardBorderClass(telemetry.ph, targets.ph.min, targets.ph.max)
       ]"
     >
@@ -61,7 +61,7 @@
     <Card 
       v-if="targets.ec"
       :class="[
-        'transition-all duration-300 hover:border-opacity-80',
+        'transition-all duration-300 hover:border-cyan-300/50 hover:shadow-[0_15px_40px_rgba(48,240,201,0.15)]',
         getCardBorderClass(telemetry.ec, targets.ec.min, targets.ec.max)
       ]"
     >
@@ -118,7 +118,7 @@
     <Card 
       v-if="targets.temp"
       :class="[
-        'transition-all duration-300 hover:border-opacity-80',
+        'transition-all duration-300 hover:border-amber-300/50 hover:shadow-[0_15px_40px_rgba(245,159,69,0.15)]',
         getCardBorderClass(telemetry.temperature, targets.temp.min, targets.temp.max)
       ]"
     >
@@ -175,7 +175,7 @@
     <Card 
       v-if="targets.humidity"
       :class="[
-        'transition-all duration-300 hover:border-opacity-80',
+        'transition-all duration-300 hover:border-cyan-200/50 hover:shadow-[0_15px_40px_rgba(48,240,201,0.15)]',
         getCardBorderClass(telemetry.humidity, targets.humidity.min, targets.humidity.max)
       ]"
     >
@@ -445,4 +445,3 @@ function getPulseClass(value: number | null | undefined, min: number | null | un
   }
 }
 </script>
-

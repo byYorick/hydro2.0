@@ -23,12 +23,12 @@ const props = withDefaults(defineProps<Props>(), {
 const attrs = useAttrs()
 
 const classes = computed(() => {
-  const base = 'inline-flex items-center justify-center rounded-xl font-semibold transition focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sky-500/50 shadow-sm'
+  const base = 'inline-flex items-center justify-center rounded-xl font-semibold transition duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-300/60 focus-visible:ring-offset-neutral-900 shadow-sm tracking-tight'
   const variants: Record<ButtonVariant, string> = {
-    primary: 'bg-gradient-to-r from-sky-600 to-sky-500 hover:from-sky-500 hover:to-sky-400 text-white shadow-[0_12px_24px_rgba(14,165,233,0.4)]',
-    secondary: 'bg-neutral-800 hover:bg-neutral-700 text-neutral-100 border border-transparent',
-    outline: 'border border-neutral-700 hover:border-neutral-600 text-neutral-100 bg-transparent',
-    ghost: 'bg-transparent text-neutral-100 hover:text-white hover:bg-neutral-900 border border-transparent',
+    primary: 'bg-gradient-to-r from-emerald-300/90 via-cyan-300/90 to-amber-300/90 text-neutral-900 hover:shadow-[0_15px_35px_rgba(48,240,201,0.25)]',
+    secondary: 'bg-neutral-900/80 text-slate-100 border border-slate-700/70 hover:border-slate-500/80 hover:shadow-[0_10px_30px_rgba(0,0,0,0.45)] backdrop-blur-md',
+    outline: 'border border-slate-600/70 text-slate-100 hover:border-emerald-300/70 hover:text-white bg-neutral-900/40',
+    ghost: 'bg-transparent text-slate-200 hover:text-white hover:bg-white/5 border border-transparent',
   }
   const sizes: Record<ButtonSize, string> = {
     sm: 'h-9 px-3 text-xs',

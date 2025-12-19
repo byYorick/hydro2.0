@@ -1,14 +1,52 @@
 <template>
   <div class="space-y-6">
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-      <h1 class="text-lg font-semibold">Панель агронома</h1>
-      <div class="flex flex-wrap gap-2">
-        <Link href="/recipes/create" class="flex-1 sm:flex-none min-w-[140px]">
-          <Button size="sm" variant="primary" class="w-full sm:w-auto">Создать рецепт</Button>
-        </Link>
-        <Link href="/analytics" class="flex-1 sm:flex-none min-w-[120px]">
-          <Button size="sm" variant="outline" class="w-full sm:w-auto">Аналитика</Button>
-        </Link>
+    <div class="glass-panel border border-slate-800/60 rounded-2xl p-5 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
+      <div class="flex flex-col gap-4">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <p class="text-[11px] uppercase tracking-[0.28em] text-slate-400">мониторинг агронома</p>
+            <h1 class="text-2xl font-semibold tracking-tight mt-1">Циклы выращивания и здоровье зон</h1>
+            <p class="text-sm text-slate-400 mt-1">Фокус на фазах, аномалиях и активных рецептах.</p>
+          </div>
+          <div class="flex flex-wrap gap-2 justify-end">
+            <Link href="/recipes/create" class="flex-1 sm:flex-none min-w-[140px]">
+              <Button size="sm" variant="primary" class="w-full sm:w-auto">Создать рецепт</Button>
+            </Link>
+            <Link href="/analytics" class="flex-1 sm:flex-none min-w-[120px]">
+              <Button size="sm" variant="secondary" class="w-full sm:w-auto">Аналитика</Button>
+            </Link>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div class="glass-panel border border-emerald-400/30 rounded-xl p-3 shadow-inner shadow-emerald-500/10">
+            <div class="text-xs text-slate-400 uppercase tracking-[0.15em] mb-1">Активные зоны</div>
+            <div class="flex items-end gap-2">
+              <div class="text-3xl font-semibold text-emerald-200">{{ activeZonesCount }}</div>
+              <div class="text-sm text-slate-400">из {{ totalZonesCount }}</div>
+            </div>
+          </div>
+          <div class="glass-panel border border-amber-400/30 rounded-xl p-3">
+            <div class="text-xs text-slate-400 uppercase tracking-[0.15em] mb-1">Предупреждения</div>
+            <div class="flex items-center gap-2">
+              <div class="text-3xl font-semibold text-amber-200">{{ warningZonesCount }}</div>
+              <Badge variant="warning" size="sm">warning</Badge>
+            </div>
+          </div>
+          <div class="glass-panel border border-rose-400/30 rounded-xl p-3">
+            <div class="text-xs text-slate-400 uppercase tracking-[0.15em] mb-1">Критические</div>
+            <div class="flex items-center gap-2">
+              <div class="text-3xl font-semibold text-rose-200">{{ alarmZonesCount }}</div>
+              <Badge variant="danger" size="sm">alarm</Badge>
+            </div>
+          </div>
+          <div class="glass-panel border border-cyan-300/30 rounded-xl p-3">
+            <div class="text-xs text-slate-400 uppercase tracking-[0.15em] mb-1">Активных рецептов</div>
+            <div class="flex items-center gap-2">
+              <div class="text-3xl font-semibold text-cyan-200">{{ activeRecipesCount }}</div>
+              <Badge variant="info" size="sm">recipes</Badge>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -389,6 +427,14 @@ const totalZonesCount = computed(() => {
   return props.dashboard.zones?.length || 0
 })
 
+const warningZonesCount = computed(() => {
+  return props.dashboard.zonesByStatus?.WARNING || 0
+})
+
+const alarmZonesCount = computed(() => {
+  return props.dashboard.zonesByStatus?.ALARM || 0
+})
+
 const activeRecipes = computed(() => {
   if (!props.dashboard.recipes) return []
   // Рецепты считаются активными, если они применены к зонам
@@ -462,4 +508,3 @@ function formatTimeUntil(timestamp: string | Date): string {
   return `${minutes} мин.`
 }
 </script>
-

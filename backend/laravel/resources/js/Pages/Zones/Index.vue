@@ -1,144 +1,178 @@
 <template>
   <AppLayout>
-    <div class="flex items-center justify-between mb-4">
-      <h1 class="text-lg font-semibold">Зоны</h1>
-      <Button
-        size="sm"
-        variant="secondary"
-        @click="showComparisonModal = true"
-        :disabled="filteredZones.length < 2"
-      >
-        📊 Сравнить зоны
-      </Button>
-    </div>
-
-    <div class="mb-3 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
-      <div class="flex items-center gap-2 flex-1 sm:flex-none">
-        <label class="text-sm text-neutral-300 shrink-0">Статус:</label>
-        <select v-model="status" class="h-9 flex-1 sm:w-auto sm:min-w-[140px] rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm">
-          <option value="">Все</option>
-          <option value="RUNNING">Запущено</option>
-          <option value="PAUSED">Приостановлено</option>
-          <option value="WARNING">Предупреждение</option>
-          <option value="ALARM">Тревога</option>
-        </select>
-      </div>
-      <div class="flex items-center gap-2 flex-1 sm:flex-none">
-        <label class="text-sm text-neutral-300 shrink-0">Поиск:</label>
-        <input v-model="query" placeholder="Имя зоны..." class="h-9 flex-1 sm:w-56 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
-      </div>
-      <div class="flex items-center gap-2 flex-1 sm:flex-none">
-        <button
-          @click="showOnlyFavorites = !showOnlyFavorites"
-          class="h-9 px-3 rounded-md border text-sm transition-colors flex items-center gap-1.5"
-          :class="showOnlyFavorites
-            ? 'border-amber-500 bg-amber-950/30 text-amber-300'
-            : 'border-neutral-700 bg-neutral-900 text-neutral-300 hover:border-neutral-600'"
-        >
-          <svg
-            class="w-4 h-4"
-            :class="showOnlyFavorites ? 'fill-amber-400' : ''"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"
-            />
-          </svg>
-          <span>Избранные</span>
-        </button>
-      </div>
-    </div>
-
-    <div class="rounded-xl border border-neutral-800 overflow-hidden max-h-[720px] flex flex-col">
-      <div class="overflow-auto flex-1">
-        <table class="w-full border-collapse">
-          <thead class="bg-neutral-900 text-neutral-300 text-sm sticky top-0 z-10">
-            <tr>
-              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">
-                <div class="flex items-center gap-2">
-                  <div class="w-5"></div>
-                  <span>Название</span>
-                </div>
-              </th>
-              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Статус</th>
-              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Теплица</th>
-              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">pH</th>
-              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">EC</th>
-              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Температура</th>
-              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Действия</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="(r, index) in rows"
-              :key="r[0]"
-              :class="index % 2 === 0 ? 'bg-neutral-950' : 'bg-neutral-925'"
-              class="text-sm border-b border-neutral-900 hover:bg-neutral-900 transition-colors"
+    <div class="space-y-4">
+      <div class="glass-panel border border-slate-800/60 rounded-2xl p-5 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <p class="text-[11px] uppercase tracking-[0.28em] text-slate-400">мониторинг зон</p>
+            <h1 class="text-2xl font-semibold tracking-tight mt-1">Зоны выращивания</h1>
+            <p class="text-sm text-slate-400 mt-1">Статусы, быстрые действия и сравнение зон.</p>
+          </div>
+          <div class="flex flex-wrap gap-2 justify-end">
+            <Button
+              size="sm"
+              variant="secondary"
+              @click="showComparisonModal = true"
+              :disabled="filteredZones.length < 2"
             >
-              <td class="px-3 py-2">
-                <div class="flex items-center gap-2 min-w-0">
-                  <button
-                    @click.stop="toggleZoneFavorite(getZoneIdFromRow(r))"
-                    class="p-0.5 rounded hover:bg-neutral-800 transition-colors shrink-0 w-5 h-5 flex items-center justify-center"
-                    :title="isZoneFavorite(getZoneIdFromRow(r)) ? 'Удалить из избранного' : 'Добавить в избранное'"
-                  >
-                    <svg
-                      class="w-3.5 h-3.5 transition-colors"
-                      :class="isZoneFavorite(getZoneIdFromRow(r)) ? 'text-amber-400 fill-amber-400' : 'text-neutral-600'"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"
-                      />
-                    </svg>
-                  </button>
-                  <Link :href="`/zones/${r[0]}`" class="text-sky-400 hover:underline truncate min-w-0">{{ r[1] }}</Link>
-                </div>
-              </td>
-              <td class="px-3 py-2">
-                <Badge :variant="getStatusVariant(r[2])" class="shrink-0">{{ r[2] }}</Badge>
-              </td>
-              <td class="px-3 py-2 text-xs text-neutral-400">
-                <span class="truncate block">{{ r[3] || '-' }}</span>
-              </td>
-              <td class="px-3 py-2 text-xs text-neutral-400">{{ r[4] || '-' }}</td>
-              <td class="px-3 py-2 text-xs text-neutral-400">{{ r[5] || '-' }}</td>
-              <td class="px-3 py-2 text-xs text-neutral-400">{{ r[6] || '-' }}</td>
-              <td class="px-3 py-2">
-                <Link :href="`/zones/${r[0]}`">
-                  <Button size="sm" variant="secondary">Подробнее</Button>
-                </Link>
-              </td>
-            </tr>
-            <tr v-if="!rows.length">
-              <td colspan="7" class="px-3 py-6 text-sm text-neutral-400 text-center">Нет зон по текущим фильтрам</td>
-            </tr>
-          </tbody>
-        </table>
+              📊 Сравнить зоны
+            </Button>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 mt-4">
+          <div class="glass-panel border border-emerald-400/30 rounded-xl p-3 shadow-inner shadow-emerald-500/10">
+            <div class="text-xs text-slate-400 uppercase tracking-[0.15em] mb-1">Активные</div>
+            <div class="text-3xl font-semibold text-emerald-200">{{ runningCount }}</div>
+          </div>
+          <div class="glass-panel border border-slate-600/40 rounded-xl p-3">
+            <div class="text-xs text-slate-400 uppercase tracking-[0.15em] mb-1">Пауза</div>
+            <div class="text-3xl font-semibold text-slate-200">{{ pausedCount }}</div>
+          </div>
+          <div class="glass-panel border border-amber-400/30 rounded-xl p-3">
+            <div class="text-xs text-slate-400 uppercase tracking-[0.15em] mb-1">Warning</div>
+            <div class="text-3xl font-semibold text-amber-200">{{ warningCount }}</div>
+          </div>
+          <div class="glass-panel border border-rose-400/30 rounded-xl p-3">
+            <div class="text-xs text-slate-400 uppercase tracking-[0.15em] mb-1">Alarm</div>
+            <div class="text-3xl font-semibold text-rose-200">{{ alarmCount }}</div>
+          </div>
+          <div class="glass-panel border border-cyan-300/30 rounded-xl p-3">
+            <div class="text-xs text-slate-400 uppercase tracking-[0.15em] mb-1">Всего</div>
+            <div class="text-3xl font-semibold text-cyan-200">{{ totalZones }}</div>
+          </div>
+        </div>
       </div>
-      <Pagination
-        v-model:current-page="currentPage"
-        v-model:per-page="perPage"
-        :total="filteredZones.length"
+
+      <div class="glass-panel border border-slate-800/60 rounded-2xl p-4 shadow-lg shadow-black/30">
+        <div class="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
+          <div class="flex items-center gap-2 flex-1 sm:flex-none">
+            <label class="text-sm text-slate-300 shrink-0">Статус:</label>
+            <select v-model="status" class="h-10 flex-1 sm:w-auto sm:min-w-[160px] rounded-lg border border-slate-700/70 bg-neutral-950/70 px-3 text-sm focus:ring-2 focus:ring-emerald-300/60 focus:outline-none">
+              <option value="">Все</option>
+              <option value="RUNNING">Запущено</option>
+              <option value="PAUSED">Приостановлено</option>
+              <option value="WARNING">Предупреждение</option>
+              <option value="ALARM">Тревога</option>
+            </select>
+          </div>
+          <div class="flex items-center gap-2 flex-1 sm:flex-none">
+            <label class="text-sm text-slate-300 shrink-0">Поиск:</label>
+            <input v-model="query" placeholder="Имя зоны..." class="h-10 flex-1 sm:w-64 rounded-lg border border-slate-700/70 bg-neutral-950/70 px-3 text-sm focus:ring-2 focus:ring-emerald-300/60 focus:outline-none" />
+          </div>
+          <div class="flex items-center gap-2 flex-1 sm:flex-none">
+            <button
+              @click="showOnlyFavorites = !showOnlyFavorites"
+              class="h-10 px-3 rounded-lg border text-sm transition-colors flex items-center gap-1.5 bg-neutral-950/70"
+              :class="showOnlyFavorites
+                ? 'border-amber-500/70 text-amber-200 shadow-[0_0_0_1px_rgba(245,159,69,0.35)]'
+                : 'border-slate-700/70 text-slate-200 hover:border-slate-500/70'"
+            >
+              <svg
+                class="w-4 h-4"
+                :class="showOnlyFavorites ? 'fill-amber-400' : ''"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"
+                />
+              </svg>
+              <span>Избранные</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="glass-panel border border-slate-800/60 rounded-2xl overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.35)] max-h-[720px] flex flex-col">
+        <div class="overflow-auto flex-1">
+          <table class="w-full border-collapse">
+            <thead class="bg-neutral-950/80 text-slate-200 text-sm sticky top-0 z-10 backdrop-blur-md">
+              <tr>
+                <th class="text-left px-4 py-3 font-semibold border-b border-slate-800/70">
+                  <div class="flex items-center gap-2">
+                    <div class="w-5"></div>
+                    <span>Название</span>
+                  </div>
+                </th>
+                <th class="text-left px-4 py-3 font-semibold border-b border-slate-800/70">Статус</th>
+                <th class="text-left px-4 py-3 font-semibold border-b border-slate-800/70">Теплица</th>
+                <th class="text-left px-4 py-3 font-semibold border-b border-slate-800/70">pH</th>
+                <th class="text-left px-4 py-3 font-semibold border-b border-slate-800/70">EC</th>
+                <th class="text-left px-4 py-3 font-semibold border-b border-slate-800/70">Температура</th>
+                <th class="text-left px-4 py-3 font-semibold border-b border-slate-800/70">Действия</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="(r, index) in rows"
+                :key="r[0]"
+                :class="index % 2 === 0 ? 'bg-neutral-950/60' : 'bg-neutral-900/50'"
+                class="text-sm border-b border-slate-900/70 hover:bg-white/5 transition-colors"
+              >
+                <td class="px-4 py-3">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <button
+                      @click.stop="toggleZoneFavorite(getZoneIdFromRow(r))"
+                      class="p-1 rounded-md hover:bg-white/5 transition-colors shrink-0 w-8 h-8 flex items-center justify-center"
+                      :title="isZoneFavorite(getZoneIdFromRow(r)) ? 'Удалить из избранного' : 'Добавить в избранное'"
+                    >
+                      <svg
+                        class="w-4 h-4 transition-colors"
+                        :class="isZoneFavorite(getZoneIdFromRow(r)) ? 'text-amber-400 fill-amber-400' : 'text-slate-500'"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"
+                        />
+                      </svg>
+                    </button>
+                    <Link :href="`/zones/${r[0]}`" class="text-cyan-200 hover:underline truncate min-w-0 font-semibold">{{ r[1] }}</Link>
+                  </div>
+                </td>
+                <td class="px-4 py-3">
+                  <Badge :variant="getStatusVariant(r[2])" class="shrink-0">{{ r[2] }}</Badge>
+                </td>
+                <td class="px-4 py-3 text-xs text-slate-300">
+                  <span class="truncate block">{{ r[3] || '-' }}</span>
+                </td>
+                <td class="px-4 py-3 text-xs text-slate-300">{{ r[4] || '-' }}</td>
+                <td class="px-4 py-3 text-xs text-slate-300">{{ r[5] || '-' }}</td>
+                <td class="px-4 py-3 text-xs text-slate-300">{{ r[6] || '-' }}</td>
+                <td class="px-4 py-3">
+                  <Link :href="`/zones/${r[0]}`">
+                    <Button size="sm" variant="secondary">Подробнее</Button>
+                  </Link>
+                </td>
+              </tr>
+              <tr v-if="!rows.length">
+                <td colspan="7" class="px-4 py-6 text-sm text-slate-400 text-center">Нет зон по текущим фильтрам</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <Pagination
+          v-model:current-page="currentPage"
+          v-model:per-page="perPage"
+          :total="filteredZones.length"
+        />
+      </div>
+
+      <!-- Модальное окно сравнения зон -->
+      <ZoneComparisonModal
+        :open="showComparisonModal"
+        :zones="filteredZones"
+        @close="showComparisonModal = false"
       />
     </div>
-
-    <!-- Модальное окно сравнения зон -->
-    <ZoneComparisonModal
-      :open="showComparisonModal"
-      :zones="filteredZones"
-      @close="showComparisonModal = false"
-    />
   </AppLayout>
 </template>
 
@@ -167,6 +201,12 @@ zonesStore.initFromProps(page.props)
 
 // Используем getter allZones для получения всех зон
 const zones = computed(() => zonesStore.allZones)
+
+const totalZones = computed(() => zones.value.length || 0)
+const runningCount = computed(() => zones.value.filter((z) => z.status === 'RUNNING').length)
+const pausedCount = computed(() => zones.value.filter((z) => z.status === 'PAUSED').length)
+const warningCount = computed(() => zones.value.filter((z) => z.status === 'WARNING').length)
+const alarmCount = computed(() => zones.value.filter((z) => z.status === 'ALARM').length)
 
 // Оптимизированные batch updates для обновлений зон
 // Используем silent: true чтобы предотвратить рекурсию (события уже были эмитнуты извне)
@@ -381,4 +421,3 @@ td:last-child {
   text-align: center;
 }
 </style>
-

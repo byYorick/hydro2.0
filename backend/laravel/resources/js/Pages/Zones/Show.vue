@@ -1,155 +1,163 @@
 <template>
   <AppLayout>
-    <div class="flex flex-col gap-3">
-      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div class="flex-1 min-w-0">
-          <div class="text-lg font-semibold truncate">{{ zone.name }}</div>
-          <div class="text-xs text-neutral-400 mt-1">
-            <span v-if="zone.description" class="block sm:inline">{{ zone.description }}</span>
-            <span v-if="zone.recipeInstance?.recipe" class="block sm:inline sm:ml-1">
-              <span v-if="zone.description" class="hidden sm:inline">·</span>
-              Рецепт: {{ zone.recipeInstance.recipe.name }}
-              <span v-if="zone.recipeInstance.current_phase_index !== null">
-                (фаза {{ zone.recipeInstance.current_phase_index + 1 }})
-              </span>
-            </span>
+    <div class="space-y-4">
+      <div class="glass-panel border border-slate-800/60 rounded-2xl p-5 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
+        <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div class="flex-1 min-w-0">
+            <p class="text-[11px] uppercase tracking-[0.28em] text-slate-400">зона выращивания</p>
+            <div class="flex items-center gap-3 mt-1">
+              <div class="text-2xl font-semibold truncate">{{ zone.name }}</div>
+              <Badge :variant="variant" class="shrink-0" data-testid="zone-status-badge">{{ translateStatus(zone.status) }}</Badge>
+            </div>
+            <div class="text-sm text-slate-400 mt-1 space-y-1">
+              <div v-if="zone.description" class="truncate">{{ zone.description }}</div>
+              <div v-if="zone.recipeInstance?.recipe" class="flex items-center gap-2 text-xs uppercase tracking-[0.12em]">
+                <span class="text-slate-500">Рецепт</span>
+                <span class="text-cyan-200 font-semibold">{{ zone.recipeInstance.recipe.name }}</span>
+                <span v-if="zone.recipeInstance.current_phase_index !== null" class="text-slate-400">фаза {{ zone.recipeInstance.current_phase_index + 1 }}</span>
+              </div>
+            </div>
           </div>
-        </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <Badge :variant="variant" class="shrink-0" data-testid="zone-status-badge">{{ translateStatus(zone.status) }}</Badge>
-          <template v-if="page.props.auth?.user?.role === 'admin' || page.props.auth?.user?.role === 'operator'">
-            <Button size="sm" variant="secondary" @click="onToggle" :disabled="loading.toggle" class="flex-1 sm:flex-none min-w-[120px]" :data-testid="zone.status === 'PAUSED' ? 'zone-resume-btn' : 'zone-pause-btn'">
-              <template v-if="loading.toggle">
-                <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
-              </template>
-              <span class="hidden sm:inline">{{ zone.status === 'PAUSED' ? 'Возобновить' : 'Приостановить' }}</span>
-              <span class="sm:hidden">{{ zone.status === 'PAUSED' ? '▶' : '⏸' }}</span>
+          <div class="flex flex-wrap items-center gap-2 justify-end">
+            <template v-if="page.props.auth?.user?.role === 'admin' || page.props.auth?.user?.role === 'operator'">
+              <Button size="sm" variant="secondary" @click="onToggle" :disabled="loading.toggle" class="flex-1 sm:flex-none min-w-[140px]" :data-testid="zone.status === 'PAUSED' ? 'zone-resume-btn' : 'zone-pause-btn'">
+                <template v-if="loading.toggle">
+                  <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
+                </template>
+                <span class="hidden sm:inline">{{ zone.status === 'PAUSED' ? 'Возобновить' : 'Приостановить' }}</span>
+                <span class="sm:hidden">{{ zone.status === 'PAUSED' ? '▶' : '⏸' }}</span>
+              </Button>
+              <Button size="sm" variant="outline" @click="openActionModal('FORCE_IRRIGATION')" :disabled="loading.irrigate" class="flex-1 sm:flex-none" data-testid="force-irrigation-button">
+                <template v-if="loading.irrigate">
+                  <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
+                </template>
+                <span class="hidden sm:inline">Полить сейчас</span>
+                <span class="sm:hidden">💧</span>
+              </Button>
+              <Button size="sm" @click="onNextPhase" :disabled="loading.nextPhase" class="flex-1 sm:flex-none" data-testid="next-phase-button">
+                <template v-if="loading.nextPhase">
+                  <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
+                </template>
+                <span class="hidden sm:inline">Следующая фаза</span>
+                <span class="sm:hidden">⏭</span>
+              </Button>
+            </template>
+            <Button size="sm" variant="outline" @click="modals.open('simulation')" class="flex-1 sm:flex-none">
+              <span class="hidden sm:inline">Симуляция</span>
+              <span class="sm:hidden">🧪</span>
             </Button>
-            <Button size="sm" variant="outline" @click="openActionModal('FORCE_IRRIGATION')" :disabled="loading.irrigate" class="flex-1 sm:flex-none" data-testid="force-irrigation-button">
-              <template v-if="loading.irrigate">
-                <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
-              </template>
-              <span class="hidden sm:inline">Полить сейчас</span>
-              <span class="sm:hidden">💧</span>
-            </Button>
-            <Button size="sm" @click="onNextPhase" :disabled="loading.nextPhase" class="flex-1 sm:flex-none" data-testid="next-phase-button">
-              <template v-if="loading.nextPhase">
-                <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
-              </template>
-              <span class="hidden sm:inline">Следующая фаза</span>
-              <span class="sm:hidden">⏭</span>
-            </Button>
-          </template>
-          <Button size="sm" variant="outline" @click="modals.open('simulation')" class="flex-1 sm:flex-none">
-            <span class="hidden sm:inline">Симуляция</span>
-            <span class="sm:hidden">🧪</span>
-          </Button>
+          </div>
         </div>
       </div>
 
-      <!-- Target vs Actual (основная метрика зоны) -->
-      <ZoneTargets :telemetry="telemetry" :targets="targets" />
-
-      <!-- Прогресс стадий цикла -->
-      <StageProgress
-        v-if="zone.recipeInstance"
-        :recipe-instance="zone.recipeInstance"
-        :phase-progress="computedPhaseProgress"
-        :phase-days-elapsed="computedPhaseDaysElapsed"
-        :phase-days-total="computedPhaseDaysTotal"
-        :started-at="zone.recipeInstance.started_at"
-      />
-
-      <div class="grid grid-cols-1 xl:grid-cols-3 gap-3">
-        <div class="xl:col-span-2 space-y-3">
-          <!-- Мульти-серии график pH + EC -->
-          <MultiSeriesTelemetryChart
-            v-if="chartDataPh.length > 0 || chartDataEc.length > 0"
-            title="pH и EC"
-            :series="multiSeriesData"
-            :time-range="chartTimeRange"
-            @time-range-change="onChartTimeRangeChange"
-          />
-          <!-- Отдельные графики как fallback или опционально -->
-          <div v-if="showSeparateCharts" class="space-y-3">
-            <ZoneTelemetryChart 
-              title="pH" 
-              :data="chartDataPh" 
-              series-name="pH"
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div class="lg:col-span-2 space-y-4">
+          <div class="glass-panel border border-slate-800/60 rounded-2xl p-4 shadow-[0_15px_45px_rgba(0,0,0,0.35)]">
+            <ZoneTargets :telemetry="telemetry" :targets="targets" />
+          </div>
+          <div
+            v-if="zone.recipeInstance"
+            class="glass-panel border border-slate-800/60 rounded-2xl p-4 shadow-[0_15px_45px_rgba(0,0,0,0.35)]"
+          >
+            <StageProgress
+              :recipe-instance="zone.recipeInstance"
+              :phase-progress="computedPhaseProgress"
+              :phase-days-elapsed="computedPhaseDaysElapsed"
+              :phase-days-total="computedPhaseDaysTotal"
+              :started-at="zone.recipeInstance.started_at"
+            />
+          </div>
+          <div class="glass-panel border border-slate-800/60 rounded-2xl p-4 shadow-[0_15px_45px_rgba(0,0,0,0.35)] space-y-3">
+            <!-- Мульти-серии график pH + EC -->
+            <MultiSeriesTelemetryChart
+              v-if="chartDataPh.length > 0 || chartDataEc.length > 0"
+              title="pH и EC"
+              :series="multiSeriesData"
               :time-range="chartTimeRange"
               @time-range-change="onChartTimeRangeChange"
             />
-            <ZoneTelemetryChart 
-              title="EC" 
-              :data="chartDataEc" 
-              series-name="EC"
-              :time-range="chartTimeRange"
-              @time-range-change="onChartTimeRangeChange"
-            />
+            <!-- Отдельные графики как fallback или опционально -->
+            <div v-if="showSeparateCharts" class="space-y-3">
+              <ZoneTelemetryChart 
+                title="pH" 
+                :data="chartDataPh" 
+                series-name="pH"
+                :time-range="chartTimeRange"
+                @time-range-change="onChartTimeRangeChange"
+              />
+              <ZoneTelemetryChart 
+                title="EC" 
+                :data="chartDataEc" 
+                series-name="EC"
+                :time-range="chartTimeRange"
+                @time-range-change="onChartTimeRangeChange"
+              />
+            </div>
           </div>
         </div>
-        <!-- Визуализация устройств зоны -->
-        <ZoneDevicesVisualization
-          :zone-name="zone.name"
-          :zone-status="zone.status"
-          :devices="devices"
-          :can-manage="page.props.auth?.user?.role === 'admin' || page.props.auth?.user?.role === 'operator'"
-          @attach="showAttachNodesModal = true"
-          @configure="(device) => openNodeConfig(device.id, device)"
-        />
-        
-        <!-- Ошибки узлов зоны -->
-        <UnassignedNodeErrorsWidget :zone-id="zone.id" :limit="5" />
-        
-        <!-- Рецепт зоны -->
-        <Card>
-          <div class="flex items-center justify-between mb-2">
-            <div class="text-sm font-semibold">Рецепт</div>
-            <template v-if="page.props.auth?.user?.role === 'admin' || page.props.auth?.user?.role === 'operator'">
-              <Button
-                size="sm"
-                :variant="zone.recipeInstance?.recipe ? 'secondary' : 'primary'"
-                @click="modals.open('attachRecipe')"
-                data-testid="recipe-attach-btn"
-              >
-                {{ zone.recipeInstance?.recipe ? 'Изменить рецепт' : 'Привязать рецепт' }}
-              </Button>
-            </template>
+        <div class="space-y-4">
+          <div class="glass-panel border border-slate-800/60 rounded-2xl p-4 shadow-[0_15px_45px_rgba(0,0,0,0.35)]">
+            <ZoneDevicesVisualization
+              :zone-name="zone.name"
+              :zone-status="zone.status"
+              :devices="devices"
+              :can-manage="page.props.auth?.user?.role === 'admin' || page.props.auth?.user?.role === 'operator'"
+              @attach="showAttachNodesModal = true"
+              @configure="(device) => openNodeConfig(device.id, device)"
+            />
           </div>
-          <div v-if="zone.recipeInstance?.recipe" class="text-sm text-neutral-300">
-            <div class="font-semibold">{{ zone.recipeInstance.recipe.name }}</div>
-            <div class="text-xs text-neutral-400">
-              Фаза {{ (zone.recipeInstance.current_phase_index || 0) + 1 }} из {{ zone.recipeInstance.recipe.phases?.length || 0 }}
-              <span v-if="zone.recipeInstance.current_phase_name">
-                — {{ zone.recipeInstance.current_phase_name }}
-              </span>
-            </div>
-            <div class="mt-2 flex flex-wrap items-center gap-2">
-              <Badge :variant="cycleStatusVariant" class="text-[10px] px-2 py-0.5">
-                {{ cycleStatusLabel }}
-              </Badge>
-              <span v-if="phaseTimeLeftLabel" class="text-[11px] text-neutral-400">
-                {{ phaseTimeLeftLabel }}
-              </span>
-            </div>
+          <div class="glass-panel border border-slate-800/60 rounded-2xl p-4 shadow-[0_15px_45px_rgba(0,0,0,0.35)]">
+            <UnassignedNodeErrorsWidget :zone-id="zone.id" :limit="5" />
           </div>
-          <div v-else class="space-y-2">
-            <div class="text-sm text-neutral-400">
-              Рецепт не привязан
-              <span
-                v-if="zone.recipeInstance && !zone.recipeInstance.recipe"
-                class="text-amber-400 text-xs block mt-1"
-              >
-                Данные рецепта пока не загружены. Обновите страницу или привяжите рецепт заново.
-              </span>
+          <Card>
+            <div class="flex items-center justify-between mb-2">
+              <div class="text-sm font-semibold">Рецепт</div>
+              <template v-if="page.props.auth?.user?.role === 'admin' || page.props.auth?.user?.role === 'operator'">
+                <Button
+                  size="sm"
+                  :variant="zone.recipeInstance?.recipe ? 'secondary' : 'primary'"
+                  @click="modals.open('attachRecipe')"
+                  data-testid="recipe-attach-btn"
+                >
+                  {{ zone.recipeInstance?.recipe ? 'Изменить рецепт' : 'Привязать рецепт' }}
+                </Button>
+              </template>
             </div>
-            <template v-if="page.props.auth?.user?.role === 'admin' || page.props.auth?.user?.role === 'operator'">
-              <div class="text-xs text-neutral-500">
-                Привяжите рецепт для автоматического управления фазами выращивания
+            <div v-if="zone.recipeInstance?.recipe" class="text-sm text-neutral-300">
+              <div class="font-semibold">{{ zone.recipeInstance.recipe.name }}</div>
+              <div class="text-xs text-neutral-400">
+                Фаза {{ (zone.recipeInstance.current_phase_index || 0) + 1 }} из {{ zone.recipeInstance.recipe.phases?.length || 0 }}
+                <span v-if="zone.recipeInstance.current_phase_name">
+                  — {{ zone.recipeInstance.current_phase_name }}
+                </span>
               </div>
-            </template>
-          </div>
-        </Card>
+              <div class="mt-2 flex flex-wrap items-center gap-2">
+                <Badge :variant="cycleStatusVariant" class="text-[10px] px-2 py-0.5">
+                  {{ cycleStatusLabel }}
+                </Badge>
+                <span v-if="phaseTimeLeftLabel" class="text-[11px] text-neutral-400">
+                  {{ phaseTimeLeftLabel }}
+                </span>
+              </div>
+            </div>
+            <div v-else class="space-y-2">
+              <div class="text-sm text-neutral-400">
+                Рецепт не привязан
+                <span
+                  v-if="zone.recipeInstance && !zone.recipeInstance.recipe"
+                  class="text-amber-400 text-xs block mt-1"
+                >
+                  Данные рецепта пока не загружены. Обновите страницу или привяжите рецепт заново.
+                </span>
+              </div>
+              <template v-if="page.props.auth?.user?.role === 'admin' || page.props.auth?.user?.role === 'operator'">
+                <div class="text-xs text-neutral-500">
+                  Привяжите рецепт для автоматического управления фазами выращивания
+                </div>
+              </template>
+            </div>
+          </Card>
+        </div>
       </div>
 
       <!-- Cycles (расписание подсистем) -->

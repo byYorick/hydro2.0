@@ -23,87 +23,91 @@
         :dashboard="dashboard"
       />
       <!-- Дефолтный Dashboard для остальных случаев -->
-      <div v-else>
-        <div class="flex items-center justify-between mb-4">
-          <h1 class="text-lg font-semibold">Панель управления</h1>
-        <div class="flex gap-2">
-          <Link href="/greenhouses">
-            <Button size="sm" variant="secondary">Теплицы</Button>
-          </Link>
+      <div v-else class="space-y-6">
+        <div class="glass-panel border border-slate-800/60 rounded-2xl p-5 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
+          <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <p class="text-[11px] uppercase tracking-[0.28em] text-slate-400">обзор системы</p>
+              <h1 class="text-2xl font-semibold tracking-tight mt-1">Мониторинг теплиц и зон</h1>
+              <p class="text-sm text-slate-400 mt-1">Сводка по теплицам, зонам, устройствам и активным алертам.</p>
+            </div>
+            <div class="flex gap-2 justify-end">
+              <Link href="/greenhouses">
+                <Button size="sm" variant="secondary">Перейти к теплицам</Button>
+              </Link>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4 mt-4">
+            <Card class="hover:border-emerald-300/40 hover:shadow-[0_12px_40px_rgba(48,240,201,0.12)]">
+              <div class="flex items-start justify-between mb-2">
+                <div class="text-slate-400 text-xs font-medium uppercase tracking-[0.15em]">Теплицы</div>
+                <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-300/30 to-cyan-300/30 border border-emerald-400/40 flex items-center justify-center">
+                  <svg class="w-4 h-4 text-emerald-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                  </svg>
+                </div>
+              </div>
+              <div class="text-3xl font-bold text-emerald-100">{{ dashboard.greenhousesCount }}</div>
+            </Card>
+            <Card class="hover:border-cyan-300/40 hover:shadow-[0_12px_40px_rgba(48,240,201,0.12)]" data-testid="dashboard-zones-count">
+              <div class="flex items-start justify-between mb-2">
+                <div class="text-slate-400 text-xs font-medium uppercase tracking-[0.15em]">Зоны</div>
+                <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-300/30 to-emerald-300/30 border border-cyan-400/40 flex items-center justify-center">
+                  <svg class="w-4 h-4 text-cyan-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                  </svg>
+                </div>
+              </div>
+              <div class="text-3xl font-bold text-cyan-100 mb-2">{{ dashboard.zonesCount }}</div>
+              <div v-if="zonesStatusSummary" class="flex flex-wrap gap-1.5 text-xs">
+                <span v-if="zonesStatusSummary.RUNNING" class="px-1.5 py-0.5 rounded bg-emerald-900/30 text-emerald-300 border border-emerald-700/50">
+                  Запущено: {{ zonesStatusSummary.RUNNING }}
+                </span>
+                <span v-if="zonesStatusSummary.PAUSED" class="px-1.5 py-0.5 rounded bg-slate-900/70 text-slate-300 border border-slate-700/50">
+                  Пауза: {{ zonesStatusSummary.PAUSED }}
+                </span>
+                <span v-if="zonesStatusSummary.ALARM" class="px-1.5 py-0.5 rounded bg-rose-900/40 text-rose-200 border border-rose-700/60">
+                  Тревога: {{ zonesStatusSummary.ALARM }}
+                </span>
+                <span v-if="zonesStatusSummary.WARNING" class="px-1.5 py-0.5 rounded bg-amber-900/40 text-amber-200 border border-amber-700/60">
+                  Предупреждение: {{ zonesStatusSummary.WARNING }}
+                </span>
+              </div>
+            </Card>
+            <Card class="hover:border-purple-300/40 hover:shadow-[0_12px_40px_rgba(168,85,247,0.12)]">
+              <div class="flex items-start justify-between mb-2">
+                <div class="text-slate-400 text-xs font-medium uppercase tracking-[0.15em]">Устройства</div>
+                <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-400/30 to-indigo-400/30 border border-purple-400/50 flex items-center justify-center">
+                  <svg class="w-4 h-4 text-purple-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m-2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+                  </svg>
+                </div>
+              </div>
+              <div class="text-3xl font-bold text-purple-100 mb-2">{{ dashboard.devicesCount }}</div>
+              <div v-if="nodesStatusSummary" class="flex flex-wrap gap-1.5 text-xs">
+                <span v-if="nodesStatusSummary.online" class="px-1.5 py-0.5 rounded bg-emerald-900/30 text-emerald-300 border border-emerald-700/50">
+                  Онлайн: {{ nodesStatusSummary.online }}
+                </span>
+                <span v-if="nodesStatusSummary.offline" class="px-1.5 py-0.5 rounded bg-rose-900/40 text-rose-200 border border-rose-700/60">
+                  Офлайн: {{ nodesStatusSummary.offline }}
+                </span>
+              </div>
+            </Card>
+            <Card class="hover:border-rose-300/40 hover:shadow-[0_12px_40px_rgba(255,77,103,0.14)]" :class="dashboard.alertsCount > 0 ? 'border-rose-800/60' : ''" data-testid="dashboard-alerts-count">
+              <div class="flex items-start justify-between mb-2">
+                <div class="text-slate-400 text-xs font-medium uppercase tracking-[0.15em]">Активные алерты</div>
+                <div class="w-9 h-9 rounded-xl flex items-center justify-center" :class="dashboard.alertsCount > 0 ? 'bg-rose-900/40 border border-rose-700/60' : 'bg-emerald-900/30 border border-emerald-700/50'">
+                  <svg class="w-4 h-4" :class="dashboard.alertsCount > 0 ? 'text-rose-200' : 'text-emerald-200'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+              </div>
+              <div class="text-3xl font-bold" :class="dashboard.alertsCount > 0 ? 'text-rose-200' : 'text-emerald-200'">
+                {{ dashboard.alertsCount }}
+              </div>
+            </Card>
+          </div>
         </div>
-      </div>
-      
-      <!-- Основные статистики -->
-      <div class="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4 mb-6">
-        <Card class="hover:border-neutral-700 transition-all duration-200 hover:shadow-lg">
-          <div class="flex items-start justify-between mb-2">
-            <div class="text-neutral-400 text-xs font-medium uppercase tracking-wide">Теплицы</div>
-            <div class="w-8 h-8 rounded-lg bg-sky-900/30 border border-sky-700/50 flex items-center justify-center">
-              <svg class="w-4 h-4 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-              </svg>
-            </div>
-          </div>
-          <div class="text-3xl font-bold text-neutral-100">{{ dashboard.greenhousesCount }}</div>
-        </Card>
-        <Card class="hover:border-neutral-700 transition-all duration-200 hover:shadow-lg" data-testid="dashboard-zones-count">
-          <div class="flex items-start justify-between mb-2">
-            <div class="text-neutral-400 text-xs font-medium uppercase tracking-wide">Зоны</div>
-            <div class="w-8 h-8 rounded-lg bg-emerald-900/30 border border-emerald-700/50 flex items-center justify-center">
-              <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-              </svg>
-            </div>
-          </div>
-          <div class="text-3xl font-bold text-neutral-100 mb-2">{{ dashboard.zonesCount }}</div>
-          <div v-if="zonesStatusSummary" class="flex flex-wrap gap-1.5 text-xs">
-            <span v-if="zonesStatusSummary.RUNNING" class="px-1.5 py-0.5 rounded bg-emerald-900/30 text-emerald-400 border border-emerald-700/50">
-              Запущено: {{ zonesStatusSummary.RUNNING }}
-            </span>
-            <span v-if="zonesStatusSummary.PAUSED" class="px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-400 border border-neutral-700">
-              Пауза: {{ zonesStatusSummary.PAUSED }}
-            </span>
-            <span v-if="zonesStatusSummary.ALARM" class="px-1.5 py-0.5 rounded bg-red-900/30 text-red-400 border border-red-700/50">
-              Тревога: {{ zonesStatusSummary.ALARM }}
-            </span>
-            <span v-if="zonesStatusSummary.WARNING" class="px-1.5 py-0.5 rounded bg-amber-900/30 text-amber-400 border border-amber-700/50">
-              Предупреждение: {{ zonesStatusSummary.WARNING }}
-            </span>
-          </div>
-        </Card>
-        <Card class="hover:border-neutral-700 transition-all duration-200 hover:shadow-lg">
-          <div class="flex items-start justify-between mb-2">
-            <div class="text-neutral-400 text-xs font-medium uppercase tracking-wide">Устройства</div>
-            <div class="w-8 h-8 rounded-lg bg-purple-900/30 border border-purple-700/50 flex items-center justify-center">
-              <svg class="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m-2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
-              </svg>
-            </div>
-          </div>
-          <div class="text-3xl font-bold text-neutral-100 mb-2">{{ dashboard.devicesCount }}</div>
-          <div v-if="nodesStatusSummary" class="flex flex-wrap gap-1.5 text-xs">
-            <span v-if="nodesStatusSummary.online" class="px-1.5 py-0.5 rounded bg-emerald-900/30 text-emerald-400 border border-emerald-700/50">
-              Онлайн: {{ nodesStatusSummary.online }}
-            </span>
-            <span v-if="nodesStatusSummary.offline" class="px-1.5 py-0.5 rounded bg-red-900/30 text-red-400 border border-red-700/50">
-              Офлайн: {{ nodesStatusSummary.offline }}
-            </span>
-          </div>
-        </Card>
-        <Card class="hover:border-neutral-700 transition-all duration-200 hover:shadow-lg" :class="dashboard.alertsCount > 0 ? 'border-red-800/50' : ''" data-testid="dashboard-alerts-count">
-          <div class="flex items-start justify-between mb-2">
-            <div class="text-neutral-400 text-xs font-medium uppercase tracking-wide">Активные алерты</div>
-            <div class="w-8 h-8 rounded-lg flex items-center justify-center" :class="dashboard.alertsCount > 0 ? 'bg-red-900/30 border border-red-700/50' : 'bg-emerald-900/30 border border-emerald-700/50'">
-              <svg class="w-4 h-4" :class="dashboard.alertsCount > 0 ? 'text-red-400' : 'text-emerald-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-            </div>
-          </div>
-          <div class="text-3xl font-bold" :class="dashboard.alertsCount > 0 ? 'text-red-400' : 'text-emerald-400'">
-            {{ dashboard.alertsCount }}
-          </div>
-        </Card>
-      </div>
 
       <!-- Быстрые действия -->
       <div v-if="!hasGreenhouses || dashboard.greenhousesCount === 0" class="mb-6">
@@ -816,4 +820,3 @@ onUnmounted(() => {
 })
 
 </script>
-
