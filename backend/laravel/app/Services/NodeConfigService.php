@@ -40,8 +40,7 @@ class NodeConfigService
                 $ghUid = $node->zone->greenhouse->uid ?? 'gh-' . $node->zone->greenhouse->id;
             }
         }
-        // Каналы задаются прошивкой и не отправляются сервером
-        $channels = [];
+        $channels = $this->buildChannelsConfig($node);
         
         // Формируем wifi конфигурацию
         $wifi = $this->getWifiConfig($node, $includeCredentials);
@@ -64,6 +63,50 @@ class NodeConfigService
         $this->validateNodeConfig($nodeConfig);
         
         return $nodeConfig;
+    }
+
+    /**
+     * Собрать channels для NodeConfig из базы.
+     */
+    private function buildChannelsConfig(DeviceNode $node): array
+    {
+        $node->loadMissing(['channels']);
+
+        if ($node->channels->isEmpty()) {
+            $nodeConfig = $node->config ?? [];
+            if (isset($nodeConfig['channels']) && is_array($nodeConfig['channels'])) {
+                return $nodeConfig['channels'];
+            }
+
+            return [];
+        }
+
+        $channels = [];
+
+        foreach ($node->channels as $channel) {
+            $config = is_array($channel->config) ? $channel->config : [];
+
+            $entry = $config;
+            $entry['name'] = $channel->channel;
+            $entry['channel'] = $channel->channel;
+
+            $type = $channel->type ?: ($entry['type'] ?? null);
+            if ($type) {
+                $entry['type'] = strtoupper((string) $type);
+            }
+
+            if ($channel->metric) {
+                $entry['metric'] = $channel->metric;
+            }
+
+            if ($channel->unit) {
+                $entry['unit'] = $channel->unit;
+            }
+
+            $channels[] = $entry;
+        }
+
+        return $channels;
     }
     
     /**

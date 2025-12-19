@@ -19,10 +19,12 @@
 #include <stdio.h>
 
 static const char *TAG = "node_command_handler";
+static bool g_logged_missing_hmac = false;
 
 // Константы для HMAC проверки
 #define HMAC_TIMESTAMP_TOLERANCE_SEC 10  // Допустимое отклонение timestamp (секунды)
 #define NODE_SECRET_DEFAULT "hydro-default-secret-key-2025"  // Дефолтный секрет (должен быть заменен на реальный)
+#define NODE_COMMAND_MAX_JSON_SIZE 4096  // Защита от слишком больших команд
 
 // Структура зарегистрированного обработчика
 typedef struct {
@@ -39,7 +41,6 @@ typedef struct {
 // Также сохраняет final_status (DONE/FAILED) для идемпотентности
 #define CMD_ID_CACHE_SIZE 128  // Минимум N=128 для идемпотентности
 #define CMD_ID_TTL_MS 300000  // 5 минут TTL (увеличено для идемпотентности)
-#define MAX_CHANNEL_NAME_LEN 64
 #define MAX_STATUS_LEN 16  // "DONE", "FAILED", "ACK", "ERROR"
 
 typedef struct {
@@ -58,32 +59,15 @@ static struct {
     SemaphoreHandle_t cache_mutex;
 } s_global_cmd_cache = {0};
 
-// Per-channel кеш (для обратной совместимости и дополнительной защиты)
-typedef struct {
-    char channel[MAX_CHANNEL_NAME_LEN];
-    cmd_id_cache_entry_t entries[CMD_ID_CACHE_SIZE];
-    size_t lru_index;  // Индекс для LRU (круговой буфер)
-} channel_cache_t;
-
-#define MAX_CHANNEL_CACHES 16  // Максимум каналов с кешем
-
 static struct {
     command_handler_entry_t handlers[NODE_COMMAND_HANDLER_MAX];
     size_t handler_count;
     SemaphoreHandle_t mutex;
-    
-    // LRU кеш per channel (для обратной совместимости)
-    channel_cache_t channel_caches[MAX_CHANNEL_CACHES];
-    size_t channel_cache_count;
-    SemaphoreHandle_t channel_cache_mutex;
 } s_command_handler = {0};
 
 static void init_mutexes(void) {
     if (s_command_handler.mutex == NULL) {
         s_command_handler.mutex = xSemaphoreCreateMutex();
-    }
-    if (s_command_handler.channel_cache_mutex == NULL) {
-        s_command_handler.channel_cache_mutex = xSemaphoreCreateMutex();
     }
     if (s_global_cmd_cache.cache_mutex == NULL) {
         s_global_cmd_cache.cache_mutex = xSemaphoreCreateMutex();
@@ -368,6 +352,11 @@ void node_command_handler_process(
         return;
     }
 
+    if (data_len > NODE_COMMAND_MAX_JSON_SIZE) {
+        ESP_LOGE(TAG, "Command payload too large: %d bytes (max %d)", data_len, NODE_COMMAND_MAX_JSON_SIZE);
+        return;
+    }
+
     // Парсинг JSON команды
     cJSON *json = cJSON_ParseWithLength(data, data_len);
     if (!json) {
@@ -488,8 +477,11 @@ void node_command_handler_process(
         
         ESP_LOGI(TAG, "Command HMAC signature verified: cmd=%s, cmd_id=%s", cmd, cmd_id);
     } else {
-        // Если нет полей ts и sig, логируем предупреждение, но не блокируем команду (обратная совместимость)
-        ESP_LOGW(TAG, "Command without HMAC fields (ts/sig): cmd=%s, cmd_id=%s (backward compatibility mode)", cmd, cmd_id);
+        // Нет полей ts/sig: не блокируем команду (обратная совместимость), но не спамим лог
+        if (!g_logged_missing_hmac) {
+            ESP_LOGW(TAG, "Command without HMAC fields (ts/sig): cmd=%s, cmd_id=%s (backward compatibility mode)", cmd, cmd_id);
+            g_logged_missing_hmac = true;
+        }
     }
 
     // Проверка на дубликат и идемпотентность
@@ -799,11 +791,11 @@ cJSON *node_command_handler_create_response(
     int64_t ts_ms = node_utils_get_timestamp_seconds() * 1000;
     cJSON_AddNumberToObject(response, "ts", (double)ts_ms);
 
-    if (error_code && strcmp(status, "ERROR") == 0) {
+    if (error_code && status && (strcmp(status, "ERROR") == 0 || strcmp(status, "FAILED") == 0)) {
         cJSON_AddStringToObject(response, "error_code", error_code);
     }
 
-    if (error_message && strcmp(status, "ERROR") == 0) {
+    if (error_message && status && (strcmp(status, "ERROR") == 0 || strcmp(status, "FAILED") == 0)) {
         cJSON_AddStringToObject(response, "error_message", error_message);
     }
 
@@ -812,45 +804,6 @@ cJSON *node_command_handler_create_response(
     }
 
     return response;
-}
-
-/**
- * @brief Найти или создать кеш для канала
- * @note Эта функция используется для обратной совместимости.
- * Основной дедуп теперь работает глобально по cmd_id.
- */
-static channel_cache_t *find_or_create_channel_cache(const char *channel) {
-    if (channel == NULL || s_command_handler.channel_cache_mutex == NULL) {
-        return NULL;
-    }
-
-    const char *channel_name = (channel[0] != '\0') ? channel : "default";
-    
-    // Ищем существующий кеш для канала
-    for (size_t i = 0; i < s_command_handler.channel_cache_count; i++) {
-        if (strcmp(s_command_handler.channel_caches[i].channel, channel_name) == 0) {
-            return &s_command_handler.channel_caches[i];
-        }
-    }
-
-    // Создаем новый кеш для канала, если есть место
-    if (s_command_handler.channel_cache_count < MAX_CHANNEL_CACHES) {
-        channel_cache_t *cache = &s_command_handler.channel_caches[s_command_handler.channel_cache_count];
-        strncpy(cache->channel, channel_name, MAX_CHANNEL_NAME_LEN - 1);
-        cache->channel[MAX_CHANNEL_NAME_LEN - 1] = '\0';
-        memset(cache->entries, 0, sizeof(cache->entries));
-        cache->lru_index = 0;
-        s_command_handler.channel_cache_count++;
-        return cache;
-    }
-
-    // Если нет места, используем первый кеш (простое решение)
-    // В реальности можно использовать LRU для самих каналов, но для простоты используем первый
-    if (s_command_handler.channel_cache_count > 0) {
-        return &s_command_handler.channel_caches[0];
-    }
-
-    return NULL;
 }
 
 bool node_command_handler_is_duplicate(const char *cmd_id, const char *channel) {

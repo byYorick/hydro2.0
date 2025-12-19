@@ -145,6 +145,7 @@ import { useHistory } from '@/composables/useHistory'
 import { useToast } from '@/composables/useToast'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { useApi } from '@/composables/useApi'
+import { normalizeStatus } from '@/composables/useCommands'
 import { useDevicesStore } from '@/stores/devices'
 import { useNodeTelemetry } from '@/composables/useNodeTelemetry'
 import type { Device, DeviceChannel } from '@/types'
@@ -246,6 +247,17 @@ const METRIC_NORMALIZATION: Record<string, string> = {
   'EC': 'EC',
 }
 
+const COMMAND_ERROR_MESSAGES: Record<string, string> = {
+  relay_not_initialized: 'Релейный драйвер не инициализирован',
+  relay_invalid_channel: 'Неверное имя канала реле',
+  relay_channel_not_found: 'Канал реле не найден',
+  relay_mutex_timeout: 'Таймаут выполнения команды реле',
+  relay_gpio_error: 'Ошибка управления GPIO реле',
+  relay_error: 'Ошибка управления реле',
+  invalid_params: 'Неверные параметры команды',
+  set_time_failed: 'Не удалось установить время на ноде',
+}
+
 // Утилиты для работы с метриками
 const getMetricFromChannel = (channel: DeviceChannel): string => {
   return channel.metric || channel.channel.toUpperCase()
@@ -261,6 +273,22 @@ const getMetricLabel = (metric: string, fallback?: string): string => {
 
 const normalizeMetricForQuery = (metric: string): string => {
   return METRIC_NORMALIZATION[metric] || metric
+}
+
+const formatCommandError = (status: string, errorMessage?: string, errorCode?: string): string => {
+  if (errorCode && COMMAND_ERROR_MESSAGES[errorCode]) {
+    return COMMAND_ERROR_MESSAGES[errorCode]
+  }
+
+  if (errorMessage) {
+    return errorMessage
+  }
+
+  if (errorCode) {
+    return `Код ошибки: ${errorCode}`
+  }
+
+  return status
 }
 
 const getCurrentValue = (data: Array<{ ts: number; value: number }>): number | undefined => {
@@ -513,13 +541,18 @@ const onTestPump = async (channelName: string, channelType: string): Promise<voi
       if (result.success) {
         showToast(`Тест ${channelLabel} выполнен успешно!`, 'success', TOAST_TIMEOUT.LONG)
       } else {
-        showToast(`Ошибка теста ${channelLabel}: ${result.status}`, 'error', TOAST_TIMEOUT.LONG)
+        const detail = formatCommandError(result.status, result.errorMessage, result.errorCode)
+        showToast(`Ошибка теста ${channelLabel}: ${detail}`, 'error', TOAST_TIMEOUT.LONG)
       }
     } else {
       showToast(`Не удалось отправить команду для ${channelLabel}`, 'error', TOAST_TIMEOUT.LONG)
     }
   } catch (err) {
-    // Ошибка уже обработана в useApi через showToast
+    const apiMessage = (err as { response?: { data?: { message?: string; error?: string } } })?.response?.data
+    const detail = apiMessage?.message || apiMessage?.error
+    if (detail) {
+      showToast(`Ошибка теста ${channelLabel}: ${detail}`, 'error', TOAST_TIMEOUT.LONG)
+    }
     logger.error(`[Devices/Show] Failed to test ${channelName}:`, err)
   } finally {
     testingChannels.value.delete(channelName)
@@ -558,10 +591,25 @@ function getChannelLabel(channelName, channelType) {
 }
 
 // Функция для проверки статуса команды
-async function checkCommandStatus(cmdId: number, maxAttempts = 30): Promise<{ success: boolean; status: string; error?: string }> {
+async function checkCommandStatus(cmdId: number, maxAttempts = 30): Promise<{
+  success: boolean
+  status: string
+  error?: string
+  errorCode?: string
+  errorMessage?: string
+}> {
   for (let i = 0; i < maxAttempts; i++) {
     try {
-      const response = await api.get<{ status: string; data?: { status: string } }>(
+      const response = await api.get<{
+        status: string
+        data?: {
+          status: string
+          error_message?: string | null
+          error_code?: string | null
+          result_code?: number | null
+          duration_ms?: number | null
+        }
+      }>(
         `/commands/${cmdId}/status`
       )
       
@@ -572,7 +620,16 @@ async function checkCommandStatus(cmdId: number, maxAttempts = 30): Promise<{ su
         if (normalizedStatus === 'DONE') {
           return { success: true, status: 'DONE' }
         } else if (['FAILED', 'TIMEOUT', 'SEND_FAILED'].includes(normalizedStatus)) {
-          return { success: false, status: normalizedStatus }
+          const errorMessage = response.data.data.error_message || undefined
+          const errorCode = response.data.data.error_code || undefined
+          const errorDetail = errorMessage || errorCode || null
+          return {
+            success: false,
+            status: normalizedStatus,
+            error: errorDetail || undefined,
+            errorCode,
+            errorMessage,
+          }
         } else if (normalizedStatus === 'QUEUED' || normalizedStatus === 'SENT' || normalizedStatus === 'ACCEPTED') {
           // Продолжаем ожидание
           await new Promise(resolve => setTimeout(resolve, 500))

@@ -77,8 +77,11 @@ class CommandStatusController extends Controller
                 'ack_at' => $command->ack_at?->toIso8601String(),
                 'failed_at' => $command->failed_at?->toIso8601String(),
                 'sent_at' => $command->sent_at?->toIso8601String(),
+                'error_code' => $command->error_code,
+                'error_message' => $command->error_message,
+                'result_code' => $command->result_code,
+                'duration_ms' => $command->duration_ms,
             ],
         ]);
     }
 }
-

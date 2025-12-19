@@ -169,6 +169,39 @@ class NodeController extends Controller
     }
 
     /**
+     * Обновление узла через сервисный токен (history-logger).
+     * Используется для системных операций, например, подтверждения привязки зоны.
+     */
+    public function serviceUpdate(UpdateNodeRequest $request, DeviceNode $node)
+    {
+        $user = $this->authenticateUser($request);
+        if (! $user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+
+        if (! $request->attributes->get('service_auth')) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden',
+            ], 403);
+        }
+
+        $data = $request->validated();
+        $data = array_intersect_key($data, array_flip(['zone_id', 'pending_zone_id']));
+
+        if (empty($data)) {
+            return response()->json(['status' => 'ok', 'data' => $node]);
+        }
+
+        $node = $this->nodeService->update($node, $data);
+
+        return response()->json(['status' => 'ok', 'data' => $node]);
+    }
+
+    /**
      * Аутентификация пользователя через Sanctum или сервисный токен.
      */
     private function authenticateUser(Request $request): ?\App\Models\User
@@ -195,6 +228,7 @@ class NodeController extends Controller
                 }
 
                 if ($tokenValid) {
+                    $request->attributes->set('service_auth', true);
                     $serviceUser = \App\Models\User::where('role', 'operator')->first()
                         ?? \App\Models\User::where('role', 'admin')->first()
                         ?? \App\Models\User::first();

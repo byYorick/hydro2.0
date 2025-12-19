@@ -125,6 +125,16 @@ esp_err_t node_utils_set_time(int64_t unix_ts_sec);
 int64_t node_utils_get_unix_timestamp(void);
 
 /**
+ * @brief Базовая инициализация NVS, esp_netif, event loop и Wi‑Fi STA
+ * 
+ * Идёмпотентная: повторные вызовы не считаются ошибкой. Используется
+ * всеми нодами для одинакового пути старта перед node_framework.
+ * 
+ * @return ESP_OK при успехе или ESP_ERR_xxx при фатальной ошибке
+ */
+esp_err_t node_utils_bootstrap_network_stack(void);
+
+/**
  * @brief Публикация node_hello сообщения для регистрации узла
  * 
  * @param node_type Тип ноды ("ph", "ec", "pump", "climate")

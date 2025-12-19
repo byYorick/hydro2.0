@@ -2421,6 +2421,16 @@ async def handle_config_response(topic: str, payload: bytes):
                     )
                     CONFIG_RESPONSE_ERROR.labels(node_uid=node_uid).inc()
                     return
+
+                channels_payload = data.get("channels")
+                if channels_payload is not None:
+                    try:
+                        await sync_node_channels_from_payload(node.get("id"), node_uid, channels_payload)
+                    except Exception as sync_err:
+                        logger.warning(
+                            f"[CONFIG_RESPONSE] Failed to sync channels for node {node_uid}: {sync_err}",
+                            exc_info=True
+                        )
                 
             except Exception as validation_e:
                 logger.error(
@@ -2660,6 +2670,92 @@ async def handle_config_response(topic: str, payload: bytes):
     except Exception as e:
         logger.error(f"[CONFIG_RESPONSE] Unexpected error processing config_response: {e}", exc_info=True)
         CONFIG_RESPONSE_ERROR.labels(node_uid="unknown").inc()
+
+
+async def sync_node_channels_from_payload(node_id: int, node_uid: str, channels_payload: Any) -> None:
+    if not node_id:
+        logger.warning("[CONFIG_RESPONSE] Cannot sync channels: node_id missing")
+        return
+
+    if not isinstance(channels_payload, list):
+        logger.warning(
+            f"[CONFIG_RESPONSE] channels payload is not a list for node {node_uid}: {type(channels_payload)}"
+        )
+        return
+
+    if len(channels_payload) == 0:
+        logger.info(f"[CONFIG_RESPONSE] channels payload empty for node {node_uid}, skipping sync")
+        return
+
+    updated = 0
+    skipped = 0
+    for channel in channels_payload:
+        if not isinstance(channel, dict):
+            skipped += 1
+            continue
+
+        channel_name = channel.get("name") or channel.get("channel")
+        if channel_name is None:
+            skipped += 1
+            continue
+
+        channel_name = str(channel_name).strip()
+        if not channel_name:
+            skipped += 1
+            continue
+
+        channel_name = channel_name[:255]
+
+        type_value = channel.get("type") or channel.get("channel_type")
+        if type_value is not None:
+            type_value = str(type_value).strip().upper()
+            if not type_value:
+                type_value = None
+
+        metric_value = channel.get("metric") or channel.get("metrics")
+        if metric_value is not None:
+            metric_value = str(metric_value).strip().upper()
+            if not metric_value:
+                metric_value = None
+
+        unit_value = channel.get("unit")
+        if unit_value is not None:
+            unit_value = str(unit_value).strip()
+            if not unit_value:
+                unit_value = None
+
+        config = {
+            key: value
+            for key, value in channel.items()
+            if key not in {"name", "channel", "type", "channel_type", "metric", "metrics", "unit"}
+        }
+        if not config:
+            config = None
+
+        await execute(
+            """
+            INSERT INTO node_channels (node_id, channel, type, metric, unit, config, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+            ON CONFLICT (node_id, channel)
+            DO UPDATE SET
+                type = COALESCE(EXCLUDED.type, node_channels.type),
+                metric = COALESCE(EXCLUDED.metric, node_channels.metric),
+                unit = COALESCE(EXCLUDED.unit, node_channels.unit),
+                config = COALESCE(EXCLUDED.config, node_channels.config),
+                updated_at = NOW()
+            """,
+            node_id,
+            channel_name,
+            type_value,
+            metric_value,
+            unit_value,
+            config,
+        )
+        updated += 1
+
+    logger.info(
+        f"[CONFIG_RESPONSE] Synced {updated} channel(s) for node {node_uid}, skipped {skipped}"
+    )
 
 
 # Helper функции для устранения дублирования

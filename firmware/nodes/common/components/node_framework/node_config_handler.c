@@ -32,6 +32,10 @@ static const char *TAG = "node_config_handler";
 static node_config_channel_callback_t s_channel_init_cb = NULL;
 static void *s_channel_init_ctx = NULL;
 
+// Callback для формирования channels в config_response
+static node_config_channels_callback_t s_channels_cb = NULL;
+static void *s_channels_ctx = NULL;
+
 // Глобальные ссылки на MQTT callbacks для config_apply_mqtt
 static mqtt_config_callback_t s_mqtt_config_cb = NULL;
 static mqtt_command_callback_t s_mqtt_command_cb = NULL;
@@ -57,6 +61,29 @@ typedef struct {
 static QueueHandle_t s_config_queue = NULL;
 static TaskHandle_t s_config_processor_task = NULL;
 static bool s_config_processor_running = false;
+
+static cJSON *node_config_handler_copy_channels_from_config(void) {
+    static char config_json[CONFIG_STORAGE_MAX_JSON_SIZE];
+
+    if (config_storage_get_json(config_json, sizeof(config_json)) != ESP_OK) {
+        return NULL;
+    }
+
+    cJSON *config = cJSON_Parse(config_json);
+    if (!config) {
+        return NULL;
+    }
+
+    cJSON *channels = cJSON_GetObjectItem(config, "channels");
+    if (!channels || !cJSON_IsArray(channels) || cJSON_GetArraySize(channels) == 0) {
+        cJSON_Delete(config);
+        return NULL;
+    }
+
+    cJSON *dup = cJSON_Duplicate(channels, 1);
+    cJSON_Delete(config);
+    return dup;
+}
 
 /**
  * @brief Маскирует секретные поля в JSON перед логированием
@@ -757,6 +784,21 @@ esp_err_t node_config_handler_publish_response(
         }
     }
 
+    if (status && (strcmp(status, "ACK") == 0 || strcmp(status, "OK") == 0)) {
+        cJSON *channels = NULL;
+        if (s_channels_cb) {
+            channels = s_channels_cb(s_channels_ctx);
+        }
+
+        if (!channels) {
+            channels = node_config_handler_copy_channels_from_config();
+        }
+
+        if (channels) {
+            cJSON_AddItemToObject(response, "channels", channels);
+        }
+    }
+
     char *json_str = cJSON_PrintUnformatted(response);
     if (json_str) {
         esp_err_t err = mqtt_manager_publish_config_response(json_str);
@@ -777,6 +819,14 @@ void node_config_handler_set_channel_init_callback(
 ) {
     s_channel_init_cb = callback;
     s_channel_init_ctx = user_ctx;
+}
+
+void node_config_handler_set_channels_callback(
+    node_config_channels_callback_t callback,
+    void *user_ctx
+) {
+    s_channels_cb = callback;
+    s_channels_ctx = user_ctx;
 }
 
 void node_config_handler_set_mqtt_callbacks(

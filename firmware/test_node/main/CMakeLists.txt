@@ -5,10 +5,14 @@ idf_component_register(
     INCLUDE_DIRS 
         "."
     REQUIRES 
-        node_framework
         mqtt_manager
-        heartbeat_task
         config_storage
         node_utils
+        json
+        wifi_manager
+        freertos
+        esp_timer
+        esp_system
+        esp_wifi
 )
 
