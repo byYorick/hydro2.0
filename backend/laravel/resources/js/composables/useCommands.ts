@@ -18,7 +18,7 @@ interface PendingCommandInternal {
   message?: string
 }
 
-function normalizeStatus(status: CommandStatus | string): CommandStatus {
+export function normalizeStatus(status: CommandStatus | string): CommandStatus {
   // Нормализация статусов: маппинг старых значений на новые
   const statusUpper = String(status).toUpperCase()
   

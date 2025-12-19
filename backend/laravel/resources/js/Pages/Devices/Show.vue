@@ -145,6 +145,7 @@ import { useHistory } from '@/composables/useHistory'
 import { useToast } from '@/composables/useToast'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { useApi } from '@/composables/useApi'
+import { normalizeStatus } from '@/composables/useCommands'
 import { useDevicesStore } from '@/stores/devices'
 import { useNodeTelemetry } from '@/composables/useNodeTelemetry'
 import type { Device, DeviceChannel } from '@/types'
@@ -513,13 +514,18 @@ const onTestPump = async (channelName: string, channelType: string): Promise<voi
       if (result.success) {
         showToast(`Тест ${channelLabel} выполнен успешно!`, 'success', TOAST_TIMEOUT.LONG)
       } else {
-        showToast(`Ошибка теста ${channelLabel}: ${result.status}`, 'error', TOAST_TIMEOUT.LONG)
+        const detail = result.error ? `: ${result.error}` : ''
+        showToast(`Ошибка теста ${channelLabel}: ${result.status}${detail}`, 'error', TOAST_TIMEOUT.LONG)
       }
     } else {
       showToast(`Не удалось отправить команду для ${channelLabel}`, 'error', TOAST_TIMEOUT.LONG)
     }
   } catch (err) {
-    // Ошибка уже обработана в useApi через showToast
+    const apiMessage = (err as { response?: { data?: { message?: string; error?: string } } })?.response?.data
+    const detail = apiMessage?.message || apiMessage?.error
+    if (detail) {
+      showToast(`Ошибка теста ${channelLabel}: ${detail}`, 'error', TOAST_TIMEOUT.LONG)
+    }
     logger.error(`[Devices/Show] Failed to test ${channelName}:`, err)
   } finally {
     testingChannels.value.delete(channelName)
@@ -561,7 +567,16 @@ function getChannelLabel(channelName, channelType) {
 async function checkCommandStatus(cmdId: number, maxAttempts = 30): Promise<{ success: boolean; status: string; error?: string }> {
   for (let i = 0; i < maxAttempts; i++) {
     try {
-      const response = await api.get<{ status: string; data?: { status: string } }>(
+      const response = await api.get<{
+        status: string
+        data?: {
+          status: string
+          error_message?: string | null
+          error_code?: string | null
+          result_code?: number | null
+          duration_ms?: number | null
+        }
+      }>(
         `/commands/${cmdId}/status`
       )
       
@@ -572,7 +587,10 @@ async function checkCommandStatus(cmdId: number, maxAttempts = 30): Promise<{ su
         if (normalizedStatus === 'DONE') {
           return { success: true, status: 'DONE' }
         } else if (['FAILED', 'TIMEOUT', 'SEND_FAILED'].includes(normalizedStatus)) {
-          return { success: false, status: normalizedStatus }
+          const errorDetail = response.data.data.error_message
+            || response.data.data.error_code
+            || null
+          return { success: false, status: normalizedStatus, error: errorDetail || undefined }
         } else if (normalizedStatus === 'QUEUED' || normalizedStatus === 'SENT' || normalizedStatus === 'ACCEPTED') {
           // Продолжаем ожидание
           await new Promise(resolve => setTimeout(resolve, 500))
