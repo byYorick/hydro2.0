@@ -16,6 +16,7 @@
 #include "i2c_bus.h"
 #include "oled_ui.h"
 #include "relay_driver.h"
+#include "relay_node_hw_map.h"
 #include "mqtt_manager.h"
 #include "node_utils.h"
 #include "esp_log.h"
@@ -25,6 +26,37 @@
 #include <string.h>
 
 static const char *TAG = "relay_node_init_steps";
+
+static esp_err_t relay_node_init_relays_from_hw_map(void) {
+    const size_t max_channels = 16;
+    size_t count = RELAY_NODE_HW_CHANNELS_COUNT;
+
+    if (count == 0) {
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    if (count > max_channels) {
+        ESP_LOGW(TAG, "Relay channels exceed limit: %zu (max %zu), truncating", count, max_channels);
+        count = max_channels;
+    }
+
+    relay_channel_config_t relay_configs[16];
+    memset(relay_configs, 0, sizeof(relay_configs));
+
+    for (size_t i = 0; i < count; i++) {
+        const relay_node_hw_channel_t *hw = &RELAY_NODE_HW_CHANNELS[i];
+        if (!hw->channel_name) {
+            continue;
+        }
+
+        relay_configs[i].channel_name = hw->channel_name;
+        relay_configs[i].gpio_pin = hw->gpio_pin;
+        relay_configs[i].active_high = hw->active_high;
+        relay_configs[i].relay_type = hw->relay_type;
+    }
+
+    return relay_driver_init(relay_configs, count);
+}
 
 
 esp_err_t relay_node_init_step_config_storage(relay_node_init_context_t *ctx, 
@@ -213,9 +245,19 @@ esp_err_t relay_node_init_step_relays(relay_node_init_context_t *ctx,
             result->component_initialized = true;
         }
     } else if (err == ESP_ERR_NOT_FOUND) {
-        ESP_LOGW(TAG, "No relay channels found in config, relays will be initialized when config received");
+        ESP_LOGW(TAG, "No relay channels found in config, trying hardware map");
+        esp_err_t fallback_err = relay_node_init_relays_from_hw_map();
+        if (fallback_err == ESP_OK) {
+            ESP_LOGI(TAG, "Relay driver initialized from hardware map");
+            if (result) {
+                result->err = ESP_OK;
+                result->component_initialized = true;
+            }
+            return ESP_OK;
+        }
+        ESP_LOGW(TAG, "Hardware map relay init failed: %s", esp_err_to_name(fallback_err));
         if (result) {
-            result->err = ESP_ERR_NOT_FOUND;
+            result->err = fallback_err;
         }
     } else {
         ESP_LOGE(TAG, "Failed to initialize relay driver: %s", esp_err_to_name(err));
@@ -321,4 +363,3 @@ esp_err_t relay_node_init_step_finalize(relay_node_init_context_t *ctx,
     
     return ESP_OK;
 }
-

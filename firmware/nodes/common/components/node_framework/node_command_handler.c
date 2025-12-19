@@ -19,6 +19,7 @@
 #include <stdio.h>
 
 static const char *TAG = "node_command_handler";
+static bool g_logged_missing_hmac = false;
 
 // Константы для HMAC проверки
 #define HMAC_TIMESTAMP_TOLERANCE_SEC 10  // Допустимое отклонение timestamp (секунды)
@@ -476,8 +477,11 @@ void node_command_handler_process(
         
         ESP_LOGI(TAG, "Command HMAC signature verified: cmd=%s, cmd_id=%s", cmd, cmd_id);
     } else {
-        // Если нет полей ts и sig, логируем предупреждение, но не блокируем команду (обратная совместимость)
-        ESP_LOGW(TAG, "Command without HMAC fields (ts/sig): cmd=%s, cmd_id=%s (backward compatibility mode)", cmd, cmd_id);
+        // Нет полей ts/sig: не блокируем команду (обратная совместимость), но не спамим лог
+        if (!g_logged_missing_hmac) {
+            ESP_LOGW(TAG, "Command without HMAC fields (ts/sig): cmd=%s, cmd_id=%s (backward compatibility mode)", cmd, cmd_id);
+            g_logged_missing_hmac = true;
+        }
     }
 
     // Проверка на дубликат и идемпотентность
