@@ -3,7 +3,8 @@ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
 # Добавляем путь к общим компонентам
 set(EXTRA_COMPONENT_DIRS 
-    "${CMAKE_CURRENT_SOURCE_DIR}/../common/components"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../nodes/common/components"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../nodes/common/components/sensors"
 )
 
 project(test_node)

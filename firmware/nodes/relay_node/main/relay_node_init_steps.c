@@ -17,6 +17,7 @@
 #include "oled_ui.h"
 #include "relay_driver.h"
 #include "mqtt_manager.h"
+#include "node_utils.h"
 #include "esp_log.h"
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
@@ -25,26 +26,6 @@
 
 static const char *TAG = "relay_node_init_steps";
 
-// Вспомогательная функция для получения значения из config_storage с дефолтом
-static esp_err_t get_config_string(const char *key, char *buffer, size_t buffer_size, const char *default_value) {
-    esp_err_t err = ESP_ERR_NOT_FOUND;
-    
-    if (strcmp(key, "node_id") == 0) {
-        err = config_storage_get_node_id(buffer, buffer_size);
-    } else if (strcmp(key, "gh_uid") == 0) {
-        err = config_storage_get_gh_uid(buffer, buffer_size);
-    } else if (strcmp(key, "zone_uid") == 0) {
-        err = config_storage_get_zone_uid(buffer, buffer_size);
-    }
-    
-    if (err != ESP_OK && default_value) {
-        strncpy(buffer, default_value, buffer_size - 1);
-        buffer[buffer_size - 1] = '\0';
-        return ESP_OK;
-    }
-    
-    return err;
-}
 
 esp_err_t relay_node_init_step_config_storage(relay_node_init_context_t *ctx, 
                                            relay_node_init_step_result_t *result) {
@@ -129,11 +110,10 @@ esp_err_t relay_node_init_step_i2c(relay_node_init_context_t *ctx,
         result->component_initialized = false;
     }
     
-    esp_err_t err = ESP_OK;
-    
     // Инициализация I2C 0 для OLED (если используется)
+    // Проверка на уже инициализированный I2C выполняется внутри i2c_bus_init_bus
+    esp_err_t err = ESP_OK;
     if (!i2c_bus_is_initialized_bus(I2C_BUS_0)) {
-        ESP_LOGI(TAG, "Initializing I2C bus 0 (OLED)...");
         i2c_bus_config_t i2c0_config = {
             .sda_pin = RELAY_NODE_I2C_BUS_0_SDA,
             .scl_pin = RELAY_NODE_I2C_BUS_0_SCL,
@@ -144,9 +124,6 @@ esp_err_t relay_node_init_step_i2c(relay_node_init_context_t *ctx,
         if (err != ESP_OK) {
             ESP_LOGW(TAG, "Failed to initialize I2C bus 0: %s (OLED may not be available)", esp_err_to_name(err));
             // Continue - I2C может быть не критичен
-        } else {
-            ESP_LOGI(TAG, "I2C bus 0 initialized: SDA=%d, SCL=%d", 
-                     i2c0_config.sda_pin, i2c0_config.scl_pin);
         }
     }
     
@@ -177,7 +154,10 @@ esp_err_t relay_node_init_step_oled(relay_node_init_context_t *ctx,
     
     // Получаем node_id из config_storage или используем дефолт
     char node_id[64];
-    get_config_string("node_id", node_id, sizeof(node_id), RELAY_NODE_DEFAULT_NODE_ID);
+    if (config_storage_get_node_id(node_id, sizeof(node_id)) != ESP_OK) {
+        strncpy(node_id, RELAY_NODE_DEFAULT_NODE_ID, sizeof(node_id) - 1);
+        node_id[sizeof(node_id) - 1] = '\0';
+    }
     ESP_LOGI(TAG, "Node ID for OLED: %s", node_id);
     
     oled_ui_config_t oled_config = {
@@ -257,8 +237,7 @@ esp_err_t relay_node_init_step_mqtt(relay_node_init_context_t *ctx,
         result->component_initialized = false;
     }
     
-    // Загрузка конфигурации MQTT
-    config_storage_mqtt_t mqtt_cfg;
+    // Загрузка конфигурации MQTT через node_utils
     mqtt_manager_config_t mqtt_config;
     mqtt_node_info_t node_info;
     
@@ -269,53 +248,29 @@ esp_err_t relay_node_init_step_mqtt(relay_node_init_context_t *ctx,
     static char gh_uid[CONFIG_STORAGE_MAX_STRING_LEN];
     static char zone_uid[CONFIG_STORAGE_MAX_STRING_LEN];
     
-    if (config_storage_get_mqtt(&mqtt_cfg) == ESP_OK) {
-        strncpy(mqtt_host, mqtt_cfg.host, sizeof(mqtt_host) - 1);
-        mqtt_host[sizeof(mqtt_host) - 1] = '\0';
-        mqtt_config.host = mqtt_host;
-        mqtt_config.port = mqtt_cfg.port;
-        mqtt_config.keepalive = mqtt_cfg.keepalive;
-        mqtt_config.client_id = NULL;
-        if (strlen(mqtt_cfg.username) > 0) {
-            strncpy(mqtt_username, mqtt_cfg.username, sizeof(mqtt_username) - 1);
-            mqtt_username[sizeof(mqtt_username) - 1] = '\0';
-            mqtt_config.username = mqtt_username;
-        } else {
-            mqtt_config.username = NULL;
+    esp_err_t err = node_utils_init_mqtt_config(
+        &mqtt_config,
+        &node_info,
+        mqtt_host,
+        mqtt_username,
+        mqtt_password,
+        node_id,
+        gh_uid,
+        zone_uid,
+        RELAY_NODE_DEFAULT_GH_UID,
+        RELAY_NODE_DEFAULT_ZONE_UID,
+        RELAY_NODE_DEFAULT_NODE_ID
+    );
+    
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize MQTT config: %s", esp_err_to_name(err));
+        if (result) {
+            result->err = err;
         }
-        if (strlen(mqtt_cfg.password) > 0) {
-            strncpy(mqtt_password, mqtt_cfg.password, sizeof(mqtt_password) - 1);
-            mqtt_password[sizeof(mqtt_password) - 1] = '\0';
-            mqtt_config.password = mqtt_password;
-        } else {
-            mqtt_config.password = NULL;
-        }
-        mqtt_config.use_tls = mqtt_cfg.use_tls;
-        ESP_LOGI(TAG, "MQTT config from storage: %s:%d", mqtt_cfg.host, mqtt_cfg.port);
-    } else {
-        // Default values из relay_node_defaults.h
-        strncpy(mqtt_host, RELAY_NODE_DEFAULT_MQTT_HOST, sizeof(mqtt_host) - 1);
-        mqtt_host[sizeof(mqtt_host) - 1] = '\0';
-        mqtt_config.host = mqtt_host;
-        mqtt_config.port = RELAY_NODE_DEFAULT_MQTT_PORT;
-        mqtt_config.keepalive = RELAY_NODE_DEFAULT_MQTT_KEEPALIVE;
-        mqtt_config.client_id = NULL;
-        mqtt_config.username = NULL;
-        mqtt_config.password = NULL;
-        mqtt_config.use_tls = false;
-        ESP_LOGW(TAG, "Using default MQTT config");
+        return err;
     }
     
-    // Получение node_id, gh_uid, zone_uid
-    get_config_string("node_id", node_id, sizeof(node_id), RELAY_NODE_DEFAULT_NODE_ID);
-    get_config_string("gh_uid", gh_uid, sizeof(gh_uid), RELAY_NODE_DEFAULT_GH_UID);
-    get_config_string("zone_uid", zone_uid, sizeof(zone_uid), RELAY_NODE_DEFAULT_ZONE_UID);
-    
-    node_info.node_uid = node_id;
-    node_info.gh_uid = gh_uid;
-    node_info.zone_uid = zone_uid;
-    
-    esp_err_t err = mqtt_manager_init(&mqtt_config, &node_info);
+    err = mqtt_manager_init(&mqtt_config, &node_info);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize MQTT client: %s", esp_err_to_name(err));
         if (result) {

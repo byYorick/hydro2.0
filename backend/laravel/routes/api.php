@@ -298,7 +298,7 @@ Route::middleware(['throttle:node_register', 'ip.whitelist'])->group(function ()
     Route::post('nodes/register', [NodeController::class, 'register']);
     
     // Node updates от сервисов (history-logger и т.д.) - проверка токена в контроллере
-    Route::patch('nodes/{node}/service-update', [NodeController::class, 'update']);
+    Route::patch('nodes/{node}/service-update', [NodeController::class, 'serviceUpdate']);
     Route::post('nodes/{node}/lifecycle/service-transition', [NodeController::class, 'transitionLifecycle']);
 
     // Alertmanager webhook (защищен секретом)

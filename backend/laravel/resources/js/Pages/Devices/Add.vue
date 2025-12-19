@@ -158,6 +158,7 @@ const greenhouses = ref<Greenhouse[]>([])
 const zones = ref<Zone[]>([])
 const assigning = reactive<Record<number, boolean>>({})
 const assignmentForms = reactive<Record<number, { greenhouse_id: number | null; zone_id: number | null; name: string }>>({})
+const pendingAssignments = reactive<Record<number, string>>({})
 let refreshInterval: ReturnType<typeof setInterval> | null = null
 
 function formatDate(dateString) {
@@ -202,6 +203,8 @@ function onGreenhouseChange(nodeId) {
 async function loadNewNodes(): Promise<void> {
   startLoading()
   try {
+    const previousNodes = new Map(newNodes.value.map(node => [node.id, node]))
+
     const response = await api.get<{ data?: Device[] } | Device[]>(
       '/nodes',
       { params: { unassigned: true } }
@@ -223,6 +226,24 @@ async function loadNewNodes(): Promise<void> {
           zone_id: null,
           name: node.name || '',
         }
+      }
+    })
+
+    // Показать успех привязки для нод, которые исчезли из списка (zone_id установлен)
+    const currentIds = new Set(newNodes.value.map(node => node.id))
+    Object.entries(pendingAssignments).forEach(([idStr, label]) => {
+      const id = Number(idStr)
+      if (Number.isFinite(id) && !currentIds.has(id)) {
+        showToast(`Нода "${label}" успешно привязана к зоне!`, 'success', TOAST_TIMEOUT.NORMAL)
+        delete pendingAssignments[id]
+        delete assignmentForms[id]
+      }
+    })
+
+    // Удаляем формы для нод, которые больше не в списке (на всякий случай)
+    previousNodes.forEach((_node, id) => {
+      if (!currentIds.has(id)) {
+        delete assignmentForms[id]
       }
     })
   } catch (err) {
@@ -330,6 +351,7 @@ async function assignNode(node) {
         // Удалить ноду из списка новых (так как она теперь привязана)
         newNodes.value = newNodes.value.filter(n => n.id !== node.id)
         delete assignmentForms[node.id]
+        delete pendingAssignments[node.id]
       } else if (updatedNode?.pending_zone_id && !updatedNode?.zone_id) {
         // Конфиг публикуется, ожидаем подтверждения от ноды (через history-logger)
         showToast(
@@ -337,6 +359,8 @@ async function assignNode(node) {
           'info',
           5000
         )
+
+        pendingAssignments[node.id] = node.uid || node.name || `Node #${node.id}`
         
         // Обновляем данные ноды, но оставляем в списке
         const nodeIndex = newNodes.value.findIndex(n => n.id === node.id)
@@ -356,6 +380,7 @@ async function assignNode(node) {
         // Удалить ноду из списка новых
         newNodes.value = newNodes.value.filter(n => n.id !== node.id)
         delete assignmentForms[node.id]
+        delete pendingAssignments[node.id]
       } else {
         // Неизвестное состояние
         logger.warn('[Devices/Add] Unexpected node state after assignment:', {
@@ -422,4 +447,3 @@ onUnmounted(() => {
   }
 })
 </script>
-
