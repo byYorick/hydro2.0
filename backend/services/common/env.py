@@ -43,6 +43,8 @@ class Settings:
     queue_check_interval_sec: float = float(os.getenv("QUEUE_CHECK_INTERVAL_SEC", "0.05"))  # Уменьшено для быстрой реакции (50ms)
     queue_error_retry_delay_sec: float = float(os.getenv("QUEUE_ERROR_RETRY_DELAY_SEC", "1.0"))  # Задержка при ошибке обработки очереди
     laravel_api_timeout_sec: float = float(os.getenv("LARAVEL_API_TIMEOUT_SEC", "10.0"))  # Таймаут для Laravel API
+    node_offline_timeout_sec: int = int(os.getenv("NODE_OFFLINE_TIMEOUT_SEC", "120"))  # Таймаут офлайна по last_seen_at
+    node_offline_check_interval_sec: int = int(os.getenv("NODE_OFFLINE_CHECK_INTERVAL_SEC", "30"))  # Интервал проверки офлайна
     
     redis_host: str = os.getenv("REDIS_HOST", "redis")
     redis_port: int = int(os.getenv("REDIS_PORT", "6379"))
@@ -77,4 +79,3 @@ def get_settings() -> Settings:
             )
     
     return settings
-

@@ -82,6 +82,10 @@ async def lifespan(app: FastAPI):
     # Запуск воркера для ретраев алертов
     alert_retry_task = asyncio.create_task(alert_retry_worker(interval=30.0, shutdown_event=shutdown_event))
     background_tasks.append(alert_retry_task)
+
+    # Контроль офлайна по таймауту last_seen_at
+    offline_task = asyncio.create_task(monitor_offline_nodes())
+    background_tasks.append(offline_task)
     
     # Подключение к MQTT
     mqtt = await get_mqtt_client()
@@ -90,6 +94,8 @@ async def lifespan(app: FastAPI):
     await mqtt.subscribe("hydro/+/+/+/heartbeat", handle_heartbeat)
     # Подписка на status для обработки статуса узлов (ONLINE/OFFLINE)
     await mqtt.subscribe("hydro/+/+/+/status", handle_status)
+    # Подписка на LWT для обработки OFFLINE при потере связи
+    await mqtt.subscribe("hydro/+/+/+/lwt", handle_lwt)
     # Подписка на diagnostics для обработки метрик ошибок
     await mqtt.subscribe("hydro/+/+/+/diagnostics", handle_diagnostics)
     # Подписка на error для обработки немедленных ошибок
@@ -105,7 +111,7 @@ async def lifespan(app: FastAPI):
     await mqtt.subscribe("hydro/time/request", handle_time_request)
     
     logger.info("History Logger service started")
-    logger.info("Subscribed to MQTT topics: hydro/+/+/+/+/telemetry, hydro/+/+/+/heartbeat, hydro/+/+/+/status, hydro/+/+/+/diagnostics, hydro/+/+/+/error, hydro/node_hello, hydro/+/+/+/node_hello, hydro/+/+/+/config_response, hydro/+/+/+/+/command_response")
+    logger.info("Subscribed to MQTT topics: hydro/+/+/+/+/telemetry, hydro/+/+/+/heartbeat, hydro/+/+/+/status, hydro/+/+/+/lwt, hydro/+/+/+/diagnostics, hydro/+/+/+/error, hydro/node_hello, hydro/+/+/+/node_hello, hydro/+/+/+/config_response, hydro/+/+/+/+/command_response")
     
     yield
     
@@ -2149,6 +2155,83 @@ async def handle_status(topic: str, payload: bytes):
         logger.warning(f"[STATUS] Unknown status value: {status} for node {node_uid}")
     
     STATUS_RECEIVED.labels(node_uid=node_uid, status=status.lower()).inc()
+
+
+async def handle_lwt(topic: str, payload: bytes):
+    """
+    Обработчик LWT сообщений от узлов ESP32.
+    LWT приходит как строка "offline" при потере связи.
+    """
+    logger.info(f"[LWT] ===== START processing LWT =====")
+    logger.info(f"[LWT] Topic: {topic}, payload length: {len(payload)}")
+
+    node_uid = _extract_node_uid(topic)
+    if not node_uid:
+        logger.warning(f"[LWT] Could not extract node_uid from topic {topic}")
+        return
+
+    raw_payload = payload.decode("utf-8", errors="ignore").strip()
+    status = raw_payload.upper()
+    if not status:
+        data = _parse_json(payload)
+        if isinstance(data, dict):
+            status = str(data.get("status", "")).upper()
+
+    if status not in ("OFFLINE", "ONLINE"):
+        status = "OFFLINE"
+
+    if status == "ONLINE":
+        await execute(
+            "UPDATE nodes SET status='online', last_seen_at=NOW(), updated_at=NOW() WHERE uid=$1",
+            node_uid,
+        )
+        logger.info(f"[LWT] Node {node_uid} marked as ONLINE (unexpected LWT payload)")
+    else:
+        await execute(
+            "UPDATE nodes SET status='offline', updated_at=NOW() WHERE uid=$1",
+            node_uid,
+        )
+        logger.info(f"[LWT] Node {node_uid} marked as OFFLINE")
+
+    STATUS_RECEIVED.labels(node_uid=node_uid, status=status.lower()).inc()
+
+
+async def monitor_offline_nodes() -> None:
+    """Периодически помечает узлы offline, если давно не было last_seen_at."""
+    s = get_settings()
+    timeout_sec = max(1, s.node_offline_timeout_sec)
+    interval_sec = max(1, s.node_offline_check_interval_sec)
+
+    logger.info(
+        f"[OFFLINE_MONITOR] Started (timeout={timeout_sec}s, interval={interval_sec}s)"
+    )
+
+    while not shutdown_event.is_set():
+        try:
+            result = await execute(
+                """
+                UPDATE nodes
+                SET status='offline', updated_at=NOW()
+                WHERE status='online'
+                  AND last_seen_at IS NOT NULL
+                  AND last_seen_at < NOW() - ($1 * interval '1 second')
+                """,
+                timeout_sec,
+            )
+            if isinstance(result, str) and result.startswith("UPDATE"):
+                try:
+                    updated = int(result.split()[-1])
+                except (ValueError, IndexError):
+                    updated = 0
+                if updated > 0:
+                    logger.warning(f"[OFFLINE_MONITOR] Marked offline: {updated}")
+        except Exception as exc:
+            logger.error(f"[OFFLINE_MONITOR] Failed to update offline nodes: {exc}")
+
+        try:
+            await asyncio.wait_for(shutdown_event.wait(), timeout=interval_sec)
+        except asyncio.TimeoutError:
+            continue
 
 
 async def handle_diagnostics(topic: str, payload: bytes):
