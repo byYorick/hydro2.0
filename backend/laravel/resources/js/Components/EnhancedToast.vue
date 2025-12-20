@@ -12,7 +12,7 @@
     >
       <div
         :class="[
-          'min-w-[300px] max-w-md rounded-lg border p-4 shadow-2xl backdrop-blur-sm',
+          'min-w-[300px] max-w-md rounded-lg border p-4 shadow-[var(--shadow-card)] backdrop-blur-sm',
           variantClasses[toast.variant],
           toast.grouped && 'border-l-4'
         ]"

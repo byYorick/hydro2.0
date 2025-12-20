@@ -111,7 +111,7 @@ function getStageCircleStyle(stageId: GrowStage, index: number): Record<string, 
   
   if (isCurrent || isPast) {
     return {
-      borderColor: `${stageInfo.color}40`,
+      borderColor: `color-mix(in srgb, ${stageInfo.color} 40%, transparent)`,
     }
   }
   

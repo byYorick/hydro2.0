@@ -24,7 +24,6 @@ static const char *IN_PROGRESS_STATUS = "IN_PROGRESS";
 
 // Константы для HMAC проверки
 #define HMAC_TIMESTAMP_TOLERANCE_SEC 10  // Допустимое отклонение timestamp (секунды)
-#define NODE_SECRET_DEFAULT "hydro-default-secret-key-2025"  // Дефолтный секрет (должен быть заменен на реальный)
 #define NODE_COMMAND_MAX_JSON_SIZE 4096  // Защита от слишком больших команд
 
 // Структура зарегистрированного обработчика
@@ -77,7 +76,7 @@ static void init_mutexes(void) {
 
 /**
  * @brief Получить node_secret из конфигурации
- * 
+ *
  * @param secret_out Буфер для секрета
  * @param secret_size Размер буфера
  * @return esp_err_t ESP_OK при успехе
@@ -102,12 +101,25 @@ static esp_err_t get_node_secret(char *secret_out, size_t secret_size) {
             cJSON_Delete(config);
         }
     }
-    
-    // Fallback на дефолтный секрет
-    strncpy(secret_out, NODE_SECRET_DEFAULT, secret_size - 1);
-    secret_out[secret_size - 1] = '\0';
-    ESP_LOGW(TAG, "Using default node_secret (should be configured in NodeConfig)");
-    return ESP_OK;
+
+    return ESP_ERR_NOT_FOUND;
+}
+
+/**
+ * @brief Проверить, разрешен ли legacy режим без HMAC
+ */
+static bool get_allow_legacy_hmac(void) {
+    static char json_buf[CONFIG_STORAGE_MAX_JSON_SIZE];
+    if (config_storage_get_json(json_buf, sizeof(json_buf)) == ESP_OK) {
+        cJSON *config = cJSON_Parse(json_buf);
+        if (config) {
+            cJSON *flag = cJSON_GetObjectItem(config, "allow_legacy_hmac");
+            bool allow = (flag != NULL && cJSON_IsBool(flag) && cJSON_IsTrue(flag));
+            cJSON_Delete(config);
+            return allow;
+        }
+    }
+    return false;
 }
 
 /**
@@ -382,7 +394,53 @@ void node_command_handler_process(
     cJSON *ts_item = cJSON_GetObjectItem(json, "ts");
     cJSON *sig_item = cJSON_GetObjectItem(json, "sig");
     
-    bool has_hmac_fields = (ts_item != NULL && sig_item != NULL);
+    bool has_ts = (ts_item != NULL);
+    bool has_sig = (sig_item != NULL);
+    bool has_hmac_fields = (has_ts && has_sig);
+    bool allow_legacy_hmac = get_allow_legacy_hmac();
+    bool invalid_hmac_fields = (has_ts != has_sig);
+
+    if (invalid_hmac_fields) {
+        ESP_LOGE(TAG, "Invalid HMAC fields: ts and sig must be provided together");
+        cJSON *response = node_command_handler_create_response(
+            cmd_id,
+            "FAILED",
+            "invalid_hmac_format",
+            "ts and sig must be provided together",
+            NULL
+        );
+        if (response) {
+            char *json_str = cJSON_PrintUnformatted(response);
+            if (json_str) {
+                mqtt_manager_publish_command_response(channel ? channel : "default", json_str);
+                free(json_str);
+            }
+            cJSON_Delete(response);
+        }
+        cJSON_Delete(json);
+        return;
+    }
+
+    if (!has_hmac_fields && !allow_legacy_hmac) {
+        ESP_LOGW(TAG, "Command rejected without HMAC fields: cmd=%s, cmd_id=%s", cmd, cmd_id);
+        cJSON *response = node_command_handler_create_response(
+            cmd_id,
+            "FAILED",
+            "hmac_required",
+            "Command must include ts and sig",
+            NULL
+        );
+        if (response) {
+            char *json_str = cJSON_PrintUnformatted(response);
+            if (json_str) {
+                mqtt_manager_publish_command_response(channel ? channel : "default", json_str);
+                free(json_str);
+            }
+            cJSON_Delete(response);
+        }
+        cJSON_Delete(json);
+        return;
+    }
     
     // Если есть поля ts и sig, проверяем HMAC подпись
     if (has_hmac_fields) {
@@ -409,6 +467,28 @@ void node_command_handler_process(
         
         int64_t ts = (int64_t)cJSON_GetNumberValue(ts_item);
         const char *sig = sig_item->valuestring;
+
+        char secret_probe[128];
+        if (get_node_secret(secret_probe, sizeof(secret_probe)) != ESP_OK) {
+            ESP_LOGE(TAG, "Missing node_secret for HMAC verification");
+            cJSON *response = node_command_handler_create_response(
+                cmd_id,
+                "FAILED",
+                "missing_node_secret",
+                "node_secret is not configured",
+                NULL
+            );
+            if (response) {
+                char *json_str = cJSON_PrintUnformatted(response);
+                if (json_str) {
+                    mqtt_manager_publish_command_response(channel ? channel : "default", json_str);
+                    free(json_str);
+                }
+                cJSON_Delete(response);
+            }
+            cJSON_Delete(json);
+            return;
+        }
         
         // Проверка длины подписи (должна быть 64 символа hex)
         if (strlen(sig) != 64) {
@@ -478,9 +558,9 @@ void node_command_handler_process(
         
         ESP_LOGI(TAG, "Command HMAC signature verified: cmd=%s, cmd_id=%s", cmd, cmd_id);
     } else {
-        // Нет полей ts/sig: не блокируем команду (обратная совместимость), но не спамим лог
+        // Legacy режим: допускаем команды без ts/sig, но не спамим лог
         if (!g_logged_missing_hmac) {
-            ESP_LOGW(TAG, "Command without HMAC fields (ts/sig): cmd=%s, cmd_id=%s (backward compatibility mode)", cmd, cmd_id);
+            ESP_LOGW(TAG, "Command without HMAC fields (ts/sig): cmd=%s, cmd_id=%s (legacy mode)", cmd, cmd_id);
             g_logged_missing_hmac = true;
         }
     }

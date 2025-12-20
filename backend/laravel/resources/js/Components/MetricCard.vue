@@ -1,6 +1,6 @@
 <template>
   <Card 
-    class="relative overflow-hidden hover:border-[color:var(--border-strong)] transition-all duration-200 hover:shadow-[var(--shadow-card)] group"
+    class="relative overflow-hidden surface-card-hover hover:border-[color:var(--border-strong)] transition-all duration-200 group"
     :data-testid="$attrs['data-testid']"
   >
     <!-- Фоновый градиент для визуального акцента -->
@@ -16,8 +16,8 @@
           <div 
             class="w-10 h-10 rounded-lg flex items-center justify-center transition-transform group-hover:scale-110"
             :style="{ 
-              backgroundColor: `${color}20`,
-              borderColor: `${color}40`,
+              backgroundColor: `color-mix(in srgb, ${color} 20%, transparent)`,
+              borderColor: `color-mix(in srgb, ${color} 40%, transparent)`,
               borderWidth: '1px',
               borderStyle: 'solid'
             }"
@@ -154,7 +154,7 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  color: '#3b82f6',
+  color: 'var(--accent-cyan)',
   status: 'neutral',
   trend: null,
   target: null,
@@ -200,8 +200,6 @@ const progressBarClass = computed(() => {
   return 'bg-[color:var(--accent-amber)]'
 })
 </script>
-
-
 
 
 

@@ -22,10 +22,10 @@
           </div>
         </div>
         <div class="grid gap-3 xs:grid-cols-2 md:grid-cols-4">
-          <MetricCard label="Зоны" :value="zones.length" color="#38bdf8" status="success" subtitle="Общее количество зон" />
-          <MetricCard label="Активные циклы" :value="activeCyclesCount" color="#4ade80" status="info" subtitle="С привязанными рецептами" />
-          <MetricCard label="Узлы онлайн" :value="nodeSummary.online" color="#22d3ee" status="success" subtitle="Работает" />
-          <MetricCard label="Оповещения" :value="activeAlerts" color="#f87171" status="danger" subtitle="Активных" />
+          <MetricCard label="Зоны" :value="zones.length" color="var(--accent-cyan)" status="success" subtitle="Общее количество зон" />
+          <MetricCard label="Активные циклы" :value="activeCyclesCount" color="var(--accent-green)" status="info" subtitle="С привязанными рецептами" />
+          <MetricCard label="Узлы онлайн" :value="nodeSummary.online" color="var(--accent-cyan)" status="success" subtitle="Работает" />
+          <MetricCard label="Оповещения" :value="activeAlerts" color="var(--accent-red)" status="danger" subtitle="Активных" />
         </div>
       </header>
 

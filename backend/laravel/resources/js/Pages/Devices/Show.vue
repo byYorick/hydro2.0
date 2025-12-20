@@ -160,6 +160,7 @@ import { useApi } from '@/composables/useApi'
 import { normalizeStatus } from '@/composables/useCommands'
 import { useDevicesStore } from '@/stores/devices'
 import { useNodeTelemetry } from '@/composables/useNodeTelemetry'
+import { useTheme } from '@/composables/useTheme'
 import type { Device, DeviceChannel } from '@/types'
 
 interface PageProps {
@@ -179,6 +180,7 @@ const detachModalOpen = ref(false)
 const { showToast } = useToast()
 const { api } = useApi(showToast)
 const devicesStore = useDevicesStore()
+const { theme } = useTheme()
 
 // Графики телеметрии
 const chartTimeRange = ref<'1H' | '24H' | '7D' | '30D' | 'ALL'>('24H')
@@ -232,15 +234,27 @@ const displayChannels = computed(() => {
   return channels.value
 })
 
-// Константы для метрик
-const METRIC_COLORS: Record<string, string> = {
-  'TEMP_AIR': '#f59e0b',
-  'TEMPERATURE': '#f59e0b',
-  'HUMIDITY': '#3b82f6',
-  'CO2': '#10b981',
-  'PH': '#8b5cf6',
-  'EC': '#06b6d4',
+const resolveCssColor = (variable: string, fallback: string): string => {
+  if (typeof window === 'undefined') {
+    return fallback
+  }
+  const value = getComputedStyle(document.documentElement).getPropertyValue(variable).trim()
+  return value || fallback
 }
+
+// Константы для метрик
+const METRIC_COLORS = computed<Record<string, string>>(() => {
+  theme.value
+  return {
+    TEMP_AIR: resolveCssColor('--accent-amber', '#f59e0b'),
+    TEMPERATURE: resolveCssColor('--accent-amber', '#f59e0b'),
+    HUMIDITY: resolveCssColor('--accent-cyan', '#3b82f6'),
+    CO2: resolveCssColor('--accent-green', '#10b981'),
+    PH: resolveCssColor('--accent-lime', '#8b5cf6'),
+    EC: resolveCssColor('--accent-cyan', '#06b6d4'),
+    DEFAULT: resolveCssColor('--accent-cyan', '#3b82f6'),
+  }
+})
 
 const METRIC_LABELS: Record<string, string> = {
   'TEMP_AIR': 'Температура',
@@ -276,8 +290,8 @@ const getMetricFromChannel = (channel: DeviceChannel): string => {
   return channel.metric || channel.channel.toUpperCase()
 }
 
-const getMetricColor = (metric: string, fallback: string = '#3b82f6'): string => {
-  return METRIC_COLORS[metric] || fallback
+const getMetricColor = (metric: string, fallback?: string): string => {
+  return METRIC_COLORS.value[metric] || fallback || METRIC_COLORS.value.DEFAULT
 }
 
 const getMetricLabel = (metric: string, fallback?: string): string => {
@@ -525,17 +539,21 @@ const onTestPump = async (channelName: string, channelType: string): Promise<voi
   showToast(`Команда отправлена: ${channelLabel}`, 'info', TOAST_TIMEOUT.SHORT)
   
   try {
-    // Для релейной ноды вместо run_pump отправляем set_state
     let commandType = 'run_pump'
     let params: Record<string, any> = { duration_ms: 3000 } // 3 секунды по умолчанию
 
     const nodeTypeLower = (device.value.type || '').toLowerCase()
     const channelNameLower = (channelName || '').toLowerCase()
+    const channelTypeLower = (channelType || '').toLowerCase()
 
     const isRelayNode = nodeTypeLower.includes('relay')
+    const isSensor = channelTypeLower === 'sensor'
     const isValve = channelType === 'valve' || channelNameLower.includes('valve')
     
-    if (isRelayNode) {
+    if (isSensor) {
+      commandType = 'test_sensor'
+      params = {}
+    } else if (isRelayNode) {
       commandType = 'set_state'
       params = { state: 1, duration_ms: 3000 }
     } else if (isValve) {
@@ -588,9 +606,13 @@ const onTestPump = async (channelName: string, channelType: string): Promise<voi
 function getChannelLabel(channelName, channelType) {
   const name = (channelName || '').toLowerCase()
   const nodeType = (device.value.type || '').toLowerCase()
+  const type = (channelType || '').toLowerCase()
+  const isSensor = type === 'sensor'
   
   // PH нода
   if (nodeType.includes('ph')) {
+    if (isSensor && name.includes('ph_sensor')) return 'Тест pH сенсора'
+    if (isSensor && (name.includes('solution_temp') || name.includes('temp'))) return 'Тест температуры раствора'
     if (name.includes('acid') || name.includes('up')) return 'PH UP тест'
     if (name.includes('base') || name.includes('down')) return 'PH DOWN тест'
   }
@@ -612,6 +634,7 @@ function getChannelLabel(channelName, channelType) {
   }
   
   // Общий случай
+  if (isSensor) return `Тест сенсора ${channelName || 'канал'}`
   return channelName || 'Канал'
 }
 

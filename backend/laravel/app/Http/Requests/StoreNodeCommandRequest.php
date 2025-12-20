@@ -46,7 +46,7 @@ class StoreNodeCommandRequest extends FormRequest
             }
             
             // Ensure params is an associative array (object), not a list
-            if (isset($data['params']) && is_array($data['params']) && array_is_list($data['params'])) {
+            if (isset($data['params']) && is_array($data['params']) && array_is_list($data['params']) && count($data['params']) > 0) {
                 $validator->errors()->add('params', 'The params field must be an object, not a list.');
             }
             

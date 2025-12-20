@@ -47,9 +47,9 @@ const badgeVariant = computed(() => {
 const badgeStyle = computed(() => {
   if (props.variant === 'default' && stageInfo.value) {
     return {
-      backgroundColor: `${stageInfo.value.color}15`,
+      backgroundColor: `color-mix(in srgb, ${stageInfo.value.color} 15%, transparent)`,
       color: stageInfo.value.color,
-      borderColor: `${stageInfo.value.color}40`,
+      borderColor: `color-mix(in srgb, ${stageInfo.value.color} 40%, transparent)`,
     }
   }
   return {}

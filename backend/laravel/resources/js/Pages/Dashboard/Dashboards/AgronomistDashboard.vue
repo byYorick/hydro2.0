@@ -110,7 +110,7 @@
       <MetricCard
         label="Средний pH"
         :value="averagePh"
-        color="#3b82f6"
+        color="var(--accent-cyan)"
         :status="getPhStatus(averagePh)"
         :trend="phTrend"
         trend-label="за 24ч"
@@ -128,7 +128,7 @@
         label="Средний EC"
         :value="averageEc"
         unit="мСм/см"
-        color="#10b981"
+        color="var(--accent-green)"
         :status="getEcStatus(averageEc)"
         :trend="ecTrend"
         trend-label="за 24ч"
@@ -145,7 +145,7 @@
       <MetricCard
         label="Активных зон"
         :value="activeZonesCount"
-        color="#10b981"
+        color="var(--accent-green)"
         status="success"
         :subtitle="`из ${totalZonesCount}`"
         data-testid="dashboard-zones-count"
@@ -160,7 +160,7 @@
       <MetricCard
         label="Активных рецептов"
         :value="activeRecipesCount"
-        color="#8b5cf6"
+        color="var(--accent-lime)"
         status="info"
       >
         <template #icon>

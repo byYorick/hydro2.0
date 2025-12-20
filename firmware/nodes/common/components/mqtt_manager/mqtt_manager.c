@@ -410,6 +410,30 @@ esp_err_t mqtt_manager_update_node_info(const mqtt_node_info_t *node_info) {
     return ESP_OK;
 }
 
+esp_err_t mqtt_manager_get_node_info(mqtt_node_info_t *node_info) {
+    if (node_info == NULL) {
+        ESP_LOGE(TAG, "Invalid argument: node_info is NULL");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (s_node_info_mutex == NULL) {
+        ESP_LOGW(TAG, "Node info mutex is not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (xSemaphoreTake(s_node_info_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        ESP_LOGW(TAG, "Failed to take node_info mutex");
+        return ESP_ERR_TIMEOUT;
+    }
+
+    node_info->gh_uid = s_node_info.gh_uid;
+    node_info->zone_uid = s_node_info.zone_uid;
+    node_info->node_uid = s_node_info.node_uid;
+    xSemaphoreGive(s_node_info_mutex);
+
+    return ESP_OK;
+}
+
 void mqtt_manager_register_config_cb(mqtt_config_callback_t cb, void *user_ctx) {
     s_config_cb = cb;
     s_config_user_ctx = user_ctx;
@@ -995,4 +1019,3 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
             break;
     }
 }
-

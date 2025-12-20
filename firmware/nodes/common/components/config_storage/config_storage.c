@@ -9,6 +9,8 @@
 #include "esp_log.h"
 #include "nvs.h"
 #include "cJSON.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include <string.h>
 
 static const char *TAG = "config_storage";
@@ -20,12 +22,34 @@ static const char *NVS_TEMP_KEY = "last_temp";
 static char s_config_json[CONFIG_STORAGE_MAX_JSON_SIZE] = {0};
 static bool s_config_loaded = false;
 static nvs_handle_t s_nvs_handle = 0;
+static SemaphoreHandle_t s_config_mutex = NULL;
+
+static bool config_storage_lock(void) {
+    if (s_config_mutex == NULL) {
+        return false;
+    }
+    return (xSemaphoreTake(s_config_mutex, pdMS_TO_TICKS(2000)) == pdTRUE);
+}
+
+static void config_storage_unlock(void) {
+    if (s_config_mutex != NULL) {
+        xSemaphoreGive(s_config_mutex);
+    }
+}
 
 esp_err_t config_storage_init(void) {
     esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &s_nvs_handle);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to open NVS namespace: %s", esp_err_to_name(err));
         return err;
+    }
+
+    if (s_config_mutex == NULL) {
+        s_config_mutex = xSemaphoreCreateMutex();
+        if (s_config_mutex == NULL) {
+            ESP_LOGE(TAG, "Failed to create config storage mutex");
+            return ESP_ERR_NO_MEM;
+        }
     }
     
     ESP_LOGI(TAG, "Config storage initialized");
@@ -37,6 +61,11 @@ esp_err_t config_storage_load(void) {
         ESP_LOGE(TAG, "Config storage not initialized");
         return ESP_ERR_INVALID_STATE;
     }
+
+    if (!config_storage_lock()) {
+        ESP_LOGE(TAG, "Failed to lock config storage");
+        return ESP_ERR_TIMEOUT;
+    }
     
     size_t required_size = sizeof(s_config_json);
     esp_err_t err = nvs_get_str(s_nvs_handle, NVS_KEY, s_config_json, &required_size);
@@ -44,10 +73,12 @@ esp_err_t config_storage_load(void) {
     if (err == ESP_ERR_NVS_NOT_FOUND) {
         ESP_LOGW(TAG, "NodeConfig not found in NVS");
         s_config_loaded = false;
+        config_storage_unlock();
         return ESP_ERR_NOT_FOUND;
     } else if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to read NodeConfig from NVS: %s", esp_err_to_name(err));
         s_config_loaded = false;
+        config_storage_unlock();
         return err;
     }
     
@@ -68,6 +99,7 @@ esp_err_t config_storage_load(void) {
     if (config == NULL) {
         ESP_LOGE(TAG, "Failed to parse NodeConfig JSON - config may be corrupted");
         s_config_loaded = false;
+        config_storage_unlock();
         return ESP_FAIL;
     }
     
@@ -85,6 +117,7 @@ esp_err_t config_storage_load(void) {
         ESP_LOGE(TAG, "Loaded config has neither WiFi nor MQTT configuration - invalid");
         cJSON_Delete(config);
         s_config_loaded = false;
+        config_storage_unlock();
         return ESP_FAIL;
     }
     
@@ -134,6 +167,7 @@ esp_err_t config_storage_load(void) {
             
             cJSON_Delete(config);
             s_config_loaded = false;
+            config_storage_unlock();
             return ESP_FAIL;
         }
     }
@@ -142,6 +176,7 @@ esp_err_t config_storage_load(void) {
     s_config_loaded = true;
     ESP_LOGI(TAG, "NodeConfig loaded from NVS (WiFi: %s, MQTT: %s)", 
              has_wifi ? "yes" : "no", has_mqtt ? "yes" : "no");
+    config_storage_unlock();
     return ESP_OK;
 }
 
@@ -150,14 +185,21 @@ esp_err_t config_storage_save(const char *json_config, size_t json_len) {
         ESP_LOGE(TAG, "Config storage not initialized");
         return ESP_ERR_INVALID_STATE;
     }
+
+    if (!config_storage_lock()) {
+        ESP_LOGE(TAG, "Failed to lock config storage");
+        return ESP_ERR_TIMEOUT;
+    }
     
     if (json_config == NULL || json_len == 0) {
         ESP_LOGE(TAG, "Invalid JSON config");
+        config_storage_unlock();
         return ESP_ERR_INVALID_ARG;
     }
     
     if (json_len >= sizeof(s_config_json)) {
         ESP_LOGE(TAG, "JSON config too large: %d bytes (max: %d)", json_len, sizeof(s_config_json) - 1);
+        config_storage_unlock();
         return ESP_ERR_INVALID_SIZE;
     }
     
@@ -166,6 +208,7 @@ esp_err_t config_storage_save(const char *json_config, size_t json_len) {
     cJSON *new_config = cJSON_Parse(json_config);
     if (new_config == NULL) {
         ESP_LOGE(TAG, "Failed to parse new config JSON");
+        config_storage_unlock();
         return ESP_FAIL;
     }
     
@@ -224,6 +267,7 @@ esp_err_t config_storage_save(const char *json_config, size_t json_len) {
                     ESP_LOGE(TAG, "Failed to duplicate WiFi config from old config - memory error");
                     cJSON_Delete(old_config);
                     cJSON_Delete(new_config);
+                    config_storage_unlock();
                     return ESP_ERR_NO_MEM;
                 }
             } else {
@@ -369,6 +413,7 @@ esp_err_t config_storage_save(const char *json_config, size_t json_len) {
     
     if (final_json == NULL) {
         ESP_LOGE(TAG, "Failed to generate final JSON config - memory error");
+        config_storage_unlock();
         return ESP_ERR_NO_MEM;
     }
     
@@ -378,6 +423,7 @@ esp_err_t config_storage_save(const char *json_config, size_t json_len) {
     if (final_json_len >= sizeof(s_config_json)) {
         ESP_LOGE(TAG, "Final JSON config too large: %zu bytes (max: %zu)", final_json_len, sizeof(s_config_json) - 1);
         free(final_json);
+        config_storage_unlock();
         return ESP_ERR_INVALID_SIZE;
     }
 
@@ -386,6 +432,7 @@ esp_err_t config_storage_save(const char *json_config, size_t json_len) {
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Final config validation failed");
         free(final_json);
+        config_storage_unlock();
         return err;
     }
     
@@ -413,6 +460,7 @@ esp_err_t config_storage_save(const char *json_config, size_t json_len) {
     err = nvs_set_str(s_nvs_handle, NVS_KEY, final_json);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to save NodeConfig to NVS: %s", esp_err_to_name(err));
+        config_storage_unlock();
         return err;
     }
     
@@ -420,6 +468,7 @@ esp_err_t config_storage_save(const char *json_config, size_t json_len) {
     err = nvs_commit(s_nvs_handle);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to commit NVS: %s", esp_err_to_name(err));
+        config_storage_unlock();
         return err;
     }
     
@@ -441,6 +490,7 @@ esp_err_t config_storage_save(const char *json_config, size_t json_len) {
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "CRITICAL: Failed to verify saved config: %s", esp_err_to_name(err));
         s_config_loaded = false;
+        config_storage_unlock();
         return ESP_FAIL;
     }
     
@@ -449,6 +499,7 @@ esp_err_t config_storage_save(const char *json_config, size_t json_len) {
         ESP_LOGE(TAG, "CRITICAL: Saved config verification failed - data mismatch");
         ESP_LOGE(TAG, "Saved length: %zu, Verify length: %zu", strlen(s_config_json), strlen(verify_buffer));
         s_config_loaded = false;
+        config_storage_unlock();
         return ESP_FAIL;
     }
     
@@ -466,6 +517,7 @@ esp_err_t config_storage_save(const char *json_config, size_t json_len) {
                 ESP_LOGE(TAG, "CRITICAL: Saved config verification failed - SSID missing or empty in saved config");
                 cJSON_Delete(verify_config);
                 s_config_loaded = false;
+                config_storage_unlock();
                 return ESP_FAIL;
             }
             ESP_LOGI(TAG, "Config saved and verified successfully (SSID='%s')", verify_ssid->valuestring);
@@ -494,8 +546,10 @@ esp_err_t config_storage_save(const char *json_config, size_t json_len) {
     } else {
         ESP_LOGE(TAG, "CRITICAL: Failed to parse saved config for verification");
         s_config_loaded = false;
+        config_storage_unlock();
         return ESP_FAIL;
     }
+    config_storage_unlock();
     return ESP_OK;
 }
 
@@ -505,9 +559,14 @@ bool config_storage_exists(void) {
     }
     
     // Проверяем, что конфигурация не только существует в NVS, но и загружена и валидна
+    if (!config_storage_lock()) {
+        return false;
+    }
     if (s_config_loaded) {
+        config_storage_unlock();
         return true;
     }
+    config_storage_unlock();
     
     // Если не загружена, пытаемся проверить наличие в NVS
     size_t required_size = 0;
@@ -527,7 +586,11 @@ esp_err_t config_storage_get_json(char *buffer, size_t buffer_size) {
         return ESP_ERR_INVALID_ARG;
     }
     
+    if (!config_storage_lock()) {
+        return ESP_ERR_TIMEOUT;
+    }
     if (!s_config_loaded) {
+        config_storage_unlock();
         return ESP_ERR_NOT_FOUND;
     }
     
@@ -535,23 +598,30 @@ esp_err_t config_storage_get_json(char *buffer, size_t buffer_size) {
                        strlen(s_config_json) : buffer_size - 1;
     strncpy(buffer, s_config_json, copy_size);
     buffer[copy_size] = '\0';
+    config_storage_unlock();
     
     return ESP_OK;
 }
 
 static esp_err_t get_json_string_field(const char *field_name, char *buffer, size_t buffer_size) {
+    if (!config_storage_lock()) {
+        return ESP_ERR_TIMEOUT;
+    }
     if (!s_config_loaded) {
+        config_storage_unlock();
         return ESP_ERR_NOT_FOUND;
     }
     
     cJSON *config = cJSON_Parse(s_config_json);
     if (config == NULL) {
+        config_storage_unlock();
         return ESP_FAIL;
     }
     
     cJSON *item = cJSON_GetObjectItem(config, field_name);
     if (item == NULL || !cJSON_IsString(item)) {
         cJSON_Delete(config);
+        config_storage_unlock();
         return ESP_ERR_NOT_FOUND;
     }
     
@@ -559,27 +629,35 @@ static esp_err_t get_json_string_field(const char *field_name, char *buffer, siz
     buffer[buffer_size - 1] = '\0';
     
     cJSON_Delete(config);
+    config_storage_unlock();
     return ESP_OK;
 }
 
 static esp_err_t get_json_number_field(const char *field_name, int *value) {
+    if (!config_storage_lock()) {
+        return ESP_ERR_TIMEOUT;
+    }
     if (!s_config_loaded) {
+        config_storage_unlock();
         return ESP_ERR_NOT_FOUND;
     }
     
     cJSON *config = cJSON_Parse(s_config_json);
     if (config == NULL) {
+        config_storage_unlock();
         return ESP_FAIL;
     }
     
     cJSON *item = cJSON_GetObjectItem(config, field_name);
     if (item == NULL || !cJSON_IsNumber(item)) {
         cJSON_Delete(config);
+        config_storage_unlock();
         return ESP_ERR_NOT_FOUND;
     }
     
     *value = (int)cJSON_GetNumberValue(item);
     cJSON_Delete(config);
+    config_storage_unlock();
     return ESP_OK;
 }
 
@@ -608,8 +686,12 @@ esp_err_t config_storage_get_mqtt(config_storage_mqtt_t *mqtt) {
         return ESP_ERR_INVALID_ARG;
     }
     
+    if (!config_storage_lock()) {
+        return ESP_ERR_TIMEOUT;
+    }
     if (!s_config_loaded) {
         ESP_LOGW(TAG, "config_storage_get_mqtt: Config not loaded");
+        config_storage_unlock();
         return ESP_ERR_NOT_FOUND;
     }
     
@@ -617,6 +699,7 @@ esp_err_t config_storage_get_mqtt(config_storage_mqtt_t *mqtt) {
     cJSON *config = cJSON_Parse(s_config_json);
     if (config == NULL) {
         ESP_LOGE(TAG, "config_storage_get_mqtt: Failed to parse config JSON");
+        config_storage_unlock();
         return ESP_FAIL;
     }
     
@@ -624,6 +707,7 @@ esp_err_t config_storage_get_mqtt(config_storage_mqtt_t *mqtt) {
     if (mqtt_obj == NULL || !cJSON_IsObject(mqtt_obj)) {
         ESP_LOGW(TAG, "config_storage_get_mqtt: MQTT section not found in config");
         cJSON_Delete(config);
+        config_storage_unlock();
         return ESP_ERR_NOT_FOUND;
     }
     
@@ -679,6 +763,7 @@ esp_err_t config_storage_get_mqtt(config_storage_mqtt_t *mqtt) {
     }
     
     cJSON_Delete(config);
+    config_storage_unlock();
     return ESP_OK;
 }
 
@@ -687,18 +772,24 @@ esp_err_t config_storage_get_wifi(config_storage_wifi_t *wifi) {
         return ESP_ERR_INVALID_ARG;
     }
     
+    if (!config_storage_lock()) {
+        return ESP_ERR_TIMEOUT;
+    }
     if (!s_config_loaded) {
+        config_storage_unlock();
         return ESP_ERR_NOT_FOUND;
     }
     
     cJSON *config = cJSON_Parse(s_config_json);
     if (config == NULL) {
+        config_storage_unlock();
         return ESP_FAIL;
     }
     
     cJSON *wifi_obj = cJSON_GetObjectItem(config, "wifi");
     if (wifi_obj == NULL || !cJSON_IsObject(wifi_obj)) {
         cJSON_Delete(config);
+        config_storage_unlock();
         return ESP_ERR_NOT_FOUND;
     }
     
@@ -725,6 +816,7 @@ esp_err_t config_storage_get_wifi(config_storage_wifi_t *wifi) {
     }
     
     cJSON_Delete(config);
+    config_storage_unlock();
     return ESP_OK;
 }
 

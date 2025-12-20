@@ -33,6 +33,7 @@
 #include <stdio.h>
 
 static const char *TAG = "light_node_init";
+static bool s_node_hello_sent = false;
 
 // Setup mode function
 void light_node_run_setup_mode(void) {
@@ -140,18 +141,10 @@ static void light_node_publish_hello(void) {
 void light_node_mqtt_connection_cb(bool connected, void *user_ctx) {
     if (connected) {
         ESP_LOGI(TAG, "MQTT connected - light_node is online");
-        
-        char node_id[CONFIG_STORAGE_MAX_STRING_LEN];
-        char gh_uid[CONFIG_STORAGE_MAX_STRING_LEN];
-        bool has_node_id = (config_storage_get_node_id(node_id, sizeof(node_id)) == ESP_OK);
-        bool has_gh_uid = (config_storage_get_gh_uid(gh_uid, sizeof(gh_uid)) == ESP_OK);
-        bool has_valid_config = has_node_id && 
-                                strcmp(node_id, "nd-light-1") != 0 &&
-                                has_gh_uid &&
-                                strcmp(gh_uid, "gh-1") != 0;
-        
-        if (!has_valid_config) {
+
+        if (!s_node_hello_sent) {
             light_node_publish_hello();
+            s_node_hello_sent = true;
         }
         
         node_utils_request_time();
@@ -276,4 +269,3 @@ esp_err_t light_node_init_components(void) {
     
     return ESP_OK;
 }
-

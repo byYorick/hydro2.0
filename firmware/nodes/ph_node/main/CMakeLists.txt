@@ -6,6 +6,7 @@ idf_component_register(
         "ph_node_init.c"
         "ph_node_init_steps.c"
         "ph_node_framework_integration.c"
+        "ph_node_channel_map.c"
     INCLUDE_DIRS 
         "."
     REQUIRES 

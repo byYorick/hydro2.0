@@ -201,6 +201,15 @@ typedef struct {
 esp_err_t pump_driver_get_health_snapshot(pump_driver_health_snapshot_t *snapshot);
 
 /**
+ * @brief Получить оставшееся время cooldown для канала.
+ *
+ * @param channel_name Имя канала
+ * @param remaining_ms Оставшееся время в мс (0 если cooldown не активен)
+ * @return esp_err_t ESP_OK при успехе
+ */
+esp_err_t pump_driver_get_cooldown_remaining(const char *channel_name, uint32_t *remaining_ms);
+
+/**
  * @brief Получение health-метрик для конкретного канала
  *
  * @param channel_name Имя канала
@@ -214,4 +223,3 @@ esp_err_t pump_driver_get_channel_health(const char *channel_name, pump_driver_c
 #endif
 
 #endif // PUMP_DRIVER_H
-

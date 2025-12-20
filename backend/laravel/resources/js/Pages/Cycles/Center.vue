@@ -1,7 +1,7 @@
 <template>
   <AppLayout>
     <div class="space-y-5">
-      <section class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-6 shadow-[0_24px_60px_rgba(0,0,0,0.2)]">
+      <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-6">
         <div class="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
           <div>
             <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">центр циклов</p>

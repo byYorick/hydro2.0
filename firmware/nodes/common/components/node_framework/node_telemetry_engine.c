@@ -17,6 +17,7 @@
 #include "freertos/queue.h"
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <math.h>
 
 static const char *TAG = "node_telemetry_engine";
@@ -58,14 +59,11 @@ static struct {
 
 // Маппинг канала к metric_type согласно эталону node-sim
 // Эталон использует lowercase формат: ph, ec, air_temp_c, air_rh, co2_ppm, ina209_ma, flow_present
-static const char *channel_to_metric_type(const char *channel, metric_type_t type) {
+static const char *channel_to_metric_type(const char *channel, metric_type_t type,
+                                          char *out_buf, size_t out_size) {
     if (channel == NULL) {
         return "unknown";
     }
-    
-    // Используем имя канала напрямую, если оно соответствует эталону
-    // Преобразуем в lowercase для соответствия эталону
-    static char metric_type_buf[32];
     
     // Прямой маппинг каналов → metric_type (эталон node-sim)
     if (strcmp(channel, "ph_sensor") == 0 || strcmp(channel, "ph") == 0) {
@@ -103,15 +101,18 @@ static const char *channel_to_metric_type(const char *channel, metric_type_t typ
         case METRIC_TYPE_PUMP_STATE: return "pump_state";
         default: {
             // Если ничего не подошло, используем имя канала в lowercase
-            strncpy(metric_type_buf, channel, sizeof(metric_type_buf) - 1);
-            metric_type_buf[sizeof(metric_type_buf) - 1] = '\0';
+            if (!out_buf || out_size == 0) {
+                return "unknown";
+            }
+            strncpy(out_buf, channel, out_size - 1);
+            out_buf[out_size - 1] = '\0';
             // Преобразуем в lowercase
-            for (char *p = metric_type_buf; *p; p++) {
+            for (char *p = out_buf; *p; p++) {
                 if (*p >= 'A' && *p <= 'Z') {
                     *p = *p - 'A' + 'a';
                 }
             }
-            return metric_type_buf;
+            return out_buf;
         }
     }
 }
@@ -152,10 +153,7 @@ static esp_err_t flush_batch_internal(void) {
     }
 
     if (!mqtt_manager_is_connected()) {
-        ESP_LOGW(TAG, "MQTT not connected, clearing telemetry batch to prevent overflow");
-        // Очищаем батч при отключении MQTT, чтобы новые данные могли добавляться
-        s_telemetry_engine.batch.count = 0;
-        s_telemetry_engine.batch.last_flush_time = esp_timer_get_time() / 1000;
+        ESP_LOGW(TAG, "MQTT not connected, keeping telemetry batch");
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -168,49 +166,48 @@ static esp_err_t flush_batch_internal(void) {
     // Публикуем каждое сообщение из батча
     for (size_t i = 0; i < count; i++) {
         telemetry_item_t *item = &s_telemetry_engine.batch.items[i];
-        
-        cJSON *telemetry = cJSON_CreateObject();
-        if (telemetry) {
-            // Формат согласно эталону node-sim: только metric_type, value, ts
-            // Удалены поля node_id и channel (они уже есть в топике)
-            // metric_type уже сохранен в правильном формате (lowercase) при добавлении в батч
-            cJSON_AddStringToObject(telemetry, "metric_type", item->metric_type);
-            cJSON_AddNumberToObject(telemetry, "value", item->value);
-            cJSON_AddNumberToObject(telemetry, "ts", (int)item->ts);  // int вместо double (секунды UTC)
-            
-            // Добавляем unit, если он указан
-            if (item->unit[0] != '\0') {
-                cJSON_AddStringToObject(telemetry, "unit", item->unit);
-            }
-            
-            // Добавляем raw только если он не равен 0 (0 означает "не используется")
-            // Это позволяет передавать отрицательные значения
-            if (item->raw != 0) {
-                cJSON_AddNumberToObject(telemetry, "raw", item->raw);
-            }
-            if (item->stub) {
-                cJSON_AddBoolToObject(telemetry, "stub", item->stub);
-            }
-            if (!item->stable) {
-                cJSON_AddBoolToObject(telemetry, "stable", item->stable);
-            }
-            
-            char *json_str = cJSON_PrintUnformatted(telemetry);
-            if (json_str) {
-                // Используем пул памяти для оптимизации (если доступен)
-                // Примечание: cJSON_PrintUnformatted уже выделил память через malloc,
-                // поэтому мы не можем напрямую использовать пул. Но можем отслеживать метрики.
-                if (memory_pool_is_initialized()) {
-                    // Обновляем метрики использования памяти
-                    memory_pool_free_json_string(NULL);  // Просто обновляет метрики
-                }
-                
-                mqtt_manager_publish_telemetry(item->channel, json_str);
-                oled_ui_notify_telemetry();
-                free(json_str);
-            }
-            cJSON_Delete(telemetry);
+        char json_buf[256];
+        int len = snprintf(
+            json_buf,
+            sizeof(json_buf),
+            "{\"metric_type\":\"%s\",\"value\":%.3f,\"ts\":%llu",
+            item->metric_type,
+            (double)item->value,
+            (unsigned long long)item->ts
+        );
+        if (len < 0 || (size_t)len >= sizeof(json_buf)) {
+            ESP_LOGW(TAG, "Telemetry JSON buffer overflow for channel %s", item->channel);
+            continue;
         }
+
+        if (item->unit[0] != '\0') {
+            len += snprintf(json_buf + len, sizeof(json_buf) - (size_t)len,
+                            ",\"unit\":\"%s\"", item->unit);
+        }
+        if (item->raw != 0) {
+            len += snprintf(json_buf + len, sizeof(json_buf) - (size_t)len,
+                            ",\"raw\":%d", (int)item->raw);
+        }
+        if (item->stub) {
+            len += snprintf(json_buf + len, sizeof(json_buf) - (size_t)len,
+                            ",\"stub\":true");
+        }
+        if (!item->stable) {
+            len += snprintf(json_buf + len, sizeof(json_buf) - (size_t)len,
+                            ",\"stable\":false");
+        }
+        if (len < 0 || (size_t)len >= sizeof(json_buf)) {
+            ESP_LOGW(TAG, "Telemetry JSON buffer overflow for channel %s", item->channel);
+            continue;
+        }
+        snprintf(json_buf + len, sizeof(json_buf) - (size_t)len, "}");
+
+        if (memory_pool_is_initialized()) {
+            memory_pool_free_json_string(NULL);
+        }
+
+        mqtt_manager_publish_telemetry(item->channel, json_buf);
+        oled_ui_notify_telemetry();
     }
 
     // Очищаем батч
@@ -272,8 +269,7 @@ static esp_err_t add_to_batch(
             item->channel[63] = '\0';
             // Сохраняем metric_type в правильном формате (lowercase, эталон node-sim)
             // Используем маппинг канала → metric_type
-            const char *ethernet_metric_type = channel_to_metric_type(channel, METRIC_TYPE_CUSTOM);
-            strncpy(item->metric_type, ethernet_metric_type, 31);
+            strncpy(item->metric_type, metric_type_str, 31);
             item->metric_type[31] = '\0';
             item->value = value;
             item->raw = raw;
@@ -310,7 +306,8 @@ esp_err_t node_telemetry_publish_sensor(
 ) {
     // Используем маппинг канала → metric_type согласно эталону node-sim
     // metric_type enum используется как fallback, если канал не распознан
-    const char *metric_type_str = channel_to_metric_type(channel, metric_type);
+    char metric_buf[32];
+    const char *metric_type_str = channel_to_metric_type(channel, metric_type, metric_buf, sizeof(metric_buf));
     return add_to_batch(channel, metric_type_str, value, raw, stub, stable, unit);
 }
 
@@ -322,7 +319,8 @@ esp_err_t node_telemetry_publish_actuator(
 ) {
     // Для актуаторов используем значение как состояние
     // Используем маппинг канала → metric_type согласно эталону node-sim
-    const char *metric_type_str = channel_to_metric_type(channel, metric_type);
+    char metric_buf[32];
+    const char *metric_type_str = channel_to_metric_type(channel, metric_type, metric_buf, sizeof(metric_buf));
     return add_to_batch(channel, metric_type_str, value, 0, false, true, NULL);
 }
 

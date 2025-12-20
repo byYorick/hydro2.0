@@ -90,6 +90,7 @@ import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import ChartBase from '@/Components/ChartBase.vue'
 import type { TelemetrySample } from '@/types'
+import { useTheme } from '@/composables/useTheme'
 
 type TimeRange = '1H' | '24H' | '7D' | '30D' | 'ALL'
 
@@ -117,6 +118,8 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{
   'time-range-change': [range: TimeRange]
 }>()
+
+const { theme } = useTheme()
 
 const setRange = (r: TimeRange): void => {
   emit('time-range-change', r)
@@ -252,6 +255,28 @@ const formatTimestamp = (timestamp: number | string | null): string => {
   return `${dateStr}, ${timeStr}`
 }
 
+const resolveCssColor = (variable: string, fallback: string): string => {
+  if (typeof window === 'undefined') {
+    return fallback
+  }
+  const value = getComputedStyle(document.documentElement).getPropertyValue(variable).trim()
+  return value || fallback
+}
+
+const chartPalette = computed(() => {
+  theme.value
+  return {
+    tooltipBg: resolveCssColor('--bg-surface-strong', 'rgba(17, 24, 39, 0.95)'),
+    borderMuted: resolveCssColor('--border-muted', '#374151'),
+    borderStrong: resolveCssColor('--border-strong', '#4b5563'),
+    textPrimary: resolveCssColor('--text-primary', '#f3f4f6'),
+    textDim: resolveCssColor('--text-dim', '#9ca3af'),
+    badgeNeutralBg: resolveCssColor('--badge-neutral-bg', 'rgba(75, 85, 99, 0.2)'),
+    badgeInfoBg: resolveCssColor('--badge-info-bg', 'rgba(96, 165, 250, 0.2)'),
+    accentCyan: resolveCssColor('--accent-cyan', '#60a5fa'),
+  }
+})
+
 const option = computed(() => {
   const allDataLength = Math.max(...props.series.map(s => s.data?.length || 0))
   const hasLargeDataset = allDataLength > 50
@@ -260,6 +285,8 @@ const option = computed(() => {
   const hasDifferentUnits = props.series.length > 1 && 
     props.series.some(s => s.yAxisIndex !== undefined && s.yAxisIndex !== 0)
   
+  const palette = chartPalette.value
+
   return {
     tooltip: { 
       trigger: 'axis',
@@ -289,14 +316,14 @@ const option = computed(() => {
         
         return `${dateTimeStr}<br/>${lines}`
       },
-      backgroundColor: 'rgba(17, 24, 39, 0.95)',
-      borderColor: '#374151',
+      backgroundColor: palette.tooltipBg,
+      borderColor: palette.borderMuted,
       borderWidth: 1,
       textStyle: {
-        color: '#f3f4f6',
+        color: palette.textPrimary,
         fontSize: 12,
       },
-      extraCssText: 'z-index: 99999 !important; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2); padding: 8px 12px; border-radius: 6px;',
+      extraCssText: 'z-index: 99999 !important; box-shadow: var(--shadow-card); padding: 8px 12px; border-radius: 6px;',
     },
     legend: {
       show: false, // Используем кастомную легенду
@@ -311,36 +338,36 @@ const option = computed(() => {
     xAxis: {
       type: 'time',
       axisLabel: { 
-        color: '#9ca3af',
+        color: palette.textDim,
         rotate: 0,
         formatter: (value: number) => {
           const date = new Date(value)
           return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
         }
       },
-      axisLine: { lineStyle: { color: '#374151' } },
+      axisLine: { lineStyle: { color: palette.borderMuted } },
       boundaryGap: false,
     },
     yAxis: [
       {
         type: 'value',
         name: props.series[0]?.label || '',
-        nameTextStyle: { color: '#9ca3af' },
+        nameTextStyle: { color: palette.textDim },
         position: 'left',
         axisLabel: { 
-          color: props.series[0]?.color || '#9ca3af',
+          color: props.series[0]?.color || palette.textDim,
           formatter: formatAxisValue,
         },
-        splitLine: { lineStyle: { color: '#1f2937' } },
+        splitLine: { lineStyle: { color: palette.borderMuted } },
         scale: false,
       },
       ...(hasDifferentUnits ? [{
         type: 'value',
         name: props.series.find(s => s.yAxisIndex === 1)?.label || '',
-        nameTextStyle: { color: '#9ca3af' },
+        nameTextStyle: { color: palette.textDim },
         position: 'right',
         axisLabel: { 
-          color: props.series.find(s => s.yAxisIndex === 1)?.color || '#9ca3af',
+          color: props.series.find(s => s.yAxisIndex === 1)?.color || palette.textDim,
           formatter: formatAxisValue,
         },
         splitLine: { show: false },
@@ -369,22 +396,22 @@ const option = computed(() => {
         handleIcon: 'path://M30.9,53.2C16.8,53.2,5.3,41.7,5.3,27.6S16.8,2,30.9,2C45,2,56.4,13.5,56.4,27.6S45,53.2,30.9,53.2z M30.9,3.5C17.6,3.5,6.8,14.4,6.8,27.6c0,13.3,10.8,24.1,24.1,24.1C44.2,51.7,55,40.9,55,27.6C54.9,14.4,44.1,3.5,30.9,3.5z M36.9,35.8c0,0.6-0.4,1-1,1H26.5c-0.6,0-1-0.4-1-1V19.4c0-0.6,0.4-1,1-1h9.4c0.6,0,1,0.4,1,1V35.8z',
         handleSize: '80%',
         handleStyle: {
-          color: '#4b5563',
-          borderColor: '#6b7280',
+          color: palette.borderStrong,
+          borderColor: palette.borderMuted,
         },
         textStyle: {
-          color: '#9ca3af',
+          color: palette.textDim,
           fontSize: 10,
         },
-        borderColor: '#374151',
-        fillerColor: 'rgba(75, 85, 99, 0.2)',
+        borderColor: palette.borderMuted,
+        fillerColor: palette.badgeNeutralBg,
         dataBackground: {
-          lineStyle: { color: '#4b5563' },
-          areaStyle: { color: 'rgba(75, 85, 99, 0.1)' },
+          lineStyle: { color: palette.borderStrong },
+          areaStyle: { color: palette.badgeNeutralBg },
         },
         selectedDataBackground: {
-          lineStyle: { color: '#60a5fa' },
-          areaStyle: { color: 'rgba(96, 165, 250, 0.2)' },
+          lineStyle: { color: palette.accentCyan },
+          areaStyle: { color: palette.badgeInfoBg },
         },
         minValueSpan: allDataLength > 0 && props.series[0]?.data?.length > 0
           ? Math.min(3600000, (props.series[0].data[props.series[0].data.length - 1]?.ts || 0) - (props.series[0].data[0]?.ts || 0) || 3600000)

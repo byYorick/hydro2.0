@@ -74,7 +74,7 @@
           <!-- Устройство -->
           <Link
             :href="`/devices/${device.id}`"
-            class="block w-16 h-16 sm:w-20 sm:h-20 rounded-lg border-2 transition-all duration-300 hover:shadow-lg"
+            class="block w-16 h-16 sm:w-20 sm:h-20 rounded-lg border-2 transition-all duration-300 hover:shadow-[var(--shadow-card)]"
             :class="getDeviceCardClass(device)"
             :title="device.uid || device.name || `Device ${device.id}`"
           >
@@ -99,7 +99,7 @@
         v-for="device in devices"
         :key="device.id"
         :href="`/devices/${device.id}`"
-        class="group relative rounded-lg border-2 p-3 transition-all duration-200 hover:shadow-lg hover:scale-105"
+        class="group relative rounded-lg border-2 p-3 transition-all duration-200 hover:shadow-[var(--shadow-card)] hover:scale-105"
         :class="getDeviceCardClass(device)"
       >
         <!-- Статус индикатор -->

@@ -17,31 +17,31 @@ export const GROW_STAGES: Record<GrowStage, GrowStageInfo> = {
   planting: {
     id: 'planting',
     label: 'Посадка',
-    color: '#8b5cf6', // purple
+    color: 'var(--accent-lime)',
     icon: '🌱',
   },
   rooting: {
     id: 'rooting',
     label: 'Укоренение',
-    color: '#06b6d4', // cyan
+    color: 'var(--accent-cyan)',
     icon: '🌿',
   },
   veg: {
     id: 'veg',
     label: 'Вега',
-    color: '#10b981', // green
+    color: 'var(--accent-green)',
     icon: '🌳',
   },
   flowering: {
     id: 'flowering',
     label: 'Цветение',
-    color: '#f59e0b', // amber
+    color: 'var(--accent-amber)',
     icon: '🌸',
   },
   harvest: {
     id: 'harvest',
     label: 'Сбор',
-    color: '#ef4444', // red
+    color: 'var(--accent-red)',
     icon: '🍎',
   },
 }

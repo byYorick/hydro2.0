@@ -4,7 +4,7 @@
     <Card 
       v-if="targets.ph"
       :class="[
-        'transition-all duration-300 hover:border-[color:var(--border-strong)] hover:shadow-[var(--shadow-card)]',
+        'surface-card-hover transition-all duration-300 hover:border-[color:var(--border-strong)]',
         getCardBorderClass(telemetry.ph, targets.ph.min, targets.ph.max)
       ]"
     >
@@ -61,7 +61,7 @@
     <Card 
       v-if="targets.ec"
       :class="[
-        'transition-all duration-300 hover:border-[color:var(--border-strong)] hover:shadow-[var(--shadow-card)]',
+        'surface-card-hover transition-all duration-300 hover:border-[color:var(--border-strong)]',
         getCardBorderClass(telemetry.ec, targets.ec.min, targets.ec.max)
       ]"
     >
@@ -118,7 +118,7 @@
     <Card 
       v-if="targets.temp"
       :class="[
-        'transition-all duration-300 hover:border-[color:var(--border-strong)] hover:shadow-[var(--shadow-card)]',
+        'surface-card-hover transition-all duration-300 hover:border-[color:var(--border-strong)]',
         getCardBorderClass(telemetry.temperature, targets.temp.min, targets.temp.max)
       ]"
     >
@@ -175,7 +175,7 @@
     <Card 
       v-if="targets.humidity"
       :class="[
-        'transition-all duration-300 hover:border-[color:var(--border-strong)] hover:shadow-[var(--shadow-card)]',
+        'surface-card-hover transition-all duration-300 hover:border-[color:var(--border-strong)]',
         getCardBorderClass(telemetry.humidity, targets.humidity.min, targets.humidity.max)
       ]"
     >

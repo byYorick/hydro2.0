@@ -24,7 +24,7 @@
       />
       <!-- Дефолтный Dashboard для остальных случаев -->
       <div v-else class="space-y-6">
-        <div class="glass-panel border border-[color:var(--border-strong)] rounded-2xl p-5 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
+        <div class="glass-panel glass-panel--elevated border border-[color:var(--border-strong)] rounded-2xl p-5">
           <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
               <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">обзор системы</p>
@@ -38,7 +38,7 @@
             </div>
           </div>
           <div class="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4 mt-4">
-            <Card class="hover:border-[color:var(--border-strong)] hover:shadow-[0_12px_40px_rgba(48,240,201,0.12)]">
+            <Card class="surface-card-hover hover:border-[color:var(--border-strong)] transition-all duration-200">
               <div class="flex items-start justify-between mb-2">
                 <div class="text-[color:var(--text-dim)] text-xs font-medium uppercase tracking-[0.15em]">Теплицы</div>
                 <div class="w-9 h-9 rounded-xl bg-[color:var(--badge-success-bg)] border border-[color:var(--badge-success-border)] flex items-center justify-center">
@@ -49,7 +49,7 @@
               </div>
               <div class="text-3xl font-bold text-[color:var(--accent-green)]">{{ dashboard.greenhousesCount }}</div>
             </Card>
-            <Card class="hover:border-[color:var(--border-strong)] hover:shadow-[0_12px_40px_rgba(48,240,201,0.12)]" data-testid="dashboard-zones-count">
+            <Card class="surface-card-hover hover:border-[color:var(--border-strong)] transition-all duration-200" data-testid="dashboard-zones-count">
               <div class="flex items-start justify-between mb-2">
                 <div class="text-[color:var(--text-dim)] text-xs font-medium uppercase tracking-[0.15em]">Зоны</div>
                 <div class="w-9 h-9 rounded-xl bg-[color:var(--badge-info-bg)] border border-[color:var(--badge-info-border)] flex items-center justify-center">
@@ -74,7 +74,7 @@
                 </span>
               </div>
             </Card>
-            <Card class="hover:border-[color:var(--border-strong)] hover:shadow-[0_12px_40px_rgba(168,85,247,0.12)]">
+            <Card class="surface-card-hover hover:border-[color:var(--border-strong)] transition-all duration-200">
               <div class="flex items-start justify-between mb-2">
                 <div class="text-[color:var(--text-dim)] text-xs font-medium uppercase tracking-[0.15em]">Устройства</div>
                 <div class="w-9 h-9 rounded-xl bg-[color:var(--badge-warning-bg)] border border-[color:var(--badge-warning-border)] flex items-center justify-center">
@@ -93,7 +93,7 @@
                 </span>
               </div>
             </Card>
-            <Card class="hover:border-[color:var(--border-strong)] hover:shadow-[0_12px_40px_rgba(255,77,103,0.14)]" :class="dashboard.alertsCount > 0 ? 'border-[color:var(--badge-danger-border)]' : ''" data-testid="dashboard-alerts-count">
+            <Card class="surface-card-hover hover:border-[color:var(--border-strong)] transition-all duration-200" :class="dashboard.alertsCount > 0 ? 'border-[color:var(--badge-danger-border)]' : ''" data-testid="dashboard-alerts-count">
               <div class="flex items-start justify-between mb-2">
                 <div class="text-[color:var(--text-dim)] text-xs font-medium uppercase tracking-[0.15em]">Активные алерты</div>
                 <div class="w-9 h-9 rounded-xl flex items-center justify-center" :class="dashboard.alertsCount > 0 ? 'bg-[color:var(--badge-danger-bg)] border border-[color:var(--badge-danger-border)]' : 'bg-[color:var(--badge-success-bg)] border border-[color:var(--badge-success-border)]'">
@@ -141,7 +141,7 @@
             v-for="gh in dashboard.greenhouses" 
             :key="gh.id" 
             v-memo="[gh.id, gh.name, gh.zones_count, gh.zones_running]"
-            class="hover:border-[color:var(--border-strong)] hover:shadow-lg transition-all duration-200"
+            class="surface-card-hover hover:border-[color:var(--border-strong)] transition-all duration-200"
           >
             <div class="flex items-start justify-between">
               <div>
@@ -168,7 +168,7 @@
             v-for="zone in dashboard.problematicZones" 
             :key="zone.id" 
             v-memo="[zone.id, zone.status, zone.alerts_count]"
-            class="hover:border-[color:var(--badge-danger-border)] hover:shadow-lg transition-all duration-200 border-[color:var(--badge-danger-border)]"
+            class="surface-card-hover hover:border-[color:var(--badge-danger-border)] transition-all duration-200 border-[color:var(--badge-danger-border)]"
           >
             <div class="flex items-start justify-between mb-2">
               <div>
@@ -376,7 +376,7 @@
             v-for="e in filteredEvents" 
             :key="e.id" 
             v-memo="[e.id, e.kind, e.message, e.occurred_at]"
-            class="rounded-lg border p-2.5 transition-all duration-200 hover:shadow-md"
+            class="rounded-lg border p-2.5 transition-all duration-200 hover:shadow-[var(--shadow-card)]"
             :class="e.kind === 'ALERT' 
               ? 'border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)]' 
               : e.kind === 'WARNING' 
@@ -430,6 +430,7 @@ import { useWebSocket } from '@/composables/useWebSocket'
 import { useRole } from '@/composables/useRole'
 import { useCommands } from '@/composables/useCommands'
 import { useToast } from '@/composables/useToast'
+import { useTheme } from '@/composables/useTheme'
 import type { Zone, Greenhouse, Alert, ZoneEvent, EventKind } from '@/types'
 
 type QuickAction = 'PAUSE' | 'RESUME' | 'FORCE_IRRIGATION'
@@ -467,6 +468,7 @@ interface Props {
 const props = defineProps<Props>()
 
 const { isAgronomist, isAdmin, isEngineer, isOperator, isViewer } = useRole()
+const { theme } = useTheme()
 
 const zonesStatusSummary = computed(() => props.dashboard.zonesByStatus || {})
 const nodesStatusSummary = computed(() => props.dashboard.nodesByStatus || {})
@@ -683,9 +685,28 @@ async function handleQuickAction(zone: Zone, action: 'PAUSE' | 'RESUME' | 'FORCE
   }
 }
 
+const resolveCssColor = (variable: string, fallback: string): string => {
+  if (typeof window === 'undefined') {
+    return fallback
+  }
+  const value = getComputedStyle(document.documentElement).getPropertyValue(variable).trim()
+  return value || fallback
+}
+
+const telemetryPalette = computed(() => {
+  theme.value
+  return {
+    ph: resolveCssColor('--accent-cyan', '#3b82f6'),
+    ec: resolveCssColor('--accent-green', '#10b981'),
+    temp: resolveCssColor('--accent-amber', '#f59e0b'),
+    humidity: resolveCssColor('--accent-lime', '#8b5cf6'),
+  }
+})
+
 // Мемоизируем метрики телеметрии для избежания пересоздания массива
 const telemetryMetrics = computed(() => {
   const data = telemetryData.value
+  const palette = telemetryPalette.value
   return [
     {
       key: 'ph',
@@ -694,7 +715,7 @@ const telemetryMetrics = computed(() => {
       currentValue: data.ph.currentValue,
       unit: '',
       loading: data.ph.loading,
-      color: '#3b82f6'
+      color: palette.ph
     },
     {
       key: 'ec',
@@ -703,7 +724,7 @@ const telemetryMetrics = computed(() => {
       currentValue: data.ec.currentValue,
       unit: 'мСм/см',
       loading: data.ec.loading,
-      color: '#10b981'
+      color: palette.ec
     },
     {
       key: 'temp',
@@ -712,7 +733,7 @@ const telemetryMetrics = computed(() => {
       currentValue: data.temp.currentValue,
       unit: '°C',
       loading: data.temp.loading,
-      color: '#f59e0b'
+      color: palette.temp
     },
     {
       key: 'humidity',
@@ -721,7 +742,7 @@ const telemetryMetrics = computed(() => {
       currentValue: data.humidity.currentValue,
       unit: '%',
       loading: data.humidity.loading,
-      color: '#8b5cf6'
+      color: palette.humidity
     }
   ]
 })

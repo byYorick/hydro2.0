@@ -789,6 +789,18 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
     Route::get('/cycles', [CycleCenterController::class, 'index'])->name('cycles.center');
 
     /**
+     * Grow Cycle Wizard - мастер запуска цикла выращивания
+     *
+     * Inertia Props:
+     * - auth: { user: { role: 'viewer'|'operator'|'admin'|'agronomist' } }
+     */
+    Route::get('/grow-cycle-wizard', function () {
+        return Inertia::render('GrowCycles/Wizard', [
+            'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
+        ]);
+    })->name('grow-cycle-wizard');
+
+    /**
      * Zones routes
      */
     Route::prefix('zones')->group(function () {
@@ -1313,17 +1325,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
             ]);
         })->name('zones.show');
 
-        /**
-         * Grow Cycle Wizard - мастер запуска цикла выращивания
-         *
-         * Inertia Props:
-         * - auth: { user: { role: 'viewer'|'operator'|'admin'|'agronomist' } }
-         */
-        Route::get('/grow-cycle-wizard', function () {
-            return Inertia::render('GrowCycles/Wizard', [
-                'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
-            ]);
-        })->name('grow-cycles.wizard');
     });
 
     /**

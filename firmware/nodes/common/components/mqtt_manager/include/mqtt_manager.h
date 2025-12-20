@@ -209,6 +209,17 @@ esp_err_t mqtt_manager_publish_diagnostics(const char *data);
 bool mqtt_manager_is_connected(void);
 
 /**
+ * @brief Получить текущую информацию об узле для формирования топиков
+ * 
+ * Эта информация содержит gh_uid, zone_uid и node_uid, которые используются
+ * для публикации telemetry/command/diagnostics и теперь также для ошибок.
+ * 
+ * @param node_info Указатель на структуру, которая будет заполнена
+ * @return ESP_OK при удаче, иначе ошибка (например, ESP_ERR_INVALID_STATE, если менеджер не инициализирован)
+ */
+esp_err_t mqtt_manager_get_node_info(mqtt_node_info_t *node_info);
+
+/**
  * @brief Получить количество переподключений
  * 
  * @return Количество переподключений к брокеру
@@ -251,4 +262,3 @@ esp_err_t mqtt_manager_update_node_info(const mqtt_node_info_t *node_info);
 #endif
 
 #endif // MQTT_MANAGER_H
-

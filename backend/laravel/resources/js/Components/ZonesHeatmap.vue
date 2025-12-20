@@ -4,7 +4,7 @@
       <div
         v-for="entry in statusEntries"
         :key="entry.status"
-        class="p-4 rounded-lg border-2 transition-all duration-200 hover:scale-105 hover:shadow-lg cursor-pointer group relative"
+        class="p-4 rounded-lg border-2 transition-all duration-200 hover:scale-105 hover:shadow-[var(--shadow-card)] cursor-pointer group relative"
         :class="entry.cardClass"
         @click="handleStatusClick(entry.status)"
         @mouseenter="hoveredStatus = entry.status"

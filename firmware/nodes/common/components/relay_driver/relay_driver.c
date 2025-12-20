@@ -190,7 +190,7 @@ esp_err_t relay_driver_init_from_config(void) {
                         bool resolved_active_high = true;
                         relay_type_t resolved_relay_type = RELAY_TYPE_NO;
 
-                        bool hw_resolved = relay_driver_resolve_hw_gpio(
+                        relay_driver_resolve_hw_gpio(
                             name_item->valuestring,
                             &resolved_gpio,
                             &resolved_active_high,

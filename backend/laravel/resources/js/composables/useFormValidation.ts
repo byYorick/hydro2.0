@@ -44,8 +44,8 @@ export function useFormValidation<T extends Record<string, unknown>>(
    * Получает классы для поля с ошибкой
    */
   function getErrorClasses(field: keyof T, baseClasses: string = ''): string {
-    const errorClasses = 'border-red-500 bg-red-900/20'
-    const normalClasses = 'border-neutral-700 bg-neutral-900'
+    const errorClasses = 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]'
+    const normalClasses = 'border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]'
     
     return hasError(field) 
       ? `${baseClasses} ${errorClasses}`.trim()
@@ -125,4 +125,3 @@ export function useFormValidation<T extends Record<string, unknown>>(
     validateEmail,
   }
 }
-

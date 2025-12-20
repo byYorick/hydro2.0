@@ -6,6 +6,8 @@ idf_component_register(
         "light_node_framework_integration.c"
         "light_node_init.c"
         "light_node_init_steps.c"
+        "light_node_channel_map.c"
+        "light_node_config_utils.c"
     INCLUDE_DIRS
         "."
     REQUIRES
@@ -22,6 +24,7 @@ idf_component_register(
         oled_ui
         setup_portal
         connection_status
+        factory_reset_button
         esp_wifi
         nvs_flash
         esp_netif

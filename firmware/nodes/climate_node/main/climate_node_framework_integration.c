@@ -262,10 +262,6 @@ static esp_err_t handle_set_pwm(
 esp_err_t climate_node_publish_telemetry_callback(void *user_ctx) {
     (void)user_ctx;
 
-    if (!mqtt_manager_is_connected()) {
-        return ESP_ERR_INVALID_STATE;
-    }
-
     // Чтение температуры и влажности (SHT3x)
     sht3x_reading_t sht_reading = {0};
     esp_err_t sht_err = sht3x_read(&sht_reading);

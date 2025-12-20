@@ -11,6 +11,7 @@
 
 #include "ec_node_init_steps.h"
 #include "ec_node_defaults.h"
+#include "ec_node_channel_map.h"
 #include "config_storage.h"
 #include "wifi_manager.h"
 #include "i2c_bus.h"
@@ -22,9 +23,81 @@
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <stdlib.h>
 #include <string.h>
 
 static const char *TAG = "ec_node_init_steps";
+
+static esp_err_t ec_node_patch_pump_config(void) {
+    static char config_json[CONFIG_STORAGE_MAX_JSON_SIZE];
+
+    if (config_storage_get_json(config_json, sizeof(config_json)) != ESP_OK) {
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    cJSON *config = cJSON_Parse(config_json);
+    if (!config) {
+        return ESP_FAIL;
+    }
+
+    bool changed = false;
+    cJSON *channels = cJSON_GetObjectItem(config, "channels");
+    if (channels == NULL || !cJSON_IsArray(channels) || cJSON_GetArraySize(channels) == 0) {
+        if (channels) {
+            cJSON_DeleteItemFromObject(config, "channels");
+        }
+        cJSON *built_channels = ec_node_build_config_channels();
+        if (!built_channels) {
+            cJSON_Delete(config);
+            return ESP_ERR_NO_MEM;
+        }
+        cJSON_AddItemToObject(config, "channels", built_channels);
+        changed = true;
+    }
+
+    cJSON *limits = cJSON_GetObjectItem(config, "limits");
+    if (limits == NULL || !cJSON_IsObject(limits)) {
+        if (limits) {
+            cJSON_DeleteItemFromObject(config, "limits");
+        }
+        limits = cJSON_CreateObject();
+        if (!limits) {
+            cJSON_Delete(config);
+            return ESP_ERR_NO_MEM;
+        }
+        cJSON_AddItemToObject(config, "limits", limits);
+        changed = true;
+    }
+
+    cJSON *current_min = cJSON_GetObjectItem(limits, "currentMin");
+    if (current_min == NULL || !cJSON_IsNumber(current_min)) {
+        cJSON_DeleteItemFromObject(limits, "currentMin");
+        cJSON_AddNumberToObject(limits, "currentMin", EC_NODE_PUMP_CURRENT_MIN_MA);
+        changed = true;
+    }
+
+    cJSON *current_max = cJSON_GetObjectItem(limits, "currentMax");
+    if (current_max == NULL || !cJSON_IsNumber(current_max)) {
+        cJSON_DeleteItemFromObject(limits, "currentMax");
+        cJSON_AddNumberToObject(limits, "currentMax", EC_NODE_PUMP_CURRENT_MAX_MA);
+        changed = true;
+    }
+
+    if (!changed) {
+        cJSON_Delete(config);
+        return ESP_OK;
+    }
+
+    char *patched = cJSON_PrintUnformatted(config);
+    cJSON_Delete(config);
+    if (!patched) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    esp_err_t err = config_storage_save(patched, strlen(patched));
+    free(patched);
+    return err;
+}
 
 // Вспомогательная функция для получения значения из config_storage с дефолтом
 static esp_err_t get_config_string(const char *key, char *buffer, size_t buffer_size, const char *default_value) {
@@ -264,7 +337,14 @@ esp_err_t ec_node_init_step_pumps(ec_node_init_context_t *ctx,
         result->component_initialized = false;
     }
     
-    esp_err_t err = pump_driver_init_from_config();
+    esp_err_t err = ec_node_patch_pump_config();
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "Pump config patched with firmware channels/limits");
+    } else if (err != ESP_ERR_NOT_FOUND) {
+        ESP_LOGW(TAG, "Failed to patch pump config: %s", esp_err_to_name(err));
+    }
+
+    err = pump_driver_init_from_config();
     if (err == ESP_OK) {
         ESP_LOGI(TAG, "Pump driver initialized successfully from config");
         if (result) {
@@ -409,4 +489,3 @@ esp_err_t ec_node_init_step_finalize(ec_node_init_context_t *ctx,
     
     return ESP_OK;
 }
-

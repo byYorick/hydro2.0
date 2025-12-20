@@ -87,6 +87,11 @@ class NodeConfigService
                 }, $nodeConfig['channels']);
             }
 
+            $defaultChannels = $this->getDefaultChannelsForNodeType($node->type);
+            if (!empty($defaultChannels)) {
+                return $defaultChannels;
+            }
+
             return [];
         }
 
@@ -130,6 +135,62 @@ class NodeConfigService
         }
 
         return $config;
+    }
+
+    private function getDefaultChannelsForNodeType(string $nodeType): array
+    {
+        if ($nodeType === 'ph') {
+            return array_merge(
+                $this->buildDefaultPhSensorChannels(),
+                $this->buildDefaultPhActuatorChannels()
+            );
+        }
+
+        return [];
+    }
+
+    private function buildDefaultPhSensorChannels(): array
+    {
+        $sensors = [
+            ['name' => 'ph_sensor', 'metric' => 'PH', 'unit' => 'pH'],
+            ['name' => 'solution_temp_c', 'metric' => 'TEMP_SOLUTION', 'unit' => '°C'],
+        ];
+
+        $result = [];
+        foreach ($sensors as $sensor) {
+            $result[] = $this->buildChannelEntry($sensor['name'], 'sensor', $sensor['metric'], $sensor['unit']);
+        }
+
+        return $result;
+    }
+
+    private function buildDefaultPhActuatorChannels(): array
+    {
+        $actuators = [
+            'ph_doser_up',
+            'ph_doser_down',
+        ];
+
+        return array_map(fn (string $name) => $this->buildChannelEntry($name, 'actuator'), $actuators);
+    }
+
+    private function buildChannelEntry(string $name, string $type, ?string $metric = null, ?string $unit = null): array
+    {
+        $entry = [
+            'name' => $name,
+            'channel' => $name,
+            'type' => strtoupper($type),
+        ];
+
+        if ($metric !== null) {
+            $entry['metric'] = $metric;
+        }
+
+        if ($unit !== null) {
+            $entry['unit'] = $unit;
+        }
+
+        return $entry;
     }
     
     /**

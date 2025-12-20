@@ -25,6 +25,12 @@ extern "C" {
 #define PH_NODE_DEFAULT_MQTT_PORT    1883
 #define PH_NODE_DEFAULT_MQTT_KEEPALIVE 30
 
+// Sensor polling defaults
+#define PH_NODE_PH_SENSOR_POLL_INTERVAL_MS     3000
+#define PH_NODE_PH_SENSOR_PRECISION            2
+#define PH_NODE_SOLUTION_TEMP_POLL_INTERVAL_MS 5000
+#define PH_NODE_SOLUTION_TEMP_PRECISION        1
+
 // I2C bus defaults
 #define PH_NODE_I2C_BUS_0_SDA        21  // ESP32 стандартный SDA (OLED + INA209)
 #define PH_NODE_I2C_BUS_0_SCL        22  // ESP32 стандартный SCL
@@ -45,9 +51,20 @@ extern "C" {
 #define PH_NODE_FACTORY_RESET_HOLD_MS        20000U
 #define PH_NODE_FACTORY_RESET_POLL_INTERVAL  50U
 
+// pH pump actuator defaults
+#define PH_NODE_PH_DOSER_UP_GPIO            GPIO_NUM_12
+#define PH_NODE_PH_DOSER_DOWN_GPIO          GPIO_NUM_13
+#define PH_NODE_PH_DOSER_FAIL_SAFE_NC       0
+#define PH_NODE_PH_DOSER_MAX_DURATION_MS    15000U
+#define PH_NODE_PH_DOSER_MIN_OFF_MS         5000U
+#define PH_NODE_PH_DOSER_ML_PER_SECOND      1.5f
+
+// Pump current limits (INA209)
+#define PH_NODE_PUMP_CURRENT_MIN_MA        50.0f
+#define PH_NODE_PUMP_CURRENT_MAX_MA        500.0f
+
 #ifdef __cplusplus
 }
 #endif
 
 #endif // PH_NODE_DEFAULTS_H
-

@@ -6,6 +6,7 @@ idf_component_register(
         "ec_node_init.c"
         "ec_node_init_steps.c"
         "ec_node_framework_integration.c"
+        "ec_node_channel_map.c"
     INCLUDE_DIRS 
         "."
     REQUIRES 
@@ -34,4 +35,3 @@ idf_component_register(
         json
         mbedtls
 )
-

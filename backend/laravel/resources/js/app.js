@@ -279,7 +279,7 @@ createInertiaApp({
         return vueApp.mount(el);
     },
     progress: {
-        color: '#4B5563',
+        color: 'var(--text-dim)',
         delay: 100, // Задержка перед показом индикатора (100ms)
     },
     // Отключаем логирование переходов Inertia.js

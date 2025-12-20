@@ -46,8 +46,8 @@ describe('useFormValidation (P3-3)', () => {
     const { getErrorClasses } = useFormValidation(form)
 
     const classes = getErrorClasses('name', 'base-class')
-    expect(classes).toContain('border-red-500')
-    expect(classes).toContain('bg-red-900/20')
+    expect(classes).toContain('border-[color:var(--accent-red)]')
+    expect(classes).toContain('bg-[color:var(--badge-danger-bg)]')
   })
 
   it('should return normal classes for field without error', () => {
@@ -58,8 +58,8 @@ describe('useFormValidation (P3-3)', () => {
     const { getErrorClasses } = useFormValidation(form)
 
     const classes = getErrorClasses('name', 'base-class')
-    expect(classes).toContain('border-neutral-700')
-    expect(classes).toContain('bg-neutral-900')
+    expect(classes).toContain('border-[color:var(--border-muted)]')
+    expect(classes).toContain('bg-[color:var(--bg-elevated)]')
   })
 
   it('should clear error for specific field', () => {
@@ -114,4 +114,3 @@ describe('useFormValidation (P3-3)', () => {
     expect(validateEmail(null)).toContain('обязателен')
   })
 })
-

@@ -263,7 +263,6 @@ esp_err_t pump_driver_init_from_config(void) {
     pump_channel_config_t pump_configs[PUMP_DRIVER_MAX_CHANNELS];
     // Статические буферы для имен каналов (чтобы пережить удаление JSON)
     static char channel_name_buffers[PUMP_DRIVER_MAX_CHANNELS][PUMP_DRIVER_MAX_CHANNEL_NAME_LEN];
-    static char relay_channel_buffers[PUMP_DRIVER_MAX_CHANNELS][PUMP_DRIVER_MAX_CHANNEL_NAME_LEN];
     size_t pump_count = 0;
 
     int channel_count = cJSON_GetArraySize(channels);
@@ -737,6 +736,13 @@ static esp_err_t pump_start_internal(const char *channel_name, uint32_t duration
         return err;
     }
 
+    // Помечаем как запущенный до проверки INA209, чтобы гарантировать остановку при ошибке
+    uint64_t start_time_ms = esp_timer_get_time() / 1000;
+    channel->current_state = PUMP_STATE_ON;
+    channel->is_running = true;
+    channel->start_time_ms = start_time_ms;
+    channel->stats.last_start_timestamp_ms = start_time_ms;
+
     // Если INA209 настроен, ждем стабилизации и проверяем ток
     if (s_ina209_enabled) {
         xSemaphoreGive(s_mutex);
@@ -1042,6 +1048,39 @@ esp_err_t pump_driver_get_health_snapshot(pump_driver_health_snapshot_t *snapsho
     return ESP_OK;
 }
 
+esp_err_t pump_driver_get_cooldown_remaining(const char *channel_name, uint32_t *remaining_ms) {
+    if (remaining_ms) {
+        *remaining_ms = 0;
+    }
+
+    if (!s_initialized || channel_name == NULL || remaining_ms == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    pump_channel_t *channel = find_channel(channel_name);
+    if (channel == NULL) {
+        xSemaphoreGive(s_mutex);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    if (channel->current_state == PUMP_STATE_COOLDOWN) {
+        uint64_t now_ms = esp_timer_get_time() / 1000;
+        uint64_t cooldown_end = channel->last_stop_time_ms + channel->min_off_time_ms;
+        if (now_ms < cooldown_end) {
+            *remaining_ms = (uint32_t)(cooldown_end - now_ms);
+        } else {
+            channel->current_state = PUMP_STATE_OFF;
+        }
+    }
+
+    xSemaphoreGive(s_mutex);
+    return ESP_OK;
+}
+
 esp_err_t pump_driver_get_channel_health(const char *channel_name, pump_driver_channel_health_t *stats) {
     if (channel_name == NULL || stats == NULL) {
         return ESP_ERR_INVALID_ARG;
@@ -1066,4 +1105,3 @@ esp_err_t pump_driver_get_channel_health(const char *channel_name, pump_driver_c
     xSemaphoreGive(s_mutex);
     return ESP_OK;
 }
-

@@ -1,6 +1,6 @@
 <template>
   <Card 
-    class="h-full overflow-hidden hover:border-[color:var(--border-strong)] transition-all duration-200 hover:shadow-[var(--shadow-card)] group cursor-pointer"
+    class="h-full overflow-hidden surface-card-hover hover:border-[color:var(--border-strong)] transition-all duration-200 group cursor-pointer"
     @click="handleClick"
   >
     <div class="flex items-center justify-between mb-2">
@@ -80,7 +80,7 @@ const props = withDefaults(defineProps<Props>(), {
   currentValue: null,
   unit: '',
   loading: false,
-  color: '#3b82f6'
+  color: 'var(--accent-cyan)'
 })
 
 const { theme } = useTheme()
@@ -100,6 +100,48 @@ const chartPalette = computed(() => {
     border: resolveCssColor('--border-muted', '#374151'),
     text: resolveCssColor('--text-primary', '#f3f4f6'),
   }
+})
+
+const resolveColorFromProp = (value?: string): string => {
+  if (!value) {
+    return resolveCssColor('--accent-cyan', '#3b82f6')
+  }
+  if (value.startsWith('var(')) {
+    const variable = value.slice(4, -1).trim()
+    return resolveCssColor(variable, '#3b82f6')
+  }
+  if (value.startsWith('--')) {
+    return resolveCssColor(value, '#3b82f6')
+  }
+  return value
+}
+
+const toRgba = (color: string, alpha: number): string => {
+  if (color.startsWith('#')) {
+    const hex = color.replace('#', '')
+    const normalized = hex.length === 3 ? hex.split('').map(c => c + c).join('') : hex
+    const int = parseInt(normalized, 16)
+    const r = (int >> 16) & 255
+    const g = (int >> 8) & 255
+    const b = int & 255
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`
+  }
+  const rgbMatch = color.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/u)
+  if (rgbMatch) {
+    const [, r, g, b] = rgbMatch
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`
+  }
+  const rgbaMatch = color.match(/^rgba\((\d+),\s*(\d+),\s*(\d+),\s*[\d.]+\)$/u)
+  if (rgbaMatch) {
+    const [, r, g, b] = rgbaMatch
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`
+  }
+  return color
+}
+
+const resolvedColor = computed(() => {
+  theme.value
+  return resolveColorFromProp(props.color)
 })
 
 function formatValue(value: number | null | undefined): string {
@@ -182,7 +224,7 @@ const chartOption = computed(() => {
         color: chartPalette.value.text,
         fontSize: 12,
       },
-      extraCssText: 'z-index: 99999 !important; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2); padding: 6px 10px; border-radius: 6px;',
+      extraCssText: 'z-index: 99999 !important; box-shadow: var(--shadow-card); padding: 6px 10px; border-radius: 6px;',
     },
     grid: { 
       left: 4, 
@@ -209,7 +251,7 @@ const chartOption = computed(() => {
         smooth: true,
         lineStyle: { 
           width: 1.5,
-          color: props.color
+          color: resolvedColor.value
         },
         areaStyle: {
           color: {
@@ -219,8 +261,8 @@ const chartOption = computed(() => {
             x2: 0,
             y2: 1,
             colorStops: [
-              { offset: 0, color: props.color + '40' },
-              { offset: 1, color: props.color + '00' }
+              { offset: 0, color: toRgba(resolvedColor.value, 0.25) },
+              { offset: 1, color: toRgba(resolvedColor.value, 0) }
             ]
           }
         },

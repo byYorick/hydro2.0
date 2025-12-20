@@ -24,7 +24,7 @@
           </span>
         </div>
         <div
-          class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-[color:var(--bg-surface-strong)] rounded text-xs text-[color:var(--text-primary)] opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-lg border border-[color:var(--border-muted)]"
+          class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-[color:var(--bg-surface-strong)] rounded text-xs text-[color:var(--text-primary)] opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-[var(--shadow-card)] border border-[color:var(--border-muted)]"
         >
           <div class="font-medium">Core Service</div>
           <div class="text-[10px] text-[color:var(--text-dim)] mt-0.5">
@@ -59,7 +59,7 @@
           </span>
         </div>
         <div
-          class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-[color:var(--bg-surface-strong)] rounded text-xs text-[color:var(--text-primary)] opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-lg border border-[color:var(--border-muted)]"
+          class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-[color:var(--bg-surface-strong)] rounded text-xs text-[color:var(--text-primary)] opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-[var(--shadow-card)] border border-[color:var(--border-muted)]"
         >
           <div class="font-medium">Database</div>
           <div class="text-[10px] text-[color:var(--text-dim)] mt-0.5">
@@ -95,7 +95,7 @@
           </span>
         </div>
         <div
-          class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-[color:var(--bg-surface-strong)] rounded text-xs text-[color:var(--text-primary)] opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-lg border border-[color:var(--border-muted)] max-w-xs"
+          class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-[color:var(--bg-surface-strong)] rounded text-xs text-[color:var(--text-primary)] opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-[var(--shadow-card)] border border-[color:var(--border-muted)] max-w-xs"
         >
           <div class="font-medium">WebSocket Connection</div>
           <div class="text-[10px] text-[color:var(--text-dim)] mt-0.5">
@@ -164,7 +164,7 @@
           </span>
         </div>
         <div
-          class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-[color:var(--bg-surface-strong)] rounded text-xs text-[color:var(--text-primary)] opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-lg border border-[color:var(--border-muted)]"
+          class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-[color:var(--bg-surface-strong)] rounded text-xs text-[color:var(--text-primary)] opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-[var(--shadow-card)] border border-[color:var(--border-muted)]"
         >
           <div class="font-medium">MQTT Broker</div>
           <div class="text-[10px] text-[color:var(--text-dim)] mt-0.5">
@@ -196,7 +196,7 @@
           <span class="font-medium text-[color:var(--text-primary)]">{{ metrics.zonesCount }}</span>
           <span class="text-[color:var(--text-dim)] hidden sm:inline">зон</span>
           <div
-            class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-[color:var(--bg-surface-strong)] rounded text-xs text-[color:var(--text-primary)] opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-lg border border-[color:var(--border-muted)]"
+            class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-[color:var(--bg-surface-strong)] rounded text-xs text-[color:var(--text-primary)] opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-[var(--shadow-card)] border border-[color:var(--border-muted)]"
           >
             <div class="font-medium">Активные зоны</div>
             <div class="text-[10px] text-[color:var(--text-dim)] mt-0.5">
@@ -217,7 +217,7 @@
           <span class="font-medium text-[color:var(--text-primary)]">{{ metrics.devicesCount }}</span>
           <span class="text-[color:var(--text-dim)] hidden sm:inline">устр.</span>
           <div
-            class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-[color:var(--bg-surface-strong)] rounded text-xs text-[color:var(--text-primary)] opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-lg border border-[color:var(--border-muted)]"
+            class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-[color:var(--bg-surface-strong)] rounded text-xs text-[color:var(--text-primary)] opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-[var(--shadow-card)] border border-[color:var(--border-muted)]"
           >
             <div class="font-medium">Устройства</div>
             <div class="text-[10px] text-[color:var(--text-dim)] mt-0.5">
@@ -249,7 +249,7 @@
           </span>
           <span class="text-[color:var(--text-dim)] hidden sm:inline">алерт.</span>
           <div
-            class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-[color:var(--bg-surface-strong)] rounded text-xs text-[color:var(--text-primary)] opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-lg border border-[color:var(--border-muted)]"
+            class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-[color:var(--bg-surface-strong)] rounded text-xs text-[color:var(--text-primary)] opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-[var(--shadow-card)] border border-[color:var(--border-muted)]"
           >
             <div class="font-medium">Активные алерты</div>
             <div class="text-[10px] text-[color:var(--text-dim)] mt-0.5">

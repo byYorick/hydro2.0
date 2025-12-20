@@ -81,24 +81,24 @@
     <Modal :open="isEditing" title="Редактирование растения" @close="resetForm" size="large" v-if="selectedPlant">
       <form @submit.prevent="handleSubmit" class="space-y-4">
             <div>
-              <label class="form-label">Название</label>
-              <input v-model="form.name" type="text" class="form-input" />
-              <p v-if="form.errors.name" class="form-error">{{ form.errors.name }}</p>
+              <label class="block text-xs text-[color:var(--text-muted)] mb-1">Название</label>
+              <input v-model="form.name" type="text" class="input-field" />
+              <p v-if="form.errors.name" class="text-xs text-[color:var(--badge-danger-text)] mt-1">{{ form.errors.name }}</p>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label class="form-label">Вид</label>
-                <input v-model="form.species" type="text" class="form-input" />
+                <label class="block text-xs text-[color:var(--text-muted)] mb-1">Вид</label>
+                <input v-model="form.species" type="text" class="input-field" />
               </div>
               <div>
-                <label class="form-label">Сорт</label>
-                <input v-model="form.variety" type="text" class="form-input" />
+                <label class="block text-xs text-[color:var(--text-muted)] mb-1">Сорт</label>
+                <input v-model="form.variety" type="text" class="input-field" />
               </div>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label class="form-label">Субстрат</label>
-                <select v-model="form.substrate_type" class="form-input">
+                <label class="block text-xs text-[color:var(--text-muted)] mb-1">Субстрат</label>
+                <select v-model="form.substrate_type" class="input-select">
                   <option value="">Не выбрано</option>
                   <option v-for="option in taxonomies.substrate_type" :key="option.id" :value="option.id">
                     {{ option.label }}
@@ -106,8 +106,8 @@
                 </select>
               </div>
               <div>
-                <label class="form-label">Система</label>
-                <select v-model="form.growing_system" class="form-input">
+                <label class="block text-xs text-[color:var(--text-muted)] mb-1">Система</label>
+                <select v-model="form.growing_system" class="input-select">
                   <option value="">Не выбрано</option>
                   <option v-for="option in taxonomies.growing_system" :key="option.id" :value="option.id">
                     {{ option.label }}
@@ -117,8 +117,8 @@
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label class="form-label">Фотопериод</label>
-                <select v-model="form.photoperiod_preset" class="form-input">
+                <label class="block text-xs text-[color:var(--text-muted)] mb-1">Фотопериод</label>
+                <select v-model="form.photoperiod_preset" class="input-select">
                   <option value="">Не выбрано</option>
                   <option v-for="option in taxonomies.photoperiod_preset" :key="option.id" :value="option.id">
                     {{ option.label }}
@@ -126,8 +126,8 @@
                 </select>
               </div>
               <div>
-                <label class="form-label">Сезонность</label>
-                <select v-model="form.seasonality" class="form-input">
+                <label class="block text-xs text-[color:var(--text-muted)] mb-1">Сезонность</label>
+                <select v-model="form.seasonality" class="input-select">
                   <option value="">Не выбрано</option>
                   <option v-for="option in seasonOptions" :key="option.value" :value="option.value">
                     {{ option.label }}
@@ -136,8 +136,8 @@
               </div>
             </div>
             <div>
-              <label class="form-label">Описание</label>
-              <textarea v-model="form.description" rows="4" class="form-input"></textarea>
+              <label class="block text-xs text-[color:var(--text-muted)] mb-1">Описание</label>
+              <textarea v-model="form.description" rows="4" class="input-field h-auto"></textarea>
             </div>
             <div class="space-y-2">
               <p class="text-sm font-semibold text-[color:var(--text-primary)]">Диапазоны</p>
@@ -147,14 +147,14 @@
                   v-model="form.environment_requirements[metric.key].min"
                   type="number"
                   step="0.1"
-                  class="form-input text-xs"
+                  class="input-field h-8 text-xs"
                   placeholder="Мин"
                 />
                 <input
                   v-model="form.environment_requirements[metric.key].max"
                   type="number"
                   step="0.1"
-                  class="form-input text-xs"
+                  class="input-field h-8 text-xs"
                   placeholder="Макс"
                 />
               </div>
@@ -179,7 +179,7 @@
     <ConfirmModal
       :open="deleteModal.open"
       title="Удалить растение"
-      :message="deleteModal.plant ? `Удалить растение \"${deleteModal.plant.name}\"?` : 'Удалить растение?'"
+      :message="deleteModal.plant ? `Удалить растение '${deleteModal.plant.name}'?` : 'Удалить растение?'"
       confirm-text="Удалить"
       confirm-variant="danger"
       :loading="Boolean(deletingId)"
@@ -497,37 +497,6 @@ watch(selectedPlantId, () => {
 </script>
 
 <style scoped>
-.form-label {
-  display: block;
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  margin-bottom: 0.25rem;
-}
-.form-input {
-  width: 100%;
-  min-height: 2.6rem;
-  border-radius: 0.85rem;
-  border: 1px solid var(--border-muted);
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-  padding: 0.5rem 0.85rem;
-  font-size: 0.85rem;
-  transition: border 0.2s ease, box-shadow 0.2s ease;
-}
-.form-input:focus {
-  outline: none;
-  border-color: var(--accent-green);
-  box-shadow: 0 0 0 2px rgba(63, 220, 120, 0.18);
-}
-.form-input::placeholder {
-  color: var(--text-dim);
-}
-.form-error {
-  font-size: 0.75rem;
-  color: var(--badge-danger-text);
-  margin-top: 0.25rem;
-}
-
 table {
   table-layout: auto;
 }

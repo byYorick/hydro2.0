@@ -1,7 +1,7 @@
 <template>
   <AppLayout>
     <div class="space-y-4">
-      <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-5 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
+      <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-5">
         <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div class="flex-1 min-w-0">
             <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">зона выращивания</p>
@@ -19,7 +19,7 @@
             </div>
           </div>
           <div class="flex flex-wrap items-center gap-2 justify-end">
-            <template v-if="page.props.auth?.user?.role === 'admin' || page.props.auth?.user?.role === 'operator'">
+            <template v-if="canOperateZone">
               <Button size="sm" variant="secondary" @click="onToggle" :disabled="loading.toggle" class="flex-1 sm:flex-none min-w-[140px]" :data-testid="zone.status === 'PAUSED' ? 'zone-resume-btn' : 'zone-pause-btn'">
                 <template v-if="loading.toggle">
                   <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
@@ -41,6 +41,65 @@
                 <span class="hidden sm:inline">Следующая фаза</span>
                 <span class="sm:hidden">⏭</span>
               </Button>
+              <Button
+                v-if="!activeCycle"
+                size="sm"
+                class="flex-1 sm:flex-none"
+                :disabled="loading.cycleConfig"
+                @click="onRunCycle"
+              >
+                Запустить цикл выращивания
+              </Button>
+              <Button
+                v-else
+                size="sm"
+                variant="outline"
+                class="flex-1 sm:flex-none"
+                :disabled="loading.cycleConfig"
+                @click="onRunCycle"
+              >
+                Настройки цикла
+              </Button>
+              <Button
+                v-if="activeGrowCycle?.status === 'RUNNING'"
+                size="sm"
+                variant="secondary"
+                class="flex-1 sm:flex-none"
+                :disabled="loading.cyclePause"
+                @click="onCyclePause"
+              >
+                <template v-if="loading.cyclePause">
+                  <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
+                </template>
+                Пауза
+              </Button>
+              <Button
+                v-if="activeGrowCycle"
+                size="sm"
+                variant="danger"
+                class="flex-1 sm:flex-none"
+                :disabled="loading.cycleAbort"
+                @click="onCycleAbort"
+              >
+                <template v-if="loading.cycleAbort">
+                  <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
+                </template>
+                Стоп
+              </Button>
+              <div
+                v-if="growthCycleCommandStatus"
+                class="flex items-center gap-1 text-[10px] text-[color:var(--text-dim)] w-full"
+              >
+                <div
+                  class="w-1.5 h-1.5 rounded-full"
+                  :class="{
+                    'bg-[color:var(--accent-amber)] animate-pulse': ['QUEUED', 'SENT', 'ACCEPTED', 'pending', 'executing'].includes(growthCycleCommandStatus || ''),
+                    'bg-[color:var(--accent-green)]': ['DONE', 'completed', 'ack'].includes(growthCycleCommandStatus || ''),
+                    'bg-[color:var(--accent-red)]': ['FAILED', 'TIMEOUT', 'SEND_FAILED', 'failed'].includes(growthCycleCommandStatus || '')
+                  }"
+                ></div>
+                <span>{{ getCommandStatusText(growthCycleCommandStatus) }}</span>
+              </div>
             </template>
             <Button size="sm" variant="outline" @click="modals.open('simulation')" class="flex-1 sm:flex-none">
               <span class="hidden sm:inline">Симуляция</span>
@@ -52,12 +111,12 @@
 
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div class="lg:col-span-2 space-y-4">
-          <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4 shadow-[0_15px_45px_rgba(0,0,0,0.35)]">
+          <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
             <ZoneTargets :telemetry="telemetry" :targets="targets" />
           </div>
           <div
             v-if="zone.recipeInstance"
-            class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4 shadow-[0_15px_45px_rgba(0,0,0,0.35)]"
+            class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4"
           >
             <StageProgress
               :recipe-instance="zone.recipeInstance"
@@ -67,7 +126,7 @@
               :started-at="zone.recipeInstance.started_at"
             />
           </div>
-          <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4 shadow-[0_15px_45px_rgba(0,0,0,0.35)] space-y-3">
+          <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-3">
             <!-- Мульти-серии график pH + EC -->
             <MultiSeriesTelemetryChart
               v-if="chartDataPh.length > 0 || chartDataEc.length > 0"
@@ -96,23 +155,23 @@
           </div>
         </div>
         <div class="space-y-4">
-          <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4 shadow-[0_15px_45px_rgba(0,0,0,0.35)]">
+          <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
             <ZoneDevicesVisualization
               :zone-name="zone.name"
               :zone-status="zone.status"
               :devices="devices"
-              :can-manage="page.props.auth?.user?.role === 'admin' || page.props.auth?.user?.role === 'operator'"
+              :can-manage="canManageDevices"
               @attach="showAttachNodesModal = true"
               @configure="(device) => openNodeConfig(device.id, device)"
             />
           </div>
-          <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4 shadow-[0_15px_45px_rgba(0,0,0,0.35)]">
+          <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
             <UnassignedNodeErrorsWidget :zone-id="zone.id" :limit="5" />
           </div>
           <Card>
             <div class="flex items-center justify-between mb-2">
               <div class="text-sm font-semibold">Рецепт</div>
-              <template v-if="page.props.auth?.user?.role === 'admin' || page.props.auth?.user?.role === 'operator'">
+              <template v-if="canManageRecipe">
                 <Button
                   size="sm"
                   :variant="zone.recipeInstance?.recipe ? 'secondary' : 'primary'"
@@ -150,7 +209,7 @@
                   Данные рецепта пока не загружены. Обновите страницу или привяжите рецепт заново.
                 </span>
               </div>
-              <template v-if="page.props.auth?.user?.role === 'admin' || page.props.auth?.user?.role === 'operator'">
+              <template v-if="canManageRecipe">
                 <div class="text-xs text-[color:var(--text-dim)]">
                   Привяжите рецепт для автоматического управления фазами выращивания
                 </div>
@@ -230,39 +289,6 @@
                 </div>
               </div>
               <div v-else class="text-xs text-[color:var(--text-dim)]">Не запланирован</div>
-            </div>
-            
-            <Button 
-              size="sm" 
-              variant="secondary" 
-              class="mt-2 w-full text-xs" 
-              @click="onRunCycle(cycle.type)"
-              :disabled="loading.cycles[cycle.type] || !!activeCycle"
-            >
-              <template v-if="loading.cycles[cycle.type]">
-                <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
-              </template>
-              {{ loading.cycles[cycle.type] ? 'Запуск...' : 'Запустить сейчас' }}
-            </Button>
-            
-            <!-- Индикатор статуса последней команды -->
-            <div v-if="getLastCommandStatus(cycle.type)" class="mt-2 text-xs">
-              <div class="flex items-center gap-1">
-                <div 
-                  class="w-1.5 h-1.5 rounded-full"
-                  :class="{
-                    'bg-[color:var(--accent-amber)] animate-pulse': ['QUEUED', 'SENT', 'ACCEPTED', 'pending', 'executing'].includes(getLastCommandStatus(cycle.type) || ''),
-                    'bg-[color:var(--accent-green)]': ['DONE', 'completed', 'ack'].includes(getLastCommandStatus(cycle.type) || ''),
-                    'bg-[color:var(--accent-red)]': ['FAILED', 'TIMEOUT', 'SEND_FAILED', 'failed'].includes(getLastCommandStatus(cycle.type) || '')
-                  }"
-                ></div>
-                <span class="text-[color:var(--text-dim)]">
-                  {{ getCommandStatusText(getLastCommandStatus(cycle.type)) }}
-                </span>
-              </div>
-            </div>
-            <div v-if="activeCycle" class="mt-1 text-[11px] text-[color:var(--accent-amber)]">
-              Запуск нового цикла недоступен: в зоне уже выполняется цикл выращивания (правило «1 цикл на зону»).
             </div>
           </div>
         </div>
@@ -556,7 +582,7 @@ interface LoadingState {
   toggle: boolean
   irrigate: boolean
   nextPhase: boolean
-  cycles: Record<string, boolean>
+  cycleConfig: boolean
   cyclePause: boolean
   cycleResume: boolean
   cycleHarvest: boolean
@@ -568,13 +594,7 @@ const { loading, setLoading, startLoading, stopLoading } = useLoading<LoadingSta
   toggle: false,
   irrigate: false,
   nextPhase: false,
-  cycles: {
-    PH_CONTROL: false,
-    EC_CONTROL: false,
-    IRRIGATION: false,
-    LIGHTING: false,
-    CLIMATE: false,
-  },
+  cycleConfig: false,
   cyclePause: false,
   cycleResume: false,
   cycleHarvest: false,
@@ -714,10 +734,11 @@ const events = computed(() => (eventsProp.value || []) as ZoneEvent[])
 const cycles = computed(() => (cyclesProp.value || {}) as Record<string, Cycle>)
 
 // События цикла (теперь загружаются внутри CycleControlPanel)
-const canManageCycle = computed(() => {
-  const userRole = page.props.auth?.user?.role
-  return userRole === 'admin' || userRole === 'operator'
-})
+const userRole = computed(() => page.props.auth?.user?.role || 'viewer')
+const canOperateZone = computed(() => ['admin', 'operator', 'agronomist'].includes(userRole.value))
+const canManageDevices = computed(() => ['admin', 'operator'].includes(userRole.value))
+const canManageRecipe = computed(() => ['admin', 'operator', 'agronomist'].includes(userRole.value))
+const canManageCycle = computed(() => ['admin', 'operator', 'agronomist'].includes(userRole.value))
 
 // Вычисление прогресса фазы/рецепта на основе нормализованного current_phase (UTC)
 // ВАЖНО: все вычисления в UTC, отображение форматируется в локальное время
@@ -948,41 +969,17 @@ function getTimeUntilNextRun(cycle: Cycle & { next_run?: string | null }): strin
 }
 
 // Функции для отображения статуса команд
-function getLastCommandStatus(cycleType: string): string | null {
-  // Для агрегированного цикла ищем GROWTH_CYCLE_CONFIG
-  // Для отдельных подсистем ищем FORCE_*
-  const commandType = `FORCE_${cycleType}` as CommandType
-  
-  // Сначала ищем GROWTH_CYCLE_CONFIG (новый формат)
-  // Используем новые статусы из единого контракта
-  const activeStatuses = ['QUEUED', 'SENT', 'ACCEPTED', 'DONE', 'FAILED', 'TIMEOUT', 'SEND_FAILED']
-  // Также поддерживаем старые для обратной совместимости
-  const legacyStatuses = ['pending', 'executing', 'completed', 'failed', 'ack']
-  const allActiveStatuses = [...activeStatuses, ...legacyStatuses]
-  
-  const growthCycleCommand = pendingCommands.value.find(cmd => 
-    cmd.type === 'GROWTH_CYCLE_CONFIG' && 
-    cmd.zoneId === zoneId.value &&
-    allActiveStatuses.includes(cmd.status)
-  )
-  
-  if (growthCycleCommand) {
-    return growthCycleCommand.status
-  }
-  
-  // Fallback к старому формату FORCE_*
-  const command = pendingCommands.value.find(cmd => 
-    cmd.type === commandType && 
-    cmd.zoneId === zoneId.value &&
-    allActiveStatuses.includes(cmd.status)
-  )
-  return command?.status || null
-}
+const growthCycleCommandStatus = computed(() => {
+  const activeStatuses = ['QUEUED', 'SENT', 'ACCEPTED', 'DONE', 'FAILED', 'TIMEOUT', 'SEND_FAILED', 'pending', 'executing', 'completed', 'failed', 'ack']
+  const matching = pendingCommands.value
+    .filter((cmd) => cmd.type === 'GROWTH_CYCLE_CONFIG' && cmd.zoneId === zoneId.value && activeStatuses.includes(cmd.status))
+    .sort((a, b) => b.timestamp - a.timestamp)
+  return matching[0]?.status || null
+})
 
 function getCommandStatusText(status: string | null): string {
   if (!status) return ''
   const texts: Record<string, string> = {
-    // Новые статусы
     'QUEUED': 'В очереди',
     'SENT': 'Отправлено',
     'ACCEPTED': 'Принято',
@@ -990,11 +987,9 @@ function getCommandStatusText(status: string | null): string {
     'FAILED': 'Ошибка',
     'TIMEOUT': 'Таймаут',
     'SEND_FAILED': 'Ошибка отправки',
-    // Старые статусы (для обратной совместимости)
     'pending': 'Ожидание...',
     'executing': 'Выполняется...',
     'completed': 'Выполнено',
-    'ack': 'Выполнено',
     'ack': 'Выполнено',
     'failed': 'Ошибка'
   }
@@ -1351,23 +1346,26 @@ function getDefaultCycleParams(cycleType: string): Record<string, unknown> {
   return params
 }
 
-async function onRunCycle(cycleType: string): Promise<void> {
+async function onRunCycle(): Promise<void> {
   if (!zoneId.value) {
     logger.warn('[onRunCycle] zoneId is missing')
     showToast('Ошибка: зона не найдена', 'error', TOAST_TIMEOUT.NORMAL)
     return
   }
 
-  // Проверяем, что рецепт привязан (для агрегированного цикла нужны таргеты фазы)
-  if (!zone.value.recipeInstance?.recipe) {
-    showToast('Для запуска цикла выращивания необходимо привязать рецепт к зоне', 'warning', TOAST_TIMEOUT.LONG)
-    return
-  }
+  const hasActiveCycle = !!activeCycle.value
 
-  // Проверяем, что есть текущая фаза с таргетами
-  if (!currentPhase.value || !currentPhase.value.targets) {
-    showToast('Текущая фаза рецепта не содержит таргетов. Проверьте настройки рецепта.', 'warning', TOAST_TIMEOUT.LONG)
-    return
+  // Для старта цикла нужны рецепт и таргеты текущей фазы
+  if (!hasActiveCycle) {
+    if (!zone.value.recipeInstance?.recipe) {
+      showToast('Для запуска цикла выращивания необходимо привязать рецепт к зоне', 'warning', TOAST_TIMEOUT.LONG)
+      return
+    }
+
+    if (!currentPhase.value || !currentPhase.value.targets) {
+      showToast('Текущая фаза рецепта не содержит таргетов. Проверьте настройки рецепта.', 'warning', TOAST_TIMEOUT.LONG)
+      return
+    }
   }
 
   // Открываем модал для запуска/корректировки агрегированного цикла
@@ -1508,7 +1506,7 @@ function openActionModal(actionType: CommandType): void {
 async function onActionSubmit({ actionType, params }: { actionType: CommandType; params: Record<string, unknown> }): Promise<void> {
   if (!zoneId.value) return
   
-  setLoading('irrigate', true)
+  setLoading('cycleConfig', true)
   
   try {
     await sendZoneCommand(zoneId.value, actionType, params)
@@ -1530,7 +1528,7 @@ async function onActionSubmit({ actionType, params }: { actionType: CommandType;
     const actionName = actionNames[actionType] || 'Действие'
     showToast(`Ошибка при выполнении "${actionName}": ${errorMessage}`, 'error', TOAST_TIMEOUT.LONG)
   } finally {
-    setLoading('irrigate', false)
+    setLoading('cycleConfig', false)
   }
 }
 

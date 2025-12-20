@@ -35,6 +35,21 @@ extern "C" {
 #define EC_NODE_OLED_I2C_ADDRESS    0x3C
 #define EC_NODE_OLED_UPDATE_INTERVAL_MS 1500
 
+// EC sensor defaults
+#define EC_NODE_EC_SENSOR_POLL_INTERVAL_MS 3000
+#define EC_NODE_EC_SENSOR_PRECISION 2
+
+// Pump defaults
+#define EC_NODE_PUMP_NUTRIENT_GPIO 26
+#define EC_NODE_PUMP_FAIL_SAFE_NC false
+#define EC_NODE_PUMP_MAX_DURATION_MS 15000
+#define EC_NODE_PUMP_MIN_OFF_MS 5000
+#define EC_NODE_PUMP_ML_PER_SECOND 3.0f
+
+// Pump current limits (INA209)
+#define EC_NODE_PUMP_CURRENT_MIN_MA 50.0f
+#define EC_NODE_PUMP_CURRENT_MAX_MA 500.0f
+
 // Setup portal defaults
 #define EC_NODE_SETUP_AP_PASSWORD    "hydro2025"
 
@@ -49,4 +64,3 @@ extern "C" {
 #endif
 
 #endif // EC_NODE_DEFAULTS_H
-

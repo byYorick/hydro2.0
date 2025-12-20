@@ -53,6 +53,12 @@ static QueueHandle_t s_auto_off_done_queue = NULL;
 // Forward declaration для callback safe_mode
 static esp_err_t relay_node_disable_actuators_in_safe_mode(void *user_ctx);
 static cJSON *relay_node_channels_callback(void *user_ctx);
+static void relay_node_config_handler_wrapper(
+    const char *topic,
+    const char *data,
+    int data_len,
+    void *user_ctx
+);
 static void relay_node_build_error_details(
     esp_err_t err,
     const char *channel,
@@ -239,29 +245,6 @@ static void relay_node_cancel_auto_off(const char *channel, bool clear_cmd_id) {
     }
 }
 
-static cJSON *relay_node_copy_channels_from_config(void) {
-    static char config_json[CONFIG_STORAGE_MAX_JSON_SIZE];
-
-    if (config_storage_get_json(config_json, sizeof(config_json)) != ESP_OK) {
-        return NULL;
-    }
-
-    cJSON *config = cJSON_Parse(config_json);
-    if (!config) {
-        return NULL;
-    }
-
-    cJSON *channels = cJSON_GetObjectItem(config, "channels");
-    if (!channels || !cJSON_IsArray(channels) || cJSON_GetArraySize(channels) == 0) {
-        cJSON_Delete(config);
-        return NULL;
-    }
-
-    cJSON *dup = cJSON_Duplicate(channels, 1);
-    cJSON_Delete(config);
-    return dup;
-}
-
 static cJSON *relay_node_build_channels_from_hw_map(void) {
     cJSON *channels = cJSON_CreateArray();
     if (!channels) {
@@ -295,12 +278,6 @@ static cJSON *relay_node_build_channels_from_hw_map(void) {
 
 static cJSON *relay_node_channels_callback(void *user_ctx) {
     (void)user_ctx;
-
-    cJSON *channels = relay_node_copy_channels_from_config();
-    if (channels) {
-        return channels;
-    }
-
     return relay_node_build_channels_from_hw_map();
 }
 
@@ -695,6 +672,46 @@ static void relay_node_command_handler_wrapper(
     node_command_handler_process(topic, channel, data, data_len, user_ctx);
 }
 
+static void relay_node_config_handler_wrapper(
+    const char *topic,
+    const char *data,
+    int data_len,
+    void *user_ctx
+) {
+    if (data == NULL || data_len <= 0) {
+        node_config_handler_process(topic, data, data_len, user_ctx);
+        return;
+    }
+
+    cJSON *config = cJSON_ParseWithLength(data, data_len);
+    if (config == NULL) {
+        node_config_handler_process(topic, data, data_len, user_ctx);
+        return;
+    }
+
+    cJSON_DeleteItemFromObject(config, "channels");
+    cJSON *channels = relay_node_build_channels_from_hw_map();
+    if (channels == NULL) {
+        ESP_LOGW(TAG, "Failed to build firmware relay channels");
+        cJSON_Delete(config);
+        node_config_handler_process(topic, data, data_len, user_ctx);
+        return;
+    }
+
+    cJSON_AddItemToObject(config, "channels", channels);
+    char *patched = cJSON_PrintUnformatted(config);
+    cJSON_Delete(config);
+
+    if (patched == NULL) {
+        ESP_LOGW(TAG, "Failed to serialize patched relay config");
+        node_config_handler_process(topic, data, data_len, user_ctx);
+        return;
+    }
+
+    node_config_handler_process(topic, patched, (int)strlen(patched), user_ctx);
+    free(patched);
+}
+
 // Callback для отключения актуаторов в safe_mode
 static esp_err_t relay_node_disable_actuators_in_safe_mode(void *user_ctx) {
     (void)user_ctx;
@@ -711,14 +728,14 @@ static esp_err_t relay_node_disable_actuators_in_safe_mode(void *user_ctx) {
 // Регистрация MQTT обработчиков через node_framework
 void relay_node_framework_register_mqtt_handlers(void) {
     // Регистрация обработчика конфигов
-    mqtt_manager_register_config_cb(node_config_handler_process, NULL);
+    mqtt_manager_register_config_cb(relay_node_config_handler_wrapper, NULL);
     
     // Регистрация обработчика команд
     mqtt_manager_register_command_cb(relay_node_command_handler_wrapper, NULL);
     
     // Регистрация MQTT callbacks в node_config_handler для config_apply_mqtt
     node_config_handler_set_mqtt_callbacks(
-        node_config_handler_process,
+        relay_node_config_handler_wrapper,
         relay_node_command_handler_wrapper,
         NULL,
         NULL,

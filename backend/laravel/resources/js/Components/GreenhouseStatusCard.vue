@@ -1,5 +1,5 @@
 <template>
-  <Card class="flex flex-col gap-4 hover:shadow-2xl transition-all duration-200">
+  <Card class="flex flex-col gap-4 surface-card-hover transition-all duration-200">
     <div class="flex justify-between gap-4 items-start min-w-0">
       <div class="min-w-0 flex-1">
         <div class="text-xs uppercase text-[color:var(--text-dim)] tracking-[0.2em]">{{ greenhouse.type || 'Теплица' }}</div>
