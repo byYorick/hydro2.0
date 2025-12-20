@@ -5,32 +5,32 @@
     </div>
 
     <!-- Общий обзор системы -->
-    <Card class="bg-neutral-900 border-neutral-800">
+    <Card class="bg-[color:var(--bg-elevated)] border-[color:var(--border-muted)]">
       <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         <div>
-          <div class="text-neutral-400 text-sm mb-1">Система</div>
-          <div class="text-2xl font-bold text-emerald-400">✅ Онлайн</div>
+          <div class="text-[color:var(--text-muted)] text-sm mb-1">Система</div>
+          <div class="text-2xl font-bold text-[color:var(--accent-green)]">✅ Онлайн</div>
         </div>
         <div data-testid="dashboard-zones-count">
-          <div class="text-neutral-400 text-sm mb-1">Зоны</div>
+          <div class="text-[color:var(--text-muted)] text-sm mb-1">Зоны</div>
           <div class="text-2xl font-bold">{{ totalZonesCount }}</div>
-          <div class="text-xs text-neutral-400 mt-1">
+          <div class="text-xs text-[color:var(--text-muted)] mt-1">
             {{ activeZonesCount }} активных
           </div>
         </div>
         <div>
-          <div class="text-neutral-400 text-sm mb-1">Устройства</div>
+          <div class="text-[color:var(--text-muted)] text-sm mb-1">Устройства</div>
           <div class="text-2xl font-bold">{{ totalDevicesCount }}</div>
-          <div class="text-xs text-neutral-400 mt-1">
-            <span class="text-emerald-400">{{ onlineDevicesCount }} онлайн</span>
-            <span v-if="offlineDevicesCount > 0" class="text-red-400 ml-2">
+          <div class="text-xs text-[color:var(--text-muted)] mt-1">
+            <span class="text-[color:var(--accent-green)]">{{ onlineDevicesCount }} онлайн</span>
+            <span v-if="offlineDevicesCount > 0" class="text-[color:var(--accent-red)] ml-2">
               {{ offlineDevicesCount }} офлайн
             </span>
           </div>
         </div>
         <div data-testid="dashboard-alerts-count">
-          <div class="text-neutral-400 text-sm mb-1">Активные алерты</div>
-          <div class="text-2xl font-bold" :class="activeAlertsCount > 0 ? 'text-red-400' : 'text-emerald-400'">
+          <div class="text-[color:var(--text-muted)] text-sm mb-1">Активные алерты</div>
+          <div class="text-2xl font-bold" :class="activeAlertsCount > 0 ? 'text-[color:var(--accent-red)]' : 'text-[color:var(--accent-green)]'">
             {{ activeAlertsCount }}
           </div>
         </div>
@@ -44,12 +44,12 @@
         <Card
           v-for="zone in allZones"
           :key="zone.id"
-          class="hover:border-neutral-700 transition-colors"
+          class="hover:border-[color:var(--border-strong)] transition-colors"
         >
           <div class="flex items-start justify-between mb-3">
             <div>
               <div class="text-sm font-semibold">{{ zone.name }}</div>
-              <div v-if="zone.greenhouse" class="text-xs text-neutral-400 mt-1">
+              <div v-if="zone.greenhouse" class="text-xs text-[color:var(--text-muted)] mt-1">
                 {{ zone.greenhouse.name }}
               </div>
             </div>
@@ -61,19 +61,19 @@
           <!-- Метрики -->
           <div class="grid grid-cols-2 gap-2 text-xs mb-3">
             <div v-if="zone.telemetry?.ph !== null && zone.telemetry?.ph !== undefined && typeof zone.telemetry.ph === 'number'">
-              <span class="text-neutral-400">pH:</span>
+              <span class="text-[color:var(--text-muted)]">pH:</span>
               <span class="ml-1 font-medium">{{ zone.telemetry.ph.toFixed(2) }}</span>
             </div>
             <div v-if="zone.telemetry?.ec !== null && zone.telemetry?.ec !== undefined && typeof zone.telemetry.ec === 'number'">
-              <span class="text-neutral-400">EC:</span>
+              <span class="text-[color:var(--text-muted)]">EC:</span>
               <span class="ml-1 font-medium">{{ zone.telemetry.ec.toFixed(2) }}</span>
             </div>
             <div v-if="zone.telemetry?.temperature !== null && zone.telemetry?.temperature !== undefined">
-              <span class="text-neutral-400">Темп:</span>
+              <span class="text-[color:var(--text-muted)]">Темп:</span>
               <span class="ml-1 font-medium">{{ zone.telemetry.temperature.toFixed(1) }}°C</span>
             </div>
             <div v-if="zone.telemetry?.humidity !== null && zone.telemetry?.humidity !== undefined">
-              <span class="text-neutral-400">Влаж:</span>
+              <span class="text-[color:var(--text-muted)]">Влаж:</span>
               <span class="ml-1 font-medium">{{ zone.telemetry.humidity.toFixed(0) }}%</span>
             </div>
           </div>
@@ -93,13 +93,13 @@
           <div
             v-for="alert in activeAlerts"
             :key="alert.id"
-            class="p-3 bg-neutral-900 rounded-lg border border-red-800"
+            class="p-3 bg-[color:var(--bg-elevated)] rounded-lg border border-[color:var(--badge-danger-border)]"
           >
-            <div class="text-sm font-semibold text-red-400">{{ alert.type }}</div>
-            <div class="text-xs text-neutral-400 mt-1">
+            <div class="text-sm font-semibold text-[color:var(--accent-red)]">{{ alert.type }}</div>
+            <div class="text-xs text-[color:var(--text-muted)] mt-1">
               Зона: {{ alert.zone?.name || `ID ${alert.zone_id}` }}
             </div>
-            <div class="text-xs text-neutral-500 mt-1">
+            <div class="text-xs text-[color:var(--text-dim)] mt-1">
               {{ formatTime(alert.created_at) }}
             </div>
           </div>
@@ -156,4 +156,3 @@ function getStatusVariant(status: string): 'success' | 'warning' | 'danger' | 'i
   }
 }
 </script>
-

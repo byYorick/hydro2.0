@@ -7,8 +7,8 @@
           @click="viewMode = 'grid'"
           class="p-1.5 rounded border transition-colors"
           :class="viewMode === 'grid' 
-            ? 'border-neutral-600 bg-neutral-800 text-neutral-100' 
-            : 'border-neutral-800 bg-neutral-900 text-neutral-400 hover:bg-neutral-850'"
+            ? 'border-[color:var(--border-strong)] bg-[color:var(--bg-elevated)] text-[color:var(--text-primary)]' 
+            : 'border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] text-[color:var(--text-muted)] hover:bg-[color:var(--bg-elevated)]'"
           title="Сетка"
         >
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -19,8 +19,8 @@
           @click="viewMode = 'graph'"
           class="p-1.5 rounded border transition-colors"
           :class="viewMode === 'graph' 
-            ? 'border-neutral-600 bg-neutral-800 text-neutral-100' 
-            : 'border-neutral-800 bg-neutral-900 text-neutral-400 hover:bg-neutral-850'"
+            ? 'border-[color:var(--border-strong)] bg-[color:var(--bg-elevated)] text-[color:var(--text-primary)]' 
+            : 'border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] text-[color:var(--text-muted)] hover:bg-[color:var(--bg-elevated)]'"
           title="Граф"
         >
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -44,7 +44,7 @@
           :class="zoneStatusClass"
         >
           <div class="text-xs sm:text-sm font-semibold text-center px-2">{{ zoneName }}</div>
-          <div class="text-xs text-neutral-400 mt-1">{{ devices.length }} устройств</div>
+          <div class="text-xs text-[color:var(--text-muted)] mt-1">{{ devices.length }} устройств</div>
         </div>
 
         <!-- Устройства вокруг зоны -->
@@ -67,7 +67,7 @@
               stroke="currentColor"
               stroke-width="1.5"
               stroke-dasharray="4,4"
-              class="text-neutral-700"
+              class="text-[color:var(--text-dim)]"
             />
           </svg>
 
@@ -127,12 +127,12 @@
         </div>
 
         <!-- Тип -->
-        <div class="text-xs text-neutral-400 text-center mb-2">
+        <div class="text-xs text-[color:var(--text-muted)] text-center mb-2">
           {{ translateDeviceType(device.type) }}
         </div>
 
         <!-- Дополнительная информация -->
-        <div class="text-xs text-neutral-500 space-y-0.5">
+        <div class="text-xs text-[color:var(--text-dim)] space-y-0.5">
           <div v-if="device.fw_version" class="flex items-center justify-center gap-1">
             <span>FW:</span>
             <span class="font-medium">{{ device.fw_version }}</span>
@@ -161,7 +161,7 @@
     </div>
 
     <!-- Пустое состояние -->
-    <div v-else class="text-center py-8 text-neutral-400">
+    <div v-else class="text-center py-8 text-[color:var(--text-muted)]">
       <div class="text-4xl mb-2">📱</div>
       <div class="text-sm mb-3">Нет устройств в зоне</div>
       <template v-if="canManage">
@@ -207,15 +207,15 @@ const viewMode = ref<ViewMode>('grid')
 const zoneStatusClass = computed(() => {
   switch (props.zoneStatus) {
     case 'RUNNING':
-      return 'border-emerald-500 bg-emerald-950/20 text-emerald-100'
+      return 'border-[color:var(--badge-success-border)] bg-[color:var(--badge-success-bg)] text-[color:var(--badge-success-text)]'
     case 'PAUSED':
-      return 'border-neutral-500 bg-neutral-950/20 text-neutral-100'
+      return 'border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] text-[color:var(--text-primary)]'
     case 'ALARM':
-      return 'border-red-500 bg-red-950/20 text-red-100'
+      return 'border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)] text-[color:var(--badge-danger-text)]'
     case 'WARNING':
-      return 'border-amber-500 bg-amber-950/20 text-amber-100'
+      return 'border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] text-[color:var(--badge-warning-text)]'
     default:
-      return 'border-neutral-600 bg-neutral-950/20 text-neutral-100'
+      return 'border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] text-[color:var(--text-primary)]'
   }
 })
 
@@ -251,27 +251,27 @@ function getDeviceShortName(device: Device): string {
 }
 
 function getDeviceCardClass(device: Device): string {
-  const base = 'bg-neutral-900'
+  const base = 'bg-[color:var(--bg-surface-strong)]'
   if (device.status === 'online') {
-    return `${base} border-emerald-500/50 hover:border-emerald-400`
+    return `${base} border-[color:var(--badge-success-border)] hover:border-[color:var(--accent-green)]`
   } else if (device.status === 'offline') {
-    return `${base} border-red-500/50 hover:border-red-400`
+    return `${base} border-[color:var(--badge-danger-border)] hover:border-[color:var(--accent-red)]`
   } else if (device.status === 'degraded') {
-    return `${base} border-amber-500/50 hover:border-amber-400`
+    return `${base} border-[color:var(--badge-warning-border)] hover:border-[color:var(--accent-amber)]`
   }
-  return `${base} border-neutral-700 hover:border-neutral-600`
+  return `${base} border-[color:var(--border-muted)] hover:border-[color:var(--border-strong)]`
 }
 
 function getStatusDotClass(status: string | undefined): string {
   switch (status) {
     case 'online':
-      return 'bg-emerald-400'
+      return 'bg-[color:var(--accent-green)]'
     case 'offline':
-      return 'bg-red-400'
+      return 'bg-[color:var(--accent-red)]'
     case 'degraded':
-      return 'bg-amber-400'
+      return 'bg-[color:var(--accent-amber)]'
     default:
-      return 'bg-neutral-500'
+      return 'bg-[color:var(--text-dim)]'
   }
 }
 
@@ -339,4 +339,3 @@ function formatLastSeen(timestamp: string | undefined): string {
   return `${diffDays} дн назад`
 }
 </script>
-

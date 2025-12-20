@@ -1,10 +1,10 @@
 <template>
-  <Card v-if="recipeInstance?.recipe" class="bg-gradient-to-br from-neutral-900 to-neutral-925 border-neutral-800">
+  <Card v-if="recipeInstance?.recipe" class="bg-[color:var(--bg-surface-strong)] border-[color:var(--border-muted)]">
     <div class="space-y-4">
       <!-- Заголовок с бейджем стадии -->
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
-          <div class="w-2 h-2 rounded-full bg-sky-500 animate-pulse"></div>
+          <div class="w-2 h-2 rounded-full bg-[color:var(--accent-cyan)] animate-pulse"></div>
           <div class="text-sm font-semibold">Прогресс цикла</div>
         </div>
         <GrowCycleStageHeader :stage="currentStage" />
@@ -19,7 +19,7 @@
       />
 
       <!-- Прогресс: кольцо + детали фазы -->
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t border-neutral-800">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t border-[color:var(--border-muted)]">
         <!-- Кольцо прогресса -->
         <div class="flex items-center justify-center md:col-span-1">
           <GrowCycleProgressRing
@@ -34,29 +34,29 @@
         <div class="md:col-span-2 space-y-2">
           <div v-if="phaseProgress !== null" class="space-y-2">
             <div class="flex items-center justify-between text-xs">
-              <span class="text-neutral-400">
+              <span class="text-[color:var(--text-muted)]">
                 Фаза: {{ currentPhaseName || `Фаза ${currentPhaseIndex + 1}` }}
-                <span v-if="phaseDaysElapsed !== null && phaseDaysTotal !== null" class="text-neutral-500">
+                <span v-if="phaseDaysElapsed !== null && phaseDaysTotal !== null" class="text-[color:var(--text-dim)]">
                   (день {{ phaseDaysElapsed }}/{{ phaseDaysTotal }})
                 </span>
               </span>
-              <span class="font-semibold text-sky-400">{{ Math.round(phaseProgress) }}%</span>
+              <span class="font-semibold text-[color:var(--accent-cyan)]">{{ Math.round(phaseProgress) }}%</span>
             </div>
             
             <!-- Прогресс-бар фазы -->
-            <div class="relative w-full h-2 bg-neutral-800 rounded-full overflow-hidden">
+            <div class="relative w-full h-2 bg-[color:var(--border-muted)] rounded-full overflow-hidden">
               <div
-                class="absolute inset-0 bg-gradient-to-r from-sky-500 to-sky-400 rounded-full transition-all duration-500 ease-out"
+                class="absolute inset-0 bg-[linear-gradient(90deg,var(--accent-cyan),var(--accent-green))] rounded-full transition-all duration-500 ease-out"
                 :style="{ width: `${phaseProgress}%` }"
               >
-                <div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer"></div>
+                <div class="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.12),transparent)] animate-shimmer"></div>
               </div>
             </div>
 
             <!-- Информация о следующей фазе -->
-            <div v-if="nextPhaseInfo" class="flex items-center justify-between text-xs text-neutral-400">
+            <div v-if="nextPhaseInfo" class="flex items-center justify-between text-xs text-[color:var(--text-muted)]">
               <span>Следующая: {{ nextPhaseInfo.name }}</span>
-              <span v-if="nextPhaseInfo.daysRemaining !== null" class="font-medium text-neutral-300">
+              <span v-if="nextPhaseInfo.daysRemaining !== null" class="font-medium text-[color:var(--text-primary)]">
                 через {{ formatDays(nextPhaseInfo.daysRemaining) }}
               </span>
             </div>
@@ -65,10 +65,10 @@
       </div>
 
       <!-- Общий прогресс по фазам -->
-      <div v-if="totalPhases > 1" class="pt-2 border-t border-neutral-800">
+      <div v-if="totalPhases > 1" class="pt-2 border-t border-[color:var(--border-muted)]">
         <div class="flex items-center justify-between text-xs mb-2">
-          <span class="text-neutral-400">Прогресс по фазам</span>
-          <span class="font-medium text-neutral-300">
+          <span class="text-[color:var(--text-muted)]">Прогресс по фазам</span>
+          <span class="font-medium text-[color:var(--text-primary)]">
             {{ currentPhaseIndex + 1 }} / {{ totalPhases }} фаз
           </span>
         </div>
@@ -84,13 +84,13 @@
       </div>
 
       <!-- Информация о рецепте -->
-      <div class="pt-2 border-t border-neutral-800 text-xs text-neutral-400">
+      <div class="pt-2 border-t border-[color:var(--border-muted)] text-xs text-[color:var(--text-muted)]">
         <div class="flex items-center justify-between">
           <span>Рецепт: {{ recipeInstance.recipe.name }}</span>
           <Link
             v-if="recipeInstance.recipe.id"
             :href="`/recipes/${recipeInstance.recipe.id}`"
-            class="text-sky-400 hover:text-sky-300 transition-colors"
+            class="text-[color:var(--accent-cyan)] hover:text-[color:var(--accent-green)] transition-colors"
           >
             Открыть →
           </Link>
@@ -235,11 +235,11 @@ const progressVariant = computed<'primary' | 'success' | 'warning' | 'danger'>((
 
 function getPhaseBarClass(phaseIndex: number): string {
   if (phaseIndex < currentPhaseIndex.value) {
-    return 'bg-emerald-500'
+    return 'bg-[color:var(--accent-green)]'
   } else if (phaseIndex === currentPhaseIndex.value) {
-    return 'bg-sky-500'
+    return 'bg-[color:var(--accent-cyan)]'
   } else {
-    return 'bg-neutral-700'
+    return 'bg-[color:var(--border-muted)]'
   }
 }
 

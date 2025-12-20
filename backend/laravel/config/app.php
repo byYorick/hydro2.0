@@ -105,6 +105,8 @@ return [
         ),
     ],
 
+    'node_default_secret' => env('NODE_DEFAULT_SECRET', 'hydro-default-secret-key-2025'),
+
     /*
     |--------------------------------------------------------------------------
     | Maintenance Mode Driver

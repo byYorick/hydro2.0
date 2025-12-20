@@ -21,26 +21,26 @@
         />
 
         <!-- Информация о цикле -->
-        <div class="grid grid-cols-2 gap-3 pt-3 border-t border-neutral-800 text-xs">
+        <div class="grid grid-cols-2 gap-3 pt-3 border-t border-[color:var(--border-muted)] text-xs">
           <div>
-            <div class="text-neutral-400 mb-1">Запущен</div>
-            <div class="text-neutral-200">
+            <div class="text-[color:var(--text-dim)] mb-1">Запущен</div>
+            <div class="text-[color:var(--text-primary)]">
               {{ cycle.started_at ? formatDateTime(cycle.started_at) : 'Не запущен' }}
             </div>
           </div>
           <div v-if="cycle.expected_harvest_at">
-            <div class="text-neutral-400 mb-1">Ожидаемый сбор</div>
-            <div class="text-neutral-200">
+            <div class="text-[color:var(--text-dim)] mb-1">Ожидаемый сбор</div>
+            <div class="text-[color:var(--text-primary)]">
               {{ formatDateTime(cycle.expected_harvest_at) }}
             </div>
           </div>
           <div v-if="cycle.current_stage_code">
-            <div class="text-neutral-400 mb-1">Текущая стадия</div>
-            <div class="text-neutral-200">{{ cycle.current_stage_code }}</div>
+            <div class="text-[color:var(--text-dim)] mb-1">Текущая стадия</div>
+            <div class="text-[color:var(--text-primary)]">{{ cycle.current_stage_code }}</div>
           </div>
           <div v-if="cycle.batch_label">
-            <div class="text-neutral-400 mb-1">Партия</div>
-            <div class="text-neutral-200">{{ cycle.batch_label }}</div>
+            <div class="text-[color:var(--text-dim)] mb-1">Партия</div>
+            <div class="text-[color:var(--text-primary)]">{{ cycle.batch_label }}</div>
           </div>
         </div>
       </div>
@@ -132,7 +132,7 @@
             v-for="event in events"
             :key="event.id"
             :data-testid="`cycle-event-item-${event.id}`"
-            class="text-sm text-neutral-300 flex items-start gap-2 py-2 px-2 rounded border border-neutral-800 hover:border-neutral-700 transition-colors"
+            class="text-sm text-[color:var(--text-muted)] flex items-start gap-2 py-2 px-2 rounded border border-[color:var(--border-muted)] hover:border-[color:var(--border-strong)] transition-colors"
           >
             <Badge
               :variant="getEventVariant(event.type)"
@@ -141,14 +141,14 @@
               {{ getEventTypeLabel(event.type) }}
             </Badge>
             <div class="flex-1 min-w-0">
-              <div class="text-xs text-neutral-400 mb-1">
+              <div class="text-xs text-[color:var(--text-dim)] mb-1">
                 {{ formatDateTime(event.created_at || event.occurred_at) }}
               </div>
               <div class="text-sm">{{ getEventMessage(event) }}</div>
             </div>
           </div>
         </div>
-        <div v-else class="text-sm text-neutral-400 text-center py-4">
+        <div v-else class="text-sm text-[color:var(--text-dim)] text-center py-4">
           Нет событий цикла
         </div>
       </div>
@@ -371,4 +371,3 @@ watch(() => props.cycle?.id, (newCycleId) => {
   }
 })
 </script>
-

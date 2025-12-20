@@ -1,13 +1,13 @@
 <template>
-  <div v-if="error" class="error-container min-h-screen flex items-center justify-center bg-neutral-950">
+  <div v-if="error" class="error-container min-h-screen flex items-center justify-center bg-[color:var(--bg-main)]">
     <Card class="max-w-md w-full">
       <div class="text-center">
         <div class="text-6xl mb-4">⚠️</div>
-        <h2 class="text-xl font-bold mb-2 text-red-400">Произошла ошибка</h2>
-        <p class="text-sm text-neutral-400 mb-4">{{ error.message }}</p>
+        <h2 class="text-xl font-bold mb-2 text-[color:var(--accent-red)]">Произошла ошибка</h2>
+        <p class="text-sm text-[color:var(--text-muted)] mb-4">{{ error.message }}</p>
         
-        <div v-if="isDev" class="text-left bg-neutral-900 p-3 rounded mb-4 overflow-auto max-h-40">
-          <pre class="text-xs text-neutral-300">{{ error.stack }}</pre>
+        <div v-if="isDev" class="text-left bg-[color:var(--bg-elevated)] p-3 rounded mb-4 overflow-auto max-h-40">
+          <pre class="text-xs text-[color:var(--text-primary)]">{{ error.stack }}</pre>
         </div>
         
         <div class="flex gap-2 justify-center">
@@ -84,4 +84,3 @@ function goHome(): void {
   router.visit('/')
 }
 </script>
-

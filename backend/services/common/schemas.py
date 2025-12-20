@@ -118,6 +118,8 @@ class CommandRequest(BaseModel):
     zone_id: Optional[int] = Field(None, ge=1, description="Zone ID")
     cmd_id: Optional[str] = Field(None, max_length=64, description="Command ID from Laravel")
     hardware_id: Optional[str] = Field(None, max_length=128, description="Hardware ID for temporary topic")
+    ts: Optional[int] = Field(None, description="Command timestamp (seconds)")
+    sig: Optional[str] = Field(None, max_length=128, description="Command HMAC signature (hex)")
     
     def to_command(self) -> Command:
         """Конвертирует CommandRequest в единый контракт Command."""

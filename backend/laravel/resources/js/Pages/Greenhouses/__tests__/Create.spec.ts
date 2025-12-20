@@ -248,8 +248,7 @@ describe('Greenhouses/Create.vue', () => {
     // errors доступны через reactive, но не через $data в тестах
     // Проверяем, что ошибки отображаются в UI
     await wrapper.vm.$nextTick()
-    const errorMessages = wrapper.findAll('.text-red-400')
-    expect(errorMessages.length).toBeGreaterThan(0)
+    expect(wrapper.text()).toContain('Название обязательно')
   })
 
   it('позволяет выбрать тип теплицы', async () => {
@@ -272,4 +271,3 @@ describe('Greenhouses/Create.vue', () => {
     expect(wrapper.text()).toContain('Создать')
   })
 })
-

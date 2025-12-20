@@ -1,19 +1,19 @@
 <template>
   <div class="flex flex-col gap-2">
-    <div class="text-xs font-semibold text-neutral-300 mb-1">Управление Lifecycle</div>
+    <div class="text-xs font-semibold text-[color:var(--text-primary)] mb-1">Управление Lifecycle</div>
     
-    <div v-if="loading" class="text-xs text-neutral-400">Загрузка...</div>
+    <div v-if="loading" class="text-xs text-[color:var(--text-muted)]">Загрузка...</div>
     
-    <div v-else-if="error" class="text-xs text-red-400">{{ error }}</div>
+    <div v-else-if="error" class="text-xs text-[color:var(--accent-red)]">{{ error }}</div>
     
-    <div v-else-if="allowedTransitions.length === 0" class="text-xs text-neutral-400">
+    <div v-else-if="allowedTransitions.length === 0" class="text-xs text-[color:var(--text-muted)]">
       Нет доступных переходов
     </div>
     
     <div v-else class="flex items-center gap-2">
       <select
         v-model="selectedState"
-        class="h-9 flex-1 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm text-neutral-200"
+        class="input-select h-9 flex-1"
         :disabled="transitioning"
       >
         <option :value="null">Выберите состояние...</option>
@@ -23,7 +23,7 @@
           :value="state.value"
         >
           {{ state.label }}
-          <span v-if="state.is_active" class="text-emerald-400">(Активно)</span>
+          <span v-if="state.is_active" class="text-[color:var(--accent-green)]">(Активно)</span>
         </option>
       </select>
       
@@ -37,8 +37,8 @@
       </Button>
     </div>
     
-    <div v-if="currentState" class="text-xs text-neutral-500">
-      Текущее состояние: <span class="text-neutral-300">{{ currentState.label }}</span>
+    <div v-if="currentState" class="text-xs text-[color:var(--text-dim)]">
+      Текущее состояние: <span class="text-[color:var(--text-primary)]">{{ currentState.label }}</span>
     </div>
   </div>
 </template>
@@ -169,4 +169,3 @@ watch(() => props.currentLifecycleState, (newState) => {
   }
 })
 </script>
-

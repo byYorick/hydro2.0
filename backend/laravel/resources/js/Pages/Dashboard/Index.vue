@@ -24,12 +24,12 @@
       />
       <!-- Дефолтный Dashboard для остальных случаев -->
       <div v-else class="space-y-6">
-        <div class="glass-panel border border-slate-800/60 rounded-2xl p-5 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
+        <div class="glass-panel border border-[color:var(--border-strong)] rounded-2xl p-5 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
           <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
-              <p class="text-[11px] uppercase tracking-[0.28em] text-slate-400">обзор системы</p>
+              <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">обзор системы</p>
               <h1 class="text-2xl font-semibold tracking-tight mt-1">Мониторинг теплиц и зон</h1>
-              <p class="text-sm text-slate-400 mt-1">Сводка по теплицам, зонам, устройствам и активным алертам.</p>
+              <p class="text-sm text-[color:var(--text-muted)] mt-1">Сводка по теплицам, зонам, устройствам и активным алертам.</p>
             </div>
             <div class="flex gap-2 justify-end">
               <Link href="/greenhouses">
@@ -38,71 +38,71 @@
             </div>
           </div>
           <div class="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4 mt-4">
-            <Card class="hover:border-emerald-300/40 hover:shadow-[0_12px_40px_rgba(48,240,201,0.12)]">
+            <Card class="hover:border-[color:var(--border-strong)] hover:shadow-[0_12px_40px_rgba(48,240,201,0.12)]">
               <div class="flex items-start justify-between mb-2">
-                <div class="text-slate-400 text-xs font-medium uppercase tracking-[0.15em]">Теплицы</div>
-                <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-300/30 to-cyan-300/30 border border-emerald-400/40 flex items-center justify-center">
-                  <svg class="w-4 h-4 text-emerald-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div class="text-[color:var(--text-dim)] text-xs font-medium uppercase tracking-[0.15em]">Теплицы</div>
+                <div class="w-9 h-9 rounded-xl bg-[color:var(--badge-success-bg)] border border-[color:var(--badge-success-border)] flex items-center justify-center">
+                  <svg class="w-4 h-4 text-[color:var(--badge-success-text)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
                   </svg>
                 </div>
               </div>
-              <div class="text-3xl font-bold text-emerald-100">{{ dashboard.greenhousesCount }}</div>
+              <div class="text-3xl font-bold text-[color:var(--accent-green)]">{{ dashboard.greenhousesCount }}</div>
             </Card>
-            <Card class="hover:border-cyan-300/40 hover:shadow-[0_12px_40px_rgba(48,240,201,0.12)]" data-testid="dashboard-zones-count">
+            <Card class="hover:border-[color:var(--border-strong)] hover:shadow-[0_12px_40px_rgba(48,240,201,0.12)]" data-testid="dashboard-zones-count">
               <div class="flex items-start justify-between mb-2">
-                <div class="text-slate-400 text-xs font-medium uppercase tracking-[0.15em]">Зоны</div>
-                <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-300/30 to-emerald-300/30 border border-cyan-400/40 flex items-center justify-center">
-                  <svg class="w-4 h-4 text-cyan-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div class="text-[color:var(--text-dim)] text-xs font-medium uppercase tracking-[0.15em]">Зоны</div>
+                <div class="w-9 h-9 rounded-xl bg-[color:var(--badge-info-bg)] border border-[color:var(--badge-info-border)] flex items-center justify-center">
+                  <svg class="w-4 h-4 text-[color:var(--badge-info-text)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
                   </svg>
                 </div>
               </div>
-              <div class="text-3xl font-bold text-cyan-100 mb-2">{{ dashboard.zonesCount }}</div>
+              <div class="text-3xl font-bold text-[color:var(--accent-cyan)] mb-2">{{ dashboard.zonesCount }}</div>
               <div v-if="zonesStatusSummary" class="flex flex-wrap gap-1.5 text-xs">
-                <span v-if="zonesStatusSummary.RUNNING" class="px-1.5 py-0.5 rounded bg-emerald-900/30 text-emerald-300 border border-emerald-700/50">
+                <span v-if="zonesStatusSummary.RUNNING" class="px-1.5 py-0.5 rounded bg-[color:var(--badge-success-bg)] text-[color:var(--badge-success-text)] border border-[color:var(--badge-success-border)]">
                   Запущено: {{ zonesStatusSummary.RUNNING }}
                 </span>
-                <span v-if="zonesStatusSummary.PAUSED" class="px-1.5 py-0.5 rounded bg-slate-900/70 text-slate-300 border border-slate-700/50">
+                <span v-if="zonesStatusSummary.PAUSED" class="px-1.5 py-0.5 rounded bg-[color:var(--badge-neutral-bg)] text-[color:var(--badge-neutral-text)] border border-[color:var(--badge-neutral-border)]">
                   Пауза: {{ zonesStatusSummary.PAUSED }}
                 </span>
-                <span v-if="zonesStatusSummary.ALARM" class="px-1.5 py-0.5 rounded bg-rose-900/40 text-rose-200 border border-rose-700/60">
+                <span v-if="zonesStatusSummary.ALARM" class="px-1.5 py-0.5 rounded bg-[color:var(--badge-danger-bg)] text-[color:var(--badge-danger-text)] border border-[color:var(--badge-danger-border)]">
                   Тревога: {{ zonesStatusSummary.ALARM }}
                 </span>
-                <span v-if="zonesStatusSummary.WARNING" class="px-1.5 py-0.5 rounded bg-amber-900/40 text-amber-200 border border-amber-700/60">
+                <span v-if="zonesStatusSummary.WARNING" class="px-1.5 py-0.5 rounded bg-[color:var(--badge-warning-bg)] text-[color:var(--badge-warning-text)] border border-[color:var(--badge-warning-border)]">
                   Предупреждение: {{ zonesStatusSummary.WARNING }}
                 </span>
               </div>
             </Card>
-            <Card class="hover:border-purple-300/40 hover:shadow-[0_12px_40px_rgba(168,85,247,0.12)]">
+            <Card class="hover:border-[color:var(--border-strong)] hover:shadow-[0_12px_40px_rgba(168,85,247,0.12)]">
               <div class="flex items-start justify-between mb-2">
-                <div class="text-slate-400 text-xs font-medium uppercase tracking-[0.15em]">Устройства</div>
-                <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-400/30 to-indigo-400/30 border border-purple-400/50 flex items-center justify-center">
-                  <svg class="w-4 h-4 text-purple-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div class="text-[color:var(--text-dim)] text-xs font-medium uppercase tracking-[0.15em]">Устройства</div>
+                <div class="w-9 h-9 rounded-xl bg-[color:var(--badge-warning-bg)] border border-[color:var(--badge-warning-border)] flex items-center justify-center">
+                  <svg class="w-4 h-4 text-[color:var(--badge-warning-text)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m-2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
                   </svg>
                 </div>
               </div>
-              <div class="text-3xl font-bold text-purple-100 mb-2">{{ dashboard.devicesCount }}</div>
+              <div class="text-3xl font-bold text-[color:var(--accent-amber)] mb-2">{{ dashboard.devicesCount }}</div>
               <div v-if="nodesStatusSummary" class="flex flex-wrap gap-1.5 text-xs">
-                <span v-if="nodesStatusSummary.online" class="px-1.5 py-0.5 rounded bg-emerald-900/30 text-emerald-300 border border-emerald-700/50">
+                <span v-if="nodesStatusSummary.online" class="px-1.5 py-0.5 rounded bg-[color:var(--badge-success-bg)] text-[color:var(--badge-success-text)] border border-[color:var(--badge-success-border)]">
                   Онлайн: {{ nodesStatusSummary.online }}
                 </span>
-                <span v-if="nodesStatusSummary.offline" class="px-1.5 py-0.5 rounded bg-rose-900/40 text-rose-200 border border-rose-700/60">
+                <span v-if="nodesStatusSummary.offline" class="px-1.5 py-0.5 rounded bg-[color:var(--badge-danger-bg)] text-[color:var(--badge-danger-text)] border border-[color:var(--badge-danger-border)]">
                   Офлайн: {{ nodesStatusSummary.offline }}
                 </span>
               </div>
             </Card>
-            <Card class="hover:border-rose-300/40 hover:shadow-[0_12px_40px_rgba(255,77,103,0.14)]" :class="dashboard.alertsCount > 0 ? 'border-rose-800/60' : ''" data-testid="dashboard-alerts-count">
+            <Card class="hover:border-[color:var(--border-strong)] hover:shadow-[0_12px_40px_rgba(255,77,103,0.14)]" :class="dashboard.alertsCount > 0 ? 'border-[color:var(--badge-danger-border)]' : ''" data-testid="dashboard-alerts-count">
               <div class="flex items-start justify-between mb-2">
-                <div class="text-slate-400 text-xs font-medium uppercase tracking-[0.15em]">Активные алерты</div>
-                <div class="w-9 h-9 rounded-xl flex items-center justify-center" :class="dashboard.alertsCount > 0 ? 'bg-rose-900/40 border border-rose-700/60' : 'bg-emerald-900/30 border border-emerald-700/50'">
-                  <svg class="w-4 h-4" :class="dashboard.alertsCount > 0 ? 'text-rose-200' : 'text-emerald-200'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div class="text-[color:var(--text-dim)] text-xs font-medium uppercase tracking-[0.15em]">Активные алерты</div>
+                <div class="w-9 h-9 rounded-xl flex items-center justify-center" :class="dashboard.alertsCount > 0 ? 'bg-[color:var(--badge-danger-bg)] border border-[color:var(--badge-danger-border)]' : 'bg-[color:var(--badge-success-bg)] border border-[color:var(--badge-success-border)]'">
+                  <svg class="w-4 h-4" :class="dashboard.alertsCount > 0 ? 'text-[color:var(--badge-danger-text)]' : 'text-[color:var(--badge-success-text)]'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                   </svg>
                 </div>
               </div>
-              <div class="text-3xl font-bold" :class="dashboard.alertsCount > 0 ? 'text-rose-200' : 'text-emerald-200'">
+              <div class="text-3xl font-bold" :class="dashboard.alertsCount > 0 ? 'text-[color:var(--accent-red)]' : 'text-[color:var(--accent-green)]'">
                 {{ dashboard.alertsCount }}
               </div>
             </Card>
@@ -111,11 +111,11 @@
 
       <!-- Быстрые действия -->
       <div v-if="!hasGreenhouses || dashboard.greenhousesCount === 0" class="mb-6">
-        <Card class="bg-sky-900/20 border-sky-700">
+        <Card class="bg-[color:var(--badge-info-bg)] border-[color:var(--badge-info-border)]">
           <div class="flex items-center justify-between">
             <div>
               <div class="text-sm font-semibold mb-1">Начать работу</div>
-              <div class="text-xs text-neutral-400">
+              <div class="text-xs text-[color:var(--text-muted)]">
                 Создайте теплицу и зоны для начала работы с системой
               </div>
             </div>
@@ -131,7 +131,7 @@
       <!-- Теплицы -->
       <div v-if="hasGreenhouses" class="mb-6">
         <div class="flex items-center justify-between mb-4">
-          <h2 class="text-base font-semibold text-neutral-100">Теплицы</h2>
+          <h2 class="text-base font-semibold text-[color:var(--text-primary)]">Теплицы</h2>
           <Link href="/greenhouses">
             <Button size="sm" variant="outline">Все теплицы</Button>
           </Link>
@@ -141,20 +141,20 @@
             v-for="gh in dashboard.greenhouses" 
             :key="gh.id" 
             v-memo="[gh.id, gh.name, gh.zones_count, gh.zones_running]"
-            class="hover:border-neutral-700 hover:shadow-lg transition-all duration-200"
+            class="hover:border-[color:var(--border-strong)] hover:shadow-lg transition-all duration-200"
           >
             <div class="flex items-start justify-between">
               <div>
                 <div class="text-sm font-semibold">{{ gh.name }}</div>
-                <div class="text-xs text-neutral-400 mt-1">
+                <div class="text-xs text-[color:var(--text-muted)] mt-1">
                   <span v-if="gh.type">{{ gh.type }}</span>
                   <span v-if="gh.uid" class="ml-2">UID: {{ gh.uid }}</span>
                 </div>
               </div>
             </div>
-            <div class="mt-3 text-xs text-neutral-400">
+            <div class="mt-3 text-xs text-[color:var(--text-muted)]">
               <div>Зон: {{ gh.zones_count || 0 }}</div>
-              <div class="text-emerald-400">Запущено: {{ gh.zones_running || 0 }}</div>
+              <div class="text-[color:var(--accent-green)]">Запущено: {{ gh.zones_running || 0 }}</div>
             </div>
           </Card>
         </div>
@@ -162,18 +162,18 @@
 
       <!-- Проблемные зоны -->
       <div v-if="hasProblematicZones" class="mb-6">
-        <h2 class="text-base font-semibold text-neutral-100 mb-4">Проблемные зоны</h2>
+        <h2 class="text-base font-semibold text-[color:var(--text-primary)] mb-4">Проблемные зоны</h2>
         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
           <Card 
             v-for="zone in dashboard.problematicZones" 
             :key="zone.id" 
             v-memo="[zone.id, zone.status, zone.alerts_count]"
-            class="hover:border-red-800/50 hover:shadow-lg transition-all duration-200 border-red-900/30"
+            class="hover:border-[color:var(--badge-danger-border)] hover:shadow-lg transition-all duration-200 border-[color:var(--badge-danger-border)]"
           >
             <div class="flex items-start justify-between mb-2">
               <div>
                 <div class="text-sm font-semibold">{{ zone.name }}</div>
-                <div v-if="zone.greenhouse" class="text-xs text-neutral-400 mt-1">
+                <div v-if="zone.greenhouse" class="text-xs text-[color:var(--text-muted)] mt-1">
                   {{ zone.greenhouse.name }}
                 </div>
               </div>
@@ -181,8 +181,8 @@
                 {{ translateStatus(zone.status) }}
               </Badge>
             </div>
-            <div v-if="zone.description" class="text-xs text-neutral-400 mb-2">{{ zone.description }}</div>
-            <div v-if="zone.alerts_count > 0" class="text-xs text-red-400 mb-2">
+            <div v-if="zone.description" class="text-xs text-[color:var(--text-muted)] mb-2">{{ zone.description }}</div>
+            <div v-if="zone.alerts_count > 0" class="text-xs text-[color:var(--accent-red)] mb-2">
               Активных алертов: {{ zone.alerts_count }}
             </div>
             <!-- Быстрые действия -->
@@ -200,7 +200,7 @@
               >
                 <template v-if="isQuickActionLoading(zone.id, 'PAUSE')">
                   <span class="inline-flex items-center gap-1">
-                    <svg class="w-3.5 h-3.5 animate-spin text-neutral-300" viewBox="0 0 24 24">
+                    <svg class="w-3.5 h-3.5 animate-spin text-[color:var(--text-muted)]" viewBox="0 0 24 24">
                       <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
                       <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
                     </svg>
@@ -221,7 +221,7 @@
               >
                 <template v-if="isQuickActionLoading(zone.id, 'RESUME')">
                   <span class="inline-flex items-center gap-1">
-                    <svg class="w-3.5 h-3.5 animate-spin text-neutral-300" viewBox="0 0 24 24">
+                    <svg class="w-3.5 h-3.5 animate-spin text-[color:var(--text-muted)]" viewBox="0 0 24 24">
                       <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
                       <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
                     </svg>
@@ -237,12 +237,12 @@
                 size="sm"
                 variant="outline"
                 @click="handleQuickAction(zone, 'FORCE_IRRIGATION')"
-                class="text-xs text-emerald-400 border-emerald-700 hover:bg-emerald-950/20"
+                class="text-xs text-[color:var(--accent-green)] border-[color:var(--badge-success-border)] hover:bg-[color:var(--badge-success-bg)]"
                 :disabled="isQuickActionLoading(zone.id)"
               >
                 <template v-if="isQuickActionLoading(zone.id, 'FORCE_IRRIGATION')">
                   <span class="inline-flex items-center gap-1">
-                    <svg class="w-3.5 h-3.5 animate-spin text-emerald-300" viewBox="0 0 24 24">
+                    <svg class="w-3.5 h-3.5 animate-spin text-[color:var(--badge-success-text)]" viewBox="0 0 24 24">
                       <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
                       <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
                     </svg>
@@ -259,7 +259,7 @@
       </div>
       <div v-else class="mb-6">
         <Card>
-          <div class="text-sm text-neutral-400">Нет проблемных зон</div>
+          <div class="text-sm text-[color:var(--text-dim)]">Нет проблемных зон</div>
         </Card>
       </div>
 
@@ -268,22 +268,22 @@
         <template v-if="hasZonesForTelemetry">
           <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
             <div>
-              <h2 class="text-base font-semibold text-neutral-100">
+              <h2 class="text-base font-semibold text-[color:var(--text-primary)]">
                 Телеметрия
-                <span v-if="selectedZoneLabel" class="text-neutral-400 font-normal">· {{ selectedZoneLabel }}</span>
-                <span class="text-neutral-500 font-normal">· {{ telemetryPeriodLabel }}</span>
+                <span v-if="selectedZoneLabel" class="text-[color:var(--text-muted)] font-normal">· {{ selectedZoneLabel }}</span>
+                <span class="text-[color:var(--text-dim)] font-normal">· {{ telemetryPeriodLabel }}</span>
               </h2>
-              <div class="flex items-center gap-1.5 text-xs text-neutral-500 mt-1">
-              <div class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
+              <div class="flex items-center gap-1.5 text-xs text-[color:var(--text-dim)] mt-1">
+              <div class="w-2 h-2 rounded-full bg-[color:var(--accent-green)] animate-pulse"></div>
               <span>Обновляется в реальном времени</span>
             </div>
             </div>
             <div class="flex flex-wrap items-center gap-3">
               <div v-if="telemetryZones.length > 0" class="flex items-center gap-2">
-                <label class="text-xs text-neutral-400">Зона</label>
+                <label class="text-xs text-[color:var(--text-muted)]">Зона</label>
                 <select
                   v-model.number="selectedZoneId"
-                  class="h-8 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-xs min-w-[160px]"
+                  class="input-select h-8 text-xs min-w-[160px]"
                 >
                   <option
                     v-for="zone in telemetryZones"
@@ -301,8 +301,8 @@
                   @click="telemetryPeriod = range.value"
                   class="px-3 py-1 rounded-md text-xs border transition-colors"
                   :class="telemetryPeriod === range.value
-                    ? 'border-sky-500 bg-sky-900/40 text-sky-200'
-                    : 'border-neutral-700 bg-neutral-900 text-neutral-400 hover:border-neutral-600'"
+                    ? 'border-[color:var(--accent-cyan)] bg-[color:var(--badge-info-bg)] text-[color:var(--accent-cyan)]'
+                    : 'border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)] hover:border-[color:var(--border-strong)]'"
                 >
                   {{ range.label }}
                 </button>
@@ -328,7 +328,7 @@
         </template>
         <template v-else>
           <Card>
-            <div class="text-sm text-neutral-400">Нет доступных зон с телеметрией</div>
+            <div class="text-sm text-[color:var(--text-dim)]">Нет доступных зон с телеметрией</div>
           </Card>
         </template>
       </div>
@@ -336,8 +336,8 @@
       <!-- Heatmap зон по статусам -->
       <div v-if="hasZones" class="mb-6">
         <div class="flex items-center justify-between mb-4">
-          <h2 class="text-base font-semibold text-neutral-100">Статусы зон</h2>
-          <Link href="/zones" class="text-xs text-sky-400 hover:text-sky-300 transition-colors">
+          <h2 class="text-base font-semibold text-[color:var(--text-primary)]">Статусы зон</h2>
+          <Link href="/zones" class="text-xs text-[color:var(--accent-cyan)] hover:underline transition-colors">
             Все зоны →
           </Link>
         </div>
@@ -348,9 +348,9 @@
     <template #context>
       <div class="flex flex-col flex-1 min-h-0" data-testid="dashboard-events-panel">
         <div class="flex items-center justify-between mb-3 shrink-0">
-          <div class="text-neutral-300 font-medium">Последние события</div>
-          <div class="flex items-center gap-1.5 text-xs text-neutral-500">
-            <div class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></div>
+          <div class="text-[color:var(--text-primary)] font-medium">Последние события</div>
+          <div class="flex items-center gap-1.5 text-xs text-[color:var(--text-dim)]">
+            <div class="w-1.5 h-1.5 rounded-full bg-[color:var(--accent-green)] animate-pulse"></div>
             <span>Live</span>
           </div>
         </div>
@@ -364,24 +364,24 @@
             @click="eventFilter = kind"
             class="px-2.5 py-1 text-xs rounded-md border transition-all duration-200"
             :class="eventFilter === kind 
-              ? 'border-neutral-600 bg-neutral-800 text-neutral-100' 
-              : 'border-neutral-800 bg-neutral-900 text-neutral-400 hover:border-neutral-700'"
+              ? 'border-[color:var(--border-strong)] bg-[color:var(--bg-elevated)] text-[color:var(--text-primary)]' 
+              : 'border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] text-[color:var(--text-muted)] hover:border-[color:var(--border-strong)]'"
           >
             {{ kind === 'ALL' ? 'Все' : kind }}
           </button>
         </div>
         
-        <div v-if="filteredEvents.length > 0" class="space-y-2 flex-1 min-h-0 overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-800 scrollbar-track-transparent pr-1">
+        <div v-if="filteredEvents.length > 0" class="space-y-2 flex-1 min-h-0 overflow-y-auto scrollbar-thin scrollbar-thumb-[color:var(--border-muted)] scrollbar-track-transparent pr-1">
           <div 
             v-for="e in filteredEvents" 
             :key="e.id" 
             v-memo="[e.id, e.kind, e.message, e.occurred_at]"
             class="rounded-lg border p-2.5 transition-all duration-200 hover:shadow-md"
             :class="e.kind === 'ALERT' 
-              ? 'border-red-800/50 bg-red-950/20' 
+              ? 'border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)]' 
               : e.kind === 'WARNING' 
-              ? 'border-amber-800/50 bg-amber-950/20' 
-              : 'border-neutral-800 bg-neutral-925'"
+              ? 'border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)]' 
+              : 'border-[color:var(--border-muted)] bg-[color:var(--bg-surface)]'"
           >
             <div class="flex items-start justify-between mb-1.5">
               <Badge 
@@ -390,19 +390,19 @@
               >
                 {{ e.kind }}
               </Badge>
-              <span class="text-xs text-neutral-500">{{ formatTime(e.occurred_at || e.created_at) }}</span>
+              <span class="text-xs text-[color:var(--text-dim)]">{{ formatTime(e.occurred_at || e.created_at) }}</span>
             </div>
-            <div v-if="e.zone_id" class="text-xs text-neutral-400 mb-1.5">
-              <Link :href="`/zones/${e.zone_id}`" class="text-sky-400 hover:text-sky-300 transition-colors">
+            <div v-if="e.zone_id" class="text-xs text-[color:var(--text-muted)] mb-1.5">
+              <Link :href="`/zones/${e.zone_id}`" class="text-[color:var(--accent-cyan)] hover:underline transition-colors">
                 Зона #{{ e.zone_id }} →
               </Link>
             </div>
-            <div class="text-sm text-neutral-200 leading-relaxed">
+            <div class="text-sm text-[color:var(--text-primary)] leading-relaxed">
               {{ e.message }}
             </div>
           </div>
         </div>
-        <div v-else class="text-neutral-500 text-sm text-center py-4">Нет событий</div>
+        <div v-else class="text-[color:var(--text-dim)] text-sm text-center py-4">Нет событий</div>
       </div>
     </template>
   </AppLayout>

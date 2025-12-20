@@ -13,59 +13,59 @@
     </div>
 
     <!-- Системная статистика -->
-    <Card class="bg-neutral-900 border-neutral-800">
+    <Card class="bg-[color:var(--bg-elevated)] border-[color:var(--border-muted)]">
       <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         <div class="flex items-center gap-3">
-          <div class="w-12 h-12 rounded-lg bg-emerald-900/30 border border-emerald-700 flex items-center justify-center">
-            <svg class="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div class="w-12 h-12 rounded-lg bg-[color:var(--badge-success-bg)] border border-[color:var(--badge-success-border)] flex items-center justify-center">
+            <svg class="w-6 h-6 text-[color:var(--badge-success-text)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
           <div>
-            <div class="text-xs text-neutral-400">Система</div>
-            <div class="text-lg font-semibold text-emerald-400">Онлайн</div>
+            <div class="text-xs text-[color:var(--text-muted)]">Система</div>
+            <div class="text-lg font-semibold text-[color:var(--accent-green)]">Онлайн</div>
           </div>
         </div>
         <div class="flex items-center gap-3" data-testid="dashboard-zones-count">
-          <div class="w-12 h-12 rounded-lg bg-sky-900/30 border border-sky-700 flex items-center justify-center">
-            <svg class="w-6 h-6 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div class="w-12 h-12 rounded-lg bg-[color:var(--badge-info-bg)] border border-[color:var(--badge-info-border)] flex items-center justify-center">
+            <svg class="w-6 h-6 text-[color:var(--badge-info-text)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
             </svg>
           </div>
           <div>
-            <div class="text-xs text-neutral-400">Зоны</div>
+            <div class="text-xs text-[color:var(--text-muted)]">Зоны</div>
             <div class="text-lg font-semibold">
               {{ zonesStatusSummary.RUNNING || 0 }} активных
-              <span v-if="zonesStatusSummary.PAUSED" class="text-neutral-400">
+              <span v-if="zonesStatusSummary.PAUSED" class="text-[color:var(--text-muted)]">
                 / {{ zonesStatusSummary.PAUSED }} на паузе
               </span>
             </div>
           </div>
         </div>
         <div class="flex items-center gap-3">
-          <div class="w-12 h-12 rounded-lg bg-amber-900/30 border border-amber-700 flex items-center justify-center">
-            <svg class="w-6 h-6 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div class="w-12 h-12 rounded-lg bg-[color:var(--badge-warning-bg)] border border-[color:var(--badge-warning-border)] flex items-center justify-center">
+            <svg class="w-6 h-6 text-[color:var(--badge-warning-text)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m-2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
             </svg>
           </div>
           <div>
-            <div class="text-xs text-neutral-400">Устройства</div>
+            <div class="text-xs text-[color:var(--text-muted)]">Устройства</div>
             <div class="text-lg font-semibold">
-              <span class="text-emerald-400">{{ nodesStatusSummary.online || 0 }} онлайн</span>
-              <span v-if="nodesStatusSummary.offline" class="text-red-400 ml-2">
+              <span class="text-[color:var(--accent-green)]">{{ nodesStatusSummary.online || 0 }} онлайн</span>
+              <span v-if="nodesStatusSummary.offline" class="text-[color:var(--accent-red)] ml-2">
                 / {{ nodesStatusSummary.offline }} офлайн
               </span>
             </div>
           </div>
         </div>
         <div class="flex items-center gap-3">
-          <div class="w-12 h-12 rounded-lg bg-purple-900/30 border border-purple-700 flex items-center justify-center">
-            <svg class="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div class="w-12 h-12 rounded-lg bg-[color:var(--badge-info-bg)] border border-[color:var(--badge-info-border)] flex items-center justify-center">
+            <svg class="w-6 h-6 text-[color:var(--badge-info-text)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
             </svg>
           </div>
           <div>
-            <div class="text-xs text-neutral-400">Пользователи</div>
+            <div class="text-xs text-[color:var(--text-muted)]">Пользователи</div>
             <div class="text-lg font-semibold">{{ activeUsersCount }} активных</div>
           </div>
         </div>
@@ -84,12 +84,12 @@
         <Card
           v-for="zone in problematicZones"
           :key="zone.id"
-          class="hover:border-neutral-700 transition-colors"
+          class="hover:border-[color:var(--border-strong)] transition-colors"
         >
           <div class="flex items-start justify-between mb-2">
             <div>
               <div class="text-sm font-semibold">{{ zone.name }}</div>
-              <div v-if="zone.greenhouse" class="text-xs text-neutral-400 mt-1">
+              <div v-if="zone.greenhouse" class="text-xs text-[color:var(--text-muted)] mt-1">
                 {{ zone.greenhouse.name }}
               </div>
             </div>
@@ -97,7 +97,7 @@
               {{ translateStatus(zone.status) }}
             </Badge>
           </div>
-          <div v-if="zone.alertsCount > 0" class="text-xs text-red-400 mb-2">
+          <div v-if="zone.alertsCount > 0" class="text-xs text-[color:var(--accent-red)] mb-2">
             Активных алертов: {{ zone.alertsCount }}
           </div>
           <div class="flex gap-2 mt-3">
@@ -131,30 +131,30 @@
           <div
             v-for="action in recentUserActions"
             :key="action.id"
-            class="flex items-center justify-between py-2 border-b border-neutral-800 last:border-0"
+            class="flex items-center justify-between py-2 border-b border-[color:var(--border-muted)] last:border-0"
           >
             <div class="flex items-center gap-3">
-              <div class="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-xs">
+              <div class="w-8 h-8 rounded-full bg-[color:var(--bg-surface-strong)] flex items-center justify-center text-xs">
                 {{ action.userName.charAt(0).toUpperCase() }}
               </div>
               <div>
                 <div class="text-sm">{{ action.userName }}</div>
-                <div class="text-xs text-neutral-400">{{ action.description }}</div>
+                <div class="text-xs text-[color:var(--text-muted)]">{{ action.description }}</div>
               </div>
             </div>
-            <div class="text-xs text-neutral-500">
+            <div class="text-xs text-[color:var(--text-dim)]">
               {{ formatTime(action.timestamp) }}
             </div>
           </div>
         </div>
-        <div v-else class="text-sm text-neutral-400 text-center py-4">
+        <div v-else class="text-sm text-[color:var(--text-dim)] text-center py-4">
           Нет недавних действий
         </div>
       </Card>
     </div>
 
     <!-- Быстрые действия -->
-    <Card class="bg-neutral-900 border-neutral-800">
+    <Card class="bg-[color:var(--bg-elevated)] border-[color:var(--border-muted)]">
       <h3 class="text-sm font-semibold mb-3">Быстрые действия</h3>
       <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Link href="/admin/users">
@@ -314,4 +314,3 @@ async function exportSystemData() {
   }
 }
 </script>
-

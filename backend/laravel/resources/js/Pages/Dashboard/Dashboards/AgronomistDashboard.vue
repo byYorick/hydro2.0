@@ -1,12 +1,12 @@
 <template>
   <div class="space-y-6">
-    <div class="glass-panel border border-slate-800/60 rounded-2xl p-5 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
+    <div class="glass-panel border border-[color:var(--border-strong)] rounded-2xl p-5 shadow-[var(--shadow-card)]">
       <div class="flex flex-col gap-4">
         <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <p class="text-[11px] uppercase tracking-[0.28em] text-slate-400">мониторинг агронома</p>
+            <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">мониторинг агронома</p>
             <h1 class="text-2xl font-semibold tracking-tight mt-1">Циклы выращивания и здоровье зон</h1>
-            <p class="text-sm text-slate-400 mt-1">Фокус на фазах, аномалиях и активных рецептах.</p>
+            <p class="text-sm text-[color:var(--text-muted)] mt-1">Фокус на фазах, аномалиях и активных рецептах.</p>
           </div>
           <div class="flex flex-wrap gap-2 justify-end">
             <Link href="/recipes/create" class="flex-1 sm:flex-none min-w-[140px]">
@@ -18,31 +18,31 @@
           </div>
         </div>
         <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <div class="glass-panel border border-emerald-400/30 rounded-xl p-3 shadow-inner shadow-emerald-500/10">
-            <div class="text-xs text-slate-400 uppercase tracking-[0.15em] mb-1">Активные зоны</div>
+          <div class="glass-panel border border-[color:var(--badge-success-border)] rounded-xl p-3 shadow-[inset_0_0_0_1px_var(--badge-success-border)]">
+            <div class="text-xs text-[color:var(--text-dim)] uppercase tracking-[0.15em] mb-1">Активные зоны</div>
             <div class="flex items-end gap-2">
-              <div class="text-3xl font-semibold text-emerald-200">{{ activeZonesCount }}</div>
-              <div class="text-sm text-slate-400">из {{ totalZonesCount }}</div>
+              <div class="text-3xl font-semibold text-[color:var(--accent-green)]">{{ activeZonesCount }}</div>
+              <div class="text-sm text-[color:var(--text-dim)]">из {{ totalZonesCount }}</div>
             </div>
           </div>
-          <div class="glass-panel border border-amber-400/30 rounded-xl p-3">
-            <div class="text-xs text-slate-400 uppercase tracking-[0.15em] mb-1">Предупреждения</div>
+          <div class="glass-panel border border-[color:var(--badge-warning-border)] rounded-xl p-3">
+            <div class="text-xs text-[color:var(--text-dim)] uppercase tracking-[0.15em] mb-1">Предупреждения</div>
             <div class="flex items-center gap-2">
-              <div class="text-3xl font-semibold text-amber-200">{{ warningZonesCount }}</div>
+              <div class="text-3xl font-semibold text-[color:var(--accent-amber)]">{{ warningZonesCount }}</div>
               <Badge variant="warning" size="sm">warning</Badge>
             </div>
           </div>
-          <div class="glass-panel border border-rose-400/30 rounded-xl p-3">
-            <div class="text-xs text-slate-400 uppercase tracking-[0.15em] mb-1">Критические</div>
+          <div class="glass-panel border border-[color:var(--badge-danger-border)] rounded-xl p-3">
+            <div class="text-xs text-[color:var(--text-dim)] uppercase tracking-[0.15em] mb-1">Критические</div>
             <div class="flex items-center gap-2">
-              <div class="text-3xl font-semibold text-rose-200">{{ alarmZonesCount }}</div>
+              <div class="text-3xl font-semibold text-[color:var(--accent-red)]">{{ alarmZonesCount }}</div>
               <Badge variant="danger" size="sm">alarm</Badge>
             </div>
           </div>
-          <div class="glass-panel border border-cyan-300/30 rounded-xl p-3">
-            <div class="text-xs text-slate-400 uppercase tracking-[0.15em] mb-1">Активных рецептов</div>
+          <div class="glass-panel border border-[color:var(--badge-info-border)] rounded-xl p-3">
+            <div class="text-xs text-[color:var(--text-dim)] uppercase tracking-[0.15em] mb-1">Активных рецептов</div>
             <div class="flex items-center gap-2">
-              <div class="text-3xl font-semibold text-cyan-200">{{ activeRecipesCount }}</div>
+              <div class="text-3xl font-semibold text-[color:var(--accent-cyan)]">{{ activeRecipesCount }}</div>
               <Badge variant="info" size="sm">recipes</Badge>
             </div>
           </div>
@@ -57,12 +57,12 @@
         <Card
           v-for="crop in zonesByCrop"
           :key="crop.cropName"
-          class="hover:border-neutral-700 transition-colors"
+          class="hover:border-[color:var(--border-strong)] transition-colors"
         >
           <div class="flex items-start justify-between mb-3">
             <div>
               <div class="text-sm font-semibold">{{ crop.cropName }}</div>
-              <div class="text-xs text-neutral-400 mt-1">
+              <div class="text-xs text-[color:var(--text-muted)] mt-1">
                 {{ crop.zones.length }} {{ crop.zones.length === 1 ? 'зона' : 'зон' }}
               </div>
             </div>
@@ -74,12 +74,12 @@
           <!-- Прогресс фазы -->
           <div v-if="crop.averageProgress !== null" class="mb-3">
             <div class="flex items-center justify-between text-xs mb-1">
-              <span class="text-neutral-400">Общий прогресс</span>
+              <span class="text-[color:var(--text-muted)]">Общий прогресс</span>
               <span class="font-medium">{{ Math.round(crop.averageProgress) }}%</span>
             </div>
-            <div class="w-full bg-neutral-800 rounded-full h-2">
+            <div class="w-full bg-[color:var(--border-muted)] rounded-full h-2">
               <div
-                class="bg-emerald-500 h-2 rounded-full transition-all duration-300"
+                class="bg-[color:var(--accent-green)] h-2 rounded-full transition-all duration-300"
                 :style="{ width: `${crop.averageProgress}%` }"
               />
             </div>
@@ -88,17 +88,17 @@
           <!-- Средние метрики -->
           <div class="grid grid-cols-2 gap-2 text-xs">
             <div v-if="crop.avgPh !== null">
-              <span class="text-neutral-400">pH:</span>
+              <span class="text-[color:var(--text-muted)]">pH:</span>
               <span class="ml-1 font-medium">{{ crop.avgPh.toFixed(2) }}</span>
             </div>
             <div v-if="crop.avgEc !== null">
-              <span class="text-neutral-400">EC:</span>
+              <span class="text-[color:var(--text-muted)]">EC:</span>
               <span class="ml-1 font-medium">{{ crop.avgEc.toFixed(2) }}</span>
             </div>
           </div>
 
           <!-- Фаза -->
-          <div v-if="crop.currentPhase" class="mt-3 text-xs text-neutral-400">
+          <div v-if="crop.currentPhase" class="mt-3 text-xs text-[color:var(--text-muted)]">
             Фаза: {{ crop.currentPhase }} (день {{ crop.averageDay }}/{{ crop.totalDays }})
           </div>
         </Card>
@@ -178,12 +178,12 @@
         <Card
           v-for="recipe in activeRecipes"
           :key="recipe.id"
-          class="hover:border-neutral-700 transition-colors"
+          class="hover:border-[color:var(--border-strong)] transition-colors"
         >
           <div class="flex items-start justify-between mb-3">
             <div>
               <div class="text-sm font-semibold">{{ recipe.name }}</div>
-              <div class="text-xs text-neutral-400 mt-1">
+              <div class="text-xs text-[color:var(--text-muted)] mt-1">
                 Применен в {{ recipe.zonesCount }} {{ recipe.zonesCount === 1 ? 'зоне' : 'зонах' }}
               </div>
             </div>
@@ -195,16 +195,16 @@
           <!-- Прогресс по фазам -->
           <div v-if="recipe.currentPhase" class="space-y-2">
             <div class="flex items-center justify-between text-xs">
-              <span class="text-neutral-400">Текущая фаза</span>
+              <span class="text-[color:var(--text-muted)]">Текущая фаза</span>
               <span class="font-medium">{{ recipe.currentPhase }}</span>
             </div>
-            <div class="w-full bg-neutral-800 rounded-full h-2">
+            <div class="w-full bg-[color:var(--border-muted)] rounded-full h-2">
               <div
-                class="bg-sky-500 h-2 rounded-full transition-all duration-300"
+                class="bg-[color:var(--accent-cyan)] h-2 rounded-full transition-all duration-300"
                 :style="{ width: `${recipe.phaseProgress}%` }"
               />
             </div>
-            <div v-if="recipe.nextPhaseTransition" class="text-xs text-neutral-400">
+            <div v-if="recipe.nextPhaseTransition" class="text-xs text-[color:var(--text-muted)]">
               Следующая фаза через: {{ formatTimeUntil(recipe.nextPhaseTransition) }}
             </div>
           </div>
@@ -219,12 +219,12 @@
         <Card
           v-for="zone in problematicZones"
           :key="zone.id"
-          class="hover:border-neutral-700 transition-colors"
+          class="hover:border-[color:var(--border-strong)] transition-colors"
         >
           <div class="flex items-start justify-between mb-2">
             <div>
               <div class="text-sm font-semibold">{{ zone.name }}</div>
-              <div v-if="zone.crop" class="text-xs text-neutral-400 mt-1">
+              <div v-if="zone.crop" class="text-xs text-[color:var(--text-muted)] mt-1">
                 {{ zone.crop }}
               </div>
             </div>
@@ -232,7 +232,7 @@
               {{ translateStatus(zone.status) }}
             </Badge>
           </div>
-          <div v-if="zone.issues && zone.issues.length > 0" class="text-xs text-red-400 mt-2">
+          <div v-if="zone.issues && zone.issues.length > 0" class="text-xs text-[color:var(--accent-red)] mt-2">
             <div v-for="issue in zone.issues" :key="issue">
               • {{ issue }}
             </div>

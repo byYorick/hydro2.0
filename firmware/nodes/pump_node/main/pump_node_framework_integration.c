@@ -59,15 +59,11 @@ static esp_err_t handle_run_pump(const char *channel, const cJSON *params, cJSON
     
     // Извлекаем cmd_id из params (он будет добавлен позже в node_command_handler_process)
     // Но для промежуточного ответа нам нужен cmd_id, поэтому получаем его из params
-    cJSON *cmd_id_item = cJSON_GetObjectItem(params, "cmd_id");
-    const char *cmd_id = NULL;
-    if (cmd_id_item && cJSON_IsString(cmd_id_item)) {
-        cmd_id = cmd_id_item->valuestring;
-    }
+    const char *cmd_id = node_command_handler_get_cmd_id(params);
     
     cJSON *duration_item = cJSON_GetObjectItem(params, "duration_ms");
     if (!cJSON_IsNumber(duration_item)) {
-        *response = node_command_handler_create_response(cmd_id, "ERROR", "missing_duration", "duration_ms is required", NULL);
+        *response = node_command_handler_create_response(cmd_id, "FAILED", "missing_duration", "duration_ms is required", NULL);
         return ESP_ERR_INVALID_ARG;
     }
     
@@ -76,15 +72,7 @@ static esp_err_t handle_run_pump(const char *channel, const cJSON *params, cJSON
     
     // Шаг 1: Отправляем ACCEPTED сразу при принятии команды
     if (cmd_id) {
-        cJSON *accepted_response = node_command_handler_create_response(cmd_id, "ACCEPTED", NULL, NULL, NULL);
-        if (accepted_response) {
-            char *json_str = cJSON_PrintUnformatted(accepted_response);
-            if (json_str) {
-                mqtt_manager_publish_command_response(channel, json_str);
-                free(json_str);
-            }
-            cJSON_Delete(accepted_response);
-        }
+        node_command_handler_publish_accepted(cmd_id, channel);
     }
     
     // Шаг 2: Выполняем команду (может занять время из-за проверки тока INA209)
@@ -264,4 +252,3 @@ void pump_node_framework_register_mqtt_handlers(void) {
     
     ESP_LOGI(TAG, "MQTT handlers registered via node_framework");
 }
-

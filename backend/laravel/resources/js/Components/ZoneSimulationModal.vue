@@ -1,7 +1,7 @@
 <template>
   <div v-if="show" class="fixed inset-0 z-50 flex items-center justify-center">
-    <div class="absolute inset-0 bg-black/70" @click="$emit('close')"></div>
-    <div class="relative w-full max-w-2xl rounded-xl border border-neutral-800 bg-neutral-925 p-6 max-h-[90vh] overflow-y-auto" @click.stop>
+    <div class="absolute inset-0 bg-[color:var(--bg-main)] opacity-80" @click="$emit('close')"></div>
+    <div class="relative w-full max-w-2xl rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-6 max-h-[90vh] overflow-y-auto" @click.stop>
       <h2 class="text-lg font-semibold mb-4">Digital Twin Simulation</h2>
       
       <form @submit.prevent="onSubmit" class="space-y-4" @click.stop>
@@ -14,7 +14,7 @@
             type="number"
             min="1"
             max="720"
-            class="w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-sm"
+            class="input-field h-9 w-full"
             required
           />
         </div>
@@ -28,7 +28,7 @@
             type="number"
             min="1"
             max="60"
-            class="w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-sm"
+            class="input-field h-9 w-full"
             required
           />
         </div>
@@ -40,80 +40,80 @@
             name="recipe_id"
             v-model.number="form.recipe_id"
             type="number"
-            class="w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-sm"
+            class="input-field h-9 w-full"
           />
         </div>
         
-        <div class="border-t border-neutral-800 pt-4">
+        <div class="border-t border-[color:var(--border-muted)] pt-4">
           <div class="text-sm font-medium mb-2">Initial State (optional)</div>
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label for="simulation-initial-ph" class="block text-xs text-neutral-400 mb-1">pH</label>
+              <label for="simulation-initial-ph" class="block text-xs text-[color:var(--text-muted)] mb-1">pH</label>
               <input
                 id="simulation-initial-ph"
                 name="initial_state_ph"
                 v-model.number="form.initial_state.ph"
                 type="number"
                 step="0.1"
-                class="w-full h-8 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
+                class="input-field h-8 w-full"
               />
             </div>
             <div>
-              <label for="simulation-initial-ec" class="block text-xs text-neutral-400 mb-1">EC</label>
+              <label for="simulation-initial-ec" class="block text-xs text-[color:var(--text-muted)] mb-1">EC</label>
               <input
                 id="simulation-initial-ec"
                 name="initial_state_ec"
                 v-model.number="form.initial_state.ec"
                 type="number"
                 step="0.1"
-                class="w-full h-8 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
+                class="input-field h-8 w-full"
               />
             </div>
             <div>
-              <label for="simulation-initial-temp-air" class="block text-xs text-neutral-400 mb-1">Temp Air (°C)</label>
+              <label for="simulation-initial-temp-air" class="block text-xs text-[color:var(--text-muted)] mb-1">Temp Air (°C)</label>
               <input
                 id="simulation-initial-temp-air"
                 name="initial_state_temp_air"
                 v-model.number="form.initial_state.temp_air"
                 type="number"
                 step="0.1"
-                class="w-full h-8 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
+                class="input-field h-8 w-full"
               />
             </div>
             <div>
-              <label for="simulation-initial-temp-water" class="block text-xs text-neutral-400 mb-1">Temp Water (°C)</label>
+              <label for="simulation-initial-temp-water" class="block text-xs text-[color:var(--text-muted)] mb-1">Temp Water (°C)</label>
               <input
                 id="simulation-initial-temp-water"
                 name="initial_state_temp_water"
                 v-model.number="form.initial_state.temp_water"
                 type="number"
                 step="0.1"
-                class="w-full h-8 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
+                class="input-field h-8 w-full"
               />
             </div>
             <div class="col-span-2">
-              <label for="simulation-initial-humidity" class="block text-xs text-neutral-400 mb-1">Влажность (%)</label>
+              <label for="simulation-initial-humidity" class="block text-xs text-[color:var(--text-muted)] mb-1">Влажность (%)</label>
               <input
                 id="simulation-initial-humidity"
                 name="initial_state_humidity_air"
                 v-model.number="form.initial_state.humidity_air"
                 type="number"
                 step="0.1"
-                class="w-full h-8 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
+                class="input-field h-8 w-full"
               />
             </div>
           </div>
         </div>
         
-        <div v-if="loading" class="text-sm text-neutral-400">
+        <div v-if="loading" class="text-sm text-[color:var(--text-muted)]">
           Running simulation...
         </div>
         
-        <div v-if="error" class="text-sm text-red-400">
+        <div v-if="error" class="text-sm text-[color:var(--accent-red)]">
           {{ error }}
         </div>
         
-        <div class="flex justify-end gap-2 pt-4 border-t border-neutral-800">
+        <div class="flex justify-end gap-2 pt-4 border-t border-[color:var(--border-muted)]">
           <Button type="button" variant="secondary" @click="$emit('close')">Cancel</Button>
           <Button type="submit" :disabled="loading">
             {{ loading ? 'Running...' : 'Run Simulation' }}
@@ -121,9 +121,9 @@
         </div>
       </form>
       
-      <div v-if="results" class="mt-6 border-t border-neutral-800 pt-4" @click.stop>
+      <div v-if="results" class="mt-6 border-t border-[color:var(--border-muted)] pt-4" @click.stop>
         <div class="text-sm font-medium mb-3">Simulation Results</div>
-        <div class="text-xs text-neutral-400 mb-2">
+        <div class="text-xs text-[color:var(--text-muted)] mb-2">
           Duration: {{ results.duration_hours }}h, Step: {{ results.step_minutes }}min
         </div>
         <div class="h-64">
@@ -142,6 +142,7 @@ import ChartBase from '@/Components/ChartBase.vue'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
 import { useLoading } from '@/composables/useLoading'
+import { useTheme } from '@/composables/useTheme'
 import type { EChartsOption } from 'echarts'
 
 interface Props {
@@ -161,6 +162,7 @@ const emit = defineEmits<{
 
 const { showToast } = useToast()
 const { api } = useApi(showToast)
+const { theme } = useTheme()
 
 interface SimulationForm {
   duration_hours: number
@@ -205,6 +207,26 @@ const { loading, startLoading, stopLoading } = useLoading<boolean>(false)
 const error = ref<string | null>(null)
 const results = ref<SimulationResults | null>(null)
 
+const resolveCssColor = (variable: string, fallback: string): string => {
+  if (typeof window === 'undefined') {
+    return fallback
+  }
+  const value = getComputedStyle(document.documentElement).getPropertyValue(variable).trim()
+  return value || fallback
+}
+
+const chartPalette = computed(() => {
+  theme.value
+  return {
+    text: resolveCssColor('--text-muted', '#9ca3af'),
+    textStrong: resolveCssColor('--text-primary', '#e5e7eb'),
+    grid: resolveCssColor('--border-muted', '#374151'),
+    ph: resolveCssColor('--accent-cyan', '#3b82f6'),
+    ec: resolveCssColor('--accent-green', '#10b981'),
+    temp: resolveCssColor('--accent-amber', '#f59e0b'),
+  }
+})
+
 const chartOption = computed<EChartsOption | null>(() => {
   if (!results.value?.points) return null
   
@@ -220,7 +242,7 @@ const chartOption = computed<EChartsOption | null>(() => {
     },
     legend: {
       data: ['pH', 'EC', 'Temp Air'],
-      textStyle: { color: '#d1d5db' },
+      textStyle: { color: chartPalette.value.textStrong },
     },
     grid: {
       left: '3%',
@@ -231,23 +253,23 @@ const chartOption = computed<EChartsOption | null>(() => {
     xAxis: {
       type: 'value',
       name: 'Time (hours)',
-      nameTextStyle: { color: '#9ca3af' },
-      axisLabel: { color: '#9ca3af' },
-      splitLine: { lineStyle: { color: '#374151' } },
+      nameTextStyle: { color: chartPalette.value.text },
+      axisLabel: { color: chartPalette.value.text },
+      splitLine: { lineStyle: { color: chartPalette.value.grid } },
     },
     yAxis: [
       {
         type: 'value',
         name: 'pH / EC',
-        nameTextStyle: { color: '#9ca3af' },
-        axisLabel: { color: '#9ca3af' },
-        splitLine: { lineStyle: { color: '#374151' } },
+        nameTextStyle: { color: chartPalette.value.text },
+        axisLabel: { color: chartPalette.value.text },
+        splitLine: { lineStyle: { color: chartPalette.value.grid } },
       },
       {
         type: 'value',
         name: 'Temp (°C)',
-        nameTextStyle: { color: '#9ca3af' },
-        axisLabel: { color: '#9ca3af' },
+        nameTextStyle: { color: chartPalette.value.text },
+        axisLabel: { color: chartPalette.value.text },
         splitLine: { show: false },
       },
     ],
@@ -257,16 +279,16 @@ const chartOption = computed<EChartsOption | null>(() => {
         type: 'line',
         data: phData,
         smooth: true,
-        lineStyle: { color: '#3b82f6' },
-        itemStyle: { color: '#3b82f6' },
+        lineStyle: { color: chartPalette.value.ph },
+        itemStyle: { color: chartPalette.value.ph },
       },
       {
         name: 'EC',
         type: 'line',
         data: ecData,
         smooth: true,
-        lineStyle: { color: '#10b981' },
-        itemStyle: { color: '#10b981' },
+        lineStyle: { color: chartPalette.value.ec },
+        itemStyle: { color: chartPalette.value.ec },
       },
       {
         name: 'Temp Air',
@@ -274,8 +296,8 @@ const chartOption = computed<EChartsOption | null>(() => {
         yAxisIndex: 1,
         data: tempData,
         smooth: true,
-        lineStyle: { color: '#f59e0b' },
-        itemStyle: { color: '#f59e0b' },
+        lineStyle: { color: chartPalette.value.temp },
+        itemStyle: { color: chartPalette.value.temp },
       },
     ],
   }
@@ -335,4 +357,3 @@ async function onSubmit(): Promise<void> {
   }
 }
 </script>
-

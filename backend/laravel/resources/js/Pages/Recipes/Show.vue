@@ -3,7 +3,7 @@
     <div class="flex items-center justify-between mb-3">
       <div>
         <div class="text-lg font-semibold">{{ recipe.name }}</div>
-        <div class="text-xs text-neutral-400">
+        <div class="text-xs text-[color:var(--text-muted)]">
           {{ recipe.description || 'Без описания' }} · Фаз: {{ recipe.phases?.length || 0 }}
         </div>
       </div>
@@ -18,7 +18,7 @@
     <div class="grid grid-cols-1 xl:grid-cols-3 gap-3">
       <Card class="xl:col-span-2">
         <div class="text-sm font-semibold mb-2">Фазы</div>
-        <ul class="text-sm text-neutral-300 space-y-1">
+        <ul class="text-sm text-[color:var(--text-muted)] space-y-1">
           <li v-for="(p, i) in sortedPhases" :key="p.id || i">
             {{ p.phase_index + 1 }}. {{ p.name }} — 
             {{ formatDuration(p.duration_hours) }} — 
@@ -29,9 +29,9 @@
       </Card>
       <Card>
         <div class="text-sm font-semibold mb-2">Цели по умолчанию</div>
-        <div class="text-sm text-neutral-300">Температура: 22–24°C</div>
-        <div class="text-sm text-neutral-300">Влажность: 50–60%</div>
-        <div class="text-sm text-neutral-300">Свет: 16ч</div>
+        <div class="text-sm text-[color:var(--text-muted)]">Температура: 22–24°C</div>
+        <div class="text-sm text-[color:var(--text-muted)]">Влажность: 50–60%</div>
+        <div class="text-sm text-[color:var(--text-muted)]">Свет: 16ч</div>
       </Card>
     </div>
   </AppLayout>
@@ -68,4 +68,3 @@ function formatDuration(hours: number | null | undefined): string {
   return `${days} дн ${remainder} ч`
 }
 </script>
-

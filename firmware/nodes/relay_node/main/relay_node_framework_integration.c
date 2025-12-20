@@ -20,8 +20,12 @@
 #include "esp_log.h"
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/task.h"
 #include "freertos/timers.h"
 #include "cJSON.h"
+#include <stdlib.h>
+#include <strings.h>
 #include <string.h>
 
 static const char *TAG = "relay_node_fw";
@@ -38,7 +42,13 @@ typedef struct {
     bool in_use;
 } relay_node_auto_off_entry_t;
 
+typedef struct {
+    char channel_name[RELAY_NODE_MAX_CHANNEL_NAME_LEN];
+    char cmd_id[RELAY_NODE_MAX_CMD_ID_LEN];
+} relay_node_done_event_t;
+
 static relay_node_auto_off_entry_t s_auto_off_entries[RELAY_NODE_MAX_AUTO_OFF_CHANNELS] = {0};
+static QueueHandle_t s_auto_off_done_queue = NULL;
 
 // Forward declaration для callback safe_mode
 static esp_err_t relay_node_disable_actuators_in_safe_mode(void *user_ctx);
@@ -52,6 +62,78 @@ static void relay_node_build_error_details(
     const char **error_message_out,
     cJSON **extra_out
 );
+
+static bool relay_node_parse_state(const cJSON *state_item, int *state_out) {
+    if (!state_item || !state_out) {
+        return false;
+    }
+
+    if (cJSON_IsNumber(state_item)) {
+        *state_out = state_item->valueint != 0 ? 1 : 0;
+        return true;
+    }
+
+    if (cJSON_IsBool(state_item)) {
+        *state_out = cJSON_IsTrue(state_item) ? 1 : 0;
+        return true;
+    }
+
+    if (cJSON_IsString(state_item) && state_item->valuestring) {
+        const char *value = state_item->valuestring;
+        if (strcasecmp(value, "open") == 0 ||
+            strcasecmp(value, "off") == 0 ||
+            strcasecmp(value, "false") == 0) {
+            *state_out = 0;
+            return true;
+        }
+        if (strcasecmp(value, "closed") == 0 ||
+            strcasecmp(value, "on") == 0 ||
+            strcasecmp(value, "true") == 0) {
+            *state_out = 1;
+            return true;
+        }
+        char *endptr = NULL;
+        long parsed = strtol(value, &endptr, 10);
+        if (endptr && *endptr == '\0') {
+            *state_out = parsed != 0 ? 1 : 0;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static void relay_node_auto_off_task(void *pvParameters) {
+    (void) pvParameters;
+    relay_node_done_event_t event;
+
+    while (true) {
+        if (xQueueReceive(s_auto_off_done_queue, &event, portMAX_DELAY) != pdTRUE) {
+            continue;
+        }
+
+        if (!event.cmd_id[0] || !event.channel_name[0]) {
+            continue;
+        }
+
+        cJSON *done_response = node_command_handler_create_response(
+            event.cmd_id,
+            "DONE",
+            NULL,
+            NULL,
+            NULL
+        );
+        if (done_response) {
+            char *json_str = cJSON_PrintUnformatted(done_response);
+            if (json_str) {
+                mqtt_manager_publish_command_response(event.channel_name, json_str);
+                free(json_str);
+            }
+            cJSON_Delete(done_response);
+        }
+        node_command_handler_cache_final_status(event.cmd_id, event.channel_name, "DONE");
+    }
+}
 
 static void relay_node_auto_off_timer_cb(TimerHandle_t timer) {
     relay_node_auto_off_entry_t *entry = (relay_node_auto_off_entry_t *) pvTimerGetTimerID(timer);
@@ -67,23 +149,15 @@ static void relay_node_auto_off_timer_cb(TimerHandle_t timer) {
         ESP_LOGI(TAG, "Auto-off: relay %s opened", entry->channel_name);
     }
 
-    if (entry->cmd_id[0]) {
-        cJSON *done_response = node_command_handler_create_response(
-            entry->cmd_id,
-            "DONE",
-            NULL,
-            NULL,
-            NULL
-        );
-        if (done_response) {
-            char *json_str = cJSON_PrintUnformatted(done_response);
-            if (json_str) {
-                mqtt_manager_publish_command_response(entry->channel_name, json_str);
-                free(json_str);
-            }
-            cJSON_Delete(done_response);
+    if (entry->cmd_id[0] && s_auto_off_done_queue) {
+        relay_node_done_event_t event = {0};
+        strncpy(event.channel_name, entry->channel_name, sizeof(event.channel_name) - 1);
+        event.channel_name[sizeof(event.channel_name) - 1] = '\0';
+        strncpy(event.cmd_id, entry->cmd_id, sizeof(event.cmd_id) - 1);
+        event.cmd_id[sizeof(event.cmd_id) - 1] = '\0';
+        if (xQueueSend(s_auto_off_done_queue, &event, 0) != pdTRUE) {
+            ESP_LOGW(TAG, "Auto-off done queue full for channel %s", entry->channel_name);
         }
-        node_command_handler_cache_final_status(entry->cmd_id, entry->channel_name, "DONE");
         entry->cmd_id[0] = '\0';
     }
 }
@@ -369,25 +443,15 @@ static esp_err_t handle_set_state(
     }
 
     // Извлекаем cmd_id из params
-    cJSON *cmd_id_item = cJSON_GetObjectItem(params, "cmd_id");
-    const char *cmd_id = NULL;
-    if (cmd_id_item && cJSON_IsString(cmd_id_item)) {
-        cmd_id = cmd_id_item->valuestring;
-    }
+    const char *cmd_id = node_command_handler_get_cmd_id(params);
 
     cJSON *state_item = cJSON_GetObjectItem(params, "state");
     int state = 0;
-    if (cJSON_IsNumber(state_item)) {
-        state = state_item->valueint;
-    } else if (cJSON_IsBool(state_item)) {
-        state = cJSON_IsTrue(state_item) ? 1 : 0;
-    } else if (cJSON_IsString(state_item) && state_item->valuestring) {
-        state = atoi(state_item->valuestring);
-    } else {
+    if (!relay_node_parse_state(state_item, &state)) {
         ESP_LOGW(TAG, "set_state invalid params: channel=%s, state json type=%d", channel, state_item ? state_item->type : -1);
         *response = node_command_handler_create_response(
             cmd_id,
-            "ERROR",
+            "FAILED",
             "invalid_params",
             "Missing or invalid state",
             NULL
@@ -409,17 +473,9 @@ static esp_err_t handle_set_state(
     
     bool use_delayed_done = (state == 1 && duration_ms > 0);
 
-    // Шаг 1: Отправляем ACCEPTED сразу при принятии команды
-    if (cmd_id) {
-        cJSON *accepted_response = node_command_handler_create_response(cmd_id, "ACCEPTED", NULL, NULL, NULL);
-        if (accepted_response) {
-            char *json_str = cJSON_PrintUnformatted(accepted_response);
-            if (json_str) {
-                mqtt_manager_publish_command_response(channel, json_str);
-                free(json_str);
-            }
-            cJSON_Delete(accepted_response);
-        }
+    // Шаг 1: Отправляем ACCEPTED сразу при принятии команды (если DONE будет сразу)
+    if (cmd_id && !use_delayed_done) {
+        node_command_handler_publish_accepted(cmd_id, channel);
     }
     
     relay_state_t relay_state = (state == 0) ? RELAY_STATE_OPEN : RELAY_STATE_CLOSED;
@@ -485,11 +541,7 @@ static esp_err_t handle_toggle(
     }
 
     // Извлекаем cmd_id из params
-    cJSON *cmd_id_item = cJSON_GetObjectItem(params, "cmd_id");
-    const char *cmd_id = NULL;
-    if (cmd_id_item && cJSON_IsString(cmd_id_item)) {
-        cmd_id = cmd_id_item->valuestring;
-    }
+    const char *cmd_id = node_command_handler_get_cmd_id(params);
 
     relay_state_t current_state;
     esp_err_t get_err = relay_driver_get_state(channel, &current_state);
@@ -557,7 +609,7 @@ static esp_err_t handle_toggle(
     cJSON_AddNumberToObject(extra, "state", new_state);
     *response = node_command_handler_create_response(
         cmd_id,
-        "ACK",
+        "DONE",
         NULL,
         NULL,
         extra
@@ -571,6 +623,15 @@ static esp_err_t handle_toggle(
 // Инициализация node_framework для relay_node
 esp_err_t relay_node_framework_init(void) {
     ESP_LOGI(TAG, "Initializing node_framework for relay_node...");
+
+    if (!s_auto_off_done_queue) {
+        s_auto_off_done_queue = xQueueCreate(8, sizeof(relay_node_done_event_t));
+        if (s_auto_off_done_queue) {
+            xTaskCreate(relay_node_auto_off_task, "relay_auto_off", 4096, NULL, 4, NULL);
+        } else {
+            ESP_LOGW(TAG, "Failed to create auto-off done queue");
+        }
+    }
 
     node_framework_config_t config = {
         .node_type = "relay",
@@ -594,6 +655,16 @@ esp_err_t relay_node_framework_init(void) {
     err = node_command_handler_register("set_state", handle_set_state, NULL);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to register set_state handler: %s", esp_err_to_name(err));
+    }
+
+    err = node_command_handler_register("set_relay", handle_set_state, NULL);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to register set_relay handler: %s", esp_err_to_name(err));
+    }
+
+    err = node_command_handler_register("set_relay_state", handle_set_state, NULL);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to register set_relay_state handler: %s", esp_err_to_name(err));
     }
 
     err = node_command_handler_register("toggle", handle_toggle, NULL);

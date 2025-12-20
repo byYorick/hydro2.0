@@ -1,17 +1,17 @@
 <template>
   <Card 
-    class="h-full overflow-hidden hover:border-neutral-700 transition-all duration-200 hover:shadow-lg group cursor-pointer"
+    class="h-full overflow-hidden hover:border-[color:var(--border-strong)] transition-all duration-200 hover:shadow-[var(--shadow-card)] group cursor-pointer"
     @click="handleClick"
   >
     <div class="flex items-center justify-between mb-2">
-      <div class="text-xs font-medium uppercase tracking-wide text-neutral-400 group-hover:text-neutral-300 transition-colors">
+      <div class="text-xs font-medium uppercase tracking-wide text-[color:var(--text-muted)] group-hover:text-[color:var(--text-primary)] transition-colors">
         {{ label }}
       </div>
       <div class="flex items-center gap-2">
         <!-- Индикатор аномалий -->
         <div 
           v-if="hasAnomalies && !loading"
-          class="w-2 h-2 rounded-full bg-red-400 animate-pulse"
+          class="w-2 h-2 rounded-full bg-[color:var(--accent-red)] animate-pulse"
           title="Обнаружены аномалии"
         ></div>
         <!-- Индикатор активности -->
@@ -24,20 +24,20 @@
     </div>
     <div class="text-2xl font-bold mb-2" :style="{ color: color }">
       {{ currentValue !== null ? formatValue(currentValue) : '-' }}
-      <span v-if="unit" class="text-sm text-neutral-400 ml-1">{{ unit }}</span>
+      <span v-if="unit" class="text-sm text-[color:var(--text-muted)] ml-1">{{ unit }}</span>
     </div>
     <!-- Sparkline график -->
     <div v-if="loading" class="h-16 flex items-center justify-center">
-      <div class="text-xs text-neutral-500">Загрузка...</div>
+      <div class="text-xs text-[color:var(--text-dim)]">Загрузка...</div>
     </div>
     <div v-else-if="data.length === 0" class="h-16 flex items-center justify-center">
-      <div class="text-xs text-neutral-500">Нет данных</div>
+      <div class="text-xs text-[color:var(--text-dim)]">Нет данных</div>
     </div>
     <div v-else class="h-16 relative">
       <ChartBase :option="chartOption" full-height />
       <!-- Подсказка о клике -->
       <div class="absolute bottom-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <div class="text-[10px] text-neutral-500 bg-neutral-900/80 px-1.5 py-0.5 rounded">
+        <div class="text-[10px] text-[color:var(--text-dim)] bg-[color:var(--bg-surface-strong)] px-1.5 py-0.5 rounded">
           Клик для деталей
         </div>
       </div>
@@ -49,6 +49,7 @@
 import { computed } from 'vue'
 import Card from '@/Components/Card.vue'
 import ChartBase from '@/Components/ChartBase.vue'
+import { useTheme } from '@/composables/useTheme'
 
 interface TelemetryDataPoint {
   ts: number
@@ -80,6 +81,25 @@ const props = withDefaults(defineProps<Props>(), {
   unit: '',
   loading: false,
   color: '#3b82f6'
+})
+
+const { theme } = useTheme()
+
+const resolveCssColor = (variable: string, fallback: string): string => {
+  if (typeof window === 'undefined') {
+    return fallback
+  }
+  const value = getComputedStyle(document.documentElement).getPropertyValue(variable).trim()
+  return value || fallback
+}
+
+const chartPalette = computed(() => {
+  theme.value
+  return {
+    surface: resolveCssColor('--bg-surface-strong', 'rgba(17, 24, 39, 0.95)'),
+    border: resolveCssColor('--border-muted', '#374151'),
+    text: resolveCssColor('--text-primary', '#f3f4f6'),
+  }
 })
 
 function formatValue(value: number | null | undefined): string {
@@ -155,11 +175,11 @@ const chartOption = computed(() => {
         
         return `${dateStr}, ${timeStr}<br/>${point.seriesName}: ${valueStr}${props.unit ? ' ' + props.unit : ''}`
       },
-      backgroundColor: 'rgba(17, 24, 39, 0.95)', // neutral-900 с прозрачностью
-      borderColor: '#374151',
+      backgroundColor: chartPalette.value.surface,
+      borderColor: chartPalette.value.border,
       borderWidth: 1,
       textStyle: {
-        color: '#f3f4f6',
+        color: chartPalette.value.text,
         fontSize: 12,
       },
       extraCssText: 'z-index: 99999 !important; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2); padding: 6px 10px; border-radius: 6px;',
@@ -214,4 +234,3 @@ const chartOption = computed(() => {
   }
 })
 </script>
-

@@ -8,11 +8,11 @@
           <input
             v-model="searchQuery"
             placeholder="Поиск по имени/email..."
-            class="h-9 w-64 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
+            class="input-field w-64"
           />
           <select
             v-model="roleFilter"
-            class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
+            class="input-select"
           >
             <option value="">Все роли</option>
             <option value="admin">Администратор</option>
@@ -23,13 +23,13 @@
           <Button size="sm" variant="secondary" @click="openCreateModal()">Создать пользователя</Button>
         </div>
 
-        <div class="rounded-xl border border-neutral-800 overflow-hidden max-h-[720px] flex flex-col">
-          <div v-if="loading.load && users.length === 0" class="text-sm text-neutral-400 px-3 py-6 text-center">
+        <div class="rounded-xl border border-[color:var(--border-muted)] overflow-hidden max-h-[720px] flex flex-col">
+          <div v-if="loading.load && users.length === 0" class="text-sm text-[color:var(--text-dim)] px-3 py-6 text-center">
             Загрузка пользователей...
           </div>
           <template v-else>
             <!-- Заголовок таблицы -->
-            <div class="flex-shrink-0 grid grid-cols-6 gap-0 bg-neutral-900 text-neutral-300 text-sm border-b border-neutral-800">
+            <div class="flex-shrink-0 grid grid-cols-6 gap-0 bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)] text-sm border-b border-[color:var(--border-muted)]">
               <div v-for="(h, i) in headers" :key="i" class="px-3 py-2 text-left font-medium">
                 {{ h }}
               </div>
@@ -44,19 +44,19 @@
                 class="virtual-table-body h-full"
               >
                 <div 
-                  :class="index % 2 === 0 ? 'bg-neutral-950' : 'bg-neutral-925'" 
-                  class="grid grid-cols-6 gap-0 text-sm border-b border-neutral-900"
+                  :class="index % 2 === 0 ? 'bg-[color:var(--bg-surface-strong)]' : 'bg-[color:var(--bg-surface)]'" 
+                  class="grid grid-cols-6 gap-0 text-sm border-b border-[color:var(--border-muted)]"
                   style="height:44px"
                 >
                   <div class="px-3 py-2 flex items-center">{{ r[0] }}</div>
                   <div class="px-3 py-2 flex items-center">{{ r[1] }}</div>
-                  <div class="px-3 py-2 flex items-center text-xs text-neutral-400">{{ r[2] }}</div>
+                  <div class="px-3 py-2 flex items-center text-xs text-[color:var(--text-muted)]">{{ r[2] }}</div>
                   <div class="px-3 py-2 flex items-center">
                     <Badge :variant="r[3]">
                       {{ r[4] }}
                     </Badge>
                   </div>
-                  <div class="px-3 py-2 flex items-center text-xs text-neutral-400">{{ r[5] }}</div>
+                  <div class="px-3 py-2 flex items-center text-xs text-[color:var(--text-muted)]">{{ r[5] }}</div>
                   <div class="px-3 py-2 flex items-center gap-2">
                     <Button size="sm" variant="secondary" @click="editUser(getUserFromRow(r))">Изменить</Button>
                     <Button
@@ -70,7 +70,7 @@
                   </div>
                 </div>
               </RecycleScroller>
-              <div v-if="!rows.length && !loading.load" class="text-sm text-neutral-400 px-3 py-6 text-center">
+              <div v-if="!rows.length && !loading.load" class="text-sm text-[color:var(--text-dim)] px-3 py-6 text-center">
                 {{ users.length === 0 ? 'Нет пользователей' : 'Нет пользователей по текущим фильтрам' }}
               </div>
             </div>
@@ -83,7 +83,7 @@
         </div>
       </Card>
     </div>
-    <div v-else class="text-sm text-neutral-400">
+    <div v-else class="text-sm text-[color:var(--text-dim)]">
       У вас нет доступа к управлению пользователями
     </div>
 
@@ -91,47 +91,47 @@
     <Modal :open="showCreateModal || editingUser !== null" title="Пользователь" @close="closeModal">
       <div class="space-y-3">
         <div>
-          <label class="text-sm text-neutral-300">Имя</label>
+          <label class="text-sm text-[color:var(--text-muted)]">Имя</label>
           <input
             v-model="userForm.name"
-            class="mt-1 w-full h-9 rounded-md border px-2 text-sm"
-            :class="formErrors.name ? 'border-red-500 bg-neutral-900' : 'border-neutral-700 bg-neutral-900'"
+            class="input-field mt-1"
+            :class="formErrors.name ? 'border-[color:var(--accent-red)] bg-[color:var(--bg-elevated)]' : ''"
           />
-          <div v-if="formErrors.name" class="text-xs text-red-400 mt-1">{{ formErrors.name }}</div>
+          <div v-if="formErrors.name" class="text-xs text-[color:var(--badge-danger-text)] mt-1">{{ formErrors.name }}</div>
         </div>
         <div>
-          <label class="text-sm text-neutral-300">Email</label>
+          <label class="text-sm text-[color:var(--text-muted)]">Email</label>
           <input
             v-model="userForm.email"
             type="email"
-            class="mt-1 w-full h-9 rounded-md border px-2 text-sm"
-            :class="formErrors.email ? 'border-red-500 bg-neutral-900' : 'border-neutral-700 bg-neutral-900'"
+            class="input-field mt-1"
+            :class="formErrors.email ? 'border-[color:var(--accent-red)] bg-[color:var(--bg-elevated)]' : ''"
           />
-          <div v-if="formErrors.email" class="text-xs text-red-400 mt-1">{{ formErrors.email }}</div>
+          <div v-if="formErrors.email" class="text-xs text-[color:var(--badge-danger-text)] mt-1">{{ formErrors.email }}</div>
         </div>
         <div>
-          <label class="text-sm text-neutral-300">Пароль</label>
+          <label class="text-sm text-[color:var(--text-muted)]">Пароль</label>
           <input
             v-model="userForm.password"
             type="password"
-            class="mt-1 w-full h-9 rounded-md border px-2 text-sm"
-            :class="formErrors.password ? 'border-red-500 bg-neutral-900' : 'border-neutral-700 bg-neutral-900'"
+            class="input-field mt-1"
+            :class="formErrors.password ? 'border-[color:var(--accent-red)] bg-[color:var(--bg-elevated)]' : ''"
             :placeholder="editingUser ? 'Оставьте пустым, чтобы не менять' : 'Минимум 8 символов'"
           />
-          <div v-if="formErrors.password" class="text-xs text-red-400 mt-1">{{ formErrors.password }}</div>
+          <div v-if="formErrors.password" class="text-xs text-[color:var(--badge-danger-text)] mt-1">{{ formErrors.password }}</div>
         </div>
         <div>
-          <label class="text-sm text-neutral-300">Роль</label>
+          <label class="text-sm text-[color:var(--text-muted)]">Роль</label>
           <select
             v-model="userForm.role"
-            class="mt-1 w-full h-9 rounded-md border px-2 text-sm"
-            :class="formErrors.role ? 'border-red-500 bg-neutral-900' : 'border-neutral-700 bg-neutral-900'"
+            class="input-select mt-1"
+            :class="formErrors.role ? 'border-[color:var(--accent-red)] bg-[color:var(--bg-elevated)]' : ''"
           >
             <option value="viewer">Наблюдатель</option>
             <option value="operator">Оператор</option>
             <option value="admin">Администратор</option>
           </select>
-          <div v-if="formErrors.role" class="text-xs text-red-400 mt-1">{{ formErrors.role }}</div>
+          <div v-if="formErrors.role" class="text-xs text-[color:var(--badge-danger-text)] mt-1">{{ formErrors.role }}</div>
         </div>
       </div>
       <template #footer>
@@ -144,7 +144,7 @@
 
     <!-- Delete Confirmation Modal -->
     <Modal :open="deletingUser !== null" title="Удалить пользователя?" @close="deletingUser = null">
-      <div class="text-sm">
+      <div class="text-sm text-[color:var(--text-muted)]">
         Вы уверены, что хотите удалить пользователя <strong>{{ deletingUser?.name }}</strong>?
       </div>
       <template #footer>
@@ -438,4 +438,3 @@ watch([searchQuery, roleFilter], () => {
   currentPage.value = 1
 })
 </script>
-

@@ -3,7 +3,7 @@
     <div class="space-y-4">
       <!-- Основные компоненты -->
       <div>
-        <h3 class="text-sm font-semibold mb-3 text-neutral-200">Основные компоненты</h3>
+        <h3 class="text-sm font-semibold mb-3 text-[color:var(--text-primary)]">Основные компоненты</h3>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <ServiceStatusCard
             name="Core API"
@@ -36,7 +36,7 @@
 
       <!-- Python сервисы -->
       <div>
-        <h3 class="text-sm font-semibold mb-3 text-neutral-200">Python сервисы</h3>
+        <h3 class="text-sm font-semibold mb-3 text-[color:var(--text-primary)]">Python сервисы</h3>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <ServiceStatusCard
             name="History Logger"
@@ -57,59 +57,59 @@
 
       <!-- Цепочка состояния -->
       <div>
-        <h3 class="text-sm font-semibold mb-3 text-neutral-200">Цепочка состояния</h3>
-        <div class="bg-neutral-900 rounded-lg p-4 border border-neutral-800">
+        <h3 class="text-sm font-semibold mb-3 text-[color:var(--text-primary)]">Цепочка состояния</h3>
+        <div class="bg-[color:var(--bg-surface-strong)] rounded-lg p-4 border border-[color:var(--border-muted)]">
           <div class="flex items-center justify-between gap-4 text-xs">
             <div class="flex items-center gap-2">
               <div
                 class="w-3 h-3 rounded-full"
                 :class="getChainStatusClass('db')"
               ></div>
-              <span class="text-neutral-400">БД</span>
+              <span class="text-[color:var(--text-muted)]">БД</span>
             </div>
-            <span class="text-neutral-600">→</span>
+            <span class="text-[color:var(--text-dim)]">→</span>
             <div class="flex items-center gap-2">
               <div
                 class="w-3 h-3 rounded-full"
                 :class="getChainStatusClass('mqtt')"
               ></div>
-              <span class="text-neutral-400">MQTT</span>
+              <span class="text-[color:var(--text-muted)]">MQTT</span>
             </div>
-            <span class="text-neutral-600">→</span>
+            <span class="text-[color:var(--text-dim)]">→</span>
             <div class="flex items-center gap-2">
               <div
                 class="w-3 h-3 rounded-full"
                 :class="getChainStatusClass('ws')"
               ></div>
-              <span class="text-neutral-400">WebSocket</span>
+              <span class="text-[color:var(--text-muted)]">WebSocket</span>
             </div>
-            <span class="text-neutral-600">→</span>
+            <span class="text-[color:var(--text-dim)]">→</span>
             <div class="flex items-center gap-2">
               <div
                 class="w-3 h-3 rounded-full"
                 :class="getChainStatusClass('ui')"
               ></div>
-              <span class="text-neutral-400">UI</span>
+              <span class="text-[color:var(--text-muted)]">UI</span>
             </div>
           </div>
           <div class="mt-3 text-xs">
             <div 
               v-if="chainStatus.type === 'success'" 
-              class="text-emerald-400 flex items-center gap-2"
+              class="text-[color:var(--accent-green)] flex items-center gap-2"
             >
               <span class="text-base">✓</span>
               <span>{{ chainStatus.message }}</span>
             </div>
             <div 
               v-else-if="chainStatus.type === 'warning'" 
-              class="text-amber-400 flex items-center gap-2"
+              class="text-[color:var(--accent-amber)] flex items-center gap-2"
             >
               <span class="text-base">⚠</span>
               <span>{{ chainStatus.message }}</span>
             </div>
             <div 
               v-else 
-              class="text-red-400 flex items-center gap-2"
+              class="text-[color:var(--accent-red)] flex items-center gap-2"
             >
               <span class="text-base">❌</span>
               <span>{{ chainStatus.message }}</span>
@@ -120,8 +120,8 @@
               v-if="chainIssues.length > 0" 
               class="mt-2 ml-6 list-disc space-y-1"
               :class="{
-                'text-red-300': chainStatus.type === 'error',
-                'text-amber-300': chainStatus.type === 'warning',
+                'text-[color:var(--badge-danger-text)]': chainStatus.type === 'error',
+                'text-[color:var(--badge-warning-text)]': chainStatus.type === 'warning',
               }"
             >
               <li v-for="issue in chainIssues" :key="issue" class="text-xs">
@@ -130,22 +130,22 @@
             </ul>
           </div>
           <!-- Легенда цветов -->
-          <div class="mt-3 pt-3 border-t border-neutral-800 text-xs text-neutral-500">
+          <div class="mt-3 pt-3 border-t border-[color:var(--border-muted)] text-xs text-[color:var(--text-dim)]">
             <div class="flex items-center gap-4 flex-wrap">
               <div class="flex items-center gap-1">
-                <div class="w-2 h-2 rounded-full bg-emerald-400"></div>
+                <div class="w-2 h-2 rounded-full bg-[color:var(--accent-green)]"></div>
                 <span>Работает</span>
               </div>
               <div class="flex items-center gap-1">
-                <div class="w-2 h-2 rounded-full bg-amber-400"></div>
+                <div class="w-2 h-2 rounded-full bg-[color:var(--accent-amber)]"></div>
                 <span>Деградировано</span>
               </div>
               <div class="flex items-center gap-1">
-                <div class="w-2 h-2 rounded-full bg-neutral-500"></div>
+                <div class="w-2 h-2 rounded-full bg-[color:var(--text-dim)]"></div>
                 <span>Проверяется</span>
               </div>
               <div class="flex items-center gap-1">
-                <div class="w-2 h-2 rounded-full bg-red-400"></div>
+                <div class="w-2 h-2 rounded-full bg-[color:var(--accent-red)]"></div>
                 <span>Недоступно</span>
               </div>
             </div>
@@ -154,11 +154,11 @@
       </div>
 
       <!-- Последнее обновление -->
-      <div class="text-xs text-neutral-500 text-center">
+      <div class="text-xs text-[color:var(--text-dim)] text-center">
         Последнее обновление: {{ lastUpdate ? formatTime(lastUpdate) : 'Никогда' }}
         <button
           @click="refreshStatus"
-          class="ml-2 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 transition-colors"
+          class="ml-2 px-2 py-1 rounded bg-[color:var(--bg-elevated)] hover:bg-[color:var(--bg-surface-strong)] transition-colors"
           :disabled="refreshing"
         >
           {{ refreshing ? 'Обновление...' : 'Обновить' }}
@@ -306,23 +306,23 @@ const chainStatus = computed(() => {
 function getChainStatusClass(component: 'db' | 'mqtt' | 'ws' | 'ui'): string {
   switch (component) {
     case 'db':
-      if (dbStatus.value === 'ok') return 'bg-emerald-400'
-      if (dbStatus.value === 'unknown') return 'bg-neutral-500'
-      return 'bg-red-400'
+      if (dbStatus.value === 'ok') return 'bg-[color:var(--accent-green)]'
+      if (dbStatus.value === 'unknown') return 'bg-[color:var(--text-dim)]'
+      return 'bg-[color:var(--accent-red)]'
     case 'mqtt':
-      if (mqttStatus.value === 'online') return 'bg-emerald-400'
-      if (mqttStatus.value === 'degraded') return 'bg-amber-400'
-      if (mqttStatus.value === 'unknown') return 'bg-neutral-500'
-      return 'bg-red-400'
+      if (mqttStatus.value === 'online') return 'bg-[color:var(--accent-green)]'
+      if (mqttStatus.value === 'degraded') return 'bg-[color:var(--accent-amber)]'
+      if (mqttStatus.value === 'unknown') return 'bg-[color:var(--text-dim)]'
+      return 'bg-[color:var(--accent-red)]'
     case 'ws':
-      if (wsStatus.value === 'connected') return 'bg-emerald-400'
-      if (wsStatus.value === 'unknown') return 'bg-neutral-500'
-      return 'bg-red-400'
+      if (wsStatus.value === 'connected') return 'bg-[color:var(--accent-green)]'
+      if (wsStatus.value === 'unknown') return 'bg-[color:var(--text-dim)]'
+      return 'bg-[color:var(--accent-red)]'
     case 'ui':
       // UI всегда доступен, если модальное окно открыто
-      return 'bg-emerald-400'
+      return 'bg-[color:var(--accent-green)]'
     default:
-      return 'bg-neutral-500'
+      return 'bg-[color:var(--text-dim)]'
   }
 }
 
@@ -376,4 +376,3 @@ onUnmounted(() => {
   }
 })
 </script>
-

@@ -3,12 +3,12 @@
     <div class="space-y-4">
       <div>
         <h3 class="text-sm font-semibold mb-2">Привязка каналов к ролям</h3>
-        <p class="text-xs text-neutral-400 mb-4">
+        <p class="text-xs text-[color:var(--text-muted)] mb-4">
           Выберите ноды и назначьте роли каналам для работы оборудования
         </p>
       </div>
 
-      <div v-if="!nodes || nodes.length === 0" class="text-sm text-neutral-400">
+      <div v-if="!nodes || nodes.length === 0" class="text-sm text-[color:var(--text-muted)]">
         Нет доступных нод в зоне
       </div>
 
@@ -17,12 +17,12 @@
           v-for="node in nodes"
           :key="node.id"
           :data-testid="`node-card-${node.id}`"
-          class="p-4 rounded border border-neutral-700 bg-neutral-900"
+          class="p-4 rounded border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)]"
         >
           <div class="flex items-center justify-between mb-3">
             <div>
               <div class="font-medium text-sm" :data-testid="`node-name-${node.id}`">{{ node.name }} ({{ node.uid }})</div>
-              <div class="text-xs text-neutral-400">{{ node.type }}</div>
+              <div class="text-xs text-[color:var(--text-muted)]">{{ node.type }}</div>
             </div>
             <Badge
               :variant="node.is_online ? 'success' : 'danger'"
@@ -38,17 +38,17 @@
               v-for="channel in node.channels"
               :key="channel.id"
               :data-testid="`channel-item-${channel.id}`"
-              class="flex items-center gap-2 p-2 rounded bg-neutral-800"
+              class="flex items-center gap-2 p-2 rounded bg-[color:var(--bg-elevated)]"
             >
               <div class="flex-1">
                 <div class="text-xs font-medium" :data-testid="`channel-name-${channel.id}`">{{ channel.channel }}</div>
-                <div class="text-xs text-neutral-400">{{ channel.metric }} {{ channel.unit || '' }}</div>
+                <div class="text-xs text-[color:var(--text-muted)]">{{ channel.metric }} {{ channel.unit || '' }}</div>
               </div>
               <select
                 :value="getBindingForChannel(channel.id)"
                 @change="updateBinding(channel.id, node.id, $event.target.value)"
                 :data-testid="`channel-role-select-${channel.id}`"
-                class="h-8 rounded-md border px-2 text-xs border-neutral-700 bg-neutral-900 min-w-[140px]"
+                class="input-select h-8 text-xs min-w-[140px]"
               >
                 <option :value="null">Не назначено</option>
                 <option
@@ -61,14 +61,14 @@
               </select>
             </div>
           </div>
-          <div v-else class="text-xs text-neutral-500">
+          <div v-else class="text-xs text-[color:var(--text-dim)]">
             Нет доступных каналов
           </div>
         </div>
       </div>
 
-      <div v-if="bindings.length > 0" class="mt-4 p-3 rounded border border-neutral-700 bg-neutral-900">
-        <div class="text-xs text-neutral-400 mb-2">Привязанные каналы:</div>
+      <div v-if="bindings.length > 0" class="mt-4 p-3 rounded border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)]">
+        <div class="text-xs text-[color:var(--text-muted)] mb-2">Привязанные каналы:</div>
         <div class="space-y-1">
           <div
             v-for="binding in bindings"
@@ -76,9 +76,9 @@
             :data-testid="`bound-channel-item-${binding.node_id}-${binding.channel_id}`"
             class="text-xs"
           >
-            <span class="text-neutral-300">{{ getNodeName(binding.node_id) }}</span>
-            <span class="text-neutral-500"> → </span>
-            <span class="text-sky-400">{{ getRoleLabel(binding.role) }}</span>
+            <span class="text-[color:var(--text-primary)]">{{ getNodeName(binding.node_id) }}</span>
+            <span class="text-[color:var(--text-dim)]"> → </span>
+            <span class="text-[color:var(--accent-cyan)]">{{ getRoleLabel(binding.role) }}</span>
           </div>
         </div>
       </div>
@@ -182,4 +182,3 @@ defineExpose({
   getBindings: () => bindings.value,
 })
 </script>
-

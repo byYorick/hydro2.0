@@ -7,7 +7,7 @@
         ? 'flex flex-col items-center justify-center text-xs transition-colors px-2 py-2'
         : 'nav-link text-sm',
       mobile
-        ? isActive ? 'text-white' : 'text-slate-400'
+        ? isActive ? 'text-[color:var(--text-primary)]' : 'text-[color:var(--text-dim)]'
         : isActive ? 'nav-link--active' : ''
     ]"
   >

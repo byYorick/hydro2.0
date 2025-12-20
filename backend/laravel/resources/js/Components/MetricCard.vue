@@ -1,6 +1,6 @@
 <template>
   <Card 
-    class="relative overflow-hidden hover:border-neutral-700 transition-all duration-200 hover:shadow-lg group"
+    class="relative overflow-hidden hover:border-[color:var(--border-strong)] transition-all duration-200 hover:shadow-[var(--shadow-card)] group"
     :data-testid="$attrs['data-testid']"
   >
     <!-- Фоновый градиент для визуального акцента -->
@@ -29,10 +29,10 @@
             </slot>
           </div>
           <div>
-            <div class="text-xs font-medium uppercase tracking-wide text-neutral-400 group-hover:text-neutral-300 transition-colors">
+            <div class="text-xs font-medium uppercase tracking-wide text-[color:var(--text-muted)] group-hover:text-[color:var(--text-primary)] transition-colors">
               {{ label }}
             </div>
-            <div v-if="subtitle" class="text-xs text-neutral-500 mt-0.5">
+            <div v-if="subtitle" class="text-xs text-[color:var(--text-dim)] mt-0.5">
               {{ subtitle }}
             </div>
           </div>
@@ -42,10 +42,10 @@
           v-if="status !== 'neutral'"
           class="w-2 h-2 rounded-full animate-pulse"
           :class="{
-            'bg-emerald-400': status === 'success',
-            'bg-amber-400': status === 'warning',
-            'bg-red-400': status === 'danger',
-            'bg-blue-400': status === 'info',
+            'bg-[color:var(--accent-green)]': status === 'success',
+            'bg-[color:var(--accent-amber)]': status === 'warning',
+            'bg-[color:var(--accent-red)]': status === 'danger',
+            'bg-[color:var(--accent-cyan)]': status === 'info',
           }"
         ></div>
       </div>
@@ -57,14 +57,14 @@
           :style="{ color: color }"
         >
           {{ formattedValue }}
-          <span v-if="unit" class="text-2xl text-neutral-400 ml-1">{{ unit }}</span>
+          <span v-if="unit" class="text-2xl text-[color:var(--text-muted)] ml-1">{{ unit }}</span>
         </div>
         
         <!-- Тренд и изменение -->
         <div v-if="trend !== null" class="flex items-center gap-2 text-sm">
           <div 
             class="flex items-center gap-1 font-medium"
-            :class="trend > 0 ? 'text-emerald-400' : trend < 0 ? 'text-red-400' : 'text-neutral-400'"
+            :class="trend > 0 ? 'text-[color:var(--accent-green)]' : trend < 0 ? 'text-[color:var(--accent-red)]' : 'text-[color:var(--text-dim)]'"
           >
             <svg 
               v-if="trend > 0" 
@@ -95,36 +95,36 @@
             </svg>
             <span>{{ Math.abs(trend).toFixed(decimals) }}</span>
           </div>
-          <span v-if="trendLabel" class="text-neutral-500 text-xs">{{ trendLabel }}</span>
+          <span v-if="trendLabel" class="text-[color:var(--text-dim)] text-xs">{{ trendLabel }}</span>
         </div>
       </div>
 
       <!-- Прогресс-бар для целевых значений -->
       <div v-if="target !== null && target.min !== undefined && target.max !== undefined" class="mb-2">
         <div class="flex items-center justify-between text-xs mb-1">
-          <span class="text-neutral-400">Цель: {{ target.min }}-{{ target.max }}</span>
+          <span class="text-[color:var(--text-muted)]">Цель: {{ target.min }}-{{ target.max }}</span>
           <span 
             class="font-medium"
-            :class="isInTarget ? 'text-emerald-400' : 'text-amber-400'"
+            :class="isInTarget ? 'text-[color:var(--accent-green)]' : 'text-[color:var(--accent-amber)]'"
           >
             {{ isInTarget ? '✓ В норме' : '⚠ Вне нормы' }}
           </span>
         </div>
-        <div class="h-2 bg-neutral-800 rounded-full overflow-hidden">
+        <div class="h-2 bg-[color:var(--border-muted)] rounded-full overflow-hidden">
           <div 
             class="h-full transition-all duration-300 rounded-full"
             :class="progressBarClass"
             :style="{ width: `${progressPercentage}%` }"
           ></div>
         </div>
-        <div class="flex items-center justify-between text-xs mt-1 text-neutral-500">
+        <div class="flex items-center justify-between text-xs mt-1 text-[color:var(--text-dim)]">
           <span>{{ target.min }}</span>
           <span>{{ target.max }}</span>
         </div>
       </div>
 
       <!-- Дополнительная информация -->
-      <div v-if="$slots.footer" class="mt-3 pt-3 border-t border-neutral-800">
+      <div v-if="$slots.footer" class="mt-3 pt-3 border-t border-[color:var(--border-muted)]">
         <slot name="footer"></slot>
       </div>
     </div>
@@ -185,22 +185,21 @@ const progressPercentage = computed(() => {
 
 const progressBarClass = computed(() => {
   if (isInTarget.value) {
-    return 'bg-emerald-500'
+    return 'bg-[color:var(--accent-green)]'
   }
   // Если значение ниже минимума
   if (props.value !== null && props.value !== undefined && props.target) {
     if (props.value < props.target.min) {
-      return 'bg-blue-500'
+      return 'bg-[color:var(--accent-cyan)]'
     }
     // Если значение выше максимума
     if (props.value > props.target.max) {
-      return 'bg-red-500'
+      return 'bg-[color:var(--accent-red)]'
     }
   }
-  return 'bg-amber-500'
+  return 'bg-[color:var(--accent-amber)]'
 })
 </script>
-
 
 
 

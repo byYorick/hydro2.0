@@ -4,9 +4,12 @@ from fastapi import Body, Response
 from contextlib import asynccontextmanager
 from pydantic import BaseModel, Field
 from typing import Optional
+import hashlib
+import hmac
 import logging
 import os
 import asyncio
+import time
 from common.schemas import CommandRequest
 from common.commands import new_command_id, mark_command_sent
 from publisher import Publisher
@@ -30,6 +33,25 @@ REQ_COUNTER = Counter("bridge_requests_total", "Bridge HTTP requests", ["path"])
 
 # Глобальная переменная для Publisher
 publisher: Optional[Publisher] = None
+
+
+def _maybe_attach_hmac(payload: dict, cmd: str, ts: Optional[int], sig: Optional[str]) -> None:
+    if sig and ts is None:
+        raise ValueError("sig requires ts")
+    secret = get_settings().node_default_secret
+    if ts is None and not sig:
+        if not secret:
+            return
+        ts = int(time.time())
+        sig = hmac.new(secret.encode(), f"{cmd}|{ts}".encode(), hashlib.sha256).hexdigest()
+    elif ts is not None and not sig:
+        if secret:
+            sig = hmac.new(secret.encode(), f"{cmd}|{ts}".encode(), hashlib.sha256).hexdigest()
+
+    if ts is not None:
+        payload["ts"] = ts
+    if sig:
+        payload["sig"] = sig
 
 
 @asynccontextmanager
@@ -178,6 +200,10 @@ async def send_zone_command(
     # Use cmd_id from Laravel if provided, otherwise generate new one
     cmd_id = req.cmd_id or new_command_id()
     payload = {"cmd": req.type, "cmd_id": cmd_id, **({"params": req.params} if req.params else {})}
+    try:
+        _maybe_attach_hmac(payload, req.type, req.ts, req.sig)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     # Получаем hardware_id из запроса для временного топика
     hardware_id = req.hardware_id
     
@@ -259,6 +285,10 @@ async def send_node_command(
     # Use cmd_id from Laravel if provided, otherwise generate new one
     cmd_id = req.cmd_id or new_command_id()
     payload = {"cmd": req.type, "cmd_id": cmd_id, **({"params": req.params} if req.params else {})}
+    try:
+        _maybe_attach_hmac(payload, req.type, req.ts, req.sig)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     # Получаем hardware_id из запроса для временного топика
     hardware_id = req.hardware_id
     
@@ -544,4 +574,3 @@ async def zone_calibrate_flow(
     finally:
         # Закрываем соединение MQTT для предотвращения утечек
         mqtt.stop()
-

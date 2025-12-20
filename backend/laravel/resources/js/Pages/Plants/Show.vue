@@ -5,7 +5,7 @@
       <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div class="flex-1 min-w-0">
           <div class="text-lg font-semibold truncate">{{ plant.name }}</div>
-          <div class="text-xs text-neutral-400 mt-1">
+          <div class="text-xs text-[color:var(--text-muted)] mt-1">
             <span v-if="plant.species">{{ plant.species }}</span>
             <span v-if="plant.variety"> · {{ plant.variety }}</span>
             <span v-if="plant.description" class="block sm:inline sm:ml-1">
@@ -29,41 +29,41 @@
           <div class="text-sm font-semibold mb-3">Основная информация</div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <div class="text-xs text-neutral-400 mb-1">Вид</div>
-              <div class="text-sm text-neutral-100">{{ plant.species || '—' }}</div>
+              <div class="text-xs text-[color:var(--text-muted)] mb-1">Вид</div>
+              <div class="text-sm text-[color:var(--text-primary)]">{{ plant.species || '—' }}</div>
             </div>
             <div>
-              <div class="text-xs text-neutral-400 mb-1">Сорт</div>
-              <div class="text-sm text-neutral-100">{{ plant.variety || '—' }}</div>
+              <div class="text-xs text-[color:var(--text-muted)] mb-1">Сорт</div>
+              <div class="text-sm text-[color:var(--text-primary)]">{{ plant.variety || '—' }}</div>
             </div>
             <div>
-              <div class="text-xs text-neutral-400 mb-1">Субстрат</div>
-              <div class="text-sm text-neutral-100">
+              <div class="text-xs text-[color:var(--text-muted)] mb-1">Субстрат</div>
+              <div class="text-sm text-[color:var(--text-primary)]">
                 {{ plant.substrate_type ? taxonomyLabel('substrate_type', plant.substrate_type) : '—' }}
               </div>
             </div>
             <div>
-              <div class="text-xs text-neutral-400 mb-1">Система выращивания</div>
-              <div class="text-sm text-neutral-100">
+              <div class="text-xs text-[color:var(--text-muted)] mb-1">Система выращивания</div>
+              <div class="text-sm text-[color:var(--text-primary)]">
                 {{ plant.growing_system ? taxonomyLabel('growing_system', plant.growing_system) : '—' }}
               </div>
             </div>
             <div>
-              <div class="text-xs text-neutral-400 mb-1">Фотопериод</div>
-              <div class="text-sm text-neutral-100">
+              <div class="text-xs text-[color:var(--text-muted)] mb-1">Фотопериод</div>
+              <div class="text-sm text-[color:var(--text-primary)]">
                 {{ plant.photoperiod_preset ? taxonomyLabel('photoperiod_preset', plant.photoperiod_preset) : '—' }}
               </div>
             </div>
             <div>
-              <div class="text-xs text-neutral-400 mb-1">Сезонность</div>
-              <div class="text-sm text-neutral-100">
+              <div class="text-xs text-[color:var(--text-muted)] mb-1">Сезонность</div>
+              <div class="text-sm text-[color:var(--text-primary)]">
                 {{ seasonalityLabel(plant.seasonality) }}
               </div>
             </div>
           </div>
           <div v-if="plant.description" class="mt-4">
-            <div class="text-xs text-neutral-400 mb-1">Описание</div>
-            <div class="text-sm text-neutral-300 leading-relaxed">{{ plant.description }}</div>
+            <div class="text-xs text-[color:var(--text-muted)] mb-1">Описание</div>
+            <div class="text-sm text-[color:var(--text-muted)] leading-relaxed">{{ plant.description }}</div>
           </div>
         </Card>
 
@@ -72,26 +72,26 @@
           <div class="text-sm font-semibold mb-3">Экономика</div>
           <div class="space-y-3">
             <div>
-              <div class="text-xs text-neutral-400 uppercase tracking-wide mb-1">Себестоимость</div>
-              <div class="text-lg font-semibold text-neutral-100">
+              <div class="text-xs text-[color:var(--text-muted)] uppercase tracking-wide mb-1">Себестоимость</div>
+              <div class="text-lg font-semibold text-[color:var(--text-primary)]">
                 {{ formatCurrency(plant.profitability.total_cost, plant.profitability.currency) }}
               </div>
             </div>
             <div>
-              <div class="text-xs text-neutral-400 uppercase tracking-wide mb-1">Оптовая цена</div>
-              <div class="text-lg font-semibold text-emerald-400">
+              <div class="text-xs text-[color:var(--text-muted)] uppercase tracking-wide mb-1">Оптовая цена</div>
+              <div class="text-lg font-semibold text-[color:var(--accent-green)]">
                 {{ formatCurrency(plant.profitability.wholesale_price, plant.profitability.currency) }}
               </div>
-              <div class="text-xs text-neutral-500 mt-1">
+              <div class="text-xs text-[color:var(--text-dim)] mt-1">
                 Маржа: {{ formatCurrency(plant.profitability.margin_wholesale, plant.profitability.currency) }}
               </div>
             </div>
             <div>
-              <div class="text-xs text-neutral-400 uppercase tracking-wide mb-1">Розничная цена</div>
-              <div class="text-lg font-semibold text-sky-400">
+              <div class="text-xs text-[color:var(--text-muted)] uppercase tracking-wide mb-1">Розничная цена</div>
+              <div class="text-lg font-semibold text-[color:var(--accent-cyan)]">
                 {{ formatCurrency(plant.profitability.retail_price, plant.profitability.currency) }}
               </div>
-              <div class="text-xs text-neutral-500 mt-1">
+              <div class="text-xs text-[color:var(--text-dim)] mt-1">
                 Маржа: {{ formatCurrency(plant.profitability.margin_retail, plant.profitability.currency) }}
               </div>
             </div>
@@ -104,8 +104,8 @@
         <div class="text-sm font-semibold mb-3">Диапазоны параметров</div>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div v-for="(range, metric) in plant.environment_requirements" :key="metric">
-            <div class="text-xs text-neutral-400 uppercase tracking-wide mb-1">{{ metricLabel(metric) }}</div>
-            <div class="text-sm text-neutral-100">{{ formatRange(range) }}</div>
+            <div class="text-xs text-[color:var(--text-muted)] uppercase tracking-wide mb-1">{{ metricLabel(metric) }}</div>
+            <div class="text-sm text-[color:var(--text-primary)]">{{ formatRange(range) }}</div>
           </div>
         </div>
       </Card>
@@ -117,10 +117,10 @@
           <div
             v-for="(phase, index) in plant.growth_phases"
             :key="index"
-            class="text-sm text-neutral-300 p-2 rounded border border-neutral-800 bg-neutral-900/50"
+            class="text-sm text-[color:var(--text-muted)] p-2 rounded border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]"
           >
             <div class="font-medium">{{ phase.name || `Фаза ${index + 1}` }}</div>
-            <div v-if="phase.duration_days" class="text-xs text-neutral-400 mt-1">
+            <div v-if="phase.duration_days" class="text-xs text-[color:var(--text-muted)] mt-1">
               Длительность: {{ phase.duration_days }} {{ phase.duration_days === 1 ? 'день' : 'дней' }}
             </div>
           </div>
@@ -139,20 +139,20 @@
             <div class="flex items-start justify-between mb-4">
               <div class="flex-1">
                 <div class="flex items-center gap-2 mb-2">
-                  <Link :href="`/recipes/${recipe.id}`" class="text-base font-semibold text-sky-400 hover:underline">
+                  <Link :href="`/recipes/${recipe.id}`" class="text-base font-semibold text-[color:var(--accent-cyan)] hover:underline">
                     {{ recipe.name }}
                   </Link>
                   <Badge v-if="recipe.is_default" size="xs" variant="info">По умолчанию</Badge>
                 </div>
-                <div v-if="recipe.description" class="text-sm text-neutral-400 mb-1">{{ recipe.description }}</div>
-                <div v-if="recipe.season || recipe.site_type" class="text-xs text-neutral-500">
+                <div v-if="recipe.description" class="text-sm text-[color:var(--text-muted)] mb-1">{{ recipe.description }}</div>
+                <div v-if="recipe.season || recipe.site_type" class="text-xs text-[color:var(--text-dim)]">
                   <span v-if="recipe.season">Сезон: {{ recipe.season }}</span>
                   <span v-if="recipe.site_type" class="ml-2">Тип: {{ recipe.site_type }}</span>
                 </div>
               </div>
             </div>
             <div v-if="recipe.phases && recipe.phases.length > 0" class="mt-3">
-              <div class="text-xs text-neutral-400 mb-3">Фазы ({{ recipe.phases.length }}):</div>
+              <div class="text-xs text-[color:var(--text-muted)] mb-3">Фазы ({{ recipe.phases.length }}):</div>
               <div class="space-y-4">
                 <Card
                   v-for="phase in recipe.phases"
@@ -160,71 +160,71 @@
                   class="p-4"
                 >
                   <div class="flex items-center justify-between mb-4">
-                    <div class="font-semibold text-base text-neutral-100">
+                    <div class="font-semibold text-base text-[color:var(--text-primary)]">
                       {{ phase.phase_index + 1 }}. {{ phase.name }}
                     </div>
-                    <div class="text-sm text-neutral-400">
+                    <div class="text-sm text-[color:var(--text-muted)]">
                       Длительность: {{ formatDuration(phase.duration_hours) }}
                     </div>
                   </div>
                   <div v-if="hasPhaseTargets(phase.targets)" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     <!-- pH -->
-                    <div v-if="hasTargetValue(phase.targets?.ph)" class="rounded-lg border border-neutral-800 bg-neutral-900/50 p-3">
-                      <div class="text-xs text-neutral-400 mb-1 uppercase tracking-wide">pH</div>
-                      <div class="text-base font-semibold text-neutral-100">
+                    <div v-if="hasTargetValue(phase.targets?.ph)" class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3">
+                      <div class="text-xs text-[color:var(--text-muted)] mb-1 uppercase tracking-wide">pH</div>
+                      <div class="text-base font-semibold text-[color:var(--text-primary)]">
                         {{ formatTargetRange(phase.targets.ph) }}
                       </div>
                     </div>
                     <!-- EC -->
-                    <div v-if="hasTargetValue(phase.targets?.ec)" class="rounded-lg border border-neutral-800 bg-neutral-900/50 p-3">
-                      <div class="text-xs text-neutral-400 mb-1 uppercase tracking-wide">EC (мСм/см)</div>
-                      <div class="text-base font-semibold text-neutral-100">
+                    <div v-if="hasTargetValue(phase.targets?.ec)" class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3">
+                      <div class="text-xs text-[color:var(--text-muted)] mb-1 uppercase tracking-wide">EC (мСм/см)</div>
+                      <div class="text-base font-semibold text-[color:var(--text-primary)]">
                         {{ formatTargetRange(phase.targets.ec) }}
                       </div>
                     </div>
                     <!-- Температура -->
-                    <div v-if="hasTargetValue(phase.targets?.temp_air)" class="rounded-lg border border-neutral-800 bg-neutral-900/50 p-3">
-                      <div class="text-xs text-neutral-400 mb-1 uppercase tracking-wide">Температура воздуха</div>
-                      <div class="text-base font-semibold text-neutral-100">
+                    <div v-if="hasTargetValue(phase.targets?.temp_air)" class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3">
+                      <div class="text-xs text-[color:var(--text-muted)] mb-1 uppercase tracking-wide">Температура воздуха</div>
+                      <div class="text-base font-semibold text-[color:var(--text-primary)]">
                         {{ phase.targets.temp_air }}°C
                       </div>
                     </div>
                     <!-- Влажность -->
-                    <div v-if="hasTargetValue(phase.targets?.humidity_air)" class="rounded-lg border border-neutral-800 bg-neutral-900/50 p-3">
-                      <div class="text-xs text-neutral-400 mb-1 uppercase tracking-wide">Влажность воздуха</div>
-                      <div class="text-base font-semibold text-neutral-100">
+                    <div v-if="hasTargetValue(phase.targets?.humidity_air)" class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3">
+                      <div class="text-xs text-[color:var(--text-muted)] mb-1 uppercase tracking-wide">Влажность воздуха</div>
+                      <div class="text-base font-semibold text-[color:var(--text-primary)]">
                         {{ phase.targets.humidity_air }}%
                       </div>
                     </div>
                     <!-- Свет -->
-                    <div v-if="hasTargetValue(phase.targets?.light_hours)" class="rounded-lg border border-neutral-800 bg-neutral-900/50 p-3">
-                      <div class="text-xs text-neutral-400 mb-1 uppercase tracking-wide">Световой день</div>
-                      <div class="text-base font-semibold text-neutral-100">
+                    <div v-if="hasTargetValue(phase.targets?.light_hours)" class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3">
+                      <div class="text-xs text-[color:var(--text-muted)] mb-1 uppercase tracking-wide">Световой день</div>
+                      <div class="text-base font-semibold text-[color:var(--text-primary)]">
                         {{ phase.targets.light_hours }} ч
                       </div>
                     </div>
                     <!-- Интервал полива -->
-                    <div v-if="hasTargetValue(phase.targets?.irrigation_interval_sec)" class="rounded-lg border border-neutral-800 bg-neutral-900/50 p-3">
-                      <div class="text-xs text-neutral-400 mb-1 uppercase tracking-wide">Интервал полива</div>
-                      <div class="text-base font-semibold text-neutral-100">
+                    <div v-if="hasTargetValue(phase.targets?.irrigation_interval_sec)" class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3">
+                      <div class="text-xs text-[color:var(--text-muted)] mb-1 uppercase tracking-wide">Интервал полива</div>
+                      <div class="text-base font-semibold text-[color:var(--text-primary)]">
                         {{ formatIrrigationInterval(phase.targets.irrigation_interval_sec) }}
                       </div>
                     </div>
                     <!-- Длительность полива -->
-                    <div v-if="hasTargetValue(phase.targets?.irrigation_duration_sec)" class="rounded-lg border border-neutral-800 bg-neutral-900/50 p-3">
-                      <div class="text-xs text-neutral-400 mb-1 uppercase tracking-wide">Длительность полива</div>
-                      <div class="text-base font-semibold text-neutral-100">
+                    <div v-if="hasTargetValue(phase.targets?.irrigation_duration_sec)" class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3">
+                      <div class="text-xs text-[color:var(--text-muted)] mb-1 uppercase tracking-wide">Длительность полива</div>
+                      <div class="text-base font-semibold text-[color:var(--text-primary)]">
                         {{ phase.targets.irrigation_duration_sec }} сек
                       </div>
                     </div>
                   </div>
-                  <div v-else class="text-xs text-neutral-500 text-center py-2">
+                  <div v-else class="text-xs text-[color:var(--text-dim)] text-center py-2">
                     Параметры не заданы
                   </div>
                 </Card>
               </div>
             </div>
-            <div v-else class="text-xs text-neutral-500 mt-2">Нет фаз в рецепте</div>
+            <div v-else class="text-xs text-[color:var(--text-dim)] mt-2">Нет фаз в рецепте</div>
           </Card>
         </div>
       </Card>
@@ -287,9 +287,9 @@
               <textarea v-model="form.description" rows="4" class="form-input"></textarea>
             </div>
             <div class="md:col-span-2">
-              <p class="text-sm font-semibold text-neutral-200 mb-2">Диапазоны</p>
+              <p class="text-sm font-semibold text-[color:var(--text-primary)] mb-2">Диапазоны</p>
               <div class="grid grid-cols-2 gap-3" v-for="metric in rangeMetrics" :key="metric.key">
-                <label class="text-xs text-neutral-400 col-span-2">{{ metric.label }}</label>
+                <label class="text-xs text-[color:var(--text-muted)] col-span-2">{{ metric.label }}</label>
                 <input
                   v-model="form.environment_requirements[metric.key].min"
                   type="number"
@@ -315,6 +315,17 @@
           <Button type="button" @click="handleSubmit" :disabled="form.processing">Сохранить</Button>
         </template>
       </Modal>
+
+      <ConfirmModal
+        :open="deleteModalOpen"
+        title="Удалить растение"
+        :message="plant?.name ? `Удалить растение \"${plant.name}\"?` : 'Удалить растение?'"
+        confirm-text="Удалить"
+        confirm-variant="danger"
+        :loading="deleting"
+        @close="deleteModalOpen = false"
+        @confirm="confirmDeletePlant"
+      />
     </div>
   </AppLayout>
 </template>
@@ -327,6 +338,7 @@ import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
 import Modal from '@/Components/Modal.vue'
+import ConfirmModal from '@/Components/ConfirmModal.vue'
 import { useToast } from '@/composables/useToast'
 import { useSimpleModal } from '@/composables/useModal'
 import { usePageProps } from '@/composables/usePageProps'
@@ -413,6 +425,7 @@ const taxonomies = computed(() => ({
 const { showToast } = useToast()
 const { isOpen: showEditModal, open: openEditModal, close: closeEditModal } = useSimpleModal()
 const deleting = ref(false)
+const deleteModalOpen = ref(false)
 
 const taxonomyIndex = computed(() => {
   const map: Record<string, Record<string, string>> = {}
@@ -606,13 +619,16 @@ function handleSubmit(): void {
 
 function deletePlant(): void {
   if (!plant.value?.id) return
-  if (!confirm(`Удалить растение "${plant.value.name}"?`)) {
-    return
-  }
+  deleteModalOpen.value = true
+}
+
+function confirmDeletePlant(): void {
+  if (!plant.value?.id) return
   deleting.value = true
   router.delete(`/plants/${plant.value.id}`, {
     onSuccess: () => {
       showToast('Растение удалено', 'success')
+      deleteModalOpen.value = false
       router.visit('/plants')
     },
     onError: () => {
@@ -625,13 +641,33 @@ function deletePlant(): void {
 
 <style scoped>
 .form-label {
-  @apply text-xs text-neutral-400 block mb-1;
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 0.25rem;
 }
 .form-input {
-  @apply w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm text-neutral-100 focus:border-sky-500 focus:outline-none;
+  width: 100%;
+  min-height: 2.6rem;
+  border-radius: 0.85rem;
+  border: 1px solid var(--border-muted);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  padding: 0.5rem 0.85rem;
+  font-size: 0.85rem;
+  transition: border 0.2s ease, box-shadow 0.2s ease;
+}
+.form-input:focus {
+  outline: none;
+  border-color: var(--accent-green);
+  box-shadow: 0 0 0 2px rgba(63, 220, 120, 0.18);
+}
+.form-input::placeholder {
+  color: var(--text-dim);
 }
 .form-error {
-  @apply text-xs text-red-400 mt-1;
+  font-size: 0.75rem;
+  color: var(--badge-danger-text);
+  margin-top: 0.25rem;
 }
 </style>
-

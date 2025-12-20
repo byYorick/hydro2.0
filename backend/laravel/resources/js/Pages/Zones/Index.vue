@@ -1,12 +1,12 @@
 <template>
   <AppLayout>
     <div class="space-y-4">
-      <div class="glass-panel border border-slate-800/60 rounded-2xl p-5 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
+      <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-5 shadow-[var(--shadow-card)]">
         <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <p class="text-[11px] uppercase tracking-[0.28em] text-slate-400">мониторинг зон</p>
+            <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">мониторинг зон</p>
             <h1 class="text-2xl font-semibold tracking-tight mt-1">Зоны выращивания</h1>
-            <p class="text-sm text-slate-400 mt-1">Статусы, быстрые действия и сравнение зон.</p>
+            <p class="text-sm text-[color:var(--text-dim)] mt-1">Статусы, быстрые действия и сравнение зон.</p>
           </div>
           <div class="flex flex-wrap gap-2 justify-end">
             <Button
@@ -20,34 +20,34 @@
           </div>
         </div>
         <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 mt-4">
-          <div class="glass-panel border border-emerald-400/30 rounded-xl p-3 shadow-inner shadow-emerald-500/10">
-            <div class="text-xs text-slate-400 uppercase tracking-[0.15em] mb-1">Активные</div>
-            <div class="text-3xl font-semibold text-emerald-200">{{ runningCount }}</div>
+          <div class="glass-panel border border-[color:var(--badge-success-border)] rounded-xl p-3 shadow-[inset_0_0_0_1px_var(--badge-success-border)]">
+            <div class="text-xs text-[color:var(--text-dim)] uppercase tracking-[0.15em] mb-1">Активные</div>
+            <div class="text-3xl font-semibold text-[color:var(--accent-green)]">{{ runningCount }}</div>
           </div>
-          <div class="glass-panel border border-slate-600/40 rounded-xl p-3">
-            <div class="text-xs text-slate-400 uppercase tracking-[0.15em] mb-1">Пауза</div>
-            <div class="text-3xl font-semibold text-slate-200">{{ pausedCount }}</div>
+          <div class="glass-panel border border-[color:var(--border-muted)] rounded-xl p-3">
+            <div class="text-xs text-[color:var(--text-dim)] uppercase tracking-[0.15em] mb-1">Пауза</div>
+            <div class="text-3xl font-semibold text-[color:var(--text-primary)]">{{ pausedCount }}</div>
           </div>
-          <div class="glass-panel border border-amber-400/30 rounded-xl p-3">
-            <div class="text-xs text-slate-400 uppercase tracking-[0.15em] mb-1">Warning</div>
-            <div class="text-3xl font-semibold text-amber-200">{{ warningCount }}</div>
+          <div class="glass-panel border border-[color:var(--badge-warning-border)] rounded-xl p-3">
+            <div class="text-xs text-[color:var(--text-dim)] uppercase tracking-[0.15em] mb-1">Warning</div>
+            <div class="text-3xl font-semibold text-[color:var(--accent-amber)]">{{ warningCount }}</div>
           </div>
-          <div class="glass-panel border border-rose-400/30 rounded-xl p-3">
-            <div class="text-xs text-slate-400 uppercase tracking-[0.15em] mb-1">Alarm</div>
-            <div class="text-3xl font-semibold text-rose-200">{{ alarmCount }}</div>
+          <div class="glass-panel border border-[color:var(--badge-danger-border)] rounded-xl p-3">
+            <div class="text-xs text-[color:var(--text-dim)] uppercase tracking-[0.15em] mb-1">Alarm</div>
+            <div class="text-3xl font-semibold text-[color:var(--accent-red)]">{{ alarmCount }}</div>
           </div>
-          <div class="glass-panel border border-cyan-300/30 rounded-xl p-3">
-            <div class="text-xs text-slate-400 uppercase tracking-[0.15em] mb-1">Всего</div>
-            <div class="text-3xl font-semibold text-cyan-200">{{ totalZones }}</div>
+          <div class="glass-panel border border-[color:var(--badge-info-border)] rounded-xl p-3">
+            <div class="text-xs text-[color:var(--text-dim)] uppercase tracking-[0.15em] mb-1">Всего</div>
+            <div class="text-3xl font-semibold text-[color:var(--accent-cyan)]">{{ totalZones }}</div>
           </div>
         </div>
       </div>
 
-      <div class="glass-panel border border-slate-800/60 rounded-2xl p-4 shadow-lg shadow-black/30">
+      <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4 shadow-[var(--shadow-card)]">
         <div class="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
           <div class="flex items-center gap-2 flex-1 sm:flex-none">
-            <label class="text-sm text-slate-300 shrink-0">Статус:</label>
-            <select v-model="status" class="h-10 flex-1 sm:w-auto sm:min-w-[160px] rounded-lg border border-slate-700/70 bg-neutral-950/70 px-3 text-sm focus:ring-2 focus:ring-emerald-300/60 focus:outline-none">
+            <label class="text-sm text-[color:var(--text-muted)] shrink-0">Статус:</label>
+            <select v-model="status" class="input-select h-10 flex-1 sm:w-auto sm:min-w-[160px]">
               <option value="">Все</option>
               <option value="RUNNING">Запущено</option>
               <option value="PAUSED">Приостановлено</option>
@@ -56,20 +56,20 @@
             </select>
           </div>
           <div class="flex items-center gap-2 flex-1 sm:flex-none">
-            <label class="text-sm text-slate-300 shrink-0">Поиск:</label>
-            <input v-model="query" placeholder="Имя зоны..." class="h-10 flex-1 sm:w-64 rounded-lg border border-slate-700/70 bg-neutral-950/70 px-3 text-sm focus:ring-2 focus:ring-emerald-300/60 focus:outline-none" />
+            <label class="text-sm text-[color:var(--text-muted)] shrink-0">Поиск:</label>
+            <input v-model="query" placeholder="Имя зоны..." class="input-field h-10 flex-1 sm:w-64" />
           </div>
           <div class="flex items-center gap-2 flex-1 sm:flex-none">
             <button
               @click="showOnlyFavorites = !showOnlyFavorites"
-              class="h-10 px-3 rounded-lg border text-sm transition-colors flex items-center gap-1.5 bg-neutral-950/70"
+              class="h-10 px-3 rounded-lg border text-sm transition-colors flex items-center gap-1.5 bg-[color:var(--bg-surface-strong)]"
               :class="showOnlyFavorites
-                ? 'border-amber-500/70 text-amber-200 shadow-[0_0_0_1px_rgba(245,159,69,0.35)]'
-                : 'border-slate-700/70 text-slate-200 hover:border-slate-500/70'"
+                ? 'border-[color:var(--badge-warning-border)] text-[color:var(--accent-amber)] shadow-[0_0_0_1px_var(--badge-warning-border)]'
+                : 'border-[color:var(--border-muted)] text-[color:var(--text-primary)] hover:border-[color:var(--border-strong)]'"
             >
               <svg
                 class="w-4 h-4"
-                :class="showOnlyFavorites ? 'fill-amber-400' : ''"
+                :class="showOnlyFavorites ? 'fill-[color:var(--accent-amber)]' : ''"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -87,42 +87,42 @@
         </div>
       </div>
 
-      <div class="glass-panel border border-slate-800/60 rounded-2xl overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.35)] max-h-[720px] flex flex-col">
+      <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl overflow-hidden shadow-[var(--shadow-card)] max-h-[720px] flex flex-col">
         <div class="overflow-auto flex-1">
           <table class="w-full border-collapse">
-            <thead class="bg-neutral-950/80 text-slate-200 text-sm sticky top-0 z-10 backdrop-blur-md">
+            <thead class="bg-[color:var(--bg-surface-strong)] text-[color:var(--text-primary)] text-sm sticky top-0 z-10 backdrop-blur-md">
               <tr>
-                <th class="text-left px-4 py-3 font-semibold border-b border-slate-800/70">
+                <th class="text-left px-4 py-3 font-semibold border-b border-[color:var(--border-muted)]">
                   <div class="flex items-center gap-2">
                     <div class="w-5"></div>
                     <span>Название</span>
                   </div>
                 </th>
-                <th class="text-left px-4 py-3 font-semibold border-b border-slate-800/70">Статус</th>
-                <th class="text-left px-4 py-3 font-semibold border-b border-slate-800/70">Теплица</th>
-                <th class="text-left px-4 py-3 font-semibold border-b border-slate-800/70">pH</th>
-                <th class="text-left px-4 py-3 font-semibold border-b border-slate-800/70">EC</th>
-                <th class="text-left px-4 py-3 font-semibold border-b border-slate-800/70">Температура</th>
-                <th class="text-left px-4 py-3 font-semibold border-b border-slate-800/70">Действия</th>
+                <th class="text-left px-4 py-3 font-semibold border-b border-[color:var(--border-muted)]">Статус</th>
+                <th class="text-left px-4 py-3 font-semibold border-b border-[color:var(--border-muted)]">Теплица</th>
+                <th class="text-left px-4 py-3 font-semibold border-b border-[color:var(--border-muted)]">pH</th>
+                <th class="text-left px-4 py-3 font-semibold border-b border-[color:var(--border-muted)]">EC</th>
+                <th class="text-left px-4 py-3 font-semibold border-b border-[color:var(--border-muted)]">Температура</th>
+                <th class="text-left px-4 py-3 font-semibold border-b border-[color:var(--border-muted)]">Действия</th>
               </tr>
             </thead>
             <tbody>
               <tr
                 v-for="(r, index) in rows"
                 :key="r[0]"
-                :class="index % 2 === 0 ? 'bg-neutral-950/60' : 'bg-neutral-900/50'"
-                class="text-sm border-b border-slate-900/70 hover:bg-white/5 transition-colors"
+                :class="index % 2 === 0 ? 'bg-[color:var(--bg-surface-strong)]' : 'bg-[color:var(--bg-surface)]'"
+                class="text-sm border-b border-[color:var(--border-muted)] hover:bg-[color:var(--bg-elevated)] transition-colors"
               >
                 <td class="px-4 py-3">
                   <div class="flex items-center gap-2 min-w-0">
                     <button
                       @click.stop="toggleZoneFavorite(getZoneIdFromRow(r))"
-                      class="p-1 rounded-md hover:bg-white/5 transition-colors shrink-0 w-8 h-8 flex items-center justify-center"
+                      class="p-1 rounded-md hover:bg-[color:var(--bg-elevated)] transition-colors shrink-0 w-8 h-8 flex items-center justify-center"
                       :title="isZoneFavorite(getZoneIdFromRow(r)) ? 'Удалить из избранного' : 'Добавить в избранное'"
                     >
                       <svg
                         class="w-4 h-4 transition-colors"
-                        :class="isZoneFavorite(getZoneIdFromRow(r)) ? 'text-amber-400 fill-amber-400' : 'text-slate-500'"
+                        :class="isZoneFavorite(getZoneIdFromRow(r)) ? 'text-[color:var(--accent-amber)] fill-[color:var(--accent-amber)]' : 'text-[color:var(--text-dim)]'"
                         fill="none"
                         stroke="currentColor"
                         viewBox="0 0 24 24"
@@ -135,18 +135,18 @@
                         />
                       </svg>
                     </button>
-                    <Link :href="`/zones/${r[0]}`" class="text-cyan-200 hover:underline truncate min-w-0 font-semibold">{{ r[1] }}</Link>
+                    <Link :href="`/zones/${r[0]}`" class="text-[color:var(--accent-cyan)] hover:underline truncate min-w-0 font-semibold">{{ r[1] }}</Link>
                   </div>
                 </td>
                 <td class="px-4 py-3">
                   <Badge :variant="getStatusVariant(r[2])" class="shrink-0">{{ r[2] }}</Badge>
                 </td>
-                <td class="px-4 py-3 text-xs text-slate-300">
+                <td class="px-4 py-3 text-xs text-[color:var(--text-muted)]">
                   <span class="truncate block">{{ r[3] || '-' }}</span>
                 </td>
-                <td class="px-4 py-3 text-xs text-slate-300">{{ r[4] || '-' }}</td>
-                <td class="px-4 py-3 text-xs text-slate-300">{{ r[5] || '-' }}</td>
-                <td class="px-4 py-3 text-xs text-slate-300">{{ r[6] || '-' }}</td>
+                <td class="px-4 py-3 text-xs text-[color:var(--text-muted)]">{{ r[4] || '-' }}</td>
+                <td class="px-4 py-3 text-xs text-[color:var(--text-muted)]">{{ r[5] || '-' }}</td>
+                <td class="px-4 py-3 text-xs text-[color:var(--text-muted)]">{{ r[6] || '-' }}</td>
                 <td class="px-4 py-3">
                   <Link :href="`/zones/${r[0]}`">
                     <Button size="sm" variant="secondary">Подробнее</Button>
@@ -154,7 +154,7 @@
                 </td>
               </tr>
               <tr v-if="!rows.length">
-                <td colspan="7" class="px-4 py-6 text-sm text-slate-400 text-center">Нет зон по текущим фильтрам</td>
+                <td colspan="7" class="px-4 py-6 text-sm text-[color:var(--text-dim)] text-center">Нет зон по текущим фильтрам</td>
               </tr>
             </tbody>
           </table>

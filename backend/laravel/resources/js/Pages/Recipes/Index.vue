@@ -11,35 +11,35 @@
     </div>
     <div class="mb-3 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
       <div class="flex items-center gap-2 flex-1 sm:flex-none">
-        <label class="text-sm text-neutral-300 shrink-0">Поиск:</label>
-        <input v-model="query" placeholder="Название или культура..." class="h-9 flex-1 sm:w-56 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
+        <label class="text-sm text-[color:var(--text-muted)] shrink-0">Поиск:</label>
+        <input v-model="query" placeholder="Название или культура..." class="input-field flex-1 sm:w-56" />
       </div>
     </div>
-    <div class="rounded-xl border border-neutral-800 overflow-hidden max-h-[720px] flex flex-col">
+    <div class="rounded-xl border border-[color:var(--border-muted)] overflow-hidden max-h-[720px] flex flex-col">
       <div class="overflow-auto flex-1">
         <table class="w-full border-collapse">
-          <thead class="bg-neutral-900 text-neutral-300 text-sm sticky top-0 z-10">
+          <thead class="bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)] text-sm sticky top-0 z-10">
             <tr>
-              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Название</th>
-              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Описание</th>
-              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Фаз</th>
-              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Действия</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Название</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Описание</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Фаз</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Действия</th>
             </tr>
           </thead>
           <tbody>
             <tr
               v-for="(r, index) in rows"
               :key="r[0]"
-              :class="index % 2 === 0 ? 'bg-neutral-950' : 'bg-neutral-925'"
-              class="text-sm border-b border-neutral-900 hover:bg-neutral-900 transition-colors"
+              :class="index % 2 === 0 ? 'bg-[color:var(--bg-surface-strong)]' : 'bg-[color:var(--bg-surface)]'"
+              class="text-sm border-b border-[color:var(--border-muted)] hover:bg-[color:var(--bg-elevated)] transition-colors"
             >
               <td class="px-3 py-2">
-                <Link :href="`/recipes/${r[0]}`" class="text-sky-400 hover:underline truncate block">{{ r[1] }}</Link>
+                <Link :href="`/recipes/${r[0]}`" class="text-[color:var(--accent-cyan)] hover:underline truncate block">{{ r[1] }}</Link>
               </td>
-              <td class="px-3 py-2 text-xs text-neutral-400">
+              <td class="px-3 py-2 text-xs text-[color:var(--text-muted)]">
                 <span class="truncate block">{{ r[2] || 'Без описания' }}</span>
               </td>
-              <td class="px-3 py-2 text-xs text-neutral-400">{{ r[3] || 0 }}</td>
+              <td class="px-3 py-2 text-xs text-[color:var(--text-muted)]">{{ r[3] || 0 }}</td>
               <td class="px-3 py-2">
                 <Link :href="`/recipes/${r[0]}`">
                   <Button size="sm" variant="secondary">Открыть</Button>
@@ -47,7 +47,7 @@
               </td>
             </tr>
             <tr v-if="!rows.length">
-              <td colspan="4" class="px-3 py-6 text-sm text-neutral-400 text-center">
+              <td colspan="4" class="px-3 py-6 text-sm text-[color:var(--text-dim)] text-center">
                 {{ all.length === 0 ? 'Рецепты не найдены' : 'Нет рецептов по текущему фильтру' }}
               </td>
             </tr>
@@ -177,4 +177,3 @@ td:last-child {
   text-align: center;
 }
 </style>
-

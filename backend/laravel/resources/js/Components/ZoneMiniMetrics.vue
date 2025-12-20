@@ -5,9 +5,9 @@
       :key="metric.key"
       class="flex items-center justify-between text-xs"
     >
-      <span class="text-neutral-400">{{ metric.label }}:</span>
+      <span class="text-[color:var(--text-muted)]">{{ metric.label }}:</span>
       <div class="flex items-center gap-2">
-        <span class="font-semibold text-neutral-200">{{ metric.value }}</span>
+        <span class="font-semibold text-[color:var(--text-primary)]">{{ metric.value }}</span>
         <span
           v-if="metric.delta !== null && metric.delta !== undefined"
           class="px-1.5 py-0.5 rounded text-[10px] font-medium"
@@ -162,17 +162,17 @@ const visibleMetrics = computed(() => {
 
 function getDeltaClass(delta: number | null, tolerance: number): string {
   if (delta === null) {
-    return 'text-neutral-500 bg-neutral-800'
+    return 'text-[color:var(--text-dim)] bg-[color:var(--badge-neutral-bg)]'
   }
   
   const absDelta = Math.abs(delta)
   if (absDelta <= tolerance) {
-    return 'text-emerald-400 bg-emerald-500/20'
+    return 'text-[color:var(--accent-green)] bg-[color:var(--badge-success-bg)]'
   }
   if (absDelta <= tolerance * 2) {
-    return 'text-amber-400 bg-amber-500/20'
+    return 'text-[color:var(--accent-amber)] bg-[color:var(--badge-warning-bg)]'
   }
-  return 'text-red-400 bg-red-500/20'
+  return 'text-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]'
 }
 
 function formatDelta(delta: number | null): string {

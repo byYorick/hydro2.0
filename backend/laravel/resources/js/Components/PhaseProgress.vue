@@ -1,9 +1,9 @@
 <template>
-  <Card v-if="recipeInstance?.recipe" class="bg-gradient-to-br from-neutral-900 to-neutral-925 border-neutral-800">
+  <Card v-if="recipeInstance?.recipe" class="bg-[color:var(--bg-surface-strong)] border-[color:var(--border-muted)]">
     <div class="space-y-3">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
-          <div class="w-2 h-2 rounded-full bg-sky-500 animate-pulse"></div>
+          <div class="w-2 h-2 rounded-full bg-[color:var(--accent-cyan)] animate-pulse"></div>
           <div class="text-sm font-semibold">Прогресс рецепта</div>
         </div>
         <Badge :variant="progressVariant" class="text-xs">
@@ -14,45 +14,45 @@
       <!-- Прогресс текущей фазы -->
       <div v-if="phaseProgress !== null" class="space-y-2">
         <div class="flex items-center justify-between text-xs">
-          <span class="text-neutral-400">
+          <span class="text-[color:var(--text-muted)]">
             {{ currentPhaseName || `Фаза ${currentPhaseIndex + 1}` }}
             <span v-if="phaseDaysElapsed !== null && phaseDaysTotal !== null">
               (день {{ phaseDaysElapsed }}/{{ phaseDaysTotal }})
             </span>
           </span>
-          <span class="font-semibold text-sky-400">{{ Math.round(phaseProgress) }}%</span>
+          <span class="font-semibold text-[color:var(--accent-cyan)]">{{ Math.round(phaseProgress) }}%</span>
         </div>
         
         <!-- Прогресс-бар -->
-        <div class="relative w-full h-3 bg-neutral-800 rounded-full overflow-hidden">
+        <div class="relative w-full h-3 bg-[color:var(--border-muted)] rounded-full overflow-hidden">
           <div
-            class="absolute inset-0 bg-gradient-to-r from-sky-500 to-sky-400 rounded-full transition-all duration-500 ease-out"
+            class="absolute inset-0 bg-[linear-gradient(90deg,var(--accent-cyan),var(--accent-green))] rounded-full transition-all duration-500 ease-out"
             :style="{ width: `${phaseProgress}%` }"
           >
-            <div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer"></div>
+            <div class="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.12),transparent)] animate-shimmer"></div>
           </div>
           <!-- Индикатор цели -->
           <div
             v-if="phaseProgress < 100"
-            class="absolute top-0 bottom-0 w-0.5 bg-sky-300/50"
+            class="absolute top-0 bottom-0 w-0.5 bg-[color:var(--accent-cyan)]/40"
             :style="{ left: `${phaseProgress}%` }"
           ></div>
         </div>
 
         <!-- Информация о следующей фазе -->
-        <div v-if="nextPhaseInfo" class="flex items-center justify-between text-xs text-neutral-400">
+        <div v-if="nextPhaseInfo" class="flex items-center justify-between text-xs text-[color:var(--text-muted)]">
           <span>Следующая фаза: {{ nextPhaseInfo.name }}</span>
-          <span v-if="nextPhaseInfo.daysRemaining !== null" class="font-medium text-neutral-300">
+          <span v-if="nextPhaseInfo.daysRemaining !== null" class="font-medium text-[color:var(--text-primary)]">
             через {{ formatDays(nextPhaseInfo.daysRemaining) }}
           </span>
         </div>
       </div>
 
       <!-- Общий прогресс рецепта (все фазы) -->
-      <div v-if="totalPhases > 1" class="pt-2 border-t border-neutral-800">
+      <div v-if="totalPhases > 1" class="pt-2 border-t border-[color:var(--border-muted)]">
         <div class="flex items-center justify-between text-xs mb-1">
-          <span class="text-neutral-400">Общий прогресс рецепта</span>
-          <span class="font-medium text-neutral-300">
+          <span class="text-[color:var(--text-muted)]">Общий прогресс рецепта</span>
+          <span class="font-medium text-[color:var(--text-primary)]">
             {{ currentPhaseIndex + 1 }} / {{ totalPhases }} фаз
           </span>
         </div>
@@ -68,13 +68,13 @@
       </div>
 
       <!-- Информация о рецепте -->
-      <div class="pt-2 border-t border-neutral-800 text-xs text-neutral-400">
+      <div class="pt-2 border-t border-[color:var(--border-muted)] text-xs text-[color:var(--text-muted)]">
         <div class="flex items-center justify-between">
           <span>Рецепт: {{ recipeInstance.recipe.name }}</span>
           <Link
             v-if="recipeInstance.recipe.id"
             :href="`/recipes/${recipeInstance.recipe.id}`"
-            class="text-sky-400 hover:text-sky-300 transition-colors"
+            class="text-[color:var(--accent-cyan)] hover:text-[color:var(--accent-green)] transition-colors"
           >
             Открыть →
           </Link>
@@ -148,11 +148,11 @@ const progressVariant = computed(() => {
 
 function getPhaseBarClass(phaseIndex: number): string {
   if (phaseIndex < currentPhaseIndex.value) {
-    return 'bg-emerald-500' // Завершенные фазы
+    return 'bg-[color:var(--accent-green)]' // Завершенные фазы
   } else if (phaseIndex === currentPhaseIndex.value) {
-    return 'bg-sky-500' // Текущая фаза
+    return 'bg-[color:var(--accent-cyan)]' // Текущая фаза
   } else {
-    return 'bg-neutral-700' // Предстоящие фазы
+    return 'bg-[color:var(--border-muted)]' // Предстоящие фазы
   }
 }
 
@@ -178,4 +178,3 @@ function formatDays(days: number): string {
   animation: shimmer 2s infinite;
 }
 </style>
-

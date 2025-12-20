@@ -4,19 +4,19 @@
     
     <Card class="mb-4">
       <div class="mb-3 flex flex-wrap items-center gap-2">
-        <label class="text-sm text-neutral-300">Уровень:</label>
-        <select v-model="levelFilter" class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm">
+        <label class="text-sm text-[color:var(--text-muted)]">Уровень:</label>
+        <select v-model="levelFilter" class="input-select">
           <option value="">Все уровни</option>
           <option value="error">Error</option>
           <option value="warning">Warning</option>
           <option value="info">Info</option>
           <option value="debug">Debug</option>
         </select>
-        <label class="ml-4 text-sm text-neutral-300">Поиск:</label>
+        <label class="ml-4 text-sm text-[color:var(--text-muted)]">Поиск:</label>
         <input 
           v-model="searchQuery" 
           placeholder="Поиск по сообщению..." 
-          class="h-9 w-64 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" 
+          class="input-field w-64" 
         />
         <div class="ml-auto flex gap-2">
           <Button size="sm" @click="loadLogs" :disabled="loading">
@@ -28,18 +28,18 @@
         </div>
       </div>
       
-      <div class="text-xs text-neutral-400 mb-2">
+      <div class="text-xs text-[color:var(--text-dim)] mb-2">
         Всего: {{ all.length }} | Отфильтровано: {{ filtered.length }}
       </div>
     </Card>
 
     <Card>
-      <div v-if="loading && all.length === 0" class="text-sm text-neutral-400 px-3 py-6 text-center">
+      <div v-if="loading && all.length === 0" class="text-sm text-[color:var(--text-dim)] px-3 py-6 text-center">
         Загрузка логов...
       </div>
-      <div v-else class="rounded-xl border border-neutral-800 overflow-hidden max-h-[720px] flex flex-col">
+      <div v-else class="rounded-xl border border-[color:var(--border-muted)] overflow-hidden max-h-[720px] flex flex-col">
         <!-- Заголовок таблицы -->
-        <div class="flex-shrink-0 grid grid-cols-4 gap-0 bg-neutral-900 text-neutral-300 text-sm border-b border-neutral-800">
+        <div class="flex-shrink-0 grid grid-cols-4 gap-0 bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)] text-sm border-b border-[color:var(--border-muted)]">
           <div v-for="(h, i) in headers" :key="i" class="px-3 py-2 text-left font-medium">
             {{ h }}
           </div>
@@ -54,8 +54,8 @@
             class="virtual-table-body h-full"
           >
             <div 
-              :class="index % 2 === 0 ? 'bg-neutral-950' : 'bg-neutral-925'" 
-              class="grid grid-cols-4 gap-0 text-sm border-b border-neutral-900"
+              :class="index % 2 === 0 ? 'bg-[color:var(--bg-surface-strong)]' : 'bg-[color:var(--bg-surface)]'" 
+              class="grid grid-cols-4 gap-0 text-sm border-b border-[color:var(--border-muted)]"
               style="height:44px"
             >
               <div class="px-3 py-2 flex items-center">
@@ -65,7 +65,7 @@
                   {{ log.level?.toUpperCase() || '-' }}
                 </Badge>
               </div>
-              <div class="px-3 py-2 flex items-center text-xs text-neutral-400">
+              <div class="px-3 py-2 flex items-center text-xs text-[color:var(--text-muted)]">
                 {{ formatDateTime(log.created_at) }}
               </div>
               <div class="px-3 py-2 flex items-center">
@@ -83,7 +83,7 @@
               </div>
             </div>
           </RecycleScroller>
-          <div v-if="!paginatedLogs.length" class="text-sm text-neutral-400 px-3 py-6 text-center">
+          <div v-if="!paginatedLogs.length" class="text-sm text-[color:var(--text-dim)] px-3 py-6 text-center">
             {{ all.length === 0 ? 'Логи не найдены' : 'Нет логов по текущим фильтрам' }}
           </div>
         </div>
@@ -99,7 +99,7 @@
     <Modal :open="selectedLog !== null" :title="`Детали лога #${selectedLog?.id}`" @close="selectedLog = null">
       <div v-if="selectedLog" class="space-y-3">
         <div>
-          <label class="text-xs text-neutral-400">Уровень</label>
+          <label class="text-xs text-[color:var(--text-muted)]">Уровень</label>
           <div class="mt-1">
             <Badge :variant="getLevelVariant(selectedLog.level)">
               {{ selectedLog.level?.toUpperCase() || '-' }}
@@ -107,24 +107,24 @@
           </div>
         </div>
         <div>
-          <label class="text-xs text-neutral-400">Время</label>
-          <div class="mt-1 text-sm text-neutral-200">
+          <label class="text-xs text-[color:var(--text-muted)]">Время</label>
+          <div class="mt-1 text-sm text-[color:var(--text-primary)]">
             {{ formatDateTime(selectedLog.created_at) }}
           </div>
         </div>
         <div>
-          <label class="text-xs text-neutral-400">Сообщение</label>
-          <div class="mt-1 text-sm text-neutral-200 bg-neutral-900 p-2 rounded">
+          <label class="text-xs text-[color:var(--text-muted)]">Сообщение</label>
+          <div class="mt-1 text-sm text-[color:var(--text-primary)] bg-[color:var(--bg-elevated)] p-2 rounded">
             {{ selectedLog.message || '-' }}
           </div>
         </div>
         <div v-if="selectedLog.context && Object.keys(selectedLog.context).length > 0">
-          <label class="text-xs text-neutral-400">Контекст</label>
-          <div class="mt-1 bg-neutral-900 p-3 rounded overflow-auto max-h-60">
-            <pre class="text-xs text-neutral-300">{{ JSON.stringify(selectedLog.context, null, 2) }}</pre>
+          <label class="text-xs text-[color:var(--text-muted)]">Контекст</label>
+          <div class="mt-1 bg-[color:var(--bg-elevated)] p-3 rounded overflow-auto max-h-60">
+            <pre class="text-xs text-[color:var(--text-muted)]">{{ JSON.stringify(selectedLog.context, null, 2) }}</pre>
           </div>
         </div>
-        <div v-else class="text-xs text-neutral-500">
+        <div v-else class="text-xs text-[color:var(--text-dim)]">
           Нет дополнительных данных
         </div>
       </div>
@@ -278,4 +278,3 @@ watch([levelFilter, searchQuery], () => {
   currentPage.value = 1
 })
 </script>
-

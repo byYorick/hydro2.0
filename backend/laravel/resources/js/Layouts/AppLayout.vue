@@ -1,15 +1,15 @@
 <template>
   <ErrorBoundary>
     <div class="app-shell">
-      <div class="min-h-screen text-slate-50">
+      <div class="min-h-screen text-[color:var(--text-primary)]">
         <div class="flex h-screen overflow-hidden">
-          <aside class="hidden lg:flex w-72 shrink-0 flex-col border-r border-slate-800/60 bg-neutral-950/70 backdrop-blur-xl glass-panel">
-            <div class="h-16 flex items-center px-5 border-b border-slate-800/70">
+          <aside class="hidden lg:flex w-72 shrink-0 flex-col border-r border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] backdrop-blur-xl glass-panel">
+            <div class="h-16 flex items-center px-5 border-b border-[color:var(--border-muted)]">
               <div class="flex items-center gap-3">
-                <div class="h-8 w-8 rounded-xl bg-gradient-to-br from-emerald-300/70 via-cyan-300/70 to-orange-300/70 shadow-lg shadow-emerald-500/20" />
+                <div class="h-8 w-8 rounded-xl bg-[linear-gradient(135deg,var(--accent-green),var(--accent-cyan))] shadow-[0_0_0_1px_var(--badge-success-border)]" />
                 <div>
                   <div class="text-lg font-semibold tracking-tight">hydro 2.0</div>
-                  <div class="text-[11px] uppercase tracking-[0.2em] text-slate-400">agronomy deck</div>
+                  <div class="text-[11px] uppercase tracking-[0.2em] text-[color:var(--text-dim)]">agronomy deck</div>
                 </div>
               </div>
             </div>
@@ -24,16 +24,16 @@
             class="fixed inset-0 z-50 lg:hidden"
             @click="showMobileMenu = false"
           >
-            <div class="fixed inset-0 bg-black/60 backdrop-blur-sm" />
+            <div class="fixed inset-0 bg-[color:var(--bg-main)] opacity-80 backdrop-blur-sm" />
             <div
-              class="fixed left-0 top-0 bottom-0 w-72 bg-neutral-950/90 border-r border-slate-800/60 glass-panel"
+              class="fixed left-0 top-0 bottom-0 w-72 bg-[color:var(--bg-surface-strong)] border-r border-[color:var(--border-muted)] glass-panel"
               @click.stop
             >
-              <div class="h-16 flex items-center justify-between px-4 border-b border-slate-800/70">
+              <div class="h-16 flex items-center justify-between px-4 border-b border-[color:var(--border-muted)]">
                 <span class="text-base font-semibold">hydro 2.0</span>
                 <button
                   @click="showMobileMenu = false"
-                  class="p-2 rounded-md text-slate-400 hover:text-slate-100 hover:bg-white/5"
+                  class="p-2 rounded-md text-[color:var(--text-dim)] hover:text-[color:var(--text-primary)] hover:bg-[color:var(--bg-elevated)]"
                 >
                   <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -52,11 +52,11 @@
               <HeaderStatusBar />
             </div>
 
-            <header class="h-16 flex items-center justify-between px-4 border-b border-slate-800/70 bg-neutral-950/80 lg:hidden backdrop-blur-xl shrink-0">
+            <header class="h-16 flex items-center justify-between px-4 border-b border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] lg:hidden backdrop-blur-xl shrink-0">
               <div class="flex items-center gap-3">
                 <button
                   @click="showMobileMenu = !showMobileMenu"
-                  class="p-2 rounded-md text-slate-300 hover:text-white hover:bg-white/5"
+                  class="p-2 rounded-md text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)] hover:bg-[color:var(--bg-elevated)]"
                 >
                   <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
@@ -64,11 +64,11 @@
                 </button>
                 <span class="text-base font-semibold">hydro 2.0</span>
               </div>
-              <span class="text-xs text-slate-400 hidden sm:inline">Ctrl+K — Командная палитра</span>
+              <span class="text-xs text-[color:var(--text-dim)] hidden sm:inline">Ctrl+K — Командная палитра</span>
             </header>
 
             <div class="flex-1 min-h-0 overflow-y-auto px-4 py-4 pb-20 lg:pb-6 space-y-4">
-              <div class="glass-panel border border-slate-800/60 px-4 py-3 rounded-2xl shadow-lg shadow-black/30">
+              <div class="glass-panel border border-[color:var(--border-muted)] px-4 py-3 rounded-2xl shadow-[var(--shadow-card)]">
                 <Breadcrumbs />
               </div>
               <Transition
@@ -91,9 +91,9 @@
             </div>
           </main>
 
-          <aside class="hidden xl:flex w-80 shrink-0 border-l border-slate-800/60 bg-neutral-950/80 glass-panel flex-col h-screen">
-            <div class="h-16 flex items-center px-4 border-b border-slate-800/70 shrink-0">
-              <span class="text-sm text-slate-400 uppercase tracking-[0.2em]">события</span>
+          <aside class="hidden xl:flex w-80 shrink-0 border-l border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] glass-panel flex-col h-screen">
+            <div class="h-16 flex items-center px-4 border-b border-[color:var(--border-muted)] shrink-0">
+              <span class="text-sm text-[color:var(--text-dim)] uppercase tracking-[0.2em]">события</span>
             </div>
             <div class="flex-1 min-h-0 flex flex-col overflow-hidden">
               <div class="p-4 space-y-4 shrink-0">
@@ -134,11 +134,8 @@ onMounted(() => {
 </script>
   
 <style>
-:root {
-  color-scheme: dark;
-}
-.bg-neutral-925 { background-color: #0f0f10; }
-.bg-neutral-850 { background-color: #1a1a1b; }
+.bg-neutral-925 { background-color: var(--bg-surface-strong); }
+.bg-neutral-850 { background-color: var(--bg-elevated); }
 
 /* Анимации переходов между страницами */
 .page-enter-active {
@@ -179,11 +176,11 @@ onMounted(() => {
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background-color: rgba(38, 38, 38, 0.8);
+  background-color: var(--border-muted);
   border-radius: 3px;
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(38, 38, 38, 1);
+  background-color: var(--border-strong);
 }
 </style>

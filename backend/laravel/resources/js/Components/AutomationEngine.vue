@@ -1,7 +1,7 @@
 <template>
   <Card>
     <div class="space-y-4">
-      <div class="flex items-center gap-2 border-b border-neutral-800">
+      <div class="flex items-center gap-2 border-b border-[color:var(--border-muted)]">
         <button
           v-for="tab in tabs"
           :key="tab.id"
@@ -9,8 +9,8 @@
           :class="[
             'px-4 py-2 text-sm font-medium transition-colors border-b-2',
             activeTab === tab.id
-              ? 'border-sky-500 text-sky-400'
-              : 'border-transparent text-neutral-400 hover:text-neutral-300'
+              ? 'border-[color:var(--accent-cyan)] text-[color:var(--accent-cyan)]'
+              : 'border-transparent text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)]'
           ]"
         >
           {{ tab.label }}
@@ -53,4 +53,3 @@ function onConfigSaved(config: PidConfigWithMeta) {
   logger.info('PID config saved:', { config })
 }
 </script>
-

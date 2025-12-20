@@ -15,10 +15,10 @@
             max="3600"
             step="1"
             required
-            class="w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-sm"
+            class="input-field w-full"
             placeholder="10"
           />
-          <div class="text-xs text-neutral-400 mt-1">От 1 до 3600 секунд</div>
+          <div class="text-xs text-[color:var(--text-dim)] mt-1">От 1 до 3600 секунд</div>
         </div>
       </div>
 
@@ -34,10 +34,10 @@
             max="9.0"
             step="0.1"
             required
-            class="w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-sm"
+            class="input-field w-full"
             placeholder="6.0"
           />
-          <div class="text-xs text-neutral-400 mt-1">От 4.0 до 9.0</div>
+          <div class="text-xs text-[color:var(--text-dim)] mt-1">От 4.0 до 9.0</div>
         </div>
       </div>
 
@@ -53,10 +53,10 @@
             max="10.0"
             step="0.1"
             required
-            class="w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-sm"
+            class="input-field w-full"
             placeholder="1.5"
           />
-          <div class="text-xs text-neutral-400 mt-1">От 0.1 до 10.0</div>
+          <div class="text-xs text-[color:var(--text-dim)] mt-1">От 0.1 до 10.0</div>
         </div>
       </div>
 
@@ -72,10 +72,10 @@
             max="35"
             step="0.5"
             required
-            class="w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-sm"
+            class="input-field w-full"
             placeholder="22"
           />
-          <div class="text-xs text-neutral-400 mt-1">От 10 до 35°C</div>
+          <div class="text-xs text-[color:var(--text-dim)] mt-1">От 10 до 35°C</div>
         </div>
         <div>
           <label for="zone-action-target-humidity" class="block text-sm font-medium mb-1">Целевая влажность (%)</label>
@@ -88,10 +88,10 @@
             max="90"
             step="1"
             required
-            class="w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-sm"
+            class="input-field w-full"
             placeholder="60"
           />
-          <div class="text-xs text-neutral-400 mt-1">От 30 до 90%</div>
+          <div class="text-xs text-[color:var(--text-dim)] mt-1">От 30 до 90%</div>
         </div>
       </div>
 
@@ -107,10 +107,10 @@
             max="100"
             step="1"
             required
-            class="w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-sm"
+            class="input-field w-full"
             placeholder="80"
           />
-          <div class="text-xs text-neutral-400 mt-1">От 0 до 100%</div>
+          <div class="text-xs text-[color:var(--text-dim)] mt-1">От 0 до 100%</div>
         </div>
         <div>
           <label for="zone-action-duration-hours" class="block text-sm font-medium mb-1">Длительность (часы)</label>
@@ -123,18 +123,18 @@
             max="24"
             step="0.5"
             required
-            class="w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-3 text-sm"
+            class="input-field w-full"
             placeholder="12"
           />
-          <div class="text-xs text-neutral-400 mt-1">От 0.5 до 24 часов</div>
+          <div class="text-xs text-[color:var(--text-dim)] mt-1">От 0.5 до 24 часов</div>
         </div>
       </div>
 
-      <div v-else class="text-sm text-neutral-400">
+      <div v-else class="text-sm text-[color:var(--text-dim)]">
         Параметры для этого действия не требуются
       </div>
 
-      <div v-if="error" class="text-sm text-red-400">{{ error }}</div>
+      <div v-if="error" class="text-sm text-[color:var(--accent-red)]">{{ error }}</div>
     </form>
     
     <template #footer>
@@ -354,4 +354,3 @@ function onSubmit(): void {
   emit('close')
 }
 </script>
-

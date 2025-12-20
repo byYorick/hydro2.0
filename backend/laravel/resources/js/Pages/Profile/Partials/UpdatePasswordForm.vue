@@ -47,11 +47,11 @@ const updatePassword = () => {
 <template>
     <section>
         <header>
-            <h2 class="text-lg font-medium text-neutral-100">
+            <h2 class="text-lg font-medium text-[color:var(--text-primary)]">
                 Изменение пароля
             </h2>
 
-            <p class="mt-1 text-sm text-neutral-400">
+            <p class="mt-1 text-sm text-[color:var(--text-muted)]">
                 Убедитесь, что ваш аккаунт использует длинный, случайный пароль для обеспечения безопасности.
             </p>
         </header>
@@ -121,7 +121,7 @@ const updatePassword = () => {
                 >
                     <p
                         v-if="form.recentlySuccessful"
-                        class="text-sm text-neutral-400"
+                        class="text-sm text-[color:var(--text-muted)]"
                     >
                         Сохранено.
                     </p>

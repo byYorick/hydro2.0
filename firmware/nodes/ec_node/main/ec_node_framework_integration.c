@@ -21,6 +21,7 @@
 #include "esp_err.h"
 #include "cJSON.h"
 #include <string.h>
+#include <strings.h>
 #include <math.h>
 #include <float.h>
 
@@ -51,20 +52,31 @@ static esp_err_t ec_node_init_channel_callback(
     }
 
     const char *channel_type = type_item->valuestring;
+    const char *actuator_type = channel_type;
+
+    if (strcasecmp(channel_type, "ACTUATOR") == 0) {
+        cJSON *actuator_item = cJSON_GetObjectItem(channel_config, "actuator_type");
+        if (!cJSON_IsString(actuator_item)) {
+            ESP_LOGW(TAG, "Channel %s: missing or invalid actuator_type", channel_name);
+            return ESP_ERR_INVALID_ARG;
+        }
+        actuator_type = actuator_item->valuestring;
+    }
 
     // Инициализация насосов
     // Примечание: pump_driver инициализируется через pump_driver_init_from_config()
     // после применения всех каналов, поэтому здесь только логируем
-    if (strcmp(channel_type, "pump") == 0) {
+    if (strcasecmp(actuator_type, "PUMP") == 0) {
         cJSON *pin_item = cJSON_GetObjectItem(channel_config, "pin");
-        if (!cJSON_IsNumber(pin_item)) {
-            ESP_LOGW(TAG, "Channel %s: missing or invalid pin", channel_name);
-            return ESP_ERR_INVALID_ARG;
+        cJSON *gpio_item = cJSON_GetObjectItem(channel_config, "gpio");
+        cJSON *pin_src = cJSON_IsNumber(pin_item) ? pin_item : (cJSON_IsNumber(gpio_item) ? gpio_item : NULL);
+        if (pin_src) {
+            int pin = pin_src->valueint;
+            ESP_LOGI(TAG, "Pump channel %s configured on pin %d (will be initialized via pump_driver_init_from_config)",
+                    channel_name, pin);
+        } else {
+            ESP_LOGI(TAG, "Pump channel %s configured (GPIO resolved in firmware)", channel_name);
         }
-
-        int pin = pin_item->valueint;
-        ESP_LOGI(TAG, "Pump channel %s configured on pin %d (will be initialized via pump_driver_init_from_config)", 
-                channel_name, pin);
         return ESP_OK;
     }
 
@@ -88,7 +100,7 @@ static esp_err_t handle_run_pump(
     if (!cJSON_IsNumber(duration_item)) {
         *response = node_command_handler_create_response(
             NULL,
-            "ERROR",
+            "FAILED",
             "invalid_params",
             "Missing or invalid duration_ms",
             NULL
@@ -100,7 +112,7 @@ static esp_err_t handle_run_pump(
     if (duration_ms <= 0 || duration_ms > 60000) {
         *response = node_command_handler_create_response(
             NULL,
-            "ERROR",
+            "FAILED",
             "invalid_params",
             "duration_ms must be between 1 and 60000",
             NULL
@@ -112,7 +124,7 @@ static esp_err_t handle_run_pump(
     if (err != ESP_OK) {
         *response = node_command_handler_create_response(
             NULL,
-            "ERROR",
+            "FAILED",
             "pump_error",
             "Failed to run pump",
             NULL
@@ -122,7 +134,7 @@ static esp_err_t handle_run_pump(
 
     *response = node_command_handler_create_response(
         NULL,
-        "ACK",
+        "DONE",
         NULL,
         NULL,
         NULL
@@ -150,7 +162,7 @@ static esp_err_t handle_stop_pump(
     if (err != ESP_OK) {
         *response = node_command_handler_create_response(
             NULL,
-            "ERROR",
+            "FAILED",
             "pump_error",
             "Failed to stop pump",
             NULL
@@ -160,7 +172,7 @@ static esp_err_t handle_stop_pump(
 
     *response = node_command_handler_create_response(
         NULL,
-        "ACK",
+        "DONE",
         NULL,
         NULL,
         NULL
@@ -190,7 +202,7 @@ static esp_err_t handle_calibrate(
     if (!cJSON_IsNumber(stage_item) || !cJSON_IsNumber(tds_value_item)) {
         *response = node_command_handler_create_response(
             NULL,
-            "ERROR",
+            "FAILED",
             "invalid_format",
             "Missing stage or tds_value",
             NULL
@@ -204,7 +216,7 @@ static esp_err_t handle_calibrate(
     if (stage != 1 && stage != 2) {
         *response = node_command_handler_create_response(
             NULL,
-            "ERROR",
+            "FAILED",
             "invalid_stage",
             "Stage must be 1 or 2",
             NULL
@@ -215,7 +227,7 @@ static esp_err_t handle_calibrate(
     if (known_tds > 10000) {
         *response = node_command_handler_create_response(
             NULL,
-            "ERROR",
+            "FAILED",
             "invalid_tds",
             "TDS value must be <= 10000",
             NULL
@@ -240,7 +252,7 @@ static esp_err_t handle_calibrate(
 
         *response = node_command_handler_create_response(
             NULL,
-            "ERROR",
+            "FAILED",
             "calibration_failed",
             error_msg,
             NULL
@@ -250,7 +262,7 @@ static esp_err_t handle_calibrate(
 
     *response = node_command_handler_create_response(
         NULL,
-        "ACK",
+        "DONE",
         NULL,
         NULL,
         NULL
@@ -422,6 +434,11 @@ esp_err_t ec_node_framework_init_integration(void) {
         return err;
     }
 
+    err = node_command_handler_register("calibrate_ec", handle_calibrate, NULL);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to register calibrate_ec handler: %s", esp_err_to_name(err));
+    }
+
     // Регистрация callback для отключения актуаторов в safe_mode
     err = node_state_manager_register_safe_mode_callback(ec_node_disable_actuators_in_safe_mode, NULL);
     if (err != ESP_OK) {
@@ -455,4 +472,3 @@ void ec_node_framework_register_mqtt_handlers(void) {
     
     ESP_LOGI(TAG, "MQTT handlers registered");
 }
-

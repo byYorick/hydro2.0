@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\CycleCenterController;
 use App\Http\Controllers\PlantController;
 use App\Http\Controllers\ProfileController;
 use App\Models\Alert;
@@ -781,6 +782,11 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
             'activeAlerts' => $activeAlerts,
         ]);
     })->name('greenhouses.show');
+
+    /**
+     * Cycle Center - основной операционный экран циклов выращивания
+     */
+    Route::get('/cycles', [CycleCenterController::class, 'index'])->name('cycles.center');
 
     /**
      * Zones routes

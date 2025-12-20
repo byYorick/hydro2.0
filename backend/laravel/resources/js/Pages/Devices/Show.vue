@@ -3,9 +3,9 @@
     <div class="flex items-center justify-between mb-3">
       <div>
         <div class="text-lg font-semibold">{{ device.uid || device.name || device.id }}</div>
-        <div class="text-xs text-neutral-400">
+        <div class="text-xs text-[color:var(--text-muted)]">
           <span v-if="device.zone">
-            <Link :href="`/zones/${device.zone.id}`" class="text-sky-400 hover:underline">Zone: {{ device.zone.name }}</Link>
+            <Link :href="`/zones/${device.zone.id}`" class="text-[color:var(--accent-cyan)] hover:underline">Zone: {{ device.zone.name }}</Link>
           </span>
           <span v-else>Zone: -</span>
           · Type: {{ device.type || '-' }}
@@ -25,15 +25,15 @@
     <Card v-if="device.zone" class="mb-3">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-3">
-          <div class="w-12 h-12 rounded-lg border-2 border-sky-500/50 bg-sky-950/20 flex items-center justify-center">
+          <div class="w-12 h-12 rounded-lg border-2 border-[color:var(--border-strong)] bg-[color:var(--bg-elevated)] flex items-center justify-center">
             <span class="text-2xl">🌱</span>
           </div>
           <div>
-            <div class="text-sm font-semibold text-neutral-200">Привязано к зоне</div>
-            <Link :href="`/zones/${device.zone.id}`" class="text-sky-400 hover:text-sky-300 hover:underline text-sm">
+            <div class="text-sm font-semibold text-[color:var(--text-primary)]">Привязано к зоне</div>
+            <Link :href="`/zones/${device.zone.id}`" class="text-[color:var(--accent-cyan)] hover:underline text-sm">
               {{ device.zone.name }}
             </Link>
-            <div v-if="device.zone.status" class="text-xs text-neutral-400 mt-1">
+            <div v-if="device.zone.status" class="text-xs text-[color:var(--text-muted)] mt-1">
               Статус: {{ device.zone.status }}
             </div>
           </div>
@@ -47,7 +47,7 @@
           <button 
             @click="detachNode"
             :disabled="detaching"
-            class="inline-flex items-center justify-center rounded-md font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-red-600/50 h-8 px-3 text-xs bg-red-900/50 hover:bg-red-800/50 text-red-200 border border-red-700/50 hover:border-red-600/50 disabled:opacity-50 disabled:cursor-not-allowed"
+            class="inline-flex items-center justify-center rounded-md font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-[color:var(--accent-red)]/50 h-8 px-3 text-xs bg-[color:var(--badge-danger-bg)] text-[color:var(--badge-danger-text)] border border-[color:var(--badge-danger-border)] hover:border-[color:var(--accent-red)] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <svg v-if="!detaching" class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -58,8 +58,8 @@
         </div>
       </div>
     </Card>
-    <Card v-else class="mb-3 border-amber-500/30 bg-amber-950/10">
-      <div class="flex items-center gap-2 text-amber-400">
+    <Card v-else class="mb-3 border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)]">
+      <div class="flex items-center gap-2 text-[color:var(--badge-warning-text)]">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
         </svg>
@@ -78,7 +78,7 @@
           @time-range-change="onChartTimeRangeChange"
         />
       </template>
-      <Card v-if="sensorChannels.length > 0 && !hasChartData" class="text-center text-sm text-neutral-400 py-8">
+      <Card v-if="sensorChannels.length > 0 && !hasChartData" class="text-center text-sm text-[color:var(--text-dim)] py-8">
         <div>Загрузка данных телеметрии...</div>
       </Card>
     </div>
@@ -88,10 +88,10 @@
         <div class="flex items-center justify-between gap-2 mb-2">
           <div>
             <div class="text-sm font-semibold">Channels</div>
-            <div class="text-xs text-neutral-500">
+            <div class="text-xs text-[color:var(--text-dim)]">
               <span v-if="configLoading">Обновляем конфиг...</span>
               <span v-else>Текущий конфиг ноды</span>
-              <span v-if="configError" class="text-amber-400 ml-2">{{ configError }}</span>
+              <span v-if="configError" class="text-[color:var(--accent-amber)] ml-2">{{ configError }}</span>
             </div>
           </div>
           <div class="flex items-center gap-2">
@@ -113,9 +113,9 @@
       <Card>
         <div class="flex items-center justify-between mb-2">
           <div class="text-sm font-semibold">NodeConfig</div>
-          <div class="text-[11px] text-neutral-500" v-if="configLoading">Загрузка...</div>
+          <div class="text-[11px] text-[color:var(--text-dim)]" v-if="configLoading">Загрузка...</div>
         </div>
-        <pre class="text-xs text-neutral-300 overflow-auto">{{ nodeConfig }}</pre>
+        <pre class="text-xs text-[color:var(--text-muted)] overflow-auto">{{ nodeConfig }}</pre>
       </Card>
     </div>
 
@@ -125,6 +125,17 @@
       :initial-channels="wizardInitialChannels"
       @close="showConfigWizard = false"
       @published="onConfigPublished"
+    />
+
+    <ConfirmModal
+      :open="detachModalOpen"
+      title="Отвязать ноду"
+      message="Отвязать ноду от зоны? Нода будет сброшена в состояние «Зарегистрирована»."
+      confirm-text="Отвязать"
+      confirm-variant="danger"
+      :loading="detaching"
+      @close="detachModalOpen = false"
+      @confirm="confirmDetachNode"
     />
   </AppLayout>
 </template>
@@ -136,6 +147,7 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
+import ConfirmModal from '@/Components/ConfirmModal.vue'
 import NodeLifecycleBadge from '@/Components/NodeLifecycleBadge.vue'
 import DeviceChannelsTable from '@/Pages/Devices/DeviceChannelsTable.vue'
 import RelayConfigWizard from '@/Pages/Devices/RelayConfigWizard.vue'
@@ -163,6 +175,7 @@ const configLoading = ref(false)
 const configError = ref('')
 const showConfigWizard = ref(false)
 const detaching = ref(false)
+const detachModalOpen = ref(false)
 const { showToast } = useToast()
 const { api } = useApi(showToast)
 const devicesStore = useDevicesStore()
@@ -458,7 +471,12 @@ const detachNode = async (): Promise<void> => {
     return
   }
 
-  if (!confirm('Вы уверены, что хотите отвязать ноду от зоны? Нода будет сброшена в состояние "Зарегистрирована" и появится в списке новых нод.')) {
+  detachModalOpen.value = true
+}
+
+const confirmDetachNode = async (): Promise<void> => {
+  if (!device.value.zone_id) {
+    detachModalOpen.value = false
     return
   }
 
@@ -494,6 +512,7 @@ const detachNode = async (): Promise<void> => {
     logger.error('[Devices/Show] Failed to detach node:', err)
   } finally {
     detaching.value = false
+    detachModalOpen.value = false
   }
 }
 

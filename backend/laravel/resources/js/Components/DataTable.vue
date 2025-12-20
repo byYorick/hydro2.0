@@ -1,16 +1,16 @@
 <template>
-  <div class="rounded-xl border border-neutral-800 overflow-hidden">
+  <div class="rounded-xl border border-[color:var(--border-muted)] overflow-hidden">
     <table class="min-w-full text-sm">
-      <thead class="bg-neutral-900 text-neutral-300">
+      <thead class="bg-[color:var(--bg-surface-strong)] text-[color:var(--text-muted)]">
         <tr>
-          <th v-for="(h, i) in headers" :key="i" class="px-3 py-2 text-left font-medium border-b border-neutral-800">
+          <th v-for="(h, i) in headers" :key="i" class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">
             {{ h }}
           </th>
         </tr>
       </thead>
       <tbody>
-        <tr v-for="(row, ri) in paginatedRows" :key="ri" class="odd:bg-neutral-950 even:bg-neutral-925">
-          <td v-for="(cell, ci) in row" :key="ci" class="px-3 py-2 border-b border-neutral-900">
+        <tr v-for="(row, ri) in paginatedRows" :key="ri" class="odd:bg-[color:var(--bg-surface-strong)] even:bg-[color:var(--bg-surface)]">
+          <td v-for="(cell, ci) in row" :key="ci" class="px-3 py-2 border-b border-[color:var(--border-muted)]">
             <slot :name="`cell-${ci}`" :value="cell">{{ cell }}</slot>
           </td>
         </tr>
@@ -53,4 +53,3 @@ const paginatedRows = computed(() => {
   return props.rows.slice(start, end)
 })
 </script>
-

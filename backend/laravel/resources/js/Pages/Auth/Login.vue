@@ -62,14 +62,14 @@ const authErrorMessage = computed(() => {
     <GuestLayout>
         <Head title="Вход" />
 
-        <div v-if="status" class="mb-4 rounded-md bg-green-50 p-4 text-sm font-medium text-green-800 dark:bg-green-900/20 dark:text-green-400">
+        <div v-if="status" class="mb-4 rounded-md bg-[color:var(--badge-success-bg)] p-4 text-sm font-medium text-[color:var(--badge-success-text)] border border-[color:var(--badge-success-border)]">
             {{ status }}
         </div>
 
         <div 
             v-if="hasAuthError && authErrorMessage" 
             data-testid="login-error"
-            class="mb-4 rounded-md bg-red-50 p-4 text-sm font-medium text-red-800 dark:bg-red-900/20 dark:text-red-400"
+            class="mb-4 rounded-md bg-[color:var(--badge-danger-bg)] p-4 text-sm font-medium text-[color:var(--badge-danger-text)] border border-[color:var(--badge-danger-border)]"
         >
             {{ authErrorMessage }}
         </div>
@@ -85,7 +85,7 @@ const authErrorMessage = computed(() => {
                     :class="[
                         'mt-1 block w-full',
                         form.errors.email 
-                            ? 'border-red-500 focus:border-red-500 focus:ring-red-500' 
+                            ? 'border-[color:var(--accent-red)] focus:border-[color:var(--accent-red)] focus:ring-[color:var(--accent-red)]' 
                             : ''
                     ]"
                     v-model="form.email"
@@ -107,7 +107,7 @@ const authErrorMessage = computed(() => {
                     :class="[
                         'mt-1 block w-full',
                         form.errors.password 
-                            ? 'border-red-500 focus:border-red-500 focus:ring-red-500' 
+                            ? 'border-[color:var(--accent-red)] focus:border-[color:var(--accent-red)] focus:ring-[color:var(--accent-red)]' 
                             : ''
                     ]"
                     v-model="form.password"
@@ -121,7 +121,7 @@ const authErrorMessage = computed(() => {
             <div class="mt-4 block">
                 <label class="flex items-center">
                     <Checkbox name="remember" v-model:checked="form.remember" />
-                    <span class="ms-2 text-sm text-gray-600"
+                    <span class="ms-2 text-sm text-[color:var(--text-muted)]"
                         >Запомнить меня</span
                     >
                 </label>
@@ -130,7 +130,7 @@ const authErrorMessage = computed(() => {
             <div class="mt-4 flex items-center justify-between">
                 <Link
                     :href="route('register')"
-                    class="rounded-md text-sm text-gray-600 underline hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                    class="rounded-md text-sm text-[color:var(--text-muted)] underline hover:text-[color:var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[color:var(--focus-ring)] focus:ring-offset-2"
                 >
                     Нет аккаунта? Зарегистрироваться
                 </Link>
@@ -139,7 +139,7 @@ const authErrorMessage = computed(() => {
                     <Link
                         v-if="canResetPassword"
                         :href="route('password.request')"
-                        class="rounded-md text-sm text-gray-600 underline hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                        class="rounded-md text-sm text-[color:var(--text-muted)] underline hover:text-[color:var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[color:var(--focus-ring)] focus:ring-offset-2"
                     >
                         Забыли пароль?
                     </Link>

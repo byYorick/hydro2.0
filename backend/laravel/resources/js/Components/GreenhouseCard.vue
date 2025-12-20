@@ -1,5 +1,5 @@
 <template>
-  <Card class="bg-gradient-to-br from-neutral-900 to-neutral-925">
+  <Card class="bg-[color:var(--bg-surface-strong)]">
     <div class="space-y-6">
       <!-- Заголовок -->
       <div class="flex items-start justify-between">
@@ -10,7 +10,7 @@
               {{ greenhouse.type }}
             </Badge>
           </div>
-          <p v-if="greenhouse.description" class="text-sm text-neutral-400">
+          <p v-if="greenhouse.description" class="text-sm text-[color:var(--text-muted)]">
             {{ greenhouse.description }}
           </p>
         </div>
@@ -18,21 +18,21 @@
 
       <!-- Метрики теплицы -->
       <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div class="bg-neutral-800/50 rounded-lg p-3">
-          <div class="text-xs text-neutral-400 mb-1">Зоны</div>
-          <div class="text-2xl font-bold text-neutral-100">{{ zones.length }}</div>
+        <div class="bg-[color:var(--bg-elevated)] rounded-lg p-3">
+          <div class="text-xs text-[color:var(--text-muted)] mb-1">Зоны</div>
+          <div class="text-2xl font-bold text-[color:var(--text-primary)]">{{ zones.length }}</div>
         </div>
-        <div class="bg-neutral-800/50 rounded-lg p-3">
-          <div class="text-xs text-neutral-400 mb-1">Активные циклы</div>
-          <div class="text-2xl font-bold text-emerald-400">{{ activeCyclesCount }}</div>
+        <div class="bg-[color:var(--bg-elevated)] rounded-lg p-3">
+          <div class="text-xs text-[color:var(--text-muted)] mb-1">Активные циклы</div>
+          <div class="text-2xl font-bold text-[color:var(--accent-green)]">{{ activeCyclesCount }}</div>
         </div>
-        <div class="bg-neutral-800/50 rounded-lg p-3">
-          <div class="text-xs text-neutral-400 mb-1">Узлы онлайн</div>
-          <div class="text-2xl font-bold text-sky-400">{{ nodesOnlineTotal }}</div>
+        <div class="bg-[color:var(--bg-elevated)] rounded-lg p-3">
+          <div class="text-xs text-[color:var(--text-muted)] mb-1">Узлы онлайн</div>
+          <div class="text-2xl font-bold text-[color:var(--accent-cyan)]">{{ nodesOnlineTotal }}</div>
         </div>
-        <div class="bg-neutral-800/50 rounded-lg p-3">
-          <div class="text-xs text-neutral-400 mb-1">Алерты</div>
-          <div class="text-2xl font-bold" :class="alertsTotal > 0 ? 'text-red-400' : 'text-neutral-400'">
+        <div class="bg-[color:var(--bg-elevated)] rounded-lg p-3">
+          <div class="text-xs text-[color:var(--text-muted)] mb-1">Алерты</div>
+          <div class="text-2xl font-bold" :class="alertsTotal > 0 ? 'text-[color:var(--accent-red)]' : 'text-[color:var(--text-dim)]'">
             {{ alertsTotal }}
           </div>
         </div>
@@ -41,8 +41,8 @@
       <!-- Зоны -->
       <div class="space-y-3">
         <div class="flex items-center justify-between">
-          <h3 class="text-sm font-semibold text-neutral-200">Зоны</h3>
-          <span class="text-xs text-neutral-400">{{ zones.length }} зон</span>
+          <h3 class="text-sm font-semibold text-[color:var(--text-primary)]">Зоны</h3>
+          <span class="text-xs text-[color:var(--text-muted)]">{{ zones.length }} зон</span>
         </div>
         
         <div v-if="zones.length > 0" class="grid gap-3 md:grid-cols-2">
@@ -52,7 +52,7 @@
             :zone="zone"
           />
         </div>
-        <div v-else class="text-sm text-neutral-400 py-8 text-center">
+        <div v-else class="text-sm text-[color:var(--text-muted)] py-8 text-center">
           Нет зон в этой теплице
         </div>
       </div>

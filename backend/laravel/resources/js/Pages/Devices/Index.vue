@@ -13,8 +13,8 @@
     </div>
     <div class="mb-3 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
       <div class="flex items-center gap-2 flex-1 sm:flex-none">
-        <label class="text-sm text-neutral-300 shrink-0">Тип:</label>
-        <select v-model="type" class="h-9 flex-1 sm:w-auto sm:min-w-[140px] rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm">
+        <label class="text-sm text-[color:var(--text-muted)] shrink-0">Тип:</label>
+        <select v-model="type" class="input-select flex-1 sm:w-auto sm:min-w-[140px]">
           <option value="">Все</option>
           <option value="sensor">Датчик</option>
           <option value="actuator">Актуатор</option>
@@ -22,20 +22,20 @@
         </select>
       </div>
       <div class="flex items-center gap-2 flex-1 sm:flex-none">
-        <label class="text-sm text-neutral-300 shrink-0">Поиск:</label>
-        <input v-model="query" placeholder="ID устройства..." class="h-9 flex-1 sm:w-56 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
+        <label class="text-sm text-[color:var(--text-muted)] shrink-0">Поиск:</label>
+        <input v-model="query" placeholder="ID устройства..." class="input-field flex-1 sm:w-56" />
       </div>
       <div class="flex items-center gap-2 flex-1 sm:flex-none">
         <button
           @click="showOnlyFavorites = !showOnlyFavorites"
-          class="h-9 px-3 rounded-md border text-sm transition-colors flex items-center gap-1.5"
+          class="h-9 px-3 rounded-md border text-sm transition-colors flex items-center gap-1.5 bg-[color:var(--bg-elevated)]"
           :class="showOnlyFavorites
-            ? 'border-amber-500 bg-amber-950/30 text-amber-300'
-            : 'border-neutral-700 bg-neutral-900 text-neutral-300 hover:border-neutral-600'"
+            ? 'border-[color:var(--badge-warning-border)] text-[color:var(--accent-amber)]'
+            : 'border-[color:var(--border-muted)] text-[color:var(--text-muted)] hover:border-[color:var(--border-strong)]'"
         >
           <svg
             class="w-4 h-4"
-            :class="showOnlyFavorites ? 'fill-amber-400' : ''"
+            :class="showOnlyFavorites ? 'fill-[color:var(--accent-amber)]' : ''"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -51,42 +51,42 @@
         </button>
       </div>
     </div>
-    <div class="rounded-xl border border-neutral-800 overflow-hidden max-h-[720px] flex flex-col">
+    <div class="rounded-xl border border-[color:var(--border-muted)] overflow-hidden max-h-[720px] flex flex-col">
       <div class="overflow-auto flex-1">
         <table class="w-full border-collapse">
-          <thead class="bg-neutral-900 text-neutral-300 text-sm sticky top-0 z-10">
+          <thead class="bg-[color:var(--bg-surface-strong)] text-[color:var(--text-muted)] text-sm sticky top-0 z-10">
             <tr>
-              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">
+              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">
                 <div class="flex items-center gap-2">
                   <div class="w-5"></div>
                   <span>UID</span>
                 </div>
               </th>
-              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Зона</th>
-              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Имя</th>
-              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Тип</th>
-              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Статус</th>
-              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Версия ПО</th>
-              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Последний раз видели</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Зона</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Имя</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Тип</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Статус</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Версия ПО</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Последний раз видели</th>
             </tr>
           </thead>
           <tbody>
             <tr
               v-for="(r, index) in rows"
               :key="r[0]"
-              :class="index % 2 === 0 ? 'bg-neutral-950' : 'bg-neutral-925'"
-              class="text-sm border-b border-neutral-900 hover:bg-neutral-900 transition-colors"
+              :class="index % 2 === 0 ? 'bg-[color:var(--bg-surface-strong)]' : 'bg-[color:var(--bg-surface)]'"
+              class="text-sm border-b border-[color:var(--border-muted)] hover:bg-[color:var(--bg-surface-strong)] transition-colors"
             >
               <td class="px-3 py-2">
                 <div class="flex items-center gap-2 min-w-0">
                   <button
                     @click.stop="toggleDeviceFavorite(getDeviceIdFromRow(r))"
-                    class="p-0.5 rounded hover:bg-neutral-800 transition-colors shrink-0 w-5 h-5 flex items-center justify-center"
+                    class="p-0.5 rounded hover:bg-[color:var(--bg-surface-strong)] transition-colors shrink-0 w-5 h-5 flex items-center justify-center"
                     :title="isDeviceFavorite(getDeviceIdFromRow(r)) ? 'Удалить из избранного' : 'Добавить в избранное'"
                   >
                     <svg
                       class="w-3.5 h-3.5 transition-colors"
-                      :class="isDeviceFavorite(getDeviceIdFromRow(r)) ? 'text-amber-400 fill-amber-400' : 'text-neutral-600'"
+                      :class="isDeviceFavorite(getDeviceIdFromRow(r)) ? 'text-[color:var(--accent-amber)] fill-[color:var(--accent-amber)]' : 'text-[color:var(--text-dim)]'"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -99,22 +99,22 @@
                       />
                     </svg>
                   </button>
-                  <Link :href="`/devices/${r[0]}`" class="text-sky-400 hover:underline truncate min-w-0">{{ r[0] }}</Link>
+                  <Link :href="`/devices/${r[0]}`" class="text-[color:var(--accent-cyan)] hover:underline truncate min-w-0">{{ r[0] }}</Link>
                 </div>
               </td>
-              <td class="px-3 py-2 text-xs text-neutral-400">
+              <td class="px-3 py-2 text-xs text-[color:var(--text-dim)]">
                 <span class="truncate block">{{ r[1] || '-' }}</span>
               </td>
-              <td class="px-3 py-2 text-xs text-neutral-400">
+              <td class="px-3 py-2 text-xs text-[color:var(--text-dim)]">
                 <span class="truncate block">{{ r[2] || '-' }}</span>
               </td>
-              <td class="px-3 py-2 text-xs text-neutral-400">{{ r[3] || '-' }}</td>
-              <td class="px-3 py-2 text-xs text-neutral-400">{{ r[4] || '-' }}</td>
-              <td class="px-3 py-2 text-xs text-neutral-400">{{ r[5] || '-' }}</td>
-              <td class="px-3 py-2 text-xs text-neutral-400">{{ r[6] || '-' }}</td>
+              <td class="px-3 py-2 text-xs text-[color:var(--text-dim)]">{{ r[3] || '-' }}</td>
+              <td class="px-3 py-2 text-xs text-[color:var(--text-dim)]">{{ r[4] || '-' }}</td>
+              <td class="px-3 py-2 text-xs text-[color:var(--text-dim)]">{{ r[5] || '-' }}</td>
+              <td class="px-3 py-2 text-xs text-[color:var(--text-dim)]">{{ r[6] || '-' }}</td>
             </tr>
             <tr v-if="!rows.length">
-              <td colspan="7" class="px-3 py-6 text-sm text-neutral-400 text-center">Нет устройств по текущим фильтрам</td>
+              <td colspan="7" class="px-3 py-6 text-sm text-[color:var(--text-dim)] text-center">Нет устройств по текущим фильтрам</td>
             </tr>
           </tbody>
         </table>
@@ -370,4 +370,3 @@ td:last-child {
   min-width: 180px;
 }
 </style>
-

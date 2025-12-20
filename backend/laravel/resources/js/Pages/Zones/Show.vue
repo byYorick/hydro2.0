@@ -1,20 +1,20 @@
 <template>
   <AppLayout>
     <div class="space-y-4">
-      <div class="glass-panel border border-slate-800/60 rounded-2xl p-5 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
+      <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-5 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
         <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div class="flex-1 min-w-0">
-            <p class="text-[11px] uppercase tracking-[0.28em] text-slate-400">зона выращивания</p>
+            <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">зона выращивания</p>
             <div class="flex items-center gap-3 mt-1">
               <div class="text-2xl font-semibold truncate">{{ zone.name }}</div>
               <Badge :variant="variant" class="shrink-0" data-testid="zone-status-badge">{{ translateStatus(zone.status) }}</Badge>
             </div>
-            <div class="text-sm text-slate-400 mt-1 space-y-1">
+            <div class="text-sm text-[color:var(--text-dim)] mt-1 space-y-1">
               <div v-if="zone.description" class="truncate">{{ zone.description }}</div>
               <div v-if="zone.recipeInstance?.recipe" class="flex items-center gap-2 text-xs uppercase tracking-[0.12em]">
-                <span class="text-slate-500">Рецепт</span>
-                <span class="text-cyan-200 font-semibold">{{ zone.recipeInstance.recipe.name }}</span>
-                <span v-if="zone.recipeInstance.current_phase_index !== null" class="text-slate-400">фаза {{ zone.recipeInstance.current_phase_index + 1 }}</span>
+                <span class="text-[color:var(--text-dim)]">Рецепт</span>
+                <span class="text-[color:var(--accent-cyan)] font-semibold">{{ zone.recipeInstance.recipe.name }}</span>
+                <span v-if="zone.recipeInstance.current_phase_index !== null" class="text-[color:var(--text-dim)]">фаза {{ zone.recipeInstance.current_phase_index + 1 }}</span>
               </div>
             </div>
           </div>
@@ -52,12 +52,12 @@
 
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div class="lg:col-span-2 space-y-4">
-          <div class="glass-panel border border-slate-800/60 rounded-2xl p-4 shadow-[0_15px_45px_rgba(0,0,0,0.35)]">
+          <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4 shadow-[0_15px_45px_rgba(0,0,0,0.35)]">
             <ZoneTargets :telemetry="telemetry" :targets="targets" />
           </div>
           <div
             v-if="zone.recipeInstance"
-            class="glass-panel border border-slate-800/60 rounded-2xl p-4 shadow-[0_15px_45px_rgba(0,0,0,0.35)]"
+            class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4 shadow-[0_15px_45px_rgba(0,0,0,0.35)]"
           >
             <StageProgress
               :recipe-instance="zone.recipeInstance"
@@ -67,7 +67,7 @@
               :started-at="zone.recipeInstance.started_at"
             />
           </div>
-          <div class="glass-panel border border-slate-800/60 rounded-2xl p-4 shadow-[0_15px_45px_rgba(0,0,0,0.35)] space-y-3">
+          <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4 shadow-[0_15px_45px_rgba(0,0,0,0.35)] space-y-3">
             <!-- Мульти-серии график pH + EC -->
             <MultiSeriesTelemetryChart
               v-if="chartDataPh.length > 0 || chartDataEc.length > 0"
@@ -96,7 +96,7 @@
           </div>
         </div>
         <div class="space-y-4">
-          <div class="glass-panel border border-slate-800/60 rounded-2xl p-4 shadow-[0_15px_45px_rgba(0,0,0,0.35)]">
+          <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4 shadow-[0_15px_45px_rgba(0,0,0,0.35)]">
             <ZoneDevicesVisualization
               :zone-name="zone.name"
               :zone-status="zone.status"
@@ -106,7 +106,7 @@
               @configure="(device) => openNodeConfig(device.id, device)"
             />
           </div>
-          <div class="glass-panel border border-slate-800/60 rounded-2xl p-4 shadow-[0_15px_45px_rgba(0,0,0,0.35)]">
+          <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4 shadow-[0_15px_45px_rgba(0,0,0,0.35)]">
             <UnassignedNodeErrorsWidget :zone-id="zone.id" :limit="5" />
           </div>
           <Card>
@@ -123,9 +123,9 @@
                 </Button>
               </template>
             </div>
-            <div v-if="zone.recipeInstance?.recipe" class="text-sm text-neutral-300">
+            <div v-if="zone.recipeInstance?.recipe" class="text-sm text-[color:var(--text-muted)]">
               <div class="font-semibold">{{ zone.recipeInstance.recipe.name }}</div>
-              <div class="text-xs text-neutral-400">
+              <div class="text-xs text-[color:var(--text-dim)]">
                 Фаза {{ (zone.recipeInstance.current_phase_index || 0) + 1 }} из {{ zone.recipeInstance.recipe.phases?.length || 0 }}
                 <span v-if="zone.recipeInstance.current_phase_name">
                   — {{ zone.recipeInstance.current_phase_name }}
@@ -135,23 +135,23 @@
                 <Badge :variant="cycleStatusVariant" class="text-[10px] px-2 py-0.5">
                   {{ cycleStatusLabel }}
                 </Badge>
-                <span v-if="phaseTimeLeftLabel" class="text-[11px] text-neutral-400">
+                <span v-if="phaseTimeLeftLabel" class="text-[11px] text-[color:var(--text-dim)]">
                   {{ phaseTimeLeftLabel }}
                 </span>
               </div>
             </div>
             <div v-else class="space-y-2">
-              <div class="text-sm text-neutral-400">
+              <div class="text-sm text-[color:var(--text-dim)]">
                 Рецепт не привязан
                 <span
                   v-if="zone.recipeInstance && !zone.recipeInstance.recipe"
-                  class="text-amber-400 text-xs block mt-1"
+                  class="text-[color:var(--accent-amber)] text-xs block mt-1"
                 >
                   Данные рецепта пока не загружены. Обновите страницу или привяжите рецепт заново.
                 </span>
               </div>
               <template v-if="page.props.auth?.user?.role === 'admin' || page.props.auth?.user?.role === 'operator'">
-                <div class="text-xs text-neutral-500">
+                <div class="text-xs text-[color:var(--text-dim)]">
                   Привяжите рецепт для автоматического управления фазами выращивания
                 </div>
               </template>
@@ -164,19 +164,19 @@
       <Card>
         <div class="text-sm font-semibold mb-3">Циклы</div>
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
-          <div v-for="cycle in cyclesList" :key="cycle.type" class="text-xs text-neutral-400 p-3 rounded border border-neutral-800 bg-neutral-925 hover:border-neutral-700 transition-colors">
-            <div class="font-semibold text-sm mb-1 text-neutral-200 flex items-center justify-between gap-2">
+          <div v-for="cycle in cyclesList" :key="cycle.type" class="text-xs text-[color:var(--text-dim)] p-3 rounded border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] hover:border-[color:var(--border-strong)] transition-colors">
+            <div class="font-semibold text-sm mb-1 text-[color:var(--text-primary)] flex items-center justify-between gap-2">
               <span>{{ translateCycleType(cycle.type) }}</span>
               <span
                 class="px-1.5 py-0.5 rounded-full text-[10px]"
-                :class="cycle.required ? 'bg-emerald-900/40 text-emerald-300' : 'bg-neutral-800 text-neutral-400'"
+                :class="cycle.required ? 'bg-[color:var(--badge-success-bg)] text-[color:var(--badge-success-text)]' : 'bg-[color:var(--bg-elevated)] text-[color:var(--text-dim)]'"
               >
                 {{ cycle.required ? 'Обязательно' : 'Опционально' }}
               </span>
             </div>
 
             <!-- Таргеты текущей фазы (baseline рецепта) -->
-            <div class="text-[11px] mb-2 space-y-0.5 text-neutral-300">
+            <div class="text-[11px] mb-2 space-y-0.5 text-[color:var(--text-muted)]">
               <div v-if="cycle.recipeTargets && cycle.type === 'PH_CONTROL' && typeof cycle.recipeTargets.min === 'number' && typeof cycle.recipeTargets.max === 'number'">
                 pH: {{ cycle.recipeTargets.min }}–{{ cycle.recipeTargets.max }}
               </div>
@@ -192,7 +192,7 @@
               <div v-else-if="cycle.recipeTargets && cycle.type === 'IRRIGATION' && typeof cycle.recipeTargets.interval_minutes === 'number' && typeof cycle.recipeTargets.duration_seconds === 'number'">
                 Полив: каждые {{ cycle.recipeTargets.interval_minutes }} мин, {{ cycle.recipeTargets.duration_seconds }} с
               </div>
-              <div v-else class="text-neutral-500">
+              <div v-else class="text-[color:var(--text-dim)]">
                 Таргеты для этой фазы не заданы
               </div>
             </div>
@@ -202,34 +202,34 @@
             
             <!-- Последний запуск с индикатором -->
             <div class="mb-2">
-              <div class="text-xs text-neutral-500 mb-1">Последний запуск:</div>
+              <div class="text-xs text-[color:var(--text-dim)] mb-1">Последний запуск:</div>
               <div class="flex items-center gap-2">
-                <div v-if="cycle.last_run" class="w-2 h-2 rounded-full bg-emerald-400"></div>
-                <div v-else class="w-2 h-2 rounded-full bg-neutral-600"></div>
-                <span class="text-xs text-neutral-300">{{ formatTimeShort(cycle.last_run) }}</span>
+                <div v-if="cycle.last_run" class="w-2 h-2 rounded-full bg-[color:var(--accent-green)]"></div>
+                <div v-else class="w-2 h-2 rounded-full bg-[color:var(--text-dim)]"></div>
+                <span class="text-xs text-[color:var(--text-muted)]">{{ formatTimeShort(cycle.last_run) }}</span>
               </div>
             </div>
             
             <!-- Следующий запуск с прогресс-баром -->
             <div class="mb-2">
-              <div class="text-xs text-neutral-500 mb-1">Следующий запуск:</div>
+              <div class="text-xs text-[color:var(--text-dim)] mb-1">Следующий запуск:</div>
               <div v-if="cycle.next_run" class="space-y-1">
                 <div class="flex items-center gap-2">
-                  <div class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></div>
-                  <span class="text-xs text-neutral-300">{{ formatTimeShort(cycle.next_run) }}</span>
+                  <div class="w-2 h-2 rounded-full bg-[color:var(--accent-amber)] animate-pulse"></div>
+                  <span class="text-xs text-[color:var(--text-muted)]">{{ formatTimeShort(cycle.next_run) }}</span>
                 </div>
                 <!-- Прогресс-бар до следующего запуска -->
-                <div v-if="cycle.last_run && cycle.interval" class="w-full h-1.5 bg-neutral-800 rounded-full overflow-hidden">
+                <div v-if="cycle.last_run && cycle.interval" class="w-full h-1.5 bg-[color:var(--border-muted)] rounded-full overflow-hidden">
                   <div 
-                    class="h-full bg-amber-400 transition-all duration-300"
+                    class="h-full bg-[color:var(--accent-amber)] transition-all duration-300"
                     :style="{ width: `${getProgressToNextRun(cycle)}%` }"
                   ></div>
                 </div>
-                <div v-if="cycle.last_run && cycle.interval" class="text-xs text-neutral-500">
+                <div v-if="cycle.last_run && cycle.interval" class="text-xs text-[color:var(--text-dim)]">
                   {{ getTimeUntilNextRun(cycle) }}
                 </div>
               </div>
-              <div v-else class="text-xs text-neutral-500">Не запланирован</div>
+              <div v-else class="text-xs text-[color:var(--text-dim)]">Не запланирован</div>
             </div>
             
             <Button 
@@ -251,17 +251,17 @@
                 <div 
                   class="w-1.5 h-1.5 rounded-full"
                   :class="{
-                    'bg-amber-400 animate-pulse': ['QUEUED', 'SENT', 'ACCEPTED', 'pending', 'executing'].includes(getLastCommandStatus(cycle.type) || ''),
-                    'bg-emerald-400': ['DONE', 'completed', 'ack'].includes(getLastCommandStatus(cycle.type) || ''),
-                    'bg-red-400': ['FAILED', 'TIMEOUT', 'SEND_FAILED', 'failed'].includes(getLastCommandStatus(cycle.type) || '')
+                    'bg-[color:var(--accent-amber)] animate-pulse': ['QUEUED', 'SENT', 'ACCEPTED', 'pending', 'executing'].includes(getLastCommandStatus(cycle.type) || ''),
+                    'bg-[color:var(--accent-green)]': ['DONE', 'completed', 'ack'].includes(getLastCommandStatus(cycle.type) || ''),
+                    'bg-[color:var(--accent-red)]': ['FAILED', 'TIMEOUT', 'SEND_FAILED', 'failed'].includes(getLastCommandStatus(cycle.type) || '')
                   }"
                 ></div>
-                <span class="text-neutral-500">
+                <span class="text-[color:var(--text-dim)]">
                   {{ getCommandStatusText(getLastCommandStatus(cycle.type)) }}
                 </span>
               </div>
             </div>
-            <div v-if="activeCycle" class="mt-1 text-[11px] text-amber-400">
+            <div v-if="activeCycle" class="mt-1 text-[11px] text-[color:var(--accent-amber)]">
               Запуск нового цикла недоступен: в зоне уже выполняется цикл выращивания (правило «1 цикл на зону»).
             </div>
           </div>
@@ -295,7 +295,7 @@
             v-for="e in events"
             :key="e.id"
             :data-testid="`zone-event-item-${e.id}`"
-            class="text-sm text-neutral-300 flex items-start gap-2 py-1 border-b border-neutral-800 last:border-0"
+            class="text-sm text-[color:var(--text-muted)] flex items-start gap-2 py-1 border-b border-[color:var(--border-muted)] last:border-0"
           >
             <Badge
               :variant="
@@ -308,14 +308,14 @@
               {{ translateEventKind(e.kind) }}
             </Badge>
             <div class="flex-1 min-w-0">
-              <div class="text-xs text-neutral-400">
+              <div class="text-xs text-[color:var(--text-dim)]">
                 {{ new Date(e.occurred_at).toLocaleString('ru-RU') }}
               </div>
               <div class="text-sm">{{ e.message }}</div>
             </div>
           </div>
         </div>
-        <div v-else class="text-sm text-neutral-400">Нет событий</div>
+        <div v-else class="text-sm text-[color:var(--text-dim)]">Нет событий</div>
       </Card>
     </div>
     
@@ -376,11 +376,85 @@
       @close="modals.close('growthCycle')"
       @submit="onGrowthCycleSubmit"
     />
+
+    <ConfirmModal
+      :open="harvestModal.open"
+      title="Зафиксировать сбор"
+      message=" "
+      confirm-text="Подтвердить"
+      :loading="loading.cycleHarvest"
+      @close="closeHarvestModal"
+      @confirm="confirmHarvest"
+    >
+      <div class="space-y-3 text-sm text-[color:var(--text-muted)]">
+        <div>Зафиксировать сбор урожая и завершить цикл?</div>
+        <div>
+          <label class="text-xs text-[color:var(--text-dim)]">Метка партии (опционально)</label>
+          <input v-model="harvestModal.batchLabel" class="input-field mt-1 w-full" placeholder="Например: Batch-042" />
+        </div>
+      </div>
+    </ConfirmModal>
+
+    <ConfirmModal
+      :open="abortModal.open"
+      title="Аварийная остановка"
+      message=" "
+      confirm-text="Остановить"
+      confirm-variant="danger"
+      :loading="loading.cycleAbort"
+      @close="closeAbortModal"
+      @confirm="confirmAbort"
+    >
+      <div class="space-y-3 text-sm text-[color:var(--text-muted)]">
+        <div>Остановить цикл? Это действие нельзя отменить.</div>
+        <div>
+          <label class="text-xs text-[color:var(--text-dim)]">Причина (опционально)</label>
+          <textarea v-model="abortModal.notes" class="input-field mt-1 w-full h-20 resize-none" placeholder="Короткое описание причины"></textarea>
+        </div>
+      </div>
+    </ConfirmModal>
+
+    <ConfirmModal
+      :open="changeRecipeModal.open"
+      title="Сменить рецепт"
+      message=" "
+      confirm-text="Подтвердить"
+      :confirm-disabled="!changeRecipeModal.recipeId"
+      :loading="loading.cycleChangeRecipe"
+      @close="closeChangeRecipeModal"
+      @confirm="confirmChangeRecipe"
+    >
+      <div class="space-y-3 text-sm text-[color:var(--text-muted)]">
+        <div>Введите ID нового рецепта и выберите режим.</div>
+        <div>
+          <label class="text-xs text-[color:var(--text-dim)]">ID рецепта</label>
+          <input v-model="changeRecipeModal.recipeId" class="input-field mt-1 w-full" placeholder="Например: 12" />
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button
+            type="button"
+            class="btn btn-outline h-9 px-3 text-xs"
+            :class="changeRecipeModal.action === 'rebase' ? 'border-[color:var(--accent-green)]' : ''"
+            @click="changeRecipeModal.action = 'rebase'"
+          >
+            Обновить текущий цикл
+          </button>
+          <button
+            type="button"
+            class="btn btn-outline h-9 px-3 text-xs"
+            :class="changeRecipeModal.action === 'new_cycle' ? 'border-[color:var(--accent-green)]' : ''"
+            @click="changeRecipeModal.action = 'new_cycle'"
+          >
+            Создать новый цикл
+          </button>
+        </div>
+      </div>
+    </ConfirmModal>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { Link, usePage, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
@@ -398,6 +472,7 @@ import GrowthCycleModal from '@/Components/GrowthCycleModal.vue'
 import AttachRecipeModal from '@/Components/AttachRecipeModal.vue'
 import AttachNodesModal from '@/Components/AttachNodesModal.vue'
 import NodeConfigModal from '@/Components/NodeConfigModal.vue'
+import ConfirmModal from '@/Components/ConfirmModal.vue'
 import AutomationEngine from '@/Components/AutomationEngine.vue'
 import CycleControlPanel from '@/Components/GrowCycle/CycleControlPanel.vue'
 import { translateStatus, translateEventKind, translateCycleType, translateStrategy } from '@/utils/i18n'
@@ -417,6 +492,7 @@ import { useOptimizedUpdates, useTelemetryBatch } from '@/composables/useOptimiz
 import { useToast } from '@/composables/useToast'
 import { useModal } from '@/composables/useModal'
 import { useLoading } from '@/composables/useLoading'
+import { useTheme } from '@/composables/useTheme'
 import { extractData } from '@/utils/apiHelpers'
 import { usePageProps } from '@/composables/usePageProps'
 import { DEBOUNCE_DELAY, ANIMATION_DELAY, TOAST_TIMEOUT } from '@/constants/timeouts'
@@ -931,13 +1007,30 @@ const chartDataPh = ref<Array<{ ts: number; value: number }>>([])
 const chartDataEc = ref<Array<{ ts: number; value: number }>>([])
 const showSeparateCharts = ref(false) // Опция для показа отдельных графиков
 
+const { theme } = useTheme()
+const resolveCssColor = (variable: string, fallback: string): string => {
+  if (typeof window === 'undefined') {
+    return fallback
+  }
+  const value = getComputedStyle(document.documentElement).getPropertyValue(variable).trim()
+  return value || fallback
+}
+
+const chartPalette = computed(() => {
+  theme.value
+  return {
+    ph: resolveCssColor('--accent-cyan', '#3b82f6'),
+    ec: resolveCssColor('--accent-green', '#10b981'),
+  }
+})
+
 // Мульти-серии данные для комбинированного графика
 const multiSeriesData = computed(() => {
   return [
     {
       name: 'ph',
       label: 'pH',
-      color: '#3b82f6', // blue-500
+      color: chartPalette.value.ph,
       data: chartDataPh.value,
       currentValue: telemetry.value.ph,
       yAxisIndex: 0,
@@ -945,7 +1038,7 @@ const multiSeriesData = computed(() => {
     {
       name: 'ec',
       label: 'EC',
-      color: '#10b981', // emerald-500
+      color: chartPalette.value.ec,
       data: chartDataEc.value,
       currentValue: telemetry.value.ec,
       yAxisIndex: 1, // Используем правую ось Y для EC
@@ -1668,20 +1761,55 @@ async function onCycleResume(): Promise<void> {
   }
 }
 
-async function onCycleHarvest(): Promise<void> {
-  if (!activeGrowCycle.value?.id) return
+const harvestModal = reactive<{ open: boolean; batchLabel: string }>({
+  open: false,
+  batchLabel: '',
+})
 
-  const batchLabel = prompt('Введите метку партии (опционально):')
-  if (batchLabel === null) return // Пользователь отменил
+const abortModal = reactive<{ open: boolean; notes: string }>({
+  open: false,
+  notes: '',
+})
+
+const changeRecipeModal = reactive<{ open: boolean; recipeId: string; action: 'new_cycle' | 'rebase' }>({
+  open: false,
+  recipeId: '',
+  action: 'rebase',
+})
+
+function closeHarvestModal() {
+  harvestModal.open = false
+  harvestModal.batchLabel = ''
+}
+
+function closeAbortModal() {
+  abortModal.open = false
+  abortModal.notes = ''
+}
+
+function closeChangeRecipeModal() {
+  changeRecipeModal.open = false
+  changeRecipeModal.recipeId = ''
+  changeRecipeModal.action = 'rebase'
+}
+
+function onCycleHarvest(): void {
+  if (!activeGrowCycle.value?.id) return
+  harvestModal.open = true
+}
+
+async function confirmHarvest(): Promise<void> {
+  if (!activeGrowCycle.value?.id) return
 
   setLoading('cycleHarvest', true)
   try {
     const response = await api.post(`/api/grow-cycles/${activeGrowCycle.value.id}/harvest`, {
-      batch_label: batchLabel || undefined,
+      batch_label: harvestModal.batchLabel || undefined,
     })
     if (response.data?.status === 'ok') {
       showToast('Урожай зафиксирован, цикл закрыт', 'success', TOAST_TIMEOUT.NORMAL)
       await reloadZone(zoneId.value, ['zone', 'active_grow_cycle'])
+      closeHarvestModal()
     }
   } catch (err) {
     logger.error('Failed to harvest cycle:', err)
@@ -1691,24 +1819,23 @@ async function onCycleHarvest(): Promise<void> {
   }
 }
 
-async function onCycleAbort(): Promise<void> {
+function onCycleAbort(): void {
   if (!activeGrowCycle.value?.id) return
+  abortModal.open = true
+}
 
-  if (!confirm('Вы уверены, что хотите аварийно остановить цикл? Это действие нельзя отменить.')) {
-    return
-  }
-
-  const notes = prompt('Введите причину остановки (опционально):')
-  if (notes === null) return // Пользователь отменил
+async function confirmAbort(): Promise<void> {
+  if (!activeGrowCycle.value?.id) return
 
   setLoading('cycleAbort', true)
   try {
     const response = await api.post(`/api/grow-cycles/${activeGrowCycle.value.id}/abort`, {
-      notes: notes || undefined,
+      notes: abortModal.notes || undefined,
     })
     if (response.data?.status === 'ok') {
       showToast('Цикл аварийно остановлен', 'success', TOAST_TIMEOUT.NORMAL)
       await reloadZone(zoneId.value, ['zone', 'active_grow_cycle'])
+      closeAbortModal()
     }
   } catch (err) {
     logger.error('Failed to abort cycle:', err)
@@ -1718,19 +1845,21 @@ async function onCycleAbort(): Promise<void> {
   }
 }
 
-async function onCycleChangeRecipe(): Promise<void> {
+function onCycleChangeRecipe(): void {
+  if (!zoneId.value) return
+  changeRecipeModal.open = true
+}
+
+async function confirmChangeRecipe(): Promise<void> {
   if (!zoneId.value) return
 
-  const recipeId = prompt('Введите ID нового рецепта:')
-  if (!recipeId) return
-
-  const recipeIdNum = parseInt(recipeId)
+  const recipeIdNum = parseInt(changeRecipeModal.recipeId)
   if (isNaN(recipeIdNum)) {
     showToast('Неверный ID рецепта', 'error', TOAST_TIMEOUT.NORMAL)
     return
   }
 
-  const action = confirm('Создать новый цикл? (Отмена = rebase текущего цикла)') ? 'new_cycle' : 'rebase'
+  const action = changeRecipeModal.action
 
   setLoading('cycleChangeRecipe', true)
   try {
@@ -1743,6 +1872,7 @@ async function onCycleChangeRecipe(): Promise<void> {
       showToast(`Рецепт ${actionText}`, 'success', TOAST_TIMEOUT.NORMAL)
       await reloadZone(zoneId.value, ['zone'])
       await loadCycleEvents()
+      closeChangeRecipeModal()
     }
   } catch (err) {
     logger.error('Failed to change recipe:', err)

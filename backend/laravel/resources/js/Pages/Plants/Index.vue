@@ -4,24 +4,24 @@
     <div class="space-y-4">
       <div class="flex items-center justify-between">
         <div>
-          <h1 class="text-lg font-semibold text-neutral-100">Растения</h1>
-          <p class="text-sm text-neutral-400">Управление культурами и их агропрофилями</p>
+          <h1 class="text-lg font-semibold text-[color:var(--text-primary)]">Растения</h1>
+          <p class="text-sm text-[color:var(--text-muted)]">Управление культурами и их агропрофилями</p>
         </div>
         <Button size="sm" variant="primary" @click="openCreateModal">
           Новое растение
         </Button>
       </div>
-      <div class="rounded-xl border border-neutral-800 overflow-hidden max-h-[720px] flex flex-col">
+      <div class="rounded-xl border border-[color:var(--border-muted)] overflow-hidden max-h-[720px] flex flex-col">
         <div class="overflow-auto flex-1">
           <table class="w-full border-collapse">
-              <thead class="bg-neutral-900 text-neutral-300 text-sm sticky top-0 z-10">
+              <thead class="bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)] text-sm sticky top-0 z-10">
                 <tr>
-                  <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Название</th>
-                  <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Вид / Сорт</th>
-                  <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Субстрат</th>
-                  <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Система</th>
-                  <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Фотопериод</th>
-                  <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Описание</th>
+                  <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Название</th>
+                  <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Вид / Сорт</th>
+                  <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Субстрат</th>
+                  <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Система</th>
+                  <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Фотопериод</th>
+                  <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Описание</th>
                 </tr>
               </thead>
             <tbody>
@@ -29,40 +29,40 @@
                 v-for="(plant, index) in plants"
                 :key="plant.id"
                 :class="[
-                  index % 2 === 0 ? 'bg-neutral-950' : 'bg-neutral-925',
-                  selectedPlantId === plant.id ? 'bg-sky-950/30 border-sky-600' : ''
+                  index % 2 === 0 ? 'bg-[color:var(--bg-surface-strong)]' : 'bg-[color:var(--bg-surface)]',
+                  selectedPlantId === plant.id ? 'bg-[color:var(--badge-info-bg)] border-[color:var(--badge-info-border)]' : ''
                 ]"
-                class="text-sm border-b border-neutral-900 hover:bg-neutral-900 transition-colors"
+                class="text-sm border-b border-[color:var(--border-muted)] hover:bg-[color:var(--bg-elevated)] transition-colors"
               >
                   <td class="px-3 py-2">
-                    <Link :href="`/plants/${plant.id}`" class="font-semibold text-sky-400 hover:underline">{{ plant.name }}</Link>
+                    <Link :href="`/plants/${plant.id}`" class="font-semibold text-[color:var(--accent-cyan)] hover:underline">{{ plant.name }}</Link>
                   </td>
-                <td class="px-3 py-2 text-xs text-neutral-400">
+                <td class="px-3 py-2 text-xs text-[color:var(--text-muted)]">
                   <div>
                     <span v-if="plant.species">{{ plant.species }}</span>
                     <span v-if="plant.variety"> · {{ plant.variety }}</span>
                     <span v-if="!plant.species && !plant.variety">—</span>
                   </div>
                 </td>
-                <td class="px-3 py-2 text-xs text-neutral-400">
+                <td class="px-3 py-2 text-xs text-[color:var(--text-muted)]">
                   <span v-if="plant.substrate_type">{{ taxonomyLabel('substrate_type', plant.substrate_type) }}</span>
                   <span v-else>—</span>
                 </td>
-                <td class="px-3 py-2 text-xs text-neutral-400">
+                <td class="px-3 py-2 text-xs text-[color:var(--text-muted)]">
                   <span v-if="plant.growing_system">{{ taxonomyLabel('growing_system', plant.growing_system) }}</span>
                   <span v-else>—</span>
                 </td>
-                <td class="px-3 py-2 text-xs text-neutral-400">
+                <td class="px-3 py-2 text-xs text-[color:var(--text-muted)]">
                   <span v-if="plant.photoperiod_preset">{{ taxonomyLabel('photoperiod_preset', plant.photoperiod_preset) }}</span>
                   <span v-else>—</span>
                 </td>
-                  <td class="px-3 py-2 text-xs text-neutral-400">
+                  <td class="px-3 py-2 text-xs text-[color:var(--text-muted)]">
                     <span v-if="plant.description" class="truncate block max-w-xs">{{ plant.description }}</span>
                     <span v-else>—</span>
                   </td>
               </tr>
                 <tr v-if="paginatedPlants.length === 0">
-                  <td colspan="6" class="px-3 py-6 text-sm text-neutral-400 text-center">
+                  <td colspan="6" class="px-3 py-6 text-sm text-[color:var(--text-dim)] text-center">
                     {{ props.plants.length === 0 ? 'Растения ещё не добавлены — создайте профиль, чтобы связать его с зонами и рецептами.' : 'Нет растений на текущей странице' }}
                   </td>
                 </tr>
@@ -140,9 +140,9 @@
               <textarea v-model="form.description" rows="4" class="form-input"></textarea>
             </div>
             <div class="space-y-2">
-              <p class="text-sm font-semibold text-neutral-200">Диапазоны</p>
+              <p class="text-sm font-semibold text-[color:var(--text-primary)]">Диапазоны</p>
               <div class="grid grid-cols-2 gap-2" v-for="metric in rangeMetrics" :key="metric.key">
-                <label class="text-xs text-neutral-400 col-span-2">{{ metric.label }}</label>
+                <label class="text-xs text-[color:var(--text-muted)] col-span-2">{{ metric.label }}</label>
                 <input
                   v-model="form.environment_requirements[metric.key].min"
                   type="number"
@@ -175,6 +175,17 @@
       @close="closeCreateModal"
       @created="onPlantCreated"
     />
+
+    <ConfirmModal
+      :open="deleteModal.open"
+      title="Удалить растение"
+      :message="deleteModal.plant ? `Удалить растение \"${deleteModal.plant.name}\"?` : 'Удалить растение?'"
+      confirm-text="Удалить"
+      confirm-variant="danger"
+      :loading="Boolean(deletingId)"
+      @close="deleteModal = { open: false, plant: null }"
+      @confirm="confirmDeletePlant"
+    />
   </AppLayout>
 </template>
 
@@ -188,6 +199,7 @@ import Badge from '@/Components/Badge.vue'
 import Modal from '@/Components/Modal.vue'
 import PlantCreateModal from '@/Components/PlantCreateModal.vue'
 import Pagination from '@/Components/Pagination.vue'
+import ConfirmModal from '@/Components/ConfirmModal.vue'
 import { useToast } from '@/composables/useToast'
 import { useSimpleModal } from '@/composables/useModal'
 
@@ -238,6 +250,7 @@ const { showToast } = useToast()
 const { isOpen: showCreateModal, open: openCreateModal, close: closeCreateModal } = useSimpleModal()
 const selectedPlantId = ref<number | null>(null)
 const deletingId = ref<number | null>(null)
+const deleteModal = ref<{ open: boolean; plant: PlantSummary | null }>({ open: false, plant: null })
 const currentPage = ref<number>(1)
 const perPage = ref<number>(25)
 
@@ -407,9 +420,12 @@ function onPlantCreated(plant: any): void {
 }
 
 function deletePlant(plant: PlantSummary): void {
-  if (!confirm(`Удалить растение "${plant.name}"?`)) {
-    return
-  }
+  deleteModal.value = { open: true, plant }
+}
+
+function confirmDeletePlant(): void {
+  const plant = deleteModal.value.plant
+  if (!plant) return
   deletingId.value = plant.id
   router.delete(`/plants/${plant.id}`, {
     onSuccess: () => showToast('Растение удалено', 'success'),
@@ -419,6 +435,7 @@ function deletePlant(plant: PlantSummary): void {
       if (selectedPlantId.value === plant.id) {
         resetForm()
       }
+      deleteModal.value = { open: false, plant: null }
     },
   })
 }
@@ -481,13 +498,34 @@ watch(selectedPlantId, () => {
 
 <style scoped>
 .form-label {
-  @apply text-xs text-neutral-400 block mb-1;
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 0.25rem;
 }
 .form-input {
-  @apply w-full h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm text-neutral-100 focus:border-sky-500 focus:outline-none;
+  width: 100%;
+  min-height: 2.6rem;
+  border-radius: 0.85rem;
+  border: 1px solid var(--border-muted);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  padding: 0.5rem 0.85rem;
+  font-size: 0.85rem;
+  transition: border 0.2s ease, box-shadow 0.2s ease;
+}
+.form-input:focus {
+  outline: none;
+  border-color: var(--accent-green);
+  box-shadow: 0 0 0 2px rgba(63, 220, 120, 0.18);
+}
+.form-input::placeholder {
+  color: var(--text-dim);
 }
 .form-error {
-  @apply text-xs text-red-400 mt-1;
+  font-size: 0.75rem;
+  color: var(--badge-danger-text);
+  margin-top: 0.25rem;
 }
 
 table {
@@ -528,4 +566,3 @@ td:nth-child(6) {
   max-width: 300px;
 }
 </style>
-

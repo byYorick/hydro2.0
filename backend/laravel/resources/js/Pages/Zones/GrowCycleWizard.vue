@@ -3,7 +3,7 @@
     <div class="max-w-4xl mx-auto" data-testid="grow-cycle-wizard">
       <div class="mb-6">
         <h1 class="text-2xl font-bold mb-2">Мастер запуска цикла выращивания</h1>
-        <p class="text-sm text-neutral-400">Пошаговая настройка цикла от посадки до сбора</p>
+        <p class="text-sm text-[color:var(--text-muted)]">Пошаговая настройка цикла от посадки до сбора</p>
       </div>
 
       <!-- Прогресс шагов -->
@@ -20,10 +20,10 @@
                 :class="[
                   'w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold',
                   currentStep > index
-                    ? 'bg-sky-600 text-white'
+                    ? 'bg-[color:var(--accent-green)] text-[color:var(--btn-primary-text)]'
                     : currentStep === index
-                    ? 'bg-sky-500 text-white ring-2 ring-sky-400'
-                    : 'bg-neutral-800 text-neutral-400'
+                    ? 'bg-[color:var(--accent-cyan)] text-[color:var(--btn-primary-text)] ring-2 ring-[color:var(--focus-ring)]'
+                    : 'bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)]'
                 ]"
               >
                 <span v-if="currentStep > index">✓</span>
@@ -32,7 +32,7 @@
               <span
                 :class="[
                   'ml-2 text-xs',
-                  currentStep >= index ? 'text-neutral-200' : 'text-neutral-500'
+                  currentStep >= index ? 'text-[color:var(--text-primary)]' : 'text-[color:var(--text-dim)]'
                 ]"
               >
                 {{ step.title }}
@@ -42,7 +42,7 @@
               v-if="index < steps.length - 1"
               :class="[
                 'flex-1 h-0.5 mx-2',
-                currentStep > index ? 'bg-sky-600' : 'bg-neutral-800'
+                currentStep > index ? 'bg-[color:var(--accent-cyan)]' : 'bg-[color:var(--border-muted)]'
               ]"
             />
           </div>
@@ -80,7 +80,7 @@
               <div v-if="greenhouseMode === 'select'" class="space-y-3">
                 <select
                   v-model="selectedGreenhouseId"
-                  class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+                  class="input-select w-full"
                   data-testid="select-greenhouse-dropdown"
                   @change="loadZonesForGreenhouse"
                 >
@@ -101,7 +101,7 @@
                   type="text"
                   placeholder="Название теплицы"
                   data-testid="new-greenhouse-name-input"
-                  class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+                  class="input-field w-full"
                 />
                 <Button size="sm" @click="createGreenhouse" :disabled="!newGreenhouse.name.trim() || loading.createGreenhouse" data-testid="create-greenhouse-button">
                   {{ loading.createGreenhouse ? 'Создание...' : 'Создать' }}
@@ -134,7 +134,7 @@
               <div v-if="zoneMode === 'select'" class="space-y-3">
                 <select
                   v-model="selectedZoneId"
-                  class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+                  class="input-select w-full"
                   data-testid="select-zone-dropdown"
                   @change="loadZoneData"
                 >
@@ -155,7 +155,7 @@
                   type="text"
                   placeholder="Название зоны"
                   data-testid="new-zone-name-input"
-                  class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+                  class="input-field w-full"
                 />
                 <Button size="sm" @click="createZone" :disabled="!newZone.name.trim() || loading.createZone" data-testid="create-zone-button">
                   {{ loading.createZone ? 'Создание...' : 'Создать' }}
@@ -178,7 +178,7 @@
         <div v-if="currentStep === 1" class="space-y-6">
           <div>
             <h2 class="text-lg font-semibold mb-4">Схема оборудования</h2>
-            <p class="text-sm text-neutral-400 mb-4">
+            <p class="text-sm text-[color:var(--text-muted)] mb-4">
               Укажите, какое оборудование установлено в зоне
             </p>
 
@@ -190,11 +190,11 @@
                 :class="
                   asset.required
                     ? selectedInfrastructure.includes(asset.type)
-                      ? 'border-sky-600 bg-sky-900/20'
-                      : 'border-red-600 bg-red-900/10'
+                      ? 'border-[color:var(--badge-success-border)] bg-[color:var(--badge-success-bg)]'
+                      : 'border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)]'
                     : selectedInfrastructure.includes(asset.type)
-                    ? 'border-sky-500 bg-sky-900/10'
-                    : 'border-neutral-700 bg-neutral-900'
+                    ? 'border-[color:var(--badge-info-border)] bg-[color:var(--badge-info-bg)]'
+                    : 'border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]'
                 "
               >
                 <label class="flex items-center cursor-pointer">
@@ -206,7 +206,7 @@
                   />
                   <div class="flex-1">
                     <div class="text-sm font-medium">{{ asset.label }}</div>
-                    <div v-if="asset.required" class="text-xs text-red-400 mt-1">Обязательно</div>
+                    <div v-if="asset.required" class="text-xs text-[color:var(--accent-red)] mt-1">Обязательно</div>
                   </div>
                 </label>
               </div>
@@ -228,7 +228,7 @@
         <div v-if="currentStep === 2" class="space-y-6">
           <div>
             <h2 class="text-lg font-semibold mb-4">Привязка каналов</h2>
-            <p class="text-sm text-neutral-400 mb-4">
+            <p class="text-sm text-[color:var(--text-muted)] mb-4">
               Выберите ноды и назначьте роли каналам
             </p>
 
@@ -236,12 +236,12 @@
               <div
                 v-for="node in zoneData.nodes"
                 :key="node.id"
-                class="p-4 rounded border border-neutral-700 bg-neutral-900"
+                class="p-4 rounded border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]"
               >
                 <div class="flex items-center justify-between mb-3">
                   <div>
                     <div class="font-medium">{{ node.name }} ({{ node.uid }})</div>
-                    <div class="text-xs text-neutral-400">{{ node.type }}</div>
+                    <div class="text-xs text-[color:var(--text-muted)]">{{ node.type }}</div>
                   </div>
                   <Badge
                     :variant="node.is_online ? 'success' : 'danger'"
@@ -260,7 +260,7 @@
                     <div class="flex-1 text-sm">{{ channel.channel }} ({{ channel.metric }})</div>
                     <select
                       v-model="channelBindings[channel.id]"
-                      class="h-8 rounded-md border px-2 text-xs border-neutral-700 bg-neutral-800"
+                      class="input-select h-8 text-xs"
                     >
                       <option :value="null">Не назначено</option>
                       <option
@@ -310,7 +310,7 @@
               <div v-if="plantMode === 'select'">
                 <select
                   v-model="selectedPlantId"
-                  class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+                  class="input-select w-full"
                   @change="onPlantSelected"
                 >
                   <option :value="null">Выберите растение</option>
@@ -330,40 +330,40 @@
               <h3 class="text-sm font-semibold">Партия</h3>
               <div class="grid grid-cols-2 gap-3">
                 <div>
-                  <label class="block text-xs text-neutral-400 mb-1">Количество</label>
+                  <label class="block text-xs text-[color:var(--text-muted)] mb-1">Количество</label>
                   <input
                     v-model.number="batch.quantity"
                     type="number"
                     placeholder="Количество растений"
-                    class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+                    class="input-field w-full"
                   />
                 </div>
                 <div>
-                  <label class="block text-xs text-neutral-400 mb-1">Плотность (шт/м²)</label>
+                  <label class="block text-xs text-[color:var(--text-muted)] mb-1">Плотность (шт/м²)</label>
                   <input
                     v-model.number="batch.density"
                     type="number"
                     step="0.1"
                     placeholder="Плотность"
-                    class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+                    class="input-field w-full"
                   />
                 </div>
                 <div>
-                  <label class="block text-xs text-neutral-400 mb-1">Субстрат</label>
+                  <label class="block text-xs text-[color:var(--text-muted)] mb-1">Субстрат</label>
                   <input
                     v-model="batch.substrate"
                     type="text"
                     placeholder="Тип субстрата"
-                    class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+                    class="input-field w-full"
                   />
                 </div>
                 <div>
-                  <label class="block text-xs text-neutral-400 mb-1">Система</label>
+                  <label class="block text-xs text-[color:var(--text-muted)] mb-1">Система</label>
                   <input
                     v-model="batch.system"
                     type="text"
                     placeholder="Система выращивания"
-                    class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+                    class="input-field w-full"
                   />
                 </div>
               </div>
@@ -390,7 +390,7 @@
               <label class="block text-sm font-medium mb-2">Выберите рецепт</label>
               <select
                 v-model="selectedRecipeId"
-                class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+                class="input-select w-full"
                 data-testid="select-recipe-dropdown"
                 @change="onRecipeSelected"
               >
@@ -413,11 +413,11 @@
                   v-for="(phase, index) in selectedRecipe.phases"
                   :key="phase.id"
                   :data-testid="`recipe-phase-item-${phase.id || index}`"
-                  class="p-2 rounded border border-neutral-700 bg-neutral-900 text-sm"
+                  class="p-2 rounded border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] text-sm"
                 >
                   <div class="flex justify-between">
                     <span>{{ phase.name }}</span>
-                    <span class="text-neutral-400">{{ phase.duration_hours }}ч</span>
+                    <span class="text-[color:var(--text-muted)]">{{ phase.duration_hours }}ч</span>
                   </div>
                 </div>
               </div>
@@ -447,7 +447,7 @@
                 <input
                   v-model="plantingDate"
                   type="datetime-local"
-                  class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+                  class="input-field w-full"
                 />
               </div>
 
@@ -456,9 +456,9 @@
                 <input
                   v-model="automationStartDate"
                   type="datetime-local"
-                  class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+                  class="input-field w-full"
                 />
-                <p class="text-xs text-neutral-400 mt-1">
+                <p class="text-xs text-[color:var(--text-muted)] mt-1">
                   Может совпадать с датой посадки или быть позже
                 </p>
               </div>
@@ -468,9 +468,9 @@
                 <input
                   v-model="estimatedHarvestDate"
                   type="datetime-local"
-                  class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+                  class="input-field w-full"
                 />
-                <p class="text-xs text-neutral-400 mt-1">
+                <p class="text-xs text-[color:var(--text-muted)] mt-1">
                   Автоматически рассчитано на основе длительности фаз рецепта
                 </p>
               </div>
@@ -504,7 +504,7 @@
                   <span
                     :class="[
                       'text-lg',
-                      check.passed ? 'text-green-400' : 'text-red-400'
+                      check.passed ? 'text-[color:var(--accent-green)]' : 'text-[color:var(--accent-red)]'
                     ]"
                   >
                     {{ check.passed ? '✓' : '✗' }}
@@ -514,7 +514,7 @@
               </div>
 
               <!-- Сводка -->
-              <div class="p-4 rounded border border-neutral-700 bg-neutral-900">
+              <div class="p-4 rounded border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
                 <h3 class="text-sm font-semibold mb-2">Сводка</h3>
                 <div class="space-y-1 text-sm">
                   <div>Зона: {{ selectedZone?.name }}</div>
@@ -890,4 +890,3 @@ watch(plantingDate, () => {
   }
 })
 </script>
-

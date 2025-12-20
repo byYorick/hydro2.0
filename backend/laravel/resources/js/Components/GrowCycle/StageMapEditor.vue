@@ -3,12 +3,12 @@
     <div class="space-y-4">
       <div>
         <h3 class="text-sm font-semibold mb-2">Маппинг фаз рецепта → стадии выращивания</h3>
-        <p class="text-xs text-neutral-400 mb-4">
+        <p class="text-xs text-[color:var(--text-muted)] mb-4">
           Настройте соответствие фаз рецепта стадиям выращивания растения
         </p>
       </div>
 
-      <div v-if="phases.length === 0" class="text-sm text-neutral-400">
+      <div v-if="phases.length === 0" class="text-sm text-[color:var(--text-muted)]">
         Нет фаз в рецепте
       </div>
 
@@ -16,23 +16,23 @@
         <div
           v-for="(phase, index) in phases"
           :key="phase.id || index"
-          class="p-3 rounded border border-neutral-700 bg-neutral-900"
+          class="p-3 rounded border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]"
         >
           <div class="flex items-center justify-between mb-2">
             <div>
               <div class="text-sm font-medium">{{ phase.name }}</div>
-              <div class="text-xs text-neutral-400">
+              <div class="text-xs text-[color:var(--text-muted)]">
                 Фаза {{ phase.phase_index }} • {{ phase.duration_hours }}ч
               </div>
             </div>
           </div>
 
           <div class="mt-2">
-            <label class="block text-xs text-neutral-400 mb-1">Стадия выращивания</label>
+            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Стадия выращивания</label>
             <select
               :value="getStageForPhase(phase.phase_index)"
               @change="updateStageMapping(phase.phase_index, $event.target.value)"
-              class="h-8 w-full rounded-md border px-2 text-xs border-neutral-700 bg-neutral-800"
+              class="input-select h-8 w-full text-xs"
             >
               <option
                 v-for="stage in availableStages"
@@ -171,4 +171,3 @@ defineExpose({
   getStageMap: () => stageMap.value,
 })
 </script>
-

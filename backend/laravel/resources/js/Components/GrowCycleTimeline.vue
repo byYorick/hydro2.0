@@ -1,17 +1,17 @@
 <template>
   <div class="space-y-3">
     <div class="flex items-center justify-between text-sm">
-      <span class="font-semibold text-neutral-200">Стадии цикла</span>
-      <span v-if="totalStages > 0" class="text-xs text-neutral-400">
+      <span class="font-semibold text-[color:var(--text-primary)]">Стадии цикла</span>
+      <span v-if="totalStages > 0" class="text-xs text-[color:var(--text-muted)]">
         {{ currentStageIndex + 1 }} / {{ totalStages }}
       </span>
     </div>
     
     <div class="relative">
       <!-- Линия прогресса -->
-      <div class="absolute top-6 left-0 right-0 h-0.5 bg-neutral-800"></div>
+      <div class="absolute top-6 left-0 right-0 h-0.5 bg-[color:var(--border-muted)]"></div>
       <div
-        class="absolute top-6 left-0 h-0.5 bg-gradient-to-r from-sky-500 to-emerald-500 transition-all duration-500"
+        class="absolute top-6 left-0 h-0.5 bg-[linear-gradient(90deg,var(--accent-cyan),var(--accent-green))] transition-all duration-500"
         :style="{ width: `${progressLineWidth}%` }"
       ></div>
       
@@ -43,7 +43,7 @@
             <!-- Дата (если есть) -->
             <div
               v-if="stageDates[index]"
-              class="text-[10px] text-neutral-500 mt-0.5"
+              class="text-[10px] text-[color:var(--text-dim)] mt-0.5"
             >
               {{ formatDate(stageDates[index]) }}
             </div>
@@ -93,12 +93,12 @@ function getStageCircleClass(stageId: GrowStage, index: number): string {
   const isFuture = index > currentIndex
   
   if (isCurrent) {
-    return 'bg-gradient-to-br from-sky-500 to-emerald-500 scale-110 shadow-lg shadow-sky-500/50'
+    return 'bg-[linear-gradient(135deg,var(--accent-cyan),var(--accent-green))] scale-110 shadow-[var(--shadow-card)] ring-1 ring-[color:var(--badge-info-border)]'
   }
   if (isPast) {
-    return 'bg-emerald-500'
+    return 'bg-[color:var(--accent-green)]'
   }
-  return 'bg-neutral-700 border-2 border-neutral-600'
+  return 'bg-[color:var(--bg-elevated)] border-2 border-[color:var(--border-strong)]'
 }
 
 function getStageCircleStyle(stageId: GrowStage, index: number): Record<string, string> {
@@ -124,12 +124,12 @@ function getStageLabelClass(stageId: GrowStage, index: number): string {
   const isPast = index < currentIndex
   
   if (isCurrent) {
-    return 'text-sky-400 font-semibold'
+    return 'text-[color:var(--accent-cyan)] font-semibold'
   }
   if (isPast) {
-    return 'text-emerald-400'
+    return 'text-[color:var(--accent-green)]'
   }
-  return 'text-neutral-400'
+  return 'text-[color:var(--text-muted)]'
 }
 
 function formatDate(date: string | null | undefined): string {

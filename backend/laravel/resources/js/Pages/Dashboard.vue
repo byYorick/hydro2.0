@@ -8,9 +8,9 @@ import { Head } from '@inertiajs/vue3'
 
   <AppLayout>
     <div class="max-w-4xl mx-auto space-y-4">
-      <div class="rounded-xl border border-neutral-800 bg-neutral-925 p-6">
-        <h2 class="text-lg font-semibold text-neutral-100 mb-2">Панель управления</h2>
-        <p class="text-sm text-neutral-400">
+      <div class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] p-6">
+        <h2 class="text-lg font-semibold text-[color:var(--text-primary)] mb-2">Панель управления</h2>
+        <p class="text-sm text-[color:var(--text-muted)]">
           Вы успешно вошли в систему. Используйте основное меню для перехода к роли-ориентированному дашборду.
         </p>
                     </div>

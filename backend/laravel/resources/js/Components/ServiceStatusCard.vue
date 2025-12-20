@@ -1,7 +1,7 @@
 <template>
   <div 
-    class="bg-neutral-900 rounded-lg p-3 border border-neutral-800 hover:border-neutral-700 transition-colors relative group"
-    :class="status === 'fail' || status === 'offline' || status === 'disconnected' ? 'border-red-500/50' : ''"
+    class="bg-[color:var(--bg-surface-strong)] rounded-lg p-3 border border-[color:var(--border-muted)] hover:border-[color:var(--border-strong)] transition-colors relative group"
+    :class="status === 'fail' || status === 'offline' || status === 'disconnected' ? 'border-[color:var(--badge-danger-border)]' : ''"
   >
     <div class="flex items-start justify-between gap-2">
       <div class="flex items-center gap-2 flex-1">
@@ -19,9 +19,9 @@
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2">
             <span class="text-sm">{{ icon }}</span>
-            <span class="text-sm font-medium text-neutral-200">{{ name }}</span>
+            <span class="text-sm font-medium text-[color:var(--text-primary)]">{{ name }}</span>
           </div>
-          <div class="text-xs text-neutral-400 mt-0.5">{{ description }}</div>
+          <div class="text-xs text-[color:var(--text-muted)] mt-0.5">{{ description }}</div>
         </div>
       </div>
       <div class="flex flex-col items-end">
@@ -31,7 +31,7 @@
         >
           {{ getStatusText(status, statusType) }}
         </span>
-        <div v-if="endpoint" class="text-[10px] text-neutral-500 mt-0.5 truncate max-w-[120px]">
+        <div v-if="endpoint" class="text-[10px] text-[color:var(--text-dim)] mt-0.5 truncate max-w-[120px]">
           {{ endpoint.replace(/^https?:\/\//, '').split('/')[0] }}
         </div>
       </div>
@@ -39,13 +39,13 @@
     <!-- Tooltip с дополнительной информацией при ошибке -->
     <div 
       v-if="(status === 'fail' || status === 'offline' || status === 'disconnected') && endpoint"
-      class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-xs text-neutral-300 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 whitespace-nowrap shadow-lg"
+      class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-[color:var(--bg-surface-strong)] border border-[color:var(--border-muted)] rounded-lg text-xs text-[color:var(--text-muted)] opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 whitespace-nowrap shadow-[var(--shadow-card)]"
     >
       <div class="font-medium mb-1">Проблема с подключением</div>
-      <div class="text-neutral-400">Endpoint: {{ endpoint }}</div>
-      <div class="text-neutral-400 mt-1">Проверьте, запущен ли сервис</div>
+      <div class="text-[color:var(--text-dim)]">Endpoint: {{ endpoint }}</div>
+      <div class="text-[color:var(--text-dim)] mt-1">Проверьте, запущен ли сервис</div>
       <div class="absolute top-full left-1/2 transform -translate-x-1/2 -mt-1">
-        <div class="w-2 h-2 bg-neutral-800 border-r border-b border-neutral-700 transform rotate-45"></div>
+        <div class="w-2 h-2 bg-[color:var(--bg-surface-strong)] border-r border-b border-[color:var(--border-muted)] transform rotate-45"></div>
       </div>
     </div>
   </div>
@@ -74,35 +74,35 @@ function getStatusDotClass(status: string, statusType: string): string {
   if (statusType === 'ws') {
     switch (status) {
       case 'connected':
-        return 'bg-emerald-400'
+        return 'bg-[color:var(--accent-green)]'
       case 'disconnected':
-        return 'bg-red-400'
+        return 'bg-[color:var(--accent-red)]'
       default:
-        return 'bg-neutral-500'
+        return 'bg-[color:var(--text-dim)]'
     }
   }
   
   if (statusType === 'mqtt') {
     switch (status) {
       case 'online':
-        return 'bg-emerald-400'
+        return 'bg-[color:var(--accent-green)]'
       case 'offline':
-        return 'bg-red-400'
+        return 'bg-[color:var(--accent-red)]'
       case 'degraded':
-        return 'bg-amber-400'
+        return 'bg-[color:var(--accent-amber)]'
       default:
-        return 'bg-neutral-500'
+        return 'bg-[color:var(--text-dim)]'
     }
   }
   
   // service status
   switch (status) {
     case 'ok':
-      return 'bg-emerald-400'
+      return 'bg-[color:var(--accent-green)]'
     case 'fail':
-      return 'bg-red-400'
+      return 'bg-[color:var(--accent-red)]'
     default:
-      return 'bg-neutral-500'
+      return 'bg-[color:var(--text-dim)]'
   }
 }
 
@@ -146,36 +146,35 @@ function getStatusTextClass(status: string, statusType: string): string {
   if (statusType === 'ws') {
     switch (status) {
       case 'connected':
-        return 'text-emerald-400'
+        return 'text-[color:var(--accent-green)]'
       case 'disconnected':
-        return 'text-red-400'
+        return 'text-[color:var(--accent-red)]'
       default:
-        return 'text-neutral-500'
+        return 'text-[color:var(--text-dim)]'
     }
   }
   
   if (statusType === 'mqtt') {
     switch (status) {
       case 'online':
-        return 'text-emerald-400'
+        return 'text-[color:var(--accent-green)]'
       case 'offline':
-        return 'text-red-400'
+        return 'text-[color:var(--accent-red)]'
       case 'degraded':
-        return 'text-amber-400'
+        return 'text-[color:var(--accent-amber)]'
       default:
-        return 'text-neutral-500'
+        return 'text-[color:var(--text-dim)]'
     }
   }
   
   // service status
   switch (status) {
     case 'ok':
-      return 'text-emerald-400'
+      return 'text-[color:var(--accent-green)]'
     case 'fail':
-      return 'text-red-400'
+      return 'text-[color:var(--accent-red)]'
     default:
-      return 'text-neutral-500'
-  }
+      return 'text-[color:var(--text-dim)]'
+}
 }
 </script>
-

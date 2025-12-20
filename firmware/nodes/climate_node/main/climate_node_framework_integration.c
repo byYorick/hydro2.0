@@ -24,6 +24,8 @@
 #include "esp_log.h"
 #include "esp_err.h"
 #include <string.h>
+#include <stdlib.h>
+#include <strings.h>
 #include <math.h>
 #include <float.h>
 
@@ -31,6 +33,46 @@ static const char *TAG = "climate_node_fw";
 
 // Forward declaration для callback safe_mode
 static esp_err_t climate_node_disable_actuators_in_safe_mode(void *user_ctx);
+
+static bool climate_node_parse_state(const cJSON *state_item, bool *state_out) {
+    if (!state_item || !state_out) {
+        return false;
+    }
+
+    if (cJSON_IsBool(state_item)) {
+        *state_out = cJSON_IsTrue(state_item);
+        return true;
+    }
+
+    if (cJSON_IsNumber(state_item)) {
+        *state_out = (state_item->valueint != 0);
+        return true;
+    }
+
+    if (cJSON_IsString(state_item) && state_item->valuestring) {
+        const char *value = state_item->valuestring;
+        if (strcasecmp(value, "open") == 0 ||
+            strcasecmp(value, "off") == 0 ||
+            strcasecmp(value, "false") == 0) {
+            *state_out = false;
+            return true;
+        }
+        if (strcasecmp(value, "closed") == 0 ||
+            strcasecmp(value, "on") == 0 ||
+            strcasecmp(value, "true") == 0) {
+            *state_out = true;
+            return true;
+        }
+        char *endptr = NULL;
+        long parsed = strtol(value, &endptr, 10);
+        if (endptr && *endptr == '\0') {
+            *state_out = (parsed != 0);
+            return true;
+        }
+    }
+
+    return false;
+}
 
 // Callback для инициализации каналов из NodeConfig
 static esp_err_t climate_node_init_channel_callback(
@@ -54,20 +96,35 @@ static esp_err_t climate_node_init_channel_callback(
     }
 
     const char *channel_type = type_item->valuestring;
+    const char *actuator_type = channel_type;
+
+    if (strcasecmp(channel_type, "ACTUATOR") == 0) {
+        cJSON *actuator_item = cJSON_GetObjectItem(channel_config, "actuator_type");
+        if (!cJSON_IsString(actuator_item)) {
+            ESP_LOGW(TAG, "Channel %s: missing or invalid actuator_type", channel_name);
+            return ESP_ERR_INVALID_ARG;
+        }
+        actuator_type = actuator_item->valuestring;
+    }
 
     // Инициализация реле и PWM
     // Примечание: relay_driver и pwm_driver инициализируются через init_from_config()
     // после применения всех каналов, поэтому здесь только логируем
-    if (strcmp(channel_type, "relay") == 0 || strcmp(channel_type, "pwm") == 0) {
+    if (strcasecmp(actuator_type, "RELAY") == 0 ||
+        strcasecmp(actuator_type, "PWM") == 0 ||
+        strcasecmp(actuator_type, "FAN") == 0 ||
+        strcasecmp(actuator_type, "HEATER") == 0 ||
+        strcasecmp(actuator_type, "LED") == 0) {
         cJSON *pin_item = cJSON_GetObjectItem(channel_config, "pin");
-        if (!cJSON_IsNumber(pin_item)) {
-            ESP_LOGW(TAG, "Channel %s: missing or invalid pin", channel_name);
-            return ESP_ERR_INVALID_ARG;
+        cJSON *gpio_item = cJSON_GetObjectItem(channel_config, "gpio");
+        cJSON *pin_src = cJSON_IsNumber(pin_item) ? pin_item : (cJSON_IsNumber(gpio_item) ? gpio_item : NULL);
+        if (pin_src) {
+            int pin = pin_src->valueint;
+            ESP_LOGI(TAG, "%s channel %s configured on pin %d (will be initialized via driver_init_from_config)",
+                    actuator_type, channel_name, pin);
+        } else {
+            ESP_LOGI(TAG, "%s channel %s configured (GPIO resolved in firmware)", actuator_type, channel_name);
         }
-
-        int pin = pin_item->valueint;
-        ESP_LOGI(TAG, "%s channel %s configured on pin %d (will be initialized via driver_init_from_config)", 
-                channel_type, channel_name, pin);
         return ESP_OK;
     }
 
@@ -88,25 +145,24 @@ static esp_err_t handle_set_relay(
     }
 
     cJSON *state_item = cJSON_GetObjectItem(params, "state");
-    if (!cJSON_IsBool(state_item)) {
+    bool state = false;
+    if (!climate_node_parse_state(state_item, &state)) {
         *response = node_command_handler_create_response(
             NULL,
-            "ERROR",
+            "FAILED",
             "invalid_params",
-            "Missing or invalid state (must be boolean)",
+            "Missing or invalid state",
             NULL
         );
         return ESP_ERR_INVALID_ARG;
     }
-
-    bool state = cJSON_IsTrue(state_item);
     relay_state_t relay_state = state ? RELAY_STATE_CLOSED : RELAY_STATE_OPEN;
     
     esp_err_t err = relay_driver_set_state(channel, relay_state);
     if (err != ESP_OK) {
         *response = node_command_handler_create_response(
             NULL,
-            "ERROR",
+            "FAILED",
             "relay_driver_failed",
             "Failed to set relay state",
             NULL
@@ -116,7 +172,7 @@ static esp_err_t handle_set_relay(
 
     *response = node_command_handler_create_response(
         NULL,
-        "ACK",
+        "DONE",
         NULL,
         NULL,
         NULL
@@ -143,7 +199,7 @@ static esp_err_t handle_set_pwm(
     if (!cJSON_IsNumber(value_item)) {
         *response = node_command_handler_create_response(
             NULL,
-            "ERROR",
+            "FAILED",
             "invalid_params",
             "Missing or invalid value (must be number)",
             NULL
@@ -170,7 +226,7 @@ static esp_err_t handle_set_pwm(
     if (duty_percent < 0.0f || duty_percent > 100.0f) {
         *response = node_command_handler_create_response(
             NULL,
-            "ERROR",
+            "FAILED",
             "invalid_params",
             "PWM value must be between 0 and 100 (or 0-255)",
             NULL
@@ -182,7 +238,7 @@ static esp_err_t handle_set_pwm(
     if (err != ESP_OK) {
         *response = node_command_handler_create_response(
             NULL,
-            "ERROR",
+            "FAILED",
             "pwm_failed",
             "Failed to set PWM duty",
             NULL
@@ -192,7 +248,7 @@ static esp_err_t handle_set_pwm(
 
     *response = node_command_handler_create_response(
         NULL,
-        "ACK",
+        "DONE",
         NULL,
         NULL,
         NULL
@@ -352,6 +408,12 @@ esp_err_t climate_node_framework_init_integration(void) {
     err = node_command_handler_register("set_relay", handle_set_relay, NULL);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to register set_relay handler: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    err = node_command_handler_register("set_relay_state", handle_set_relay, NULL);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register set_relay_state handler: %s", esp_err_to_name(err));
         return err;
     }
 

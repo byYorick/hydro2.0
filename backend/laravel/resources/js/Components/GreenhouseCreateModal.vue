@@ -3,8 +3,8 @@
     <form @submit.prevent="onSubmit" class="space-y-4">
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div class="md:col-span-2">
-          <label for="greenhouse-name" class="block text-xs text-neutral-400 mb-1">
-            Название <span class="text-red-400">*</span>
+          <label for="greenhouse-name" class="block text-xs text-[color:var(--text-muted)] mb-1">
+            Название <span class="text-[color:var(--accent-red)]">*</span>
           </label>
           <input
             id="greenhouse-name"
@@ -13,18 +13,18 @@
             type="text"
             required
             placeholder="Main Greenhouse"
-            class="h-9 w-full rounded-md border px-2 text-sm"
-            :class="errors.name ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'"
+            class="input-field h-9 w-full"
+            :class="errors.name ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''"
             autocomplete="off"
           />
-          <div v-if="errors.name" class="text-xs text-red-400 mt-1">{{ errors.name }}</div>
-          <div class="text-xs text-neutral-500 mt-1">
-            UID будет сгенерирован автоматически: <span class="text-neutral-400">{{ generatedUid }}</span>
+          <div v-if="errors.name" class="text-xs text-[color:var(--accent-red)] mt-1">{{ errors.name }}</div>
+          <div class="text-xs text-[color:var(--text-dim)] mt-1">
+            UID будет сгенерирован автоматически: <span class="text-[color:var(--text-muted)]">{{ generatedUid }}</span>
           </div>
         </div>
 
         <div>
-          <label for="greenhouse-width" class="block text-xs text-neutral-400 mb-1">Ширина (м)</label>
+          <label for="greenhouse-width" class="block text-xs text-[color:var(--text-muted)] mb-1">Ширина (м)</label>
           <input
             id="greenhouse-width"
             name="width"
@@ -33,13 +33,13 @@
             step="0.1"
             min="0"
             placeholder="10.0"
-            class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+            class="input-field h-9 w-full"
             autocomplete="off"
           />
         </div>
 
         <div>
-          <label for="greenhouse-length" class="block text-xs text-neutral-400 mb-1">Длина (м)</label>
+          <label for="greenhouse-length" class="block text-xs text-[color:var(--text-muted)] mb-1">Длина (м)</label>
           <input
             id="greenhouse-length"
             name="length"
@@ -48,13 +48,13 @@
             step="0.1"
             min="0"
             placeholder="20.0"
-            class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+            class="input-field h-9 w-full"
             autocomplete="off"
           />
         </div>
 
         <div>
-          <label for="greenhouse-height" class="block text-xs text-neutral-400 mb-1">Высота (м)</label>
+          <label for="greenhouse-height" class="block text-xs text-[color:var(--text-muted)] mb-1">Высота (м)</label>
           <input
             id="greenhouse-height"
             name="height"
@@ -63,18 +63,18 @@
             step="0.1"
             min="0"
             placeholder="3.0"
-            class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+            class="input-field h-9 w-full"
             autocomplete="off"
           />
         </div>
 
         <div>
-          <label for="greenhouse-type" class="block text-xs text-neutral-400 mb-1">Тип теплицы</label>
+          <label for="greenhouse-type" class="block text-xs text-[color:var(--text-muted)] mb-1">Тип теплицы</label>
           <select
             id="greenhouse-type"
             name="type"
             v-model="form.type"
-            class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+            class="input-select h-9 w-full"
           >
             <option value="">Выберите тип</option>
             <option value="outdoor">Открытая</option>
@@ -84,33 +84,33 @@
         </div>
 
         <div>
-          <label for="greenhouse-location" class="block text-xs text-neutral-400 mb-1">Расположение</label>
+          <label for="greenhouse-location" class="block text-xs text-[color:var(--text-muted)] mb-1">Расположение</label>
           <input
             id="greenhouse-location"
             name="location"
             v-model="form.location"
             type="text"
             placeholder="Москва, ул. Примерная, д. 1"
-            class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+            class="input-field h-9 w-full"
             autocomplete="off"
           />
         </div>
 
         <div class="md:col-span-2">
-          <label for="greenhouse-description" class="block text-xs text-neutral-400 mb-1">Описание</label>
+          <label for="greenhouse-description" class="block text-xs text-[color:var(--text-muted)] mb-1">Описание</label>
           <textarea
             id="greenhouse-description"
             name="description"
             v-model="form.description"
             rows="3"
             placeholder="Описание теплицы..."
-            class="w-full rounded-md border px-2 py-1 text-sm border-neutral-700 bg-neutral-900"
+            class="input-field w-full py-2 h-auto"
             autocomplete="off"
           ></textarea>
         </div>
       </div>
 
-      <div v-if="errors.general" class="text-sm text-red-400">{{ errors.general }}</div>
+      <div v-if="errors.general" class="text-sm text-[color:var(--accent-red)]">{{ errors.general }}</div>
     </form>
 
     <template #footer>
@@ -267,4 +267,3 @@ async function onSubmit() {
   }
 }
 </script>
-

@@ -61,7 +61,7 @@
         </div>
         <button
           @click="show = false"
-          class="flex-shrink-0 rounded-md p-1 hover:bg-black/20"
+          class="flex-shrink-0 rounded-md p-1 hover:bg-[color:var(--bg-elevated)]"
         >
           <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
@@ -101,10 +101,10 @@ const show = ref<boolean>(true) // Start visible
 const toastElement = ref<HTMLElement | null>(null)
 
 const variantClasses: Record<ToastVariant, string> = {
-  success: 'bg-emerald-900/90 text-emerald-100 border-emerald-700',
-  error: 'bg-red-900/90 text-red-100 border-red-700',
-  warning: 'bg-amber-900/90 text-amber-100 border-amber-700',
-  info: 'bg-sky-900/90 text-sky-100 border-sky-700',
+  success: 'bg-[color:var(--badge-success-bg)] text-[color:var(--badge-success-text)] border-[color:var(--badge-success-border)]',
+  error: 'bg-[color:var(--badge-danger-bg)] text-[color:var(--badge-danger-text)] border-[color:var(--badge-danger-border)]',
+  warning: 'bg-[color:var(--badge-warning-bg)] text-[color:var(--badge-warning-text)] border-[color:var(--badge-warning-border)]',
+  info: 'bg-[color:var(--badge-info-bg)] text-[color:var(--badge-info-text)] border-[color:var(--badge-info-border)]',
 }
 
 onMounted(() => {
@@ -191,4 +191,3 @@ watch(show, (newVal) => {
   transform: translateX(100%);
 }
 </style>
-

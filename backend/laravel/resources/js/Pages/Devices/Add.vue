@@ -14,10 +14,10 @@
       <!-- Инструкция -->
       <Card>
         <div class="text-sm font-semibold mb-2">Инструкция по добавлению ноды</div>
-        <ol class="text-xs text-neutral-400 space-y-1 list-decimal list-inside">
+        <ol class="text-xs text-[color:var(--text-muted)] space-y-1 list-decimal list-inside">
           <li>Включите новую ноду. Она поднимет точку доступа Wi-Fi.</li>
           <li>Подключитесь с телефона к точке доступа ноды.</li>
-          <li>Откройте в браузере <code class="text-sky-400">192.168.4.1</code></li>
+          <li>Откройте в браузере <code class="text-[color:var(--accent-cyan)]">192.168.4.1</code></li>
           <li>Введите SSID и пароль вашей Wi-Fi сети.</li>
           <li>Нода перезагрузится и отправит discovery сообщение.</li>
           <li>Нажмите "Обновить список" или нода появится автоматически.</li>
@@ -28,33 +28,33 @@
       <!-- Список новых нод -->
       <Card>
         <div class="text-sm font-semibold mb-3">Новые ноды (без привязки к зоне)</div>
-        <div v-if="loading" class="text-sm text-neutral-400 py-4 text-center">
+        <div v-if="loading" class="text-sm text-[color:var(--text-dim)] py-4 text-center">
           Загрузка...
         </div>
-        <div v-else-if="newNodes.length === 0" class="text-sm text-neutral-400 py-4 text-center">
+        <div v-else-if="newNodes.length === 0" class="text-sm text-[color:var(--text-dim)] py-4 text-center">
           Новых нод не найдено. Убедитесь, что нода подключена к Wi-Fi и отправила discovery сообщение.
         </div>
         <div v-else class="space-y-3">
           <div
             v-for="node in newNodes"
             :key="node.id"
-            class="p-3 rounded-lg border border-neutral-800 bg-neutral-900"
+            class="p-3 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]"
           >
               <div class="flex items-start justify-between mb-2">
               <div>
                 <div class="text-sm font-semibold">{{ node.name || node.uid || `Node #${node.id}` }}</div>
-                <div class="text-xs text-neutral-400 mt-1">
+                <div class="text-xs text-[color:var(--text-muted)] mt-1">
                   <span v-if="node.uid">UID: {{ node.uid }}</span>
                   <span v-if="node.type" class="ml-2">Тип: {{ node.type }}</span>
                   <span v-if="node.fw_version" class="ml-2">FW: {{ node.fw_version }}</span>
                 </div>
-                <div class="text-xs text-neutral-500 mt-1">
+                <div class="text-xs text-[color:var(--text-dim)] mt-1">
                   <span v-if="node.last_seen_at">
                     Последний раз видели: {{ formatDate(node.last_seen_at) }}
                   </span>
                   <span v-else>Никогда не видели</span>
                   <span v-if="node.lifecycle_state" class="ml-2">
-                    · Lifecycle: <span class="text-sky-400">{{ getStateLabel(node.lifecycle_state) }}</span>
+                    · Lifecycle: <span class="text-[color:var(--accent-cyan)]">{{ getStateLabel(node.lifecycle_state) }}</span>
                   </span>
                 </div>
               </div>
@@ -72,8 +72,8 @@
             </div>
 
             <!-- Форма привязки к зоне -->
-            <div class="mt-3 pt-3 border-t border-neutral-800">
-              <div class="text-xs font-semibold mb-2 text-neutral-300">Привязать к зоне:</div>
+            <div class="mt-3 pt-3 border-t border-[color:var(--border-muted)]">
+              <div class="text-xs font-semibold mb-2 text-[color:var(--text-muted)]">Привязать к зоне:</div>
               <form @submit.prevent="assignNode(node)" class="grid grid-cols-1 md:grid-cols-4 gap-2">
                 <label :for="`node-${node.id}-greenhouse`" class="sr-only">Теплица</label>
                 <select
@@ -81,7 +81,7 @@
                   :name="`node_${node.id}_greenhouse_id`"
                   v-model="assignmentForms[node.id].greenhouse_id"
                   @change="onGreenhouseChange(node.id)"
-                  class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
+                  class="input-select"
                   required
                 >
                   <option :value="null">Выберите теплицу</option>
@@ -94,7 +94,7 @@
                   :id="`node-${node.id}-zone`"
                   :name="`node_${node.id}_zone_id`"
                   v-model="assignmentForms[node.id].zone_id"
-                  class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
+                  class="input-select"
                   :disabled="!assignmentForms[node.id].greenhouse_id"
                   required
                 >
@@ -109,7 +109,7 @@
                   :name="`node_${node.id}_name`"
                   v-model="assignmentForms[node.id].name"
                   placeholder="Имя ноды (опционально)"
-                  class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm"
+                  class="input-field"
                 />
                 <Button
                   type="submit"

@@ -58,6 +58,13 @@ class NodeConfigService
             'wifi' => $wifi,
             'mqtt' => $mqtt,
         ];
+
+        if ($includeCredentials) {
+            $nodeSecret = config('app.node_default_secret');
+            if ($nodeSecret) {
+                $nodeConfig['node_secret'] = $nodeSecret;
+            }
+        }
         
         // Валидация конфига перед возвратом
         $this->validateNodeConfig($nodeConfig);

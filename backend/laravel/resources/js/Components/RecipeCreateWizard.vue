@@ -3,29 +3,29 @@
     <div class="space-y-6">
       <!-- Шаг 1: Основная информация -->
       <div>
-        <h3 class="text-sm font-semibold mb-3 text-neutral-200">Основная информация</h3>
+        <h3 class="text-sm font-semibold mb-3 text-[color:var(--text-primary)]">Основная информация</h3>
         <div class="space-y-3">
           <div>
-            <label for="recipe-name" class="block text-xs text-neutral-400 mb-1">Название рецепта</label>
+            <label for="recipe-name" class="block text-xs text-[color:var(--text-muted)] mb-1">Название рецепта</label>
             <input
               id="recipe-name"
               name="name"
               v-model="form.name"
               type="text"
               placeholder="Например: Рецепт для салата"
-              class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+              class="input-field h-9 w-full"
               autocomplete="off"
               required
             />
           </div>
           <div>
-            <label for="recipe-description" class="block text-xs text-neutral-400 mb-1">Описание (опционально)</label>
+            <label for="recipe-description" class="block text-xs text-[color:var(--text-muted)] mb-1">Описание (опционально)</label>
             <textarea
               id="recipe-description"
               name="description"
               v-model="form.description"
               placeholder="Описание рецепта..."
-              class="w-full rounded-md border px-2 py-2 text-sm border-neutral-700 bg-neutral-900 min-h-[60px]"
+              class="input-field w-full min-h-[60px] py-2 h-auto"
               autocomplete="off"
             />
           </div>
@@ -35,17 +35,17 @@
       <!-- Шаг 2: Фазы рецепта -->
       <div>
         <div class="flex items-center justify-between mb-3">
-          <h3 class="text-sm font-semibold text-neutral-200">Фазы рецепта</h3>
+          <h3 class="text-sm font-semibold text-[color:var(--text-primary)]">Фазы рецепта</h3>
           <Button size="sm" variant="secondary" @click="addPhase">+ Добавить фазу</Button>
         </div>
         <div class="space-y-3 max-h-[400px] overflow-y-auto">
           <div
             v-for="(phase, index) in form.phases"
             :key="index"
-            class="p-3 rounded-md border border-neutral-800 bg-neutral-900/50 space-y-2"
+            class="p-3 rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] space-y-2"
           >
             <div class="flex items-center justify-between">
-              <div class="text-xs font-semibold text-neutral-300">Фаза {{ index + 1 }}</div>
+              <div class="text-xs font-semibold text-[color:var(--text-primary)]">Фаза {{ index + 1 }}</div>
               <Button
                 v-if="form.phases.length > 1"
                 size="sm"
@@ -57,31 +57,31 @@
             </div>
             <div class="grid grid-cols-2 gap-2">
               <div>
-                <label :for="`phase-name-${index}`" class="block text-xs text-neutral-400 mb-1">Название</label>
+                <label :for="`phase-name-${index}`" class="block text-xs text-[color:var(--text-muted)] mb-1">Название</label>
                 <input
                   :id="`phase-name-${index}`"
                   v-model="phase.name"
                   type="text"
                   placeholder="Например: Проращивание"
-                  class="h-8 w-full rounded-md border px-2 text-xs border-neutral-700 bg-neutral-900"
+                  class="input-field h-8 w-full text-xs"
                   autocomplete="off"
                 />
               </div>
               <div>
-                <label :for="`phase-duration-${index}`" class="block text-xs text-neutral-400 mb-1">Длительность (часов)</label>
+                <label :for="`phase-duration-${index}`" class="block text-xs text-[color:var(--text-muted)] mb-1">Длительность (часов)</label>
                 <input
                   :id="`phase-duration-${index}`"
                   v-model.number="phase.duration_hours"
                   type="number"
                   min="1"
-                  class="h-8 w-full rounded-md border px-2 text-xs border-neutral-700 bg-neutral-900"
+                  class="input-field h-8 w-full text-xs"
                   autocomplete="off"
                 />
               </div>
             </div>
             <div class="grid grid-cols-2 gap-2 mt-2">
               <div>
-                <label :for="`phase-ph-min-${index}`" class="block text-xs text-neutral-400 mb-1">pH мин</label>
+                <label :for="`phase-ph-min-${index}`" class="block text-xs text-[color:var(--text-muted)] mb-1">pH мин</label>
                 <input
                   :id="`phase-ph-min-${index}`"
                   v-model.number="phase.targets.ph.min"
@@ -89,12 +89,12 @@
                   step="0.1"
                   min="0"
                   max="14"
-                  class="h-8 w-full rounded-md border px-2 text-xs border-neutral-700 bg-neutral-900"
+                  class="input-field h-8 w-full text-xs"
                   autocomplete="off"
                 />
               </div>
               <div>
-                <label :for="`phase-ph-max-${index}`" class="block text-xs text-neutral-400 mb-1">pH макс</label>
+                <label :for="`phase-ph-max-${index}`" class="block text-xs text-[color:var(--text-muted)] mb-1">pH макс</label>
                 <input
                   :id="`phase-ph-max-${index}`"
                   v-model.number="phase.targets.ph.max"
@@ -102,54 +102,54 @@
                   step="0.1"
                   min="0"
                   max="14"
-                  class="h-8 w-full rounded-md border px-2 text-xs border-neutral-700 bg-neutral-900"
+                  class="input-field h-8 w-full text-xs"
                   autocomplete="off"
                 />
               </div>
             </div>
             <div class="grid grid-cols-2 gap-2">
               <div>
-                <label :for="`phase-ec-min-${index}`" class="block text-xs text-neutral-400 mb-1">EC мин</label>
+                <label :for="`phase-ec-min-${index}`" class="block text-xs text-[color:var(--text-muted)] mb-1">EC мин</label>
                 <input
                   :id="`phase-ec-min-${index}`"
                   v-model.number="phase.targets.ec.min"
                   type="number"
                   step="0.1"
                   min="0"
-                  class="h-8 w-full rounded-md border px-2 text-xs border-neutral-700 bg-neutral-900"
+                  class="input-field h-8 w-full text-xs"
                   autocomplete="off"
                 />
               </div>
               <div>
-                <label :for="`phase-ec-max-${index}`" class="block text-xs text-neutral-400 mb-1">EC макс</label>
+                <label :for="`phase-ec-max-${index}`" class="block text-xs text-[color:var(--text-muted)] mb-1">EC макс</label>
                 <input
                   :id="`phase-ec-max-${index}`"
                   v-model.number="phase.targets.ec.max"
                   type="number"
                   step="0.1"
                   min="0"
-                  class="h-8 w-full rounded-md border px-2 text-xs border-neutral-700 bg-neutral-900"
+                  class="input-field h-8 w-full text-xs"
                   autocomplete="off"
                 />
               </div>
             </div>
           </div>
         </div>
-        <div v-if="form.phases.length === 0" class="text-xs text-neutral-500 text-center py-4">
+        <div v-if="form.phases.length === 0" class="text-xs text-[color:var(--text-dim)] text-center py-4">
           Нет фаз. Добавьте хотя бы одну фазу.
         </div>
       </div>
 
       <!-- Сообщение об успехе -->
-      <div v-if="createdRecipe" class="p-3 rounded-md bg-emerald-900/30 border border-emerald-700">
-        <div class="text-sm text-emerald-400">
+      <div v-if="createdRecipe" class="p-3 rounded-md bg-[color:var(--badge-success-bg)] border border-[color:var(--badge-success-border)]">
+        <div class="text-sm text-[color:var(--badge-success-text)]">
           ✓ Рецепт "{{ createdRecipe.name }}" успешно создан!
         </div>
       </div>
 
       <!-- Ошибка -->
-      <div v-if="error" class="p-3 rounded-md bg-red-900/30 border border-red-700">
-        <div class="text-sm text-red-400">{{ error }}</div>
+      <div v-if="error" class="p-3 rounded-md bg-[color:var(--badge-danger-bg)] border border-[color:var(--badge-danger-border)]">
+        <div class="text-sm text-[color:var(--badge-danger-text)]">{{ error }}</div>
       </div>
     </div>
 
@@ -347,4 +347,3 @@ async function onCreate(): Promise<void> {
   }
 }
 </script>
-

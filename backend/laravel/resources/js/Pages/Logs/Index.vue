@@ -5,15 +5,15 @@
         <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 class="text-lg font-semibold">Журнал сервисов</h1>
-            <p class="text-sm text-neutral-400 max-w-3xl">
+            <p class="text-sm text-[color:var(--text-muted)] max-w-3xl">
               Отслеживайте события автоматизации, History Logger, MQTT Bridge и cron в одном окне.
             </p>
           </div>
           <div class="flex flex-wrap gap-2 items-center">
-            <span class="text-xs uppercase text-neutral-500 tracking-[0.3em]">Фильтры</span>
+            <span class="text-xs uppercase text-[color:var(--text-dim)] tracking-[0.3em]">Фильтры</span>
             <select
               v-model="filters.service"
-              class="h-9 rounded-xl border border-neutral-700 bg-neutral-900 px-3 text-sm text-neutral-100"
+              class="input-select"
             >
               <option value="all">Все сервисы</option>
               <option
@@ -26,7 +26,7 @@
             </select>
             <select
               v-model="filters.level"
-              class="h-9 rounded-xl border border-neutral-700 bg-neutral-900 px-3 text-sm text-neutral-100"
+              class="input-select"
             >
               <option value="">Все уровни</option>
               <option
@@ -41,17 +41,17 @@
               v-model="filters.search"
               type="search"
               placeholder="Поиск по сообщению/контексту"
-              class="h-9 w-56 rounded-xl border border-neutral-700 bg-neutral-900 px-3 text-sm text-neutral-100 placeholder:text-neutral-500"
+              class="input-field w-56"
             />
             <input
               v-model="filters.from"
               type="date"
-              class="h-9 rounded-xl border border-neutral-700 bg-neutral-900 px-3 text-sm text-neutral-100"
+              class="input-field"
             />
             <input
               v-model="filters.to"
               type="date"
-              class="h-9 rounded-xl border border-neutral-700 bg-neutral-900 px-3 text-sm text-neutral-100"
+              class="input-field"
             />
             <Button
               size="sm"
@@ -65,15 +65,15 @@
         </div>
       </header>
 
-      <div v-if="error" class="text-sm text-red-400">
+      <div v-if="error" class="text-sm text-[color:var(--accent-red)]">
         {{ error }}
       </div>
 
-      <div v-if="loading" class="text-sm text-neutral-400 text-center py-8">
+      <div v-if="loading" class="text-sm text-[color:var(--text-dim)] text-center py-8">
         Загрузка логов...
       </div>
 
-      <div v-else-if="!hasLogs" class="text-sm text-neutral-400 text-center py-8">
+      <div v-else-if="!hasLogs" class="text-sm text-[color:var(--text-dim)] text-center py-8">
         Нет логов по выбранным фильтрам
       </div>
 
@@ -85,39 +85,39 @@
         >
           <div class="flex items-center justify-between gap-4">
             <div>
-              <div class="text-sm font-semibold text-neutral-100">{{ service.label }}</div>
-              <p class="text-xs text-neutral-500">{{ service.description ?? 'Логи сервиса' }}</p>
+              <div class="text-sm font-semibold text-[color:var(--text-primary)]">{{ service.label }}</div>
+              <p class="text-xs text-[color:var(--text-dim)]">{{ service.description ?? 'Логи сервиса' }}</p>
             </div>
-            <span class="text-xs text-neutral-500">{{ entriesFor(service.key).length }} записей</span>
+            <span class="text-xs text-[color:var(--text-dim)]">{{ entriesFor(service.key).length }} записей</span>
           </div>
           <div class="space-y-2 max-h-[360px] overflow-y-auto scrollbar-glow pr-1">
             <div
               v-for="entry in entriesFor(service.key)"
               :key="entry.id"
-              class="surface-strong rounded-2xl border border-neutral-800 p-3"
+              class="surface-strong rounded-2xl border border-[color:var(--border-muted)] p-3"
             >
               <div class="flex items-start justify-between gap-3">
                 <div class="space-y-1">
-                  <div class="text-sm font-semibold text-neutral-100">{{ entry.message }}</div>
-                  <div class="text-xs text-neutral-500">{{ summarizeContext(entry.context) }}</div>
+                  <div class="text-sm font-semibold text-[color:var(--text-primary)]">{{ entry.message }}</div>
+                  <div class="text-xs text-[color:var(--text-dim)]">{{ summarizeContext(entry.context) }}</div>
                 </div>
                 <div class="text-right">
                   <Badge :variant="levelVariant(entry.level)" size="xs">{{ entry.level }}</Badge>
-                  <div class="text-[10px] text-neutral-500 mt-1">
+                  <div class="text-[10px] text-[color:var(--text-dim)] mt-1">
                     {{ formatTime(entry.created_at) }}
                   </div>
                 </div>
               </div>
             </div>
-            <div v-if="!entriesFor(service.key).length" class="text-xs text-neutral-500 text-center py-6">
+            <div v-if="!entriesFor(service.key).length" class="text-xs text-[color:var(--text-dim)] text-center py-6">
               Нет событий по выбранным фильтрам
             </div>
           </div>
         </Card>
       </div>
 
-      <div class="flex items-center justify-between pt-2 border-t border-neutral-800" v-if="meta.total > 0">
-        <div class="text-xs text-neutral-500">
+      <div class="flex items-center justify-between pt-2 border-t border-[color:var(--border-muted)]" v-if="meta.total > 0">
+        <div class="text-xs text-[color:var(--text-dim)]">
           Страница {{ meta.page }} / {{ meta.last_page }} • {{ meta.total }} записей
         </div>
         <div class="flex gap-2">
@@ -388,7 +388,7 @@ onUnmounted(() => {
 
 <style scoped>
 select option {
-  background-color: rgb(23 23 23); /* neutral-900 */
-  color: rgb(245 245 245); /* neutral-100 */
+  background-color: var(--bg-surface-strong);
+  color: var(--text-primary);
 }
 </style>

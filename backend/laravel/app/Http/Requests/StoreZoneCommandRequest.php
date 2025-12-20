@@ -34,6 +34,7 @@ class StoreZoneCommandRequest extends FormRequest
     {
         $validator->after(function ($validator) {
             $data = $this->all();
+            $params = $data['params'] ?? [];
             
             // Ensure params is an associative array (object), not a list
             if (isset($data['params']) && is_array($data['params']) && array_is_list($data['params'])) {
@@ -42,7 +43,6 @@ class StoreZoneCommandRequest extends FormRequest
 
             // Специальная валидация для GROWTH_CYCLE_CONFIG
             if (($data['type'] ?? '') === 'GROWTH_CYCLE_CONFIG') {
-                $params = $data['params'] ?? [];
 
                 // Проверяем наличие mode
                 if (!isset($params['mode']) || !in_array($params['mode'], ['start', 'adjust'], true)) {
@@ -67,7 +67,54 @@ class StoreZoneCommandRequest extends FormRequest
                     }
                 }
             }
+
+            $type = $data['type'] ?? '';
+            if (!is_array($params)) {
+                $params = [];
+            }
+
+            if ($type === 'FORCE_IRRIGATION') {
+                $duration = $params['duration_sec'] ?? null;
+                if (!is_numeric($duration) || $duration < 1 || $duration > 3600) {
+                    $validator->errors()->add('params.duration_sec', 'The params.duration_sec must be between 1 and 3600 seconds.');
+                }
+            }
+
+            if ($type === 'FORCE_PH_CONTROL') {
+                $target = $params['target_ph'] ?? null;
+                if (!is_numeric($target) || $target < 4.0 || $target > 9.0) {
+                    $validator->errors()->add('params.target_ph', 'The params.target_ph must be between 4.0 and 9.0.');
+                }
+            }
+
+            if ($type === 'FORCE_EC_CONTROL') {
+                $target = $params['target_ec'] ?? null;
+                if (!is_numeric($target) || $target < 0.1 || $target > 10.0) {
+                    $validator->errors()->add('params.target_ec', 'The params.target_ec must be between 0.1 and 10.0.');
+                }
+            }
+
+            if ($type === 'FORCE_CLIMATE') {
+                $temp = $params['target_temp'] ?? null;
+                $humidity = $params['target_humidity'] ?? null;
+                if (!is_numeric($temp) || $temp < 10 || $temp > 35) {
+                    $validator->errors()->add('params.target_temp', 'The params.target_temp must be between 10 and 35.');
+                }
+                if (!is_numeric($humidity) || $humidity < 30 || $humidity > 90) {
+                    $validator->errors()->add('params.target_humidity', 'The params.target_humidity must be between 30 and 90.');
+                }
+            }
+
+            if ($type === 'FORCE_LIGHTING') {
+                $intensity = $params['intensity'] ?? null;
+                $duration = $params['duration_hours'] ?? null;
+                if (!is_numeric($intensity) || $intensity < 0 || $intensity > 100) {
+                    $validator->errors()->add('params.intensity', 'The params.intensity must be between 0 and 100.');
+                }
+                if (!is_numeric($duration) || $duration < 0.5 || $duration > 24) {
+                    $validator->errors()->add('params.duration_hours', 'The params.duration_hours must be between 0.5 and 24 hours.');
+                }
+            }
         });
     }
 }
-

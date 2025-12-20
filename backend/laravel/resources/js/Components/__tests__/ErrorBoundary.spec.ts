@@ -19,7 +19,7 @@ describe('ErrorBoundary (P1-3)', () => {
     })
 
     expect(wrapper.text()).toContain('Test Content')
-    expect(wrapper.find('.text-red-400').exists()).toBe(false)
+    expect(wrapper.find('h2').exists()).toBe(false)
   })
 
   it('catches and displays error when child component throws', async () => {
@@ -40,7 +40,9 @@ describe('ErrorBoundary (P1-3)', () => {
 
     // ErrorBoundary должен отобразить fallback UI
     expect(wrapper.text()).toContain('Произошла ошибка')
-    expect(wrapper.find('.text-red-400').exists()).toBe(true)
+    const heading = wrapper.find('h2')
+    expect(heading.exists()).toBe(true)
+    expect(heading.classes()).toContain('text-[color:var(--accent-red)]')
   })
 
   it('displays error message in fallback UI', async () => {
@@ -183,4 +185,3 @@ describe('ErrorBoundary (P1-3)', () => {
     expect(throwCount).toBeGreaterThan(1)
   })
 })
-

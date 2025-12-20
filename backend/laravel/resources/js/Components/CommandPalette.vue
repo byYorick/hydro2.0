@@ -1,17 +1,17 @@
 <template>
   <Transition name="command-palette">
     <div v-if="open" class="fixed inset-0 z-50">
-      <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="close"></div>
-      <div class="relative mx-auto mt-12 sm:mt-24 w-full max-w-xl rounded-xl border border-neutral-800 bg-neutral-925 p-3 shadow-2xl mx-4 sm:mx-auto">
+      <div class="absolute inset-0 bg-[color:var(--bg-main)] opacity-80 backdrop-blur-sm" @click="close"></div>
+      <div class="relative mx-auto mt-12 sm:mt-24 w-full max-w-xl rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-3 shadow-[var(--shadow-card)] mx-4 sm:mx-auto">
         <!-- Заголовок и подсказки -->
         <div class="mb-2 flex items-center justify-between">
-          <div class="text-xs text-neutral-400">Командная палитра</div>
-          <div class="hidden sm:flex items-center gap-2 text-xs text-neutral-500">
-            <kbd class="px-1.5 py-0.5 rounded bg-neutral-900 border border-neutral-800">↑↓</kbd>
+          <div class="text-xs text-[color:var(--text-muted)]">Командная палитра</div>
+          <div class="hidden sm:flex items-center gap-2 text-xs text-[color:var(--text-dim)]">
+            <kbd class="px-1.5 py-0.5 rounded bg-[color:var(--bg-elevated)] border border-[color:var(--border-muted)]">↑↓</kbd>
             <span>навигация</span>
-            <kbd class="px-1.5 py-0.5 rounded bg-neutral-900 border border-neutral-800">↵</kbd>
+            <kbd class="px-1.5 py-0.5 rounded bg-[color:var(--bg-elevated)] border border-[color:var(--border-muted)]">↵</kbd>
             <span>выбрать</span>
-            <kbd class="px-1.5 py-0.5 rounded bg-neutral-900 border border-neutral-800">Esc</kbd>
+            <kbd class="px-1.5 py-0.5 rounded bg-[color:var(--bg-elevated)] border border-[color:var(--border-muted)]">Esc</kbd>
             <span>закрыть</span>
           </div>
         </div>
@@ -20,17 +20,17 @@
           v-model="q" 
           ref="inputRef"
           placeholder="Команда или поиск..." 
-          class="h-12 w-full rounded-md border border-neutral-800 bg-neutral-900 px-4 text-sm transition-all duration-200 focus:border-neutral-700 focus:ring-2 focus:ring-sky-500/20"
+          class="input-field h-12 w-full px-4 text-sm transition-all duration-200"
           @keydown.down.prevent="selectedIndex = Math.min(selectedIndex + 1, totalItemsCount - 1)"
           @keydown.up.prevent="selectedIndex = Math.max(selectedIndex - 1, 0)"
           @keydown.enter.prevent="runSelected()"
         />
         
-        <div class="mt-3 max-h-80 overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-800 scrollbar-track-transparent">
+        <div class="mt-3 max-h-80 overflow-y-auto scrollbar-thin scrollbar-thumb-[color:var(--border-muted)] scrollbar-track-transparent">
           <!-- Группированные результаты -->
           <template v-for="(group, groupIndex) in groupedResults" :key="group.category">
             <div v-if="group.items.length > 0" class="mb-2">
-              <div class="px-3 py-1.5 text-xs font-semibold text-neutral-500 uppercase tracking-wider">
+              <div class="px-3 py-1.5 text-xs font-semibold text-[color:var(--text-dim)] uppercase tracking-wider">
                 {{ group.category }}
               </div>
               <TransitionGroup name="command-item" tag="div">
@@ -38,9 +38,9 @@
                   v-for="(item, itemIndex) in group.items" 
                   :key="`${item.type}-${item.id || itemIndex}`"
                   :data-index="getItemIndex(groupIndex, itemIndex)"
-                  class="px-3 py-2.5 text-sm hover:bg-neutral-850 cursor-pointer rounded-md flex items-center gap-3 transition-all duration-150"
+                  class="px-3 py-2.5 text-sm hover:bg-[color:var(--bg-elevated)] cursor-pointer rounded-md flex items-center gap-3 transition-all duration-150"
                   :class="{ 
-                    'bg-neutral-850 border-l-2 border-sky-500': getItemIndex(groupIndex, itemIndex) === selectedIndex 
+                    'bg-[color:var(--bg-elevated)] border-l-2 border-[color:var(--accent-cyan)]': getItemIndex(groupIndex, itemIndex) === selectedIndex 
                   }"
                   @click="run(item)"
                   @mouseenter="selectedIndex = getItemIndex(groupIndex, itemIndex)"
@@ -48,12 +48,12 @@
                   <span v-if="item.icon" class="text-lg flex-shrink-0">{{ item.icon }}</span>
                   <span class="flex-1">
                     <template v-for="(segment, segmentIndex) in highlightMatch(item.label, q)" :key="segmentIndex">
-                      <mark v-if="segment.match" class="bg-amber-500/30">{{ segment.text }}</mark>
+                      <mark v-if="segment.match" class="bg-[color:var(--badge-warning-bg)] text-[color:var(--badge-warning-text)]">{{ segment.text }}</mark>
                       <span v-else>{{ segment.text }}</span>
                     </template>
                   </span>
-                  <span v-if="item.shortcut" class="ml-auto text-xs text-neutral-500 flex items-center gap-1">
-                    <kbd class="px-1.5 py-0.5 rounded bg-neutral-900 border border-neutral-800 text-[10px]">
+                  <span v-if="item.shortcut" class="ml-auto text-xs text-[color:var(--text-dim)] flex items-center gap-1">
+                    <kbd class="px-1.5 py-0.5 rounded bg-[color:var(--bg-elevated)] border border-[color:var(--border-muted)] text-[10px]">
                       {{ item.shortcut }}
                     </kbd>
                   </span>
@@ -62,14 +62,14 @@
             </div>
           </template>
           
-          <div v-if="loading" class="px-3 py-4 text-sm text-neutral-400 flex items-center gap-2">
-            <div class="w-4 h-4 border-2 border-neutral-600 border-t-transparent rounded-full animate-spin"></div>
+          <div v-if="loading" class="px-3 py-4 text-sm text-[color:var(--text-muted)] flex items-center gap-2">
+            <div class="w-4 h-4 border-2 border-[color:var(--border-muted)] border-t-transparent rounded-full animate-spin"></div>
             Загрузка...
           </div>
-          <div v-if="!loading && groupedResults.length === 0 && q" class="px-3 py-4 text-sm text-neutral-400 text-center">
+          <div v-if="!loading && groupedResults.length === 0 && q" class="px-3 py-4 text-sm text-[color:var(--text-muted)] text-center">
             Ничего не найдено
           </div>
-          <div v-if="!loading && groupedResults.length === 0 && !q" class="px-3 py-4 text-sm text-neutral-400 text-center">
+          <div v-if="!loading && groupedResults.length === 0 && !q" class="px-3 py-4 text-sm text-[color:var(--text-muted)] text-center">
             Начните вводить для поиска...
           </div>
         </div>
@@ -890,4 +890,3 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
   background-color: rgba(255, 255, 255, 0.2);
 }
 </style>
-

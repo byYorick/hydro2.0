@@ -3,7 +3,7 @@
     <div class="flex items-center justify-between mb-2">
       <div class="text-sm font-semibold">{{ title }}</div>
       <div class="flex items-center gap-2">
-        <div class="text-xs text-neutral-500 hidden sm:inline">
+        <div class="text-xs text-[color:var(--text-dim)] hidden sm:inline">
           <span class="mr-2">🖱️ Колесо мыши — zoom</span>
           <span>Перетаскивание — pan</span>
         </div>
@@ -69,7 +69,7 @@
           class="w-3 h-0.5 rounded"
           :style="{ backgroundColor: series.color }"
         ></div>
-        <span class="text-neutral-400">{{ series.label }}</span>
+        <span class="text-[color:var(--text-muted)]">{{ series.label }}</span>
         <span
           v-if="series.currentValue !== null && series.currentValue !== undefined"
           class="font-medium"
@@ -413,4 +413,3 @@ const option = computed(() => {
   }
 })
 </script>
-

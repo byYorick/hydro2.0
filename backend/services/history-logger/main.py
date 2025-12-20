@@ -1,4 +1,6 @@
 import asyncio
+import hashlib
+import hmac
 import json
 import logging
 import os
@@ -2800,14 +2802,37 @@ async def _get_gh_uid_from_zone_id(zone_id: int) -> str:
     return rows[0]["uid"]
 
 
-def _create_command_payload(cmd_type: Optional[str] = None, cmd_id: Optional[str] = None, params: Optional[dict] = None, cmd: Optional[str] = None) -> dict:
+def _create_command_payload(
+    cmd_type: Optional[str] = None,
+    cmd_id: Optional[str] = None,
+    params: Optional[dict] = None,
+    cmd: Optional[str] = None,
+    ts: Optional[int] = None,
+    sig: Optional[str] = None
+) -> dict:
     """Создать payload для команды MQTT."""
     cmd_id = cmd_id or str(uuid.uuid4())
     # Поддерживаем оба формата: cmd (новый) и type (legacy)
     command_name = cmd or cmd_type
     if not command_name:
         raise ValueError("Either 'cmd' or 'type' must be provided")
+    if sig and ts is None:
+        raise ValueError("sig requires ts")
     payload = {"cmd": command_name, "cmd_id": cmd_id}
+
+    if ts is None or not sig:
+        secret = get_settings().node_default_secret
+        if secret:
+            if ts is None:
+                ts = int(time.time())
+            if not sig:
+                payload_str = f"{command_name}|{ts}".encode()
+                sig = hmac.new(secret.encode(), payload_str, hashlib.sha256).hexdigest()
+
+    if ts is not None:
+        payload["ts"] = ts
+    if sig:
+        payload["sig"] = sig
     if params:
         payload["params"] = params
     return payload
@@ -3411,6 +3436,8 @@ class CommandRequest(BaseModel):
     zone_uid: Optional[str] = Field(None, max_length=128, description="Zone UID")
     hardware_id: Optional[str] = Field(None, max_length=128, description="Hardware ID for temporary topic")
     cmd_id: Optional[str] = Field(None, max_length=64, description="Command ID from Laravel")
+    ts: Optional[int] = Field(None, description="Command timestamp (seconds)")
+    sig: Optional[str] = Field(None, max_length=128, description="Command HMAC signature (hex)")
     trace_id: Optional[str] = Field(None, max_length=64, description="Trace ID for logging")
     
     def get_command_name(self) -> str:
@@ -3447,7 +3474,14 @@ async def publish_zone_command(
     
     # Создаем payload для команды
     try:
-        payload = _create_command_payload(cmd_type=req.type, cmd=req.cmd, cmd_id=req.cmd_id, params=req.params)
+        payload = _create_command_payload(
+            cmd_type=req.type,
+            cmd=req.cmd,
+            cmd_id=req.cmd_id,
+            params=req.params,
+            ts=req.ts,
+            sig=req.sig
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     cmd_id = payload["cmd_id"]
@@ -3555,7 +3589,14 @@ async def publish_node_command(
     
     # Создаем payload для команды
     try:
-        payload = _create_command_payload(cmd_type=req.type, cmd=req.cmd, cmd_id=req.cmd_id, params=req.params)
+        payload = _create_command_payload(
+            cmd_type=req.type,
+            cmd=req.cmd,
+            cmd_id=req.cmd_id,
+            params=req.params,
+            ts=req.ts,
+            sig=req.sig
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     cmd_id = payload["cmd_id"]
@@ -3717,7 +3758,9 @@ async def publish_command(
             cmd_type=req.type, 
             cmd=req.cmd, 
             cmd_id=cmd_id, 
-            params=params_without_cmd_id
+            params=params_without_cmd_id,
+            ts=req.ts,
+            sig=req.sig
         )
         cmd_id = payload["cmd_id"]
     except ValueError as e:

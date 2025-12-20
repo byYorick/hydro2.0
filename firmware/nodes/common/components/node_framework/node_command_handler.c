@@ -20,6 +20,7 @@
 
 static const char *TAG = "node_command_handler";
 static bool g_logged_missing_hmac = false;
+static const char *IN_PROGRESS_STATUS = "IN_PROGRESS";
 
 // Константы для HMAC проверки
 #define HMAC_TIMESTAMP_TOLERANCE_SEC 10  // Допустимое отклонение timestamp (секунды)
@@ -41,7 +42,7 @@ typedef struct {
 // Также сохраняет final_status (DONE/FAILED) для идемпотентности
 #define CMD_ID_CACHE_SIZE 128  // Минимум N=128 для идемпотентности
 #define CMD_ID_TTL_MS 300000  // 5 минут TTL (увеличено для идемпотентности)
-#define MAX_STATUS_LEN 16  // "DONE", "FAILED", "ACK", "ERROR"
+#define MAX_STATUS_LEN 16  // "DONE", "FAILED", "ACCEPTED"
 
 typedef struct {
     char cmd_id[64];
@@ -389,7 +390,7 @@ void node_command_handler_process(
             ESP_LOGE(TAG, "Invalid HMAC fields format: ts must be number, sig must be non-null string");
             cJSON *response = node_command_handler_create_response(
                 cmd_id,
-                "ERROR",
+                "FAILED",
                 "invalid_hmac_format",
                 "Invalid HMAC fields format",
                 NULL
@@ -414,7 +415,7 @@ void node_command_handler_process(
             ESP_LOGE(TAG, "Invalid HMAC signature length: expected 64, got %zu", strlen(sig));
             cJSON *response = node_command_handler_create_response(
                 cmd_id,
-                "ERROR",
+                "FAILED",
                 "invalid_hmac_format",
                 "Invalid HMAC signature length",
                 NULL
@@ -436,7 +437,7 @@ void node_command_handler_process(
             ESP_LOGW(TAG, "Command timestamp verification failed: cmd=%s, cmd_id=%s", cmd, cmd_id);
             cJSON *response = node_command_handler_create_response(
                 cmd_id,
-                "ERROR",
+                "FAILED",
                 "timestamp_expired",
                 "Command timestamp is outside acceptable range",
                 NULL
@@ -458,7 +459,7 @@ void node_command_handler_process(
             ESP_LOGW(TAG, "Command HMAC signature verification failed: cmd=%s, cmd_id=%s", cmd, cmd_id);
             cJSON *response = node_command_handler_create_response(
                 cmd_id,
-                "ERROR",
+                "FAILED",
                 "invalid_signature",
                 "Command HMAC signature verification failed",
                 NULL
@@ -492,22 +493,23 @@ void node_command_handler_process(
                  cmd, cmd_id, channel ? channel : "default", cached_status);
         
         // Определяем статус ответа на основе cached_status
-        const char *response_status = "ACK";
+        const char *response_status = "DONE";
         const char *error_code = NULL;
         const char *error_message = NULL;
         
-        if (strcmp(cached_status, "DONE") == 0) {
+        if (strcmp(cached_status, IN_PROGRESS_STATUS) == 0) {
+            response_status = "ACCEPTED";
+        } else if (strcmp(cached_status, "DONE") == 0) {
             response_status = "DONE";
         } else if (strcmp(cached_status, "FAILED") == 0) {
             response_status = "FAILED";
             error_code = "command_already_failed";
             error_message = "Command was already processed and failed previously";
         } else if (strcmp(cached_status, "ERROR") == 0) {
-            response_status = "ERROR";
-            error_code = "command_already_errored";
-            error_message = "Command was already processed and errored previously";
+            response_status = "FAILED";
+            error_code = "command_already_failed";
+            error_message = "Command was already processed and failed previously";
         }
-        // Если cached_status == "ACK", используем "ACK" (команда принята, но еще не завершена)
         
         cJSON *response = node_command_handler_create_response(
             cmd_id,
@@ -535,7 +537,7 @@ void node_command_handler_process(
         ESP_LOGW(TAG, "Command %s rejected: node is in safe_mode", cmd);
         cJSON *response = node_command_handler_create_response(
             cmd_id,
-            "ERROR",
+            "FAILED",
             "safe_mode_active",
             "Node is in safe mode. Use 'exit_safe_mode' command to exit.",
             NULL
@@ -600,7 +602,7 @@ void node_command_handler_process(
             ESP_LOGE(TAG, "Failed to duplicate command params (out of memory)");
             response = node_command_handler_create_response(
                 cmd_id,
-                "ERROR",
+                "FAILED",
                 "memory_error",
                 "Failed to parse command parameters",
                 NULL
@@ -612,7 +614,7 @@ void node_command_handler_process(
             if (err == ESP_OK && response == NULL) {
                 response = node_command_handler_create_response(
                     cmd_id,
-                    "ACK",
+                    "DONE",
                     NULL,
                     NULL,
                     NULL
@@ -620,7 +622,7 @@ void node_command_handler_process(
             } else if (err != ESP_OK && response == NULL) {
                 response = node_command_handler_create_response(
                     cmd_id,
-                    "ERROR",
+                    "FAILED",
                     "handler_error",
                     "Command handler failed",
                     NULL
@@ -644,7 +646,7 @@ void node_command_handler_process(
         ESP_LOGW(TAG, "Unknown command: %s", cmd);
         response = node_command_handler_create_response(
             cmd_id,
-            "ERROR",
+            "FAILED",
             "unknown_command",
             "Command not found",
             NULL
@@ -657,11 +659,12 @@ void node_command_handler_process(
         cJSON *status_item = cJSON_GetObjectItem(response, "status");
         if (status_item && cJSON_IsString(status_item)) {
             const char *status_str = status_item->valuestring;
-            // Сохраняем только терминальные статусы (DONE/FAILED/ERROR)
-            // ACK не сохраняем, так как это промежуточный статус
+            // Сохраняем только терминальные статусы (DONE/FAILED)
+            if (strcmp(status_str, "ERROR") == 0) {
+                status_str = "FAILED";
+            }
             if (strcmp(status_str, "DONE") == 0 || 
-                strcmp(status_str, "FAILED") == 0 || 
-                strcmp(status_str, "ERROR") == 0) {
+                strcmp(status_str, "FAILED") == 0) {
                 node_command_handler_cache_final_status(cmd_id, channel, status_str);
             }
         }
@@ -676,6 +679,40 @@ void node_command_handler_process(
     }
 
     cJSON_Delete(json);
+}
+
+const char *node_command_handler_get_cmd_id(const cJSON *params) {
+    if (!params) {
+        return NULL;
+    }
+
+    cJSON *cmd_id_item = cJSON_GetObjectItem(params, "cmd_id");
+    if (cmd_id_item && cJSON_IsString(cmd_id_item)) {
+        return cmd_id_item->valuestring;
+    }
+
+    return NULL;
+}
+
+esp_err_t node_command_handler_publish_accepted(const char *cmd_id, const char *channel) {
+    if (!cmd_id) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const char *publish_channel = channel ? channel : "default";
+    cJSON *accepted_response = node_command_handler_create_response(cmd_id, "ACCEPTED", NULL, NULL, NULL);
+    if (!accepted_response) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    char *json_str = cJSON_PrintUnformatted(accepted_response);
+    if (json_str) {
+        mqtt_manager_publish_command_response(publish_channel, json_str);
+        free(json_str);
+    }
+    cJSON_Delete(accepted_response);
+
+    return ESP_OK;
 }
 
 /**
@@ -703,7 +740,7 @@ static esp_err_t handle_set_time(
         if (response) {
             *response = node_command_handler_create_response(
                 NULL,
-                "ERROR",
+                "FAILED",
                 "invalid_params",
                 "Missing parameters",
                 NULL
@@ -718,7 +755,7 @@ static esp_err_t handle_set_time(
         if (response) {
             *response = node_command_handler_create_response(
                 NULL,
-                "ERROR",
+                "FAILED",
                 "invalid_params",
                 "Missing or invalid unix_ts",
                 NULL
@@ -735,7 +772,7 @@ static esp_err_t handle_set_time(
         if (response) {
             *response = node_command_handler_create_response(
                 NULL,
-                "ACK",
+                "DONE",
                 NULL,
                 NULL,
                 NULL
@@ -747,7 +784,7 @@ static esp_err_t handle_set_time(
         if (response) {
             *response = node_command_handler_create_response(
                 NULL,
-                "ERROR",
+                "FAILED",
                 "set_time_failed",
                 "Failed to set time",
                 NULL
@@ -816,7 +853,7 @@ bool node_command_handler_is_duplicate(const char *cmd_id, const char *channel) 
  * 
  * @param cmd_id ID команды
  * @param channel Имя канала (может быть NULL)
- * @return Указатель на строку статуса или NULL если команда не найдена или нет финального статуса
+ * @return Указатель на строку статуса, IN_PROGRESS если команда уже в обработке, или NULL если команда не найдена
  */
 const char *node_command_handler_get_cached_status(const char *cmd_id, const char *channel) {
     (void)channel;  // Не используем channel для глобального кеша
@@ -853,9 +890,11 @@ const char *node_command_handler_get_cached_status(const char *cmd_id, const cha
                     // Если есть финальный статус, возвращаем его
                     if (s_global_cmd_cache.global_cache[i].has_final_status) {
                         cached_status = s_global_cmd_cache.global_cache[i].final_status;
+                    } else {
+                        // Команда уже в обработке - не выполняем повторно
+                        cached_status = IN_PROGRESS_STATUS;
+                        s_global_cmd_cache.global_cache[i].timestamp_ms = current_time_ms;
                     }
-                    // Если нет финального статуса, но команда в кеше - это означает, что она обрабатывается
-                    // Возвращаем NULL, чтобы команда могла быть обработана (но это не должно происходить)
                     xSemaphoreGive(s_global_cmd_cache.cache_mutex);
                     if (cached_status) {
                         ESP_LOGD(TAG, "Cached final status found: cmd_id=%s, status=%s", cmd_id, cached_status);

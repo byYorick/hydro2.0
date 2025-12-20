@@ -12,7 +12,7 @@
         :r="radius"
         :stroke-width="strokeWidth"
         stroke="currentColor"
-        class="text-neutral-800"
+        class="text-[color:var(--border-muted)]"
         fill="none"
       />
       
@@ -37,7 +37,7 @@
       <span class="text-2xl font-bold" :class="textColorClass">
         {{ Math.round(progress) }}%
       </span>
-      <span v-if="label" class="text-xs text-neutral-400 mt-0.5">
+      <span v-if="label" class="text-xs text-[color:var(--text-muted)] mt-0.5">
         {{ label }}
       </span>
     </div>
@@ -75,26 +75,26 @@ const offset = computed(() => {
 const progressColorClass = computed(() => {
   switch (props.variant) {
     case 'success':
-      return 'text-emerald-500'
+      return 'text-[color:var(--accent-green)]'
     case 'warning':
-      return 'text-amber-500'
+      return 'text-[color:var(--accent-amber)]'
     case 'danger':
-      return 'text-red-500'
+      return 'text-[color:var(--accent-red)]'
     default:
-      return 'text-sky-500'
+      return 'text-[color:var(--accent-cyan)]'
   }
 })
 
 const textColorClass = computed(() => {
   switch (props.variant) {
     case 'success':
-      return 'text-emerald-400'
+      return 'text-[color:var(--accent-green)]'
     case 'warning':
-      return 'text-amber-400'
+      return 'text-[color:var(--accent-amber)]'
     case 'danger':
-      return 'text-red-400'
+      return 'text-[color:var(--accent-red)]'
     default:
-      return 'text-sky-400'
+      return 'text-[color:var(--accent-cyan)]'
   }
 })
 </script>

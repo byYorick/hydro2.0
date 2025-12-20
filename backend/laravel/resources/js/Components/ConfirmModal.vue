@@ -1,6 +1,8 @@
 <template>
   <Modal :open="open" :title="title" @close="$emit('close')">
-    <div class="text-sm text-neutral-300">{{ message }}</div>
+    <slot>
+      <div class="text-sm text-[color:var(--text-muted)]">{{ message }}</div>
+    </slot>
     <template #footer>
       <Button size="sm" variant="secondary" @click="$emit('close')">
         {{ cancelText }}
@@ -9,7 +11,7 @@
         size="sm" 
         :variant="confirmVariant"
         @click="$emit('confirm')"
-        :disabled="loading"
+        :disabled="loading || confirmDisabled"
       >
         {{ loading ? loadingText : confirmText }}
       </Button>
@@ -32,6 +34,7 @@ interface Props {
   cancelText?: string
   confirmVariant?: ButtonVariant
   loading?: boolean
+  confirmDisabled?: boolean
   loadingText?: string
 }
 
@@ -42,6 +45,7 @@ const props = withDefaults(defineProps<Props>(), {
   cancelText: 'Отмена',
   confirmVariant: 'primary',
   loading: false,
+  confirmDisabled: false,
   loadingText: 'Загрузка...'
 })
 
@@ -50,4 +54,3 @@ defineEmits<{
   confirm: []
 }>()
 </script>
-

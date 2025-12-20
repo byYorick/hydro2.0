@@ -5,20 +5,20 @@
         <Link
           v-if="item.href && index < items.length - 1"
           :href="item.href"
-          class="text-neutral-400 hover:text-neutral-200 transition-colors"
+          class="text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)] transition-colors"
         >
           {{ item.label }}
         </Link>
         <span
           v-else
-          class="text-neutral-200 font-medium"
-          :class="{ 'text-neutral-400': index < items.length - 1 }"
+          class="text-[color:var(--text-primary)] font-medium"
+          :class="{ 'text-[color:var(--text-muted)]': index < items.length - 1 }"
         >
           {{ item.label }}
         </span>
         <svg
           v-if="index < items.length - 1"
-          class="w-4 h-4 text-neutral-600 shrink-0"
+          class="w-4 h-4 text-[color:var(--text-dim)] shrink-0"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -118,4 +118,3 @@ const items = computed(() => {
 <style scoped>
 /* Дополнительные стили при необходимости */
 </style>
-

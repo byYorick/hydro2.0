@@ -2,12 +2,12 @@
   <!-- Bottom Navigation для мобильных устройств -->
   <nav
     v-if="isMobile"
-    class="fixed bottom-0 left-0 right-0 z-40 bg-neutral-925 border-t border-neutral-800 lg:hidden"
+    class="fixed bottom-0 left-0 right-0 z-40 bg-[color:var(--bg-surface-strong)] border-t border-[color:var(--border-muted)] lg:hidden"
   >
     <div class="flex items-center justify-around h-16">
       <NavLink
-        href="/"
-        :label="'Панель'"
+        href="/cycles"
+        :label="'Циклы'"
         class="flex flex-col items-center justify-center flex-1 h-full"
         :mobile="true"
       >
@@ -124,4 +124,3 @@ nav {
   -webkit-backdrop-filter: blur(10px);
 }
 </style>
-

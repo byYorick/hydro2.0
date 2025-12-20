@@ -3,12 +3,12 @@
     <div class="space-y-4">
       <div>
         <h3 class="text-sm font-semibold mb-2">Проверка готовности зоны</h3>
-        <p class="text-xs text-neutral-400 mb-4">
+        <p class="text-xs text-[color:var(--text-muted)] mb-4">
           Убедитесь, что все обязательные компоненты настроены и готовы к запуску
         </p>
       </div>
 
-      <div v-if="loading" class="text-sm text-neutral-400">
+      <div v-if="loading" class="text-sm text-[color:var(--text-muted)]">
         Проверка готовности...
       </div>
 
@@ -19,19 +19,19 @@
             v-for="check in checks"
             :key="check.key"
             class="flex items-center gap-3 p-2 rounded"
-            :class="check.passed ? 'bg-green-900/20' : 'bg-red-900/20'"
+            :class="check.passed ? 'bg-[color:var(--badge-success-bg)]' : 'bg-[color:var(--badge-danger-bg)]'"
           >
             <span
               :class="[
                 'text-lg',
-                check.passed ? 'text-green-400' : 'text-red-400'
+                check.passed ? 'text-[color:var(--accent-green)]' : 'text-[color:var(--accent-red)]'
               ]"
             >
               {{ check.passed ? '✓' : '✗' }}
             </span>
             <div class="flex-1">
               <div class="text-sm font-medium">{{ check.label }}</div>
-              <div v-if="check.message" class="text-xs text-neutral-400 mt-1">
+              <div v-if="check.message" class="text-xs text-[color:var(--text-muted)] mt-1">
                 {{ check.message }}
               </div>
             </div>
@@ -39,13 +39,13 @@
         </div>
 
         <!-- Детальные ошибки -->
-        <div v-if="errors.length > 0" class="mt-4 p-3 rounded border border-red-700 bg-red-900/10">
-          <div class="text-xs font-semibold text-red-400 mb-2">Обнаружены проблемы:</div>
+        <div v-if="errors.length > 0" class="mt-4 p-3 rounded border border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)]">
+          <div class="text-xs font-semibold text-[color:var(--accent-red)] mb-2">Обнаружены проблемы:</div>
           <ul class="space-y-1">
             <li
               v-for="(error, index) in errors"
               :key="index"
-              class="text-xs text-red-300"
+              class="text-xs text-[color:var(--badge-danger-text)]"
             >
               • {{ error }}
             </li>
@@ -57,15 +57,15 @@
           class="mt-4 p-4 rounded border"
           :class="
             readiness.ready
-              ? 'border-green-600 bg-green-900/20'
-              : 'border-red-600 bg-red-900/20'
+              ? 'border-[color:var(--badge-success-border)] bg-[color:var(--badge-success-bg)]'
+              : 'border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)]'
           "
         >
           <div class="flex items-center gap-2">
             <span
               :class="[
                 'text-lg',
-                readiness.ready ? 'text-green-400' : 'text-red-400'
+                readiness.ready ? 'text-[color:var(--accent-green)]' : 'text-[color:var(--accent-red)]'
               ]"
             >
               {{ readiness.ready ? '✓' : '✗' }}
@@ -74,7 +74,7 @@
               <div class="text-sm font-semibold">
                 {{ readiness.ready ? 'Зона готова к запуску' : 'Зона не готова к запуску' }}
               </div>
-              <div class="text-xs text-neutral-400 mt-1">
+              <div class="text-xs text-[color:var(--text-muted)] mt-1">
                 {{ readiness.ready ? 'Все проверки пройдены успешно' : 'Исправьте указанные проблемы перед запуском' }}
               </div>
             </div>
@@ -82,7 +82,7 @@
         </div>
       </div>
 
-      <div v-else class="text-sm text-neutral-400">
+      <div v-else class="text-sm text-[color:var(--text-muted)]">
         Нет данных о готовности
       </div>
     </div>
@@ -221,4 +221,3 @@ const checks = computed((): ReadinessCheck[] => {
   return checksList
 })
 </script>
-

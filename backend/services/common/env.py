@@ -34,6 +34,7 @@ class Settings:
     command_timeout_sec: int = int(os.getenv("COMMAND_TIMEOUT_SEC", "30"))
     mqtt_zone_format: str = os.getenv("MQTT_ZONE_FORMAT", "id")  # id | uid
     service_port: int = int(os.getenv("SERVICE_PORT", "9300"))  # Порт для history-logger
+    node_default_secret: str = os.getenv("NODE_DEFAULT_SECRET", "hydro-default-secret-key-2025")
     
     # History Logger specific settings
     shutdown_wait_sec: int = int(os.getenv("SHUTDOWN_WAIT_SEC", "2"))  # Время ожидания перед закрытием Redis
@@ -76,5 +77,4 @@ def get_settings() -> Settings:
             )
     
     return settings
-
 

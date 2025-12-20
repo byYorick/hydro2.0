@@ -4,7 +4,7 @@
     <Card 
       v-if="targets.ph"
       :class="[
-        'transition-all duration-300 hover:border-emerald-300/50 hover:shadow-[0_15px_40px_rgba(48,240,201,0.15)]',
+        'transition-all duration-300 hover:border-[color:var(--border-strong)] hover:shadow-[var(--shadow-card)]',
         getCardBorderClass(telemetry.ph, targets.ph.min, targets.ph.max)
       ]"
     >
@@ -35,7 +35,7 @@
       <!-- Прогресс-бар отклонения -->
       <div v-if="telemetry.ph !== null && telemetry.ph !== undefined && targets.ph" class="mt-3">
         <div class="flex items-center justify-between text-xs mb-1">
-          <span class="text-neutral-400">Цель: {{ formatTarget(targets.ph) }}</span>
+          <span class="text-[color:var(--text-muted)]">Цель: {{ formatTarget(targets.ph) }}</span>
           <span 
             v-if="getDeviationPercent(telemetry.ph, targets.ph) !== null"
             :class="getDeviationColorClass(telemetry.ph, targets.ph.min, targets.ph.max)"
@@ -44,7 +44,7 @@
             {{ formatDeviation(telemetry.ph, targets.ph) }}
           </span>
         </div>
-        <div class="w-full bg-neutral-800 rounded-full h-1.5 overflow-hidden">
+        <div class="w-full bg-[color:var(--border-muted)] rounded-full h-1.5 overflow-hidden">
           <div
             :class="getProgressBarClass(telemetry.ph, targets.ph.min, targets.ph.max)"
             class="h-full transition-all duration-500 ease-out"
@@ -52,7 +52,7 @@
           />
         </div>
       </div>
-      <div v-else class="text-xs text-neutral-400 mt-1">
+      <div v-else class="text-xs text-[color:var(--text-muted)] mt-1">
         Цель: {{ formatTarget(targets.ph) }}
       </div>
     </Card>
@@ -61,7 +61,7 @@
     <Card 
       v-if="targets.ec"
       :class="[
-        'transition-all duration-300 hover:border-cyan-300/50 hover:shadow-[0_15px_40px_rgba(48,240,201,0.15)]',
+        'transition-all duration-300 hover:border-[color:var(--border-strong)] hover:shadow-[var(--shadow-card)]',
         getCardBorderClass(telemetry.ec, targets.ec.min, targets.ec.max)
       ]"
     >
@@ -92,7 +92,7 @@
       <!-- Прогресс-бар отклонения -->
       <div v-if="telemetry.ec !== null && telemetry.ec !== undefined && targets.ec" class="mt-3">
         <div class="flex items-center justify-between text-xs mb-1">
-          <span class="text-neutral-400">Цель: {{ formatTarget(targets.ec) }}</span>
+          <span class="text-[color:var(--text-muted)]">Цель: {{ formatTarget(targets.ec) }}</span>
           <span 
             v-if="getDeviationPercent(telemetry.ec, targets.ec) !== null"
             :class="getDeviationColorClass(telemetry.ec, targets.ec.min, targets.ec.max)"
@@ -101,7 +101,7 @@
             {{ formatDeviation(telemetry.ec, targets.ec) }}
           </span>
         </div>
-        <div class="w-full bg-neutral-800 rounded-full h-1.5 overflow-hidden">
+        <div class="w-full bg-[color:var(--border-muted)] rounded-full h-1.5 overflow-hidden">
           <div
             :class="getProgressBarClass(telemetry.ec, targets.ec.min, targets.ec.max)"
             class="h-full transition-all duration-500 ease-out"
@@ -109,7 +109,7 @@
           />
         </div>
       </div>
-      <div v-else class="text-xs text-neutral-400 mt-1">
+      <div v-else class="text-xs text-[color:var(--text-muted)] mt-1">
         Цель: {{ formatTarget(targets.ec) }}
       </div>
     </Card>
@@ -118,7 +118,7 @@
     <Card 
       v-if="targets.temp"
       :class="[
-        'transition-all duration-300 hover:border-amber-300/50 hover:shadow-[0_15px_40px_rgba(245,159,69,0.15)]',
+        'transition-all duration-300 hover:border-[color:var(--border-strong)] hover:shadow-[var(--shadow-card)]',
         getCardBorderClass(telemetry.temperature, targets.temp.min, targets.temp.max)
       ]"
     >
@@ -149,7 +149,7 @@
       <!-- Прогресс-бар отклонения -->
       <div v-if="telemetry.temperature !== null && telemetry.temperature !== undefined && targets.temp" class="mt-3">
         <div class="flex items-center justify-between text-xs mb-1">
-          <span class="text-neutral-400">Цель: {{ formatTarget(targets.temp, '°C') }}</span>
+          <span class="text-[color:var(--text-muted)]">Цель: {{ formatTarget(targets.temp, '°C') }}</span>
           <span 
             v-if="getDeviationPercent(telemetry.temperature, targets.temp) !== null"
             :class="getDeviationColorClass(telemetry.temperature, targets.temp.min, targets.temp.max)"
@@ -158,7 +158,7 @@
             {{ formatDeviation(telemetry.temperature, targets.temp, '°C') }}
           </span>
         </div>
-        <div class="w-full bg-neutral-800 rounded-full h-1.5 overflow-hidden">
+        <div class="w-full bg-[color:var(--border-muted)] rounded-full h-1.5 overflow-hidden">
           <div
             :class="getProgressBarClass(telemetry.temperature, targets.temp.min, targets.temp.max)"
             class="h-full transition-all duration-500 ease-out"
@@ -166,7 +166,7 @@
           />
         </div>
       </div>
-      <div v-else class="text-xs text-neutral-400 mt-1">
+      <div v-else class="text-xs text-[color:var(--text-muted)] mt-1">
         Цель: {{ formatTarget(targets.temp, '°C') }}
       </div>
     </Card>
@@ -175,7 +175,7 @@
     <Card 
       v-if="targets.humidity"
       :class="[
-        'transition-all duration-300 hover:border-cyan-200/50 hover:shadow-[0_15px_40px_rgba(48,240,201,0.15)]',
+        'transition-all duration-300 hover:border-[color:var(--border-strong)] hover:shadow-[var(--shadow-card)]',
         getCardBorderClass(telemetry.humidity, targets.humidity.min, targets.humidity.max)
       ]"
     >
@@ -206,7 +206,7 @@
       <!-- Прогресс-бар отклонения -->
       <div v-if="telemetry.humidity !== null && telemetry.humidity !== undefined && targets.humidity" class="mt-3">
         <div class="flex items-center justify-between text-xs mb-1">
-          <span class="text-neutral-400">Цель: {{ formatTarget(targets.humidity, '%') }}</span>
+          <span class="text-[color:var(--text-muted)]">Цель: {{ formatTarget(targets.humidity, '%') }}</span>
           <span 
             v-if="getDeviationPercent(telemetry.humidity, targets.humidity) !== null"
             :class="getDeviationColorClass(telemetry.humidity, targets.humidity.min, targets.humidity.max)"
@@ -215,7 +215,7 @@
             {{ formatDeviation(telemetry.humidity, targets.humidity, '%') }}
           </span>
         </div>
-        <div class="w-full bg-neutral-800 rounded-full h-1.5 overflow-hidden">
+        <div class="w-full bg-[color:var(--border-muted)] rounded-full h-1.5 overflow-hidden">
           <div
             :class="getProgressBarClass(telemetry.humidity, targets.humidity.min, targets.humidity.max)"
             class="h-full transition-all duration-500 ease-out"
@@ -223,7 +223,7 @@
           />
         </div>
       </div>
-      <div v-else class="text-xs text-neutral-400 mt-1">
+      <div v-else class="text-xs text-[color:var(--text-muted)] mt-1">
         Цель: {{ formatTarget(targets.humidity, '%') }}
       </div>
     </Card>
@@ -375,13 +375,13 @@ function getProgressBarClass(value: number | null | undefined, min: number | nul
   const variant = getIndicatorVariant(value, min, max)
   switch (variant) {
     case 'success':
-      return 'bg-emerald-500'
+      return 'bg-[color:var(--accent-green)]'
     case 'warning':
-      return 'bg-amber-500'
+      return 'bg-[color:var(--accent-amber)]'
     case 'danger':
-      return 'bg-red-500'
+      return 'bg-[color:var(--accent-red)]'
     default:
-      return 'bg-neutral-500'
+      return 'bg-[color:var(--text-dim)]'
   }
 }
 
@@ -390,13 +390,13 @@ function getValueColorClass(value: number | null | undefined, min: number | null
   const variant = getIndicatorVariant(value, min, max)
   switch (variant) {
     case 'success':
-      return 'text-emerald-400'
+      return 'text-[color:var(--accent-green)]'
     case 'warning':
-      return 'text-amber-400'
+      return 'text-[color:var(--accent-amber)]'
     case 'danger':
-      return 'text-red-400'
+      return 'text-[color:var(--accent-red)]'
     default:
-      return 'text-neutral-300'
+      return 'text-[color:var(--text-muted)]'
   }
 }
 
@@ -405,13 +405,13 @@ function getDeviationColorClass(value: number | null | undefined, min: number | 
   const variant = getIndicatorVariant(value, min, max)
   switch (variant) {
     case 'success':
-      return 'text-emerald-400'
+      return 'text-[color:var(--accent-green)]'
     case 'warning':
-      return 'text-amber-400'
+      return 'text-[color:var(--accent-amber)]'
     case 'danger':
-      return 'text-red-400'
+      return 'text-[color:var(--accent-red)]'
     default:
-      return 'text-neutral-400'
+      return 'text-[color:var(--text-muted)]'
   }
 }
 
@@ -420,11 +420,11 @@ function getCardBorderClass(value: number | null | undefined, min: number | null
   const variant = getIndicatorVariant(value, min, max)
   switch (variant) {
     case 'success':
-      return 'border-emerald-700/30'
+      return 'border-[color:var(--badge-success-border)]'
     case 'warning':
-      return 'border-amber-700/30'
+      return 'border-[color:var(--badge-warning-border)]'
     case 'danger':
-      return 'border-red-700/30'
+      return 'border-[color:var(--badge-danger-border)]'
     default:
       return ''
   }
@@ -435,13 +435,13 @@ function getPulseClass(value: number | null | undefined, min: number | null | un
   const variant = getIndicatorVariant(value, min, max)
   switch (variant) {
     case 'success':
-      return 'bg-emerald-500 animate-pulse'
+      return 'bg-[color:var(--accent-green)] animate-pulse'
     case 'warning':
-      return 'bg-amber-500 animate-pulse'
+      return 'bg-[color:var(--accent-amber)] animate-pulse'
     case 'danger':
-      return 'bg-red-500 animate-pulse'
+      return 'bg-[color:var(--accent-red)] animate-pulse'
     default:
-      return 'bg-neutral-500'
+      return 'bg-[color:var(--text-dim)]'
   }
 }
 </script>

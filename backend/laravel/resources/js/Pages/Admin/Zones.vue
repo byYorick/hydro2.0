@@ -4,15 +4,15 @@
     <Card class="mb-4">
       <div class="text-sm font-semibold mb-2">Create Zone</div>
       <form class="grid grid-cols-1 md:grid-cols-4 gap-2" @submit.prevent="onCreate">
-        <input v-model="form.name" placeholder="Name" class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
-        <input v-model="form.description" placeholder="Description" class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
-        <select v-model="form.status" class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm">
+        <input v-model="form.name" placeholder="Name" class="input-field" />
+        <input v-model="form.description" placeholder="Description" class="input-field" />
+        <select v-model="form.status" class="input-select">
           <option value="RUNNING">RUNNING</option>
           <option value="PAUSED">PAUSED</option>
           <option value="WARNING">WARNING</option>
           <option value="ALARM">ALARM</option>
         </select>
-        <select v-model="form.greenhouse_id" class="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm">
+        <select v-model="form.greenhouse_id" class="input-select">
           <option :value="null">Выберите теплицу</option>
           <option v-for="gh in greenhouses" :key="gh.id" :value="gh.id">{{ gh.name }}</option>
         </select>
@@ -24,7 +24,7 @@
 
     <Card>
       <div class="text-sm font-semibold mb-2">Zones</div>
-      <ul class="text-sm text-neutral-300 space-y-1">
+      <ul class="text-sm text-[color:var(--text-muted)] space-y-1">
         <li v-for="z in zones" :key="z.id">
           {{ z.name }} — {{ z.status }}
           <span v-if="z.description"> — {{ z.description }}</span>
@@ -110,4 +110,3 @@ async function onCreate(): Promise<void> {
   }
 }
 </script>
-

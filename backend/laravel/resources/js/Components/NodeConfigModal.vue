@@ -1,16 +1,16 @@
 <template>
   <Modal :open="show" :title="`Настройка узла ${node?.uid || node?.id}`" @close="handleClose">
-    <div v-if="loading" class="text-sm text-neutral-400">Загрузка конфигурации...</div>
+    <div v-if="loading" class="text-sm text-[color:var(--text-muted)]">Загрузка конфигурации...</div>
     <div v-else class="space-y-4">
-      <div class="text-xs text-neutral-400 mb-2">
+      <div class="text-xs text-[color:var(--text-muted)] mb-2">
         Настройте каналы узла. Конфигурация будет отправлена узлу через MQTT.
       </div>
 
-      <div v-if="errorMessage" class="text-xs text-amber-200 bg-amber-950/30 border border-amber-800 rounded-lg p-3">
+      <div v-if="errorMessage" class="text-xs text-[color:var(--badge-warning-text)] bg-[color:var(--badge-warning-bg)] border border-[color:var(--badge-warning-border)] rounded-lg p-3">
         {{ errorMessage }}
       </div>
 
-      <div v-if="!hasChannels && !loading" class="text-sm text-neutral-400">
+      <div v-if="!hasChannels && !loading" class="text-sm text-[color:var(--text-muted)]">
         У узла нет настроенных каналов
       </div>
 
@@ -18,16 +18,16 @@
         <div
           v-for="(channel, index) in channels"
           :key="channel.id || index"
-          class="p-3 rounded-xl border border-neutral-700 bg-neutral-925 space-y-2"
+          class="p-3 rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] space-y-2"
         >
           <div class="flex items-center justify-between gap-2">
             <div>
-              <div class="text-xs uppercase tracking-[0.2em] text-neutral-500">Канал {{ index + 1 }}</div>
+              <div class="text-xs uppercase tracking-[0.2em] text-[color:var(--text-dim)]">Канал {{ index + 1 }}</div>
             </div>
             <button
               v-if="channels.length > 1"
               type="button"
-              class="text-xs text-rose-400 hover:text-rose-300"
+              class="text-xs text-[color:var(--accent-red)] hover:text-[color:var(--badge-danger-text)]"
               @click="removeChannel(index)"
             >
               Удалить
@@ -35,19 +35,19 @@
           </div>
           <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
-              <label class="block text-xs text-neutral-400 mb-1">Channel</label>
+              <label class="block text-xs text-[color:var(--text-muted)] mb-1">Channel</label>
               <input
                 v-model="channel.channel"
                 type="text"
                 placeholder="example_channel"
-                class="h-9 w-full rounded-lg border border-neutral-700 bg-neutral-900 px-2 text-xs focus:border-sky-500"
+                class="input-field h-9 w-full text-xs"
               />
             </div>
             <div>
-              <label class="block text-xs text-neutral-400 mb-1">Type</label>
+              <label class="block text-xs text-[color:var(--text-muted)] mb-1">Type</label>
               <select
                 v-model="channel.type"
-                class="h-9 w-full rounded-lg border border-neutral-700 bg-neutral-900 px-2 text-xs focus:border-sky-500"
+                class="input-select h-9 w-full text-xs"
               >
                 <option v-for="option in availableTypes" :key="option.value" :value="option.value">
                   {{ option.label }}
@@ -55,32 +55,32 @@
               </select>
             </div>
             <div>
-              <label class="block text-xs text-neutral-400 mb-1">Unit</label>
+              <label class="block text-xs text-[color:var(--text-muted)] mb-1">Unit</label>
               <input
                 v-model="channel.unit"
                 type="text"
                 placeholder="единицы измерения"
-                class="h-9 w-full rounded-lg border border-neutral-700 bg-neutral-900 px-2 text-xs focus:border-sky-500"
+                class="input-field h-9 w-full text-xs"
               />
             </div>
           </div>
-          <div class="grid grid-cols-2 gap-3 text-xs text-neutral-400">
+          <div class="grid grid-cols-2 gap-3 text-xs text-[color:var(--text-muted)]">
             <div>
-              <label class="block text-[0.6rem] uppercase text-neutral-500">Min</label>
+              <label class="block text-[0.6rem] uppercase text-[color:var(--text-dim)]">Min</label>
               <input
                 v-model.number="channel.min"
                 type="number"
                 step="0.01"
-                class="h-8 w-full rounded-lg border border-neutral-700 bg-neutral-900 px-2 text-xs"
+                class="input-field h-8 w-full text-xs"
               />
             </div>
             <div>
-              <label class="block text-[0.6rem] uppercase text-neutral-500">Max</label>
+              <label class="block text-[0.6rem] uppercase text-[color:var(--text-dim)]">Max</label>
               <input
                 v-model.number="channel.max"
                 type="number"
                 step="0.01"
-                class="h-8 w-full rounded-lg border border-neutral-700 bg-neutral-900 px-2 text-xs"
+                class="input-field h-8 w-full text-xs"
               />
             </div>
           </div>
@@ -89,7 +89,7 @@
 
       <div class="flex flex-wrap items-center gap-3">
         <Button size="sm" variant="secondary" @click="addChannel">Добавить канал</Button>
-        <span class="text-xs text-neutral-400">Для сохранения отправьте конфигурацию</span>
+        <span class="text-xs text-[color:var(--text-muted)]">Для сохранения отправьте конфигурацию</span>
       </div>
     </div>
     

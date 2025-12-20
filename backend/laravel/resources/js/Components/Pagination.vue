@@ -1,6 +1,6 @@
 <template>
-  <div v-if="totalPages > 1" class="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-neutral-800 bg-neutral-900/50">
-    <div class="text-xs text-neutral-400 order-3 sm:order-1">
+  <div v-if="totalPages > 1" class="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-[color:var(--border-muted)] bg-[color:var(--bg-surface)]">
+    <div class="text-xs text-[color:var(--text-dim)] order-3 sm:order-1">
       Показано {{ startItem }}-{{ endItem }} из {{ total }}
     </div>
     <div class="flex items-center gap-2 order-1 sm:order-2">
@@ -8,10 +8,10 @@
         @click="goToPage(currentPageModel - 1)"
         :disabled="currentPageModel === 1"
         :aria-label="'Перейти на предыдущую страницу'"
-        class="px-3 py-1.5 text-sm rounded-md border transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-neutral-900"
+        class="px-3 py-1.5 text-sm rounded-md border transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[color:var(--focus-ring)] focus:ring-offset-2 focus:ring-offset-[color:var(--bg-main)]"
         :class="currentPageModel === 1
-          ? 'border-neutral-700 bg-neutral-900 text-neutral-500'
-          : 'border-neutral-700 bg-neutral-900 text-neutral-300 hover:border-neutral-600 hover:bg-neutral-800'"
+          ? 'border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] text-[color:var(--text-dim)]'
+          : 'border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] text-[color:var(--text-muted)] hover:border-[color:var(--border-strong)] hover:bg-[color:var(--bg-elevated)]'"
       >
         <span class="sr-only">Назад</span>
         <span aria-hidden="true">‹</span>
@@ -24,14 +24,14 @@
           @click="goToPage(1)"
           :aria-label="`Перейти на страницу 1`"
           :aria-current="currentPageModel === 1 ? 'page' : undefined"
-          class="min-w-[32px] px-2 py-1.5 text-sm rounded-md border transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-neutral-900"
+          class="min-w-[32px] px-2 py-1.5 text-sm rounded-md border transition-colors focus:outline-none focus:ring-2 focus:ring-[color:var(--focus-ring)] focus:ring-offset-2 focus:ring-offset-[color:var(--bg-main)]"
           :class="currentPageModel === 1
-            ? 'border-sky-500 bg-sky-600 text-white'
-            : 'border-neutral-700 bg-neutral-900 text-neutral-300 hover:border-neutral-600 hover:bg-neutral-800'"
+            ? 'border-[color:var(--badge-info-border)] bg-[color:var(--badge-info-bg)] text-[color:var(--badge-info-text)]'
+            : 'border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] text-[color:var(--text-muted)] hover:border-[color:var(--border-strong)] hover:bg-[color:var(--bg-elevated)]'"
         >
           1
         </button>
-        <span v-if="showFirstEllipsis" class="px-2 text-neutral-500">...</span>
+        <span v-if="showFirstEllipsis" class="px-2 text-[color:var(--text-dim)]">...</span>
         
         <!-- Видимые страницы -->
         <button
@@ -40,25 +40,25 @@
           @click="goToPage(page)"
           :aria-label="`Перейти на страницу ${page}`"
           :aria-current="page === currentPageModel ? 'page' : undefined"
-          class="min-w-[32px] px-2 py-1.5 text-sm rounded-md border transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-neutral-900"
+          class="min-w-[32px] px-2 py-1.5 text-sm rounded-md border transition-colors focus:outline-none focus:ring-2 focus:ring-[color:var(--focus-ring)] focus:ring-offset-2 focus:ring-offset-[color:var(--bg-main)]"
           :class="page === currentPageModel
-            ? 'border-sky-500 bg-sky-600 text-white'
-            : 'border-neutral-700 bg-neutral-900 text-neutral-300 hover:border-neutral-600 hover:bg-neutral-800'"
+            ? 'border-[color:var(--badge-info-border)] bg-[color:var(--badge-info-bg)] text-[color:var(--badge-info-text)]'
+            : 'border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] text-[color:var(--text-muted)] hover:border-[color:var(--border-strong)] hover:bg-[color:var(--bg-elevated)]'"
         >
           {{ page }}
         </button>
         
-        <span v-if="showLastEllipsis" class="px-2 text-neutral-500">...</span>
+        <span v-if="showLastEllipsis" class="px-2 text-[color:var(--text-dim)]">...</span>
         <!-- Последняя страница -->
         <button
           v-if="showLastPage"
           @click="goToPage(totalPages)"
           :aria-label="`Перейти на страницу ${totalPages}`"
           :aria-current="currentPageModel === totalPages ? 'page' : undefined"
-          class="min-w-[32px] px-2 py-1.5 text-sm rounded-md border transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-neutral-900"
+          class="min-w-[32px] px-2 py-1.5 text-sm rounded-md border transition-colors focus:outline-none focus:ring-2 focus:ring-[color:var(--focus-ring)] focus:ring-offset-2 focus:ring-offset-[color:var(--bg-main)]"
           :class="currentPageModel === totalPages
-            ? 'border-sky-500 bg-sky-600 text-white'
-            : 'border-neutral-700 bg-neutral-900 text-neutral-300 hover:border-neutral-600 hover:bg-neutral-800'"
+            ? 'border-[color:var(--badge-info-border)] bg-[color:var(--badge-info-bg)] text-[color:var(--badge-info-text)]'
+            : 'border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] text-[color:var(--text-muted)] hover:border-[color:var(--border-strong)] hover:bg-[color:var(--bg-elevated)]'"
         >
           {{ totalPages }}
         </button>
@@ -68,10 +68,10 @@
         @click="goToPage(currentPageModel + 1)"
         :disabled="currentPageModel === totalPages"
         :aria-label="'Перейти на следующую страницу'"
-        class="px-3 py-1.5 text-sm rounded-md border transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-neutral-900"
+        class="px-3 py-1.5 text-sm rounded-md border transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[color:var(--focus-ring)] focus:ring-offset-2 focus:ring-offset-[color:var(--bg-main)]"
         :class="currentPageModel === totalPages
-          ? 'border-neutral-700 bg-neutral-900 text-neutral-500'
-          : 'border-neutral-700 bg-neutral-900 text-neutral-300 hover:border-neutral-600 hover:bg-neutral-800'"
+          ? 'border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] text-[color:var(--text-dim)]'
+          : 'border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] text-[color:var(--text-muted)] hover:border-[color:var(--border-strong)] hover:bg-[color:var(--bg-elevated)]'"
       >
         <span class="sr-only">Вперед</span>
         <span aria-hidden="true">›</span>
@@ -79,12 +79,12 @@
     </div>
     
     <div class="flex items-center gap-2 order-2 sm:order-3">
-      <label for="pagination-per-page" class="text-xs text-neutral-400">На странице:</label>
+      <label for="pagination-per-page" class="text-xs text-[color:var(--text-dim)]">На странице:</label>
       <select
         id="pagination-per-page"
         :value="perPageModel"
         @change="onPerPageChange(Number(($event.target as HTMLSelectElement).value))"
-        class="h-7 px-2 text-xs rounded-md border border-neutral-700 bg-neutral-900 text-neutral-300 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-neutral-900"
+        class="h-7 px-2 text-xs rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] text-[color:var(--text-muted)] focus:border-[color:var(--accent-green)] focus:outline-none focus:ring-2 focus:ring-[color:var(--focus-ring)] focus:ring-offset-2 focus:ring-offset-[color:var(--bg-main)]"
         aria-label="Количество элементов на странице"
       >
         <option :value="10">10</option>
@@ -257,4 +257,3 @@ function onPerPageChange(newPerPage: number) {
   border-width: 0;
 }
 </style>
-

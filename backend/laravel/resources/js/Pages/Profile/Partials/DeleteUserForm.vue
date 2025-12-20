@@ -50,11 +50,11 @@ const closeModal = () => {
 <template>
     <section class="space-y-6">
         <header>
-            <h2 class="text-lg font-medium text-neutral-100">
+            <h2 class="text-lg font-medium text-[color:var(--text-primary)]">
                 Удаление аккаунта
             </h2>
 
-            <p class="mt-1 text-sm text-neutral-400">
+            <p class="mt-1 text-sm text-[color:var(--text-muted)]">
                 После удаления аккаунта все его ресурсы и данные будут безвозвратно удалены. 
                 Перед удалением аккаунта, пожалуйста, загрузите все данные или информацию, 
                 которую вы хотите сохранить.
@@ -66,12 +66,12 @@ const closeModal = () => {
         <Modal :show="confirmingUserDeletion" @close="closeModal">
             <div class="p-6">
                 <h2
-                    class="text-lg font-medium text-neutral-100"
+                    class="text-lg font-medium text-[color:var(--text-primary)]"
                 >
                     Вы уверены, что хотите удалить свой аккаунт?
                 </h2>
 
-                <p class="mt-1 text-sm text-neutral-400">
+                <p class="mt-1 text-sm text-[color:var(--text-muted)]">
                     После удаления аккаунта все его ресурсы и данные будут безвозвратно удалены. 
                     Пожалуйста, введите ваш пароль для подтверждения удаления аккаунта.
                 </p>

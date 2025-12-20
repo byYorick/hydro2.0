@@ -3,8 +3,8 @@
     <form @submit.prevent="onSubmit" class="space-y-4">
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div class="md:col-span-2">
-          <label for="plant-name" class="block text-xs text-neutral-400 mb-1">
-            Название <span class="text-red-400">*</span>
+          <label for="plant-name" class="block text-xs text-[color:var(--text-muted)] mb-1">
+            Название <span class="text-[color:var(--accent-red)]">*</span>
           </label>
           <input
             id="plant-name"
@@ -13,46 +13,46 @@
             type="text"
             required
             placeholder="Салат Айсберг"
-            class="h-9 w-full rounded-md border px-2 text-sm"
-            :class="errors.name ? 'border-red-500 bg-red-900/20' : 'border-neutral-700 bg-neutral-900'"
+            class="input-field h-9 w-full"
+            :class="errors.name ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''"
             autocomplete="off"
           />
-          <div v-if="errors.name" class="text-xs text-red-400 mt-1">{{ errors.name }}</div>
+          <div v-if="errors.name" class="text-xs text-[color:var(--accent-red)] mt-1">{{ errors.name }}</div>
         </div>
 
         <div>
-          <label for="plant-species" class="block text-xs text-neutral-400 mb-1">Вид</label>
+          <label for="plant-species" class="block text-xs text-[color:var(--text-muted)] mb-1">Вид</label>
           <input
             id="plant-species"
             name="species"
             v-model="form.species"
             type="text"
             placeholder="Lactuca sativa"
-            class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+            class="input-field h-9 w-full"
             autocomplete="off"
           />
         </div>
 
         <div>
-          <label for="plant-variety" class="block text-xs text-neutral-400 mb-1">Сорт</label>
+          <label for="plant-variety" class="block text-xs text-[color:var(--text-muted)] mb-1">Сорт</label>
           <input
             id="plant-variety"
             name="variety"
             v-model="form.variety"
             type="text"
             placeholder="Айсберг"
-            class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+            class="input-field h-9 w-full"
             autocomplete="off"
           />
         </div>
 
         <div>
-          <label for="plant-substrate" class="block text-xs text-neutral-400 mb-1">Субстрат</label>
+          <label for="plant-substrate" class="block text-xs text-[color:var(--text-muted)] mb-1">Субстрат</label>
           <select
             id="plant-substrate"
             name="substrate_type"
             v-model="form.substrate_type"
-            class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+            class="input-select h-9 w-full"
           >
             <option value="">Не выбрано</option>
             <option v-for="option in taxonomies.substrate_type" :key="option.id" :value="option.id">
@@ -62,12 +62,12 @@
         </div>
 
         <div>
-          <label for="plant-system" class="block text-xs text-neutral-400 mb-1">Система</label>
+          <label for="plant-system" class="block text-xs text-[color:var(--text-muted)] mb-1">Система</label>
           <select
             id="plant-system"
             name="growing_system"
             v-model="form.growing_system"
-            class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+            class="input-select h-9 w-full"
           >
             <option value="">Не выбрано</option>
             <option v-for="option in taxonomies.growing_system" :key="option.id" :value="option.id">
@@ -77,12 +77,12 @@
         </div>
 
         <div>
-          <label for="plant-photoperiod" class="block text-xs text-neutral-400 mb-1">Фотопериод</label>
+          <label for="plant-photoperiod" class="block text-xs text-[color:var(--text-muted)] mb-1">Фотопериод</label>
           <select
             id="plant-photoperiod"
             name="photoperiod_preset"
             v-model="form.photoperiod_preset"
-            class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+            class="input-select h-9 w-full"
           >
             <option value="">Не выбрано</option>
             <option v-for="option in taxonomies.photoperiod_preset" :key="option.id" :value="option.id">
@@ -92,12 +92,12 @@
         </div>
 
         <div>
-          <label for="plant-seasonality" class="block text-xs text-neutral-400 mb-1">Сезонность</label>
+          <label for="plant-seasonality" class="block text-xs text-[color:var(--text-muted)] mb-1">Сезонность</label>
           <select
             id="plant-seasonality"
             name="seasonality"
             v-model="form.seasonality"
-            class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+            class="input-select h-9 w-full"
           >
             <option value="">Не выбрано</option>
             <option v-for="option in seasonOptions" :key="option.value" :value="option.value">
@@ -107,23 +107,23 @@
         </div>
 
         <div class="md:col-span-2">
-          <label for="plant-description" class="block text-xs text-neutral-400 mb-1">Описание</label>
+          <label for="plant-description" class="block text-xs text-[color:var(--text-muted)] mb-1">Описание</label>
           <textarea
             id="plant-description"
             name="description"
             v-model="form.description"
             rows="3"
             placeholder="Описание растения..."
-            class="w-full rounded-md border px-2 py-1 text-sm border-neutral-700 bg-neutral-900"
+            class="input-field w-full"
             autocomplete="off"
           ></textarea>
         </div>
 
         <div class="md:col-span-2">
-          <p class="text-sm font-semibold text-neutral-200 mb-2">Диапазоны параметров</p>
+          <p class="text-sm font-semibold text-[color:var(--text-primary)] mb-2">Диапазоны параметров</p>
           <div class="grid grid-cols-2 gap-3" v-for="metric in rangeMetrics" :key="metric.key">
             <div>
-              <label :for="`plant-${metric.key}-min`" class="block text-xs text-neutral-400 mb-1">{{ metric.label }} (мин)</label>
+              <label :for="`plant-${metric.key}-min`" class="block text-xs text-[color:var(--text-muted)] mb-1">{{ metric.label }} (мин)</label>
               <input
                 :id="`plant-${metric.key}-min`"
                 :name="`${metric.key}_min`"
@@ -131,12 +131,12 @@
                 type="number"
                 step="0.1"
                 placeholder="Мин"
-                class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+                class="input-field h-9 w-full"
                 autocomplete="off"
               />
             </div>
             <div>
-              <label :for="`plant-${metric.key}-max`" class="block text-xs text-neutral-400 mb-1">{{ metric.label }} (макс)</label>
+              <label :for="`plant-${metric.key}-max`" class="block text-xs text-[color:var(--text-muted)] mb-1">{{ metric.label }} (макс)</label>
               <input
                 :id="`plant-${metric.key}-max`"
                 :name="`${metric.key}_max`"
@@ -144,7 +144,7 @@
                 type="number"
                 step="0.1"
                 placeholder="Макс"
-                class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+                class="input-field h-9 w-full"
                 autocomplete="off"
               />
             </div>
@@ -152,7 +152,7 @@
         </div>
       </div>
 
-      <div v-if="errors.general" class="text-sm text-red-400">{{ errors.general }}</div>
+      <div v-if="errors.general" class="text-sm text-[color:var(--accent-red)]">{{ errors.general }}</div>
     </form>
 
     <template #footer>
@@ -332,4 +332,3 @@ async function onSubmit() {
   }
 }
 </script>
-

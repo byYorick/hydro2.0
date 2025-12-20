@@ -42,11 +42,11 @@ const submit = () => {
 <template>
     <section>
         <header>
-            <h2 class="text-lg font-medium text-neutral-100">
+            <h2 class="text-lg font-medium text-[color:var(--text-primary)]">
                 Информация профиля
             </h2>
 
-            <p class="mt-1 text-sm text-neutral-400">
+            <p class="mt-1 text-sm text-[color:var(--text-muted)]">
                 Обновите информацию о вашем профиле и адрес электронной почты.
             </p>
         </header>
@@ -87,13 +87,13 @@ const submit = () => {
             </div>
 
             <div v-if="mustVerifyEmail && user.email_verified_at === null">
-                <p class="mt-2 text-sm text-neutral-400">
+                <p class="mt-2 text-sm text-[color:var(--text-muted)]">
                     Ваш адрес электронной почты не подтвержден.
                     <Link
                         :href="route('verification.send')"
                         method="post"
                         as="button"
-                        class="rounded-md text-sm text-neutral-300 underline hover:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                        class="rounded-md text-sm text-[color:var(--text-muted)] underline hover:text-[color:var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[color:var(--focus-ring)] focus:ring-offset-2"
                     >
                         Нажмите здесь, чтобы повторно отправить письмо с подтверждением.
                     </Link>
@@ -101,7 +101,7 @@ const submit = () => {
 
                 <div
                     v-show="status === 'verification-link-sent'"
-                    class="mt-2 text-sm font-medium text-emerald-400"
+                    class="mt-2 text-sm font-medium text-[color:var(--accent-green)]"
                 >
                     Новое письмо с подтверждением отправлено на ваш адрес электронной почты.
                 </div>
@@ -118,7 +118,7 @@ const submit = () => {
                 >
                     <p
                         v-if="form.recentlySuccessful"
-                        class="text-sm text-neutral-400"
+                        class="text-sm text-[color:var(--text-muted)]"
                     >
                         Сохранено.
                     </p>

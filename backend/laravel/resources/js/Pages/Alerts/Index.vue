@@ -5,28 +5,28 @@
     </div>
     <div class="mb-3 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
       <div class="flex items-center gap-2 flex-1 sm:flex-none">
-        <label class="text-sm text-neutral-300 shrink-0">Фильтр:</label>
-        <select v-model="onlyActive" data-testid="alerts-filter-active" class="h-9 flex-1 sm:w-auto sm:min-w-[140px] rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm">
+        <label class="text-sm text-[color:var(--text-muted)] shrink-0">Фильтр:</label>
+        <select v-model="onlyActive" data-testid="alerts-filter-active" class="input-select flex-1 sm:w-auto sm:min-w-[140px]">
           <option :value="true">Только активные</option>
           <option :value="false">Все</option>
         </select>
       </div>
       <div class="flex items-center gap-2 flex-1 sm:flex-none">
-        <label class="text-sm text-neutral-300 shrink-0">Зона:</label>
-        <input v-model="zoneQuery" data-testid="alerts-filter-zone" placeholder="Зона..." class="h-9 flex-1 sm:w-56 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm" />
+        <label class="text-sm text-[color:var(--text-muted)] shrink-0">Зона:</label>
+        <input v-model="zoneQuery" data-testid="alerts-filter-zone" placeholder="Зона..." class="input-field flex-1 sm:w-56" />
       </div>
     </div>
 
-    <div class="rounded-xl border border-neutral-800 overflow-hidden max-h-[720px] flex flex-col">
+    <div class="rounded-xl border border-[color:var(--border-muted)] overflow-hidden max-h-[720px] flex flex-col">
       <div class="overflow-auto flex-1">
         <table class="w-full border-collapse" data-testid="alerts-table">
-          <thead class="bg-neutral-900 text-neutral-300 text-sm sticky top-0 z-10">
+          <thead class="bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)] text-sm sticky top-0 z-10">
             <tr>
-              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Тип</th>
-              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Зона</th>
-              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Время</th>
-              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Статус</th>
-              <th class="text-left px-3 py-2 font-semibold border-b border-neutral-800">Действия</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Тип</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Зона</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Время</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Статус</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Действия</th>
             </tr>
           </thead>
           <tbody>
@@ -34,21 +34,21 @@
               v-for="(a, index) in paginatedAlerts"
               :key="a.id"
               :data-testid="`alert-row-${a.id}`"
-              :class="index % 2 === 0 ? 'bg-neutral-950' : 'bg-neutral-925'"
-              class="text-sm border-b border-neutral-900 hover:bg-neutral-900 transition-colors"
+              :class="index % 2 === 0 ? 'bg-[color:var(--bg-surface-strong)]' : 'bg-[color:var(--bg-surface)]'"
+              class="text-sm border-b border-[color:var(--border-muted)] hover:bg-[color:var(--bg-elevated)] transition-colors"
             >
-              <td class="px-3 py-2 text-xs text-neutral-400">{{ a.type }}</td>
-              <td class="px-3 py-2 text-xs text-neutral-400">
+              <td class="px-3 py-2 text-xs text-[color:var(--text-muted)]">{{ a.type }}</td>
+              <td class="px-3 py-2 text-xs text-[color:var(--text-muted)]">
                 <span class="truncate block">{{ a.zone?.name || `Zone #${a.zone_id}` || '-' }}</span>
               </td>
-              <td class="px-3 py-2 text-xs text-neutral-400">{{ a.created_at ? new Date(a.created_at).toLocaleString('ru-RU') : '-' }}</td>
-              <td class="px-3 py-2 text-xs text-neutral-400">{{ translateStatus(a.status) }}</td>
+              <td class="px-3 py-2 text-xs text-[color:var(--text-muted)]">{{ a.created_at ? new Date(a.created_at).toLocaleString('ru-RU') : '-' }}</td>
+              <td class="px-3 py-2 text-xs text-[color:var(--text-muted)]">{{ translateStatus(a.status) }}</td>
               <td class="px-3 py-2">
                 <Button size="sm" variant="secondary" :data-testid="`alert-resolve-btn-${a.id}`" @click="onResolve(a)" :disabled="a.status === 'resolved'">Подтвердить</Button>
               </td>
             </tr>
             <tr v-if="!paginatedAlerts.length">
-              <td colspan="5" class="px-3 py-6 text-sm text-neutral-400 text-center">Нет алертов по текущим фильтрам</td>
+              <td colspan="5" class="px-3 py-6 text-sm text-[color:var(--text-dim)] text-center">Нет алертов по текущим фильтрам</td>
             </tr>
           </tbody>
         </table>
@@ -61,7 +61,7 @@
     </div>
 
     <Modal :open="confirm.open" title="Подтвердить алерт" @close="confirm.open=false">
-      <div class="text-sm">Вы уверены, что алерт будет помечен как решённый?</div>
+      <div class="text-sm text-[color:var(--text-muted)]">Вы уверены, что алерт будет помечен как решённый?</div>
       <template #footer>
         <Button size="sm" variant="secondary" @click="confirm.open=false">Отмена</Button>
         <Button size="sm" @click="doResolve">Подтвердить</Button>
