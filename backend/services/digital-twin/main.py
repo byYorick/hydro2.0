@@ -8,6 +8,7 @@ import os
 from typing import Dict, Any, List, Optional
 from fastapi import Query
 from datetime import datetime, timedelta
+from common.utils.time import utcnow
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -81,13 +82,17 @@ async def simulate_zone(request: SimulationRequest) -> Dict[str, Any]:
         calibrated_params = None
         
         # Инициализация моделей с калиброванными параметрами (если есть)
-        ph_model = PHModel(calibrated_params.get("ph") if calibrated_params else None)
-        ec_model = ECModel(calibrated_params.get("ec") if calibrated_params else None)
-        climate_model = ClimateModel(calibrated_params.get("climate") if calibrated_params else None)
+        ph_params = calibrated_params.get("ph") if calibrated_params and isinstance(calibrated_params, dict) else None
+        ec_params = calibrated_params.get("ec") if calibrated_params and isinstance(calibrated_params, dict) else None
+        climate_params = calibrated_params.get("climate") if calibrated_params and isinstance(calibrated_params, dict) else None
+        
+        ph_model = PHModel(ph_params)
+        ec_model = ECModel(ec_params)
+        climate_model = ClimateModel(climate_params)
 
         # Результаты симуляции
         points = []
-        start_time = datetime.utcnow()
+        start_time = utcnow()
         current_time = start_time
         end_time = current_time + timedelta(hours=request.duration_hours)
         step_delta = timedelta(minutes=request.step_minutes)

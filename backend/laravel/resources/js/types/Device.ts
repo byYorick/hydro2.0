@@ -20,7 +20,6 @@ export interface DeviceChannel {
   unit: string | null
   config?: Record<string, unknown>
   actuator_type?: string | null
-  gpio?: number | null
   description?: string | null
 }
 

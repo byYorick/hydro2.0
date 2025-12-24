@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from services.zone_automation_service import ZoneAutomationService
 from correction_controller import CorrectionController, CorrectionType
-from repositories import ZoneRepository, TelemetryRepository, NodeRepository, RecipeRepository
+from repositories import ZoneRepository, TelemetryRepository, NodeRepository, RecipeRepository, GrowCycleRepository, InfrastructureRepository
 from infrastructure.command_bus import CommandBus
 
 
@@ -24,11 +24,15 @@ async def test_zone_deletion_clears_pid_instances():
     telemetry_repo = MagicMock(spec=TelemetryRepository)
     node_repo = MagicMock(spec=NodeRepository)
     recipe_repo = MagicMock(spec=RecipeRepository)
+    grow_cycle_repo = MagicMock(spec=GrowCycleRepository)
+    infrastructure_repo = MagicMock(spec=InfrastructureRepository)
     command_bus = MagicMock(spec=CommandBus)
+    grow_cycle_repo.get_active_grow_cycle = AsyncMock(return_value=None)
+    infrastructure_repo.get_zone_bindings_by_role = AsyncMock(return_value={})
     
     # Создаем сервис
     service = ZoneAutomationService(
-        zone_repo, telemetry_repo, node_repo, recipe_repo, command_bus
+        zone_repo, telemetry_repo, node_repo, recipe_repo, grow_cycle_repo, infrastructure_repo, command_bus
     )
     
     # Создаем PID инстансы для зоны
@@ -61,11 +65,15 @@ async def test_zone_deletion_does_not_clear_when_zone_exists():
     telemetry_repo = MagicMock(spec=TelemetryRepository)
     node_repo = MagicMock(spec=NodeRepository)
     recipe_repo = MagicMock(spec=RecipeRepository)
+    grow_cycle_repo = MagicMock(spec=GrowCycleRepository)
+    infrastructure_repo = MagicMock(spec=InfrastructureRepository)
     command_bus = MagicMock(spec=CommandBus)
+    grow_cycle_repo.get_active_grow_cycle = AsyncMock(return_value=None)
+    infrastructure_repo.get_zone_bindings_by_role = AsyncMock(return_value={})
     
     # Создаем сервис
     service = ZoneAutomationService(
-        zone_repo, telemetry_repo, node_repo, recipe_repo, command_bus
+        zone_repo, telemetry_repo, node_repo, recipe_repo, grow_cycle_repo, infrastructure_repo, command_bus
     )
     
     # Создаем PID инстансы для зоны
@@ -88,4 +96,3 @@ async def test_zone_deletion_does_not_clear_when_zone_exists():
         assert service.ph_controller._pid_by_zone[zone_id] == ph_pid
         assert zone_id in service.ec_controller._pid_by_zone
         assert service.ec_controller._pid_by_zone[zone_id] == ec_pid
-

@@ -51,6 +51,9 @@
             :key="zone.id"
             :zone="zone"
             :telemetry="zone.telemetry"
+            :alerts-count="zone.alerts_count"
+            :nodes-online="zone.nodes_online"
+            :nodes-total="zone.nodes_total"
           />
         </div>
       </section>

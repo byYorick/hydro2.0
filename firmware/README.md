@@ -36,10 +36,26 @@
 
 ## Документация
 
+### Основная документация
 - Спецификация NodeConfig: `NODE_CONFIG_SPEC.md`
 - Архитектура нод: `doc_ai/02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md`
 - Структура прошивки: `doc_ai/02_HARDWARE_FIRMWARE/FIRMWARE_STRUCTURE.md`
 - MQTT протокол: `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
+
+### Синхронизация с эталоном node-sim
+- План синхронизации: `FIRMWARE_NODE_SIM_SYNC_PLAN.md`
+- Чек-лист совместимости: `FIRMWARE_COMPATIBILITY_CHECKLIST.md`
+- Описание изменений: `FIRMWARE_SYNC_CHANGES.md`
+- Итоговый отчет: `SYNC_IMPLEMENTATION_SUMMARY.md`
+
+**Эталонная документация:**
+- MQTT протокол: `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
+- Контракт Backend-Node: `doc_ai/03_TRANSPORT_MQTT/BACKEND_NODE_CONTRACT_FULL.md`
+- Архитектура нод: `doc_ai/02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md`
+
+### Тестирование
+- Тесты совместимости: `tests/README.md`
+- Тестовая прошивка: `test_node/README.md`
 
 ## Статус реализации
 

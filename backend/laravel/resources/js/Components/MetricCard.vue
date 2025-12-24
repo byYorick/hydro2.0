@@ -1,5 +1,8 @@
 <template>
-  <Card class="relative overflow-hidden hover:border-neutral-700 transition-all duration-200 hover:shadow-lg group">
+  <Card 
+    class="relative overflow-hidden hover:border-neutral-700 transition-all duration-200 hover:shadow-lg group"
+    :data-testid="$attrs['data-testid']"
+  >
     <!-- Фоновый градиент для визуального акцента -->
     <div 
       class="absolute inset-0 opacity-5 group-hover:opacity-10 transition-opacity"

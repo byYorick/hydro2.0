@@ -6,13 +6,15 @@ use App\Models\DeviceNode;
 use App\Services\NodeLifecycleService;
 use App\Enums\NodeLifecycleState;
 use App\Events\NodeConfigUpdated;
+use App\Helpers\TransactionHelper;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class NodeService
 {
     public function __construct(
-        private NodeLifecycleService $lifecycleService
+        private NodeLifecycleService $lifecycleService,
+        private NodeRegistryService $registryService,
     ) {
     }
 
@@ -50,7 +52,19 @@ class NodeService
      */
     public function update(DeviceNode $node, array $data): DeviceNode
     {
-        return DB::transaction(function () use ($node, $data) {
+        // Используем SERIALIZABLE isolation level для критичной операции обновления узла
+        // с retry логикой на serialization failures
+        return TransactionHelper::withSerializableRetry(function () use ($node, $data) {
+            
+            // Блокируем строку для предотвращения lost updates
+            $node = DeviceNode::where('id', $node->id)
+                ->lockForUpdate()
+                ->first();
+            
+            if (!$node) {
+                throw new \RuntimeException('Node not found');
+            }
+            
             Log::info('NodeService::update START', [
                 'node_id' => $node->id,
                 'uid' => $node->uid,
@@ -157,6 +171,13 @@ class NodeService
             
             $node->update($data);
             
+            // БАГ #2 FIX: Убрана дублирующая публикация конфига
+            // Публикация происходит только через событие NodeConfigUpdated в DeviceNode::saved
+            // Это предотвращает двойную публикацию конфига
+            // if ($isAssignmentFromUI) {
+            //     \App\Jobs\PublishNodeConfigJob::dispatch($node->id);
+            // }
+            
             // Логируем завершение привязки от history-logger (когда zone_id устанавливается и pending_zone_id очищается)
             if ($isBindingCompletion && $node->zone_id && !$node->pending_zone_id) {
                 Log::info('NodeService: Binding completed by history-logger (zone_id set, pending_zone_id cleared)', [
@@ -170,6 +191,19 @@ class NodeService
                     'lifecycle_state' => $node->lifecycle_state?->value,
                     'reason' => 'History-logger completed node binding after config_response',
                 ]);
+
+                // Превращаем накопленные unassigned ошибки в alerts теперь, когда зона известна.
+                try {
+                    $this->registryService->attachUnassignedErrorsForNode($node);
+                } catch (\Throwable $e) {
+                    Log::error('NodeService: Failed to attach unassigned node errors on binding completion', [
+                        'node_id' => $node->id,
+                        'uid' => $node->uid,
+                        'hardware_id' => $node->hardware_id,
+                        'zone_id' => $node->zone_id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
             }
             
             /**
@@ -289,5 +323,4 @@ class NodeService
         });
     }
 }
-
 

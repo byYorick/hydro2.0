@@ -41,13 +41,23 @@ class ZoneAccessHelper
             return false;
         }
         
-        // TODO: В будущем добавить проверку через user_zones или user_greenhouses
-        // Пока что для остальных ролей разрешаем доступ ко всем зонам
-        // Это нужно изменить, если требуется изоляция между хозяйствами
+        // ПРИМЕЧАНИЕ: Мультитенантность (изоляция между хозяйствами)
         // 
-        // Пример будущей реализации:
-        // return $user->zones()->where('zones.id', $zoneModel->id)->exists()
-        //     || $user->greenhouses()->where('greenhouses.id', $zoneModel->greenhouse_id)->exists();
+        // Текущая реализация: все авторизованные пользователи имеют доступ ко всем зонам
+        // (кроме админов, которые имеют полный доступ).
+        // 
+        // Для реализации мультитенантности потребуется:
+        // 1. Создать миграции для таблиц:
+        //    - user_zones (user_id, zone_id)
+        //    - user_greenhouses (user_id, greenhouse_id)
+        // 2. Добавить отношения в модель User:
+        //    - zones() - BelongsToMany
+        //    - greenhouses() - BelongsToMany
+        // 3. Заменить эту логику на:
+        //    return $user->zones()->where('zones.id', $zoneModel->id)->exists()
+        //        || $user->greenhouses()->where('greenhouses.id', $zoneModel->greenhouse_id)->exists();
+        // 
+        // См. Issue #XXX для детального плана реализации мультитенантности.
         
         return true;
     }
@@ -102,11 +112,18 @@ class ZoneAccessHelper
             return false;
         }
         
-        // TODO: В будущем добавить проверку через user_greenhouses
-        // Пока что для остальных ролей разрешаем доступ ко всем теплицам
+        // ПРИМЕЧАНИЕ: Мультитенантность (изоляция между хозяйствами)
         // 
-        // Пример будущей реализации:
-        // return $user->greenhouses()->where('greenhouses.id', $greenhouseModel->id)->exists();
+        // Текущая реализация: все авторизованные пользователи имеют доступ ко всем теплицам
+        // (кроме админов, которые имеют полный доступ).
+        // 
+        // Для реализации мультитенантности потребуется:
+        // 1. Создать миграцию для таблицы user_greenhouses (user_id, greenhouse_id)
+        // 2. Добавить отношение в модель User: greenhouses() - BelongsToMany
+        // 3. Заменить эту логику на:
+        //    return $user->greenhouses()->where('greenhouses.id', $greenhouseModel->id)->exists();
+        // 
+        // См. Issue #XXX для детального плана реализации мультитенантности.
         
         return true;
     }
@@ -124,11 +141,21 @@ class ZoneAccessHelper
             return Zone::pluck('id')->toArray();
         }
         
-        // TODO: В будущем фильтровать по user_zones или user_greenhouses
-        // Пока что возвращаем все зоны
+        // ПРИМЕЧАНИЕ: Мультитенантность (изоляция между хозяйствами)
         // 
-        // Пример будущей реализации:
-        // return $user->zones()->pluck('zones.id')->toArray();
+        // Текущая реализация: возвращаем все зоны для не-админов.
+        // 
+        // Для реализации мультитенантности потребуется:
+        // 1. Создать миграции для таблиц user_zones и user_greenhouses
+        // 2. Добавить отношения в модель User
+        // 3. Заменить эту логику на:
+        //    $zoneIds = $user->zones()->pluck('zones.id')->toArray();
+        //    $greenhouseIds = $user->greenhouses()->pluck('greenhouses.id')->toArray();
+        //    $zonesFromGreenhouses = Zone::whereIn('greenhouse_id', $greenhouseIds)
+        //        ->pluck('id')->toArray();
+        //    return array_unique(array_merge($zoneIds, $zonesFromGreenhouses));
+        // 
+        // См. Issue #XXX для детального плана реализации мультитенантности.
         
         return Zone::pluck('id')->toArray();
     }

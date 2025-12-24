@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Command Message Schema",
+  "description": "Schema for command messages sent to firmware nodes",
+  "type": "object",
+  "required": ["cmd_id", "cmd", "params"],
+  "properties": {
+    "cmd_id": {
+      "type": "string",
+      "description": "Unique command identifier"
+    },
+    "cmd": {
+      "type": "string",
+      "description": "Command name",
+      "enum": [
+        "set_relay_state",
+        "set_relay",
+        "run",
+        "run_pump",
+        "stop",
+        "stop_pump",
+        "set_pwm",
+        "hil_set_sensor",
+        "hil_raise_error",
+        "hil_clear_error",
+        "hil_set_flow",
+        "hil_set_current",
+        "hil_request_telemetry"
+      ]
+    },
+    "params": {
+      "type": "object",
+      "description": "Command parameters",
+      "additionalProperties": true
+    },
+    "exec_time_ms": {
+      "type": "integer",
+      "description": "Expected execution time in milliseconds (optional)",
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false
+}
+

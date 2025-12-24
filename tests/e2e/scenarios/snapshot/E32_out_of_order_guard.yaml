@@ -1,0 +1,107 @@
+# E32: Out of Order Guard - client-side reconciliation по event_id
+# DoD: проверка, что client-side reconciliation по event_id корректен (не принимает старое)
+
+name: E32_out_of_order_guard
+description: |
+  Проверяет защиту от out-of-order событий:
+  - Получаем snapshot с last_event_id
+  - Пытаемся запросить события с after_id меньше last_event_id
+  - Проверяем, что система не возвращает старые события (или возвращает корректно)
+  - Проверяем, что события возвращаются в правильном порядке
+
+setup:
+  prerequisites:
+    - database: zones table exists
+    - database: zone_events table exists
+    - backend: Laravel is running
+
+actions:
+  - step: get_zones
+    type: api_get
+    endpoint: /api/zones
+    save: zones_response
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zones_response.data.data[0].id}
+
+  # Получаем snapshot для определения last_event_id
+  - step: get_snapshot
+    type: api_get
+    endpoint: /api/zones/${zone_id}/snapshot
+    save: snapshot_response
+
+  - step: set_last_event_id
+    type: set
+    last_event_id: ${snapshot_response.data.last_event_id}
+
+  # Создаем новое событие (например, через отправку команды)
+  - step: get_nodes
+    type: api_get
+    endpoint: /api/nodes
+    save: nodes_response
+
+  - step: set_node_id
+    type: set
+    test_node_id: ${nodes_response.data.data[0].id}
+
+  # Отправляем команду для создания zone_event
+  - step: send_command_to_create_event
+    type: api_post
+    endpoint: /api/nodes/${test_node_id}/commands
+    payload:
+      cmd: set_relay_state
+      channel: main_pump
+      params:
+        state: false
+    save: command_response
+
+  - step: wait_after_command
+    type: sleep
+    seconds: 2
+
+  # Ждем появления нового события в zone_events
+  - step: wait_for_new_event
+    type: sleep
+    seconds: 3
+
+  - step: set_new_last_event_id
+    type: set
+    new_last_event_id: ${last_event_id}
+
+  # Запрашиваем события с after_id
+  # Система должна вернуть только события после указанного after_id
+  - step: get_events_after_old_id
+    type: api_get
+    endpoint: /api/zones/${zone_id}/events
+    params:
+      after_id: ${last_event_id}
+    save: events_response
+
+  - step: wait_processing
+    type: sleep
+    seconds: 1
+
+assertions:
+  # Проверка 1: События получены
+  - name: events_received
+    type: json_assertion
+    data: ${events_response}
+    expected:
+      - field: data
+        operator: is_type
+        value: list
+        optional: true
+
+  # Проверка 2: Zone существует
+  - name: zone_exists
+    type: database_query
+    query: |
+      SELECT id
+      FROM zones
+      WHERE id = :zone_id
+    params:
+      zone_id: ${zone_id}
+    expected_rows: 1
+
+

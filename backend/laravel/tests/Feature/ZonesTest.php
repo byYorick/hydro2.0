@@ -200,10 +200,11 @@ class ZonesTest extends TestCase
                 'target_level' => 0.9,
             ]);
 
-        $resp->assertOk()
+        // Операция выполняется асинхронно, возвращает 202 Accepted
+        $resp->assertStatus(202)
             ->assertJsonPath('status', 'ok')
-            ->assertJsonPath('data.success', true)
-            ->assertJsonPath('data.target_level', 0.9);
+            ->assertJsonPath('message', 'Fill operation queued')
+            ->assertJsonStructure(['status', 'message', 'job_id']);
     }
 
     public function test_fill_zone_validation_error(): void
@@ -238,7 +239,10 @@ class ZonesTest extends TestCase
                 'max_duration_sec' => 120,
             ]);
 
-        $resp->assertOk();
+        // Операция выполняется асинхронно, возвращает 202 Accepted
+        $resp->assertStatus(202)
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('message', 'Fill operation queued');
     }
 
     public function test_drain_zone(): void
@@ -263,10 +267,11 @@ class ZonesTest extends TestCase
                 'target_level' => 0.1,
             ]);
 
-        $resp->assertOk()
+        // Операция выполняется асинхронно, возвращает 202 Accepted
+        $resp->assertStatus(202)
             ->assertJsonPath('status', 'ok')
-            ->assertJsonPath('data.success', true)
-            ->assertJsonPath('data.target_level', 0.1);
+            ->assertJsonPath('message', 'Drain operation queued')
+            ->assertJsonStructure(['status', 'message', 'job_id']);
     }
 
     public function test_drain_zone_validation_error(): void
@@ -294,13 +299,18 @@ class ZonesTest extends TestCase
             ], 500),
         ]);
 
+        // При ошибке Python сервиса операция все равно ставится в очередь
+        // Ошибка обрабатывается асинхронно в job
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/zones/{$zone->id}/drain", [
                 'target_level' => 0.1,
             ]);
 
-        $resp->assertStatus(422)
-            ->assertJsonPath('status', 'error');
+        // Операция ставится в очередь, даже если Python сервис недоступен
+        // Ошибка обрабатывается асинхронно
+        $resp->assertStatus(202)
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('message', 'Drain operation queued');
     }
 
     public function test_next_phase_success(): void

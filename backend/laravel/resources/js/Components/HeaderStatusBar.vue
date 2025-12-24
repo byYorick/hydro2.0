@@ -72,11 +72,12 @@
       </div>
 
       <!-- WebSocket Status -->
-      <div class="flex items-center gap-2 group relative">
+      <div class="flex items-center gap-2 group relative" data-testid="ws-status-indicator">
         <div class="relative">
           <div
             class="w-2.5 h-2.5 rounded-full transition-all duration-300"
             :class="[getWsStatusDotClass(wsStatus), wsStatus === 'connected' ? 'animate-pulse' : '']"
+            :data-testid="wsStatus === 'connected' ? 'ws-status-connected' : 'ws-status-disconnected'"
           ></div>
           <div
             v-if="wsStatus === 'connected'"

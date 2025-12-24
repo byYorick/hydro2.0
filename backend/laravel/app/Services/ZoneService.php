@@ -7,6 +7,7 @@ use App\Models\ZoneRecipeInstance;
 use App\Events\ZoneUpdated;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class ZoneService
@@ -223,26 +224,63 @@ class ZoneService
      */
     public function nextPhase(Zone $zone): ZoneRecipeInstance
     {
-        // Eager loading для предотвращения N+1 запросов
-        $instance = $zone->load('recipeInstance.recipe.phases')->recipeInstance;
-        if (!$instance) {
-            throw new \DomainException('Zone has no active recipe');
-        }
+        return DB::transaction(function () use ($zone) {
+            // Eager loading для предотвращения N+1 запросов
+            $instance = $zone->load('recipeInstance.recipe.phases')->recipeInstance;
+            if (!$instance) {
+                throw new \DomainException('Zone has no active recipe');
+            }
 
-        $currentPhaseIndex = $instance->current_phase_index;
-        $nextPhaseIndex = $currentPhaseIndex + 1;
+            $currentPhaseIndex = $instance->current_phase_index;
+            $nextPhaseIndex = $currentPhaseIndex + 1;
 
-        // Проверка: следующая фаза должна существовать в рецепте
-        // Используем загруженные phases вместо нового запроса
-        $recipe = $instance->recipe;
-        $maxPhaseIndex = $recipe->phases->max('phase_index') ?? 0;
-        
-        if ($nextPhaseIndex > $maxPhaseIndex) {
-            throw new \DomainException("No next phase available. Current phase is {$currentPhaseIndex}, max phase is {$maxPhaseIndex}");
-        }
+            // Проверка: следующая фаза должна существовать в рецепте
+            // Используем загруженные phases вместо нового запроса
+            $recipe = $instance->recipe;
+            $maxPhaseIndex = $recipe->phases->max('phase_index') ?? 0;
+            
+            if ($nextPhaseIndex > $maxPhaseIndex) {
+                throw new \DomainException("No next phase available. Current phase is {$currentPhaseIndex}, max phase is {$maxPhaseIndex}");
+            }
 
-        // Используем существующий метод changePhase
-        return $this->changePhase($zone, $nextPhaseIndex);
+            // Обновляем phase_index
+            $instance->update([
+                'current_phase_index' => $nextPhaseIndex,
+            ]);
+
+            // Создаем zone_event для изменения фазы
+            $hasPayloadJson = Schema::hasColumn('zone_events', 'payload_json');
+            $detailsColumn = $hasPayloadJson ? 'payload_json' : 'details';
+            
+            DB::table('zone_events')->insert([
+                'zone_id' => $zone->id,
+                'type' => 'PHASE_TRANSITION',
+                $detailsColumn => json_encode([
+                    'from_phase_index' => $currentPhaseIndex,
+                    'to_phase_index' => $nextPhaseIndex,
+                    'recipe_id' => $recipe->id,
+                    'recipe_instance_id' => $instance->id,
+                ]),
+                'created_at' => now(),
+            ]);
+
+            Log::info('Zone phase advanced', [
+                'zone_id' => $zone->id,
+                'from_phase' => $currentPhaseIndex,
+                'to_phase' => $nextPhaseIndex,
+            ]);
+
+            // Проверить, завершён ли рецепт (все фазы пройдены)
+            if ($nextPhaseIndex >= $maxPhaseIndex) {
+                // Рецепт завершён - запустить расчёт аналитики
+                \App\Jobs\CalculateRecipeAnalyticsJob::dispatch($zone->id, $instance->id);
+            }
+
+            // Dispatch event для уведомления Python-сервиса
+            event(new ZoneUpdated($zone->fresh()));
+
+            return $instance->fresh();
+        });
     }
 
     /**
@@ -254,14 +292,59 @@ class ZoneService
             throw new \DomainException('Zone is already paused');
         }
 
-        $zone->update(['status' => 'PAUSED']);
-        Log::info('Zone paused', ['zone_id' => $zone->id]);
-        $zone = $zone->fresh();
-        
-        // Dispatch event для уведомления Python-сервиса
-        event(new ZoneUpdated($zone));
-        
-        return $zone;
+        return DB::transaction(function () use ($zone) {
+            try {
+                $oldStatus = $zone->status;
+                $zone->update(['status' => 'PAUSED']);
+                
+                // Создаем zone_event
+                $hasPayloadJson = Schema::hasColumn('zone_events', 'payload_json');
+                
+                $eventPayload = json_encode([
+                    'zone_id' => $zone->id,
+                    'from_status' => $oldStatus ?? null,
+                    'to_status' => 'PAUSED',
+                    'paused_at' => now()->toIso8601String(),
+                ]);
+                
+                $eventData = [
+                    'zone_id' => $zone->id,
+                    'type' => 'CYCLE_PAUSED',
+                    'created_at' => now(),
+                ];
+                
+                if ($hasPayloadJson) {
+                    $eventData['payload_json'] = $eventPayload;
+                } else {
+                    $eventData['details'] = $eventPayload;
+                }
+                
+                DB::table('zone_events')->insert($eventData);
+
+                Log::info('Zone paused', ['zone_id' => $zone->id]);
+                $zone = $zone->fresh();
+                
+                // Dispatch event для уведомления Python-сервиса
+                try {
+                    event(new ZoneUpdated($zone));
+                } catch (\Exception $e) {
+                    // Игнорируем ошибки при dispatch event, это не критично
+                    Log::warning('Failed to dispatch ZoneUpdated event', [
+                        'zone_id' => $zone->id,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+                
+                return $zone;
+            } catch (\Exception $e) {
+                Log::error('Error in ZoneService::pause', [
+                    'zone_id' => $zone->id,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+                throw $e;
+            }
+        });
     }
 
     /**
@@ -273,14 +356,41 @@ class ZoneService
             throw new \DomainException('Zone is not paused');
         }
 
-        $zone->update(['status' => 'RUNNING']);
-        Log::info('Zone resumed', ['zone_id' => $zone->id]);
-        $zone = $zone->fresh();
-        
-        // Dispatch event для уведомления Python-сервиса
-        event(new ZoneUpdated($zone));
-        
-        return $zone;
+        return DB::transaction(function () use ($zone) {
+            $zone->update(['status' => 'RUNNING']);
+            
+            // Создаем zone_event
+            $hasPayloadJson = Schema::hasColumn('zone_events', 'payload_json');
+            
+            $eventPayload = json_encode([
+                'zone_id' => $zone->id,
+                'from_status' => 'PAUSED',
+                'to_status' => 'RUNNING',
+                'resumed_at' => now()->toIso8601String(),
+            ]);
+            
+            $eventData = [
+                'zone_id' => $zone->id,
+                'type' => 'CYCLE_RESUMED',
+                'created_at' => now(),
+            ];
+            
+            if ($hasPayloadJson) {
+                $eventData['payload_json'] = $eventPayload;
+            } else {
+                $eventData['details'] = $eventPayload;
+            }
+            
+            DB::table('zone_events')->insert($eventData);
+
+            Log::info('Zone resumed', ['zone_id' => $zone->id]);
+            $zone = $zone->fresh();
+            
+            // Dispatch event для уведомления Python-сервиса
+            event(new ZoneUpdated($zone));
+            
+            return $zone;
+        });
     }
 
     /**
@@ -488,6 +598,66 @@ class ZoneService
             ]);
             throw new \DomainException('Flow calibration failed. Please check the request parameters.');
         }
+    }
+
+    /**
+     * Завершить grow-cycle (harvest)
+     */
+    public function harvest(Zone $zone): Zone
+    {
+        return DB::transaction(function () use ($zone) {
+            // Проверяем, что зона в статусе RUNNING или PAUSED
+            if (!in_array($zone->status, ['RUNNING', 'PAUSED'])) {
+                throw new \DomainException("Zone must be RUNNING or PAUSED to harvest. Current status: {$zone->status}");
+            }
+
+            // Обновляем статус зоны на HARVESTED
+            $zone->update(['status' => 'HARVESTED']);
+            
+            // Закрываем активный recipe instance, если есть
+            if ($zone->recipeInstance) {
+                // Можно пометить instance как завершенный (добавить ended_at если есть колонка)
+                // Или просто оставить как есть для истории
+                Log::info('Recipe instance closed on harvest', [
+                    'zone_id' => $zone->id,
+                    'recipe_instance_id' => $zone->recipeInstance->id,
+                ]);
+            }
+
+            // Создаем zone_event
+            $hasPayloadJson = Schema::hasColumn('zone_events', 'payload_json');
+            
+            $eventPayload = json_encode([
+                'zone_id' => $zone->id,
+                'status' => 'HARVESTED',
+                'harvested_at' => now()->toIso8601String(),
+            ]);
+            
+            $eventData = [
+                'zone_id' => $zone->id,
+                'type' => 'CYCLE_HARVESTED',
+                'created_at' => now(),
+            ];
+            
+            if ($hasPayloadJson) {
+                $eventData['payload_json'] = $eventPayload;
+            } else {
+                $eventData['details'] = $eventPayload;
+            }
+            
+            DB::table('zone_events')->insert($eventData);
+
+            Log::info('Zone cycle harvested', [
+                'zone_id' => $zone->id,
+            ]);
+
+            $zone = $zone->fresh();
+            
+            // Dispatch event для уведомления Python-сервиса
+            event(new ZoneUpdated($zone));
+            
+            return $zone;
+        });
     }
 }
 

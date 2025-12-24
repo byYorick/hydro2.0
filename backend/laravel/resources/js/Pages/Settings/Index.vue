@@ -38,7 +38,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="u in filteredUsers" :key="u.id" class="odd:bg-neutral-950 even:bg-neutral-925">
+              <tr v-for="u in paginatedUsers" :key="u.id" class="odd:bg-neutral-950 even:bg-neutral-925">
                 <td class="px-3 py-2 border-b border-neutral-900">{{ u.id }}</td>
                 <td class="px-3 py-2 border-b border-neutral-900">{{ u.name }}</td>
                 <td class="px-3 py-2 border-b border-neutral-900">{{ u.email }}</td>
@@ -68,7 +68,12 @@
               </tr>
             </tbody>
           </table>
-          <div v-if="!filteredUsers.length" class="text-sm text-neutral-400 px-3 py-6 text-center">
+          <Pagination
+            v-model:current-page="currentPage"
+            v-model:per-page="perPage"
+            :total="filteredUsers.length"
+          />
+          <div v-if="!paginatedUsers.length" class="text-sm text-neutral-400 px-3 py-6 text-center">
             Нет пользователей
           </div>
         </div>
@@ -165,13 +170,14 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, onMounted } from 'vue'
+import { computed, reactive, ref, watch, onMounted } from 'vue'
 import { usePage, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
 import Modal from '@/Components/Modal.vue'
+import Pagination from '@/Components/Pagination.vue'
 import { translateRole } from '@/utils/i18n'
 import { logger } from '@/utils/logger'
 import { useApi } from '@/composables/useApi'
@@ -193,6 +199,8 @@ const { api } = useApi(showToast)
 const users = ref([])
 const searchQuery = ref('')
 const roleFilter = ref('')
+const currentPage = ref(1)
+const perPage = ref(25)
 const { isOpen: showCreateModal, open: openCreateModal, close: closeCreateModal } = useSimpleModal()
 const editingUser = ref(null)
 const deletingUser = ref(null)
@@ -213,6 +221,22 @@ const filteredUsers = computed(() => {
     const matchRole = !roleFilter.value || u.role === roleFilter.value
     return matchSearch && matchRole
   })
+})
+
+const paginatedUsers = computed(() => {
+  const total = filteredUsers.value.length
+  if (total === 0) return []
+  
+  // Защита от некорректных значений
+  const maxPage = Math.ceil(total / perPage.value) || 1
+  const validPage = Math.min(currentPage.value, maxPage)
+  if (validPage !== currentPage.value) {
+    currentPage.value = validPage
+  }
+  
+  const start = (validPage - 1) * perPage.value
+  const end = start + perPage.value
+  return filteredUsers.value.slice(start, end)
 })
 
     const loadUsers = () => {
@@ -303,5 +327,10 @@ onMounted(() => {
   if (isAdmin.value) {
     loadUsers()
   }
+})
+
+// Сбрасываем на первую страницу при изменении фильтров
+watch([searchQuery, roleFilter], () => {
+  currentPage.value = 1
 })
 </script>

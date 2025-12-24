@@ -3,8 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Enums\NodeLifecycleState;
+use App\Http\Requests\PublishNodeConfigRequest;
+use App\Http\Requests\UpdateNodeRequest;
 use App\Models\DeviceNode;
-use App\Models\NodeChannel;
+use App\Services\ConfigPublishLockService;
+use App\Services\ConfigSignatureService;
 use App\Services\NodeConfigService;
 use App\Services\NodeLifecycleService;
 use App\Services\NodeRegistryService;
@@ -12,7 +15,6 @@ use App\Services\NodeService;
 use App\Services\NodeSwapService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
-use Illuminate\Support\Facades\DB;
 
 class NodeController extends Controller
 {
@@ -21,7 +23,9 @@ class NodeController extends Controller
         private NodeRegistryService $registryService,
         private NodeConfigService $configService,
         private NodeSwapService $swapService,
-        private NodeLifecycleService $lifecycleService
+        private NodeLifecycleService $lifecycleService,
+        private ConfigSignatureService $configSignatureService,
+        private ConfigPublishLockService $configPublishLockService
     ) {}
 
     public function index(Request $request)
@@ -92,11 +96,12 @@ class NodeController extends Controller
 
         // Поиск по имени, UID или типу
         if (isset($validated['search']) && $validated['search']) {
-            $searchTerm = '%'.strtolower($validated['search']).'%';
+            // Экранируем специальные символы LIKE для защиты от SQL injection
+            $searchTerm = addcslashes($validated['search'], '%_');
             $query->where(function ($q) use ($searchTerm) {
-                $q->whereRaw('LOWER(name) LIKE ?', [$searchTerm])
-                    ->orWhereRaw('LOWER(uid) LIKE ?', [$searchTerm])
-                    ->orWhereRaw('LOWER(type) LIKE ?', [$searchTerm]);
+                $q->where('name', 'ILIKE', "%{$searchTerm}%")
+                    ->orWhere('uid', 'ILIKE', "%{$searchTerm}%")
+                    ->orWhere('type', 'ILIKE', "%{$searchTerm}%");
             });
         }
 
@@ -115,17 +120,9 @@ class NodeController extends Controller
         return response()->json(['status' => 'ok', 'data' => $items]);
     }
 
-    public function store(Request $request)
+    public function store(\App\Http\Requests\StoreNodeRequest $request)
     {
-        $data = $request->validate([
-            'zone_id' => ['nullable', 'integer', 'exists:zones,id'],
-            'uid' => ['required', 'string', 'max:64', 'unique:nodes,uid'],
-            'name' => ['nullable', 'string', 'max:255'],
-            'type' => ['nullable', 'string', 'max:64'],
-            'fw_version' => ['nullable', 'string', 'max:64'],
-            'status' => ['nullable', 'string', 'max:32'],
-            'config' => ['nullable', 'array'],
-        ]);
+        $data = $request->validated();
         $node = $this->nodeService->create($data);
 
         return response()->json(['status' => 'ok', 'data' => $node], Response::HTTP_CREATED);
@@ -133,21 +130,7 @@ class NodeController extends Controller
 
     public function show(Request $request, DeviceNode $node)
     {
-        $user = $request->user();
-        if (! $user) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Unauthorized',
-            ], 401);
-        }
-
-        // Проверяем доступ к ноде
-        if (! \App\Helpers\ZoneAccessHelper::canAccessNode($user, $node)) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Forbidden: Access denied to this node',
-            ], 403);
-        }
+        $this->authorize('view', $node);
 
         // Загружаем связанные данные, исключая config для предотвращения утечки Wi-Fi/MQTT кредов
         $node->load(['zone:id,name,status', 'channels' => function ($channelQuery) {
@@ -163,89 +146,54 @@ class NodeController extends Controller
         return response()->json(['status' => 'ok', 'data' => $node]);
     }
 
-    public function update(Request $request, DeviceNode $node)
+    public function update(UpdateNodeRequest $request, DeviceNode $node)
     {
-        // Проверяем аутентификацию: либо через Sanctum, либо через сервисный токен
-        $user = $request->user();
-        
-        // Если пользователь не авторизован через Sanctum, проверяем сервисный токен
+        $user = $this->authenticateUser($request);
         if (! $user) {
-            $providedToken = $request->bearerToken();
-            \Log::debug('[NodeController::update] Checking token', [
-                'provided_token' => $providedToken ? substr($providedToken, 0, 10).'...' : 'null',
-                'py_api_token' => config('services.python_bridge.token') ? 'set' : 'null',
-                'py_ingest_token' => config('services.python_bridge.ingest_token') ? 'set' : 'null',
-                'history_logger_token' => config('services.history_logger.token') ? 'set' : 'null',
-            ]);
-            if ($providedToken) {
-                // Используем config вместо env для совместимости с кешированием
-                $pyApiToken = config('services.python_bridge.token');
-                $pyIngestToken = config('services.python_bridge.ingest_token');
-                $historyLoggerToken = config('services.history_logger.token');
-                
-                // Проверяем сервисный токен против всех известных токенов
-                $tokenValid = false;
-                if ($pyApiToken && hash_equals($pyApiToken, $providedToken)) {
-                    $tokenValid = true;
-                    \Log::debug('[NodeController::update] Token matched: py_api_token');
-                } elseif ($pyIngestToken && hash_equals($pyIngestToken, $providedToken)) {
-                    $tokenValid = true;
-                    \Log::debug('[NodeController::update] Token matched: py_ingest_token');
-                } elseif ($historyLoggerToken && hash_equals($historyLoggerToken, $providedToken)) {
-                    $tokenValid = true;
-                    \Log::debug('[NodeController::update] Token matched: history_logger_token');
-                } else {
-                    \Log::warning('[NodeController::update] Token NOT matched');
-                }
-                
-                if ($tokenValid) {
-                    // Устанавливаем сервисного пользователя для проверки доступа
-                    $serviceUser = \App\Models\User::where('role', 'operator')->first() 
-                        ?? \App\Models\User::where('role', 'admin')->first()
-                        ?? \App\Models\User::first();
-                    
-                    if ($serviceUser) {
-                        $user = $serviceUser;
-                        $request->setUserResolver(static fn () => $serviceUser);
-                    }
-                }
-            }
-            
-            if (! $user) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Unauthorized',
-                ], 401);
-            }
-        }
-
-        // Проверяем доступ к ноде
-        if (! \App\Helpers\ZoneAccessHelper::canAccessNode($user, $node)) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Forbidden: Access denied to this node',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+
+        $this->authorize('update', $node);
+
+        $data = $request->validated();
+
+        // Проверяем доступ к новой зоне, если меняется
+        $this->validateZoneChange($user, $node, $data);
+
+        $node = $this->nodeService->update($node, $data);
+
+        return response()->json(['status' => 'ok', 'data' => $node]);
+    }
+
+    /**
+     * Обновление узла через сервисный токен (history-logger).
+     * Используется для системных операций, например, подтверждения привязки зоны.
+     */
+    public function serviceUpdate(UpdateNodeRequest $request, DeviceNode $node)
+    {
+        $user = $this->authenticateUser($request);
+        if (! $user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+
+        if (! $request->attributes->get('service_auth')) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden',
             ], 403);
         }
 
-        $data = $request->validate([
-            'zone_id' => ['nullable', 'integer', 'exists:zones,id'],
-            'pending_zone_id' => ['nullable', 'integer', 'exists:zones,id'],
-            'uid' => ['sometimes', 'string', 'max:64', 'unique:nodes,uid,'.$node->id],
-            'name' => ['nullable', 'string', 'max:255'],
-            'type' => ['nullable', 'string', 'max:64'],
-            'fw_version' => ['nullable', 'string', 'max:64'],
-            'status' => ['nullable', 'string', 'max:32'],
-            'config' => ['nullable', 'array'],
-        ]);
+        $data = $request->validated();
+        $data = array_intersect_key($data, array_flip(['zone_id', 'pending_zone_id']));
 
-        // Проверяем доступ к новой зоне, если меняется
-        if (isset($data['zone_id']) && $data['zone_id'] !== $node->zone_id) {
-            if (! \App\Helpers\ZoneAccessHelper::canAccessZone($user, $data['zone_id'])) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Forbidden: Access denied to target zone',
-                ], 403);
-            }
+        if (empty($data)) {
+            return response()->json(['status' => 'ok', 'data' => $node]);
         }
 
         $node = $this->nodeService->update($node, $data);
@@ -254,26 +202,68 @@ class NodeController extends Controller
     }
 
     /**
+     * Аутентификация пользователя через Sanctum или сервисный токен.
+     */
+    private function authenticateUser(Request $request): ?\App\Models\User
+    {
+        $user = $request->user();
+
+        // Если пользователь не авторизован через Sanctum, проверяем сервисный токен
+        if (! $user) {
+            $providedToken = $request->bearerToken();
+            \Log::debug('[NodeController] Checking service token authentication');
+
+            if ($providedToken) {
+                $pyApiToken = config('services.python_bridge.token');
+                $pyIngestToken = config('services.python_bridge.ingest_token');
+                $historyLoggerToken = config('services.history_logger.token');
+
+                $tokenValid = false;
+                if ($pyApiToken && hash_equals($pyApiToken, $providedToken)) {
+                    $tokenValid = true;
+                } elseif ($pyIngestToken && hash_equals($pyIngestToken, $providedToken)) {
+                    $tokenValid = true;
+                } elseif ($historyLoggerToken && hash_equals($historyLoggerToken, $providedToken)) {
+                    $tokenValid = true;
+                }
+
+                if ($tokenValid) {
+                    $request->attributes->set('service_auth', true);
+                    $serviceUser = \App\Models\User::where('role', 'operator')->first()
+                        ?? \App\Models\User::where('role', 'admin')->first()
+                        ?? \App\Models\User::first();
+
+                    if ($serviceUser) {
+                        $request->setUserResolver(static fn () => $serviceUser);
+
+                        return $serviceUser;
+                    }
+                }
+            }
+        }
+
+        return $user;
+    }
+
+    /**
+     * Проверка изменения зоны узла.
+     */
+    private function validateZoneChange(\App\Models\User $user, DeviceNode $node, array $data): void
+    {
+        if (isset($data['zone_id']) && $data['zone_id'] !== $node->zone_id) {
+            if (! \App\Helpers\ZoneAccessHelper::canAccessZone($user, $data['zone_id'])) {
+                abort(403, 'Forbidden: Access denied to target zone');
+            }
+        }
+    }
+
+    /**
      * Отвязать узел от зоны.
      * При отвязке нода сбрасывается в REGISTERED_BACKEND и считается новой.
      */
     public function detach(Request $request, DeviceNode $node)
     {
-        $user = $request->user();
-        if (! $user) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Unauthorized',
-            ], 401);
-        }
-
-        // Проверяем доступ к ноде
-        if (! \App\Helpers\ZoneAccessHelper::canAccessNode($user, $node)) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Forbidden: Access denied to this node',
-            ], 403);
-        }
+        $this->authorize('detach', $node);
 
         try {
             $node = $this->nodeService->detach($node);
@@ -301,21 +291,7 @@ class NodeController extends Controller
 
     public function destroy(Request $request, DeviceNode $node)
     {
-        $user = $request->user();
-        if (! $user) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Unauthorized',
-            ], 401);
-        }
-
-        // Проверяем доступ к ноде
-        if (! \App\Helpers\ZoneAccessHelper::canAccessNode($user, $node)) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Forbidden: Access denied to this node',
-            ], 403);
-        }
+        $this->authorize('delete', $node);
 
         try {
             $this->nodeService->delete($node);
@@ -358,7 +334,7 @@ class NodeController extends Controller
      * 2. И это node_hello от внутренних сервисов
      * 3. И только в dev режиме
      */
-    public function register(Request $request)
+    public function register(\App\Http\Requests\RegisterNodeRequest $request)
     {
         // Проверка токена для защиты от несанкционированной регистрации
         // Используем PY_INGEST_TOKEN как основной токен для ingest операций
@@ -405,32 +381,14 @@ class NodeController extends Controller
             ], 500);
         }
 
+        $data = $request->validated();
+
         // Проверяем, это node_hello или обычная регистрация
         if ($request->has('message_type') && $request->input('message_type') === 'node_hello') {
             // Обработка node_hello из MQTT
-            $data = $request->validate([
-                'message_type' => ['required', 'string', 'in:node_hello'],
-                'hardware_id' => ['required', 'string', 'max:128'],
-                'node_type' => ['nullable', 'string', 'max:64'],
-                'fw_version' => ['nullable', 'string', 'max:64'],
-                'hardware_revision' => ['nullable', 'string', 'max:64'],
-                'capabilities' => ['nullable', 'array'],
-                'provisioning_meta' => ['nullable', 'array'],
-            ]);
-
             $node = $this->registryService->registerNodeFromHello($data);
         } else {
             // Обычная регистрация через API
-            $data = $request->validate([
-                'node_uid' => ['required', 'string', 'max:64'],
-                'zone_uid' => ['nullable', 'string', 'max:64'],
-                'firmware_version' => ['nullable', 'string', 'max:64'],
-                'hardware_revision' => ['nullable', 'string', 'max:64'],
-                'hardware_id' => ['nullable', 'string', 'max:128'],
-                'name' => ['nullable', 'string', 'max:255'],
-                'type' => ['nullable', 'string', 'max:64'],
-            ]);
-
             $node = $this->registryService->registerNode(
                 $data['node_uid'],
                 $data['zone_uid'] ?? null,
@@ -499,10 +457,10 @@ class NodeController extends Controller
     /**
      * Опубликовать NodeConfig через MQTT.
      * Это проксирует запрос в history-logger для публикации конфига (все общение с нодами через history-logger).
+     * Использует pessimistic/optimistic locking и advisory lock для дедупликации.
      */
-    public function publishConfig(DeviceNode $node, Request $request)
+    public function publishConfig(PublishNodeConfigRequest $request, DeviceNode $node)
     {
-        // Проверяем доступ к ноде
         $user = $request->user();
         if (! $user) {
             return response()->json([
@@ -511,213 +469,208 @@ class NodeController extends Controller
             ], 401);
         }
 
-        if (! \App\Helpers\ZoneAccessHelper::canAccessNode($user, $node)) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Forbidden: Access denied to this node',
-            ], 403);
-        }
+        $this->authorize('publishConfig', $node);
 
         try {
-            // Валидация пользовательского конфига (если пришёл)
-            $validatedConfig = $request->validate([
-                'config' => ['nullable', 'array'],
-                'config.channels' => ['nullable', 'array'],
-                'config.channels.*.name' => ['nullable', 'string', 'max:64'],
-                'config.channels.*.channel' => ['nullable', 'string', 'max:64'],
-                'config.channels.*.type' => ['nullable', 'string', 'max:32'],
-                'config.channels.*.metric' => ['nullable', 'string', 'max:64'],
-                'config.channels.*.unit' => ['nullable', 'string', 'max:32'],
-                'config.channels.*.actuator_type' => ['nullable', 'string', 'max:32'],
-                'config.channels.*.gpio' => ['nullable', 'integer', 'min:0', 'max:39'],
-                'config.channels.*.description' => ['nullable', 'string', 'max:255'],
-            ]);
+            // Получаем pessimistic lock для предотвращения одновременной публикации
+            // ВАЖНО: acquirePessimisticLock использует DB::transaction(), который завершается внутри метода
+            // После завершения транзакции SELECT FOR UPDATE блокировка автоматически освобождается
+            $lockedNode = $this->configPublishLockService->acquirePessimisticLock($node);
+            if (! $lockedNode) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Failed to acquire lock for config publishing',
+                ], Response::HTTP_CONFLICT);
+            }
 
-            $customChannels = data_get($validatedConfig, 'config.channels');
+            // Получаем optimistic lock для проверки версии
+            $optimisticLock = $this->configPublishLockService->acquireOptimisticLock($lockedNode);
+            if (! $optimisticLock) {
+                // Pessimistic lock уже освобожден автоматически после завершения транзакции в acquirePessimisticLock
+                // Advisory lock еще не был получен, поэтому не нужно его освобождать
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Failed to acquire optimistic lock',
+                ], Response::HTTP_CONFLICT);
+            }
 
-            if (is_array($customChannels)) {
-                $sanitizedChannels = [];
-                foreach ($customChannels as $channel) {
-                    if (!is_array($channel)) {
-                        continue;
-                    }
-                    $name = trim($channel['channel'] ?? $channel['name'] ?? '');
-                    if ($name === '') {
-                        continue;
-                    }
-                    $type = strtoupper($channel['type'] ?? 'ACTUATOR');
-                    $metric = $channel['metric'] ?? ($type === 'ACTUATOR' ? 'RELAY' : null);
-                    $actuatorType = strtoupper($channel['actuator_type'] ?? ($type === 'ACTUATOR' ? 'RELAY' : ''));
-                    $gpio = $channel['gpio'] ?? null;
-                    $description = $channel['description'] ?? null;
+            // Получаем advisory lock для дедупликации
+            $advisoryLockAcquired = $this->configPublishLockService->acquireAdvisoryLock($lockedNode);
+            if (! $advisoryLockAcquired) {
+                // Advisory lock не был получен, поэтому не нужно его освобождать
+                // Pessimistic lock уже освобожден автоматически после завершения транзакции в acquirePessimisticLock
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Config publishing is already in progress',
+                ], Response::HTTP_CONFLICT);
+            }
 
-                    $sanitizedChannels[] = [
-                        'name' => $name,
-                        'channel' => $name,
-                        'type' => $type,
-                        'metric' => $metric ? strtoupper((string) $metric) : null,
-                        'unit' => $channel['unit'] ?? null,
-                        'actuator_type' => $actuatorType ?: null,
-                        'gpio' => $gpio !== null ? (int) $gpio : null,
-                        'description' => $description ? trim((string) $description) : null,
-                    ];
+            try {
+                // Для публикации через MQTT включаем креды (нужны для подключения ноды)
+                $config = $this->configService->generateNodeConfig($lockedNode, null, true);
+
+                // Проверяем дедупликацию через хеш конфигурации
+                // Используем JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE для консистентности
+                // Сортируем ключи рекурсивно для детерминированного хеша
+                $sortedConfig = $this->recursiveKsort($config);
+                $configJson = json_encode($sortedConfig, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    throw new \RuntimeException('Failed to encode config to JSON: '.json_last_error_msg());
                 }
+                $configHash = hash('sha256', $configJson);
 
-                if (count($sanitizedChannels) === 0) {
+                if ($this->configPublishLockService->isDuplicate($lockedNode, $configHash)) {
+                    // Освобождаем advisory lock перед возвратом
+                    $this->configPublishLockService->releaseAdvisoryLock($lockedNode);
+
                     return response()->json([
                         'status' => 'error',
-                        'message' => 'Не переданы каналы для публикации',
+                        'message' => 'This configuration was already published recently',
+                    ], Response::HTTP_CONFLICT);
+                }
+
+                // Подписываем конфигурацию HMAC подписью
+                $config = $this->configSignatureService->signConfig($lockedNode, $config);
+
+                // Проверяем, что узел привязан к зоне
+                if (! $lockedNode->zone_id) {
+                    // Освобождаем advisory lock перед возвратом
+                    $this->configPublishLockService->releaseAdvisoryLock($lockedNode);
+
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Node must be assigned to a zone before publishing config',
                     ], Response::HTTP_BAD_REQUEST);
                 }
 
-                DB::transaction(function () use ($sanitizedChannels, $node) {
-                    $incomingNames = [];
-                    foreach ($sanitizedChannels as $channel) {
-                        $incomingNames[] = $channel['channel'];
+                // Проверяем optimistic lock перед публикацией
+                if (! $this->configPublishLockService->checkOptimisticLock($lockedNode, $optimisticLock['version'])) {
+                    // Освобождаем advisory lock перед возвратом
+                    $this->configPublishLockService->releaseAdvisoryLock($lockedNode);
 
-                        $configPayload = array_filter([
-                            'actuator_type' => $channel['actuator_type'],
-                            'gpio' => $channel['gpio'],
-                            'description' => $channel['description'],
-                        ], fn ($value) => $value !== null && $value !== '');
-
-                        NodeChannel::updateOrCreate(
-                            [
-                                'node_id' => $node->id,
-                                'channel' => $channel['channel'],
-                            ],
-                            [
-                                'type' => $channel['type'],
-                                'metric' => $channel['metric'],
-                                'unit' => $channel['unit'],
-                                'config' => $configPayload,
-                            ]
-                        );
-                    }
-
-                    // Для релейных нод удаляем каналы, которых нет в новой конфигурации
-                    if (strtolower($node->type ?? '') === 'relay' && count($incomingNames) > 0) {
-                        NodeChannel::where('node_id', $node->id)
-                            ->whereNotIn('channel', $incomingNames)
-                            ->delete();
-                    }
-                });
-
-                // После обновления каналов пересчитываем связанные данные
-                $node->refresh();
-            }
-
-            // Для публикации через MQTT включаем креды (нужны для подключения ноды)
-            $config = $this->configService->generateNodeConfig($node, null, true);
-
-            // Проверяем, что узел привязан к зоне
-            if (! $node->zone_id) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Node must be assigned to a zone before publishing config',
-                ], Response::HTTP_BAD_REQUEST);
-            }
-
-            // Получаем greenhouse_uid
-            $node->load('zone.greenhouse');
-            $greenhouseUid = $node->zone?->greenhouse?->uid;
-            if (! $greenhouseUid) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Zone must have a greenhouse before publishing config',
-                ], Response::HTTP_BAD_REQUEST);
-            }
-
-            // Вызываем history-logger API для публикации (все общение бэка с нодами через history-logger)
-            $baseUrl = config('services.history_logger.url');
-            $token = config('services.history_logger.token') ?? config('services.python_bridge.token'); // Fallback на старый токен
-
-            if (! $baseUrl) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'History Logger URL not configured',
-                ], Response::HTTP_INTERNAL_SERVER_ERROR);
-            }
-
-            $headers = [];
-            if ($token) {
-                $headers['Authorization'] = "Bearer {$token}";
-            }
-
-            // Используем короткий таймаут, чтобы не блокировать workers
-            $timeout = 10; // секунд
-
-            try {
-                $response = \Illuminate\Support\Facades\Http::withHeaders($headers)
-                    ->timeout($timeout)
-                    ->post("{$baseUrl}/nodes/{$node->uid}/config", [
-                        'node_uid' => $node->uid,
-                        'zone_id' => $node->zone_id,
-                        'greenhouse_uid' => $greenhouseUid,
-                        'config' => $config,
-                        'hardware_id' => $node->hardware_id, // Передаем hardware_id для временного топика
-                    ]);
-
-                if ($response->successful()) {
                     return response()->json([
-                        'status' => 'ok',
-                        'data' => [
-                            'node' => $node->fresh(['channels']),
-                            'published_config' => $config,
-                            'bridge_response' => $response->json(),
-                        ],
-                    ]);
+                        'status' => 'error',
+                        'message' => 'Node was modified during config publishing. Please try again.',
+                    ], Response::HTTP_CONFLICT);
                 }
 
-                \Illuminate\Support\Facades\Log::warning('NodeController: Failed to publish config - non-successful response', [
-                    'node_id' => $node->id,
-                    'node_uid' => $node->uid,
-                    'status' => $response->status(),
-                    'response_preview' => substr($response->body(), 0, 500),
-                ]);
+                // Получаем greenhouse_uid
+                $lockedNode->load('zone.greenhouse');
+                $greenhouseUid = $lockedNode->zone?->greenhouse?->uid;
+                if (! $greenhouseUid) {
+                    // Освобождаем advisory lock перед возвратом
+                    $this->configPublishLockService->releaseAdvisoryLock($lockedNode);
 
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Failed to publish config via MQTT bridge',
-                    'details' => $response->json(),
-                ], $response->status());
-            } catch (\Illuminate\Http\Client\ConnectionException $e) {
-                \Illuminate\Support\Facades\Log::error('NodeController: Connection error on publishConfig', [
-                    'node_id' => $node->id,
-                    'node_uid' => $node->uid,
-                    'error' => $e->getMessage(),
-                ]);
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Zone must have a greenhouse before publishing config',
+                    ], Response::HTTP_BAD_REQUEST);
+                }
 
-                return response()->json([
-                    'status' => 'error',
-                    'code' => 'SERVICE_UNAVAILABLE',
-                    'message' => 'MQTT bridge service is currently unavailable. Please try again later.',
-                ], 503);
-            } catch (\Illuminate\Http\Client\TimeoutException $e) {
-                \Illuminate\Support\Facades\Log::error('NodeController: Timeout error on publishConfig', [
-                    'node_id' => $node->id,
-                    'node_uid' => $node->uid,
-                    'timeout' => $timeout,
-                ]);
+                // Вызываем history-logger API для публикации (все общение бэка с нодами через history-logger)
+                $baseUrl = config('services.history_logger.url');
+                $token = config('services.history_logger.token') ?? config('services.python_bridge.token'); // Fallback на старый токен
 
-                return response()->json([
-                    'status' => 'error',
-                    'code' => 'SERVICE_TIMEOUT',
-                    'message' => 'MQTT bridge service did not respond in time. Please try again later.',
-                ], 503);
-            } catch (\Illuminate\Http\Client\RequestException $e) {
-                \Illuminate\Support\Facades\Log::error('NodeController: Request error on publishConfig', [
-                    'node_id' => $node->id,
-                    'node_uid' => $node->uid,
-                    'error' => $e->getMessage(),
-                    'status' => $e->response?->status(),
-                ]);
+                if (! $baseUrl) {
+                    // Освобождаем advisory lock перед возвратом
+                    $this->configPublishLockService->releaseAdvisoryLock($lockedNode);
 
-                return response()->json([
-                    'status' => 'error',
-                    'code' => 'PUBLISH_FAILED',
-                    'message' => 'Failed to publish config via MQTT bridge',
-                ], 500);
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'History Logger URL not configured',
+                    ], Response::HTTP_INTERNAL_SERVER_ERROR);
+                }
+
+                $headers = [];
+                if ($token) {
+                    $headers['Authorization'] = "Bearer {$token}";
+                }
+
+                // Используем короткий таймаут, чтобы не блокировать workers
+                $timeout = 10; // секунд
+
+                try {
+                    $response = \Illuminate\Support\Facades\Http::withHeaders($headers)
+                        ->timeout($timeout)
+                        ->post("{$baseUrl}/nodes/{$lockedNode->uid}/config", [
+                            'node_uid' => $lockedNode->uid,
+                            'zone_id' => $lockedNode->zone_id,
+                            'greenhouse_uid' => $greenhouseUid,
+                            'config' => $config,
+                            'hardware_id' => $lockedNode->hardware_id, // Передаем hardware_id для временного топика
+                        ]);
+
+                    if ($response->successful()) {
+                        // Помечаем конфигурацию как опубликованную (для дедупликации)
+                        $this->configPublishLockService->markAsPublished($lockedNode, $configHash);
+
+                        return response()->json([
+                            'status' => 'ok',
+                            'data' => [
+                                'node' => $lockedNode->fresh(['channels']),
+                                'published_config' => $config,
+                                'bridge_response' => $response->json(),
+                            ],
+                        ]);
+                    }
+
+                    \Illuminate\Support\Facades\Log::warning('NodeController: Failed to publish config - non-successful response', [
+                        'node_id' => $lockedNode->id,
+                        'node_uid' => $lockedNode->uid,
+                        'status' => $response->status(),
+                        'response_preview' => substr($response->body(), 0, 500),
+                    ]);
+
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Failed to publish config via MQTT bridge',
+                        'details' => $response->json(),
+                    ], $response->status());
+                } catch (\Illuminate\Http\Client\ConnectionException $e) {
+                    \Illuminate\Support\Facades\Log::error('NodeController: Connection error on publishConfig', [
+                        'node_id' => $lockedNode->id,
+                        'node_uid' => $lockedNode->uid,
+                        'error' => $e->getMessage(),
+                    ]);
+
+                    return response()->json([
+                        'status' => 'error',
+                        'code' => 'SERVICE_UNAVAILABLE',
+                        'message' => 'MQTT bridge service is currently unavailable. Please try again later.',
+                    ], 503);
+                } catch (\Illuminate\Http\Client\TimeoutException $e) {
+                    \Illuminate\Support\Facades\Log::error('NodeController: Timeout error on publishConfig', [
+                        'node_id' => $lockedNode->id,
+                        'node_uid' => $lockedNode->uid,
+                        'timeout' => $timeout,
+                    ]);
+
+                    return response()->json([
+                        'status' => 'error',
+                        'code' => 'SERVICE_TIMEOUT',
+                        'message' => 'MQTT bridge service did not respond in time. Please try again later.',
+                    ], 503);
+                } catch (\Illuminate\Http\Client\RequestException $e) {
+                    \Illuminate\Support\Facades\Log::error('NodeController: Request error on publishConfig', [
+                        'node_id' => $lockedNode->id,
+                        'node_uid' => $lockedNode->uid,
+                        'error' => $e->getMessage(),
+                        'status' => $e->response?->status(),
+                    ]);
+
+                    return response()->json([
+                        'status' => 'error',
+                        'code' => 'PUBLISH_FAILED',
+                        'message' => 'Failed to publish config via MQTT bridge',
+                    ], 500);
+                } finally {
+                    // Освобождаем advisory lock
+                    $this->configPublishLockService->releaseAdvisoryLock($lockedNode);
+                }
+            } catch (\Exception $e) {
+                // Освобождаем advisory lock в случае ошибки
+                $this->configPublishLockService->releaseAdvisoryLock($lockedNode);
+                throw $e;
             }
         } catch (\InvalidArgumentException $e) {
             \Illuminate\Support\Facades\Log::warning('NodeController: Invalid argument on publishConfig', [
@@ -965,5 +918,19 @@ class NodeController extends Controller
         }
 
         return false;
+    }
+
+    /**
+     * Рекурсивно сортирует ключи массива для детерминированного JSON
+     */
+    private function recursiveKsort(array &$array): array
+    {
+        ksort($array);
+        foreach ($array as &$value) {
+            if (is_array($value)) {
+                $this->recursiveKsort($value);
+            }
+        }
+        return $array;
     }
 }

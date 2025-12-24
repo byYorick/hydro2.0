@@ -8,6 +8,8 @@
 #include "node_utils.h"
 #include "mqtt_manager.h"
 #include "config_storage.h"
+#include "esp_efuse.h"
+#include "esp_mac.h"
 #include "cJSON.h"
 #include <stdlib.h>
 #include "esp_log.h"
@@ -170,29 +172,66 @@ esp_err_t node_state_manager_report_error(
         if (config_storage_get_node_id(node_id, sizeof(node_id)) == ESP_OK) {
             cJSON *error_json = cJSON_CreateObject();
             if (error_json) {
-                cJSON_AddStringToObject(error_json, "level", level_str);
+                // Формат согласно эталону node-sim: level, component, error_code, message, details?, ts?
+                // Маппинг level: CRITICAL → ERROR (эталон не поддерживает CRITICAL, только ERROR/WARNING/INFO)
+                const char *ethernet_level = level_str;
+                if (strcmp(level_str, "CRITICAL") == 0) {
+                    ethernet_level = "ERROR";
+                } else if (strcmp(level_str, "UNKNOWN") == 0) {
+                    ethernet_level = "ERROR";
+                }
+                
+                cJSON_AddStringToObject(error_json, "level", ethernet_level);
                 cJSON_AddStringToObject(error_json, "component", component);
-                cJSON_AddStringToObject(error_json, "error_code", esp_err_to_name(error_code));
-                cJSON_AddNumberToObject(error_json, "error_code_num", error_code);
+                // error_code должен быть строковым кодом (например, "infra_overcurrent")
+                // Пока используем esp_err_to_name как fallback, но лучше использовать строковые коды
+                char error_code_str[32];
+                snprintf(error_code_str, sizeof(error_code_str), "esp_%s", esp_err_to_name(error_code));
+                cJSON_AddStringToObject(error_json, "error_code", error_code_str);
                 cJSON_AddStringToObject(error_json, "message", message ? message : "Unknown error");
-                cJSON_AddNumberToObject(error_json, "ts", (double)node_utils_get_timestamp_seconds());
+                // ts опционально в миллисекундах согласно эталону
+                int64_t ts_ms = node_utils_get_timestamp_seconds() * 1000;
+                cJSON_AddNumberToObject(error_json, "ts", (double)ts_ms);
+                
+                // details опционально - добавляем error_code_num и исходный level для диагностики
+                cJSON *details = cJSON_CreateObject();
+                if (details) {
+                    cJSON_AddNumberToObject(details, "error_code_num", error_code);
+                    cJSON_AddStringToObject(details, "original_level", level_str);
+                    cJSON_AddItemToObject(error_json, "details", details);
+                }
                 
                 char *json_str = cJSON_PrintUnformatted(error_json);
                 if (json_str) {
                     // Публикуем в топик ошибок: hydro/{gh}/{zone}/{node}/error
                     char topic[256];  // Увеличенный размер для безопасности
                     char gh_uid[64], zone_uid[64];
+                    char hardware_id[32] = {0};
+                    
+                    // Пытаемся получить hardware_id для fallback топика
+                    esp_err_t hw_id_err = node_utils_get_hardware_id(hardware_id, sizeof(hardware_id));
+                    
                     if (config_storage_get_gh_uid(gh_uid, sizeof(gh_uid)) == ESP_OK &&
                         config_storage_get_zone_uid(zone_uid, sizeof(zone_uid)) == ESP_OK) {
                         int len = snprintf(topic, sizeof(topic), "hydro/%s/%s/%s/error", 
                                           gh_uid, zone_uid, node_id);
                         if (len < 0 || len >= (int)sizeof(topic)) {
-                            ESP_LOGW(TAG, "Topic too long, using fallback");
-                            snprintf(topic, sizeof(topic), "hydro/+/+/%s/error", node_id);
+                            ESP_LOGW(TAG, "Topic too long, using temp fallback");
+                            // Fallback: используем temp топик с hardware_id или node_id
+                            if (hw_id_err == ESP_OK && hardware_id[0] != '\0') {
+                                snprintf(topic, sizeof(topic), "hydro/gh-temp/zn-temp/%s/error", hardware_id);
+                            } else {
+                                snprintf(topic, sizeof(topic), "hydro/gh-temp/zn-temp/%s/error", node_id);
+                            }
                         }
                     } else {
-                        // Fallback: используем только node_id
-                        snprintf(topic, sizeof(topic), "hydro/+/+/%s/error", node_id);
+                        // Fallback: используем temp топик с hardware_id или node_id
+                        ESP_LOGW(TAG, "Config not available, using temp error topic");
+                        if (hw_id_err == ESP_OK && hardware_id[0] != '\0') {
+                            snprintf(topic, sizeof(topic), "hydro/gh-temp/zn-temp/%s/error", hardware_id);
+                        } else {
+                            snprintf(topic, sizeof(topic), "hydro/gh-temp/zn-temp/%s/error", node_id);
+                        }
                     }
                     
                     mqtt_manager_publish_raw(topic, json_str, 1, 0);  // QoS=1 для надежности

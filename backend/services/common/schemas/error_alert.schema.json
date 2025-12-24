@@ -1,0 +1,85 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ErrorAlertPayload",
+  "description": "Payload ошибки/алерта от узлов через MQTT или от backend сервисов",
+  "type": "object",
+  "required": ["level", "component"],
+  "properties": {
+    "level": {
+      "type": "string",
+      "description": "Уровень ошибки",
+      "enum": ["ERROR", "WARNING", "INFO", "DEBUG", "CRITICAL", "FATAL"]
+    },
+    "component": {
+      "type": "string",
+      "description": "Компонент, который сгенерировал ошибку",
+      "maxLength": 100
+    },
+    "error_code": {
+      "type": "string",
+      "description": "Символический код ошибки (например: ESP_ERR_NO_MEM, TIMEOUT, CONNECTION_FAILED)",
+      "maxLength": 100
+    },
+    "error_code_num": {
+      "type": "integer",
+      "description": "Числовой код ошибки (ESP error code)"
+    },
+    "message": {
+      "type": "string",
+      "description": "Человекочитаемое сообщение об ошибке",
+      "maxLength": 512
+    },
+    "ts": {
+      "type": "number",
+      "description": "Unix timestamp в секундах",
+      "minimum": 0
+    },
+    "hardware_id": {
+      "type": "string",
+      "description": "Hardware ID узла (MAC адрес)",
+      "maxLength": 100
+    },
+    "node_uid": {
+      "type": "string",
+      "description": "Node UID",
+      "maxLength": 100
+    },
+    "zone_id": {
+      "type": "integer",
+      "description": "Zone ID (опционально, для привязанных узлов)",
+      "minimum": 1
+    },
+    "source": {
+      "type": "string",
+      "description": "Источник алерта",
+      "enum": ["biz", "infra"]
+    },
+    "code": {
+      "type": "string",
+      "description": "Код алерта",
+      "maxLength": 64
+    },
+    "type": {
+      "type": "string",
+      "description": "Тип алерта",
+      "maxLength": 64
+    },
+    "severity": {
+      "type": "string",
+      "description": "Уровень серьезности",
+      "maxLength": 32
+    },
+    "details": {
+      "type": "object",
+      "description": "Дополнительные детали ошибки/алерта",
+      "additionalProperties": true
+    },
+    "ts_device": {
+      "type": "string",
+      "description": "Временная метка устройства (ISO 8601)",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": true
+}
+

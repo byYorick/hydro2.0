@@ -26,7 +26,7 @@
             <div class="text-lg font-semibold text-emerald-400">Онлайн</div>
           </div>
         </div>
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-3" data-testid="dashboard-zones-count">
           <div class="w-12 h-12 rounded-lg bg-sky-900/30 border border-sky-700 flex items-center justify-center">
             <svg class="w-6 h-6 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
@@ -108,9 +108,10 @@
               v-if="canCreateCommands"
               size="sm"
               variant="outline"
-              @click="handleQuickAction(zone.id, 'pause')"
+              :disabled="processingZones.has(zone.id)"
+              @click="handleQuickAction(zone.id, zone.status === 'PAUSED' ? 'resume' : 'pause')"
             >
-              {{ zone.status === 'PAUSED' ? 'Возобновить' : 'Приостановить' }}
+              {{ processingZones.has(zone.id) ? 'Обработка...' : (zone.status === 'PAUSED' ? 'Возобновить' : 'Приостановить') }}
             </Button>
           </div>
         </Card>
@@ -165,8 +166,14 @@
         <Link href="/admin/audit">
           <Button size="sm" variant="secondary" class="w-full">Просмотр логов</Button>
         </Link>
-        <Button size="sm" variant="outline" class="w-full" @click="exportSystemData">
-          Экспорт данных
+        <Button 
+          size="sm" 
+          variant="outline" 
+          class="w-full" 
+          :disabled="exporting"
+          @click="exportSystemData"
+        >
+          {{ exporting ? 'Экспорт...' : 'Экспорт данных' }}
         </Button>
       </div>
     </Card>
@@ -174,7 +181,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { Link } from '@inertiajs/vue3'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
@@ -183,6 +190,8 @@ import { translateStatus } from '@/utils/i18n'
 import { formatTime } from '@/utils/formatTime'
 import { useRole } from '@/composables/useRole'
 import { useApi } from '@/composables/useApi'
+import { useToast } from '@/composables/useToast'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { logger } from '@/utils/logger'
 import type { Zone } from '@/types'
 
@@ -205,6 +214,10 @@ const props = defineProps<Props>()
 
 const { canCreateCommands } = useRole()
 const { api } = useApi()
+const { showToast } = useToast()
+
+const processingZones = ref<Set<number>>(new Set())
+const exporting = ref(false)
 
 const zonesStatusSummary = computed(() => props.dashboard.zonesByStatus || {})
 const nodesStatusSummary = computed(() => props.dashboard.nodesByStatus || {})
@@ -212,14 +225,93 @@ const problematicZones = computed(() => props.dashboard.problematicZones || [])
 const activeUsersCount = computed(() => props.dashboard.activeUsersCount || 0)
 const recentUserActions = computed(() => props.dashboard.recentUserActions || [])
 
-function handleQuickAction(zoneId: number, action: string) {
-  // TODO: Реализовать быстрые действия
-  logger.debug('[AdminDashboard] Quick action:', action, 'for zone:', zoneId)
+async function handleQuickAction(zoneId: number, action: string) {
+  if (processingZones.value.has(zoneId)) {
+    return
+  }
+
+  processingZones.value.add(zoneId)
+
+  try {
+    let endpoint = ''
+    let method: 'post' | 'put' | 'patch' = 'post'
+    let payload: any = {}
+
+    switch (action) {
+      case 'pause':
+        endpoint = `/zones/${zoneId}/pause`
+        break
+      case 'resume':
+        endpoint = `/zones/${zoneId}/resume`
+        break
+      case 'nextPhase':
+        endpoint = `/zones/${zoneId}/next-phase`
+        break
+      default:
+        showToast(`Неизвестное действие: ${action}`, 'error', TOAST_TIMEOUT.NORMAL)
+        return
+    }
+
+    const response = await api[method]<{ status: string; data?: Zone }>(endpoint, payload)
+
+    if (response.data?.status === 'ok') {
+      const actionNames: Record<string, string> = {
+        pause: 'приостановлена',
+        resume: 'возобновлена',
+        nextPhase: 'переведена на следующую фазу',
+      }
+      showToast(`Зона ${actionNames[action] || 'обновлена'}`, 'success', TOAST_TIMEOUT.NORMAL)
+      logger.debug('[AdminDashboard] Quick action successful:', action, 'for zone:', zoneId)
+      
+      // Обновляем страницу для получения актуальных данных
+      window.location.reload()
+    }
+  } catch (err) {
+    logger.error('[AdminDashboard] Failed to execute quick action:', err)
+    showToast('Не удалось выполнить действие', 'error', TOAST_TIMEOUT.LONG)
+  } finally {
+    processingZones.value.delete(zoneId)
+  }
 }
 
-function exportSystemData() {
-  // TODO: Реализовать экспорт данных
-  logger.debug('[AdminDashboard] Export system data')
+async function exportSystemData() {
+  if (exporting.value) {
+    return
+  }
+
+  exporting.value = true
+
+  try {
+    // Создаем данные для экспорта
+    const exportData = {
+      timestamp: new Date().toISOString(),
+      zones: props.dashboard.problematicZones || [],
+      zonesByStatus: props.dashboard.zonesByStatus || {},
+      nodesByStatus: props.dashboard.nodesByStatus || {},
+      activeUsersCount: props.dashboard.activeUsersCount || 0,
+      recentUserActions: props.dashboard.recentUserActions || [],
+    }
+
+    // Создаем JSON файл
+    const json = JSON.stringify(exportData, null, 2)
+    const blob = new Blob([json], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `hydro-system-export-${new Date().toISOString().split('T')[0]}.json`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+
+    showToast('Данные экспортированы', 'success', TOAST_TIMEOUT.NORMAL)
+    logger.debug('[AdminDashboard] System data exported successfully')
+  } catch (err) {
+    logger.error('[AdminDashboard] Failed to export system data:', err)
+    showToast('Не удалось экспортировать данные', 'error', TOAST_TIMEOUT.LONG)
+  } finally {
+    exporting.value = false
+  }
 }
 </script>
 

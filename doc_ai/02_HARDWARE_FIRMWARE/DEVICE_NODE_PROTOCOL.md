@@ -69,24 +69,33 @@ hydro/gh/zone/node/channel/telemetry
 **Payload:**
 ```json
 {
+ "metric_type": "ph",
  "value": 6.42,
- "ts": 1737355600456
+ "ts": 1737355600
 }
 ```
 
-Требования:
+**Обязательные поля:**
+- `metric_type` (string, lowercase) — тип метрики: `ph`, `ec`, `air_temp_c`, `air_rh`, `co2_ppm`, `ina209_ma` и т.д.
+- `value` (float или int) — значение метрики
+- `ts` (integer) — UNIX timestamp в секундах (не миллисекундах)
 
-- value — float или int, не объект.
-- ts — UNIX‑timestamp в миллисекундах (uint64).
-- канал channel = одно из:
- - ph_sensor
- - ec_sensor
- - temp_air
- - humidity_air
- - temp_water
- - water_level
- - light_sensor
- - custom_xxx (если расширяем)
+**Опциональные поля:**
+- `unit` (string) — единица измерения
+- `raw` (integer) — сырое значение сенсора
+- `stub` (boolean) — флаг симулированного значения
+- `stable` (boolean) — флаг стабильности значения
+
+> **Важно:** Формат соответствует эталону node-sim. Поля `node_id` и `channel` не включаются в JSON, так как они уже есть в топике.
+
+Каналы (channel в топике):
+- `ph_sensor` → `metric_type: "ph"`
+- `ec_sensor` → `metric_type: "ec"`
+- `air_temp_c` → `metric_type: "air_temp_c"`
+- `air_rh` → `metric_type: "air_rh"`
+- `co2_ppm` → `metric_type: "co2_ppm"`
+- `ina209_ma` → `metric_type: "ina209_ma"`
+- и другие
 
 ## 4.2. Status (жизненный статус узла)
 
@@ -98,14 +107,20 @@ hydro/gh/zone/node/status
 **Payload:**
 ```json
 {
- "online": true,
- "ip": "192.168.1.44",
- "rssi": -62,
- "fw": "1.0.3"
+ "status": "ONLINE",
+ "ts": 1737355600
 }
 ```
 
-Минимум каждые **60 секунд** узел обязан публиковать status.
+**Обязательные поля:**
+- `status` (string) — статус узла: `ONLINE` или `OFFLINE`
+- `ts` (integer) — UTC timestamp в секундах
+
+**Требования:**
+- QoS = 1
+- Retain = true
+- Публикация выполняется сразу после успешного подключения к MQTT брокеру
+- Минимум каждые **60 секунд** узел обязан публиковать status (или при изменении состояния)
 
 ## 4.3. command_response
 
@@ -120,17 +135,19 @@ hydro/gh/zone/node/channel/command_response
 ```json
 {
  "cmd_id": "cmd-91ab23",
- "status": "ACK",
- "details": "OK"
+ "status": "DONE",
+ "details": "OK",
+ "ts": 1737355600123
 }
 ```
 
-Статусы:
-- ACK
-- ERROR
-- INVALID
-- BUSY
-- NO_EFFECT
+**Обязательные поля:**
+- `cmd_id` (string) — идентификатор команды, точно соответствующий `cmd_id` из команды
+- `status` (string) — статус выполнения: `ACK`, `DONE`, `ERROR`, `INVALID`, `BUSY`, `NO_EFFECT`
+- `ts` (integer) — UTC timestamp в миллисекундах
+
+**Опциональные поля:**
+- `details` (string) — детали выполнения команды
 
 Узел обязан отправить command_response в течение 5 секунд после выполнения.
 

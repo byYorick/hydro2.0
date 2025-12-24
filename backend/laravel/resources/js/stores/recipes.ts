@@ -2,6 +2,29 @@ import { defineStore } from 'pinia'
 import type { Recipe } from '@/types/Recipe'
 import { recipeEvents } from '@/composables/useStoreEvents'
 
+/**
+ * Эффективное сравнение рецептов без JSON.stringify
+ * Использует id + updated_at для определения изменений
+ */
+function recipesEqual(existing: Recipe, incoming: Recipe): boolean {
+  // Если ID не совпадают, это разные рецепты
+  if (existing.id !== incoming.id) {
+    return false
+  }
+  
+  // Сравниваем updated_at - если они одинаковы, данные не изменились
+  if (existing.updated_at && incoming.updated_at) {
+    return existing.updated_at === incoming.updated_at
+  }
+  
+  // Если updated_at нет, сравниваем ключевые поля
+  return (
+    existing.name === incoming.name &&
+    existing.description === incoming.description &&
+    existing.phases_count === incoming.phases_count
+  )
+}
+
 interface RecipesStoreState {
   // Нормализованная структура: Record<id, Recipe> для быстрого доступа O(1)
   items: Record<number, Recipe>
@@ -67,6 +90,14 @@ export const useRecipesStore = defineStore('recipes', {
       if (!recipe.id) return
       
       const exists = this.items[recipe.id]
+      
+      // Проверяем, изменился ли рецепт (эффективное сравнение без JSON.stringify)
+      // Это предотвращает рекурсию при обновлении с теми же данными
+      if (exists && recipesEqual(exists, recipe)) {
+        // Данные не изменились, не обновляем и не эмитим события
+        return
+      }
+      
       this.items[recipe.id] = recipe
       
       if (!exists) {

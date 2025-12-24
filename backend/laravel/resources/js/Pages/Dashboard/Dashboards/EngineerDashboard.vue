@@ -62,9 +62,10 @@
             <Button
               size="sm"
               variant="outline"
+              :disabled="testingDevices.has(device.id)"
               @click="testDevice(device.id)"
             >
-              Тест
+              {{ testingDevices.has(device.id) ? 'Тестирование...' : 'Тест' }}
             </Button>
           </div>
         </Card>
@@ -94,9 +95,10 @@
               <Button
                 size="sm"
                 variant="outline"
+                :disabled="restartingDevices.has(device.id)"
                 @click="restartDevice(device.id)"
               >
-                Перезапустить
+                {{ restartingDevices.has(device.id) ? 'Перезапуск...' : 'Перезапустить' }}
               </Button>
             </div>
           </div>
@@ -143,7 +145,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { Link } from '@inertiajs/vue3'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
@@ -152,6 +154,8 @@ import { translateStatus } from '@/utils/i18n'
 import { formatTime } from '@/utils/formatTime'
 import { useApi } from '@/composables/useApi'
 import { useFilteredList } from '@/composables/useFilteredList'
+import { useToast } from '@/composables/useToast'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { logger } from '@/utils/logger'
 import type { Device } from '@/types'
 
@@ -175,6 +179,10 @@ interface Props {
 const props = defineProps<Props>()
 
 const { api } = useApi()
+const { showToast } = useToast()
+
+const testingDevices = ref<Set<number>>(new Set())
+const restartingDevices = ref<Set<number>>(new Set())
 
 const devices = computed(() => props.dashboard.devices || [])
 
@@ -212,14 +220,64 @@ function formatTimeAgo(timestamp: string | Date): string {
   return `${days} дн назад`
 }
 
-function testDevice(deviceId: number) {
-  // TODO: Реализовать тестирование устройства
-  logger.debug('[EngineerDashboard] Test device:', deviceId)
+async function testDevice(deviceId: number) {
+  if (testingDevices.value.has(deviceId)) {
+    return
+  }
+
+  testingDevices.value.add(deviceId)
+  
+  try {
+    const response = await api.post<{ status: string; data?: { command_id: string } }>(
+      `/nodes/${deviceId}/commands`,
+      {
+        cmd: 'MEASURE_NOW',
+        params: {},
+      }
+    )
+    
+    if (response.data?.status === 'ok') {
+      logger.debug('[EngineerDashboard] Test command sent successfully', response.data)
+      showToast('Команда тестирования отправлена устройству', 'success', TOAST_TIMEOUT.NORMAL)
+    }
+  } catch (err) {
+    logger.error('[EngineerDashboard] Failed to send test command:', err)
+    showToast('Не удалось отправить команду тестирования', 'error', TOAST_TIMEOUT.LONG)
+  } finally {
+    testingDevices.value.delete(deviceId)
+  }
 }
 
-function restartDevice(deviceId: number) {
-  // TODO: Реализовать перезапуск устройства
-  logger.debug('[EngineerDashboard] Restart device:', deviceId)
+async function restartDevice(deviceId: number) {
+  if (restartingDevices.value.has(deviceId)) {
+    return
+  }
+
+  if (!confirm('Вы уверены, что хотите перезапустить устройство?')) {
+    return
+  }
+
+  restartingDevices.value.add(deviceId)
+  
+  try {
+    const response = await api.post<{ status: string; data?: { command_id: string } }>(
+      `/nodes/${deviceId}/commands`,
+      {
+        cmd: 'REBOOT',
+        params: {},
+      }
+    )
+    
+    if (response.data?.status === 'ok') {
+      logger.debug('[EngineerDashboard] Restart command sent successfully', response.data)
+      showToast('Команда перезапуска отправлена устройству', 'success', TOAST_TIMEOUT.NORMAL)
+    }
+  } catch (err) {
+    logger.error('[EngineerDashboard] Failed to send restart command:', err)
+    showToast('Не удалось отправить команду перезапуска', 'error', TOAST_TIMEOUT.LONG)
+  } finally {
+    restartingDevices.value.delete(deviceId)
+  }
 }
 </script>
 

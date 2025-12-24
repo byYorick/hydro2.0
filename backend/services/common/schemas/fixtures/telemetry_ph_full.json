@@ -1,0 +1,11 @@
+{
+  "metric_type": "PH",
+  "value": 6.5,
+  "ts": 1737979200.5,
+  "channel": "ph_sensor",
+  "node_id": "nd-ph-1",
+  "raw": 1465,
+  "stub": false,
+  "stable": true
+}
+

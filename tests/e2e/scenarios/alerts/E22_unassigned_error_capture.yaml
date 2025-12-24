@@ -1,0 +1,91 @@
+# E22: Unassigned Error Capture - temp error → unassigned_node_errors
+# DoD: temp error (preconfig) → запись в unassigned_node_errors
+
+name: E22_unassigned_error_capture
+description: |
+  Проверяет захват ошибок от непривязанных узлов:
+  - Узел в режиме preconfig публикует ошибку в temp-топик
+  - Ошибка сохраняется в unassigned_node_errors
+  - Ошибка не создает alert (узел не привязан к зоне)
+
+setup:
+  node_sim:
+    config:
+      mqtt:
+        host: ${MQTT_HOST:-localhost}
+        port: ${MQTT_PORT:-1884}
+      node:
+        gh_uid: gh-test-1
+        zone_uid: null  # Непривязанный узел
+        node_uid: esp32-unassigned-002  # Уникальный UID для непривязанного узла
+        hardware_id: esp32-unassigned-002
+        node_type: ph
+        mode: preconfig  # Режим предконфигурации
+        channels:
+          - ph_sensor
+        actuators:
+          - main_pump
+      telemetry:
+        interval_seconds: 2.0
+        heartbeat_interval_seconds: 15.0
+
+actions:
+  - step: start_node_simulator
+    type: start_simulator
+    config_ref: node_sim.config
+    wait_seconds: 3
+    optional: true  # node-sim уже может быть запущен
+
+  # Публикуем ошибку от непривязанного узла в temp-топик
+  # Формат топика для непривязанных: hydro/temp/{hardware_id}/error
+  - step: publish_unassigned_error
+    type: mqtt_publish
+    topic: hydro/temp/esp32-unassigned-002/error
+    payload:
+      level: ERROR
+      component: sensor
+      error_code: temp_sensor_failure
+      message: Temperature sensor failure in unassigned node
+      ts: ${TIMESTAMP_MS}
+    qos: 1
+    wait_seconds: 5
+
+  # Ждем обработки ошибки
+  - step: wait_for_error_capture
+    type: sleep
+    seconds: 5
+
+assertions:
+  # Проверка 1: Ошибка зарегистрирована в unassigned_node_errors
+  # Примечание: Система может не обрабатывать ошибки из temp-топиков автоматически
+  # Эта проверка опциональна, так как механизм обработки может отличаться
+  - name: error_in_unassigned_errors
+    type: database_query
+    query: |
+      SELECT COUNT(*) as count
+      FROM unassigned_node_errors
+      WHERE hardware_id = :hardware_id
+    params:
+      hardware_id: esp32-unassigned-002
+    timeout: 5.0
+    optional: true
+
+  # Проверка 2: Alert НЕ создан (узел не привязан)
+  - name: no_alert_created
+    type: database_query
+    query: |
+      SELECT COUNT(*) as alert_count
+      FROM alerts
+      WHERE code LIKE '%%temp_sensor_failure%%'
+      AND created_at > NOW() - INTERVAL '5 minutes'
+    expected:
+      - field: alert_count
+        operator: equals
+        value: 0
+
+cleanup:
+  - step: stop_node_simulator
+    type: stop_simulator
+    optional: true  # fault injection не работает в контейнере
+
+

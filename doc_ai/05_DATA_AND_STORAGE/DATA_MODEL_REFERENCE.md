@@ -87,6 +87,16 @@ created_at
 updated_at
 ```
 
+Индексы:
+```
+nodes_zone_id_idx (zone_id) WHERE zone_id IS NOT NULL
+nodes_zone_type_idx (zone_id, type) WHERE zone_id IS NOT NULL AND type IS NOT NULL
+nodes_zone_status_idx (zone_id, status) WHERE zone_id IS NOT NULL
+nodes_last_seen_at_idx (last_seen_at) WHERE last_seen_at IS NOT NULL
+nodes_type_idx (type) WHERE type IS NOT NULL
+nodes_status_idx (status) -- уже существует
+```
+
 Семантика идентификаторов:
 
 - `id` — внутренний числовой PK, не используется во внешних API.
@@ -138,11 +148,20 @@ telemetry_samples_zone_metric_ts_idx
 
 ```
 zone_id PK
+node_id PK
 metric_type PK
-node_id
 channel
 value FLOAT
 updated_at
+```
+
+Индексы:
+```
+telemetry_last_pk (zone_id, node_id, metric_type) -- PRIMARY KEY
+telemetry_last_node_id_idx (node_id) WHERE node_id IS NOT NULL
+telemetry_last_zone_node_idx (zone_id, node_id) WHERE node_id IS NOT NULL
+telemetry_last_updated_at_idx (updated_at) WHERE updated_at IS NOT NULL
+telemetry_last_zone_metric_idx (zone_id, metric_type)
 ```
 
 ---
@@ -201,8 +220,16 @@ failed_at
 
 Индексы:
 ```
-commands_status_idx
-commands_cmd_id_idx
+commands_status_idx (status)
+commands_cmd_id_idx (cmd_id) -- UNIQUE
+commands_status_created_idx (status, created_at) -- уже существует
+commands_zone_status_idx (zone_id, status) -- уже существует
+commands_node_status_idx (node_id, status) -- уже существует
+commands_created_at_idx (created_at) -- уже существует
+commands_sent_at_idx (sent_at) -- уже существует
+commands_zone_node_status_idx (zone_id, node_id, status) WHERE zone_id IS NOT NULL AND node_id IS NOT NULL
+commands_ack_at_idx (ack_at) WHERE ack_at IS NOT NULL
+commands_node_channel_idx (node_id, channel) WHERE node_id IS NOT NULL AND channel IS NOT NULL
 ```
 
 ---
@@ -330,7 +357,67 @@ Python читает:
 
 ---
 
-# 14. Правила для ИИ
+# 14. Transaction Isolation и Concurrency Control
+
+## 14.1. SERIALIZABLE Isolation Level
+
+Для критичных операций используется **SERIALIZABLE** isolation level с автоматическим retry на serialization failures.
+
+### Критичные операции:
+
+1. **PublishNodeConfigJob** - публикация конфигурации узла
+   - Использует `TransactionHelper::withSerializableRetry()` с advisory lock
+   - Advisory lock: `pg_try_advisory_xact_lock(crc32("publish_config:{node_id}"))`
+   - Retry: до 5 попыток с exponential backoff
+
+2. **NodeService::update()** - обновление узла
+   - Использует `TransactionHelper::withSerializableRetry()`
+   - Блокировка строки: `SELECT ... FOR UPDATE`
+   - Retry: до 5 попыток с exponential backoff
+
+3. **NodeLifecycleService::transition()** - переход состояния узла
+   - Использует `TransactionHelper::withSerializableRetry()`
+   - Retry: до 5 попыток с exponential backoff
+
+### Advisory Locks
+
+PostgreSQL advisory locks используются для предотвращения конкурентного выполнения критичных операций:
+
+- **Publish Config**: `pg_try_advisory_xact_lock(crc32("publish_config:{node_id}"))`
+  - Гарантирует, что конфиг публикуется только один раз
+  - Автоматически освобождается при завершении транзакции
+
+### Retry Logic
+
+`TransactionHelper::withSerializableRetry()` автоматически обрабатывает serialization failures:
+
+- **PostgreSQL Error Codes**: `40001` (serialization failure), `40P01` (deadlock detected)
+- **Retry Strategy**: Exponential backoff (50ms, 100ms, 200ms, 400ms, 800ms)
+- **Max Retries**: 5 попыток по умолчанию
+- **Logging**: Все retry попытки логируются с предупреждением
+
+### Пример использования:
+
+```php
+use App\Helpers\TransactionHelper;
+
+// С SERIALIZABLE isolation и retry
+$result = TransactionHelper::withSerializableRetry(function () {
+    // Критичная операция
+    return DB::transaction(function () {
+        // ...
+    });
+});
+
+// С advisory lock
+$result = TransactionHelper::withAdvisoryLock("operation:{$id}", function () {
+    // Операция под блокировкой
+});
+```
+
+---
+
+# 15. Правила для ИИ
 
 ИИ может:
 
@@ -338,12 +425,14 @@ Python читает:
 - расширять JSONB поля,
 - добавлять индексы,
 - вводить новые связи,
+- использовать `TransactionHelper` для критичных операций,
 
 ИИ не может:
 
 - менять существующие поля без backward-compatibility,
 - удалять таблицы,
-- переименовывать критические поля.
+- переименовывать критические поля,
+- использовать транзакции без SERIALIZABLE для критичных операций.
 
 ---
 

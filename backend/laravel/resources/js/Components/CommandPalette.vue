@@ -46,7 +46,12 @@
                   @mouseenter="selectedIndex = getItemIndex(groupIndex, itemIndex)"
                 >
                   <span v-if="item.icon" class="text-lg flex-shrink-0">{{ item.icon }}</span>
-                  <span class="flex-1" v-html="highlightMatch(item.label, q)"></span>
+                  <span class="flex-1">
+                    <template v-for="(segment, segmentIndex) in highlightMatch(item.label, q)" :key="segmentIndex">
+                      <mark v-if="segment.match" class="bg-amber-500/30">{{ segment.text }}</mark>
+                      <span v-else>{{ segment.text }}</span>
+                    </template>
+                  </span>
                   <span v-if="item.shortcut" class="ml-auto text-xs text-neutral-500 flex items-center gap-1">
                     <kbd class="px-1.5 py-0.5 rounded bg-neutral-900 border border-neutral-800 text-[10px]">
                       {{ item.shortcut }}
@@ -291,11 +296,63 @@ function fuzzyMatch(text: string, query: string): boolean {
   return queryIndex === queryLower.length
 }
 
-// Подсветка совпадений
-function highlightMatch(text: string, query: string): string {
-  if (!query) return text
-  const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi')
-  return text.replace(regex, '<mark class="bg-amber-500/30">$1</mark>')
+// Интерфейс для сегмента текста
+interface TextSegment {
+  text: string
+  match: boolean
+}
+
+// Подсветка совпадений - возвращает массив сегментов вместо HTML
+function highlightMatch(text: string, query: string): TextSegment[] {
+  if (!query) {
+    return [{ text, match: false }]
+  }
+  
+  // Экранируем спецсимволы regex
+  const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const regex = new RegExp(`(${escapedQuery})`, 'gi')
+  const segments: TextSegment[] = []
+  let lastIndex = 0
+  let match
+  
+  // Используем цикл для поиска всех совпадений
+  while ((match = regex.exec(text)) !== null) {
+    // Добавляем текст до совпадения
+    if (match.index > lastIndex) {
+      segments.push({
+        text: text.substring(lastIndex, match.index),
+        match: false
+      })
+    }
+    
+    // Добавляем совпадение
+    segments.push({
+      text: match[0],
+      match: true
+    })
+    
+    lastIndex = regex.lastIndex
+    
+    // Предотвращаем бесконечный цикл при пустых совпадениях
+    if (match[0].length === 0) {
+      regex.lastIndex++
+    }
+  }
+  
+  // Добавляем оставшийся текст
+  if (lastIndex < text.length) {
+    segments.push({
+      text: text.substring(lastIndex),
+      match: false
+    })
+  }
+  
+  // Если совпадений не найдено, возвращаем весь текст как один сегмент
+  if (segments.length === 0) {
+    return [{ text, match: false }]
+  }
+  
+  return segments
 }
 
 // Поиск через API

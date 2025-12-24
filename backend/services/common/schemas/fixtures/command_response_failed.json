@@ -1,0 +1,9 @@
+{
+  "cmd_id": "cmd-abc123",
+  "status": "FAILED",
+  "ts": 1737979210000,
+  "result_code": 1,
+  "error_code": "TIMEOUT",
+  "error_message": "Command execution timeout"
+}
+

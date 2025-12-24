@@ -151,6 +151,7 @@ import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import { formatTime } from '@/utils/formatTime'
 import { useApi } from '@/composables/useApi'
+import { extractData } from '@/utils/apiHelpers'
 import { logger } from '@/utils/logger'
 
 interface ServiceOption {
@@ -196,9 +197,9 @@ const filters = reactive({
 
 const levelOptions = ['ERROR', 'WARNING', 'INFO', 'DEBUG']
 const logs = ref<ServiceLog[]>([])
-const meta = reactive({
+const meta = reactive<ServiceLogMeta>({
   page: 1,
-  perPage: 50,
+  per_page: 50,
   total: 0,
   last_page: 1,
 })
@@ -278,7 +279,7 @@ async function fetchLogs(page = 1) {
   try {
     const params: Record<string, any> = {
       page,
-      per_page: meta.perPage,
+      per_page: meta.per_page,
     }
 
     if (filters.service && filters.service !== 'all') params.service = filters.service
@@ -287,19 +288,54 @@ async function fetchLogs(page = 1) {
     if (filters.from) params.from = filters.from
     if (filters.to) params.to = filters.to
 
-    const response = await get<{ data: ServiceLog[]; meta: ServiceLogMeta }>('/logs/service', { params })
-
-    logs.value = response.data.data || []
-    meta.page = response.data.meta.page
-    meta.perPage = response.data.meta.per_page
-    meta.total = response.data.meta.total
-    meta.last_page = response.data.meta.last_page
+    const response = await get('/logs/service', { params })
+    const parsed = normalizeLogsResponse(response)
+    logs.value = parsed.logs
+    updateMeta(parsed.meta, logs.value.length)
   } catch (err) {
     logger.error('Failed to load service logs', { err })
     error.value = 'Не удалось загрузить логи. Попробуйте обновить страницу.'
   } finally {
     loading.value = false
   }
+}
+
+/**
+ * Нормализует ответ API для логов (учитываем разные формы: {status, data, meta} | {data:{data,meta}} | массив)
+ */
+function normalizeLogsResponse(response: any): { logs: ServiceLog[]; meta?: Partial<ServiceLogMeta> | null } {
+  const payload = response?.data ?? response
+  const directData = extractData<ServiceLog[] | Record<string, any>>(payload)
+
+  // Вариант: extractData вернул массив
+  if (Array.isArray(directData)) {
+    return { logs: directData, meta: (payload as any)?.meta ?? null }
+  }
+
+  // Вариант: объект с data/meta на первом или втором уровне
+  const inner = directData ?? payload ?? {}
+  const firstLevelData = Array.isArray(inner?.data) ? inner.data : null
+  const secondLevelData = Array.isArray(inner?.data?.data) ? inner.data.data : null
+
+  const logsData = firstLevelData || secondLevelData || []
+  const metaFromPayload = inner?.meta ?? inner?.data?.meta ?? (payload as any)?.meta ?? null
+
+  return {
+    logs: Array.isArray(logsData) ? logsData : [],
+    meta: metaFromPayload,
+  }
+}
+
+function updateMeta(metaPayload?: Partial<ServiceLogMeta> | null, fallbackTotal = 0) {
+  const pageValue = (metaPayload as any)?.page ?? (metaPayload as any)?.current_page
+  const perPageValue = (metaPayload as any)?.per_page ?? (metaPayload as any)?.perPage
+  const totalValue = (metaPayload as any)?.total ?? (metaPayload as any)?.total_count
+  const lastPageValue = (metaPayload as any)?.last_page ?? (metaPayload as any)?.lastPage ?? (metaPayload as any)?.total_pages
+
+  meta.page = pageValue ?? meta.page
+  meta.per_page = perPageValue ?? meta.per_page
+  meta.total = totalValue ?? fallbackTotal ?? meta.total
+  meta.last_page = lastPageValue ?? meta.last_page
 }
 
 function changePage(newPage: number) {

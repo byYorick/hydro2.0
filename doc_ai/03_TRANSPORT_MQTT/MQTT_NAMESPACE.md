@@ -49,11 +49,13 @@ Payload (пример):
 
 ```json
 {
+ "metric_type": "air_temp_c",
  "value": 23.4,
- "metric": "TEMP_AIR",
- "ts": 1737355600456
+ "ts": 1737355600
 }
 ```
+
+> **Важно:** Формат соответствует эталону node-sim. Поля `node_id` и `channel` не включаются в JSON, так как они уже есть в топике.
 
 ### 2.2. command
 

@@ -21,6 +21,7 @@
 #include "setup_portal.h"
 #include "connection_status.h"
 #include "node_utils.h"
+#include "node_state_manager.h"
 #include "esp_log.h"
 #include "esp_err.h"
 #include "esp_mac.h"
@@ -92,6 +93,7 @@ static void light_node_publish_hello(void) {
     esp_err_t err = esp_efuse_mac_get_default(mac);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to get MAC address: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "system", err, "Failed to get MAC address for node_hello");
         return;
     }
     
@@ -106,6 +108,7 @@ static void light_node_publish_hello(void) {
     cJSON *hello = cJSON_CreateObject();
     if (!hello) {
         ESP_LOGE(TAG, "Failed to create node_hello JSON");
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "mqtt", ESP_ERR_NO_MEM, "Failed to create node_hello JSON");
         return;
     }
     
@@ -126,6 +129,7 @@ static void light_node_publish_hello(void) {
             ESP_LOGI(TAG, "node_hello published successfully");
         } else {
             ESP_LOGE(TAG, "Failed to publish node_hello: %s", esp_err_to_name(pub_err));
+            node_state_manager_report_error(ERROR_LEVEL_ERROR, "mqtt", pub_err, "Failed to publish node_hello");
         }
         free(json_str);
     }
@@ -182,6 +186,7 @@ esp_err_t light_node_init_components(void) {
     esp_err_t err = light_node_init_step_config_storage(&init_ctx, &step_result);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Step 1 failed: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_CRITICAL, "config_storage", err, "Config storage initialization failed");
         return err;
     }
     
@@ -193,6 +198,7 @@ esp_err_t light_node_init_components(void) {
         return ESP_ERR_NOT_FOUND;
     } else if (err != ESP_OK) {
         ESP_LOGE(TAG, "Step 2 failed: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_CRITICAL, "wifi_manager", err, "WiFi manager initialization failed");
         return err;
     }
     
@@ -215,6 +221,7 @@ esp_err_t light_node_init_components(void) {
         err = wifi_manager_connect(&wifi_config);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "Failed to connect to Wi-Fi: %s", esp_err_to_name(err));
+            node_state_manager_report_error(ERROR_LEVEL_WARNING, "wifi", err, "Failed to connect to Wi-Fi, will retry");
         }
     }
     
@@ -222,12 +229,14 @@ esp_err_t light_node_init_components(void) {
     err = light_node_init_step_i2c(&init_ctx, &step_result);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Step 3 failed: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "i2c_bus", err, "I2C bus initialization failed");
     }
     
     // [Step 4/7] Light Sensor
     err = light_node_init_step_light_sensor(&init_ctx, &step_result);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Step 4 failed: %s (will retry later)", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_WARNING, "light_sensor", err, "Light sensor initialization failed, will retry");
     }
     
     // [Step 5/7] OLED UI
@@ -240,6 +249,7 @@ esp_err_t light_node_init_components(void) {
     err = light_node_init_step_mqtt(&init_ctx, &step_result);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Step 6 failed: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_CRITICAL, "mqtt_manager", err, "MQTT manager initialization failed");
         return err;
     }
     
@@ -247,6 +257,7 @@ esp_err_t light_node_init_components(void) {
     esp_err_t fw_err = light_node_framework_init_integration();
     if (fw_err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize node_framework: %s", esp_err_to_name(fw_err));
+        node_state_manager_report_error(ERROR_LEVEL_CRITICAL, "node_framework", fw_err, "Node framework initialization failed");
         return fw_err;
     }
     
@@ -259,6 +270,7 @@ esp_err_t light_node_init_components(void) {
     err = light_node_init_step_finalize(&init_ctx, &step_result);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Step 7 failed: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "init_finalize", err, "Initialization finalization failed");
         return err;
     }
     

@@ -4,6 +4,7 @@
       v-if="show"
       ref="toastElement"
       :data-toast-id="message"
+      :data-testid="`toast-${variant}`"
       :class="[
         'fixed top-4 right-4 z-[10000] min-w-[300px] max-w-md rounded-lg border p-4 shadow-2xl',
         variantClasses[variant]
@@ -56,7 +57,7 @@
           </svg>
         </div>
         <div class="flex-1">
-          <p class="text-sm font-medium">{{ message }}</p>
+          <p class="text-sm font-medium" data-testid="toast-message">{{ message }}</p>
         </div>
         <button
           @click="show = false"
@@ -79,6 +80,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue'
 import type { ToastVariant } from '@/composables/useToast'
+import { logger } from '@/utils/logger'
 
 interface Props {
   message: string
@@ -106,7 +108,7 @@ const variantClasses: Record<ToastVariant, string> = {
 }
 
 onMounted(() => {
-  console.log('=== [Toast] Компонент смонтирован ===', { 
+  logger.debug('[Toast] Компонент смонтирован', { 
     message: props.message, 
     variant: props.variant,
     duration: props.duration,
@@ -122,9 +124,9 @@ onMounted(() => {
     try {
       // Используем ref вместо querySelector для надежного доступа к элементу
       const el = toastElement.value
-      console.log('[Toast] DOM элемент найден:', el)
+      logger.debug('[Toast] DOM элемент найден', el)
       if (el) {
-        console.log('[Toast] Стили элемента:', {
+        logger.debug('[Toast] Стили элемента', {
           display: window.getComputedStyle(el).display,
           visibility: window.getComputedStyle(el).visibility,
           opacity: window.getComputedStyle(el).opacity,
@@ -136,18 +138,18 @@ onMounted(() => {
       }
     } catch (error) {
       // Игнорируем ошибки при отладке - это не критично
-      console.debug('[Toast] Не удалось найти DOM элемент для отладки:', error)
+      logger.debug('[Toast] Не удалось найти DOM элемент для отладки', error)
     }
   }, 100)
   
   // Component starts visible, so we just need to set up auto-close
   if (props.duration > 0) {
     setTimeout(() => {
-      console.log('[Toast] Автоматическое закрытие через', props.duration, 'мс')
+      logger.debug('[Toast] Автоматическое закрытие через', props.duration, 'мс')
       show.value = false
     }, props.duration)
   }
-  console.log('[Toast] show.value после onMounted:', show.value)
+  logger.debug('[Toast] show.value после onMounted', show.value)
 })
 
 // Emit close event when hidden

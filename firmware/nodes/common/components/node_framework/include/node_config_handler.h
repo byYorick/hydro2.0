@@ -92,6 +92,27 @@ esp_err_t node_config_handler_publish_response(
     size_t component_count
 );
 
+/**
+ * @brief Callback для формирования списка каналов в config_response.
+ *
+ * Владелец callback должен вернуть cJSON массив. node_config_handler берет
+ * владение объектом и освободит его после публикации.
+ */
+typedef cJSON *(*node_config_channels_callback_t)(void *user_ctx);
+
+/**
+ * @brief Регистрация callback для формирования channels в config_response.
+ *
+ * Если callback не задан, handler попытается взять channels из сохраненного NodeConfig.
+ *
+ * @param callback Callback для формирования channels (может быть NULL)
+ * @param user_ctx Пользовательский контекст
+ */
+void node_config_handler_set_channels_callback(
+    node_config_channels_callback_t callback,
+    void *user_ctx
+);
+
 // Forward declarations для типов из mqtt_manager.h
 typedef void (*mqtt_config_callback_t)(const char *topic, const char *data, int data_len, void *user_ctx);
 typedef void (*mqtt_command_callback_t)(const char *topic, const char *channel, const char *data, int data_len, void *user_ctx);
@@ -126,4 +147,3 @@ void node_config_handler_set_mqtt_callbacks(
 #endif
 
 #endif // NODE_CONFIG_HANDLER_H
-

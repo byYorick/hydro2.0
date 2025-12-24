@@ -80,14 +80,13 @@ hydro/{gh}/{zone}/{node}/{channel}/telemetry
 ## 3.4. Пример JSON
 ```json
 {
- "node_id": "nd-ph-1",
- "channel": "ph_sensor",
- "metric_type": "PH",
+ "metric_type": "ph",
  "value": 5.81,
- "raw": 1461,
  "ts": 1710023000
 }
 ```
+
+> **Важно:** Формат соответствует эталону node-sim. Поля `node_id` и `channel` не включаются в JSON, так как они уже есть в топике. `metric_type` в lowercase, `ts` в секундах.
 
 ## 3.5. QoS = 1 
 ## Retain = false

@@ -87,8 +87,7 @@ class ZoneRepository:
             SELECT DISTINCT z.id, z.status
             FROM zones z
             JOIN zone_recipe_instances zri ON zri.zone_id = z.id
-            WHERE z.status IN ('online', 'warning')
+            WHERE z.status IN ('online', 'warning', 'RUNNING', 'PAUSED')
             """
         )
         return zones if zones else []
-

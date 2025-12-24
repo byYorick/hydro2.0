@@ -31,51 +31,90 @@ Backend принимает решения → узлы исполняют.
 
 # 2. Архитектура прошивки узла (Firmware Structure)
 
-Структура модулей:
+Прошивка построена на ESP-IDF framework и использует структуру компонентов.
+
+## 2.1. Структура проекта ESP-IDF
+
+Каждая нода — отдельный ESP-IDF проект:
 
 ```
-src/
- ├─ main.cpp
- ├─ wifi/
- │ ├─ wifi_manager.cpp
- │ └─ wifi_manager.h
- ├─ mqtt/
- │ ├─ mqtt_manager.cpp
- │ ├─ mqtt_manager.h
- │ ├─ mqtt_topics.cpp
- │ └─ mqtt_topics.h
- ├─ config/
- │ ├─ node_config.cpp
- │ ├─ node_config.h
- │ ├─ nvs_storage.cpp
- │ └─ nvs_storage.h
- ├─ channels/
- │ ├─ sensor_channel.cpp
- │ ├─ sensor_channel.h
- │ ├─ actuator_channel.cpp
- │ ├─ actuator_channel.h
- │ ├─ ph_sensor.cpp
- │ ├─ ec_sensor.cpp
- │ ├─ sht31.cpp
- │ ├─ ccs811.cpp
- │ ├─ pump.cpp
- │ ├─ fan.cpp
- │ ├─ heater.cpp
- │ └─ relay.cpp
- ├─ telemetry/
- │ ├─ telemetry_manager.cpp
- │ └─ telemetry_manager.h
- ├─ commands/
- │ ├─ command_parser.cpp
- │ └─ command_parser.h
- ├─ utils/
- │ ├─ json.cpp
- │ ├─ json.h
- │ ├─ timers.cpp
- │ ├─ timers.h
- │ └─ safe_mode.cpp
- └─ main_loop.cpp
+firmware/nodes/{node_type}/
+├─ main/
+│  ├─ main.c                    # Точка входа приложения
+│  ├─ {node_type}_app.c         # Основная логика ноды
+│  ├─ {node_type}_app.h
+│  └─ CMakeLists.txt            # Конфигурация компонента main
+├─ components/                  # Специфические компоненты ноды (опционально)
+├─ CMakeLists.txt               # Корневой CMakeLists проекта
+├─ sdkconfig.defaults           # Конфигурация ESP-IDF по умолчанию
+├─ partitions.csv               # Таблица разделов флеш-памяти
+└─ README.md
 ```
+
+## 2.2. Общие компоненты
+
+Все общие компоненты находятся в `firmware/nodes/common/components/`:
+
+```
+firmware/nodes/common/components/
+├─ mqtt_manager/                # MQTT менеджер и топик-роутер
+├─ wifi_manager/                # Wi-Fi менеджер
+├─ config_storage/              # Хранение NodeConfig в NVS
+├─ node_framework/              # Унифицированный фреймворк для всех нод
+│  ├─ node_telemetry_engine.c   # Движок публикации телеметрии
+│  ├─ node_command_handler.c    # Обработчик команд
+│  └─ node_state_manager.c      # Управление состоянием (Safe Mode)
+├─ heartbeat_task/              # Задача публикации heartbeat
+├─ sensors/                     # Драйверы сенсоров
+│  ├─ ph_sensor/                # Универсальный драйвер pH
+│  ├─ trema_ph/                 # Trema pH-сенсор (iarduino)
+│  ├─ ec_sensor/                # Универсальный драйвер EC
+│  ├─ trema_ec/                 # Trema EC-сенсор (iarduino)
+│  ├─ sht3x/                    # Температура/влажность
+│  └─ ina209/                   # Датчик тока
+├─ i2c_bus/                     # I²C шина
+├─ oled_ui/                     # OLED дисплей UI
+├─ logging/                     # Система логирования
+└─ ...
+```
+
+## 2.3. Архитектура компонентов
+
+Каждый компонент — это ESP-IDF компонент со структурой:
+
+```
+component_name/
+├─ include/
+│  └─ component_name.h          # Публичный API компонента
+├─ component_name.c             # Реализация компонента
+├─ CMakeLists.txt               # Конфигурация компонента
+└─ README.md                    # Документация компонента
+```
+
+## 2.4. Основные модули
+
+- **node_framework** — унифицированный фреймворк:
+  - Обработка NodeConfig
+  - Обработка команд MQTT
+  - Публикация телеметрии
+  - Управление состоянием (Safe Mode)
+  - Watchdog
+
+- **mqtt_manager** — MQTT клиент и менеджер:
+  - Подключение к брокеру
+  - Публикация сообщений
+  - Подписка на топики
+  - Обработка LWT
+
+- **config_storage** — хранение конфигурации:
+  - Сохранение NodeConfig в NVS
+  - Загрузка при старте
+  - Валидация конфигурации
+
+- **telemetry_engine** — движок телеметрии:
+  - Батчинг сообщений
+  - Форматирование JSON
+  - Публикация в MQTT
 
 ---
 
@@ -192,14 +231,24 @@ NodeConfig полностью формируется на backend.
 ## 6.1. Формат
 ```json
 {
- "node_id": "nd-ph-1",
- "channel": "ph_sensor",
- "metric_type": "PH",
+ "metric_type": "ph",
  "value": 5.82,
- "raw": 1460,
  "ts": 1710001234
 }
 ```
+
+**Обязательные поля:**
+- `metric_type` (string, lowercase) — тип метрики: `ph`, `ec`, `air_temp_c`, `air_rh` и т.д.
+- `value` (number) — значение метрики
+- `ts` (integer) — UTC timestamp в секундах (Unix timestamp)
+
+**Опциональные поля:**
+- `unit` (string) — единица измерения
+- `raw` (integer) — сырое значение сенсора
+- `stub` (boolean) — флаг симулированного значения
+- `stable` (boolean) — флаг стабильности значения
+
+> **Важно:** Поля `node_id` и `channel` **не включаются** в JSON payload, так как они уже присутствуют в структуре MQTT топика (`hydro/{gh}/{zone}/{node}/{channel}/telemetry`). Формат соответствует эталону node-sim.
 
 ## 6.2. Отправка
 Топик:

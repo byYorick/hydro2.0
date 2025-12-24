@@ -1,7 +1,7 @@
 /**
  * Composable для работы с телеметрией с кешированием и rate limiting
  */
-import { ref, computed, type Ref, type ComputedRef } from 'vue'
+import { ref, computed, onMounted, onUnmounted, type Ref, type ComputedRef } from 'vue'
 import { useApi, type ToastHandler } from './useApi'
 import { useRateLimitedApi } from './useRateLimitedApi'
 import { useErrorHandler } from './useErrorHandler'
@@ -341,6 +341,69 @@ export function useTelemetry(showToast?: ToastHandler) {
     }
     saveCacheToStorage()
   }
+
+  // Обработчик события reconciliation для обновления телеметрии при переподключении
+  function handleReconciliation(event: CustomEvent) {
+    const { telemetry } = event.detail || {}
+    
+    if (!telemetry || !Array.isArray(telemetry)) {
+      return
+    }
+
+    logger.debug('[useTelemetry] Processing reconciliation telemetry data', {
+      count: telemetry.length,
+    })
+
+    // Группируем телеметрию по zone_id и обновляем кеш
+    const telemetryByZone = new Map<number, ZoneTelemetry>()
+    
+    for (const item of telemetry) {
+      if (!item.zone_id) continue
+      
+      const zoneId = item.zone_id
+      if (!telemetryByZone.has(zoneId)) {
+        telemetryByZone.set(zoneId, {} as ZoneTelemetry)
+      }
+      
+      const zoneTelemetry = telemetryByZone.get(zoneId)!
+      const key = item.metric_type || 'unknown'
+      zoneTelemetry[key] = {
+        zone_id: zoneId,
+        node_id: item.node_id,
+        channel: item.channel,
+        metric_type: item.metric_type,
+        value: item.value,
+        ts: item.ts ? new Date(item.ts) : new Date(),
+      } as any
+    }
+
+    // Обновляем кеш для каждой зоны
+    for (const [zoneId, zoneTelemetry] of telemetryByZone.entries()) {
+      const cacheKey = `telemetry_last_${zoneId}`
+      telemetryCache.set(cacheKey, {
+        data: zoneTelemetry,
+        timestamp: Date.now(),
+      })
+    }
+
+    saveCacheToStorage()
+    logger.info('[useTelemetry] Reconciliation completed', {
+      zonesUpdated: telemetryByZone.size,
+    })
+  }
+
+  // Подписываемся на событие reconciliation при монтировании
+  onMounted(() => {
+    if (typeof window !== 'undefined') {
+      window.addEventListener('ws:reconciliation:telemetry', handleReconciliation as EventListener)
+    }
+  })
+
+  onUnmounted(() => {
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('ws:reconciliation:telemetry', handleReconciliation as EventListener)
+    }
+  })
 
   return {
     loading: computed(() => loading.value) as ComputedRef<boolean>,

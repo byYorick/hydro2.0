@@ -238,7 +238,7 @@ class PythonIngestControllerTest extends TestCase
         // Создаём команду напрямую
         $command = \App\Models\Command::create([
             'cmd_id' => 'cmd-test-123',
-            'status' => 'pending',
+            'status' => Command::STATUS_QUEUED,
             'cmd' => 'test_command',
         ]);
 
@@ -251,10 +251,9 @@ class PythonIngestControllerTest extends TestCase
         $response->assertOk()
             ->assertJson(['status' => 'ok']);
 
-        // Проверяем, что статус команды НЕ обновлён
+        // Проверяем, что статус команды обновлён
         $command->refresh();
-        $this->assertEquals('pending', $command->status);
-        // Laravel больше не обновляет статусы команд
+        $this->assertEquals('completed', $command->status);
     }
 
     public function test_command_ack_endpoint_requires_auth(): void

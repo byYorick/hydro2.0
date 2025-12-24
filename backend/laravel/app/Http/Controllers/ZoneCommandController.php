@@ -2,15 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\StoreZoneCommandRequest;
+use App\Http\Resources\CommandResource;
 use App\Models\Zone;
 use App\Models\ZoneEvent;
 use App\Models\ZoneCycle;
 use App\Services\PythonBridgeService;
+use App\Services\ZoneReadinessService;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\TimeoutException;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class ZoneCommandController extends Controller
@@ -18,14 +20,12 @@ class ZoneCommandController extends Controller
     /**
      * Отправка команды для зоны в Python-сервис + логирование в историю зоны.
      */
-    public function store(Request $request, Zone $zone, PythonBridgeService $bridge): JsonResponse
+    public function store(StoreZoneCommandRequest $request, Zone $zone, PythonBridgeService $bridge): JsonResponse
     {
-        $data = $request->validate([
-            'type' => ['required', 'string', 'max:64'],
-            'params' => ['nullable'],
-            'node_uid' => ['nullable', 'string', 'max:64'],
-            'channel' => ['nullable', 'string', 'max:64'],
-        ]);
+        // Проверяем авторизацию через Policy
+        $this->authorize('sendCommand', $zone);
+
+        $data = $request->validated();
 
         // Ensure params is an associative array (object), not a list
         // Python service expects Dict[str, Any], not a list
@@ -36,72 +36,49 @@ class ZoneCommandController extends Controller
             $data['params'] = [];
         }
 
-        // Специальная валидация для GROWTH_CYCLE_CONFIG
-        if ($data['type'] === 'GROWTH_CYCLE_CONFIG') {
-            $params = $data['params'] ?? [];
+        // Бизнес-правило: в зоне может быть только один активный цикл выращивания
+        if (($data['type'] ?? '') === 'GROWTH_CYCLE_CONFIG' && ($data['params']['mode'] ?? '') === 'start') {
+            $hasActiveCycle = ZoneCycle::query()
+                ->where('zone_id', $zone->id)
+                ->where('status', 'active')
+                ->exists();
 
-            // Проверяем наличие mode
-            if (! isset($params['mode']) || ! in_array($params['mode'], ['start', 'adjust'], true)) {
+            if ($hasActiveCycle) {
                 return response()->json([
                     'status' => 'error',
-                    'code' => 'VALIDATION_ERROR',
-                    'message' => 'The params.mode field is required and must be "start" or "adjust" for GROWTH_CYCLE_CONFIG.',
+                    'code' => 'CYCLE_ALREADY_ACTIVE',
+                    'message' => 'В этой зоне уже есть активный цикл выращивания. Сначала завершите или остановите текущий цикл.',
                 ], 422);
             }
 
-            // Проверяем наличие subsystems
-            if (! isset($params['subsystems']) || ! is_array($params['subsystems'])) {
+            // Проверка готовности зоны к старту цикла
+            $readinessService = app(ZoneReadinessService::class);
+            $readiness = $readinessService->validate($zone->id);
+            
+            // Если есть критические ошибки - блокируем старт
+            if (!$readiness['valid']) {
                 return response()->json([
                     'status' => 'error',
-                    'code' => 'VALIDATION_ERROR',
-                    'message' => 'The params.subsystems field is required and must be an object for GROWTH_CYCLE_CONFIG.',
+                    'code' => 'ZONE_NOT_READY',
+                    'message' => 'Зона не готова к запуску цикла',
+                    'data' => [
+                        'errors' => $readiness['errors'],
+                        'warnings' => $readiness['warnings'],
+                    ],
                 ], 422);
             }
-
-            // Проверяем обязательные подсистемы (ph, ec, irrigation должны быть enabled)
-            $subsystems = $params['subsystems'];
-            $requiredSubsystems = ['ph', 'ec', 'irrigation'];
-            foreach ($requiredSubsystems as $subsystem) {
-                if (! isset($subsystems[$subsystem]) || ! is_array($subsystems[$subsystem])) {
-                    return response()->json([
-                        'status' => 'error',
-                        'code' => 'VALIDATION_ERROR',
-                        'message' => "The params.subsystems.{$subsystem} field is required for GROWTH_CYCLE_CONFIG.",
-                    ], 422);
-                }
-                
-                if (! isset($subsystems[$subsystem]['enabled']) || $subsystems[$subsystem]['enabled'] !== true) {
-                    return response()->json([
-                        'status' => 'error',
-                        'code' => 'VALIDATION_ERROR',
-                        'message' => "The params.subsystems.{$subsystem}.enabled must be true (required subsystem).",
-                    ], 422);
-                }
-                
-                // Если enabled, должны быть targets
-                if ($subsystems[$subsystem]['enabled'] && ! isset($subsystems[$subsystem]['targets'])) {
-                    return response()->json([
-                        'status' => 'error',
-                        'code' => 'VALIDATION_ERROR',
-                        'message' => "The params.subsystems.{$subsystem}.targets field is required when enabled.",
-                    ], 422);
-                }
-            }
-
-            // Бизнес-правило: в зоне может быть только один активный цикл выращивания
-            if ($params['mode'] === 'start') {
-                $hasActiveCycle = ZoneCycle::query()
-                    ->where('zone_id', $zone->id)
-                    ->where('status', 'active')
-                    ->exists();
-
-                if ($hasActiveCycle) {
-                    return response()->json([
-                        'status' => 'error',
-                        'code' => 'CYCLE_ALREADY_ACTIVE',
-                        'message' => 'В этой зоне уже есть активный цикл выращивания. Сначала завершите или остановите текущий цикл.',
-                    ], 422);
-                }
+            
+            // Если есть предупреждения и не указан флаг "start_anyway" - возвращаем предупреждения
+            if (!empty($readiness['warnings']) && !($data['params']['start_anyway'] ?? false)) {
+                return response()->json([
+                    'status' => 'warning',
+                    'code' => 'ZONE_READINESS_WARNINGS',
+                    'message' => 'Зона готова к запуску, но есть предупреждения',
+                    'data' => [
+                        'warnings' => $readiness['warnings'],
+                        'can_start_anyway' => true,
+                    ],
+                ], 422);
             }
         }
 

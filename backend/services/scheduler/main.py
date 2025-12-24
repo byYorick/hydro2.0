@@ -2,7 +2,9 @@ import asyncio
 import json
 import logging
 import os
+import httpx
 from datetime import datetime, time
+from common.utils.time import utcnow
 from typing import Optional, Dict, Any, List
 from common.env import get_settings
 from common.mqtt import MqttClient
@@ -39,6 +41,78 @@ logger = logging.getLogger(__name__)
 
 SCHEDULE_EXECUTIONS = Counter("schedule_executions_total", "Scheduled tasks executed", ["zone_id", "task_type"])
 ACTIVE_SCHEDULES = Gauge("active_schedules", "Number of active schedules")
+COMMAND_REST_ERRORS = Counter("scheduler_command_rest_errors_total", "REST command errors from scheduler", ["error_type"])
+
+# URL automation-engine для отправки команд
+AUTOMATION_ENGINE_URL = os.getenv("AUTOMATION_ENGINE_URL", "http://automation-engine:9405")
+
+
+async def send_command_via_automation_engine(
+    zone_id: int,
+    node_uid: str,
+    channel: str,
+    cmd: str,
+    params: Optional[Dict[str, Any]] = None
+) -> bool:
+    """
+    Отправить команду через automation-engine REST API.
+    Scheduler не должен общаться с нодами напрямую, только через automation-engine.
+    
+    Args:
+        zone_id: ID зоны
+        node_uid: UID узла
+        channel: Канал узла
+        cmd: Команда
+        params: Параметры команды
+    
+    Returns:
+        True если команда успешно отправлена, False в противном случае
+    """
+    try:
+        payload = {
+            "zone_id": zone_id,
+            "node_uid": node_uid,
+            "channel": channel,
+            "cmd": cmd,
+        }
+        if params:
+            payload["params"] = params
+        
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.post(
+                f"{AUTOMATION_ENGINE_URL}/scheduler/command",
+                json=payload
+            )
+            
+            if response.status_code == 200:
+                logger.debug(
+                    f"Scheduler command sent successfully: zone_id={zone_id}, node_uid={node_uid}, cmd={cmd}"
+                )
+                return True
+            else:
+                try:
+                    error_msg = response.text
+                except Exception:
+                    error_msg = f"HTTP {response.status_code}"
+                COMMAND_REST_ERRORS.labels(error_type=f"http_{response.status_code}").inc()
+                logger.error(
+                    f"Scheduler command failed: {response.status_code} - {error_msg}, "
+                    f"zone_id={zone_id}, node_uid={node_uid}, cmd={cmd}"
+                )
+                return False
+                
+    except httpx.TimeoutException as e:
+        COMMAND_REST_ERRORS.labels(error_type="timeout").inc()
+        logger.error(f"Scheduler command timeout: {e}, zone_id={zone_id}, node_uid={node_uid}, cmd={cmd}")
+        return False
+    except httpx.RequestError as e:
+        COMMAND_REST_ERRORS.labels(error_type="request_error").inc()
+        logger.error(f"Scheduler command request error: {e}, zone_id={zone_id}, node_uid={node_uid}, cmd={cmd}")
+        return False
+    except Exception as e:
+        COMMAND_REST_ERRORS.labels(error_type=type(e).__name__).inc()
+        logger.error(f"Scheduler command error: {e}, zone_id={zone_id}, node_uid={node_uid}, cmd={cmd}", exc_info=True)
+        return False
 
 
 def _parse_time_spec(spec: str) -> Optional[time]:
@@ -154,8 +228,6 @@ async def get_gh_uid_for_zone(zone_id: int) -> Optional[str]:
 async def monitor_pump_safety(
     zone_id: int,
     pump_start_time: datetime,
-    mqtt: MqttClient,
-    gh_uid: str,
     node_uid: str,
     channel: str
 ):
@@ -164,6 +236,7 @@ async def monitor_pump_safety(
     
     Через 3 секунды после запуска проверяет flow и останавливает насос
     при обнаружении сухого хода.
+    Команды отправляются через automation-engine REST API.
     """
     # Ждем 3 секунды перед проверкой
     await asyncio.sleep(3)  # DRY_RUN_CHECK_DELAY_SEC
@@ -172,10 +245,13 @@ async def monitor_pump_safety(
     is_safe, error = await check_dry_run_protection(zone_id, pump_start_time)
     
     if not is_safe:
-        # Отправляем команду остановки насоса
-        payload = {"cmd": "stop"}
-        topic = f"hydro/{gh_uid}/zn-{zone_id}/{node_uid}/{channel}/command"
-        mqtt.publish_json(topic, payload, qos=1, retain=False)
+        # Отправляем команду остановки насоса через automation-engine
+        await send_command_via_automation_engine(
+            zone_id=zone_id,
+            node_uid=node_uid,
+            channel=channel,
+            cmd="stop"
+        )
         
         # Создаем событие остановки насоса
         await create_zone_event(
@@ -203,9 +279,10 @@ async def monitor_pump_safety(
 
 
 async def execute_irrigation_schedule(
-    zone_id: int, mqtt: MqttClient, gh_uid: str, schedule: Dict[str, Any],
+    zone_id: int, schedule: Dict[str, Any],
 ):
-    """Execute irrigation schedule for zone with Water Flow Engine integration."""
+    """Execute irrigation schedule for zone with Water Flow Engine integration.
+    Команды отправляются через automation-engine REST API."""
     task_name = f"irrigation_zone_{zone_id}"
     try:
         await create_scheduler_log(task_name, "running", {"zone_id": zone_id, "type": "irrigation"})
@@ -232,7 +309,7 @@ async def execute_irrigation_schedule(
         duration_sec = targets.get("irrigation_duration_sec", 60)
         
         # Create IRRIGATION_STARTED event
-        irrigation_start_time = datetime.utcnow()
+        irrigation_start_time = utcnow()
         await create_zone_event(
             zone_id,
             'IRRIGATION_STARTED',
@@ -243,19 +320,68 @@ async def execute_irrigation_schedule(
             }
         )
         
-        # Send irrigation commands
+        # Send irrigation commands через automation-engine
+        monitoring_tasks = []  # Отслеживаем задачи для предотвращения утечек памяти
         for node_info in nodes:
-            payload = {"cmd": "irrigate", "params": {"duration_sec": duration_sec}}
-            topic = f"hydro/{gh_uid}/zn-{zone_id}/{node_info['node_uid']}/{node_info['channel']}/command"
-            mqtt.publish_json(topic, payload, qos=1, retain=False)
+            await send_command_via_automation_engine(
+                zone_id=zone_id,
+                node_uid=node_info['node_uid'],
+                channel=node_info['channel'],
+                cmd="irrigate",
+                params={"duration_sec": duration_sec}
+            )
             
             # Start async monitoring for dry run protection
-            asyncio.create_task(
+            task = asyncio.create_task(
                 monitor_pump_safety(
-                    zone_id, irrigation_start_time, mqtt, gh_uid,
+                    zone_id, irrigation_start_time,
                     node_info['node_uid'], node_info['channel']
                 )
             )
+            monitoring_tasks.append(task)
+            
+            # Добавляем обработку ошибок для предотвращения утечек
+            def log_task_error(t):
+                """Callback для логирования ошибок в задачах мониторинга."""
+                try:
+                    if t.done() and t.exception():
+                        exc = t.exception()
+                        logger.error(
+                            f"Callback failure: Pump safety monitoring task failed for zone {zone_id}, "
+                            f"node {node_info['node_uid']}, channel {node_info['channel']}: {exc}",
+                            exc_info=True,
+                            extra={
+                                'zone_id': zone_id,
+                                'node_uid': node_info['node_uid'],
+                                'channel': node_info['channel'],
+                                'error_type': type(exc).__name__,
+                                'error_message': str(exc)
+                            }
+                        )
+                        # Создаем событие для observability
+                        asyncio.create_task(create_zone_event(
+                            zone_id,
+                            'PUMP_MONITORING_CALLBACK_FAILURE',
+                            {
+                                'node_uid': node_info['node_uid'],
+                                'channel': node_info['channel'],
+                                'error': str(exc),
+                                'error_type': type(exc).__name__
+                            }
+                        ))
+                except Exception as callback_error:
+                    # Даже если сам callback упал, логируем это
+                    logger.critical(
+                        f"Critical: Callback error handler itself failed: {callback_error}",
+                        exc_info=True,
+                        extra={
+                            'zone_id': zone_id,
+                            'original_task': str(t),
+                            'callback_error': str(callback_error)
+                        }
+                    )
+            
+            task.add_done_callback(log_task_error)
         
         SCHEDULE_EXECUTIONS.labels(zone_id=zone_id, task_type="irrigation").inc()
         
@@ -263,7 +389,7 @@ async def execute_irrigation_schedule(
         await asyncio.sleep(min(duration_sec, 10))  # Max wait 10 seconds for async check
         
         # Calculate volume and create IRRIGATION_FINISHED event
-        irrigation_end_time = datetime.utcnow()
+        irrigation_end_time = utcnow()
         volume = await calculate_irrigation_volume(zone_id, irrigation_start_time, irrigation_end_time)
         
         # Check flow after irrigation
@@ -290,13 +416,24 @@ async def execute_irrigation_schedule(
             {"zone_id": zone_id, "nodes_count": len(nodes), "volume_l": volume}
         )
     except Exception as e:
+        logger.error(
+            f"Callback failure: Irrigation schedule execution failed for zone {zone_id}: {e}",
+            exc_info=True,
+            extra={
+                'zone_id': zone_id,
+                'task_name': task_name,
+                'error_type': type(e).__name__,
+                'error_message': str(e)
+            }
+        )
         await create_scheduler_log(task_name, "failed", {"zone_id": zone_id, "error": str(e)})
 
 
 async def execute_lighting_schedule(
-    zone_id: int, mqtt: MqttClient, gh_uid: str, schedule: Dict[str, Any],
+    zone_id: int, schedule: Dict[str, Any],
 ):
-    """Execute lighting schedule for zone (on/off based on time)."""
+    """Execute lighting schedule for zone (on/off based on time).
+    Команды отправляются через automation-engine REST API."""
     task_name = f"lighting_zone_{zone_id}"
     try:
         await create_scheduler_log(task_name, "running", {"zone_id": zone_id, "type": "lighting"})
@@ -314,12 +451,25 @@ async def execute_lighting_schedule(
         should_be_on = start_time <= now <= end_time
         cmd = "light_on" if should_be_on else "light_off"
         for node_info in nodes:
-            payload = {"cmd": cmd}
-            topic = f"hydro/{gh_uid}/zn-{zone_id}/{node_info['node_uid']}/{node_info['channel']}/command"
-            mqtt.publish_json(topic, payload, qos=1, retain=False)
+            await send_command_via_automation_engine(
+                zone_id=zone_id,
+                node_uid=node_info['node_uid'],
+                channel=node_info['channel'],
+                cmd=cmd
+            )
         SCHEDULE_EXECUTIONS.labels(zone_id=zone_id, task_type="lighting").inc()
         await create_scheduler_log(task_name, "completed", {"zone_id": zone_id, "command": cmd, "nodes_count": len(nodes)})
     except Exception as e:
+        logger.error(
+            f"Callback failure: Lighting schedule execution failed for zone {zone_id}: {e}",
+            exc_info=True,
+            extra={
+                'zone_id': zone_id,
+                'task_name': task_name,
+                'error_type': type(e).__name__,
+                'error_message': str(e)
+            }
+        )
         await create_scheduler_log(task_name, "failed", {"zone_id": zone_id, "error": str(e)})
 
 
@@ -361,11 +511,35 @@ async def check_water_changes(mqtt: MqttClient):
                     # Продолжаем смену воды
                     await execute_water_change(zone_id, mqtt, gh_uid)
         except Exception as e:
-            logger.error(f"Zone {zone_id}: Error checking water change: {e}")
+            logger.error(
+                f"Callback failure: Error checking water change for zone {zone_id}: {e}",
+                exc_info=True,
+                extra={
+                    'zone_id': zone_id,
+                    'error_type': type(e).__name__,
+                    'error_message': str(e)
+                }
+            )
+            # Создаем событие для observability
+            try:
+                await create_zone_event(
+                    zone_id,
+                    'WATER_CHANGE_CHECK_FAILURE',
+                    {
+                        'error': str(e),
+                        'error_type': type(e).__name__
+                    }
+                )
+            except Exception as event_error:
+                logger.warning(
+                    f"Failed to create zone event for water change check failure: {event_error}",
+                    extra={'zone_id': zone_id, 'original_error': str(e)}
+                )
 
 
-async def check_and_execute_schedules(mqtt: MqttClient):
-    """Check schedules and execute tasks if time matches."""
+async def check_and_execute_schedules():
+    """Check schedules and execute tasks if time matches.
+    Команды отправляются через automation-engine REST API."""
     schedules = await get_active_schedules()
     now = datetime.now().time()
     # Group by zone and type
@@ -376,9 +550,6 @@ async def check_and_execute_schedules(mqtt: MqttClient):
         key = (zone_id, task_type)
         if key in executed:
             continue
-        gh_uid = await get_gh_uid_for_zone(zone_id)
-        if not gh_uid:
-            continue
         if task_type == "irrigation":
             # Check if current time matches schedule time (within 1 minute window)
             schedule_time = schedule.get("time")
@@ -387,11 +558,11 @@ async def check_and_execute_schedules(mqtt: MqttClient):
                     (now.hour * 60 + now.minute) - (schedule_time.hour * 60 + schedule_time.minute)
                 )
                 if time_diff <= 1:
-                    await execute_irrigation_schedule(zone_id, mqtt, gh_uid, schedule)
+                    await execute_irrigation_schedule(zone_id, schedule)
                     executed.add(key)
         elif task_type == "lighting":
             # Lighting is checked every cycle, execute if needed
-            await execute_lighting_schedule(zone_id, mqtt, gh_uid, schedule)
+            await execute_lighting_schedule(zone_id, schedule)
             executed.add(key)
     
     # Проверяем смены воды
@@ -424,7 +595,7 @@ async def main():
 
     while True:
         try:
-            await check_and_execute_schedules(mqtt)
+            await check_and_execute_schedules()
         except KeyboardInterrupt:
             logger.info("Received interrupt signal, shutting down")
             break

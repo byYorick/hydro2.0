@@ -32,6 +32,11 @@ class Greenhouse extends Model
     {
         return $this->hasMany(Zone::class);
     }
+
+    public function growCycles(): HasMany
+    {
+        return $this->hasMany(GrowCycle::class);
+    }
 }
 
 

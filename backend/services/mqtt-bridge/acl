@@ -10,12 +10,13 @@
 user python_service
 topic readwrite hydro/#
 
-# Automation engine - read telemetry, write commands
+# Automation engine - только чтение телеметрии и ответов, команды через history-logger REST API
 user automation_engine
 topic read hydro/+/+/telemetry/#
 topic read hydro/+/+/status/#
-topic write hydro/+/+/commands/#
+topic read hydro/+/+/+/command_response
 topic readwrite hydro/+/+/events/#
+# Публикация команд удалена - все команды через history-logger REST API
 
 # ESP32 nodes - read/write their own topics
 # Pattern: hydro/{greenhouse_uid}/{zone_uid}/{node_uid}/#
@@ -26,16 +27,18 @@ topic read hydro/+/+/+/command
 topic read hydro/+/+/+/commands/#
 topic read hydro/gh-temp/zn-temp/+/+/command
 
-# History logger - read telemetry, write events
+# History logger - единственная точка публикации команд, читает телеметрию
 user history_logger
 topic read hydro/+/+/telemetry/#
+topic read hydro/+/+/+/command_response
+topic write hydro/+/+/+/command
 topic write hydro/+/+/events/#
 
-# Scheduler - read/write commands and status
+# Scheduler - только чтение статуса и телеметрии, команды через automation-engine REST API
 user scheduler
 topic read hydro/+/+/status/#
-topic write hydro/+/+/commands/#
 topic read hydro/+/+/telemetry/#
+# Публикация команд удалена - все команды через automation-engine → history-logger REST API
 
 # MQTT Bridge - full access (bridge between systems)
 user mqtt_bridge

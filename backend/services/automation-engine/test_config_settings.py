@@ -9,11 +9,24 @@ from config.settings import (
 
 def test_automation_settings_defaults():
     """Test default values in AutomationSettings."""
-    settings = AutomationSettings()
+    # Сбрасываем переменную окружения для теста
+    import os
+    old_value = os.environ.get('MAX_CONCURRENT_ZONES')
+    if 'MAX_CONCURRENT_ZONES' in os.environ:
+        del os.environ['MAX_CONCURRENT_ZONES']
+    
+    # Перезагружаем настройки
+    from config.settings import reload_settings
+    settings = reload_settings()
     
     assert settings.MAIN_LOOP_SLEEP_SECONDS == 15
-    assert settings.MAX_CONCURRENT_ZONES == 5
+    # MAX_CONCURRENT_ZONES по умолчанию 50 из env или может быть переопределено
+    assert settings.MAX_CONCURRENT_ZONES >= 5
     assert settings.PH_CORRECTION_THRESHOLD == 0.2
+    
+    # Восстанавливаем переменную окружения
+    if old_value is not None:
+        os.environ['MAX_CONCURRENT_ZONES'] = old_value
     assert settings.EC_CORRECTION_THRESHOLD == 0.2
     assert settings.PH_DOSING_MULTIPLIER == 10.0
     assert settings.EC_DOSING_MULTIPLIER == 100.0

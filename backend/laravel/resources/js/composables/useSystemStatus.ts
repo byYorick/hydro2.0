@@ -195,7 +195,7 @@ export function useSystemStatus(showToast?: ToastHandler) {
 
       lastUpdate.value = new Date()
       // Сбрасываем флаг и backoff при успешном запросе
-      if (sharedState.isRateLimited) {
+      if (sharedState && sharedState.isRateLimited) {
         sharedState.isRateLimited = false
         sharedState.rateLimitBackoffMs = 30000 // Сбрасываем backoff до начального значения
         if (sharedState.rateLimitTimeout) {
@@ -216,6 +216,11 @@ export function useSystemStatus(showToast?: ToastHandler) {
       
       // Обработка ошибки 429 (Too Many Requests)
       if (error?.response?.status === 429) {
+        if (!sharedState) {
+          logger.debug('[useSystemStatus] Rate limited but sharedState is null, skipping', {})
+          return
+        }
+        
         sharedState.isRateLimited = true
         
         // Останавливаем текущий интервал при rate limiting
@@ -238,13 +243,18 @@ export function useSystemStatus(showToast?: ToastHandler) {
         })
         
         sharedState.rateLimitTimeout = setTimeout(() => {
+          if (!sharedState) {
+            logger.debug('[useSystemStatus] Rate limit timeout fired but sharedState is null, skipping', {})
+            return
+          }
+          
           // Увеличиваем backoff экспоненциально (максимум 5 минут)
           sharedState.rateLimitBackoffMs = Math.min(sharedState.rateLimitBackoffMs * 2, 300000)
           sharedState.isRateLimited = false
           sharedState.rateLimitTimeout = null
           
           // Возобновляем проверку здоровья
-          if (sharedState && !sharedState.healthInterval) {
+          if (!sharedState.healthInterval) {
             checkHealth()
             sharedState.healthInterval = setInterval(checkHealth, HEALTH_CHECK_INTERVAL)
             logger.debug('[useSystemStatus] Health checks resumed after rate limit backoff', {
@@ -265,6 +275,12 @@ export function useSystemStatus(showToast?: ToastHandler) {
         // При ошибке аутентификации не обновляем статусы - они остаются как есть
         // Это нормально, если пользователь не залогинен или сессия истекла
         // historyLoggerStatus и automationEngineStatus останутся 'unknown', что корректно
+        return
+      }
+      
+      // Проверяем, что sharedState все еще существует перед логированием и обновлением статусов
+      if (!sharedState) {
+        logger.debug('[useSystemStatus] Health check failed but sharedState is null, skipping', {})
         return
       }
       
@@ -365,6 +381,7 @@ export function useSystemStatus(showToast?: ToastHandler) {
     if (pusher && pusher.connection && typeof pusher.connection.bind === 'function') {
       if (!sharedState.connectedHandler) {
         sharedState.connectedHandler = () => {
+          if (!sharedState) return
           wsStatus.value = 'connected'
           checkMqttStatus()
         }
@@ -372,6 +389,7 @@ export function useSystemStatus(showToast?: ToastHandler) {
       }
       if (!sharedState.disconnectedHandler) {
         sharedState.disconnectedHandler = () => {
+          if (!sharedState) return
           wsStatus.value = 'disconnected'
           checkMqttStatus()
         }

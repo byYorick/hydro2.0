@@ -1,0 +1,8 @@
+# E2E Test Runner - зависимости
+paho-mqtt>=1.6.1
+pyyaml>=6.0
+httpx>=0.24.0
+websockets>=12.0
+tenacity>=8.2.0
+psycopg[binary]>=3.1.0
+

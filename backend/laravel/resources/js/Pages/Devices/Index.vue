@@ -119,15 +119,21 @@
           </tbody>
         </table>
       </div>
+      <Pagination
+        v-model:current-page="currentPage"
+        v-model:per-page="perPage"
+        :total="filtered.length"
+      />
     </div>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { Link, usePage, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Button from '@/Components/Button.vue'
+import Pagination from '@/Components/Pagination.vue'
 import { useDevicesStore } from '@/stores/devices'
 import { useStoreEvents } from '@/composables/useStoreEvents'
 import { useFavorites } from '@/composables/useFavorites'
@@ -253,6 +259,8 @@ onMounted(() => {
 const type = ref<string>('')
 const query = ref<string>('')
 const showOnlyFavorites = ref<boolean>(false)
+const currentPage = ref<number>(1)
+const perPage = ref<number>(25)
 
 const { isDeviceFavorite, toggleDeviceFavorite } = useFavorites()
 
@@ -277,11 +285,28 @@ const filtered = computed(() => {
   })
 })
 
-const rows = computed(() => {
+const paginatedData = computed(() => {
   if (!Array.isArray(filtered.value)) {
     return []
   }
-  return filtered.value.map(d => [
+  
+  const total = filtered.value.length
+  if (total === 0) return []
+  
+  // Защита от некорректных значений
+  const maxPage = Math.ceil(total / perPage.value) || 1
+  const validPage = Math.min(currentPage.value, maxPage)
+  if (validPage !== currentPage.value) {
+    currentPage.value = validPage
+  }
+  
+  const start = (validPage - 1) * perPage.value
+  const end = start + perPage.value
+  return filtered.value.slice(start, end)
+})
+
+const rows = computed(() => {
+  return paginatedData.value.map(d => [
   d.uid || d.id,
   d.zone?.name || '-',
   d.name || '-',
@@ -291,6 +316,11 @@ const rows = computed(() => {
   d.last_seen_at ? new Date(d.last_seen_at).toLocaleString('ru-RU') : '-',
   d.id // Добавляем ID в конец для удобства доступа
   ])
+})
+
+// Сбрасываем на первую страницу при изменении фильтров
+watch([type, query, showOnlyFavorites], () => {
+  currentPage.value = 1
 })
 
 // Функция для получения ID устройства из строки таблицы

@@ -128,13 +128,30 @@ class AdaptivePid:
 
         coeffs = self.config.zone_coeffs.get(zone, self.config.zone_coeffs[PidZone.CLOSE])
 
-        # Интеграл с антиwindup
-        self.integral += error * dt_seconds
-        self.integral = max(-self.config.max_integral, min(self.integral, self.config.max_integral))
-
+        # Вычисляем производную
         derivative = 0.0
         if self.prev_error is not None and dt_seconds > 0:
             derivative = (error - self.prev_error) / dt_seconds
+
+        # Интеграл с антиwindup и clamping
+        # Clamping: если выход уже на максимуме, не накапливаем интеграл
+        # Сначала вычисляем предварительный выход для проверки
+        prev_output = (
+            coeffs.kp * error +
+            coeffs.ki * self.integral +
+            coeffs.kd * derivative
+        )
+        prev_output = abs(prev_output)
+        prev_output = max(self.config.min_output, min(prev_output, self.config.max_output))
+        
+        # Накапливаем интеграл только если выход не на пределе
+        if prev_output < self.config.max_output:
+            self.integral += error * dt_seconds
+            self.integral = max(-self.config.max_integral, min(self.integral, self.config.max_integral))
+        else:
+            # Если выход на максимуме, не накапливаем интеграл (anti-windup)
+            # Небольшое затухание для предотвращения накопления
+            self.integral = self.integral * 0.95
 
         self._apply_autotune(zone, error, derivative)
 

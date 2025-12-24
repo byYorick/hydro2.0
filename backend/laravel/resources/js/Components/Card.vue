@@ -18,8 +18,8 @@ const props = withDefaults(defineProps<Props>(), {
 const attrs = useAttrs()
 
 const classes = computed(() => {
-  const base = 'surface-card relative overflow-hidden bg-opacity-95 p-4 backdrop-blur-md'
-  const tone = props.variant === 'elevated' ? 'surface-strong border border-neutral-700/60' : 'border border-neutral-800'
+  const base = 'glass-panel relative overflow-hidden p-5 backdrop-blur-lg text-slate-100'
+  const tone = props.variant === 'elevated' ? 'border border-emerald-400/40 shadow-[0_25px_60px_rgba(0,0,0,0.45)]' : 'border border-slate-700/60'
   return [base, tone, attrs.class].filter(Boolean).join(' ')
 })
 </script>

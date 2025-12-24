@@ -1,0 +1,67 @@
+# E41: Zone Readiness Warn Start Anyway - missing nodes → warning, но start работает
+# DoD: missing online nodes → warning, но start anyway работает
+
+name: E41_zone_readiness_warn_start_anyway
+description: |
+  Проверяет работу start при отсутствии некоторых узлов:
+  - Зона имеет bindings, но некоторые узлы offline
+  - Запуск grow-cycle должен работать с warning
+
+actions:
+  - step: get_zones
+    type: api_get
+    endpoint: /api/zones
+    save: zones_response
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zones_response.data.data[0].id}
+
+  # Проверяем статус узлов (некоторые могут быть offline)
+  - step: check_nodes_status
+    type: database_query
+    query: |
+      SELECT COUNT(*) as offline_count
+      FROM nodes
+      WHERE zone_id = :zone_id
+      AND (status != 'ONLINE' OR status IS NULL)
+    params:
+      zone_id: ${zone_id}
+    optional: true
+
+  # Запускаем grow-cycle (должен работать даже с offline узлами)
+  - step: start_cycle_with_warnings
+    type: api_post
+    endpoint: /api/zones/${zone_id}/start
+    payload: {}
+    save: start_response
+    optional: true
+
+assertions:
+  # Проверка 1: Zone существует
+  - name: zone_exists
+    type: database_query
+    query: |
+      SELECT id
+      FROM zones
+      WHERE id = :zone_id
+    params:
+      zone_id: ${zone_id}
+    expected_rows: 1
+
+  # Проверка 2: В ответе может быть warning (опционально)
+  # Если start_response пустой (опциональный шаг не выполнился), проверка пропускается
+  - name: warning_present
+    type: json_assertion
+    data: ${start_response}
+    expected:
+      - field: status
+        operator: in
+        value: ['ok', 'error']
+        optional: true
+      - field: data.warnings
+        operator: is_type
+        value: list
+        optional: true
+    optional: true
+

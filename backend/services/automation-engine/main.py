@@ -3,21 +3,31 @@ import json
 import httpx
 import logging
 import os
+import signal
 from typing import Optional, Dict, Any, Tuple, List
 from datetime import datetime
+from common.utils.time import utcnow
 from common.env import get_settings
 from common.mqtt import MqttClient
 from common.db import fetch, execute, create_zone_event, create_ai_log
-from prometheus_client import Counter, Histogram, start_http_server
+from prometheus_client import Counter, Histogram, Gauge, start_http_server
+import math
+import time
 from common.service_logs import send_service_log
+from infrastructure.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
+from infrastructure.command_validator import CommandValidator
+from infrastructure.command_tracker import CommandTracker
+from infrastructure.command_audit import CommandAudit
+from infrastructure.system_health import SystemHealthMonitor
+from services.pid_state_manager import PidStateManager
+from utils.logging_context import set_trace_id, set_zone_id
+from utils.system_state_logger import log_system_state
+from utils.zone_prioritizer import prioritize_zones
 
 # Настройка логирования
 log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
-logging.basicConfig(
-    level=getattr(logging, log_level, logging.INFO),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler()]  # Явно указываем stdout для Docker
-)
+from utils.logging_context import setup_structured_logging
+setup_structured_logging(level=getattr(logging, log_level, logging.INFO))
 
 logger = logging.getLogger(__name__)
 from recipe_utils import calculate_current_phase, advance_phase, get_phase_targets
@@ -26,9 +36,9 @@ from recipe_utils import calculate_current_phase, advance_phase, get_phase_targe
 LOOP_ERRORS = Counter("automation_loop_errors_total", "Errors in automation main loop", ["error_type"])
 CONFIG_FETCH_ERRORS = Counter("config_fetch_errors_total", "Errors fetching config from Laravel", ["error_type"])
 CONFIG_FETCH_SUCCESS = Counter("config_fetch_success_total", "Successful config fetches from Laravel")
-# MQTT_PUBLISH_ERRORS и COMMANDS_SENT перенесены в infrastructure/command_bus.py
+# COMMANDS_SENT перенесена в infrastructure/command_bus.py
 # Импортируем метрики для регистрации в REGISTRY до запуска start_http_server
-from infrastructure.command_bus import COMMANDS_SENT, MQTT_PUBLISH_ERRORS
+from infrastructure.command_bus import COMMANDS_SENT
 from common.water_flow import (
     check_water_level,
     ensure_water_level_alert,
@@ -36,18 +46,47 @@ from common.water_flow import (
 )
 # tick_recirculation moved to irrigation_controller
 from common.pump_safety import can_run_pump
-from repositories import ZoneRepository, TelemetryRepository, NodeRepository, RecipeRepository
-from services import ZoneAutomationService
+from repositories import (
+    ZoneRepository, 
+    TelemetryRepository, 
+    NodeRepository, 
+    RecipeRepository,
+    GrowCycleRepository,
+    InfrastructureRepository
+)
+from services.zone_automation_service import ZoneAutomationService, ZONE_CHECKS, CHECK_LAT
 from infrastructure import CommandBus
 from config.settings import get_settings as get_automation_settings
 from error_handler import handle_automation_error, error_handler
 from exceptions import InvalidConfigurationError
 
-# Метрики перенесены в соответствующие модули:
-# - ZONE_CHECKS и CHECK_LAT в services/zone_automation_service.py
-# - COMMANDS_SENT и MQTT_PUBLISH_ERRORS в infrastructure/command_bus.py
-# Импортируем метрики для регистрации в REGISTRY до запуска start_http_server
-from services.zone_automation_service import ZONE_CHECKS, CHECK_LAT
+# Метрики для адаптивной конкурентности
+ZONE_PROCESSING_TIME = Histogram(
+    "zone_processing_time_seconds",
+    "Time to process a single zone",
+    buckets=[0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0]
+)
+ZONE_PROCESSING_ERRORS = Counter(
+    "zone_processing_errors_total",
+    "Errors during zone processing",
+    ["zone_id", "error_type"]
+)
+OPTIMAL_CONCURRENCY = Gauge(
+    "optimal_concurrency_zones",
+    "Calculated optimal concurrency for zone processing"
+)
+
+# Глобальное хранилище для среднего времени обработки (скользящее среднее)
+_avg_processing_time = 1.0
+_processing_times = []  # Последние 100 измерений
+_MAX_SAMPLES = 100
+_processing_times_lock = asyncio.Lock()  # Блокировка для thread-safe доступа
+
+# Graceful shutdown
+_shutdown_event = asyncio.Event()
+_zone_service: Optional[ZoneAutomationService] = None
+_command_tracker: Optional[CommandTracker] = None
+_command_bus: Optional[CommandBus] = None
 
 
 def validate_config(cfg: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
@@ -92,90 +131,37 @@ def _extract_gh_uid_from_config(cfg: Dict[str, Any]) -> Optional[str]:
 
 
 async def get_zone_recipe_and_targets(zone_id: int) -> Optional[Dict[str, Any]]:
-    """Fetch active recipe phase and targets for zone."""
-    rows = await fetch(
-        """
-        SELECT zri.zone_id, zri.current_phase_index, rp.targets, rp.name as phase_name
-        FROM zone_recipe_instances zri
-        JOIN recipe_phases rp ON rp.recipe_id = zri.recipe_id AND rp.phase_index = zri.current_phase_index
-        WHERE zri.zone_id = $1
-        """,
-        zone_id,
-    )
-    if rows and len(rows) > 0:
-        return {
-            "zone_id": rows[0]["zone_id"],
-            "phase_index": rows[0]["current_phase_index"],
-            "targets": rows[0]["targets"],
-            "phase_name": rows[0]["phase_name"],
-        }
-    return None
+    """
+    DEPRECATED: Fetch active recipe phase and targets for zone.
+    Используется только для тестов. В основном коде используйте RecipeRepository напрямую.
+    """
+    # Для обратной совместимости создаем репозиторий без circuit breaker
+    # В основном коде circuit breaker передается из main()
+    repo = RecipeRepository()
+    return await repo.get_zone_recipe_and_targets(zone_id)
 
 
 async def get_zone_telemetry_last(zone_id: int) -> Dict[str, Optional[float]]:
-    """Fetch last telemetry values for zone."""
-    rows = await fetch(
-        """
-        SELECT metric_type, value
-        FROM telemetry_last
-        WHERE zone_id = $1
-        """,
-        zone_id,
-    )
-    result: Dict[str, Optional[float]] = {}
-    for row in rows:
-        result[row["metric_type"]] = row["value"]
-    return result
+    """
+    DEPRECATED: Fetch last telemetry values for zone.
+    Используется только для тестов. В основном коде используйте TelemetryRepository напрямую.
+    """
+    # Для обратной совместимости создаем репозиторий без circuit breaker
+    # В основном коде circuit breaker передается из main()
+    repo = TelemetryRepository()
+    return await repo.get_last_telemetry(zone_id)
 
 
 async def get_zone_nodes(zone_id: int) -> Dict[str, Dict[str, Any]]:
     """Fetch nodes for zone, keyed by type and channel."""
-    rows = await fetch(
-        """
-        SELECT n.id, n.uid, n.type, nc.channel
-        FROM nodes n
-        LEFT JOIN node_channels nc ON nc.node_id = n.id
-        WHERE n.zone_id = $1 AND n.status = 'online'
-        """,
-        zone_id,
-    )
-    result: Dict[str, Dict[str, Any]] = {}
-    for row in rows:
-        node_type = row["type"]
-        channel = row["channel"] or "default"
-        key = f"{node_type}:{channel}"
-        if key not in result:
-            result[key] = {
-                "node_id": row["id"],
-                "node_uid": row["uid"],
-                "type": node_type,
-                "channel": channel,
-            }
-    return result
+    repo = NodeRepository()
+    return await repo.get_zone_nodes(zone_id)
 
 
 async def get_zone_capabilities(zone_id: int) -> Dict[str, bool]:
     """Fetch zone capabilities from database."""
-    rows = await fetch(
-        """
-        SELECT capabilities
-        FROM zones
-        WHERE id = $1
-        """,
-        zone_id,
-    )
-    if rows and len(rows) > 0 and rows[0]["capabilities"]:
-        return rows[0]["capabilities"]
-    # Default capabilities (all False if not set)
-    return {
-        "ph_control": False,
-        "ec_control": False,
-        "climate_control": False,
-        "light_control": False,
-        "irrigation_control": False,
-        "recirculation": False,
-        "flow_sensor": False,
-    }
+    repo = ZoneRepository()
+    return await repo.get_zone_capabilities(zone_id)
 
 
 # DEPRECATED: Используйте CommandBus вместо этой функции
@@ -193,9 +179,20 @@ async def publish_correction_command(
     DEPRECATED: Используйте CommandBus.publish_command() вместо этой функции.
     Оставлено для обратной совместимости.
     """
+    global _command_bus
+    if _command_bus is not None:
+        return await _command_bus.publish_command(zone_id, node_uid, channel, cmd, params)
+    
+    # Fallback: создаем временный CommandBus если глобальный не инициализирован
     from infrastructure import CommandBus
-    command_bus = CommandBus(mqtt, gh_uid)
-    return await command_bus.publish_command(zone_id, node_uid, channel, cmd, params)
+    history_logger_url = os.getenv("HISTORY_LOGGER_URL", "http://history-logger:9300")
+    history_logger_token = os.getenv("HISTORY_LOGGER_API_TOKEN") or os.getenv("PY_INGEST_TOKEN")
+    command_bus = CommandBus(mqtt=None, gh_uid=gh_uid, history_logger_url=history_logger_url, history_logger_token=history_logger_token)
+    await command_bus.start()
+    try:
+        return await command_bus.publish_command(zone_id, node_uid, channel, cmd, params)
+    finally:
+        await command_bus.stop()
 
 
 async def check_phase_transitions(zone_id: int):
@@ -229,35 +226,148 @@ def validate_zone_id(zone_id: Any) -> int:
     return zone_id
 
 
+async def calculate_optimal_concurrency(
+    total_zones: int,
+    target_cycle_time: int,
+    avg_zone_processing_time: float
+) -> int:
+    """
+    Вычислить оптимальное количество параллельных зон.
+    
+    Формула: concurrency = (total_zones * avg_time) / target_cycle_time
+    
+    Args:
+        total_zones: Общее количество зон
+        target_cycle_time: Целевое время цикла в секундах
+        avg_zone_processing_time: Среднее время обработки одной зоны в секундах
+    
+    Returns:
+        Оптимальное количество параллельных зон
+    """
+    if avg_zone_processing_time <= 0:
+        # Если нет данных, используем дефолтное значение
+        return 5
+    
+    optimal = math.ceil((total_zones * avg_zone_processing_time) / target_cycle_time)
+    
+    # Ограничиваем диапазон
+    min_concurrency = 5
+    max_concurrency = 50  # Защита от перегрузки
+    
+    return max(min_concurrency, min(optimal, max_concurrency))
+
+
 async def process_zones_parallel(
     zones: List[Dict[str, Any]],
     zone_service: ZoneAutomationService,
     max_concurrent: int = 5
-) -> None:
+) -> Dict[str, Any]:
     """
-    Обработка зон параллельно с ограничением количества одновременных операций.
+    Обработка зон параллельно с ограничением количества одновременных операций и отслеживанием ошибок.
     
     Args:
         zones: Список зон для обработки
         zone_service: Сервис автоматизации зон
         max_concurrent: Максимальное количество одновременных операций
+    
+    Returns:
+        Dict с результатами: {'total': int, 'success': int, 'failed': int, 'errors': List[Dict]}
     """
+    results = {
+        'total': len(zones),
+        'success': 0,
+        'failed': 0,
+        'errors': []
+    }
+    
     semaphore = asyncio.Semaphore(max_concurrent)
     
-    async def process_zone(zone_row: Dict[str, Any]) -> None:
-        """Обработка одной зоны с ограничением через semaphore."""
-        async with semaphore:
-            zone_id = zone_row["id"]
-            try:
-                await zone_service.process_zone(zone_id)
-            except Exception as e:
-                from error_handler import handle_zone_error
-                handle_zone_error(zone_id, e, {"action": "process_zone"})
-                # Продолжаем с другими зонами даже если одна упала
+    async def process_with_tracking(zone_row: Dict[str, Any]) -> None:
+        """Обработка зоны с отслеживанием результата."""
+        zone_id = zone_row.get("id")
+        zone_name = zone_row.get("name", "unknown")
+        
+        # Устанавливаем zone_id в контекст для логирования
+        set_zone_id(zone_id)
+        set_trace_id()  # Новый trace ID для каждой зоны
+        
+        try:
+            async with semaphore:
+                try:
+                    start = time.time()
+                    await zone_service.process_zone(zone_id)
+                    duration = time.time() - start
+                    
+                    ZONE_PROCESSING_TIME.observe(duration)
+                    
+                    # Обновляем скользящее среднее (thread-safe)
+                    global _avg_processing_time, _processing_times, _processing_times_lock
+                    async with _processing_times_lock:
+                        _processing_times.append(duration)
+                        if len(_processing_times) > _MAX_SAMPLES:
+                            _processing_times.pop(0)
+                        _avg_processing_time = sum(_processing_times) / len(_processing_times) if _processing_times else 1.0
+                    
+                    results['success'] += 1
+                    
+                    logger.debug(f"Zone {zone_id} processed successfully ({duration:.2f}s)")
+                    
+                except Exception as e:
+                    results['failed'] += 1
+                    error_info = {
+                        'zone_id': zone_id,
+                        'zone_name': zone_name,
+                        'error': str(e),
+                        'error_type': type(e).__name__,
+                        'timestamp': utcnow().isoformat()
+                    }
+                    results['errors'].append(error_info)
+                    
+                    ZONE_PROCESSING_ERRORS.labels(
+                        zone_id=str(zone_id),
+                        error_type=type(e).__name__
+                    ).inc()
+                    
+                    from error_handler import handle_zone_error
+                    handle_zone_error(zone_id, e, {"action": "process_zone"})
+                    
+                    logger.error(
+                        f"Error processing zone {zone_id}: {e}",
+                        exc_info=True,
+                        extra={'zone_id': zone_id, 'zone_name': zone_name}
+                    )
+        finally:
+            # Очищаем контекст
+            set_zone_id(None)
     
     # Создаем задачи для всех зон и выполняем их параллельно
-    tasks = [process_zone(zone_row) for zone_row in zones]
-    await asyncio.gather(*tasks, return_exceptions=True)
+    tasks = [process_with_tracking(zone_row) for zone_row in zones]
+    await asyncio.gather(*tasks)
+    
+    # Логируем общий результат
+    logger.info(
+        f"Zone processing completed: {results['success']}/{results['total']} success, "
+        f"{results['failed']} failed"
+    )
+    
+    # Отправляем алерты при критическом количестве ошибок
+    if results['failed'] > 0 and results['total'] > 0:
+        failure_rate = results['failed'] / results['total']
+        
+        if failure_rate > 0.1:  # >10% ошибок
+            severity = 'warning' if failure_rate < 0.3 else 'critical'
+            logger.warning(
+                f"High zone processing failure rate: {failure_rate:.1%}",
+                extra={
+                    'total': results['total'],
+                    'failed': results['failed'],
+                    'failure_rate': failure_rate,
+                    'severity': severity,
+                    'errors': results['errors'][:10]  # Первые 10 ошибок
+                }
+            )
+    
+    return results
 
 
 # DEPRECATED: Используйте ZoneAutomationService.process_zone() вместо этой функции
@@ -287,31 +397,57 @@ async def check_and_correct_zone(
         return
     
     # Используем новый сервисный слой (метрики внутри сервиса)
-    command_bus = CommandBus(mqtt, gh_uid)
+    global _command_bus
+    if _command_bus is None:
+        history_logger_url = os.getenv("HISTORY_LOGGER_URL", "http://history-logger:9300")
+        history_logger_token = os.getenv("HISTORY_LOGGER_API_TOKEN") or os.getenv("PY_INGEST_TOKEN")
+        _command_bus = CommandBus(mqtt=None, gh_uid=gh_uid, history_logger_url=history_logger_url, history_logger_token=history_logger_token)
+        await _command_bus.start()
+    
+    command_bus = _command_bus
+    grow_cycle_repo = GrowCycleRepository()
+    infrastructure_repo = InfrastructureRepository()
     zone_service = ZoneAutomationService(
-        zone_repo, telemetry_repo, node_repo, recipe_repo, command_bus
+        zone_repo, 
+        telemetry_repo, 
+        node_repo, 
+        recipe_repo, 
+        grow_cycle_repo,
+        infrastructure_repo,
+        command_bus
     )
     await zone_service.process_zone(zone_id)
 
 
-async def fetch_full_config(client: httpx.AsyncClient, base_url: str, token: str) -> Optional[Dict[str, Any]]:
+async def fetch_full_config(
+    client: httpx.AsyncClient,
+    base_url: str,
+    token: str,
+    circuit_breaker: Optional[CircuitBreaker] = None
+) -> Optional[Dict[str, Any]]:
     """Fetch full config from Laravel API with proper error handling and retry logic."""
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     max_retries = 3
     retry_delay = 2.0
     
+    async def _fetch():
+        r = await client.get(f"{base_url}/api/system/config/full", headers=headers, timeout=30.0)
+        r.raise_for_status()
+        response_data = r.json()
+        # Laravel API returns {"status": "ok", "data": {...}}, extract "data" part
+        if isinstance(response_data, dict) and "data" in response_data:
+            data = response_data["data"]
+        else:
+            data = response_data
+        CONFIG_FETCH_SUCCESS.inc()
+        return data
+    
     for attempt in range(max_retries):
         try:
-            r = await client.get(f"{base_url}/api/system/config/full", headers=headers, timeout=30.0)
-            r.raise_for_status()
-            response_data = r.json()
-            # Laravel API returns {"status": "ok", "data": {...}}, extract "data" part
-            if isinstance(response_data, dict) and "data" in response_data:
-                data = response_data["data"]
+            if circuit_breaker:
+                return await circuit_breaker.call(_fetch)
             else:
-                data = response_data
-            CONFIG_FETCH_SUCCESS.inc()
-            return data
+                return await _fetch()
         except httpx.HTTPStatusError as e:
             error_type = f"http_{e.response.status_code}"
             CONFIG_FETCH_ERRORS.labels(error_type=error_type).inc()
@@ -364,17 +500,76 @@ async def fetch_full_config(client: httpx.AsyncClient, base_url: str, token: str
     return None
 
 
+def signal_handler(signum, frame):
+    """Обработчик сигналов для graceful shutdown."""
+    logger.info(f"Received signal {signum}, initiating graceful shutdown...")
+    _shutdown_event.set()
+
+
+async def _finish_current_zones(zone_service: ZoneAutomationService, active_zones: List[Dict[str, Any]]) -> None:
+    """Завершить обработку текущих зон."""
+    if not active_zones:
+        return
+    
+    logger.info(f"Finishing processing of {len(active_zones)} zones...")
+    # Даем время завершить текущие операции (упрощенная версия)
+    await asyncio.sleep(2.0)
+
+
+
+
 async def main():
+    # Регистрация обработчиков сигналов
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+    
     s = get_settings()
     automation_settings = get_automation_settings()
     
     # Start Prometheus metrics server
     start_http_server(automation_settings.PROMETHEUS_PORT)  # Prometheus metrics
+    
+    # Start FastAPI server for REST API (scheduler endpoint) в отдельном потоке
+    import threading
+    import uvicorn
+    from api import app as api_app
+    
+    api_port = int(os.getenv("AUTOMATION_ENGINE_API_PORT", "9405"))
+    
+    def run_api_server():
+        """Запуск FastAPI сервера в отдельном потоке."""
+        import sys
+        # Создаем новый event loop для этого потока
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        config = uvicorn.Config(
+            api_app,
+            host="0.0.0.0",
+            port=api_port,
+            log_level="info",
+            access_log=False
+        )
+        server = uvicorn.Server(config)
+        try:
+            loop.run_until_complete(server.serve())
+        except Exception as e:
+            logger.error(f"FastAPI server error: {e}", exc_info=True)
+            sys.exit(1)
+    
+    # Запускаем API сервер в отдельном потоке
+    api_thread = threading.Thread(target=run_api_server, daemon=True)
+    api_thread.start()
+    logger.info(f"FastAPI server started on port {api_port}")
+    
     send_service_log(
         service="automation-engine",
         level="info",
         message="Automation Engine service started",
-        context={"prometheus_port": automation_settings.PROMETHEUS_PORT},
+        context={
+            "prometheus_port": automation_settings.PROMETHEUS_PORT,
+            "api_port": api_port
+        },
     )
     
     mqtt = MqttClient(client_id_suffix="-auto")
@@ -390,64 +585,271 @@ async def main():
         )
         # Exit on critical configuration errors
         raise
-
-    async with httpx.AsyncClient() as client:
-        while True:
+    
+    # Инициализация Circuit Breakers
+    db_circuit_breaker = CircuitBreaker("database", failure_threshold=5, timeout=60.0)
+    api_circuit_breaker = CircuitBreaker("laravel_api", failure_threshold=5, timeout=60.0)
+    mqtt_circuit_breaker = CircuitBreaker("mqtt", failure_threshold=3, timeout=30.0)
+    
+    # Инициализация Command Tracker
+    global _command_tracker
+    _command_tracker = CommandTracker(command_timeout=300, poll_interval=5)
+    
+    # Восстанавливаем pending команды из БД после рестарта
+    await _command_tracker.restore_pending_commands()
+    
+    # Запускаем периодическую проверку статусов команд из БД
+    await _command_tracker.start_polling()
+    
+    # Инициализация Command Validator
+    command_validator = CommandValidator()
+    
+    # Инициализация Health Monitor
+    health_monitor = SystemHealthMonitor(
+        mqtt,
+        db_circuit_breaker,
+        api_circuit_breaker,
+        mqtt_circuit_breaker
+    )
+    
+    # Инициализация PID State Manager
+    pid_state_manager = PidStateManager()
+    
+    # Периодическая проверка здоровья (каждые 30 секунд)
+    async def health_check_loop():
+        while not _shutdown_event.is_set():
             try:
-                # Fetch config
-                cfg = await fetch_full_config(client, s.laravel_api_url, s.laravel_api_token)
-                if not cfg:
-                    logger.warning("Config fetch returned None, sleeping before retry")
-                    await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
-                    continue
-                
-                # Validate config structure
-                is_valid, error_msg = validate_config(cfg)
-                if not is_valid:
-                    handle_automation_error(
-                        InvalidConfigurationError(error_msg, cfg),
-                        {"action": "config_validation"}
-                    )
-                    await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
-                    continue
-                
-                gh_uid = _extract_gh_uid_from_config(cfg)
-                if not gh_uid:
-                    logger.warning("No greenhouse UID found in config, sleeping before retry")
-                    await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
-                    continue
-                
-                # Инициализация репозиториев
-                zone_repo = ZoneRepository()
-                telemetry_repo = TelemetryRepository()
-                node_repo = NodeRepository()
-                recipe_repo = RecipeRepository()
-                
-                # Инициализация Command Bus
-                command_bus = CommandBus(mqtt, gh_uid)
-                
-                # Инициализация сервиса автоматизации зон
-                zone_service = ZoneAutomationService(
-                    zone_repo, telemetry_repo, node_repo, recipe_repo, command_bus
-                )
-                
-                # Get active zones with recipes
-                zones = await zone_repo.get_active_zones()
-                
-                # Параллельная обработка зон с ограничением количества одновременных операций
-                if zones:
-                    await process_zones_parallel(
-                        zones, zone_service,
-                        max_concurrent=automation_settings.MAX_CONCURRENT_ZONES
-                    )
-            except KeyboardInterrupt:
-                logger.info("Received interrupt signal, shutting down")
-                break
+                health = await health_monitor.check_health()
+                if health['status'] != 'healthy':
+                    logger.warning(f"System health: {health['status']}", extra=health)
             except Exception as e:
-                handle_automation_error(e, {"action": "main_loop"})
-                # Sleep before retrying to avoid tight error loops
-                await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
-            await asyncio.sleep(automation_settings.MAIN_LOOP_SLEEP_SECONDS)
+                logger.error(f"Health check failed: {e}", exc_info=True)
+            await asyncio.sleep(30)
+    
+    health_task = asyncio.create_task(health_check_loop())
+    
+    # Убрана подписка на command_response - статусы команд теперь отслеживаются через БД (таблица commands)
+    # history-logger обрабатывает command_response и обновляет статусы через Laravel API
+    # CommandTracker периодически проверяет статусы из БД
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            active_zones: List[Dict[str, Any]] = []
+            global _zone_service
+            
+            while not _shutdown_event.is_set():
+                try:
+                    # Fetch config через Circuit Breaker
+                    try:
+                        cfg = await fetch_full_config(
+                            client, s.laravel_api_url, s.laravel_api_token, api_circuit_breaker
+                        )
+                    except CircuitBreakerOpenError:
+                        logger.warning("API Circuit Breaker is OPEN, using cached config or skipping")
+                        await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
+                        continue
+                    
+                    if not cfg:
+                        logger.warning("Config fetch returned None, sleeping before retry")
+                        await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
+                        continue
+                    
+                    # Validate config structure
+                    is_valid, error_msg = validate_config(cfg)
+                    if not is_valid:
+                        handle_automation_error(
+                            InvalidConfigurationError(error_msg, cfg),
+                            {"action": "config_validation"}
+                        )
+                        await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
+                        continue
+                    
+                    gh_uid = _extract_gh_uid_from_config(cfg)
+                    if not gh_uid:
+                        logger.warning("No greenhouse UID found in config, sleeping before retry")
+                        await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
+                        continue
+                    
+                    # Инициализация репозиториев с circuit breakers
+                    zone_repo = ZoneRepository()
+                    telemetry_repo = TelemetryRepository(db_circuit_breaker=db_circuit_breaker)
+                    node_repo = NodeRepository()
+                    recipe_repo = RecipeRepository(db_circuit_breaker=db_circuit_breaker)
+                    grow_cycle_repo = GrowCycleRepository(db_circuit_breaker=db_circuit_breaker)
+                    infrastructure_repo = InfrastructureRepository(db_circuit_breaker=db_circuit_breaker)
+                    
+                    # Инициализация Command Audit
+                    command_audit = CommandAudit()
+                    
+                    # Инициализация Command Bus с валидатором, трекером и аудитом
+                    # Все команды отправляются через history-logger REST API
+                    global _command_bus
+                    if _command_bus is None:
+                        history_logger_url = os.getenv("HISTORY_LOGGER_URL", "http://history-logger:9300")
+                        history_logger_token = os.getenv("HISTORY_LOGGER_API_TOKEN") or os.getenv("PY_INGEST_TOKEN")
+                        _command_bus = CommandBus(
+                            mqtt=None,  # MQTT больше не используется для команд
+                            gh_uid=gh_uid,
+                            history_logger_url=history_logger_url,
+                            history_logger_token=history_logger_token,
+                            command_validator=command_validator,
+                            command_tracker=_command_tracker,
+                            command_audit=command_audit,
+                            api_circuit_breaker=api_circuit_breaker
+                        )
+                        await _command_bus.start()
+                        logger.info("CommandBus initialized with long-lived HTTP client")
+                    
+                    command_bus = _command_bus
+                    
+                    # Устанавливаем CommandBus в API для scheduler endpoint
+                    try:
+                        from api import set_command_bus
+                        set_command_bus(command_bus, gh_uid)
+                    except ImportError:
+                        logger.warning("API module not available, scheduler endpoint will not work")
+                    
+                    # Инициализация сервиса автоматизации зон
+                    _zone_service = ZoneAutomationService(
+                        zone_repo, 
+                        telemetry_repo, 
+                        node_repo, 
+                        recipe_repo, 
+                        grow_cycle_repo,
+                        infrastructure_repo,
+                        command_bus, 
+                        pid_state_manager
+                    )
+                    
+                    # Get active zones with recipes через Circuit Breaker
+                    try:
+                        async def _get_zones():
+                            return await zone_repo.get_active_zones()
+                        
+                        zones = await db_circuit_breaker.call(_get_zones)
+                    except CircuitBreakerOpenError:
+                        logger.warning("Database Circuit Breaker is OPEN, skipping zone processing")
+                        await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
+                        continue
+                    
+                    # Приоритизация зон
+                    zones = prioritize_zones(zones)
+                    active_zones = zones
+                    
+                    # Параллельная обработка зон с адаптивной конкурентностью
+                    if zones:
+                        # Вычисляем оптимальную конкурентность, если включена адаптивность
+                        if automation_settings.ADAPTIVE_CONCURRENCY:
+                            global _avg_processing_time
+                            optimal_concurrency = await calculate_optimal_concurrency(
+                                total_zones=len(zones),
+                                target_cycle_time=automation_settings.TARGET_CYCLE_TIME_SEC,
+                                avg_zone_processing_time=_avg_processing_time
+                            )
+                            
+                            OPTIMAL_CONCURRENCY.set(optimal_concurrency)
+                            
+                            logger.info(
+                                f"Adaptive concurrency: {optimal_concurrency} zones "
+                                f"(avg time: {_avg_processing_time:.2f}s, target cycle: {automation_settings.TARGET_CYCLE_TIME_SEC}s)"
+                            )
+                            
+                            max_concurrent = optimal_concurrency
+                        else:
+                            max_concurrent = automation_settings.MAX_CONCURRENT_ZONES
+                        
+                        # Обрабатываем зоны с отслеживанием результатов
+                        results = await process_zones_parallel(
+                            zones, _zone_service,
+                            max_concurrent=max_concurrent
+                        )
+                        
+                        # Логируем результаты для мониторинга
+                        if results['failed'] > 0:
+                            logger.warning(
+                                f"Zone processing completed with errors: {results['success']}/{results['total']} success, "
+                                f"{results['failed']} failed"
+                            )
+                        
+                        # Логируем состояние системы (каждые 5 минут)
+                        import time
+                        if int(time.time()) % 300 == 0:  # Каждые 5 минут
+                            await log_system_state(
+                                _zone_service,
+                                zones,
+                                _command_tracker,
+                                db_circuit_breaker,
+                                api_circuit_breaker,
+                                mqtt_circuit_breaker
+                            )
+                except KeyboardInterrupt:
+                    logger.info("Received interrupt signal, shutting down")
+                    _shutdown_event.set()
+                    break
+                except Exception as e:
+                    handle_automation_error(e, {"action": "main_loop"})
+                    # Sleep before retrying to avoid tight error loops
+                    await asyncio.sleep(automation_settings.CONFIG_FETCH_RETRY_SLEEP_SECONDS)
+                
+                # Проверяем shutdown event
+                if _shutdown_event.is_set():
+                    break
+                
+                await asyncio.sleep(automation_settings.MAIN_LOOP_SLEEP_SECONDS)
+    finally:
+        # Graceful shutdown
+        logger.info("Graceful shutdown initiated")
+        
+        # Отменяем health check task
+        health_task.cancel()
+        try:
+            await health_task
+        except asyncio.CancelledError:
+            pass
+        
+        # 1. Завершаем обработку текущих зон
+        if _zone_service and active_zones:
+            try:
+                await asyncio.wait_for(
+                    _finish_current_zones(_zone_service, active_zones),
+                    timeout=30.0
+                )
+            except asyncio.TimeoutError:
+                logger.warning("Timeout waiting for zones to finish")
+        
+        # 2. Сохраняем состояние PID контроллеров
+        if _zone_service:
+            try:
+                await asyncio.wait_for(
+                    _zone_service.save_all_pid_states(),
+                    timeout=10.0
+                )
+            except asyncio.TimeoutError:
+                logger.warning("Timeout saving PID state")
+            except Exception as e:
+                logger.error(f"Error saving PID state: {e}", exc_info=True)
+        
+        # 3. Останавливаем polling статусов команд
+        if _command_tracker:
+            try:
+                await _command_tracker.stop_polling()
+            except Exception as e:
+                logger.warning(f"Failed to stop command polling: {e}")
+        
+        # 4. Закрываем CommandBus HTTP клиент
+        if _command_bus:
+            try:
+                await _command_bus.stop()
+            except Exception as e:
+                logger.warning(f"Failed to stop CommandBus: {e}")
+        
+        # 5. Закрываем соединения
+        try:
+            mqtt.stop()
+        except Exception as e:
+            logger.warning(f"Error stopping MQTT: {e}")
+        
+        logger.info("Graceful shutdown completed")
 
 
 if __name__ == "__main__":

@@ -4,8 +4,10 @@ Light Controller - управление освещением и фотопери
 """
 from typing import Optional, Dict, Any, List
 from datetime import datetime, time
+from common.utils.time import utcnow
 from common.db import fetch, create_zone_event
 from common.alerts import create_alert, AlertSource, AlertCode
+from alerts_manager import ensure_alert
 
 
 # Пороги для обнаружения света
@@ -67,39 +69,31 @@ def parse_photoperiod(light_hours: Any) -> Optional[tuple]:
     return None
 
 
-async def get_light_nodes(zone_id: int) -> List[Dict[str, Any]]:
+def get_light_bindings(bindings: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    Получить узлы освещения для зоны.
+    Получить bindings для освещения по ролям.
+    
+    Args:
+        bindings: Dict[role, binding_info] из InfrastructureRepository
     
     Returns:
-        Список узлов с типом 'light' или каналами 'white_light', 'uv_light'
+        Список bindings для освещения
     """
-    rows = await fetch(
-        """
-        SELECT n.id, n.uid, n.type, nc.channel
-        FROM nodes n
-        LEFT JOIN node_channels nc ON nc.node_id = n.id
-        WHERE n.zone_id = $1 AND n.status = 'online'
-          AND (n.type = 'light' OR nc.channel IN ('white_light', 'uv_light', 'light'))
-        """,
-        zone_id,
-    )
-    
     result: List[Dict[str, Any]] = []
     seen_nodes: set = set()
     
-    for row in rows:
-        node_uid = row["uid"]
-        if node_uid in seen_nodes:
-            continue
-        seen_nodes.add(node_uid)
-        
-        result.append({
-            'node_id': row["id"],
-            'node_uid': node_uid,
-            'type': row["type"],
-            'channel': row["channel"] or "light",
-        })
+    # Ищем по ролям: light, white_light, uv_light, grow_light
+    for role in ['light', 'white_light', 'uv_light', 'grow_light']:
+        if role in bindings and bindings[role]['direction'] == 'actuator':
+            node_uid = bindings[role]['node_uid']
+            if node_uid not in seen_nodes:
+                seen_nodes.add(node_uid)
+                result.append({
+                    'node_id': bindings[role]['node_id'],
+                    'node_uid': node_uid,
+                    'channel': bindings[role]['channel'],
+                    'asset_type': bindings[role]['asset_type'],
+                })
     
     return result
 
@@ -142,6 +136,7 @@ async def check_light_failure(zone_id: int, should_be_on: bool) -> bool:
 async def check_and_control_lighting(
     zone_id: int,
     targets: Dict[str, Any],
+    bindings: Dict[str, Dict[str, Any]],
     current_time: Optional[datetime] = None
 ) -> Optional[Dict[str, Any]]:
     """
@@ -152,13 +147,14 @@ async def check_and_control_lighting(
     Args:
         zone_id: ID зоны
         targets: Целевые значения из рецепта (light_hours, light_intensity)
+        bindings: Dict[role, binding_info] из InfrastructureRepository
         current_time: Текущее время (если None, используется datetime.now())
     
     Returns:
         Команда для управления освещением или None
     """
     if current_time is None:
-        current_time = datetime.now()
+        current_time = utcnow()
     
     current_hour = current_time.hour
     current_minute = current_time.minute
@@ -183,9 +179,14 @@ async def check_and_control_lighting(
         # Период переходит через полночь (например, 22:00-06:00)
         should_be_on = current_time_obj >= start_time or current_time_obj <= end_time
     
-    # Получаем узлы освещения
-    light_nodes = await get_light_nodes(zone_id)
-    if not light_nodes:
+    # Получаем bindings для освещения
+    light_bindings = get_light_bindings(bindings)
+    if not light_bindings:
+        # Нет binding для освещения - создаем alert
+        await ensure_alert(zone_id, 'MISSING_BINDING', {
+            'binding_role': 'light',
+            'required_for': 'light_control',
+        })
         return None
     
     # Проверяем на отказ освещения
@@ -216,8 +217,8 @@ async def check_and_control_lighting(
         event_type = "LIGHT_OFF"
     
     return {
-        'node_uid': light_nodes[0]['node_uid'],
-        'channel': light_nodes[0]['channel'],
+        'node_uid': light_bindings[0]['node_uid'],
+        'channel': light_bindings[0]['channel'],
         'cmd': cmd,
         'params': params,
         'event_type': event_type,

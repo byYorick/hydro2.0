@@ -1,5 +1,6 @@
 import asyncio
 import json
+from datetime import datetime, timezone
 from typing import Any, Optional, Dict
 
 import asyncpg
@@ -8,6 +9,27 @@ from .env import get_settings
 
 
 _pool: Optional[asyncpg.pool.Pool] = None
+
+
+async def _init_connection(conn: asyncpg.Connection) -> None:
+    """
+    Настраиваем кодеки JSON/JSONB один раз для каждого подключения.
+    Это позволяет безопасно передавать dict/list прямо в запросы без предварительного json.dumps.
+    """
+    await conn.set_type_codec(
+        "json",
+        encoder=json.dumps,
+        decoder=json.loads,
+        schema="pg_catalog",
+        format="text",
+    )
+    await conn.set_type_codec(
+        "jsonb",
+        encoder=json.dumps,
+        decoder=json.loads,
+        schema="pg_catalog",
+        format="text",
+    )
 
 
 async def get_pool() -> asyncpg.pool.Pool:
@@ -22,6 +44,7 @@ async def get_pool() -> asyncpg.pool.Pool:
             password=s.pg_pass,
             min_size=1,
             max_size=10,
+            init=_init_connection,
         )
     return _pool
 
@@ -38,27 +61,115 @@ async def fetch(query: str, *args: Any):
         return await conn.fetch(query, *args)
 
 
-async def upsert_telemetry_last(zone_id: int, metric_type: str, node_id: Optional[int], channel: Optional[str], value: Optional[float]):
+async def upsert_telemetry_last(zone_id: int, metric_type: str, node_id: Optional[int], channel: Optional[str], value: Optional[float], ts: Optional[datetime] = None):
     """
     Обновить или вставить последнее значение телеметрии.
     Использует (zone_id, metric_type) как уникальный ключ (текущая структура таблицы).
     Если node_id указан, он также обновляется.
     """
     actual_node_id = node_id if node_id is not None else -1
+    sample_ts = ts
+    if sample_ts and getattr(sample_ts, "tzinfo", None):
+        sample_ts = sample_ts.astimezone(timezone.utc).replace(tzinfo=None)
+    if not sample_ts:
+        sample_ts = datetime.utcnow()
     
     await execute(
         """
         INSERT INTO telemetry_last (zone_id, node_id, metric_type, channel, value, updated_at)
-        VALUES ($1, $2, $3, $4, $5, NOW())
+        VALUES ($1, $2, $3, $4, $5, $6)
         ON CONFLICT (zone_id, metric_type)
         DO UPDATE SET 
             node_id = EXCLUDED.node_id,
             channel = EXCLUDED.channel, 
             value = EXCLUDED.value, 
-            updated_at = NOW()
+            updated_at = EXCLUDED.updated_at
         """,
-        zone_id, actual_node_id, metric_type, channel, value
+        zone_id, actual_node_id, metric_type, channel, value, sample_ts
     )
+
+
+async def upsert_unassigned_node_error(
+    hardware_id: str,
+    error_message: str,
+    error_code: Optional[str] = None,
+    severity: str = "ERROR",
+    topic: str = "",
+    last_payload: Optional[Dict[str, Any]] = None
+):
+    """
+    Записать или обновить ошибку неназначенного узла.
+    
+    Args:
+        hardware_id: Hardware ID узла из temp-топика
+        error_message: Текст ошибки
+        error_code: Код ошибки (опционально, используется как часть уникального ключа)
+        severity: Уровень ошибки (ERROR, WARNING, CRITICAL, etc)
+        topic: MQTT топик, откуда пришла ошибка
+        last_payload: Последний payload ошибки (опционально)
+    """
+    last_payload_json = json.dumps(last_payload) if last_payload else None
+    
+    # Используем hardware_id + COALESCE(error_code, '') как уникальный ключ
+    # Обрабатываем NULL в error_code через COALESCE
+    normalized_code = error_code or ''
+    
+    # Используем функциональный уникальный индекс для ON CONFLICT
+    # Индекс создан как: CREATE UNIQUE INDEX ... ON (hardware_id, COALESCE(error_code, ''))
+    # Для использования функционального индекса в ON CONFLICT нужно использовать имя индекса
+    # или синтаксис ON CONFLICT ON CONSTRAINT, но для функционального индекса это не работает
+    # Поэтому используем подход с проверкой существования и обновлением
+    
+    # Сначала проверяем, существует ли запись
+    existing = await fetch(
+        """
+        SELECT id, count, last_seen_at
+        FROM unassigned_node_errors
+        WHERE hardware_id = $1 AND COALESCE(error_code, '') = COALESCE($2, '')
+        """,
+        hardware_id,
+        error_code
+    )
+    
+    if existing and len(existing) > 0:
+        # Обновляем существующую запись
+        await execute(
+            """
+            UPDATE unassigned_node_errors
+            SET 
+                count = count + 1,
+                last_seen_at = NOW(),
+                updated_at = NOW(),
+                last_payload = $1::jsonb,
+                error_message = $2,
+                severity = $3,
+                topic = $4
+            WHERE hardware_id = $5 AND COALESCE(error_code, '') = COALESCE($6, '')
+            """,
+            last_payload_json,
+            error_message,
+            severity,
+            topic,
+            hardware_id,
+            error_code
+        )
+    else:
+        # Создаем новую запись
+        await execute(
+            """
+            INSERT INTO unassigned_node_errors (
+                hardware_id, error_message, error_code, severity, topic, last_payload,
+                count, first_seen_at, last_seen_at, updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6::jsonb, 1, NOW(), NOW(), NOW())
+            """,
+            hardware_id,
+            error_message,
+            error_code,
+            severity,
+            topic,
+            last_payload_json
+        )
 
 
 async def create_zone_event(zone_id: int, event_type: str, details: Optional[Dict[str, Any]] = None):
@@ -66,7 +177,7 @@ async def create_zone_event(zone_id: int, event_type: str, details: Optional[Dic
     details_json = json.dumps(details) if details else None
     await execute(
         """
-        INSERT INTO zone_events (zone_id, type, details, created_at)
+        INSERT INTO zone_events (zone_id, type, payload_json, created_at)
         VALUES ($1, $2, $3, NOW())
         """,
         zone_id, event_type, details_json
@@ -95,5 +206,3 @@ async def create_scheduler_log(task_name: str, status: str, details: Optional[Di
         """,
         task_name, status, details_json
     )
-
-

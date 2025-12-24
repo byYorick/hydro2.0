@@ -32,7 +32,7 @@
 2. **Wi-Fi Manager** - инициализация Wi-Fi
 3. **I2C Buses** - инициализация I²C для OLED (если используется)
 4. **OLED UI** - инициализация OLED дисплея (опционально)
-5. **Relay Driver** - инициализация драйвера реле из NodeConfig
+5. **Relay Driver** - инициализация драйвера реле по встроенной карте каналов (см. `relay_node_hw_map.h`)
 6. **MQTT Manager** - инициализация MQTT клиента
 7. **Finalization** - запуск MQTT и установка OLED в нормальный режим
 
@@ -40,7 +40,7 @@
 
 ### Актуаторы (реле)
 
-Каналы реле настраиваются через NodeConfig. Примеры каналов:
+Состав каналов фиксирован в прошивке (карта `relay_node_hw_map.h`) и не редактируется через сервер. Примеры каналов:
 
 - `pump_transfer` - перекачивающий насос
 - `pump_drain` - дренажный насос
@@ -190,48 +190,7 @@ gh/{gh_uid}/zone/{zone_uid}/node/{node_id}/command/{channel}
 
 ## Конфигурация
 
-Каналы реле настраиваются через NodeConfig (отправляется через MQTT):
-
-```json
-{
-  "node_id": "nd-relay-1",
-  "gh_uid": "gh-1",
-  "zone_uid": "zn-4",
-  "channels": [
-    {
-      "name": "pump_transfer",
-      "type": "ACTUATOR",
-      "actuator_type": "RELAY",
-      "gpio": 4,
-      "fail_safe_mode": "NO"
-    },
-    {
-      "name": "pump_drain",
-      "type": "ACTUATOR",
-      "actuator_type": "RELAY",
-      "gpio": 5,
-      "fail_safe_mode": "NO"
-    },
-    {
-      "name": "valve_tank1_in",
-      "type": "ACTUATOR",
-      "actuator_type": "RELAY",
-      "gpio": 18,
-      "fail_safe_mode": "NC"
-    }
-  ]
-}
-```
-
-**Параметры канала:**
-- `name` (string): имя канала (уникальное в рамках ноды)
-- `type` (string): должен быть "ACTUATOR"
-- `actuator_type` (string): должен быть "RELAY"
-- `gpio` (integer): GPIO пин для управления реле (0-39 для ESP32, 0-21 для ESP32C3)
-- `fail_safe_mode` (string, опционально): 
-  - "NO" (Normaly-Open) - нормально разомкнутое реле
-  - "NC" (Normaly-Closed) - нормально замкнутое реле
-  - По умолчанию: "NO"
+Каналы реле полностью зашиты в прошивке (см. `relay_node_hw_map.h`) и не передаются сервером. NodeConfig от сервера содержит только идентификаторы теплицы/зоны, Wi‑Fi/MQTT параметры и прочие общие настройки, без описания каналов.
 
 ## Watchdog таймер
 
@@ -317,7 +276,6 @@ idf.py monitor
 
 - **Архитектура нод**: `doc_ai/02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md`
 - **MQTT спецификация**: `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
-- **NodeConfig**: `firmware/NODE_CONFIG_SPEC.md`
 - **Relay Driver**: `firmware/nodes/common/components/relay_driver/include/relay_driver.h`
 
 ## Известные ограничения
@@ -329,22 +287,6 @@ idf.py monitor
 3. **Защита от дубликатов**: TTL для cmd_id кэша - 60 секунд. Команды с одинаковым cmd_id игнорируются в течение этого времени.
 
 ## Примеры использования
-
-### Инициализация каналов через NodeConfig
-
-```json
-{
-  "channels": [
-    {
-      "name": "pump_transfer",
-      "type": "ACTUATOR",
-      "actuator_type": "RELAY",
-      "gpio": 4,
-      "fail_safe_mode": "NO"
-    }
-  ]
-}
-```
 
 ### Управление реле через команды
 

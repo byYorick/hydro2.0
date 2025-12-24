@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Правила извлечения данных для Android 12+.
+    
+    Контролирует, какие данные могут быть извлечены при копировании/вставке
+    и при перетаскивании между приложениями.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <!-- Отключаем облачное резервное копирование чувствительных данных -->
+        <exclude domain="sharedpref" path="datastore/"/>
+        <exclude domain="database" path="hydro_database"/>
+    </cloud-backup>
+    
+    <device-transfer>
+        <!-- Отключаем передачу чувствительных данных при переносе на новое устройство -->
+        <exclude domain="sharedpref" path="datastore/"/>
+        <exclude domain="database" path="hydro_database"/>
+    </device-transfer>
+</data-extraction-rules>
+

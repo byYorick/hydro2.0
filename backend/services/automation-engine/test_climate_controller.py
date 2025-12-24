@@ -9,25 +9,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from climate_controller import (
     check_and_control_climate,
-    get_climate_nodes,
     check_temp_alerts,
     check_humidity_alerts,
 )
-
-
-@pytest.mark.asyncio
-async def test_get_climate_nodes():
-    """Test getting climate nodes for zone."""
-    with patch("climate_controller.fetch") as mock_fetch:
-        mock_fetch.return_value = [
-            {"id": 1, "uid": "nd-climate-1", "channel": "fan_air", "type": "climate"},
-            {"id": 2, "uid": "nd-climate-1", "channel": "heater_air", "type": "climate"},
-        ]
-        
-        nodes = await get_climate_nodes(1)
-        assert "fan" in nodes
-        assert "heater" in nodes
-        assert nodes["fan"]["node_uid"] == "nd-climate-1"
 
 
 @pytest.mark.asyncio
@@ -35,19 +19,18 @@ async def test_check_and_control_climate_heating():
     """Test climate control when temperature is too low."""
     targets = {"temp_air": 25.0, "humidity_air": 60.0}
     telemetry = {"TEMP_AIR": 22.0, "HUMIDITY": 55.0}
+    bindings = {
+        "heater": {"node_uid": "nd-climate-1", "channel": "heater_air", "direction": "actuator"},
+        "vent": {"node_uid": "nd-climate-1", "channel": "fan_air", "direction": "actuator"},
+    }
     
-    with patch("climate_controller.get_climate_nodes") as mock_nodes, \
-         patch("climate_controller.check_temp_alerts") as mock_temp_alerts, \
+    with patch("climate_controller.check_temp_alerts") as mock_temp_alerts, \
          patch("climate_controller.check_humidity_alerts") as mock_hum_alerts, \
          patch("climate_controller.create_zone_event") as mock_event:
-        mock_nodes.return_value = {
-            "heater": {"node_uid": "nd-climate-1", "channel": "heater_air"},
-            "fan": {"node_uid": "nd-climate-1", "channel": "fan_air"},
-        }
         mock_temp_alerts.return_value = None
         mock_hum_alerts.return_value = None
         
-        commands = await check_and_control_climate(1, targets, telemetry)
+        commands = await check_and_control_climate(1, targets, telemetry, bindings)
         
         # Должен включить нагреватель
         assert len(commands) > 0
@@ -63,19 +46,18 @@ async def test_check_and_control_climate_cooling():
     """Test climate control when temperature is too high."""
     targets = {"temp_air": 25.0, "humidity_air": 60.0}
     telemetry = {"TEMP_AIR": 28.0, "HUMIDITY": 55.0}
+    bindings = {
+        "heater": {"node_uid": "nd-climate-1", "channel": "heater_air", "direction": "actuator"},
+        "vent": {"node_uid": "nd-climate-1", "channel": "fan_air", "direction": "actuator"},
+    }
     
-    with patch("climate_controller.get_climate_nodes") as mock_nodes, \
-         patch("climate_controller.check_temp_alerts") as mock_temp_alerts, \
+    with patch("climate_controller.check_temp_alerts") as mock_temp_alerts, \
          patch("climate_controller.check_humidity_alerts") as mock_hum_alerts, \
          patch("climate_controller.create_zone_event") as mock_event:
-        mock_nodes.return_value = {
-            "heater": {"node_uid": "nd-climate-1", "channel": "heater_air"},
-            "fan": {"node_uid": "nd-climate-1", "channel": "fan_air"},
-        }
         mock_temp_alerts.return_value = None
         mock_hum_alerts.return_value = None
         
-        commands = await check_and_control_climate(1, targets, telemetry)
+        commands = await check_and_control_climate(1, targets, telemetry, bindings)
         
         # Должен включить вентилятор для охлаждения
         assert len(commands) > 0
@@ -89,20 +71,17 @@ async def test_check_and_control_climate_humidity_high():
     """Test climate control when humidity is too high."""
     targets = {"temp_air": 25.0, "humidity_air": 60.0}
     telemetry = {"TEMP_AIR": 25.0, "HUMIDITY": 80.0}
+    bindings = {
+        "vent": {"node_uid": "nd-climate-1", "channel": "fan_air", "direction": "actuator"},
+    }
     
-    with patch("climate_controller.get_climate_nodes") as mock_nodes, \
-         patch("climate_controller.check_temp_alerts") as mock_temp_alerts, \
+    with patch("climate_controller.check_temp_alerts") as mock_temp_alerts, \
          patch("climate_controller.check_humidity_alerts") as mock_hum_alerts, \
          patch("climate_controller.create_zone_event") as mock_event:
-        mock_nodes.return_value = {
-            "fan": {"node_uid": "nd-climate-1", "channel": "fan_air"},
-            "heater": None,  # get_climate_nodes всегда возвращает все ключи
-            "climate_sensor": None,
-        }
         mock_temp_alerts.return_value = None
         mock_hum_alerts.return_value = None
         
-        commands = await check_and_control_climate(1, targets, telemetry)
+        commands = await check_and_control_climate(1, targets, telemetry, bindings)
         
         # Температура в норме (25.0), поэтому сначала выключается вентилятор (set_relay False)
         # Затем управление влажностью включает вентилятор на максимум (set_pwm 100)
@@ -159,4 +138,3 @@ async def test_check_humidity_alerts_low():
         mock_ensure_alert.assert_called_once()
         call_args = mock_ensure_alert.call_args
         assert call_args[0][1] == "HUMIDITY_LOW"
-

@@ -19,62 +19,56 @@ TEMP_HYSTERESIS = 0.5  # °C
 HUMIDITY_HYSTERESIS = 3  # %
 
 
-async def get_climate_nodes(zone_id: int) -> Dict[str, Dict[str, Any]]:
+def get_climate_bindings(zone_id: int, bindings: Dict[str, Dict[str, Any]]) -> Dict[str, Optional[Dict[str, Any]]]:
     """
-    Получить климатические узлы для зоны.
+    Получить климатические bindings для зоны по ролям.
+    
+    Args:
+        zone_id: ID зоны
+        bindings: Dict[role, binding_info] из InfrastructureRepository
     
     Returns:
         Dict с ключами: 'fan', 'heater', 'climate_sensor'
+        Если binding отсутствует, значение будет None
     """
-    rows = await fetch(
-        """
-        SELECT n.id, n.uid, n.type, nc.channel
-        FROM nodes n
-        LEFT JOIN node_channels nc ON nc.node_id = n.id
-        WHERE n.zone_id = $1 AND n.status = 'online'
-          AND (n.type = 'climate' OR nc.channel IN ('fan_A', 'fan_B', 'heater_1', 'temperature', 'humidity'))
-        """,
-        zone_id,
-    )
-    
-    result: Dict[str, Dict[str, Any]] = {
+    result: Dict[str, Optional[Dict[str, Any]]] = {
         'fan': None,
         'heater': None,
         'climate_sensor': None,
     }
     
-    for row in rows:
-        node_type = row["type"]
-        channel = row["channel"] or "default"
-        
-        # Ищем вентилятор
-        if channel in ('fan_A', 'fan_B') or (node_type == 'climate' and 'fan' in channel.lower()):
-            if result['fan'] is None:
-                result['fan'] = {
-                    'node_id': row["id"],
-                    'node_uid': row["uid"],
-                    'type': node_type,
-                    'channel': channel,
-                }
-        
-        # Ищем нагреватель
-        if channel == 'heater_1' or (node_type == 'climate' and 'heater' in channel.lower()):
-            if result['heater'] is None:
-                result['heater'] = {
-                    'node_id': row["id"],
-                    'node_uid': row["uid"],
-                    'type': node_type,
-                    'channel': channel,
-                }
-        
-        # Ищем сенсор климата
-        if channel in ('temperature', 'humidity') or node_type == 'climate':
-            if result['climate_sensor'] is None:
-                result['climate_sensor'] = {
-                    'node_id': row["id"],
-                    'node_uid': row["uid"],
-                    'type': node_type,
-                }
+    # Ищем вентилятор по ролям: vent, fan, ventilation
+    for role in ['vent', 'fan', 'ventilation']:
+        if role in bindings and bindings[role]['direction'] == 'actuator':
+            result['fan'] = {
+                'node_id': bindings[role]['node_id'],
+                'node_uid': bindings[role]['node_uid'],
+                'channel': bindings[role]['channel'],
+                'asset_type': bindings[role]['asset_type'],
+            }
+            break
+    
+    # Ищем нагреватель по ролям: heater, heating
+    for role in ['heater', 'heating']:
+        if role in bindings and bindings[role]['direction'] == 'actuator':
+            result['heater'] = {
+                'node_id': bindings[role]['node_id'],
+                'node_uid': bindings[role]['node_uid'],
+                'channel': bindings[role]['channel'],
+                'asset_type': bindings[role]['asset_type'],
+            }
+            break
+    
+    # Ищем сенсор климата по ролям: climate_sensor, temperature_sensor, humidity_sensor
+    for role in ['climate_sensor', 'temperature_sensor', 'humidity_sensor']:
+        if role in bindings and bindings[role]['direction'] == 'sensor':
+            result['climate_sensor'] = {
+                'node_id': bindings[role]['node_id'],
+                'node_uid': bindings[role]['node_uid'],
+                'channel': bindings[role]['channel'],
+                'asset_type': bindings[role]['asset_type'],
+            }
+            break
     
     return result
 
@@ -82,7 +76,8 @@ async def get_climate_nodes(zone_id: int) -> Dict[str, Dict[str, Any]]:
 async def check_and_control_climate(
     zone_id: int,
     targets: Dict[str, Any],
-    telemetry: Dict[str, Optional[float]]
+    telemetry: Dict[str, Optional[float]],
+    bindings: Dict[str, Dict[str, Any]]
 ) -> List[Dict[str, Any]]:
     """
     Проверка и управление климатом зоны.
@@ -91,23 +86,55 @@ async def check_and_control_climate(
         zone_id: ID зоны
         targets: Целевые значения из рецепта (temp_air, humidity_air)
         telemetry: Текущие значения телеметрии
+        bindings: Dict[role, binding_info] из InfrastructureRepository
     
     Returns:
         Список команд для отправки узлам
     """
     commands: List[Dict[str, Any]] = []
+
+    def _first_metric(keys: List[str]) -> Optional[Any]:
+        for key in keys:
+            if key in telemetry and telemetry.get(key) is not None:
+                return telemetry.get(key)
+        return None
     
-    # Получаем текущие значения
-    temp_air = telemetry.get("TEMP_AIR") or telemetry.get("temp_air")
-    humidity = telemetry.get("HUMIDITY") or telemetry.get("humidity")
-    co2 = telemetry.get("CO2") or telemetry.get("co2")
+    # Получаем текущие значения (поддерживаем разные названия метрик)
+    temp_air = _first_metric(["TEMP_AIR", "temp_air", "air_temp_c"])
+    humidity = _first_metric(["HUMIDITY", "humidity", "humidity_air", "air_rh"])
+    co2 = _first_metric(["CO2", "co2", "co2_ppm"])
     
     # Получаем целевые значения
     target_temp = targets.get("temp_air")
     target_humidity = targets.get("humidity_air")
     
-    # Получаем узлы
-    nodes = await get_climate_nodes(zone_id)
+    # Получаем bindings по ролям
+    nodes = get_climate_bindings(zone_id, bindings)
+    
+    # Проверяем наличие обязательных bindings и создаём alerts при их отсутствии
+    if target_temp is not None:
+        # Для управления температурой нужен либо heater, либо fan
+        if temp_air is not None:
+            temp_val = float(temp_air)
+            target_temp_val = float(target_temp)
+            
+            if temp_val < target_temp_val - TEMP_HYSTERESIS and not nodes['heater']:
+                # Нужен нагреватель, но его нет
+                await ensure_alert(zone_id, 'MISSING_BINDING', {
+                    'binding_role': 'heater',
+                    'required_for': 'temperature_control',
+                    'current_temp': temp_val,
+                    'target_temp': target_temp_val,
+                })
+            
+            if temp_val > target_temp_val + TEMP_HYSTERESIS and not nodes['fan']:
+                # Нужен вентилятор, но его нет
+                await ensure_alert(zone_id, 'MISSING_BINDING', {
+                    'binding_role': 'vent',
+                    'required_for': 'temperature_control',
+                    'current_temp': temp_val,
+                    'target_temp': target_temp_val,
+                })
     
     # Контроль температуры
     if target_temp is not None and temp_air is not None:
@@ -136,20 +163,24 @@ async def check_and_control_climate(
                     'action': 'heating_on'
                 }
             })
-        elif temp_val > temp_max and nodes['fan']:
-            # Включаем вентилятор (охлаждение)
-            commands.append({
-                'node_uid': nodes['fan']['node_uid'],
-                'channel': nodes['fan']['channel'],
-                'cmd': 'set_relay',
-                'params': {'state': True},
-                'event_type': 'CLIMATE_COOLING_ON',
-                'event_details': {
-                    'temp_air': temp_val,
-                    'target_temp': target_temp_val,
-                    'action': 'cooling_on'
-                }
-            })
+        elif temp_val > temp_max:
+            if nodes['fan']:
+                # Включаем вентилятор (охлаждение)
+                commands.append({
+                    'node_uid': nodes['fan']['node_uid'],
+                    'channel': nodes['fan']['channel'],
+                    'cmd': 'set_relay',
+                    'params': {'state': True},
+                    'event_type': 'CLIMATE_COOLING_ON',
+                    'event_details': {
+                        'temp_air': temp_val,
+                        'target_temp': target_temp_val,
+                        'action': 'cooling_on'
+                    }
+                })
+            else:
+                # Нет binding для вентилятора - alert уже создан выше
+                pass
         elif temp_min <= temp_val <= temp_max:
             # Выключаем все, если температура в норме
             if nodes['heater']:
@@ -192,34 +223,44 @@ async def check_and_control_climate(
         # Логика: if humidity > target.max → increase ventilation
         humidity_max = target_humidity_val + HUMIDITY_HYSTERESIS
         
-        if humidity_val > humidity_max and nodes['fan']:
-            # Увеличиваем вентиляцию
-            commands.append({
-                'node_uid': nodes['fan']['node_uid'],
-                'channel': nodes['fan']['channel'],
-                'cmd': 'set_pwm',
-                'params': {'value': 100},  # Максимальная вентиляция
-                'event_type': 'FAN_ON',
-                'event_details': {
-                    'humidity': humidity_val,
+        if humidity_val > humidity_max:
+            if nodes['fan']:
+                # Увеличиваем вентиляцию
+                commands.append({
+                    'node_uid': nodes['fan']['node_uid'],
+                    'channel': nodes['fan']['channel'],
+                    'cmd': 'set_pwm',
+                    'params': {'value': 100},  # Максимальная вентиляция
+                    'event_type': 'FAN_ON',
+                    'event_details': {
+                        'humidity': humidity_val,
+                        'target_humidity': target_humidity_val,
+                        'action': 'increase_ventilation'
+                    }
+                })
+            else:
+                # Нет binding для вентилятора
+                await ensure_alert(zone_id, 'MISSING_BINDING', {
+                    'binding_role': 'vent',
+                    'required_for': 'humidity_control',
+                    'current_humidity': humidity_val,
                     'target_humidity': target_humidity_val,
-                    'action': 'increase_ventilation'
-                }
-            })
-        elif humidity_val <= target_humidity_val and nodes['fan']:
-            # Нормальная вентиляция (средняя)
-            commands.append({
-                'node_uid': nodes['fan']['node_uid'],
-                'channel': nodes['fan']['channel'],
-                'cmd': 'set_pwm',
-                'params': {'value': 50},  # Средняя вентиляция
-                'event_type': 'FAN_ON',  # Вентилятор все еще работает
-                'event_details': {
-                    'humidity': humidity_val,
-                    'target_humidity': target_humidity_val,
-                    'action': 'normal_ventilation'
-                }
-            })
+                })
+        elif humidity_val <= target_humidity_val:
+            if nodes['fan']:
+                # Нормальная вентиляция (средняя)
+                commands.append({
+                    'node_uid': nodes['fan']['node_uid'],
+                    'channel': nodes['fan']['channel'],
+                    'cmd': 'set_pwm',
+                    'params': {'value': 50},  # Средняя вентиляция
+                    'event_type': 'FAN_ON',  # Вентилятор все еще работает
+                    'event_details': {
+                        'humidity': humidity_val,
+                        'target_humidity': target_humidity_val,
+                        'action': 'normal_ventilation'
+                    }
+                })
     
     # Контроль CO₂ (опционально)
     if co2 is not None:
@@ -272,4 +313,3 @@ async def check_humidity_alerts(zone_id: int, humidity: float, target_humidity: 
             'target_humidity': target_humidity,
             'diff': target_humidity - humidity
         })
-

@@ -9,6 +9,10 @@
 #include "esp_timer.h"
 #include "esp_system.h"
 #include "esp_mac.h"
+#include "esp_netif.h"
+#include "esp_event.h"
+#include "esp_wifi.h"
+#include "nvs_flash.h"
 #include <string.h>
 #include <time.h>
 #include <sys/time.h>
@@ -174,6 +178,55 @@ esp_err_t node_utils_init_mqtt_config(
         ESP_LOGW(TAG, "Zone UID not found in config, using default: %s", default_zone_uid);
     }
     
+    return ESP_OK;
+}
+
+esp_err_t node_utils_bootstrap_network_stack(void) {
+    // NVS init with erase fallback for corrupted pages
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init NVS: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    // esp_netif + default loop (idempotent)
+    ret = esp_netif_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init esp_netif: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ret = esp_event_loop_create_default();
+    if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
+        ESP_LOGE(TAG, "Failed to create default event loop: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    // Wi‑Fi station bring-up (ignore if already started)
+    esp_netif_create_default_wifi_sta();
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ret = esp_wifi_init(&cfg);
+    if (ret != ESP_OK && ret != ESP_ERR_WIFI_INIT_STATE) {
+        ESP_LOGE(TAG, "Failed to init Wi-Fi: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ret = esp_wifi_set_mode(WIFI_MODE_STA);
+    if (ret != ESP_OK && ret != ESP_ERR_WIFI_NOT_INIT) {  // NOT_INIT happens if init failed
+        ESP_LOGE(TAG, "Failed to set Wi-Fi mode: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ret = esp_wifi_start();
+    if (ret != ESP_OK && ret != ESP_ERR_WIFI_CONN) {  // CONN means already started
+        ESP_LOGE(TAG, "Failed to start Wi-Fi: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
     return ESP_OK;
 }
 

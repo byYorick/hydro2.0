@@ -164,7 +164,6 @@ Authorization: Bearer {HISTORY_LOGGER_API_TOKEN}
     "type": "climate",
     "gh_uid": "gh-temp",
     "zone_uid": "zn-temp",
-    "channels": [...],
     "wifi": {
       "ssid": "HydroFarm",
       "password": "..."
@@ -179,7 +178,7 @@ Authorization: Bearer {HISTORY_LOGGER_API_TOKEN}
 }
 ```
 
-**ВАЖНО:** Теперь конфиг публикуется **ТОЛЬКО** при привязке к зоне (установке pending_zone_id), а не при первой регистрации!
+**ВАЖНО:** Конфиг не содержит описаний каналов. Каналы зашиты в прошивке и нода публикует их сама после получения этого конфига (ACK) — только тогда Laravel сохраняет их в БД. Конфиг публикуется **ТОЛЬКО** при привязке к зоне (установке pending_zone_id), а не при первой регистрации!
 
 ### 5️⃣ History Logger публикует конфиг в MQTT
 
@@ -508,4 +507,3 @@ environment:
 - ESP32 ↔ MQTT ↔ History Logger ↔ Laravel
 - Никаких прямых подключений узлов к Laravel API
 - Централизованная обработка всех сообщений
-

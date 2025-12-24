@@ -63,3 +63,13 @@ Schedule::command('zone-events:archive --days=180')
 Schedule::command('logs:cleanup --days=30')
     ->weeklyOn(0, '02:00')
     ->description('Очистка старых логов (7-30 дней hot logs)');
+
+// Обработка timeout команд: каждые 30 секунд
+Schedule::command('commands:process-timeouts')
+    ->everyThirtySeconds()
+    ->description('Автоматическая обработка timeout для команд в статусе SENT');
+
+// Автоматический replay DLQ алертов: ежедневно в 4:00
+Schedule::command('alerts:dlq-replay --older-than-hours=24')
+    ->dailyAt('04:00')
+    ->description('Автоматический replay старых алертов из DLQ (старше 24 часов)');

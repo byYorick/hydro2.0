@@ -8,6 +8,7 @@
 #include "node_config_handler.h"
 #include "node_command_handler.h"
 #include "node_telemetry_engine.h"
+#include "node_state_manager.h"
 #include "trema_light.h"
 #include "mqtt_manager.h"
 #include "esp_log.h"
@@ -43,9 +44,11 @@ esp_err_t light_node_publish_telemetry_callback(void *user_ctx) {
         );
         if (err != ESP_OK) {
             ESP_LOGW(TAG, "Failed to publish light: %s", esp_err_to_name(err));
+            node_state_manager_report_error(ERROR_LEVEL_ERROR, "mqtt", err, "Failed to publish light telemetry");
         }
     } else {
         ESP_LOGW(TAG, "Failed to read light sensor: success=%d, lux=%.0f", read_success, light_lux);
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "light_sensor", ESP_ERR_INVALID_RESPONSE, "Failed to read light sensor value");
         
         // Публикация ошибки
         node_telemetry_publish_sensor(
@@ -104,6 +107,7 @@ esp_err_t light_node_framework_init_integration(void) {
     esp_err_t err = node_framework_init(&config);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize node_framework: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_CRITICAL, "node_framework", err, "Node framework initialization failed");
         return err;
     }
 

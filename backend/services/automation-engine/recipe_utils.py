@@ -2,7 +2,8 @@
 Utility functions for working with recipes and phases.
 """
 from typing import Optional, Dict, Any, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from common.utils.time import utcnow
 from common.db import fetch, execute
 
 
@@ -79,14 +80,14 @@ async def calculate_current_phase(zone_id: int) -> Optional[Dict[str, Any]]:
     # Calculate total elapsed time
     if isinstance(started_at, str):
         started_at = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
-    elif isinstance(started_at, datetime):
-        pass
-    else:
+    elif not isinstance(started_at, datetime):
         return None
 
-    now = datetime.utcnow()
-    if started_at.tzinfo:
-        now = datetime.now(started_at.tzinfo)
+    # База хранит timestamps без таймзоны, приводим их к UTC
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=timezone.utc)
+
+    now = datetime.now(started_at.tzinfo) if started_at.tzinfo else utcnow()
 
     elapsed_hours = (now - started_at).total_seconds() / 3600
 
@@ -186,4 +187,3 @@ async def advance_phase(zone_id: int, new_phase_index: int) -> bool:
         return True
     except Exception:
         return False
-

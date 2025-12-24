@@ -56,6 +56,7 @@ class AuthenticationTest extends TestCase
         $response = $this->actingAs($user)->post('/logout');
 
         $this->assertGuest();
-        $response->assertRedirect('/');
+        // После logout редирект на /login
+        $response->assertRedirect('/login');
     }
 }

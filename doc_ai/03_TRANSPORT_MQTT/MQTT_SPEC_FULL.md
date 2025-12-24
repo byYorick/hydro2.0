@@ -64,16 +64,24 @@ hydro/{gh}/{zone}/{node}/{channel}/telemetry
 ## 3.2. Пример JSON
 ```json
 {
- "node_id": "nd-ph-1",
- "channel": "ph_sensor",
- "metric_type": "PH",
+ "metric_type": "ph",
  "value": 5.86,
- "raw": 1465,
- "timestamp": 1710001234
+ "ts": 1710001234
 }
 ```
 
-> Примечание: в поле `node_id` передаётся строковый UID узла (`nodes.uid`), совпадающий с сегментом `{node}` в топике и `node_uid` из `NODE_CHANNELS_REFERENCE.md`.
+**Обязательные поля:**
+- `metric_type` (string, lowercase) — тип метрики: `ph`, `ec`, `air_temp_c`, `air_rh`, `co2_ppm`, `ina209_ma`, `flow_present`, `solution_temp_c`, `light_level`
+- `value` (number) — значение метрики
+- `ts` (integer) — UTC timestamp в секундах (Unix timestamp)
+
+**Опциональные поля:**
+- `unit` (string) — единица измерения (например, "pH", "°C", "%")
+- `raw` (integer) — сырое значение сенсора
+- `stub` (boolean) — флаг, указывающий на симулированное значение
+- `stable` (boolean) — флаг, указывающий на стабильность значения
+
+> **Важно:** Поля `node_id` и `channel` **не включаются** в JSON payload, так как они уже присутствуют в структуре MQTT топика (`hydro/{gh}/{zone}/{node}/{channel}/telemetry`). Формат соответствует эталону node-sim, который успешно проходит E2E тесты.
 
 ## 3.3. Requirements
 - QoS = 1
@@ -249,8 +257,12 @@ hydro/{gh}/{zone}/{node}/{channel}/command
 ```json
 {
  "cmd": "run_pump",
- "duration_ms": 2500,
- "cmd_id": "cmd-591"
+ "params": {
+   "duration_ms": 2500
+ },
+ "cmd_id": "cmd-591",
+ "ts": 1737355112,
+ "sig": "a1b2c3d4e5f6..."
 }
 ```
 
@@ -258,8 +270,12 @@ hydro/{gh}/{zone}/{node}/{channel}/command
 ```json
 {
  "cmd": "set_relay",
- "state": true,
- "cmd_id": "cmd-592"
+ "params": {
+   "state": true
+ },
+ "cmd_id": "cmd-592",
+ "ts": 1737355113,
+ "sig": "b2c3d4e5f6a1..."
 }
 ```
 
@@ -267,8 +283,12 @@ hydro/{gh}/{zone}/{node}/{channel}/command
 ```json
 {
  "cmd": "set_pwm",
- "value": 128,
- "cmd_id": "cmd-593"
+ "params": {
+   "value": 128
+ },
+ "cmd_id": "cmd-593",
+ "ts": 1737355114,
+ "sig": "c3d4e5f6a1b2..."
 }
 ```
 
@@ -276,10 +296,52 @@ hydro/{gh}/{zone}/{node}/{channel}/command
 ```json
 {
  "cmd": "calibrate",
- "type": "PH_7",
- "cmd_id": "cmd-594"
+ "params": {
+   "type": "PH_7"
+ },
+ "cmd_id": "cmd-594",
+ "ts": 1737355115,
+ "sig": "d4e5f6a1b2c3..."
 }
 ```
+
+## 7.3. Формат команды с HMAC подписью
+
+Все команды должны содержать следующие обязательные поля:
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `cmd` | string | Имя команды |
+| `cmd_id` | string | Уникальный ID команды |
+| `params` | object | Параметры команды (опционально) |
+| `ts` | number | Unix timestamp в секундах (обязательно для HMAC) |
+| `sig` | string | HMAC-SHA256 подпись (обязательно для HMAC) |
+
+**Формат подписи:**
+```
+sig = HMAC_SHA256(node_secret, cmd + '|' + ts)
+```
+
+Где:
+- `node_secret` — секретный ключ узла (хранится в NodeConfig поле `node_secret` или используется дефолтный)
+- `cmd` — имя команды (строка)
+- `ts` — Unix timestamp в секундах (number, int64)
+- Разделитель: `|` (вертикальная черта)
+- Подпись возвращается в виде hex строки (64 символа, нижний регистр)
+
+**Проверка на узле:**
+1. Узел проверяет наличие полей `ts` и `sig`
+2. Если поля присутствуют, выполняется проверка:
+   - Формат: `ts` должен быть числом, `sig` должен быть строкой длиной 64 символа (hex)
+   - Timestamp: `abs(now - ts) < 10 секунд` (где `now` и `ts` в секундах Unix timestamp)
+   - HMAC подпись: вычисляется ожидаемая подпись и сравнивается с полученной (регистронезависимое сравнение hex)
+3. Если проверки не пройдены, команда отклоняется с ошибкой:
+   - `invalid_hmac_format` — неверный формат полей или длина подписи
+   - `timestamp_expired` — timestamp вне допустимого диапазона
+   - `invalid_signature` — подпись не совпадает
+4. Если поля `ts` и `sig` отсутствуют, команда обрабатывается в режиме обратной совместимости (с предупреждением в логах)
+
+**Статус реализации:** ✅ **РЕАЛИЗОВАНО** (node_command_handler.c)
 
 ---
 
@@ -295,12 +357,57 @@ hydro/{gh}/{zone}/{node}/{channel}/command_response
 Каждая команда, отправленная в `.../{channel}/command`, **обязана** породить хотя бы один
 ответ `command_response` от узла:
 
-- даже если команда была отвергнута по валидации;
+- даже если команда была отвергнута по валидации (HMAC, timestamp, параметры);
 - даже если действие выполнить не удалось по железу (ошибка насоса, проблема с питанием);
 - даже если узел находился в SAFE_MODE.
 
-Backend никогда не остаётся “в неизвестности”: по `cmd_id` он либо получает `ACK`,
+Backend никогда не остаётся "в неизвестности": по `cmd_id` он либо получает `ACK`,
 либо `ERROR`/`TIMEOUT` и может принять управленческое решение.
+
+## 8.2.1. Формат command_response
+
+**Обязательные поля:**
+- `cmd_id` (string) — идентификатор команды, точно соответствующий `cmd_id` из команды
+- `status` (string) — статус выполнения: `ACK`, `DONE`, `ERROR`, `INVALID`, `BUSY`, `NO_EFFECT`
+- `ts` (integer) — UTC timestamp в миллисекундах
+
+**Опциональные поля:**
+- `details` (string) — детали выполнения команды
+
+**Пример успешного ответа:**
+```json
+{
+  "cmd_id": "cmd-591",
+  "status": "DONE",
+  "details": "OK",
+  "ts": 1710003399123
+}
+```
+
+**Пример ошибки валидации HMAC:**
+
+Если команда отклонена из-за невалидной HMAC подписи или истекшего timestamp, узел отправляет:
+
+```json
+{
+  "cmd_id": "cmd-591",
+  "status": "ERROR",
+  "details": "Command HMAC signature verification failed",
+  "ts": 1710003399123
+}
+```
+
+или
+
+```json
+{
+  "cmd_id": "cmd-591",
+  "status": "ERROR",
+  "ts": 1710003399,
+  "error_code": "timestamp_expired",
+  "error_message": "Command timestamp is outside acceptable range"
+}
+```
 
 ## 8.3. Базовый payload
 
@@ -308,14 +415,19 @@ Backend никогда не остаётся “в неизвестности”
 {
   "cmd_id": "cmd-591",
   "status": "ACK",
-  "ts": 1710003333
+  "ts": 1710003333123
 }
 ```
 
+**Важно:** Поле `ts` содержит UTC timestamp в **миллисекундах** (не секундах).
+
 Статусы:
-- `ACK` — команда принята и выполнена без критичных ошибок;
+- `ACK` — команда принята и будет выполнена;
+- `DONE` — команда выполнена успешно;
 - `ERROR` — команда не выполнена или выполнена с ошибкой;
-- `TIMEOUT` — узел сам зафиксировал превышение внутренних таймаутов.
+- `INVALID` — команда невалидна (неверные параметры);
+- `BUSY` — узел занят, команда не может быть выполнена сейчас;
+- `NO_EFFECT` — команда не оказала эффекта (например, реле уже в нужном состоянии).
 
 ## 8.4. Расширенный payload для ошибок
 
@@ -409,16 +521,20 @@ hydro/{gh}/{zone}/{node}/heartbeat
 **Payload:**
 ```json
 {
-  "uptime": 35555,
+  "uptime": 3600,
   "free_heap": 102000,
   "rssi": -62
 }
 ```
 
-**Альтернативные имена полей:**
-- `free_heap` или `free_heap_bytes` — свободная память в байтах
-- `uptime` — время работы узла в секундах
-- `rssi` — сила сигнала Wi-Fi в dBm
+**Обязательные поля:**
+- `uptime` (integer) — время работы узла в секундах (не миллисекунды)
+- `free_heap` (integer) — свободная память в байтах
+
+**Опциональные поля:**
+- `rssi` (integer) — сила сигнала Wi-Fi в dBm (от -100 до 0)
+
+> **Важно:** Поле `ts` **не включается** в heartbeat согласно эталону node-sim. Формат соответствует эталону, который успешно проходит E2E тесты.
 
 **Requirements:**
 - QoS = 1 (обновлено: было 0, теперь 1 для надёжности)
@@ -430,7 +546,46 @@ hydro/{gh}/{zone}/{node}/heartbeat
 
 ---
 
-## 9.3. Debug (опционально)
+## 9.3. Error (публикация ошибок узлом)
+
+**Топик:**
+```
+hydro/{gh}/{zone}/{node}/error
+```
+
+**Payload:**
+```json
+{
+  "level": "ERROR",
+  "component": "ph_sensor",
+  "error_code": "esp_ESP_ERR_INVALID_STATE",
+  "message": "Sensor not initialized",
+  "ts": 1710003399123,
+  "details": {
+    "error_code_num": 9,
+    "original_level": "CRITICAL"
+  }
+}
+```
+
+**Обязательные поля:**
+- `level` (string) — уровень ошибки: `ERROR`, `WARNING`, `INFO` (CRITICAL маппится в ERROR)
+- `component` (string) — компонент, сгенерировавший ошибку
+- `error_code` (string) — код ошибки (например, `esp_ESP_ERR_INVALID_STATE`)
+- `message` (string) — человекочитаемое сообщение об ошибке
+
+**Опциональные поля:**
+- `ts` (integer) — UTC timestamp в миллисекундах
+- `details` (object) — дополнительные детали ошибки
+
+**Requirements:**
+- QoS = 1
+- Retain = false
+- Backend обрабатывает ошибки и может создавать алерты
+
+---
+
+## 9.4. Debug (опционально)
 ```
 hydro/{node}/debug
 ```

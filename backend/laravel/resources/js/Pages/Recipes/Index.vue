@@ -54,6 +54,11 @@
           </tbody>
         </table>
       </div>
+      <Pagination
+        v-model:current-page="currentPage"
+        v-model:per-page="perPage"
+        :total="filtered.length"
+      />
     </div>
 
     <!-- Мастер создания рецепта -->
@@ -66,11 +71,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Link, usePage, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Button from '@/Components/Button.vue'
 import RecipeCreateWizard from '@/Components/RecipeCreateWizard.vue'
+import Pagination from '@/Components/Pagination.vue'
 import { useSimpleModal } from '@/composables/useModal'
 import type { Recipe } from '@/types'
 
@@ -78,6 +84,8 @@ const headers = ['Название', 'Описание', 'Фаз', 'Действ
 const page = usePage<{ recipes?: Recipe[] }>()
 const all = computed(() => (page.props.recipes || []) as Recipe[])
 const query = ref<string>('')
+const currentPage = ref<number>(1)
+const perPage = ref<number>(25)
 
 const { isOpen: showRecipeWizard, open: openRecipeWizard, close: closeRecipeWizard } = useSimpleModal()
 
@@ -99,15 +107,37 @@ const filtered = computed(() => {
   })
 })
 
+// Пагинированные рецепты
+const paginatedRecipes = computed(() => {
+  const total = filtered.value.length
+  if (total === 0) return []
+  
+  // Защита от некорректных значений
+  const maxPage = Math.ceil(total / perPage.value) || 1
+  const validPage = Math.min(currentPage.value, maxPage)
+  if (validPage !== currentPage.value) {
+    currentPage.value = validPage
+  }
+  
+  const start = (validPage - 1) * perPage.value
+  const end = start + perPage.value
+  return filtered.value.slice(start, end)
+})
+
 // Преобразуем рецепты в строки таблицы
 const rows = computed(() => {
-  return filtered.value.map(r => [
+  return paginatedRecipes.value.map(r => [
     r.id,
     r.name || '-',
     r.description || 'Без описания',
     r.phases_count || 0,
     r.id // Добавляем ID в конец для удобства доступа
   ])
+})
+
+// Сбрасываем на первую страницу при изменении фильтров
+watch(query, () => {
+  currentPage.value = 1
 })
 
 </script>

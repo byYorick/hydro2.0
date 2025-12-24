@@ -11,6 +11,9 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
+    ->withCommands([
+        \App\Console\Commands\CleanupNodeChannelsGpio::class,
+    ])
     ->withMiddleware(function (Middleware $middleware) {
         // Trust all proxies (for Docker/nginx setup)
         $middleware->trustProxies(at: '*');
@@ -25,7 +28,10 @@ return Application::configure(basePath: dirname(__DIR__))
             'verify.python.service' => \App\Http\Middleware\VerifyPythonServiceToken::class,
             'auth.token' => \App\Http\Middleware\AuthenticateWithApiToken::class,
             'verify.alertmanager.webhook' => \App\Http\Middleware\VerifyAlertmanagerWebhook::class,
+            'ip.whitelist' => \App\Http\Middleware\NodeRegistrationIpWhitelist::class,
         ]);
+        
+        // Rate limiting для регистрации нод будет настроен в AppServiceProvider
 
         // Rate Limiting для API роутов
         // Стандартный лимит: 120 запросов в минуту для всех API роутов
@@ -58,6 +64,44 @@ return Application::configure(basePath: dirname(__DIR__))
         $generateCorrelationId = function () {
             return 'req_'.uniqid().'_'.substr(md5(microtime(true)), 0, 8);
         };
+
+        // Обрабатываем ThrottleRequestsException ПЕРВЫМ (до общего обработчика)
+        // Используем HttpException вместо ThrottleRequestsException, так как ThrottleRequestsException наследуется от HttpException
+        $exceptions->render(function (\Illuminate\Http\Exceptions\ThrottleRequestsException $e, \Illuminate\Http\Request $request) {
+            $retryAfter = $e->getHeaders()['Retry-After'] ?? 60;
+            
+            if ($request->is('broadcasting/auth')) {
+                \Log::warning('Broadcasting auth: Rate limit exceeded', [
+                    'ip' => $request->ip(),
+                    'channel' => $request->input('channel_name'),
+                    'retry_after' => $retryAfter,
+                ]);
+
+                return response()->json([
+                    'message' => 'Too Many Attempts.',
+                ], 429)->withHeaders([
+                    'Retry-After' => $retryAfter,
+                ]);
+            }
+            
+            // Для API роутов возвращаем JSON с 429
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json([
+                    'status' => 'error',
+                    'code' => 'RATE_LIMIT_EXCEEDED',
+                    'message' => 'Too many requests. Please try again later.',
+                ], 429)->withHeaders([
+                    'Retry-After' => $retryAfter,
+                ]);
+            }
+            
+            // Для веб-роутов возвращаем стандартный ответ
+            return response()->view('errors.429', [
+                'retry_after' => $retryAfter,
+            ], 429)->withHeaders([
+                'Retry-After' => $retryAfter,
+            ]);
+        });
 
         // Централизованная обработка исключений для API и веб-маршрутов
         $exceptions->render(function (\Throwable $e, \Illuminate\Http\Request $request) use ($generateCorrelationId) {
@@ -120,6 +164,17 @@ return Application::configure(basePath: dirname(__DIR__))
                 \Log::error('API Exception', $logContext);
 
                 // Обработка специфичных исключений
+                if ($e instanceof \Illuminate\Http\Exceptions\ThrottleRequestsException) {
+                    $retryAfter = $e->getHeaders()['Retry-After'] ?? 60;
+                    return response()->json([
+                        'status' => 'error',
+                        'code' => 'RATE_LIMIT_EXCEEDED',
+                        'message' => 'Too many requests. Please try again later.',
+                    ], 429)->withHeaders([
+                        'Retry-After' => $retryAfter,
+                    ]);
+                }
+                
                 if ($e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException) {
                     return response()->json([
                         'status' => 'error',
@@ -235,23 +290,6 @@ return Application::configure(basePath: dirname(__DIR__))
             return null;
         });
 
-        // Обрабатываем ThrottleRequestsException для broadcasting/auth (возвращаем 429 вместо 500)
-        $exceptions->render(function (\Illuminate\Routing\Middleware\ThrottleRequestsException $e, \Illuminate\Http\Request $request) {
-            if ($request->is('broadcasting/auth')) {
-                $retryAfter = $e->getHeaders()['Retry-After'] ?? 60;
-                \Log::warning('Broadcasting auth: Rate limit exceeded', [
-                    'ip' => $request->ip(),
-                    'channel' => $request->input('channel_name'),
-                    'retry_after' => $retryAfter,
-                ]);
-
-                return response()->json([
-                    'message' => 'Too Many Attempts.',
-                ], 429)->withHeaders([
-                    'Retry-After' => $retryAfter,
-                ]);
-            }
-        });
 
         // Обрабатываем исключения для broadcasting/auth
         $exceptions->render(function (\Illuminate\Auth\AuthenticationException $e, \Illuminate\Http\Request $request) {

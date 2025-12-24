@@ -4,6 +4,7 @@ Zone Health Monitor - анализ состояния зоны и расчет h
 """
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
+from common.utils.time import utcnow
 from common.db import fetch, execute
 from common.water_flow import check_water_level, check_flow
 
@@ -15,7 +16,7 @@ async def calculate_ph_stability(zone_id: int, hours: int = 2) -> float:
     Returns:
         Оценка стабильности 0-100 (100 = идеальная стабильность)
     """
-    cutoff_time = datetime.utcnow() - timedelta(hours=hours)
+    cutoff_time = utcnow().replace(tzinfo=None) - timedelta(hours=hours)
     
     rows = await fetch(
         """
@@ -64,7 +65,7 @@ async def calculate_ec_stability(zone_id: int, hours: int = 2) -> float:
     Returns:
         Оценка стабильности 0-100
     """
-    cutoff_time = datetime.utcnow() - timedelta(hours=hours)
+    cutoff_time = utcnow().replace(tzinfo=None) - timedelta(hours=hours)
     
     rows = await fetch(
         """
@@ -319,4 +320,3 @@ async def update_zone_health_in_db(zone_id: int, health_data: Dict[str, Any]) ->
         health_data['health_status'],
         zone_id,
     )
-

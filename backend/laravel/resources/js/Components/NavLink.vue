@@ -3,12 +3,12 @@
     :href="href"
     :prefetch="true"
     :class="[
-      mobile 
-        ? 'flex flex-col items-center justify-center text-xs transition-colors'
-        : 'block rounded-md px-3 py-2 text-sm transition-colors',
       mobile
-        ? isActive ? 'text-neutral-100' : 'text-neutral-400'
-        : isActive ? 'bg-neutral-800 text-neutral-100' : 'text-neutral-300 hover:bg-neutral-850 hover:text-neutral-100'
+        ? 'flex flex-col items-center justify-center text-xs transition-colors px-2 py-2'
+        : 'nav-link text-sm',
+      mobile
+        ? isActive ? 'text-white' : 'text-slate-400'
+        : isActive ? 'nav-link--active' : ''
     ]"
   >
     <slot>

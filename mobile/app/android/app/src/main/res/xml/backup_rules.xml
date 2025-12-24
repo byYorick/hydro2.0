@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Правила резервного копирования для приложения Hydro.
+    
+    Отключаем резервное копирование чувствительных данных (токены, пароли).
+    Разрешаем резервное копирование только некритичных данных.
+-->
+<full-backup-content>
+    <!-- Исключаем DataStore (содержит токены) -->
+    <exclude domain="sharedpref" path="datastore/"/>
+    
+    <!-- Исключаем базу данных Room (может содержать чувствительные данные) -->
+    <exclude domain="database" path="hydro_database"/>
+    
+    <!-- Разрешаем резервное копирование конфигураций -->
+    <include domain="file" path="configs/"/>
+</full-backup-content>
+

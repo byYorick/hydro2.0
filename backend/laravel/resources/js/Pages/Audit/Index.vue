@@ -47,7 +47,7 @@
         <!-- Виртуализированный список -->
         <div class="flex-1 overflow-hidden">
           <RecycleScroller
-            :items="filtered"
+            :items="paginatedLogs"
             :item-size="rowHeight"
             key-field="id"
             v-slot="{ item: log, index }"
@@ -83,10 +83,15 @@
               </div>
             </div>
           </RecycleScroller>
-          <div v-if="!filtered.length" class="text-sm text-neutral-400 px-3 py-6 text-center">
+          <div v-if="!paginatedLogs.length" class="text-sm text-neutral-400 px-3 py-6 text-center">
             {{ all.length === 0 ? 'Логи не найдены' : 'Нет логов по текущим фильтрам' }}
           </div>
         </div>
+        <Pagination
+          v-model:current-page="currentPage"
+          v-model:per-page="perPage"
+          :total="filtered.length"
+        />
       </div>
     </Card>
 
@@ -131,14 +136,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, watch, onMounted } from 'vue'
 import { usePage, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
 import Modal from '@/Components/Modal.vue'
+import Pagination from '@/Components/Pagination.vue'
 import { logger } from '@/utils/logger'
+import { useToast } from '@/composables/useToast'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
 
 interface SystemLog {
   id: number
@@ -154,10 +162,13 @@ interface PageProps {
 
 const page = usePage<PageProps>()
 const all = computed(() => (page.props.logs || []) as SystemLog[])
+const { showToast } = useToast()
 
 const headers = ['Уровень', 'Время', 'Сообщение', 'Действия']
 const levelFilter = ref<string>('')
 const searchQuery = ref<string>('')
+const currentPage = ref<number>(1)
+const perPage = ref<number>(25)
 const rowHeight = 44
 const loading = ref<boolean>(false)
 const selectedLog = ref<SystemLog | null>(null)
@@ -169,6 +180,22 @@ const filtered = computed(() => {
       (log.message?.toLowerCase().includes(searchQuery.value.toLowerCase()) ?? false)
     return levelOk && searchOk
   })
+})
+
+const paginatedLogs = computed(() => {
+  const total = filtered.value.length
+  if (total === 0) return []
+  
+  // Защита от некорректных значений
+  const maxPage = Math.ceil(total / perPage.value) || 1
+  const validPage = Math.min(currentPage.value, maxPage)
+  if (validPage !== currentPage.value) {
+    currentPage.value = validPage
+  }
+  
+  const start = (validPage - 1) * perPage.value
+  const end = start + perPage.value
+  return filtered.value.slice(start, end)
 })
 
 const getLevelVariant = (level?: string): string => {
@@ -190,6 +217,11 @@ const loadLogs = async () => {
       preserveScroll: true,
       preserveState: true 
     })
+    // После загрузки проверяем, что текущая страница не выходит за пределы
+    const maxPage = Math.ceil(all.value.length / perPage.value) || 1
+    if (currentPage.value > maxPage) {
+      currentPage.value = maxPage
+    }
   } catch (err) {
     logger.error('[Audit/Index] Failed to load logs:', err)
     showToast('Ошибка загрузки логов', 'error', TOAST_TIMEOUT.LONG)
@@ -239,6 +271,11 @@ const exportLogs = () => {
 
 onMounted(() => {
   loadLogs()
+})
+
+// Сбрасываем на первую страницу при изменении фильтров
+watch([levelFilter, searchQuery], () => {
+  currentPage.value = 1
 })
 </script>
 

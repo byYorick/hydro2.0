@@ -11,6 +11,7 @@ use Illuminate\Http\Client\TimeoutException;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class PythonBridgeService
@@ -22,7 +23,7 @@ class PythonBridgeService
             'zone_id' => $zone->id,
             'cmd' => $payload['type'] ?? ($payload['cmd'] ?? 'unknown'),
             'params' => $payload['params'] ?? [],
-            'status' => 'pending',
+            'status' => Command::STATUS_QUEUED,
             'cmd_id' => $cmdId,
         ]);
         $ghUid = optional($zone->greenhouse)->uid ?? 'gh-1';
@@ -139,6 +140,10 @@ class PythonBridgeService
             'channel' => $channel,
             'cmd_id' => $cmdId, // Pass Laravel's cmd_id to Python service
         ];
+        
+        // Подписываем команду HMAC подписью
+        $signatureService = app(\App\Services\CommandSignatureService::class);
+        $requestData = $signatureService->signCommand($node, $requestData);
 
         try {
             $this->sendWithRetry(
@@ -165,13 +170,17 @@ class PythonBridgeService
     public function sendNodeCommand(DeviceNode $node, array $payload): string
     {
         $cmdId = Str::uuid()->toString();
+        
+        // Получаем channel из payload или из params (для обратной совместимости)
+        $channel = $payload['channel'] ?? ($payload['params']['channel'] ?? null);
+        
         $command = Command::create([
             'zone_id' => $node->zone_id,
             'node_id' => $node->id,
-            'channel' => $payload['channel'] ?? null,
+            'channel' => $channel,
             'cmd' => $payload['type'] ?? ($payload['cmd'] ?? 'unknown'),
             'params' => $payload['params'] ?? [],
-            'status' => 'pending',
+            'status' => Command::STATUS_QUEUED,
             'cmd_id' => $cmdId,
         ]);
         $zoneId = $node->zone_id ?? ($payload['zone_id'] ?? null);
@@ -211,6 +220,20 @@ class PythonBridgeService
             $zoneUid = $node->zone->uid;
         }
         
+        // Получаем channel из payload, params, или из command
+        $channel = $payload['channel'] ?? ($payload['params']['channel'] ?? null) ?? $command->channel;
+        if (!$channel) {
+            $error = 'Channel is required for node command';
+            Log::error('PythonBridgeService: '.$error, [
+                'node_id' => $node->id,
+                'node_uid' => $node->uid,
+                'cmd_id' => $cmdId,
+                'payload' => $payload,
+            ]);
+            $this->markCommandFailed($command, $error);
+            throw new \InvalidArgumentException($error);
+        }
+        
         $requestData = [
             'type' => $command->cmd,
             'params' => $params,
@@ -219,9 +242,13 @@ class PythonBridgeService
             'zone_uid' => $zoneUid, // Передаем zone_uid
             'node_uid' => $node->uid,
             'hardware_id' => $node->hardware_id, // Передаем hardware_id для временного топика
-            'channel' => $payload['channel'] ?? null,
+            'channel' => $channel,
             'cmd_id' => $cmdId, // Pass Laravel's cmd_id to Python service
         ];
+        
+        // Подписываем команду HMAC подписью
+        $signatureService = app(\App\Services\CommandSignatureService::class);
+        $requestData = $signatureService->signCommand($node, $requestData);
 
         try {
             $this->sendWithRetry(
@@ -298,13 +325,41 @@ class PythonBridgeService
 
         for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
             try {
+                Log::info('PythonBridgeService: Sending command request', [
+                    'cmd_id' => $command->cmd_id,
+                    'url' => $url,
+                    'attempt' => $attempt,
+                    'has_token' => !empty($headers['Authorization'] ?? null),
+                ]);
+                
+                // Используем новый HTTP клиент для каждого запроса, чтобы избежать проблем с keep-alive
+                // Отключаем DNS кэширование и принудительно закрываем соединения
                 $response = Http::withHeaders($headers)
                     ->timeout($timeout)
+                    ->withoutVerifying() // Отключаем проверку SSL для внутренних запросов
+                    ->withOptions([
+                        'curl' => [
+                            CURLOPT_TCP_NODELAY => true,
+                            CURLOPT_FRESH_CONNECT => true,
+                            CURLOPT_FORBID_REUSE => true,
+                            CURLOPT_CONNECTTIMEOUT => 5,
+                            CURLOPT_DNS_CACHE_TIMEOUT => 0, // Отключаем DNS кэш
+                            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1, // Явно указываем HTTP/1.1
+                        ],
+                        'allow_redirects' => false, // Отключаем редиректы
+                    ])
                     ->post($url, $data);
+
+                Log::info('PythonBridgeService: Received response from history-logger', [
+                    'cmd_id' => $command->cmd_id,
+                    'url' => $url,
+                    'status' => $response->status(),
+                    'attempt' => $attempt,
+                ]);
 
                 // Проверяем успешность ответа
                 if ($response->successful()) {
-                    Log::debug('PythonBridgeService: Command sent successfully', [
+                    Log::info('PythonBridgeService: Command sent successfully', [
                         'cmd_id' => $command->cmd_id,
                         'url' => $url,
                         'attempt' => $attempt,
@@ -314,18 +369,13 @@ class PythonBridgeService
                 }
 
                 // Если ответ неуспешный, но не критическая ошибка сети
-                $status = $response->status();
-                $body = $response->body();
-                $lastException = new RequestException(
-                    "HTTP {$status}: {$body}",
-                    $response->toPsrResponse()
-                );
+                $lastException = new RequestException($response);
 
                 Log::warning('PythonBridgeService: Non-successful response', [
                     'cmd_id' => $command->cmd_id,
                     'url' => $url,
-                    'status' => $status,
-                    'body' => substr($body, 0, 500), // Ограничиваем длину лога
+                    'status' => $response->status(),
+                    'body' => substr($response->body(), 0, 500), // Ограничиваем длину лога
                     'attempt' => $attempt,
                 ]);
 
@@ -479,10 +529,23 @@ class PythonBridgeService
     private function markCommandFailed(Command $command, string $error): void
     {
         try {
-            $command->update([
-                'status' => 'failed',
+            $updateData = [
+                'status' => Command::STATUS_SEND_FAILED,
                 'failed_at' => now(),
-            ]);
+            ];
+            
+            // Проверяем, существуют ли поля error_code и error_message в таблице
+            if (Schema::hasColumn('commands', 'error_code')) {
+                $updateData['error_code'] = 'SEND_FAILED';
+            }
+            if (Schema::hasColumn('commands', 'error_message')) {
+                $updateData['error_message'] = $error;
+            }
+            if (Schema::hasColumn('commands', 'result_code')) {
+                $updateData['result_code'] = 1;
+            }
+            
+            $command->update($updateData);
 
             Log::info('PythonBridgeService: Command marked as failed', [
                 'cmd_id' => $command->cmd_id,

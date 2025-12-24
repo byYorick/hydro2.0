@@ -20,6 +20,16 @@ class AdminUserSeeder extends Seeder
             ]
         );
 
+        // Agronomist user (основной профиль для агронома)
+        User::query()->firstOrCreate(
+            ['email' => 'agronomist@example.com'],
+            [
+                'name' => 'Agronomist',
+                'password' => Hash::make('password'),
+                'role' => 'agronomist',
+            ]
+        );
+
         // Operator user
         User::query()->firstOrCreate(
             ['email' => 'operator@example.com'],
@@ -41,5 +51,4 @@ class AdminUserSeeder extends Seeder
         );
     }
 }
-
 

@@ -15,7 +15,9 @@
 #include "oled_ui.h"
 #include "pump_driver.h"
 #include "config_storage.h"
+#include "factory_reset_button.h"
 #include "esp_log.h"
+#include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include <string.h>
@@ -125,6 +127,19 @@ void ph_node_set_node_id(const char *node_id) {
  */
 void ph_node_app_init(void) {
     ESP_LOGI(TAG, "Initializing ph_node application...");
+
+    factory_reset_button_config_t reset_cfg = {
+        .gpio_num = PH_NODE_FACTORY_RESET_GPIO,
+        .active_level_low = PH_NODE_FACTORY_RESET_ACTIVE_LOW,
+        .pull_up = true,
+        .pull_down = false,
+        .hold_time_ms = PH_NODE_FACTORY_RESET_HOLD_MS,
+        .poll_interval_ms = PH_NODE_FACTORY_RESET_POLL_INTERVAL
+    };
+    esp_err_t reset_err = factory_reset_button_init(&reset_cfg);
+    if (reset_err != ESP_OK) {
+        ESP_LOGW(TAG, "Factory reset button not armed: %s", esp_err_to_name(reset_err));
+    }
     
     esp_err_t err = ph_node_init_components();
     if (err != ESP_OK && err != ESP_ERR_NOT_FOUND) {

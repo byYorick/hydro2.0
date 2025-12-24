@@ -117,8 +117,13 @@ class ComprehensiveDashboardSeeder extends Seeder
             'READ_SENSOR' => ['metric' => 'EC'],
         ];
 
-        $statuses = ['pending', 'sent', 'ack', 'failed'];
-        $statusWeights = ['pending' => 5, 'sent' => 20, 'ack' => 70, 'failed' => 5]; // Процентное распределение
+        $statuses = [Command::STATUS_QUEUED, Command::STATUS_SENT, Command::STATUS_DONE, Command::STATUS_FAILED];
+        $statusWeights = [
+            Command::STATUS_QUEUED => 5, 
+            Command::STATUS_SENT => 20, 
+            Command::STATUS_DONE => 70, 
+            Command::STATUS_FAILED => 5
+        ]; // Процентное распределение
 
         $totalCommands = 0;
 
@@ -147,14 +152,14 @@ class ComprehensiveDashboardSeeder extends Seeder
                     $ackAt = null;
                     $failedAt = null;
 
-                    if (in_array($status, ['sent', 'ack', 'failed'])) {
+                    if (in_array($status, [Command::STATUS_SENT, Command::STATUS_DONE, Command::STATUS_FAILED])) {
                         $sentAt = $createdAt->copy()->addSeconds(rand(1, 5));
                     }
 
-                    if ($status === 'ack') {
-                        $ackAt = $sentAt->copy()->addSeconds(rand(1, 10));
-                    } elseif ($status === 'failed') {
-                        $failedAt = $sentAt->copy()->addSeconds(rand(5, 30));
+                    if ($status === Command::STATUS_DONE) {
+                        $ackAt = $sentAt ? $sentAt->copy()->addSeconds(rand(1, 10)) : $createdAt->copy()->addSeconds(rand(1, 10));
+                    } elseif ($status === Command::STATUS_FAILED) {
+                        $failedAt = $sentAt ? $sentAt->copy()->addSeconds(rand(5, 30)) : $createdAt->copy()->addSeconds(rand(5, 30));
                     }
 
                     // Выбираем канал из узла
@@ -381,10 +386,13 @@ class ComprehensiveDashboardSeeder extends Seeder
     private function printCommandStatistics(): void
     {
         $stats = [
-            'pending' => Command::where('status', 'pending')->count(),
-            'sent' => Command::where('status', 'sent')->count(),
-            'ack' => Command::where('status', 'ack')->count(),
-            'failed' => Command::where('status', 'failed')->count(),
+            'QUEUED' => Command::where('status', Command::STATUS_QUEUED)->count(),
+            'SENT' => Command::where('status', Command::STATUS_SENT)->count(),
+            'ACCEPTED' => Command::where('status', Command::STATUS_ACCEPTED)->count(),
+            'DONE' => Command::where('status', Command::STATUS_DONE)->count(),
+            'FAILED' => Command::where('status', Command::STATUS_FAILED)->count(),
+            'TIMEOUT' => Command::where('status', Command::STATUS_TIMEOUT)->count(),
+            'SEND_FAILED' => Command::where('status', Command::STATUS_SEND_FAILED)->count(),
         ];
 
         $this->command->info("   - Статусы команд:");

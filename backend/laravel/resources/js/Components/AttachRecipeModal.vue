@@ -1,5 +1,5 @@
 <template>
-  <Modal :open="show" title="Привязать рецепт к зоне" @close="$emit('close')">
+  <Modal :open="show" title="Привязать рецепт к зоне" @close="$emit('close')" data-testid="attach-recipe-modal">
     <div v-if="loading" class="text-sm text-neutral-400">Загрузка...</div>
     <div v-else class="space-y-4">
       <div>
@@ -9,6 +9,7 @@
           name="recipe_id"
           v-model="selectedRecipeId"
           class="h-9 w-full rounded-md border px-2 text-sm border-neutral-700 bg-neutral-900"
+          data-testid="attach-recipe-select"
         >
           <option :value="null">Выберите рецепт</option>
           <option
@@ -35,7 +36,7 @@
       
       <div v-if="selectedRecipe && selectedRecipe.phases" class="text-xs text-neutral-400">
         <div class="font-semibold mb-2">Фазы рецепта:</div>
-        <div v-for="phase in selectedRecipe.phases" :key="phase.id" class="mb-1 pl-2 border-l-2 border-neutral-700">
+        <div v-for="phase in selectedRecipe.phases" :key="phase.id" :data-testid="`recipe-phase-item-${phase.id || phase.phase_index}`" class="mb-1 pl-2 border-l-2 border-neutral-700">
           {{ phase.phase_index + 1 }}. {{ phase.name }} — {{ phase.duration_hours }}ч
         </div>
       </div>

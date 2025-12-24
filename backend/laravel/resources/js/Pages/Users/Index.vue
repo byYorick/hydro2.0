@@ -75,6 +75,11 @@
               </div>
             </div>
           </template>
+          <Pagination
+            v-model:current-page="currentPage"
+            v-model:per-page="perPage"
+            :total="filteredUsers.length"
+          />
         </div>
       </Card>
     </div>
@@ -153,13 +158,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, onMounted } from 'vue'
+import { computed, reactive, ref, watch, onMounted } from 'vue'
 import { usePage, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
 import Modal from '@/Components/Modal.vue'
+import Pagination from '@/Components/Pagination.vue'
 import { translateRole } from '@/utils/i18n'
 import { logger } from '@/utils/logger'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
@@ -181,6 +187,8 @@ const { api } = useApi(showToast)
 const users = ref([])
 const searchQuery = ref('')
 const roleFilter = ref('')
+const currentPage = ref<number>(1)
+const perPage = ref<number>(25)
 const { isOpen: showCreateModal, open: openCreateModal, close: closeCreateModal } = useSimpleModal()
 const editingUser = ref(null)
 const deletingUser = ref(null)
@@ -218,9 +226,26 @@ const filteredUsers = computed(() => {
   })
 })
 
+// Пагинированные пользователи
+const paginatedUsers = computed(() => {
+  // Защита от некорректных значений
+  const total = filteredUsers.value.length
+  if (total === 0) return []
+  
+  const maxPage = Math.ceil(total / perPage.value) || 1
+  const validPage = Math.min(currentPage.value, maxPage)
+  if (validPage !== currentPage.value) {
+    currentPage.value = validPage
+  }
+  
+  const start = (validPage - 1) * perPage.value
+  const end = start + perPage.value
+  return filteredUsers.value.slice(start, end)
+})
+
 // Преобразуем пользователей в строки таблицы
 const rows = computed(() => {
-  return filteredUsers.value.map(u => [
+  return paginatedUsers.value.map(u => [
     u.id, // r[0]
     u.name, // r[1]
     u.email, // r[2]
@@ -406,6 +431,11 @@ onMounted(() => {
       created_at: u.created_at,
     }))
   }
+})
+
+// Сбрасываем на первую страницу при изменении фильтров
+watch([searchQuery, roleFilter], () => {
+  currentPage.value = 1
 })
 </script>
 

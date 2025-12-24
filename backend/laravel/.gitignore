@@ -19,3 +19,10 @@ yarn-error.log
 /.vscode
 /database/*.sqlite
 /database/*.sqlite-journal
+
+# Vite build artifacts
+**/vite.config.js.timestamp-*.mjs
+
+# Test results and reports (should not be tracked)
+/test-results/
+/tests/e2e/reports/

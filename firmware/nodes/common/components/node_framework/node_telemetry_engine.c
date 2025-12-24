@@ -56,16 +56,76 @@ static struct {
     .batch_size = TELEMETRY_BATCH_MAX_SIZE
 };
 
-// Маппинг типов метрик в строки
-static const char *metric_type_to_string(metric_type_t type) {
+// Маппинг канала к metric_type согласно эталону node-sim
+// Эталон использует lowercase формат: ph, ec, air_temp_c, air_rh, co2_ppm, ina209_ma, flow_present
+static const char *channel_to_metric_type(const char *channel, metric_type_t type) {
+    if (channel == NULL) {
+        return "unknown";
+    }
+    
+    // Используем имя канала напрямую, если оно соответствует эталону
+    // Преобразуем в lowercase для соответствия эталону
+    static char metric_type_buf[32];
+    
+    // Прямой маппинг каналов → metric_type (эталон node-sim)
+    if (strcmp(channel, "ph_sensor") == 0 || strcmp(channel, "ph") == 0) {
+        return "ph";
+    }
+    if (strcmp(channel, "ec_sensor") == 0 || strcmp(channel, "ec") == 0) {
+        return "ec";
+    }
+    if (strcmp(channel, "air_temp_c") == 0 || strcmp(channel, "temperature") == 0) {
+        return "air_temp_c";
+    }
+    if (strcmp(channel, "air_rh") == 0 || strcmp(channel, "humidity") == 0) {
+        return "air_rh";
+    }
+    if (strcmp(channel, "co2_ppm") == 0 || strcmp(channel, "co2") == 0) {
+        return "co2_ppm";
+    }
+    if (strcmp(channel, "ina209") == 0 || strcmp(channel, "pump_bus_current") == 0) {
+        return "ina209_ma";
+    }
+    if (strcmp(channel, "flow_present") == 0) {
+        return "flow_present";
+    }
+    if (strcmp(channel, "solution_temp_c") == 0) {
+        return "solution_temp_c";
+    }
+    
+    // Fallback: используем metric_type enum с преобразованием в lowercase
     switch (type) {
-        case METRIC_TYPE_PH: return "PH";
-        case METRIC_TYPE_EC: return "EC";
-        case METRIC_TYPE_TEMPERATURE: return "TEMPERATURE";
-        case METRIC_TYPE_HUMIDITY: return "HUMIDITY";
-        case METRIC_TYPE_CURRENT: return "CURRENT";
-        case METRIC_TYPE_PUMP_STATE: return "PUMP_STATE";
-        default: return "UNKNOWN";
+        case METRIC_TYPE_PH: return "ph";
+        case METRIC_TYPE_EC: return "ec";
+        case METRIC_TYPE_TEMPERATURE: return "air_temp_c";  // По умолчанию air_temp_c
+        case METRIC_TYPE_HUMIDITY: return "air_rh";
+        case METRIC_TYPE_CURRENT: return "ina209_ma";
+        case METRIC_TYPE_PUMP_STATE: return "pump_state";
+        default: {
+            // Если ничего не подошло, используем имя канала в lowercase
+            strncpy(metric_type_buf, channel, sizeof(metric_type_buf) - 1);
+            metric_type_buf[sizeof(metric_type_buf) - 1] = '\0';
+            // Преобразуем в lowercase
+            for (char *p = metric_type_buf; *p; p++) {
+                if (*p >= 'A' && *p <= 'Z') {
+                    *p = *p - 'A' + 'a';
+                }
+            }
+            return metric_type_buf;
+        }
+    }
+}
+
+// Устаревшая функция (оставлена для совместимости, но не используется)
+__attribute__((unused)) static const char *metric_type_to_string(metric_type_t type) {
+    switch (type) {
+        case METRIC_TYPE_PH: return "ph";
+        case METRIC_TYPE_EC: return "ec";
+        case METRIC_TYPE_TEMPERATURE: return "air_temp_c";
+        case METRIC_TYPE_HUMIDITY: return "air_rh";
+        case METRIC_TYPE_CURRENT: return "ina209_ma";
+        case METRIC_TYPE_PUMP_STATE: return "pump_state";
+        default: return "unknown";
     }
 }
 
@@ -99,15 +159,8 @@ static esp_err_t flush_batch_internal(void) {
         return ESP_ERR_INVALID_STATE;
     }
 
-    // Получаем node_id из конфига
-    char node_id[64];
-    if (config_storage_get_node_id(node_id, sizeof(node_id)) != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to get node_id, clearing telemetry batch");
-        // Очищаем батч при ошибке получения node_id
-        s_telemetry_engine.batch.count = 0;
-        s_telemetry_engine.batch.last_flush_time = esp_timer_get_time() / 1000;
-        return ESP_ERR_INVALID_STATE;
-    }
+    // node_id больше не нужен в payload (удален согласно эталону node-sim)
+    // gh_uid, zone_uid, node_uid используются только в топике, который формируется в mqtt_manager
 
     // Сохраняем count локально, так как мы будем изменять batch
     size_t count = s_telemetry_engine.batch.count;
@@ -118,11 +171,12 @@ static esp_err_t flush_batch_internal(void) {
         
         cJSON *telemetry = cJSON_CreateObject();
         if (telemetry) {
-            cJSON_AddStringToObject(telemetry, "node_id", node_id);
-            cJSON_AddStringToObject(telemetry, "channel", item->channel);
+            // Формат согласно эталону node-sim: только metric_type, value, ts
+            // Удалены поля node_id и channel (они уже есть в топике)
+            // metric_type уже сохранен в правильном формате (lowercase) при добавлении в батч
             cJSON_AddStringToObject(telemetry, "metric_type", item->metric_type);
             cJSON_AddNumberToObject(telemetry, "value", item->value);
-            cJSON_AddNumberToObject(telemetry, "ts", (double)item->ts);
+            cJSON_AddNumberToObject(telemetry, "ts", (int)item->ts);  // int вместо double (секунды UTC)
             
             // Добавляем unit, если он указан
             if (item->unit[0] != '\0') {
@@ -216,7 +270,10 @@ static esp_err_t add_to_batch(
             telemetry_item_t *item = &s_telemetry_engine.batch.items[s_telemetry_engine.batch.count];
             strncpy(item->channel, channel, 63);
             item->channel[63] = '\0';
-            strncpy(item->metric_type, metric_type_str, 31);
+            // Сохраняем metric_type в правильном формате (lowercase, эталон node-sim)
+            // Используем маппинг канала → metric_type
+            const char *ethernet_metric_type = channel_to_metric_type(channel, METRIC_TYPE_CUSTOM);
+            strncpy(item->metric_type, ethernet_metric_type, 31);
             item->metric_type[31] = '\0';
             item->value = value;
             item->raw = raw;
@@ -251,7 +308,9 @@ esp_err_t node_telemetry_publish_sensor(
     bool stub,
     bool stable
 ) {
-    const char *metric_type_str = metric_type_to_string(metric_type);
+    // Используем маппинг канала → metric_type согласно эталону node-sim
+    // metric_type enum используется как fallback, если канал не распознан
+    const char *metric_type_str = channel_to_metric_type(channel, metric_type);
     return add_to_batch(channel, metric_type_str, value, raw, stub, stable, unit);
 }
 
@@ -262,7 +321,8 @@ esp_err_t node_telemetry_publish_actuator(
     float value
 ) {
     // Для актуаторов используем значение как состояние
-    const char *metric_type_str = metric_type_to_string(metric_type);
+    // Используем маппинг канала → metric_type согласно эталону node-sim
+    const char *metric_type_str = channel_to_metric_type(channel, metric_type);
     return add_to_batch(channel, metric_type_str, value, 0, false, true, NULL);
 }
 

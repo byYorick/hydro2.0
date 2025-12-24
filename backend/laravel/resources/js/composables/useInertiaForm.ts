@@ -65,7 +65,14 @@ export interface UseInertiaFormOptions<T extends Record<string, unknown>> {
   onFinish?: () => void
 
   /**
-   * Должен ли выполняться reload после успеха (опционально)
+   * Callback для обновления store после успеха (рекомендуется)
+   * Вместо reloadOnSuccess используйте этот callback для обновления данных
+   */
+  onStoreUpdate?: (data: any) => void
+
+  /**
+   * Должен ли выполняться reload после успеха (deprecated)
+   * @deprecated Используйте onStoreUpdate для обновления store напрямую
    * Можно передать массив ключей для partial reload (only)
    */
   reloadOnSuccess?: boolean | string[]
@@ -99,6 +106,7 @@ export function useInertiaForm<T extends Record<string, unknown>>(
     onSuccess: customOnSuccess,
     onError: customOnError,
     onFinish: customOnFinish,
+    onStoreUpdate,
     reloadOnSuccess = false,
     preserveScroll = true,
     preserveState = false,
@@ -130,11 +138,20 @@ export function useInertiaForm<T extends Record<string, unknown>>(
       }
     }
 
-    // Выполняем reload, если нужно (не рекомендуется - лучше обновлять store напрямую)
-    // TODO: Рассмотреть замену на опциональный callback для обновления store
+    // Обновляем store через callback (рекомендуемый способ)
+    if (onStoreUpdate) {
+      try {
+        onStoreUpdate(page.props || page)
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error('[useInertiaForm] Error in onStoreUpdate callback:', error)
+      }
+    }
+
+    // Выполняем reload, если нужно (deprecated - используйте onStoreUpdate)
     if (reloadOnSuccess) {
       // eslint-disable-next-line no-console
-      console.warn('[useInertiaForm] reloadOnSuccess is deprecated. Consider updating store directly instead of using router.reload')
+      console.warn('[useInertiaForm] reloadOnSuccess is deprecated. Use onStoreUpdate callback instead.')
       if (Array.isArray(reloadOnSuccess)) {
         router.reload({ only: reloadOnSuccess, preserveScroll, preserveState })
       } else {

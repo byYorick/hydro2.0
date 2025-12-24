@@ -4,6 +4,7 @@
     <div 
       class="relative w-full rounded-xl border border-neutral-800 bg-neutral-925 p-4 max-h-[90vh] overflow-y-auto"
       :class="size === 'large' ? 'max-w-4xl' : 'max-w-lg'"
+      :data-testid="$attrs['data-testid']"
     >
       <div class="mb-2 text-base font-semibold">{{ title }}</div>
       <div class="mb-4 text-sm text-neutral-300"><slot /></div>

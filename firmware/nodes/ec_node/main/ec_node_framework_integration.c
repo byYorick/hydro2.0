@@ -308,12 +308,14 @@ esp_err_t ec_node_publish_telemetry_callback(void *user_ctx) {
         read_error = trema_ec_get_error();
         if (!read_success || isnan(ec_value)) {
             ESP_LOGW(TAG, "Failed to read EC value, using stub");
+            node_state_manager_report_error(ERROR_LEVEL_ERROR, "ec_sensor", ESP_ERR_INVALID_RESPONSE, "Failed to read EC sensor value");
             ec_value = 1.2f;
             using_stub = true;
         }
         tds_value = trema_ec_get_tds();
     } else {
         ESP_LOGW(TAG, "EC sensor not initialized, using stub value");
+        node_state_manager_report_error(ERROR_LEVEL_WARNING, "ec_sensor", ESP_ERR_INVALID_STATE, "EC sensor not initialized");
         ec_value = 1.2f;
         using_stub = true;
     }
@@ -332,6 +334,7 @@ esp_err_t ec_node_publish_telemetry_callback(void *user_ctx) {
 
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to publish EC telemetry: %s", esp_err_to_name(err));
+        node_state_manager_report_error(ERROR_LEVEL_ERROR, "mqtt", err, "Failed to publish EC telemetry");
     }
 
     // Публикация TDS (если доступно) - используем METRIC_TYPE_CUSTOM

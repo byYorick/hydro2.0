@@ -1,14 +1,52 @@
 <template>
   <div class="space-y-6">
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-      <h1 class="text-lg font-semibold">Панель агронома</h1>
-      <div class="flex flex-wrap gap-2">
-        <Link href="/recipes/create" class="flex-1 sm:flex-none min-w-[140px]">
-          <Button size="sm" variant="primary" class="w-full sm:w-auto">Создать рецепт</Button>
-        </Link>
-        <Link href="/analytics" class="flex-1 sm:flex-none min-w-[120px]">
-          <Button size="sm" variant="outline" class="w-full sm:w-auto">Аналитика</Button>
-        </Link>
+    <div class="glass-panel border border-slate-800/60 rounded-2xl p-5 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
+      <div class="flex flex-col gap-4">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <p class="text-[11px] uppercase tracking-[0.28em] text-slate-400">мониторинг агронома</p>
+            <h1 class="text-2xl font-semibold tracking-tight mt-1">Циклы выращивания и здоровье зон</h1>
+            <p class="text-sm text-slate-400 mt-1">Фокус на фазах, аномалиях и активных рецептах.</p>
+          </div>
+          <div class="flex flex-wrap gap-2 justify-end">
+            <Link href="/recipes/create" class="flex-1 sm:flex-none min-w-[140px]">
+              <Button size="sm" variant="primary" class="w-full sm:w-auto">Создать рецепт</Button>
+            </Link>
+            <Link href="/analytics" class="flex-1 sm:flex-none min-w-[120px]">
+              <Button size="sm" variant="secondary" class="w-full sm:w-auto">Аналитика</Button>
+            </Link>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div class="glass-panel border border-emerald-400/30 rounded-xl p-3 shadow-inner shadow-emerald-500/10">
+            <div class="text-xs text-slate-400 uppercase tracking-[0.15em] mb-1">Активные зоны</div>
+            <div class="flex items-end gap-2">
+              <div class="text-3xl font-semibold text-emerald-200">{{ activeZonesCount }}</div>
+              <div class="text-sm text-slate-400">из {{ totalZonesCount }}</div>
+            </div>
+          </div>
+          <div class="glass-panel border border-amber-400/30 rounded-xl p-3">
+            <div class="text-xs text-slate-400 uppercase tracking-[0.15em] mb-1">Предупреждения</div>
+            <div class="flex items-center gap-2">
+              <div class="text-3xl font-semibold text-amber-200">{{ warningZonesCount }}</div>
+              <Badge variant="warning" size="sm">warning</Badge>
+            </div>
+          </div>
+          <div class="glass-panel border border-rose-400/30 rounded-xl p-3">
+            <div class="text-xs text-slate-400 uppercase tracking-[0.15em] mb-1">Критические</div>
+            <div class="flex items-center gap-2">
+              <div class="text-3xl font-semibold text-rose-200">{{ alarmZonesCount }}</div>
+              <Badge variant="danger" size="sm">alarm</Badge>
+            </div>
+          </div>
+          <div class="glass-panel border border-cyan-300/30 rounded-xl p-3">
+            <div class="text-xs text-slate-400 uppercase tracking-[0.15em] mb-1">Активных рецептов</div>
+            <div class="flex items-center gap-2">
+              <div class="text-3xl font-semibold text-cyan-200">{{ activeRecipesCount }}</div>
+              <Badge variant="info" size="sm">recipes</Badge>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -110,6 +148,7 @@
         color="#10b981"
         status="success"
         :subtitle="`из ${totalZonesCount}`"
+        data-testid="dashboard-zones-count"
       >
         <template #icon>
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -210,7 +249,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { Link } from '@inertiajs/vue3'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
@@ -218,7 +257,10 @@ import Badge from '@/Components/Badge.vue'
 import MetricCard from '@/Components/MetricCard.vue'
 import { translateStatus } from '@/utils/i18n'
 import { formatTime } from '@/utils/formatTime'
+import { useTelemetry } from '@/composables/useTelemetry'
 import type { Zone, Recipe } from '@/types'
+
+type TrendDirection = 'up' | 'down' | 'stable' | null
 
 interface Props {
   dashboard: {
@@ -230,6 +272,10 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+
+const { fetchHistory } = useTelemetry()
+const phTrendData = ref<TrendDirection>(null)
+const ecTrendData = ref<TrendDirection>(null)
 
 // Группировка зон по культурам
 const zonesByCrop = computed(() => {
@@ -295,15 +341,55 @@ const averageEc = computed(() => {
   return sum / zonesWithEc.length
 })
 
-const phTrend = computed(() => {
-  // TODO: Вычислить тренд на основе исторических данных
-  return null
+// Вычисление трендов на основе исторических данных
+async function calculateTrend(zoneId: number, metric: 'PH' | 'EC', currentValue: number | null): Promise<TrendDirection> {
+  if (currentValue === null) return null
+
+  try {
+    const now = new Date()
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+    
+    const history = await fetchHistory(zoneId, metric, {
+      from: yesterday.toISOString(),
+      to: now.toISOString(),
+    }, true)
+
+    if (history.length < 2) return null
+
+    // Берем значения из начала и конца периода
+    const oldValue = history[0].value
+    const newValue = history[history.length - 1].value
+    
+    const diff = newValue - oldValue
+    const threshold = metric === 'PH' ? 0.1 : 0.2 // Порог для определения тренда
+
+    if (Math.abs(diff) < threshold) return 'stable'
+    return diff > 0 ? 'up' : 'down'
+  } catch (error) {
+    console.error(`[AgronomistDashboard] Failed to calculate ${metric} trend:`, error)
+    return null
+  }
+}
+
+// Вычисляем тренды для всех зон
+onMounted(async () => {
+  if (!props.dashboard.zones || props.dashboard.zones.length === 0) return
+
+  // Вычисляем тренд pH на основе первой зоны с pH
+  const zoneWithPh = props.dashboard.zones.find(z => z.telemetry?.ph !== null && z.telemetry?.ph !== undefined)
+  if (zoneWithPh) {
+    phTrendData.value = await calculateTrend(zoneWithPh.id, 'PH', zoneWithPh.telemetry?.ph || null)
+  }
+
+  // Вычисляем тренд EC на основе первой зоны с EC
+  const zoneWithEc = props.dashboard.zones.find(z => z.telemetry?.ec !== null && z.telemetry?.ec !== undefined)
+  if (zoneWithEc) {
+    ecTrendData.value = await calculateTrend(zoneWithEc.id, 'EC', zoneWithEc.telemetry?.ec || null)
+  }
 })
 
-const ecTrend = computed(() => {
-  // TODO: Вычислить тренд на основе исторических данных
-  return null
-})
+const phTrend = computed(() => phTrendData.value)
+const ecTrend = computed(() => ecTrendData.value)
 
 // Целевые значения для pH (стандартный диапазон для гидропоники)
 const phTarget = computed(() => {
@@ -341,6 +427,14 @@ const totalZonesCount = computed(() => {
   return props.dashboard.zones?.length || 0
 })
 
+const warningZonesCount = computed(() => {
+  return props.dashboard.zonesByStatus?.WARNING || 0
+})
+
+const alarmZonesCount = computed(() => {
+  return props.dashboard.zonesByStatus?.ALARM || 0
+})
+
 const activeRecipes = computed(() => {
   if (!props.dashboard.recipes) return []
   // Рецепты считаются активными, если они применены к зонам
@@ -348,12 +442,44 @@ const activeRecipes = computed(() => {
     const zonesWithRecipe = props.dashboard.zones?.filter(z => 
       z.recipe_instance?.recipe_id === recipe.id
     ) || []
+    
+    // Вычисляем информацию о фазах из зон
+    let currentPhase: string | null = null
+    let phaseProgress = 0
+    let nextPhaseTransition: string | null = null
+
+    if (zonesWithRecipe.length > 0 && recipe.phases && recipe.phases.length > 0) {
+      // Берем первую зону для определения текущей фазы
+      const firstZone = zonesWithRecipe[0]
+      const currentPhaseIndex = firstZone.recipe_instance?.current_phase_index ?? 0
+      const currentPhaseData = recipe.phases.find(p => p.phase_index === currentPhaseIndex)
+      
+      if (currentPhaseData) {
+        currentPhase = currentPhaseData.name || `Фаза ${currentPhaseIndex + 1}`
+        
+        // Вычисляем прогресс фазы на основе времени
+        if (firstZone.recipe_instance?.started_at) {
+          const startedAt = new Date(firstZone.recipe_instance.started_at)
+          const now = new Date()
+          const phaseDuration = currentPhaseData.duration_days * 24 * 60 * 60 * 1000
+          const elapsed = now.getTime() - startedAt.getTime()
+          phaseProgress = Math.min(100, Math.max(0, (elapsed / phaseDuration) * 100))
+          
+          // Вычисляем время до следующей фазы
+          const nextPhaseStart = new Date(startedAt.getTime() + phaseDuration)
+          if (nextPhaseStart > now) {
+            nextPhaseTransition = nextPhaseStart.toISOString()
+          }
+        }
+      }
+    }
+
     return {
       ...recipe,
       zonesCount: zonesWithRecipe.length,
-      currentPhase: null, // TODO: Вычислить из zones
-      phaseProgress: 0, // TODO: Вычислить из zones
-      nextPhaseTransition: null // TODO: Вычислить из zones
+      currentPhase,
+      phaseProgress,
+      nextPhaseTransition
     }
   }).filter(r => r.zonesCount > 0)
 })
@@ -382,4 +508,3 @@ function formatTimeUntil(timestamp: string | Date): string {
   return `${minutes} мин.`
 }
 </script>
-

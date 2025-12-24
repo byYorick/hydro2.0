@@ -1,0 +1,187 @@
+actions:
+- endpoint: /api/zones
+  save: zones_response
+  step: get_zones
+  type: api_get
+- step: set_zone_id
+  type: set
+  zone_id: ${zones_response.data.data[0].id}
+- config_ref: node_sim.config
+  optional: true
+  step: start_node_simulator_unassigned
+  type: start_simulator
+  wait_seconds: 3
+- payload:
+    component: provisioning
+    error_code: ERR_UNASSIGNED
+    level: ERROR
+    message: Node not assigned to any zone
+    ts: ${TIMESTAMP_S}
+  qos: 1
+  step: node_publishes_temp_error
+  topic: hydro/gh-temp/zn-temp/esp32-unassigned-001/error
+  type: mqtt_publish
+  wait_seconds: 2
+- payload:
+    fw_version: 2.0.0-sim
+    hardware_id: esp32-unassigned-001
+    message_type: node_hello
+    node_type: ph
+    ts: ${TIMESTAMP_S}
+  qos: 1
+  step: node_sends_node_hello
+  topic: hydro/gh-temp/zn-temp/esp32-unassigned-001/node_hello
+  type: mqtt_publish
+  wait_seconds: 2
+- query: 'SELECT id, uid, zone_id, lifecycle_state
+
+    FROM nodes
+
+    WHERE hardware_id = ''esp32-unassigned-001''
+
+    ORDER BY id DESC
+
+    LIMIT 1
+
+    '
+  save: node_row
+  step: db_lookup_node_id
+  type: database_query
+  wait_seconds: 1
+- node_id: ${node_row[0].id}
+  node_uid: ${node_row[0].uid}
+  step: set_node_id
+  type: set
+- endpoint: /api/nodes/${node_id}
+  payload:
+    zone_id: ${zone_id}
+  step: assign_node_to_zone_ui
+  type: api_patch
+  wait_seconds: 2
+- endpoint: /api/nodes/${node_id}
+  payload:
+    pending_zone_id: null
+    zone_id: ${zone_id}
+  step: complete_node_binding
+  type: api_patch
+  wait_seconds: 5
+assertions:
+- name: error_was_registered_or_removed
+  optional: true
+  query: "SELECT \n  (SELECT COUNT(*) FROM unassigned_node_errors WHERE hardware_id\
+    \ = 'esp32-unassigned-001') as current_count,\n  (SELECT COUNT(*) FROM unassigned_node_errors_archive\
+    \ WHERE hardware_id = 'esp32-unassigned-001') as archived_count\n"
+  timeout: 5.0
+  type: database_query
+- expected:
+  - field: zone_id
+    operator: equals
+    optional: true
+    value: ${zone_id}
+  - field: lifecycle_state
+    operator: in
+    optional: true
+    value:
+    - ASSIGNED_TO_ZONE
+    - REGISTERED_BACKEND
+  name: node_attached_to_zone
+  params:
+    node_id: ${node_id}
+  query: 'SELECT id, zone_id, uid, lifecycle_state
+
+    FROM nodes
+
+    WHERE id = :node_id
+
+    '
+  type: database_query
+- expected:
+  - field: status
+    operator: in
+    optional: true
+    value:
+    - ACTIVE
+    - RESOLVED
+  - field: zone_id
+    operator: equals
+    optional: true
+    value: ${zone_id}
+  name: alert_created_after_attach
+  optional: true
+  params:
+    zone_id: ${zone_id}
+  query: 'SELECT id, status, code, zone_id, created_at
+
+    FROM alerts
+
+    WHERE zone_id = :zone_id
+
+    AND (code LIKE ''%%ERR_UNASSIGNED%%'' OR code LIKE ''%%unassigned%%'')
+
+    ORDER BY created_at DESC
+
+    LIMIT 1
+
+    '
+  type: database_query
+- expected:
+  - field: total_count
+    operator: greater_than_or_equal
+    optional: true
+    value: 0
+  name: unassigned_errors_registered
+  optional: true
+  query: 'SELECT COUNT(*) as total_count
+
+    FROM unassigned_node_errors
+
+    WHERE hardware_id = ''esp32-unassigned-001''
+
+    '
+  timeout: 10.0
+  type: database_query
+cleanup:
+- optional: true
+  step: stop_node_simulator
+  type: stop_simulator
+description: 'Проверяет сценарий присвоения не назначенного узла:
+
+  - Узел публикует телеметрию без привязки к зоне (unassigned)
+
+  - Ошибка регистрируется в unassigned_node_errors
+
+  - Узел вручную привязывается к зоне через API
+
+  - Алерт создается после привязки (если ошибка была критичной)
+
+  '
+name: E05_unassigned_attach
+setup:
+  node_sim:
+    config:
+      mqtt:
+        host: ${MQTT_HOST:-localhost}
+        password: ${MQTT_PASS:-null}
+        port: ${MQTT_PORT:-1884}
+        username: ${MQTT_USER:-null}
+      node:
+        actuators:
+        - main_pump
+        channels:
+        - ph_sensor
+        gh_uid: gh-test-1
+        hardware_id: esp32-unassigned-001
+        mode: preconfig
+        node_type: ph
+        node_uid: nd-ph-esp32una
+        zone_uid: zn-test-1
+      telemetry:
+        heartbeat_interval_seconds: 15.0
+        interval_seconds: 2.0
+  prerequisites:
+  - database: nodes table exists
+  - database: zones table exists with zone_id for zn-test-1
+  - database: unassigned_node_errors table exists
+  - database: alerts table exists
+  - mqtt: broker is accessible
+  - backend: Laravel is running

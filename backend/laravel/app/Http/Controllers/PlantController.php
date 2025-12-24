@@ -7,6 +7,7 @@ use App\Http\Requests\StorePlantRequest;
 use App\Http\Requests\UpdatePlantRequest;
 use App\Models\Plant;
 use App\Services\Profitability\ProfitabilityCalculator;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -21,7 +22,7 @@ class PlantController extends Controller
     {
     }
 
-    public function index(Request $request): Response
+    public function index(Request $request): Response|JsonResponse
     {
         $plants = Plant::query()
             ->with([
@@ -54,13 +55,21 @@ class PlantController extends Controller
                 ];
             });
 
+        // Если это API запрос, возвращаем JSON
+        if ($request->wantsJson() || $request->expectsJson()) {
+            return response()->json([
+                'status' => 'ok',
+                'data' => $plants,
+            ]);
+        }
+
         return Inertia::render('Plants/Index', [
             'plants' => $plants,
             'taxonomies' => $this->loadTaxonomies(),
         ]);
     }
 
-    public function show(Plant $plant): Response
+    public function show(Request $request, Plant $plant): Response|JsonResponse
     {
         $profitability = $this->profitability->calculatePlant($plant);
 
@@ -109,6 +118,14 @@ class PlantController extends Controller
             'created_at' => $plant->created_at,
             'profitability' => $profitability,
         ];
+
+        // Если это API запрос, возвращаем JSON
+        if ($request->wantsJson() || $request->expectsJson()) {
+            return response()->json([
+                'status' => 'ok',
+                'data' => $plantData,
+            ]);
+        }
 
         return Inertia::render('Plants/Show', [
             'plant' => $plantData,

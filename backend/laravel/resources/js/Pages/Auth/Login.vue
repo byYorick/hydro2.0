@@ -68,18 +68,20 @@ const authErrorMessage = computed(() => {
 
         <div 
             v-if="hasAuthError && authErrorMessage" 
+            data-testid="login-error"
             class="mb-4 rounded-md bg-red-50 p-4 text-sm font-medium text-red-800 dark:bg-red-900/20 dark:text-red-400"
         >
             {{ authErrorMessage }}
         </div>
 
-        <form @submit.prevent="submit">
+        <form @submit.prevent="submit" data-testid="login-form">
             <div>
                 <InputLabel for="email" value="Email" />
 
                 <TextInput
                     id="email"
                     type="email"
+                    data-testid="login-email"
                     :class="[
                         'mt-1 block w-full',
                         form.errors.email 
@@ -101,6 +103,7 @@ const authErrorMessage = computed(() => {
                 <TextInput
                     id="password"
                     type="password"
+                    data-testid="login-password"
                     :class="[
                         'mt-1 block w-full',
                         form.errors.password 
@@ -141,7 +144,9 @@ const authErrorMessage = computed(() => {
                         Забыли пароль?
                     </Link>
 
-                    <Button variant="primary"
+                    <Button 
+                        variant="primary"
+                        data-testid="login-submit"
                         class="ms-4"
                         :class="{ 'opacity-25': form.processing }"
                         :disabled="form.processing"

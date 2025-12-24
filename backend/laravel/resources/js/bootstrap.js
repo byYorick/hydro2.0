@@ -1,46 +1,13 @@
-import axios from 'axios';
-window.axios = axios;
-
-window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
-
-// Настройка axios для работы с Laravel сессиями и CSRF
-axios.defaults.withCredentials = true;
-axios.defaults.headers.common['Accept'] = 'application/json';
-
-// Получить CSRF токен из meta тега или cookie
-const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-if (csrfToken) {
-  axios.defaults.headers.common['X-CSRF-TOKEN'] = csrfToken;
-}
-
+// Импортируем единый apiClient вместо настройки window.axios
+// Вся конфигурация (CSRF, baseURL, interceptors) теперь в utils/apiClient.ts
+import apiClient from './utils/apiClient';
 import { logger } from './utils/logger';
 import { initEcho, isEchoInitializing, getEchoInstance, onWsStateChange } from './utils/echoClient';
 import Echo from 'laravel-echo';
 
-// Axios error logging to console
-window.axios.interceptors.response.use(
-  (res) => res,
-  (error) => {
-    // Игнорируем отмененные запросы (CanceledError) - это нормальное поведение Inertia.js
-    // при быстром переключении между страницами
-    if (error?.code === 'ERR_CANCELED' || error?.name === 'CanceledError' || error?.message === 'canceled') {
-      // Не логируем отмененные запросы - это нормальное поведение
-      return Promise.reject(error);
-    }
-    
-    // Network or API errors
-    const cfg = error?.config || {};
-    const url = cfg.url || '(unknown url)';
-    const method = (cfg.method || 'GET').toUpperCase();
-    const status = error?.response?.status;
-    const data = error?.response?.data;
-    
-    // Логируем только реальные ошибки
-    // eslint-disable-next-line no-console
-    logger.error('[HTTP ERROR]', { method, url, status, data, error });
-    return Promise.reject(error);
-  }
-);
+// Экспортируем apiClient в window.axios для обратной совместимости
+// (если где-то в коде используется window.axios напрямую)
+window.axios = apiClient;
 
 function initializeEcho() {
   if (isEchoInitializing()) {
@@ -197,75 +164,41 @@ function initializeEchoOnce() {
   }
 }
 
-let initializationScheduled = false;
-let initializationAttempts = 0;
-const MAX_INIT_ATTEMPTS = 5;
-const INIT_RETRY_DELAYS = [1000, 2000, 5000, 10000, 30000];
-
-function scheduleEchoInitialization(force = false) {
-  if (initializationScheduled && !force) {
-    logger.debug('[bootstrap.js] Echo initialization already scheduled, skipping', {});
-    return;
-  }
-  
-  if (force) {
-    initializationScheduled = false;
-    initializationAttempts = 0;
-  }
-  
-  if (initializationScheduled) {
-    return;
-  }
-  
-  initializationScheduled = true;
-  
-  const attemptInit = () => {
-    // Проверяем реальное состояние соединения, а не только флаг
-    if (window.Echo) {
-      const pusher = window.Echo.connector?.pusher;
-      const connection = pusher?.connection;
-      if (connection && (connection.state === 'connected' || connection.state === 'connecting')) {
-        logger.debug('[bootstrap.js] Echo already connected or connecting, skipping initialization', {
-          state: connection.state,
-          socketId: connection.socket_id,
-        });
-        initializationScheduled = false;
-        echoInitialized = true;
-        return;
-      }
-    }
-    
-    if (echoInitialized || echoInitInProgress) {
-      initializationScheduled = false;
+// Упрощенная инициализация: однократный вызов initEcho
+// Reconnect управляется исключительно через echoClient.ts
+function initializeEchoOnLoad() {
+  // Проверяем, не инициализирован ли Echo уже
+  if (window.Echo) {
+    const pusher = window.Echo.connector?.pusher;
+    const connection = pusher?.connection;
+    if (connection && (connection.state === 'connected' || connection.state === 'connecting')) {
+      logger.debug('[bootstrap.js] Echo already initialized and active, skipping', {
+        state: connection.state,
+        socketId: connection.socket_id,
+      });
+      echoInitialized = true;
       return;
     }
-    
+  }
+  
+  if (echoInitialized || echoInitInProgress) {
+    logger.debug('[bootstrap.js] Echo initialization already in progress or completed', {});
+    return;
+  }
+  
+  const attemptInit = () => {
     const echo = initializeEchoOnce();
-    
-    if (!echo || !window.Echo) {
-      initializationAttempts++;
-      
-      if (initializationAttempts < MAX_INIT_ATTEMPTS) {
-        const delay = INIT_RETRY_DELAYS[initializationAttempts - 1] || 30000;
-        logger.debug('[bootstrap.js] Echo initialization failed, retrying', {
-          attempt: initializationAttempts,
-          maxAttempts: MAX_INIT_ATTEMPTS,
-          nextRetryIn: delay,
-        });
-        
-        initializationScheduled = false;
-        setTimeout(() => {
-          scheduleEchoInitialization();
-        }, delay);
-      } else {
-        logger.error('[bootstrap.js] Echo initialization failed after max attempts', {
-          attempts: initializationAttempts,
-        });
-        initializationScheduled = false;
-      }
+    if (echo && window.Echo) {
+      logger.info('[bootstrap.js] Echo initialized successfully', {
+        socketId: echo.connector?.pusher?.connection?.socket_id,
+      });
     } else {
-      initializationAttempts = 0;
-      initializationScheduled = false;
+      logger.warn('[bootstrap.js] Echo initialization returned null', {
+        isInitializing: isEchoInitializing(),
+        hasExistingInstance: !!getEchoInstance(),
+        hasWindowEcho: !!window.Echo,
+      });
+      // Reconnect будет управляться через echoClient.ts, не делаем retry здесь
     }
   };
   
@@ -279,164 +212,69 @@ function scheduleEchoInitialization(force = false) {
 }
 
 // Обработчик события teardown от echoClient.ts
+// Обработчик события reconciliation для синхронизации данных при переподключении
+window.addEventListener('ws:reconciliation', (event) => {
+  const { telemetry, commands, alerts } = event.detail || {}
+  
+  logger.info('[bootstrap.js] Processing reconciliation data', {
+    telemetryCount: telemetry?.length || 0,
+    commandsCount: commands?.length || 0,
+    alertsCount: alerts?.length || 0,
+  })
+
+  // Обновляем алерты через store
+  if (alerts && Array.isArray(alerts)) {
+    try {
+      // Динамически импортируем store, чтобы избежать циклических зависимостей
+      import('./stores/alerts').then(({ useAlertsStore }) => {
+        const alertsStore = useAlertsStore()
+        // Обновляем только активные алерты из snapshot
+        const activeAlerts = alerts.filter((a) => a.status === 'ACTIVE' || a.status === 'active')
+        alertsStore.setAll(activeAlerts)
+        logger.debug('[bootstrap.js] Alerts updated from reconciliation', {
+          count: activeAlerts.length,
+        })
+      }).catch((err) => {
+        logger.warn('[bootstrap.js] Failed to update alerts from reconciliation', {
+          error: err instanceof Error ? err.message : String(err),
+        })
+      })
+    } catch (err) {
+      logger.warn('[bootstrap.js] Error processing alerts reconciliation', {
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
+
+  // Уведомляем composables о необходимости обновления телеметрии и команд
+  // Они сами решат, нужно ли обновлять данные на основе текущего состояния
+  if (typeof window !== 'undefined' && window.dispatchEvent) {
+    // Создаем отдельные события для каждого типа данных
+    if (telemetry && Array.isArray(telemetry)) {
+      window.dispatchEvent(new CustomEvent('ws:reconciliation:telemetry', {
+        detail: { telemetry },
+      }))
+    }
+    if (commands && Array.isArray(commands)) {
+      window.dispatchEvent(new CustomEvent('ws:reconciliation:commands', {
+        detail: { commands },
+      }))
+    }
+  }
+})
+
 window.addEventListener('echo:teardown', () => {
   logger.debug('[bootstrap.js] Echo teardown event received, resetting flags', {});
   echoInitialized = false;
   echoInitInProgress = false;
-  initializationScheduled = false;
-  initializationAttempts = 0;
 });
 
-// Инициализируем Echo после полной загрузки DOM
-scheduleEchoInitialization();
+// Инициализируем Echo после полной загрузки DOM (один раз)
+// Reconnect управляется исключительно через echoClient.ts
+initializeEchoOnLoad();
 
-// Zones WS subscription helper с восстановлением подписки при reconnect
-export function subscribeZone(zoneId, handler) {
-  const channelName = `hydro.zones.${zoneId}`
-  const eventName = '.App\\Events\\ZoneUpdated'
-  let channel = null
-  let listener = null
-  let unsubscribeWsState = null
-  let stopped = false
-
-  const cleanupChannel = () => {
-    try {
-      if (channel && listener) {
-        channel.stopListening(eventName)
-      }
-      if (channel && typeof window.Echo?.leave === 'function') {
-        window.Echo.leave(channelName)
-      }
-    } catch (error) {
-      logger.warn('[bootstrap.js] subscribeZone cleanup failed', { error })
-    } finally {
-      channel = null
-      listener = null
-    }
-  }
-
-  function doSubscribe() {
-    if (stopped || !window.Echo) {
-      return
-    }
-
-    try {
-      channel = window.Echo.private(channelName)
-      listener = (event) => handler?.(event)
-      channel.listen(eventName, listener)
-      logger.debug('[bootstrap.js] subscribeZone: subscribed to zone channel', {
-        channel: channelName,
-        zoneId,
-      })
-    } catch (error) {
-      logger.warn('[bootstrap.js] subscribeZone: failed to subscribe', { error })
-      cleanupChannel()
-    }
-  }
-
-  // Пытаемся подписаться сразу, если Echo доступен
-  doSubscribe()
-
-  // Подписываемся на изменения состояния WebSocket для автоматического восстановления
-  unsubscribeWsState = onWsStateChange((state) => {
-    if (stopped) return
-    if (state === 'connected') {
-      logger.debug('[bootstrap.js] subscribeZone: WebSocket connected, (re)subscribing to zone channel', { zoneId })
-      cleanupChannel()
-      doSubscribe()
-    } else if (state === 'disconnected') {
-      logger.debug('[bootstrap.js] subscribeZone: WebSocket disconnected, cleaning up zone channel', { zoneId })
-      cleanupChannel()
-    }
-  })
-
-  return () => {
-    stopped = true
-    // Отписываемся от изменений состояния WebSocket
-    if (unsubscribeWsState) {
-      unsubscribeWsState()
-      unsubscribeWsState = null
-    }
-    // Отписываемся от канала зоны
-    cleanupChannel()
-  }
-}
-
-export function subscribeAlerts(handler) {
-  const channelName = 'hydro.alerts'
-  const eventName = '.App\\Events\\AlertCreated'
-  let channel = null
-  let listener = null
-  let unsubscribeWsState = null
-  let stopped = false
-
-  const cleanupChannel = () => {
-    try {
-      if (channel && listener) {
-        channel.stopListening(eventName)
-      }
-      if (channel && typeof window.Echo?.leave === 'function') {
-        window.Echo.leave(channelName)
-      }
-    } catch (error) {
-      logger.warn('[bootstrap.js] subscribeAlerts cleanup failed', { error })
-    } finally {
-      channel = null
-      listener = null
-    }
-  }
-
-  function doSubscribe() {
-    if (stopped || channel) {
-      return
-    }
-
-    try {
-      channel = window.Echo.private(channelName)
-      listener = (event) => handler?.(event)
-      channel.listen(eventName, listener)
-      logger.debug('[bootstrap.js] subscribeAlerts: subscribed to alerts channel', {
-        channel: channelName,
-        event: eventName,
-      })
-    } catch (error) {
-      logger.warn('[bootstrap.js] subscribeAlerts: failed to subscribe', { error })
-      cleanupChannel()
-    }
-  }
-
-  // Если Echo уже доступен, подписываемся сразу
-  if (window.Echo) {
-    doSubscribe()
-  } else {
-    logger.debug('[bootstrap.js] subscribeAlerts: Echo not available, will subscribe on connect', {})
-  }
-
-  // Подписываемся на изменения состояния WebSocket для автоматического восстановления
-  unsubscribeWsState = onWsStateChange((state) => {
-    if (stopped) return
-    if (state === 'connected') {
-      logger.debug('[bootstrap.js] subscribeAlerts: WebSocket connected, (re)subscribing to alerts', {})
-      cleanupChannel()
-      doSubscribe()
-    } else if (state === 'disconnected') {
-      logger.debug('[bootstrap.js] subscribeAlerts: WebSocket disconnected, cleaning up alerts channel', {})
-      cleanupChannel()
-    }
-  })
-
-  return () => {
-    stopped = true
-    // Отписываемся от изменений состояния WebSocket
-    if (unsubscribeWsState) {
-      unsubscribeWsState()
-      unsubscribeWsState = null
-    }
-
-    // Отписываемся от канала алертов
-    cleanupChannel()
-  }
-}
+// Подписки на WebSocket каналы (зоны, алерты) перенесены в ws/subscriptions.ts
+// Используйте: import { subscribeZone, subscribeAlerts } from '@/ws/subscriptions'
 
 // Обработка глобальных ошибок с логированием, но без блокировки стандартного поведения
 // Сохраняем ссылки на обработчики в глобальной области для очистки при HMR
@@ -533,27 +371,14 @@ const pageshowHandler = (event) => {
   if (!event.persisted) {
     return;
   }
-  logger.info('[bootstrap.js] Page restored from back/forward cache, checking WebSocket connection', {
+  logger.info('[bootstrap.js] Page restored from back/forward cache', {
     persisted: event.persisted,
   });
   
+  // Сбрасываем флаги, но не инициализируем Echo
+  // Reconnect управляется через echoClient.ts
   echoInitialized = false;
   echoInitInProgress = false;
-  initializationScheduled = false;
-  
-  setTimeout(() => {
-    const echo = window.Echo;
-    if (echo && echo.connector?.pusher) {
-      const connection = echo.connector.pusher.connection;
-      const state = connection?.state;
-      
-      if (state !== 'connected' && state !== 'connecting') {
-        initializeEchoOnce();
-      }
-    } else if (!echo) {
-      initializeEchoOnce();
-    }
-  }, 200);
 };
 
 const visibilityChangeHandler = () => {
@@ -561,44 +386,23 @@ const visibilityChangeHandler = () => {
     return;
   }
   
-  logger.debug('[bootstrap.js] Page visible, checking WebSocket connection', {});
+  logger.debug('[bootstrap.js] Page visible', {});
   
-  setTimeout(() => {
-    const echo = window.Echo;
-    if (!echo) {
-      logger.info('[bootstrap.js] Echo not initialized after visibility change, initializing', {});
-      scheduleEchoInitialization(true);
-      return;
-    }
-    
-    const pusher = echo.connector?.pusher;
+  // Не делаем reconnect - echoClient.ts управляет этим автоматически
+  // Просто логируем для отладки
+  if (window.Echo) {
+    const pusher = window.Echo.connector?.pusher;
     const connection = pusher?.connection;
     const state = connection?.state;
-    
-    if (state !== 'connected' && state !== 'connecting') {
-      logger.info('[bootstrap.js] WebSocket not connected after visibility change, reconnecting', {
-        state,
-      });
-      
-      try {
-        if (pusher && typeof pusher.connect === 'function') {
-          pusher.connect();
-        } else if (connection && typeof connection.connect === 'function') {
-          connection.connect();
-        } else {
-          scheduleEchoInitialization(true);
-        }
-      } catch (err) {
-        logger.warn('[bootstrap.js] Error reconnecting on visibility change', {
-          error: err instanceof Error ? err.message : String(err),
-        });
-        scheduleEchoInitialization(true);
-      }
-    }
-  }, 200);
+    logger.debug('[bootstrap.js] WebSocket state on visibility change', {
+      state,
+      socketId: connection?.socket_id,
+    });
+  }
 };
 
 const focusHandler = () => {
+  // Не делаем reconnect - echoClient.ts управляет этим автоматически
   visibilityChangeHandler();
 };
 

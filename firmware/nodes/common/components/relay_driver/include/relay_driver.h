@@ -51,6 +51,14 @@ typedef struct {
 } relay_channel_config_t;
 
 /**
+ * @brief Опциональный резолвер аппаратной карты (имя -> GPIO/режим).
+ *
+ * Должен быть определен на стороне конкретной ноды, если GPIO берутся из прошивки,
+ * а не из NodeConfig. По умолчанию weak-реализация возвращает false.
+ */
+bool relay_driver_resolve_hw_gpio(const char *channel_name, int *gpio_pin_out, bool *active_high_out, relay_type_t *relay_type_out);
+
+/**
  * @brief Инициализация драйвера реле
  * 
  * @param channels Массив конфигураций каналов реле
@@ -105,4 +113,3 @@ bool relay_driver_is_initialized(void);
 #endif
 
 #endif // RELAY_DRIVER_H
-

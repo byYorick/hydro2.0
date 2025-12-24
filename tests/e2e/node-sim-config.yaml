@@ -1,0 +1,45 @@
+# Конфигурация node-sim для E2E тестов
+# Этот файл монтируется в контейнер node-sim
+
+mqtt:
+  host: mosquitto  # Используется имя сервиса из docker-compose
+  port: 1883
+  username: null
+  password: null
+  tls: false
+  ca_certs: null
+  client_id: null
+  keepalive: 60
+
+node:
+  gh_uid: gh-test-1
+  zone_uid: zn-test-1
+  node_uid: nd-ph-esp32una  # Должен соответствовать UID узла в БД (id=2)
+  hardware_id: esp32-test-001
+  node_type: ph  # ph, ec, climate, pump, irrig, light, unknown
+  mode: configured  # preconfig | configured
+  channels:
+    - ph_sensor
+    - ec_sensor
+    - solution_temp_c
+    - air_temp_c
+    - air_rh
+  actuators:
+    - main_pump
+    - drain_pump
+    - fan
+    - heater
+    - light
+    - mister
+
+telemetry:
+  interval_seconds: 5.0      # Интервал публикации телеметрии
+  heartbeat_interval_seconds: 30.0  # Интервал публикации heartbeat
+
+# Режимы отказов (отключены для E2E тестов)
+failure_mode:
+  delay_response: false
+  delay_ms: 0
+  drop_response: false
+  duplicate_response: false
+

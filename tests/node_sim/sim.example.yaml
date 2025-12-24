@@ -1,0 +1,45 @@
+# Пример конфигурации для node-sim
+
+mqtt:
+  host: localhost
+  port: 1883
+  username: null  # Опционально
+  password: null   # Опционально
+  tls: false
+  ca_certs: null  # Путь к CA сертификату (если используется TLS)
+  client_id: null # Автоматически генерируется, если не указан
+  keepalive: 60
+
+node:
+  gh_uid: gh-1
+  zone_uid: zn-1
+  node_uid: nd-sim-1
+  hardware_id: esp32-sim-001
+  node_type: ph  # ph, ec, climate, pump, irrig, light, unknown
+  mode: preconfig  # preconfig | configured
+  channels:
+    - ph_sensor
+    - ec_sensor
+    - solution_temp_c
+    - air_temp_c
+    - air_rh
+  actuators:
+    - main_pump
+    - drain_pump
+    - fan
+    - heater
+    - light
+    - mister
+
+telemetry:
+  interval_seconds: 5.0      # Интервал публикации телеметрии
+  heartbeat_interval_seconds: 30.0  # Интервал публикации heartbeat
+  status_interval_seconds: 60.0  # Интервал публикации status (опционально)
+
+# Режимы отказов (опционально, для тестирования)
+failure_mode:
+  delay_response: false      # Задержка ответа
+  delay_ms: 0               # Задержка в миллисекундах
+  drop_response: false       # Пропуск ответа
+  duplicate_response: false  # Дублирование ответа
+

@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Command Response Schema",
+  "description": "Schema for command response messages from firmware nodes",
+  "type": "object",
+  "required": ["cmd_id", "status", "ts"],
+  "properties": {
+    "cmd_id": {
+      "type": "string",
+      "description": "Command ID (echo from command)"
+    },
+    "status": {
+      "type": "string",
+      "description": "Command execution status",
+      "enum": ["ACK", "DONE", "ERROR", "INVALID", "BUSY", "NO_EFFECT"]
+    },
+    "details": {
+      "type": "string",
+      "description": "Execution details (optional)"
+    },
+    "ts": {
+      "type": "integer",
+      "description": "UTC timestamp in milliseconds"
+    }
+  },
+  "additionalProperties": false
+}
+

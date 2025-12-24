@@ -14,6 +14,7 @@
 #include "freertos/semphr.h"
 #include <string.h>
 #include "cJSON.h"
+#include <stdbool.h>
 
 static const char *TAG = "relay_driver";
 
@@ -36,6 +37,15 @@ static relay_channel_t s_channels[MAX_RELAY_CHANNELS] = {0};
 static size_t s_channel_count = 0;
 static bool s_initialized = false;
 static SemaphoreHandle_t s_mutex = NULL;
+
+// Weak resolver: конкретная нода может вернуть сопоставление канал -> GPIO/режим.
+__attribute__((weak)) bool relay_driver_resolve_hw_gpio(const char *channel_name, int *gpio_pin_out, bool *active_high_out, relay_type_t *relay_type_out) {
+    (void)channel_name;
+    (void)gpio_pin_out;
+    (void)active_high_out;
+    (void)relay_type_out;
+    return false;
+}
 
 static esp_err_t relay_driver_set_gpio_state(int gpio_pin, bool active, bool active_high) {
     int level = active ? (active_high ? 1 : 0) : (active_high ? 0 : 1);
@@ -99,6 +109,14 @@ esp_err_t relay_driver_init(const relay_channel_config_t *channels, size_t chann
         channel->active_high = channels[i].active_high;
         channel->current_state = RELAY_STATE_OPEN; // По умолчанию разомкнуто
         channel->initialized = true;
+
+        if (!channel->active_high) {
+            esp_err_t pull_err = gpio_set_pull_mode(channel->gpio_pin, GPIO_PULLUP_ONLY);
+            if (pull_err != ESP_OK) {
+                ESP_LOGW(TAG, "Failed to enable pull-up on GPIO %d: %s",
+                         channel->gpio_pin, esp_err_to_name(pull_err));
+            }
+        }
         
         // Устанавливаем начальное состояние (разомкнуто)
         relay_driver_set_gpio_state(channel->gpio_pin, false, channel->active_high);
@@ -167,15 +185,34 @@ esp_err_t relay_driver_init_from_config(void) {
                     cJSON *gpio_item = cJSON_GetObjectItem(channel, "gpio");
                     cJSON *fail_safe_item = cJSON_GetObjectItem(channel, "fail_safe_mode");
                     
-                    if (name_item != NULL && cJSON_IsString(name_item) &&
-                        gpio_item != NULL && cJSON_IsNumber(gpio_item)) {
+                    if (name_item != NULL && cJSON_IsString(name_item)) {
+                        int resolved_gpio = -1;
+                        bool resolved_active_high = true;
+                        relay_type_t resolved_relay_type = RELAY_TYPE_NO;
+
+                        bool hw_resolved = relay_driver_resolve_hw_gpio(
+                            name_item->valuestring,
+                            &resolved_gpio,
+                            &resolved_active_high,
+                            &resolved_relay_type
+                        );
+
+                        if (gpio_item != NULL && cJSON_IsNumber(gpio_item)) {
+                            resolved_gpio = (int)cJSON_GetNumberValue(gpio_item);
+                        }
+
+                        if (resolved_gpio < 0) {
+                            ESP_LOGW(TAG, "Relay channel %s has no GPIO mapping, skipping", name_item->valuestring);
+                            continue;
+                        }
+
                         relay_channel_config_t *relay_cfg = &relay_configs[relay_count];
                         // Копируем имя канала в статический буфер перед удалением JSON
                         strncpy(channel_names[relay_count], name_item->valuestring, RELAY_DRIVER_MAX_STRING_LEN - 1);
                         channel_names[relay_count][RELAY_DRIVER_MAX_STRING_LEN - 1] = '\0';
                         relay_cfg->channel_name = channel_names[relay_count];
-                        relay_cfg->gpio_pin = (int)cJSON_GetNumberValue(gpio_item);
-                        relay_cfg->active_high = true; // По умолчанию active high
+                        relay_cfg->gpio_pin = resolved_gpio;
+                        relay_cfg->active_high = resolved_active_high;
                         
                         // Определяем тип реле из fail_safe_mode или по умолчанию NO
                         if (fail_safe_item != NULL && cJSON_IsString(fail_safe_item)) {
@@ -185,7 +222,7 @@ esp_err_t relay_driver_init_from_config(void) {
                                 relay_cfg->relay_type = RELAY_TYPE_NO;
                             }
                         } else {
-                            relay_cfg->relay_type = RELAY_TYPE_NO;
+                            relay_cfg->relay_type = resolved_relay_type;
                         }
                         
                         relay_count++;
@@ -318,4 +355,3 @@ esp_err_t relay_driver_get_state(const char *channel_name, relay_state_t *state)
 bool relay_driver_is_initialized(void) {
     return s_initialized;
 }
-

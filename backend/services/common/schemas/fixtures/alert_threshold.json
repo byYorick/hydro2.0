@@ -1,0 +1,17 @@
+{
+  "level": "WARNING",
+  "component": "automation",
+  "source": "biz",
+  "code": "PH_LOW",
+  "type": "threshold",
+  "severity": "medium",
+  "zone_id": 1,
+  "node_uid": "nd-ph-1",
+  "message": "pH value below threshold",
+  "ts": 1737979200.5,
+  "details": {
+    "current_value": 5.5,
+    "threshold": 6.0
+  }
+}
+

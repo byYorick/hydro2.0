@@ -2,6 +2,33 @@ import { defineStore } from 'pinia'
 import type { Device } from '@/types/Device'
 import { deviceEvents } from '@/composables/useStoreEvents'
 
+/**
+ * Эффективное сравнение устройств без JSON.stringify
+ * Использует id/uid + updated_at для определения изменений
+ */
+function devicesEqual(existing: Device, incoming: Device): boolean {
+  // Если идентификаторы не совпадают, это разные устройства
+  const existingId = existing.id ?? existing.uid
+  const incomingId = incoming.id ?? incoming.uid
+  if (existingId !== incomingId) {
+    return false
+  }
+  
+  // Сравниваем updated_at - если они одинаковы, данные не изменились
+  if (existing.updated_at && incoming.updated_at) {
+    return existing.updated_at === incoming.updated_at
+  }
+  
+  // Если updated_at нет, сравниваем ключевые поля
+  return (
+    existing.name === incoming.name &&
+    existing.status === incoming.status &&
+    existing.type === incoming.type &&
+    existing.lifecycle_state === incoming.lifecycle_state &&
+    existing.zone_id === incoming.zone_id
+  )
+}
+
 interface DevicesStoreState {
   // Нормализованная структура: Record<id, Device> для быстрого доступа O(1)
   items: Record<number | string, Device>
@@ -79,6 +106,13 @@ export const useDevicesStore = defineStore('devices', {
       const resolvedKey = this.resolveDeviceKey(identifier)
       const oldDevice = this.items[resolvedKey]
       const exists = !!oldDevice
+      
+      // Проверяем, изменилось ли устройство (эффективное сравнение без JSON.stringify)
+      // Это предотвращает рекурсию при обновлении с теми же данными
+      if (exists && devicesEqual(oldDevice, device)) {
+        // Данные не изменились, не обновляем и не эмитим события
+        return
+      }
       
       this.items[resolvedKey] = device
       if (device.uid) {

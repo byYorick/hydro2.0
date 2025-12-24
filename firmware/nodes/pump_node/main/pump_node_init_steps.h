@@ -49,11 +49,15 @@ esp_err_t pump_node_init_step_i2c(pump_node_init_context_t *ctx,
 esp_err_t pump_node_init_step_pumps(pump_node_init_context_t *ctx,
                                     pump_node_init_step_result_t *result);
 
-// Шаг 5: MQTT Manager
+// Шаг 5: OLED UI
+esp_err_t pump_node_init_step_oled(pump_node_init_context_t *ctx,
+                                   pump_node_init_step_result_t *result);
+
+// Шаг 6: MQTT Manager
 esp_err_t pump_node_init_step_mqtt(pump_node_init_context_t *ctx,
                                     pump_node_init_step_result_t *result);
 
-// Шаг 6: Finalization
+// Шаг 7: Finalization
 esp_err_t pump_node_init_step_finalize(pump_node_init_context_t *ctx,
                                        pump_node_init_step_result_t *result);
 

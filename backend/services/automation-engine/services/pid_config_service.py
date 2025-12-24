@@ -5,7 +5,8 @@
 import json
 import logging
 from typing import Optional, Dict, Any, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from common.utils.time import utcnow
 from common.db import fetch
 from config.settings import get_settings
 from utils.adaptive_pid import AdaptivePidConfig, PidZone, PidZoneCoeffs
@@ -33,7 +34,7 @@ async def get_config(zone_id: int, correction_type: str, setpoint: float) -> Opt
     cache_key = (zone_id, correction_type)
     if zone_id in _config_cache and correction_type in _config_cache[zone_id]:
         config, timestamp, cached_db_updated_at = _config_cache[zone_id][correction_type]
-        age = datetime.utcnow() - timestamp
+        age = utcnow() - timestamp
         
         if age.total_seconds() < _cache_ttl_seconds:
             # Проверяем, не обновился ли конфиг в БД
@@ -49,11 +50,20 @@ async def get_config(zone_id: int, correction_type: str, setpoint: float) -> Opt
                 
                 if rows:
                     db_updated_at = rows[0]['updated_at']
-                    # Преобразуем в datetime если нужно
+                    # Преобразуем в datetime если нужно и приводим к aware UTC
                     if isinstance(db_updated_at, str):
                         db_updated_at = datetime.fromisoformat(db_updated_at.replace('Z', '+00:00'))
-                    elif db_updated_at.tzinfo:
-                        db_updated_at = db_updated_at.replace(tzinfo=None)
+                    if db_updated_at.tzinfo is None:
+                        db_updated_at = db_updated_at.replace(tzinfo=timezone.utc)
+                    elif db_updated_at.tzinfo != timezone.utc:
+                        db_updated_at = db_updated_at.astimezone(timezone.utc)
+                    
+                    # Приводим cached_db_updated_at к aware UTC для корректного сравнения
+                    if cached_db_updated_at is not None:
+                        if cached_db_updated_at.tzinfo is None:
+                            cached_db_updated_at = cached_db_updated_at.replace(tzinfo=timezone.utc)
+                        elif cached_db_updated_at.tzinfo != timezone.utc:
+                            cached_db_updated_at = cached_db_updated_at.astimezone(timezone.utc)
                     
                     # Если конфиг обновился в БД, инвалидируем кеш
                     if cached_db_updated_at is None or db_updated_at > cached_db_updated_at:
@@ -101,11 +111,13 @@ async def get_config(zone_id: int, correction_type: str, setpoint: float) -> Opt
             # asyncpg возвращает JSONB как dict
             config_json = row['config'] if isinstance(row['config'], dict) else json.loads(row['config'])
             db_updated_at = row['updated_at']
-            # Преобразуем в datetime если нужно
+            # Преобразуем в datetime если нужно и приводим к aware UTC
             if isinstance(db_updated_at, str):
                 db_updated_at = datetime.fromisoformat(db_updated_at.replace('Z', '+00:00'))
-            elif db_updated_at.tzinfo:
-                db_updated_at = db_updated_at.replace(tzinfo=None)
+            if db_updated_at.tzinfo is None:
+                db_updated_at = db_updated_at.replace(tzinfo=timezone.utc)
+            elif db_updated_at.tzinfo != timezone.utc:
+                db_updated_at = db_updated_at.astimezone(timezone.utc)
             
             # Преобразуем JSONB в AdaptivePidConfig
             pid_config = _json_to_pid_config(config_json, setpoint, correction_type)
@@ -113,7 +125,7 @@ async def get_config(zone_id: int, correction_type: str, setpoint: float) -> Opt
             # Сохраняем в кеш с timestamp обновления из БД
             if zone_id not in _config_cache:
                 _config_cache[zone_id] = {}
-            _config_cache[zone_id][correction_type] = (pid_config, datetime.utcnow(), db_updated_at)
+            _config_cache[zone_id][correction_type] = (pid_config, utcnow(), db_updated_at)
             
             logger.debug(f"Loaded PID config from DB: zone={zone_id}, type={correction_type}")
             return pid_config
@@ -125,7 +137,7 @@ async def get_config(zone_id: int, correction_type: str, setpoint: float) -> Opt
             # Сохраняем дефолтный конфиг в кеш (без db_updated_at, так как конфига нет в БД)
             if zone_id not in _config_cache:
                 _config_cache[zone_id] = {}
-            _config_cache[zone_id][correction_type] = (pid_config, datetime.utcnow(), None)
+            _config_cache[zone_id][correction_type] = (pid_config, utcnow(), None)
             
             logger.info(f"Using default PID config: zone={zone_id}, type={correction_type}")
             return pid_config
