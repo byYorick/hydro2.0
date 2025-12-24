@@ -13,6 +13,7 @@
 #include "wifi_manager.h"
 #include "mqtt_manager.h"
 #include <stddef.h>
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -123,6 +124,13 @@ esp_err_t node_utils_set_time(int64_t unix_ts_sec);
  * @return Unix timestamp в секундах, или 0 если время не синхронизировано
  */
 int64_t node_utils_get_unix_timestamp(void);
+
+/**
+ * @brief Проверка синхронизации времени
+ * 
+ * @return true если время синхронизировано через set_time
+ */
+bool node_utils_is_time_synced(void);
 
 /**
  * @brief Базовая инициализация NVS, esp_netif, event loop и Wi‑Fi STA

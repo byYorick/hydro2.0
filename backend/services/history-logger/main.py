@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import hmac
+from common.hmac_utils import canonical_json_payload
 import json
 import logging
 import os
@@ -2903,21 +2904,23 @@ def _create_command_payload(
         raise ValueError("sig requires ts")
     payload = {"cmd": command_name, "cmd_id": cmd_id}
 
-    if ts is None or not sig:
-        secret = get_settings().node_default_secret
+    if params:
+        payload["params"] = params
+
+    secret = get_settings().node_default_secret
+    if ts is None and sig is None:
         if secret:
-            if ts is None:
-                ts = int(time.time())
-            if not sig:
-                payload_str = f"{command_name}|{ts}".encode()
-                sig = hmac.new(secret.encode(), payload_str, hashlib.sha256).hexdigest()
+            ts = int(time.time())
+    elif ts is not None and sig is None and not secret:
+        raise ValueError("sig requires node_default_secret")
 
     if ts is not None:
         payload["ts"] = ts
+    if sig is None and secret:
+        payload_str = canonical_json_payload(payload)
+        sig = hmac.new(secret.encode(), payload_str.encode(), hashlib.sha256).hexdigest()
     if sig:
         payload["sig"] = sig
-    if params:
-        payload["params"] = params
     return payload
 
 

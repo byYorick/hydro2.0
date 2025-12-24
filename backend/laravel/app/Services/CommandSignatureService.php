@@ -28,11 +28,12 @@ class CommandSignatureService
             throw new \InvalidArgumentException('Command must contain "cmd" or "type" field');
         }
 
-        $payload = $cmd . '|' . $timestamp;
+        $command['ts'] = $timestamp;
+
+        $payload = $this->buildCanonicalPayload($command);
         $signature = hash_hmac('sha256', $payload, $secret);
 
         $signedCommand = array_merge($command, [
-            'ts' => $timestamp,
             'sig' => $signature,
         ]);
 
@@ -92,7 +93,7 @@ class CommandSignatureService
             return false;
         }
 
-        $payload = $cmd . '|' . $timestamp;
+        $payload = $this->buildCanonicalPayload($command);
         $expectedSignature = hash_hmac('sha256', $payload, $secret);
 
         $isValid = hash_equals($expectedSignature, $signature);
@@ -108,6 +109,128 @@ class CommandSignatureService
         return $isValid;
     }
 
+    private function buildCanonicalPayload(array $command): string
+    {
+        if (array_key_exists('sig', $command)) {
+            unset($command['sig']);
+        }
+
+        $canonical = $this->canonicalizeValue($command);
+        return $this->encodeCanonical($canonical);
+    }
+
+    private function canonicalizeValue($value)
+    {
+        if (is_array($value)) {
+            if ($this->isList($value)) {
+                $result = [];
+                foreach ($value as $item) {
+                    $result[] = $this->canonicalizeValue($item);
+                }
+                return $result;
+            }
+
+            $keys = array_keys($value);
+            sort($keys, SORT_STRING);
+            $result = [];
+            foreach ($keys as $key) {
+                $result[$key] = $this->canonicalizeValue($value[$key]);
+            }
+            return $result;
+        }
+
+        return $value;
+    }
+
+    private function encodeCanonical($value): string
+    {
+        if (is_null($value)) {
+            return 'null';
+        }
+
+        if (is_bool($value)) {
+            return $value ? 'true' : 'false';
+        }
+
+        if (is_int($value)) {
+            return (string) $value;
+        }
+
+        if (is_float($value)) {
+            return $this->formatNumber($value);
+        }
+
+        if (is_string($value)) {
+            $encoded = json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            if ($encoded === false) {
+                throw new \RuntimeException('Failed to encode command string for signature');
+            }
+            return $encoded;
+        }
+
+        if (is_array($value)) {
+            if ($this->isList($value)) {
+                $items = [];
+                foreach ($value as $item) {
+                    $items[] = $this->encodeCanonical($item);
+                }
+                return '[' . implode(',', $items) . ']';
+            }
+
+            $items = [];
+            foreach ($value as $key => $item) {
+                $encodedKey = json_encode((string) $key, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                if ($encodedKey === false) {
+                    throw new \RuntimeException('Failed to encode command key for signature');
+                }
+                $items[] = $encodedKey . ':' . $this->encodeCanonical($item);
+            }
+            return '{' . implode(',', $items) . '}';
+        }
+
+        throw new \InvalidArgumentException('Unsupported command payload type for signature');
+    }
+
+    private function formatNumber(float $value): string
+    {
+        if (is_nan($value) || is_infinite($value)) {
+            return 'null';
+        }
+
+        if ((float) (int) $value === $value) {
+            return (string) (int) $value;
+        }
+
+        $formatted = sprintf('%.15g', $value);
+        $formatted = str_replace(',', '.', $formatted);
+
+        $test = (float) $formatted;
+        if (!$this->compareDouble($test, $value)) {
+            $formatted = sprintf('%.17g', $value);
+            $formatted = str_replace(',', '.', $formatted);
+        }
+
+        return strtolower($formatted);
+    }
+
+    private function compareDouble(float $a, float $b): bool
+    {
+        $max = max(abs($a), abs($b));
+        return abs($a - $b) <= $max * PHP_FLOAT_EPSILON;
+    }
+
+    private function isList(array $value): bool
+    {
+        $expected = 0;
+        foreach ($value as $key => $unused) {
+            if ((string) $key !== (string) $expected) {
+                return false;
+            }
+            $expected++;
+        }
+        return true;
+    }
+
     /**
      * Получить секрет узла для подписи команд.
      * 
@@ -121,4 +244,3 @@ class CommandSignatureService
         return config('app.node_default_secret') ?? config('app.key');
     }
 }
-

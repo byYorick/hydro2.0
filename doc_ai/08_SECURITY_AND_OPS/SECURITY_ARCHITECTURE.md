@@ -84,9 +84,16 @@ topic write hydro/+/+/+/status
  "cmd": "dose",
  "params": {"ml": 1.0},
  "ts": 1737355500,
- "sig": "hmacsha256(node_secret, cmd|ts)"
+ "sig": "hmacsha256(node_secret, canonical_json(command_without_sig))"
 }
 ```
+
+`canonical_json` — каноническая JSON-строка команды без `sig`:
+- ключи объектов отсортированы лексикографически,
+- порядок массивов сохраняется,
+- сериализация без пробелов,
+- числа форматируются как в cJSON (int если целое, иначе 15/17 значащих),
+- строки JSON-экранируются, UTF-8, слэши не экранируются.
 
 Узлы ESP32 проверяют подпись и timestamp (не старше 30 секунд).
 

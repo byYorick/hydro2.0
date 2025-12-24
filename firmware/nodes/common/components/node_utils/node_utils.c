@@ -304,6 +304,10 @@ int64_t node_utils_get_unix_timestamp(void) {
     return 0;
 }
 
+bool node_utils_is_time_synced(void) {
+    return s_time_synced;
+}
+
 esp_err_t node_utils_publish_node_hello(
     const char *node_type,
     const char *capabilities[],
