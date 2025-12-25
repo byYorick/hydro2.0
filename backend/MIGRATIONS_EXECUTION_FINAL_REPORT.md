@@ -77,12 +77,21 @@
 **Все миграции выполнены успешно.**
 
 **Схема БД полностью соответствует новой доменной модели:**
-- ✅ Снапшоты фаз и шагов созданы
-- ✅ Сенсоры и телеметрия обновлены
-- ✅ Команды и двухфазные подтверждения реализованы
+- ✅ Снапшоты фаз и шагов созданы (`grow_cycle_phases`, `grow_cycle_phase_steps`)
+- ✅ Сенсоры и телеметрия обновлены (`sensors`, `telemetry_samples`, `telemetry_last`)
+- ✅ Команды и двухфазные подтверждения реализованы (`commands`, `command_acks`)
 - ✅ Все constraints и индексы созданы
 - ✅ Legacy таблицы удалены
-- ✅ FK constraints работают корректно
+- ✅ FK constraints работают корректно:
+  - `grow_cycles.current_phase_id` → `grow_cycle_phases.id` ✅
+  - `grow_cycles.current_step_id` → `grow_cycle_phase_steps.id` ✅
+  - `grow_cycles.recipe_revision_id` → `recipe_revisions.id` ✅
 
 **PHASE 0-5 полностью завершены и проверены.**
+
+### Исправленные проблемы
+
+1. ✅ Исправлена ошибка удаления FK constraint в `update_grow_cycles_for_snapshots`
+2. ✅ Исправлена ошибка удаления таблицы `telemetry_samples` (удален view `telemetry_raw`)
+3. ✅ Все миграции выполнены без ошибок
 
