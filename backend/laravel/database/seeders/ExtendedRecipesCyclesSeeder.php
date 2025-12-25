@@ -286,7 +286,7 @@ class ExtendedRecipesCyclesSeeder extends Seeder
                 $expectedHarvestAt = $startedAt->copy()->addDays(rand(30, 90));
                 
                 $actualHarvestAt = null;
-                if (in_array($status, [GrowCycleStatus::COMPLETED, GrowCycleStatus::HARVESTED])) {
+                if (in_array($status, [GrowCycleStatus::HARVESTED, GrowCycleStatus::ABORTED])) {
                     $actualHarvestAt = $expectedHarvestAt->copy()->subDays(rand(-5, 5));
                 }
 
@@ -342,7 +342,7 @@ class ExtendedRecipesCyclesSeeder extends Seeder
                 GrowCycleStatus::RUNNING,
                 GrowCycleStatus::RUNNING,
                 GrowCycleStatus::PAUSED,
-                GrowCycleStatus::COMPLETED,
+                GrowCycleStatus::HARVESTED,
             ][rand(0, 4)],
             'PAUSED' => [
                 GrowCycleStatus::PAUSED,
@@ -350,9 +350,9 @@ class ExtendedRecipesCyclesSeeder extends Seeder
                 GrowCycleStatus::PLANNED,
             ][rand(0, 2)],
             'STOPPED' => [
-                GrowCycleStatus::STOPPED,
-                GrowCycleStatus::COMPLETED,
-                GrowCycleStatus::CANCELLED,
+                GrowCycleStatus::ABORTED,
+                GrowCycleStatus::HARVESTED,
+                GrowCycleStatus::ABORTED,
             ][rand(0, 2)],
             default => GrowCycleStatus::PLANNED,
         };

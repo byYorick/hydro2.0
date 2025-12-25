@@ -208,10 +208,10 @@ class ExtendedPlantsSeeder extends Seeder
                 'season' => ['spring', 'summer', 'autumn', 'winter', 'all_year'][rand(0, 4)],
                 'site_type' => ['indoor', 'outdoor', 'both'][rand(0, 2)],
                 'is_default' => rand(0, 1) === 1,
-                'metadata' => [
+                'metadata' => json_encode([
                     'recommended' => true,
                     'created_by' => 'system',
-                ],
+                ]),
             ]);
 
             $created++;

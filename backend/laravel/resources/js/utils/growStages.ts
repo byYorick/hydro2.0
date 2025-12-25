@@ -1,17 +1,37 @@
 /**
- * Стадии цикла выращивания
+ * ЕДИНСТВЕННЫЙ ИСТОЧНИК ИСТИНЫ для стадий цикла выращивания
+ * 
+ * Этот файл определяет все стадии, их цвета, лейблы и правила маппинга.
+ * Все компоненты должны использовать функции из этого модуля для работы со стадиями.
+ * 
+ * ИСПОЛЬЗОВАНИЕ:
+ *   import { getStageForPhase, getStageInfo, GROW_STAGES } from '@/utils/growStages'
+ * 
+ * ЗАПРЕЩЕНО:
+ *   - Хардкодить стадии в компонентах
+ *   - Создавать собственные маппинги стадий
+ *   - Использовать строковые литералы вместо типов из этого модуля
+ */
+
+/**
+ * Типы стадий цикла выращивания
  */
 export type GrowStage = 'planting' | 'rooting' | 'veg' | 'flowering' | 'harvest'
 
+/**
+ * Информация о стадии (цвет, лейбл, иконка)
+ */
 export interface GrowStageInfo {
   id: GrowStage
   label: string
   color: string
   icon?: string
+  order: number // Порядок стадии для сортировки
 }
 
 /**
- * Информация о стадиях
+ * ЕДИНСТВЕННЫЙ источник информации о стадиях
+ * Используется во всех компонентах для отображения стадий
  */
 export const GROW_STAGES: Record<GrowStage, GrowStageInfo> = {
   planting: {
@@ -19,36 +39,52 @@ export const GROW_STAGES: Record<GrowStage, GrowStageInfo> = {
     label: 'Посадка',
     color: 'var(--accent-lime)',
     icon: '🌱',
+    order: 0,
   },
   rooting: {
     id: 'rooting',
     label: 'Укоренение',
     color: 'var(--accent-cyan)',
     icon: '🌿',
+    order: 1,
   },
   veg: {
     id: 'veg',
-    label: 'Вега',
+    label: 'Вегетация',
     color: 'var(--accent-green)',
     icon: '🌳',
+    order: 2,
   },
   flowering: {
     id: 'flowering',
     label: 'Цветение',
     color: 'var(--accent-amber)',
     icon: '🌸',
+    order: 3,
   },
   harvest: {
     id: 'harvest',
-    label: 'Сбор',
+    label: 'Сбор урожая',
     color: 'var(--accent-red)',
     icon: '🍎',
+    order: 4,
   },
 }
 
 /**
+ * Массив стадий в правильном порядке
+ */
+export const GROW_STAGES_ORDERED: GrowStage[] = [
+  'planting',
+  'rooting',
+  'veg',
+  'flowering',
+  'harvest',
+]
+
+/**
  * Маппинг названий фаз к стадиям
- * Можно расширить для кастомных рецептов
+ * Поддерживает русский и английский языки, различные варианты написания
  */
 const PHASE_TO_STAGE_MAPPING: Record<string, GrowStage> = {
   // Посадка
@@ -58,6 +94,7 @@ const PHASE_TO_STAGE_MAPPING: Record<string, GrowStage> = {
   'germ': 'planting',
   'seed': 'planting',
   'семена': 'planting',
+  'sowing': 'planting',
   
   // Укоренение
   'укоренение': 'rooting',
@@ -66,6 +103,7 @@ const PHASE_TO_STAGE_MAPPING: Record<string, GrowStage> = {
   'seedling': 'rooting',
   'рассада': 'rooting',
   'ростки': 'rooting',
+  'sprouting': 'rooting',
   
   // Вега
   'вега': 'veg',
@@ -75,6 +113,7 @@ const PHASE_TO_STAGE_MAPPING: Record<string, GrowStage> = {
   'growth': 'veg',
   'рост': 'veg',
   'вегетативный': 'veg',
+  'vegetation': 'veg',
   
   // Цветение
   'цветение': 'flowering',
@@ -83,6 +122,7 @@ const PHASE_TO_STAGE_MAPPING: Record<string, GrowStage> = {
   'bloom': 'flowering',
   'blooming': 'flowering',
   'цвет': 'flowering',
+  'floral': 'flowering',
   
   // Сбор
   'сбор': 'harvest',
@@ -91,11 +131,11 @@ const PHASE_TO_STAGE_MAPPING: Record<string, GrowStage> = {
   'finish': 'harvest',
   'созревание': 'harvest',
   'урожай': 'harvest',
+  'harvesting': 'harvest',
 }
 
 /**
  * Маппинг по индексу фазы (для рецептов с фиксированным порядком)
- * Можно настроить в зависимости от типа рецепта
  */
 const DEFAULT_STAGE_BY_PHASE_INDEX: GrowStage[] = [
   'planting',    // фаза 0
@@ -107,6 +147,9 @@ const DEFAULT_STAGE_BY_PHASE_INDEX: GrowStage[] = [
 
 /**
  * Определяет стадию на основе названия фазы
+ * 
+ * @param phaseName - Название фазы (может быть на русском или английском)
+ * @returns Стадия или null, если не удалось определить
  */
 export function getStageByPhaseName(phaseName: string | null | undefined): GrowStage | null {
   if (!phaseName) return null
@@ -130,6 +173,10 @@ export function getStageByPhaseName(phaseName: string | null | undefined): GrowS
 
 /**
  * Определяет стадию на основе индекса фазы
+ * 
+ * @param phaseIndex - Индекс фазы (0-based)
+ * @param totalPhases - Общее количество фаз
+ * @returns Стадия
  */
 export function getStageByPhaseIndex(phaseIndex: number, totalPhases: number): GrowStage {
   if (phaseIndex < 0) return 'planting'
@@ -142,6 +189,12 @@ export function getStageByPhaseIndex(phaseIndex: number, totalPhases: number): G
 
 /**
  * Определяет стадию для фазы (комбинированный подход)
+ * Сначала пытается определить по названию, затем по индексу
+ * 
+ * @param phaseName - Название фазы
+ * @param phaseIndex - Индекс фазы
+ * @param totalPhases - Общее количество фаз
+ * @returns Стадия
  */
 export function getStageForPhase(
   phaseName: string | null | undefined,
@@ -160,6 +213,9 @@ export function getStageForPhase(
 
 /**
  * Получить информацию о стадии
+ * 
+ * @param stage - Стадия или null
+ * @returns Информация о стадии или null
  */
 export function getStageInfo(stage: GrowStage | null): GrowStageInfo | null {
   if (!stage) return null
@@ -167,7 +223,102 @@ export function getStageInfo(stage: GrowStage | null): GrowStageInfo | null {
 }
 
 /**
+ * Получить цвет стадии
+ * 
+ * @param stage - Стадия или null
+ * @returns CSS переменная цвета или null
+ */
+export function getStageColor(stage: GrowStage | null): string | null {
+  const info = getStageInfo(stage)
+  return info?.color || null
+}
+
+/**
+ * Получить лейбл стадии
+ * 
+ * @param stage - Стадия или null
+ * @returns Лейбл стадии или пустая строка
+ */
+export function getStageLabel(stage: GrowStage | null): string {
+  const info = getStageInfo(stage)
+  return info?.label || ''
+}
+
+/**
+ * Получить иконку стадии
+ * 
+ * @param stage - Стадия или null
+ * @returns Иконка стадии или пустая строка
+ */
+export function getStageIcon(stage: GrowStage | null): string {
+  const info = getStageInfo(stage)
+  return info?.icon || ''
+}
+
+/**
+ * Получить порядок стадии (для сортировки)
+ * 
+ * @param stage - Стадия или null
+ * @returns Порядок стадии или -1
+ */
+export function getStageOrder(stage: GrowStage | null): number {
+  const info = getStageInfo(stage)
+  return info?.order ?? -1
+}
+
+/**
+ * Проверить, является ли стадия валидной
+ * 
+ * @param stage - Стадия для проверки
+ * @returns true, если стадия валидна
+ */
+export function isValidStage(stage: string | null | undefined): stage is GrowStage {
+  if (!stage) return false
+  return stage in GROW_STAGES
+}
+
+/**
+ * Получить следующую стадию
+ * 
+ * @param currentStage - Текущая стадия
+ * @returns Следующая стадия или null, если текущая стадия последняя
+ */
+export function getNextStage(currentStage: GrowStage | null): GrowStage | null {
+  if (!currentStage) return 'planting'
+  
+  const currentOrder = getStageOrder(currentStage)
+  if (currentOrder < 0 || currentOrder >= GROW_STAGES_ORDERED.length - 1) {
+    return null
+  }
+  
+  return GROW_STAGES_ORDERED[currentOrder + 1]
+}
+
+/**
+ * Получить предыдущую стадию
+ * 
+ * @param currentStage - Текущая стадия
+ * @returns Предыдущая стадия или null, если текущая стадия первая
+ */
+export function getPrevStage(currentStage: GrowStage | null): GrowStage | null {
+  if (!currentStage) return null
+  
+  const currentOrder = getStageOrder(currentStage)
+  if (currentOrder <= 0) {
+    return null
+  }
+  
+  return GROW_STAGES_ORDERED[currentOrder - 1]
+}
+
+/**
  * Вычисляет общий прогресс цикла на основе фаз рецепта
+ * 
+ * @param currentPhaseIndex - Индекс текущей фазы
+ * @param phases - Массив фаз с длительностью
+ * @param startedAt - Дата начала цикла
+ * @param phaseProgress - Прогресс текущей фазы (0-100)
+ * @returns Прогресс цикла в процентах (0-100)
  */
 export function calculateCycleProgress(
   currentPhaseIndex: number,

@@ -117,7 +117,12 @@ class ExtendedCommandsSeeder extends Seeder
                     ? "Ошибка выполнения команды: {$cmdType}"
                     : null;
 
-                $resultCode = $status === Command::STATUS_DONE ? 0 : null;
+                // result_code всегда должен быть установлен (0 = успех, >0 = ошибка)
+                $resultCode = match ($status) {
+                    Command::STATUS_DONE => 0,
+                    Command::STATUS_FAILED, Command::STATUS_TIMEOUT, Command::STATUS_SEND_FAILED => rand(1, 9999),
+                    default => 0,
+                };
                 $durationMs = $ackAt && $sentAt ? $sentAt->diffInMilliseconds($ackAt) : null;
 
                 Command::create([

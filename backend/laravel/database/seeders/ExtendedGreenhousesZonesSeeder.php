@@ -6,6 +6,7 @@ use App\Models\Greenhouse;
 use App\Models\Preset;
 use App\Models\Zone;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 /**
@@ -141,24 +142,34 @@ class ExtendedGreenhousesZonesSeeder extends Seeder
         foreach ($configs as $config) {
             $preset = $presets->get($config['preset_index'] % $presets->count());
             
+            $zoneData = [
+                'uid' => 'zone-' . Str::random(16),
+                'description' => "Зона для выращивания в {$greenhouse->name}",
+                'status' => $config['status'],
+                'preset_id' => $preset->id,
+                'health_score' => $config['status'] === 'RUNNING' ? rand(70, 100) : rand(0, 50),
+                'health_status' => $this->getHealthStatus($config['status']),
+                'hardware_profile' => $this->generateHardwareProfile(),
+                'capabilities' => $this->generateCapabilities(),
+                'settings' => $this->generateZoneSettings(),
+            ];
+
+            // Добавляем water_state только если колонка существует
+            if (Schema::hasColumn('zones', 'water_state')) {
+                $zoneData['water_state'] = $config['status'] === 'RUNNING' ? 'circulating' : 'idle';
+            }
+
+            // Добавляем solution_started_at только если колонка существует
+            if (Schema::hasColumn('zones', 'solution_started_at')) {
+                $zoneData['solution_started_at'] = $config['status'] === 'RUNNING' ? now()->subDays(rand(1, 30)) : null;
+            }
+
             Zone::firstOrCreate(
                 [
                     'greenhouse_id' => $greenhouse->id,
                     'name' => $config['name'],
                 ],
-                [
-                    'uid' => 'zone-' . Str::random(16),
-                    'description' => "Зона для выращивания в {$greenhouse->name}",
-                    'status' => $config['status'],
-                    'preset_id' => $preset->id,
-                    'health_score' => $config['status'] === 'RUNNING' ? rand(70, 100) : rand(0, 50),
-                    'health_status' => $this->getHealthStatus($config['status']),
-                    'hardware_profile' => $this->generateHardwareProfile(),
-                    'capabilities' => $this->generateCapabilities(),
-                    'water_state' => $config['status'] === 'RUNNING' ? 'circulating' : 'idle',
-                    'solution_started_at' => $config['status'] === 'RUNNING' ? now()->subDays(rand(1, 30)) : null,
-                    'settings' => $this->generateZoneSettings(),
-                ]
+                $zoneData
             );
         }
     }

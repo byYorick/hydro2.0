@@ -52,49 +52,45 @@ class ExtendedNodesChannelsSeeder extends Seeder
     {
         $nodes = [];
         
-        // Определяем количество узлов в зависимости от статуса зоны
-        $nodeCount = match ($zone->status) {
-            'RUNNING' => rand(3, 6),
-            'PAUSED' => rand(2, 4),
-            'STOPPED' => rand(1, 2),
-            default => 2,
-        };
+        // Для каждой зоны создаем ровно 6 разнотипных нод
+        $nodeCount = 6;
 
+        // 6 разнотипных нод с уникальными функциями
         $nodeTypes = [
-            [
-                'type' => 'sensor',
-                'name_prefix' => 'Датчик',
-                'channels' => ['ph', 'ec', 'temperature', 'humidity'],
-            ],
-            [
-                'type' => 'actuator',
-                'name_prefix' => 'Актуатор',
-                'channels' => ['pump1', 'pump2', 'light', 'fan'],
-            ],
-            [
-                'type' => 'controller',
-                'name_prefix' => 'Контроллер',
-                'channels' => ['ph', 'ec', 'pump1', 'pump2', 'light', 'fan', 'heater'],
-            ],
             [
                 'type' => 'sensor',
                 'name_prefix' => 'Датчик pH/EC',
                 'channels' => ['ph', 'ec'],
             ],
             [
-                'type' => 'actuator',
-                'name_prefix' => 'Насос',
-                'channels' => ['pump1', 'pump2'],
-            ],
-            [
                 'type' => 'sensor',
                 'name_prefix' => 'Датчик Климата',
                 'channels' => ['temperature', 'humidity'],
             ],
+            [
+                'type' => 'actuator',
+                'name_prefix' => 'Контроллер Насосов',
+                'channels' => ['pump1', 'pump2'],
+            ],
+            [
+                'type' => 'actuator',
+                'name_prefix' => 'Контроллер Освещения',
+                'channels' => ['light'],
+            ],
+            [
+                'type' => 'actuator',
+                'name_prefix' => 'Контроллер Вентиляции',
+                'channels' => ['fan', 'heater'],
+            ],
+            [
+                'type' => 'controller',
+                'name_prefix' => 'Главный Контроллер',
+                'channels' => ['ph', 'ec', 'pump1', 'pump2', 'light', 'fan', 'heater'],
+            ],
         ];
 
         for ($i = 0; $i < $nodeCount; $i++) {
-            $nodeType = $nodeTypes[$i % count($nodeTypes)];
+            $nodeType = $nodeTypes[$i];
             $status = $zone->status === 'RUNNING' 
                 ? (rand(0, 10) > 1 ? 'online' : 'offline')
                 : 'offline';
@@ -111,7 +107,7 @@ class ExtendedNodesChannelsSeeder extends Seeder
                     'uid' => 'nd-' . Str::random(12) . '-' . $zone->id,
                 ],
                 [
-                    'name' => "{$nodeType['name_prefix']} - {$zone->name} #{$i}",
+                    'name' => "{$nodeType['name_prefix']} - {$zone->name}",
                     'type' => $nodeType['type'],
                     'status' => $status,
                     'lifecycle_state' => $lifecycleState,
@@ -129,6 +125,8 @@ class ExtendedNodesChannelsSeeder extends Seeder
                 ]
             );
 
+            // Сохраняем информацию о каналах для последующего использования
+            $node->setAttribute('_channels_config', $nodeType['channels']);
             $nodes[] = $node;
         }
 
@@ -139,35 +137,41 @@ class ExtendedNodesChannelsSeeder extends Seeder
     {
         $channels = [];
         
-        // Определяем каналы в зависимости от типа узла
-        $channelConfigs = match ($node->type) {
-            'sensor' => [
-                ['channel' => 'ph', 'type' => 'sensor', 'metric' => 'PH', 'unit' => 'pH'],
-                ['channel' => 'ec', 'type' => 'sensor', 'metric' => 'EC', 'unit' => 'mS/cm'],
-                ['channel' => 'temperature', 'type' => 'sensor', 'metric' => 'TEMPERATURE', 'unit' => '°C'],
-                ['channel' => 'humidity', 'type' => 'sensor', 'metric' => 'HUMIDITY', 'unit' => '%'],
-            ],
-            'actuator' => [
-                ['channel' => 'pump1', 'type' => 'actuator', 'metric' => 'PUMP1', 'unit' => ''],
-                ['channel' => 'pump2', 'type' => 'actuator', 'metric' => 'PUMP2', 'unit' => ''],
-                ['channel' => 'light', 'type' => 'actuator', 'metric' => 'LIGHT', 'unit' => '%'],
-                ['channel' => 'fan', 'type' => 'actuator', 'metric' => 'FAN', 'unit' => '%'],
-            ],
-            'controller' => [
-                ['channel' => 'ph', 'type' => 'sensor', 'metric' => 'PH', 'unit' => 'pH'],
-                ['channel' => 'ec', 'type' => 'sensor', 'metric' => 'EC', 'unit' => 'mS/cm'],
-                ['channel' => 'pump1', 'type' => 'actuator', 'metric' => 'PUMP1', 'unit' => ''],
-                ['channel' => 'pump2', 'type' => 'actuator', 'metric' => 'PUMP2', 'unit' => ''],
-                ['channel' => 'light', 'type' => 'actuator', 'metric' => 'LIGHT', 'unit' => '%'],
-                ['channel' => 'fan', 'type' => 'actuator', 'metric' => 'FAN', 'unit' => '%'],
-                ['channel' => 'heater', 'type' => 'actuator', 'metric' => 'HEATER', 'unit' => '%'],
-            ],
-            default => [],
-        };
-
-        // Для некоторых узлов используем подмножество каналов
-        if (count($channelConfigs) > 4 && rand(0, 1) === 1) {
-            $channelConfigs = array_slice($channelConfigs, 0, rand(2, 4));
+        // Получаем конфигурацию каналов из атрибута ноды или определяем по типу
+        $channelsList = $node->getAttribute('_channels_config');
+        
+        if (!$channelsList) {
+            // Fallback: определяем каналы по типу узла
+            $channelsList = match ($node->type) {
+                'sensor' => ['ph', 'ec', 'temperature', 'humidity'],
+                'actuator' => ['pump1', 'pump2', 'light', 'fan'],
+                'controller' => ['ph', 'ec', 'pump1', 'pump2', 'light', 'fan', 'heater'],
+                default => [],
+            };
+        }
+        
+        // Маппинг каналов на их конфигурацию
+        $channelMapping = [
+            'ph' => ['type' => 'sensor', 'metric' => 'PH', 'unit' => 'pH'],
+            'ec' => ['type' => 'sensor', 'metric' => 'EC', 'unit' => 'mS/cm'],
+            'temperature' => ['type' => 'sensor', 'metric' => 'TEMPERATURE', 'unit' => '°C'],
+            'humidity' => ['type' => 'sensor', 'metric' => 'HUMIDITY', 'unit' => '%'],
+            'pump1' => ['type' => 'actuator', 'metric' => 'PUMP1', 'unit' => ''],
+            'pump2' => ['type' => 'actuator', 'metric' => 'PUMP2', 'unit' => ''],
+            'light' => ['type' => 'actuator', 'metric' => 'LIGHT', 'unit' => '%'],
+            'fan' => ['type' => 'actuator', 'metric' => 'FAN', 'unit' => '%'],
+            'heater' => ['type' => 'actuator', 'metric' => 'HEATER', 'unit' => '%'],
+        ];
+        
+        // Формируем конфигурацию каналов на основе списка
+        $channelConfigs = [];
+        foreach ($channelsList as $channelName) {
+            if (isset($channelMapping[$channelName])) {
+                $channelConfigs[] = array_merge(
+                    ['channel' => $channelName],
+                    $channelMapping[$channelName]
+                );
+            }
         }
 
         foreach ($channelConfigs as $config) {

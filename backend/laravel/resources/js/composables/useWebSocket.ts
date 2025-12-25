@@ -6,6 +6,9 @@ import { onWsStateChange, getEchoInstance } from '@/utils/echoClient'
 import { readBooleanEnv } from '@/utils/env'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { registerSubscription, unregisterSubscription } from '@/ws/invariants'
+// Импортируем типы для reconciliation
+import type { ZoneSnapshot, SnapshotHandler, SnapshotResponse } from '@/types/reconciliation'
+import { isValidSnapshot, isValidReconciliationData } from '@/types/reconciliation'
 
 type ZoneCommandHandler = (event: {
   commandId: number | string
@@ -86,21 +89,9 @@ let isResubscribing = false // Флаг для предотвращения па
 
 const WS_DISABLED_MESSAGE = 'Realtime отключен в этой сборке'
 
-// Хранилище snapshot для каждой зоны (для reconciliation)
-interface ZoneSnapshot {
-  snapshot_id: string
-  server_ts: number
-  zone_id: number
-  telemetry: Record<string, any>
-  active_alerts: Array<any>
-  recent_commands: Array<any>
-  nodes: Array<any>
-}
-
 const zoneSnapshots = new Map<number, ZoneSnapshot>()
 
 // Callback для применения snapshot (будет установлен компонентами)
-type SnapshotHandler = (snapshot: ZoneSnapshot) => void | Promise<void>
 const snapshotHandlers = new Map<number, SnapshotHandler>()
 
 // Вспомогательная функция для проверки, является ли канал глобальным
@@ -902,6 +893,16 @@ async function fetchAndApplySnapshot(zoneId: number): Promise<void> {
     
     if (response.data?.status === 'ok' && response.data?.data) {
       const snapshot = response.data.data
+      
+      // Валидация snapshot перед сохранением
+      if (!isValidSnapshot(snapshot)) {
+        logger.warn('[useWebSocket] Invalid snapshot received, skipping', {
+          zoneId,
+          snapshot,
+        })
+        return
+      }
+      
       zoneSnapshots.set(zoneId, snapshot)
       
       logger.info('[useWebSocket] Snapshot fetched and stored', {

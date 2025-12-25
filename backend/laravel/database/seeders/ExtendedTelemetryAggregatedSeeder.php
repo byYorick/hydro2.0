@@ -54,19 +54,23 @@ class ExtendedTelemetryAggregatedSeeder extends Seeder
                         $baseValue = $this->getBaseValue($metricType, $zone);
                         $value = $baseValue + (rand(-10, 10) / 100);
 
-                        DB::table('telemetry_agg_1m')->insert([
-                            'zone_id' => $zone->id,
-                            'node_id' => $node->id,
-                            'channel' => $metricType,
-                            'metric_type' => $metricType,
-                            'value_avg' => $value,
-                            'value_min' => $value - 0.1,
-                            'value_max' => $value + 0.1,
-                            'value_median' => $value,
-                            'sample_count' => rand(10, 12),
-                            'ts' => $ts,
-                            'created_at' => $ts,
-                        ]);
+                        DB::table('telemetry_agg_1m')->updateOrInsert(
+                            [
+                                'zone_id' => $zone->id,
+                                'node_id' => $node->id,
+                                'channel' => $metricType,
+                                'metric_type' => $metricType,
+                                'ts' => $ts,
+                            ],
+                            [
+                                'value_avg' => $value,
+                                'value_min' => $value - 0.1,
+                                'value_max' => $value + 0.1,
+                                'value_median' => $value,
+                                'sample_count' => rand(10, 12),
+                                'created_at' => $ts,
+                            ]
+                        );
 
                         $created++;
                     }
@@ -100,19 +104,23 @@ class ExtendedTelemetryAggregatedSeeder extends Seeder
                         $baseValue = $this->getBaseValue($metricType, $zone);
                         $value = $baseValue + (rand(-20, 20) / 100);
 
-                        DB::table('telemetry_agg_1h')->insert([
-                            'zone_id' => $zone->id,
-                            'node_id' => $node->id,
-                            'channel' => $metricType,
-                            'metric_type' => $metricType,
-                            'value_avg' => $value,
-                            'value_min' => $value - 0.2,
-                            'value_max' => $value + 0.2,
-                            'value_median' => $value,
-                            'sample_count' => rand(50, 60),
-                            'ts' => $ts,
-                            'created_at' => $ts,
-                        ]);
+                        DB::table('telemetry_agg_1h')->updateOrInsert(
+                            [
+                                'zone_id' => $zone->id,
+                                'node_id' => $node->id,
+                                'channel' => $metricType,
+                                'metric_type' => $metricType,
+                                'ts' => $ts,
+                            ],
+                            [
+                                'value_avg' => $value,
+                                'value_min' => $value - 0.2,
+                                'value_max' => $value + 0.2,
+                                'value_median' => $value,
+                                'sample_count' => rand(50, 60),
+                                'created_at' => $ts,
+                            ]
+                        );
 
                         $created++;
                     }
@@ -145,19 +153,23 @@ class ExtendedTelemetryAggregatedSeeder extends Seeder
                     $baseValue = $this->getBaseValue($metricType, $zone);
                     $value = $baseValue + (rand(-30, 30) / 100);
 
-                    DB::table('telemetry_daily')->insert([
-                        'zone_id' => $zone->id,
-                        'node_id' => $node->id,
-                        'channel' => $metricType,
-                        'metric_type' => $metricType,
-                        'value_avg' => $value,
-                        'value_min' => $value - 0.5,
-                        'value_max' => $value + 0.5,
-                        'value_median' => $value,
-                        'sample_count' => rand(200, 300),
-                        'date' => $date->toDateString(),
-                        'created_at' => $date,
-                    ]);
+                    DB::table('telemetry_daily')->updateOrInsert(
+                        [
+                            'zone_id' => $zone->id,
+                            'node_id' => $node->id,
+                            'channel' => $metricType,
+                            'metric_type' => $metricType,
+                            'date' => $date->toDateString(),
+                        ],
+                        [
+                            'value_avg' => $value,
+                            'value_min' => $value - 0.5,
+                            'value_max' => $value + 0.5,
+                            'value_median' => $value,
+                            'sample_count' => rand(200, 300),
+                            'created_at' => $date,
+                        ]
+                    );
 
                     $created++;
                 }

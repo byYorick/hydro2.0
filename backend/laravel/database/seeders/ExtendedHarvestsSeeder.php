@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Enums\GrowCycleStatus;
 use App\Models\GrowCycle;
 use App\Models\Harvest;
 use App\Models\Recipe;
@@ -43,7 +44,7 @@ class ExtendedHarvestsSeeder extends Seeder
 
         // Создаем урожаи для завершенных циклов
         $cycles = GrowCycle::where('zone_id', $zone->id)
-            ->whereIn('status', ['COMPLETED', 'HARVESTED'])
+            ->whereIn('status', [GrowCycleStatus::HARVESTED->value, GrowCycleStatus::ABORTED->value])
             ->get();
 
         foreach ($cycles as $cycle) {
@@ -65,7 +66,7 @@ class ExtendedHarvestsSeeder extends Seeder
                 'harvest_date' => $harvestDate,
                 'yield_weight_kg' => rand(50, 500) / 10,
                 'yield_count' => rand(100, 1000),
-                'quality_score' => rand(70, 100) / 10,
+                'quality_score' => rand(70, 99) / 10,
                 'notes' => [
                     'comment' => "Урожай из зоны {$zone->name}",
                     'batch_label' => $cycle->batch_label ?? 'BATCH-' . rand(1000, 9999),
@@ -100,7 +101,7 @@ class ExtendedHarvestsSeeder extends Seeder
                 'harvest_date' => $harvestDate,
                 'yield_weight_kg' => rand(50, 500) / 10,
                 'yield_count' => rand(100, 1000),
-                'quality_score' => rand(70, 100) / 10,
+                'quality_score' => rand(70, 99) / 10,
                 'notes' => [
                     'comment' => "Исторический урожай из зоны {$zone->name}",
                     'batch_label' => 'BATCH-' . rand(1000, 9999),
@@ -137,7 +138,7 @@ class ExtendedHarvestsSeeder extends Seeder
 
             $cycles = GrowCycle::where('zone_id', $zone->id)
                 ->where('recipe_id', $recipe->id)
-                ->whereIn('status', ['COMPLETED', 'HARVESTED'])
+                ->whereIn('status', [GrowCycleStatus::HARVESTED->value, GrowCycleStatus::ABORTED->value])
                 ->get();
 
             $harvests = Harvest::where('zone_id', $zone->id)
@@ -149,22 +150,35 @@ class ExtendedHarvestsSeeder extends Seeder
             $totalCycles = $cycles->count();
             $successRate = $totalCycles > 0 ? rand(80, 100) / 100 : 0;
 
+            $completedCycles = $cycles->where('status', GrowCycleStatus::HARVESTED->value)->count();
+            
+            // Получаем даты первого и последнего цикла
+            $firstCycle = $cycles->sortBy('started_at')->first();
+            $lastCycle = $cycles->sortByDesc('started_at')->first();
+            
+            $startDate = $firstCycle?->started_at ?? now()->subDays(rand(30, 90));
+            $endDate = $lastCycle?->finished_at ?? ($completedCycles > 0 ? now()->subDays(rand(1, 30)) : null);
+            $totalDurationHours = $endDate && $startDate ? (int)round($startDate->diffInHours($endDate)) : null;
+
             DB::table('recipe_analytics')->insert([
                 'zone_id' => $zone->id,
                 'recipe_id' => $recipe->id,
-                'total_cycles' => $totalCycles,
-                'completed_cycles' => $cycles->where('status', 'COMPLETED')->count(),
-                'avg_yield_kg' => $avgYield,
-                'avg_quality_score' => $avgQuality,
-                'success_rate' => $successRate,
-                'avg_cycle_duration_days' => $cycles->avg(function ($cycle) {
-                    if ($cycle->started_at && $cycle->actual_harvest_at) {
-                        return $cycle->started_at->diffInDays($cycle->actual_harvest_at);
-                    }
-                    return rand(30, 90);
-                }) ?? rand(30, 90),
-                'metadata' => json_encode([
-                    'last_updated' => now()->toIso8601String(),
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+                'total_duration_hours' => $totalDurationHours,
+                'avg_ph_deviation' => rand(-5, 5) / 10,
+                'avg_ec_deviation' => rand(-10, 10) / 10,
+                'alerts_count' => rand(0, 20),
+                'final_yield' => json_encode([
+                    'weight_kg' => $avgYield,
+                    'count' => $completedCycles,
+                    'quality_score' => $avgQuality,
+                ]),
+                'efficiency_score' => rand(70, 95),
+                'additional_metrics' => json_encode([
+                    'total_cycles' => $totalCycles,
+                    'completed_cycles' => $completedCycles,
+                    'success_rate' => $totalCycles > 0 ? ($completedCycles / $totalCycles) * 100 : 0,
                     'zone_name' => $zone->name,
                 ]),
                 'created_at' => now()->subDays(rand(1, 30)),
