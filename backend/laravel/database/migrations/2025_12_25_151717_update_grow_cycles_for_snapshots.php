@@ -15,25 +15,27 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('grow_cycles', function (Blueprint $table) {
-            // Удаляем старые FK на шаблоны (если они существуют)
-            if (Schema::hasColumn('grow_cycles', 'current_phase_id')) {
-                // Проверяем, существует ли FK constraint
-                $constraintName = $this->getForeignKeyName('grow_cycles', 'current_phase_id');
-                if ($constraintName) {
-                    $table->dropForeign([$constraintName]);
-                }
+        // Удаляем старые FK на шаблоны (если они существуют)
+        // Используем прямой SQL для более надежного удаления
+        if (Schema::hasColumn('grow_cycles', 'current_phase_id')) {
+            $constraintName = $this->getForeignKeyName('grow_cycles', 'current_phase_id');
+            if ($constraintName) {
+                DB::statement("ALTER TABLE grow_cycles DROP CONSTRAINT IF EXISTS {$constraintName}");
+            }
+            Schema::table('grow_cycles', function (Blueprint $table) {
                 $table->dropColumn('current_phase_id');
+            });
+        }
+        
+        if (Schema::hasColumn('grow_cycles', 'current_step_id')) {
+            $constraintName = $this->getForeignKeyName('grow_cycles', 'current_step_id');
+            if ($constraintName) {
+                DB::statement("ALTER TABLE grow_cycles DROP CONSTRAINT IF EXISTS {$constraintName}");
             }
-            
-            if (Schema::hasColumn('grow_cycles', 'current_step_id')) {
-                $constraintName = $this->getForeignKeyName('grow_cycles', 'current_step_id');
-                if ($constraintName) {
-                    $table->dropForeign([$constraintName]);
-                }
+            Schema::table('grow_cycles', function (Blueprint $table) {
                 $table->dropColumn('current_step_id');
-            }
-        });
+            });
+        }
         
         Schema::table('grow_cycles', function (Blueprint $table) {
             // Добавляем новые FK на снапшоты

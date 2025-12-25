@@ -18,8 +18,11 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Удаляем зависимые объекты (views) перед удалением таблицы
+        DB::statement('DROP VIEW IF EXISTS telemetry_raw CASCADE');
+        
         // Удаляем старую таблицу, если она существует (без обратной совместимости)
-        Schema::dropIfExists('telemetry_samples');
+        DB::statement('DROP TABLE IF EXISTS telemetry_samples CASCADE');
         
         // Создаём новую таблицу без партиционирования (для совместимости с Laravel)
         // Партиционирование будет настроено отдельным SQL скриптом

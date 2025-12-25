@@ -18,7 +18,8 @@ return new class extends Migration
     public function up(): void
     {
         // Удаляем старую таблицу, если она существует (без обратной совместимости)
-        Schema::dropIfExists('telemetry_last');
+        // Используем CASCADE для удаления зависимых объектов
+        DB::statement('DROP TABLE IF EXISTS telemetry_last CASCADE');
         
         Schema::create('telemetry_last', function (Blueprint $table) {
             $table->foreignId('sensor_id')->primary()->constrained('sensors')->cascadeOnDelete();
