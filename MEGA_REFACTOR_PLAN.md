@@ -78,26 +78,26 @@
 ## 4) План работ (один мега‑тикет, разбитый на этапы)
 Ниже — последовательность работ для исполнителя‑ИИ (или команды), без обратной совместимости.
 
-### Этап 0. “Заморозка” базиса и стратегия ветки
-1. Создать ветку `refactor/grow-cycle-centric`.
-2. Зафиксировать тестовый контур:
+### ✅ Этап 0. "Заморозка" базиса и стратегия ветки
+1. ✅ Создать ветку `refactor/grow-cycle-centric`.
+2. ✅ Зафиксировать тестовый контур:
    - `php artisan test` (что проходит/падает)
    - `pytest` по сервисам
    - e2e (если есть)
-3. Ввести правило: все миграции — под `migrate:fresh` (т.к. backward compat не нужна).
+3. ✅ Ввести правило: все миграции — под `migrate:fresh` (т.к. backward compat не нужна).
 
-Acceptance:
+✅ Acceptance:
 - Ветка собирается, Docker поднимается, есть базовый smoke‑test.
 
 ---
 
-### Этап 1. Пересборка схемы БД под новую доменную модель
-#### 1.1. Новые таблицы/поля (миграции Laravel)
-Сделать **новый набор миграций** (или 1 “mega migration” + вспомогательные), который:
-- Создаёт:
-  - `recipe_revisions`
-  - `recipe_revision_phases` (targets “по колонкам”, JSON оставить только для расширений)
-  - `recipe_revision_phase_steps` (опционально)
+### ✅ Этап 1. Пересборка схемы БД под новую доменную модель
+#### ✅ 1.1. Новые таблицы/поля (миграции Laravel)
+Сделать **новый набор миграций** (или 1 "mega migration" + вспомогательные), который:
+- ✅ Создаёт:
+  - ✅ `recipe_revisions`
+  - ✅ `recipe_revision_phases` (targets "по колонкам", JSON оставить только для расширений)
+  - ✅ `recipe_revision_phase_steps` (опционально)
   - `grow_cycle_overrides` (опционально: либо таблица, либо jsonb в grow_cycles, но таблица лучше для аудита)
   - `grow_cycle_transitions`
 - Модифицирует `grow_cycles`:
@@ -209,12 +209,14 @@ Acceptance:
 Удалить:
 - `/attach-recipe`, `/zone_recipe_instances/*`, любые endpoints которые выставляют targets в JSON напрямую.
 
-#### 2.4. Права доступа
-- Только роль/permission “agronomist”:
-  - create/stop cycle
-  - edit recipes & publish
-  - manual phase switch
-- Остальные: read‑only + manual внецикловые команды (по отдельной политике, если нужно).
+#### ✅ 2.4. Права доступа
+- ✅ Только роль/permission "agronomist":
+  - ✅ create/stop cycle
+  - ✅ edit recipes & publish
+  - ✅ manual phase switch
+- ✅ Остальные: read‑only + manual внецикловые команды (по отдельной политике, если нужно).
+- ✅ Созданы Policy: `GrowCyclePolicy`, `RecipeRevisionPolicy`
+- ✅ Все методы управления защищены проверками прав через `Gate::allows()`
 
 #### 2.5. События и логи
 - Все transition’ы цикла писать в:
