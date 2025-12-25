@@ -503,13 +503,13 @@ class ZoneService
             // Обновляем статус зоны на HARVESTED
             $zone->update(['status' => 'HARVESTED']);
             
-            // Закрываем активный recipe instance, если есть
-            if ($zone->recipeInstance) {
-                // Можно пометить instance как завершенный (добавить ended_at если есть колонка)
-                // Или просто оставить как есть для истории
-                Log::info('Recipe instance closed on harvest', [
+            // Закрываем активный цикл, если есть
+            if ($zone->activeGrowCycle) {
+                // Завершаем цикл через GrowCycleService
+                // Это должно быть сделано через отдельный метод, но пока просто логируем
+                Log::info('Active grow cycle found on harvest', [
                     'zone_id' => $zone->id,
-                    'recipe_instance_id' => $zone->recipeInstance->id,
+                    'grow_cycle_id' => $zone->activeGrowCycle->id,
                 ]);
             }
 
