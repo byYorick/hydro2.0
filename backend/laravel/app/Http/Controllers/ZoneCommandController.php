@@ -6,7 +6,8 @@ use App\Http\Requests\StoreZoneCommandRequest;
 use App\Http\Resources\CommandResource;
 use App\Models\Zone;
 use App\Models\ZoneEvent;
-use App\Models\ZoneCycle;
+use App\Models\GrowCycle;
+use App\Enums\GrowCycleStatus;
 use App\Services\PythonBridgeService;
 use App\Services\ZoneReadinessService;
 use Illuminate\Http\Client\ConnectionException;
@@ -38,9 +39,9 @@ class ZoneCommandController extends Controller
 
         // Бизнес-правило: в зоне может быть только один активный цикл выращивания
         if (($data['type'] ?? '') === 'GROWTH_CYCLE_CONFIG' && ($data['params']['mode'] ?? '') === 'start') {
-            $hasActiveCycle = ZoneCycle::query()
+            $hasActiveCycle = GrowCycle::query()
                 ->where('zone_id', $zone->id)
-                ->where('status', 'active')
+                ->whereIn('status', [GrowCycleStatus::PLANNED, GrowCycleStatus::RUNNING, GrowCycleStatus::PAUSED])
                 ->exists();
 
             if ($hasActiveCycle) {
