@@ -57,13 +57,19 @@ class GrowCycleUpdated implements ShouldBroadcast
      */
     public function broadcastWith(): array
     {
+        $cycle = $this->cycle->load('currentPhase.recipeRevisionPhase.stageTemplate');
+        
         return [
             'cycle' => [
                 'id' => $this->cycle->id,
                 'zone_id' => $this->cycle->zone_id,
                 'status' => $this->cycle->status->value,
-                'current_stage_code' => $this->cycle->current_stage_code,
-                'current_stage_started_at' => $this->cycle->current_stage_started_at?->toIso8601String(),
+                'current_phase' => $this->cycle->currentPhase ? [
+                    'id' => $this->cycle->currentPhase->id,
+                    'name' => $this->cycle->currentPhase->name,
+                    'code' => $this->cycle->currentPhase->recipeRevisionPhase?->stageTemplate?->code ?? null,
+                ] : null,
+                'phase_started_at' => $this->cycle->phase_started_at?->toIso8601String(),
                 'started_at' => $this->cycle->started_at?->toIso8601String(),
                 'expected_harvest_at' => $this->cycle->expected_harvest_at?->toIso8601String(),
                 'actual_harvest_at' => $this->cycle->actual_harvest_at?->toIso8601String(),
@@ -91,6 +97,9 @@ class GrowCycleUpdated implements ShouldBroadcast
             default => "CYCLE_{$this->action}",
         };
         
+        $currentPhase = $this->cycle->currentPhase;
+        $stageCode = $currentPhase?->recipeRevisionPhase?->stageTemplate?->code ?? null;
+        
         $this->recordZoneEvent(
             $this->cycle->zone_id,
             $eventType,
@@ -100,7 +109,9 @@ class GrowCycleUpdated implements ShouldBroadcast
                 'cycle_id' => $this->cycle->id,
                 'status' => $this->cycle->status->value,
                 'action' => $this->action,
-                'stage_code' => $this->cycle->current_stage_code,
+                'phase_id' => $currentPhase?->id,
+                'phase_name' => $currentPhase?->name,
+                'stage_code' => $stageCode,
             ],
             $this->eventId,
             $this->serverTs

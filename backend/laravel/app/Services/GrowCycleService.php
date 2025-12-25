@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Events\GrowCycleUpdated;
 use App\Models\GrowCycle;
+use App\Models\GrowCyclePhase;
 use App\Models\GrowCycleTransition;
 use App\Models\GrowStageTemplate;
 use App\Models\Recipe;
@@ -55,12 +56,15 @@ class GrowCycleService
 
             $startImmediately = $data['start_immediately'] ?? false;
 
+            // Создаем снапшот первой фазы
+            $firstPhaseSnapshot = $this->createPhaseSnapshot(null, $firstPhase, $startImmediately ? $plantingAt : null);
+
             $cycle = GrowCycle::create([
                 'greenhouse_id' => $zone->greenhouse_id,
                 'zone_id' => $zone->id,
                 'plant_id' => $plantId,
                 'recipe_revision_id' => $revision->id,
-                'current_phase_id' => $firstPhase->id,
+                'current_phase_id' => $firstPhaseSnapshot->id,
                 'current_step_id' => null,
                 'status' => $startImmediately ? GrowCycleStatus::RUNNING : GrowCycleStatus::PLANNED,
                 'planting_at' => $plantingAt,
@@ -69,6 +73,9 @@ class GrowCycleService
                 'notes' => $data['notes'] ?? null,
                 'started_at' => $startImmediately ? $plantingAt : null,
             ]);
+
+            // Обновляем снапшот с ID цикла
+            $firstPhaseSnapshot->update(['grow_cycle_id' => $cycle->id]);
 
             // Логируем создание
             GrowCycleTransition::create([
@@ -586,20 +593,29 @@ class GrowCycleService
             throw new \DomainException('Cycle has no current phase');
         }
 
-        // Находим следующую фазу
-        $nextPhase = $revision->phases()
-            ->where('phase_index', '>', $currentPhase->phase_index)
+        // Получаем шаблон текущей фазы для поиска следующей
+        $currentPhaseTemplate = $currentPhase->recipeRevisionPhase;
+        if (!$currentPhaseTemplate) {
+            throw new \DomainException('Current phase has no template reference');
+        }
+
+        // Находим следующую фазу в шаблоне
+        $nextPhaseTemplate = $revision->phases()
+            ->where('phase_index', '>', $currentPhaseTemplate->phase_index)
             ->orderBy('phase_index')
             ->first();
 
-        if (!$nextPhase) {
+        if (!$nextPhaseTemplate) {
             throw new \DomainException('No next phase available');
         }
 
-        return DB::transaction(function () use ($cycle, $currentPhase, $nextPhase, $userId) {
+        return DB::transaction(function () use ($cycle, $currentPhase, $nextPhaseTemplate, $userId) {
+            // Создаем снапшот следующей фазы
+            $nextPhaseSnapshot = $this->createPhaseSnapshot($cycle, $nextPhaseTemplate, now());
+
             // Обновляем цикл
             $cycle->update([
-                'current_phase_id' => $nextPhase->id,
+                'current_phase_id' => $nextPhaseSnapshot->id,
                 'current_step_id' => null,
                 'phase_started_at' => now(),
                 'step_started_at' => null,
@@ -607,11 +623,11 @@ class GrowCycleService
 
             $zone = $cycle->zone;
 
-            // Логируем переход
+            // Логируем переход (используем шаблоны для истории переходов)
             GrowCycleTransition::create([
                 'grow_cycle_id' => $cycle->id,
-                'from_phase_id' => $currentPhase->id,
-                'to_phase_id' => $nextPhase->id,
+                'from_phase_id' => $currentPhaseTemplate->id, // Шаблон для истории
+                'to_phase_id' => $nextPhaseTemplate->id, // Шаблон для истории
                 'from_step_id' => $cycle->current_step_id,
                 'to_step_id' => null,
                 'trigger' => 'MANUAL',
@@ -657,11 +673,15 @@ class GrowCycleService
         }
 
         $currentPhase = $cycle->currentPhase;
+        $currentPhaseTemplate = $currentPhase?->recipeRevisionPhase;
 
-        return DB::transaction(function () use ($cycle, $currentPhase, $newPhase, $comment, $userId) {
+        return DB::transaction(function () use ($cycle, $currentPhaseTemplate, $newPhase, $comment, $userId) {
+            // Создаем снапшот новой фазы
+            $newPhaseSnapshot = $this->createPhaseSnapshot($cycle, $newPhase, now());
+
             // Обновляем цикл
             $cycle->update([
-                'current_phase_id' => $newPhase->id,
+                'current_phase_id' => $newPhaseSnapshot->id,
                 'current_step_id' => null,
                 'phase_started_at' => now(),
                 'step_started_at' => null,
@@ -669,11 +689,11 @@ class GrowCycleService
 
             $zone = $cycle->zone;
 
-            // Логируем переход
+            // Логируем переход (используем шаблоны для истории переходов)
             GrowCycleTransition::create([
                 'grow_cycle_id' => $cycle->id,
-                'from_phase_id' => $currentPhase?->id,
-                'to_phase_id' => $newPhase->id,
+                'from_phase_id' => $currentPhaseTemplate?->id, // Шаблон для истории
+                'to_phase_id' => $newPhase->id, // Шаблон для истории
                 'from_step_id' => $cycle->current_step_id,
                 'to_step_id' => null,
                 'trigger' => 'MANUAL',
@@ -724,27 +744,31 @@ class GrowCycleService
 
             if ($applyMode === 'now') {
                 // Применяем сейчас: меняем ревизию и сбрасываем фазу на первую
-                $firstPhase = $newRevision->phases()->orderBy('phase_index')->first();
+                $firstPhaseTemplate = $newRevision->phases()->orderBy('phase_index')->first();
                 
-                if (!$firstPhase) {
+                if (!$firstPhaseTemplate) {
                     throw new \DomainException('Revision has no phases');
                 }
 
-                $oldPhaseId = $cycle->current_phase_id;
+                $oldPhaseSnapshot = $cycle->currentPhase;
+                $oldPhaseTemplateId = $oldPhaseSnapshot?->recipeRevisionPhase?->id;
+
+                // Создаем снапшот первой фазы новой ревизии
+                $firstPhaseSnapshot = $this->createPhaseSnapshot($cycle, $firstPhaseTemplate, now());
 
                 $cycle->update([
                     'recipe_revision_id' => $newRevision->id,
-                    'current_phase_id' => $firstPhase->id,
+                    'current_phase_id' => $firstPhaseSnapshot->id,
                     'current_step_id' => null,
                     'phase_started_at' => now(),
                     'step_started_at' => null,
                 ]);
 
-                // Логируем переход
+                // Логируем переход (используем шаблоны для истории переходов)
                 GrowCycleTransition::create([
                     'grow_cycle_id' => $cycle->id,
-                    'from_phase_id' => $oldPhaseId,
-                    'to_phase_id' => $firstPhase->id,
+                    'from_phase_id' => $oldPhaseTemplateId, // Шаблон для истории
+                    'to_phase_id' => $firstPhaseTemplate->id, // Шаблон для истории
                     'trigger' => 'RECIPE_REVISION_CHANGED',
                     'triggered_by' => $userId,
                     'comment' => "Changed recipe revision from {$oldRevisionId} to {$newRevision->id}",
@@ -804,6 +828,49 @@ class GrowCycleService
             ->with(['zone', 'plant', 'recipeRevision.phases', 'currentPhase', 'currentStep'])
             ->orderBy('started_at', 'desc')
             ->paginate($perPage);
+    }
+
+    /**
+     * Создать снапшот фазы из шаблона
+     * 
+     * @param GrowCycle|null $cycle Цикл (может быть null при создании цикла)
+     * @param RecipeRevisionPhase $templatePhase Шаблонная фаза
+     * @param Carbon|null $startedAt Время начала фазы
+     * @return GrowCyclePhase
+     */
+    private function createPhaseSnapshot(?GrowCycle $cycle, RecipeRevisionPhase $templatePhase, ?Carbon $startedAt = null): GrowCyclePhase
+    {
+        return GrowCyclePhase::create([
+            'grow_cycle_id' => $cycle?->id,
+            'recipe_revision_phase_id' => $templatePhase->id,
+            'phase_index' => $templatePhase->phase_index,
+            'name' => $templatePhase->name,
+            'ph_target' => $templatePhase->ph_target,
+            'ph_min' => $templatePhase->ph_min,
+            'ph_max' => $templatePhase->ph_max,
+            'ec_target' => $templatePhase->ec_target,
+            'ec_min' => $templatePhase->ec_min,
+            'ec_max' => $templatePhase->ec_max,
+            'irrigation_mode' => $templatePhase->irrigation_mode,
+            'irrigation_interval_sec' => $templatePhase->irrigation_interval_sec,
+            'irrigation_duration_sec' => $templatePhase->irrigation_duration_sec,
+            'lighting_photoperiod_hours' => $templatePhase->lighting_photoperiod_hours,
+            'lighting_start_time' => $templatePhase->lighting_start_time,
+            'mist_interval_sec' => $templatePhase->mist_interval_sec,
+            'mist_duration_sec' => $templatePhase->mist_duration_sec,
+            'mist_mode' => $templatePhase->mist_mode,
+            'temp_air_target' => $templatePhase->temp_air_target,
+            'humidity_target' => $templatePhase->humidity_target,
+            'co2_target' => $templatePhase->co2_target,
+            'progress_model' => $templatePhase->progress_model,
+            'duration_hours' => $templatePhase->duration_hours,
+            'duration_days' => $templatePhase->duration_days,
+            'base_temp_c' => $templatePhase->base_temp_c,
+            'target_gdd' => $templatePhase->target_gdd,
+            'dli_target' => $templatePhase->dli_target,
+            'extensions' => $templatePhase->extensions,
+            'started_at' => $startedAt,
+        ]);
     }
 }
 
