@@ -132,6 +132,6 @@ return new class extends Migration
                     $table->index('current_stage_code', 'grow_cycles_current_stage_code_idx');
                 }
             });
-        }
+    }
 };
 
