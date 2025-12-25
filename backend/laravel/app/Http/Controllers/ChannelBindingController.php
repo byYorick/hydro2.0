@@ -6,6 +6,7 @@ use App\Helpers\ZoneAccessHelper;
 use App\Models\ChannelBinding;
 use App\Models\InfrastructureInstance;
 use App\Models\Zone;
+use App\Services\ChannelBindingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -13,6 +14,11 @@ use Symfony\Component\HttpFoundation\Response;
 
 class ChannelBindingController extends Controller
 {
+    public function __construct(
+        private ChannelBindingService $bindingService
+    ) {
+    }
+
     /**
      * Создать привязку канала
      * POST /api/channel-bindings
@@ -49,11 +55,11 @@ class ChannelBindingController extends Controller
                 }
             }
 
-            $binding = ChannelBinding::create($data);
+            $binding = $this->bindingService->create($data);
 
             return response()->json([
                 'status' => 'ok',
-                'data' => $binding->load('infrastructureInstance', 'node'),
+                'data' => $binding,
             ], Response::HTTP_CREATED);
         } catch (\Exception $e) {
             Log::error('Failed to create channel binding', [
@@ -103,11 +109,11 @@ class ChannelBindingController extends Controller
         ]);
 
         try {
-            $channelBinding->update($data);
+            $binding = $this->bindingService->update($channelBinding, $data);
 
             return response()->json([
                 'status' => 'ok',
-                'data' => $channelBinding->fresh()->load('infrastructureInstance', 'node'),
+                'data' => $binding,
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to update channel binding', [

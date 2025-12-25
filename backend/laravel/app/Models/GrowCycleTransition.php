@@ -16,7 +16,7 @@ class GrowCycleTransition extends Model
         'to_phase_id',
         'from_step_id',
         'to_step_id',
-        'trigger_type',
+        'trigger',
         'comment',
         'triggered_by',
         'metadata',

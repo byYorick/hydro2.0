@@ -4,14 +4,19 @@ namespace App\Http\Controllers;
 
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
+use App\Services\RecipeRevisionPhaseService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
 class RecipeRevisionPhaseController extends Controller
 {
+    public function __construct(
+        private RecipeRevisionPhaseService $phaseService
+    ) {
+    }
+
     /**
      * Создать фазу в ревизии рецепта
      * POST /api/recipe-revisions/{recipeRevision}/phases
@@ -24,14 +29,6 @@ class RecipeRevisionPhaseController extends Controller
                 'status' => 'error',
                 'message' => 'Unauthorized',
             ], 401);
-        }
-
-        // Только черновики можно редактировать
-        if ($recipeRevision->status !== 'DRAFT') {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Only DRAFT revisions can be edited',
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
         $data = $request->validate([
@@ -67,18 +64,17 @@ class RecipeRevisionPhaseController extends Controller
         ]);
 
         try {
-            // Если phase_index не указан, используем следующий доступный
-            if (!isset($data['phase_index'])) {
-                $maxIndex = $recipeRevision->phases()->max('phase_index') ?? -1;
-                $data['phase_index'] = $maxIndex + 1;
-            }
-
-            $phase = $recipeRevision->phases()->create($data);
+            $phase = $this->phaseService->createPhase($recipeRevision, $data);
 
             return response()->json([
                 'status' => 'ok',
                 'data' => $phase->load('stageTemplate'),
             ], Response::HTTP_CREATED);
+        } catch (\DomainException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (\Exception $e) {
             Log::error('Failed to create recipe revision phase', [
                 'revision_id' => $recipeRevision->id,
@@ -104,16 +100,6 @@ class RecipeRevisionPhaseController extends Controller
                 'status' => 'error',
                 'message' => 'Unauthorized',
             ], 401);
-        }
-
-        $revision = $recipeRevisionPhase->recipeRevision;
-
-        // Только черновики можно редактировать
-        if ($revision->status !== 'DRAFT') {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Only DRAFT revisions can be edited',
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
         $data = $request->validate([
@@ -148,12 +134,17 @@ class RecipeRevisionPhaseController extends Controller
         ]);
 
         try {
-            $recipeRevisionPhase->update($data);
+            $phase = $this->phaseService->updatePhase($recipeRevisionPhase, $data);
 
             return response()->json([
                 'status' => 'ok',
-                'data' => $recipeRevisionPhase->fresh()->load('stageTemplate'),
+                'data' => $phase,
             ]);
+        } catch (\DomainException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (\Exception $e) {
             Log::error('Failed to update recipe revision phase', [
                 'phase_id' => $recipeRevisionPhase->id,
@@ -181,23 +172,18 @@ class RecipeRevisionPhaseController extends Controller
             ], 401);
         }
 
-        $revision = $recipeRevisionPhase->recipeRevision;
-
-        // Только черновики можно редактировать
-        if ($revision->status !== 'DRAFT') {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Only DRAFT revisions can be edited',
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
-        }
-
         try {
-            $recipeRevisionPhase->delete();
+            $this->phaseService->deletePhase($recipeRevisionPhase);
 
             return response()->json([
                 'status' => 'ok',
                 'message' => 'Phase deleted',
             ]);
+        } catch (\DomainException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (\Exception $e) {
             Log::error('Failed to delete recipe revision phase', [
                 'phase_id' => $recipeRevisionPhase->id,

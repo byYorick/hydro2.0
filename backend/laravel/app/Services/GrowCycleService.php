@@ -4,54 +4,107 @@ namespace App\Services;
 
 use App\Events\GrowCycleUpdated;
 use App\Models\GrowCycle;
+use App\Models\GrowCycleTransition;
 use App\Models\GrowStageTemplate;
 use App\Models\Recipe;
+use App\Models\RecipeRevision;
+use App\Models\RecipeRevisionPhase;
 use App\Models\RecipeStageMap;
 use App\Models\Zone;
+use App\Models\ZoneEvent;
 use App\Models\ZoneRecipeInstance;
 use App\Enums\GrowCycleStatus;
 use Carbon\Carbon;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class GrowCycleService
 {
     /**
-     * Создать новый цикл выращивания
+     * Создать новый цикл выращивания (новая модель с recipe_revision_id)
      */
     public function createCycle(
         Zone $zone,
-        ?Recipe $recipe = null,
-        ?int $plantId = null,
-        array $settings = []
+        RecipeRevision $revision,
+        int $plantId,
+        array $data = [],
+        ?int $userId = null
     ): GrowCycle {
-        $recipe = $recipe ?? $zone->recipeInstance?->recipe;
-        
-        if (!$recipe) {
-            throw new \DomainException('Recipe is required to create a grow cycle');
+        // Проверяем, что в зоне нет активного цикла
+        $activeCycle = $zone->activeGrowCycle;
+        if ($activeCycle) {
+            throw new \DomainException('Zone already has an active cycle. Please pause, harvest, or abort it first.');
         }
 
-        return DB::transaction(function () use ($zone, $recipe, $plantId, $settings) {
+        // Проверяем, что ревизия опубликована
+        if ($revision->status !== 'PUBLISHED') {
+            throw new \DomainException('Only PUBLISHED revisions can be used for new cycles');
+        }
+
+        // Получаем первую фазу
+        $firstPhase = $revision->phases()->orderBy('phase_index')->first();
+        if (!$firstPhase) {
+            throw new \DomainException('Revision has no phases');
+        }
+
+        return DB::transaction(function () use ($zone, $revision, $firstPhase, $plantId, $data, $userId) {
+            $plantingAt = isset($data['planting_at']) && $data['planting_at'] 
+                ? Carbon::parse($data['planting_at']) 
+                : now();
+
+            $startImmediately = $data['start_immediately'] ?? false;
+
             $cycle = GrowCycle::create([
                 'greenhouse_id' => $zone->greenhouse_id,
                 'zone_id' => $zone->id,
                 'plant_id' => $plantId,
-                'recipe_id' => $recipe->id,
-                'zone_recipe_instance_id' => $zone->recipeInstance?->id,
-                'status' => GrowCycleStatus::PLANNED,
-                'settings' => $settings,
+                'recipe_revision_id' => $revision->id,
+                'current_phase_id' => $firstPhase->id,
+                'current_step_id' => null,
+                'status' => $startImmediately ? GrowCycleStatus::RUNNING : GrowCycleStatus::PLANNED,
+                'planting_at' => $plantingAt,
+                'phase_started_at' => $startImmediately ? $plantingAt : null,
+                'batch_label' => $data['batch_label'] ?? null,
+                'notes' => $data['notes'] ?? null,
+                'started_at' => $startImmediately ? $plantingAt : null,
             ]);
 
-            // Генерируем stage-map для рецепта, если его еще нет
-            $this->ensureRecipeStageMap($recipe);
+            // Логируем создание
+            GrowCycleTransition::create([
+                'grow_cycle_id' => $cycle->id,
+                'from_phase_id' => null,
+                'to_phase_id' => $firstPhase->id,
+                'trigger' => 'CYCLE_CREATED',
+                'triggered_by' => $userId,
+                'comment' => 'Cycle created',
+            ]);
+
+            // Записываем событие
+            ZoneEvent::create([
+                'zone_id' => $zone->id,
+                'type' => 'CYCLE_CREATED',
+                'entity_type' => 'grow_cycle',
+                'entity_id' => (string) $cycle->id,
+                'payload_json' => [
+                    'cycle_id' => $cycle->id,
+                    'recipe_revision_id' => $revision->id,
+                    'plant_id' => $plantId,
+                    'user_id' => $userId,
+                    'source' => 'web',
+                ],
+            ]);
+
+            // Отправляем WebSocket broadcast
+            broadcast(new GrowCycleUpdated($cycle->fresh(), 'CREATED'));
 
             Log::info('Grow cycle created', [
                 'cycle_id' => $cycle->id,
                 'zone_id' => $zone->id,
-                'recipe_id' => $recipe->id,
+                'recipe_revision_id' => $revision->id,
             ]);
 
-            return $cycle;
+            return $cycle->load('recipeRevision', 'currentPhase', 'plant');
         });
     }
 
@@ -342,6 +395,415 @@ class GrowCycleService
                 ],
             ]);
         }
+    }
+
+    /**
+     * Приостановить цикл
+     */
+    public function pause(GrowCycle $cycle, int $userId): GrowCycle
+    {
+        if ($cycle->status !== GrowCycleStatus::RUNNING) {
+            throw new \DomainException('Cycle is not running');
+        }
+
+        return DB::transaction(function () use ($cycle, $userId) {
+            $cycle->update(['status' => GrowCycleStatus::PAUSED]);
+            $cycle->refresh();
+
+            $zone = $cycle->zone;
+
+            // Записываем событие в zone_events
+            ZoneEvent::create([
+                'zone_id' => $zone->id,
+                'type' => 'CYCLE_PAUSED',
+                'entity_type' => 'grow_cycle',
+                'entity_id' => (string) $cycle->id,
+                'payload_json' => [
+                    'cycle_id' => $cycle->id,
+                    'user_id' => $userId,
+                    'source' => 'web',
+                ],
+            ]);
+
+            // Отправляем WebSocket broadcast
+            broadcast(new GrowCycleUpdated($cycle, 'PAUSED'));
+
+            Log::info('Grow cycle paused', [
+                'zone_id' => $zone->id,
+                'cycle_id' => $cycle->id,
+                'user_id' => $userId,
+            ]);
+
+            return $cycle->fresh();
+        });
+    }
+
+    /**
+     * Возобновить цикл
+     */
+    public function resume(GrowCycle $cycle, int $userId): GrowCycle
+    {
+        if ($cycle->status !== GrowCycleStatus::PAUSED) {
+            throw new \DomainException('Cycle is not paused');
+        }
+
+        return DB::transaction(function () use ($cycle, $userId) {
+            $cycle->update(['status' => GrowCycleStatus::RUNNING]);
+            $cycle->refresh();
+
+            $zone = $cycle->zone;
+
+            // Записываем событие в zone_events
+            ZoneEvent::create([
+                'zone_id' => $zone->id,
+                'type' => 'CYCLE_RESUMED',
+                'entity_type' => 'grow_cycle',
+                'entity_id' => (string) $cycle->id,
+                'payload_json' => [
+                    'cycle_id' => $cycle->id,
+                    'user_id' => $userId,
+                    'source' => 'web',
+                ],
+            ]);
+
+            // Отправляем WebSocket broadcast
+            broadcast(new GrowCycleUpdated($cycle, 'RESUMED'));
+
+            Log::info('Grow cycle resumed', [
+                'zone_id' => $zone->id,
+                'cycle_id' => $cycle->id,
+                'user_id' => $userId,
+            ]);
+
+            return $cycle->fresh();
+        });
+    }
+
+    /**
+     * Зафиксировать сбор (harvest) - закрывает цикл
+     */
+    public function harvest(GrowCycle $cycle, array $data, int $userId): GrowCycle
+    {
+        if ($cycle->status === GrowCycleStatus::HARVESTED || $cycle->status === GrowCycleStatus::ABORTED) {
+            throw new \DomainException('Cycle is already completed');
+        }
+
+        return DB::transaction(function () use ($cycle, $data, $userId) {
+            $cycle->update([
+                'status' => GrowCycleStatus::HARVESTED,
+                'actual_harvest_at' => now(),
+                'batch_label' => $data['batch_label'] ?? $cycle->batch_label,
+                'notes' => $data['notes'] ?? $cycle->notes,
+            ]);
+            $cycle->refresh();
+
+            $zone = $cycle->zone;
+
+            // Записываем событие в zone_events
+            ZoneEvent::create([
+                'zone_id' => $zone->id,
+                'type' => 'CYCLE_HARVESTED',
+                'entity_type' => 'grow_cycle',
+                'entity_id' => (string) $cycle->id,
+                'payload_json' => [
+                    'cycle_id' => $cycle->id,
+                    'user_id' => $userId,
+                    'source' => 'web',
+                    'batch_label' => $cycle->batch_label,
+                ],
+            ]);
+
+            // Отправляем WebSocket broadcast
+            broadcast(new GrowCycleUpdated($cycle, 'HARVESTED'));
+
+            Log::info('Grow cycle harvested', [
+                'zone_id' => $zone->id,
+                'cycle_id' => $cycle->id,
+                'user_id' => $userId,
+            ]);
+
+            return $cycle->fresh();
+        });
+    }
+
+    /**
+     * Аварийная остановка цикла
+     */
+    public function abort(GrowCycle $cycle, array $data, int $userId): GrowCycle
+    {
+        if ($cycle->status === GrowCycleStatus::HARVESTED || $cycle->status === GrowCycleStatus::ABORTED) {
+            throw new \DomainException('Cycle is already completed');
+        }
+
+        return DB::transaction(function () use ($cycle, $data, $userId) {
+            $cycle->update([
+                'status' => GrowCycleStatus::ABORTED,
+                'notes' => $data['notes'] ?? $cycle->notes,
+            ]);
+            $cycle->refresh();
+
+            $zone = $cycle->zone;
+
+            // Записываем событие в zone_events
+            ZoneEvent::create([
+                'zone_id' => $zone->id,
+                'type' => 'CYCLE_ABORTED',
+                'entity_type' => 'grow_cycle',
+                'entity_id' => (string) $cycle->id,
+                'payload_json' => [
+                    'cycle_id' => $cycle->id,
+                    'user_id' => $userId,
+                    'source' => 'web',
+                    'reason' => $data['notes'] ?? 'Emergency abort',
+                ],
+            ]);
+
+            // Отправляем WebSocket broadcast
+            broadcast(new GrowCycleUpdated($cycle, 'ABORTED'));
+
+            Log::info('Grow cycle aborted', [
+                'zone_id' => $zone->id,
+                'cycle_id' => $cycle->id,
+                'user_id' => $userId,
+            ]);
+
+            return $cycle->fresh();
+        });
+    }
+
+    /**
+     * Переход на следующую фазу
+     */
+    public function advancePhase(GrowCycle $cycle, int $userId): GrowCycle
+    {
+        $revision = $cycle->recipeRevision;
+        if (!$revision) {
+            throw new \DomainException('Cycle has no recipe revision');
+        }
+
+        $currentPhase = $cycle->currentPhase;
+        if (!$currentPhase) {
+            throw new \DomainException('Cycle has no current phase');
+        }
+
+        // Находим следующую фазу
+        $nextPhase = $revision->phases()
+            ->where('phase_index', '>', $currentPhase->phase_index)
+            ->orderBy('phase_index')
+            ->first();
+
+        if (!$nextPhase) {
+            throw new \DomainException('No next phase available');
+        }
+
+        return DB::transaction(function () use ($cycle, $currentPhase, $nextPhase, $userId) {
+            // Обновляем цикл
+            $cycle->update([
+                'current_phase_id' => $nextPhase->id,
+                'current_step_id' => null,
+                'phase_started_at' => now(),
+                'step_started_at' => null,
+            ]);
+
+            $zone = $cycle->zone;
+
+            // Логируем переход
+            GrowCycleTransition::create([
+                'grow_cycle_id' => $cycle->id,
+                'from_phase_id' => $currentPhase->id,
+                'to_phase_id' => $nextPhase->id,
+                'from_step_id' => $cycle->current_step_id,
+                'to_step_id' => null,
+                'trigger' => 'MANUAL',
+                'triggered_by' => $userId,
+                'comment' => 'Advanced to next phase',
+            ]);
+
+            // Записываем событие в zone_events
+            ZoneEvent::create([
+                'zone_id' => $zone->id,
+                'type' => 'CYCLE_PHASE_ADVANCED',
+                'entity_type' => 'grow_cycle',
+                'entity_id' => (string) $cycle->id,
+                'payload_json' => [
+                    'cycle_id' => $cycle->id,
+                    'from_phase_id' => $currentPhase->id,
+                    'to_phase_id' => $nextPhase->id,
+                    'user_id' => $userId,
+                    'source' => 'web',
+                ],
+            ]);
+
+            // Отправляем WebSocket broadcast
+            broadcast(new GrowCycleUpdated($cycle->fresh(), 'PHASE_ADVANCED'));
+
+            return $cycle->fresh()->load('currentPhase', 'currentStep');
+        });
+    }
+
+    /**
+     * Установить конкретную фазу (manual switch с комментарием)
+     */
+    public function setPhase(GrowCycle $cycle, RecipeRevisionPhase $newPhase, string $comment, int $userId): GrowCycle
+    {
+        $revision = $cycle->recipeRevision;
+        if (!$revision) {
+            throw new \DomainException('Cycle has no recipe revision');
+        }
+
+        // Проверяем, что фаза принадлежит ревизии
+        if ($newPhase->recipe_revision_id !== $revision->id) {
+            throw new \DomainException('Phase does not belong to cycle\'s recipe revision');
+        }
+
+        $currentPhase = $cycle->currentPhase;
+
+        return DB::transaction(function () use ($cycle, $currentPhase, $newPhase, $comment, $userId) {
+            // Обновляем цикл
+            $cycle->update([
+                'current_phase_id' => $newPhase->id,
+                'current_step_id' => null,
+                'phase_started_at' => now(),
+                'step_started_at' => null,
+            ]);
+
+            $zone = $cycle->zone;
+
+            // Логируем переход
+            GrowCycleTransition::create([
+                'grow_cycle_id' => $cycle->id,
+                'from_phase_id' => $currentPhase?->id,
+                'to_phase_id' => $newPhase->id,
+                'from_step_id' => $cycle->current_step_id,
+                'to_step_id' => null,
+                'trigger' => 'MANUAL',
+                'triggered_by' => $userId,
+                'comment' => $comment,
+            ]);
+
+            // Записываем событие в zone_events
+            ZoneEvent::create([
+                'zone_id' => $zone->id,
+                'type' => 'CYCLE_PHASE_SET',
+                'entity_type' => 'grow_cycle',
+                'entity_id' => (string) $cycle->id,
+                'payload_json' => [
+                    'cycle_id' => $cycle->id,
+                    'from_phase_id' => $currentPhase?->id,
+                    'to_phase_id' => $newPhase->id,
+                    'user_id' => $userId,
+                    'source' => 'web',
+                    'comment' => $comment,
+                ],
+            ]);
+
+            // Отправляем WebSocket broadcast
+            broadcast(new GrowCycleUpdated($cycle->fresh(), 'PHASE_SET'));
+
+            return $cycle->fresh()->load('currentPhase', 'currentStep');
+        });
+    }
+
+    /**
+     * Сменить ревизию рецепта
+     */
+    public function changeRecipeRevision(
+        GrowCycle $cycle,
+        RecipeRevision $newRevision,
+        string $applyMode,
+        int $userId
+    ): GrowCycle {
+        // Проверяем, что ревизия опубликована
+        if ($newRevision->status !== 'PUBLISHED') {
+            throw new \DomainException('Only PUBLISHED revisions can be applied to cycles');
+        }
+
+        return DB::transaction(function () use ($cycle, $newRevision, $applyMode, $userId) {
+            $zone = $cycle->zone;
+            $oldRevisionId = $cycle->recipe_revision_id;
+
+            if ($applyMode === 'now') {
+                // Применяем сейчас: меняем ревизию и сбрасываем фазу на первую
+                $firstPhase = $newRevision->phases()->orderBy('phase_index')->first();
+                
+                if (!$firstPhase) {
+                    throw new \DomainException('Revision has no phases');
+                }
+
+                $oldPhaseId = $cycle->current_phase_id;
+
+                $cycle->update([
+                    'recipe_revision_id' => $newRevision->id,
+                    'current_phase_id' => $firstPhase->id,
+                    'current_step_id' => null,
+                    'phase_started_at' => now(),
+                    'step_started_at' => null,
+                ]);
+
+                // Логируем переход
+                GrowCycleTransition::create([
+                    'grow_cycle_id' => $cycle->id,
+                    'from_phase_id' => $oldPhaseId,
+                    'to_phase_id' => $firstPhase->id,
+                    'trigger' => 'RECIPE_REVISION_CHANGED',
+                    'triggered_by' => $userId,
+                    'comment' => "Changed recipe revision from {$oldRevisionId} to {$newRevision->id}",
+                ]);
+
+                // Записываем событие
+                ZoneEvent::create([
+                    'zone_id' => $zone->id,
+                    'type' => 'CYCLE_RECIPE_REVISION_CHANGED',
+                    'entity_type' => 'grow_cycle',
+                    'entity_id' => (string) $cycle->id,
+                    'payload_json' => [
+                        'cycle_id' => $cycle->id,
+                        'from_revision_id' => $oldRevisionId,
+                        'to_revision_id' => $newRevision->id,
+                        'apply_mode' => 'now',
+                        'user_id' => $userId,
+                        'source' => 'web',
+                    ],
+                ]);
+            } else {
+                // Применяем с следующей фазы: только меняем ревизию, фазу не трогаем
+                $cycle->update([
+                    'recipe_revision_id' => $newRevision->id,
+                ]);
+
+                // Записываем событие
+                ZoneEvent::create([
+                    'zone_id' => $zone->id,
+                    'type' => 'CYCLE_RECIPE_REVISION_CHANGED',
+                    'entity_type' => 'grow_cycle',
+                    'entity_id' => (string) $cycle->id,
+                    'payload_json' => [
+                        'cycle_id' => $cycle->id,
+                        'from_revision_id' => $oldRevisionId,
+                        'to_revision_id' => $newRevision->id,
+                        'apply_mode' => 'next_phase',
+                        'user_id' => $userId,
+                        'source' => 'web',
+                    ],
+                ]);
+            }
+
+            // Отправляем WebSocket broadcast
+            broadcast(new GrowCycleUpdated($cycle->fresh(), 'RECIPE_REVISION_CHANGED'));
+
+            return $cycle->fresh()->load('recipeRevision', 'currentPhase');
+        });
+    }
+
+    /**
+     * Получить все циклы для теплицы
+     */
+    public function getByGreenhouse(int $greenhouseId, int $perPage = 50): LengthAwarePaginator
+    {
+        return GrowCycle::where('greenhouse_id', $greenhouseId)
+            ->with(['zone', 'plant', 'recipeRevision.phases', 'currentPhase', 'currentStep'])
+            ->orderBy('started_at', 'desc')
+            ->paginate($perPage);
     }
 }
 

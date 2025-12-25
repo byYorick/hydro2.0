@@ -6,14 +6,19 @@ use App\Helpers\ZoneAccessHelper;
 use App\Models\InfrastructureInstance;
 use App\Models\Zone;
 use App\Models\Greenhouse;
+use App\Services\InfrastructureInstanceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
 class InfrastructureInstanceController extends Controller
 {
+    public function __construct(
+        private InfrastructureInstanceService $infrastructureService
+    ) {
+    }
+
     /**
      * Получить все экземпляры инфраструктуры для зоны
      * GET /api/zones/{zone}/infrastructure-instances
@@ -36,10 +41,7 @@ class InfrastructureInstanceController extends Controller
         }
 
         try {
-            $instances = InfrastructureInstance::where('owner_type', 'zone')
-                ->where('owner_id', $zone->id)
-                ->with('channelBindings.node')
-                ->get();
+            $instances = $this->infrastructureService->getForZone($zone);
 
             return response()->json([
                 'status' => 'ok',
@@ -75,10 +77,7 @@ class InfrastructureInstanceController extends Controller
         // TODO: Проверка доступа к теплице
 
         try {
-            $instances = InfrastructureInstance::where('owner_type', 'greenhouse')
-                ->where('owner_id', $greenhouse->id)
-                ->with('channelBindings.node')
-                ->get();
+            $instances = $this->infrastructureService->getForGreenhouse($greenhouse);
 
             return response()->json([
                 'status' => 'ok',
@@ -135,14 +134,7 @@ class InfrastructureInstanceController extends Controller
                 // TODO: Проверка доступа к теплице
             }
 
-            $instance = InfrastructureInstance::create([
-                'owner_type' => $data['owner_type'],
-                'owner_id' => $data['owner_id'],
-                'asset_type' => $data['asset_type'],
-                'label' => $data['label'],
-                'specs' => $data['specs'] ?? [],
-                'required' => $data['required'] ?? false,
-            ]);
+            $instance = $this->infrastructureService->create($data);
 
             return response()->json([
                 'status' => 'ok',
@@ -193,11 +185,11 @@ class InfrastructureInstanceController extends Controller
         ]);
 
         try {
-            $infrastructureInstance->update($data);
+            $instance = $this->infrastructureService->update($infrastructureInstance, $data);
 
             return response()->json([
                 'status' => 'ok',
-                'data' => $infrastructureInstance->fresh()->load('channelBindings'),
+                'data' => $instance,
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to update infrastructure instance', [
@@ -238,7 +230,7 @@ class InfrastructureInstanceController extends Controller
         }
 
         try {
-            $infrastructureInstance->delete();
+            $this->infrastructureService->delete($infrastructureInstance);
 
             return response()->json([
                 'status' => 'ok',
