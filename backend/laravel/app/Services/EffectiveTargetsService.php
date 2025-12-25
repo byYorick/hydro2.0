@@ -216,7 +216,10 @@ class EffectiveTargetsService
             return null;
         }
 
-        $startedAt = Carbon::parse($cycle->phase_started_at);
+        // phase_started_at уже cast в datetime, но parse безопасно работает и с Carbon объектами
+        $startedAt = $cycle->phase_started_at instanceof Carbon 
+            ? $cycle->phase_started_at 
+            : Carbon::parse($cycle->phase_started_at);
 
         // Простая модель по времени
         if ($phase->progress_model === 'TIME' || !$phase->progress_model) {
