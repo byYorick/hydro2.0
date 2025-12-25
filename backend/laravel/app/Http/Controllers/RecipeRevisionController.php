@@ -7,6 +7,7 @@ use App\Models\RecipeRevision;
 use App\Services\RecipeRevisionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -50,8 +51,13 @@ class RecipeRevisionController extends Controller
             ], 401);
         }
 
-        // TODO: Проверка прав (только agronomist может создавать ревизии)
-        // if (!$user->hasRole('agronomist')) { ... }
+        // Проверка прав: только агроном может создавать ревизии
+        if (!Gate::allows('create', RecipeRevision::class)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Only agronomists can create recipe revisions',
+            ], 403);
+        }
 
         $data = $request->validate([
             'clone_from_revision_id' => ['nullable', 'integer', 'exists:recipe_revisions,id'],
@@ -103,6 +109,14 @@ class RecipeRevisionController extends Controller
                 'status' => 'error',
                 'message' => 'Only DRAFT revisions can be edited',
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        // Проверка прав: только агроном может редактировать ревизии
+        if (!Gate::allows('update', $recipeRevision)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Only agronomists can edit recipe revisions',
+            ], 403);
         }
 
         $data = $request->validate([

@@ -14,6 +14,7 @@ use App\Services\EffectiveTargetsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Gate;
 use Symfony\Component\HttpFoundation\Response;
 
 class GrowCycleController extends Controller
@@ -42,6 +43,14 @@ class GrowCycleController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this zone',
+            ], 403);
+        }
+
+        // Проверка прав: только агроном может управлять циклами
+        if (!Gate::allows('update', $growCycle)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Only agronomists can manage grow cycles',
             ], 403);
         }
 
@@ -92,6 +101,14 @@ class GrowCycleController extends Controller
             ], 403);
         }
 
+        // Проверка прав: только агроном может управлять циклами
+        if (!Gate::allows('update', $growCycle)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Only agronomists can manage grow cycles',
+            ], 403);
+        }
+
         try {
             $cycle = $this->growCycleService->resume($growCycle, $user->id);
 
@@ -136,6 +153,14 @@ class GrowCycleController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this zone',
+            ], 403);
+        }
+
+        // Проверка прав: только агроном может управлять циклами
+        if (!Gate::allows('update', $growCycle)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Only agronomists can manage grow cycles',
             ], 403);
         }
 
@@ -188,6 +213,14 @@ class GrowCycleController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this zone',
+            ], 403);
+        }
+
+        // Проверка прав: только агроном может управлять циклами
+        if (!Gate::allows('update', $growCycle)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Only agronomists can manage grow cycles',
             ], 403);
         }
 
@@ -407,6 +440,14 @@ class GrowCycleController extends Controller
             ], 403);
         }
 
+        // Проверка прав: только агроном может переключать фазы
+        if (!Gate::allows('switchPhase', $growCycle)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Only agronomists can switch phases',
+            ], 403);
+        }
+
         try {
             $cycle = $this->growCycleService->advancePhase($growCycle, $user->id);
 
@@ -451,6 +492,14 @@ class GrowCycleController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this zone',
+            ], 403);
+        }
+
+        // Проверка прав: только агроном может переключать фазы
+        if (!Gate::allows('switchPhase', $growCycle)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Only agronomists can switch phases',
             ], 403);
         }
 
@@ -504,6 +553,14 @@ class GrowCycleController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this zone',
+            ], 403);
+        }
+
+        // Проверка прав: только агроном может менять ревизию рецепта
+        if (!Gate::allows('changeRecipeRevision', $growCycle)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Only agronomists can change recipe revisions',
             ], 403);
         }
 

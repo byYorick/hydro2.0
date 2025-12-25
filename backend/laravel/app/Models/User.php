@@ -51,4 +51,20 @@ class User extends Authenticatable
     {
         return ($this->role ?? 'operator') === 'admin';
     }
+
+    /**
+     * Проверить, имеет ли пользователь указанную роль
+     */
+    public function hasRole(string $role): bool
+    {
+        return ($this->role ?? 'operator') === $role;
+    }
+
+    /**
+     * Проверить, является ли пользователь агрономом
+     */
+    public function isAgronomist(): bool
+    {
+        return $this->hasRole('agronomist');
+    }
 }
