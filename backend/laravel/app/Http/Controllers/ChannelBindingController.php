@@ -156,7 +156,7 @@ class ChannelBindingController extends Controller
         }
 
         try {
-            $channelBinding->delete();
+            $this->bindingService->delete($channelBinding);
 
             return response()->json([
                 'status' => 'ok',
