@@ -134,7 +134,11 @@ class EffectiveTargetsService
         if ($phase->lighting_photoperiod_hours !== null) {
             $targets['lighting'] = [
                 'photoperiod_hours' => $phase->lighting_photoperiod_hours,
-                'start_time' => $phase->lighting_start_time?->format('H:i:s'),
+                'start_time' => $phase->lighting_start_time 
+                    ? (is_string($phase->lighting_start_time) 
+                        ? $phase->lighting_start_time 
+                        : Carbon::parse($phase->lighting_start_time)->format('H:i:s'))
+                    : null,
             ];
         }
 
@@ -258,8 +262,10 @@ class EffectiveTargetsService
 
         // Упрощенная формула: скорость пропорциональна разнице температур
         // Более точная формула будет в Phase Progress Engine
+        // Формула: +1% скорости на каждые 1°C выше базовой температуры
         if ($avgTemp24h > $baseTemp) {
-            return 1.0 + (($avgTemp24h - $baseTemp) / 10.0) * 0.1; // +1% на каждые 0.1°C выше базовой
+            $tempDiff = $avgTemp24h - $baseTemp;
+            return 1.0 + ($tempDiff * 0.01); // +1% на каждый градус выше базовой
         }
 
         return 1.0;
