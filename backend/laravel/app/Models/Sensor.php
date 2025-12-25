@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Sensor extends Model
 {
@@ -65,9 +66,9 @@ class Sensor extends Model
     /**
      * Последнее значение (кэш)
      */
-    public function lastValue(): BelongsTo
+    public function lastValue(): HasOne
     {
-        return $this->belongsTo(TelemetryLast::class, 'sensor_id', 'sensor_id');
+        return $this->hasOne(TelemetryLast::class, 'sensor_id');
     }
 
     /**
