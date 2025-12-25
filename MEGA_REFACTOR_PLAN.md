@@ -7,6 +7,12 @@
 
 - ✅ **Этап 0**: Завершен (ветка создана, тесты зафиксированы)
 - ✅ **Этап 1**: Завершен (миграции, constraints, удаление legacy таблиц)
+  - ✅ PHASE 0: Подготовка (DB_CANON_V2.md, db_sanity.sql)
+  - ✅ PHASE 1: Исправление критических ошибок миграций
+  - ✅ PHASE 2: Снапшоты фаз и шагов циклов (grow_cycle_phases, grow_cycle_phase_steps)
+  - ✅ PHASE 3: Сенсоры и телеметрия (sensors, telemetry_samples, telemetry_last)
+  - ✅ PHASE 4: Команды и двухфазные подтверждения (commands, command_acks)
+  - ✅ PHASE 5: Удаление legacy и финальное ужесточение схемы
 - ✅ **Этап 2.1**: Завершен (Eloquent модели и отношения)
 - ✅ **Этап 2.2**: Завершен (EffectiveTargetsService и другие сервисы)
 - ✅ **Этап 2.3**: Завершен (API эндпоинты, удалены legacy endpoints)
@@ -20,6 +26,7 @@
 
 ### Дополнительно выполнено
 - ✅ Рефакторинг контроллеров по принципу тонких контроллеров (вся бизнес-логика вынесена в сервисы)
+- ✅ DB Canonical Model (PHASE 0-5): Полная перестройка схемы БД под новую доменную модель
 
 ## 0) Цель (Definition of Done)
 Система переводится на доменную модель:
@@ -121,8 +128,9 @@
 - ✅ Модифицирует `grow_cycles`:
   - ✅ удалить `zone_recipe_instance_id`
   - ✅ добавить `recipe_revision_id` (NOT NULL)
-  - ✅ добавить `current_phase_id` (FK → recipe_revision_phases.id) и `current_step_id` (FK nullable)
+  - ✅ добавить `current_phase_id` (FK → grow_cycle_phases.id, снапшот) и `current_step_id` (FK → grow_cycle_phase_steps.id, nullable, снапшот)
   - ✅ добавить `phase_started_at`, `step_started_at`, `planting_at` (если нет) и `progress_meta jsonb` (для temp/light коррекций)
+  - ✅ **Исправлено:** `current_phase_id` и `current_step_id` теперь ссылаются на снапшоты (`grow_cycle_phases`, `grow_cycle_phase_steps`), а не на шаблоны рецептов
 - ✅ Полиморфная инфраструктура (рекомендуется):
   - ✅ заменить `zone_infrastructure` + `infrastructure_assets` на единый `infrastructure_instances`:
     - ✅ `owner_type` ENUM('zone','greenhouse')
@@ -131,11 +139,11 @@
     - ✅ `label`, `specs`, `required`
   - ✅ заменить `zone_channel_bindings` на `channel_bindings` (owner‑agnostic):
     - ✅ `infrastructure_instance_id`
-    - ✅ `node_id`
-    - ✅ `channel`
+    - ✅ `node_channel_id` (FK → node_channels, нормализация через PHASE 1.4)
     - ✅ `direction`, `role`
-- ⏳ Enforce "1 node = 1 zone":
-  - ⏳ частичный уникальный индекс: `nodes(zone_id) WHERE zone_id IS NOT NULL` (или `unique` + договориться что только 1 node будет иметь zone_id).
+    - ✅ **Исправлено:** Используется `node_channel_id` вместо `node_id + channel`
+- ✅ Enforce "1 node = 1 zone":
+  - ✅ частичный уникальный индекс: `nodes(zone_id) WHERE zone_id IS NOT NULL` (PHASE 5.2)
 
 #### ✅ 1.2. Дроп legacy таблиц и колонок
 ✅ Удалить из схемы (и затем удалить код/модели):
@@ -152,10 +160,18 @@
 
 #### ✅ 1.4. Ограничения целостности
 - ✅ Уникальность активного цикла:
-  - ✅ partial unique index на `grow_cycles(zone_id)` WHERE `status IN ('RUNNING','PAUSED')`
-  - ⏳ опционально дополнительно ограничить 1 PLANNED (если нужно).
+  - ✅ partial unique index на `grow_cycles(zone_id)` WHERE `status IN ('PLANNED','RUNNING','PAUSED')` (исправлено: добавлен PLANNED)
 - ✅ Упорядочивание фаз:
-  - ✅ `unique(recipe_revision_id, phase_index)`.
+  - ✅ `unique(recipe_revision_id, phase_index)` в `recipe_revision_phases`
+  - ✅ `unique(recipe_revision_phase_id, step_index)` в `recipe_revision_phase_steps`
+  - ✅ `unique(grow_cycle_id, phase_index)` в `grow_cycle_phases`
+  - ✅ `unique(grow_cycle_phase_id, step_index)` в `grow_cycle_phase_steps`
+- ✅ Правило 1 зона = 1 нода:
+  - ✅ `unique(zone_id) WHERE zone_id IS NOT NULL` в `nodes`
+- ✅ Уникальность каналов ноды:
+  - ✅ `unique(node_id, channel)` в `node_channels`
+- ✅ Уникальность версий рецепта:
+  - ✅ `unique(recipe_id, revision_number)` в `recipe_revisions`
 
 ✅ Acceptance:
 - ✅ `php artisan migrate:fresh` проходит.
