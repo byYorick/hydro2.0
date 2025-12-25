@@ -609,7 +609,7 @@ class GrowCycleService
             throw new \DomainException('No next phase available');
         }
 
-        return DB::transaction(function () use ($cycle, $currentPhase, $nextPhaseTemplate, $userId) {
+        return DB::transaction(function () use ($cycle, $currentPhase, $currentPhaseTemplate, $nextPhaseTemplate, $userId) {
             // Создаем снапшот следующей фазы
             $nextPhaseSnapshot = $this->createPhaseSnapshot($cycle, $nextPhaseTemplate, now());
 
