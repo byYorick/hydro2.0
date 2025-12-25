@@ -6,6 +6,7 @@ use App\Enums\GrowCycleStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class GrowCycle extends Model
 {
@@ -15,8 +16,10 @@ class GrowCycle extends Model
         'greenhouse_id',
         'zone_id',
         'plant_id',
-        'recipe_id',
-        'zone_recipe_instance_id',
+        'recipe_id', // Оставлено для совместимости, но основной источник - recipe_revision_id
+        'recipe_revision_id',
+        'current_phase_id',
+        'current_step_id',
         'status',
         'started_at',
         'recipe_started_at',
@@ -25,9 +28,10 @@ class GrowCycle extends Model
         'batch_label',
         'notes',
         'settings',
-        'current_stage_code',
-        'current_stage_started_at',
         'planting_at',
+        'phase_started_at',
+        'step_started_at',
+        'progress_meta',
     ];
 
     protected $casts = [
@@ -36,9 +40,11 @@ class GrowCycle extends Model
         'recipe_started_at' => 'datetime',
         'expected_harvest_at' => 'datetime',
         'actual_harvest_at' => 'datetime',
-        'current_stage_started_at' => 'datetime',
         'planting_at' => 'datetime',
+        'phase_started_at' => 'datetime',
+        'step_started_at' => 'datetime',
         'settings' => 'array',
+        'progress_meta' => 'array',
     ];
 
     public function greenhouse(): BelongsTo
@@ -56,14 +62,86 @@ class GrowCycle extends Model
         return $this->belongsTo(Plant::class);
     }
 
+    /**
+     * Рецепт (legacy, для совместимости)
+     * Основной источник - recipeRevision()
+     */
     public function recipe(): BelongsTo
     {
         return $this->belongsTo(Recipe::class);
     }
 
-    public function zoneRecipeInstance(): BelongsTo
+    /**
+     * Ревизия рецепта (центр истины)
+     */
+    public function recipeRevision(): BelongsTo
     {
-        return $this->belongsTo(ZoneRecipeInstance::class);
+        return $this->belongsTo(RecipeRevision::class);
+    }
+
+    /**
+     * Текущая фаза цикла
+     */
+    public function currentPhase(): BelongsTo
+    {
+        return $this->belongsTo(RecipeRevisionPhase::class, 'current_phase_id');
+    }
+
+    /**
+     * Текущий подшаг цикла
+     */
+    public function currentStep(): BelongsTo
+    {
+        return $this->belongsTo(RecipeRevisionPhaseStep::class, 'current_step_id');
+    }
+
+    /**
+     * Перекрытия целевых параметров
+     */
+    public function overrides(): HasMany
+    {
+        return $this->hasMany(GrowCycleOverride::class);
+    }
+
+    /**
+     * Активные перекрытия
+     */
+    public function activeOverrides(): HasMany
+    {
+        return $this->hasMany(GrowCycleOverride::class)
+            ->where('is_active', true);
+    }
+
+    /**
+     * История переходов фаз
+     */
+    public function transitions(): HasMany
+    {
+        return $this->hasMany(GrowCycleTransition::class)->orderBy('created_at');
+    }
+
+    /**
+     * Проверка, является ли цикл активным (RUNNING или PAUSED)
+     */
+    public function isActive(): bool
+    {
+        return in_array($this->status, [GrowCycleStatus::RUNNING, GrowCycleStatus::PAUSED]);
+    }
+
+    /**
+     * Scope для активных циклов
+     */
+    public function scopeActive($query)
+    {
+        return $query->whereIn('status', [GrowCycleStatus::RUNNING, GrowCycleStatus::PAUSED]);
+    }
+
+    /**
+     * Scope для циклов в зоне
+     */
+    public function scopeForZone($query, int $zoneId)
+    {
+        return $query->where('zone_id', $zoneId);
     }
 }
 

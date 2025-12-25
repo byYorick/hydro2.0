@@ -51,6 +51,42 @@ class Zone extends Model
         return $this->hasMany(DeviceNode::class, 'zone_id');
     }
 
+    /**
+     * Активный цикл выращивания (RUNNING или PAUSED)
+     */
+    public function activeGrowCycle(): HasOne
+    {
+        return $this->hasOne(GrowCycle::class)
+            ->whereIn('status', [GrowCycleStatus::RUNNING, GrowCycleStatus::PAUSED]);
+    }
+
+    /**
+     * Экземпляры инфраструктуры зоны
+     */
+    public function infrastructureInstances(): HasMany
+    {
+        return $this->morphMany(InfrastructureInstance::class, 'owner')
+            ->where('owner_type', 'zone');
+    }
+
+    /**
+     * Привязки каналов через инфраструктуру зоны
+     */
+    public function channelBindings(): HasMany
+    {
+        return $this->hasManyThrough(
+            ChannelBinding::class,
+            InfrastructureInstance::class,
+            'owner_id', // Foreign key on infrastructure_instances
+            'infrastructure_instance_id', // Foreign key on channel_bindings
+            'id', // Local key on zones
+            'id' // Local key on infrastructure_instances
+        )->where('infrastructure_instances.owner_type', 'zone');
+    }
+
+    /**
+     * @deprecated Используйте activeGrowCycle() вместо recipeInstance()
+     */
     public function recipeInstance(): HasOne
     {
         return $this->hasOne(ZoneRecipeInstance::class);
@@ -96,39 +132,34 @@ class Zone extends Model
         return $this->hasMany(GrowCycle::class);
     }
 
-    public function activeGrowCycle(): HasOne
-    {
-        return $this->hasOne(GrowCycle::class)
-            ->whereIn('status', [
-                GrowCycleStatus::PLANNED,
-                GrowCycleStatus::RUNNING,
-                GrowCycleStatus::PAUSED,
-            ])
-            ->latest('started_at');
-    }
-
+    /**
+     * @deprecated Используйте infrastructureInstances() вместо infrastructure()
+     */
     public function infrastructure(): HasMany
     {
         return $this->hasMany(ZoneInfrastructure::class);
     }
 
-    public function channelBindings(): HasMany
+    /**
+     * @deprecated Используйте channelBindings() (новая модель) вместо старой
+     */
+    public function legacyChannelBindings(): HasMany
     {
         return $this->hasMany(ZoneChannelBinding::class);
     }
 
     /**
-     * Проверка валидности инфраструктуры зоны
+     * Проверка валидности инфраструктуры зоны (новая модель)
      * Все required-оборудование должно быть привязано к каналам
      */
     public function isInfrastructureValid(): bool
     {
-        $requiredAssets = $this->infrastructure()
+        $requiredAssets = $this->infrastructureInstances()
             ->where('required', true)
             ->get();
 
         foreach ($requiredAssets as $asset) {
-            if (!$asset->isBound()) {
+            if ($asset->channelBindings()->count() === 0) {
                 return false;
             }
         }
@@ -137,17 +168,17 @@ class Zone extends Model
     }
 
     /**
-     * Получить список незаполненных required-оборудований
+     * Получить список незаполненных required-оборудований (новая модель)
      */
     public function getMissingRequiredAssets(): array
     {
-        $requiredAssets = $this->infrastructure()
+        $requiredAssets = $this->infrastructureInstances()
             ->where('required', true)
             ->get();
 
         $missing = [];
         foreach ($requiredAssets as $asset) {
-            if (!$asset->isBound()) {
+            if ($asset->channelBindings()->count() === 0) {
                 $missing[] = [
                     'id' => $asset->id,
                     'type' => $asset->asset_type,
