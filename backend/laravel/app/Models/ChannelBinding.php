@@ -12,8 +12,7 @@ class ChannelBinding extends Model
 
     protected $fillable = [
         'infrastructure_instance_id',
-        'node_id',
-        'channel',
+        'node_channel_id',
         'direction',
         'role',
     ];
@@ -27,11 +26,20 @@ class ChannelBinding extends Model
     }
 
     /**
-     * Нода, к которой привязан канал
+     * Канал ноды (нормализованная связь)
+     */
+    public function nodeChannel(): BelongsTo
+    {
+        return $this->belongsTo(NodeChannel::class);
+    }
+
+    /**
+     * Нода через канал (для обратной совместимости)
      */
     public function node(): BelongsTo
     {
-        return $this->belongsTo(DeviceNode::class, 'node_id');
+        return $this->belongsTo(DeviceNode::class, 'node_id')
+            ->through('nodeChannel');
     }
 
     /**
