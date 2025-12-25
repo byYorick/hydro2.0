@@ -82,31 +82,20 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('commands', function (Blueprint $table) {
-            // Удаляем индексы
-            if (Schema::hasIndex('commands', 'commands_cycle_idx')) {
-                $table->dropIndex('commands_cycle_idx');
-            }
-            if (Schema::hasIndex('commands', 'commands_request_id_idx')) {
-                $table->dropIndex('commands_request_id_idx');
-            }
-            if (Schema::hasIndex('commands', 'commands_node_status_idx')) {
-                $table->dropIndex('commands_node_status_idx');
-            }
-            
-            // Удаляем индексы
-            if (Schema::hasIndex('commands', 'commands_cycle_idx')) {
-                $table->dropIndex('commands_cycle_idx');
-            }
-            if (Schema::hasIndex('commands', 'commands_request_id_idx')) {
-                $table->dropIndex('commands_request_id_idx');
-            }
-            if (Schema::hasIndex('commands', 'commands_node_status_idx')) {
-                $table->dropIndex('commands_node_status_idx');
-            }
-            
             // Удаляем уникальный индекс для request_id
             if (Schema::hasIndex('commands', 'commands_request_id_unique')) {
                 $table->dropUnique('commands_request_id_unique');
+            }
+            
+            // Удаляем индексы
+            if (Schema::hasIndex('commands', 'commands_cycle_idx')) {
+                $table->dropIndex('commands_cycle_idx');
+            }
+            if (Schema::hasIndex('commands', 'commands_request_id_idx')) {
+                $table->dropIndex('commands_request_id_idx');
+            }
+            if (Schema::hasIndex('commands', 'commands_node_status_idx')) {
+                $table->dropIndex('commands_node_status_idx');
             }
             
             // Удаляем новые колонки
