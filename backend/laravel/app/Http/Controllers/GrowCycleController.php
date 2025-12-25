@@ -276,6 +276,14 @@ class GrowCycleController extends Controller
             ], 403);
         }
 
+        // Проверка прав: только агроном может создавать циклы
+        if (!Gate::allows('create', [GrowCycle::class, $zone])) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Only agronomists can create grow cycles',
+            ], 403);
+        }
+
         $data = $request->validate([
             'recipe_revision_id' => ['required', 'integer', 'exists:recipe_revisions,id'],
             'plant_id' => ['required', 'integer', 'exists:plants,id'],

@@ -103,19 +103,12 @@ class RecipeRevisionController extends Controller
             ], 401);
         }
 
-        // Только черновики можно редактировать
-        if ($recipeRevision->status !== 'DRAFT') {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Only DRAFT revisions can be edited',
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
-        }
-
         // Проверка прав: только агроном может редактировать ревизии
+        // Policy также проверяет статус DRAFT
         if (!Gate::allows('update', $recipeRevision)) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Forbidden: Only agronomists can edit recipe revisions',
+                'message' => 'Forbidden: Only agronomists can edit recipe revisions, and only DRAFT revisions can be edited',
             ], 403);
         }
 
