@@ -26,7 +26,6 @@ class RecipeRevisionController extends Controller
     {
         $recipeRevision->load([
             'phases.stageTemplate',
-            'phases.steps',
             'recipe',
             'creator',
         ]);

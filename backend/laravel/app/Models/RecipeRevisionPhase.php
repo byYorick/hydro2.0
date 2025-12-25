@@ -82,7 +82,7 @@ class RecipeRevisionPhase extends Model
      */
     public function steps(): HasMany
     {
-        return $this->hasMany(RecipeRevisionPhaseStep::class)->orderBy('step_index');
+        return $this->hasMany(RecipeRevisionPhaseStep::class, 'phase_id')->orderBy('step_index');
     }
 
     /**

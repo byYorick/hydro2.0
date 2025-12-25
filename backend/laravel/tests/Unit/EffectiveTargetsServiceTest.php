@@ -39,6 +39,7 @@ class EffectiveTargetsServiceTest extends TestCase
         $phase = RecipeRevisionPhase::factory()->create([
             'recipe_revision_id' => $revision->id,
             'phase_index' => 0,
+            'name' => 'Test Phase',
             'ph_target' => 6.0,
             'ph_min' => 5.8,
             'ph_max' => 6.2,
@@ -61,6 +62,7 @@ class EffectiveTargetsServiceTest extends TestCase
             'grow_cycle_id' => $cycle->id,
             'recipe_revision_phase_id' => $phase->id,
             'phase_index' => 0,
+            'name' => 'Test Phase',
             'ph_target' => 6.0,
             'ph_min' => 5.8,
             'ph_max' => 6.2,
@@ -113,6 +115,7 @@ class EffectiveTargetsServiceTest extends TestCase
         $phase = RecipeRevisionPhase::factory()->create([
             'recipe_revision_id' => $revision->id,
             'phase_index' => 0,
+            'name' => 'Test Phase',
             'ph_target' => 6.0,
             'ph_min' => 5.8,
             'ph_max' => 6.2,
@@ -128,6 +131,7 @@ class EffectiveTargetsServiceTest extends TestCase
             'grow_cycle_id' => $cycle->id,
             'recipe_revision_phase_id' => $phase->id,
             'phase_index' => 0,
+            'name' => 'Test Phase',
             'ph_target' => 6.0,
             'ph_min' => 5.8,
             'ph_max' => 6.2,
@@ -135,13 +139,15 @@ class EffectiveTargetsServiceTest extends TestCase
 
         $cycle->update(['current_phase_id' => $snapshotPhase->id]);
 
-        // Создаем override для pH
+        // Создаем override для pH (используем точечную нотацию для вложенных параметров)
         GrowCycleOverride::factory()->create([
             'grow_cycle_id' => $cycle->id,
-            'parameter' => 'ph_target',
+            'parameter' => 'ph.target',
             'value' => '6.5',
             'value_type' => 'decimal',
             'is_active' => true,
+            'applies_from' => now()->subDay(),
+            'applies_until' => null,
         ]);
 
         $result = $this->service->getEffectiveTargets($cycle->id);
@@ -167,6 +173,7 @@ class EffectiveTargetsServiceTest extends TestCase
         $phase = RecipeRevisionPhase::factory()->create([
             'recipe_revision_id' => $revision->id,
             'phase_index' => 0,
+            'name' => 'Test Phase',
             'ph_target' => 6.0,
         ]);
 
@@ -186,6 +193,7 @@ class EffectiveTargetsServiceTest extends TestCase
             'grow_cycle_id' => $cycle1->id,
             'recipe_revision_phase_id' => $phase->id,
             'phase_index' => 0,
+            'name' => 'Test Phase',
             'ph_target' => 6.0,
         ]);
 
@@ -193,6 +201,7 @@ class EffectiveTargetsServiceTest extends TestCase
             'grow_cycle_id' => $cycle2->id,
             'recipe_revision_phase_id' => $phase->id,
             'phase_index' => 0,
+            'name' => 'Test Phase',
             'ph_target' => 6.0,
         ]);
 
@@ -244,6 +253,7 @@ class EffectiveTargetsServiceTest extends TestCase
         $phase = RecipeRevisionPhase::factory()->create([
             'recipe_revision_id' => $revision->id,
             'phase_index' => 0,
+            'name' => 'Test Phase',
             'irrigation_mode' => 'SUBSTRATE',
             'irrigation_interval_sec' => 3600,
             'irrigation_duration_sec' => 300,
@@ -259,6 +269,7 @@ class EffectiveTargetsServiceTest extends TestCase
             'grow_cycle_id' => $cycle->id,
             'recipe_revision_phase_id' => $phase->id,
             'phase_index' => 0,
+            'name' => 'Test Phase',
             'irrigation_mode' => 'SUBSTRATE',
             'irrigation_interval_sec' => 3600,
             'irrigation_duration_sec' => 300,

@@ -81,13 +81,16 @@ class RecipeRevisionControllerTest extends TestCase
             'status' => 'PUBLISHED',
         ]);
 
+        $template = \App\Models\GrowStageTemplate::factory()->create();
         RecipeRevisionPhase::factory()->create([
             'recipe_revision_id' => $sourceRevision->id,
+            'stage_template_id' => $template->id,
             'phase_index' => 0,
             'name' => 'Test Phase 1',
         ]);
         RecipeRevisionPhase::factory()->create([
             'recipe_revision_id' => $sourceRevision->id,
+            'stage_template_id' => $template->id,
             'phase_index' => 1,
             'name' => 'Test Phase 2',
         ]);

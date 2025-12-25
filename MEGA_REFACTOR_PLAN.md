@@ -47,12 +47,14 @@
   - ✅ Настроены retention policies (365 дней) для commands и zone_events
   - ✅ Поддержка TimescaleDB hypertables и native PostgreSQL partitioning
 - ✅ **Этап 6**: Завершен (Тестирование)
-  - ✅ Создан EffectiveTargetsServiceTest - тесты контракта effective targets
-  - ✅ Создан RecipeRevisionControllerTest - тесты CRUD операций с ревизиями
-  - ✅ Создан GrowCyclePolicyTest - тесты прав доступа (agronomist)
-  - ✅ Создан InternalApiControllerTest - тесты batch endpoint для Python сервисов
+  - ✅ Создан EffectiveTargetsServiceTest - тесты контракта effective targets (5 тестов)
+  - ✅ Создан RecipeRevisionControllerTest - тесты CRUD операций с ревизиями (6 тестов)
+  - ✅ Создан GrowCyclePolicyTest - тесты прав доступа (agronomist) (10 тестов)
+  - ✅ Создан InternalApiControllerTest - тесты batch endpoint для Python сервисов (3 теста)
   - ✅ Созданы фабрики: RecipeRevisionFactory, RecipeRevisionPhaseFactory, GrowCyclePhaseFactory, GrowCycleOverrideFactory
+  - ✅ Обновлена GrowCycleFactory для новой модели (recipe_revision_id вместо zone_recipe_instance_id)
   - ✅ Создан test_laravel_api_repository.py - тесты для Python LaravelApiRepository
+  - ✅ Исправлены все ошибки в тестах (25 тестов проходят успешно, 100 assertions)
 - ⏳ **Этап 7**: Не начат (Документация)
 
 ### Дополнительно выполнено
