@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * Модель команды с единым контрактом статусов.
@@ -44,12 +46,17 @@ class Command extends Model
 
     protected $fillable = [
         'zone_id',
+        'cycle_id',
+        'context_type',
         'node_id',
         'channel',
         'cmd',
+        'command_type',
         'params',
+        'payload',
         'status',
         'cmd_id',
+        'request_id',
         'sent_at',
         'ack_at',
         'failed_at',
@@ -61,6 +68,7 @@ class Command extends Model
 
     protected $casts = [
         'params' => 'array',
+        'payload' => 'array',
         'sent_at' => 'datetime',
         'ack_at' => 'datetime',
         'failed_at' => 'datetime',
@@ -94,6 +102,70 @@ class Command extends Model
             self::STATUS_TIMEOUT,
             self::STATUS_SEND_FAILED,
         ], true);
+    }
+
+    /**
+     * Цикл выращивания (nullable для внецикловых команд)
+     */
+    public function cycle(): BelongsTo
+    {
+        return $this->belongsTo(GrowCycle::class);
+    }
+
+    /**
+     * Зона
+     */
+    public function zone(): BelongsTo
+    {
+        return $this->belongsTo(Zone::class);
+    }
+
+    /**
+     * Узел
+     */
+    public function node(): BelongsTo
+    {
+        return $this->belongsTo(DeviceNode::class, 'node_id');
+    }
+
+    /**
+     * Подтверждения команды (двухфазное подтверждение)
+     */
+    public function acks(): HasMany
+    {
+        return $this->hasMany(CommandAck::class);
+    }
+
+    /**
+     * Последнее подтверждение
+     */
+    public function lastAck()
+    {
+        return $this->hasOne(CommandAck::class)->latestOfMany('created_at');
+    }
+
+    /**
+     * Scope для команд цикла
+     */
+    public function scopeForCycle($query, int $cycleId)
+    {
+        return $query->where('cycle_id', $cycleId);
+    }
+
+    /**
+     * Scope для внецикловых команд
+     */
+    public function scopeOutOfCycle($query)
+    {
+        return $query->whereNull('cycle_id');
+    }
+
+    /**
+     * Scope для типа контекста
+     */
+    public function scopeWithContext($query, string $contextType)
+    {
+        return $query->where('context_type', $contextType);
     }
 }
 
