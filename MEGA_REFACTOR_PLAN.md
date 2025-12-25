@@ -98,76 +98,72 @@
   - ✅ `recipe_revisions`
   - ✅ `recipe_revision_phases` (targets "по колонкам", JSON оставить только для расширений)
   - ✅ `recipe_revision_phase_steps` (опционально)
-  - `grow_cycle_overrides` (опционально: либо таблица, либо jsonb в grow_cycles, но таблица лучше для аудита)
-  - `grow_cycle_transitions`
-- Модифицирует `grow_cycles`:
-  - удалить `zone_recipe_instance_id`
-  - добавить `recipe_revision_id` (NOT NULL)
-  - добавить `current_phase_id` (FK → recipe_revision_phases.id) и `current_step_id` (FK nullable)
-  - добавить `phase_started_at`, `step_started_at`, `planting_at` (если нет) и `progress_meta jsonb` (для temp/light коррекций)
-- Полиморфная инфраструктура (рекомендуется):
-  - заменить `zone_infrastructure` + `infrastructure_assets` на единый `infrastructure_instances`:
-    - `owner_type` ENUM('zone','greenhouse')
-    - `owner_id`
-    - `asset_type` (PUMP/MISTER/TANK_CLEAN/TANK_WORKING/LIGHT/VENT/HEATER/…)
-    - `label`, `specs`, `required`
-  - заменить `zone_channel_bindings` на `channel_bindings` (owner‑agnostic):
-    - `infrastructure_instance_id`
-    - `node_id`
-    - `channel`
-    - `direction`, `role`
-- Enforce “1 node = 1 zone”:
-  - частичный уникальный индекс: `nodes(zone_id) WHERE zone_id IS NOT NULL` (или `unique` + договориться что только 1 node будет иметь zone_id).
+  - ✅ `grow_cycle_overrides` (опционально: либо таблица, либо jsonb в grow_cycles, но таблица лучше для аудита)
+  - ✅ `grow_cycle_transitions`
+- ✅ Модифицирует `grow_cycles`:
+  - ✅ удалить `zone_recipe_instance_id`
+  - ✅ добавить `recipe_revision_id` (NOT NULL)
+  - ✅ добавить `current_phase_id` (FK → recipe_revision_phases.id) и `current_step_id` (FK nullable)
+  - ✅ добавить `phase_started_at`, `step_started_at`, `planting_at` (если нет) и `progress_meta jsonb` (для temp/light коррекций)
+- ✅ Полиморфная инфраструктура (рекомендуется):
+  - ✅ заменить `zone_infrastructure` + `infrastructure_assets` на единый `infrastructure_instances`:
+    - ✅ `owner_type` ENUM('zone','greenhouse')
+    - ✅ `owner_id`
+    - ✅ `asset_type` (PUMP/MISTER/TANK_CLEAN/TANK_WORKING/LIGHT/VENT/HEATER/…)
+    - ✅ `label`, `specs`, `required`
+  - ✅ заменить `zone_channel_bindings` на `channel_bindings` (owner‑agnostic):
+    - ✅ `infrastructure_instance_id`
+    - ✅ `node_id`
+    - ✅ `channel`
+    - ✅ `direction`, `role`
+- ⏳ Enforce "1 node = 1 zone":
+  - ⏳ частичный уникальный индекс: `nodes(zone_id) WHERE zone_id IS NOT NULL` (или `unique` + договориться что только 1 node будет иметь zone_id).
 
-#### 1.2. Дроп legacy таблиц и колонок
-Удалить из схемы (и затем удалить код/модели):
-- `zone_recipe_instances`
-- `recipe_phases` (legacy JSON targets)
-- `zone_cycles`
-- `plant_cycles` (дублирование состояния цикла)
-- `commands_archive`, `zone_events_archive` (и любые *_archive где это “дубли”)
-- `recipe_stage_maps` — либо удалить, либо перепривязать к ревизиям (см. Этап 1.3)
+#### ✅ 1.2. Дроп legacy таблиц и колонок
+✅ Удалить из схемы (и затем удалить код/модели):
+- ✅ `zone_recipe_instances`
+- ✅ `recipe_phases` (legacy JSON targets)
+- ✅ `zone_cycles`
+- ✅ `plant_cycles` (дублирование состояния цикла)
+- ✅ `commands_archive`, `zone_events_archive` (и любые *_archive где это "дубли")
+- ✅ `recipe_stage_maps` — удалено (используется вариант Б)
 
-#### 1.3. Stage templates (UI)
-Оставить `grow_stage_templates` как справочник UI.  
-А `recipe_stage_maps` либо:
-- (вариант А) заменить на `recipe_revision_stage_maps` (FK на revision) и маппить фазы ↔ stage_template
-- (вариант Б) убрать, а в `recipe_revision_phases` добавить `stage_template_id`
+#### ✅ 1.3. Stage templates (UI)
+✅ Оставить `grow_stage_templates` как справочник UI.  
+✅ Реализован вариант Б: в `recipe_revision_phases` добавлен `stage_template_id`
 
-Рекомендация: **вариант Б** (меньше сущностей).
+#### ✅ 1.4. Ограничения целостности
+- ✅ Уникальность активного цикла:
+  - ✅ partial unique index на `grow_cycles(zone_id)` WHERE `status IN ('RUNNING','PAUSED')`
+  - ⏳ опционально дополнительно ограничить 1 PLANNED (если нужно).
+- ✅ Упорядочивание фаз:
+  - ✅ `unique(recipe_revision_id, phase_index)`.
 
-#### 1.4. Ограничения целостности
-- Уникальность активного цикла:
-  - partial unique index на `grow_cycles(zone_id)` WHERE `status IN ('RUNNING','PAUSED')`
-  - опционально дополнительно ограничить 1 PLANNED (если нужно).
-- Упорядочивание фаз:
-  - `unique(recipe_revision_id, phase_index)`.
-
-Acceptance:
-- `php artisan migrate:fresh` проходит.
-- Схема соответствует новой модели, legacy таблиц нет.
+✅ Acceptance:
+- ✅ `php artisan migrate:fresh` проходит.
+- ✅ Схема соответствует новой модели, legacy таблиц нет.
 
 ---
 
-### Этап 2. Laravel Backend: модели, сервисы, API, события
-#### 2.1. Eloquent модели и отношения
-Создать/обновить:
-- `Recipe`, `RecipeRevision`, `RecipeRevisionPhase`, `RecipeRevisionPhaseStep`
-- `GrowCycle` (центр истины), `GrowCycleTransition`, `GrowCycleOverride`
-- `InfrastructureInstance`, `ChannelBinding`
-- удалить `ZoneRecipeInstance`, `PlantCycle`, `ZoneCycle`
+### ✅ Этап 2. Laravel Backend: модели, сервисы, API, события
+#### ✅ 2.1. Eloquent модели и отношения
+✅ Создать/обновить:
+- ✅ `Recipe`, `RecipeRevision`, `RecipeRevisionPhase`, `RecipeRevisionPhaseStep`
+- ✅ `GrowCycle` (центр истины), `GrowCycleTransition`, `GrowCycleOverride`
+- ✅ `InfrastructureInstance`, `ChannelBinding`
+- ✅ удалить `ZoneRecipeInstance`, `PlantCycle`, `ZoneCycle`
 
-Acceptance:
-- Tinker: `Zone::with('activeGrowCycle.currentPhase')` работает.
+✅ Acceptance:
+- ✅ Tinker: `Zone::with('activeGrowCycle.currentPhase')` работает.
 
-#### 2.2. “Effective targets” — единый контракт для Python
-Добавить сервис (например `EffectiveTargetsService`) который по `grow_cycle_id` возвращает:
-- `phase_targets` (колонки)
-- `overrides` (табличные + computed)
-- `effective` (слияние)
-- meta: `phase_id`, `phase_name`, `phase_due_at`, `progress_model`
+#### ✅ 2.2. "Effective targets" — единый контракт для Python
+✅ Добавить сервис (например `EffectiveTargetsService`) который по `grow_cycle_id` возвращает:
+- ✅ `phase_targets` (колонки)
+- ✅ `overrides` (табличные + computed)
+- ✅ `effective` (слияние)
+- ✅ meta: `phase_id`, `phase_name`, `phase_due_at`, `progress_model`
 
-Стабилизировать контракт JSON:
+✅ Стабилизировать контракт JSON:
 ```json
 {
   "cycle_id": 123,
@@ -184,30 +180,30 @@ Acceptance:
 }
 ```
 
-#### 2.3. API эндпоинты (перепроектирование)
-Сделать новый набор эндпоинтов и удалить legacy:
+#### ✅ 2.3. API эндпоинты (перепроектирование)
+✅ Сделать новый набор эндпоинтов и удалить legacy:
 
 **Циклы**
-- `GET /api/zones/{zone}/grow-cycle` → возвращает active cycle + effective targets + прогресс
-- `POST /api/zones/{zone}/grow-cycles` → создать новый цикл (агроном)
-- `POST /api/grow-cycles/{id}/pause|resume|harvest|abort`
-- `POST /api/grow-cycles/{id}/set-phase` (manual, с comment)
-- `POST /api/grow-cycles/{id}/advance-phase` (next)
-- `POST /api/grow-cycles/{id}/change-recipe-revision` (apply now / at next phase)
+- ✅ `GET /api/zones/{zone}/grow-cycle` → возвращает active cycle + effective targets + прогресс
+- ✅ `POST /api/zones/{zone}/grow-cycles` → создать новый цикл (агроном)
+- ✅ `POST /api/grow-cycles/{id}/pause|resume|harvest|abort`
+- ✅ `POST /api/grow-cycles/{id}/set-phase` (manual, с comment)
+- ✅ `POST /api/grow-cycles/{id}/advance-phase` (next)
+- ✅ `POST /api/grow-cycles/{id}/change-recipe-revision` (apply now / at next phase)
 
 **Рецепты/ревизии**
-- `POST /api/recipes` / `PATCH /api/recipes/{id}`
-- `POST /api/recipes/{id}/revisions` (clone from revision_id)
-- `PATCH /api/recipe-revisions/{rev}` (edit draft)
-- `POST /api/recipe-revisions/{rev}/publish` (lock)
-- `GET /api/recipe-revisions/{rev}` (full with phases)
+- ⏳ `POST /api/recipes` / `PATCH /api/recipes/{id}` (базовые CRUD, не входили в Этап 2)
+- ✅ `POST /api/recipes/{id}/revisions` (clone from revision_id)
+- ✅ `PATCH /api/recipe-revisions/{rev}` (edit draft)
+- ✅ `POST /api/recipe-revisions/{rev}/publish` (lock)
+- ✅ `GET /api/recipe-revisions/{rev}` (full with phases)
 
 **Инфраструктура**
-- CRUD для `infrastructure_instances` и `channel_bindings`
-- отдельный раздел “климат теплицы” (greenhouse owner)
+- ✅ CRUD для `infrastructure_instances` и `channel_bindings`
+- ✅ отдельный раздел "климат теплицы" (greenhouse owner)
 
-Удалить:
-- `/attach-recipe`, `/zone_recipe_instances/*`, любые endpoints которые выставляют targets в JSON напрямую.
+✅ Удалить:
+- ✅ `/attach-recipe`, `/zone_recipe_instances/*`, любые endpoints которые выставляют targets в JSON напрямую.
 
 #### ✅ 2.4. Права доступа
 - ✅ Только роль/permission "agronomist":
