@@ -45,9 +45,14 @@ class EffectiveTargetsService
         $phaseDueAt = $this->calculatePhaseDueAt($cycle, $phase);
         
         // Формируем метаданные фазы
+        // Для снапшота получаем stageTemplate через recipeRevisionPhase, для шаблона напрямую
+        $stageTemplate = $phase instanceof GrowCyclePhase 
+            ? $phase->recipeRevisionPhase?->stageTemplate 
+            : $phase->stageTemplate;
+        
         $phaseMeta = [
             'id' => $phase->id,
-            'code' => $phase->stageTemplate?->code ?? 'UNKNOWN',
+            'code' => $stageTemplate?->code ?? 'UNKNOWN',
             'name' => $phase->name,
             'started_at' => $cycle->phase_started_at?->toIso8601String(),
             'due_at' => $phaseDueAt?->toIso8601String(),
@@ -89,9 +94,11 @@ class EffectiveTargetsService
     }
 
     /**
-     * Извлечь целевые параметры из фазы рецепта
+     * Извлечь целевые параметры из фазы (снапшот или шаблон)
+     * 
+     * @param GrowCyclePhase|RecipeRevisionPhase $phase
      */
-    protected function extractPhaseTargets(RecipeRevisionPhase $phase): array
+    protected function extractPhaseTargets($phase): array
     {
         $targets = [];
 
@@ -210,8 +217,11 @@ class EffectiveTargetsService
 
     /**
      * Вычислить due_at для фазы на основе progress_model
+     * 
+     * @param GrowCycle $cycle
+     * @param GrowCyclePhase|RecipeRevisionPhase $phase
      */
-    protected function calculatePhaseDueAt(GrowCycle $cycle, RecipeRevisionPhase $phase): ?Carbon
+    protected function calculatePhaseDueAt(GrowCycle $cycle, $phase): ?Carbon
     {
         if (!$cycle->phase_started_at) {
             return null;
@@ -253,8 +263,11 @@ class EffectiveTargetsService
 
     /**
      * Вычислить коэффициент скорости роста на основе температуры
+     * 
+     * @param GrowCycle $cycle
+     * @param GrowCyclePhase|RecipeRevisionPhase $phase
      */
-    protected function calculateSpeedFactor(GrowCycle $cycle, RecipeRevisionPhase $phase): ?float
+    protected function calculateSpeedFactor(GrowCycle $cycle, $phase): ?float
     {
         $progressMeta = $cycle->progress_meta ?? [];
         $avgTemp24h = $progressMeta['temp_avg_24h'] ?? null;
