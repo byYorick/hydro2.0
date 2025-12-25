@@ -23,6 +23,15 @@ return new class extends Migration
                 $table->dropForeign(['zone_recipe_instance_id']);
                 $table->dropColumn('zone_recipe_instance_id');
             }
+            
+            // Удаляем старые поля stage (заменены на current_phase_id/current_step_id)
+            if (Schema::hasColumn('grow_cycles', 'current_stage_code')) {
+                $table->dropIndex('grow_cycles_current_stage_code_idx');
+                $table->dropColumn('current_stage_code');
+            }
+            if (Schema::hasColumn('grow_cycles', 'current_stage_started_at')) {
+                $table->dropColumn('current_stage_started_at');
+            }
         });
         
         Schema::table('grow_cycles', function (Blueprint $table) {
@@ -62,27 +71,59 @@ return new class extends Migration
 
     /**
      * Reverse the migrations.
+     * 
+     * ВНИМАНИЕ: При rollback таблица zone_recipe_instances должна быть восстановлена
+     * миграцией drop_legacy_tables (которая выполнится позже в обратном порядке).
      */
     public function down(): void
     {
         Schema::table('grow_cycles', function (Blueprint $table) {
-            $table->dropForeign(['recipe_revision_id']);
-            $table->dropForeign(['current_phase_id']);
-            $table->dropForeign(['current_step_id']);
+            // Удаляем новые foreign keys
+            if (Schema::hasColumn('grow_cycles', 'recipe_revision_id')) {
+                $table->dropForeign(['recipe_revision_id']);
+            }
+            if (Schema::hasColumn('grow_cycles', 'current_phase_id')) {
+                $table->dropForeign(['current_phase_id']);
+            }
+            if (Schema::hasColumn('grow_cycles', 'current_step_id')) {
+                $table->dropForeign(['current_step_id']);
+            }
             
-            $table->dropColumn([
-                'recipe_revision_id',
-                'current_phase_id',
-                'current_step_id',
-                'planting_at',
-                'phase_started_at',
-                'step_started_at',
-                'progress_meta',
-            ]);
-            
-            // Восстанавливаем legacy поле (если нужно для rollback)
-            $table->foreignId('zone_recipe_instance_id')->nullable()->constrained('zone_recipe_instances')->nullOnDelete();
+            // Удаляем новые колонки
+            $columnsToDrop = [];
+            foreach (['recipe_revision_id', 'current_phase_id', 'current_step_id', 'planting_at', 'phase_started_at', 'step_started_at', 'progress_meta'] as $col) {
+                if (Schema::hasColumn('grow_cycles', $col)) {
+                    $columnsToDrop[] = $col;
+                }
+            }
+            if (!empty($columnsToDrop)) {
+                $table->dropColumn($columnsToDrop);
+            }
         });
-    }
+        
+            // Восстанавливаем legacy поля только если таблица zone_recipe_instances существует
+            // (она будет восстановлена миграцией drop_legacy_tables при полном rollback)
+            if (Schema::hasTable('zone_recipe_instances')) {
+                Schema::table('grow_cycles', function (Blueprint $table) {
+                    if (!Schema::hasColumn('grow_cycles', 'zone_recipe_instance_id')) {
+                        $table->foreignId('zone_recipe_instance_id')->nullable()->constrained('zone_recipe_instances')->nullOnDelete();
+                    }
+                });
+            }
+            
+            // Восстанавливаем старые поля stage (для rollback совместимости)
+            Schema::table('grow_cycles', function (Blueprint $table) {
+                if (!Schema::hasColumn('grow_cycles', 'current_stage_code')) {
+                    $table->string('current_stage_code', 64)->nullable()->after('status');
+                }
+                if (!Schema::hasColumn('grow_cycles', 'current_stage_started_at')) {
+                    $table->timestamp('current_stage_started_at')->nullable()->after('current_stage_code');
+                }
+                // Восстанавливаем индекс
+                if (!Schema::hasIndex('grow_cycles', 'grow_cycles_current_stage_code_idx')) {
+                    $table->index('current_stage_code', 'grow_cycles_current_stage_code_idx');
+                }
+            });
+        }
 };
 
