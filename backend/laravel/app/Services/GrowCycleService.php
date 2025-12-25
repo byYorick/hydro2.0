@@ -643,8 +643,10 @@ class GrowCycleService
                 'entity_id' => (string) $cycle->id,
                 'payload_json' => [
                     'cycle_id' => $cycle->id,
-                    'from_phase_id' => $currentPhase->id,
-                    'to_phase_id' => $nextPhase->id,
+                    'from_phase_id' => $currentPhase->id, // Снапшот
+                    'to_phase_id' => $nextPhaseSnapshot->id, // Снапшот
+                    'from_phase_template_id' => $currentPhaseTemplate->id, // Шаблон для истории
+                    'to_phase_template_id' => $nextPhaseTemplate->id, // Шаблон для истории
                     'user_id' => $userId,
                     'source' => 'web',
                 ],
