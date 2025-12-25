@@ -54,34 +54,36 @@ class GrowCycleService
                 : now();
 
             $startImmediately = $data['start_immediately'] ?? false;
+            $phaseStartedAt = $startImmediately ? $plantingAt : null;
 
-            // Создаем снапшот первой фазы
-            $firstPhaseSnapshot = $this->createPhaseSnapshot(null, $firstPhase, $startImmediately ? $plantingAt : null);
-
+            // Сначала создаем цикл без current_phase_id (временно null)
             $cycle = GrowCycle::create([
                 'greenhouse_id' => $zone->greenhouse_id,
                 'zone_id' => $zone->id,
                 'plant_id' => $plantId,
                 'recipe_revision_id' => $revision->id,
-                'current_phase_id' => $firstPhaseSnapshot->id,
+                'current_phase_id' => null, // Временно null, обновим после создания снапшота
                 'current_step_id' => null,
                 'status' => $startImmediately ? GrowCycleStatus::RUNNING : GrowCycleStatus::PLANNED,
                 'planting_at' => $plantingAt,
-                'phase_started_at' => $startImmediately ? $plantingAt : null,
+                'phase_started_at' => $phaseStartedAt,
                 'batch_label' => $data['batch_label'] ?? null,
                 'notes' => $data['notes'] ?? null,
                 'started_at' => $startImmediately ? $plantingAt : null,
             ]);
 
-            // Обновляем снапшот с ID цикла
-            $firstPhaseSnapshot->update(['grow_cycle_id' => $cycle->id]);
+            // Теперь создаем снапшот первой фазы с ID цикла
+            $firstPhaseSnapshot = $this->createPhaseSnapshot($cycle, $firstPhase, $phaseStartedAt);
+
+            // Обновляем цикл с ID снапшота фазы
+            $cycle->update(['current_phase_id' => $firstPhaseSnapshot->id]);
 
             // Логируем создание
             GrowCycleTransition::create([
                 'grow_cycle_id' => $cycle->id,
                 'from_phase_id' => null,
                 'to_phase_id' => $firstPhase->id,
-                'trigger' => 'CYCLE_CREATED',
+                'trigger_type' => 'CYCLE_CREATED',
                 'triggered_by' => $userId,
                 'comment' => 'Cycle created',
             ]);
@@ -126,11 +128,20 @@ class GrowCycleService
         return DB::transaction(function () use ($cycle, $plantingAt) {
             $plantingAt = $plantingAt ?? now();
             
+            // Обновляем phase_started_at для текущей фазы
+            if ($cycle->current_phase_id) {
+                $currentPhase = GrowCyclePhase::find($cycle->current_phase_id);
+                if ($currentPhase) {
+                    $currentPhase->update(['started_at' => $plantingAt]);
+                }
+            }
+            
             $cycle->update([
                 'status' => GrowCycleStatus::RUNNING,
                 'planting_at' => $plantingAt,
                 'started_at' => $plantingAt,
                 'recipe_started_at' => $plantingAt,
+                'phase_started_at' => $plantingAt, // Устанавливаем phase_started_at при старте
             ]);
 
             // В новой модели фазы уже установлены при создании цикла через createPhaseSnapshot()
@@ -578,7 +589,7 @@ class GrowCycleService
                 'to_phase_id' => $nextPhaseTemplate->id, // Шаблон для истории
                 'from_step_id' => $cycle->current_step_id,
                 'to_step_id' => null,
-                'trigger' => 'MANUAL',
+                'trigger_type' => 'MANUAL',
                 'triggered_by' => $userId,
                 'comment' => 'Advanced to next phase',
             ]);
@@ -646,7 +657,7 @@ class GrowCycleService
                 'to_phase_id' => $newPhase->id, // Шаблон для истории
                 'from_step_id' => $cycle->current_step_id,
                 'to_step_id' => null,
-                'trigger' => 'MANUAL',
+                'trigger_type' => 'MANUAL',
                 'triggered_by' => $userId,
                 'comment' => $comment,
             ]);
@@ -719,7 +730,7 @@ class GrowCycleService
                     'grow_cycle_id' => $cycle->id,
                     'from_phase_id' => $oldPhaseTemplateId, // Шаблон для истории
                     'to_phase_id' => $firstPhaseTemplate->id, // Шаблон для истории
-                    'trigger' => 'RECIPE_REVISION_CHANGED',
+                    'trigger_type' => 'RECIPE_REVISION_CHANGED',
                     'triggered_by' => $userId,
                     'comment' => "Changed recipe revision from {$oldRevisionId} to {$newRevision->id}",
                 ]);

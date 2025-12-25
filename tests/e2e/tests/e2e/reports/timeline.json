@@ -1,63 +1,11 @@
 {
-  "test_suite": "E63_backoff_on_errors",
-  "generated_at": "2025-12-16T11:54:33.973432",
+  "test_suite": "E14_command_response_before_sent",
+  "generated_at": "2025-12-25T21:58:51.110966",
   "test_cases": [
-    {
-      "name": "get_automation_zone",
-      "status": "passed",
-      "duration": 0.06374812126159668,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "get_automation_zone",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-16T11:53:44.842050"
-    },
-    {
-      "name": "set_zone_id_from_uid",
-      "status": "passed",
-      "duration": 0.00835108757019043,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_zone_id_from_uid",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-16T11:53:44.850440"
-    },
-    {
-      "name": "set_zone_id",
-      "status": "passed",
-      "duration": 5.7220458984375e-06,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_zone_id",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-16T11:53:44.850561"
-    },
-    {
-      "name": "enable_capabilities",
-      "status": "passed",
-      "duration": 0.002108335494995117,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "enable_capabilities",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-16T11:53:44.852691"
-    },
     {
       "name": "start_node_simulator",
       "status": "passed",
-      "duration": 5.638817548751831,
+      "duration": 5.6464684009552,
       "error_message": null,
       "steps": [
         {
@@ -65,253 +13,137 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-16T11:53:50.491530"
+      "timestamp": "2025-12-25T21:58:19.403169"
     },
     {
-      "name": "enable_test_mode",
+      "name": "get_zones",
       "status": "passed",
-      "duration": 5.245208740234375e-06,
+      "duration": 0.07618236541748047,
       "error_message": null,
       "steps": [
         {
-          "name": "enable_test_mode",
+          "name": "get_zones",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-16T11:53:50.491561"
+      "timestamp": "2025-12-25T21:58:19.479629"
     },
     {
-      "name": "inject_error_1",
+      "name": "get_nodes",
       "status": "passed",
-      "duration": 0.024169206619262695,
+      "duration": 0.05931496620178223,
       "error_message": null,
       "steps": [
         {
-          "name": "inject_error_1",
+          "name": "get_nodes",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-16T11:53:50.515773"
+      "timestamp": "2025-12-25T21:58:19.538968"
     },
     {
-      "name": "wait_cycle_1",
+      "name": "set_zone_and_node",
       "status": "passed",
-      "duration": 3.002589702606201,
+      "duration": 6.4373016357421875e-06,
       "error_message": null,
       "steps": [
         {
-          "name": "wait_cycle_1",
+          "name": "set_zone_and_node",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-16T11:53:53.518380"
+      "timestamp": "2025-12-25T21:58:19.539021"
     },
     {
-      "name": "inject_error_2",
+      "name": "subscribe_zone_channel",
       "status": "passed",
-      "duration": 0.02485370635986328,
+      "duration": 0.1792466640472412,
       "error_message": null,
       "steps": [
         {
-          "name": "inject_error_2",
+          "name": "subscribe_zone_channel",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-16T11:53:53.543296"
+      "timestamp": "2025-12-25T21:58:19.718284"
     },
     {
-      "name": "wait_cycle_2",
-      "status": "passed",
-      "duration": 3.0030837059020996,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "wait_cycle_2",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-16T11:53:56.546399"
-    },
-    {
-      "name": "inject_error_3",
-      "status": "passed",
-      "duration": 0.02527475357055664,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "inject_error_3",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-16T11:53:56.571728"
-    },
-    {
-      "name": "wait_backoff",
-      "status": "passed",
-      "duration": 15.00723934173584,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "wait_backoff",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-16T11:54:11.578985"
-    },
-    {
-      "name": "check_metrics_before",
-      "status": "passed",
-      "duration": 0.02774500846862793,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "check_metrics_before",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-16T11:54:11.606770"
-    },
-    {
-      "name": "wait_next_cycle_after_backoff",
-      "status": "passed",
-      "duration": 10.01010513305664,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "wait_next_cycle_after_backoff",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-16T11:54:21.616891"
-    },
-    {
-      "name": "check_metrics_after",
-      "status": "passed",
-      "duration": 0.025394439697265625,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "check_metrics_after",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-16T11:54:21.642338"
-    },
-    {
-      "name": "set_metrics_defaults",
-      "status": "passed",
-      "duration": 8.106231689453125e-06,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_metrics_defaults",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-16T11:54:21.642611"
-    },
-    {
-      "name": "check_backoff_state",
-      "status": "passed",
-      "duration": 0.02555108070373535,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "check_backoff_state",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-16T11:54:21.668183"
-    },
-    {
-      "name": "set_backoff_state_vars",
-      "status": "passed",
-      "duration": 5.4836273193359375e-06,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_backoff_state_vars",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-16T11:54:21.668390"
-    },
-    {
-      "name": "backoff_event_created",
-      "status": "passed",
-      "duration": 0.0034279823303222656,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "backoff_event_created",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-16T11:54:21.671830"
-    },
-    {
-      "name": "error_metrics_increased",
-      "status": "passed",
-      "duration": 5.9604644775390625e-05,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "error_metrics_increased",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-16T11:54:21.671902"
-    },
-    {
-      "name": "degraded_mode_safety_only",
-      "status": "passed",
-      "duration": 0.002067089080810547,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "degraded_mode_safety_only",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-16T11:54:21.673974"
-    },
-    {
-      "name": "backoff_reset_works",
-      "status": "passed",
-      "duration": 0.0005731582641601562,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "backoff_reset_works",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-16T11:54:21.674554"
-    },
-    {
-      "name": "backoff_state_set",
+      "name": "send_command",
       "status": "skipped",
-      "duration": 4.172325134277344e-05,
-      "error_message": "Failed to evaluate assert condition ' is not None': invalid syntax (<string>, line 1)",
+      "duration": 21.096755743026733,
+      "error_message": "Server error '503 Service Unavailable' for url 'http://localhost:8081/api/nodes/1/commands'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/503",
       "steps": [
         {
-          "name": "backoff_state_set",
+          "name": "send_command",
           "status": "skipped",
-          "error": "Failed to evaluate assert condition ' is not None': invalid syntax (<string>, line 1)"
+          "error": "Server error '503 Service Unavailable' for url 'http://localhost:8081/api/nodes/1/commands'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/503"
         }
       ],
-      "timestamp": "2025-12-16T11:54:21.674640"
+      "timestamp": "2025-12-25T21:58:40.815135"
+    },
+    {
+      "name": "set_command_id_from_response",
+      "status": "passed",
+      "duration": 7.152557373046875e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_command_id_from_response",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-25T21:58:40.815344"
+    },
+    {
+      "name": "create_command_manually_if_needed",
+      "status": "failed",
+      "duration": 0.008067131042480469,
+      "error_message": "null value in column \"cmd_id\" of relation \"commands\" violates not-null constraint\nDETAIL:  Failing row contains (1373, 225, 1, main_pump, set_relay_state, {\"state\": true}, QUEUED, null, 2025-12-25 18:58:41, 2025-12-25 18:58:41, null, null, null, test, null, null, 0, null, null, manual, null, null, null).",
+      "steps": [
+        {
+          "name": "create_command_manually_if_needed",
+          "status": "failed",
+          "error": "null value in column \"cmd_id\" of relation \"commands\" violates not-null constraint\nDETAIL:  Failing row contains (1373, 225, 1, main_pump, set_relay_state, {\"state\": true}, QUEUED, null, 2025-12-25 18:58:41, 2025-12-25 18:58:41, null, null, null, test, null, null, 0, null, null, manual, null, null, null)."
+        }
+      ],
+      "timestamp": "2025-12-25T21:58:40.823585"
+    },
+    {
+      "name": "final_status_is_done",
+      "status": "failed",
+      "duration": 2.5510787963867188e-05,
+      "error_message": "Обязательная переменная 'command_id' разрешена в пустое значение. Убедитесь, что предыдущие шаги (API/DB) корректно заполнили контекст. Текущее значение: ''",
+      "steps": [
+        {
+          "name": "final_status_is_done",
+          "status": "failed",
+          "error": "Обязательная переменная 'command_id' разрешена в пустое значение. Убедитесь, что предыдущие шаги (API/DB) корректно заполнили контекст. Текущее значение: ''"
+        }
+      ],
+      "timestamp": "2025-12-25T21:58:40.823666"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E63_backoff_on_errors": {
-      "ws_messages": [],
+    "E14_command_response_before_sent": {
+      "ws_messages": [
+        {
+          "data": {
+            "event": "pusher_internal:subscription_succeeded",
+            "data": "{}",
+            "channel": "private-hydro.zones.225"
+          },
+          "timestamp": "2025-12-25T21:58:19.621026"
+        }
+      ],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
-        "zone_id": "225",
-        "node_id": 1
+        "zone_id": 225,
+        "node_id": 1,
+        "test_zone_id": "225",
+        "test_node_id": "1",
+        "command_id": ""
       }
     }
   }

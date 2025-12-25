@@ -78,9 +78,8 @@ async def upsert_telemetry_last(zone_id: int, metric_type: str, node_id: Optiona
         """
         INSERT INTO telemetry_last (zone_id, node_id, metric_type, channel, value, updated_at)
         VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (zone_id, metric_type)
+        ON CONFLICT (zone_id, node_id, metric_type)
         DO UPDATE SET 
-            node_id = EXCLUDED.node_id,
             channel = EXCLUDED.channel, 
             value = EXCLUDED.value, 
             updated_at = EXCLUDED.updated_at

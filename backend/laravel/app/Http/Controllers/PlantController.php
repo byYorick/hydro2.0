@@ -133,10 +133,31 @@ class PlantController extends Controller
         ]);
     }
 
-    public function store(StorePlantRequest $request): RedirectResponse
+    public function store(StorePlantRequest $request)
     {
-        $payload = $this->preparePayload($request->validated());
-        Plant::create($payload);
+        $validated = $request->validated();
+        
+        // Маппинг scientific_name -> species для обратной совместимости с тестами
+        if (isset($validated['scientific_name']) && !isset($validated['species'])) {
+            $validated['species'] = $validated['scientific_name'];
+            unset($validated['scientific_name']);
+        }
+        
+        $payload = $this->preparePayload($validated);
+        $plant = Plant::create($payload);
+
+        // Если это API запрос, возвращаем JSON
+        if ($request->wantsJson() || $request->expectsJson()) {
+            return response()->json([
+                'status' => 'ok',
+                'data' => [
+                    'id' => $plant->id,
+                    'name' => $plant->name,
+                    'scientific_name' => $plant->species,
+                    'slug' => $plant->slug,
+                ],
+            ], 201);
+        }
 
         return back()->with('flash', [
             'success' => 'Растение создано',

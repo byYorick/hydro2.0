@@ -1514,9 +1514,8 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]):
                 query = f"""
                     INSERT INTO telemetry_last (zone_id, node_id, metric_type, channel, value, updated_at)
                     VALUES {', '.join(values_list)}
-                    ON CONFLICT (zone_id, metric_type)
+                    ON CONFLICT (zone_id, node_id, metric_type)
                     DO UPDATE SET 
-                        node_id = EXCLUDED.node_id,
                         channel = EXCLUDED.channel,
                         value = EXCLUDED.value,
                         updated_at = EXCLUDED.updated_at

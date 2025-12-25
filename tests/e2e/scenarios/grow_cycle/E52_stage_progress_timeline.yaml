@@ -4,7 +4,7 @@
 name: E52_stage_progress_timeline
 description: |
   Проверяет прогресс стадий во времени:
-  - У зоны есть активный рецепт
+  - У зоны есть активный grow-cycle
   - Симулируется прохождение времени
   - Проверяется прогресс стадий и проценты
 
@@ -18,46 +18,61 @@ actions:
     type: set
     zone_id: ${zones_response.data.data[0].id}
 
-  # Получаем текущее состояние recipe instance
-  - step: get_recipe_instance
+  # Получаем текущее состояние grow cycle
+  - step: get_grow_cycle
     type: database_query
     query: |
-      SELECT id, recipe_id, current_phase_index, started_at
-      FROM zone_recipe_instances
+      SELECT id, recipe_revision_id, status, current_phase_id, phase_started_at, planting_at
+      FROM grow_cycles
       WHERE zone_id = :zone_id
+      AND status IN ('PLANNED', 'RUNNING', 'PAUSED')
     params:
       zone_id: ${zone_id}
-    save: recipe_instance
+    save: grow_cycle
 
-  # Получаем информацию о фазах рецепта
-  - step: get_recipe_phases
+  # Получаем информацию о текущей фазе
+  - step: get_current_phase
+    type: database_query
+    query: |
+      SELECT id, phase_index, name, duration_hours
+      FROM grow_cycle_phases
+      WHERE id = :phase_id
+    params:
+      phase_id: ${grow_cycle[0].current_phase_id}
+    save: current_phase
+
+  # Получаем информацию о ревизии рецепта
+  - step: get_recipe_revision
     type: api_get
-    endpoint: /api/recipes/${recipe_instance[0].recipe_id}
-    save: recipe_details
+    endpoint: /api/recipe-revisions/${grow_cycle[0].recipe_revision_id}
+    save: revision_details
 
   # Симулируем прохождение времени (опционально - может требовать специальной логики)
-  # В реальности прогресс рассчитывается автоматически на основе started_at
+  # В реальности прогресс рассчитывается автоматически на основе phase_started_at
   - step: check_current_progress
     type: database_query
     query: |
       SELECT 
-        current_phase_index,
-        started_at,
-        EXTRACT(EPOCH FROM (NOW() - started_at)) as elapsed_seconds
-      FROM zone_recipe_instances
+        current_phase_id,
+        phase_started_at,
+        planting_at,
+        EXTRACT(EPOCH FROM (NOW() - COALESCE(phase_started_at, planting_at))) as elapsed_seconds
+      FROM grow_cycles
       WHERE zone_id = :zone_id
+      AND status IN ('PLANNED', 'RUNNING', 'PAUSED')
     params:
       zone_id: ${zone_id}
     save: progress_data
 
 assertions:
-  # Проверка 1: Recipe instance существует
-  - name: recipe_instance_active
+  # Проверка 1: Grow cycle существует
+  - name: grow_cycle_active
     type: database_query
     query: |
       SELECT COUNT(*) as count
-      FROM zone_recipe_instances
+      FROM grow_cycles
       WHERE zone_id = :zone_id
+      AND status IN ('PLANNED', 'RUNNING', 'PAUSED')
     params:
       zone_id: ${zone_id}
     expected:
@@ -65,15 +80,19 @@ assertions:
         operator: equals
         value: 1
 
-  # Проверка 2: started_at установлен
+  # Проверка 2: phase_started_at или planting_at установлен
   - name: started_at_set
     type: database_query
     query: |
-      SELECT started_at
-      FROM zone_recipe_instances
+      SELECT phase_started_at, planting_at
+      FROM grow_cycles
       WHERE zone_id = :zone_id
+      AND status IN ('PLANNED', 'RUNNING', 'PAUSED')
     params:
       zone_id: ${zone_id}
     expected:
-      - field: started_at
+      - field: phase_started_at
         operator: is_not_null
+        or:
+          - field: planting_at
+            operator: is_not_null

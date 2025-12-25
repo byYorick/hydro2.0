@@ -4,8 +4,8 @@
 name: E54_pause_resume_harvest
 description: |
   Проверяет управление циклом:
-  - Pause зоны
-  - Resume зоны
+  - Pause цикла
+  - Resume цикла
   - Harvest → закрытие цикла
   - API snapshot отражает изменения
 
@@ -19,17 +19,99 @@ actions:
     type: set
     zone_id: ${zones_response.data.data[0].id}
 
-  # Убеждаемся, что зона в статусе RUNNING
-  - step: ensure_zone_running
-    type: api_patch
-    endpoint: /api/zones/${zone_id}
-    payload:
-      status: RUNNING
+  # Удаляем старые циклы для чистой проверки
+  - step: cleanup_old_cycles
+    type: database_execute
+    query: |
+      DELETE FROM grow_cycles
+      WHERE zone_id = :zone_id
+      AND status IN ('PLANNED', 'RUNNING', 'PAUSED')
+    params:
+      zone_id: ${zone_id}
+    optional: true
 
-  # Pause зоны
-  - step: pause_zone
+  # Получаем активный цикл
+  - step: get_active_cycle
+    type: api_get
+    endpoint: /api/zones/${zone_id}/grow-cycle
+    save: active_cycle_response
+
+  # Устанавливаем cycle_id из существующего или созданного цикла
+  - step: set_cycle_id_from_active
+    type: set
+    cycle_id: ${active_cycle_response.data.cycle.id}
+    condition: ${active_cycle_response.data.cycle}
+
+  # Если цикла нет, создаем его
+  - step: create_plant_if_needed
     type: api_post
-    endpoint: /api/zones/${zone_id}/pause
+    endpoint: /api/plants
+    payload:
+      name: test-plant-e54-${TIMESTAMP_S}
+      scientific_name: Test Plant
+    save: plant_response
+    condition: ${active_cycle_response.data.cycle == null}
+
+  - step: create_recipe_if_needed
+    type: api_post
+    endpoint: /api/recipes
+    payload:
+      name: test-recipe-e54-${TIMESTAMP_S}
+      description: Test recipe
+    save: recipe_response
+    condition: ${active_cycle_response.data.cycle == null}
+
+  - step: create_revision_if_needed
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/revisions
+    payload:
+      description: Test revision
+    save: revision_response
+    condition: ${active_cycle_response.data.cycle == null}
+
+  - step: add_phase_if_needed
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/phases
+    payload:
+      phase_index: 0
+      name: Test Phase
+      duration_hours: 24
+      ph_target: 6.0
+      ec_target: 1.5
+      irrigation_mode: SUBSTRATE
+    condition: ${active_cycle_response.data.cycle == null}
+
+  - step: publish_revision_if_needed
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/publish
+    condition: ${active_cycle_response.data.cycle == null}
+
+  - step: create_cycle_if_needed
+    type: api_post
+    endpoint: /api/zones/${zone_id}/grow-cycles
+    payload:
+      recipe_revision_id: ${revision_response.data.id}
+      plant_id: ${plant_response.data.id}
+      start_immediately: false
+    save: cycle_response
+    condition: ${active_cycle_response.data.cycle == null}
+
+  - step: set_cycle_id_from_response
+    type: set
+    cycle_id: ${cycle_response.data.id}
+    condition: ${cycle_response}
+
+  # Запускаем цикл, если он в PLANNED
+  - step: start_cycle_if_needed
+    type: api_post
+    endpoint: /api/grow-cycles/${cycle_id}/start
+    payload: {}
+    condition: ${active_cycle_response.data.cycle.status == 'PLANNED'}
+
+  # Pause цикла
+  - step: pause_cycle
+    type: api_post
+    endpoint: /api/grow-cycles/${cycle_id}/pause
     payload: {}
     save: pause_response
 
@@ -37,10 +119,10 @@ actions:
     type: sleep
     seconds: 1
 
-  # Resume зоны
-  - step: resume_zone
+  # Resume цикла
+  - step: resume_cycle
     type: api_post
-    endpoint: /api/zones/${zone_id}/resume
+    endpoint: /api/grow-cycles/${cycle_id}/resume
     payload: {}
     save: resume_response
 
@@ -48,21 +130,22 @@ actions:
     type: sleep
     seconds: 1
 
-  # Harvest (закрытие цикла) через специальный endpoint
-  - step: harvest_zone
+  # Harvest (закрытие цикла)
+  - step: harvest_cycle
     type: api_post
-    endpoint: /api/zones/${zone_id}/harvest
-    payload: {}
+    endpoint: /api/grow-cycles/${cycle_id}/harvest
+    payload:
+      batch_label: Test Batch E54
     save: harvest_response
 
   - step: wait_after_harvest
     type: sleep
     seconds: 1
 
-  # Получаем snapshot после изменений - опционально, т.к. endpoint может не работать
+  # Получаем snapshot после изменений
   - step: get_snapshot_after_changes
     type: api_get
-    endpoint: /api/zones/${zone_id}
+    endpoint: /api/zones/${zone_id}/grow-cycle
     save: final_snapshot
 
 assertions:
@@ -77,23 +160,29 @@ assertions:
       zone_id: ${zone_id}
     expected_rows: 1
 
-  # Проверка 3: Зона имеет статус (может быть RUNNING, HARVESTED или другой)
-  - name: zone_has_status
+  # Проверка 2: Цикл имеет статус HARVESTED
+  - name: cycle_harvested
     type: database_query
     query: |
       SELECT status
-      FROM zones
-      WHERE id = :zone_id
+      FROM grow_cycles
+      WHERE id = :cycle_id
     params:
-      zone_id: ${zone_id}
-    timeout: 5.0
+      cycle_id: ${cycle_id}
     expected:
       - field: status
-        operator: is_not_null
+        operator: equals
+        value: HARVESTED
 
-  # Проверка 4: Snapshot отражает текущее состояние - опционально, т.к. endpoint может не работать
-  - name: snapshot_reflects_current_state
+  # Проверка 3: actual_harvest_at установлен
+  - name: harvest_at_set
     type: database_query
     query: |
-      SELECT 1 as check_dummy
-    expected_rows: 1
+      SELECT actual_harvest_at
+      FROM grow_cycles
+      WHERE id = :cycle_id
+    params:
+      cycle_id: ${cycle_id}
+    expected:
+      - field: actual_harvest_at
+        operator: is_not_null

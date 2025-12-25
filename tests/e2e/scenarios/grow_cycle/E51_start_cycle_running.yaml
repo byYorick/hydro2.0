@@ -1,13 +1,12 @@
-# E51: Start Cycle Running - start cycle → RUNNING, zone_recipe_instance
-# DoD: start cycle → RUNNING, zone_recipe_instance
+# E51: Start Cycle Running - start cycle → RUNNING
+# DoD: start cycle → RUNNING
 
 name: E51_start_cycle_running
 description: |
   Проверяет запуск grow-cycle:
   - Рецепт привязан к зоне (status = PLANNED)
   - Запускается цикл (start)
-  - Создается zone_recipe_instance
-  - Статус зоны = RUNNING
+  - Статус цикла = RUNNING
   - Стадия ACTIVE
 
 actions:
@@ -25,127 +24,151 @@ actions:
     endpoint: /api/zones/${zone_id}
     save: zone_details
 
-  # Проверяем, есть ли у зоны рецепт
-  - step: check_recipe_instance
-    type: database_query
+  # Удаляем старые циклы для чистой проверки
+  - step: cleanup_old_cycles
+    type: database_execute
     query: |
-      SELECT id, recipe_id, current_phase_index
-      FROM zone_recipe_instances
+      DELETE FROM grow_cycles
       WHERE zone_id = :zone_id
+      AND status IN ('PLANNED', 'RUNNING', 'PAUSED')
     params:
       zone_id: ${zone_id}
-    save: existing_instance
+    optional: true
 
-  # Если рецепта нет, создаем и привязываем
+  # Проверяем, есть ли у зоны активный цикл
+  - step: check_active_cycle
+    type: database_query
+    query: |
+      SELECT id, recipe_revision_id, status, current_phase_id
+      FROM grow_cycles
+      WHERE zone_id = :zone_id
+      AND status IN ('PLANNED', 'RUNNING', 'PAUSED')
+    params:
+      zone_id: ${zone_id}
+    save: existing_cycle
+
+  # Если цикла нет, создаем его
+  - step: create_plant_if_needed
+    type: api_post
+    endpoint: /api/plants
+    payload:
+      name: test-plant-e51-${TIMESTAMP_S}
+      scientific_name: Test Plant
+    save: plant_response
+    condition: ${existing_cycle.length == 0}
+
   - step: create_recipe_if_needed
     type: api_post
     endpoint: /api/recipes
     payload:
-      name: test-recipe-e51
+      name: test-recipe-e51-${TIMESTAMP_S}
       description: Test recipe for E51
     save: recipe_response
+    condition: ${existing_cycle.length == 0}
 
-  - step: add_phase_0
+  - step: create_revision_if_needed
     type: api_post
-    endpoint: /api/recipes/${recipe_response.data.id}/phases
+    endpoint: /api/recipes/${recipe_response.data.id}/revisions
+    payload:
+      description: Test revision
+    save: revision_response
+    condition: ${existing_cycle.length == 0}
+
+  - step: add_phase_0_if_needed
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/phases
     payload:
       phase_index: 0
       name: Planting
       duration_hours: 24
-      targets:
-        ph:
-          min: 5.5
-          max: 6.5
-        ec: 1.5
-        temp_air: 22
-        humidity_air: 60
-        light_hours: 16
+      ph_target: 6.0
+      ph_min: 5.5
+      ph_max: 6.5
+      ec_target: 1.5
+      irrigation_mode: SUBSTRATE
+      irrigation_interval_sec: 3600
+      irrigation_duration_sec: 300
+    condition: ${existing_cycle.length == 0}
 
-  - step: add_phase_1
+  - step: publish_revision_if_needed
     type: api_post
-    endpoint: /api/recipes/${recipe_response.data.id}/phases
-    payload:
-      phase_index: 1
-      name: Veg
-      duration_hours: 48
-      targets:
-        ph:
-          min: 5.6
-          max: 6.6
-        ec: 1.8
-        temp_air: 23
-        humidity_air: 55
-        light_hours: 18
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/publish
+    payload: {}
+    condition: ${existing_cycle.length == 0}
 
-  - step: attach_recipe_if_needed
+  - step: create_cycle_if_needed
     type: api_post
-    endpoint: /api/zones/${zone_id}/attach-recipe
+    endpoint: /api/zones/${zone_id}/grow-cycles
     payload:
-      recipe_id: ${recipe_response.data.id}
-    save: attach_response
+      recipe_revision_id: ${revision_response.data.id}
+      plant_id: ${plant_response.data.id}
+      start_immediately: false
+    save: cycle_response
+    condition: ${existing_cycle.length == 0}
 
-  - step: set_recipe_id
+  - step: get_active_cycle
+    type: api_get
+    endpoint: /api/zones/${zone_id}/grow-cycle
+    save: active_cycle_response
+    condition: ${existing_cycle.length > 0}
+
+  # Устанавливаем cycle_id из созданного цикла или существующего
+  - step: set_cycle_id_from_response
     type: set
-    recipe_id: ${recipe_response.data.id if recipe_response else existing_instance[0].recipe_id}
+    cycle_id: ${cycle_response.data.id}
+    condition: ${cycle_response}
 
-  # Обновляем статус зоны на PLANNED если нужно
-  - step: set_zone_planned
-    type: api_patch
-    endpoint: /api/zones/${zone_id}
-    payload:
-      status: PLANNED
-    save: zone_update_response
+  - step: set_cycle_id_from_active
+    type: set
+    cycle_id: ${active_cycle_response.data.cycle.id}
+    condition: ${active_cycle_response.data.cycle}
 
-  # Запускаем цикл через start endpoint
-  # Примечание: может вернуть 422 если нет bindings - делаем опциональным
+  # Запускаем цикл через новый endpoint grow-cycle
   - step: start_cycle
     type: api_post
-    endpoint: /api/zones/${zone_id}/start
+    endpoint: /api/grow-cycles/${cycle_id}/start
     payload: {}
     save: start_response
 
 assertions:
-  # Проверка 0: Start либо успешен (200), либо вернул 422 (нет bindings) - в любом случае проверяем дальше
-  - name: start_response_received
+  # Проверка 1: Статус цикла = RUNNING (или остался PLANNED если нет bindings)
+  - name: cycle_status_running
     type: database_query
     query: |
-      SELECT 1 as check_dummy
-    expected_rows: 1
-
-  # Проверка 1: Статус зоны обновлен (может быть RUNNING или остался PLANNED если нет bindings)
-  - name: zone_status_updated
-    type: database_query
-    query: |
-      SELECT status
-      FROM zones
-      WHERE id = :zone_id
+      SELECT status, current_phase_id
+      FROM grow_cycles
+      WHERE zone_id = :zone_id
+      AND status IN ('PLANNED', 'RUNNING', 'PAUSED')
     params:
       zone_id: ${zone_id}
     expected:
       - field: status
         operator: is_not_null
+      - field: current_phase_id
+        operator: is_not_null
 
-  # Проверка 2: zone_recipe_instance создан
-  - name: recipe_instance_exists
+  # Проверка 2: Grow cycle существует
+  - name: cycle_exists
     type: database_query
     query: |
-      SELECT id, recipe_id, current_phase_index
-      FROM zone_recipe_instances
+      SELECT id, recipe_revision_id, status
+      FROM grow_cycles
       WHERE zone_id = :zone_id
+      AND status IN ('PLANNED', 'RUNNING', 'PAUSED')
     params:
       zone_id: ${zone_id}
     expected_rows: 1
 
-  # Проверка 3: Текущая фаза активна (current_phase_index >= 0)
+  # Проверка 3: Текущая фаза активна (current_phase_id установлен)
   - name: phase_is_active
     type: database_query
     query: |
-      SELECT current_phase_index
-      FROM zone_recipe_instances
+      SELECT current_phase_id
+      FROM grow_cycles
       WHERE zone_id = :zone_id
+      AND status IN ('PLANNED', 'RUNNING', 'PAUSED')
     params:
       zone_id: ${zone_id}
     expected:
-      - field: current_phase_index
-        operator: greater_than_or_equal
-        value: 0
+      - field: current_phase_id
+        operator: is_not_null

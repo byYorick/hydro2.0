@@ -132,7 +132,10 @@ Route::middleware([
     Route::get('presets', [PresetController::class, 'index']);
     Route::get('presets/{preset}', [PresetController::class, 'show']);
     Route::get('plants', [PlantController::class, 'index']);
+    Route::post('plants', [PlantController::class, 'store']);
     Route::get('plants/{plant}', [PlantController::class, 'show']);
+    Route::put('plants/{plant}', [PlantController::class, 'update']);
+    Route::delete('plants/{plant}', [PlantController::class, 'destroy']);
     
     // Grow Cycle Wizard endpoints
     Route::get('grow-cycle-wizard/data', [\App\Http\Controllers\GrowCycleWizardController::class, 'getWizardData']);
@@ -172,6 +175,7 @@ Route::middleware([
 
         // Grow Cycle operations
         Route::post('zones/{zone}/grow-cycles', [GrowCycleController::class, 'store']);
+        Route::post('grow-cycles/{growCycle}/start', [GrowCycleController::class, 'start']);
         Route::post('grow-cycles/{growCycle}/pause', [GrowCycleController::class, 'pause']);
         Route::post('grow-cycles/{growCycle}/resume', [GrowCycleController::class, 'resume']);
         Route::post('grow-cycles/{growCycle}/harvest', [GrowCycleController::class, 'harvest']);

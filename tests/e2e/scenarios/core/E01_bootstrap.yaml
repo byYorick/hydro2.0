@@ -101,6 +101,8 @@ actions:
 
 assertions:
   # Проверка 1: Телеметрия в БД (ОБЯЗАТЕЛЬНАЯ - DoD требует телеметрию в БД)
+  # History-logger использует старую структуру telemetry_last (zone_id, node_id, metric_type, value)
+  # Проверяем наличие данных в этой структуре
   - name: telemetry_in_db
     type: database_query
     query: |

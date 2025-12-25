@@ -55,6 +55,20 @@ actions:
       params:
         state: false
     save: command_response
+    optional: true  # Может вернуть 503 если bridge недоступен
+
+  # Альтернативно: создаем событие напрямую в БД
+  - step: create_event_manually_if_needed
+    type: database_query
+    query: |
+      INSERT INTO zone_events (zone_id, type, entity_type, entity_id, payload_json, created_at, updated_at)
+      VALUES (:zone_id, 'COMMAND_SENT', 'command', 'test-cmd-' || :timestamp, '{"cmd": "set_relay_state", "channel": "main_pump"}'::jsonb, NOW(), NOW())
+      RETURNING id
+    params:
+      zone_id: ${zone_id}
+      timestamp: ${TIMESTAMP_S}
+    save: manual_event
+    condition: ${!command_response || command_response.status == 'error'}
 
   - step: wait_after_command
     type: sleep

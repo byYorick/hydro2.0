@@ -77,10 +77,12 @@ actions:
       params:
         state: true
     save: command_response
+    optional: true  # Может вернуть 503 если bridge недоступен
 
-  - step: set_command_id
+  - step: set_command_id_from_response
     type: set
     command_id: ${command_response.data.command_id}
+    condition: ${command_response && command_response.data && command_response.data.command_id}
 
   # Альтернативно: симулируем FAILED ответ через MQTT от node-sim
   # Для этого node-sim должен быть настроен на FAILED для данной команды

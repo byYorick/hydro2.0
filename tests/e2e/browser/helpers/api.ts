@@ -121,17 +121,75 @@ export class APITestHelper {
     const result = await response.json();
     const recipe = result.data;
 
-    // Создаем фазы, если они указаны
+    // Создаем ревизию рецепта (новая модель)
+    const revisionResponse = await this.request.post(`${baseURL}/api/recipes/${recipe.id}/revisions`, {
+      headers: await this.getHeaders(),
+      data: {
+        description: 'Test revision',
+      },
+    });
+
+    if (!revisionResponse.ok()) {
+      throw new Error(`Failed to create recipe revision: ${revisionResponse.status()} ${await revisionResponse.text()}`);
+    }
+
+    const revisionResult = await revisionResponse.json();
+    const revision = revisionResult.data;
+
+    // Создаем фазы ревизии, если они указаны
     if (phases && phases.length > 0) {
       for (const phase of phases) {
-        const phaseResponse = await this.request.post(`${baseURL}/api/recipes/${recipe.id}/phases`, {
+        const phasePayload: any = {
+          phase_index: phase.phase_index,
+          name: phase.name,
+          duration_hours: phase.duration_hours,
+        };
+
+        // Преобразуем targets в новую структуру (колонки вместо JSON)
+        if (phase.targets.ph !== undefined) {
+          phasePayload.ph_target = phase.targets.ph;
+          phasePayload.ph_min = phase.targets.ph - 0.2;
+          phasePayload.ph_max = phase.targets.ph + 0.2;
+        }
+        if (phase.targets.ec !== undefined) {
+          phasePayload.ec_target = phase.targets.ec;
+          phasePayload.ec_min = phase.targets.ec - 0.2;
+          phasePayload.ec_max = phase.targets.ec + 0.2;
+        }
+        if (phase.targets.temp_air !== undefined) {
+          phasePayload.temp_air_target = phase.targets.temp_air;
+        }
+        if (phase.targets.humidity_air !== undefined) {
+          phasePayload.humidity_target = phase.targets.humidity_air;
+        }
+        if (phase.targets.light_hours !== undefined) {
+          phasePayload.lighting_photoperiod_hours = phase.targets.light_hours;
+        }
+        if (phase.targets.irrigation_interval_sec !== undefined) {
+          phasePayload.irrigation_interval_sec = phase.targets.irrigation_interval_sec;
+        }
+        if (phase.targets.irrigation_duration_sec !== undefined) {
+          phasePayload.irrigation_duration_sec = phase.targets.irrigation_duration_sec;
+        }
+        phasePayload.irrigation_mode = 'SUBSTRATE';
+
+        const phaseResponse = await this.request.post(`${baseURL}/api/recipe-revisions/${revision.id}/phases`, {
           headers: await this.getHeaders(),
-          data: phase,
+          data: phasePayload,
         });
 
         if (!phaseResponse.ok()) {
-          throw new Error(`Failed to create recipe phase: ${phaseResponse.status()} ${await phaseResponse.text()}`);
+          throw new Error(`Failed to create recipe revision phase: ${phaseResponse.status()} ${await phaseResponse.text()}`);
         }
+      }
+
+      // Публикуем ревизию после создания всех фаз
+      const publishResponse = await this.request.post(`${baseURL}/api/recipe-revisions/${revision.id}/publish`, {
+        headers: await this.getHeaders(),
+      });
+
+      if (!publishResponse.ok()) {
+        throw new Error(`Failed to publish recipe revision: ${publishResponse.status()} ${await publishResponse.text()}`);
       }
     }
 
@@ -179,20 +237,93 @@ export class APITestHelper {
     throw lastError || new Error('Failed to create zone after retries');
   }
 
-  async attachRecipeToZone(zoneId: number, recipeId: number, startAt?: string): Promise<void> {
-    const payload: any = { recipe_id: recipeId };
-    if (startAt) {
-      payload.start_at = startAt;
+  async attachRecipeToZone(zoneId: number, recipeId: number, startAt?: string, plantId?: number): Promise<any> {
+    // Новая модель: создаем grow-cycle вместо attach-recipe
+    // Сначала получаем опубликованную ревизию рецепта
+    const recipeResponse = await this.request.get(`${baseURL}/api/recipes/${recipeId}`, {
+      headers: await this.getHeaders(),
+    });
+
+    if (!recipeResponse.ok()) {
+      throw new Error(`Failed to get recipe: ${recipeResponse.status()} ${await recipeResponse.text()}`);
     }
 
-    const response = await this.request.post(`${baseURL}/api/zones/${zoneId}/attach-recipe`, {
+    const recipeData = await recipeResponse.json();
+    const recipe = recipeData.data;
+
+    // Находим опубликованную ревизию
+    let publishedRevision = null;
+    if (recipe.revisions && Array.isArray(recipe.revisions)) {
+      publishedRevision = recipe.revisions.find((r: any) => r.status === 'PUBLISHED');
+    }
+
+    if (!publishedRevision) {
+      // Если нет опубликованной ревизии, получаем первую доступную
+      const revisionsResponse = await this.request.get(`${baseURL}/api/recipes/${recipeId}`, {
+        headers: await this.getHeaders(),
+      });
+      const revisionsData = await revisionsResponse.json();
+      if (revisionsData.data.revisions && revisionsData.data.revisions.length > 0) {
+        publishedRevision = revisionsData.data.revisions[0];
+      } else {
+        throw new Error(`Recipe ${recipeId} has no published revision`);
+      }
+    }
+
+    // Получаем или создаем plant (если не указан)
+    let finalPlantId = plantId;
+    if (!finalPlantId) {
+      // Получаем первый доступный plant
+      const plantsResponse = await this.request.get(`${baseURL}/api/plants`, {
+        headers: await this.getHeaders(),
+      });
+      if (plantsResponse.ok()) {
+        const plantsData = await plantsResponse.json();
+        if (plantsData.data && plantsData.data.length > 0) {
+          finalPlantId = plantsData.data[0].id;
+        }
+      }
+      
+      // Если нет растений, создаем тестовое
+      if (!finalPlantId) {
+        const createPlantResponse = await this.request.post(`${baseURL}/api/plants`, {
+          headers: await this.getHeaders(),
+          data: {
+            name: `Test Plant ${Date.now()}`,
+            scientific_name: 'Test Plant',
+          },
+        });
+        if (createPlantResponse.ok()) {
+          const plantData = await createPlantResponse.json();
+          finalPlantId = plantData.data.id;
+        }
+      }
+    }
+
+    if (!finalPlantId) {
+      throw new Error(`Failed to get or create plant for grow cycle`);
+    }
+
+    const payload: any = {
+      recipe_revision_id: publishedRevision.id,
+      plant_id: finalPlantId,
+      start_immediately: !!startAt,
+    };
+    if (startAt) {
+      payload.planting_at = startAt;
+    }
+
+    const response = await this.request.post(`${baseURL}/api/zones/${zoneId}/grow-cycles`, {
       headers: await this.getHeaders(),
       data: payload,
     });
 
     if (!response.ok()) {
-      throw new Error(`Failed to attach recipe: ${response.status()} ${await response.text()}`);
+      throw new Error(`Failed to create grow cycle: ${response.status()} ${await response.text()}`);
     }
+
+    const result = await response.json();
+    return result.data;
   }
 
   async createBinding(zoneId: number, nodeId: number, channelId: number, role: string): Promise<void> {
@@ -211,6 +342,23 @@ export class APITestHelper {
   }
 
   async startZone(zoneId: number): Promise<void> {
+    // Получаем активный цикл зоны
+    const cycleResponse = await this.request.get(`${baseURL}/api/zones/${zoneId}/grow-cycle`, {
+      headers: await this.getHeaders(),
+    });
+
+    if (!cycleResponse.ok()) {
+      throw new Error(`Failed to get grow cycle: ${cycleResponse.status()} ${await cycleResponse.text()}`);
+    }
+
+    const cycleData = await cycleResponse.json();
+    const cycle = cycleData.data?.cycle;
+
+    if (!cycle || !cycle.id) {
+      throw new Error(`Zone ${zoneId} has no active grow cycle`);
+    }
+
+    // Запускаем цикл через start endpoint зоны (legacy поддержка) или напрямую через grow-cycle
     const response = await this.request.post(`${baseURL}/api/zones/${zoneId}/start`, {
       headers: await this.getHeaders(),
     });
@@ -221,32 +369,83 @@ export class APITestHelper {
   }
 
   async pauseZone(zoneId: number): Promise<void> {
-    const response = await this.request.post(`${baseURL}/api/zones/${zoneId}/pause`, {
+    // Получаем активный цикл зоны
+    const cycleResponse = await this.request.get(`${baseURL}/api/zones/${zoneId}/grow-cycle`, {
+      headers: await this.getHeaders(),
+    });
+
+    if (!cycleResponse.ok()) {
+      throw new Error(`Failed to get grow cycle: ${cycleResponse.status()} ${await cycleResponse.text()}`);
+    }
+
+    const cycleData = await cycleResponse.json();
+    const cycle = cycleData.data?.cycle;
+
+    if (!cycle || !cycle.id) {
+      throw new Error(`Zone ${zoneId} has no active grow cycle`);
+    }
+
+    const response = await this.request.post(`${baseURL}/api/grow-cycles/${cycle.id}/pause`, {
       headers: await this.getHeaders(),
     });
 
     if (!response.ok()) {
-      throw new Error(`Failed to pause zone: ${response.status()} ${await response.text()}`);
+      throw new Error(`Failed to pause cycle: ${response.status()} ${await response.text()}`);
     }
   }
 
   async resumeZone(zoneId: number): Promise<void> {
-    const response = await this.request.post(`${baseURL}/api/zones/${zoneId}/resume`, {
+    // Получаем активный цикл зоны
+    const cycleResponse = await this.request.get(`${baseURL}/api/zones/${zoneId}/grow-cycle`, {
+      headers: await this.getHeaders(),
+    });
+
+    if (!cycleResponse.ok()) {
+      throw new Error(`Failed to get grow cycle: ${cycleResponse.status()} ${await cycleResponse.text()}`);
+    }
+
+    const cycleData = await cycleResponse.json();
+    const cycle = cycleData.data?.cycle;
+
+    if (!cycle || !cycle.id) {
+      throw new Error(`Zone ${zoneId} has no active grow cycle`);
+    }
+
+    const response = await this.request.post(`${baseURL}/api/grow-cycles/${cycle.id}/resume`, {
       headers: await this.getHeaders(),
     });
 
     if (!response.ok()) {
-      throw new Error(`Failed to resume zone: ${response.status()} ${await response.text()}`);
+      throw new Error(`Failed to resume cycle: ${response.status()} ${await response.text()}`);
     }
   }
 
   async harvestZone(zoneId: number): Promise<void> {
-    const response = await this.request.post(`${baseURL}/api/zones/${zoneId}/harvest`, {
+    // Получаем активный цикл зоны
+    const cycleResponse = await this.request.get(`${baseURL}/api/zones/${zoneId}/grow-cycle`, {
       headers: await this.getHeaders(),
     });
 
+    if (!cycleResponse.ok()) {
+      throw new Error(`Failed to get grow cycle: ${cycleResponse.status()} ${await cycleResponse.text()}`);
+    }
+
+    const cycleData = await cycleResponse.json();
+    const cycle = cycleData.data?.cycle;
+
+    if (!cycle || !cycle.id) {
+      throw new Error(`Zone ${zoneId} has no active grow cycle`);
+    }
+
+    const response = await this.request.post(`${baseURL}/api/grow-cycles/${cycle.id}/harvest`, {
+      headers: await this.getHeaders(),
+      data: {
+        batch_label: `Test Batch ${Date.now()}`,
+      },
+    });
+
     if (!response.ok()) {
-      throw new Error(`Failed to harvest zone: ${response.status()} ${await response.text()}`);
+      throw new Error(`Failed to harvest cycle: ${response.status()} ${await response.text()}`);
     }
   }
 

@@ -29,10 +29,80 @@ actions:
       zone_id: ${zone_id}
     optional: true
 
-  # Запускаем grow-cycle (должен работать даже с offline узлами)
+  # Создаем и запускаем grow-cycle (должен работать даже с offline узлами)
+  - step: get_active_cycle
+    type: api_get
+    endpoint: /api/zones/${zone_id}/grow-cycle
+    save: active_cycle_response
+    optional: true
+
+  - step: create_plant_if_needed
+    type: api_post
+    endpoint: /api/plants
+    payload:
+      name: test-plant-e41-${TIMESTAMP_S}
+      scientific_name: Test Plant
+    save: plant_response
+    condition: ${active_cycle_response.data.cycle == null}
+    optional: true
+
+  - step: create_recipe_if_needed
+    type: api_post
+    endpoint: /api/recipes
+    payload:
+      name: test-recipe-e41-${TIMESTAMP_S}
+      description: Test recipe
+    save: recipe_response
+    condition: ${active_cycle_response.data.cycle == null}
+    optional: true
+
+  - step: create_revision_if_needed
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/revisions
+    payload:
+      description: Test revision
+    save: revision_response
+    condition: ${active_cycle_response.data.cycle == null}
+    optional: true
+
+  - step: add_phase_if_needed
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/phases
+    payload:
+      phase_index: 0
+      name: Test Phase
+      duration_hours: 24
+      ph_target: 6.0
+      ec_target: 1.5
+      irrigation_mode: SUBSTRATE
+    condition: ${active_cycle_response.data.cycle == null}
+    optional: true
+
+  - step: publish_revision_if_needed
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/publish
+    condition: ${active_cycle_response.data.cycle == null}
+    optional: true
+
+  - step: create_cycle_if_needed
+    type: api_post
+    endpoint: /api/zones/${zone_id}/grow-cycles
+    payload:
+      recipe_revision_id: ${revision_response.data.id}
+      plant_id: ${plant_response.data.id}
+      start_immediately: false
+    save: cycle_response
+    condition: ${active_cycle_response.data.cycle == null}
+    optional: true
+
+  - step: set_cycle_id
+    type: set
+    cycle_id: ${active_cycle_response.data.cycle.id if active_cycle_response.data.cycle else cycle_response.data.id}
+    optional: true
+
   - step: start_cycle_with_warnings
     type: api_post
-    endpoint: /api/zones/${zone_id}/start
+    endpoint: /api/grow-cycles/${cycle_id}/start
     payload: {}
     save: start_response
     optional: true

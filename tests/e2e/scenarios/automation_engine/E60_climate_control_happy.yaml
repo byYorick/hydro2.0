@@ -100,14 +100,18 @@ actions:
   - step: cleanup_bindings
     type: database_execute
     query: |
-      DELETE FROM zone_channel_bindings WHERE zone_id = :zone_id;
+      DELETE FROM channel_bindings cb
+      USING infrastructure_instances ii
+      WHERE cb.infrastructure_instance_id = ii.id
+      AND ii.owner_type = 'zone'
+      AND ii.owner_id = :zone_id;
     params:
       zone_id: ${zone_id}
 
   - step: cleanup_infra
     type: database_execute
     query: |
-      DELETE FROM zone_infrastructure WHERE zone_id = :zone_id;
+      DELETE FROM infrastructure_instances WHERE owner_type = 'zone' AND owner_id = :zone_id;
     params:
       zone_id: ${zone_id}
 
@@ -132,12 +136,35 @@ actions:
     params:
       node_id: ${node_id}
 
+  # Создаем или получаем node_channels для fan и heater
+  - step: get_or_create_fan_channel
+    type: database_query
+    query: |
+      INSERT INTO node_channels (node_id, channel, type, created_at, updated_at)
+      VALUES (:node_id, 'fan', 'actuator', NOW(), NOW())
+      ON CONFLICT (node_id, channel) DO UPDATE SET updated_at = NOW()
+      RETURNING id
+    params:
+      node_id: ${node_id}
+    save: fan_channel
+
+  - step: get_or_create_heater_channel
+    type: database_query
+    query: |
+      INSERT INTO node_channels (node_id, channel, type, created_at, updated_at)
+      VALUES (:node_id, 'heater', 'actuator', NOW(), NOW())
+      ON CONFLICT (node_id, channel) DO UPDATE SET updated_at = NOW()
+      RETURNING id
+    params:
+      node_id: ${node_id}
+    save: heater_channel
+
   # Создаем инфраструктуру и бинды фан/хитер
   - step: insert_fan_asset
     type: database_query
     query: |
-      INSERT INTO zone_infrastructure (zone_id, asset_type, label, required, created_at, updated_at)
-      VALUES (:zone_id, 'VENT', 'Test Fan', false, NOW(), NOW())
+      INSERT INTO infrastructure_instances (owner_type, owner_id, asset_type, label, required, created_at, updated_at)
+      VALUES ('zone', :zone_id, 'VENT', 'Test Fan', false, NOW(), NOW())
       RETURNING id
     params:
       zone_id: ${zone_id}
@@ -146,8 +173,8 @@ actions:
   - step: insert_heater_asset
     type: database_query
     query: |
-      INSERT INTO zone_infrastructure (zone_id, asset_type, label, required, created_at, updated_at)
-      VALUES (:zone_id, 'HEATER', 'Test Heater', false, NOW(), NOW())
+      INSERT INTO infrastructure_instances (owner_type, owner_id, asset_type, label, required, created_at, updated_at)
+      VALUES ('zone', :zone_id, 'HEATER', 'Test Heater', false, NOW(), NOW())
       RETURNING id
     params:
       zone_id: ${zone_id}
@@ -156,22 +183,20 @@ actions:
   - step: bind_fan
     type: database_execute
     query: |
-      INSERT INTO zone_channel_bindings (zone_id, asset_id, node_id, channel, direction, role, created_at, updated_at)
-      VALUES (:zone_id, :asset_id, :node_id, 'fan', 'actuator', 'fan', NOW(), NOW());
+      INSERT INTO channel_bindings (infrastructure_instance_id, node_channel_id, direction, role, created_at, updated_at)
+      VALUES (:infrastructure_instance_id, :node_channel_id, 'actuator', 'fan', NOW(), NOW());
     params:
-      zone_id: ${zone_id}
-      asset_id: ${fan_asset[0].id}
-      node_id: ${node_id}
+      infrastructure_instance_id: ${fan_asset[0].id}
+      node_channel_id: ${fan_channel[0].id}
 
   - step: bind_heater
     type: database_execute
     query: |
-      INSERT INTO zone_channel_bindings (zone_id, asset_id, node_id, channel, direction, role, created_at, updated_at)
-      VALUES (:zone_id, :asset_id, :node_id, 'heater', 'actuator', 'heater', NOW(), NOW());
+      INSERT INTO channel_bindings (infrastructure_instance_id, node_channel_id, direction, role, created_at, updated_at)
+      VALUES (:infrastructure_instance_id, :node_channel_id, 'actuator', 'heater', NOW(), NOW());
     params:
-      zone_id: ${zone_id}
-      asset_id: ${heater_asset[0].id}
-      node_id: ${node_id}
+      infrastructure_instance_id: ${heater_asset[0].id}
+      node_channel_id: ${heater_channel[0].id}
 
   # Даем automation-engine подтянуть конфиг с биндингами/рецептом
   - step: wait_for_config
@@ -187,40 +212,60 @@ actions:
       description: Test recipe for E60
     save: recipe_response
 
+  - step: create_revision
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/revisions
+    payload:
+      description: Test revision
+    save: revision_response
+
   - step: add_phase_0
     type: api_post
-    endpoint: /api/recipes/${recipe_response.data.id}/phases
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/phases
     payload:
       phase_index: 0
       name: Planting
       duration_hours: 24
-      targets:
-        temp_air: 24
-        humidity_air: 60
-        co2_ppm: 700
+      temp_air_target: 24
+      humidity_target: 60
+      co2_target: 700
 
   - step: add_phase_1
     type: api_post
-    endpoint: /api/recipes/${recipe_response.data.id}/phases
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/phases
     payload:
       phase_index: 1
       name: Veg
       duration_hours: 48
-      targets:
-        temp_air: 24
-        humidity_air: 60
-        co2_ppm: 700
+      temp_air_target: 24
+      humidity_target: 60
+      co2_target: 700
 
-  - step: attach_recipe
+  - step: publish_revision
     type: api_post
-    endpoint: /api/zones/${zone_id}/attach-recipe
-    payload:
-      recipe_id: ${recipe_response.data.id}
-
-  - step: start_cycle
-    type: api_post
-    endpoint: /api/zones/${zone_id}/start
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/publish
     payload: {}
+
+  - step: create_plant
+    type: api_post
+    endpoint: /api/plants
+    payload:
+      name: test-plant-e60-${TIMESTAMP_S}
+      scientific_name: Test Plant
+    save: plant_response
+
+  - step: create_cycle
+    type: api_post
+    endpoint: /api/zones/${zone_id}/grow-cycles
+    payload:
+      recipe_revision_id: ${revision_response.data.id}
+      plant_id: ${plant_response.data.id}
+      start_immediately: true
+    save: cycle_response
+
+  - step: set_cycle_id
+    type: set
+    cycle_id: ${cycle_response.data.id}
 
   - step: start_node_simulator
     type: start_simulator
@@ -271,8 +316,8 @@ actions:
     query: |
       INSERT INTO telemetry_last (zone_id, node_id, metric_type, channel, value, updated_at)
       VALUES (:zone_id, :node_id, 'air_temp_c', 'default', 18.0, NOW())
-      ON CONFLICT (zone_id, metric_type)
-      DO UPDATE SET value = EXCLUDED.value, node_id = EXCLUDED.node_id, channel = EXCLUDED.channel, updated_at = NOW();
+      ON CONFLICT (zone_id, node_id, metric_type)
+      DO UPDATE SET value = EXCLUDED.value, channel = EXCLUDED.channel, updated_at = NOW();
     params:
       zone_id: ${zone_id}
       node_id: ${node_id}
@@ -282,8 +327,8 @@ actions:
     query: |
       INSERT INTO telemetry_last (zone_id, node_id, metric_type, channel, value, updated_at)
       VALUES (:zone_id, :node_id, 'air_rh', 'default', 65.0, NOW())
-      ON CONFLICT (zone_id, metric_type)
-      DO UPDATE SET value = EXCLUDED.value, node_id = EXCLUDED.node_id, channel = EXCLUDED.channel, updated_at = NOW();
+      ON CONFLICT (zone_id, node_id, metric_type)
+      DO UPDATE SET value = EXCLUDED.value, channel = EXCLUDED.channel, updated_at = NOW();
     params:
       zone_id: ${zone_id}
       node_id: ${node_id}
@@ -293,8 +338,8 @@ actions:
     query: |
       INSERT INTO telemetry_last (zone_id, node_id, metric_type, channel, value, updated_at)
       VALUES (:zone_id, :node_id, 'co2_ppm', 'default', 600.0, NOW())
-      ON CONFLICT (zone_id, metric_type)
-      DO UPDATE SET value = EXCLUDED.value, node_id = EXCLUDED.node_id, channel = EXCLUDED.channel, updated_at = NOW();
+      ON CONFLICT (zone_id, node_id, metric_type)
+      DO UPDATE SET value = EXCLUDED.value, channel = EXCLUDED.channel, updated_at = NOW();
     params:
       zone_id: ${zone_id}
       node_id: ${node_id}

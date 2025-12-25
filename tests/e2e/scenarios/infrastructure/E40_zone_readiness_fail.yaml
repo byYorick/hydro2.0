@@ -21,12 +21,65 @@ actions:
     type: set
     zone_id: ${zone_response.data.id}
 
-  # Попытка запустить grow-cycle (start)
+  # Попытка создать и запустить grow-cycle (start)
   # В тестовом окружении (APP_ENV=testing) REQUIRED_BINDINGS отключены, поэтому start вернет 200
   # В реальном окружении без bindings будет 422
+  - step: create_plant_for_test
+    type: api_post
+    endpoint: /api/plants
+    payload:
+      name: test-plant-e40-${TIMESTAMP_S}
+      scientific_name: Test Plant
+    save: plant_response
+    optional: true
+
+  - step: create_recipe_for_test
+    type: api_post
+    endpoint: /api/recipes
+    payload:
+      name: test-recipe-e40-${TIMESTAMP_S}
+      description: Test recipe
+    save: recipe_response
+    optional: true
+
+  - step: create_revision_for_test
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/revisions
+    payload:
+      description: Test revision
+    save: revision_response
+    optional: true
+
+  - step: add_phase_for_test
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/phases
+    payload:
+      phase_index: 0
+      name: Test Phase
+      duration_hours: 24
+      ph_target: 6.0
+      ec_target: 1.5
+      irrigation_mode: SUBSTRATE
+    optional: true
+
+  - step: publish_revision_for_test
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/publish
+    optional: true
+
+  - step: create_cycle_for_test
+    type: api_post
+    endpoint: /api/zones/${zone_id}/grow-cycles
+    payload:
+      recipe_revision_id: ${revision_response.data.id}
+      plant_id: ${plant_response.data.id}
+      start_immediately: false
+    save: cycle_response
+    optional: true
+
   - step: attempt_start_cycle
     type: api_post
-    endpoint: /api/zones/${zone_id}/start
+    endpoint: /api/grow-cycles/${cycle_response.data.id}/start
     payload: {}
     save: start_response
     optional: true

@@ -26,6 +26,62 @@ class GrowCycleController extends Controller
     ) {
     }
     /**
+     * Запустить цикл (из PLANNED в RUNNING)
+     * POST /api/grow-cycles/{id}/start
+     */
+    public function start(Request $request, GrowCycle $growCycle): JsonResponse
+    {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+
+        $zone = $growCycle->zone;
+        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Access denied to this zone',
+            ], 403);
+        }
+
+        // Проверка прав: только агроном может управлять циклами
+        if (!Gate::allows('update', $growCycle)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Only agronomists can manage grow cycles',
+            ], 403);
+        }
+
+        try {
+            $cycle = $this->growCycleService->startCycle($growCycle);
+
+            return response()->json([
+                'status' => 'ok',
+                'data' => $cycle,
+            ]);
+        } catch (\DomainException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (\Exception $e) {
+            Log::error('Failed to start grow cycle', [
+                'zone_id' => $zone->id,
+                'cycle_id' => $growCycle->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    /**
      * Приостановить цикл
      */
     public function pause(Request $request, GrowCycle $growCycle): JsonResponse

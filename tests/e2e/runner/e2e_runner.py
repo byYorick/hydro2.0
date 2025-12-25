@@ -49,7 +49,7 @@ class E2ERunner:
         
         # Инициализируем AuthClient (singleton)
         auth_email = config.get("auth_email", "e2e@test.local")
-        auth_role = config.get("auth_role", "admin")
+        auth_role = config.get("auth_role", "agronomist")  # По умолчанию agronomist для работы с ревизиями и циклами
         self.auth_client = AuthClient(
             api_url=self.api_url,
             email=auth_email,

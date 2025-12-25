@@ -47,7 +47,7 @@ class AuthClient:
         self,
         api_url: Optional[str] = None,
         email: str = "e2e@test.local",
-        role: str = "admin",
+        role: str = "agronomist",  # По умолчанию agronomist для работы с ревизиями и циклами
         token_ttl_seconds: Optional[int] = None
     ):
         """

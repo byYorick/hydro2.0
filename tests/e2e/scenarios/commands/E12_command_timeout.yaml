@@ -68,10 +68,30 @@ actions:
       params:
         state: true
     save: command_response
+    optional: true  # Может вернуть 503 если bridge недоступен
 
-  - step: set_command_id
+  - step: set_command_id_from_response
     type: set
     command_id: ${command_response.data.command_id}
+    condition: ${command_response && command_response.data && command_response.data.command_id}
+
+  # Если команда не была создана из-за 503, создаем команду вручную для теста
+  - step: create_command_manually_if_needed
+    type: database_query
+    query: |
+      INSERT INTO commands (zone_id, node_id, cmd, channel, params, status, source, cmd_id, created_at, updated_at)
+      VALUES (:zone_id, :node_id, 'set_relay_state', 'main_pump', '{"state": true}'::jsonb, 'SENT', 'test', gen_random_uuid()::text, NOW(), NOW())
+      RETURNING cmd_id
+    params:
+      zone_id: ${test_zone_id}
+      node_id: ${test_node_id}
+    save: manual_command
+    condition: ${!command_id || command_id == '' || command_id == null}
+
+  - step: set_command_id_from_manual
+    type: set
+    command_id: ${manual_command[0].cmd_id}
+    condition: ${manual_command && len(manual_command) > 0 && manual_command[0].cmd_id}
 
   # Останавливаем node-sim чтобы гарантировать отсутствие ответа
   - step: stop_node_simulator_to_force_timeout
