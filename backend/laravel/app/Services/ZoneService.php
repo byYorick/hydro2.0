@@ -110,9 +110,9 @@ class ZoneService
     public function delete(Zone $zone): void
     {
         DB::transaction(function () use ($zone) {
-            // Проверка: нельзя удалить зону с активным рецептом
-            if ($zone->recipeInstance) {
-                throw new \DomainException('Cannot delete zone with active recipe. Please detach recipe first.');
+            // Проверка: нельзя удалить зону с активным циклом
+            if ($zone->activeGrowCycle) {
+                throw new \DomainException('Cannot delete zone with active grow cycle. Please finish or abort cycle first.');
             }
 
             // Проверка: нельзя удалить зону с привязанными узлами
