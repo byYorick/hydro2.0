@@ -16,12 +16,18 @@ class GrowCycleFactory extends Factory
 
     public function definition(): array
     {
+        $recipe = Recipe::factory()->create();
+        $revision = \App\Models\RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+        
         return [
             'greenhouse_id' => Greenhouse::factory(),
             'zone_id' => Zone::factory(),
             'plant_id' => null,
-            'recipe_id' => Recipe::factory(),
-            'zone_recipe_instance_id' => null,
+            'recipe_id' => $recipe->id,
+            'recipe_revision_id' => $revision->id,
             'status' => GrowCycleStatus::PLANNED,
             'started_at' => null,
             'recipe_started_at' => null,
@@ -30,8 +36,10 @@ class GrowCycleFactory extends Factory
             'batch_label' => null,
             'notes' => null,
             'settings' => null,
-            'current_stage_code' => null,
-            'current_stage_started_at' => null,
+            'current_phase_id' => null,
+            'current_step_id' => null,
+            'phase_started_at' => null,
+            'step_started_at' => null,
             'planting_at' => null,
         ];
     }
@@ -43,8 +51,7 @@ class GrowCycleFactory extends Factory
             'planting_at' => now(),
             'started_at' => now(),
             'recipe_started_at' => now(),
-            'current_stage_code' => 'VEG',
-            'current_stage_started_at' => now(),
+            'phase_started_at' => now(),
         ]);
     }
 

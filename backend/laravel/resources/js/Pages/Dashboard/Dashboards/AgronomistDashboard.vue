@@ -294,7 +294,10 @@ const zonesByCrop = computed(() => {
   }>()
   
   props.dashboard.zones.forEach(zone => {
-    const cropName = zone.recipe_instance?.recipe?.name || 'Без рецепта'
+    // Используем новую модель: activeGrowCycle -> recipeRevision -> recipe
+    const cropName = zone.activeGrowCycle?.recipeRevision?.recipe?.name 
+      || zone.recipe_instance?.recipe?.name 
+      || 'Без рецепта'
     
     if (!grouped.has(cropName)) {
       grouped.set(cropName, {
@@ -437,10 +440,11 @@ const alarmZonesCount = computed(() => {
 
 const activeRecipes = computed(() => {
   if (!props.dashboard.recipes) return []
-  // Рецепты считаются активными, если они применены к зонам
+  // Рецепты считаются активными, если они применены к зонам через activeGrowCycle или recipeInstance
   return props.dashboard.recipes.slice(0, 6).map(recipe => {
     const zonesWithRecipe = props.dashboard.zones?.filter(z => 
-      z.recipe_instance?.recipe_id === recipe.id
+      z.activeGrowCycle?.recipeRevision?.recipe_id === recipe.id
+      || z.recipe_instance?.recipe_id === recipe.id
     ) || []
     
     // Вычисляем информацию о фазах из зон
@@ -451,19 +455,33 @@ const activeRecipes = computed(() => {
     if (zonesWithRecipe.length > 0 && recipe.phases && recipe.phases.length > 0) {
       // Берем первую зону для определения текущей фазы
       const firstZone = zonesWithRecipe[0]
-      const currentPhaseIndex = firstZone.recipe_instance?.current_phase_index ?? 0
+      
+      // Используем новую модель: activeGrowCycle
+      let currentPhaseIndex = 0
+      let startedAt: Date | null = null
+      
+      if (firstZone.activeGrowCycle?.currentPhase) {
+        currentPhaseIndex = firstZone.activeGrowCycle.currentPhase.phase_index ?? 0
+        startedAt = firstZone.activeGrowCycle.phase_started_at 
+          ? new Date(firstZone.activeGrowCycle.phase_started_at)
+          : (firstZone.activeGrowCycle.started_at ? new Date(firstZone.activeGrowCycle.started_at) : null)
+      } else if (firstZone.recipe_instance) {
+        // Fallback на legacy
+        currentPhaseIndex = firstZone.recipe_instance.current_phase_index ?? 0
+        startedAt = firstZone.recipe_instance.started_at ? new Date(firstZone.recipe_instance.started_at) : null
+      }
+      
       const currentPhaseData = recipe.phases.find(p => p.phase_index === currentPhaseIndex)
       
       if (currentPhaseData) {
         currentPhase = currentPhaseData.name || `Фаза ${currentPhaseIndex + 1}`
         
         // Вычисляем прогресс фазы на основе времени
-        if (firstZone.recipe_instance?.started_at) {
-          const startedAt = new Date(firstZone.recipe_instance.started_at)
+        if (startedAt) {
           const now = new Date()
-          const phaseDuration = currentPhaseData.duration_days * 24 * 60 * 60 * 1000
+          const phaseDuration = (currentPhaseData.duration_days || 0) * 24 * 60 * 60 * 1000
           const elapsed = now.getTime() - startedAt.getTime()
-          phaseProgress = Math.min(100, Math.max(0, (elapsed / phaseDuration) * 100))
+          phaseProgress = phaseDuration > 0 ? Math.min(100, Math.max(0, (elapsed / phaseDuration) * 100)) : 0
           
           // Вычисляем время до следующей фазы
           const nextPhaseStart = new Date(startedAt.getTime() + phaseDuration)

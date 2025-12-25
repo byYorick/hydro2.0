@@ -40,17 +40,93 @@ class SimulationResponse(BaseModel):
 
 
 async def get_recipe_phases(recipe_id: int) -> List[Dict[str, Any]]:
-    """Получить фазы рецепта."""
-    rows = await fetch(
+    """
+    Получить фазы рецепта из ревизии (новая модель).
+    Для симуляции используем последнюю опубликованную ревизию рецепта.
+    """
+    # Получаем последнюю опубликованную ревизию рецепта
+    revision_rows = await fetch(
         """
-        SELECT phase_index, name, duration_hours, targets
-        FROM recipe_phases
-        WHERE recipe_id = $1
-        ORDER BY phase_index ASC
+        SELECT id
+        FROM recipe_revisions
+        WHERE recipe_id = $1 AND status = 'PUBLISHED'
+        ORDER BY revision_number DESC
+        LIMIT 1
         """,
         recipe_id,
     )
-    return rows or []
+    
+    if not revision_rows:
+        logger.warning(f'No published revision found for recipe {recipe_id}')
+        return []
+    
+    revision_id = revision_rows[0]["id"]
+    
+    # Получаем фазы ревизии
+    phase_rows = await fetch(
+        """
+        SELECT 
+            phase_index,
+            name,
+            duration_hours,
+            duration_days,
+            ph_target, ph_min, ph_max,
+            ec_target, ec_min, ec_max,
+            temp_air_target,
+            humidity_target,
+            co2_target,
+            irrigation_mode,
+            irrigation_interval_sec,
+            irrigation_duration_sec,
+            lighting_photoperiod_hours,
+            lighting_start_time,
+            mist_interval_sec,
+            mist_duration_sec,
+            mist_mode,
+            extensions
+        FROM recipe_revision_phases
+        WHERE recipe_revision_id = $1
+        ORDER BY phase_index ASC
+        """,
+        revision_id,
+    )
+    
+    if not phase_rows:
+        return []
+    
+    # Преобразуем фазы в формат, совместимый со старым кодом
+    phases = []
+    for row in phase_rows:
+        # Преобразуем колонки в формат targets для совместимости
+        targets = {}
+        
+        if row.get("ph_target") is not None:
+            targets["ph"] = row["ph_target"]
+        if row.get("ec_target") is not None:
+            targets["ec"] = row["ec_target"]
+        if row.get("temp_air_target") is not None:
+            targets["temp_air"] = row["temp_air_target"]
+        if row.get("humidity_target") is not None:
+            targets["humidity_air"] = row["humidity_target"]
+        if row.get("co2_target") is not None:
+            targets["co2"] = row["co2_target"]
+        
+        # Добавляем расширения если есть
+        if row.get("extensions"):
+            targets.update(row["extensions"])
+        
+        duration_hours = row.get("duration_hours")
+        if not duration_hours and row.get("duration_days"):
+            duration_hours = row["duration_days"] * 24
+        
+        phases.append({
+            "phase_index": row["phase_index"],
+            "name": row["name"],
+            "duration_hours": duration_hours or 0,
+            "targets": targets,
+        })
+    
+    return phases
 
 
 async def simulate_zone(request: SimulationRequest) -> Dict[str, Any]:

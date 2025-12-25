@@ -6,15 +6,18 @@ use App\Models\Zone;
 use App\Models\TelemetryLast;
 use App\Models\ParameterPrediction;
 use App\Services\PredictionService;
+use App\Services\EffectiveTargetsService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 
 class AiController extends Controller
 {
     public function __construct(
-        private PredictionService $predictionService
+        private PredictionService $predictionService,
+        private EffectiveTargetsService $effectiveTargetsService
     ) {
     }
 
@@ -67,7 +70,7 @@ class AiController extends Controller
             'zone_id' => ['required', 'integer', 'exists:zones,id'],
         ]);
 
-        $zone = Zone::with(['recipeInstance.recipe.phases'])->findOrFail($validated['zone_id']);
+        $zone = Zone::findOrFail($validated['zone_id']);
 
         // Получаем текущую телеметрию
         $telemetry = TelemetryLast::query()
@@ -84,22 +87,29 @@ class AiController extends Controller
             ->groupBy('metric_type')
             ->map(fn($group) => $group->first());
 
-        // Получаем targets из активного рецепта
+        // Получаем targets из активного цикла выращивания (новая модель)
         $targets = null;
-        if ($zone->recipeInstance) {
-            $currentPhase = $zone->recipeInstance->recipe->phases()
-                ->where('phase_index', $zone->recipeInstance->current_phase_index)
-                ->first();
-            $targets = $currentPhase?->targets;
+        $activeCycle = $zone->activeGrowCycle;
+        if ($activeCycle) {
+            try {
+                $effectiveTargets = $this->effectiveTargetsService->getEffectiveTargets($activeCycle->id);
+                $targets = $effectiveTargets['targets'] ?? [];
+            } catch (\Exception $e) {
+                Log::warning('Failed to get effective targets for AI explain', [
+                    'zone_id' => $zone->id,
+                    'cycle_id' => $activeCycle->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
 
         // Простой анализ состояния (без LLM пока)
         $explanations = [];
         
         // Анализ pH
-        if ($telemetry->has('ph') && $targets && isset($targets['ph'])) {
+        if ($telemetry->has('ph') && $targets && isset($targets['ph']['target'])) {
             $phCurrent = $telemetry->get('ph')->value;
-            $phTarget = $targets['ph'];
+            $phTarget = $targets['ph']['target'];
             $phDiff = abs($phCurrent - $phTarget);
             
             if ($phDiff > 0.3) {
@@ -116,9 +126,9 @@ class AiController extends Controller
         }
 
         // Анализ EC
-        if ($telemetry->has('ec') && $targets && isset($targets['ec'])) {
+        if ($telemetry->has('ec') && $targets && isset($targets['ec']['target'])) {
             $ecCurrent = $telemetry->get('ec')->value;
-            $ecTarget = $targets['ec'];
+            $ecTarget = $targets['ec']['target'];
             $ecDiff = abs($ecCurrent - $ecTarget);
             
             if ($ecDiff > 0.2) {
@@ -174,7 +184,7 @@ class AiController extends Controller
             'context' => ['nullable', 'string'], // ph_high, ph_low, ec_high, ec_low
         ]);
 
-        $zone = Zone::with(['recipeInstance.recipe.phases'])->findOrFail($validated['zone_id']);
+        $zone = Zone::findOrFail($validated['zone_id']);
 
         // Получаем текущую телеметрию
         $telemetry = TelemetryLast::query()
@@ -182,21 +192,28 @@ class AiController extends Controller
             ->get()
             ->keyBy('metric_type');
 
-        // Получаем targets
+        // Получаем targets из активного цикла выращивания (новая модель)
         $targets = null;
-        if ($zone->recipeInstance) {
-            $currentPhase = $zone->recipeInstance->recipe->phases()
-                ->where('phase_index', $zone->recipeInstance->current_phase_index)
-                ->first();
-            $targets = $currentPhase?->targets;
+        $activeCycle = $zone->activeGrowCycle;
+        if ($activeCycle) {
+            try {
+                $effectiveTargets = $this->effectiveTargetsService->getEffectiveTargets($activeCycle->id);
+                $targets = $effectiveTargets['targets'] ?? [];
+            } catch (\Exception $e) {
+                Log::warning('Failed to get effective targets for AI recommend', [
+                    'zone_id' => $zone->id,
+                    'cycle_id' => $activeCycle->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
 
         $recommendations = [];
 
         // Рекомендации по pH
-        if ($telemetry->has('ph') && $targets && isset($targets['ph'])) {
+        if ($telemetry->has('ph') && $targets && isset($targets['ph']['target'])) {
             $phCurrent = $telemetry->get('ph')->value;
-            $phTarget = $targets['ph'];
+            $phTarget = $targets['ph']['target'];
             $phDiff = $phCurrent - $phTarget;
 
             if (abs($phDiff) > 0.2) {
@@ -219,9 +236,9 @@ class AiController extends Controller
         }
 
         // Рекомендации по EC
-        if ($telemetry->has('ec') && $targets && isset($targets['ec'])) {
+        if ($telemetry->has('ec') && $targets && isset($targets['ec']['target'])) {
             $ecCurrent = $telemetry->get('ec')->value;
-            $ecTarget = $targets['ec'];
+            $ecTarget = $targets['ec']['target'];
             $ecDiff = $ecCurrent - $ecTarget;
 
             if (abs($ecDiff) > 0.2) {
@@ -261,7 +278,7 @@ class AiController extends Controller
         // Получаем все активные зоны
         $zones = Zone::query()
             ->whereIn('status', ['online', 'warning', 'RUNNING'])
-            ->with(['recipeInstance.recipe'])
+            ->with(['activeGrowCycle'])
             ->get();
 
         $report = [
@@ -294,7 +311,7 @@ class AiController extends Controller
                 'zone_name' => $zone->name,
                 'status' => $zone->status,
                 'issues' => $issues,
-                'has_recipe' => $zone->recipeInstance !== null,
+                'has_active_cycle' => $zone->activeGrowCycle !== null,
             ];
         }
 

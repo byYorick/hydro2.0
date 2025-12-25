@@ -308,6 +308,11 @@ Route::prefix('python')->middleware('throttle:120,1')->group(function () {
     Route::post('logs', [ServiceLogController::class, 'store'])->middleware('verify.python.service');
 });
 
+// Internal API для Python сервисов (требует verify.python.service middleware)
+Route::prefix('internal')->middleware(['verify.python.service', 'throttle:120,1'])->group(function () {
+    Route::post('effective-targets/batch', [\App\Http\Controllers\InternalApiController::class, 'getEffectiveTargetsBatch']);
+});
+
 // Node registration and service updates (token-based) - умеренный лимит
 Route::middleware(['throttle:node_register', 'ip.whitelist'])->group(function () {
     Route::post('nodes/register', [NodeController::class, 'register']);

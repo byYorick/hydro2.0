@@ -1,10 +1,14 @@
 """
 Utility functions for working with recipes and phases.
+DEPRECATED: Эти функции используют legacy таблицы. Используйте LaravelApiRepository или GrowCycleRepository вместо них.
 """
+import logging
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta, timezone
 from common.utils.time import utcnow
 from common.db import fetch, execute
+
+logger = logging.getLogger(__name__)
 
 
 async def get_recipe_by_id(recipe_id: int) -> Optional[Dict[str, Any]]:
@@ -23,7 +27,66 @@ async def get_recipe_by_id(recipe_id: int) -> Optional[Dict[str, Any]]:
 
 
 async def get_recipe_phases(recipe_id: int) -> List[Dict[str, Any]]:
-    """Fetch all phases for a recipe, ordered by phase_index."""
+    """
+    DEPRECATED: Используйте recipe_revisions и recipe_revision_phases вместо recipe_phases.
+    Fetch all phases for a recipe, ordered by phase_index (legacy).
+    """
+    logger.warning('get_recipe_phases() is deprecated - use recipe_revisions instead')
+    # Пытаемся получить из новой модели
+    try:
+        revision_rows = await fetch(
+            """
+            SELECT id
+            FROM recipe_revisions
+            WHERE recipe_id = $1 AND status = 'PUBLISHED'
+            ORDER BY revision_number DESC
+            LIMIT 1
+            """,
+            recipe_id,
+        )
+        if revision_rows:
+            revision_id = revision_rows[0]["id"]
+            phase_rows = await fetch(
+                """
+                SELECT phase_index, name, duration_hours, duration_days,
+                       ph_target, ec_target, temp_air_target, humidity_target
+                FROM recipe_revision_phases
+                WHERE recipe_revision_id = $1
+                ORDER BY phase_index ASC
+                """,
+                revision_id,
+            )
+            # Преобразуем в старый формат для совместимости
+            result = []
+            for row in phase_rows:
+                targets = {}
+                if row.get("ph_target") is not None:
+                    targets["ph"] = row["ph_target"]
+                if row.get("ec_target") is not None:
+                    targets["ec"] = row["ec_target"]
+                if row.get("temp_air_target") is not None:
+                    targets["temp_air"] = row["temp_air_target"]
+                if row.get("humidity_target") is not None:
+                    targets["humidity_air"] = row["humidity_target"]
+                
+                duration_hours = row.get("duration_hours")
+                if not duration_hours and row.get("duration_days"):
+                    duration_hours = row["duration_days"] * 24
+                
+                result.append({
+                    "id": None,  # В новой модели нет id в старом смысле
+                    "recipe_id": recipe_id,
+                    "phase_index": row["phase_index"],
+                    "name": row["name"],
+                    "duration_hours": duration_hours or 0,
+                    "targets": targets,
+                    "created_at": None,
+                })
+            return result
+    except Exception as e:
+        logger.warning(f'Failed to get phases from new model, falling back to legacy: {e}')
+    
+    # Fallback на legacy таблицу (если еще существует)
     rows = await fetch(
         """
         SELECT id, recipe_id, phase_index, name, duration_hours, targets, created_at
@@ -37,7 +100,30 @@ async def get_recipe_phases(recipe_id: int) -> List[Dict[str, Any]]:
 
 
 async def get_zone_recipe_instance(zone_id: int) -> Optional[Dict[str, Any]]:
-    """Fetch active recipe instance for zone."""
+    """
+    DEPRECATED: Используйте GrowCycleRepository.get_active_cycle_for_zone() вместо этого.
+    Fetch active recipe instance for zone (legacy).
+    """
+    logger.warning('get_zone_recipe_instance() is deprecated - use GrowCycleRepository instead')
+    # Пытаемся получить из новой модели
+    try:
+        from repositories.grow_cycle_repository import GrowCycleRepository
+        grow_cycle_repo = GrowCycleRepository()
+        cycle = await grow_cycle_repo.get_active_cycle_for_zone(zone_id)
+        if cycle:
+            # Преобразуем в старый формат для совместимости
+            return {
+                "id": cycle.get("id"),
+                "zone_id": zone_id,
+                "recipe_id": cycle.get("recipe_id"),
+                "current_phase_index": cycle.get("current_phase_id"),  # Приблизительно
+                "started_at": cycle.get("started_at"),
+                "updated_at": cycle.get("updated_at"),
+            }
+    except Exception as e:
+        logger.warning(f'Failed to get cycle from new model, falling back to legacy: {e}')
+    
+    # Fallback на legacy таблицу (если еще существует)
     rows = await fetch(
         """
         SELECT id, zone_id, recipe_id, current_phase_index, started_at, updated_at

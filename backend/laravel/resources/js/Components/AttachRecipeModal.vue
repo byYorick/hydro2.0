@@ -1,5 +1,9 @@
+<!--
+  DEPRECATED: Этот компонент использует legacy модель recipeInstance.
+  Используйте GrowCycles/Wizard.vue для создания циклов выращивания с рецептами.
+-->
 <template>
-  <Modal :open="show" title="Привязать рецепт к зоне" @close="$emit('close')" data-testid="attach-recipe-modal">
+  <Modal :open="show" title="Привязать рецепт к зоне (Legacy)" @close="$emit('close')" data-testid="attach-recipe-modal">
     <div v-if="loading" class="text-sm text-[color:var(--text-muted)]">Загрузка...</div>
     <div v-else class="space-y-4">
       <div>

@@ -127,30 +127,62 @@ def _parse_time_spec(spec: str) -> Optional[time]:
 
 
 async def get_active_schedules() -> List[Dict[str, Any]]:
-    """Fetch active schedules from recipe phases or zone configs."""
-    # MVP: simple schedules from recipe_phases.targets (irrigation_schedule, lighting_schedule)
-    # Example targets: {"ph": 6.5, "ec": 1.8, "irrigation_schedule": ["08:00", "14:00", "20:00"], "lighting_schedule": "06:00-22:00"}
-    rows = await fetch(
+    """Fetch active schedules from effective targets (новая модель GrowCycle)."""
+    # Получаем активные зоны
+    zone_rows = await fetch(
         """
-        SELECT zri.zone_id, zri.current_phase_index, rp.targets, z.status
-        FROM zone_recipe_instances zri
-        JOIN recipe_phases rp ON rp.recipe_id = zri.recipe_id AND rp.phase_index = zri.current_phase_index
-        JOIN zones z ON z.id = zri.zone_id
+        SELECT z.id as zone_id
+        FROM zones z
         WHERE z.status IN ('online', 'warning')
         """
     )
+    
+    if not zone_rows:
+        ACTIVE_SCHEDULES.set(0)
+        return []
+    
+    zone_ids = [row["zone_id"] for row in zone_rows]
+    
+    # Получаем effective targets через Laravel API
+    try:
+        from repositories.laravel_api_repository import LaravelApiRepository
+        laravel_api = LaravelApiRepository()
+        effective_targets_batch = await laravel_api.get_effective_targets_batch(zone_ids)
+    except Exception as e:
+        logger.error(f'Failed to get effective targets from Laravel API: {e}')
+        ACTIVE_SCHEDULES.set(0)
+        return []
+    
     schedules: List[Dict[str, Any]] = []
-    for row in rows:
-        targets = row["targets"] or {}
+    
+    for zone_id in zone_ids:
+        effective_targets = effective_targets_batch.get(zone_id)
+        if not effective_targets or 'error' in effective_targets:
+            continue
+        
+        targets = effective_targets.get('targets', {})
         if not isinstance(targets, dict):
             continue
-        zone_id = row["zone_id"]
-        # Irrigation schedule
-        irrigation_schedule = targets.get("irrigation_schedule")
-        if irrigation_schedule:
-            if isinstance(irrigation_schedule, list):
-                for time_spec in irrigation_schedule:
-                    t = _parse_time_spec(str(time_spec))
+        
+        # Irrigation schedule из effective targets
+        irrigation = targets.get("irrigation", {})
+        if irrigation:
+            # Используем interval_sec для создания расписания
+            # Если есть явное расписание, используем его
+            irrigation_schedule = targets.get("irrigation_schedule")
+            if irrigation_schedule:
+                if isinstance(irrigation_schedule, list):
+                    for time_spec in irrigation_schedule:
+                        t = _parse_time_spec(str(time_spec))
+                        if t:
+                            schedules.append({
+                                "zone_id": zone_id,
+                                "type": "irrigation",
+                                "time": t,
+                                "targets": targets,
+                            })
+                elif isinstance(irrigation_schedule, str):
+                    t = _parse_time_spec(irrigation_schedule)
                     if t:
                         schedules.append({
                             "zone_id": zone_id,
@@ -158,24 +190,22 @@ async def get_active_schedules() -> List[Dict[str, Any]]:
                             "time": t,
                             "targets": targets,
                         })
-            elif isinstance(irrigation_schedule, str):
-                t = _parse_time_spec(irrigation_schedule)
-                if t:
-                    schedules.append({
-                        "zone_id": zone_id,
-                        "type": "irrigation",
-                        "time": t,
-                        "targets": targets,
-                    })
-        # Lighting schedule
-        lighting_schedule = targets.get("lighting_schedule")
-        if lighting_schedule and isinstance(lighting_schedule, str):
-            # Parse "06:00-22:00"
-            parts = lighting_schedule.split("-")
-            if len(parts) == 2:
-                start_t = _parse_time_spec(parts[0].strip())
-                end_t = _parse_time_spec(parts[1].strip())
-                if start_t and end_t:
+        
+        # Lighting schedule из effective targets
+        lighting = targets.get("lighting", {})
+        if lighting:
+            # Используем photoperiod_hours и start_time для создания расписания
+            photoperiod_hours = lighting.get("photoperiod_hours")
+            start_time_str = lighting.get("start_time")
+            
+            if photoperiod_hours and start_time_str:
+                start_t = _parse_time_spec(start_time_str)
+                if start_t:
+                    # Вычисляем end_time на основе photoperiod_hours
+                    from datetime import timedelta
+                    end_time_dt = datetime.combine(datetime.today(), start_t) + timedelta(hours=photoperiod_hours)
+                    end_t = end_time_dt.time()
+                    
                     schedules.append({
                         "zone_id": zone_id,
                         "type": "lighting",
@@ -183,6 +213,23 @@ async def get_active_schedules() -> List[Dict[str, Any]]:
                         "end_time": end_t,
                         "targets": targets,
                     })
+            else:
+                # Fallback на старый формат lighting_schedule
+                lighting_schedule = targets.get("lighting_schedule")
+                if lighting_schedule and isinstance(lighting_schedule, str):
+                    parts = lighting_schedule.split("-")
+                    if len(parts) == 2:
+                        start_t = _parse_time_spec(parts[0].strip())
+                        end_t = _parse_time_spec(parts[1].strip())
+                        if start_t and end_t:
+                            schedules.append({
+                                "zone_id": zone_id,
+                                "type": "lighting",
+                                "start_time": start_t,
+                                "end_time": end_t,
+                                "targets": targets,
+                            })
+    
     ACTIVE_SCHEDULES.set(len(schedules))
     return schedules
 
@@ -304,9 +351,10 @@ async def execute_irrigation_schedule(
             await create_scheduler_log(task_name, "failed", {"zone_id": zone_id, "error": "no_nodes"})
             return
         
-        # Get irrigation duration from targets
+        # Get irrigation duration from targets (новая модель)
         targets = schedule.get("targets", {})
-        duration_sec = targets.get("irrigation_duration_sec", 60)
+        irrigation = targets.get("irrigation", {})
+        duration_sec = irrigation.get("duration_sec") or targets.get("irrigation_duration_sec", 60)
         
         # Create IRRIGATION_STARTED event
         irrigation_start_time = utcnow()

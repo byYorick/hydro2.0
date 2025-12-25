@@ -33,7 +33,7 @@
     </div>
 
     <!-- Стадия и прогресс -->
-    <div v-if="zone.recipe_instance || zone.recipeInstance" class="mt-3 space-y-2">
+    <div v-if="zone.activeGrowCycle || zone.recipe_instance || zone.recipeInstance" class="mt-3 space-y-2">
       <div class="flex items-center justify-between">
         <GrowCycleStageHeader :stage="currentStage" />
         <GrowCycleProgressRing
@@ -135,6 +135,22 @@ const variant = computed<BadgeVariant>(() => {
 
 // Определяем текущую стадию
 const currentStage = computed<GrowStage | null>(() => {
+  // Используем новую модель: activeGrowCycle
+  if (props.zone.activeGrowCycle?.currentPhase) {
+    const currentPhase = props.zone.activeGrowCycle.currentPhase
+    const phases = props.zone.activeGrowCycle.phases || []
+    const phaseIndex = currentPhase.phase_index ?? -1
+    
+    if (phaseIndex >= 0) {
+      return getStageForPhase(
+        currentPhase.name,
+        phaseIndex,
+        phases.length || 1
+      )
+    }
+  }
+  
+  // Fallback на legacy recipeInstance
   const recipeInstance = props.zone.recipe_instance || props.zone.recipeInstance
   if (!recipeInstance?.recipe?.phases) {
     return null
@@ -162,6 +178,39 @@ const currentStage = computed<GrowStage | null>(() => {
 
 // Вычисляем прогресс цикла
 const cycleProgress = computed<number | null>(() => {
+  // Используем новую модель: activeGrowCycle
+  if (props.zone.activeGrowCycle) {
+    const cycle = props.zone.activeGrowCycle
+    const phases = cycle.phases || []
+    const currentPhase = cycle.currentPhase
+    
+    if (currentPhase && phases.length > 0 && cycle.started_at) {
+      const phaseIndex = currentPhase.phase_index ?? -1
+      if (phaseIndex >= 0) {
+        // Вычисляем прогресс на основе времени
+        const startedAt = new Date(cycle.started_at)
+        const now = new Date()
+        const phaseStartedAt = cycle.phase_started_at ? new Date(cycle.phase_started_at) : startedAt
+        
+        // Вычисляем длительность текущей фазы
+        const durationHours = currentPhase.duration_hours || (currentPhase.duration_days ? currentPhase.duration_days * 24 : 0)
+        const phaseEndAt = new Date(phaseStartedAt.getTime() + durationHours * 60 * 60 * 1000)
+        
+        const totalMs = phaseEndAt.getTime() - phaseStartedAt.getTime()
+        const elapsedMs = now.getTime() - phaseStartedAt.getTime()
+        const phaseProgress = totalMs > 0 ? Math.min(100, Math.max(0, (elapsedMs / totalMs) * 100)) : 0
+        
+        return calculateCycleProgress(
+          phaseIndex,
+          phases,
+          cycle.started_at,
+          phaseProgress
+        )
+      }
+    }
+  }
+  
+  // Fallback на legacy recipeInstance
   const recipeInstance = props.zone.recipe_instance || props.zone.recipeInstance
   if (!recipeInstance?.recipe?.phases || !recipeInstance.started_at) {
     return null

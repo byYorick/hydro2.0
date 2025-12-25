@@ -21,10 +21,11 @@ class CycleCenterController extends Controller
         $zonesQuery = Zone::query()
             ->with([
                 'greenhouse:id,name',
-                'recipeInstance.recipe:id,name',
-                'activeGrowCycle.recipe.stageMaps.stageTemplate',
-                'activeGrowCycle.recipe:id,name',
+                'activeGrowCycle.currentPhase',
+                'activeGrowCycle.recipeRevision.recipe:id,name',
                 'activeGrowCycle.plant:id,name',
+                // Fallback на legacy для обратной совместимости
+                'recipeInstance.recipe:id,name',
             ])
             ->withCount([
                 'alerts as alerts_count' => function ($query) {
@@ -145,12 +146,20 @@ class CycleCenterController extends Controller
             $cycleDto = $cycle ? $growCyclePresenter->buildCycleDto($cycle)['cycle'] ?? null : null;
 
             $recipe = null;
-            if ($cycle?->recipe) {
+            // Используем новую модель: activeGrowCycle -> recipeRevision -> recipe
+            if ($cycle?->recipeRevision?->recipe) {
+                $recipe = [
+                    'id' => $cycle->recipeRevision->recipe->id,
+                    'name' => $cycle->recipeRevision->recipe->name,
+                ];
+            } elseif ($cycle?->recipe) {
+                // Fallback на старую структуру (если есть прямая связь)
                 $recipe = [
                     'id' => $cycle->recipe->id,
                     'name' => $cycle->recipe->name,
                 ];
             } elseif ($zone->recipeInstance?->recipe) {
+                // Fallback на legacy для обратной совместимости
                 $recipe = [
                     'id' => $zone->recipeInstance->recipe->id,
                     'name' => $zone->recipeInstance->recipe->name,

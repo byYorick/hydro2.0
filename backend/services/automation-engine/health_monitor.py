@@ -128,23 +128,22 @@ async def calculate_climate_quality(zone_id: int) -> float:
     temp_air = telemetry.get("TEMP_AIR")
     humidity = telemetry.get("HUMIDITY")
     
-    # Получаем цели из рецепта
-    recipe_rows = await fetch(
-        """
-        SELECT rp.targets
-        FROM zone_recipe_instances zri
-        JOIN recipe_phases rp ON rp.recipe_id = zri.recipe_id AND rp.phase_index = zri.current_phase_index
-        WHERE zri.zone_id = $1
-        """,
-        zone_id,
-    )
-    
-    if not recipe_rows or not recipe_rows[0]["targets"]:
+    # Получаем цели из активного цикла выращивания (новая модель)
+    try:
+        from repositories.laravel_api_repository import LaravelApiRepository
+        laravel_api = LaravelApiRepository()
+        effective_targets = await laravel_api.get_effective_targets(zone_id)
+        
+        if not effective_targets or 'error' in effective_targets:
+            return 50.0
+        
+        targets = effective_targets.get('targets', {})
+        climate_request = targets.get('climate_request', {})
+        target_temp = climate_request.get('temp_air_target')
+        target_humidity = climate_request.get('humidity_target')
+    except Exception as e:
+        logger.warning(f'Failed to get effective targets for health monitor zone {zone_id}: {e}')
         return 50.0
-    
-    targets = recipe_rows[0]["targets"]
-    target_temp = targets.get("temp_air")
-    target_humidity = targets.get("humidity_air")
     
     score = 100.0
     

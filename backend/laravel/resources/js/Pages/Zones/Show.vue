@@ -11,10 +11,14 @@
             </div>
             <div class="text-sm text-[color:var(--text-dim)] mt-1 space-y-1">
               <div v-if="zone.description" class="truncate">{{ zone.description }}</div>
-              <div v-if="zone.recipeInstance?.recipe" class="flex items-center gap-2 text-xs uppercase tracking-[0.12em]">
+              <div v-if="activeGrowCycle?.recipeRevision || zone.recipeInstance?.recipe" class="flex items-center gap-2 text-xs uppercase tracking-[0.12em]">
                 <span class="text-[color:var(--text-dim)]">Рецепт</span>
-                <span class="text-[color:var(--accent-cyan)] font-semibold">{{ zone.recipeInstance.recipe.name }}</span>
-                <span v-if="zone.recipeInstance.current_phase_index !== null" class="text-[color:var(--text-dim)]">фаза {{ zone.recipeInstance.current_phase_index + 1 }}</span>
+                <span class="text-[color:var(--accent-cyan)] font-semibold">
+                  {{ activeGrowCycle?.recipeRevision?.recipe?.name || zone.recipeInstance?.recipe?.name }}
+                </span>
+                <span v-if="activeGrowCycle?.currentPhase || zone.recipeInstance?.current_phase_index !== null" class="text-[color:var(--text-dim)]">
+                  фаза {{ (activeGrowCycle?.currentPhase?.phase_index ?? zone.recipeInstance?.current_phase_index ?? 0) + 1 }}
+                </span>
               </div>
             </div>
           </div>
@@ -127,12 +131,13 @@
         <!-- Прогресс цикла выращивания -->
         <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
           <StageProgress
-            v-if="zone.recipeInstance?.recipe || zone.recipeInstance?.recipe_id"
+            v-if="activeGrowCycle || zone.recipeInstance?.recipe || zone.recipeInstance?.recipe_id"
             :recipe-instance="zone.recipeInstance"
+            :grow-cycle="activeGrowCycle"
             :phase-progress="computedPhaseProgress"
             :phase-days-elapsed="computedPhaseDaysElapsed"
             :phase-days-total="computedPhaseDaysTotal"
-            :started-at="zone.recipeInstance?.started_at"
+            :started-at="activeGrowCycle?.started_at || zone.recipeInstance?.started_at"
           />
           <div v-else-if="activeGrowCycle || activeCycle || zone.status === 'RUNNING'" class="text-center py-6">
             <div class="text-4xl mb-2">🌱</div>
@@ -237,20 +242,23 @@
               <template v-if="canManageRecipe">
                 <Button
                   size="sm"
-                  :variant="zone.recipeInstance?.recipe ? 'secondary' : 'primary'"
+                  :variant="(activeGrowCycle || zone.recipeInstance?.recipe) ? 'secondary' : 'primary'"
                   @click="modals.open('attachRecipe')"
                   data-testid="recipe-attach-btn"
                 >
-                  {{ zone.recipeInstance?.recipe ? 'Изменить рецепт' : 'Привязать рецепт' }}
+                  {{ (activeGrowCycle || zone.recipeInstance?.recipe) ? 'Изменить рецепт' : 'Привязать рецепт' }}
                 </Button>
               </template>
             </div>
-            <div v-if="zone.recipeInstance?.recipe" class="text-sm text-[color:var(--text-muted)]">
-              <div class="font-semibold">{{ zone.recipeInstance.recipe.name }}</div>
+            <div v-if="activeGrowCycle?.recipeRevision?.recipe || zone.recipeInstance?.recipe" class="text-sm text-[color:var(--text-muted)]">
+              <div class="font-semibold">
+                {{ activeGrowCycle?.recipeRevision?.recipe?.name || zone.recipeInstance?.recipe?.name }}
+              </div>
               <div class="text-xs text-[color:var(--text-dim)]">
-                Фаза {{ (zone.recipeInstance.current_phase_index || 0) + 1 }} из {{ zone.recipeInstance.recipe.phases?.length || 0 }}
-                <span v-if="zone.recipeInstance.current_phase_name">
-                  — {{ zone.recipeInstance.current_phase_name }}
+                Фаза {{ (activeGrowCycle?.currentPhase?.phase_index ?? zone.recipeInstance?.current_phase_index ?? 0) + 1 }} 
+                из {{ activeGrowCycle?.phases?.length || zone.recipeInstance?.recipe?.phases?.length || 0 }}
+                <span v-if="activeGrowCycle?.currentPhase?.name || zone.recipeInstance?.current_phase_name">
+                  — {{ activeGrowCycle?.currentPhase?.name || zone.recipeInstance?.current_phase_name }}
                 </span>
               </div>
               <div class="mt-2 flex flex-wrap items-center gap-2">
@@ -950,7 +958,13 @@ const computedPhaseDaysTotal = computed(() => {
 
 // Единый статус цикла зоны и человекочитаемое время до конца фазы
 const cycleStatusLabel = computed(() => {
-  if (!zone.value.recipeInstance) {
+  if (activeGrowCycle.value) {
+    const status = activeGrowCycle.value.status
+    if (status === 'RUNNING') return 'Цикл активен'
+    if (status === 'PAUSED') return 'Цикл на паузе'
+    if (status === 'PLANNED') return 'Цикл запланирован'
+  }
+  if (!zone.value.recipeInstance && !activeGrowCycle.value) {
     return 'Рецепт не привязан'
   }
   if (activeCycle.value) {
@@ -960,7 +974,13 @@ const cycleStatusLabel = computed(() => {
 })
 
 const cycleStatusVariant = computed<'success' | 'neutral' | 'warning'>(() => {
-  if (!zone.value.recipeInstance) {
+  if (activeGrowCycle.value) {
+    const status = activeGrowCycle.value.status
+    if (status === 'RUNNING') return 'success'
+    if (status === 'PAUSED') return 'warning'
+    if (status === 'PLANNED') return 'neutral'
+  }
+  if (!zone.value.recipeInstance && !activeGrowCycle.value) {
     return 'neutral'
   }
   if (activeCycle.value) {
@@ -1360,8 +1380,15 @@ function getDefaultCycleParams(cycleType: string): Record<string, unknown> {
       if (targets.value.irrigation_duration_sec) {
         // Важно: это может приходить либо из текущей фазы рецепта, либо из агрегированных targets зоны
         params.duration_sec = targets.value.irrigation_duration_sec
+      } else if (activeGrowCycle.value?.currentPhase) {
+        // Используем фазу из activeGrowCycle (новая модель)
+        const currentPhase = activeGrowCycle.value.currentPhase
+        if (currentPhase.duration_hours || currentPhase.duration_days) {
+          // Можно использовать длительность из фазы, но лучше из effective targets
+          // Пока используем fallback на recipeInstance
+        }
       } else if (zone.value.recipeInstance?.recipe?.phases) {
-        // Ищем текущую фазу рецепта
+        // Fallback: ищем текущую фазу рецепта (legacy)
         const currentPhaseIndex = zone.value.recipeInstance.current_phase_index ?? 0
         const currentPhase = zone.value.recipeInstance.recipe.phases?.find(
           (p: { phase_index: number }) => p.phase_index === currentPhaseIndex

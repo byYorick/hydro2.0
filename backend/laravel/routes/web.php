@@ -975,9 +975,25 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 })
                 ->toArray();
 
-            // Загрузить цели из текущей фазы рецепта
+            // Загрузить цели из активного цикла выращивания (новая модель)
             $targets = [];
-            if ($zone->recipeInstance?->recipe) {
+            $activeGrowCycle = $zone->activeGrowCycle;
+            if ($activeGrowCycle) {
+                try {
+                    $effectiveTargetsService = app(\App\Services\EffectiveTargetsService::class);
+                    $effectiveTargets = $effectiveTargetsService->getEffectiveTargets($activeGrowCycle->id);
+                    $targets = $effectiveTargets['targets'] ?? [];
+                } catch (\Exception $e) {
+                    \Log::warning('Failed to get effective targets for zone show', [
+                        'zone_id' => $zone->id,
+                        'cycle_id' => $activeGrowCycle->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+            
+            // Fallback на legacy recipeInstance если активного цикла нет
+            if (empty($targets) && $zone->recipeInstance?->recipe) {
                 $currentPhaseIndex = $zone->recipeInstance->current_phase_index ?? 0;
                 $zone->load(['recipeInstance.recipe.phases' => function ($q) use ($currentPhaseIndex) {
                     $q->where('phase_index', $currentPhaseIndex);
@@ -989,8 +1005,36 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
             }
 
             // Нормализованный блок current_phase с UTC-таймингами и агрегированными таргетами
+            // Используем activeGrowCycle (новая модель) вместо recipeInstance
             $currentPhaseNormalized = null;
-            if ($zone->recipeInstance?->recipe && $zone->recipeInstance->started_at) {
+            if ($activeGrowCycle && $activeGrowCycle->currentPhase) {
+                try {
+                    $effectiveTargetsService = app(\App\Services\EffectiveTargetsService::class);
+                    $effectiveTargets = $effectiveTargetsService->getEffectiveTargets($activeGrowCycle->id);
+                    $phase = $effectiveTargets['phase'] ?? null;
+                    $effectiveTargetsData = $effectiveTargets['targets'] ?? [];
+                    
+                    if ($phase) {
+                        $currentPhaseNormalized = [
+                            'index' => $activeGrowCycle->currentPhase->phase_index ?? 0,
+                            'name' => $phase['name'] ?? $phase['code'] ?? "Фаза " . ($activeGrowCycle->currentPhase->phase_index ?? 0),
+                            'duration_hours' => $activeGrowCycle->currentPhase->duration_hours ?? ($activeGrowCycle->currentPhase->duration_days * 24 ?? 0),
+                            'phase_started_at' => $activeGrowCycle->phase_started_at?->toIso8601String() ?? $phase['started_at'],
+                            'phase_ends_at' => $phase['due_at'] ?? null,
+                            'targets' => $effectiveTargetsData,
+                        ];
+                    }
+                } catch (\Exception $e) {
+                    \Log::warning('Failed to get effective targets for current phase', [
+                        'zone_id' => $zone->id,
+                        'cycle_id' => $activeGrowCycle->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+            
+            // Fallback на legacy recipeInstance если activeGrowCycle не доступен
+            if (!$currentPhaseNormalized && $zone->recipeInstance?->recipe && $zone->recipeInstance->started_at) {
                 $instance = $zone->recipeInstance;
                 $phases = $instance->recipe->phases()
                     ->orderBy('phase_index')
@@ -1300,14 +1344,14 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
             \Log::info('Sending zone data to Inertia', [
                 'zone_id' => $zone->id,
                 'zone_name' => $zone->name,
-                'has_recipe_instance' => $zone->recipeInstance !== null,
-                'recipe_instance' => $zone->recipeInstance ? [
-                    'id' => $zone->recipeInstance->id,
-                    'recipe_id' => $zone->recipeInstance->recipe_id,
-                    'recipe_name' => $zone->recipeInstance->recipe?->name,
-                    'current_phase_index' => $zone->recipeInstance->current_phase_index,
+                'has_active_grow_cycle' => $activeGrowCycle !== null,
+                'active_grow_cycle' => $activeGrowCycle ? [
+                    'id' => $activeGrowCycle->id,
+                    'status' => $activeGrowCycle->status,
+                    'recipe_revision_id' => $activeGrowCycle->recipe_revision_id,
+                    'current_phase_id' => $activeGrowCycle->current_phase_id,
                 ] : null,
-                'zone_data_has_recipe_instance' => isset($zoneData['recipe_instance']),
+                'has_recipe_instance' => $zone->recipeInstance !== null,
             ]);
 
             return Inertia::render('Zones/Show', [

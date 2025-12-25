@@ -1,5 +1,5 @@
 <template>
-  <Card v-if="recipeInstance?.recipe" class="bg-[color:var(--bg-surface-strong)] border-[color:var(--border-muted)]">
+  <Card v-if="recipeInstance?.recipe || growCycle" class="bg-[color:var(--bg-surface-strong)] border-[color:var(--border-muted)]">
     <div class="space-y-4">
       <!-- Заголовок с бейджем стадии -->
       <div class="flex items-center justify-between">
@@ -112,12 +112,12 @@
       </div>
 
       <!-- Информация о рецепте -->
-      <div class="pt-2 border-t border-[color:var(--border-muted)] text-xs text-[color:var(--text-muted)]">
+      <div v-if="recipeName" class="pt-2 border-t border-[color:var(--border-muted)] text-xs text-[color:var(--text-muted)]">
         <div class="flex items-center justify-between">
-          <span>Рецепт: {{ recipeInstance.recipe.name }}</span>
+          <span>Рецепт: {{ recipeName }}</span>
           <Link
-            v-if="recipeInstance.recipe.id"
-            :href="`/recipes/${recipeInstance.recipe.id}`"
+            v-if="recipeId"
+            :href="`/recipes/${recipeId}`"
             class="text-[color:var(--accent-cyan)] hover:text-[color:var(--accent-green)] transition-colors"
           >
             Открыть →
@@ -146,6 +146,7 @@ import type { RecipeInstance } from '@/types'
 
 interface Props {
   recipeInstance?: RecipeInstance | null
+  growCycle?: any | null // GrowCycle из новой модели
   phaseProgress?: number | null // Прогресс текущей фазы (0-100)
   phaseDaysElapsed?: number | null // Дней в текущей фазе
   phaseDaysTotal?: number | null // Всего дней в текущей фазе
@@ -154,17 +155,25 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   recipeInstance: null,
+  growCycle: null,
   phaseProgress: null,
   phaseDaysElapsed: null,
   phaseDaysTotal: null,
   startedAt: null,
 })
 
+// Используем growCycle если доступен, иначе fallback на recipeInstance
 const currentPhaseIndex = computed(() => {
+  if (props.growCycle?.currentPhase) {
+    return props.growCycle.currentPhase.phase_index ?? -1
+  }
   return props.recipeInstance?.current_phase_index ?? -1
 })
 
 const currentPhaseName = computed(() => {
+  if (props.growCycle?.currentPhase) {
+    return props.growCycle.currentPhase.name || null
+  }
   if (!props.recipeInstance?.recipe?.phases) return null
   const phase = props.recipeInstance.recipe.phases.find(
     p => p.phase_index === currentPhaseIndex.value
@@ -173,12 +182,35 @@ const currentPhaseName = computed(() => {
 })
 
 const totalPhases = computed(() => {
+  if (props.growCycle?.phases) {
+    return props.growCycle.phases.length || 0
+  }
   return props.recipeInstance?.recipe?.phases?.length || 0
+})
+
+const recipeName = computed(() => {
+  if (props.growCycle?.recipeRevision?.recipe) {
+    return props.growCycle.recipeRevision.recipe.name
+  }
+  return props.recipeInstance?.recipe?.name || null
+})
+
+const recipeId = computed(() => {
+  if (props.growCycle?.recipeRevision?.recipe) {
+    return props.growCycle.recipeRevision.recipe.id
+  }
+  return props.recipeInstance?.recipe?.id || null
 })
 
 // Определяем текущую стадию
 const currentStage = computed<GrowStage | null>(() => {
-  if (currentPhaseIndex.value < 0 || !props.recipeInstance?.recipe?.phases) {
+  if (currentPhaseIndex.value < 0) {
+    return null
+  }
+  
+  // Проверяем наличие фаз
+  const hasPhases = props.growCycle?.phases?.length > 0 || props.recipeInstance?.recipe?.phases?.length > 0
+  if (!hasPhases) {
     return null
   }
   
@@ -191,20 +223,27 @@ const currentStage = computed<GrowStage | null>(() => {
 
 // Определяем все стадии для timeline
 const allStages = computed<GrowStage[]>(() => {
-  if (!props.recipeInstance?.recipe?.phases) {
-    return []
-  }
-  
   const stages: GrowStage[] = []
   const seenStages = new Set<GrowStage>()
   
-  props.recipeInstance.recipe.phases.forEach((phase, index) => {
-    const stage = getStageForPhase(phase.name, phase.phase_index, totalPhases.value)
-    if (!seenStages.has(stage)) {
-      stages.push(stage)
-      seenStages.add(stage)
-    }
-  })
+  // Используем фазы из growCycle если доступны
+  if (props.growCycle?.phases) {
+    props.growCycle.phases.forEach((phase: any) => {
+      const stage = getStageForPhase(phase.name, phase.phase_index, totalPhases.value)
+      if (!seenStages.has(stage)) {
+        stages.push(stage)
+        seenStages.add(stage)
+      }
+    })
+  } else if (props.recipeInstance?.recipe?.phases) {
+    props.recipeInstance.recipe.phases.forEach((phase, index) => {
+      const stage = getStageForPhase(phase.name, phase.phase_index, totalPhases.value)
+      if (!seenStages.has(stage)) {
+        stages.push(stage)
+        seenStages.add(stage)
+      }
+    })
+  }
   
   return stages
 })
@@ -224,31 +263,38 @@ const stageDates = computed<(string | null)[]>(() => {
 
 // Общий прогресс цикла
 const overallProgress = computed(() => {
-  if (!props.recipeInstance?.recipe?.phases || !props.startedAt) {
+  const phases = props.growCycle?.phases || props.recipeInstance?.recipe?.phases
+  const startedAt = props.startedAt || props.growCycle?.started_at
+  
+  if (!phases || !startedAt) {
     return 0
   }
   
   // Если phaseProgress не предоставлен, вычисляем его на основе времени
   let phaseProgress = props.phaseProgress
   if (phaseProgress === null || phaseProgress === undefined) {
-    const currentPhase = props.recipeInstance.recipe.phases.find(
-      p => p.phase_index === currentPhaseIndex.value
+    const currentPhase = phases.find(
+      (p: any) => p.phase_index === currentPhaseIndex.value
     )
-    if (currentPhase && props.startedAt) {
-      const startedAt = new Date(props.startedAt)
+    if (currentPhase && startedAt) {
+      const startedAtDate = new Date(startedAt)
       const now = new Date()
       
       // Вычисляем время начала текущей фазы
-      let phaseStartTime = startedAt.getTime()
+      let phaseStartTime = startedAtDate.getTime()
       for (let i = 0; i < currentPhaseIndex.value; i++) {
-        const prevPhase = props.recipeInstance.recipe.phases[i]
-        if (prevPhase && prevPhase.duration_hours) {
-          phaseStartTime += prevPhase.duration_hours * 60 * 60 * 1000
+        const prevPhase = phases[i]
+        if (prevPhase) {
+          const durationHours = prevPhase.duration_hours || (prevPhase.duration_days ? prevPhase.duration_days * 24 : 0)
+          if (durationHours) {
+            phaseStartTime += durationHours * 60 * 60 * 1000
+          }
         }
       }
       
       const phaseStart = new Date(phaseStartTime)
-      const phaseEnd = new Date(phaseStartTime + (currentPhase.duration_hours || 0) * 60 * 60 * 1000)
+      const durationHours = currentPhase.duration_hours || (currentPhase.duration_days ? currentPhase.duration_days * 24 : 0)
+      const phaseEnd = new Date(phaseStartTime + durationHours * 60 * 60 * 1000)
       
       const totalMs = phaseEnd.getTime() - phaseStart.getTime()
       if (totalMs > 0) {
@@ -270,16 +316,18 @@ const overallProgress = computed(() => {
   
   return calculateCycleProgress(
     currentPhaseIndex.value,
-    props.recipeInstance.recipe.phases,
-    props.startedAt,
+    phases,
+    startedAt,
     phaseProgress
   )
 })
 
 const nextPhaseInfo = computed(() => {
-  if (!props.recipeInstance?.recipe?.phases || currentPhaseIndex.value < 0) return null
-  const nextPhase = props.recipeInstance.recipe.phases.find(
-    p => p.phase_index === currentPhaseIndex.value + 1
+  const phases = props.growCycle?.phases || props.recipeInstance?.recipe?.phases
+  if (!phases || currentPhaseIndex.value < 0) return null
+  
+  const nextPhase = phases.find(
+    (p: any) => p.phase_index === currentPhaseIndex.value + 1
   )
   if (!nextPhase) return null
 

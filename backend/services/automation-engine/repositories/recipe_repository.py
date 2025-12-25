@@ -1,27 +1,38 @@
 """
 Recipe Repository - доступ к рецептам и фазам.
+Использует Laravel API для получения effective targets (новая модель GrowCycle).
 """
 import json
+import logging
 from typing import Dict, Any, Optional, List
 from common.db import fetch
 from infrastructure.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
+from repositories.laravel_api_repository import LaravelApiRepository
+
+logger = logging.getLogger(__name__)
 
 
 class RecipeRepository:
     """Репозиторий для работы с рецептами."""
     
-    def __init__(self, db_circuit_breaker: Optional[CircuitBreaker] = None):
+    def __init__(self, db_circuit_breaker: Optional[CircuitBreaker] = None, use_laravel_api: bool = True):
         """
         Инициализация репозитория.
         
         Args:
             db_circuit_breaker: Circuit breaker для БД (опционально)
+            use_laravel_api: Использовать Laravel API вместо прямых SQL запросов (по умолчанию True)
         """
         self.db_circuit_breaker = db_circuit_breaker
+        self.use_laravel_api = use_laravel_api
+        if use_laravel_api:
+            self.laravel_api = LaravelApiRepository()
+        else:
+            self.laravel_api = None
     
     async def get_zone_recipe_and_targets(self, zone_id: int) -> Optional[Dict[str, Any]]:
         """
-        Получить активный рецепт и targets для зоны.
+        Получить активный рецепт и targets для зоны (новая модель через Laravel API).
         
         Args:
             zone_id: ID зоны
@@ -31,6 +42,37 @@ class RecipeRepository:
         
         Raises:
             CircuitBreakerOpenError: Если Circuit Breaker открыт
+        """
+        # Используем Laravel API для получения effective targets
+        if self.use_laravel_api and self.laravel_api:
+            try:
+                effective_targets = await self.laravel_api.get_effective_targets(zone_id)
+                if not effective_targets:
+                    return None
+                
+                # Преобразуем формат из Laravel API в формат, ожидаемый кодом
+                phase = effective_targets.get('phase', {})
+                targets = effective_targets.get('targets', {})
+                
+                return {
+                    "zone_id": effective_targets.get('zone_id', zone_id),
+                    "cycle_id": effective_targets.get('cycle_id'),
+                    "phase_index": phase.get('id'),  # Используем ID фазы как индекс
+                    "targets": targets,
+                    "phase_name": phase.get('name', phase.get('code', 'UNKNOWN')),
+                }
+            except Exception as e:
+                logger.warning(f'Failed to get effective targets from Laravel API for zone {zone_id}: {e}')
+                # Fallback на legacy метод (если таблицы еще существуют)
+                return await self._get_zone_recipe_and_targets_legacy(zone_id)
+        
+        # Legacy метод через прямые SQL запросы
+        return await self._get_zone_recipe_and_targets_legacy(zone_id)
+    
+    async def _get_zone_recipe_and_targets_legacy(self, zone_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Legacy метод для получения рецепта через прямые SQL запросы.
+        Используется как fallback если Laravel API недоступен.
         """
         async def _fetch():
             return await fetch(
@@ -43,22 +85,25 @@ class RecipeRepository:
                 zone_id,
             )
         
-        if self.db_circuit_breaker:
-            rows = await self.db_circuit_breaker.call(_fetch)
-        else:
-            rows = await _fetch()
-        if rows and len(rows) > 0:
-            return {
-                "zone_id": rows[0]["zone_id"],
-                "phase_index": rows[0]["current_phase_index"],
-                "targets": rows[0]["targets"],
-                "phase_name": rows[0]["phase_name"],
-            }
+        try:
+            if self.db_circuit_breaker:
+                rows = await self.db_circuit_breaker.call(_fetch)
+            else:
+                rows = await _fetch()
+            if rows and len(rows) > 0:
+                return {
+                    "zone_id": rows[0]["zone_id"],
+                    "phase_index": rows[0]["current_phase_index"],
+                    "targets": rows[0]["targets"],
+                    "phase_name": rows[0]["phase_name"],
+                }
+        except Exception as e:
+            logger.error(f'Legacy SQL query failed for zone {zone_id}: {e}')
         return None
     
     async def get_zones_recipes_batch(self, zone_ids: List[int]) -> Dict[int, Optional[Dict[str, Any]]]:
         """
-        Получить рецепты и targets для нескольких зон одним запросом.
+        Получить рецепты и targets для нескольких зон одним запросом (новая модель через Laravel API).
         
         Args:
             zone_ids: Список ID зон
@@ -72,6 +117,43 @@ class RecipeRepository:
         if not zone_ids:
             return {}
         
+        # Используем Laravel API для batch запроса
+        if self.use_laravel_api and self.laravel_api:
+            try:
+                effective_targets_batch = await self.laravel_api.get_effective_targets_batch(zone_ids)
+                
+                # Преобразуем формат из Laravel API в формат, ожидаемый кодом
+                result: Dict[int, Optional[Dict[str, Any]]] = {}
+                for zone_id in zone_ids:
+                    effective_targets = effective_targets_batch.get(zone_id)
+                    if not effective_targets or 'error' in effective_targets:
+                        result[zone_id] = None
+                        continue
+                    
+                    phase = effective_targets.get('phase', {})
+                    targets = effective_targets.get('targets', {})
+                    
+                    result[zone_id] = {
+                        "zone_id": effective_targets.get('zone_id', zone_id),
+                        "cycle_id": effective_targets.get('cycle_id'),
+                        "phase_index": phase.get('id'),  # Используем ID фазы как индекс
+                        "targets": targets,
+                        "phase_name": phase.get('name', phase.get('code', 'UNKNOWN')),
+                    }
+                
+                return result
+            except Exception as e:
+                logger.warning(f'Failed to get effective targets batch from Laravel API: {e}')
+                # Fallback на legacy метод
+                return await self._get_zones_recipes_batch_legacy(zone_ids)
+        
+        # Legacy метод через прямые SQL запросы
+        return await self._get_zones_recipes_batch_legacy(zone_ids)
+    
+    async def _get_zones_recipes_batch_legacy(self, zone_ids: List[int]) -> Dict[int, Optional[Dict[str, Any]]]:
+        """
+        Legacy метод для batch получения рецептов через прямые SQL запросы.
+        """
         async def _fetch():
             return await fetch(
                 """
@@ -83,27 +165,31 @@ class RecipeRepository:
                 zone_ids,
             )
         
-        if self.db_circuit_breaker:
-            rows = await self.db_circuit_breaker.call(_fetch)
-        else:
-            rows = await _fetch()
-        
-        result: Dict[int, Optional[Dict[str, Any]]] = {}
-        for row in rows:
-            zone_id = row["zone_id"]
-            result[zone_id] = {
-                "zone_id": zone_id,
-                "phase_index": row["current_phase_index"],
-                "targets": row["targets"],
-                "phase_name": row["phase_name"],
-            }
-        
-        # Добавляем None для зон без рецептов
-        for zone_id in zone_ids:
-            if zone_id not in result:
-                result[zone_id] = None
-        
-        return result
+        try:
+            if self.db_circuit_breaker:
+                rows = await self.db_circuit_breaker.call(_fetch)
+            else:
+                rows = await _fetch()
+            
+            result: Dict[int, Optional[Dict[str, Any]]] = {}
+            for row in rows:
+                zone_id = row["zone_id"]
+                result[zone_id] = {
+                    "zone_id": zone_id,
+                    "phase_index": row["current_phase_index"],
+                    "targets": row["targets"],
+                    "phase_name": row["phase_name"],
+                }
+            
+            # Добавляем None для зон без рецептов
+            for zone_id in zone_ids:
+                if zone_id not in result:
+                    result[zone_id] = None
+            
+            return result
+        except Exception as e:
+            logger.error(f'Legacy SQL batch query failed: {e}')
+            return {zone_id: None for zone_id in zone_ids}
     
     async def get_zone_data_batch(self, zone_id: int) -> Dict[str, Any]:
         """

@@ -10,7 +10,10 @@ use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Сидер для архивных таблиц (команды, события, ошибки)
+ * Сидер для архивных таблиц (только ошибки узлов)
+ * 
+ * DEPRECATED: commands_archive и zone_events_archive удалены.
+ * Используется партиционирование и retention policies вместо архивных таблиц.
  */
 class ExtendedArchivesSeeder extends Seeder
 {
@@ -18,87 +21,27 @@ class ExtendedArchivesSeeder extends Seeder
     {
         $this->command->info('=== Создание архивных данных ===');
 
-        $commandsArchived = $this->seedCommandsArchive();
-        $eventsArchived = $this->seedZoneEventsArchive();
         $errorsArchived = $this->seedUnassignedNodeErrorsArchive();
 
-        $this->command->info("Архивировано команд: {$commandsArchived}");
-        $this->command->info("Архивировано событий: {$eventsArchived}");
         $this->command->info("Архивировано ошибок: {$errorsArchived}");
     }
 
+    /**
+     * @deprecated Архивные таблицы commands_archive и zone_events_archive удалены.
+     * Используется партиционирование и retention policies вместо архивных таблиц.
+     */
     private function seedCommandsArchive(): int
     {
-        $archived = 0;
-
-        // Берем старые завершенные команды для архивации
-        $oldCommands = Command::whereIn('status', ['DONE', 'FAILED', 'TIMEOUT'])
-            ->where('created_at', '<', now()->subDays(30))
-            ->limit(100)
-            ->get();
-
-        foreach ($oldCommands as $command) {
-            $exists = DB::table('commands_archive')
-                ->where('cmd_id', $command->cmd_id)
-                ->exists();
-
-            if ($exists) {
-                continue;
-            }
-
-            DB::table('commands_archive')->insert([
-                'zone_id' => $command->zone_id,
-                'node_id' => $command->node_id,
-                'channel' => $command->channel,
-                'cmd' => $command->cmd,
-                'params' => json_encode($command->params),
-                'status' => strtolower($command->status),
-                'cmd_id' => $command->cmd_id,
-                'created_at' => $command->created_at,
-                'sent_at' => $command->sent_at,
-                'ack_at' => $command->ack_at,
-                'failed_at' => $command->failed_at,
-                'archived_at' => now()->subDays(rand(1, 7)),
-            ]);
-
-            $archived++;
-        }
-
-        return $archived;
+        // Архивные таблицы удалены - используем партиционирование
+        return 0;
     }
 
+    /**
+     * @deprecated Архивная таблица zone_events_archive удалена. Используется партиционирование.
+     */
     private function seedZoneEventsArchive(): int
     {
-        $archived = 0;
-
-        // Берем старые события для архивации
-        $oldEvents = ZoneEvent::where('created_at', '<', now()->subDays(30))
-            ->limit(200)
-            ->get();
-
-        foreach ($oldEvents as $event) {
-            $exists = DB::table('zone_events_archive')
-                ->where('zone_id', $event->zone_id)
-                ->where('type', $event->type)
-                ->where('created_at', $event->created_at)
-                ->exists();
-
-            if ($exists) {
-                continue;
-            }
-
-            DB::table('zone_events_archive')->insert([
-                'zone_id' => $event->zone_id,
-                'type' => $event->type,
-                'details' => json_encode($event->details),
-                'created_at' => $event->created_at,
-                'archived_at' => now()->subDays(rand(1, 7)),
-            ]);
-
-            $archived++;
-        }
-
-        return $archived;
+        return 0;
     }
 
     private function seedUnassignedNodeErrorsArchive(): int

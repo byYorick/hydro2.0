@@ -133,9 +133,7 @@ class GrowCycleService
                 'recipe_started_at' => $plantingAt,
             ]);
 
-            // Вычисляем первую стадию и устанавливаем её
-            $this->computeStageFromRecipeInstance($cycle);
-            
+            // В новой модели фазы уже установлены при создании цикла через createPhaseSnapshot()
             // Вычисляем ожидаемую дату сбора
             $this->computeExpectedHarvest($cycle);
 
@@ -212,66 +210,17 @@ class GrowCycleService
     }
 
     /**
-     * Вычислить текущую стадию на основе recipe instance
+     * @deprecated Этот метод использует legacy модель RecipeStageMap и zone_recipe_instances.
+     * В новой модели фазы устанавливаются при создании цикла через createPhaseSnapshot().
+     * Метод оставлен для обратной совместимости, но больше не используется.
      */
     public function computeStageFromRecipeInstance(GrowCycle $cycle): void
     {
-        $recipe = $cycle->recipe;
-        $zone = $cycle->zone;
-        
-        if (!$recipe || !$zone->recipeInstance) {
-            return;
-        }
-
-        $stageMaps = $recipe->stageMaps()->with('stageTemplate')->orderBy('order_index')->get();
-        
-        if ($stageMaps->isEmpty()) {
-            // Если нет stage-map, создаем его автоматически
-            $this->ensureRecipeStageMap($recipe);
-            $stageMaps = $recipe->stageMaps()->with('stageTemplate')->orderBy('order_index')->get();
-        }
-
-        $plantingAt = $cycle->planting_at ?? $cycle->started_at;
-        if (!$plantingAt) {
-            return;
-        }
-
-        $daysSincePlanting = now()->diffInDays($plantingAt);
-        
-        // Находим текущую стадию на основе offset_days
-        $currentMap = null;
-        foreach ($stageMaps as $map) {
-            $startOffset = $map->start_offset_days ?? 0;
-            $endOffset = $map->end_offset_days;
-            
-            if ($daysSincePlanting >= $startOffset) {
-                if ($endOffset === null || $daysSincePlanting < $endOffset) {
-                    $currentMap = $map;
-                    break;
-                }
-            }
-        }
-
-        // Если не нашли по offset, берем первую стадию
-        if (!$currentMap) {
-            $currentMap = $stageMaps->first();
-        }
-
-        if ($currentMap) {
-            $oldStageCode = $cycle->current_stage_code;
-            $newStageCode = $currentMap->stageTemplate->code;
-            
-            $cycle->update([
-                'current_stage_code' => $newStageCode,
-                'current_stage_started_at' => $cycle->current_stage_started_at ?? now(),
-            ]);
-            
-            // Если стадия изменилась, отправляем событие для обновления targets
-            if ($oldStageCode !== $newStageCode) {
-                $cycle->refresh();
-                GrowCycleUpdated::dispatch($cycle, 'STAGE_COMPUTED');
-            }
-        }
+        // В новой модели фазы уже установлены при создании цикла
+        // Этот метод больше не нужен, но оставлен для обратной совместимости
+        Log::warning('computeStageFromRecipeInstance called but deprecated - phases are set via snapshots', [
+            'cycle_id' => $cycle->id,
+        ]);
     }
 
     /**

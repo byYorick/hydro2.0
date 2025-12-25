@@ -193,17 +193,48 @@ const cycles = computed(() => {
     return []
   }
   return props.zones
-    .filter((zone) => zone.recipe_instance && zone.recipe_instance.recipe)
-    .map((zone) => ({
-      zone_id: zone.id,
-      zone,
-      recipe: zone.recipe_instance?.recipe,
-      phaseIndex: (zone.recipe_instance?.current_phase_index ?? 0) + 1,
-      statusLabel: zone.recipe_instance?.phase_progress && zone.recipe_instance.phase_progress >= 85
-        ? 'Старт' : zone.recipe_instance?.phase_progress && zone.recipe_instance.phase_progress >= 45
-        ? 'В процессе' : 'Начало',
-      progress: zone.recipe_instance?.phase_progress ?? 0,
-    }))
+    .filter((zone) => zone.activeGrowCycle || (zone.recipe_instance && zone.recipe_instance.recipe))
+    .map((zone) => {
+      // Используем новую модель: activeGrowCycle
+      if (zone.activeGrowCycle) {
+        const cycle = zone.activeGrowCycle
+        const currentPhase = cycle.currentPhase
+        const phaseIndex = (currentPhase?.phase_index ?? 0) + 1
+        
+        // Вычисляем прогресс фазы
+        let progress = 0
+        if (cycle.phase_started_at && currentPhase) {
+          const startedAt = new Date(cycle.phase_started_at)
+          const now = new Date()
+          const durationHours = currentPhase.duration_hours || (currentPhase.duration_days ? currentPhase.duration_days * 24 : 0)
+          const phaseEndAt = new Date(startedAt.getTime() + durationHours * 60 * 60 * 1000)
+          const totalMs = phaseEndAt.getTime() - startedAt.getTime()
+          const elapsedMs = now.getTime() - startedAt.getTime()
+          progress = totalMs > 0 ? Math.min(100, Math.max(0, (elapsedMs / totalMs) * 100)) : 0
+        }
+        
+        return {
+          zone_id: zone.id,
+          zone,
+          recipe: cycle.recipeRevision?.recipe,
+          phaseIndex,
+          statusLabel: progress >= 85 ? 'Старт' : progress >= 45 ? 'В процессе' : 'Начало',
+          progress,
+        }
+      }
+      
+      // Fallback на legacy recipeInstance
+      return {
+        zone_id: zone.id,
+        zone,
+        recipe: zone.recipe_instance?.recipe,
+        phaseIndex: (zone.recipe_instance?.current_phase_index ?? 0) + 1,
+        statusLabel: zone.recipe_instance?.phase_progress && zone.recipe_instance.phase_progress >= 85
+          ? 'Старт' : zone.recipe_instance?.phase_progress && zone.recipe_instance.phase_progress >= 45
+          ? 'В процессе' : 'Начало',
+        progress: zone.recipe_instance?.phase_progress ?? 0,
+      }
+    })
 })
 
 const activeCyclesCount = computed(() => cycles.value.length)

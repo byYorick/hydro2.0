@@ -19,16 +19,8 @@ return new class extends Migration
             );
         }
 
-        // Архивная таблица, если присутствует
-        if (
-            Schema::hasTable('zone_events_archive') &&
-            Schema::hasColumn('zone_events_archive', 'payload_json') &&
-            !Schema::hasColumn('zone_events_archive', 'details')
-        ) {
-            DB::statement(
-                "ALTER TABLE zone_events_archive ADD COLUMN details jsonb GENERATED ALWAYS AS (payload_json) STORED"
-            );
-        }
+        // Архивная таблица удалена (Этап 5) - используем партиционирование вместо архивных таблиц
+        // Код оставлен для обратной совместимости при rollback миграций
     }
 
     public function down(): void
@@ -37,6 +29,7 @@ return new class extends Migration
             DB::statement("ALTER TABLE zone_events DROP COLUMN details");
         }
 
+        // Архивная таблица удалена (Этап 5) - код оставлен для обратной совместимости
         if (Schema::hasTable('zone_events_archive') && Schema::hasColumn('zone_events_archive', 'details')) {
             DB::statement("ALTER TABLE zone_events_archive DROP COLUMN details");
         }

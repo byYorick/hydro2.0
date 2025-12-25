@@ -6,6 +6,7 @@ use App\Helpers\ZoneAccessHelper;
 use App\Models\Zone;
 use App\Services\ZoneService;
 use App\Services\ZoneReadinessService;
+use App\Services\EffectiveTargetsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -17,7 +18,8 @@ class ZoneController extends Controller
 {
     public function __construct(
         private ZoneService $zoneService,
-        private ZoneReadinessService $readinessService
+        private ZoneReadinessService $readinessService,
+        private EffectiveTargetsService $effectiveTargetsService
     ) {
     }
 
@@ -129,7 +131,7 @@ class ZoneController extends Controller
             ], 403);
         }
         
-        $zone->load(['greenhouse', 'preset', 'nodes', 'recipeInstance.recipe.phases', 'activeGrowCycle']);
+        $zone->load(['greenhouse', 'preset', 'nodes', 'activeGrowCycle.currentPhase', 'activeGrowCycle.recipeRevision']);
         return response()->json(['status' => 'ok', 'data' => $zone]);
     }
 
@@ -231,9 +233,9 @@ class ZoneController extends Controller
                 isset($data['start_at']) ? new \DateTime($data['start_at']) : null
             );
             
-            // Загружаем обновленную зону с recipeInstance
+            // Загружаем обновленную зону с активным циклом
             $zone->refresh();
-            $zone->load(['recipeInstance.recipe']);
+            $zone->load(['activeGrowCycle.recipeRevision']);
             
             return response()->json([
                 'status' => 'ok',
@@ -463,24 +465,17 @@ class ZoneController extends Controller
         }
 
         return DB::transaction(function () use ($zone, $readiness) {
-            // Если есть активный recipe instance - обновляем его статус
-            if ($zone->recipeInstance) {
-                // Убеждаемся что started_at установлен
-                if (!$zone->recipeInstance->started_at) {
-                    $zone->recipeInstance->update(['started_at' => now()]);
-                }
-            } else {
-                // Если рецепт не привязан, создаем пустой instance (опционально)
-                // Или просто запускаем зону без рецепта
-                Log::info('Zone started without recipe instance', [
-                    'zone_id' => $zone->id
-                ]);
+            // Если есть активный цикл выращивания - запускаем его
+            $activeCycle = $zone->activeGrowCycle;
+            if ($activeCycle && $activeCycle->status === \App\Enums\GrowCycleStatus::PLANNED) {
+                // Запускаем цикл через GrowCycleService
+                app(\App\Services\GrowCycleService::class)->startCycle($activeCycle);
             }
 
             // Обновляем статус зоны на RUNNING
             $zone->update(['status' => 'RUNNING']);
             $zone->refresh();
-            $zone->load(['recipeInstance.recipe']);
+            $zone->load(['activeGrowCycle']);
 
             // Создаем zone_event
             $hasPayloadJson = Schema::hasColumn('zone_events', 'payload_json');
@@ -704,15 +699,18 @@ class ZoneController extends Controller
         $settings = $zone->settings ?? [];
         $targets = [];
         
-        // Получаем targets из текущей фазы рецепта
-        if ($zone->recipeInstance?->recipe) {
-            $currentPhaseIndex = $zone->recipeInstance->current_phase_index ?? 0;
-            $zone->load(['recipeInstance.recipe.phases' => function ($q) use ($currentPhaseIndex) {
-                $q->where('phase_index', $currentPhaseIndex);
-            }]);
-            $currentPhase = $zone->recipeInstance->recipe->phases->first();
-            if ($currentPhase && $currentPhase->targets) {
-                $targets = $currentPhase->targets;
+        // Получаем targets из активного цикла выращивания (новая модель)
+        $activeCycle = $zone->activeGrowCycle;
+        if ($activeCycle) {
+            try {
+                $effectiveTargets = $this->effectiveTargetsService->getEffectiveTargets($activeCycle->id);
+                $targets = $effectiveTargets['targets'] ?? [];
+            } catch (\Exception $e) {
+                Log::warning('Failed to get effective targets for zone cycles', [
+                    'zone_id' => $zone->id,
+                    'cycle_id' => $activeCycle->id,
+                    'error' => $e->getMessage(),
+                ]);
             }
         }
         
@@ -741,11 +739,11 @@ class ZoneController extends Controller
             ],
             'IRRIGATION' => [
                 'strategy' => $settings['irrigation']['strategy'] ?? 'periodic',
-                'interval' => $targets['irrigation_interval_sec'] ?? $settings['irrigation']['interval_sec'] ?? null,
+                'interval' => $targets['irrigation']['interval_sec'] ?? $settings['irrigation']['interval_sec'] ?? null,
             ],
             'LIGHTING' => [
                 'strategy' => $settings['lighting']['strategy'] ?? 'periodic',
-                'interval' => isset($targets['light_hours']) ? $targets['light_hours'] * 3600 : ($settings['lighting']['interval_sec'] ?? null),
+                'interval' => isset($targets['lighting']['photoperiod_hours']) ? $targets['lighting']['photoperiod_hours'] * 3600 : ($settings['lighting']['interval_sec'] ?? null),
             ],
             'CLIMATE' => [
                 'strategy' => $settings['climate']['strategy'] ?? 'periodic',
