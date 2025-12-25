@@ -12,10 +12,16 @@ return new class extends Migration
      * 
      * Таблица телеметрии с партиционированием по месяцам.
      * zone_id и cycle_id проставляются сервером для удобства запросов.
+     * 
+     * ВНИМАНИЕ: Заменяет старую структуру telemetry_samples (zone_id, node_id, channel, metric_type)
+     * на новую структуру с sensor_id.
      */
     public function up(): void
     {
-        // Создаём основную таблицу без партиционирования (для совместимости с Laravel)
+        // Удаляем старую таблицу, если она существует (без обратной совместимости)
+        Schema::dropIfExists('telemetry_samples');
+        
+        // Создаём новую таблицу без партиционирования (для совместимости с Laravel)
         // Партиционирование будет настроено отдельным SQL скриптом
         Schema::create('telemetry_samples', function (Blueprint $table) {
             $table->id();
