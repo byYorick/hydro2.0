@@ -26,6 +26,9 @@ class DatabaseSeeder extends Seeder
             // Полное заполнение всех таблиц для тестирования всех сервисов
             // PresetSeeder уже выполнен выше
             $this->call(FullServiceTestSeeder::class);
+            
+            // Сидер для тестирования прогресса фаз
+            $this->call(ProgressTestSeeder::class);
         }
 
         // Seed E2E automation engine data (only in testing/e2e environment)

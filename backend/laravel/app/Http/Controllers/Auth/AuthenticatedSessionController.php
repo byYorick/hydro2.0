@@ -27,8 +27,11 @@ class AuthenticatedSessionController extends Controller
     /**
      * Handle an incoming authentication request.
      */
-    public function store(LoginRequest $request): RedirectResponse
+    public function store(LoginRequest $request)
     {
+        // Валидация и аутентификация выполняются в LoginRequest
+        // При ошибке валидации Laravel автоматически вернет ошибки обратно на страницу логина
+        // Для Inertia запросов ошибки будут показаны в форме без редиректа
         $request->authenticate();
 
         $request->session()->regenerate();

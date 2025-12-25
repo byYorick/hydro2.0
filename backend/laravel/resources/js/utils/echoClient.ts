@@ -3,7 +3,24 @@ import Pusher from 'pusher-js'
 import { logger } from './logger'
 import { readBooleanEnv } from './env'
 import apiClient from './apiClient'
-import { useWebSocketStore } from '@/stores/websocket'
+
+// Ленивая загрузка store для избежания ошибок до инициализации Pinia
+function getWebSocketStore() {
+  try {
+    // Проверяем доступность Pinia перед использованием store
+    const { getActivePinia } = require('pinia')
+    const pinia = getActivePinia()
+    if (!pinia) {
+      return null
+    }
+    // Динамический импорт для избежания циклических зависимостей
+    const { useWebSocketStore } = require('@/stores/websocket')
+    return useWebSocketStore()
+  } catch (err) {
+    // Pinia еще не инициализирована или store недоступен - это нормально при начальной загрузке
+    return null
+  }
+}
 
 type WsState = 'connecting' | 'connected' | 'disconnected' | 'unavailable' | 'failed'
 type StateListener = (state: WsState) => void
@@ -68,23 +85,24 @@ function isBrowser(): boolean {
 function emitState(state: WsState): void {
   currentState = state
   
-  // Обновляем store
+  // Обновляем store (только если Pinia инициализирована)
   try {
-    const wsStore = useWebSocketStore()
-    const connectionState = getConnectionState()
-    wsStore.setState(state)
-    wsStore.setReconnectAttempts(connectionState.reconnectAttempts)
-    wsStore.setLastError(connectionState.lastError)
-    wsStore.setSocketId(connectionState.socketId || null)
-    wsStore.setConnectionInfo({
-      protocol: connectionState.protocol,
-      port: connectionState.port,
-      host: connectionState.host,
-    })
+    const wsStore = getWebSocketStore()
+    if (wsStore) {
+      const connectionState = getConnectionState()
+      wsStore.setState(state)
+      wsStore.setReconnectAttempts(connectionState.reconnectAttempts)
+      wsStore.setLastError(connectionState.lastError)
+      wsStore.setSocketId(connectionState.socketId || null)
+      wsStore.setConnectionInfo({
+        protocol: connectionState.protocol,
+        port: connectionState.port,
+        host: connectionState.host,
+      })
+    }
   } catch (err) {
-    logger.warn('[echoClient] Error updating WebSocket store', {
-      error: err instanceof Error ? err.message : String(err),
-    })
+    // Игнорируем ошибки, если Pinia еще не инициализирована
+    // Это нормально при начальной загрузке страницы
   }
   
   listeners.forEach(listener => {

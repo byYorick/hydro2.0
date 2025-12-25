@@ -171,11 +171,21 @@ export function useInertiaForm<T extends Record<string, unknown>>(
   function handleError(errors: Record<string, string>): void {
     // Показываем Toast при ошибке
     if (showErrorToast) {
-      const message =
-        errorMessage ||
-        (Object.keys(errors).length > 0
-          ? ERROR_MESSAGES.VALIDATION
-          : ERROR_MESSAGES.UNKNOWN)
+      // Если есть конкретное сообщение об ошибке, используем его
+      // Иначе берем первое сообщение об ошибке из валидации
+      // Или используем переданное errorMessage
+      let message = errorMessage
+      
+      if (!message && Object.keys(errors).length > 0) {
+        // Берем первое сообщение об ошибке
+        const firstErrorKey = Object.keys(errors)[0]
+        message = errors[firstErrorKey] || ERROR_MESSAGES.VALIDATION
+      }
+      
+      if (!message) {
+        message = ERROR_MESSAGES.UNKNOWN
+      }
+      
       showToast(message, 'error', TOAST_TIMEOUT.LONG)
     }
 

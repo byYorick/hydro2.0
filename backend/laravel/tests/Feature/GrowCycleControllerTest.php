@@ -187,7 +187,7 @@ class GrowCycleControllerTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->postJson("/api/zones/{$this->zone->id}/grow-cycle/harvest", [
+            ->postJson("/api/grow-cycles/{$cycle->id}/harvest", [
                 'batch_label' => 'Batch-001',
             ]);
 
@@ -208,7 +208,7 @@ class GrowCycleControllerTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->postJson("/api/zones/{$this->zone->id}/grow-cycle/abort", [
+            ->postJson("/api/grow-cycles/{$cycle->id}/abort", [
                 'notes' => 'Emergency stop',
             ]);
 

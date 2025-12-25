@@ -37,75 +37,53 @@
               </Link>
             </div>
           </div>
+          <!-- Промышленный стиль: Крупные индикаторы метрик -->
           <div class="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4 mt-4">
-            <Card class="surface-card-hover hover:border-[color:var(--border-strong)] transition-all duration-200">
-              <div class="flex items-start justify-between mb-2">
-                <div class="text-[color:var(--text-dim)] text-xs font-medium uppercase tracking-[0.15em]">Теплицы</div>
-                <div class="w-9 h-9 rounded-xl bg-[color:var(--badge-success-bg)] border border-[color:var(--badge-success-border)] flex items-center justify-center">
-                  <svg class="w-4 h-4 text-[color:var(--badge-success-text)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                  </svg>
+            <MetricIndicator
+              label="Теплицы"
+              :value="dashboard.greenhousesCount"
+              :status="dashboard.greenhousesCount > 0 ? 'success' : 'neutral'"
+              size="large"
+            />
+            
+            <MetricIndicator
+              label="Зоны"
+              :value="dashboard.zonesCount"
+              :status="zonesStatusSummary?.ALARM > 0 ? 'danger' : zonesStatusSummary?.WARNING > 0 ? 'warning' : zonesStatusSummary?.RUNNING > 0 ? 'success' : 'neutral'"
+              size="large"
+              data-testid="dashboard-zones-count"
+            >
+              <template v-if="zonesStatusSummary" #footer>
+                <div class="flex flex-wrap gap-1.5 text-xs mt-2">
+                  <StatusIndicator v-if="zonesStatusSummary.RUNNING" status="RUNNING" size="small" show-label />
+                  <StatusIndicator v-if="zonesStatusSummary.PAUSED" status="PAUSED" size="small" show-label />
+                  <StatusIndicator v-if="zonesStatusSummary.ALARM" status="ALARM" size="small" show-label :pulse="true" />
+                  <StatusIndicator v-if="zonesStatusSummary.WARNING" status="WARNING" size="small" show-label />
                 </div>
-              </div>
-              <div class="text-3xl font-bold text-[color:var(--accent-green)]">{{ dashboard.greenhousesCount }}</div>
-            </Card>
-            <Card class="surface-card-hover hover:border-[color:var(--border-strong)] transition-all duration-200" data-testid="dashboard-zones-count">
-              <div class="flex items-start justify-between mb-2">
-                <div class="text-[color:var(--text-dim)] text-xs font-medium uppercase tracking-[0.15em]">Зоны</div>
-                <div class="w-9 h-9 rounded-xl bg-[color:var(--badge-info-bg)] border border-[color:var(--badge-info-border)] flex items-center justify-center">
-                  <svg class="w-4 h-4 text-[color:var(--badge-info-text)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-                  </svg>
+              </template>
+            </MetricIndicator>
+            
+            <MetricIndicator
+              label="Устройства"
+              :value="dashboard.devicesCount"
+              :status="nodesStatusSummary?.offline > 0 ? 'danger' : nodesStatusSummary?.online > 0 ? 'success' : 'neutral'"
+              size="large"
+            >
+              <template v-if="nodesStatusSummary" #footer>
+                <div class="flex flex-wrap gap-1.5 text-xs mt-2">
+                  <StatusIndicator v-if="nodesStatusSummary.online" status="ONLINE" size="small" show-label />
+                  <StatusIndicator v-if="nodesStatusSummary.offline" status="OFFLINE" size="small" show-label :pulse="true" />
                 </div>
-              </div>
-              <div class="text-3xl font-bold text-[color:var(--accent-cyan)] mb-2">{{ dashboard.zonesCount }}</div>
-              <div v-if="zonesStatusSummary" class="flex flex-wrap gap-1.5 text-xs">
-                <span v-if="zonesStatusSummary.RUNNING" class="px-1.5 py-0.5 rounded bg-[color:var(--badge-success-bg)] text-[color:var(--badge-success-text)] border border-[color:var(--badge-success-border)]">
-                  Запущено: {{ zonesStatusSummary.RUNNING }}
-                </span>
-                <span v-if="zonesStatusSummary.PAUSED" class="px-1.5 py-0.5 rounded bg-[color:var(--badge-neutral-bg)] text-[color:var(--badge-neutral-text)] border border-[color:var(--badge-neutral-border)]">
-                  Пауза: {{ zonesStatusSummary.PAUSED }}
-                </span>
-                <span v-if="zonesStatusSummary.ALARM" class="px-1.5 py-0.5 rounded bg-[color:var(--badge-danger-bg)] text-[color:var(--badge-danger-text)] border border-[color:var(--badge-danger-border)]">
-                  Тревога: {{ zonesStatusSummary.ALARM }}
-                </span>
-                <span v-if="zonesStatusSummary.WARNING" class="px-1.5 py-0.5 rounded bg-[color:var(--badge-warning-bg)] text-[color:var(--badge-warning-text)] border border-[color:var(--badge-warning-border)]">
-                  Предупреждение: {{ zonesStatusSummary.WARNING }}
-                </span>
-              </div>
-            </Card>
-            <Card class="surface-card-hover hover:border-[color:var(--border-strong)] transition-all duration-200">
-              <div class="flex items-start justify-between mb-2">
-                <div class="text-[color:var(--text-dim)] text-xs font-medium uppercase tracking-[0.15em]">Устройства</div>
-                <div class="w-9 h-9 rounded-xl bg-[color:var(--badge-warning-bg)] border border-[color:var(--badge-warning-border)] flex items-center justify-center">
-                  <svg class="w-4 h-4 text-[color:var(--badge-warning-text)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m-2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
-                  </svg>
-                </div>
-              </div>
-              <div class="text-3xl font-bold text-[color:var(--accent-amber)] mb-2">{{ dashboard.devicesCount }}</div>
-              <div v-if="nodesStatusSummary" class="flex flex-wrap gap-1.5 text-xs">
-                <span v-if="nodesStatusSummary.online" class="px-1.5 py-0.5 rounded bg-[color:var(--badge-success-bg)] text-[color:var(--badge-success-text)] border border-[color:var(--badge-success-border)]">
-                  Онлайн: {{ nodesStatusSummary.online }}
-                </span>
-                <span v-if="nodesStatusSummary.offline" class="px-1.5 py-0.5 rounded bg-[color:var(--badge-danger-bg)] text-[color:var(--badge-danger-text)] border border-[color:var(--badge-danger-border)]">
-                  Офлайн: {{ nodesStatusSummary.offline }}
-                </span>
-              </div>
-            </Card>
-            <Card class="surface-card-hover hover:border-[color:var(--border-strong)] transition-all duration-200" :class="dashboard.alertsCount > 0 ? 'border-[color:var(--badge-danger-border)]' : ''" data-testid="dashboard-alerts-count">
-              <div class="flex items-start justify-between mb-2">
-                <div class="text-[color:var(--text-dim)] text-xs font-medium uppercase tracking-[0.15em]">Активные алерты</div>
-                <div class="w-9 h-9 rounded-xl flex items-center justify-center" :class="dashboard.alertsCount > 0 ? 'bg-[color:var(--badge-danger-bg)] border border-[color:var(--badge-danger-border)]' : 'bg-[color:var(--badge-success-bg)] border border-[color:var(--badge-success-border)]'">
-                  <svg class="w-4 h-4" :class="dashboard.alertsCount > 0 ? 'text-[color:var(--badge-danger-text)]' : 'text-[color:var(--badge-success-text)]'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
-                </div>
-              </div>
-              <div class="text-3xl font-bold" :class="dashboard.alertsCount > 0 ? 'text-[color:var(--accent-red)]' : 'text-[color:var(--accent-green)]'">
-                {{ dashboard.alertsCount }}
-              </div>
-            </Card>
+              </template>
+            </MetricIndicator>
+            
+            <MetricIndicator
+              label="Активные алерты"
+              :value="dashboard.alertsCount"
+              :status="dashboard.alertsCount > 0 ? 'danger' : 'success'"
+              size="large"
+              data-testid="dashboard-alerts-count"
+            />
           </div>
         </div>
 
@@ -415,6 +393,8 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
+import MetricIndicator from '@/Components/MetricIndicator.vue'
+import StatusIndicator from '@/Components/StatusIndicator.vue'
 import MiniTelemetryChart from '@/Components/MiniTelemetryChart.vue'
 import ZonesHeatmap from '@/Components/ZonesHeatmap.vue'
 import AgronomistDashboard from './Dashboards/AgronomistDashboard.vue'

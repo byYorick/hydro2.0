@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+// Удалены неиспользуемые импорты
 import Checkbox from '@/Components/Checkbox.vue';
 import GuestLayout from '@/Layouts/GuestLayout.vue';
 import InputError from '@/Components/InputError.vue';
@@ -32,47 +32,34 @@ const { form, submit: submitForm } = useInertiaForm<LoginFormData>(
     },
     {
         resetFieldsOnSuccess: ['password'],
-        showSuccessToast: false, // Auth формы обычно не показывают Toast
-        showErrorToast: false,
+        showSuccessToast: false, // Auth формы обычно не показывают Toast при успехе
+        showErrorToast: true, // Показываем toast при ошибке аутентификации
+        errorMessage: 'Неверный email или пароль. Проверьте правильность введенных данных.',
+        preserveScroll: true, // Сохраняем позицию прокрутки при ошибке
+        preserveState: true, // Сохраняем состояние формы при ошибке
     }
 );
 
 const submit = (): void => {
     submitForm('post', route('login'));
+    // preserveScroll и preserveState уже настроены в useInertiaForm
+    // Toast уведомления обрабатываются автоматически
+    // Форма остается на странице логина при ошибке валидации
 };
-
-// Проверяем, есть ли ошибки аутентификации
-const hasAuthError = computed(() => {
-    return !!(form.errors.email || form.errors.password);
-});
-
-// Получаем общее сообщение об ошибке
-const authErrorMessage = computed(() => {
-    if (form.errors.email) {
-        return form.errors.email;
-    }
-    if (form.errors.password) {
-        return form.errors.password;
-    }
-    return null;
-});
 </script>
 
 <template>
     <GuestLayout>
         <Head title="Вход" />
 
+        <!-- Сообщение об успехе (например, после регистрации или сброса пароля) -->
         <div v-if="status" class="mb-4 rounded-md bg-[color:var(--badge-success-bg)] p-4 text-sm font-medium text-[color:var(--badge-success-text)] border border-[color:var(--badge-success-border)]">
             {{ status }}
         </div>
 
-        <div 
-            v-if="hasAuthError && authErrorMessage" 
-            data-testid="login-error"
-            class="mb-4 rounded-md bg-[color:var(--badge-danger-bg)] p-4 text-sm font-medium text-[color:var(--badge-danger-text)] border border-[color:var(--badge-danger-border)]"
-        >
-            {{ authErrorMessage }}
-        </div>
+        <!-- Ошибки валидации показываются под полями и в toast -->
+        <!-- Основные ошибки аутентификации показываются через toast -->
+        <!-- Блок ошибки убран, чтобы избежать дублирования с toast -->
 
         <form @submit.prevent="submit" data-testid="login-form">
             <div>

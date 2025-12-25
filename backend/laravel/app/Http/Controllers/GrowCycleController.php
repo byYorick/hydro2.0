@@ -496,7 +496,7 @@ class GrowCycleController extends Controller
 
             // Если start_immediately, запускаем цикл
             if ($data['start_immediately'] ?? false) {
-                $plantingAt = $data['planting_at'] ? Carbon::parse($data['planting_at']) : null;
+                $plantingAt = isset($data['planting_at']) && $data['planting_at'] ? Carbon::parse($data['planting_at']) : null;
                 $cycle = $this->growCycleService->startCycle($cycle, $plantingAt);
             }
 

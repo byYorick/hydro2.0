@@ -101,6 +101,10 @@ interface SeriesConfig {
   data: TelemetrySample[]
   currentValue?: number | null
   yAxisIndex?: number
+  targetRange?: {
+    min?: number
+    max?: number
+  }
 }
 
 interface Props {
@@ -418,25 +422,52 @@ const option = computed(() => {
           : 3600000,
       }] : []),
     ],
-    series: props.series.map((series, index) => ({
-      name: series.label,
-      type: 'line',
-      showSymbol: false,
-      smooth: true,
-      lineStyle: { 
-        width: 2,
-        color: series.color,
-      },
-      itemStyle: {
-        color: series.color,
-      },
-      data: series.data.map(p => [p.ts, p.value]),
-      clip: true,
-      large: hasLargeDataset,
-      largeThreshold: 100,
-      yAxisIndex: series.yAxisIndex || 0,
-      z: props.series.length - index, // Порядок отрисовки
-    })),
+    series: props.series.map((series, index) => {
+      const seriesConfig: any = {
+        name: series.label,
+        type: 'line',
+        showSymbol: false,
+        smooth: true,
+        lineStyle: { 
+          width: 2,
+          color: series.color,
+        },
+        itemStyle: {
+          color: series.color,
+        },
+        data: series.data.map(p => [p.ts, p.value]),
+        clip: true,
+        large: hasLargeDataset,
+        largeThreshold: 100,
+        yAxisIndex: series.yAxisIndex || 0,
+        z: props.series.length - index, // Порядок отрисовки
+      }
+
+      // Добавляем визуализацию целевого диапазона (markArea)
+      if (series.targetRange && series.targetRange.min !== undefined && series.targetRange.max !== undefined) {
+        const targetColor = resolveCssColor('--badge-success-bg', 'rgba(34, 197, 94, 0.15)')
+        seriesConfig.markArea = {
+          silent: true,
+          itemStyle: {
+            color: targetColor,
+            borderColor: resolveCssColor('--accent-green', '#22c55e'),
+            borderWidth: 1,
+            borderType: 'dashed',
+          },
+          data: [
+            [
+              { yAxis: series.targetRange.min },
+              { yAxis: series.targetRange.max },
+            ],
+          ],
+          label: {
+            show: false,
+          },
+        }
+      }
+
+      return seriesConfig
+    }),
   }
 })
 </script>

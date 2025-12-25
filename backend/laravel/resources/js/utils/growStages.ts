@@ -193,13 +193,21 @@ export function calculateCycleProgress(
   // Вычисляем прошедшее время до текущей фазы
   let completedHours = 0
   for (let i = 0; i < currentPhaseIndex; i++) {
-    completedHours += phases[i]?.duration_hours || 0
+    const phase = phases[i]
+    if (phase && typeof phase.duration_hours === 'number') {
+      completedHours += phase.duration_hours
+    }
   }
   
   // Добавляем прогресс текущей фазы
   const currentPhase = phases[currentPhaseIndex]
+  if (!currentPhase) {
+    return 0
+  }
+  
+  const currentPhaseDurationHours = currentPhase.duration_hours || 0
   const currentPhaseProgress = (phaseProgress || 0) / 100
-  const currentPhaseCompleted = (currentPhase?.duration_hours || 0) * currentPhaseProgress
+  const currentPhaseCompleted = currentPhaseDurationHours * currentPhaseProgress
   
   const totalCompleted = completedHours + currentPhaseCompleted
   

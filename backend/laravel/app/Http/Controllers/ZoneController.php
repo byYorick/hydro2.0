@@ -1080,6 +1080,21 @@ class ZoneController extends Controller
             ], 403);
         }
 
+        // Преобразуем cycle_only в boolean до валидации (может быть строкой "true"/"false" или boolean)
+        // Axios передает boolean как строку "true"/"false" в query параметрах
+        $cycleOnlyInput = $request->query->get('cycle_only');
+        if ($cycleOnlyInput !== null) {
+            // Преобразуем строку "true"/"false" в boolean
+            $boolValue = filter_var($cycleOnlyInput, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            if ($boolValue !== null) {
+                // Заменяем значение в query параметрах
+                $request->query->set('cycle_only', $boolValue);
+            } else {
+                // Если не удалось преобразовать, удаляем параметр
+                $request->query->remove('cycle_only');
+            }
+        }
+        
         // Валидация query параметров
         $validated = $request->validate([
             'after_id' => ['nullable', 'integer', 'min:0'],  // Разрешаем 0 для начального запроса
@@ -1109,19 +1124,31 @@ class ZoneController extends Controller
                 'RECIPE_PHASE_CHANGED',
                 'ZONE_COMMAND', // Ручные вмешательства
             ];
-            $query->whereIn('type', $cycleEventTypes);
-        }
-
-        // Проверяем, какая колонка существует (payload_json или details) для обратной совместимости
-        $hasPayloadJson = DB::getSchemaBuilder()->hasColumn('zone_events', 'payload_json');
-        $detailsColumn = $hasPayloadJson ? 'payload_json' : 'details';
-        
-        // Также включаем critical alerts (ALERT_CREATED с severity CRITICAL) если cycle_only = true
-        if ($cycleOnly) {
+            
+            // Используем where с замыканием для правильной группировки условий
+            $query->where(function ($q) use ($cycleEventTypes) {
+                $q->whereIn('type', $cycleEventTypes);
+            });
+            
+            // Также включаем critical alerts (ALERT_CREATED с severity CRITICAL)
+            // Проверяем, какая колонка существует (payload_json или details) для обратной совместимости
+            $hasPayloadJson = DB::getSchemaBuilder()->hasColumn('zone_events', 'payload_json');
+            $detailsColumn = $hasPayloadJson ? 'payload_json' : 'details';
+            
             $query->orWhere(function ($q) use ($detailsColumn) {
                 $q->where('type', 'ALERT_CREATED')
                   ->whereRaw("{$detailsColumn}->>'severity' = 'CRITICAL'");
             });
+        } else {
+            // Определяем колонку details для случая, когда cycle_only = false
+            $hasPayloadJson = DB::getSchemaBuilder()->hasColumn('zone_events', 'payload_json');
+            $detailsColumn = $hasPayloadJson ? 'payload_json' : 'details';
+        }
+
+        // Убеждаемся, что $detailsColumn определена (если cycle_only = false, она еще не определена)
+        if (!isset($detailsColumn)) {
+            $hasPayloadJson = DB::getSchemaBuilder()->hasColumn('zone_events', 'payload_json');
+            $detailsColumn = $hasPayloadJson ? 'payload_json' : 'details';
         }
 
         $query->orderBy('id', 'asc'); // Строго по возрастанию id для гарантии порядка

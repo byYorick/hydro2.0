@@ -3,6 +3,7 @@
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Inertia\Inertia;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -65,7 +66,90 @@ return Application::configure(basePath: dirname(__DIR__))
             return 'req_'.uniqid().'_'.substr(md5(microtime(true)), 0, 8);
         };
 
-        // Обрабатываем ThrottleRequestsException ПЕРВЫМ (до общего обработчика)
+        // Обрабатываем AuthenticationException ПЕРВЫМ (до общего обработчика)
+        // Это важно, чтобы не логировать ошибки аутентификации как критические ошибки
+        $exceptions->render(function (\Illuminate\Auth\AuthenticationException $e, \Illuminate\Http\Request $request) use ($generateCorrelationId) {
+            $correlationId = $generateCorrelationId();
+            $isApi = $request->is('api/*') || $request->expectsJson();
+            $isInertia = $request->header('X-Inertia') !== null;
+
+            // Логируем как предупреждение, а не ошибку (это нормальная ситуация)
+            $logContext = [
+                'correlation_id' => $correlationId,
+                'url' => $request->fullUrl(),
+                'method' => $request->method(),
+                'ip' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'is_api' => $isApi,
+                'is_inertia' => $isInertia,
+                'has_auth_header' => $request->headers->has('Authorization'),
+                'has_bearer_token' => $request->bearerToken() !== null,
+                'has_session' => $request->hasSession(),
+                'session_id' => $request->hasSession() ? $request->session()->getId() : null,
+            ];
+
+            // Проверяем, был ли запрос с токеном или сессией
+            $authHeader = $request->header('Authorization');
+            if ($authHeader) {
+                $logContext['auth_header_prefix'] = substr($authHeader, 0, 20);
+            }
+
+            \Log::warning('Authentication failed', $logContext);
+
+            // Для API роутов возвращаем JSON с 401
+            if ($isApi) {
+                return response()->json([
+                    'status' => 'error',
+                    'code' => 'UNAUTHENTICATED',
+                    'message' => 'Unauthenticated.',
+                    'correlation_id' => $correlationId,
+                ], 401);
+            }
+
+            // Для Inertia запросов делаем редирект
+            if ($isInertia) {
+                return redirect()->route('login')->with('error', 'Требуется авторизация.');
+            }
+
+            // Для обычных веб-запросов делаем редирект
+            return redirect()->route('login')->with('error', 'Требуется авторизация.');
+        });
+
+        // Обрабатываем ValidationException ПЕРЕД общим обработчиком Throwable
+        // Это важно для правильной обработки ошибок валидации в Inertia.js
+        $exceptions->render(function (\Illuminate\Validation\ValidationException $e, \Illuminate\Http\Request $request) {
+            $isInertia = $request->header('X-Inertia') !== null;
+            $isApi = $request->is('api/*') || ($request->expectsJson() && !$isInertia);
+            
+            // Для Inertia запросов используем redirect()->back() для правильной обработки
+            // Это вернет на предыдущую страницу (страницу логина) с ошибками валидации
+            if ($isInertia && !$isApi) {
+                // Используем redirect()->back() для правильной обработки ошибок валидации
+                // Это вернет на страницу логина с ошибками в форме
+                // Inertia автоматически обработает это и покажет ошибки в форме
+                return redirect()->back()
+                    ->withErrors($e->errors(), $e->errorBag)
+                    ->withInput($request->except('password'));
+            }
+            
+            // Для API запросов возвращаем JSON
+            if ($isApi) {
+                return response()->json([
+                    'status' => 'error',
+                    'code' => 'VALIDATION_ERROR',
+                    'message' => 'Validation failed',
+                    'errors' => $e->errors(),
+                ], 422);
+            }
+            
+            // Для обычных веб-запросов используем стандартную обработку Laravel
+            // которая делает back()->withErrors()
+            return redirect()->back()
+                ->withErrors($e->errors(), $e->errorBag)
+                ->withInput();
+        });
+
+        // Обрабатываем ThrottleRequestsException (после AuthenticationException и ValidationException)
         // Используем HttpException вместо ThrottleRequestsException, так как ThrottleRequestsException наследуется от HttpException
         $exceptions->render(function (\Illuminate\Http\Exceptions\ThrottleRequestsException $e, \Illuminate\Http\Request $request) {
             $retryAfter = $e->getHeaders()['Retry-After'] ?? 60;
@@ -110,32 +194,46 @@ return Application::configure(basePath: dirname(__DIR__))
                 return null;
             }
 
+            // Пропускаем AuthenticationException (уже обработано выше)
+            if ($e instanceof \Illuminate\Auth\AuthenticationException) {
+                return null;
+            }
+
+            // Пропускаем ValidationException (уже обработано выше)
+            if ($e instanceof \Illuminate\Validation\ValidationException) {
+                return null;
+            }
+
             $correlationId = $generateCorrelationId();
             $isDev = app()->environment(['local', 'testing', 'development']);
             $isApi = $request->is('api/*') || $request->expectsJson();
             $isInertia = $request->header('X-Inertia') !== null;
 
-            // Логируем исключение с контекстом
-            $logContext = [
-                'correlation_id' => $correlationId,
-                'url' => $request->fullUrl(),
-                'method' => $request->method(),
-                'ip' => $request->ip(),
-                'user_agent' => $request->userAgent(),
-                'user_id' => auth()->id(),
-                'exception' => get_class($e),
-                'message' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'is_api' => $isApi,
-                'is_inertia' => $isInertia,
-            ];
+            // НЕ логируем ValidationException как ошибку для Inertia запросов
+            // Это нормальная ситуация валидации формы
+            if (!($e instanceof \Illuminate\Validation\ValidationException && $isInertia)) {
+                // Логируем исключение с контекстом
+                $logContext = [
+                    'correlation_id' => $correlationId,
+                    'url' => $request->fullUrl(),
+                    'method' => $request->method(),
+                    'ip' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                    'user_id' => auth()->id(),
+                    'exception' => get_class($e),
+                    'message' => $e->getMessage(),
+                    'file' => $e->getFile(),
+                    'line' => $e->getLine(),
+                    'is_api' => $isApi,
+                    'is_inertia' => $isInertia,
+                ];
 
-            if ($isDev) {
-                $logContext['trace'] = $e->getTraceAsString();
+                if ($isDev) {
+                    $logContext['trace'] = $e->getTraceAsString();
+                }
+
+                \Log::error('Exception', $logContext);
             }
-
-            \Log::error('Exception', $logContext);
 
             // Обработка для API роутов
             if ($isApi) {
@@ -184,11 +282,13 @@ return Application::configure(basePath: dirname(__DIR__))
                     ], 404);
                 }
 
+                // AuthenticationException уже обработано выше, здесь не должно попасть
+                // Но оставляем для безопасности
                 if ($e instanceof \Illuminate\Auth\AuthenticationException) {
                     return response()->json([
                         'status' => 'error',
                         'code' => 'UNAUTHENTICATED',
-                        'message' => 'Unauthenticated',
+                        'message' => 'Unauthenticated.',
                         'correlation_id' => $correlationId,
                     ], 401);
                 }
@@ -202,14 +302,10 @@ return Application::configure(basePath: dirname(__DIR__))
                     ], 403);
                 }
 
+                // ValidationException уже обработано выше в приоритетном обработчике
+                // Здесь не должно попасть, но оставляем для безопасности
                 if ($e instanceof \Illuminate\Validation\ValidationException) {
-                    return response()->json([
-                        'status' => 'error',
-                        'code' => 'VALIDATION_ERROR',
-                        'message' => 'Validation failed',
-                        'errors' => $e->errors(),
-                        'correlation_id' => $correlationId,
-                    ], 422);
+                    return null; // Пропускаем, уже обработано выше
                 }
 
                 if ($e instanceof \Illuminate\Http\Client\RequestException ||
@@ -262,6 +358,8 @@ return Application::configure(basePath: dirname(__DIR__))
                     ], 404);
                 }
 
+                // AuthenticationException уже обработано выше, здесь не должно попасть
+                // Но оставляем для безопасности
                 if ($e instanceof \Illuminate\Auth\AuthenticationException) {
                     return redirect()->route('login')->with('error', 'Требуется авторизация.');
                 }
@@ -274,6 +372,16 @@ return Application::configure(basePath: dirname(__DIR__))
                 }
 
                 if ($e instanceof \Illuminate\Validation\ValidationException) {
+                    // Для Inertia запросов Laravel автоматически обработает ValidationException
+                    // и вернет ошибки на страницу формы без редиректа
+                    // Используем стандартную обработку Laravel для Inertia
+                    if ($isInertia) {
+                        // Пробрасываем исключение, Laravel обработает его автоматически
+                        // Inertia покажет ошибки в форме без редиректа
+                        throw $e;
+                    }
+                    
+                    // Для обычных веб-запросов делаем редирект с ошибками
                     return back()->withErrors($e->errors())->withInput();
                 }
 
