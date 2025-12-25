@@ -170,40 +170,6 @@ class ZoneService
         ]);
 
         throw new \DomainException('ZoneService::nextPhase() is deprecated. Please use GrowCycleService::advancePhase() to advance to the next phase in a grow cycle.');
-
-            // Создаем zone_event для изменения фазы
-            $hasPayloadJson = Schema::hasColumn('zone_events', 'payload_json');
-            $detailsColumn = $hasPayloadJson ? 'payload_json' : 'details';
-            
-            DB::table('zone_events')->insert([
-                'zone_id' => $zone->id,
-                'type' => 'PHASE_TRANSITION',
-                $detailsColumn => json_encode([
-                    'from_phase_index' => $currentPhaseIndex,
-                    'to_phase_index' => $nextPhaseIndex,
-                    'recipe_id' => $recipe->id,
-                    'recipe_instance_id' => $instance->id,
-                ]),
-                'created_at' => now(),
-            ]);
-
-            Log::info('Zone phase advanced', [
-                'zone_id' => $zone->id,
-                'from_phase' => $currentPhaseIndex,
-                'to_phase' => $nextPhaseIndex,
-            ]);
-
-            // Проверить, завершён ли рецепт (все фазы пройдены)
-            if ($nextPhaseIndex >= $maxPhaseIndex) {
-                // Рецепт завершён - запустить расчёт аналитики
-                \App\Jobs\CalculateRecipeAnalyticsJob::dispatch($zone->id, $instance->id);
-            }
-
-            // Dispatch event для уведомления Python-сервиса
-            event(new ZoneUpdated($zone->fresh()));
-
-            return $instance->fresh();
-        });
     }
 
     /**
