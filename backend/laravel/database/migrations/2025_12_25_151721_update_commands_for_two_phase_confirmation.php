@@ -55,19 +55,10 @@ return new class extends Migration
             // Но проверим и обновим если нужно
         });
         
-        // Добавляем уникальный индекс для request_id (если колонка была добавлена)
-        if (Schema::hasColumn('commands', 'request_id')) {
+        // Добавляем уникальный индекс для request_id (если колонка была добавлена и индекса еще нет)
+        if (Schema::hasColumn('commands', 'request_id') && !Schema::hasIndex('commands', 'commands_request_id_unique')) {
             Schema::table('commands', function (Blueprint $table) {
-                // Проверяем, нет ли уже уникального индекса
-                $indexes = DB::select("
-                    SELECT indexname 
-                    FROM pg_indexes 
-                    WHERE tablename = 'commands' 
-                    AND indexname LIKE '%request_id%'
-                ");
-                if (empty($indexes)) {
-                    $table->unique('request_id', 'commands_request_id_unique');
-                }
+                $table->unique('request_id', 'commands_request_id_unique');
             });
         }
         
