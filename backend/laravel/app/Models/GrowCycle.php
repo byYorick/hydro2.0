@@ -125,7 +125,7 @@ class GrowCycle extends Model
      */
     public function isActive(): bool
     {
-        return in_array($this->status, [GrowCycleStatus::RUNNING, GrowCycleStatus::PAUSED]);
+        return in_array($this->status, [GrowCycleStatus::PLANNED, GrowCycleStatus::RUNNING, GrowCycleStatus::PAUSED]);
     }
 
     /**
@@ -133,7 +133,7 @@ class GrowCycle extends Model
      */
     public function scopeActive($query)
     {
-        return $query->whereIn('status', [GrowCycleStatus::RUNNING, GrowCycleStatus::PAUSED]);
+        return $query->whereIn('status', [GrowCycleStatus::PLANNED, GrowCycleStatus::RUNNING, GrowCycleStatus::PAUSED]);
     }
 
     /**

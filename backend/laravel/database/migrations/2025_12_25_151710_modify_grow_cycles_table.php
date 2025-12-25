@@ -35,9 +35,9 @@ return new class extends Migration
         });
         
         Schema::table('grow_cycles', function (Blueprint $table) {
-            // Добавляем связь с ревизией рецепта (NOT NULL после заполнения данных)
+            // Добавляем связь с ревизией рецепта (NOT NULL - обязательно)
             if (!Schema::hasColumn('grow_cycles', 'recipe_revision_id')) {
-                $table->foreignId('recipe_revision_id')->nullable()->after('recipe_id')->constrained('recipe_revisions')->nullOnDelete();
+                $table->foreignId('recipe_revision_id')->after('recipe_id')->constrained('recipe_revisions')->cascadeOnDelete();
             }
             
             // Текущая фаза и шаг

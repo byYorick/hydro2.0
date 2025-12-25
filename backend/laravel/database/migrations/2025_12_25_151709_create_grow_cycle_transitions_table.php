@@ -17,10 +17,10 @@ return new class extends Migration
         Schema::create('grow_cycle_transitions', function (Blueprint $table) {
             $table->id();
             $table->foreignId('grow_cycle_id')->constrained('grow_cycles')->cascadeOnDelete();
-            $table->foreignId('from_phase_id')->nullable()->constrained('recipe_revision_phases')->nullOnDelete();
-            $table->foreignId('to_phase_id')->constrained('recipe_revision_phases')->nullOnDelete();
-            $table->foreignId('from_step_id')->nullable()->constrained('recipe_revision_phase_steps')->nullOnDelete();
-            $table->foreignId('to_step_id')->nullable()->constrained('recipe_revision_phase_steps')->nullOnDelete();
+            $table->foreignId('from_phase_id')->nullable()->constrained('recipe_revision_phases')->restrictOnDelete();
+            $table->foreignId('to_phase_id')->nullable()->constrained('recipe_revision_phases')->restrictOnDelete(); // Nullable для завершения цикла
+            $table->foreignId('from_step_id')->nullable()->constrained('recipe_revision_phase_steps')->restrictOnDelete();
+            $table->foreignId('to_step_id')->nullable()->constrained('recipe_revision_phase_steps')->restrictOnDelete();
             $table->string('trigger_type'); // AUTO|MANUAL|RECIPE_CHANGE|SYSTEM
             $table->text('comment')->nullable(); // Комментарий (обязателен для MANUAL)
             $table->foreignId('triggered_by')->nullable()->constrained('users')->nullOnDelete();

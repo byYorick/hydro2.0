@@ -17,16 +17,16 @@ return new class extends Migration
         Schema::create('channel_bindings', function (Blueprint $table) {
             $table->id();
             $table->foreignId('infrastructure_instance_id')->constrained('infrastructure_instances')->cascadeOnDelete();
-            $table->foreignId('node_id')->constrained('nodes')->cascadeOnDelete();
-            $table->string('channel'); // Строка как в NodeChannel
+            $table->foreignId('node_channel_id')->constrained('node_channels')->cascadeOnDelete(); // Нормализовано через node_channels
             $table->enum('direction', ['actuator', 'sensor']);
             $table->string('role'); // main_pump|drain_pump|mister|fan|heater|ph_sensor|ec_sensor|...
             $table->timestamps();
 
-            // Уникальность: один канал ноды не может быть привязан к одному экземпляру инфраструктуры дважды
-            $table->unique(['infrastructure_instance_id', 'node_id', 'channel'], 'channel_bindings_unique');
+            // Уникальность: один канал не может быть привязан к одному экземпляру инфраструктуры дважды
+            $table->unique(['infrastructure_instance_id', 'node_channel_id'], 'channel_bindings_unique');
+            // Уникальность: один канал не может принадлежать двум инстансам
+            $table->unique(['node_channel_id'], 'channel_bindings_node_channel_unique');
             $table->index(['infrastructure_instance_id'], 'channel_bindings_infrastructure_idx');
-            $table->index(['node_id', 'channel'], 'channel_bindings_node_channel_idx');
         });
     }
 

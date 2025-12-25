@@ -17,11 +17,11 @@ return new class extends Migration
     public function up(): void
     {
         // Частичный уникальный индекс для активного цикла на зону
-        // Только один RUNNING или PAUSED цикл может быть в зоне одновременно
+        // Только один PLANNED, RUNNING или PAUSED цикл может быть в зоне одновременно
         DB::statement('
             CREATE UNIQUE INDEX grow_cycles_zone_active_unique 
             ON grow_cycles(zone_id) 
-            WHERE status IN (\'RUNNING\', \'PAUSED\')
+            WHERE status IN (\'PLANNED\', \'RUNNING\', \'PAUSED\')
         ');
         
         // Опционально: ограничить 1 PLANNED цикл на зону

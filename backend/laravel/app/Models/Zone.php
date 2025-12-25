@@ -57,7 +57,7 @@ class Zone extends Model
     public function activeGrowCycle(): HasOne
     {
         return $this->hasOne(GrowCycle::class)
-            ->whereIn('status', [GrowCycleStatus::RUNNING, GrowCycleStatus::PAUSED]);
+            ->whereIn('status', [GrowCycleStatus::PLANNED, GrowCycleStatus::RUNNING, GrowCycleStatus::PAUSED]);
     }
 
     /**

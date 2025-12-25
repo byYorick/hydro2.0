@@ -9,6 +9,7 @@ enum GrowCycleStatus: string
     case PAUSED = 'PAUSED';
     case HARVESTED = 'HARVESTED';
     case ABORTED = 'ABORTED';
+    case AWAITING_CONFIRM = 'AWAITING_CONFIRM';
 
     /**
      * Получить все значения enum как массив строк.
@@ -24,6 +25,7 @@ enum GrowCycleStatus: string
     public function isActive(): bool
     {
         return in_array($this, [
+            self::PLANNED,
             self::RUNNING,
             self::PAUSED,
         ]);
@@ -51,6 +53,7 @@ enum GrowCycleStatus: string
             self::PAUSED => 'Приостановлен',
             self::HARVESTED => 'Собран',
             self::ABORTED => 'Прерван',
+            self::AWAITING_CONFIRM => 'Ожидает подтверждения',
         };
     }
 }
