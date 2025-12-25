@@ -27,29 +27,56 @@ class DatabaseSeeder extends Seeder
             // Пользователи
             $this->call(ExtendedUsersSeeder::class);
             
+            // Каталог типов оборудования
+            $this->call(ExtendedInfrastructureAssetsSeeder::class);
+            
             // Теплицы и зоны
             $this->call(ExtendedGreenhousesZonesSeeder::class);
             
             // Узлы и каналы
             $this->call(ExtendedNodesChannelsSeeder::class);
             
-            // Инфраструктура
+            // Инфраструктура зон
             $this->call(ExtendedInfrastructureSeeder::class);
             
             // Рецепты и циклы
             $this->call(ExtendedRecipesCyclesSeeder::class);
             
+            // Шаблоны стадий роста и маппинг
+            $this->call(ExtendedGrowStagesSeeder::class);
+            
+            // Циклы зон
+            $this->call(ExtendedZoneCyclesSeeder::class);
+            
+            // PID конфигурации
+            $this->call(ExtendedZonePidConfigsSeeder::class);
+            
             // Растения (расширение)
             $this->call(ExtendedPlantsSeeder::class);
             
+            // Связи растений с зонами и рецептами
+            $this->call(ExtendedPlantRelationsSeeder::class);
+            
             // Телеметрия
             $this->call(ExtendedTelemetrySeeder::class);
+            
+            // Агрегированная телеметрия
+            $this->call(ExtendedTelemetryAggregatedSeeder::class);
+            
+            // Состояние агрегатора
+            $this->call(ExtendedAggregatorStateSeeder::class);
             
             // Команды
             $this->call(ExtendedCommandsSeeder::class);
             
             // Алерты и события
             $this->call(ExtendedAlertsEventsSeeder::class);
+            
+            // Ожидающие алерты
+            $this->call(ExtendedPendingAlertsSeeder::class);
+            
+            // Ошибки непривязанных узлов
+            $this->call(ExtendedUnassignedNodeErrorsSeeder::class);
             
             // AI и прогнозы
             $this->call(ExtendedAIPredictionsSeeder::class);
@@ -59,6 +86,9 @@ class DatabaseSeeder extends Seeder
             
             // Логи
             $this->call(ExtendedLogsSeeder::class);
+            
+            // Архивные данные
+            $this->call(ExtendedArchivesSeeder::class);
 
             // Старые сидеры для совместимости (опционально)
             // $this->call(FullServiceTestSeeder::class);

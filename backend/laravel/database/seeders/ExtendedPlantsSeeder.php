@@ -97,18 +97,22 @@ class ExtendedPlantsSeeder extends Seeder
     {
         $created = 0;
 
+        // Получаем последнюю версию цены для привязки
+        $priceVersion = PlantPriceVersion::where('plant_id', $plant->id)
+            ->orderBy('effective_from', 'desc')
+            ->first();
+
         $costItemTypes = [
-            ['name' => 'Семена', 'category' => 'materials', 'unit' => 'шт'],
-            ['name' => 'Субстрат', 'category' => 'materials', 'unit' => 'кг'],
-            ['name' => 'Удобрения', 'category' => 'materials', 'unit' => 'л'],
-            ['name' => 'Электроэнергия', 'category' => 'utilities', 'unit' => 'кВт·ч'],
-            ['name' => 'Вода', 'category' => 'utilities', 'unit' => 'л'],
-            ['name' => 'Труд', 'category' => 'labor', 'unit' => 'час'],
+            ['type' => 'seedling', 'notes' => 'Семена'],
+            ['type' => 'substrate', 'notes' => 'Субстрат'],
+            ['type' => 'nutrient', 'notes' => 'Удобрения'],
+            ['type' => 'labor', 'notes' => 'Труд'],
+            ['type' => 'utilities', 'notes' => 'Электроэнергия и вода'],
         ];
 
         foreach ($costItemTypes as $itemData) {
             $exists = PlantCostItem::where('plant_id', $plant->id)
-                ->where('name', $itemData['name'])
+                ->where('type', $itemData['type'])
                 ->exists();
 
             if ($exists) {
@@ -117,11 +121,14 @@ class ExtendedPlantsSeeder extends Seeder
 
             PlantCostItem::create([
                 'plant_id' => $plant->id,
-                'name' => $itemData['name'],
-                'category' => $itemData['category'],
-                'unit' => $itemData['unit'],
-                'cost_per_unit' => rand(10, 100) / 10,
-                'quantity_per_cycle' => rand(1, 10),
+                'plant_price_version_id' => $priceVersion?->id,
+                'type' => $itemData['type'],
+                'amount' => rand(10, 100),
+                'currency' => 'RUB',
+                'notes' => $itemData['notes'],
+                'metadata' => [
+                    'created_by' => 'system',
+                ],
             ]);
 
             $created++;
@@ -134,12 +141,21 @@ class ExtendedPlantsSeeder extends Seeder
     {
         $created = 0;
 
-        // Создаем цены продажи за последние 3 месяца
-        for ($monthsAgo = 3; $monthsAgo >= 0; $monthsAgo--) {
-            $effectiveFrom = now()->subMonths($monthsAgo)->startOfMonth();
+        // Получаем последнюю версию цены для привязки
+        $priceVersion = PlantPriceVersion::where('plant_id', $plant->id)
+            ->orderBy('effective_from', 'desc')
+            ->first();
 
+        if (!$priceVersion) {
+            return 0;
+        }
+
+        $channels = ['wholesale', 'retail', 'online', 'marketplace'];
+
+        foreach ($channels as $channel) {
             $exists = PlantSalePrice::where('plant_id', $plant->id)
-                ->whereDate('effective_from', $effectiveFrom->toDateString())
+                ->where('channel', $channel)
+                ->where('is_active', true)
                 ->exists();
 
             if ($exists) {
@@ -148,12 +164,20 @@ class ExtendedPlantsSeeder extends Seeder
 
             PlantSalePrice::create([
                 'plant_id' => $plant->id,
-                'effective_from' => $effectiveFrom,
+                'plant_price_version_id' => $priceVersion->id,
+                'channel' => $channel,
+                'price' => match ($channel) {
+                    'wholesale' => rand(300, 600),
+                    'retail' => rand(500, 1000),
+                    'online' => rand(400, 800),
+                    'marketplace' => rand(450, 900),
+                    default => rand(300, 1000),
+                },
                 'currency' => 'RUB',
-                'wholesale_price_per_kg' => rand(300, 600),
-                'retail_price_per_kg' => rand(500, 1000),
-                'wholesale_price_per_unit' => rand(20, 50),
-                'retail_price_per_unit' => rand(30, 80),
+                'is_active' => true,
+                'metadata' => [
+                    'created_by' => 'system',
+                ],
             ]);
 
             $created++;

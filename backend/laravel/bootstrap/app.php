@@ -371,18 +371,10 @@ return Application::configure(basePath: dirname(__DIR__))
                     ], 403);
                 }
 
+                // ValidationException уже обработано выше в приоритетном обработчике
+                // Здесь не должно попасть, но оставляем для безопасности
                 if ($e instanceof \Illuminate\Validation\ValidationException) {
-                    // Для Inertia запросов Laravel автоматически обработает ValidationException
-                    // и вернет ошибки на страницу формы без редиректа
-                    // Используем стандартную обработку Laravel для Inertia
-                    if ($isInertia) {
-                        // Пробрасываем исключение, Laravel обработает его автоматически
-                        // Inertia покажет ошибки в форме без редиректа
-                        throw $e;
-                    }
-                    
-                    // Для обычных веб-запросов делаем редирект с ошибками
-                    return back()->withErrors($e->errors())->withInput();
+                    return null; // Пропускаем, уже обработано выше
                 }
 
                 // Общая ошибка для веб-маршрутов
