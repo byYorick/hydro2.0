@@ -114,19 +114,21 @@ return new class extends Migration
      */
     private function getForeignKeyName(string $table, string $column): ?string
     {
-        $constraints = DB::select("
-            SELECT constraint_name
-            FROM information_schema.table_constraints
-            WHERE table_name = ? 
-            AND constraint_type = 'FOREIGN KEY'
-            AND constraint_name IN (
-                SELECT constraint_name
-                FROM information_schema.key_column_usage
-                WHERE table_name = ? AND column_name = ?
-            )
-        ", [$table, $table, $column]);
-        
-        return $constraints[0]->constraint_name ?? null;
+        try {
+            $constraints = DB::select("
+                SELECT tc.constraint_name
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.key_column_usage kcu 
+                    ON tc.constraint_name = kcu.constraint_name
+                WHERE tc.table_name = ? 
+                AND tc.constraint_type = 'FOREIGN KEY'
+                AND kcu.column_name = ?
+            ", [$table, $column]);
+            
+            return $constraints[0]->constraint_name ?? null;
+        } catch (\Exception $e) {
+            return null;
+        }
     }
 };
 
