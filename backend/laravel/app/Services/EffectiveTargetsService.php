@@ -21,7 +21,7 @@ class EffectiveTargetsService
     public function getEffectiveTargets(int $growCycleId): array
     {
         $cycle = GrowCycle::with([
-            'currentPhase.stageTemplate',
+            'currentPhase.recipeRevisionPhase.stageTemplate', // Для снапшотов получаем stageTemplate через recipeRevisionPhase
             'recipeRevision',
             'zone',
         ])->findOrFail($growCycleId);
