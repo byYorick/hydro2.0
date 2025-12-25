@@ -189,28 +189,38 @@ class ZoneCommandController extends Controller
 
             $subsystems = $params['subsystems'] ?? null;
 
-            // Управление моделью ZoneCycle
+            // Управление моделью GrowCycle (legacy ZoneCycle заменен)
+            // Примечание: создание циклов теперь должно происходить через GrowCycleController::store()
+            // Этот код оставлен для обратной совместимости с командами, но рекомендуется использовать API
             if ($mode === 'start') {
-                // Создаем новый активный цикл
-                ZoneCycle::create([
-                    'zone_id' => $zone->id,
-                    'type' => 'GROWTH_CYCLE',
-                    'status' => 'active',
-                    'subsystems' => $subsystems,
-                    'started_at' => now()->setTimezone('UTC'),
-                    'ends_at' => null,
-                ]);
+                // Проверяем, нет ли уже активного цикла
+                $hasActiveCycle = GrowCycle::query()
+                    ->where('zone_id', $zone->id)
+                    ->whereIn('status', [GrowCycleStatus::PLANNED, GrowCycleStatus::RUNNING, GrowCycleStatus::PAUSED])
+                    ->exists();
+
+                if (!$hasActiveCycle) {
+                    // Логируем событие, но не создаем цикл здесь
+                    // Создание циклов должно происходить через GrowCycleController::store()
+                    Log::warning('ZoneCommandController: GROWTH_CYCLE_CONFIG start command received, but cycle creation should use GrowCycleController::store()', [
+                        'zone_id' => $zone->id,
+                        'subsystems' => $subsystems,
+                    ]);
+                }
             } elseif ($mode === 'adjust') {
                 // Обновляем текущий активный цикл (если есть)
-                $activeCycle = ZoneCycle::query()
+                $activeCycle = GrowCycle::query()
                     ->where('zone_id', $zone->id)
-                    ->where('status', 'active')
+                    ->whereIn('status', [GrowCycleStatus::PLANNED, GrowCycleStatus::RUNNING, GrowCycleStatus::PAUSED])
                     ->latest('started_at')
                     ->first();
 
-                if ($activeCycle) {
+                if ($activeCycle && $subsystems) {
+                    // Обновляем settings цикла с subsystems
+                    $settings = $activeCycle->settings ?? [];
+                    $settings['subsystems'] = $subsystems;
                     $activeCycle->update([
-                        'subsystems' => $subsystems,
+                        'settings' => $settings,
                     ]);
                 }
             }
