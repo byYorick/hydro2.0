@@ -12,7 +12,6 @@ use App\Http\Controllers\PresetController;
 use App\Http\Controllers\ProfitabilityController;
 use App\Http\Controllers\PythonIngestController;
 use App\Http\Controllers\RecipeController;
-use App\Http\Controllers\RecipePhaseController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\ServiceLogController;
 use App\Http\Controllers\SimulationController;
@@ -130,7 +129,6 @@ Route::middleware([
     Route::get('unassigned-node-errors/{hardwareId}', [UnassignedNodeErrorController::class, 'show']);
     Route::get('recipes', [RecipeController::class, 'index']);
     Route::get('recipes/{recipe}', [RecipeController::class, 'show']);
-    Route::get('recipes/{recipe}/stage-map', [RecipeController::class, 'getStageMap']);
     Route::get('presets', [PresetController::class, 'index']);
     Route::get('presets/{preset}', [PresetController::class, 'show']);
     Route::get('plants', [PlantController::class, 'index']);
@@ -165,14 +163,6 @@ Route::middleware([
         Route::patch('channel-bindings/{channelBinding}', [ChannelBindingController::class, 'update']);
         Route::delete('channel-bindings/{channelBinding}', [ChannelBindingController::class, 'destroy']);
         
-        // Legacy zone endpoints (deprecated)
-        Route::post('zones/{zone}/attach-recipe', [ZoneController::class, 'attachRecipe'])->name('legacy.attach-recipe');
-        Route::post('zones/{zone}/start', [ZoneController::class, 'start'])->name('legacy.start');
-        Route::post('zones/{zone}/change-phase', [ZoneController::class, 'changePhase'])->name('legacy.change-phase');
-        Route::post('zones/{zone}/next-phase', [ZoneController::class, 'nextPhase'])->name('legacy.next-phase');
-        Route::post('zones/{zone}/pause', [ZoneController::class, 'pause'])->name('legacy.pause');
-        Route::post('zones/{zone}/resume', [ZoneController::class, 'resume'])->name('legacy.resume');
-        Route::post('zones/{zone}/harvest', [ZoneController::class, 'harvest'])->name('legacy.harvest');
         Route::post('zones/{zone}/fill', [ZoneController::class, 'fill']);
         Route::post('zones/{zone}/drain', [ZoneController::class, 'drain']);
         Route::post('zones/{zone}/calibrate-flow', [ZoneController::class, 'calibrateFlow']);
@@ -190,9 +180,6 @@ Route::middleware([
         Route::post('grow-cycles/{growCycle}/advance-phase', [GrowCycleController::class, 'advancePhase']);
         Route::post('grow-cycles/{growCycle}/change-recipe-revision', [GrowCycleController::class, 'changeRecipeRevision']);
         
-        // Legacy endpoints (deprecated)
-        Route::post('zones/{zone}/grow-cycle/change-recipe', [GrowCycleController::class, 'changeRecipe'])->name('legacy.change-recipe');
-        Route::post('grow-cycles/{growCycle}/advance-stage', [GrowCycleController::class, 'advanceStage'])->name('legacy.advance-stage');
 
 
         // Nodes
@@ -221,12 +208,6 @@ Route::middleware([
         Route::post('recipe-revisions/{recipeRevision}/phases', [RecipeRevisionPhaseController::class, 'store']);
         Route::patch('recipe-revision-phases/{recipeRevisionPhase}', [RecipeRevisionPhaseController::class, 'update']);
         Route::delete('recipe-revision-phases/{recipeRevisionPhase}', [RecipeRevisionPhaseController::class, 'destroy']);
-        
-        // Legacy recipe endpoints (deprecated)
-        Route::put('recipes/{recipe}/stage-map', [RecipeController::class, 'updateStageMap'])->name('legacy.stage-map');
-        Route::post('recipes/{recipe}/phases', [RecipePhaseController::class, 'store'])->name('legacy.phases.store');
-        Route::patch('recipe-phases/{recipePhase}', [RecipePhaseController::class, 'update'])->name('legacy.phases.update');
-        Route::delete('recipe-phases/{recipePhase}', [RecipePhaseController::class, 'destroy'])->name('legacy.phases.destroy');
 
         // Presets
         Route::post('presets', [PresetController::class, 'store']);
