@@ -132,7 +132,13 @@ const stepErrors = computed<string[]>(() => {
   return props.wizardState.errors.value[stepKey] || []
 })
 
-const { currentStep, steps, isValid, canGoNext, canGoPrev, isFirstStep, isLastStep } = props.wizardState
+const currentStep = computed(() => props.wizardState.currentStep.value)
+const steps = computed(() => props.wizardState.steps.value)
+const isValid = computed(() => props.wizardState.isValid.value)
+const canGoNext = computed(() => props.wizardState.canGoNext.value)
+const canGoPrev = computed(() => props.wizardState.canGoPrev.value)
+const isFirstStep = computed(() => props.wizardState.isFirstStep.value)
+const isLastStep = computed(() => props.wizardState.isLastStep.value)
 
 const handleNext = async () => {
   await props.wizardState.next()

@@ -10,41 +10,59 @@
     >
       <template #default="{ step, stepIndex }">
         <!-- Шаг 1: Выбор/создание теплицы -->
-        <WizardStepGreenhouse
-          v-if="stepIndex === 0"
-          v-model="wizardState.formData"
-          @greenhouse-selected="onGreenhouseSelected"
-        />
+        <div v-if="stepIndex === 0" class="space-y-4">
+          <p class="text-sm text-[color:var(--text-muted)]">
+            TODO: Компонент WizardStepGreenhouse будет создан позже
+          </p>
+          <p class="text-sm text-[color:var(--text-muted)]">
+            Greenhouse ID: {{ wizardState.formData.greenhouseId || 'не выбран' }}
+          </p>
+        </div>
 
         <!-- Шаг 2: Выбор/создание зоны -->
-        <WizardStepZone
-          v-if="stepIndex === 1"
-          v-model="wizardState.formData"
-          :greenhouse-id="wizardState.formData.greenhouseId"
-          @zone-selected="onZoneSelected"
-        />
+        <div v-if="stepIndex === 1" class="space-y-4">
+          <p class="text-sm text-[color:var(--text-muted)]">
+            TODO: Компонент WizardStepZone будет создан позже
+          </p>
+          <p class="text-sm text-[color:var(--text-muted)]">
+            Zone ID: {{ wizardState.formData.zoneId || 'не выбрана' }}
+          </p>
+        </div>
 
         <!-- Шаг 3: Выбор/создание растения -->
-        <WizardStepPlant
-          v-if="stepIndex === 2"
-          v-model="wizardState.formData"
-          @plant-selected="onPlantSelected"
-        />
+        <div v-if="stepIndex === 2" class="space-y-4">
+          <p class="text-sm text-[color:var(--text-muted)]">
+            TODO: Компонент WizardStepPlant будет создан позже
+          </p>
+          <p class="text-sm text-[color:var(--text-muted)]">
+            Plant ID: {{ wizardState.formData.plantId || 'не выбрано' }}
+          </p>
+        </div>
 
         <!-- Шаг 4: Выбор/создание рецепта -->
-        <WizardStepRecipe
-          v-if="stepIndex === 3"
-          v-model="wizardState.formData"
-          :plant-id="wizardState.formData.plantId"
-          @recipe-selected="onRecipeSelected"
-        />
+        <div v-if="stepIndex === 3" class="space-y-4">
+          <p class="text-sm text-[color:var(--text-muted)]">
+            TODO: Компонент WizardStepRecipe будет создан позже
+          </p>
+          <p class="text-sm text-[color:var(--text-muted)]">
+            Recipe ID: {{ wizardState.formData.recipeId || 'не выбран' }}
+          </p>
+        </div>
 
         <!-- Шаг 5: Параметры запуска -->
-        <WizardStepStart
-          v-if="stepIndex === 4"
-          v-model="wizardState.formData"
-          :recipe="selectedRecipe"
-        />
+        <div v-if="stepIndex === 4" class="space-y-4">
+          <p class="text-sm text-[color:var(--text-muted)]">
+            TODO: Компонент WizardStepStart будет создан позже
+          </p>
+          <div class="space-y-2">
+            <label class="block text-sm font-medium">Дата посадки</label>
+            <input
+              v-model="wizardState.formData.plantingAt"
+              type="datetime-local"
+              class="input-field w-full"
+            />
+          </div>
+        </div>
       </template>
     </WizardBase>
   </Modal>

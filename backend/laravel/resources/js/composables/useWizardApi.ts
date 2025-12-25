@@ -106,10 +106,11 @@ export function useWizardApi() {
 
   /**
    * Получить список рецептов
+   * Если указан plantId, фильтрует рецепты по растению
    */
   const getRecipes = async (plantId?: number) => {
     const url = plantId 
-      ? `/plants/${plantId}/recipes`
+      ? `/recipes?plant_id=${plantId}` // Используем query параметр вместо nested route
       : '/recipes'
     const response = await api.get(url)
     return response.data?.data || []
@@ -125,9 +126,10 @@ export function useWizardApi() {
 
   /**
    * Запустить цикл выращивания
+   * Использует endpoint POST /api/zones/{zone_id}/grow-cycles согласно routes/api.php
    */
   const startCycle = async (data: StartCycleRequest) => {
-    const response = await api.post(`/zones/${data.zone_id}/grow-cycle`, {
+    const response = await api.post(`/zones/${data.zone_id}/grow-cycles`, {
       recipe_id: data.recipe_id,
       planting_at: data.planting_at,
       batch_label: data.batch_label,
