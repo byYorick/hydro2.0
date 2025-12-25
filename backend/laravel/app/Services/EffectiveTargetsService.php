@@ -53,6 +53,9 @@ class EffectiveTargetsService
             'progress_model' => $phase->progress_model,
         ];
 
+        // Очищаем null значения из targets для чистого JSON
+        $effectiveTargets = $this->cleanNullValues($effectiveTargets);
+
         return [
             'cycle_id' => $cycle->id,
             'zone_id' => $cycle->zone_id,
