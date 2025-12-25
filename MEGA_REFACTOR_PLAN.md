@@ -177,6 +177,18 @@
 - ✅ `php artisan migrate:fresh` проходит.
 - ✅ Схема соответствует новой модели, legacy таблиц нет.
 
+#### ⚠️ 1.5. Обнаруженный legacy код (требует удаления в Этапе 2)
+Обнаружены упоминания `ZoneRecipeInstance` в следующих файлах:
+- `app/Models/ZoneRecipeInstance.php` - модель существует, но таблица удалена
+- `app/Models/Zone.php` - метод `recipeInstance()` помечен как @deprecated
+- `app/Services/GrowCycleService.php` - импорт, но не используется
+- `app/Services/ZoneService.php` - методы `attachRecipe()`, `changePhase()`, `nextPhase()` используют legacy модель
+- `app/Services/RecipeService.php` - методы используют legacy модель
+- `app/Http/Controllers/GrowCycleWizardController.php` - использует legacy модель
+- И другие файлы (см. `backend/ETAP_1_LEGACY_CODE.md`)
+
+**Статус:** Legacy код обнаружен, требует удаления/замены в Этапе 2.1-2.2
+
 ---
 
 ### ✅ Этап 2. Laravel Backend: модели, сервисы, API, события
