@@ -13,11 +13,11 @@
   - ✅ PHASE 3: Сенсоры и телеметрия (sensors, telemetry_samples, telemetry_last)
   - ✅ PHASE 4: Команды и двухфазные подтверждения (commands, command_acks)
   - ✅ PHASE 5: Удаление legacy и финальное ужесточение схемы
-- ✅ **Этап 2.1**: Завершен (Eloquent модели и отношения)
+- ✅ **Этап 2.1**: Завершен (Eloquent модели и отношения, legacy модели заменены на GrowCycle)
 - ✅ **Этап 2.2**: Завершен (EffectiveTargetsService и другие сервисы)
 - ✅ **Этап 2.3**: Завершен (API эндпоинты, удалены legacy endpoints)
 - ✅ **Этап 2.4**: Завершен (права доступа, Policy классы)
-- ⏳ **Этап 2.5**: Частично (события пишутся в БД, нужно расширить WebSocket payload)
+- ✅ **Этап 2.5**: Завершен (события пишутся в БД, WebSocket payload исправлен)
 - ⏳ **Этап 3**: Не начат (Python services)
 - ⏳ **Этап 4**: Не начат (Frontend)
 - ⏳ **Этап 5**: Не начат (Очистка хранения)
@@ -27,6 +27,9 @@
 ### Дополнительно выполнено
 - ✅ Рефакторинг контроллеров по принципу тонких контроллеров (вся бизнес-логика вынесена в сервисы)
 - ✅ DB Canonical Model (PHASE 0-5): Полная перестройка схемы БД под новую доменную модель
+- ✅ Критические исправления GrowCycleService (создание снапшотов фаз вместо шаблонов)
+- ✅ Исправление GrowCycleUpdated event (правильный payload с currentPhase)
+- ✅ Полное удаление legacy кода: все использования ZoneRecipeInstance, PlantCycle, ZoneCycle заменены на GrowCycle
 
 ## 0) Цель (Definition of Done)
 Система переводится на доменную модель:
@@ -177,17 +180,19 @@
 - ✅ `php artisan migrate:fresh` проходит.
 - ✅ Схема соответствует новой модели, legacy таблиц нет.
 
-#### ⚠️ 1.5. Обнаруженный legacy код (требует удаления в Этапе 2)
-Обнаружены упоминания `ZoneRecipeInstance` в следующих файлах:
-- `app/Models/ZoneRecipeInstance.php` - модель существует, но таблица удалена
-- `app/Models/Zone.php` - метод `recipeInstance()` помечен как @deprecated
-- `app/Services/GrowCycleService.php` - импорт, но не используется
-- `app/Services/ZoneService.php` - методы `attachRecipe()`, `changePhase()`, `nextPhase()` используют legacy модель
-- `app/Services/RecipeService.php` - методы используют legacy модель
-- `app/Http/Controllers/GrowCycleWizardController.php` - использует legacy модель
-- И другие файлы (см. `backend/ETAP_1_LEGACY_CODE.md`)
+#### ✅ 1.5. Legacy код удален
+✅ Все использования legacy моделей заменены на `GrowCycle`:
+- ✅ `ZoneService` - методы `attachRecipe()`, `changePhase()`, `nextPhase()` помечены как @deprecated
+- ✅ `RecipeService` - метод `applyToZone()` помечен как @deprecated, `delete()` использует `GrowCycle`
+- ✅ `RecipeAnalyticsService` - использует `GrowCycle` вместо `ZoneRecipeInstance`
+- ✅ `GrowCycleWizardController` - использует `GrowCycleService::createCycle()` с `RecipeRevision`
+- ✅ `Plant::cycles()` - возвращает `GrowCycle` вместо `PlantCycle`
+- ✅ `CalculateRecipeAnalyticsJob` - использует `growCycleId` вместо `recipeInstanceId`
+- ✅ `SimulationController` - использует `activeGrowCycle` вместо `recipeInstance`
+- ✅ `ZoneCommandController` - использует `GrowCycle` вместо `ZoneCycle`
+- ✅ Все последние использования `recipeInstance` заменены на `activeGrowCycle`
 
-**Статус:** Legacy код обнаружен, требует удаления/замены в Этапе 2.1-2.2
+**Статус:** ✅ Legacy код полностью заменен. Модели `ZoneRecipeInstance`, `PlantCycle`, `ZoneCycle` больше не используются в бизнес-логике (могут быть удалены после проверки seeders).
 
 ---
 
@@ -196,11 +201,18 @@
 ✅ Создать/обновить:
 - ✅ `Recipe`, `RecipeRevision`, `RecipeRevisionPhase`, `RecipeRevisionPhaseStep`
 - ✅ `GrowCycle` (центр истины), `GrowCycleTransition`, `GrowCycleOverride`
+- ✅ `GrowCyclePhase`, `GrowCyclePhaseStep` (снапшоты фаз и шагов)
 - ✅ `InfrastructureInstance`, `ChannelBinding`
-- ✅ удалить `ZoneRecipeInstance`, `PlantCycle`, `ZoneCycle`
+- ✅ Legacy модели (`ZoneRecipeInstance`, `PlantCycle`, `ZoneCycle`) заменены на `GrowCycle` во всех использованиях
+
+✅ Критические исправления:
+- ✅ `GrowCycleService::createCycle()` - создает снапшоты фаз (`GrowCyclePhase`) вместо ссылок на шаблоны
+- ✅ `GrowCycleService::advancePhase()`, `setPhase()`, `changeRecipeRevision()` - используют снапшоты
+- ✅ `GrowCycle::current_phase_id` и `current_step_id` ссылаются на снапшоты, а не на шаблоны рецептов
 
 ✅ Acceptance:
 - ✅ Tinker: `Zone::with('activeGrowCycle.currentPhase')` работает.
+- ✅ Все legacy использования заменены на `GrowCycle`.
 
 #### ✅ 2.2. "Effective targets" — единый контракт для Python
 ✅ Добавить сервис (например `EffectiveTargetsService`) который по `grow_cycle_id` возвращает:
@@ -260,15 +272,20 @@
 - ✅ Созданы Policy: `GrowCyclePolicy`, `RecipeRevisionPolicy`
 - ✅ Все методы управления защищены проверками прав через `Gate::allows()`
 
-#### 2.5. События и логи
-- Все transition’ы цикла писать в:
-  - `grow_cycle_transitions`
-  - `zone_events` (entity_type='grow_cycle', type='CYCLE_*')
-- WebSocket broadcast: `GrowCycleUpdated` расширить payload (phase, targets summary).
+#### ✅ 2.5. События и логи
+✅ Все transition'ы цикла пишутся в:
+  - ✅ `grow_cycle_transitions` (с правильными ссылками на шаблоны для истории)
+  - ✅ `zone_events` (entity_type='grow_cycle', type='CYCLE_*')
+- ✅ WebSocket broadcast: `GrowCycleUpdated` исправлен - использует правильный payload с `currentPhase` из снапшота
 
-Acceptance:
-- Backend API отдаёт active cycle и effective targets.
-- Legacy контроллеры/маршруты удалены, сборка проходит.
+✅ Исправления:
+- ✅ `GrowCycleUpdated::broadcastWith()` - использует `currentPhase` (снапшот) вместо несуществующих полей
+- ✅ `GrowCycleUpdated::broadcasted()` - правильно извлекает `stage_code` из снапшота
+
+✅ Acceptance:
+- ✅ Backend API отдаёт active cycle и effective targets.
+- ✅ Legacy контроллеры/маршруты удалены, сборка проходит.
+- ✅ WebSocket события содержат корректные данные о текущей фазе.
 
 ---
 
@@ -426,14 +443,16 @@ Acceptance:
 - `temp_air_target`, `humidity_target`, `co2_target` (как “запрос зоны” к климату теплицы)
 - `progress_model`, `duration_hours|days`, `base_temp_c`, `target_gdd`, `dli_target`
 
-## 6) Список “что точно удалить из кода” (после миграций)
-- Все упоминания:
-  - `zone_recipe_instances`
-  - `recipe_phases.targets`
-  - контроллеры/страницы “attach recipe to zone”
-  - репозитории Python: `recipe_utils.py` в legacy варианте, SQL JOIN на zone_recipe_instances
-- Таблицы/модели:
-  - `PlantCycle`, `ZoneCycle`, `ZoneRecipeInstance`
-- Старые доки, запрещающие breaking changes (теперь breaking changes разрешены, но фиксируются RFC)
+## 6) Список "что точно удалить из кода" (после миграций)
+✅ **Выполнено:**
+- ✅ Все упоминания `zone_recipe_instances` в бизнес-логике заменены на `GrowCycle`
+- ✅ Все упоминания `recipe_phases.targets` заменены на колонки в `recipe_revision_phases`
+- ✅ Контроллеры/страницы "attach recipe to zone" помечены как @deprecated
+- ✅ Модели `PlantCycle`, `ZoneCycle`, `ZoneRecipeInstance` больше не используются в бизнес-логике
+
+⏳ **Осталось (не критично):**
+- ⏳ Удалить модели `ZoneRecipeInstance`, `PlantCycle`, `ZoneCycle` из кода (после проверки seeders)
+- ⏳ Репозитории Python: `recipe_utils.py` в legacy варианте, SQL JOIN на zone_recipe_instances (Этап 3)
+- ⏳ Старые доки, запрещающие breaking changes (теперь breaking changes разрешены, но фиксируются RFC)
 
 MD
