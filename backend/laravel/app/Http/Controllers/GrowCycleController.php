@@ -534,12 +534,49 @@ class GrowCycleController extends Controller
     }
 
     /**
-     * Получить активный цикл (legacy метод для совместимости)
-     * GET /api/zones/{zone}/grow-cycle (alias)
+     * Получить активный цикл
+     * GET /api/zones/{zone}/grow-cycle
      */
     public function getActive(Request $request, Zone $zone): JsonResponse
     {
         return $this->show($request, $zone);
+    }
+
+    /**
+     * Получить все циклы для теплицы
+     * GET /api/greenhouses/{greenhouse}/grow-cycles
+     */
+    public function indexByGreenhouse(Request $request, \App\Models\Greenhouse $greenhouse): JsonResponse
+    {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+
+        try {
+            $cycles = GrowCycle::where('greenhouse_id', $greenhouse->id)
+                ->with(['zone', 'plant', 'recipeRevision.phases', 'currentPhase', 'currentStep'])
+                ->orderBy('started_at', 'desc')
+                ->paginate(50);
+
+            return response()->json([
+                'status' => 'ok',
+                'data' => $cycles,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to get grow cycles for greenhouse', [
+                'greenhouse_id' => $greenhouse->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
     }
 
     /**
