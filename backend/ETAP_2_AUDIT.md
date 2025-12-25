@@ -160,13 +160,25 @@
 - ✅ Все API эндпоинты реализованы
 - ✅ Policies созданы и используются в контроллерах
 
-### ❌ Требует исправления:
+### ❌ Критические проблемы:
+
 1. **Legacy модели все еще используются:**
    - `ZoneRecipeInstance` - 12 файлов
    - `PlantCycle` - 2 файла
    - `ZoneCycle` - 2 файла
 
-2. **Потенциальная проблема с `GrowCycleTransition`:**
+2. **КРИТИЧНО: `GrowCycleService::create()` устанавливает `current_phase_id` на шаблон вместо снапшота:**
+   - В строке 63: `'current_phase_id' => $firstPhase->id,` где `$firstPhase` это `RecipeRevisionPhase` (шаблон)
+   - Но FK `current_phase_id` в `grow_cycles` ссылается на `grow_cycle_phases` (снапшоты)
+   - **Это приведет к ошибке FK constraint при создании цикла!**
+   - Нужно сначала создать снапшот фазы (`GrowCyclePhase`), затем ссылаться на него
+
+3. **КРИТИЧНО: `GrowCycleUpdated` event использует несуществующие поля:**
+   - В `broadcastWith()` используются `current_stage_code` и `current_stage_started_at`
+   - Эти поля не существуют в модели `GrowCycle` (удалены в миграции)
+   - Нужно заменить на `currentPhase` и `phase_started_at`
+
+4. **Потенциальная проблема с `GrowCycleTransition`:**
    - `from_phase_id` и `to_phase_id` ссылаются на `RecipeRevisionPhase` (шаблоны), а не на `GrowCyclePhase` (снапшоты)
    - Это может быть проблемой для отслеживания переходов между снапшотами в конкретном цикле
    - Возможно, нужно добавить дополнительные поля для ссылок на снапшоты или изменить логику
