@@ -18,6 +18,7 @@
 #include "config_storage.h"
 #include "i2c_bus.h"
 #include "esp_log.h"
+#include "log_throttle.h"
 #include "freertos/task.h"
 #include <string.h>
 #include <math.h>
@@ -70,7 +71,9 @@ static void task_sensors(void *pvParameters) {
                 extern esp_err_t ec_node_publish_telemetry_callback(void *);
                 ec_node_publish_telemetry_callback(NULL);
             } else {
-                ESP_LOGW(TAG, "MQTT not connected, skipping sensor poll");
+                if (log_throttle_allow("ec_mqtt_offline", 5000)) {
+                    ESP_LOGW(TAG, "MQTT not connected, skipping sensor poll");
+                }
             }
             
             // Update OLED UI with current EC values (EC-специфичная логика)

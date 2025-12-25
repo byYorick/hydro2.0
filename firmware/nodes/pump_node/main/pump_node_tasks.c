@@ -20,6 +20,7 @@
 #include "node_telemetry_engine.h"
 #include "node_utils.h"
 #include "node_watchdog.h"
+#include "log_throttle.h"
 #include "heartbeat_task.h"
 #include "esp_log.h"
 #include "esp_idf_version.h"
@@ -110,7 +111,9 @@ static void task_current_poll(void *pvParameters) {
         node_watchdog_reset();
         
         if (!mqtt_manager_is_connected()) {
-            ESP_LOGW(TAG, "MQTT not connected, skipping current poll");
+            if (log_throttle_allow("pump_mqtt_offline", 5000)) {
+                ESP_LOGW(TAG, "MQTT not connected, skipping current poll");
+            }
             continue;
         }
         
@@ -122,7 +125,9 @@ static void task_current_poll(void *pvParameters) {
             // Публикация телеметрии через node_framework
             pump_node_publish_telemetry_callback(NULL);
         } else {
-            ESP_LOGW(TAG, "Failed to read INA209: %s", esp_err_to_name(err));
+            if (log_throttle_allow("pump_ina209_read", 5000)) {
+                ESP_LOGW(TAG, "Failed to read INA209: %s", esp_err_to_name(err));
+            }
         }
     }
 }
@@ -330,13 +335,17 @@ void pump_node_update_current_poll_interval(void) {
     // КРИТИЧНО: Используем статический буфер вместо стека для предотвращения переполнения
     static char config_json[CONFIG_STORAGE_MAX_JSON_SIZE];
     if (config_storage_get_json(config_json, sizeof(config_json)) != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to load config for poll interval update");
+        if (log_throttle_allow("pump_poll_cfg_load", 10000)) {
+            ESP_LOGW(TAG, "Failed to load config for poll interval update");
+        }
         return;
     }
     
     cJSON *config = cJSON_Parse(config_json);
     if (config == NULL) {
-        ESP_LOGW(TAG, "Failed to parse config for poll interval update");
+        if (log_throttle_allow("pump_poll_cfg_parse", 10000)) {
+            ESP_LOGW(TAG, "Failed to parse config for poll interval update");
+        }
         return;
     }
     

@@ -15,6 +15,7 @@ idf_component_register(
         config_apply
         node_framework
         node_utils
+        log_throttle
         pump_driver
         i2c_bus
         ina209

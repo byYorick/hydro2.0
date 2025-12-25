@@ -57,7 +57,7 @@
         <Card
           v-for="crop in zonesByCrop"
           :key="crop.cropName"
-          class="hover:border-[color:var(--border-strong)] transition-colors"
+          class="surface-card-hover hover:border-[color:var(--border-strong)] transition-all duration-200"
         >
           <div class="flex items-start justify-between mb-3">
             <div>
@@ -178,7 +178,7 @@
         <Card
           v-for="recipe in activeRecipes"
           :key="recipe.id"
-          class="hover:border-[color:var(--border-strong)] transition-colors"
+          class="surface-card-hover hover:border-[color:var(--border-strong)] transition-all duration-200"
         >
           <div class="flex items-start justify-between mb-3">
             <div>

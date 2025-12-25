@@ -5,7 +5,7 @@
     </div>
 
     <!-- Общий обзор системы -->
-    <Card class="bg-[color:var(--bg-elevated)] border-[color:var(--border-muted)]">
+    <Card class="bg-[color:var(--bg-elevated)] border-[color:var(--border-muted)] surface-card-hover transition-all duration-200">
       <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         <div>
           <div class="text-[color:var(--text-muted)] text-sm mb-1">Система</div>
@@ -44,7 +44,7 @@
         <Card
           v-for="zone in allZones"
           :key="zone.id"
-          class="hover:border-[color:var(--border-strong)] transition-colors"
+          class="surface-card-hover hover:border-[color:var(--border-strong)] transition-all duration-200"
         >
           <div class="flex items-start justify-between mb-3">
             <div>
@@ -88,7 +88,7 @@
     <!-- Активные алерты -->
     <div v-if="activeAlerts.length > 0" class="space-y-4">
       <h2 class="text-md font-semibold">Активные алерты</h2>
-      <Card>
+      <Card class="surface-card-hover hover:border-[color:var(--border-strong)] transition-all duration-200">
         <div class="space-y-2">
           <div
             v-for="alert in activeAlerts"

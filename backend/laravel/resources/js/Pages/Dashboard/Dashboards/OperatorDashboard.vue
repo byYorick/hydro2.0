@@ -32,7 +32,7 @@
         <Button size="sm" variant="secondary" @click="resolveIssues(zonesNeedingAttention[0]?.id)">Следующая</Button>
       </div>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <Card v-for="zone in zonesNeedingAttention" :key="zone.id" class="border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)]">
+        <Card v-for="zone in zonesNeedingAttention" :key="zone.id" class="border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] surface-card-hover transition-all duration-200">
           <div class="flex items-start justify-between">
             <div>
               <div class="text-sm font-semibold">{{ zone.name }}</div>

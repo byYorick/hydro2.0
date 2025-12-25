@@ -26,6 +26,7 @@
 #include "esp_idf_version.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
+#include "log_throttle.h"
 #include "node_watchdog.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -363,7 +364,9 @@ void ph_node_start_tasks(void) {
  */
 void ph_node_publish_telemetry(void) {
     if (!mqtt_manager_is_connected()) {
-        ESP_LOGW(TAG, "MQTT not connected, skipping telemetry");
+        if (log_throttle_allow("ph_mqtt_offline", 5000)) {
+            ESP_LOGW(TAG, "MQTT not connected, skipping telemetry");
+        }
         return;
     }
     
@@ -386,7 +389,9 @@ void ph_node_publish_telemetry(void) {
         using_stub = trema_ph_is_using_stub_values();
         
         if (!read_success || isnan(ph_value)) {
-            ESP_LOGW(TAG, "Failed to read pH value, using stub");
+            if (log_throttle_allow("ph_read_failed", 10000)) {
+                ESP_LOGW(TAG, "Failed to read pH value, using stub");
+            }
             ph_value = 6.5f;  // Neutral value
             using_stub = true;
         } else {
@@ -394,7 +399,9 @@ void ph_node_publish_telemetry(void) {
             is_stable = trema_ph_get_stability();
         }
     } else {
-        ESP_LOGW(TAG, "pH sensor not initialized, using stub value");
+        if (log_throttle_allow("ph_not_init", 10000)) {
+            ESP_LOGW(TAG, "pH sensor not initialized, using stub value");
+        }
         ph_value = 6.5f;
         using_stub = true;
     }
@@ -411,7 +418,9 @@ void ph_node_publish_telemetry(void) {
     );
     
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to publish telemetry via node_telemetry_engine: %s", esp_err_to_name(err));
+        if (log_throttle_allow("ph_telemetry_publish", 5000)) {
+            ESP_LOGW(TAG, "Failed to publish telemetry via node_telemetry_engine: %s", esp_err_to_name(err));
+        }
     }
 }
 
@@ -445,7 +454,9 @@ void ph_node_publish_pump_current_telemetry(void) {
     );
     
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to publish pump current telemetry: %s", esp_err_to_name(err));
+        if (log_throttle_allow("ph_current_publish", 5000)) {
+            ESP_LOGW(TAG, "Failed to publish pump current telemetry: %s", esp_err_to_name(err));
+        }
     }
 }
 

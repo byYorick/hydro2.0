@@ -21,6 +21,7 @@
 #include "esp_mac.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "log_throttle.h"
 #include "cJSON.h"
 #include <string.h>
 #include <stdio.h>
@@ -566,7 +567,9 @@ static esp_err_t mqtt_manager_publish_internal(const char *topic, const char *da
     }
 
     if (!s_is_connected) {
-        ESP_LOGW(TAG, "MQTT not connected, cannot publish to %s", topic);
+        if (log_throttle_allow("mqtt_pub_offline", 5000)) {
+            ESP_LOGW(TAG, "MQTT not connected, cannot publish to %s", topic);
+        }
         return ESP_ERR_INVALID_STATE;
     }
 

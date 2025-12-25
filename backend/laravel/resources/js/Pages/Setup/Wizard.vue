@@ -2,7 +2,7 @@
   <AppLayout>
     <h1 class="text-lg font-semibold mb-4">Мастер настройки системы</h1>
     
-    <Card>
+    <Card variant="elevated" class="surface-card-hover transition-all duration-200">
       <div class="space-y-6">
         <!-- Шаг 1: Выбор/Создание теплицы -->
         <div class="border-l-4 border-[color:var(--accent-green)] pl-4">

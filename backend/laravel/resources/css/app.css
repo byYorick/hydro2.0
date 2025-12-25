@@ -294,12 +294,12 @@ body {
 .btn-primary {
   background: var(--btn-primary-bg);
   color: var(--btn-primary-text);
-  box-shadow: 0 12px 30px rgba(63, 220, 120, 0.2);
+  box-shadow: 0 12px 30px color-mix(in srgb, var(--accent-green) 22%, transparent);
 }
 
 .btn-primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 18px 40px rgba(63, 220, 120, 0.25);
+  box-shadow: 0 18px 40px color-mix(in srgb, var(--accent-green) 28%, transparent);
 }
 
 .btn-secondary {
@@ -310,7 +310,7 @@ body {
 
 .btn-secondary:hover {
   border-color: var(--border-strong);
-  box-shadow: 0 12px 28px rgba(8, 12, 18, 0.2);
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--text-primary) 12%, transparent);
 }
 
 .btn-outline {
@@ -321,7 +321,7 @@ body {
 
 .btn-outline:hover {
   border-color: var(--accent-green);
-  box-shadow: 0 10px 24px rgba(63, 220, 120, 0.18);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--accent-green) 20%, transparent);
 }
 
 .btn-ghost {
@@ -332,7 +332,7 @@ body {
 
 .btn-ghost:hover {
   color: var(--text-primary);
-  background: rgba(63, 220, 120, 0.08);
+  background: color-mix(in srgb, var(--accent-green) 12%, transparent);
 }
 
 .badge {
@@ -402,7 +402,7 @@ body {
 .input-select:focus {
   outline: none;
   border-color: var(--accent-green);
-  box-shadow: 0 0 0 2px rgba(63, 220, 120, 0.18);
+  box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
 .input-field::placeholder {

@@ -11,6 +11,7 @@
 #include "oled_ui.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "log_throttle.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
@@ -153,7 +154,9 @@ static esp_err_t flush_batch_internal(void) {
     }
 
     if (!mqtt_manager_is_connected()) {
-        ESP_LOGW(TAG, "MQTT not connected, keeping telemetry batch");
+        if (log_throttle_allow("telemetry_offline", 10000)) {
+            ESP_LOGW(TAG, "MQTT not connected, keeping telemetry batch");
+        }
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -232,7 +235,9 @@ static esp_err_t add_to_batch(
 
     // Проверка на NaN и Inf
     if (isnan(value) || isinf(value)) {
-        ESP_LOGW(TAG, "Invalid telemetry value (NaN/Inf) for channel %s, dropping", channel);
+        if (log_throttle_allow("telemetry_invalid_value", 5000)) {
+            ESP_LOGW(TAG, "Invalid telemetry value (NaN/Inf) for channel %s, dropping", channel);
+        }
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -285,7 +290,9 @@ static esp_err_t add_to_batch(
             }
             s_telemetry_engine.batch.count++;
         } else {
-            ESP_LOGW(TAG, "Telemetry batch is full, dropping message");
+            if (log_throttle_allow("telemetry_batch_full", 5000)) {
+                ESP_LOGW(TAG, "Telemetry batch is full, dropping message");
+            }
         }
 
         xSemaphoreGive(s_telemetry_engine.mutex);

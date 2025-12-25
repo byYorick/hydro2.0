@@ -11,6 +11,7 @@
 #include "cJSON.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "log_throttle.h"
 #include <string.h>
 
 static const char *TAG = "config_storage";
@@ -23,6 +24,11 @@ static char s_config_json[CONFIG_STORAGE_MAX_JSON_SIZE] = {0};
 static bool s_config_loaded = false;
 static nvs_handle_t s_nvs_handle = 0;
 static SemaphoreHandle_t s_config_mutex = NULL;
+// Ревизия конфига должна меняться при любых обновлениях s_config_json
+static uint32_t s_config_revision = 0;
+static config_storage_mqtt_t s_cached_mqtt;
+static uint32_t s_cached_mqtt_revision = 0;
+static bool s_cached_mqtt_valid = false;
 
 static bool config_storage_lock(void) {
     if (s_config_mutex == NULL) {
@@ -174,6 +180,8 @@ esp_err_t config_storage_load(void) {
     
     cJSON_Delete(config);
     s_config_loaded = true;
+    s_config_revision++;
+    s_cached_mqtt_valid = false;
     ESP_LOGI(TAG, "NodeConfig loaded from NVS (WiFi: %s, MQTT: %s)", 
              has_wifi ? "yes" : "no", has_mqtt ? "yes" : "no");
     config_storage_unlock();
@@ -476,6 +484,8 @@ esp_err_t config_storage_save(const char *json_config, size_t json_len) {
     strncpy(s_config_json, final_json, sizeof(s_config_json) - 1);
     s_config_json[sizeof(s_config_json) - 1] = '\0';
     s_config_loaded = true;
+    s_config_revision++;
+    s_cached_mqtt_valid = false;
     
     ESP_LOGI(TAG, "NodeConfig saved to NVS (%zu bytes, committed)", final_json_len);
     
@@ -690,28 +700,44 @@ esp_err_t config_storage_get_mqtt(config_storage_mqtt_t *mqtt) {
         return ESP_ERR_TIMEOUT;
     }
     if (!s_config_loaded) {
-        ESP_LOGW(TAG, "config_storage_get_mqtt: Config not loaded");
+        if (log_throttle_allow("cfg_mqtt_not_loaded", 30000)) {
+            ESP_LOGW(TAG, "config_storage_get_mqtt: Config not loaded");
+        }
         config_storage_unlock();
         return ESP_ERR_NOT_FOUND;
     }
+
+    if (s_cached_mqtt_valid && s_cached_mqtt_revision == s_config_revision) {
+        memcpy(mqtt, &s_cached_mqtt, sizeof(config_storage_mqtt_t));
+        config_storage_unlock();
+        return ESP_OK;
+    }
     
-    ESP_LOGI(TAG, "config_storage_get_mqtt: Parsing config JSON (%zu bytes)", strlen(s_config_json));
+    if (log_throttle_allow("cfg_mqtt_parse", 30000)) {
+        ESP_LOGI(TAG, "config_storage_get_mqtt: Parsing config JSON (%zu bytes)", strlen(s_config_json));
+    }
     cJSON *config = cJSON_Parse(s_config_json);
     if (config == NULL) {
-        ESP_LOGE(TAG, "config_storage_get_mqtt: Failed to parse config JSON");
+        if (log_throttle_allow("cfg_mqtt_parse_fail", 30000)) {
+            ESP_LOGE(TAG, "config_storage_get_mqtt: Failed to parse config JSON");
+        }
         config_storage_unlock();
         return ESP_FAIL;
     }
     
     cJSON *mqtt_obj = cJSON_GetObjectItem(config, "mqtt");
     if (mqtt_obj == NULL || !cJSON_IsObject(mqtt_obj)) {
-        ESP_LOGW(TAG, "config_storage_get_mqtt: MQTT section not found in config");
+        if (log_throttle_allow("cfg_mqtt_missing", 30000)) {
+            ESP_LOGW(TAG, "config_storage_get_mqtt: MQTT section not found in config");
+        }
         cJSON_Delete(config);
         config_storage_unlock();
         return ESP_ERR_NOT_FOUND;
     }
     
-    ESP_LOGI(TAG, "config_storage_get_mqtt: MQTT section found, extracting fields");
+    if (log_throttle_allow("cfg_mqtt_extract", 30000)) {
+        ESP_LOGI(TAG, "config_storage_get_mqtt: MQTT section found, extracting fields");
+    }
     
     // Заполнение структуры с значениями по умолчанию
     memset(mqtt, 0, sizeof(config_storage_mqtt_t));
@@ -721,13 +747,19 @@ esp_err_t config_storage_get_mqtt(config_storage_mqtt_t *mqtt) {
         if (item->valuestring && strlen(item->valuestring) > 0) {
             strncpy(mqtt->host, item->valuestring, sizeof(mqtt->host) - 1);
             mqtt->host[sizeof(mqtt->host) - 1] = '\0';
-            ESP_LOGI(TAG, "config_storage_get_mqtt: MQTT host='%s' (len=%zu)", 
-                    mqtt->host, strlen(mqtt->host));
+            if (log_throttle_allow("cfg_mqtt_host", 30000)) {
+                ESP_LOGI(TAG, "config_storage_get_mqtt: MQTT host='%s' (len=%zu)", 
+                        mqtt->host, strlen(mqtt->host));
+            }
         } else {
-            ESP_LOGW(TAG, "config_storage_get_mqtt: MQTT host field is empty string");
+            if (log_throttle_allow("cfg_mqtt_host_empty", 30000)) {
+                ESP_LOGW(TAG, "config_storage_get_mqtt: MQTT host field is empty string");
+            }
         }
     } else {
-        ESP_LOGW(TAG, "config_storage_get_mqtt: MQTT host field not found or invalid");
+        if (log_throttle_allow("cfg_mqtt_host_missing", 30000)) {
+            ESP_LOGW(TAG, "config_storage_get_mqtt: MQTT host field not found or invalid");
+        }
     }
     
     if ((item = cJSON_GetObjectItem(mqtt_obj, "port")) && cJSON_IsNumber(item)) {
@@ -763,6 +795,9 @@ esp_err_t config_storage_get_mqtt(config_storage_mqtt_t *mqtt) {
     }
     
     cJSON_Delete(config);
+    memcpy(&s_cached_mqtt, mqtt, sizeof(config_storage_mqtt_t));
+    s_cached_mqtt_revision = s_config_revision;
+    s_cached_mqtt_valid = true;
     config_storage_unlock();
     return ESP_OK;
 }
@@ -1002,4 +1037,8 @@ void config_storage_deinit(void) {
     }
     s_config_loaded = false;
     memset(s_config_json, 0, sizeof(s_config_json));
+    s_config_revision = 0;
+    s_cached_mqtt_valid = false;
+    s_cached_mqtt_revision = 0;
+    memset(&s_cached_mqtt, 0, sizeof(s_cached_mqtt));
 }

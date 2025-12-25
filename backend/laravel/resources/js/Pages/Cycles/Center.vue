@@ -338,7 +338,7 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import { Link, router, usePage } from '@inertiajs/vue3'
+import { Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
@@ -346,6 +346,7 @@ import Pagination from '@/Components/Pagination.vue'
 import ZoneActionModal from '@/Components/ZoneActionModal.vue'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
 import { translateStatus } from '@/utils/i18n'
+import { useRole } from '@/composables/useRole'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
 import { useCommands } from '@/composables/useCommands'
@@ -417,10 +418,9 @@ interface Props {
 }
 
 const props = defineProps<Props>()
-const page = usePage()
-const role = computed(() => page.props.auth?.user?.role || 'viewer')
-const canOperate = computed(() => ['admin', 'operator'].includes(role.value))
-const canConfigure = computed(() => ['admin', 'agronomist'].includes(role.value))
+const { isAdmin, isOperator, isAgronomist } = useRole()
+const canOperate = computed(() => isAdmin.value || isOperator.value)
+const canConfigure = computed(() => isAdmin.value || isAgronomist.value)
 
 const query = ref('')
 const statusFilter = ref('')

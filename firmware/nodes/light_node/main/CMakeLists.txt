@@ -19,6 +19,7 @@ idf_component_register(
         node_framework
         heartbeat_task
         node_utils
+        log_throttle
         trema_light
         i2c_bus
         oled_ui

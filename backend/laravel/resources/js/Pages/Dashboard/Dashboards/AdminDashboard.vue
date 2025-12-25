@@ -13,7 +13,7 @@
     </div>
 
     <!-- Системная статистика -->
-    <Card class="bg-[color:var(--bg-elevated)] border-[color:var(--border-muted)]">
+    <Card class="bg-[color:var(--bg-elevated)] border-[color:var(--border-muted)] surface-card-hover transition-all duration-200">
       <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         <div class="flex items-center gap-3">
           <div class="w-12 h-12 rounded-lg bg-[color:var(--badge-success-bg)] border border-[color:var(--badge-success-border)] flex items-center justify-center">
@@ -84,7 +84,7 @@
         <Card
           v-for="zone in problematicZones"
           :key="zone.id"
-          class="hover:border-[color:var(--border-strong)] transition-colors"
+          class="surface-card-hover hover:border-[color:var(--border-strong)] transition-all duration-200"
         >
           <div class="flex items-start justify-between mb-2">
             <div>
@@ -126,7 +126,7 @@
           <Button size="sm" variant="outline">Полный аудит</Button>
         </Link>
       </div>
-      <Card>
+      <Card class="surface-card-hover hover:border-[color:var(--border-strong)] transition-all duration-200">
         <div v-if="recentUserActions.length > 0" class="space-y-2">
           <div
             v-for="action in recentUserActions"
@@ -154,7 +154,7 @@
     </div>
 
     <!-- Быстрые действия -->
-    <Card class="bg-[color:var(--bg-elevated)] border-[color:var(--border-muted)]">
+    <Card class="bg-[color:var(--bg-elevated)] border-[color:var(--border-muted)] surface-card-hover transition-all duration-200">
       <h3 class="text-sm font-semibold mb-3">Быстрые действия</h3>
       <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Link href="/admin/users">

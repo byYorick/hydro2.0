@@ -74,6 +74,19 @@
                 Пауза
               </Button>
               <Button
+                v-if="activeGrowCycle?.status === 'PAUSED'"
+                size="sm"
+                variant="secondary"
+                class="flex-1 sm:flex-none"
+                :disabled="loading.cycleResume"
+                @click="onCycleResume"
+              >
+                <template v-if="loading.cycleResume">
+                  <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
+                </template>
+                Возобновить
+              </Button>
+              <Button
                 v-if="activeGrowCycle"
                 size="sm"
                 variant="danger"
@@ -519,6 +532,7 @@ import { useToast } from '@/composables/useToast'
 import { useModal } from '@/composables/useModal'
 import { useLoading } from '@/composables/useLoading'
 import { useTheme } from '@/composables/useTheme'
+import { useRole } from '@/composables/useRole'
 import { extractData } from '@/utils/apiHelpers'
 import { usePageProps } from '@/composables/usePageProps'
 import { DEBOUNCE_DELAY, ANIMATION_DELAY, TOAST_TIMEOUT } from '@/constants/timeouts'
@@ -734,11 +748,11 @@ const events = computed(() => (eventsProp.value || []) as ZoneEvent[])
 const cycles = computed(() => (cyclesProp.value || {}) as Record<string, Cycle>)
 
 // События цикла (теперь загружаются внутри CycleControlPanel)
-const userRole = computed(() => page.props.auth?.user?.role || 'viewer')
-const canOperateZone = computed(() => ['admin', 'operator', 'agronomist'].includes(userRole.value))
-const canManageDevices = computed(() => ['admin', 'operator'].includes(userRole.value))
-const canManageRecipe = computed(() => ['admin', 'operator', 'agronomist'].includes(userRole.value))
-const canManageCycle = computed(() => ['admin', 'operator', 'agronomist'].includes(userRole.value))
+const { isAdmin, isOperator, isAgronomist, hasAnyRole } = useRole()
+const canOperateZone = computed(() => hasAnyRole(['admin', 'operator', 'agronomist']))
+const canManageDevices = computed(() => hasAnyRole(['admin', 'operator']))
+const canManageRecipe = computed(() => hasAnyRole(['admin', 'operator', 'agronomist']))
+const canManageCycle = computed(() => isAdmin.value || isOperator.value || isAgronomist.value)
 
 // Вычисление прогресса фазы/рецепта на основе нормализованного current_phase (UTC)
 // ВАЖНО: все вычисления в UTC, отображение форматируется в локальное время

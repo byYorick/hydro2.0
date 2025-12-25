@@ -22,7 +22,7 @@
     </div>
 
     <!-- Визуализация связи с зоной -->
-    <Card v-if="device.zone" class="mb-3">
+    <Card v-if="device.zone" class="mb-3 surface-card-hover hover:border-[color:var(--border-strong)] transition-all duration-200">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-3">
           <div class="w-12 h-12 rounded-lg border-2 border-[color:var(--border-strong)] bg-[color:var(--bg-elevated)] flex items-center justify-center">
@@ -84,7 +84,7 @@
     </div>
 
     <div class="grid grid-cols-1 xl:grid-cols-3 gap-3">
-      <Card class="xl:col-span-2">
+      <Card class="xl:col-span-2 surface-card-hover hover:border-[color:var(--border-strong)] transition-all duration-200">
         <div class="flex items-center justify-between gap-2 mb-2">
           <div>
             <div class="text-sm font-semibold">Channels</div>
@@ -110,7 +110,7 @@
           @test="onTestPump" 
         />
       </Card>
-      <Card>
+      <Card class="surface-card-hover hover:border-[color:var(--border-strong)] transition-all duration-200">
         <div class="flex items-center justify-between mb-2">
           <div class="text-sm font-semibold">NodeConfig</div>
           <div class="text-[11px] text-[color:var(--text-dim)]" v-if="configLoading">Загрузка...</div>

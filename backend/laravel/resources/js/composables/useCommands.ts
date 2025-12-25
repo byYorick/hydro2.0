@@ -262,9 +262,9 @@ export function useCommands(showToast?: ToastHandler) {
       pendingCommands.value.set(commandId, command)
       
       // Показываем уведомление при завершении
-      if (normalizedStatus === 'completed' && showToast) {
+      if (normalizedStatus === 'DONE' && showToast) {
         showToast(`Команда "${command.type}" выполнена успешно`, 'success', TOAST_TIMEOUT.NORMAL)
-      } else if (normalizedStatus === 'failed' && showToast) {
+      } else if (normalizedStatus === 'FAILED' && showToast) {
         showToast(`Команда "${command.type}" завершилась с ошибкой: ${message || 'Неизвестная ошибка'}`, 'error', TOAST_TIMEOUT.LONG)
       }
     }

@@ -19,7 +19,7 @@
         <Card
           v-for="device in devices"
           :key="device.id"
-          class="hover:border-[color:var(--border-strong)] transition-colors"
+          class="surface-card-hover hover:border-[color:var(--border-strong)] transition-all duration-200"
         >
           <div class="flex items-start justify-between mb-3">
             <div>
@@ -108,7 +108,7 @@
 
     <!-- Системные метрики -->
     <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-      <Card>
+      <Card class="surface-card-hover hover:border-[color:var(--border-strong)] transition-all duration-200">
         <div class="text-[color:var(--text-muted)] text-sm mb-1">Нагрузка CPU</div>
         <div class="text-3xl font-bold">{{ systemMetrics.cpu || '-' }}%</div>
         <div class="w-full bg-[color:var(--border-muted)] rounded-full h-2 mt-2">
@@ -118,7 +118,7 @@
           />
         </div>
       </Card>
-      <Card>
+      <Card class="surface-card-hover hover:border-[color:var(--border-strong)] transition-all duration-200">
         <div class="text-[color:var(--text-muted)] text-sm mb-1">Память</div>
         <div class="text-3xl font-bold">{{ systemMetrics.memory || '-' }}%</div>
         <div class="w-full bg-[color:var(--border-muted)] rounded-full h-2 mt-2">
@@ -128,13 +128,13 @@
           />
         </div>
       </Card>
-      <Card>
+      <Card class="surface-card-hover hover:border-[color:var(--border-strong)] transition-all duration-200">
         <div class="text-[color:var(--text-muted)] text-sm mb-1">База данных</div>
         <div class="text-3xl font-bold" :class="systemMetrics.dbStatus === 'OK' ? 'text-[color:var(--accent-green)]' : 'text-[color:var(--accent-red)]'">
           {{ systemMetrics.dbStatus === 'OK' ? '✅' : '❌' }}
         </div>
       </Card>
-      <Card>
+      <Card class="surface-card-hover hover:border-[color:var(--border-strong)] transition-all duration-200">
         <div class="text-[color:var(--text-muted)] text-sm mb-1">MQTT брокер</div>
         <div class="text-3xl font-bold" :class="systemMetrics.mqttStatus === 'OK' ? 'text-[color:var(--accent-green)]' : 'text-[color:var(--accent-red)]'">
           {{ systemMetrics.mqttStatus === 'OK' ? '✅' : '❌' }}

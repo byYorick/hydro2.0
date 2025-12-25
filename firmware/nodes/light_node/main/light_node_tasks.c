@@ -18,6 +18,7 @@
 #include "config_storage.h"
 #include "i2c_bus.h"
 #include "esp_log.h"
+#include "log_throttle.h"
 #include "freertos/task.h"
 #include <math.h>
 #include <string.h>
@@ -118,20 +119,26 @@ static void task_sensors(void *pvParameters) {
                         
                         // Принимаем как 0x06, так и 0x1B (разные версии датчика)
                         if (i2c_err == ESP_OK && (model_id == TREMA_LIGHT_MODEL_ID || model_id == 0x1B)) {
-                            ESP_LOGI(TAG, "Light sensor detected: model_id=0x%02X, address=0x%02X", model_id, TREMA_LIGHT_ADDR);
+                            if (log_throttle_allow("light_detected", 15000)) {
+                                ESP_LOGI(TAG, "Light sensor detected: model_id=0x%02X, address=0x%02X", model_id, TREMA_LIGHT_ADDR);
+                            }
                             model.sensor_status.i2c_connected = true;
                             
                             bool read_success = trema_light_read(&light_lux);
                             bool using_stub = trema_light_is_using_stub_values();
                             
                             if (read_success && !isnan(light_lux) && isfinite(light_lux) && light_lux >= 0.0f) {
-                                ESP_LOGI(TAG, "Light sensor value: %.0f lux", light_lux);
+                                if (log_throttle_allow("light_value", 15000)) {
+                                    ESP_LOGI(TAG, "Light sensor value: %.0f lux", light_lux);
+                                }
                                 model.lux_value = light_lux;  // Используем правильное поле lux_value
                                 model.sensor_status.using_stub = using_stub;
                                 model.sensor_status.has_error = false;  // Нет ошибки, если значение валидное
                                 model.sensor_status.error_msg[0] = '\0';  // Очищаем сообщение об ошибке
                                 if (using_stub) {
-                                    ESP_LOGW(TAG, "Sensor returned stub value, marking as error");
+                                    if (log_throttle_allow("light_stub_value", 10000)) {
+                                        ESP_LOGW(TAG, "Sensor returned stub value, marking as error");
+                                    }
                                     model.sensor_status.has_error = true;
                                     model.lux_value = NAN;
                                     strncpy(model.sensor_status.error_msg, "No sensor", sizeof(model.sensor_status.error_msg) - 1);
@@ -145,8 +152,10 @@ static void task_sensors(void *pvParameters) {
                                 model.sensor_status.error_msg[sizeof(model.sensor_status.error_msg) - 1] = '\0';
                             }
                         } else {
-                            ESP_LOGW(TAG, "Light sensor not detected: i2c_err=%s (code=%d), model_id=0x%02X (expected 0x%02X or 0x1B)", 
-                                     esp_err_to_name(i2c_err), i2c_err, model_id, TREMA_LIGHT_MODEL_ID);
+                            if (log_throttle_allow("light_not_detected", 10000)) {
+                                ESP_LOGW(TAG, "Light sensor not detected: i2c_err=%s (code=%d), model_id=0x%02X (expected 0x%02X or 0x1B)", 
+                                         esp_err_to_name(i2c_err), i2c_err, model_id, TREMA_LIGHT_MODEL_ID);
+                            }
                             model.sensor_status.i2c_connected = false;
                             model.sensor_status.has_error = true;
                             model.sensor_status.using_stub = true;
