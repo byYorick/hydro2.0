@@ -214,13 +214,24 @@ function initializeEchoOnLoad() {
 // Обработчик события teardown от echoClient.ts
 // Обработчик события reconciliation для синхронизации данных при переподключении
 window.addEventListener('ws:reconciliation', (event) => {
-  const { telemetry, commands, alerts } = event.detail || {}
+  const detail = event.detail || {}
   
-  logger.info('[bootstrap.js] Processing reconciliation data', {
-    telemetryCount: telemetry?.length || 0,
-    commandsCount: commands?.length || 0,
-    alertsCount: alerts?.length || 0,
-  })
+  // Валидация reconciliation данных
+  import('./types/reconciliation').then(({ isValidReconciliationData }) => {
+    if (!isValidReconciliationData(detail)) {
+      logger.warn('[bootstrap.js] Invalid reconciliation data received', {
+        detail,
+      })
+      return
+    }
+    
+    const { telemetry, commands, alerts } = detail
+    
+    logger.info('[bootstrap.js] Processing reconciliation data', {
+      telemetryCount: telemetry?.length || 0,
+      commandsCount: commands?.length || 0,
+      alertsCount: alerts?.length || 0,
+    })
 
   // Обновляем алерты через store
   if (alerts && Array.isArray(alerts)) {
@@ -260,7 +271,12 @@ window.addEventListener('ws:reconciliation', (event) => {
         detail: { commands },
       }))
     }
-  }
+    }
+  }).catch((err) => {
+    logger.error('[bootstrap.js] Error validating reconciliation data', {
+      error: err instanceof Error ? err.message : String(err),
+    })
+  })
 })
 
 window.addEventListener('echo:teardown', () => {

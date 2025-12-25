@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from typing import Optional
 import hashlib
 import hmac
+from common.hmac_utils import canonical_json_payload
 import logging
 import os
 import asyncio
@@ -39,17 +40,18 @@ def _maybe_attach_hmac(payload: dict, cmd: str, ts: Optional[int], sig: Optional
     if sig and ts is None:
         raise ValueError("sig requires ts")
     secret = get_settings().node_default_secret
-    if ts is None and not sig:
+    if ts is None and sig is None:
         if not secret:
             return
         ts = int(time.time())
-        sig = hmac.new(secret.encode(), f"{cmd}|{ts}".encode(), hashlib.sha256).hexdigest()
-    elif ts is not None and not sig:
-        if secret:
-            sig = hmac.new(secret.encode(), f"{cmd}|{ts}".encode(), hashlib.sha256).hexdigest()
+    elif ts is not None and sig is None and not secret:
+        raise ValueError("sig requires node_default_secret")
 
     if ts is not None:
         payload["ts"] = ts
+    if sig is None and secret:
+        payload_str = canonical_json_payload(payload)
+        sig = hmac.new(secret.encode(), payload_str.encode(), hashlib.sha256).hexdigest()
     if sig:
         payload["sig"] = sig
 

@@ -57,7 +57,8 @@
     },
     "scripts-descriptions": {
         "seed-admin": "Seeds default admin user (admin@example.com / password)",
-        "test-api": "Runs basic API tests"
+        "test-api": "Runs basic API tests",
+        "seed-progress": "Seeds test data for progress visualization (zones with different phase progress)"
     },
     "extra": {
         "branch-alias": {

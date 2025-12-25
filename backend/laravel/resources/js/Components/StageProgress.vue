@@ -21,44 +21,72 @@
       <!-- Прогресс: кольцо + детали фазы -->
       <div class="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t border-[color:var(--border-muted)]">
         <!-- Кольцо прогресса -->
-        <div class="flex items-center justify-center md:col-span-1">
+        <div class="flex flex-col items-center justify-center md:col-span-1">
           <GrowCycleProgressRing
             :progress="overallProgress"
             :label="'Цикл'"
             :variant="progressVariant"
-            :size="100"
+            :size="120"
           />
+          <div v-if="totalPhases > 1" class="mt-2 text-center">
+            <div class="text-xs text-[color:var(--text-muted)]">Фаза {{ currentPhaseIndex + 1 }} из {{ totalPhases }}</div>
+            <div class="text-xs font-medium text-[color:var(--text-primary)]">{{ Math.round(overallProgress) }}% завершено</div>
+          </div>
         </div>
 
         <!-- Детали текущей фазы -->
-        <div class="md:col-span-2 space-y-2">
-          <div v-if="phaseProgress !== null" class="space-y-2">
-            <div class="flex items-center justify-between text-xs">
-              <span class="text-[color:var(--text-muted)]">
-                Фаза: {{ currentPhaseName || `Фаза ${currentPhaseIndex + 1}` }}
-                <span v-if="phaseDaysElapsed !== null && phaseDaysTotal !== null" class="text-[color:var(--text-dim)]">
-                  (день {{ phaseDaysElapsed }}/{{ phaseDaysTotal }})
+        <div class="md:col-span-2 space-y-3">
+          <div v-if="phaseProgress !== null" class="space-y-3">
+            <!-- Заголовок фазы -->
+            <div>
+              <div class="flex items-center justify-between mb-1">
+                <span class="text-sm font-semibold text-[color:var(--text-primary)]">
+                  {{ currentPhaseName || `Фаза ${currentPhaseIndex + 1}` }}
                 </span>
-              </span>
-              <span class="font-semibold text-[color:var(--accent-cyan)]">{{ Math.round(phaseProgress) }}%</span>
+                <span class="text-lg font-bold text-[color:var(--accent-cyan)]">{{ Math.round(phaseProgress) }}%</span>
+              </div>
+              <div v-if="phaseDaysElapsed !== null && phaseDaysTotal !== null" class="text-xs text-[color:var(--text-muted)]">
+                День {{ phaseDaysElapsed }} из {{ phaseDaysTotal }}
+                <span v-if="phaseDaysElapsed >= 0 && phaseDaysTotal > 0 && (phaseDaysTotal - phaseDaysElapsed) > 0" class="text-[color:var(--text-dim)]">
+                  (осталось {{ formatDays(Math.max(0, phaseDaysTotal - phaseDaysElapsed)) }})
+                </span>
+              </div>
             </div>
             
-            <!-- Прогресс-бар фазы -->
-            <div class="relative w-full h-2 bg-[color:var(--border-muted)] rounded-full overflow-hidden">
-              <div
-                class="absolute inset-0 bg-[linear-gradient(90deg,var(--accent-cyan),var(--accent-green))] rounded-full transition-all duration-500 ease-out"
-                :style="{ width: `${phaseProgress}%` }"
-              >
-                <div class="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.12),transparent)] animate-shimmer"></div>
+            <!-- Прогресс-бар фазы с улучшенной визуализацией -->
+            <div class="space-y-1">
+              <div class="relative w-full h-3 bg-[color:var(--border-muted)] rounded-full overflow-hidden">
+                <div
+                  class="absolute inset-0 bg-[linear-gradient(90deg,var(--accent-cyan),var(--accent-green))] rounded-full transition-all duration-500 ease-out"
+                  :style="{ width: `${phaseProgress}%` }"
+                >
+                  <div class="absolute inset-0 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.15),transparent)] animate-shimmer"></div>
+                </div>
+                <!-- Маркер текущей позиции -->
+                <div
+                  v-if="phaseProgress > 0 && phaseProgress < 100"
+                  class="absolute top-0 bottom-0 w-0.5 bg-[color:var(--text-primary)] opacity-50"
+                  :style="{ left: `${phaseProgress}%`, transform: 'translateX(-50%)' }"
+                ></div>
+              </div>
+              <div class="flex items-center justify-between text-xs text-[color:var(--text-dim)]">
+                <span>Начало</span>
+                <span>Завершение</span>
               </div>
             </div>
 
             <!-- Информация о следующей фазе -->
-            <div v-if="nextPhaseInfo" class="flex items-center justify-between text-xs text-[color:var(--text-muted)]">
-              <span>Следующая: {{ nextPhaseInfo.name }}</span>
-              <span v-if="nextPhaseInfo.daysRemaining !== null" class="font-medium text-[color:var(--text-primary)]">
-                через {{ formatDays(nextPhaseInfo.daysRemaining) }}
-              </span>
+            <div v-if="nextPhaseInfo" class="pt-2 border-t border-[color:var(--border-muted)]">
+              <div class="flex items-center justify-between text-xs">
+                <span class="text-[color:var(--text-muted)]">Следующая фаза:</span>
+                <span class="font-medium text-[color:var(--text-primary)]">{{ nextPhaseInfo.name }}</span>
+              </div>
+              <div v-if="nextPhaseInfo.daysRemaining !== null" class="flex items-center justify-between text-xs mt-1">
+                <span class="text-[color:var(--text-muted)]">Осталось до перехода:</span>
+                <span class="font-semibold text-[color:var(--accent-cyan)]">
+                  {{ formatDays(nextPhaseInfo.daysRemaining) }}
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -200,11 +228,51 @@ const overallProgress = computed(() => {
     return 0
   }
   
+  // Если phaseProgress не предоставлен, вычисляем его на основе времени
+  let phaseProgress = props.phaseProgress
+  if (phaseProgress === null || phaseProgress === undefined) {
+    const currentPhase = props.recipeInstance.recipe.phases.find(
+      p => p.phase_index === currentPhaseIndex.value
+    )
+    if (currentPhase && props.startedAt) {
+      const startedAt = new Date(props.startedAt)
+      const now = new Date()
+      
+      // Вычисляем время начала текущей фазы
+      let phaseStartTime = startedAt.getTime()
+      for (let i = 0; i < currentPhaseIndex.value; i++) {
+        const prevPhase = props.recipeInstance.recipe.phases[i]
+        if (prevPhase && prevPhase.duration_hours) {
+          phaseStartTime += prevPhase.duration_hours * 60 * 60 * 1000
+        }
+      }
+      
+      const phaseStart = new Date(phaseStartTime)
+      const phaseEnd = new Date(phaseStartTime + (currentPhase.duration_hours || 0) * 60 * 60 * 1000)
+      
+      const totalMs = phaseEnd.getTime() - phaseStart.getTime()
+      if (totalMs > 0) {
+        const elapsedMs = now.getTime() - phaseStart.getTime()
+        if (elapsedMs > 0 && elapsedMs < totalMs) {
+          phaseProgress = Math.min(100, Math.max(0, (elapsedMs / totalMs) * 100))
+        } else if (elapsedMs >= totalMs) {
+          phaseProgress = 100
+        } else {
+          phaseProgress = 0
+        }
+      } else {
+        phaseProgress = 0
+      }
+    } else {
+      phaseProgress = 0
+    }
+  }
+  
   return calculateCycleProgress(
     currentPhaseIndex.value,
     props.recipeInstance.recipe.phases,
     props.startedAt,
-    props.phaseProgress
+    phaseProgress
   )
 })
 

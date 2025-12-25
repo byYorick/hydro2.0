@@ -29,7 +29,7 @@
 
 ## 3. Задачи по слоям
 ### 3.1 MQTT / ESP32
-- Добавить/подтвердить HMAC: cmd|ts, проверка ts ±30s на узлах; не менять существующие поля.
+- Добавить/подтвердить HMAC: canonical_json(command_without_sig), проверка ts ±30s на узлах; не менять существующие поля.
 - Подтвердить, что команды идут только через Python bridge, не напрямую из фронта.
 
 ### 3.2 Python сервисы
@@ -98,5 +98,4 @@
 1) Критика: race condition регистрации, advisory lock в PublishNodeConfigJob, optimistic/pessimistic locking, HMAC команд, rate limit/IP whitelist.
 2) Масштаб: adaptive concurrency + batch telemetry + алерты/метрики.
 3) Качество: Form Requests, Policies, Resources, тесты, документация.
-
 

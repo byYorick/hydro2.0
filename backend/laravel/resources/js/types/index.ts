@@ -10,6 +10,7 @@ export type * from './Alert'
 export type * from './Recipe'
 export type * from './Command'
 export type * from './Cycle'
+export type * from './GrowCycle'
 export type * from './Greenhouse'
 export type * from './User'
 // ZoneEvent экспортируется отдельно, чтобы избежать конфликта с встроенным типом Event

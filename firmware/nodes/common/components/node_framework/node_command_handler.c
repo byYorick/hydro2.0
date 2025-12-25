@@ -87,8 +87,13 @@ static esp_err_t get_node_secret(char *secret_out, size_t secret_size) {
     }
     
     // Пытаемся получить секрет из конфигурации
-    static char json_buf[CONFIG_STORAGE_MAX_JSON_SIZE];
-    if (config_storage_get_json(json_buf, sizeof(json_buf)) == ESP_OK) {
+    char *json_buf = (char *)malloc(CONFIG_STORAGE_MAX_JSON_SIZE);
+    if (!json_buf) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    esp_err_t result = ESP_ERR_NOT_FOUND;
+    if (config_storage_get_json(json_buf, CONFIG_STORAGE_MAX_JSON_SIZE) == ESP_OK) {
         cJSON *config = cJSON_Parse(json_buf);
         if (config) {
             cJSON *secret_item = cJSON_GetObjectItem(config, "node_secret");
@@ -96,30 +101,38 @@ static esp_err_t get_node_secret(char *secret_out, size_t secret_size) {
                 strncpy(secret_out, secret_item->valuestring, secret_size - 1);
                 secret_out[secret_size - 1] = '\0';
                 cJSON_Delete(config);
-                return ESP_OK;
+                result = ESP_OK;
+                free(json_buf);
+                return result;
             }
             cJSON_Delete(config);
         }
     }
 
-    return ESP_ERR_NOT_FOUND;
+    free(json_buf);
+    return result;
 }
 
 /**
  * @brief Проверить, разрешен ли legacy режим без HMAC
  */
 static bool get_allow_legacy_hmac(void) {
-    static char json_buf[CONFIG_STORAGE_MAX_JSON_SIZE];
-    if (config_storage_get_json(json_buf, sizeof(json_buf)) == ESP_OK) {
+    char *json_buf = (char *)malloc(CONFIG_STORAGE_MAX_JSON_SIZE);
+    if (!json_buf) {
+        return false;
+    }
+
+    bool allow = false;
+    if (config_storage_get_json(json_buf, CONFIG_STORAGE_MAX_JSON_SIZE) == ESP_OK) {
         cJSON *config = cJSON_Parse(json_buf);
         if (config) {
             cJSON *flag = cJSON_GetObjectItem(config, "allow_legacy_hmac");
-            bool allow = (flag != NULL && cJSON_IsBool(flag) && cJSON_IsTrue(flag));
+            allow = (flag != NULL && cJSON_IsBool(flag) && cJSON_IsTrue(flag));
             cJSON_Delete(config);
-            return allow;
         }
     }
-    return false;
+    free(json_buf);
+    return allow;
 }
 
 /**
@@ -191,16 +204,143 @@ static esp_err_t compute_hmac_sha256(const char *secret, const uint8_t *message,
  * @param sig Подпись (hex строка)
  * @return true если подпись валидна
  */
-static bool verify_command_signature(const char *cmd, int64_t ts, const char *sig) {
-    if (!cmd || !sig) {
-        ESP_LOGE(TAG, "Invalid parameters for signature verification");
-        return false;
+typedef struct {
+    const char *key;
+    const cJSON *value;
+} json_kv_t;
+
+static int compare_json_kv(const void *a, const void *b) {
+    const json_kv_t *item_a = (const json_kv_t *)a;
+    const json_kv_t *item_b = (const json_kv_t *)b;
+
+    if (item_a->key == NULL && item_b->key == NULL) {
+        return 0;
     }
-    
-    // Получаем секрет
+    if (item_a->key == NULL) {
+        return -1;
+    }
+    if (item_b->key == NULL) {
+        return 1;
+    }
+    return strcmp(item_a->key, item_b->key);
+}
+
+static cJSON *canonicalize_json(const cJSON *input) {
+    if (input == NULL) {
+        return NULL;
+    }
+
+    if (cJSON_IsObject(input)) {
+        cJSON *out = cJSON_CreateObject();
+        if (!out) {
+            return NULL;
+        }
+
+        size_t count = 0;
+        for (const cJSON *child = input->child; child; child = child->next) {
+            count++;
+        }
+
+        if (count == 0) {
+            return out;
+        }
+
+        json_kv_t *items = (json_kv_t *)calloc(count, sizeof(json_kv_t));
+        if (!items) {
+            cJSON_Delete(out);
+            return NULL;
+        }
+
+        size_t idx = 0;
+        for (const cJSON *child = input->child; child; child = child->next) {
+            items[idx].key = child->string;
+            items[idx].value = child;
+            idx++;
+        }
+
+        qsort(items, count, sizeof(json_kv_t), compare_json_kv);
+
+        for (size_t i = 0; i < count; i++) {
+            cJSON *child_value = canonicalize_json(items[i].value);
+            if (!child_value) {
+                free(items);
+                cJSON_Delete(out);
+                return NULL;
+            }
+            cJSON_AddItemToObject(out, items[i].key ? items[i].key : "", child_value);
+        }
+
+        free(items);
+        return out;
+    }
+
+    if (cJSON_IsArray(input)) {
+        cJSON *out = cJSON_CreateArray();
+        if (!out) {
+            return NULL;
+        }
+
+        for (const cJSON *child = input->child; child; child = child->next) {
+            cJSON *child_value = canonicalize_json(child);
+            if (!child_value) {
+                cJSON_Delete(out);
+                return NULL;
+            }
+            cJSON_AddItemToArray(out, child_value);
+        }
+
+        return out;
+    }
+
+    return cJSON_Duplicate(input, 1);
+}
+
+static esp_err_t compute_command_signature(const cJSON *json, char *signature_out, size_t signature_size) {
+    if (!json || !signature_out || signature_size < 65) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
     char secret[128];
     if (get_node_secret(secret, sizeof(secret)) != ESP_OK) {
         ESP_LOGE(TAG, "Failed to get node_secret");
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    cJSON *sanitized = cJSON_Duplicate(json, 1);
+    if (!sanitized) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    cJSON_DeleteItemFromObject(sanitized, "sig");
+
+    cJSON *canonical = canonicalize_json(sanitized);
+    cJSON_Delete(sanitized);
+    if (!canonical) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    char *payload = cJSON_PrintUnformatted(canonical);
+    cJSON_Delete(canonical);
+    if (!payload) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    esp_err_t err = compute_hmac_sha256(secret,
+                                        (const uint8_t *)payload,
+                                        strlen(payload),
+                                        signature_out,
+                                        signature_size);
+    free(payload);
+    return err;
+}
+
+static bool verify_command_signature(const cJSON *json,
+                                     const char *cmd,
+                                     int64_t ts,
+                                     const char *sig,
+                                     bool allow_legacy_sig) {
+    if (!json || !cmd || !sig) {
+        ESP_LOGE(TAG, "Invalid parameters for signature verification");
         return false;
     }
     
@@ -210,23 +350,13 @@ static bool verify_command_signature(const char *cmd, int64_t ts, const char *si
         ESP_LOGE(TAG, "Invalid command length: %zu (max: %d)", cmd_len, NODE_COMMAND_NAME_MAX_LEN);
         return false;
     }
-    
-    // Формируем payload: cmd|ts
-    // Максимальная длина: NODE_COMMAND_NAME_MAX_LEN (32) + 1 (|) + 20 (int64 max) + 1 (null) = 54
-    char payload[256];
-    int payload_len = snprintf(payload, sizeof(payload), "%s|%lld", cmd, (long long)ts);
-    if (payload_len < 0 || payload_len >= (int)sizeof(payload)) {
-        ESP_LOGE(TAG, "Failed to format payload: len=%d, max=%zu", payload_len, sizeof(payload));
-        return false;
-    }
-    
-    // Вычисляем ожидаемую подпись
+
     char expected_sig[65];
-    if (compute_hmac_sha256(secret, (const uint8_t *)payload, payload_len, expected_sig, sizeof(expected_sig)) != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to compute HMAC");
+    if (compute_command_signature(json, expected_sig, sizeof(expected_sig)) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to compute canonical HMAC");
         return false;
     }
-    
+
     // Сравниваем подписи (константное время, регистронезависимое сравнение hex)
     bool is_valid = (strlen(sig) == 64 && strlen(expected_sig) == 64);
     if (is_valid) {
@@ -246,7 +376,47 @@ static bool verify_command_signature(const char *cmd, int64_t ts, const char *si
         ESP_LOGD(TAG, "Expected sig: %s", expected_sig);
         ESP_LOGD(TAG, "Received sig: %s", sig);
     }
-    
+
+    if (!is_valid && allow_legacy_sig) {
+        char secret[128];
+        if (get_node_secret(secret, sizeof(secret)) != ESP_OK) {
+            return false;
+        }
+
+        char legacy_payload[256];
+        int legacy_len = snprintf(legacy_payload, sizeof(legacy_payload), "%s|%lld",
+                                  cmd, (long long)ts);
+        if (legacy_len <= 0 || legacy_len >= (int)sizeof(legacy_payload)) {
+            return false;
+        }
+
+        char legacy_expected[65];
+        if (compute_hmac_sha256(secret,
+                                (const uint8_t *)legacy_payload,
+                                legacy_len,
+                                legacy_expected,
+                                sizeof(legacy_expected)) != ESP_OK) {
+            return false;
+        }
+
+        bool legacy_valid = (strlen(sig) == 64);
+        if (legacy_valid) {
+            for (size_t i = 0; i < 64; i++) {
+                char sig_char = (sig[i] >= 'A' && sig[i] <= 'F') ? (sig[i] - 'A' + 'a') : sig[i];
+                char expected_char = legacy_expected[i];
+                if (sig_char != expected_char) {
+                    legacy_valid = false;
+                    break;
+                }
+            }
+        }
+
+        if (legacy_valid) {
+            ESP_LOGW(TAG, "Command accepted with legacy HMAC signature: cmd=%s", cmd);
+            return true;
+        }
+    }
+
     return is_valid;
 }
 
@@ -512,8 +682,29 @@ void node_command_handler_process(
             return;
         }
         
-        // Проверка timestamp
-        if (!verify_command_timestamp(ts)) {
+        bool time_synced = node_utils_is_time_synced();
+        if (!time_synced && strcmp(cmd, "set_time") != 0) {
+            ESP_LOGW(TAG, "Command rejected: time not synchronized (cmd=%s, cmd_id=%s)", cmd, cmd_id);
+            cJSON *response = node_command_handler_create_response(
+                cmd_id,
+                "FAILED",
+                "time_not_synced",
+                "Time is not synchronized yet",
+                NULL
+            );
+            if (response) {
+                char *json_str = cJSON_PrintUnformatted(response);
+                if (json_str) {
+                    mqtt_manager_publish_command_response(channel ? channel : "default", json_str);
+                    free(json_str);
+                }
+                cJSON_Delete(response);
+            }
+            cJSON_Delete(json);
+            return;
+        }
+
+        if (time_synced && !verify_command_timestamp(ts)) {
             ESP_LOGW(TAG, "Command timestamp verification failed: cmd=%s, cmd_id=%s", cmd, cmd_id);
             cJSON *response = node_command_handler_create_response(
                 cmd_id,
@@ -535,7 +726,7 @@ void node_command_handler_process(
         }
         
         // Проверка HMAC подписи
-        if (!verify_command_signature(cmd, ts, sig)) {
+        if (!verify_command_signature(json, cmd, ts, sig, allow_legacy_hmac)) {
             ESP_LOGW(TAG, "Command HMAC signature verification failed: cmd=%s, cmd_id=%s", cmd, cmd_id);
             cJSON *response = node_command_handler_create_response(
                 cmd_id,

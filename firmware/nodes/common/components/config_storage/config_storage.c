@@ -130,9 +130,13 @@ esp_err_t config_storage_load(void) {
     // Если есть WiFi, проверяем наличие SSID для полноценной работы
     if (has_wifi) {
         cJSON *ssid = cJSON_GetObjectItem(wifi, "ssid");
+        cJSON *configured = cJSON_GetObjectItem(wifi, "configured");
+        bool wifi_configured = (configured != NULL && cJSON_IsBool(configured) && cJSON_IsTrue(configured));
         
         // Логируем состояние SSID для диагностики
-        if (!ssid) {
+        if (wifi_configured) {
+            ESP_LOGI(TAG, "WiFi marked as configured, skipping SSID validation");
+        } else if (!ssid) {
             ESP_LOGW(TAG, "WiFi config present but SSID field is missing - will trigger setup mode");
         } else if (!cJSON_IsString(ssid)) {
             ESP_LOGW(TAG, "WiFi config present but SSID is not a string (type=%d) - will trigger setup mode", ssid->type);
@@ -158,7 +162,7 @@ esp_err_t config_storage_load(void) {
             ESP_LOGI(TAG, "WiFi SSID found in config: '%s' (len=%zu)", ssid->valuestring, strlen(ssid->valuestring));
         }
         
-        if (!ssid || !cJSON_IsString(ssid) || ssid->valuestring == NULL || strlen(ssid->valuestring) == 0) {
+        if (!wifi_configured && (!ssid || !cJSON_IsString(ssid) || ssid->valuestring == NULL || strlen(ssid->valuestring) == 0)) {
             // Если SSID отсутствует или пустой, конфигурация неполная и нужно setup mode
             ESP_LOGW(TAG, "Invalid WiFi config detected - clearing corrupted config from NVS");
             
@@ -930,7 +934,7 @@ esp_err_t config_storage_validate(const char *json_config, size_t json_len,
         return ESP_ERR_INVALID_ARG;
     }
     
-    if (!cJSON_IsObject(wifi)) {
+    if (wifi != NULL && !cJSON_IsObject(wifi)) {
         cJSON_Delete(config);
         if (error_msg && error_msg_size > 0) {
             strncpy(error_msg, "Missing or invalid wifi", error_msg_size - 1);
@@ -944,6 +948,23 @@ esp_err_t config_storage_validate(const char *json_config, size_t json_len,
             strncpy(error_msg, "Missing or invalid mqtt", error_msg_size - 1);
         }
         return ESP_ERR_INVALID_ARG;
+    }
+
+    if (cJSON_IsObject(wifi)) {
+        cJSON *wifi_configured = cJSON_GetObjectItem(wifi, "configured");
+        bool is_configured = (wifi_configured != NULL &&
+                              cJSON_IsBool(wifi_configured) &&
+                              cJSON_IsTrue(wifi_configured));
+        if (!is_configured) {
+            cJSON *wifi_ssid = cJSON_GetObjectItem(wifi, "ssid");
+            if (!cJSON_IsString(wifi_ssid) || wifi_ssid->valuestring == NULL || wifi_ssid->valuestring[0] == '\0') {
+                cJSON_Delete(config);
+                if (error_msg && error_msg_size > 0) {
+                    strncpy(error_msg, "Missing or invalid wifi.ssid", error_msg_size - 1);
+                }
+                return ESP_ERR_INVALID_ARG;
+            }
+        }
     }
     
     // ВАЖНО: Если mqtt содержит только {"configured": true}, значит нода уже подключена

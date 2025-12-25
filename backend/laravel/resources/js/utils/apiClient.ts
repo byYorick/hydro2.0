@@ -108,14 +108,31 @@ apiClient.interceptors.response.use(
     const method = (error.config?.method || 'GET').toUpperCase()
     const data = error.response?.data
     
+    // 401 - не показываем Toast и не логируем постоянно, обычно это обрабатывается на уровне auth
+    // 422 с "Not enough data" - это не ошибка, а нормальное состояние (недостаточно данных для прогноза)
+    // Множественные 401 могут происходить из-за интервалов обновления
+    const isNotEnoughData = status === 422 && (
+      message.includes('Not enough data') || 
+      message.includes('недостаточно данных') ||
+      message.includes('Failed to generate prediction')
+    )
+    
+    // Не логируем как ERROR, если это "Not enough data" - это нормальное состояние
+    if (isNotEnoughData) {
+      logger.debug('[apiClient] Not enough data for prediction (normal state)', {
+        url,
+        status,
+        message,
+      })
+      return Promise.reject(error)
+    }
+    
     // Логируем ошибку (но не логируем 401 постоянно, чтобы не засорять консоль)
     if (status !== 401) {
       logger.error('[HTTP ERROR]', { method, url, status, data, message, error })
     }
     
-    // 401 - не показываем Toast и не логируем постоянно, обычно это обрабатывается на уровне auth
-    // Множественные 401 могут происходить из-за интервалов обновления
-    if (globalShowToast && status !== 401) {
+    if (globalShowToast && status !== 401 && !isNotEnoughData) {
       globalShowToast(`Ошибка: ${message}`, 'error', 5000)
     }
     

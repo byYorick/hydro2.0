@@ -59,10 +59,11 @@ class LoginRequest extends FormRequest
         if (! Auth::guard('web')->attempt($this->only('email', 'password'), $this->boolean('remember'))) {
             RateLimiter::hit($this->throttleKey());
 
+            // Для Inertia запросов нужно правильно обработать ошибку валидации
+            // чтобы форма оставалась на странице логина
             throw ValidationException::withMessages([
                 'email' => 'Неверный email или пароль. Проверьте правильность введенных данных.',
-                'password' => 'Неверный email или пароль. Проверьте правильность введенных данных.',
-            ]);
+            ])->errorBag('default');
         }
 
         RateLimiter::clear($this->throttleKey());
@@ -95,5 +96,28 @@ class LoginRequest extends FormRequest
     public function throttleKey(): string
     {
         return Str::transliterate(Str::lower($this->string('email')).'|'.$this->ip());
+    }
+
+    /**
+     * Get the URL to redirect to on a validation error.
+     * Для Inertia запросов возвращаем URL страницы логина,
+     * чтобы форма оставалась на месте при ошибке валидации.
+     * 
+     * Примечание: Этот метод используется только для стандартной обработки Laravel.
+     * Для Inertia запросов ValidationException обрабатывается в bootstrap/app.php
+     * через redirect()->back()->withErrors(), который автоматически возвращает на страницу логина.
+     *
+     * @return string
+     */
+    protected function getRedirectUrl()
+    {
+        // Для Inertia запросов возвращаем URL страницы логина
+        // чтобы форма оставалась на месте при ошибке валидации
+        if ($this->header('X-Inertia')) {
+            return route('login');
+        }
+
+        // Для обычных запросов используем стандартный back()
+        return url()->previous();
     }
 }

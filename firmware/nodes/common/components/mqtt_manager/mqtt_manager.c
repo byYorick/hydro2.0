@@ -576,7 +576,9 @@ static esp_err_t mqtt_manager_publish_internal(const char *topic, const char *da
     // Уведомляем OLED UI о MQTT активности (отправка)
     // Используем слабые символы для опциональной зависимости от oled_ui
     // Если функция не определена, линкер разрешит слабый символ (NULL)
-    oled_ui_notify_mqtt_tx();
+    if (oled_ui_notify_mqtt_tx) {
+        oled_ui_notify_mqtt_tx();
+    }
 
     int data_len = strlen(data);
     
@@ -874,7 +876,9 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
             // Уведомляем OLED UI о MQTT активности (прием)
             // Используем слабые символы для опциональной зависимости от oled_ui
             // Если функция не определена, линкер разрешит слабый символ (NULL)
-            oled_ui_notify_mqtt_rx();
+            if (oled_ui_notify_mqtt_rx) {
+                oled_ui_notify_mqtt_rx();
+            }
             
             // Обновление метрик диагностики (получение сообщения)
             #if DIAGNOSTICS_AVAILABLE

@@ -122,66 +122,129 @@
         </div>
       </div>
 
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div class="lg:col-span-2 space-y-4">
-          <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
-            <ZoneTargets :telemetry="telemetry" :targets="targets" />
+      <!-- Одна колонка: все элементы последовательно -->
+      <div class="space-y-4">
+        <!-- Целевые значения телеметрии -->
+        <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
+          <ZoneTargets v-if="targets && (targets.ph || targets.ec || targets.temp || targets.humidity)" :telemetry="telemetry" :targets="targets" />
+          <div v-else class="text-center py-6">
+            <div class="text-4xl mb-2">🎯</div>
+            <div class="text-sm font-medium text-[color:var(--text-primary)] mb-1">
+              Целевые значения не настроены
+            </div>
+            <div class="text-xs text-[color:var(--text-muted)]">
+              Настройте целевые значения для отслеживания параметров зоны
+            </div>
           </div>
-          <div
-            v-if="zone.recipeInstance"
-            class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4"
-          >
-            <StageProgress
-              :recipe-instance="zone.recipeInstance"
-              :phase-progress="computedPhaseProgress"
-              :phase-days-elapsed="computedPhaseDaysElapsed"
-              :phase-days-total="computedPhaseDaysTotal"
-              :started-at="zone.recipeInstance.started_at"
-            />
+        </div>
+        <!-- Прогресс цикла выращивания -->
+        <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
+          <StageProgress
+            v-if="zone.recipeInstance?.recipe || zone.recipeInstance?.recipe_id"
+            :recipe-instance="zone.recipeInstance"
+            :phase-progress="computedPhaseProgress"
+            :phase-days-elapsed="computedPhaseDaysElapsed"
+            :phase-days-total="computedPhaseDaysTotal"
+            :started-at="zone.recipeInstance?.started_at"
+          />
+          <div v-else-if="activeGrowCycle || activeCycle || zone.status === 'RUNNING'" class="text-center py-6">
+            <div class="text-4xl mb-2">🌱</div>
+            <div class="text-sm font-medium text-[color:var(--text-primary)] mb-1">
+              Цикл выращивания активен
+            </div>
+            <div class="text-xs text-[color:var(--text-muted)] space-y-1">
+              <div v-if="zone.status">
+                Статус зоны: <span class="font-semibold">{{ translateStatus(zone.status) }}</span>
+              </div>
+              <div v-if="activeGrowCycle?.status">
+                Статус цикла: <span class="font-semibold">{{ translateStatus(activeGrowCycle.status) }}</span>
+              </div>
+              <div v-if="activeGrowCycle?.started_at">
+                Запущен: {{ formatTimeShort(new Date(activeGrowCycle.started_at)) }}
+              </div>
+              <div class="mt-2 text-[color:var(--text-dim)]">
+                Привяжите рецепт для детального отслеживания прогресса фаз
+              </div>
+            </div>
           </div>
-          <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4 space-y-3">
+          <div v-else class="text-center py-6">
+            <div class="text-4xl mb-2">🌱</div>
+            <div class="text-sm font-medium text-[color:var(--text-primary)] mb-1">
+              Цикл выращивания не запущен
+            </div>
+            <div class="text-xs text-[color:var(--text-muted)]">
+              Привяжите рецепт и запустите цикл выращивания для отслеживания прогресса
+            </div>
+          </div>
+        </div>
+        <!-- Графики телеметрии pH и EC -->
+        <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
+          <div class="mb-3">
+            <div class="text-sm font-semibold text-[color:var(--text-primary)]">Графики телеметрии</div>
+            <div class="text-xs text-[color:var(--text-muted)] mt-1">pH и EC</div>
+          </div>
+          
+          <div v-if="chartDataPh.length > 0 || chartDataEc.length > 0">
             <!-- Мульти-серии график pH + EC -->
             <MultiSeriesTelemetryChart
-              v-if="chartDataPh.length > 0 || chartDataEc.length > 0"
               title="pH и EC"
               :series="multiSeriesData"
               :time-range="chartTimeRange"
               @time-range-change="onChartTimeRangeChange"
             />
+          </div>
+          <div v-else-if="showSeparateCharts" class="space-y-3">
             <!-- Отдельные графики как fallback или опционально -->
-            <div v-if="showSeparateCharts" class="space-y-3">
-              <ZoneTelemetryChart 
-                title="pH" 
-                :data="chartDataPh" 
-                series-name="pH"
-                :time-range="chartTimeRange"
-                @time-range-change="onChartTimeRangeChange"
-              />
-              <ZoneTelemetryChart 
-                title="EC" 
-                :data="chartDataEc" 
-                series-name="EC"
-                :time-range="chartTimeRange"
-                @time-range-change="onChartTimeRangeChange"
-              />
+            <ZoneTelemetryChart 
+              title="pH" 
+              :data="chartDataPh" 
+              series-name="pH"
+              :time-range="chartTimeRange"
+              @time-range-change="onChartTimeRangeChange"
+            />
+            <ZoneTelemetryChart 
+              title="EC" 
+              :data="chartDataEc" 
+              series-name="EC"
+              :time-range="chartTimeRange"
+              @time-range-change="onChartTimeRangeChange"
+            />
+          </div>
+          <div v-else class="text-center py-6">
+            <!-- Сообщение если нет данных для графиков -->
+            <div class="text-4xl mb-2">📊</div>
+            <div class="text-sm font-medium text-[color:var(--text-primary)] mb-1">
+              Нет данных для графиков
+            </div>
+            <div class="text-xs text-[color:var(--text-muted)]">
+              Данные телеметрии появятся после начала работы датчиков в зоне
             </div>
           </div>
         </div>
-        <div class="space-y-4">
-          <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
-            <ZoneDevicesVisualization
-              :zone-name="zone.name"
-              :zone-status="zone.status"
-              :devices="devices"
-              :can-manage="canManageDevices"
-              @attach="showAttachNodesModal = true"
-              @configure="(device) => openNodeConfig(device.id, device)"
-            />
-          </div>
-          <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
-            <UnassignedNodeErrorsWidget :zone-id="zone.id" :limit="5" />
-          </div>
-          <Card>
+        <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
+          <ZoneDevicesVisualization
+            :zone-name="zone.name"
+            :zone-status="zone.status"
+            :devices="devices"
+            :can-manage="canManageDevices"
+            @attach="showAttachNodesModal = true"
+            @configure="(device) => openNodeConfig(device.id, device)"
+          />
+        </div>
+        <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
+          <UnassignedNodeErrorsWidget :zone-id="zone.id" :limit="5" />
+        </div>
+        <!-- AI Прогнозы -->
+        <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
+          <AIPredictionsSection
+            :zone-id="zone.id"
+            :targets="targets"
+            :horizon-minutes="60"
+            :auto-refresh="true"
+            :default-expanded="true"
+          />
+        </div>
+        <Card>
             <div class="flex items-center justify-between mb-2">
               <div class="text-sm font-semibold">Рецепт</div>
               <template v-if="canManageRecipe">
@@ -229,7 +292,6 @@
               </template>
             </div>
           </Card>
-        </div>
       </div>
 
       <!-- Cycles (расписание подсистем) -->
@@ -406,14 +468,15 @@
     />
     
     <!-- Модальное окно запуска/корректировки цикла выращивания -->
-    <GrowthCycleModal
+    <GrowthCycleWizard
       v-if="showGrowthCycleModal && zoneId"
       :show="showGrowthCycleModal"
       :zone-id="zoneId"
+      :zone-name="zone.name"
       :current-phase-targets="currentPhase?.targets || null"
       :active-cycle="activeCycle"
       @close="modals.close('growthCycle')"
-      @submit="onGrowthCycleSubmit"
+      @submit="onGrowthCycleWizardSubmit"
     />
 
     <ConfirmModal
@@ -505,9 +568,10 @@ import StageProgress from '@/Components/StageProgress.vue'
 import ZoneDevicesVisualization from '@/Components/ZoneDevicesVisualization.vue'
 import LoadingState from '@/Components/LoadingState.vue'
 import UnassignedNodeErrorsWidget from '@/Components/UnassignedNodeErrorsWidget.vue'
+import AIPredictionsSection from '@/Components/AIPredictionsSection.vue'
 import ZoneSimulationModal from '@/Components/ZoneSimulationModal.vue'
 import ZoneActionModal from '@/Components/ZoneActionModal.vue'
-import GrowthCycleModal from '@/Components/GrowthCycleModal.vue'
+import GrowthCycleWizard from '@/Components/GrowCycle/GrowthCycleWizard.vue'
 import AttachRecipeModal from '@/Components/AttachRecipeModal.vue'
 import AttachNodesModal from '@/Components/AttachNodesModal.vue'
 import NodeConfigModal from '@/Components/NodeConfigModal.vue'
@@ -740,7 +804,69 @@ const { targets: targetsProp, devices: devicesProp, events: eventsProp, cycles: 
 
 // Сырые targets (исторический формат, для Back-compat) + нормализованный current_phase
 const targets = computed(() => (targetsProp.value || {}) as ZoneTargetsType)
-const currentPhase = computed(() => (currentPhaseProp.value || null) as any)
+// Вычисляем currentPhase из recipeInstance, если currentPhaseProp не предоставлен
+const currentPhase = computed(() => {
+  // Сначала пробуем использовать currentPhaseProp из props
+  if (currentPhaseProp.value) {
+    return currentPhaseProp.value as any
+  }
+  
+  // Если нет currentPhaseProp, вычисляем из recipeInstance
+  const recipeInstance = zone.value?.recipeInstance
+  if (!recipeInstance || !recipeInstance.recipe || recipeInstance.current_phase_index === null) {
+    return null
+  }
+  
+  const phases = recipeInstance.recipe.phases
+  if (!phases || phases.length === 0) {
+    return null
+  }
+  
+  const currentPhaseIndex = recipeInstance.current_phase_index
+  const phase = phases.find((p: any) => p.phase_index === currentPhaseIndex)
+  if (!phase) {
+    return null
+  }
+  
+  // Вычисляем phase_started_at и phase_ends_at на основе started_at и duration_hours
+  const startedAt = recipeInstance.started_at
+  if (!startedAt) {
+    return null
+  }
+  
+  const startDate = new Date(startedAt)
+  let phaseStartTime = startDate.getTime()
+  
+  // Суммируем длительности предыдущих фаз
+  for (let i = 0; i < currentPhaseIndex; i++) {
+    const prevPhase = phases.find((p: any) => p.phase_index === i)
+    if (prevPhase && prevPhase.duration_hours) {
+      phaseStartTime += prevPhase.duration_hours * 60 * 60 * 1000
+    }
+  }
+  
+  const phaseStart = new Date(phaseStartTime)
+  const phaseEnd = new Date(phaseStartTime + (phase.duration_hours || 0) * 60 * 60 * 1000)
+  
+  const result = {
+    ...phase,
+    phase_started_at: phaseStart.toISOString(),
+    phase_ends_at: phaseEnd.toISOString(),
+    duration_hours: phase.duration_hours,
+  }
+  
+  logger.debug('[Zones/Show] currentPhase: computed', {
+    currentPhaseIndex,
+    phaseName: phase.name,
+    startedAt,
+    phase_started_at: result.phase_started_at,
+    phase_ends_at: result.phase_ends_at,
+    duration_hours: phase.duration_hours,
+  })
+  
+  return result
+})
+
 const activeCycle = computed(() => (activeCycleProp.value || null) as any)
 const activeGrowCycle = computed(() => (activeGrowCycleProp.value || zone.value?.activeGrowCycle || null) as any)
 const devices = computed(() => (devicesProp.value || []) as Device[])
@@ -758,7 +884,18 @@ const canManageCycle = computed(() => isAdmin.value || isOperator.value || isAgr
 // ВАЖНО: все вычисления в UTC, отображение форматируется в локальное время
 const computedPhaseProgress = computed(() => {
   const phase = currentPhase.value
-  if (!phase || !phase.phase_started_at || !phase.phase_ends_at) return null
+  if (!phase) {
+    logger.debug('[Zones/Show] computedPhaseProgress: phase is null')
+    return null
+  }
+  
+  if (!phase.phase_started_at || !phase.phase_ends_at) {
+    logger.debug('[Zones/Show] computedPhaseProgress: missing dates', {
+      phase_started_at: phase.phase_started_at,
+      phase_ends_at: phase.phase_ends_at,
+    })
+    return null
+  }
 
   // Все даты в UTC (ISO8601 с 'Z' или без, но интерпретируем как UTC)
   const now = new Date() // Текущее время в UTC (Date всегда в UTC внутренне)
@@ -767,13 +904,32 @@ const computedPhaseProgress = computed(() => {
 
   // Проверяем валидность дат
   if (isNaN(phaseStart.getTime()) || isNaN(phaseEnd.getTime())) {
+    logger.debug('[Zones/Show] computedPhaseProgress: invalid dates', {
+      phase_started_at: phase.phase_started_at,
+      phase_ends_at: phase.phase_ends_at,
+      phaseStartTime: phaseStart.getTime(),
+      phaseEndTime: phaseEnd.getTime(),
+    })
     return null
   }
 
   const totalMs = phaseEnd.getTime() - phaseStart.getTime()
-  if (totalMs <= 0) return null
+  if (totalMs <= 0) {
+    logger.debug('[Zones/Show] computedPhaseProgress: totalMs <= 0', { totalMs })
+    return null
+  }
 
   const elapsedMs = now.getTime() - phaseStart.getTime()
+  
+  logger.debug('[Zones/Show] computedPhaseProgress: calculation', {
+    now: now.toISOString(),
+    phaseStart: phaseStart.toISOString(),
+    phaseEnd: phaseEnd.toISOString(),
+    elapsedMs,
+    totalMs,
+    progress: elapsedMs > 0 ? (elapsedMs / totalMs) * 100 : 0,
+  })
+  
   if (elapsedMs <= 0) return 0
   if (elapsedMs >= totalMs) return 100
 
@@ -1043,6 +1199,10 @@ const multiSeriesData = computed(() => {
       data: chartDataPh.value,
       currentValue: telemetry.value.ph,
       yAxisIndex: 0,
+      targetRange: targets.value.ph ? {
+        min: targets.value.ph.min,
+        max: targets.value.ph.max,
+      } : undefined,
     },
     {
       name: 'ec',
@@ -1051,6 +1211,10 @@ const multiSeriesData = computed(() => {
       data: chartDataEc.value,
       currentValue: telemetry.value.ec,
       yAxisIndex: 1, // Используем правую ось Y для EC
+      targetRange: targets.value.ec ? {
+        min: targets.value.ec.min,
+        max: targets.value.ec.max,
+      } : undefined,
     },
   ]
 })
@@ -1544,6 +1708,11 @@ async function onActionSubmit({ actionType, params }: { actionType: CommandType;
   } finally {
     setLoading('cycleConfig', false)
   }
+}
+
+async function onGrowthCycleWizardSubmit({ zoneId, recipeId, startedAt, expectedHarvestAt }: { zoneId: number; recipeId: number; startedAt: string; expectedHarvestAt?: string }): Promise<void> {
+  // Новый wizard уже создал цикл через API, нужно только обновить данные
+  reloadZoneAfterCommand(zoneId, ['zone', 'cycles', 'active_grow_cycle'])
 }
 
 async function onGrowthCycleSubmit({ mode, subsystems }: { mode: 'start' | 'adjust'; subsystems: Record<string, { enabled: boolean; targets: any }> }): Promise<void> {

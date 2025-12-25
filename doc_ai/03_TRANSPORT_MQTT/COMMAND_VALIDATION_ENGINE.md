@@ -117,13 +117,18 @@ abs(now - ts) < 10 секунд
 
 ## 4.5. HMAC Sign
 
-Python вычисляет подпись:
+Python вычисляет подпись по каноническому JSON команды:
 
 ```
-sig = HMAC_SHA256(node_secret, cmd + '|' + ts)
+sig = HMAC_SHA256(node_secret, canonical_json(command_without_sig))
 ```
 
-И добавляет ее в MQTT payload.
+Где `canonical_json`:
+- удаляет поле `sig`,
+- сортирует ключи объектов лексикографически,
+- сохраняет порядок массивов,
+- сериализует без пробелов,
+- формат чисел как в cJSON (`int` если целое, иначе 15/17 значащих).
 
 ---
 
@@ -142,14 +147,12 @@ abs(now - ts) < 10 секунд
 ## 5.2. HMAC-подпись
 
 ```
-sig == HMAC_SHA256(node_secret, cmd + '|' + ts)
+sig == HMAC_SHA256(node_secret, canonical_json(command_without_sig))
 ```
 
 Где:
 - `node_secret` — секретный ключ из NodeConfig (поле `node_secret`) или дефолтный
-- `cmd` — имя команды (строка)
-- `ts` — timestamp в секундах
-- Разделитель: `|`
+- `canonical_json` — каноническая JSON-строка команды без `sig` (см. выше)
 - Подпись в hex формате (64 символа, нижний регистр)
 - Сравнение регистронезависимое
 

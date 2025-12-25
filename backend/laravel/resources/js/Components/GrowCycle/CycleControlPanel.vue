@@ -331,8 +331,6 @@ async function loadEvents(): Promise<void> {
     const response = await api.get(`/api/zones/${props.cycle.zone_id}/events`, {
       params: {
         cycle_only: true,
-        entity_type: 'grow_cycle',
-        entity_id: props.cycle.id,
         limit: 50,
       },
     })
