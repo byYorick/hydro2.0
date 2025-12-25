@@ -80,19 +80,27 @@ class GrowCycle extends Model
     }
 
     /**
-     * Текущая фаза цикла
+     * Текущая фаза цикла (снапшот)
      */
     public function currentPhase(): BelongsTo
     {
-        return $this->belongsTo(RecipeRevisionPhase::class, 'current_phase_id');
+        return $this->belongsTo(GrowCyclePhase::class, 'current_phase_id');
     }
 
     /**
-     * Текущий подшаг цикла
+     * Текущий подшаг цикла (снапшот)
      */
     public function currentStep(): BelongsTo
     {
-        return $this->belongsTo(RecipeRevisionPhaseStep::class, 'current_step_id');
+        return $this->belongsTo(GrowCyclePhaseStep::class, 'current_step_id');
+    }
+
+    /**
+     * Фазы цикла (снапшоты)
+     */
+    public function phases(): HasMany
+    {
+        return $this->hasMany(GrowCyclePhase::class)->orderBy('phase_index');
     }
 
     /**
