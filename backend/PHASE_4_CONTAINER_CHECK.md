@@ -26,7 +26,7 @@
 ✅ **CommandAck:**
 - Модель создана и загружается без ошибок
 - Relationship: `command()`
-- Scopes: `ofType()`, `successful()`, `errors()`
+- Scopes: `ofType()`, `successful()`, `errors()` (query builder methods)
 - Все поля в fillable и casts
 
 ### 3. Relationships
@@ -40,6 +40,7 @@
 
 ✅ **CommandAck:**
 - `command()` - BelongsTo Command - OK
+- Scopes работают через query builder (ofType, successful, errors)
 
 ### 4. Структура таблиц
 
