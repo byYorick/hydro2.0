@@ -39,6 +39,14 @@ return new class extends Migration
             if (!Schema::hasColumn('grow_cycles', 'recipe_revision_id')) {
                 $table->foreignId('recipe_revision_id')->after('recipe_id')->constrained('recipe_revisions')->cascadeOnDelete();
             }
+        });
+        
+        // Убеждаемся, что recipe_revision_id NOT NULL (если колонка уже существует и nullable)
+        if (Schema::hasColumn('grow_cycles', 'recipe_revision_id')) {
+            DB::statement('ALTER TABLE grow_cycles ALTER COLUMN recipe_revision_id SET NOT NULL');
+        }
+        
+        Schema::table('grow_cycles', function (Blueprint $table) {
             
             // Текущая фаза и шаг
             if (!Schema::hasColumn('grow_cycles', 'current_phase_id')) {
