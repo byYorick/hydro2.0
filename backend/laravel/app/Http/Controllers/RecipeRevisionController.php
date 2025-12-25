@@ -162,8 +162,13 @@ class RecipeRevisionController extends Controller
             ], 401);
         }
 
-        // TODO: Проверка прав (только agronomist может публиковать)
-        // if (!$user->hasRole('agronomist')) { ... }
+        // Проверка прав: только агроном может публиковать ревизии
+        if (!Gate::allows('publish', $recipeRevision)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forbidden: Only agronomists can publish recipe revisions',
+            ], 403);
+        }
 
         try {
             $revision = $this->recipeRevisionService->publishRevision($recipeRevision);
