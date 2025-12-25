@@ -34,12 +34,11 @@ class ChannelBinding extends Model
     }
 
     /**
-     * Нода через канал (для обратной совместимости)
+     * Нода через канал (accessor для удобства)
      */
-    public function node(): BelongsTo
+    public function getNodeAttribute()
     {
-        return $this->belongsTo(DeviceNode::class, 'node_id')
-            ->through('nodeChannel');
+        return $this->nodeChannel?->node;
     }
 
     /**
