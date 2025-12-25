@@ -27,6 +27,10 @@ use App\Http\Controllers\UnassignedNodeErrorController;
 use App\Http\Controllers\PipelineHealthController;
 use App\Http\Controllers\GrowCycleController;
 use App\Http\Controllers\PlantController;
+use App\Http\Controllers\RecipeRevisionController;
+use App\Http\Controllers\RecipeRevisionPhaseController;
+use App\Http\Controllers\InfrastructureInstanceController;
+use App\Http\Controllers\ChannelBindingController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Http\Request;
 
@@ -114,6 +118,9 @@ Route::middleware([
     Route::get('zones/{zone}/infrastructure', [ZoneInfrastructureController::class, 'show']);
     Route::get('zones/{zone}/grow-cycle', [GrowCycleController::class, 'getActive']);
     Route::get('greenhouses/{greenhouse}/grow-cycles', [GrowCycleController::class, 'indexByGreenhouse']);
+    
+    // Recipe revisions
+    Route::get('recipe-revisions/{recipeRevision}', [RecipeRevisionController::class, 'show']);
     Route::get('nodes', [NodeController::class, 'index']);
     Route::get('nodes/{node}', [NodeController::class, 'show']);
     Route::get('nodes/{node}/config', [NodeController::class, 'getConfig']);
@@ -146,13 +153,26 @@ Route::middleware([
         Route::put('zones/{zone}', [ZoneController::class, 'update']);
         Route::patch('zones/{zone}', [ZoneController::class, 'update']);
         Route::delete('zones/{zone}', [ZoneController::class, 'destroy']);
-        Route::post('zones/{zone}/attach-recipe', [ZoneController::class, 'attachRecipe']);
-        Route::post('zones/{zone}/start', [ZoneController::class, 'start']);
-        Route::post('zones/{zone}/change-phase', [ZoneController::class, 'changePhase']);
-        Route::post('zones/{zone}/next-phase', [ZoneController::class, 'nextPhase']);
-        Route::post('zones/{zone}/pause', [ZoneController::class, 'pause']);
-        Route::post('zones/{zone}/resume', [ZoneController::class, 'resume']);
-        Route::post('zones/{zone}/harvest', [ZoneController::class, 'harvest']);
+        // Infrastructure instances
+        Route::get('zones/{zone}/infrastructure-instances', [InfrastructureInstanceController::class, 'indexForZone']);
+        Route::get('greenhouses/{greenhouse}/infrastructure-instances', [InfrastructureInstanceController::class, 'indexForGreenhouse']);
+        Route::post('infrastructure-instances', [InfrastructureInstanceController::class, 'store']);
+        Route::patch('infrastructure-instances/{infrastructureInstance}', [InfrastructureInstanceController::class, 'update']);
+        Route::delete('infrastructure-instances/{infrastructureInstance}', [InfrastructureInstanceController::class, 'destroy']);
+        
+        // Channel bindings
+        Route::post('channel-bindings', [ChannelBindingController::class, 'store']);
+        Route::patch('channel-bindings/{channelBinding}', [ChannelBindingController::class, 'update']);
+        Route::delete('channel-bindings/{channelBinding}', [ChannelBindingController::class, 'destroy']);
+        
+        // Legacy zone endpoints (deprecated)
+        Route::post('zones/{zone}/attach-recipe', [ZoneController::class, 'attachRecipe'])->name('legacy.attach-recipe');
+        Route::post('zones/{zone}/start', [ZoneController::class, 'start'])->name('legacy.start');
+        Route::post('zones/{zone}/change-phase', [ZoneController::class, 'changePhase'])->name('legacy.change-phase');
+        Route::post('zones/{zone}/next-phase', [ZoneController::class, 'nextPhase'])->name('legacy.next-phase');
+        Route::post('zones/{zone}/pause', [ZoneController::class, 'pause'])->name('legacy.pause');
+        Route::post('zones/{zone}/resume', [ZoneController::class, 'resume'])->name('legacy.resume');
+        Route::post('zones/{zone}/harvest', [ZoneController::class, 'harvest'])->name('legacy.harvest');
         Route::post('zones/{zone}/fill', [ZoneController::class, 'fill']);
         Route::post('zones/{zone}/drain', [ZoneController::class, 'drain']);
         Route::post('zones/{zone}/calibrate-flow', [ZoneController::class, 'calibrateFlow']);
@@ -161,16 +181,18 @@ Route::middleware([
         Route::delete('zones/{zone}/infrastructure/bindings/{zoneChannelBinding}', [ZoneInfrastructureController::class, 'destroyBinding']);
 
         // Grow Cycle operations
-        Route::post('zones/{zone}/grow-cycles', [\App\Http\Controllers\GrowCycleController::class, 'store']);
-        Route::get('zones/{zone}/grow-cycle', [\App\Http\Controllers\GrowCycleController::class, 'show']);
-        Route::post('zones/{zone}/grow-cycle/change-recipe', [\App\Http\Controllers\GrowCycleController::class, 'changeRecipe']);
-        Route::post('grow-cycles/{growCycle}/advance-stage', [\App\Http\Controllers\GrowCycleController::class, 'advanceStage']);
-        
-        // Grow Cycle control operations (new format with grow-cycles/{id})
+        Route::post('zones/{zone}/grow-cycles', [GrowCycleController::class, 'store']);
         Route::post('grow-cycles/{growCycle}/pause', [GrowCycleController::class, 'pause']);
         Route::post('grow-cycles/{growCycle}/resume', [GrowCycleController::class, 'resume']);
         Route::post('grow-cycles/{growCycle}/harvest', [GrowCycleController::class, 'harvest']);
         Route::post('grow-cycles/{growCycle}/abort', [GrowCycleController::class, 'abort']);
+        Route::post('grow-cycles/{growCycle}/set-phase', [GrowCycleController::class, 'setPhase']);
+        Route::post('grow-cycles/{growCycle}/advance-phase', [GrowCycleController::class, 'advancePhase']);
+        Route::post('grow-cycles/{growCycle}/change-recipe-revision', [GrowCycleController::class, 'changeRecipeRevision']);
+        
+        // Legacy endpoints (deprecated)
+        Route::post('zones/{zone}/grow-cycle/change-recipe', [GrowCycleController::class, 'changeRecipe'])->name('legacy.change-recipe');
+        Route::post('grow-cycles/{growCycle}/advance-stage', [GrowCycleController::class, 'advanceStage'])->name('legacy.advance-stage');
 
 
         // Nodes
@@ -189,10 +211,22 @@ Route::middleware([
         Route::put('recipes/{recipe}', [RecipeController::class, 'update']);
         Route::patch('recipes/{recipe}', [RecipeController::class, 'update']);
         Route::delete('recipes/{recipe}', [RecipeController::class, 'destroy']);
-        Route::put('recipes/{recipe}/stage-map', [RecipeController::class, 'updateStageMap']);
-        Route::post('recipes/{recipe}/phases', [RecipePhaseController::class, 'store']);
-        Route::patch('recipe-phases/{recipePhase}', [RecipePhaseController::class, 'update']);
-        Route::delete('recipe-phases/{recipePhase}', [RecipePhaseController::class, 'destroy']);
+        
+        // Recipe revisions
+        Route::post('recipes/{recipe}/revisions', [RecipeRevisionController::class, 'store']);
+        Route::patch('recipe-revisions/{recipeRevision}', [RecipeRevisionController::class, 'update']);
+        Route::post('recipe-revisions/{recipeRevision}/publish', [RecipeRevisionController::class, 'publish']);
+        
+        // Recipe revision phases
+        Route::post('recipe-revisions/{recipeRevision}/phases', [RecipeRevisionPhaseController::class, 'store']);
+        Route::patch('recipe-revision-phases/{recipeRevisionPhase}', [RecipeRevisionPhaseController::class, 'update']);
+        Route::delete('recipe-revision-phases/{recipeRevisionPhase}', [RecipeRevisionPhaseController::class, 'destroy']);
+        
+        // Legacy recipe endpoints (deprecated)
+        Route::put('recipes/{recipe}/stage-map', [RecipeController::class, 'updateStageMap'])->name('legacy.stage-map');
+        Route::post('recipes/{recipe}/phases', [RecipePhaseController::class, 'store'])->name('legacy.phases.store');
+        Route::patch('recipe-phases/{recipePhase}', [RecipePhaseController::class, 'update'])->name('legacy.phases.update');
+        Route::delete('recipe-phases/{recipePhase}', [RecipePhaseController::class, 'destroy'])->name('legacy.phases.destroy');
 
         // Presets
         Route::post('presets', [PresetController::class, 'store']);
