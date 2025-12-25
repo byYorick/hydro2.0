@@ -31,12 +31,12 @@ class SimulationController extends Controller
         ]);
 
         // Формируем сценарий
-        // Получаем recipe_id из ZoneRecipeInstance, если не указан явно
+        // Получаем recipe_id из активного GrowCycle, если не указан явно
         $recipeId = $data['recipe_id'] ?? null;
         if (!$recipeId) {
-            $zone->load('recipeInstance');
-            if ($zone->recipeInstance) {
-                $recipeId = $zone->recipeInstance->recipe_id;
+            $zone->load('activeGrowCycle.recipeRevision');
+            if ($zone->activeGrowCycle && $zone->activeGrowCycle->recipeRevision) {
+                $recipeId = $zone->activeGrowCycle->recipeRevision->recipe_id;
             }
         }
         

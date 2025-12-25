@@ -3,7 +3,8 @@
 namespace App\Services;
 
 use App\Models\Zone;
-use App\Models\ZoneRecipeInstance;
+use App\Models\GrowCycle;
+use App\Enums\GrowCycleStatus;
 use App\Events\ZoneUpdated;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -128,125 +129,47 @@ class ZoneService
 
     /**
      * Назначить рецепт на зону
+     * 
+     * @deprecated Используйте GrowCycleService::createCycle() вместо этого метода
+     * Этот метод оставлен для обратной совместимости, но создает только ZoneRecipeInstance без GrowCycle
      */
-    public function attachRecipe(Zone $zone, int $recipeId, ?\DateTimeInterface $startAt = null): ZoneRecipeInstance
+    public function attachRecipe(Zone $zone, int $recipeId, ?\DateTimeInterface $startAt = null)
     {
-        return DB::transaction(function () use ($zone, $recipeId, $startAt) {
-            // Удалить предыдущий экземпляр рецепта, если есть
-            $existing = $zone->recipeInstance;
-            if ($existing) {
-                Log::info('Deleting existing recipe instance', [
-                    'zone_id' => $zone->id,
-                    'existing_instance_id' => $existing->id,
-                ]);
-                $existing->delete();
-            }
+        Log::warning('ZoneService::attachRecipe() is deprecated. Use GrowCycleService::createCycle() instead.', [
+            'zone_id' => $zone->id,
+            'recipe_id' => $recipeId,
+        ]);
 
-            // Проверяем, что рецепт существует
-            $recipe = \App\Models\Recipe::find($recipeId);
-            if (!$recipe) {
-                throw new \DomainException("Recipe with ID {$recipeId} not found");
-            }
-
-            $instance = ZoneRecipeInstance::create([
-                'zone_id' => $zone->id,
-                'recipe_id' => $recipeId,
-                'current_phase_index' => 0,
-                'started_at' => $startAt ?? now(),
-            ]);
-
-            Log::info('Recipe attached to zone', [
-                'zone_id' => $zone->id,
-                'recipe_id' => $recipeId,
-                'instance_id' => $instance->id,
-                'started_at' => $instance->started_at,
-            ]);
-
-            // Обновляем зону и загружаем relationships
-            $zone->refresh();
-            $zone->load(['recipeInstance.recipe']);
-
-            // Dispatch event для уведомления Python-сервиса
-            event(new ZoneUpdated($zone));
-
-            // Запустить задачу расчёта аналитики при завершении рецепта (если нужно)
-            // Можно запускать периодически или при завершении всех фаз
-
-            return $instance;
-        });
+        throw new \DomainException('ZoneService::attachRecipe() is deprecated. Please use GrowCycleService::createCycle() to create a new grow cycle with a recipe revision.');
     }
 
     /**
      * Изменить фазу рецепта зоны
+     * 
+     * @deprecated Используйте GrowCycleService::setPhase() или GrowCycleService::advancePhase() вместо этого метода
      */
-    public function changePhase(Zone $zone, int $phaseIndex): ZoneRecipeInstance
+    public function changePhase(Zone $zone, int $phaseIndex)
     {
-        return DB::transaction(function () use ($zone, $phaseIndex) {
-            // Eager loading для предотвращения N+1 запросов
-            $instance = $zone->load('recipeInstance.recipe.phases')->recipeInstance;
-            if (!$instance) {
-                throw new \DomainException('Zone has no active recipe');
-            }
+        Log::warning('ZoneService::changePhase() is deprecated. Use GrowCycleService::setPhase() or GrowCycleService::advancePhase() instead.', [
+            'zone_id' => $zone->id,
+            'phase_index' => $phaseIndex,
+        ]);
 
-            // Проверка: фаза должна существовать в рецепте
-            // Используем загруженные phases вместо нового запроса
-            $recipe = $instance->recipe;
-            $maxPhaseIndex = $recipe->phases->max('phase_index') ?? 0;
-            if ($phaseIndex < 0 || $phaseIndex > $maxPhaseIndex) {
-                throw new \DomainException("Phase index {$phaseIndex} is out of range (0-{$maxPhaseIndex})");
-            }
-
-            $instance->update([
-                'current_phase_index' => $phaseIndex,
-            ]);
-
-            Log::info('Zone phase changed', [
-                'zone_id' => $zone->id,
-                'phase_index' => $phaseIndex,
-            ]);
-
-            // Проверить, завершён ли рецепт (все фазы пройдены)
-            // Используем уже загруженные phases
-            if ($phaseIndex >= $maxPhaseIndex) {
-                // Рецепт завершён - запустить расчёт аналитики
-                \App\Jobs\CalculateRecipeAnalyticsJob::dispatch($zone->id, $instance->id);
-            }
-
-            // Dispatch event для уведомления Python-сервиса
-            event(new ZoneUpdated($zone->fresh()));
-
-            return $instance->fresh();
-        });
+        throw new \DomainException('ZoneService::changePhase() is deprecated. Please use GrowCycleService::setPhase() or GrowCycleService::advancePhase() to change phases in a grow cycle.');
     }
 
     /**
      * Перейти на следующую фазу рецепта
+     * 
+     * @deprecated Используйте GrowCycleService::advancePhase() вместо этого метода
      */
-    public function nextPhase(Zone $zone): ZoneRecipeInstance
+    public function nextPhase(Zone $zone)
     {
-        return DB::transaction(function () use ($zone) {
-            // Eager loading для предотвращения N+1 запросов
-            $instance = $zone->load('recipeInstance.recipe.phases')->recipeInstance;
-            if (!$instance) {
-                throw new \DomainException('Zone has no active recipe');
-            }
+        Log::warning('ZoneService::nextPhase() is deprecated. Use GrowCycleService::advancePhase() instead.', [
+            'zone_id' => $zone->id,
+        ]);
 
-            $currentPhaseIndex = $instance->current_phase_index;
-            $nextPhaseIndex = $currentPhaseIndex + 1;
-
-            // Проверка: следующая фаза должна существовать в рецепте
-            // Используем загруженные phases вместо нового запроса
-            $recipe = $instance->recipe;
-            $maxPhaseIndex = $recipe->phases->max('phase_index') ?? 0;
-            
-            if ($nextPhaseIndex > $maxPhaseIndex) {
-                throw new \DomainException("No next phase available. Current phase is {$currentPhaseIndex}, max phase is {$maxPhaseIndex}");
-            }
-
-            // Обновляем phase_index
-            $instance->update([
-                'current_phase_index' => $nextPhaseIndex,
-            ]);
+        throw new \DomainException('ZoneService::nextPhase() is deprecated. Please use GrowCycleService::advancePhase() to advance to the next phase in a grow cycle.');
 
             // Создаем zone_event для изменения фазы
             $hasPayloadJson = Schema::hasColumn('zone_events', 'payload_json');

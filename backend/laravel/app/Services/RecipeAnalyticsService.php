@@ -13,57 +13,59 @@ use Carbon\Carbon;
 class RecipeAnalyticsService
 {
     /**
-     * Рассчитать и сохранить аналитику для зоны с активным рецептом
+     * Рассчитать и сохранить аналитику для зоны с активным циклом
      */
-    public function calculateAndStore(int $zoneId, ?int $recipeInstanceId = null): RecipeAnalytics
+    public function calculateAndStore(int $zoneId, ?int $growCycleId = null): RecipeAnalytics
     {
-        return DB::transaction(function () use ($zoneId, $recipeInstanceId) {
-            $instance = $recipeInstanceId
-                ? ZoneRecipeInstance::find($recipeInstanceId)
-                : ZoneRecipeInstance::where('zone_id', $zoneId)->first();
+        return DB::transaction(function () use ($zoneId, $growCycleId) {
+            // Получаем активный цикл
+            $cycle = $growCycleId
+                ? GrowCycle::find($growCycleId)
+                : GrowCycle::where('zone_id', $zoneId)
+                    ->whereIn('status', [GrowCycleStatus::PLANNED, GrowCycleStatus::RUNNING, GrowCycleStatus::PAUSED])
+                    ->first();
 
-            if (!$instance) {
-                throw new \DomainException("No active recipe instance found for zone {$zoneId}");
+            if (!$cycle) {
+                throw new \DomainException("No active grow cycle found for zone {$zoneId}");
             }
 
-            $recipe = $instance->recipe;
-            $zone = $instance->zone;
+            $revision = $cycle->recipeRevision;
+            if (!$revision) {
+                throw new \DomainException("Grow cycle {$cycle->id} has no recipe revision");
+            }
 
-            $startDate = $instance->started_at;
+            $recipe = $revision->recipe;
+            $zone = $cycle->zone;
+
+            $startDate = $cycle->started_at ?? $cycle->planting_at ?? now();
             $endDate = now();
 
-            // Получить все фазы рецепта
-            $phases = $recipe->phases()->orderBy('phase_index')->get();
+            // Получить все фазы ревизии рецепта
+            $phases = $revision->phases()->orderBy('phase_index')->get();
 
             // Рассчитать отклонения pH и EC от целевых значений
             $phDeviations = [];
             $ecDeviations = [];
 
             foreach ($phases as $phase) {
-                $targets = $phase->targets ?? [];
-                $targetPh = is_array($targets) ? ($targets['ph'] ?? null) : null;
-                $targetEc = is_array($targets) ? ($targets['ec'] ?? null) : null;
+                // Используем колонки вместо JSON targets
+                $targetPh = $phase->ph_target;
+                $targetEc = $phase->ec_target;
 
-                if ($targetPh !== null) {
-                    $targetPhVal = is_array($targetPh) ? ($targetPh['min'] ?? $targetPh['max'] ?? $targetPh) : $targetPh;
-                    if (is_numeric($targetPhVal)) {
-                        $phSamples = $this->getTelemetrySamples($zoneId, 'PH', $startDate, $endDate);
-                        foreach ($phSamples as $sample) {
-                            if (is_numeric($sample->value) && is_numeric($targetPhVal)) {
-                                $phDeviations[] = abs($sample->value - floatval($targetPhVal));
-                            }
+                if ($targetPh !== null && is_numeric($targetPh)) {
+                    $phSamples = $this->getTelemetrySamples($zoneId, 'PH', $startDate, $endDate);
+                    foreach ($phSamples as $sample) {
+                        if (is_numeric($sample->value)) {
+                            $phDeviations[] = abs($sample->value - floatval($targetPh));
                         }
                     }
                 }
 
-                if ($targetEc !== null) {
-                    $targetEcVal = is_array($targetEc) ? ($targetEc['min'] ?? $targetEc['max'] ?? $targetEc) : $targetEc;
-                    if (is_numeric($targetEcVal)) {
-                        $ecSamples = $this->getTelemetrySamples($zoneId, 'EC', $startDate, $endDate);
-                        foreach ($ecSamples as $sample) {
-                            if (is_numeric($sample->value) && is_numeric($targetEcVal)) {
-                                $ecDeviations[] = abs($sample->value - floatval($targetEcVal));
-                            }
+                if ($targetEc !== null && is_numeric($targetEc)) {
+                    $ecSamples = $this->getTelemetrySamples($zoneId, 'EC', $startDate, $endDate);
+                    foreach ($ecSamples as $sample) {
+                        if (is_numeric($sample->value)) {
+                            $ecDeviations[] = abs($sample->value - floatval($targetEc));
                         }
                     }
                 }
@@ -80,8 +82,10 @@ class RecipeAnalyticsService
             // Рассчитать фактическую длительность (округляем до целого числа часов)
             $totalDurationHours = (int) round($startDate->diffInHours($endDate));
 
-            // Рассчитать планируемую длительность
-            $plannedDurationHours = $phases->sum('duration_hours');
+            // Рассчитать планируемую длительность (сумма duration_hours всех фаз)
+            $plannedDurationHours = $phases->sum(function ($phase) {
+                return $phase->duration_hours ?? ($phase->duration_days ?? 0) * 24;
+            });
 
             // Рассчитать оценку эффективности (0-100)
             // Базовые факторы: отклонения от целей, количество аварий, соблюдение сроков

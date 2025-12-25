@@ -2,9 +2,6 @@
 
 namespace App\Jobs;
 
-use App\Models\ZoneRecipeInstance;
-use App\Models\RecipeAnalytics;
-use App\Models\Alert;
 use App\Services\RecipeAnalyticsService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -19,17 +16,18 @@ class CalculateRecipeAnalyticsJob implements ShouldQueue
 
     public function __construct(
         public int $zoneId,
-        public ?int $recipeInstanceId = null
+        public ?int $growCycleId = null
     ) {
     }
 
     public function handle(RecipeAnalyticsService $service): void
     {
         try {
-            $service->calculateAndStore($this->zoneId, $this->recipeInstanceId);
+            $service->calculateAndStore($this->zoneId, $this->growCycleId);
         } catch (\Exception $e) {
             Log::error('Failed to calculate recipe analytics', [
                 'zone_id' => $this->zoneId,
+                'grow_cycle_id' => $this->growCycleId,
                 'error' => $e->getMessage(),
             ]);
             throw $e;

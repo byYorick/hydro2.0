@@ -11,8 +11,9 @@ use App\Models\Recipe;
 use App\Models\Zone;
 use App\Models\GrowCycle;
 use App\Enums\GrowCycleStatus;
-use App\Models\ZoneRecipeInstance;
 use App\Services\ZoneService;
+use App\Services\GrowCycleService;
+use App\Models\RecipeRevision;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -22,7 +23,8 @@ use Illuminate\Support\Facades\Validator;
 class GrowCycleWizardController extends Controller
 {
     public function __construct(
-        private readonly ZoneService $zoneService
+        private readonly ZoneService $zoneService,
+        private readonly GrowCycleService $growCycleService
     ) {
     }
 
@@ -261,42 +263,38 @@ class GrowCycleWizardController extends Controller
                     ]);
                 }
 
-                // 3. Создаем ZoneRecipeInstance
-                $recipeInstance = $this->zoneService->attachRecipe(
-                    $zone,
-                    $data['recipe_id'],
-                    new \DateTime($data['automation_start_date'])
-                );
-
-                // 4. Создаем GrowCycle
+                // 3. Получаем рецепт и его последнюю опубликованную ревизию
                 $recipe = Recipe::findOrFail($data['recipe_id']);
-                $totalDurationHours = $recipe->phases()->sum('duration_hours');
+                $revision = $recipe->latestPublishedRevision;
+                
+                if (!$revision) {
+                    throw new \DomainException("Recipe {$recipe->id} has no published revision. Please publish a revision first.");
+                }
 
+                // 4. Создаем GrowCycle через GrowCycleService
                 $plantingDate = new \DateTime($data['planting_date']);
                 $automationStartDate = new \DateTime($data['automation_start_date']);
-                $estimatedHarvestDate = (clone $plantingDate)->modify("+{$totalDurationHours} hours");
-
-                $growCycle = GrowCycle::create([
-                    'greenhouse_id' => $zone->greenhouse_id,
-                    'zone_id' => $zone->id,
-                    'plant_id' => $data['plant_id'],
-                    'recipe_id' => $data['recipe_id'],
-                    'zone_recipe_instance_id' => $recipeInstance->id,
-                    'status' => GrowCycleStatus::RUNNING,
-                    'started_at' => $plantingDate,
-                    'recipe_started_at' => $automationStartDate,
-                    'expected_harvest_at' => $estimatedHarvestDate,
-                    'batch_label' => $data['batch']['quantity'] 
-                        ? "Партия {$data['batch']['quantity']} шт."
-                        : 'Партия',
-                    'settings' => [
-                        'batch' => $data['batch'],
-                        'planting_date' => $data['planting_date'],
-                        'automation_start_date' => $data['automation_start_date'],
-                        'channel_bindings' => $data['channel_bindings'],
-                        'stage_map' => $data['stage_map'] ?? null,
+                
+                $growCycle = $this->growCycleService->createCycle(
+                    $zone,
+                    $revision,
+                    $data['plant_id'],
+                    [
+                        'planting_at' => $plantingDate->format('Y-m-d H:i:s'),
+                        'start_immediately' => $automationStartDate <= $plantingDate,
+                        'batch_label' => $data['batch']['quantity'] 
+                            ? "Партия {$data['batch']['quantity']} шт."
+                            : 'Партия',
+                        'notes' => json_encode([
+                            'batch' => $data['batch'],
+                            'planting_date' => $data['planting_date'],
+                            'automation_start_date' => $data['automation_start_date'],
+                            'channel_bindings' => $data['channel_bindings'],
+                            'stage_map' => $data['stage_map'] ?? null,
+                        ]),
                     ],
-                ]);
+                    $user->id
+                );
 
                 // 5. Обновляем статус зоны на RUNNING
                 $zone->update(['status' => 'RUNNING']);
@@ -314,7 +312,7 @@ class GrowCycleWizardController extends Controller
                     'data' => [
                         'grow_cycle_id' => $growCycle->id,
                         'zone_id' => $zone->id,
-                        'recipe_instance_id' => $recipeInstance->id,
+                        'recipe_revision_id' => $revision->id,
                         'zone_status' => $zone->status,
                     ],
                 ]);

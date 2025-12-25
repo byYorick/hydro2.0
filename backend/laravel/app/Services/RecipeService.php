@@ -5,7 +5,8 @@ namespace App\Services;
 use App\Models\Recipe;
 use App\Models\RecipePhase;
 use App\Models\Zone;
-use App\Models\ZoneRecipeInstance;
+use App\Models\GrowCycle;
+use App\Enums\GrowCycleStatus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -41,10 +42,13 @@ class RecipeService
     public function delete(Recipe $recipe): void
     {
         DB::transaction(function () use ($recipe) {
-            // Проверка: нельзя удалить рецепт, который используется в зонах
-            $activeInstances = \App\Models\ZoneRecipeInstance::where('recipe_id', $recipe->id)->count();
-            if ($activeInstances > 0) {
-                throw new \DomainException("Cannot delete recipe that is used in {$activeInstances} zone(s). Please detach from zones first.");
+            // Проверка: нельзя удалить рецепт, который используется в активных циклах
+            $activeCycles = GrowCycle::whereHas('recipeRevision', function ($query) use ($recipe) {
+                $query->where('recipe_id', $recipe->id);
+            })->whereIn('status', [GrowCycleStatus::PLANNED, GrowCycleStatus::RUNNING, GrowCycleStatus::PAUSED])->count();
+            
+            if ($activeCycles > 0) {
+                throw new \DomainException("Cannot delete recipe that is used in {$activeCycles} active grow cycle(s). Please finish or abort cycles first.");
             }
 
             $recipeId = $recipe->id;
@@ -103,41 +107,17 @@ class RecipeService
 
     /**
      * Применить рецепт к зоне
+     * 
+     * @deprecated Используйте GrowCycleService::createCycle() с RecipeRevision вместо этого метода
      */
-    public function applyToZone(Recipe $recipe, Zone $zone, ?\DateTimeInterface $startAt = null): ZoneRecipeInstance
+    public function applyToZone(Recipe $recipe, Zone $zone, ?\DateTimeInterface $startAt = null)
     {
-        return DB::transaction(function () use ($recipe, $zone, $startAt) {
-            // Проверка: рецепт должен иметь хотя бы одну фазу
-            $phasesCount = $recipe->phases()->count();
-            if ($phasesCount === 0) {
-                throw new \DomainException('Recipe has no phases. Please add phases before applying to zone.');
-            }
+        Log::warning('RecipeService::applyToZone() is deprecated. Use GrowCycleService::createCycle() with a RecipeRevision instead.', [
+            'recipe_id' => $recipe->id,
+            'zone_id' => $zone->id,
+        ]);
 
-            // Удалить предыдущий экземпляр рецепта, если есть
-            $existing = $zone->fresh()->recipeInstance;
-            if ($existing) {
-                $existing->delete();
-            }
-
-            $instance = ZoneRecipeInstance::create([
-                'zone_id' => $zone->id,
-                'recipe_id' => $recipe->id,
-                'current_phase_index' => 0,
-                'started_at' => $startAt ?? now(),
-            ]);
-
-            Log::info('Recipe applied to zone', [
-                'recipe_id' => $recipe->id,
-                'recipe_name' => $recipe->name,
-                'zone_id' => $zone->id,
-                'zone_name' => $zone->name,
-            ]);
-
-            // Dispatch event для уведомления Python-сервиса
-            event(new \App\Events\ZoneUpdated($zone->fresh()));
-
-            return $instance;
-        });
+        throw new \DomainException('RecipeService::applyToZone() is deprecated. Please use GrowCycleService::createCycle() with a RecipeRevision to create a new grow cycle.');
     }
 }
 
