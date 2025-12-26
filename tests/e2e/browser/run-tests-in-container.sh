@@ -12,7 +12,11 @@ TEST_DIR="/app/tests/e2e/browser"
 PROJECT_TO_RUN="${1:-smoke}"
 
 # Переменные окружения
-export LARAVEL_URL="${LARAVEL_URL:-http://localhost:80}"
+if [ "${PROJECT_TO_RUN}" = "smoke" ]; then
+  export LARAVEL_URL="${LARAVEL_URL:-http://localhost}"
+else
+  export LARAVEL_URL="${LARAVEL_URL:-http://localhost:80}"
+fi
 export E2E_AUTH_EMAIL="${E2E_AUTH_EMAIL:-admin@hydro.local}"
 export E2E_AUTH_PASSWORD="${E2E_AUTH_PASSWORD:-password}"
 export HEADLESS="${HEADLESS:-true}"
