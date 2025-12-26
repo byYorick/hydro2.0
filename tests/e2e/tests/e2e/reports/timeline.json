@@ -1,11 +1,11 @@
 {
   "test_suite": "E00_api_smoke",
-  "generated_at": "2025-12-26T15:15:43.868920",
+  "generated_at": "2025-12-26T15:57:17.600363",
   "test_cases": [
     {
       "name": "check_health",
       "status": "passed",
-      "duration": 0.08414363861083984,
+      "duration": 0.11168980598449707,
       "error_message": null,
       "steps": [
         {
@@ -13,12 +13,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-26T15:15:43.076666"
+      "timestamp": "2025-12-26T15:57:16.717478"
     },
     {
       "name": "check_login_endpoint",
       "status": "passed",
-      "duration": 0.2821626663208008,
+      "duration": 0.2681553363800049,
       "error_message": null,
       "steps": [
         {
@@ -26,12 +26,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-26T15:15:43.358867"
+      "timestamp": "2025-12-26T15:57:16.985662"
     },
     {
       "name": "check_zones_protected",
       "status": "passed",
-      "duration": 0.09633851051330566,
+      "duration": 0.13938665390014648,
       "error_message": null,
       "steps": [
         {
@@ -39,12 +39,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-26T15:15:43.455233"
+      "timestamp": "2025-12-26T15:57:17.125115"
     },
     {
       "name": "check_nodes_protected",
       "status": "passed",
-      "duration": 0.08236002922058105,
+      "duration": 0.10587596893310547,
       "error_message": null,
       "steps": [
         {
@@ -52,12 +52,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-26T15:15:43.537620"
+      "timestamp": "2025-12-26T15:57:17.231037"
     },
     {
       "name": "check_cycles_protected",
       "status": "passed",
-      "duration": 0.07964634895324707,
+      "duration": 0.09951162338256836,
       "error_message": null,
       "steps": [
         {
@@ -65,12 +65,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-26T15:15:43.617292"
+      "timestamp": "2025-12-26T15:57:17.330577"
     },
     {
       "name": "check_greenhouses_protected",
       "status": "passed",
-      "duration": 0.09403610229492188,
+      "duration": 0.09639644622802734,
       "error_message": null,
       "steps": [
         {
@@ -78,12 +78,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-26T15:15:43.711352"
+      "timestamp": "2025-12-26T15:57:17.427006"
     },
     {
       "name": "check_commands_protected",
       "status": "passed",
-      "duration": 0.15552020072937012,
+      "duration": 0.1720738410949707,
       "error_message": null,
       "steps": [
         {
@@ -91,12 +91,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-26T15:15:43.866922"
+      "timestamp": "2025-12-26T15:57:17.599116"
     },
     {
       "name": "health_endpoint_works",
       "status": "passed",
-      "duration": 0.00011539459228515625,
+      "duration": 8.082389831542969e-05,
       "error_message": null,
       "steps": [
         {
@@ -104,12 +104,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-26T15:15:43.867152"
+      "timestamp": "2025-12-26T15:57:17.599240"
     },
     {
       "name": "no_500_errors_on_endpoints",
       "status": "passed",
-      "duration": 0.001234292984008789,
+      "duration": 0.0004513263702392578,
       "error_message": null,
       "steps": [
         {
@@ -117,12 +117,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-26T15:15:43.868423"
+      "timestamp": "2025-12-26T15:57:17.599717"
     },
     {
       "name": "login_returns_validation_error",
       "status": "passed",
-      "duration": 5.269050598144531e-05,
+      "duration": 4.553794860839844e-05,
       "error_message": null,
       "steps": [
         {
@@ -130,7 +130,7 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-26T15:15:43.868492"
+      "timestamp": "2025-12-26T15:57:17.599778"
     }
   ],
   "timeline": [],

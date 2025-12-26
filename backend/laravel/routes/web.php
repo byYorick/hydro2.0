@@ -1389,14 +1389,19 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
             $recipes = \Illuminate\Support\Facades\Cache::remember($cacheKey, 10, function () {
                 return Recipe::query()
                     ->select(['id', 'name', 'description'])
-                    ->withCount('phases')
+                    ->with(['revisions.phases'])
                     ->get()
                     ->map(function ($recipe) {
+                        // Подсчитываем общее количество фаз во всех ревизиях рецепта
+                        $phasesCount = $recipe->revisions->sum(function ($revision) {
+                            return $revision->phases->count();
+                        });
+
                         return [
                             'id' => $recipe->id,
                             'name' => $recipe->name,
                             'description' => $recipe->description,
-                            'phases_count' => $recipe->phases_count ?? 0,
+                            'phases_count' => $phasesCount,
                         ];
                     });
             });
@@ -1421,12 +1426,16 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
          */
         Route::get('/{recipeId}', function (int $recipeId) {
             $recipe = Recipe::query()
-                ->with('phases:id,recipe_id,phase_index,name,duration_hours,targets')
+                ->with(['latestPublishedRevision.phases'])
                 ->findOrFail($recipeId);
+
+            // Для совместимости с фронтендом добавляем phases на уровень recipe
+            $recipeArray = $recipe->toArray();
+            $recipeArray['phases'] = $recipe->latestPublishedRevision?->phases?->toArray() ?? [];
 
             return Inertia::render('Recipes/Show', [
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
-                'recipe' => $recipe,
+                'recipe' => $recipeArray,
             ]);
         })->name('recipes.show');
 
@@ -1453,12 +1462,16 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
 
         Route::get('/{recipeId}/edit', function (int $recipeId) {
             $recipe = Recipe::query()
-                ->with('phases:id,recipe_id,phase_index,name,duration_hours,targets')
+                ->with(['latestDraftRevision.phases'])
                 ->findOrFail($recipeId);
+
+            // Для совместимости с фронтендом добавляем phases на уровень recipe
+            $recipeArray = $recipe->toArray();
+            $recipeArray['phases'] = $recipe->latestDraftRevision?->phases?->toArray() ?? [];
 
             return Inertia::render('Recipes/Edit', [
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
-                'recipe' => $recipe,
+                'recipe' => $recipeArray,
             ]);
         })->name('recipes.edit');
     });
@@ -1824,6 +1837,7 @@ Route::get('/swagger', function () {
 
 Route::middleware(['web', 'auth', 'role:admin,operator,agronomist'])->group(function () {
     Route::get('/plants', [PlantController::class, 'index'])->name('plants.index');
+    Route::get('/plants/{plant}', [PlantController::class, 'show'])->name('plants.show');
     Route::post('/plants', [PlantController::class, 'store'])->name('plants.store');
     Route::put('/plants/{plant}', [PlantController::class, 'update'])->name('plants.update');
     Route::delete('/plants/{plant}', [PlantController::class, 'destroy'])->name('plants.destroy');

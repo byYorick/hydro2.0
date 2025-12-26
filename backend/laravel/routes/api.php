@@ -127,8 +127,8 @@ Route::middleware([
     Route::get('unassigned-node-errors', [UnassignedNodeErrorController::class, 'index']);
     Route::get('unassigned-node-errors/stats', [UnassignedNodeErrorController::class, 'stats']);
     Route::get('unassigned-node-errors/{hardwareId}', [UnassignedNodeErrorController::class, 'show']);
-    Route::get('recipes', [RecipeController::class, 'index']);
-    Route::get('recipes/{recipe}', [RecipeController::class, 'show']);
+    // Route::get('recipes', [RecipeController::class, 'index']); // DEPRECATED: uses old recipe_phases table
+    // Route::get('recipes/{recipe}', [RecipeController::class, 'show']); // DEPRECATED: uses old recipe_phases table
     Route::get('presets', [PresetController::class, 'index']);
     Route::get('presets/{preset}', [PresetController::class, 'show']);
     Route::get('plants', [PlantController::class, 'index']);
@@ -199,10 +199,10 @@ Route::middleware([
         Route::post('nodes/{node}/lifecycle/transition', [NodeController::class, 'transitionLifecycle']);
 
         // Recipes
-        Route::post('recipes', [RecipeController::class, 'store']);
-        Route::put('recipes/{recipe}', [RecipeController::class, 'update']);
-        Route::patch('recipes/{recipe}', [RecipeController::class, 'update']);
-        Route::delete('recipes/{recipe}', [RecipeController::class, 'destroy']);
+        // Route::post('recipes', [RecipeController::class, 'store']); // DEPRECATED: uses old recipe_phases table
+        // Route::put('recipes/{recipe}', [RecipeController::class, 'update']); // DEPRECATED: uses old recipe_phases table
+        // Route::patch('recipes/{recipe}', [RecipeController::class, 'update']); // DEPRECATED: uses old recipe_phases table
+        // Route::delete('recipes/{recipe}', [RecipeController::class, 'destroy']); // DEPRECATED: uses old recipe_phases table
         
         // Recipe revisions
         Route::post('recipes/{recipe}/revisions', [RecipeRevisionController::class, 'store']);
@@ -297,7 +297,7 @@ Route::middleware([
     // Admin (минимальный CRUD поверх ресурсов): зоны быстрый create, рецепт быстрый update
     Route::middleware('role:admin')->prefix('admin')->group(function () {
         Route::post('zones/quick-create', [ZoneController::class, 'store']); // переиспользуем resource
-        Route::patch('recipes/{recipe}/quick-update', [RecipeController::class, 'update']); // переиспользуем resource
+        // Route::patch('recipes/{recipe}/quick-update', [RecipeController::class, 'update']); // переиспользуем resource // DEPRECATED
     });
 
     // Users management (admin only)

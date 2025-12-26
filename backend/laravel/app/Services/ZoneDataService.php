@@ -53,7 +53,7 @@ class ZoneDataService
                 $cycle = $zone->activeGrowCycle;
                 $cycleInfo = [
                     'id' => $cycle->id,
-                    'status' => $cycle->status->value,
+                    'status' => $cycle->status instanceof \BackedEnum ? $cycle->status->value : $cycle->status,
                     'current_phase_index' => $cycle->current_phase_index,
                     'current_phase_name' => $cycle->currentPhase?->name,
                     'recipe_name' => $cycle->recipeRevision?->recipe?->name,
@@ -68,7 +68,7 @@ class ZoneDataService
                 'id' => $zone->id,
                 'uid' => $zone->uid,
                 'name' => $zone->name,
-                'status' => $zone->status->value,
+                'status' => $zone->status,
                 'greenhouse_id' => $zone->greenhouse_id,
                 'greenhouse_name' => $zone->greenhouse?->name,
                 'preset_id' => $zone->preset_id,
@@ -95,12 +95,14 @@ class ZoneDataService
             return [
                 'snapshot_id' => $snapshotId,
                 'server_ts' => $serverTs,
+                'zone_id' => $zone->id,
                 'last_event_id' => $lastEventId,
                 'zone' => $zoneInfo,
                 'cycle' => $cycleInfo,
                 'telemetry' => $telemetry,
-                'alerts' => $alerts,
-                'recent_events' => $recentEvents,
+                'active_alerts' => $alerts,
+                'recent_commands' => $recentEvents,
+                'nodes' => [], // Пока пустой массив, может быть заполнен позже
             ];
         });
     }

@@ -1273,15 +1273,25 @@ async function onChartTimeRangeChange(newRange: string): Promise<void> {
 // Сохраняем функцию отписки для очистки при размонтировании
 let unsubscribeZoneCommands: (() => void) | null = null
 
+// Регистрируем onUnmounted синхронно перед async onMounted
+onUnmounted(() => {
+  // Отписываемся от WebSocket канала при размонтировании
+  if (unsubscribeZoneCommands) {
+    unsubscribeZoneCommands()
+    unsubscribeZoneCommands = null
+  }
+  flush()
+})
+
 onMounted(async () => {
   logger.info('[Show.vue] Компонент смонтирован', { zoneId: zoneId.value })
-  
+
   // Инициализируем зону в store из props для синхронизации
   if (zoneId.value && zone.value?.id) {
     zonesStore.upsert(zone.value, true) // silent: true, так как это начальная инициализация
     logger.debug('[Zones/Show] Zone initialized in store from props', { zoneId: zoneId.value })
   }
-  
+
   // Загрузить данные для графиков
   chartDataPh.value = await loadChartData('PH', chartTimeRange.value)
   chartDataEc.value = await loadChartData('EC', chartTimeRange.value)
@@ -1354,16 +1364,6 @@ onMounted(async () => {
       // Обновляем зону при присвоении рецепта
       reloadZone(zoneId.value, ['zone'])
     }
-  })
-  
-  // При размонтировании применяем все накопленные обновления телеметрии
-  onUnmounted(() => {
-    // Отписываемся от WebSocket канала при размонтировании
-    if (unsubscribeZoneCommands) {
-      unsubscribeZoneCommands()
-      unsubscribeZoneCommands = null
-    }
-    flush()
   })
 })
 

@@ -17,7 +17,7 @@ class LaravelApiRepository:
     def __init__(self):
         """Инициализация репозитория."""
         self.settings = get_settings()
-        self.base_url = self.settings.laravel_api_url or 'http://laravel:8000'
+        self.base_url = self.settings.laravel_api_url or 'http://laravel'
         self.api_token = self.settings.laravel_api_token
         
         if not self.api_token:

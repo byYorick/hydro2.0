@@ -551,6 +551,18 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
     })->name('grow-cycle-wizard');
 
     /**
+     * Analytics - страница аналитики и отчетов
+     *
+     * Inertia Props:
+     * - auth: { user: { role: 'viewer'|'operator'|'admin'|'agronomist' } }
+     */
+    Route::get('/analytics', function () {
+        return Inertia::render('Analytics/Index', [
+            'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
+        ]);
+    })->name('analytics');
+
+    /**
      * End of routes
      */
 });

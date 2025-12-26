@@ -191,7 +191,7 @@ class AlertQueue:
         pool = await get_pool()
         async with pool.acquire() as conn:
             try:
-                details_json = json.dumps(details) if details else None
+                details_json = details if details else None
                 await conn.execute("""
                     INSERT INTO pending_alerts (zone_id, source, code, type, status, details, attempts, next_retry_at)
                     VALUES ($1, $2, $3, $4, $5, $6, 0, NOW())
@@ -207,9 +207,9 @@ class AlertQueue:
         async with pool.acquire() as conn:
             await conn.execute("""
                 UPDATE pending_alerts
-                SET retry_count = $1, next_retry_at = $2, last_error = $3, updated_at = NOW()
+                SET attempts = $1, next_retry_at = $2, last_error = $3, updated_at = NOW()
                 WHERE id = $4
-            """, retry_count, next_retry_at, last_error, alert_id)
+            """, attempts, next_retry_at, last_error, alert_id)
     
     async def mark_delivered(self, alert_id: int):
         """Удаляет запись после успешной доставки."""
@@ -228,7 +228,7 @@ class AlertQueue:
         type: str,
         status: str,
         details: Optional[Dict[str, Any]],
-        retry_count: int,
+        attempts: int,
         max_attempts: int,
         last_error: str
     ):
@@ -238,13 +238,13 @@ class AlertQueue:
         pool = await get_pool()
         async with pool.acquire() as conn:
             try:
-                details_json = json.dumps(details) if details else None
+                details_json = details if details else None
                 moved_at = utcnow()
                 await conn.execute("""
-                    INSERT INTO pending_alerts_dlq 
-                    (zone_id, source, code, type, status, details, retry_count, max_attempts, last_error, moved_to_dlq_at, original_id)
+                    INSERT INTO pending_alerts_dlq
+                    (zone_id, source, code, type, status, details, attempts, max_attempts, last_error, moved_to_dlq_at, original_id)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-                """, zone_id, source, code, type, status, details_json, retry_count, max_attempts, last_error, moved_at, alert_id)
+                """, zone_id, source, code, type, status, details_json, attempts, max_attempts, last_error, moved_at, alert_id)
                 
                 # Обновляем moved_to_dlq_at в основной таблице перед удалением
                 await conn.execute("""
@@ -255,7 +255,7 @@ class AlertQueue:
                 
                 logger.warning(
                     f"[DLQ] Moved alert to DLQ: code={code}, zone_id={zone_id}, "
-                    f"retry_count={retry_count}/{max_attempts}, error={last_error[:100]}"
+                    f"attempts={attempts}/{max_attempts}, error={last_error[:100]}"
                 )
             except Exception as e:
                 logger.error(f"Failed to move alert to DLQ: {e}", exc_info=True)
@@ -281,7 +281,7 @@ class AlertQueue:
         
         result = []
         for row in rows:
-            details = json.loads(row['details']) if row['details'] else None
+            details = row['details'] if row['details'] else None
             result.append((
                 row['id'],
                 row['zone_id'],
@@ -376,7 +376,7 @@ class AlertQueue:
         pool = await get_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch("""
-                SELECT id, zone_id, source, code, type, status, details, retry_count, 
+                SELECT id, zone_id, source, code, type, status, details, attempts,
                        max_attempts, last_error, failed_at, moved_to_dlq_at, original_id, created_at
                 FROM pending_alerts_dlq
                 ORDER BY moved_to_dlq_at DESC, id DESC
@@ -385,7 +385,7 @@ class AlertQueue:
         
         result = []
         for row in rows:
-            details = json.loads(row['details']) if row['details'] else None
+            details = row['details'] if row['details'] else None
             result.append({
                 'id': row['id'],
                 'zone_id': row['zone_id'],
@@ -394,7 +394,7 @@ class AlertQueue:
                 'type': row['type'],
                 'status': row['status'],
                 'details': details,
-                'retry_count': row['retry_count'],
+                'attempts': row['attempts'],
                 'max_attempts': row.get('max_attempts'),
                 'last_error': row['last_error'],
                 'failed_at': row['failed_at'].isoformat() if row['failed_at'] else None,
@@ -434,7 +434,7 @@ class AlertQueue:
             max_attempts = row.get('max_attempts', 10)
             
             await conn.execute("""
-                INSERT INTO pending_alerts (zone_id, source, code, type, status, details, retry_count, max_attempts, next_retry_at)
+                INSERT INTO pending_alerts (zone_id, source, code, type, status, details, attempts, max_attempts, next_retry_at)
                 VALUES ($1, $2, $3, $4, $5, $6, 0, $7, NOW())
             """, row['zone_id'], row['source'], row['code'], row['type'], row['status'], details_json, max_attempts)
             
@@ -659,7 +659,7 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
             
             logger.info(f"[RETRY_WORKER] Processing {len(pending)} pending alerts")
             
-            for alert_id, zone_id, source, code, type, status, details, retry_count, max_attempts, last_error in pending:
+            for alert_id, zone_id, source, code, type, status, details, attempts, max_attempts, last_error in pending:
                 # Проверяем shutdown перед обработкой каждой записи
                 if shutdown_event and shutdown_event.is_set():
                     logger.info("Alert retry worker received shutdown signal during processing")
@@ -695,28 +695,28 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
                         )
                     else:
                         # Не удалось - планируем следующий ретрай с jitter
-                        new_retry_count = retry_count + 1
-                        backoff_seconds = calculate_backoff_with_jitter(new_retry_count)
+                        new_attempts = attempts + 1
+                        backoff_seconds = calculate_backoff_with_jitter(new_attempts)
                         next_retry_at = utcnow() + timedelta(seconds=backoff_seconds)
-                        
-                        error_msg = f"Failed to deliver after {new_retry_count} attempts"
-                        await queue.mark_retry(alert_id, new_retry_count, next_retry_at, error_msg)
+
+                        error_msg = f"Failed to deliver after {new_attempts} attempts"
+                        await queue.mark_retry(alert_id, new_attempts, next_retry_at, error_msg)
                         logger.info(
                             f"[RETRY_WORKER] Scheduled retry for alert id={alert_id}, "
-                            f"code={code}, retry_count={new_retry_count}, "
+                            f"code={code}, attempts={new_attempts}, "
                             f"next_retry_at={next_retry_at.isoformat()}"
                         )
-                        
+
                         # Проверяем максимальное количество попыток
-                        if new_retry_count >= max_attempts:
+                        if new_attempts >= max_attempts:
                             logger.error(
                                 f"[RETRY_WORKER] Max retries reached for alert "
-                                f"id={alert_id}, code={code} ({new_retry_count}/{max_attempts}). Moving to DLQ."
+                                f"id={alert_id}, code={code} ({new_attempts}/{max_attempts}). Moving to DLQ."
                             )
                             # Перемещаем в DLQ перед удалением
                             await queue.move_to_dlq(
                                 alert_id, zone_id, source, code, type, status,
-                                details, new_retry_count, max_attempts, "Max retries reached"
+                                details, new_attempts, max_attempts, "Max retries reached"
                             )
                             await queue.mark_delivered(alert_id)
                 
@@ -726,17 +726,17 @@ async def retry_worker(interval: float = 30.0, shutdown_event: Optional[asyncio.
                         exc_info=True
                     )
                     # Планируем ретрай даже при ошибке обработки с jitter
-                    new_retry_count = retry_count + 1
+                    new_attempts = attempts + 1
                     error_msg = f"Processing error: {str(e)}"
-                    if new_retry_count < max_attempts:
-                        backoff_seconds = calculate_backoff_with_jitter(new_retry_count)
+                    if new_attempts < max_attempts:
+                        backoff_seconds = calculate_backoff_with_jitter(new_attempts)
                         next_retry_at = utcnow() + timedelta(seconds=backoff_seconds)
-                        await queue.mark_retry(alert_id, new_retry_count, next_retry_at, error_msg)
+                        await queue.mark_retry(alert_id, new_attempts, next_retry_at, error_msg)
                     else:
                         # Перемещаем в DLQ перед удалением
                         await queue.move_to_dlq(
                             alert_id, zone_id, source, code, type, status,
-                            details, new_retry_count, max_attempts, error_msg
+                            details, new_attempts, max_attempts, error_msg
                         )
                         await queue.mark_delivered(alert_id)
             

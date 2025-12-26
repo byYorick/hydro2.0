@@ -77,14 +77,19 @@ use Illuminate\Support\Facades\Route;
             $recipes = \Illuminate\Support\Facades\Cache::remember($cacheKey, 10, function () {
                 return Recipe::query()
                     ->select(['id', 'name', 'description'])
-                    ->withCount('phases')
+                    ->with(['revisions.phases'])
                     ->get()
                     ->map(function ($recipe) {
+                        // Подсчитываем общее количество фаз во всех ревизиях рецепта
+                        $phasesCount = $recipe->revisions->sum(function ($revision) {
+                            return $revision->phases->count();
+                        });
+
                         return [
                             'id' => $recipe->id,
                             'name' => $recipe->name,
                             'description' => $recipe->description,
-                            'phases_count' => $recipe->phases_count ?? 0,
+                            'phases_count' => $phasesCount,
                         ];
                     });
             });
@@ -109,12 +114,16 @@ use Illuminate\Support\Facades\Route;
          */
         Route::get('/{recipeId}', function (int $recipeId) {
             $recipe = Recipe::query()
-                ->with('phases:id,recipe_id,phase_index,name,duration_hours,targets')
+                ->with(['latestPublishedRevision.phases'])
                 ->findOrFail($recipeId);
+
+            // Для совместимости с фронтендом добавляем phases на уровень recipe
+            $recipeArray = $recipe->toArray();
+            $recipeArray['phases'] = $recipe->latestPublishedRevision?->phases?->toArray() ?? [];
 
             return Inertia::render('Recipes/Show', [
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
-                'recipe' => $recipe,
+                'recipe' => $recipeArray,
             ]);
         })->name('recipes.show');
 
@@ -141,12 +150,16 @@ use Illuminate\Support\Facades\Route;
 
         Route::get('/{recipeId}/edit', function (int $recipeId) {
             $recipe = Recipe::query()
-                ->with('phases:id,recipe_id,phase_index,name,duration_hours,targets')
+                ->with(['latestDraftRevision.phases'])
                 ->findOrFail($recipeId);
+
+            // Для совместимости с фронтендом добавляем phases на уровень recipe
+            $recipeArray = $recipe->toArray();
+            $recipeArray['phases'] = $recipe->latestDraftRevision?->phases?->toArray() ?? [];
 
             return Inertia::render('Recipes/Edit', [
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
-                'recipe' => $recipe,
+                'recipe' => $recipeArray,
             ]);
         })->name('recipes.edit');
     });
