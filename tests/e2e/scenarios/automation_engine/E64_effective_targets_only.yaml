@@ -1,0 +1,203 @@
+# E64: Effective Targets Only - AE reads targets only through effective-targets
+# DoD: AE reads targets only through effective-targets
+
+name: E64_effective_targets_only
+description: |
+  Проверяет, что Automation-engine читает targets только через effective-targets:
+  - Recipe targets игнорируются в пользу effective-targets
+  - Override targets имеют приоритет над recipe targets
+  - Batch updates корректно отражаются в effective-targets
+
+actions:
+  - step: get_zones
+    type: api_get
+    endpoint: /api/zones
+    save: zones_response
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zones_response.data.data[0].id}
+
+  # Создаем цикл с известными recipe targets
+  - step: create_recipe_with_targets
+    type: api_post
+    endpoint: /api/recipes
+    payload:
+      name: test-recipe-targets-${TIMESTAMP_S}
+      description: Test recipe for effective targets
+    save: recipe_response
+
+  - step: create_recipe_revision
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/revisions
+    payload:
+      description: Test revision with specific targets
+    save: revision_response
+
+  - step: add_phase_with_targets
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/phases
+    payload:
+      phase_index: 0
+      name: Test Phase
+      duration_hours: 24
+      ph_target: 6.0      # Recipe target
+      ph_min: 5.8
+      ph_max: 6.2
+      ec_target: 1.5      # Recipe target
+      ec_min: 1.4
+      ec_max: 1.6
+      temp_air_target: 22.0  # Recipe target
+      irrigation_mode: SUBSTRATE
+      irrigation_interval_sec: 3600
+      irrigation_duration_sec: 300
+
+  - step: publish_revision
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/publish
+    payload: {}
+
+  # Создаем и запускаем цикл
+  - step: create_grow_cycle
+    type: api_post
+    endpoint: /api/zones/${zone_id}/grow-cycles
+    payload:
+      recipe_revision_id: ${revision_response.data.id}
+      plant_id: 1  # Assume test plant exists
+      start_immediately: true
+    save: cycle_response
+
+  - step: set_cycle_id
+    type: set
+    cycle_id: ${cycle_response.data.id}
+
+  # Ждем пока effective-targets будут созданы из recipe
+  - step: wait_for_effective_targets
+    type: wait_until
+    condition: |
+      # Проверяем, что effective-targets созданы
+      from runner.steps.database import DatabaseStepExecutor
+      from runner.schema.variables import VariableResolver
+      resolver = VariableResolver(context)
+      db_exec = DatabaseStepExecutor(context.get('db'), resolver)
+      import asyncio
+      result = asyncio.run(db_exec.execute_db_step('database_query', {
+        'query': 'SELECT COUNT(*) as count FROM effective_targets WHERE cycle_id = :cycle_id',
+        'params': {'cycle_id': context['cycle_id']}
+      }))
+      result and result[0]['count'] > 0
+    timeout: 15.0
+    interval: 1.0
+
+  # Проверяем начальные effective-targets (должны соответствовать recipe)
+  - step: check_initial_effective_targets
+    type: database_query
+    query: |
+      SELECT ph_target, ec_target, temp_air_target
+      FROM effective_targets
+      WHERE cycle_id = :cycle_id
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      cycle_id: ${cycle_id}
+    save: initial_targets
+
+  # Override targets через API
+  - step: override_targets
+    type: api_post
+    endpoint: /api/grow-cycles/${cycle_id}/targets
+    payload:
+      ph_target: 6.5      # Override от recipe 6.0
+      ec_target: 1.8      # Override от recipe 1.5
+      temp_air_target: 25.0  # Override от recipe 22.0
+    save: override_response
+
+  # Ждем обновления effective-targets
+  - step: wait_for_override_effective
+    type: wait_until
+    condition: |
+      # Проверяем, что effective-targets обновились
+      from runner.steps.database import DatabaseStepExecutor
+      from runner.schema.variables import VariableResolver
+      resolver = VariableResolver(context)
+      db_exec = DatabaseStepExecutor(context.get('db'), resolver)
+      import asyncio
+      result = asyncio.run(db_exec.execute_db_step('database_query', {
+        'query': 'SELECT ph_target FROM effective_targets WHERE cycle_id = :cycle_id ORDER BY created_at DESC LIMIT 1',
+        'params': {'cycle_id': context['cycle_id']}
+      }))
+      result and result[0]['ph_target'] == 6.5
+    timeout: 10.0
+    interval: 1.0
+
+  # Проверяем финальные effective-targets (должны быть override значения)
+  - step: check_final_effective_targets
+    type: database_query
+    query: |
+      SELECT ph_target, ec_target, temp_air_target
+      FROM effective_targets
+      WHERE cycle_id = :cycle_id
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      cycle_id: ${cycle_id}
+    save: final_targets
+
+assertions:
+  # Проверка 1: Начальные effective-targets соответствуют recipe
+  - name: initial_targets_from_recipe
+    type: json_assertion
+    data: ${initial_targets}
+    expected:
+      - field: ph_target
+        operator: equals
+        value: 6.0
+      - field: ec_target
+        operator: equals
+        value: 1.5
+      - field: temp_air_target
+        operator: equals
+        value: 22.0
+
+  # Проверка 2: Финальные effective-targets соответствуют override
+  - name: final_targets_from_override
+    type: json_assertion
+    data: ${final_targets}
+    expected:
+      - field: ph_target
+        operator: equals
+        value: 6.5
+      - field: ec_target
+        operator: equals
+        value: 1.8
+      - field: temp_air_target
+        operator: equals
+        value: 25.0
+
+  # Проверка 3: AE использует effective-targets (косвенно через команды)
+  - name: ae_uses_effective_targets
+    type: database_query
+    query: |
+      SELECT COUNT(*) as command_count
+      FROM commands
+      WHERE zone_id = :zone_id
+      AND type IN ('ADJUST_PH', 'ADJUST_EC', 'ADJUST_TEMPERATURE')
+      AND created_at > NOW() - INTERVAL '30 seconds'
+    params:
+      zone_id: ${zone_id}
+    expected:
+      - field: command_count
+        operator: greater_than
+        value: 0
+
+cleanup:
+  - step: abort_cycle
+    type: api_post
+    endpoint: /api/grow-cycles/${cycle_id}/abort
+    payload: {}
+    optional: true
+
+  - step: delete_recipe
+    type: api_delete
+    endpoint: /api/recipes/${recipe_response.data.id}
+    optional: true

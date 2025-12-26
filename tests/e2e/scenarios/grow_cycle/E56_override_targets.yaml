@@ -1,0 +1,118 @@
+# E56: Override Targets - manual target override during cycle
+# DoD: manual target override during cycle
+
+name: E56_override_targets
+description: |
+  Проверяет ручное переопределение целей во время цикла:
+  - Цикл в статусе RUNNING
+  - Пользователь переопределяет targets через API
+  - effective-targets отражают override значения
+  - Automation-engine использует override значения
+
+actions:
+  - step: get_zones
+    type: api_get
+    endpoint: /api/zones
+    save: zones_response
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zones_response.data.data[0].id}
+
+  - step: get_running_cycle
+    type: database_query
+    query: |
+      SELECT id, status, current_phase_id
+      FROM grow_cycles
+      WHERE zone_id = :zone_id
+      AND status = 'RUNNING'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+    save: running_cycle
+
+  # Если нет запущенного цикла, пропускаем тест
+  - step: skip_if_no_cycle
+    type: set
+    cycle_id: ${running_cycle.data[0].id if running_cycle.data else None}
+
+  - step: skip_test_if_no_cycle
+    type: eventually
+    condition: "context.get('cycle_id') is not None"
+    timeout: 1.0
+    optional: true
+
+  - step: override_ph_target
+    type: api_post
+    endpoint: /api/grow-cycles/${cycle_id}/targets
+    payload:
+      ph_target: 6.8
+      ph_min: 6.3
+      ph_max: 7.2
+    save: override_response
+
+  - step: wait_for_override
+    type: wait_until
+    condition: |
+      # Проверяем, что override сохранен
+      from runner.steps.database import DatabaseStepExecutor
+      from runner.schema.variables import VariableResolver
+      resolver = VariableResolver(context)
+      db_exec = DatabaseStepExecutor(context.get('db'), resolver)
+      import asyncio
+      result = asyncio.run(db_exec.execute_db_step('database_query', {
+        'query': 'SELECT ph_target FROM effective_targets WHERE cycle_id = :cycle_id ORDER BY created_at DESC LIMIT 1',
+        'params': {'cycle_id': context['cycle_id']}
+      }))
+      result[0]['ph_target'] == 6.8 if result else False
+    timeout: 10.0
+    interval: 1.0
+
+assertions:
+  # Проверка 1: Override сохранен в БД
+  - name: override_saved
+    type: database_query
+    query: |
+      SELECT ph_target, ph_min, ph_max
+      FROM effective_targets
+      WHERE cycle_id = :cycle_id
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      cycle_id: ${cycle_id}
+    expected:
+      - field: ph_target
+        operator: equals
+        value: 6.8
+      - field: ph_min
+        operator: equals
+        value: 6.3
+      - field: ph_max
+        operator: equals
+        value: 7.2
+
+  # Проверка 2: API ответ успешный
+  - name: override_api_success
+    type: json_assertion
+    data: ${override_response}
+    expected:
+      - field: status_code
+        operator: in
+        value: [200, 201]
+
+  # Проверка 3: Override активен (не истек)
+  - name: override_active
+    type: database_query
+    query: |
+      SELECT expires_at
+      FROM effective_targets
+      WHERE cycle_id = :cycle_id
+      AND ph_target = 6.8
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      cycle_id: ${cycle_id}
+    expected:
+      - field: expires_at
+        operator: is_not_null

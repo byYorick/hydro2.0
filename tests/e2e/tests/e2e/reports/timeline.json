@@ -1,11 +1,11 @@
 {
   "test_suite": "E00_api_smoke",
-  "generated_at": "2025-12-26T09:42:54.614986",
+  "generated_at": "2025-12-26T15:15:43.868920",
   "test_cases": [
     {
       "name": "check_health",
       "status": "passed",
-      "duration": 0.11900091171264648,
+      "duration": 0.08414363861083984,
       "error_message": null,
       "steps": [
         {
@@ -13,26 +13,90 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-26T09:42:54.517425"
+      "timestamp": "2025-12-26T15:15:43.076666"
     },
     {
       "name": "check_login_endpoint",
-      "status": "failed",
-      "duration": 0.09605240821838379,
-      "error_message": "Client error '429 Too Many Requests' for url 'http://localhost:8081/api/auth/login'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429",
+      "status": "passed",
+      "duration": 0.2821626663208008,
+      "error_message": null,
       "steps": [
         {
           "name": "check_login_endpoint",
-          "status": "failed",
-          "error": "Client error '429 Too Many Requests' for url 'http://localhost:8081/api/auth/login'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429"
+          "status": "passed"
         }
       ],
-      "timestamp": "2025-12-26T09:42:54.613643"
+      "timestamp": "2025-12-26T15:15:43.358867"
+    },
+    {
+      "name": "check_zones_protected",
+      "status": "passed",
+      "duration": 0.09633851051330566,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "check_zones_protected",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-26T15:15:43.455233"
+    },
+    {
+      "name": "check_nodes_protected",
+      "status": "passed",
+      "duration": 0.08236002922058105,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "check_nodes_protected",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-26T15:15:43.537620"
+    },
+    {
+      "name": "check_cycles_protected",
+      "status": "passed",
+      "duration": 0.07964634895324707,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "check_cycles_protected",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-26T15:15:43.617292"
+    },
+    {
+      "name": "check_greenhouses_protected",
+      "status": "passed",
+      "duration": 0.09403610229492188,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "check_greenhouses_protected",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-26T15:15:43.711352"
+    },
+    {
+      "name": "check_commands_protected",
+      "status": "passed",
+      "duration": 0.15552020072937012,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "check_commands_protected",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-26T15:15:43.866922"
     },
     {
       "name": "health_endpoint_works",
       "status": "passed",
-      "duration": 1.71661376953125e-05,
+      "duration": 0.00011539459228515625,
       "error_message": null,
       "steps": [
         {
@@ -40,21 +104,33 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-26T09:42:54.613679"
+      "timestamp": "2025-12-26T15:15:43.867152"
     },
     {
       "name": "no_500_errors_on_endpoints",
-      "status": "failed",
-      "duration": 0.00023174285888671875,
-      "error_message": "Failed to evaluate assert condition 'all(s not in [500, 502, 503, 504] for s in [context.get('health_response', {}).get('status_code', 0), context.get('login_response', {}).get('status_code', 0), context.get('zones_response', {}).get('status_code', 0), context.get('nodes_response', {}).get('status_code', 0), context.get('cycles_response', {}).get('status_code', 0), context.get('greenhouses_response', {}).get('status_code', 0), context.get('commands_response', {}).get('status_code', 0)] if s > 0)': name 'context' is not defined",
+      "status": "passed",
+      "duration": 0.001234292984008789,
+      "error_message": null,
       "steps": [
         {
           "name": "no_500_errors_on_endpoints",
-          "status": "failed",
-          "error": "Failed to evaluate assert condition 'all(s not in [500, 502, 503, 504] for s in [context.get('health_response', {}).get('status_code', 0), context.get('login_response', {}).get('status_code', 0), context.get('zones_response', {}).get('status_code', 0), context.get('nodes_response', {}).get('status_code', 0), context.get('cycles_response', {}).get('status_code', 0), context.get('greenhouses_response', {}).get('status_code', 0), context.get('commands_response', {}).get('status_code', 0)] if s > 0)': name 'context' is not defined"
+          "status": "passed"
         }
       ],
-      "timestamp": "2025-12-26T09:42:54.614008"
+      "timestamp": "2025-12-26T15:15:43.868423"
+    },
+    {
+      "name": "login_returns_validation_error",
+      "status": "passed",
+      "duration": 5.269050598144531e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "login_returns_validation_error",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-26T15:15:43.868492"
     }
   ],
   "timeline": [],
@@ -64,7 +140,7 @@
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
-        "zone_id": 3,
+        "zone_id": 1,
         "zone_uid": "zn-test-1",
         "node_id": 1,
         "node_uid": "nd-ph-esp32una"

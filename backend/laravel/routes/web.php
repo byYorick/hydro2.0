@@ -9,7 +9,7 @@ use App\Models\Recipe;
 use App\Models\SystemLog;
 use App\Models\TelemetryLast;
 use App\Models\Zone;
-use App\Models\ZoneCycle;
+use App\Models\GrowCycle;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Broadcast;
@@ -706,9 +706,17 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
 
         $telemetryByZone = [];
         if (! empty($zoneIds)) {
+            // Запрос к telemetry_last с join на sensors для получения zone_id и типа метрики
             $telemetryAll = TelemetryLast::query()
-                ->whereIn('zone_id', $zoneIds)
-                ->get(['zone_id', 'metric_type', 'value']);
+                ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
+                ->whereIn('sensors.zone_id', $zoneIds)
+                ->whereNotNull('sensors.zone_id')
+                ->select([
+                    'sensors.zone_id',
+                    'sensors.type as metric_type',
+                    'telemetry_last.last_value as value'
+                ])
+                ->get();
 
             foreach ($telemetryAll as $metric) {
                 $key = strtolower($metric->metric_type ?? '');
@@ -812,9 +820,17 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
             $telemetryByZone = [];
 
             if (! empty($zoneIds)) {
+                // Запрос к telemetry_last с join на sensors для получения zone_id и типа метрики
                 $telemetryAll = \App\Models\TelemetryLast::query()
-                    ->whereIn('zone_id', $zoneIds)
-                    ->get(['zone_id', 'metric_type', 'value']);
+                    ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
+                    ->whereIn('sensors.zone_id', $zoneIds)
+                    ->whereNotNull('sensors.zone_id')
+                    ->select([
+                        'sensors.zone_id',
+                        'sensors.type as metric_type',
+                        'telemetry_last.last_value as value'
+                    ])
+                    ->get();
 
                 // Группируем по zone_id и преобразуем в формат {ph, ec, temperature, humidity}
                 $telemetryByZone = $telemetryAll->groupBy('zone_id')->map(function ($metrics) {
@@ -941,8 +957,14 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
 
             // Загрузить телеметрию
             $telemetryLast = \App\Models\TelemetryLast::query()
-                ->where('zone_id', $zoneIdInt)
-                ->get(['metric_type', 'value'])
+                ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
+                ->where('sensors.zone_id', $zoneIdInt)
+                ->whereNotNull('sensors.zone_id')
+                ->select([
+                    'sensors.type as metric_type',
+                    'telemetry_last.last_value as value'
+                ])
+                ->get()
                 ->mapWithKeys(function ($item) {
                     $key = strtolower($item->metric_type ?? '');
                     if ($key === 'ph') {
@@ -1007,9 +1029,9 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 }
             }
             // Агрегированный цикл выращивания (один активный на зону).
-            $activeCycleModel = ZoneCycle::query()
+            $activeCycleModel = GrowCycle::query()
                 ->where('zone_id', $zone->id)
-                ->where('status', 'active')
+                ->whereIn('status', ['PLANNED', 'RUNNING', 'PAUSED'])
                 ->latest('started_at')
                 ->first();
 
@@ -1839,3 +1861,6 @@ if (app()->environment('testing')) {
         return redirect()->intended('/');
     })->name('testing.login');
 }
+
+// Подключаем дополнительные файлы маршрутов
+require __DIR__.'/web/greenhouses-zones.php';

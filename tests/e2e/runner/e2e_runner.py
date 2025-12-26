@@ -1584,6 +1584,12 @@ class E2ERunner:
                         else:
                             response.raise_for_status()
                             res = response.json()
+                    # Для expected_status сохраняем также response данные
+                    res = {
+                        'data': res,
+                        'status_code': response.status_code,
+                        'headers': dict(response.headers),
+                    }
                 else:
                     res = await self.api.post(endpoint, json=payload)
                 # Автозаполнение zone_id/node_id из API ответов

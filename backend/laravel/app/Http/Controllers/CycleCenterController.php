@@ -45,9 +45,18 @@ class CycleCenterController extends Controller
 
         $telemetryByZone = [];
         if (!empty($zoneIds)) {
+            // Запрос к telemetry_last с join на sensors для получения zone_id и типа метрики
             $telemetryAll = TelemetryLast::query()
-                ->whereIn('zone_id', $zoneIds)
-                ->get(['zone_id', 'metric_type', 'value', 'updated_at']);
+                ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
+                ->whereIn('sensors.zone_id', $zoneIds)
+                ->whereNotNull('sensors.zone_id')
+                ->select([
+                    'sensors.zone_id',
+                    'sensors.type as metric_type',
+                    'telemetry_last.last_value as value',
+                    'telemetry_last.updated_at'
+                ])
+                ->get();
 
             foreach ($telemetryAll as $metric) {
                 $zoneId = $metric->zone_id;

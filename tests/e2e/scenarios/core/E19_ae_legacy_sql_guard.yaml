@@ -1,0 +1,111 @@
+# E19: AE Legacy SQL Guard - проверка работы guard для legacy таблиц в AE
+# DoD: AE legacy SQL guard корректно логирует доступ к legacy таблицам/колонкам
+
+name: E19_ae_legacy_sql_guard
+description: |
+  Проверяет работу Automation Engine Legacy SQL Guard:
+  - Создает запрос к AE эндпоинту (grow-cycles/effective-targets)
+  - Проверяет логи на наличие записей о legacy SQL доступе
+  - Убеждается, что guard логирует, но не блокирует работу системы
+
+actions:
+  - step: get_zones
+    type: api_get
+    endpoint: /api/zones
+    save: zones_response
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zones_response.data.data[0].id}
+
+  # Создаем цикл выращивания (это вызовет AE сервис)
+  - step: create_grow_cycle
+    type: api_post
+    endpoint: /api/zones/${zone_id}/grow-cycles
+    payload:
+      recipe_revision_id: 1  # Assume test recipe exists
+      plant_id: 1           # Assume test plant exists
+      start_immediately: true
+    save: cycle_response
+
+  - step: set_cycle_id
+    type: set
+    cycle_id: ${cycle_response.data.id}
+
+  # Запрашиваем effective-targets (это вызовет EffectiveTargetsService)
+  - step: get_effective_targets
+    type: api_get
+    endpoint: /api/zones/${zone_id}/effective-targets
+    save: targets_response
+
+  # Ждем немного, чтобы логи были записаны
+  - step: wait_for_logging
+    type: sleep
+    duration: 2.0
+
+  # Проверяем логи на наличие AE_LEGACY_SQL_GUARD записей
+  - step: check_legacy_sql_logs
+    type: database_query
+    query: |
+      SELECT COUNT(*) as guard_log_count
+      FROM system_logs
+      WHERE level = 'warning'
+      AND message LIKE '%AE_LEGACY_SQL_GUARD%'
+      AND created_at > NOW() - INTERVAL '5 minutes'
+    save: guard_logs
+
+assertions:
+  # Проверка 1: Система работает корректно (grow-cycle создан)
+  - name: cycle_created_successfully
+    type: json_assertion
+    data: ${cycle_response}
+    expected:
+      - field: status_code
+        operator: equals
+        value: 201
+      - field: data.id
+        operator: is_not_null
+
+  # Проверка 2: Effective-targets API работает
+  - name: effective_targets_api_works
+    type: json_assertion
+    data: ${targets_response}
+    expected:
+      - field: status_code
+        operator: in
+        value: [200, 201]
+
+  # Проверка 3: Guard логирует legacy SQL доступ (предупреждения в логах)
+  - name: guard_logs_legacy_access
+    type: json_assertion
+    data: ${guard_logs}
+    expected:
+      - field: guard_log_count
+        operator: greater_than
+        value: 0
+
+  # Проверка 4: Guard не блокирует работу (нет ошибок в ответах)
+  - name: guard_does_not_block
+    type: custom_assert
+    condition: |
+      cycle_status = context.get('cycle_response', {}).get('status_code')
+      targets_status = context.get('targets_response', {}).get('status_code')
+      # Оба запроса должны быть успешными (guard только логирует, не блокирует)
+      cycle_status in [200, 201] and targets_status in [200, 201]
+
+cleanup:
+  - step: abort_cycle
+    type: api_post
+    endpoint: /api/grow-cycles/${cycle_id}/abort
+    payload: {}
+    optional: true
+
+  # Очищаем логи guard (опционально, для чистоты тестов)
+  - step: cleanup_guard_logs
+    type: database_execute
+    query: |
+      DELETE FROM system_logs
+      WHERE level = 'warning'
+      AND message LIKE '%AE_LEGACY_SQL_GUARD%'
+      AND created_at > NOW() - INTERVAL '10 minutes'
+    optional: true

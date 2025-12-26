@@ -74,7 +74,15 @@ class AiController extends Controller
 
         // Получаем текущую телеметрию
         $telemetry = TelemetryLast::query()
-            ->where('zone_id', $zone->id)
+            ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
+            ->where('sensors.zone_id', $zone->id)
+            ->whereNotNull('sensors.zone_id')
+            ->select([
+                'sensors.type as metric_type',
+                'telemetry_last.last_value as value',
+                'telemetry_last.last_ts as timestamp',
+                'telemetry_last.updated_at'
+            ])
             ->get()
             ->keyBy('metric_type');
 
@@ -188,7 +196,9 @@ class AiController extends Controller
 
         // Получаем текущую телеметрию
         $telemetry = TelemetryLast::query()
-            ->where('zone_id', $zone->id)
+            ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
+            ->where('sensors.zone_id', $zone->id)
+            ->whereNotNull('sensors.zone_id')
             ->get()
             ->keyBy('metric_type');
 
@@ -288,7 +298,14 @@ class AiController extends Controller
 
         foreach ($zones as $zone) {
             $telemetry = TelemetryLast::query()
-                ->where('zone_id', $zone->id)
+                ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
+                ->where('sensors.zone_id', $zone->id)
+                ->whereNotNull('sensors.zone_id')
+                ->select([
+                    'sensors.type as metric_type',
+                    'telemetry_last.last_value as value',
+                    'telemetry_last.updated_at'
+                ])
                 ->get()
                 ->keyBy('metric_type');
 

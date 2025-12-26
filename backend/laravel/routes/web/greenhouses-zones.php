@@ -11,6 +11,13 @@
 */
 
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\DB;
+use Inertia\Inertia;
+use App\Models\Alert;
+use App\Models\DeviceNode;
+use App\Models\Greenhouse;
+use App\Models\TelemetryLast;
+use App\Models\Zone;
 
 Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->group(function () {
     /**
@@ -454,9 +461,17 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
 
         $telemetryByZone = [];
         if (! empty($zoneIds)) {
+            // Запрос к telemetry_last с join на sensors для получения zone_id и типа метрики
             $telemetryAll = TelemetryLast::query()
-                ->whereIn('zone_id', $zoneIds)
-                ->get(['zone_id', 'metric_type', 'value']);
+                ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
+                ->whereIn('sensors.zone_id', $zoneIds)
+                ->whereNotNull('sensors.zone_id')
+                ->select([
+                    'sensors.zone_id',
+                    'sensors.type as metric_type',
+                    'telemetry_last.last_value as value'
+                ])
+                ->get();
 
             foreach ($telemetryAll as $metric) {
                 $key = strtolower($metric->metric_type ?? '');
@@ -521,7 +536,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
     /**
      * Cycle Center - основной операционный экран циклов выращивания
      */
-    Route::get('/cycles', [CycleCenterController::class, 'index'])->name('cycles.center');
+    Route::get('/cycles', [\App\Http\Controllers\CycleCenterController::class, 'index'])->name('cycles.center');
 
     /**
      * Grow Cycle Wizard - мастер запуска цикла выращивания
@@ -536,3 +551,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
     })->name('grow-cycle-wizard');
 
     /**
+     * End of routes
+     */
+});

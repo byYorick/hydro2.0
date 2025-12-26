@@ -142,7 +142,7 @@ Route::middleware([
     Route::get('grow-cycle-wizard/zone/{zone}', [\App\Http\Controllers\GrowCycleWizardController::class, 'getZoneData']);
 
     // Mutating endpoints (operator+)
-    Route::middleware('role:operator,admin,agronomist,engineer')->group(function () {
+    Route::middleware(['role:operator,admin,agronomist,engineer', 'ae.legacy.sql.guard'])->group(function () {
         // Greenhouses
         Route::post('greenhouses', [GreenhouseController::class, 'store']);
         Route::put('greenhouses/{greenhouse}', [GreenhouseController::class, 'update']);
@@ -174,6 +174,7 @@ Route::middleware([
         Route::delete('zones/{zone}/infrastructure/bindings/{zoneChannelBinding}', [ZoneInfrastructureController::class, 'destroyBinding']);
 
         // Grow Cycle operations
+        Route::get('grow-cycles', [GrowCycleController::class, 'index']);
         Route::post('zones/{zone}/grow-cycles', [GrowCycleController::class, 'store']);
         Route::post('grow-cycles/{growCycle}/start', [GrowCycleController::class, 'start']);
         Route::post('grow-cycles/{growCycle}/pause', [GrowCycleController::class, 'pause']);

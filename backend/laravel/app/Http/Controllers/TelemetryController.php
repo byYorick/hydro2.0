@@ -37,7 +37,19 @@ class TelemetryController extends Controller
         }
         
         $rows = TelemetryLast::query()
-            ->where('zone_id', $zoneId)
+            ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
+            ->where('sensors.zone_id', $zoneId)
+            ->whereNotNull('sensors.zone_id')
+            ->select([
+                'sensors.zone_id',
+                'sensors.node_id',
+                'sensors.label as channel',
+                'sensors.type as metric_type',
+                'telemetry_last.last_value as value',
+                'telemetry_last.last_ts as ts',
+                'telemetry_last.last_quality as quality',
+                'telemetry_last.updated_at'
+            ])
             ->get();
 
         return response()->json([
@@ -122,7 +134,19 @@ class TelemetryController extends Controller
         }
         
         $rows = TelemetryLast::query()
-            ->where('node_id', $nodeId)
+            ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
+            ->where('sensors.node_id', $nodeId)
+            ->whereNotNull('sensors.node_id')
+            ->select([
+                'sensors.zone_id',
+                'sensors.node_id',
+                'sensors.label as channel',
+                'sensors.type as metric_type',
+                'telemetry_last.last_value as value',
+                'telemetry_last.last_ts as ts',
+                'telemetry_last.last_quality as quality',
+                'telemetry_last.updated_at'
+            ])
             ->get();
 
         return response()->json([

@@ -18,15 +18,15 @@ actions:
     endpoint: /api/system/health
     save: health_response
 
-  # Тест 2: Auth endpoints (должны вернуть 401 без токена)
+  # Тест 2: Auth endpoints (должны вернуть 422 при неправильных credentials)
   - step: check_login_endpoint
     type: api_post
     endpoint: /api/auth/login
-    data:
+    payload:
       email: "invalid@test.local"
       password: "invalid"
     save: login_response
-    expect_no_500: true
+    expected_status: 422
 
   # Тест 3: Protected endpoints (должны вернуть 401 без токена)
   - step: check_zones_protected
@@ -53,16 +53,17 @@ actions:
     save: greenhouses_response
     expect_no_500: true
 
-  # Тест 4: Commands endpoint (должен вернуть 401)
+  # Тест 4: Zone commands endpoint (должен вернуть 422 при неправильных данных)
   - step: check_commands_protected
     type: api_post
-    endpoint: /api/commands
-    data:
-      type: "TEST_COMMAND"
-      zone_id: 1
+    endpoint: /api/zones/1/commands
+    payload:
+      type: "IRRIGATION"
       node_id: 1
+      params:
+        duration_sec: 30
     save: commands_response
-    expect_no_500: true
+    expected_status: 422
 
 assertions:
   # Проверка 1: Health endpoint работает
@@ -76,6 +77,13 @@ assertions:
         optional: true
 
   # Проверка 2: Нет 500 ошибок (все endpoints возвращают корректные статусы)
+  # Логин возвращает 422 (validation error) - это ожидаемо для неправильных credentials
+  # Остальные endpoints возвращают 401 (unauthorized) - это нормально
   - name: no_500_errors_on_endpoints
     type: custom_assert
     condition: all(s not in [500, 502, 503, 504] for s in [context.get('health_response', {}).get('status_code', 0), context.get('login_response', {}).get('status_code', 0), context.get('zones_response', {}).get('status_code', 0), context.get('nodes_response', {}).get('status_code', 0), context.get('cycles_response', {}).get('status_code', 0), context.get('greenhouses_response', {}).get('status_code', 0), context.get('commands_response', {}).get('status_code', 0)] if s > 0)
+
+  # Проверка 3: Логин возвращает правильный validation error
+  - name: login_returns_validation_error
+    type: custom_assert
+    condition: context.get('login_response', {}).get('status_code') == 422

@@ -52,9 +52,17 @@ use Illuminate\Support\Facades\Route;
             $telemetryByZone = [];
 
             if (! empty($zoneIds)) {
+                // Запрос к telemetry_last с join на sensors для получения zone_id и типа метрики
                 $telemetryAll = \App\Models\TelemetryLast::query()
-                    ->whereIn('zone_id', $zoneIds)
-                    ->get(['zone_id', 'metric_type', 'value']);
+                    ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
+                    ->whereIn('sensors.zone_id', $zoneIds)
+                    ->whereNotNull('sensors.zone_id')
+                    ->select([
+                        'sensors.zone_id',
+                        'sensors.type as metric_type',
+                        'telemetry_last.last_value as value'
+                    ])
+                    ->get();
 
                 // Группируем по zone_id и преобразуем в формат {ph, ec, temperature, humidity}
                 $telemetryByZone = $telemetryAll->groupBy('zone_id')->map(function ($metrics) {
@@ -172,8 +180,14 @@ use Illuminate\Support\Facades\Route;
 
             // Загрузить телеметрию
             $telemetryLast = \App\Models\TelemetryLast::query()
-                ->where('zone_id', $zoneIdInt)
-                ->get(['metric_type', 'value'])
+                ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
+                ->where('sensors.zone_id', $zoneIdInt)
+                ->whereNotNull('sensors.zone_id')
+                ->select([
+                    'sensors.type as metric_type',
+                    'telemetry_last.last_value as value'
+                ])
+                ->get()
                 ->mapWithKeys(function ($item) {
                     $key = strtolower($item->metric_type ?? '');
                     if ($key === 'ph') {

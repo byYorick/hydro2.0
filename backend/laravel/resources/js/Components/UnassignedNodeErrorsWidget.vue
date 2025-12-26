@@ -77,7 +77,7 @@ interface UnassignedError {
   hardware_id: string
   error_message: string
   error_code: string | null
-  severity: string
+  severity?: string
   topic: string
   last_payload: any
   count: number
@@ -103,8 +103,8 @@ let refreshInterval: ReturnType<typeof setInterval> | null = null
 
 const { api } = useApi()
 
-const getSeverityVariant = (severity: string): 'danger' | 'warning' | 'info' => {
-  const upper = severity.toUpperCase()
+const getSeverityVariant = (severity: string | undefined): 'danger' | 'warning' | 'info' => {
+  const upper = (severity || 'ERROR').toUpperCase()
   if (upper === 'CRITICAL' || upper === 'ERROR') return 'danger'
   if (upper === 'WARNING') return 'warning'
   return 'info'

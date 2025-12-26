@@ -58,11 +58,11 @@ actions:
 
   - step: subscribe_zone_channel
     type: websocket_subscribe
-    channel: private-hydro.zones.${test_zone_id}
+    channel: hydro.zones.1
 
   - step: subscribe_commands_channel
     type: websocket_subscribe
-    channel: private-commands.${test_zone_id}
+    channel: commands.1
 
   # Отправляем команду, которая приведет к FAILED
   # Примечание: Для симуляции FAILED может потребоваться специальная команда
@@ -70,7 +70,7 @@ actions:
   # Здесь используем команду с неверным каналом или параметрами
   - step: send_command_that_fails
     type: api_post
-    endpoint: /api/nodes/${test_node_id}/commands
+    endpoint: /api/nodes/1/commands
     payload:
       cmd: set_relay_state
       channel: nonexistent_channel  # Несуществующий канал может привести к FAILED

@@ -1,11 +1,37 @@
 {
-  "test_suite": "E72_ws_down_snapshot_recover",
-  "generated_at": "2025-12-14T05:17:12.857887",
+  "test_suite": "E10_command_happy",
+  "generated_at": "2025-12-26T11:52:40.761668",
   "test_cases": [
+    {
+      "name": "start_node_simulator",
+      "status": "passed",
+      "duration": 5.83839225769043,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "start_node_simulator",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-26T11:51:34.700347"
+    },
+    {
+      "name": "check_system_health",
+      "status": "passed",
+      "duration": 0.13907623291015625,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "check_system_health",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-26T11:51:34.839472"
+    },
     {
       "name": "get_zones",
       "status": "passed",
-      "duration": 0.06165766716003418,
+      "duration": 0.11569023132324219,
       "error_message": null,
       "steps": [
         {
@@ -13,65 +39,51 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-14T05:17:04.426729"
+      "timestamp": "2025-12-26T11:51:34.955202"
     },
     {
-      "name": "set_zone_id",
+      "name": "get_nodes",
       "status": "passed",
-      "duration": 4.76837158203125e-06,
+      "duration": 0.13757061958312988,
       "error_message": null,
       "steps": [
         {
-          "name": "set_zone_id",
+          "name": "get_nodes",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-14T05:17:04.426829"
+      "timestamp": "2025-12-26T11:51:35.092800"
     },
     {
-      "name": "get_initial_snapshot",
-      "status": "skipped",
-      "duration": 0.06323838233947754,
-      "error_message": "Server error '500 Internal Server Error' for url 'http://laravel/api/zones/1'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500",
-      "steps": [
-        {
-          "name": "get_initial_snapshot",
-          "status": "skipped",
-          "error": "Server error '500 Internal Server Error' for url 'http://laravel/api/zones/1'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
-        }
-      ],
-      "timestamp": "2025-12-14T05:17:04.490130"
-    },
-    {
-      "name": "set_initial_last_event_id",
+      "name": "find_test_zone_and_node",
       "status": "passed",
       "duration": 6.4373016357421875e-06,
       "error_message": null,
       "steps": [
         {
-          "name": "set_initial_last_event_id",
+          "name": "find_test_zone_and_node",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-14T05:17:04.490168"
+      "timestamp": "2025-12-26T11:51:35.092829"
     },
     {
-      "name": "connect_websocket",
+      "name": "subscribe_command_channel",
       "status": "passed",
-      "duration": 4.76837158203125e-06,
+      "duration": 0.10147500038146973,
       "error_message": null,
       "steps": [
         {
-          "name": "connect_websocket",
+          "name": "subscribe_command_channel",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-14T05:17:04.490178"
+      "timestamp": "2025-12-26T11:51:35.194313"
     },
     {
       "name": "subscribe_zone_channel",
       "status": "passed",
-      "duration": 0.16590046882629395,
+      "duration": 0.1008157730102539,
       "error_message": null,
       "steps": [
         {
@@ -79,132 +91,93 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-14T05:17:04.656092"
+      "timestamp": "2025-12-26T11:51:35.295157"
     },
     {
-      "name": "stop_reverb",
-      "status": "skipped",
-      "duration": 0.0018880367279052734,
-      "error_message": "[Errno 2] No such file or directory: 'docker-compose'",
-      "steps": [
-        {
-          "name": "stop_reverb",
-          "status": "skipped",
-          "error": "[Errno 2] No such file or directory: 'docker-compose'"
-        }
-      ],
-      "timestamp": "2025-12-14T05:17:04.658048"
-    },
-    {
-      "name": "wait_during_ws_down",
+      "name": "send_command",
       "status": "passed",
-      "duration": 3.0031096935272217,
+      "duration": 0.3269522190093994,
       "error_message": null,
       "steps": [
         {
-          "name": "wait_during_ws_down",
+          "name": "send_command",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-14T05:17:07.661178"
+      "timestamp": "2025-12-26T11:51:35.622140"
     },
     {
-      "name": "create_event_during_ws_down",
-      "status": "skipped",
-      "duration": 0.059734344482421875,
-      "error_message": "Client error '422 Unprocessable Content' for url 'http://laravel/api/zones/1/commands'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/422",
-      "steps": [
-        {
-          "name": "create_event_during_ws_down",
-          "status": "skipped",
-          "error": "Client error '422 Unprocessable Content' for url 'http://laravel/api/zones/1/commands'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/422"
-        }
-      ],
-      "timestamp": "2025-12-14T05:17:07.721007"
-    },
-    {
-      "name": "restore_reverb",
-      "status": "skipped",
-      "duration": 0.0009644031524658203,
-      "error_message": "[Errno 2] No such file or directory: 'docker-compose'",
-      "steps": [
-        {
-          "name": "restore_reverb",
-          "status": "skipped",
-          "error": "[Errno 2] No such file or directory: 'docker-compose'"
-        }
-      ],
-      "timestamp": "2025-12-14T05:17:07.722026"
-    },
-    {
-      "name": "wait_after_restore",
+      "name": "save_command_id",
       "status": "passed",
-      "duration": 5.005102872848511,
+      "duration": 2.86102294921875e-06,
       "error_message": null,
       "steps": [
         {
-          "name": "wait_after_restore",
+          "name": "save_command_id",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-14T05:17:12.727149"
+      "timestamp": "2025-12-26T11:51:35.622164"
     },
     {
-      "name": "get_final_snapshot",
-      "status": "skipped",
-      "duration": 0.06354451179504395,
-      "error_message": "Server error '500 Internal Server Error' for url 'http://laravel/api/zones/1'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500",
+      "name": "wait_for_command_status",
+      "status": "failed",
+      "duration": 60.046385288238525,
+      "error_message": "Timeout waiting for DB condition: SELECT status FROM commands WHERE cmd_id = :cmd_id AND status IN ('SENT', 'ACCEPTED')",
       "steps": [
         {
-          "name": "get_final_snapshot",
-          "status": "skipped",
-          "error": "Server error '500 Internal Server Error' for url 'http://laravel/api/zones/1'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+          "name": "wait_for_command_status",
+          "status": "failed",
+          "error": "Timeout waiting for DB condition: SELECT status FROM commands WHERE cmd_id = :cmd_id AND status IN ('SENT', 'ACCEPTED')"
         }
       ],
-      "timestamp": "2025-12-14T05:17:12.790785"
+      "timestamp": "2025-12-26T11:52:35.668725"
     },
     {
-      "name": "get_missed_events",
-      "status": "passed",
-      "duration": 0.05942893028259277,
-      "error_message": null,
+      "name": "assert_final_status_is_done",
+      "status": "failed",
+      "duration": 5.091597080230713,
+      "error_message": "Timeout waiting for DB condition: SELECT status\nFROM commands\nWHERE cmd_id = :cmd_id\nAND status = 'DONE'\n",
       "steps": [
         {
-          "name": "get_missed_events",
-          "status": "passed"
+          "name": "assert_final_status_is_done",
+          "status": "failed",
+          "error": "Timeout waiting for DB condition: SELECT status\nFROM commands\nWHERE cmd_id = :cmd_id\nAND status = 'DONE'\n"
         }
       ],
-      "timestamp": "2025-12-14T05:17:12.850247"
-    },
-    {
-      "name": "zone_exists",
-      "status": "passed",
-      "duration": 0.006304740905761719,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "zone_exists",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-14T05:17:12.856566"
+      "timestamp": "2025-12-26T11:52:40.760686"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E72_ws_down_snapshot_recover": {
+    "E10_command_happy": {
       "ws_messages": [
         {
           "data": {
             "event": "pusher_internal:subscription_succeeded",
             "data": "{}",
-            "channel": "private-hydro.zones.1"
+            "channel": "commands.1"
           },
-          "timestamp": "2025-12-14T05:17:04.558677"
+          "timestamp": "2025-12-26T11:51:35.105164"
+        },
+        {
+          "data": {
+            "event": "pusher_internal:subscription_succeeded",
+            "data": "{}",
+            "channel": "hydro.zones.1"
+          },
+          "timestamp": "2025-12-26T11:51:35.200870"
         }
       ],
       "mqtt_messages": [],
-      "api_responses": []
+      "api_responses": [],
+      "context_vars": {
+        "zone_id": 1,
+        "node_id": 1,
+        "test_zone_id": "${zones_response.data.data[0].id}",
+        "test_node_id": "${nodes_response.data.data[0].id}",
+        "command_id": "${command_response.data.command_id}"
+      }
     }
   }
 }

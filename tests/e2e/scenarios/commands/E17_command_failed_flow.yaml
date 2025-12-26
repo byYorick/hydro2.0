@@ -1,0 +1,140 @@
+# E17: Command Failed Flow - failure handling with WS/DB invariants
+# DoD: failure handling with WS/DB invariants
+
+name: E17_command_failed_flow
+description: |
+  Проверяет обработку failed команд:
+  - Node-sim отвечает ACCEPTED, затем FAILED
+  - WS события CommandStatusUpdated (ACCEPTED + FAILED)
+  - DB статус обновляется на FAILED
+  - Error details фиксируются
+
+actions:
+  - step: get_zones
+    type: api_get
+    endpoint: /api/zones
+    save: zones_response
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zones_response.data.data[0].id}
+
+  - step: get_nodes
+    type: api_get
+    endpoint: /api/nodes
+    save: nodes_response
+
+  - step: set_node_id
+    type: set
+    node_id: ${nodes_response.data.data[0].id}
+    test_zone_id: 1  # Используем фиксированный zone_id для каналов
+    test_node_id: ${nodes_response.data.data[0].id}
+
+  # Настраиваем node-sim на failure mode
+  - step: set_node_failure_mode
+    type: api_post
+    endpoint: /api/test-utils/node-sim/failure-mode
+    payload:
+      mode: "command_failure"
+      enabled: true
+    optional: true
+
+  - step: send_failure_command
+    type: api_post
+    endpoint: /api/zones/1/commands
+    payload:
+      type: FORCE_IRRIGATION
+      params:
+        duration_sec: 10
+    save: failure_command_response
+
+  - step: extract_failure_command_id
+    type: set
+    failure_command_id: ${failure_command_response.data.id}
+
+  # Ждем WS события ACCEPTED
+  - step: wait_for_accepted_ws_event
+    type: websocket_event
+    event_type: ".App\\Events\\CommandStatusUpdated"
+    filter:
+      command.id: ${failure_command_id}
+      command.status: "ACCEPTED"
+    timeout: 10.0
+
+  # Ждем WS события FAILED
+  - step: wait_for_failed_ws_event
+    type: websocket_event
+    event_type: ".App\\Events\\CommandStatusUpdated"
+    filter:
+      command.id: ${failure_command_id}
+      command.status: "FAILED"
+    timeout: 15.0
+    save: ws_failed_event
+
+  # Проверяем финальный DB статус
+  - step: check_failed_db_status
+    type: database_query
+    query: |
+      SELECT status, failed_at, error_message
+      FROM commands
+      WHERE id = :command_id
+    params:
+      command_id: ${failure_command_id}
+    save: failed_status
+
+  # Отключаем failure mode
+  - step: disable_node_failure_mode
+    type: api_post
+    endpoint: /api/test-utils/node-sim/failure-mode
+    payload:
+      mode: "command_failure"
+      enabled: false
+    optional: true
+
+assertions:
+  # Проверка 1: WS событие FAILED содержит детали ошибки
+  - name: ws_failed_event_data
+    type: json_assertion
+    data: ${ws_failed_event}
+    expected:
+      - field: command.status
+        operator: equals
+        value: "FAILED"
+      - field: command.id
+        operator: equals
+        value: ${failure_command_id}
+
+  # Проверка 2: DB статус FAILED с деталями ошибки
+  - name: db_failed_status
+    type: json_assertion
+    data: ${failed_status}
+    expected:
+      - field: status
+        operator: equals
+        value: "FAILED"
+      - field: failed_at
+        operator: is_not_null
+
+  # Проверка 3: Error message присутствует
+  - name: error_message_present
+    type: custom_assert
+    condition: |
+      status = context.get('failed_status', {})
+      error_msg = status.get('error_message')
+      error_msg is not None and len(str(error_msg)) > 0
+
+  # Проверка 4: Команда не зависла в промежуточном состоянии
+  - name: no_intermediate_stuck
+    type: database_query
+    query: |
+      SELECT COUNT(*) as intermediate_count
+      FROM commands
+      WHERE id = :command_id
+      AND status NOT IN ('DONE', 'FAILED', 'TIMEOUT')
+      AND updated_at < NOW() - INTERVAL '30 seconds'
+    params:
+      command_id: ${failure_command_id}
+    expected:
+      - field: intermediate_count
+        operator: equals
+        value: 0

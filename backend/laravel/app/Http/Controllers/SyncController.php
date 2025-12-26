@@ -51,7 +51,17 @@ class SyncController extends Controller
 
         try {
             $telemetry = TelemetryLast::query()
-                ->whereIn('zone_id', $accessibleZoneIds)
+                ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
+                ->whereIn('sensors.zone_id', $accessibleZoneIds)
+                ->whereNotNull('sensors.zone_id')
+                ->select([
+                    'sensors.zone_id',
+                    'sensors.node_id',
+                    'sensors.label as channel',
+                    'sensors.type as metric_type',
+                    'telemetry_last.last_value as value',
+                    'telemetry_last.last_ts as ts'
+                ])
                 ->get()
                 ->map(function ($item) {
                     return [

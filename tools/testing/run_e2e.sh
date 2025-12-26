@@ -73,8 +73,8 @@ check_services_health() {
     local attempt=0
     
     while [ $attempt -lt $max_attempts ]; do
-        # Проверка Laravel
-        if curl -sf "${LARAVEL_URL}/api/system/health" > /dev/null 2>&1; then
+        # Проверка Laravel через docker exec
+        if docker-compose -f docker-compose.e2e.yml exec -T laravel curl -sf http://localhost/api/system/health > /dev/null 2>&1; then
             log_info "✓ Laravel готов"
         else
             log_warn "Laravel еще не готов (попытка $((attempt+1))/$max_attempts)"
@@ -235,7 +235,7 @@ run_scenario() {
     
     # Запуск сценария через новый suite CLI
     cd "$E2E_DIR"
-    "$PYTHON_BIN" -m runner.suite "$scenario_path" || {
+    PYTHONPATH="$E2E_DIR" "$PYTHON_BIN" -m runner.suite "$scenario_path" || {
         log_error "Сценарий $scenario завершился с ошибкой"
         return 1
     }
@@ -267,57 +267,13 @@ run_ui_smoke() {
         return 1
     fi
 
-    # Запускаем только smoke тест (00-smoke.spec.ts)
+    # Запускаем smoke тесты через обновленный скрипт
     log_info "Запуск smoke тестов..."
-    # Создаем временный скрипт для запуска только smoke тестов
-    local temp_script="/tmp/run_smoke_tests.sh"
-    cat > "$temp_script" << 'EOF'
-#!/bin/bash
-set -e
-
-CONTAINER_NAME="e2e-laravel-1"
-TEST_DIR="/app/tests/e2e/browser"
-
-# Переменные окружения
-export LARAVEL_URL="${LARAVEL_URL:-http://localhost:80}"
-export E2E_AUTH_EMAIL="${E2E_AUTH_EMAIL:-admin@hydro.local}"
-export E2E_AUTH_PASSWORD="${E2E_AUTH_PASSWORD:-password}"
-export HEADLESS="${HEADLESS:-true}"
-
-echo "Запуск smoke тестов в контейнере ${CONTAINER_NAME}..."
-
-# Запускаем setup для создания storageState
-docker exec -e LARAVEL_URL="${LARAVEL_URL}" \
-  -e E2E_AUTH_EMAIL="${E2E_AUTH_EMAIL}" \
-  -e E2E_AUTH_PASSWORD="${E2E_AUTH_PASSWORD}" \
-  -e HEADLESS="${HEADLESS}" \
-  -w "${TEST_DIR}" \
-  "${CONTAINER_NAME}" \
-  sh -c "npx playwright test --config=playwright.config.ts --project=setup" || {
-  echo "Ошибка при запуске setup. Проверьте, что контейнер запущен и Laravel доступен."
-  exit 1
-}
-
-# Запускаем только smoke тесты
-docker exec -e LARAVEL_URL="${LARAVEL_URL}" \
-  -e E2E_AUTH_EMAIL="${E2E_AUTH_EMAIL}" \
-  -e E2E_AUTH_PASSWORD="${E2E_AUTH_PASSWORD}" \
-  -e HEADLESS="${HEADLESS}" \
-  -w "${TEST_DIR}" \
-  "${CONTAINER_NAME}" \
-  sh -c "npx playwright test --config=playwright.config.ts --project=chromium --grep 'smoke' --reporter=list"
-
-echo "Smoke тесты завершены."
-EOF
-
-    chmod +x "$temp_script"
-    if bash "$temp_script"; then
+    if "$container_script" smoke; then
         log_info "UI smoke тесты прошли успешно"
-        rm -f "$temp_script"
         return 0
     else
         log_error "UI smoke тесты провалились"
-        rm -f "$temp_script"
         return 1
     fi
 }
@@ -515,6 +471,12 @@ main() {
             ;;
         "smoke")
             log_info "Запуск smoke тестов (API + UI без 500 ошибок)"
+            log_info "Запуск инфраструктуры..."
+            docker-compose -f "$E2E_DIR/docker-compose.e2e.yml" up -d
+            if ! check_services_health; then
+                log_error "Не удалось запустить инфраструктуру"
+                exit 1
+            fi
 
             # Запуск API smoke через YAML runner
             log_info "Запуск API smoke тестов..."
@@ -537,12 +499,46 @@ main() {
             log_info "Все smoke тесты прошли успешно!"
             ;;
         "all")
-            log_info "Полный цикл: запуск инфраструктуры + тесты"
-            log_info "Runner автоматически проверит и поднимет инфраструктуру при необходимости"
-            log_info "Для принудительного запуска используйте: $0 up && $0 test"
-            # Runner сам поднимет инфраструктуру через _ensure_infra_started()
-            # Передаем управление в test
-            bash "$SCRIPT_DIR/run_e2e.sh" test
+            log_info "Полный цикл: запуск инфраструктуры + smoke тесты (YAML + UI)"
+            log_info "Запуск инфраструктуры..."
+            if ! check_services_health; then
+                log_error "Не удалось запустить инфраструктуру"
+                exit 1
+            fi
+
+            log_info "Запуск smoke тестов..."
+            # Запуск smoke тестов (API + UI без 500 ошибок)
+            API_SMOKE_FAILED=false
+            UI_SMOKE_FAILED=false
+            FAILED_SCENARIOS=()
+
+            # Запуск API smoke через YAML runner
+            log_info "Запуск API smoke тестов..."
+            if run_scenario "core/E00_api_smoke"; then
+                log_info "✓ API smoke passed"
+            else
+                log_error "✗ API smoke failed"
+                FAILED_SCENARIOS+=("API smoke")
+                API_SMOKE_FAILED=true
+            fi
+
+            # Запуск UI smoke через Playwright
+            log_info "Запуск UI smoke тестов..."
+            if run_ui_smoke; then
+                log_info "✓ UI smoke passed"
+            else
+                log_error "✗ UI smoke failed"
+                FAILED_SCENARIOS+=("UI smoke")
+                UI_SMOKE_FAILED=true
+            fi
+
+            if [ "$API_SMOKE_FAILED" = true ] || [ "$UI_SMOKE_FAILED" = true ]; then
+                log_error "Smoke тесты провалились: ${FAILED_SCENARIOS[*]}"
+                exit 1
+            else
+                log_info "✓ Все smoke тесты прошли успешно!"
+                exit 0
+            fi
             ;;
         "logs")
             log_info "Просмотр логов..."

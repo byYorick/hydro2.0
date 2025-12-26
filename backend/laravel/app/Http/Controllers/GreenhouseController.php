@@ -213,9 +213,17 @@ class GreenhouseController extends Controller
         // Получаем телеметрию для всех зон
         $telemetryByZone = [];
         if (!empty($zoneIds)) {
+            // Запрос к telemetry_last с join на sensors для получения zone_id и типа метрики
             $telemetryAll = \App\Models\TelemetryLast::query()
-                ->whereIn('zone_id', $zoneIds)
-                ->get(['zone_id', 'metric_type', 'value']);
+                ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
+                ->whereIn('sensors.zone_id', $zoneIds)
+                ->whereNotNull('sensors.zone_id')
+                ->select([
+                    'sensors.zone_id',
+                    'sensors.type as metric_type',
+                    'telemetry_last.last_value as value'
+                ])
+                ->get();
 
             foreach ($telemetryAll as $metric) {
                 $key = strtolower($metric->metric_type ?? '');
