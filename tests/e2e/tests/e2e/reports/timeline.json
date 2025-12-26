@@ -1,24 +1,11 @@
 {
-  "test_suite": "E14_command_response_before_sent",
-  "generated_at": "2025-12-25T21:58:51.110966",
+  "test_suite": "E32_out_of_order_guard",
+  "generated_at": "2025-12-25T22:09:55.039486",
   "test_cases": [
-    {
-      "name": "start_node_simulator",
-      "status": "passed",
-      "duration": 5.6464684009552,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "start_node_simulator",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-25T21:58:19.403169"
-    },
     {
       "name": "get_zones",
       "status": "passed",
-      "duration": 0.07618236541748047,
+      "duration": 0.10850262641906738,
       "error_message": null,
       "steps": [
         {
@@ -26,12 +13,51 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-25T21:58:19.479629"
+      "timestamp": "2025-12-25T22:09:27.641116"
+    },
+    {
+      "name": "set_zone_id",
+      "status": "passed",
+      "duration": 7.62939453125e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_zone_id",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-25T22:09:27.641271"
+    },
+    {
+      "name": "get_snapshot",
+      "status": "passed",
+      "duration": 0.09935998916625977,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "get_snapshot",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-25T22:09:27.740657"
+    },
+    {
+      "name": "set_last_event_id",
+      "status": "passed",
+      "duration": 6.4373016357421875e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_last_event_id",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-25T22:09:27.740705"
     },
     {
       "name": "get_nodes",
       "status": "passed",
-      "duration": 0.05931496620178223,
+      "duration": 0.08082270622253418,
       "error_message": null,
       "steps": [
         {
@@ -39,111 +65,154 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-25T21:58:19.538968"
+      "timestamp": "2025-12-25T22:09:27.821543"
     },
     {
-      "name": "set_zone_and_node",
+      "name": "set_node_id",
       "status": "passed",
-      "duration": 6.4373016357421875e-06,
+      "duration": 4.291534423828125e-06,
       "error_message": null,
       "steps": [
         {
-          "name": "set_zone_and_node",
+          "name": "set_node_id",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-25T21:58:19.539021"
+      "timestamp": "2025-12-25T22:09:27.821593"
     },
     {
-      "name": "subscribe_zone_channel",
-      "status": "passed",
-      "duration": 0.1792466640472412,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "subscribe_zone_channel",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-25T21:58:19.718284"
-    },
-    {
-      "name": "send_command",
+      "name": "send_command_to_create_event",
       "status": "skipped",
-      "duration": 21.096755743026733,
+      "duration": 21.137571811676025,
       "error_message": "Server error '503 Service Unavailable' for url 'http://localhost:8081/api/nodes/1/commands'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/503",
       "steps": [
         {
-          "name": "send_command",
+          "name": "send_command_to_create_event",
           "status": "skipped",
           "error": "Server error '503 Service Unavailable' for url 'http://localhost:8081/api/nodes/1/commands'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/503"
         }
       ],
-      "timestamp": "2025-12-25T21:58:40.815135"
+      "timestamp": "2025-12-25T22:09:48.959236"
     },
     {
-      "name": "set_command_id_from_response",
+      "name": "create_event_manually_if_needed",
       "status": "passed",
-      "duration": 7.152557373046875e-06,
+      "duration": 0.0031900405883789062,
       "error_message": null,
       "steps": [
         {
-          "name": "set_command_id_from_response",
+          "name": "create_event_manually_if_needed",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-25T21:58:40.815344"
+      "timestamp": "2025-12-25T22:09:48.962560"
     },
     {
-      "name": "create_command_manually_if_needed",
-      "status": "failed",
-      "duration": 0.008067131042480469,
-      "error_message": "null value in column \"cmd_id\" of relation \"commands\" violates not-null constraint\nDETAIL:  Failing row contains (1373, 225, 1, main_pump, set_relay_state, {\"state\": true}, QUEUED, null, 2025-12-25 18:58:41, 2025-12-25 18:58:41, null, null, null, test, null, null, 0, null, null, manual, null, null, null).",
+      "name": "wait_after_command",
+      "status": "passed",
+      "duration": 2.0021207332611084,
+      "error_message": null,
       "steps": [
         {
-          "name": "create_command_manually_if_needed",
-          "status": "failed",
-          "error": "null value in column \"cmd_id\" of relation \"commands\" violates not-null constraint\nDETAIL:  Failing row contains (1373, 225, 1, main_pump, set_relay_state, {\"state\": true}, QUEUED, null, 2025-12-25 18:58:41, 2025-12-25 18:58:41, null, null, null, test, null, null, 0, null, null, manual, null, null, null)."
+          "name": "wait_after_command",
+          "status": "passed"
         }
       ],
-      "timestamp": "2025-12-25T21:58:40.823585"
+      "timestamp": "2025-12-25T22:09:50.964703"
     },
     {
-      "name": "final_status_is_done",
-      "status": "failed",
-      "duration": 2.5510787963867188e-05,
-      "error_message": "Обязательная переменная 'command_id' разрешена в пустое значение. Убедитесь, что предыдущие шаги (API/DB) корректно заполнили контекст. Текущее значение: ''",
+      "name": "wait_for_new_event",
+      "status": "passed",
+      "duration": 3.0024094581604004,
+      "error_message": null,
       "steps": [
         {
-          "name": "final_status_is_done",
-          "status": "failed",
-          "error": "Обязательная переменная 'command_id' разрешена в пустое значение. Убедитесь, что предыдущие шаги (API/DB) корректно заполнили контекст. Текущее значение: ''"
+          "name": "wait_for_new_event",
+          "status": "passed"
         }
       ],
-      "timestamp": "2025-12-25T21:58:40.823666"
+      "timestamp": "2025-12-25T22:09:53.967145"
+    },
+    {
+      "name": "set_new_last_event_id",
+      "status": "passed",
+      "duration": 5.0067901611328125e-06,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_new_last_event_id",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-25T22:09:53.967195"
+    },
+    {
+      "name": "get_events_after_old_id",
+      "status": "passed",
+      "duration": 0.07003307342529297,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "get_events_after_old_id",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-25T22:09:54.037249"
+    },
+    {
+      "name": "wait_processing",
+      "status": "passed",
+      "duration": 1.0008957386016846,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_processing",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-25T22:09:55.038161"
+    },
+    {
+      "name": "events_received",
+      "status": "passed",
+      "duration": 5.3882598876953125e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "events_received",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-25T22:09:55.038239"
+    },
+    {
+      "name": "zone_exists",
+      "status": "passed",
+      "duration": 0.0008571147918701172,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "zone_exists",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-25T22:09:55.039103"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E14_command_response_before_sent": {
-      "ws_messages": [
-        {
-          "data": {
-            "event": "pusher_internal:subscription_succeeded",
-            "data": "{}",
-            "channel": "private-hydro.zones.225"
-          },
-          "timestamp": "2025-12-25T21:58:19.621026"
-        }
-      ],
+    "E32_out_of_order_guard": {
+      "ws_messages": [],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
-        "zone_id": 225,
+        "zone_id": "225",
+        "zone_uid": "zn-test-1",
         "node_id": 1,
-        "test_zone_id": "225",
+        "node_uid": "nd-ph-esp32una",
+        "last_event_id": "16497",
         "test_node_id": "1",
-        "command_id": ""
+        "new_last_event_id": "16497"
       }
     }
   }

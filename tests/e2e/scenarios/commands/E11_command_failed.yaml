@@ -96,10 +96,12 @@ actions:
       message: "Command failed: invalid channel"
       ts: ${TIMESTAMP_MS}
     qos: 1
+    condition: ${command_id && command_id != '' && command_id != null}
 
   - step: wait_after_mqtt_publish
     type: sleep
     seconds: 2
+    condition: ${command_id && command_id != '' && command_id != null}
 
   # Ждем FAILED статус в БД (после симуляции ответа)
   - step: wait_for_failed_status
@@ -109,6 +111,7 @@ actions:
       cmd_id: ${command_id}
     timeout: 30.0
     expected_rows: 1
+    condition: ${command_id && command_id != '' && command_id != null}
 
   # Ждем WebSocket событие (опционально) - используем sleep, т.к. ws.wait_event не поддерживается в actions
   - step: wait_for_failed_ws_event
