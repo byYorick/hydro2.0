@@ -46,7 +46,7 @@
         </div>
         
         <div v-if="zones.length > 0" class="grid gap-3 md:grid-cols-2">
-          <ZoneCycleCard
+          <GrowCycleCard
             v-for="zone in zones"
             :key="zone.id"
             :zone="zone"
@@ -64,7 +64,7 @@
 import { computed } from 'vue'
 import Card from './Card.vue'
 import Badge from './Badge.vue'
-import ZoneCycleCard from './ZoneCycleCard.vue'
+import GrowCycleCard from './GrowCycleCard.vue'
 
 interface ZoneData {
   id: number

@@ -1,7 +1,13 @@
 # PYTHON_SERVICES_ARCH.md
 # Архитектура Python-сервисов hydro2.0
+# **ОБНОВЛЕНО ПОСЛЕ РЕФАКТОРИНГА 2025-12-25**
 
 Документ описывает архитектуру Python-сервисов, их взаимодействие и структуру.
+
+**КЛЮЧЕВЫЕ ИЗМЕНЕНИЯ:**
+- ✅ Python сервисы используют Laravel API вместо прямых SQL
+- ✅ Единый контракт через `/api/internal/effective-targets/batch`
+- ✅ Убраны прямые запросы к `zone_recipe_instances` и `recipe_phases.targets`
 
 **Связанные документы:**
 - `doc_ai/04_BACKEND_CORE/BACKEND_ARCH_FULL.md` — общая архитектура backend
@@ -10,18 +16,24 @@
 
 ---
 
-## 1. Общая архитектура
+## 1. Общая архитектура (обновлено)
 
 Python-сервисы образуют промежуточный слой между:
-- **Laravel** (конфигурация, пользователи, API)
+- **Laravel API** (конфигурация, effective targets, пользователи)
 - **MQTT Broker** (коммуникация с ESP32-нодами)
 - **PostgreSQL** (хранение телеметрии и событий)
 
-### Принципы:
-1. **Единая библиотека** (`common/`) для всех сервисов
-2. **Асинхронная работа** с MQTT и БД
-3. **Stateless сервисы** — вся конфигурация из Laravel/БД
-4. **Мониторинг** через Prometheus metrics
+### Новые принципы после рефакторинга:
+1. **Laravel API first** — все данные через REST API, не прямые SQL
+2. **Effective targets контракт** — единый источник целей для контроллеров
+3. **GrowCycle-centric** — логика строится вокруг активных циклов выращивания
+4. **Stateless сервисы** — вся конфигурация из Laravel API
+5. **Мониторинг** через Prometheus metrics
+
+### Архитектурные изменения:
+- ❌ **Убрано:** Прямые SQL запросы к recipe таблицам
+- ✅ **Добавлено:** `LaravelApiRepository` для работы с API
+- ✅ **Добавлено:** Batch endpoints для эффективного получения данных
 
 ---
 
@@ -69,9 +81,98 @@ common/
 
 ---
 
-## 3. Сервисы
+## 3. Получение данных из Laravel (новая модель)
 
-### 3.1. mqtt-bridge
+### 3.1. LaravelApiRepository
+
+**Назначение:** Единый клиент для работы с Laravel API.
+
+**Ключевые методы:**
+- `get_effective_targets_batch(zone_ids)` — batch получение effective targets
+- `get_effective_targets(zone_id)` — targets для одной зоны
+
+**Пример использования:**
+```python
+from repositories.laravel_api_repository import LaravelApiRepository
+
+repo = LaravelApiRepository()
+targets = await repo.get_effective_targets_batch([1, 2, 3])
+
+# Результат:
+{
+  "1": {
+    "cycle_id": 123,
+    "phase": {"name": "VEG", "started_at": "...", "due_at": "..."},
+    "targets": {
+      "ph": {"target": 6.0, "min": 5.8, "max": 6.2},
+      "ec": {"target": 1.5, "min": 1.3, "max": 1.7},
+      "irrigation": {"mode": "SUBSTRATE", "interval_sec": 3600}
+    }
+  }
+}
+```
+
+### 3.2. RecipeRepository (обновлен)
+
+**Изменения после рефакторинга:**
+- ✅ Использует `LaravelApiRepository` вместо прямых SQL
+- ✅ Получает данные через `/api/internal/effective-targets/batch`
+- ❌ Убраны запросы к `zone_recipe_instances` и `recipe_phases.targets`
+
+**Методы:**
+- `get_zone_recipe_and_targets(zone_id)` — получает effective targets для зоны
+
+---
+
+## 4. Сервисы (обновлено после рефакторинга)
+
+### 4.1. automation-engine (КЛЮЧЕВЫЕ ИЗМЕНЕНИЯ)
+
+**Назначение:** Основной контроллер зон с новой логикой GrowCycle.
+
+**Изменения после рефакторинга:**
+- ✅ Получает effective targets через `LaravelApiRepository`
+- ✅ Использует `recipe_revisions` вместо `recipe_phases.targets`
+- ❌ Убраны прямые SQL запросы к recipe таблицам
+
+**Ключевые компоненты:**
+- `repositories/recipe_repository.py` — получение effective targets
+- `repositories/laravel_api_repository.py` — клиент Laravel API
+- `services/zone_controllers/` — контроллеры с новой логикой
+
+**Функционал:**
+- Получение effective targets для активных зон
+- Управление pH/EC/irrigation/lighting/climate контроллерами
+- Генерация команд на основе структурированных целей
+
+---
+
+### 4.2. scheduler (ОБНОВЛЕНО)
+
+**Изменения:**
+- ✅ Использует effective targets из Laravel API
+- ✅ Расписания извлекаются из структурированных targets
+- ✅ Контекст команды включает `cycle_id`
+
+---
+
+### 4.3. digital-twin (ОБНОВЛЕНО)
+
+**Изменения:**
+- ✅ Использует `recipe_revisions` и фазы по колонкам
+- ✅ Симуляция работает с новой моделью ревизий
+
+---
+
+### 4.4. health-monitor (ОБНОВЛЕНО)
+
+**Изменения:**
+- ✅ Использует effective targets из Laravel API
+- ✅ Мониторинг основан на новой доменной модели
+
+---
+
+### 4.5. mqtt-bridge (БЕЗ ИЗМЕНЕНИЙ)
 
 **Назначение:** FastAPI мост для отправки команд через MQTT.
 

@@ -1,0 +1,42 @@
+# E00: Schema Smoke - Проверка отсутствия legacy таблиц и колонок
+# DoD: zone_recipe_instances, recipe_phases, recipes таблицы отсутствуют
+#      grow_cycles.zone_recipe_instance_id, grow_cycles.current_stage_code колонки отсутствуют
+
+name: E00_schema_smoke
+description: |
+  Проверяет отсутствие legacy таблиц и колонок в БД:
+  - Таблицы: zone_recipe_instances, recipe_phases, recipes должны отсутствовать
+  - Колонки: grow_cycles.zone_recipe_instance_id, grow_cycles.current_stage_code должны отсутствовать
+  Это предотвращает "ложный GREEN" на старой БД/неполных миграциях.
+
+setup:
+  prerequisites:
+    - database: database is accessible
+
+actions:
+  # Нет действий - только проверки схемы
+
+assertions:
+  # Проверка 1: Legacy таблицы должны отсутствовать
+  - name: legacy_tables_absent
+    type: table_absent
+    table_name: zone_recipe_instances
+
+  - name: recipe_phases_table_absent
+    type: table_absent
+    table_name: recipe_phases
+
+  - name: recipes_table_absent
+    type: table_absent
+    table_name: recipes
+
+  # Проверка 2: Legacy колонки в grow_cycles должны отсутствовать
+  - name: grow_cycles_zone_recipe_instance_id_absent
+    type: column_absent
+    table_name: grow_cycles
+    column_name: zone_recipe_instance_id
+
+  - name: grow_cycles_current_stage_code_absent
+    type: column_absent
+    table_name: grow_cycles
+    column_name: current_stage_code

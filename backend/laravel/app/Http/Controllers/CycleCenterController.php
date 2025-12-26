@@ -24,8 +24,6 @@ class CycleCenterController extends Controller
                 'activeGrowCycle.currentPhase',
                 'activeGrowCycle.recipeRevision.recipe:id,name',
                 'activeGrowCycle.plant:id,name',
-                // Fallback на legacy для обратной совместимости
-                'recipeInstance.recipe:id,name',
             ])
             ->withCount([
                 'alerts as alerts_count' => function ($query) {
@@ -157,12 +155,6 @@ class CycleCenterController extends Controller
                 $recipe = [
                     'id' => $cycle->recipe->id,
                     'name' => $cycle->recipe->name,
-                ];
-            } elseif ($zone->recipeInstance?->recipe) {
-                // Fallback на legacy для обратной совместимости
-                $recipe = [
-                    'id' => $zone->recipeInstance->recipe->id,
-                    'name' => $zone->recipeInstance->recipe->name,
                 ];
             }
 

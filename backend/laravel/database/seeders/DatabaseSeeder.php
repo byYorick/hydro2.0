@@ -45,8 +45,8 @@ class DatabaseSeeder extends Seeder
             // Шаблоны стадий роста и маппинг
             $this->call(ExtendedGrowStagesSeeder::class);
             
-            // Циклы зон
-            $this->call(ExtendedZoneCyclesSeeder::class);
+            // Циклы зон - удалено в рефакторинге, используется GrowCycle
+            // $this->call(ExtendedZoneCyclesSeeder::class);
             
             // PID конфигурации
             $this->call(ExtendedZonePidConfigsSeeder::class);
@@ -54,8 +54,8 @@ class DatabaseSeeder extends Seeder
             // Растения (расширение)
             $this->call(ExtendedPlantsSeeder::class);
             
-            // Связи растений с зонами и рецептами
-            $this->call(ExtendedPlantRelationsSeeder::class);
+            // Связи растений с зонами и рецептами - частично устарело после рефакторинга
+            // $this->call(ExtendedPlantRelationsSeeder::class);
             
             // Телеметрия
             $this->call(ExtendedTelemetrySeeder::class);

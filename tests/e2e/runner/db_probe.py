@@ -249,3 +249,63 @@ class DBProbe:
         sqlite_query, sqlite_params = self._convert_named_params(query, params, backend="sqlite")
         cursor.execute(sqlite_query, sqlite_params)
         self.connection.commit()
+
+    def table_exists(self, table_name: str) -> bool:
+        """
+        Проверить существование таблицы.
+
+        Args:
+            table_name: Имя таблицы
+
+        Returns:
+            True если таблица существует
+        """
+        if self._backend == "postgres":
+            query = """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM information_schema.tables
+                    WHERE table_schema = 'public'
+                    AND table_name = %s
+                )
+            """
+            result = self.query(query, {"table_name": table_name})
+            return result[0]["exists"] if result else False
+
+        elif self._backend == "sqlite":
+            query = "SELECT name FROM sqlite_master WHERE type='table' AND name=?"
+            result = self.query(query, {"table_name": table_name})
+            return len(result) > 0
+
+        return False
+
+    def column_exists(self, table_name: str, column_name: str) -> bool:
+        """
+        Проверить существование колонки в таблице.
+
+        Args:
+            table_name: Имя таблицы
+            column_name: Имя колонки
+
+        Returns:
+            True если колонка существует
+        """
+        if self._backend == "postgres":
+            query = """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                    AND table_name = %s
+                    AND column_name = %s
+                )
+            """
+            result = self.query(query, {"table_name": table_name, "column_name": column_name})
+            return result[0]["exists"] if result else False
+
+        elif self._backend == "sqlite":
+            query = f"PRAGMA table_info({table_name})"
+            result = self.query(query)
+            return any(row["name"] == column_name for row in result)
+
+        return False

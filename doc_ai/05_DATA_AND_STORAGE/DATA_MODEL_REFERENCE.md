@@ -1,6 +1,7 @@
 # DATA_MODEL_REFERENCE.md
 # Полный справочник моделей данных системы 2.0
 # PostgreSQL • Laravel Models • Python ORM • Связи • Ограничения
+# **ОБНОВЛЕНО ПОСЛЕ МЕГА-РЕФАКТОРИНГА 2025-12-25**
 
 Документ описывает всю структуру данных системы 2.0:
 таблицы, связи, ключи, индексы, правила и использование.
@@ -166,35 +167,253 @@ telemetry_last_zone_metric_idx (zone_id, metric_type)
 
 ---
 
-# 5. Таблицы рецептов
+# 5. Таблицы рецептов (новая модель после рефакторинга)
 
 ## 5.1. recipes
 ```
-id PK
-name
-description
-created_at
+id BIGSERIAL PK
+name VARCHAR
+description TEXT
+plant_id BIGINT FK → plants (опционально)
+metadata JSONB
+created_by BIGINT FK → users
+created_at TIMESTAMP
+updated_at TIMESTAMP
 ```
 
-## 5.2. recipe_phases
+## 5.2. recipe_revisions (версии рецептов)
 ```
-id PK
-recipe_id FK
-phase_index INT
-name
-duration_hours INT
-targets JSONB
-created_at
+id BIGSERIAL PK
+recipe_id BIGINT FK → recipes CASCADE
+revision_number INT DEFAULT 1
+status ENUM('DRAFT', 'PUBLISHED', 'ARCHIVED') DEFAULT 'DRAFT'
+description TEXT
+created_by BIGINT FK → users NULL
+published_at TIMESTAMP NULL
+created_at TIMESTAMP
+updated_at TIMESTAMP
+
+UNIQUE: (recipe_id, revision_number)
+INDEX: (recipe_id, status)
 ```
 
-## 5.3. zone_recipe_instances
+## 5.3. recipe_revision_phases (шаблоны фаз)
 ```
-id PK
-zone_id FK
-recipe_id FK
-current_phase_index INT
-started_at
-updated_at
+id BIGSERIAL PK
+recipe_revision_id BIGINT FK → recipe_revisions CASCADE
+phase_index INT DEFAULT 0
+name VARCHAR
+stage_template_id BIGINT FK → grow_stage_templates NULL
+
+-- Целевые параметры по колонкам (не JSON!)
+ph_target DECIMAL(4,2) NULL
+ph_min DECIMAL(4,2) NULL
+ph_max DECIMAL(4,2) NULL
+ec_target DECIMAL(5,2) NULL
+ec_min DECIMAL(5,2) NULL
+ec_max DECIMAL(5,2) NULL
+irrigation_mode ENUM('SUBSTRATE', 'RECIRC') NULL
+irrigation_interval_sec INT NULL
+irrigation_duration_sec INT NULL
+lighting_photoperiod_hours INT NULL
+lighting_start_time TIME NULL
+mist_interval_sec INT NULL
+mist_duration_sec INT NULL
+mist_mode ENUM('NORMAL', 'SPRAY') NULL
+temp_air_target DECIMAL(5,2) NULL
+humidity_target DECIMAL(5,2) NULL
+co2_target INT NULL
+
+-- Прогресс
+progress_model VARCHAR NULL -- TIME|TIME_WITH_TEMP_CORRECTION|GDD
+duration_hours INT NULL
+duration_days INT NULL
+base_temp_c DECIMAL(4,2) NULL
+target_gdd DECIMAL(8,2) NULL
+dli_target DECIMAL(6,2) NULL
+
+-- Расширения
+extensions JSONB NULL
+
+created_at TIMESTAMP
+updated_at TIMESTAMP
+
+UNIQUE: (recipe_revision_id, phase_index)
+INDEX: recipe_revision_phase_idx (recipe_revision_id)
+```
+
+## 5.4. recipe_revision_phase_steps (шаги внутри фаз)
+```
+id BIGSERIAL PK
+recipe_revision_phase_id BIGINT FK → recipe_revision_phases CASCADE
+step_index INT DEFAULT 0
+name VARCHAR
+description TEXT
+action_type VARCHAR -- IRRIGATION|LIGHTING|MIST|etc
+action_params JSONB
+offset_hours INT NULL
+duration_sec INT NULL
+
+created_at TIMESTAMP
+updated_at TIMESTAMP
+
+UNIQUE: (recipe_revision_phase_id, step_index)
+INDEX: recipe_revision_phase_step_idx (recipe_revision_phase_id)
+```
+
+# 6. Таблицы циклов выращивания (новая модель — центр истины)
+
+## 6.1. grow_cycles (ЦЕНТР ИСТИНЫ)
+```
+id BIGSERIAL PK
+greenhouse_id BIGINT FK → greenhouses
+zone_id BIGINT FK → zones
+plant_id BIGINT FK → plants
+recipe_id BIGINT FK → recipes (legacy, для совместимости)
+recipe_revision_id BIGINT FK → recipe_revisions NOT NULL
+
+-- Статус и временные метки
+status ENUM('PLANNED', 'RUNNING', 'PAUSED', 'HARVESTED', 'ABORTED', 'COMPLETED')
+started_at TIMESTAMP NULL
+recipe_started_at TIMESTAMP NULL
+expected_harvest_at TIMESTAMP NULL
+actual_harvest_at TIMESTAMP NULL
+planting_at TIMESTAMP NULL
+
+-- Текущая фаза (ссылки на снапшоты)
+current_phase_id BIGINT FK → grow_cycle_phases NULL
+current_step_id BIGINT FK → grow_cycle_phase_steps NULL
+phase_started_at TIMESTAMP NULL
+step_started_at TIMESTAMP NULL
+
+-- Метаданные
+batch_label VARCHAR NULL
+notes TEXT NULL
+settings JSONB NULL
+progress_meta JSONB NULL
+
+created_at TIMESTAMP
+updated_at TIMESTAMP
+
+-- Критические ограничения
+UNIQUE: (zone_id) WHERE status IN ('PLANNED', 'RUNNING', 'PAUSED')
+INDEX: grow_cycle_zone_active_idx (zone_id, status)
+INDEX: grow_cycle_status_idx (status)
+INDEX: grow_cycle_recipe_revision_idx (recipe_revision_id)
+```
+
+## 6.2. grow_cycle_phases (снапшоты фаз для конкретного цикла)
+```
+id BIGSERIAL PK
+grow_cycle_id BIGINT FK → grow_cycles CASCADE
+recipe_revision_phase_id BIGINT FK → recipe_revision_phases NULL (трассировка)
+
+phase_index INT DEFAULT 0
+name VARCHAR
+
+-- Целевые параметры (копия из шаблона)
+ph_target DECIMAL(4,2) NULL
+ph_min DECIMAL(4,2) NULL
+ph_max DECIMAL(4,2) NULL
+ec_target DECIMAL(5,2) NULL
+ec_min DECIMAL(5,2) NULL
+ec_max DECIMAL(5,2) NULL
+irrigation_mode ENUM('SUBSTRATE', 'RECIRC') NULL
+irrigation_interval_sec INT NULL
+irrigation_duration_sec INT NULL
+lighting_photoperiod_hours INT NULL
+lighting_start_time TIME NULL
+mist_interval_sec INT NULL
+mist_duration_sec INT NULL
+mist_mode ENUM('NORMAL', 'SPRAY') NULL
+temp_air_target DECIMAL(5,2) NULL
+humidity_target DECIMAL(5,2) NULL
+co2_target INT NULL
+
+-- Прогресс
+progress_model VARCHAR NULL
+duration_hours INT NULL
+duration_days INT NULL
+base_temp_c DECIMAL(4,2) NULL
+target_gdd DECIMAL(8,2) NULL
+dli_target DECIMAL(6,2) NULL
+
+extensions JSONB NULL
+
+-- Выполнение в цикле
+started_at TIMESTAMP NULL
+ended_at TIMESTAMP NULL
+
+created_at TIMESTAMP
+updated_at TIMESTAMP
+
+UNIQUE: (grow_cycle_id, phase_index)
+INDEX: grow_cycle_phase_cycle_idx (grow_cycle_id)
+INDEX: grow_cycle_phase_revision_phase_idx (recipe_revision_phase_id)
+```
+
+## 6.3. grow_cycle_phase_steps (снапшоты шагов)
+```
+id BIGSERIAL PK
+grow_cycle_phase_id BIGINT FK → grow_cycle_phases CASCADE
+recipe_revision_phase_step_id BIGINT FK → recipe_revision_phase_steps NULL
+
+step_index INT DEFAULT 0
+name VARCHAR
+description TEXT
+action_type VARCHAR
+action_params JSONB
+offset_hours INT NULL
+duration_sec INT NULL
+
+started_at TIMESTAMP NULL
+ended_at TIMESTAMP NULL
+
+created_at TIMESTAMP
+updated_at TIMESTAMP
+
+UNIQUE: (grow_cycle_phase_id, step_index)
+INDEX: grow_cycle_phase_step_phase_idx (grow_cycle_phase_id)
+```
+
+## 6.4. grow_cycle_overrides (перекрытия параметров)
+```
+id BIGSERIAL PK
+grow_cycle_id BIGINT FK → grow_cycles CASCADE
+parameter VARCHAR -- 'ph.target', 'irrigation.interval_sec', etc
+value_type ENUM('numeric', 'string', 'boolean', 'json')
+numeric_value DECIMAL(10,4) NULL
+string_value VARCHAR NULL
+boolean_value BOOLEAN NULL
+json_value JSONB NULL
+
+is_active BOOLEAN DEFAULT TRUE
+reason TEXT NULL
+created_by BIGINT FK → users NULL
+
+created_at TIMESTAMP
+updated_at TIMESTAMP
+
+INDEX: grow_cycle_override_cycle_active_idx (grow_cycle_id, is_active)
+INDEX: grow_cycle_override_parameter_idx (parameter)
+```
+
+## 6.5. grow_cycle_transitions (история переходов фаз)
+```
+id BIGSERIAL PK
+grow_cycle_id BIGINT FK → grow_cycles CASCADE
+
+from_phase_id BIGINT FK → grow_cycle_phases NULL
+to_phase_id BIGINT FK → grow_cycle_phases NULL
+
+trigger_type ENUM('CYCLE_CREATED', 'AUTO_ADVANCE', 'MANUAL_SWITCH', 'HARVEST', 'ABORT')
+triggered_by BIGINT FK → users NULL
+comment TEXT NULL
+
+created_at TIMESTAMP
+
+INDEX: grow_cycle_transition_cycle_idx (grow_cycle_id)
+INDEX: grow_cycle_transition_trigger_idx (trigger_type)
 ```
 
 ---
@@ -300,60 +519,106 @@ created_at
 
 ---
 
-# 11. Ключевые связи
+# 11. Ключевые связи (обновлено после рефакторинга)
 
+**Основная доменная модель:**
 ```
-zone 1—N nodes
-node 1—N channels
-zone 1—N telemetry
+greenhouse 1—N zones
+zone 1—1 grow_cycle (активный: PLANNED/RUNNING/PAUSED)
+grow_cycle 1—1 recipe_revision (зафиксированная версия)
+recipe 1—N recipe_revisions
+recipe_revision 1—N recipe_revision_phases
+recipe_revision_phase 1—N recipe_revision_phase_steps
+
+grow_cycle 1—N grow_cycle_phases (снапшоты)
+grow_cycle_phase 1—N grow_cycle_phase_steps (снапшоты)
+grow_cycle 1—N grow_cycle_overrides
+grow_cycle 1—N grow_cycle_transitions
+```
+
+**Оборудование и телеметрия:**
+```
+zone 1—N nodes (1 node = 1 zone enforced)
+node 1—N node_channels
+zone 1—N telemetry_samples
+zone 1—1 telemetry_last (composite PK)
 zone 1—N alerts
-zone 1—N events
-recipe 1—N phases
-zone 1—1 recipe_instance
+zone 1—N zone_events
 zone 1—N commands
 ```
 
----
-
-# 12. Использование данных в Laravel
-
-Laravel модели:
-
-- Zone
-- Node
-- NodeChannel
-- TelemetrySample
-- TelemetryLast
-- Recipe
-- RecipePhase
-- ZoneRecipeInstance
-- Alert
-- ZoneEvent
-- Command
-- FirmwareFile
-
-Все используют Eloquent ORM.
+**Инфраструктура (новая модель):**
+```
+infrastructure_instance (polymorphic: owner_type='zone'|'greenhouse')
+infrastructure_instance 1—N channel_bindings
+channel_binding 1—1 node_channel
+```
 
 ---
 
-# 13. Использование данных в Python Scheduler
+# 12. Использование данных в Laravel (обновлено)
 
-Python читает:
+**Laravel модели (новая модель):**
 
-- zones
-- nodes + node_channels
-- telemetry_last
-- recipe instances
-- alerts
-- commands
+- **GrowCycle** — центр истины, содержит всю логику цикла
+- **GrowCyclePhase** — снапшоты фаз для цикла
+- **GrowCyclePhaseStep** — снапшоты шагов
+- **GrowCycleOverride** — перекрытия параметров
+- **GrowCycleTransition** — история переходов
 
-И пишет:
+- **RecipeRevision** — версии рецептов (DRAFT/PUBLISHED/ARCHIVED)
+- **RecipeRevisionPhase** — шаблоны фаз с целями по колонкам
+- **RecipeRevisionPhaseStep** — шаблоны шагов
 
-- telemetry_samples
-- telemetry_last
-- alerts
-- events
-- commands (через API или прямую запись)
+- **InfrastructureInstance** — полиморфная инфраструктура (zone/greenhouse)
+- **ChannelBinding** — привязки каналов к инфраструктуре
+
+**Устаревшие модели (удалены после рефакторинга):**
+- ❌ ZoneRecipeInstance
+- ❌ RecipePhase (legacy JSON targets)
+- ❌ ZoneCycle
+- ❌ PlantCycle
+
+**Сервисы:**
+- **EffectiveTargetsService** — единый контракт для Python сервисов
+- **GrowCycleService** — управление циклами и создание снапшотов
+
+Все используют Eloquent ORM с proper type casting.
+
+---
+
+# 13. Использование данных в Python сервисах (обновлено)
+
+**Python сервисы теперь используют Laravel API вместо прямых SQL запросов:**
+
+**Основной контракт:**
+- `GET /api/internal/effective-targets/batch` — batch получение effective targets для зон
+- Возвращает цели из активного цикла с учётом overrides
+
+**Структура ответа:**
+```json
+{
+  "zone_id": 123,
+  "cycle_id": 456,
+  "phase": {
+    "id": 789,
+    "code": "VEG",
+    "name": "Вегетация",
+    "started_at": "2025-01-01T10:00:00Z",
+    "due_at": "2025-01-15T10:00:00Z"
+  },
+  "targets": {
+    "ph": {"target": 6.0, "min": 5.8, "max": 6.2},
+    "ec": {"target": 1.5, "min": 1.3, "max": 1.7},
+    "irrigation": {"mode": "SUBSTRATE", "interval_sec": 3600, "duration_sec": 300}
+    // ... остальные цели
+  }
+}
+```
+
+**Устаревший подход (до рефакторинга):**
+- ❌ Прямые SQL запросы к `zone_recipe_instances` + `recipe_phases.targets`
+- ✅ Заменён на Laravel API для consistency и версионирования
 
 ---
 
@@ -417,22 +682,31 @@ $result = TransactionHelper::withAdvisoryLock("operation:{$id}", function () {
 
 ---
 
-# 15. Правила для ИИ
+# 15. Правила для ИИ (после рефакторинга)
 
-ИИ может:
+**ИИ может:**
+- Добавлять новые модели в доменную модель GrowCycle
+- Создавать новые версии рецептов через RecipeRevision
+- Добавлять поля в effective targets контракт
+- Расширять JSONB поля (extensions, progress_meta)
+- Добавлять индексы для performance
+- Вводить новые связи между сущностями
+- Использовать `TransactionHelper` для критичных операций
+- Обновлять Laravel API endpoints с сохранением контракта
 
-- добавлять новые модели,
-- расширять JSONB поля,
-- добавлять индексы,
-- вводить новые связи,
-- использовать `TransactionHelper` для критичных операций,
+**ИИ не может:**
+- Менять существующие поля без обновления всех зависимостей
+- Удалять таблицы или поля из активной модели
+- Переименовывать критические поля (recipe_revision_id, current_phase_id, etc.)
+- Нарушать effective targets контракт
+- Использовать транзакции без SERIALIZABLE для критичных операций
+- Добавлять прямые SQL запросы в Python сервисы (только Laravel API)
+- Менять логику создания снапшотов в GrowCycleService
 
-ИИ не может:
-
-- менять существующие поля без backward-compatibility,
-- удалять таблицы,
-- переименовывать критические поля,
-- использовать транзакции без SERIALIZABLE для критичных операций.
+**Критически важно:**
+- Все изменения в доменной модели должны отражаться в тестах EffectiveTargetsServiceTest
+- Новые API endpoints должны иметь Feature тесты
+- Любые изменения контракта effective targets требуют обновления Python клиентов
 
 ---
 

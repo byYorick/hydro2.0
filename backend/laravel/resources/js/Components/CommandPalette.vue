@@ -711,6 +711,8 @@ async function executeZoneAction(zoneId: number, action: string, zoneName: strin
 
 /**
  * Выполнить цикл в зоне
+ * @deprecated После рефакторинга циклы управляются через GrowCycle API.
+ * Эта функция оставлена для обратной совместимости с ручными командами.
  */
 async function executeZoneCycle(zoneId: number, cycleType: string, zoneName: string): Promise<void> {
   try {

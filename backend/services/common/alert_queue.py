@@ -42,7 +42,7 @@ class AlertQueue:
                     type VARCHAR(64) NOT NULL,
                     status VARCHAR(16) NOT NULL CHECK (status IN ('ACTIVE', 'RESOLVED')),
                     details JSONB,
-                    retry_count INTEGER DEFAULT 0,
+                    attempts INTEGER DEFAULT 0,
                     max_attempts INTEGER DEFAULT 10,
                     next_retry_at TIMESTAMP WITH TIME ZONE,
                     last_error TEXT,
@@ -71,9 +71,27 @@ class AlertQueue:
             
             try:
                 await conn.execute("""
-                    ALTER TABLE pending_alerts 
+                    ALTER TABLE pending_alerts
                     ADD COLUMN IF NOT EXISTS moved_to_dlq_at TIMESTAMP WITH TIME ZONE
                 """)
+            except Exception:
+                pass
+
+            try:
+                # Проверяем, существует ли колонка
+                column_exists = await conn.fetchval("""
+                    SELECT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'pending_alerts'
+                        AND column_name = 'next_retry_at'
+                        AND table_schema = 'public'
+                    )
+                """)
+                if not column_exists:
+                    await conn.execute("""
+                        ALTER TABLE pending_alerts
+                        ADD COLUMN next_retry_at TIMESTAMP WITH TIME ZONE
+                    """)
             except Exception:
                 pass
             
@@ -100,7 +118,7 @@ class AlertQueue:
                     type VARCHAR(64) NOT NULL,
                     status VARCHAR(16) NOT NULL,
                     details JSONB,
-                    retry_count INTEGER NOT NULL,
+                    attempts INTEGER NOT NULL,
                     max_attempts INTEGER,
                     last_error TEXT,
                     failed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -175,7 +193,7 @@ class AlertQueue:
             try:
                 details_json = json.dumps(details) if details else None
                 await conn.execute("""
-                    INSERT INTO pending_alerts (zone_id, source, code, type, status, details, retry_count, next_retry_at)
+                    INSERT INTO pending_alerts (zone_id, source, code, type, status, details, attempts, next_retry_at)
                     VALUES ($1, $2, $3, $4, $5, $6, 0, NOW())
                 """, zone_id, source, code, type, status, details_json)
                 return True
@@ -183,7 +201,7 @@ class AlertQueue:
                 logger.error(f"Failed to enqueue alert: {e}", exc_info=True)
                 return False
     
-    async def mark_retry(self, alert_id: int, retry_count: int, next_retry_at: datetime, last_error: Optional[str] = None):
+    async def mark_retry(self, alert_id: int, attempts: int, next_retry_at: datetime, last_error: Optional[str] = None):
         """Отмечает запись для повторной попытки."""
         pool = await get_pool()
         async with pool.acquire() as conn:
@@ -247,17 +265,17 @@ class AlertQueue:
         Получает записи, готовые к ретраю.
         
         Returns:
-            Список кортежей (id, zone_id, source, code, type, status, details, retry_count, max_attempts, last_error)
+            Список кортежей (id, zone_id, source, code, type, status, details, attempts, max_attempts, last_error)
         """
         await self.ensure_table()
         
         pool = await get_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch("""
-                SELECT id, zone_id, source, code, type, status, details, retry_count, max_attempts, last_error
+                SELECT id, zone_id, source, code, type, status, details, attempts, max_attempts, last_error
                 FROM pending_alerts
-                WHERE next_retry_at <= NOW()
-                ORDER BY next_retry_at ASC, id ASC
+                WHERE next_retry_at IS NULL OR next_retry_at <= NOW()
+                ORDER BY next_retry_at ASC NULLS FIRST, id ASC
                 LIMIT $1
             """, limit)
         
@@ -272,7 +290,7 @@ class AlertQueue:
                 row['type'],
                 row['status'],
                 details,
-                row['retry_count'],
+                row['attempts'],
                 row.get('max_attempts', 10),
                 row.get('last_error')
             ))
