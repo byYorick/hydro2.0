@@ -236,13 +236,13 @@ const allStages = computed<GrowStage[]>(() => {
       }
     })
   } else if (props.recipeInstance?.recipe?.phases) {
-    props.recipeInstance.recipe.phases.forEach((phase, index) => {
-      const stage = getStageForPhase(phase.name, phase.phase_index, totalPhases.value)
-      if (!seenStages.has(stage)) {
-        stages.push(stage)
-        seenStages.add(stage)
-      }
-    })
+  props.recipeInstance.recipe.phases.forEach((phase, index) => {
+    const stage = getStageForPhase(phase.name, phase.phase_index, totalPhases.value)
+    if (!seenStages.has(stage)) {
+      stages.push(stage)
+      seenStages.add(stage)
+    }
+  })
   }
   
   return stages
