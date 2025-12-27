@@ -296,7 +296,6 @@ const zonesByCrop = computed(() => {
   props.dashboard.zones.forEach(zone => {
     // Используем новую модель: activeGrowCycle -> recipeRevision -> recipe
     const cropName = zone.activeGrowCycle?.recipeRevision?.recipe?.name 
-      || zone.recipe_instance?.recipe?.name 
       || 'Без рецепта'
     
     if (!grouped.has(cropName)) {
@@ -440,11 +439,10 @@ const alarmZonesCount = computed(() => {
 
 const activeRecipes = computed(() => {
   if (!props.dashboard.recipes) return []
-  // Рецепты считаются активными, если они применены к зонам через activeGrowCycle или recipeInstance
+  // Рецепты считаются активными, если они применены к зонам через activeGrowCycle
   return props.dashboard.recipes.slice(0, 6).map(recipe => {
     const zonesWithRecipe = props.dashboard.zones?.filter(z => 
       z.activeGrowCycle?.recipeRevision?.recipe_id === recipe.id
-      || z.recipe_instance?.recipe_id === recipe.id
     ) || []
     
     // Вычисляем информацию о фазах из зон
@@ -465,10 +463,6 @@ const activeRecipes = computed(() => {
         startedAt = firstZone.activeGrowCycle.phase_started_at 
           ? new Date(firstZone.activeGrowCycle.phase_started_at)
           : (firstZone.activeGrowCycle.started_at ? new Date(firstZone.activeGrowCycle.started_at) : null)
-      } else if (firstZone.recipe_instance) {
-        // Fallback на legacy
-        currentPhaseIndex = firstZone.recipe_instance.current_phase_index ?? 0
-        startedAt = firstZone.recipe_instance.started_at ? new Date(firstZone.recipe_instance.started_at) : null
       }
       
       const currentPhaseData = recipe.phases.find(p => p.phase_index === currentPhaseIndex)

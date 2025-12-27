@@ -307,20 +307,44 @@ async function onCreate(): Promise<void> {
       throw new Error('Recipe ID not found in response')
     }
 
-    // 2. Создать фазы
+    // 2. Создать ревизию рецепта
+    const revisionResponse = await api.post<{ data?: { id: number } } | { id: number }>(
+      `/recipes/${recipeId}/revisions`,
+      { description: 'Initial revision' }
+    )
+    const revision = (revisionResponse.data as { data?: { id: number } })?.data || (revisionResponse.data as { id: number })
+    const revisionId = revision?.id
+    if (!revisionId) {
+      throw new Error('Recipe revision ID not found in response')
+    }
+
+    // 3. Создать фазы
     for (const phase of form.phases) {
-      await api.post(`/recipes/${recipeId}/phases`, {
+      const phMin = phase.targets?.ph?.min ?? null
+      const phMax = phase.targets?.ph?.max ?? null
+      const phTarget = phMin !== null && phMax !== null ? (phMin + phMax) / 2 : (phMin ?? phMax)
+
+      const ecMin = phase.targets?.ec?.min ?? null
+      const ecMax = phase.targets?.ec?.max ?? null
+      const ecTarget = ecMin !== null && ecMax !== null ? (ecMin + ecMax) / 2 : (ecMin ?? ecMax)
+
+      await api.post(`/recipe-revisions/${revisionId}/phases`, {
         phase_index: phase.phase_index,
         name: phase.name.trim(),
         duration_hours: phase.duration_hours,
-        targets: {
-          ph: phase.targets.ph,
-          ec: phase.targets.ec
-        }
+        ph_target: phTarget,
+        ph_min: phMin,
+        ph_max: phMax,
+        ec_target: ecTarget,
+        ec_min: ecMin,
+        ec_max: ecMax,
       })
     }
 
-    // 3. Загрузить полный рецепт с фазами
+    // 4. Опубликовать ревизию
+    await api.post(`/recipe-revisions/${revisionId}/publish`)
+
+    // 5. Загрузить полный рецепт с фазами
     const fullRecipeResponse = await api.get<{ data?: Recipe } | Recipe>(
       `/recipes/${recipeId}`
     )

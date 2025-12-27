@@ -242,10 +242,10 @@
                 <Button
                   size="sm"
                   :variant="activeGrowCycle ? 'secondary' : 'primary'"
-                  @click="modals.open('attachRecipe')"
+                  @click="activeGrowCycle ? onCycleChangeRecipe() : onRunCycle()"
                   data-testid="recipe-attach-btn"
                 >
-                  {{ activeGrowCycle ? 'Изменить рецепт' : 'Привязать рецепт' }}
+                  {{ activeGrowCycle ? 'Сменить ревизию' : 'Запустить цикл' }}
                 </Button>
               </template>
             </div>
@@ -271,17 +271,11 @@
             </div>
             <div v-else class="space-y-2">
               <div class="text-sm text-[color:var(--text-dim)]">
-                Рецепт не привязан
-                <span
-                  v-if="zone.recipeInstance && !zone.recipeInstance.recipe"
-                  class="text-[color:var(--accent-amber)] text-xs block mt-1"
-                >
-                  Данные рецепта пока не загружены. Обновите страницу или привяжите рецепт заново.
-                </span>
+                Цикл выращивания не запущен
               </div>
               <template v-if="canManageRecipe">
                 <div class="text-xs text-[color:var(--text-dim)]">
-                  Привяжите рецепт для автоматического управления фазами выращивания
+                  Запустите цикл выращивания, чтобы применить рецепт и отслеживать фазы
                 </div>
               </template>
             </div>
@@ -367,7 +361,7 @@
       <CycleControlPanel
         v-if="activeGrowCycle"
         :cycle="activeGrowCycle"
-        :recipe-instance="zone.recipeInstance"
+        :grow-cycle="activeGrowCycle"
         :phase-progress="computedPhaseProgress"
         :phase-days-elapsed="computedPhaseDaysElapsed"
         :phase-days-total="computedPhaseDaysTotal"
@@ -418,7 +412,7 @@
     <ZoneSimulationModal
       :show="showSimulationModal"
       :zone-id="zoneId"
-      :default-recipe-id="zone.recipeInstance?.recipe_id"
+      :default-recipe-id="activeGrowCycle?.recipeRevision?.recipe_id"
       @close="modals.close('simulation')"
     />
     
@@ -430,16 +424,6 @@
       :zone-id="zoneId"
       @close="modals.close('action')"
       @submit="onActionSubmit"
-    />
-    
-    <!-- Модальное окно привязки рецепта -->
-    <AttachRecipeModal
-      v-if="showAttachRecipeModal"
-      :show="showAttachRecipeModal"
-      :zone-id="zoneId"
-      data-testid="attach-recipe-modal"
-      @close="modals.close('attachRecipe')"
-      @attached="onRecipeAttached"
     />
     
     <!-- Модальное окно привязки узлов -->
@@ -515,33 +499,33 @@
       title="Сменить рецепт"
       message=" "
       confirm-text="Подтвердить"
-      :confirm-disabled="!changeRecipeModal.recipeId"
+      :confirm-disabled="!changeRecipeModal.recipeRevisionId"
       :loading="loading.cycleChangeRecipe"
       @close="closeChangeRecipeModal"
       @confirm="confirmChangeRecipe"
     >
       <div class="space-y-3 text-sm text-[color:var(--text-muted)]">
-        <div>Введите ID нового рецепта и выберите режим.</div>
+        <div>Введите ID ревизии рецепта и выберите режим применения.</div>
         <div>
-          <label class="text-xs text-[color:var(--text-dim)]">ID рецепта</label>
-          <input v-model="changeRecipeModal.recipeId" class="input-field mt-1 w-full" placeholder="Например: 12" />
+          <label class="text-xs text-[color:var(--text-dim)]">ID ревизии рецепта</label>
+          <input v-model="changeRecipeModal.recipeRevisionId" class="input-field mt-1 w-full" placeholder="Например: 42" />
         </div>
         <div class="flex flex-wrap gap-2">
           <button
             type="button"
             class="btn btn-outline h-9 px-3 text-xs"
-            :class="changeRecipeModal.action === 'rebase' ? 'border-[color:var(--accent-green)]' : ''"
-            @click="changeRecipeModal.action = 'rebase'"
+            :class="changeRecipeModal.applyMode === 'now' ? 'border-[color:var(--accent-green)]' : ''"
+            @click="changeRecipeModal.applyMode = 'now'"
           >
-            Обновить текущий цикл
+            Применить сейчас
           </button>
           <button
             type="button"
             class="btn btn-outline h-9 px-3 text-xs"
-            :class="changeRecipeModal.action === 'new_cycle' ? 'border-[color:var(--accent-green)]' : ''"
-            @click="changeRecipeModal.action = 'new_cycle'"
+            :class="changeRecipeModal.applyMode === 'next_phase' ? 'border-[color:var(--accent-green)]' : ''"
+            @click="changeRecipeModal.applyMode = 'next_phase'"
           >
-            Создать новый цикл
+            Со следующей фазы
           </button>
         </div>
       </div>
@@ -551,7 +535,7 @@
 
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { Link, usePage, router } from '@inertiajs/vue3'
+import { usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
@@ -566,7 +550,6 @@ import AIPredictionsSection from '@/Components/AIPredictionsSection.vue'
 import ZoneSimulationModal from '@/Components/ZoneSimulationModal.vue'
 import ZoneActionModal from '@/Components/ZoneActionModal.vue'
 import GrowthCycleWizard from '@/Components/GrowCycle/GrowthCycleWizard.vue'
-import AttachRecipeModal from '@/Components/AttachRecipeModal.vue'
 import AttachNodesModal from '@/Components/AttachNodesModal.vue'
 import NodeConfigModal from '@/Components/NodeConfigModal.vue'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
@@ -625,14 +608,12 @@ const modals = useModal<{
   simulation: boolean
   action: boolean
   growthCycle: boolean
-  attachRecipe: boolean
   attachNodes: boolean
   nodeConfig: boolean
 }>({
   simulation: false,
   action: false,
   growthCycle: false,
-  attachRecipe: false,
   attachNodes: false,
   nodeConfig: false,
 })
@@ -640,7 +621,6 @@ const modals = useModal<{
 const showSimulationModal = computed(() => modals.isModalOpen('simulation'))
 const showActionModal = computed(() => modals.isModalOpen('action'))
 const showGrowthCycleModal = computed(() => modals.isModalOpen('growthCycle'))
-const showAttachRecipeModal = computed(() => modals.isModalOpen('attachRecipe'))
 const showAttachNodesModal = computed(() => modals.isModalOpen('attachNodes'))
 const showNodeConfigModal = computed(() => modals.isModalOpen('nodeConfig'))
 
@@ -723,12 +703,7 @@ const zone = computed<Zone>(() => {
   // Если в store нет, используем props
   const rawZoneData = (page.props.zone || {}) as any
   
-  // Нормализуем snake_case в camelCase для recipe_instance
-  // Laravel/Inertia может отправлять данные в snake_case, а фронтенд ожидает camelCase
   const zoneData = { ...rawZoneData }
-  if (zoneData.recipe_instance && !zoneData.recipeInstance) {
-    zoneData.recipeInstance = zoneData.recipe_instance
-  }
   
   // Убеждаемся, что у объекта есть id
   if (!zoneData.id && zoneIdValue) {
@@ -797,67 +772,11 @@ const { targets: targetsProp, devices: devicesProp, events: eventsProp, cycles: 
 
 // Сырые targets (исторический формат, для Back-compat) + нормализованный current_phase
 const targets = computed(() => (targetsProp.value || {}) as ZoneTargetsType)
-// Вычисляем currentPhase из recipeInstance, если currentPhaseProp не предоставлен
 const currentPhase = computed(() => {
-  // Сначала пробуем использовать currentPhaseProp из props
   if (currentPhaseProp.value) {
     return currentPhaseProp.value as any
   }
-  
-  // Если нет currentPhaseProp, вычисляем из recipeInstance
-  const recipeInstance = zone.value?.recipeInstance
-  if (!recipeInstance || !recipeInstance.recipe || recipeInstance.current_phase_index === null) {
-    return null
-  }
-  
-  const phases = recipeInstance.recipe.phases
-  if (!phases || phases.length === 0) {
-    return null
-  }
-  
-  const currentPhaseIndex = recipeInstance.current_phase_index
-  const phase = phases.find((p: any) => p.phase_index === currentPhaseIndex)
-  if (!phase) {
-    return null
-  }
-  
-  // Вычисляем phase_started_at и phase_ends_at на основе started_at и duration_hours
-  const startedAt = recipeInstance.started_at
-  if (!startedAt) {
-    return null
-  }
-  
-  const startDate = new Date(startedAt)
-  let phaseStartTime = startDate.getTime()
-  
-  // Суммируем длительности предыдущих фаз
-  for (let i = 0; i < currentPhaseIndex; i++) {
-    const prevPhase = phases.find((p: any) => p.phase_index === i)
-    if (prevPhase && prevPhase.duration_hours) {
-      phaseStartTime += prevPhase.duration_hours * 60 * 60 * 1000
-    }
-  }
-  
-  const phaseStart = new Date(phaseStartTime)
-  const phaseEnd = new Date(phaseStartTime + (phase.duration_hours || 0) * 60 * 60 * 1000)
-  
-  const result = {
-    ...phase,
-    phase_started_at: phaseStart.toISOString(),
-    phase_ends_at: phaseEnd.toISOString(),
-    duration_hours: phase.duration_hours,
-  }
-  
-  logger.debug('[Zones/Show] currentPhase: computed', {
-    currentPhaseIndex,
-    phaseName: phase.name,
-    startedAt,
-    phase_started_at: result.phase_started_at,
-    phase_ends_at: result.phase_ends_at,
-    duration_hours: phase.duration_hours,
-  })
-  
-  return result
+  return null
 })
 
 const activeCycle = computed(() => (activeCycleProp.value || null) as any)
@@ -963,13 +882,10 @@ const cycleStatusLabel = computed(() => {
     if (status === 'PAUSED') return 'Цикл на паузе'
     if (status === 'PLANNED') return 'Цикл запланирован'
   }
-  if (!zone.value.recipeInstance && !activeGrowCycle.value) {
-    return 'Рецепт не привязан'
-  }
   if (activeCycle.value) {
     return 'Цикл активен'
   }
-  return 'Ожидает запуска'
+  return 'Цикл не запущен'
 })
 
 const cycleStatusVariant = computed<'success' | 'neutral' | 'warning'>(() => {
@@ -979,13 +895,10 @@ const cycleStatusVariant = computed<'success' | 'neutral' | 'warning'>(() => {
     if (status === 'PAUSED') return 'warning'
     if (status === 'PLANNED') return 'neutral'
   }
-  if (!zone.value.recipeInstance && !activeGrowCycle.value) {
-    return 'neutral'
-  }
   if (activeCycle.value) {
     return 'success'
   }
-  return 'warning'
+  return 'neutral'
 })
 
 const phaseTimeLeftLabel = computed(() => {
@@ -1292,6 +1205,11 @@ onMounted(async () => {
     logger.debug('[Zones/Show] Zone initialized in store from props', { zoneId: zoneId.value })
   }
 
+  const params = new URLSearchParams(window.location.search)
+  if (params.get('start_cycle') === '1') {
+    modals.open('growthCycle')
+  }
+
   // Загрузить данные для графиков
   chartDataPh.value = await loadChartData('PH', chartTimeRange.value)
   chartDataEc.value = await loadChartData('EC', chartTimeRange.value)
@@ -1358,13 +1276,6 @@ onMounted(async () => {
     }
   })
   
-  // Слушаем события присвоения рецепта к зоне
-  subscribeWithCleanup('zone:recipe:attached', ({ zoneId: eventZoneId }: { zoneId: number; recipeId: number }) => {
-    if (eventZoneId === zoneId.value) {
-      // Обновляем зону при присвоении рецепта
-      reloadZone(zoneId.value, ['zone'])
-    }
-  })
 })
 
 /**
@@ -1379,25 +1290,6 @@ function getDefaultCycleParams(cycleType: string): Record<string, unknown> {
       if (targets.value.irrigation_duration_sec) {
         // Важно: это может приходить либо из текущей фазы рецепта, либо из агрегированных targets зоны
         params.duration_sec = targets.value.irrigation_duration_sec
-      } else if (activeGrowCycle.value?.currentPhase) {
-        // Используем фазу из activeGrowCycle (новая модель)
-        const currentPhase = activeGrowCycle.value.currentPhase
-        if (currentPhase.duration_hours || currentPhase.duration_days) {
-          // Можно использовать длительность из фазы, но лучше из effective targets
-          // Пока используем fallback на recipeInstance
-        }
-      } else if (zone.value.recipeInstance?.recipe?.phases) {
-        // Fallback: ищем текущую фазу рецепта (legacy)
-        const currentPhaseIndex = zone.value.recipeInstance.current_phase_index ?? 0
-        const currentPhase = zone.value.recipeInstance.recipe.phases?.find(
-          (p: { phase_index: number }) => p.phase_index === currentPhaseIndex
-        )
-        if (currentPhase?.targets?.irrigation_duration_sec) {
-          params.duration_sec = currentPhase.targets.irrigation_duration_sec
-        } else {
-          // Значение по умолчанию, если не найдено
-          params.duration_sec = 10
-        }
       } else {
         params.duration_sec = 10
       }
@@ -1418,18 +1310,6 @@ function getDefaultCycleParams(cycleType: string): Record<string, unknown> {
       } else if (typeof (targets.value as any).ph === 'number') {
         // Back-compat: старый формат с одним числовым значением pH
         params.target_ph = (targets.value as any).ph
-      } else if (zone.value.recipeInstance?.recipe?.phases) {
-        const currentPhaseIndex = zone.value.recipeInstance.current_phase_index ?? 0
-        const currentPhase = zone.value.recipeInstance.recipe.phases?.find(
-          (p: { phase_index: number }) => p.phase_index === currentPhaseIndex
-        )
-        if (currentPhase?.targets?.ph?.min && currentPhase?.targets?.ph?.max) {
-          params.target_ph = (currentPhase.targets.ph.min + currentPhase.targets.ph.max) / 2
-        } else if (typeof currentPhase?.targets?.ph === 'number') {
-          params.target_ph = currentPhase.targets.ph
-        } else {
-          params.target_ph = 6.0
-        }
       } else {
         params.target_ph = 6.0
       }
@@ -1447,18 +1327,6 @@ function getDefaultCycleParams(cycleType: string): Record<string, unknown> {
         params.target_ec = (ec.min + ec.max) / 2
       } else if (typeof (targets.value as any).ec === 'number') {
         params.target_ec = (targets.value as any).ec
-      } else if (zone.value.recipeInstance?.recipe?.phases) {
-        const currentPhaseIndex = zone.value.recipeInstance.current_phase_index ?? 0
-        const currentPhase = zone.value.recipeInstance.recipe.phases?.find(
-          (p: { phase_index: number }) => p.phase_index === currentPhaseIndex
-        )
-        if (currentPhase?.targets?.ec?.min && currentPhase?.targets?.ec?.max) {
-          params.target_ec = (currentPhase.targets.ec.min + currentPhase.targets.ec.max) / 2
-        } else if (typeof currentPhase?.targets?.ec === 'number') {
-          params.target_ec = currentPhase.targets.ec
-        } else {
-          params.target_ec = 1.5
-        }
       } else {
         params.target_ec = 1.5
       }
@@ -1474,16 +1342,6 @@ function getDefaultCycleParams(cycleType: string): Record<string, unknown> {
       } else if ((targets.value as any).temp_air) {
         // Back-compat: старый формат, когда приходило одно значение temp_air
         params.target_temp = (targets.value as any).temp_air
-      } else if (zone.value.recipeInstance?.recipe?.phases) {
-        const currentPhaseIndex = zone.value.recipeInstance.current_phase_index ?? 0
-        const currentPhase = zone.value.recipeInstance.recipe.phases?.find(
-          (p: { phase_index: number }) => p.phase_index === currentPhaseIndex
-        )
-        if (currentPhase?.targets?.temp_air) {
-          params.target_temp = currentPhase.targets.temp_air
-        } else {
-          params.target_temp = 22
-        }
       } else {
         params.target_temp = 22
       }
@@ -1496,16 +1354,6 @@ function getDefaultCycleParams(cycleType: string): Record<string, unknown> {
       } else if ((targets.value as any).humidity_air) {
         // Back-compat: старый формат, когда приходило одно значение humidity_air
         params.target_humidity = (targets.value as any).humidity_air
-      } else if (zone.value.recipeInstance?.recipe?.phases) {
-        const currentPhaseIndex = zone.value.recipeInstance.current_phase_index ?? 0
-        const currentPhase = zone.value.recipeInstance.recipe.phases?.find(
-          (p: { phase_index: number }) => p.phase_index === currentPhaseIndex
-        )
-        if (currentPhase?.targets?.humidity_air) {
-          params.target_humidity = currentPhase.targets.humidity_air
-        } else {
-          params.target_humidity = 60
-        }
       } else {
         params.target_humidity = 60
       }
@@ -1515,16 +1363,6 @@ function getDefaultCycleParams(cycleType: string): Record<string, unknown> {
       // Используем параметры освещения из targets или рецепта
       if (targets.value.light_hours) {
         params.duration_hours = targets.value.light_hours
-      } else if (zone.value.recipeInstance?.recipe?.phases) {
-        const currentPhaseIndex = zone.value.recipeInstance.current_phase_index ?? 0
-        const currentPhase = zone.value.recipeInstance.recipe.phases?.find(
-          (p: { phase_index: number }) => p.phase_index === currentPhaseIndex
-        )
-        if (currentPhase?.targets?.light_hours) {
-          params.duration_hours = currentPhase.targets.light_hours
-        } else {
-          params.duration_hours = 12
-        }
       } else {
         params.duration_hours = 12
       }
@@ -1541,21 +1379,6 @@ async function onRunCycle(): Promise<void> {
     logger.warn('[onRunCycle] zoneId is missing')
     showToast('Ошибка: зона не найдена', 'error', TOAST_TIMEOUT.NORMAL)
     return
-  }
-
-  const hasActiveCycle = !!activeCycle.value
-
-  // Для старта цикла нужны рецепт и таргеты текущей фазы
-  if (!hasActiveCycle) {
-    if (!zone.value.recipeInstance?.recipe) {
-      showToast('Для запуска цикла выращивания необходимо привязать рецепт к зоне', 'warning', TOAST_TIMEOUT.LONG)
-      return
-    }
-
-    if (!currentPhase.value || !currentPhase.value.targets) {
-      showToast('Текущая фаза рецепта не содержит таргетов. Проверьте настройки рецепта.', 'warning', TOAST_TIMEOUT.LONG)
-      return
-    }
   }
 
   // Открываем модал для запуска/корректировки агрегированного цикла
@@ -1781,36 +1604,6 @@ function openNodeConfig(nodeId: number, node: any): void {
   modals.open('nodeConfig')
 }
 
-async function onRecipeAttached(recipeId: number): Promise<void> {
-  logger.info('[Zones/Show] Recipe attached event received:', recipeId)
-  
-  // Показываем уведомление
-  showToast('Рецепт успешно привязан к зоне', 'success', TOAST_TIMEOUT.NORMAL)
-  
-  if (!zoneId.value) return
-  
-  try {
-    // Загружаем обновленную зону через API вместо полного reload
-    // Используем уже инициализированный useZones composable
-    const { fetchZone } = useZones(showToast)
-    const updatedZone = await fetchZone(zoneId.value, true) // forceRefresh = true
-    
-    // Обновляем зону в store для мгновенного отображения
-    if (updatedZone?.id) {
-      zonesStore.upsert(updatedZone)
-      logger.info('[Zones/Show] Zone updated in store after recipe attachment', {
-        zoneId: updatedZone.id,
-        hasRecipeInstance: !!updatedZone.recipeInstance,
-        recipeId: updatedZone.recipeInstance?.recipe_id,
-      })
-    }
-  } catch (error) {
-    logger.error('[Zones/Show] Failed to fetch updated zone after recipe attachment:', error)
-    // В случае ошибки делаем частичный reload как fallback
-    reloadZone(zoneId.value, ['zone'])
-  }
-}
-
 async function onNodesAttached(nodeIds: number[]): Promise<void> {
   if (!zoneId.value) return
   
@@ -1837,80 +1630,18 @@ function onNodeConfigPublished(): void {
 }
 
 async function onNextPhase(): Promise<void> {
-  if (!zoneId.value || !zone.value.recipeInstance) return
-  
+  if (!activeGrowCycle.value?.id) return
+
   setLoading('nextPhase', true)
-  
-  // Оптимистично обновляем фазу в store
-  const nextPhaseIndex = (zone.value.recipeInstance.current_phase_index || 0) + 1
-  
-  // Создаем оптимистичное обновление
-  const optimisticUpdate = createOptimisticZoneUpdate(
-    zonesStore,
-    zoneId.value,
-    {
-      recipeInstance: {
-        ...zone.value.recipeInstance,
-        current_phase_index: nextPhaseIndex,
-      },
-    }
-  )
-  
   try {
-    // Применяем оптимистичное обновление и выполняем операцию на сервере
-    await performUpdate(
-      `zone-phase-${zoneId.value}-${Date.now()}`,
-      {
-        applyUpdate: optimisticUpdate.applyUpdate,
-        rollback: optimisticUpdate.rollback,
-        syncWithServer: async () => {
-          // Выполняем операцию на сервере
-          const response = await api.post(`/api/zones/${zoneId.value}/change-phase`, {
-            phase_index: nextPhaseIndex,
-          })
-          
-          // Обновляем зону в store с данными с сервера
-          const updatedZone = extractData<Zone>(response.data) || zone.value
-          
-          if (updatedZone.id) {
-            zonesStore.upsert(updatedZone)
-          }
-          
-          return updatedZone
-        },
-        onSuccess: async () => {
-          showToast('Фаза успешно изменена', 'success', TOAST_TIMEOUT.NORMAL)
-          // Обновляем зону через API и store вместо reload для сохранения состояния
-          if (zoneId.value) {
-            try {
-              // Используем уже инициализированный useZones composable
-              const { fetchZone } = useZones(showToast)
-              const updatedZone = await fetchZone(zoneId.value, true)
-              if (updatedZone?.id) {
-                zonesStore.upsert(updatedZone)
-              }
-            } catch (error) {
-              logger.error('[Zones/Show] Failed to fetch updated zone after phase change:', error)
-              // Fallback к частичному reload при ошибке
-              reloadZone(zoneId.value, ['zone'])
-            }
-          }
-        },
-        onError: (error) => {
-          logger.error('Failed to change phase:', error)
-          let errorMessage = ERROR_MESSAGES.UNKNOWN
-          if (error && typeof error === 'object' && 'message' in error) {
-            errorMessage = String(error.message)
-          }
-          showToast(`Ошибка при изменении фазы: ${errorMessage}`, 'error', TOAST_TIMEOUT.LONG)
-        },
-        showLoading: false, // Управляем loading вручную
-        timeout: 10000, // 10 секунд таймаут
-      }
-    )
+    const response = await api.post(`/api/grow-cycles/${activeGrowCycle.value.id}/advance-phase`)
+    if (response.data?.status === 'ok') {
+      showToast('Фаза успешно изменена', 'success', TOAST_TIMEOUT.NORMAL)
+      await reloadZone(zoneId.value, ['zone', 'active_grow_cycle'])
+    }
   } catch (err) {
-    // Ошибка уже обработана в onError callback
-    logger.error('Failed to change phase (unhandled):', err)
+    logger.error('Failed to change phase:', err)
+    handleError(err)
   } finally {
     setLoading('nextPhase', false)
   }
@@ -1964,10 +1695,10 @@ const abortModal = reactive<{ open: boolean; notes: string }>({
   notes: '',
 })
 
-const changeRecipeModal = reactive<{ open: boolean; recipeId: string; action: 'new_cycle' | 'rebase' }>({
+const changeRecipeModal = reactive<{ open: boolean; recipeRevisionId: string; applyMode: 'now' | 'next_phase' }>({
   open: false,
-  recipeId: '',
-  action: 'rebase',
+  recipeRevisionId: '',
+  applyMode: 'now',
 })
 
 function closeHarvestModal() {
@@ -1982,8 +1713,8 @@ function closeAbortModal() {
 
 function closeChangeRecipeModal() {
   changeRecipeModal.open = false
-  changeRecipeModal.recipeId = ''
-  changeRecipeModal.action = 'rebase'
+  changeRecipeModal.recipeRevisionId = ''
+  changeRecipeModal.applyMode = 'now'
 }
 
 function onCycleHarvest(): void {
@@ -2039,36 +1770,33 @@ async function confirmAbort(): Promise<void> {
 }
 
 function onCycleChangeRecipe(): void {
-  if (!zoneId.value) return
+  if (!activeGrowCycle.value?.id) return
   changeRecipeModal.open = true
 }
 
 async function confirmChangeRecipe(): Promise<void> {
-  if (!zoneId.value) return
+  if (!activeGrowCycle.value?.id) return
 
-  const recipeIdNum = parseInt(changeRecipeModal.recipeId)
-  if (isNaN(recipeIdNum)) {
-    showToast('Неверный ID рецепта', 'error', TOAST_TIMEOUT.NORMAL)
+  const revisionIdNum = parseInt(changeRecipeModal.recipeRevisionId)
+  if (isNaN(revisionIdNum)) {
+    showToast('Неверный ID ревизии', 'error', TOAST_TIMEOUT.NORMAL)
     return
   }
 
-  const action = changeRecipeModal.action
-
   setLoading('cycleChangeRecipe', true)
   try {
-    const response = await api.post(`/api/zones/${zoneId.value}/grow-cycle/change-recipe`, {
-      recipe_id: recipeIdNum,
-      action,
+    const response = await api.post(`/api/grow-cycles/${activeGrowCycle.value.id}/change-recipe-revision`, {
+      recipe_revision_id: revisionIdNum,
+      apply_mode: changeRecipeModal.applyMode,
     })
     if (response.data?.status === 'ok') {
-      const actionText = action === 'new_cycle' ? 'создан' : 'обновлен'
-      showToast(`Рецепт ${actionText}`, 'success', TOAST_TIMEOUT.NORMAL)
-      await reloadZone(zoneId.value, ['zone'])
+      showToast('Ревизия рецепта обновлена', 'success', TOAST_TIMEOUT.NORMAL)
+      await reloadZone(zoneId.value, ['zone', 'active_grow_cycle'])
       await loadCycleEvents()
       closeChangeRecipeModal()
     }
   } catch (err) {
-    logger.error('Failed to change recipe:', err)
+    logger.error('Failed to change recipe revision:', err)
     handleError(err)
   } finally {
     setLoading('cycleChangeRecipe', false)

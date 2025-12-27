@@ -12,7 +12,8 @@
 
         <!-- Timeline стадий -->
         <StageProgress
-          v-if="recipeInstance"
+          v-if="growCycle || recipeInstance"
+          :grow-cycle="growCycle"
           :recipe-instance="recipeInstance"
           :phase-progress="phaseProgress"
           :phase-days-elapsed="phaseDaysElapsed"
@@ -200,6 +201,7 @@ interface RecipeInstance {
 
 interface Props {
   cycle: GrowCycle | null
+  growCycle?: any | null
   recipeInstance?: RecipeInstance | null
   phaseProgress?: number | null
   phaseDaysElapsed?: number | null
@@ -210,6 +212,7 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   cycle: null,
+  growCycle: null,
   recipeInstance: null,
   phaseProgress: null,
   phaseDaysElapsed: null,

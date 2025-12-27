@@ -51,8 +51,8 @@ class GrowCycleWizardController extends Controller
         // Получаем растения
         $plants = Plant::orderBy('name')->get();
 
-        // Получаем рецепты
-        $recipes = Recipe::with('phases')->orderBy('name')->get();
+        // Получаем рецепты с опубликованными ревизиями
+        $recipes = Recipe::with(['publishedRevisions.phases'])->orderBy('name')->get();
 
         return response()->json([
             'status' => 'ok',
@@ -103,12 +103,28 @@ class GrowCycleWizardController extends Controller
                     'id' => $recipe->id,
                     'name' => $recipe->name,
                     'description' => $recipe->description,
-                    'phases' => $recipe->phases->map(fn($phase) => [
-                        'id' => $phase->id,
-                        'phase_index' => $phase->phase_index,
-                        'name' => $phase->name,
-                        'duration_hours' => $phase->duration_hours,
-                    ])->sortBy('phase_index')->values(),
+                    'latest_published_revision_id' => $recipe->latestPublishedRevision?->id,
+                    'published_revisions' => $recipe->publishedRevisions->map(fn($revision) => [
+                        'id' => $revision->id,
+                        'revision_number' => $revision->revision_number,
+                        'description' => $revision->description,
+                        'phases' => $revision->phases->map(fn($phase) => [
+                            'id' => $phase->id,
+                            'phase_index' => $phase->phase_index,
+                            'name' => $phase->name,
+                            'duration_hours' => $phase->duration_hours,
+                            'duration_days' => $phase->duration_days,
+                            'ph_target' => $phase->ph_target,
+                            'ph_min' => $phase->ph_min,
+                            'ph_max' => $phase->ph_max,
+                            'ec_target' => $phase->ec_target,
+                            'ec_min' => $phase->ec_min,
+                            'ec_max' => $phase->ec_max,
+                            'temp_air_target' => $phase->temp_air_target,
+                            'humidity_target' => $phase->humidity_target,
+                            'co2_target' => $phase->co2_target,
+                        ])->sortBy('phase_index')->values(),
+                    ])->values(),
                 ]),
             ],
         ]);
@@ -180,7 +196,7 @@ class GrowCycleWizardController extends Controller
             'greenhouse_id' => 'nullable|exists:greenhouses,id',
             'zone_id' => 'required|exists:zones,id',
             'plant_id' => 'required|exists:plants,id',
-            'recipe_id' => 'required|exists:recipes,id',
+            'recipe_revision_id' => 'required|exists:recipe_revisions,id',
             'planting_date' => 'required|date',
             'automation_start_date' => 'required|date|after_or_equal:planting_date',
             'batch' => 'required|array',
@@ -263,12 +279,10 @@ class GrowCycleWizardController extends Controller
                     ]);
                 }
 
-                // 3. Получаем рецепт и его последнюю опубликованную ревизию
-                $recipe = Recipe::findOrFail($data['recipe_id']);
-                $revision = $recipe->latestPublishedRevision;
-                
-                if (!$revision) {
-                    throw new \DomainException("Recipe {$recipe->id} has no published revision. Please publish a revision first.");
+                // 3. Получаем ревизию рецепта (должна быть опубликована)
+                $revision = RecipeRevision::findOrFail($data['recipe_revision_id']);
+                if ($revision->status !== 'PUBLISHED') {
+                    throw new \DomainException('Only PUBLISHED revisions can be used for new cycles');
                 }
 
                 // 4. Создаем GrowCycle через GrowCycleService
@@ -303,7 +317,7 @@ class GrowCycleWizardController extends Controller
                     'grow_cycle_id' => $growCycle->id,
                     'zone_id' => $zone->id,
                     'plant_id' => $data['plant_id'],
-                    'recipe_id' => $data['recipe_id'],
+                    'recipe_revision_id' => $revision->id,
                     'user_id' => $user->id,
                 ]);
 
@@ -394,4 +408,3 @@ class GrowCycleWizardController extends Controller
         ];
     }
 }
-

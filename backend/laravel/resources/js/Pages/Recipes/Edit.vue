@@ -128,27 +128,28 @@ const recipe = page.props.recipe || {}
 const form = useForm<RecipeFormData>({
   name: recipe.name || '',
   description: recipe.description || '',
-  phases: (recipe.phases || []).length > 0 ? (recipe.phases || []).map((p: RecipePhase) => ({
-    id: p.id,
-    phase_index: p.phase_index || 0,
-    name: p.name || '',
-    duration_hours: p.duration_hours || 24,
-    targets: {
-      ph: { 
-        min: typeof p.targets?.ph === 'object' ? (p.targets.ph as any).min : (p.targets?.ph || 5.8),
-        max: typeof p.targets?.ph === 'object' ? (p.targets.ph as any).max : (p.targets?.ph || 6.0)
+  phases: (recipe.phases || []).length > 0 ? (recipe.phases || []).map((p: RecipePhase & Record<string, any>) => {
+    const phMin = typeof p.ph_min === 'number' ? p.ph_min : (typeof p.targets?.ph?.min === 'number' ? p.targets.ph.min : 5.8)
+    const phMax = typeof p.ph_max === 'number' ? p.ph_max : (typeof p.targets?.ph?.max === 'number' ? p.targets.ph.max : 6.0)
+    const ecMin = typeof p.ec_min === 'number' ? p.ec_min : (typeof p.targets?.ec?.min === 'number' ? p.targets.ec.min : 1.2)
+    const ecMax = typeof p.ec_max === 'number' ? p.ec_max : (typeof p.targets?.ec?.max === 'number' ? p.targets.ec.max : 1.6)
+
+    return {
+      id: p.id,
+      phase_index: p.phase_index || 0,
+      name: p.name || '',
+      duration_hours: p.duration_hours || 24,
+      targets: {
+        ph: { min: phMin, max: phMax },
+        ec: { min: ecMin, max: ecMax },
+        temp_air: p.temp_air_target ?? p.targets?.temp_air ?? null,
+        humidity_air: p.humidity_target ?? p.targets?.humidity_air ?? null,
+        light_hours: p.lighting_photoperiod_hours ?? p.targets?.light_hours ?? null,
+        irrigation_interval_sec: p.irrigation_interval_sec ?? p.targets?.irrigation_interval_sec ?? null,
+        irrigation_duration_sec: p.irrigation_duration_sec ?? p.targets?.irrigation_duration_sec ?? null,
       },
-      ec: { 
-        min: typeof p.targets?.ec === 'object' ? (p.targets.ec as any).min : (p.targets?.ec || 1.2),
-        max: typeof p.targets?.ec === 'object' ? (p.targets.ec as any).max : (p.targets?.ec || 1.6)
-      },
-      temp_air: p.targets?.temp_air || null,
-      humidity_air: p.targets?.humidity_air || null,
-      light_hours: p.targets?.light_hours || null,
-      irrigation_interval_sec: p.targets?.irrigation_interval_sec || null,
-      irrigation_duration_sec: p.targets?.irrigation_duration_sec || null,
-    },
-  })) : [{
+    }
+  }) : [{
     phase_index: 0,
     name: '',
     duration_hours: 24,
@@ -190,14 +191,76 @@ const onAddPhase = (): void => {
 
 const onSave = async (): Promise<void> => {
   try {
+    form.processing = true
     if (recipe.id) {
-      // Обновление существующего рецепта
-      await form.patch(`/api/recipes/${recipe.id}`, {
-        preserveScroll: true,
-        onSuccess: () => {
-          router.visit(`/recipes/${recipe.id}`)
-        }
+      await api.patch(`/recipes/${recipe.id}`, {
+        name: form.name,
+        description: form.description
       })
+
+      let draftRevisionId = (recipe as any).draft_revision_id as number | undefined
+      const hasDraft = !!draftRevisionId
+
+      if (!draftRevisionId) {
+        const revisionResponse = await api.post<{ data?: { id: number } } | { id: number }>(
+          `/recipes/${recipe.id}/revisions`,
+          { description: 'Auto draft' }
+        )
+        const revision = (revisionResponse.data as { data?: { id: number } })?.data || (revisionResponse.data as { id: number })
+        draftRevisionId = revision?.id
+      }
+
+      if (!draftRevisionId) {
+        throw new Error('Draft revision ID not found')
+      }
+
+      const existingPhaseIds = hasDraft
+        ? (recipe.phases || []).map((p: any) => p.id).filter((id: number | undefined) => !!id)
+        : []
+      const currentPhaseIds = form.phases.map(p => p.id).filter((id): id is number => !!id)
+
+      for (const phase of form.phases) {
+        const phMin = phase.targets.ph.min
+        const phMax = phase.targets.ph.max
+        const ecMin = phase.targets.ec.min
+        const ecMax = phase.targets.ec.max
+        const phTarget = (phMin + phMax) / 2
+        const ecTarget = (ecMin + ecMax) / 2
+
+        const payload = {
+          phase_index: phase.phase_index,
+          name: phase.name,
+          duration_hours: phase.duration_hours,
+          ph_target: phTarget,
+          ph_min: phMin,
+          ph_max: phMax,
+          ec_target: ecTarget,
+          ec_min: ecMin,
+          ec_max: ecMax,
+          temp_air_target: phase.targets.temp_air || null,
+          humidity_target: phase.targets.humidity_air || null,
+          lighting_photoperiod_hours: phase.targets.light_hours || null,
+          irrigation_interval_sec: phase.targets.irrigation_interval_sec || null,
+          irrigation_duration_sec: phase.targets.irrigation_duration_sec || null,
+        }
+
+        if (hasDraft && phase.id) {
+          await api.patch(`/recipe-revision-phases/${phase.id}`, payload)
+        } else {
+          await api.post(`/recipe-revisions/${draftRevisionId}/phases`, payload)
+        }
+      }
+
+      if (hasDraft) {
+        const removedIds = existingPhaseIds.filter(id => !currentPhaseIds.includes(id))
+        for (const removedId of removedIds) {
+          await api.delete(`/recipe-revision-phases/${removedId}`)
+        }
+      }
+
+      await api.post(`/recipe-revisions/${draftRevisionId}/publish`)
+      showToast('Рецепт успешно обновлен', 'success', TOAST_TIMEOUT.NORMAL)
+      router.visit(`/recipes/${recipe.id}`)
     } else {
       // Создание нового рецепта - сначала создаем рецепт, потом фазы
       const recipeResponse = await api.post<{ data?: { id: number } }>(
@@ -213,30 +276,53 @@ const onSave = async (): Promise<void> => {
       if (!recipeId) {
         throw new Error('Recipe ID not found in response')
       }
-      
-      // Создаем фазы
+
+      const revisionResponse = await api.post<{ data?: { id: number } } | { id: number }>(
+        `/recipes/${recipeId}/revisions`,
+        { description: 'Initial revision' }
+      )
+      const revision = (revisionResponse.data as { data?: { id: number } })?.data || (revisionResponse.data as { id: number })
+      const revisionId = revision?.id
+
+      if (!revisionId) {
+        throw new Error('Recipe revision ID not found in response')
+      }
+
       for (const phase of form.phases) {
-        await api.post(`/recipes/${recipeId}/phases`, {
+        const phMin = phase.targets.ph.min
+        const phMax = phase.targets.ph.max
+        const ecMin = phase.targets.ec.min
+        const ecMax = phase.targets.ec.max
+        const phTarget = (phMin + phMax) / 2
+        const ecTarget = (ecMin + ecMax) / 2
+
+        await api.post(`/recipe-revisions/${revisionId}/phases`, {
           phase_index: phase.phase_index,
           name: phase.name,
           duration_hours: phase.duration_hours,
-          targets: {
-            ph: phase.targets.ph,
-            ec: phase.targets.ec,
-            temp_air: phase.targets.temp_air || null,
-            humidity_air: phase.targets.humidity_air || null,
-            light_hours: phase.targets.light_hours || null,
-            irrigation_interval_sec: phase.targets.irrigation_interval_sec || null,
-            irrigation_duration_sec: phase.targets.irrigation_duration_sec || null,
-          }
+          ph_target: phTarget,
+          ph_min: phMin,
+          ph_max: phMax,
+          ec_target: ecTarget,
+          ec_min: ecMin,
+          ec_max: ecMax,
+          temp_air_target: phase.targets.temp_air || null,
+          humidity_target: phase.targets.humidity_air || null,
+          lighting_photoperiod_hours: phase.targets.light_hours || null,
+          irrigation_interval_sec: phase.targets.irrigation_interval_sec || null,
+          irrigation_duration_sec: phase.targets.irrigation_duration_sec || null,
         })
       }
-      
+
+      await api.post(`/recipe-revisions/${revisionId}/publish`)
+
       showToast('Рецепт успешно создан', 'success', TOAST_TIMEOUT.NORMAL)
       router.visit(`/recipes/${recipeId}`)
     }
   } catch (error) {
     logger.error('Failed to save recipe:', error)
+  } finally {
+    form.processing = false
   }
 }
 </script>

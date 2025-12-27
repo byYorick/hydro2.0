@@ -22,7 +22,10 @@ class RecipeController extends Controller
             'search' => ['nullable', 'string', 'max:255'],
         ]);
         
-        $query = Recipe::query()->with('phases');
+        $query = Recipe::query()->with([
+            'latestPublishedRevision.phases',
+            'latestDraftRevision.phases',
+        ]);
         
         // Поиск по имени или описанию
         if (isset($validated['search']) && $validated['search']) {
@@ -35,6 +38,22 @@ class RecipeController extends Controller
         }
         
         $items = $query->latest('id')->paginate(25);
+
+        $items->getCollection()->transform(function (Recipe $recipe) {
+            $published = $recipe->latestPublishedRevision;
+            $draft = $recipe->latestDraftRevision;
+            $revisionForCount = $published ?? $draft;
+
+            return [
+                'id' => $recipe->id,
+                'name' => $recipe->name,
+                'description' => $recipe->description,
+                'phases_count' => $revisionForCount?->phases?->count() ?? 0,
+                'latest_published_revision_id' => $published?->id,
+                'latest_draft_revision_id' => $draft?->id,
+            ];
+        });
+
         return response()->json(['status' => 'ok', 'data' => $items]);
     }
 
@@ -51,8 +70,19 @@ class RecipeController extends Controller
 
     public function show(Recipe $recipe): JsonResponse
     {
-        $recipe->load('phases');
-        return response()->json(['status' => 'ok', 'data' => $recipe]);
+        $recipe->load([
+            'latestPublishedRevision.phases',
+            'latestDraftRevision.phases',
+        ]);
+
+        $recipeArray = $recipe->toArray();
+        $recipeArray['latest_published_revision_id'] = $recipe->latestPublishedRevision?->id;
+        $recipeArray['latest_draft_revision_id'] = $recipe->latestDraftRevision?->id;
+        $recipeArray['phases'] = $recipe->latestDraftRevision?->phases?->toArray()
+            ?? $recipe->latestPublishedRevision?->phases?->toArray()
+            ?? [];
+
+        return response()->json(['status' => 'ok', 'data' => $recipeArray]);
     }
 
     /**
@@ -60,15 +90,19 @@ class RecipeController extends Controller
      */
     public function getStageMap(Recipe $recipe): JsonResponse
     {
-        $recipe->load('phases');
-        
+        $recipe->load(['latestPublishedRevision.phases', 'latestDraftRevision.phases']);
+
+        $phases = $recipe->latestPublishedRevision?->phases
+            ?? $recipe->latestDraftRevision?->phases
+            ?? collect();
+
         // Получаем stage-map из metadata или генерируем автоматически
         $stageMap = $recipe->metadata['stage_map'] ?? null;
-        
+
         // Если нет stage-map, генерируем автоматически на основе названий фаз
-        if (!$stageMap && $recipe->phases->count() > 0) {
+        if (!$stageMap && $phases->count() > 0) {
             $stageMap = [];
-            foreach ($recipe->phases as $phase) {
+            foreach ($phases as $phase) {
                 $stageMap[] = [
                     'phase_index' => $phase->phase_index,
                     'phase_name' => $phase->name,
@@ -161,5 +195,4 @@ class RecipeController extends Controller
         }
     }
 }
-
 

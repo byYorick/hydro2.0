@@ -235,24 +235,35 @@ async function handleQuickAction(zoneId: number, action: string) {
   try {
     let endpoint = ''
     let method: 'post' | 'put' | 'patch' = 'post'
-    let payload: any = {}
+    const payload: any = {}
 
     switch (action) {
       case 'pause':
-        endpoint = `/zones/${zoneId}/pause`
+        endpoint = 'pause'
         break
       case 'resume':
-        endpoint = `/zones/${zoneId}/resume`
+        endpoint = 'resume'
         break
       case 'nextPhase':
-        endpoint = `/zones/${zoneId}/next-phase`
+        endpoint = 'advance'
         break
       default:
         showToast(`Неизвестное действие: ${action}`, 'error', TOAST_TIMEOUT.NORMAL)
         return
     }
 
-    const response = await api[method]<{ status: string; data?: Zone }>(endpoint, payload)
+    const cycleResponse = await api.get(`/zones/${zoneId}/grow-cycle`)
+    const growCycleId = cycleResponse.data?.data?.id
+    if (!growCycleId) {
+      showToast('В зоне нет активного цикла', 'warning', TOAST_TIMEOUT.NORMAL)
+      return
+    }
+
+    const actionEndpoint = endpoint === 'advance'
+      ? `/grow-cycles/${growCycleId}/advance-phase`
+      : `/grow-cycles/${growCycleId}/${endpoint}`
+
+    const response = await api[method]<{ status: string; data?: Zone }>(actionEndpoint, payload)
 
     if (response.data?.status === 'ok') {
       const actionNames: Record<string, string> = {

@@ -33,7 +33,7 @@
     </div>
 
     <!-- Стадия и прогресс -->
-    <div v-if="zone.activeGrowCycle || zone.recipe_instance || zone.recipeInstance" class="mt-3 space-y-2">
+    <div v-if="zone.activeGrowCycle" class="mt-3 space-y-2">
       <div class="flex items-center justify-between">
         <GrowCycleStageHeader :stage="currentStage" />
         <GrowCycleProgressRing
@@ -150,30 +150,7 @@ const currentStage = computed<GrowStage | null>(() => {
     }
   }
   
-  // Fallback на legacy recipeInstance
-  const recipeInstance = props.zone.recipe_instance || props.zone.recipeInstance
-  if (!recipeInstance?.recipe?.phases) {
-    return null
-  }
-  
-  const currentPhaseIndex = recipeInstance.current_phase_index ?? -1
-  if (currentPhaseIndex < 0) {
-    return null
-  }
-  
-  const currentPhase = recipeInstance.recipe.phases.find(
-    p => p.phase_index === currentPhaseIndex
-  )
-  
-  if (!currentPhase) {
-    return null
-  }
-  
-  return getStageForPhase(
-    currentPhase.name,
-    currentPhaseIndex,
-    recipeInstance.recipe.phases.length
-  )
+  return null
 })
 
 // Вычисляем прогресс цикла
@@ -210,26 +187,7 @@ const cycleProgress = computed<number | null>(() => {
     }
   }
   
-  // Fallback на legacy recipeInstance
-  const recipeInstance = props.zone.recipe_instance || props.zone.recipeInstance
-  if (!recipeInstance?.recipe?.phases || !recipeInstance.started_at) {
-    return null
-  }
-  
-  const currentPhaseIndex = recipeInstance.current_phase_index ?? -1
-  if (currentPhaseIndex < 0) {
-    return 0
-  }
-  
-  // Получаем прогресс текущей фазы из recipe_instance (если есть)
-  const phaseProgress = (recipeInstance as any).phase_progress || null
-  
-  return calculateCycleProgress(
-    currentPhaseIndex,
-    recipeInstance.recipe.phases,
-    recipeInstance.started_at,
-    phaseProgress
-  )
+  return null
 })
 
 // Получаем targets из зоны (если есть current_phase.targets или старый формат)

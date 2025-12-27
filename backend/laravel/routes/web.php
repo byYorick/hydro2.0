@@ -1206,7 +1206,11 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
             // ВАЖНО: Используем оригинальную модель, так как Inertia правильно сериализует отношения
             // Но убеждаемся, что все отношения загружены
             if (! $zone->relationLoaded('activeGrowCycle')) {
-                $zone->load('activeGrowCycle.recipeRevision.recipe');
+                $zone->load([
+                    'activeGrowCycle.recipeRevision.recipe',
+                    'activeGrowCycle.currentPhase',
+                    'activeGrowCycle.phases',
+                ]);
             }
 
             // Логируем данные перед отправкой в Inertia
@@ -1432,6 +1436,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
             // Для совместимости с фронтендом добавляем phases на уровень recipe
             $recipeArray = $recipe->toArray();
             $recipeArray['phases'] = $recipe->latestPublishedRevision?->phases?->toArray() ?? [];
+            $recipeArray['published_revision_id'] = $recipe->latestPublishedRevision?->id;
 
             return Inertia::render('Recipes/Show', [
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
@@ -1462,12 +1467,17 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
 
         Route::get('/{recipeId}/edit', function (int $recipeId) {
             $recipe = Recipe::query()
-                ->with(['latestDraftRevision.phases'])
+                ->with(['latestDraftRevision.phases', 'latestPublishedRevision'])
                 ->findOrFail($recipeId);
 
             // Для совместимости с фронтендом добавляем phases на уровень recipe
+            $phases = $recipe->latestDraftRevision?->phases
+                ?? $recipe->latestPublishedRevision?->phases
+                ?? collect();
             $recipeArray = $recipe->toArray();
-            $recipeArray['phases'] = $recipe->latestDraftRevision?->phases?->toArray() ?? [];
+            $recipeArray['phases'] = $phases->toArray();
+            $recipeArray['draft_revision_id'] = $recipe->latestDraftRevision?->id;
+            $recipeArray['published_revision_id'] = $recipe->latestPublishedRevision?->id;
 
             return Inertia::render('Recipes/Edit', [
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],

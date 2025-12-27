@@ -263,10 +263,10 @@
           </div>
         </div>
 
-        <!-- Шаг 4: Привязка рецепта к зоне -->
+        <!-- Шаг 4: Запуск цикла выращивания -->
         <div class="border-l-4 pl-4" :class="step3Complete ? 'border-[color:var(--accent-green)]' : 'border-[color:var(--border-muted)]'">
           <div class="flex items-center justify-between mb-2">
-            <h2 class="text-base font-semibold">Шаг 4: Привязать рецепт к зоне</h2>
+            <h2 class="text-base font-semibold">Шаг 4: Запустить цикл выращивания</h2>
             <Badge v-if="step4Complete" variant="success">Готово</Badge>
           </div>
           <div v-if="!step4Complete">
@@ -275,11 +275,11 @@
               @click="attachRecipeToZone"
               :disabled="loading.step4 || !step3Complete"
             >
-              {{ loading.step4 ? 'Привязка...' : 'Привязать рецепт к зоне' }}
+              {{ loading.step4 ? 'Открываем...' : 'Открыть мастер цикла' }}
             </Button>
           </div>
           <div v-else class="text-sm text-[color:var(--text-muted)]">
-            Рецепт успешно привязан к зоне
+            Мастер цикла доступен в зоне — запуск можно выполнить позже
           </div>
         </div>
 
@@ -657,18 +657,50 @@ async function createRecipe(): Promise<void> {
     if (!recipeId) {
       throw new Error('Recipe ID not found in response')
     }
-    
-    // 2. Создать фазы
+
+    // 2. Создать ревизию рецепта
+    const revisionResponse = await api.post<{ data?: { id: number } } | { id: number }>(
+      `/recipes/${recipeId}/revisions`,
+      { description: 'Initial revision' }
+    )
+    const revision = (revisionResponse.data as { data?: { id: number } })?.data || (revisionResponse.data as { id: number })
+    const revisionId = revision?.id
+    if (!revisionId) {
+      throw new Error('Recipe revision ID not found in response')
+    }
+
+    // 3. Создать фазы для ревизии
     for (const phase of recipeForm.phases) {
-      await api.post(`/recipes/${recipeId}/phases`, {
+      const phTarget = typeof phase.targets?.ph === 'number' ? phase.targets.ph : null
+      const phMin = typeof phase.targets?.ph?.min === 'number' ? phase.targets.ph.min : phTarget
+      const phMax = typeof phase.targets?.ph?.max === 'number' ? phase.targets.ph.max : phTarget
+
+      const ecTarget = typeof phase.targets?.ec === 'number' ? phase.targets.ec : null
+      const ecMin = typeof phase.targets?.ec?.min === 'number' ? phase.targets.ec.min : ecTarget
+      const ecMax = typeof phase.targets?.ec?.max === 'number' ? phase.targets.ec.max : ecTarget
+
+      await api.post(`/recipe-revisions/${revisionId}/phases`, {
         phase_index: phase.phase_index,
-        name: phase.name,
+        name: phase.name || `Фаза ${phase.phase_index + 1}`,
         duration_hours: phase.duration_hours,
-        targets: phase.targets
+        ph_target: phTarget,
+        ph_min: phMin,
+        ph_max: phMax,
+        ec_target: ecTarget,
+        ec_min: ecMin,
+        ec_max: ecMax,
+        temp_air_target: phase.targets?.temp_air ?? null,
+        humidity_target: phase.targets?.humidity_air ?? null,
+        lighting_photoperiod_hours: phase.targets?.light_hours ?? null,
+        irrigation_interval_sec: phase.targets?.irrigation_interval_sec ?? null,
+        irrigation_duration_sec: phase.targets?.irrigation_duration_sec ?? null,
       })
     }
-    
-    // 3. Загрузить полный рецепт с фазами
+
+    // 4. Опубликовать ревизию, чтобы рецепт был доступен для циклов
+    await api.post(`/recipe-revisions/${revisionId}/publish`)
+
+    // 5. Загрузить полный рецепт с фазами
     const fullRecipeResponse = await api.get<{ data?: Recipe } | Recipe>(
       `/recipes/${recipeId}`
     )
@@ -714,25 +746,17 @@ async function createZone(): Promise<void> {
 }
 
 async function attachRecipeToZone(): Promise<void> {
-  if (!createdZone.value || !createdRecipe.value) return
+  if (!createdZone.value) return
   
   loading.step4 = true
   try {
-    await api.post(
-      `/zones/${createdZone.value.id}/attach-recipe`,
-      {
-        recipe_id: createdRecipe.value.id,
-        start_at: new Date().toISOString()
-      }
-    )
-    
-    logger.info('Recipe attached to zone')
-    showToast('Рецепт успешно привязан к зоне', 'success', TOAST_TIMEOUT.NORMAL)
-    // Обновляем список узлов после привязки рецепта
-    await loadAvailableNodes()
+    const recipeId = createdRecipe.value?.id
+    const query = recipeId ? `?start_cycle=1&recipe_id=${recipeId}` : '?start_cycle=1'
+    logger.info('Opening grow cycle wizard for zone', { zoneId: createdZone.value.id, recipeId })
+    showToast('Открываем мастер цикла выращивания', 'info', TOAST_TIMEOUT.NORMAL)
+    router.visit(`/zones/${createdZone.value.id}${query}`)
   } catch (error) {
-    // Ошибка уже обработана в useApi через showToast
-    logger.error('Failed to attach recipe:', error)
+    logger.error('Failed to open grow cycle wizard:', error)
   } finally {
     loading.step4 = false
   }

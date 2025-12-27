@@ -570,22 +570,22 @@ const groupedResults = computed<GroupedResult[]>(() => {
           action: () => safeVisit(`/recipes/${recipe.id}`)
         })
         
-        // Действие: применить рецепт к зоне (нужно выбрать зону)
+        // Действие: открыть мастер цикла для зоны
         searchResults.value.zones.forEach(zone => {
           if (fuzzyMatch(zone.name, query) || query.includes(zone.name.toLowerCase())) {
             flatResults.push({
               type: 'action',
               id: `recipe-${recipe.id}-apply-zone-${zone.id}`,
-              label: `Применить рецепт "${recipe.name}" к зоне "${zone.name}"`,
+              label: `Открыть мастер цикла для зоны "${zone.name}"`,
               icon: '🔄',
               category: 'Рецепт',
               zoneId: zone.id,
               zoneName: zone.name,
               recipeId: recipe.id,
               recipeName: recipe.name,
-              actionType: 'apply-recipe',
-              requiresConfirm: true,
-              actionFn: () => applyRecipeToZone(zone.id, recipe.id, zone.name, recipe.name)
+              actionType: 'open-cycle-wizard',
+              requiresConfirm: false,
+              actionFn: () => openGrowCycleWizardForZone(zone.id, recipe.id, zone.name, recipe.name)
             })
           }
         })
@@ -668,7 +668,7 @@ const run = (item: CommandItem | undefined): void => {
       'lighting': 'запустить управление освещением',
       'next-phase': 'перейти к следующей фазе',
       'resume': 'возобновить',
-      'apply-recipe': `применить рецепт "${item.recipeName}"`
+      'open-cycle-wizard': 'открыть мастер цикла'
     }
     const actionName = actionNames[item.actionType || ''] || 'выполнить это действие'
     const zoneName = item.zoneName ? ` для зоны "${item.zoneName}"` : ''
@@ -692,14 +692,23 @@ const run = (item: CommandItem | undefined): void => {
 
 async function executeZoneAction(zoneId: number, action: string, zoneName: string): Promise<void> {
   try {
+    const cycleResponse = await api.get(`/api/zones/${zoneId}/grow-cycle`)
+    const growCycleId = cycleResponse.data?.data?.id
+
+    if (!growCycleId) {
+      logger.warn(`[CommandPalette] No active grow cycle in zone "${zoneName}"`)
+      close()
+      return
+    }
+
     if (action === 'pause') {
-      await api.post(`/api/zones/${zoneId}/pause`, {})
-      logger.info(`[CommandPalette] Зона "${zoneName}" приостановлена`)
+      await api.post(`/api/grow-cycles/${growCycleId}/pause`, {})
+      logger.info(`[CommandPalette] Цикл в зоне "${zoneName}" приостановлен`)
     } else if (action === 'resume') {
-      await api.post(`/api/zones/${zoneId}/resume`, {})
-      logger.info(`[CommandPalette] Зона "${zoneName}" возобновлена`)
+      await api.post(`/api/grow-cycles/${growCycleId}/resume`, {})
+      logger.info(`[CommandPalette] Цикл в зоне "${zoneName}" возобновлен`)
     } else if (action === 'next-phase') {
-      await api.post(`/api/zones/${zoneId}/next-phase`, {})
+      await api.post(`/api/grow-cycles/${growCycleId}/advance-phase`, {})
       logger.info(`[CommandPalette] Переход к следующей фазе в зоне "${zoneName}"`)
     }
     close()
@@ -762,29 +771,11 @@ async function executeZoneCycle(zoneId: number, cycleType: string, zoneName: str
 /**
  * Применить рецепт к зоне с перекрестной инвалидацией кеша
  */
-async function applyRecipeToZone(zoneId: number, recipeId: number, zoneName: string, recipeName: string): Promise<void> {
-  try {
-    await api.post(`/api/zones/${zoneId}/attach-recipe`, {
-      recipe_id: recipeId
-    })
-    
-    // Инвалидируем кеш зон и рецептов через stores
-    const { useZonesStore } = await import('@/stores/zones')
-    const zonesStore = useZonesStore()
-    await zonesStore.attachRecipe(zoneId, recipeId)
-    
-    logger.info(`[CommandPalette] Рецепт "${recipeName}" применен к зоне "${zoneName}"`)
-    close()
-  } catch (err) {
-    logger.error(`[CommandPalette] Failed to apply recipe:`, err)
-    handleError(err, {
-      component: 'CommandPalette',
-      action: 'applyRecipeToZone',
-      zoneId,
-      recipeId,
-    })
-    close()
-  }
+function openGrowCycleWizardForZone(zoneId: number, recipeId: number, zoneName: string, recipeName: string): void {
+  const query = `?start_cycle=1&recipe_id=${recipeId}`
+  logger.info(`[CommandPalette] Open grow cycle wizard for zone "${zoneName}" (recipe: "${recipeName}")`)
+  safeVisit(`/zones/${zoneId}${query}`)
+  close()
 }
 
 function confirmAction(): void {
