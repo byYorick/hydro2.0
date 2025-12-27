@@ -4,11 +4,12 @@ namespace Database\Seeders;
 
 use App\Models\GrowStageTemplate;
 use App\Models\Recipe;
-use App\Models\RecipeStageMap;
+use App\Models\RecipeRevisionPhase;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Str;
 
 /**
- * Сидер для шаблонов стадий роста и их маппинга к рецептам
+ * Сидер для шаблонов стадий роста и их привязки к фазам ревизий
  */
 class ExtendedGrowStagesSeeder extends Seeder
 {
@@ -17,10 +18,10 @@ class ExtendedGrowStagesSeeder extends Seeder
         $this->command->info('=== Создание шаблонов стадий роста ===');
 
         $stagesCreated = $this->seedGrowStageTemplates();
-        $mapsCreated = $this->seedRecipeStageMaps();
+        $phasesUpdated = $this->assignStagesToPhases();
 
         $this->command->info("Создано шаблонов стадий: {$stagesCreated}");
-        $this->command->info("Создано маппингов: {$mapsCreated}");
+        $this->command->info("Обновлено фаз: {$phasesUpdated}");
     }
 
     private function seedGrowStageTemplates(): int
@@ -118,145 +119,99 @@ class ExtendedGrowStagesSeeder extends Seeder
         return $created;
     }
 
-    private function seedRecipeStageMaps(): int
+    private function assignStagesToPhases(): int
     {
-        $created = 0;
+        $updated = 0;
 
-        $recipes = Recipe::all();
-        $stageTemplates = GrowStageTemplate::orderBy('order_index')->get();
+        $templates = GrowStageTemplate::orderBy('order_index')->get();
+        if ($templates->isEmpty()) {
+            $this->command->warn('Шаблоны стадий не найдены.');
 
-        if ($recipes->isEmpty() || $stageTemplates->isEmpty()) {
-            $this->command->warn('Рецепты или шаблоны стадий не найдены.');
             return 0;
         }
 
-        foreach ($recipes as $recipe) {
-            $phases = $recipe->phases()->orderBy('phase_index')->get();
-            
-            if ($phases->isEmpty()) {
+        $phases = RecipeRevisionPhase::with('recipeRevision.recipe')->get();
+        if ($phases->isEmpty()) {
+            $this->command->warn('Фазы ревизий не найдены.');
+
+            return 0;
+        }
+
+        foreach ($phases as $phase) {
+            if ($phase->stage_template_id) {
                 continue;
             }
 
-            // Маппим стадии в зависимости от типа рецепта
-            $stageMapping = $this->getStageMappingForRecipe($recipe, $phases, $stageTemplates);
-
-            foreach ($stageMapping as $index => $mapping) {
-                RecipeStageMap::firstOrCreate(
-                    [
-                        'recipe_id' => $recipe->id,
-                        'stage_template_id' => $mapping['stage_template_id'],
-                        'order_index' => $index,
-                    ],
-                    [
-                        'start_offset_days' => $mapping['start_offset_days'],
-                        'end_offset_days' => $mapping['end_offset_days'],
-                        'phase_indices' => $mapping['phase_indices'],
-                        'targets_override' => $mapping['targets_override'],
-                    ]
-                );
-                $created++;
+            $recipe = $phase->recipeRevision?->recipe;
+            if (! $recipe) {
+                continue;
             }
+
+            $template = $this->resolveStageTemplate($recipe, $phase, $templates);
+            if (! $template) {
+                continue;
+            }
+
+            $phase->update(['stage_template_id' => $template->id]);
+            $updated++;
         }
 
-        return $created;
+        return $updated;
     }
 
-    private function getStageMappingForRecipe(Recipe $recipe, $phases, $stageTemplates): array
+    private function resolveStageTemplate(Recipe $recipe, RecipeRevisionPhase $phase, $templates): ?GrowStageTemplate
     {
-        $recipeName = strtolower($recipe->name);
-        $mapping = [];
+        $phaseName = Str::lower($phase->name ?? '');
+        $recipeName = Str::lower($recipe->name ?? '');
 
-        // Определяем маппинг в зависимости от типа рецепта
-        if (str_contains($recipeName, 'салат') || str_contains($recipeName, 'lettuce')) {
-            // Для салата: Проращивание -> Вегетативная -> Сбор
-            $mapping = [
-                [
-                    'stage_template_id' => $stageTemplates->firstWhere('code', 'GERMINATION')->id,
-                    'start_offset_days' => 0,
-                    'end_offset_days' => 3,
-                    'phase_indices' => [0],
-                    'targets_override' => null,
-                ],
-                [
-                    'stage_template_id' => $stageTemplates->firstWhere('code', 'VEG')->id,
-                    'start_offset_days' => 3,
-                    'end_offset_days' => 21,
-                    'phase_indices' => [1],
-                    'targets_override' => null,
-                ],
-                [
-                    'stage_template_id' => $stageTemplates->firstWhere('code', 'HARVEST')->id,
-                    'start_offset_days' => 21,
-                    'end_offset_days' => 30,
-                    'phase_indices' => [2],
-                    'targets_override' => null,
-                ],
-            ];
-        } elseif (str_contains($recipeName, 'томат') || str_contains($recipeName, 'tomato')) {
-            // Для томата: Посадка -> Вегетативная -> Цветение -> Плодоношение -> Сбор
-            $mapping = [
-                [
-                    'stage_template_id' => $stageTemplates->firstWhere('code', 'PLANTING')->id,
-                    'start_offset_days' => 0,
-                    'end_offset_days' => 1,
-                    'phase_indices' => [0],
-                    'targets_override' => null,
-                ],
-                [
-                    'stage_template_id' => $stageTemplates->firstWhere('code', 'VEG')->id,
-                    'start_offset_days' => 1,
-                    'end_offset_days' => 15,
-                    'phase_indices' => [1],
-                    'targets_override' => null,
-                ],
-                [
-                    'stage_template_id' => $stageTemplates->firstWhere('code', 'FLOWER')->id,
-                    'start_offset_days' => 15,
-                    'end_offset_days' => 30,
-                    'phase_indices' => [2],
-                    'targets_override' => null,
-                ],
-                [
-                    'stage_template_id' => $stageTemplates->firstWhere('code', 'FRUIT')->id,
-                    'start_offset_days' => 30,
-                    'end_offset_days' => 60,
-                    'phase_indices' => [2],
-                    'targets_override' => null,
-                ],
-            ];
-        } else {
-            // Общий маппинг для остальных рецептов
-            $cumulativeDays = 0;
-            foreach ($phases as $phaseIndex => $phase) {
-                $durationDays = ($phase->duration_hours ?? 0) / 24;
-                
-                // Выбираем подходящую стадию
-                $stageCode = match ($phaseIndex) {
-                    0 => 'GERMINATION',
-                    1 => 'VEG',
-                    2 => 'FLOWER',
-                    3 => 'FRUIT',
-                    default => 'VEG',
-                };
-
-                $stageTemplate = $stageTemplates->firstWhere('code', $stageCode);
-                if (!$stageTemplate) {
-                    $stageTemplate = $stageTemplates->first();
-                }
-
-                $mapping[] = [
-                    'stage_template_id' => $stageTemplate->id,
-                    'start_offset_days' => $cumulativeDays,
-                    'end_offset_days' => $cumulativeDays + $durationDays,
-                    'phase_indices' => [$phaseIndex],
-                    'targets_override' => null,
-                ];
-
-                $cumulativeDays += $durationDays;
-            }
+        if (str_contains($phaseName, 'проращ') || str_contains($phaseName, 'germin')) {
+            return $templates->firstWhere('code', 'GERMINATION') ?? $templates->first();
         }
 
-        return $mapping;
+        if (str_contains($phaseName, 'рассад') || str_contains($phaseName, 'посад')) {
+            return $templates->firstWhere('code', 'PLANTING') ?? $templates->first();
+        }
+
+        if (str_contains($phaseName, 'вегет') || str_contains($phaseName, 'рост')) {
+            return $templates->firstWhere('code', 'VEG') ?? $templates->first();
+        }
+
+        if (str_contains($phaseName, 'цвет')) {
+            return $templates->firstWhere('code', 'FLOWER') ?? $templates->first();
+        }
+
+        if (str_contains($phaseName, 'плод') || str_contains($phaseName, 'созрев')) {
+            return $templates->firstWhere('code', 'FRUIT') ?? $templates->first();
+        }
+
+        if (str_contains($phaseName, 'сбор') || str_contains($phaseName, 'harvest')) {
+            return $templates->firstWhere('code', 'HARVEST') ?? $templates->first();
+        }
+
+        if (str_contains($recipeName, 'салат') || str_contains($recipeName, 'lettuce')) {
+            return match ($phase->phase_index) {
+                0 => $templates->firstWhere('code', 'GERMINATION'),
+                1 => $templates->firstWhere('code', 'VEG'),
+                default => $templates->firstWhere('code', 'HARVEST'),
+            } ?? $templates->first();
+        }
+
+        if (str_contains($recipeName, 'томат') || str_contains($recipeName, 'tomato')) {
+            return match ($phase->phase_index) {
+                0 => $templates->firstWhere('code', 'PLANTING'),
+                1 => $templates->firstWhere('code', 'VEG'),
+                default => $templates->firstWhere('code', 'FRUIT'),
+            } ?? $templates->first();
+        }
+
+        $fallbackCode = match ($phase->phase_index) {
+            0 => 'GERMINATION',
+            1 => 'VEG',
+            2 => 'FLOWER',
+            3 => 'FRUIT',
+            default => 'VEG',
+        };
+
+        return $templates->firstWhere('code', $fallbackCode) ?? $templates->first();
     }
 }
-

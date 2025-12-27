@@ -2,128 +2,101 @@
 
 namespace Database\Seeders;
 
-use App\Models\InfrastructureAsset;
+use App\Models\Greenhouse;
+use App\Models\InfrastructureInstance;
 use Illuminate\Database\Seeder;
 
 /**
- * Сидер для глобального каталога типов оборудования
+ * Сидер для базовых экземпляров инфраструктуры теплиц
  */
 class ExtendedInfrastructureAssetsSeeder extends Seeder
 {
     public function run(): void
     {
-        $this->command->info('=== Создание каталога типов оборудования ===');
+        $this->command->info('=== Создание базовой инфраструктуры теплиц ===');
+
+        $greenhouses = Greenhouse::all();
+        if ($greenhouses->isEmpty()) {
+            $this->command->warn('Теплицы не найдены. Запустите ExtendedGreenhousesZonesSeeder сначала.');
+
+            return;
+        }
 
         $created = 0;
 
         $assetTypes = [
             [
-                'type' => 'PUMP',
-                'name' => 'Насос основной',
-                'metadata' => [
-                    'description' => 'Основной насос для циркуляции питательного раствора',
-                    'power_watts' => 100,
-                    'max_flow_lpm' => 50,
-                ],
-            ],
-            [
-                'type' => 'PUMP',
-                'name' => 'Насос дренажный',
-                'metadata' => [
-                    'description' => 'Дренажный насос для откачки воды',
-                    'power_watts' => 50,
-                    'max_flow_lpm' => 30,
-                ],
-            ],
-            [
-                'type' => 'MISTER',
-                'name' => 'Распылитель тумана',
-                'metadata' => [
-                    'description' => 'Система распыления для поддержания влажности',
-                    'power_watts' => 20,
-                    'nozzle_count' => 4,
-                ],
-            ],
-            [
-                'type' => 'TANK_NUTRIENT',
-                'name' => 'Резервуар питательных веществ',
-                'metadata' => [
-                    'description' => 'Резервуар для хранения питательного раствора',
-                    'capacity_liters' => 100,
-                    'material' => 'plastic',
-                ],
-            ],
-            [
-                'type' => 'TANK_CLEAN',
-                'name' => 'Резервуар чистой воды',
-                'metadata' => [
-                    'description' => 'Резервуар для хранения чистой воды',
-                    'capacity_liters' => 200,
-                    'material' => 'plastic',
-                ],
-            ],
-            [
-                'type' => 'DRAIN',
-                'name' => 'Дренажная система',
-                'metadata' => [
-                    'description' => 'Система дренажа для отвода излишков воды',
-                    'diameter_mm' => 50,
-                ],
-            ],
-            [
-                'type' => 'LIGHT',
-                'name' => 'Светодиодная панель',
-                'metadata' => [
-                    'description' => 'LED панель для освещения растений',
-                    'power_watts' => 200,
-                    'spectrum' => 'full',
-                    'coverage_m2' => 1,
-                ],
-            ],
-            [
-                'type' => 'VENT',
-                'name' => 'Вентилятор',
-                'metadata' => [
-                    'description' => 'Вентилятор для циркуляции воздуха',
+                'asset_type' => 'VENT',
+                'label' => 'Система вентиляции',
+                'required' => false,
+                'specs' => [
+                    'description' => 'Вентиляция для циркуляции воздуха',
                     'power_watts' => 30,
                     'airflow_cfm' => 200,
                 ],
             ],
             [
-                'type' => 'HEATER',
-                'name' => 'Обогреватель',
-                'metadata' => [
-                    'description' => 'Электрический обогреватель для поддержания температуры',
-                    'power_watts' => 1000,
+                'asset_type' => 'FAN',
+                'label' => 'Циркуляционный вентилятор',
+                'required' => false,
+                'specs' => [
+                    'description' => 'Вентилятор для равномерного распределения воздуха',
+                    'power_watts' => 40,
+                    'airflow_cfm' => 250,
+                ],
+            ],
+            [
+                'asset_type' => 'HEATER',
+                'label' => 'Обогреватель теплицы',
+                'required' => false,
+                'specs' => [
+                    'description' => 'Обогреватель для поддержания температуры',
+                    'power_watts' => 1200,
                     'type' => 'electric',
                 ],
             ],
             [
-                'type' => 'COOLER',
-                'name' => 'Охладитель',
-                'metadata' => [
-                    'description' => 'Система охлаждения для снижения температуры',
-                    'power_watts' => 500,
-                    'type' => 'evaporative',
+                'asset_type' => 'CO2_INJECTOR',
+                'label' => 'Подача CO2',
+                'required' => false,
+                'specs' => [
+                    'description' => 'Система подачи CO2',
+                    'flow_rate_lph' => 5,
+                ],
+            ],
+            [
+                'asset_type' => 'LIGHT',
+                'label' => 'Общее освещение',
+                'required' => false,
+                'specs' => [
+                    'description' => 'Освещение для общей зоны теплицы',
+                    'power_watts' => 300,
+                    'spectrum' => 'full',
                 ],
             ],
         ];
 
-        foreach ($assetTypes as $asset) {
-            InfrastructureAsset::firstOrCreate(
-                [
-                    'type' => $asset['type'],
-                    'name' => $asset['name'],
-                ],
-                [
-                    'metadata' => $asset['metadata'],
-                ]
-            );
-            $created++;
+        foreach ($greenhouses as $greenhouse) {
+            foreach ($assetTypes as $asset) {
+                InfrastructureInstance::firstOrCreate(
+                    [
+                        'owner_type' => 'greenhouse',
+                        'owner_id' => $greenhouse->id,
+                        'asset_type' => $asset['asset_type'],
+                        'label' => $asset['label'],
+                    ],
+                    [
+                        'required' => $asset['required'] ?? false,
+                        'capacity_liters' => $asset['capacity_liters'] ?? null,
+                        'flow_rate' => $asset['flow_rate'] ?? null,
+                        'specs' => $asset['specs'] ?? null,
+                    ]
+                );
+                $created++;
+            }
         }
 
-        $this->command->info("Создано типов оборудования: {$created}");
-        $this->command->info("Всего типов оборудования: " . InfrastructureAsset::count());
+        $this->command->info("Создано экземпляров инфраструктуры: {$created}");
+        $this->command->info('Всего инфраструктуры теплиц: '.InfrastructureInstance::where('owner_type', 'greenhouse')->count());
     }
 }
-

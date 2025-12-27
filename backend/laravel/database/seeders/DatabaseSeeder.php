@@ -2,9 +2,7 @@
 
 namespace Database\Seeders;
 
-use App\Contracts\Database\SeederInterface;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -29,8 +27,8 @@ class DatabaseSeeder extends Seeder
             'description' => 'Инфраструктура системы',
             'seeders' => [
                 ExtendedUsersSeeder::class,
-                ExtendedInfrastructureAssetsSeeder::class,
                 ExtendedGreenhousesZonesSeeder::class,
+                ExtendedInfrastructureAssetsSeeder::class,
                 ExtendedNodesChannelsSeeder::class,
                 ExtendedInfrastructureSeeder::class,
             ],
@@ -86,8 +84,8 @@ class DatabaseSeeder extends Seeder
         $isTesting = in_array($environment, ['testing', 'e2e']);
 
         $this->command->info("📍 Окружение: {$environment}");
-        $this->command->info("⚙️  Режим разработки: " . ($isDevelopment ? 'Да' : 'Нет'));
-        $this->command->info("🧪 Режим тестирования: " . ($isTesting ? 'Да' : 'Нет'));
+        $this->command->info('⚙️  Режим разработки: '.($isDevelopment ? 'Да' : 'Нет'));
+        $this->command->info('🧪 Режим тестирования: '.($isTesting ? 'Да' : 'Нет'));
 
         // Выполняем группы сидеров
         $totalSeeders = 0;
@@ -163,12 +161,13 @@ class DatabaseSeeder extends Seeder
 
         foreach ($seeders as $seederClass) {
             try {
-                $this->command->info("  ▶️  Выполнение: " . basename($seederClass, 'Seeder'));
+                $this->command->info('  ▶️  Выполнение: '.basename($seederClass, 'Seeder'));
 
                 // Проверяем, существует ли класс
-                if (!class_exists($seederClass)) {
+                if (! class_exists($seederClass)) {
                     $this->command->warn("  ⚠️  Сидер не найден: {$seederClass}");
                     $results['skipped']++;
+
                     continue;
                 }
 
@@ -245,12 +244,13 @@ class DatabaseSeeder extends Seeder
      */
     public function runGroup(string $groupName): void
     {
-        if (!isset($this->seederGroups[$groupName])) {
+        if (! isset($this->seederGroups[$groupName])) {
             $this->command->error("Группа '{$groupName}' не найдена");
-            $this->command->info("Доступные группы:");
+            $this->command->info('Доступные группы:');
             foreach ($this->seederGroups as $name => $config) {
                 $this->command->info("  - {$name}: {$config['description']}");
             }
+
             return;
         }
 
@@ -273,18 +273,19 @@ class DatabaseSeeder extends Seeder
             $seeder = $factory->make($seederClass);
             $dependencies = $seeder->getDependencies();
 
-            if (!empty($dependencies)) {
+            if (! empty($dependencies)) {
                 $this->command->info("🔗 Проверка зависимостей для {$seederClass}...");
                 $depResults = $factory->validateAllDependencies([$seederClass]);
 
-                if (!empty($depResults['invalid'])) {
-                    $this->command->error("❌ Зависимости не выполнены:");
+                if (! empty($depResults['invalid'])) {
+                    $this->command->error('❌ Зависимости не выполнены:');
                     foreach ($depResults['invalid'] as $invalid) {
-                        $this->command->error("  - {$invalid['seeder']}: отсутствуют " . implode(', ', $invalid['missing_dependencies']));
+                        $this->command->error("  - {$invalid['seeder']}: отсутствуют ".implode(', ', $invalid['missing_dependencies']));
                     }
+
                     return;
                 }
-                $this->command->info("✅ Все зависимости выполнены");
+                $this->command->info('✅ Все зависимости выполнены');
             }
 
             $this->command->info("🚀 Запуск сидера: {$seederClass}");
@@ -300,8 +301,9 @@ class DatabaseSeeder extends Seeder
      */
     public function cleanupGroup(string $groupName): void
     {
-        if (!isset($this->seederGroups[$groupName])) {
+        if (! isset($this->seederGroups[$groupName])) {
             $this->command->error("Группа '{$groupName}' не найдена");
+
             return;
         }
 
@@ -317,7 +319,7 @@ class DatabaseSeeder extends Seeder
             try {
                 $seeder = $factory->make($seederClass);
                 $seeder->cleanup();
-                $this->command->info("  ✅ Очищено: " . basename($seederClass, 'Seeder'));
+                $this->command->info('  ✅ Очищено: '.basename($seederClass, 'Seeder'));
                 $cleaned++;
             } catch (\Throwable $e) {
                 $this->command->warn("  ⚠️  Ошибка очистки {$seederClass}: {$e->getMessage()}");
@@ -346,14 +348,14 @@ class DatabaseSeeder extends Seeder
                 $info = $factory->getSeederInfo($seederClass);
 
                 $status = isset($info['error']) ? '❌' : '✅';
-                $this->command->info("  {$status} " . basename($seederClass, 'Seeder'));
+                $this->command->info("  {$status} ".basename($seederClass, 'Seeder'));
 
                 if (isset($info['error'])) {
                     $this->command->error("    Ошибка: {$info['error']}");
-                } elseif (!empty($info['dependencies'])) {
-                    $this->command->info("    Зависимости: " . implode(', ', $info['dependencies']));
+                } elseif (! empty($info['dependencies'])) {
+                    $this->command->info('    Зависимости: '.implode(', ', $info['dependencies']));
                 } else {
-                    $this->command->info("    Зависимости: нет");
+                    $this->command->info('    Зависимости: нет');
                 }
             }
 

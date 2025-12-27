@@ -4,11 +4,17 @@ namespace Database\Seeders;
 
 use App\Enums\GrowCycleStatus;
 use App\Models\GrowCycle;
+use App\Models\GrowStageTemplate;
+use App\Models\Plant;
 use App\Models\Recipe;
-use App\Models\RecipePhase;
+use App\Models\RecipeRevision;
+use App\Models\RecipeRevisionPhase;
+use App\Models\User;
 use App\Models\Zone;
-use App\Models\ZoneRecipeInstance;
+use App\Services\GrowCycleService;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 
 /**
  * Расширенный сидер для рецептов, фаз и циклов выращивания
@@ -19,24 +25,116 @@ class ExtendedRecipesCyclesSeeder extends Seeder
     {
         $this->command->info('=== Создание расширенных рецептов и циклов ===');
 
-        // Создаем рецепты с фазами
-        $recipes = $this->seedRecipes();
-        
-        // Создаем экземпляры рецептов в зонах
-        $this->seedRecipeInstances($recipes);
-        
-        // Создаем циклы выращивания
-        $this->seedGrowCycles($recipes);
+        $templates = $this->ensureStageTemplates();
+        $revisions = $this->seedRecipes($templates);
+        $this->seedGrowCycles($revisions);
 
-        $this->command->info("Создано рецептов: " . Recipe::count());
-        $this->command->info("Создано фаз: " . RecipePhase::count());
-        $this->command->info("Создано экземпляров рецептов: " . ZoneRecipeInstance::count());
-        $this->command->info("Создано циклов выращивания: " . GrowCycle::count());
+        $this->command->info('Создано рецептов: '.Recipe::count());
+        $this->command->info('Создано ревизий: '.RecipeRevision::count());
+        $this->command->info('Создано фаз: '.RecipeRevisionPhase::count());
+        $this->command->info('Создано циклов выращивания: '.GrowCycle::count());
     }
 
-    private function seedRecipes(): array
+    private function ensureStageTemplates(): Collection
     {
-        $recipes = [];
+        $templates = GrowStageTemplate::orderBy('order_index')->get();
+        if ($templates->isNotEmpty()) {
+            return $templates;
+        }
+
+        $stageTemplates = [
+            [
+                'name' => 'Посадка',
+                'code' => 'PLANTING',
+                'order_index' => 0,
+                'default_duration_days' => 1,
+                'ui_meta' => [
+                    'color' => '#4CAF50',
+                    'icon' => 'seedling',
+                    'description' => 'Начальная стадия посадки семян или рассады',
+                ],
+            ],
+            [
+                'name' => 'Укоренение',
+                'code' => 'ROOTING',
+                'order_index' => 1,
+                'default_duration_days' => 7,
+                'ui_meta' => [
+                    'color' => '#8BC34A',
+                    'icon' => 'roots',
+                    'description' => 'Стадия развития корневой системы',
+                ],
+            ],
+            [
+                'name' => 'Проращивание',
+                'code' => 'GERMINATION',
+                'order_index' => 2,
+                'default_duration_days' => 3,
+                'ui_meta' => [
+                    'color' => '#CDDC39',
+                    'icon' => 'sprout',
+                    'description' => 'Стадия проращивания семян',
+                ],
+            ],
+            [
+                'name' => 'Вегетативная',
+                'code' => 'VEG',
+                'order_index' => 3,
+                'default_duration_days' => 21,
+                'ui_meta' => [
+                    'color' => '#2196F3',
+                    'icon' => 'leaf',
+                    'description' => 'Стадия активного роста листьев и стеблей',
+                ],
+            ],
+            [
+                'name' => 'Цветение',
+                'code' => 'FLOWER',
+                'order_index' => 4,
+                'default_duration_days' => 14,
+                'ui_meta' => [
+                    'color' => '#E91E63',
+                    'icon' => 'flower',
+                    'description' => 'Стадия цветения растений',
+                ],
+            ],
+            [
+                'name' => 'Плодоношение',
+                'code' => 'FRUIT',
+                'order_index' => 5,
+                'default_duration_days' => 30,
+                'ui_meta' => [
+                    'color' => '#FF9800',
+                    'icon' => 'fruit',
+                    'description' => 'Стадия формирования и созревания плодов',
+                ],
+            ],
+            [
+                'name' => 'Сбор',
+                'code' => 'HARVEST',
+                'order_index' => 6,
+                'default_duration_days' => 7,
+                'ui_meta' => [
+                    'color' => '#795548',
+                    'icon' => 'harvest',
+                    'description' => 'Стадия сбора урожая',
+                ],
+            ],
+        ];
+
+        foreach ($stageTemplates as $template) {
+            GrowStageTemplate::firstOrCreate(
+                ['code' => $template['code']],
+                $template
+            );
+        }
+
+        return GrowStageTemplate::orderBy('order_index')->get();
+    }
+
+    private function seedRecipes(Collection $templates): array
+    {
+        $revisions = [];
 
         $recipeConfigs = [
             [
@@ -214,6 +312,8 @@ class ExtendedRecipesCyclesSeeder extends Seeder
             ],
         ];
 
+        $createdBy = User::where('role', 'admin')->value('id') ?? User::value('id');
+
         foreach ($recipeConfigs as $recipeConfig) {
             $recipe = Recipe::firstOrCreate(
                 ['name' => $recipeConfig['name']],
@@ -226,145 +326,193 @@ class ExtendedRecipesCyclesSeeder extends Seeder
                 ]
             );
 
+            $revision = RecipeRevision::firstOrCreate(
+                [
+                    'recipe_id' => $recipe->id,
+                    'revision_number' => 1,
+                ],
+                [
+                    'status' => 'PUBLISHED',
+                    'description' => 'Автоматически созданная ревизия',
+                    'created_by' => $createdBy,
+                    'published_at' => now(),
+                ]
+            );
+
             // Создаем фазы рецепта
             foreach ($recipeConfig['phases'] as $phaseData) {
-                RecipePhase::firstOrCreate(
+                $targets = $phaseData['targets'] ?? [];
+                $ph = $targets['ph'] ?? [];
+                $ec = $targets['ec'] ?? [];
+                $temperature = $targets['temperature'] ?? [];
+                $humidity = $targets['humidity'] ?? [];
+                $stageTemplate = $this->resolveStageTemplate($recipe, $phaseData, $templates);
+
+                RecipeRevisionPhase::firstOrCreate(
                     [
-                        'recipe_id' => $recipe->id,
+                        'recipe_revision_id' => $revision->id,
                         'phase_index' => $phaseData['phase_index'],
                     ],
-                    $phaseData
+                    [
+                        'name' => $phaseData['name'],
+                        'stage_template_id' => $stageTemplate?->id,
+                        'ph_target' => $this->averageTarget($ph),
+                        'ph_min' => $ph['min'] ?? null,
+                        'ph_max' => $ph['max'] ?? null,
+                        'ec_target' => $this->averageTarget($ec),
+                        'ec_min' => $ec['min'] ?? null,
+                        'ec_max' => $ec['max'] ?? null,
+                        'temp_air_target' => $this->averageTarget($temperature),
+                        'humidity_target' => $this->averageTarget($humidity),
+                        'duration_hours' => $phaseData['duration_hours'],
+                        'progress_model' => 'TIME',
+                        'irrigation_mode' => 'RECIRC',
+                        'irrigation_interval_sec' => rand(900, 3600),
+                        'irrigation_duration_sec' => rand(30, 120),
+                    ]
                 );
             }
 
-            $recipes[] = $recipe;
+            $revisions[] = $revision;
         }
 
-        return $recipes;
+        return $revisions;
     }
 
-    private function seedRecipeInstances(array $recipes): void
+    private function seedGrowCycles(array $revisions): void
     {
-        $zones = Zone::where('status', 'RUNNING')->get();
-        
+        $zones = Zone::all();
+        if ($zones->isEmpty()) {
+            $this->command->warn('Зоны не найдены. Запустите ExtendedGreenhousesZonesSeeder сначала.');
+
+            return;
+        }
+
+        $plants = Plant::all();
+        if ($plants->isEmpty()) {
+            $this->command->warn('Растения не найдены. Запустите PlantTaxonomySeeder сначала.');
+
+            return;
+        }
+
+        if (empty($revisions)) {
+            $this->command->warn('Ревизии рецептов не найдены.');
+
+            return;
+        }
+
+        $growCycleService = app(GrowCycleService::class);
+        $userId = User::where('role', 'admin')->value('id') ?? User::value('id');
+
         foreach ($zones as $zone) {
-            // Не создаем экземпляр, если он уже существует
-            if ($zone->recipeInstance) {
+            if ($zone->activeGrowCycle) {
                 continue;
             }
 
-            $recipe = $recipes[array_rand($recipes)];
+            $revision = $revisions[array_rand($revisions)];
+            $plant = $plants->random();
             $startedAt = now()->subDays(rand(1, 30));
 
-            ZoneRecipeInstance::create([
-                'zone_id' => $zone->id,
-                'recipe_id' => $recipe->id,
-                'started_at' => $startedAt,
-                'current_phase_index' => $this->calculateCurrentPhase($recipe, $startedAt),
-            ]);
-        }
-    }
+            try {
+                $cycle = $growCycleService->createCycle(
+                    $zone,
+                    $revision,
+                    $plant->id,
+                    [
+                        'planting_at' => $startedAt->format('Y-m-d H:i:s'),
+                        'start_immediately' => $zone->status !== 'STOPPED',
+                        'batch_label' => 'BATCH-'.Str::upper(Str::random(6)),
+                        'notes' => "Цикл выращивания для зоны {$zone->name}",
+                    ],
+                    $userId
+                );
 
-    private function seedGrowCycles(array $recipes): void
-    {
-        $zones = Zone::all();
-
-        foreach ($zones as $zone) {
-            // Создаем несколько циклов для каждой зоны
-            $cycleCount = match ($zone->status) {
-                'RUNNING' => rand(1, 3),
-                'PAUSED' => rand(0, 2),
-                'STOPPED' => rand(0, 1),
-                default => 0,
-            };
-
-            for ($i = 0; $i < $cycleCount; $i++) {
-                $recipe = $recipes[array_rand($recipes)];
-                $status = $this->getRandomCycleStatus($zone->status);
-                
-                $startedAt = now()->subDays(rand(1, 60));
-                $expectedHarvestAt = $startedAt->copy()->addDays(rand(30, 90));
-                
-                $actualHarvestAt = null;
-                if (in_array($status, [GrowCycleStatus::HARVESTED, GrowCycleStatus::ABORTED])) {
-                    $actualHarvestAt = $expectedHarvestAt->copy()->subDays(rand(-5, 5));
+                if ($zone->status === 'PAUSED' && $userId) {
+                    $growCycleService->pause($cycle, $userId);
                 }
 
-                GrowCycle::create([
-                    'greenhouse_id' => $zone->greenhouse_id,
-                    'zone_id' => $zone->id,
-                    'recipe_id' => $recipe->id,
-                    'zone_recipe_instance_id' => $zone->recipeInstance?->id,
-                    'status' => $status,
-                    'started_at' => $startedAt,
-                    'recipe_started_at' => $startedAt,
-                    'expected_harvest_at' => $expectedHarvestAt,
-                    'actual_harvest_at' => $actualHarvestAt,
-                    'batch_label' => 'BATCH-' . strtoupper(substr(md5($zone->id . $i . time()), 0, 8)),
-                    'notes' => "Цикл выращивания #{$i} для зоны {$zone->name}",
-                    'settings' => [
-                        'auto_mode' => true,
-                        'notifications' => true,
-                    ],
-                    'current_stage_code' => $this->getCurrentStageCode($recipe, $startedAt),
-                    'current_stage_started_at' => $startedAt,
-                    'planting_at' => $startedAt,
-                ]);
+                if ($zone->status === 'STOPPED' && $userId && $cycle->status === GrowCycleStatus::RUNNING) {
+                    $growCycleService->abort($cycle, ['reason' => 'zone_stopped'], $userId);
+                }
+            } catch (\Throwable $e) {
+                $this->command->warn("Не удалось создать цикл для зоны {$zone->id}: {$e->getMessage()}");
             }
         }
     }
 
-    private function calculateCurrentPhase(Recipe $recipe, \DateTime $startedAt): int
+    private function resolveStageTemplate(Recipe $recipe, array $phaseData, Collection $templates): ?GrowStageTemplate
     {
-        $phases = $recipe->phases()->orderBy('phase_index')->get();
-        $elapsedHours = now()->diffInHours($startedAt, false);
-        
-        if ($elapsedHours < 0) {
-            return 0;
+        $phaseName = Str::lower($phaseData['name'] ?? '');
+        $recipeName = Str::lower($recipe->name);
+
+        if (str_contains($phaseName, 'проращ') || str_contains($phaseName, 'germin')) {
+            return $templates->firstWhere('code', 'GERMINATION') ?? $templates->first();
         }
 
-        $cumulativeHours = 0;
-        foreach ($phases as $phase) {
-            $cumulativeHours += $phase->duration_hours ?? 0;
-            if ($elapsedHours < $cumulativeHours) {
-                return $phase->phase_index;
-            }
+        if (str_contains($phaseName, 'рассад') || str_contains($phaseName, 'посад')) {
+            return $templates->firstWhere('code', 'PLANTING') ?? $templates->first();
         }
 
-        return $phases->last()->phase_index ?? 0;
-    }
+        if (str_contains($phaseName, 'вегет') || str_contains($phaseName, 'рост')) {
+            return $templates->firstWhere('code', 'VEG') ?? $templates->first();
+        }
 
-    private function getRandomCycleStatus(string $zoneStatus): GrowCycleStatus
-    {
-        return match ($zoneStatus) {
-            'RUNNING' => [
-                GrowCycleStatus::RUNNING,
-                GrowCycleStatus::RUNNING,
-                GrowCycleStatus::RUNNING,
-                GrowCycleStatus::PAUSED,
-                GrowCycleStatus::HARVESTED,
-            ][rand(0, 4)],
-            'PAUSED' => [
-                GrowCycleStatus::PAUSED,
-                GrowCycleStatus::PAUSED,
-                GrowCycleStatus::PLANNED,
-            ][rand(0, 2)],
-            'STOPPED' => [
-                GrowCycleStatus::ABORTED,
-                GrowCycleStatus::HARVESTED,
-                GrowCycleStatus::ABORTED,
-            ][rand(0, 2)],
-            default => GrowCycleStatus::PLANNED,
+        if (str_contains($phaseName, 'цвет')) {
+            return $templates->firstWhere('code', 'FLOWER') ?? $templates->first();
+        }
+
+        if (str_contains($phaseName, 'плод') || str_contains($phaseName, 'созрев')) {
+            return $templates->firstWhere('code', 'FRUIT') ?? $templates->first();
+        }
+
+        if (str_contains($phaseName, 'сбор') || str_contains($phaseName, 'harvest')) {
+            return $templates->firstWhere('code', 'HARVEST') ?? $templates->first();
+        }
+
+        if (str_contains($recipeName, 'салат') || str_contains($recipeName, 'lettuce')) {
+            return match ($phaseData['phase_index']) {
+                0 => $templates->firstWhere('code', 'GERMINATION'),
+                1 => $templates->firstWhere('code', 'VEG'),
+                default => $templates->firstWhere('code', 'HARVEST'),
+            } ?? $templates->first();
+        }
+
+        if (str_contains($recipeName, 'томат') || str_contains($recipeName, 'tomato')) {
+            return match ($phaseData['phase_index']) {
+                0 => $templates->firstWhere('code', 'PLANTING'),
+                1 => $templates->firstWhere('code', 'VEG'),
+                default => $templates->firstWhere('code', 'FRUIT'),
+            } ?? $templates->first();
+        }
+
+        $fallbackCode = match ($phaseData['phase_index']) {
+            0 => 'GERMINATION',
+            1 => 'VEG',
+            2 => 'FLOWER',
+            3 => 'FRUIT',
+            default => 'VEG',
         };
+
+        return $templates->firstWhere('code', $fallbackCode) ?? $templates->first();
     }
 
-    private function getCurrentStageCode(Recipe $recipe, \DateTime $startedAt): ?string
+    private function averageTarget(array $target): ?float
     {
-        $phases = $recipe->phases()->orderBy('phase_index')->get();
-        $currentPhaseIndex = $this->calculateCurrentPhase($recipe, $startedAt);
-        $currentPhase = $phases->firstWhere('phase_index', $currentPhaseIndex);
-        
-        return $currentPhase ? $currentPhase->name : null;
+        $min = $target['min'] ?? null;
+        $max = $target['max'] ?? null;
+
+        if ($min === null && $max === null) {
+            return null;
+        }
+
+        if ($min === null) {
+            return (float) $max;
+        }
+
+        if ($max === null) {
+            return (float) $min;
+        }
+
+        return round(((float) $min + (float) $max) / 2, 2);
     }
 }
-
