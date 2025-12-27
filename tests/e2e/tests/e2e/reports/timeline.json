@@ -1,218 +1,149 @@
 {
-  "test_suite": "E32_out_of_order_guard",
-  "generated_at": "2025-12-25T22:09:55.039486",
+  "test_suite": "E00_api_smoke",
+  "generated_at": "2025-12-26T16:41:53.824931",
   "test_cases": [
     {
-      "name": "get_zones",
+      "name": "check_health",
       "status": "passed",
-      "duration": 0.10850262641906738,
+      "duration": 0.13153362274169922,
       "error_message": null,
       "steps": [
         {
-          "name": "get_zones",
+          "name": "check_health",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-25T22:09:27.641116"
+      "timestamp": "2025-12-26T16:41:52.961112"
     },
     {
-      "name": "set_zone_id",
+      "name": "check_login_endpoint",
       "status": "passed",
-      "duration": 7.62939453125e-06,
+      "duration": 0.2803010940551758,
       "error_message": null,
       "steps": [
         {
-          "name": "set_zone_id",
+          "name": "check_login_endpoint",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-25T22:09:27.641271"
+      "timestamp": "2025-12-26T16:41:53.241434"
     },
     {
-      "name": "get_snapshot",
+      "name": "check_zones_protected",
       "status": "passed",
-      "duration": 0.09935998916625977,
+      "duration": 0.08543276786804199,
       "error_message": null,
       "steps": [
         {
-          "name": "get_snapshot",
+          "name": "check_zones_protected",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-25T22:09:27.740657"
+      "timestamp": "2025-12-26T16:41:53.326892"
     },
     {
-      "name": "set_last_event_id",
+      "name": "check_nodes_protected",
       "status": "passed",
-      "duration": 6.4373016357421875e-06,
+      "duration": 0.141387939453125,
       "error_message": null,
       "steps": [
         {
-          "name": "set_last_event_id",
+          "name": "check_nodes_protected",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-25T22:09:27.740705"
+      "timestamp": "2025-12-26T16:41:53.468324"
     },
     {
-      "name": "get_nodes",
+      "name": "check_cycles_protected",
       "status": "passed",
-      "duration": 0.08082270622253418,
+      "duration": 0.09921789169311523,
       "error_message": null,
       "steps": [
         {
-          "name": "get_nodes",
+          "name": "check_cycles_protected",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-25T22:09:27.821543"
+      "timestamp": "2025-12-26T16:41:53.567634"
     },
     {
-      "name": "set_node_id",
+      "name": "check_greenhouses_protected",
       "status": "passed",
-      "duration": 4.291534423828125e-06,
+      "duration": 0.0922694206237793,
       "error_message": null,
       "steps": [
         {
-          "name": "set_node_id",
+          "name": "check_greenhouses_protected",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-25T22:09:27.821593"
+      "timestamp": "2025-12-26T16:41:53.659933"
     },
     {
-      "name": "send_command_to_create_event",
-      "status": "skipped",
-      "duration": 21.137571811676025,
-      "error_message": "Server error '503 Service Unavailable' for url 'http://localhost:8081/api/nodes/1/commands'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/503",
-      "steps": [
-        {
-          "name": "send_command_to_create_event",
-          "status": "skipped",
-          "error": "Server error '503 Service Unavailable' for url 'http://localhost:8081/api/nodes/1/commands'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/503"
-        }
-      ],
-      "timestamp": "2025-12-25T22:09:48.959236"
-    },
-    {
-      "name": "create_event_manually_if_needed",
+      "name": "check_commands_protected",
       "status": "passed",
-      "duration": 0.0031900405883789062,
+      "duration": 0.16429376602172852,
       "error_message": null,
       "steps": [
         {
-          "name": "create_event_manually_if_needed",
+          "name": "check_commands_protected",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-25T22:09:48.962560"
+      "timestamp": "2025-12-26T16:41:53.824250"
     },
     {
-      "name": "wait_after_command",
+      "name": "health_endpoint_works",
       "status": "passed",
-      "duration": 2.0021207332611084,
+      "duration": 1.9550323486328125e-05,
       "error_message": null,
       "steps": [
         {
-          "name": "wait_after_command",
+          "name": "health_endpoint_works",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-25T22:09:50.964703"
+      "timestamp": "2025-12-26T16:41:53.824293"
     },
     {
-      "name": "wait_for_new_event",
+      "name": "no_500_errors_on_endpoints",
       "status": "passed",
-      "duration": 3.0024094581604004,
+      "duration": 0.0002372264862060547,
       "error_message": null,
       "steps": [
         {
-          "name": "wait_for_new_event",
+          "name": "no_500_errors_on_endpoints",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-25T22:09:53.967145"
+      "timestamp": "2025-12-26T16:41:53.824537"
     },
     {
-      "name": "set_new_last_event_id",
+      "name": "login_returns_validation_error",
       "status": "passed",
-      "duration": 5.0067901611328125e-06,
+      "duration": 3.4332275390625e-05,
       "error_message": null,
       "steps": [
         {
-          "name": "set_new_last_event_id",
+          "name": "login_returns_validation_error",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-25T22:09:53.967195"
-    },
-    {
-      "name": "get_events_after_old_id",
-      "status": "passed",
-      "duration": 0.07003307342529297,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "get_events_after_old_id",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-25T22:09:54.037249"
-    },
-    {
-      "name": "wait_processing",
-      "status": "passed",
-      "duration": 1.0008957386016846,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "wait_processing",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-25T22:09:55.038161"
-    },
-    {
-      "name": "events_received",
-      "status": "passed",
-      "duration": 5.3882598876953125e-05,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "events_received",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-25T22:09:55.038239"
-    },
-    {
-      "name": "zone_exists",
-      "status": "passed",
-      "duration": 0.0008571147918701172,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "zone_exists",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-25T22:09:55.039103"
+      "timestamp": "2025-12-26T16:41:53.824579"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E32_out_of_order_guard": {
+    "E00_api_smoke": {
       "ws_messages": [],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
-        "zone_id": "225",
+        "zone_id": 1,
         "zone_uid": "zn-test-1",
         "node_id": 1,
-        "node_uid": "nd-ph-esp32una",
-        "last_event_id": "16497",
-        "test_node_id": "1",
-        "new_last_event_id": "16497"
+        "node_uid": "nd-ph-esp32una"
       }
     }
   }

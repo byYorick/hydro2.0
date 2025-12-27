@@ -2,37 +2,85 @@
 
 namespace Database\Seeders;
 
+use App\Database\Seeders\BaseSeeder;
 use App\Models\User;
-use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 
 /**
  * Расширенный сидер для пользователей
  * Создает разнообразных пользователей с разными ролями и правами
  */
-class ExtendedUsersSeeder extends Seeder
+class ExtendedUsersSeeder extends BaseSeeder
 {
-    public function run(): void
+    /**
+     * Зависимости сидера
+     */
+    public function getDependencies(): array
     {
-        $this->command->info('=== Создание расширенных пользователей ===');
+        return []; // Пользователи не зависят от других данных
+    }
 
-        $users = [
+    /**
+     * Имя сидера
+     */
+    public function getSeederName(): string
+    {
+        return 'Extended Users Seeder';
+    }
+
+    /**
+     * Основная логика сидера
+     */
+    protected function execute(): void
+    {
+        $users = $this->getUserData();
+        $validatedUsers = $this->createValidatedCollection($users, $this->getValidationRules());
+
+        $this->createWithProgress($validatedUsers, function ($userData) {
+            return $this->firstOrCreate(User::class, ['email' => $userData['email']], [
+                'name' => $userData['name'],
+                'password' => Hash::make($userData['password']),
+                'role' => $userData['role'],
+                'email_verified_at' => now(),
+            ]);
+        });
+    }
+
+    /**
+     * Очистка данных сидера
+     */
+    public function cleanup(): void
+    {
+        // Не удаляем AdminUser, так как он нужен всегда
+        User::where('email', 'not like', '%admin@hydro.local%')
+            ->where('email', 'not like', '%@hydro.local%')
+            ->delete();
+
+        $this->command->info('🧹 Очищены тестовые пользователи');
+    }
+
+    /**
+     * Получить данные пользователей
+     */
+    private function getUserData(): array
+    {
+        return [
             // Администраторы
             [
                 'name' => 'Главный Администратор',
-                'email' => 'admin@hydro.local',
+                'email' => $this->generateEmail('admin', 'chief'),
                 'password' => 'password',
                 'role' => 'admin',
             ],
             [
                 'name' => 'Системный Администратор',
-                'email' => 'sysadmin@hydro.local',
+                'email' => $this->generateEmail('admin', 'system'),
                 'password' => 'password',
                 'role' => 'admin',
             ],
             [
                 'name' => 'Администратор Теплиц',
-                'email' => 'greenhouse.admin@hydro.local',
+                'email' => $this->generateEmail('admin', 'greenhouse'),
                 'password' => 'password',
                 'role' => 'admin',
             ],
@@ -40,37 +88,37 @@ class ExtendedUsersSeeder extends Seeder
             // Операторы
             [
                 'name' => 'Оператор Смены 1',
-                'email' => 'operator1@hydro.local',
+                'email' => $this->generateEmail('operator1'),
                 'password' => 'password',
                 'role' => 'operator',
             ],
             [
                 'name' => 'Оператор Смены 2',
-                'email' => 'operator2@hydro.local',
+                'email' => $this->generateEmail('operator2'),
                 'password' => 'password',
                 'role' => 'operator',
             ],
             [
                 'name' => 'Оператор Смены 3',
-                'email' => 'operator3@hydro.local',
+                'email' => $this->generateEmail('operator3'),
                 'password' => 'password',
                 'role' => 'operator',
             ],
             [
                 'name' => 'Старший Оператор',
-                'email' => 'senior.operator@hydro.local',
+                'email' => $this->generateEmail('senior_operator'),
                 'password' => 'password',
                 'role' => 'operator',
             ],
             [
                 'name' => 'Оператор Зоны A',
-                'email' => 'zone.a.operator@hydro.local',
+                'email' => $this->generateEmail('zone_a_operator'),
                 'password' => 'password',
                 'role' => 'operator',
             ],
             [
                 'name' => 'Оператор Зоны B',
-                'email' => 'zone.b.operator@hydro.local',
+                'email' => $this->generateEmail('zone_b_operator'),
                 'password' => 'password',
                 'role' => 'operator',
             ],
@@ -78,25 +126,25 @@ class ExtendedUsersSeeder extends Seeder
             // Наблюдатели
             [
                 'name' => 'Наблюдатель 1',
-                'email' => 'viewer1@hydro.local',
+                'email' => $this->generateEmail('viewer1'),
                 'password' => 'password',
                 'role' => 'viewer',
             ],
             [
                 'name' => 'Наблюдатель 2',
-                'email' => 'viewer2@hydro.local',
+                'email' => $this->generateEmail('viewer2'),
                 'password' => 'password',
                 'role' => 'viewer',
             ],
             [
                 'name' => 'Аналитик',
-                'email' => 'analyst@hydro.local',
+                'email' => $this->generateEmail('analyst'),
                 'password' => 'password',
                 'role' => 'viewer',
             ],
             [
                 'name' => 'Менеджер Проекта',
-                'email' => 'manager@hydro.local',
+                'email' => $this->generateEmail('manager'),
                 'password' => 'password',
                 'role' => 'viewer',
             ],
@@ -104,40 +152,30 @@ class ExtendedUsersSeeder extends Seeder
             // Тестовые пользователи
             [
                 'name' => 'Тестовый Пользователь',
-                'email' => 'test@hydro.local',
+                'email' => $this->generateEmail('test'),
                 'password' => 'password',
                 'role' => 'operator',
             ],
             [
                 'name' => 'Демо Пользователь',
-                'email' => 'demo@hydro.local',
+                'email' => $this->generateEmail('demo'),
                 'password' => 'password',
                 'role' => 'viewer',
             ],
         ];
+    }
 
-        $created = 0;
-        $updated = 0;
-
-        foreach ($users as $userData) {
-            $user = User::firstOrNew(['email' => $userData['email']]);
-            
-            if ($user->exists) {
-                $updated++;
-            } else {
-                $created++;
-            }
-
-            $user->name = $userData['name'];
-            $user->password = Hash::make($userData['password']);
-            $user->role = $userData['role'];
-            $user->email_verified_at = now();
-            $user->save();
-        }
-
-        $this->command->info("Создано пользователей: {$created}");
-        $this->command->info("Обновлено пользователей: {$updated}");
-        $this->command->info("Всего пользователей: " . User::count());
+    /**
+     * Правила валидации данных пользователей
+     */
+    private function getValidationRules(): array
+    {
+        return [
+            'name' => 'required',
+            'email' => 'required',
+            'password' => 'required',
+            'role' => ['admin', 'operator', 'viewer'],
+        ];
     }
 }
 

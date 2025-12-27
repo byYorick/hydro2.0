@@ -56,12 +56,12 @@ actions:
 
   - step: subscribe_zone_channel
     type: websocket_subscribe
-    channel: private-hydro.zones.${test_zone_id}
+    channel: hydro.zones.1
 
   # Отправляем команду
   - step: send_command
     type: api_post
-    endpoint: /api/nodes/${test_node_id}/commands
+    endpoint: /api/nodes/1/commands
     payload:
       cmd: set_relay_state
       channel: main_pump
@@ -83,8 +83,8 @@ actions:
       VALUES (:zone_id, :node_id, 'set_relay_state', 'main_pump', '{"state": true}'::jsonb, 'SENT', 'test', gen_random_uuid()::text, NOW(), NOW())
       RETURNING cmd_id
     params:
-      zone_id: ${test_zone_id}
-      node_id: ${test_node_id}
+      zone_id: 1
+      node_id: 1
     save: manual_command
     condition: ${!command_id || command_id == '' || command_id == null}
 

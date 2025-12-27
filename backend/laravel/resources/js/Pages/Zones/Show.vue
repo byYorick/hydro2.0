@@ -11,13 +11,13 @@
             </div>
             <div class="text-sm text-[color:var(--text-dim)] mt-1 space-y-1">
               <div v-if="zone.description" class="truncate">{{ zone.description }}</div>
-              <div v-if="activeGrowCycle?.recipeRevision || zone.recipeInstance?.recipe" class="flex items-center gap-2 text-xs uppercase tracking-[0.12em]">
+              <div v-if="activeGrowCycle?.recipeRevision" class="flex items-center gap-2 text-xs uppercase tracking-[0.12em]">
                 <span class="text-[color:var(--text-dim)]">Рецепт</span>
                 <span class="text-[color:var(--accent-cyan)] font-semibold">
-                  {{ activeGrowCycle?.recipeRevision?.recipe?.name || zone.recipeInstance?.recipe?.name }}
+                  {{ activeGrowCycle.recipeRevision.recipe.name }}
                 </span>
-                <span v-if="activeGrowCycle?.currentPhase || zone.recipeInstance?.current_phase_index !== null" class="text-[color:var(--text-dim)]">
-                  фаза {{ (activeGrowCycle?.currentPhase?.phase_index ?? zone.recipeInstance?.current_phase_index ?? 0) + 1 }}
+                <span v-if="activeGrowCycle?.currentPhase" class="text-[color:var(--text-dim)]">
+                  фаза {{ activeGrowCycle.currentPhase.phase_index + 1 }}
                 </span>
               </div>
             </div>
@@ -131,13 +131,12 @@
         <!-- Прогресс цикла выращивания -->
         <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
           <StageProgress
-            v-if="activeGrowCycle || zone.recipeInstance?.recipe || zone.recipeInstance?.recipe_id"
-            :recipe-instance="zone.recipeInstance"
+            v-if="activeGrowCycle"
             :grow-cycle="activeGrowCycle"
             :phase-progress="computedPhaseProgress"
             :phase-days-elapsed="computedPhaseDaysElapsed"
             :phase-days-total="computedPhaseDaysTotal"
-            :started-at="activeGrowCycle?.started_at || zone.recipeInstance?.started_at"
+            :started-at="activeGrowCycle.started_at"
           />
           <div v-else-if="activeGrowCycle || activeCycle || zone.status === 'RUNNING'" class="text-center py-6">
             <div class="text-4xl mb-2">🌱</div>
@@ -242,23 +241,23 @@
               <template v-if="canManageRecipe">
                 <Button
                   size="sm"
-                  :variant="(activeGrowCycle || zone.recipeInstance?.recipe) ? 'secondary' : 'primary'"
+                  :variant="activeGrowCycle ? 'secondary' : 'primary'"
                   @click="modals.open('attachRecipe')"
                   data-testid="recipe-attach-btn"
                 >
-                  {{ (activeGrowCycle || zone.recipeInstance?.recipe) ? 'Изменить рецепт' : 'Привязать рецепт' }}
+                  {{ activeGrowCycle ? 'Изменить рецепт' : 'Привязать рецепт' }}
                 </Button>
               </template>
             </div>
-            <div v-if="activeGrowCycle?.recipeRevision?.recipe || zone.recipeInstance?.recipe" class="text-sm text-[color:var(--text-muted)]">
+            <div v-if="activeGrowCycle?.recipeRevision?.recipe" class="text-sm text-[color:var(--text-muted)]">
               <div class="font-semibold">
-                {{ activeGrowCycle?.recipeRevision?.recipe?.name || zone.recipeInstance?.recipe?.name }}
+                {{ activeGrowCycle.recipeRevision.recipe.name }}
               </div>
               <div class="text-xs text-[color:var(--text-dim)]">
-                Фаза {{ (activeGrowCycle?.currentPhase?.phase_index ?? zone.recipeInstance?.current_phase_index ?? 0) + 1 }} 
-                из {{ activeGrowCycle?.phases?.length || zone.recipeInstance?.recipe?.phases?.length || 0 }}
-                <span v-if="activeGrowCycle?.currentPhase?.name || zone.recipeInstance?.current_phase_name">
-                  — {{ activeGrowCycle?.currentPhase?.name || zone.recipeInstance?.current_phase_name }}
+                Фаза {{ (activeGrowCycle?.currentPhase?.phase_index ?? 0) + 1 }}
+                из {{ activeGrowCycle?.phases?.length || 0 }}
+                <span v-if="activeGrowCycle?.currentPhase?.name">
+                  — {{ activeGrowCycle.currentPhase.name }}
                 </span>
               </div>
               <div class="mt-2 flex flex-wrap items-center gap-2">
@@ -1274,15 +1273,25 @@ async function onChartTimeRangeChange(newRange: string): Promise<void> {
 // Сохраняем функцию отписки для очистки при размонтировании
 let unsubscribeZoneCommands: (() => void) | null = null
 
+// Регистрируем onUnmounted синхронно перед async onMounted
+onUnmounted(() => {
+  // Отписываемся от WebSocket канала при размонтировании
+  if (unsubscribeZoneCommands) {
+    unsubscribeZoneCommands()
+    unsubscribeZoneCommands = null
+  }
+  flush()
+})
+
 onMounted(async () => {
   logger.info('[Show.vue] Компонент смонтирован', { zoneId: zoneId.value })
-  
+
   // Инициализируем зону в store из props для синхронизации
   if (zoneId.value && zone.value?.id) {
     zonesStore.upsert(zone.value, true) // silent: true, так как это начальная инициализация
     logger.debug('[Zones/Show] Zone initialized in store from props', { zoneId: zoneId.value })
   }
-  
+
   // Загрузить данные для графиков
   chartDataPh.value = await loadChartData('PH', chartTimeRange.value)
   chartDataEc.value = await loadChartData('EC', chartTimeRange.value)
@@ -1355,16 +1364,6 @@ onMounted(async () => {
       // Обновляем зону при присвоении рецепта
       reloadZone(zoneId.value, ['zone'])
     }
-  })
-  
-  // При размонтировании применяем все накопленные обновления телеметрии
-  onUnmounted(() => {
-    // Отписываемся от WebSocket канала при размонтировании
-    if (unsubscribeZoneCommands) {
-      unsubscribeZoneCommands()
-      unsubscribeZoneCommands = null
-    }
-    flush()
   })
 })
 

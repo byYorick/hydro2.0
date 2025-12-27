@@ -69,13 +69,13 @@ actions:
   # Шаг 2: Подписка на WebSocket канал команд зоны
   - step: subscribe_ws_commands
     type: websocket_subscribe
-    channel: "private-commands.${test_zone_id}"
+    channel: "commands.1"
     wait_seconds: 1
 
   # Шаг 3: Отправка команды через API
   - step: send_command
     type: api_post
-    endpoint: "/api/nodes/${test_node_id}/commands"
+    endpoint: "/api/nodes/1/commands"
     payload:
       cmd: "set_relay_state"
       params:

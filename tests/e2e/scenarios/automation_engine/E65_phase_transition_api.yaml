@@ -1,0 +1,200 @@
+# E65: Phase Transition API - AE uses GrowCycle API for phase transitions
+# DoD: AE uses GrowCycle API for phase transitions
+
+name: E65_phase_transition_api
+description: |
+  Проверяет, что Automation-engine использует GrowCycle API для перехода фаз:
+  - Фаза завершается по времени или условиям
+  - AE вызывает GrowCycle API для advance_phase
+  - Цикл переходит на следующую фазу
+  - Effective-targets обновляются для новой фазы
+
+actions:
+  - step: get_zones
+    type: api_get
+    endpoint: /api/zones
+    save: zones_response
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zones_response.data.data[0].id}
+
+  # Создаем рецепт с несколькими фазами
+  - step: create_multi_phase_recipe
+    type: api_post
+    endpoint: /api/recipes
+    payload:
+      name: multi-phase-recipe-${TIMESTAMP_S}
+      description: Recipe with multiple phases for transition testing
+    save: recipe_response
+
+  - step: create_revision
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/revisions
+    payload:
+      description: Multi-phase revision
+    save: revision_response
+
+  # Фаза 0: короткая фаза для быстрого завершения
+  - step: add_phase_0
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/phases
+    payload:
+      phase_index: 0
+      name: Phase 0 - Quick
+      duration_hours: 0.01  # Очень короткая фаза (36 секунд)
+      ph_target: 6.0
+      ec_target: 1.5
+      temp_air_target: 22.0
+      irrigation_mode: SUBSTRATE
+
+  # Фаза 1: следующая фаза
+  - step: add_phase_1
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/phases
+    payload:
+      phase_index: 1
+      name: Phase 1 - Next
+      duration_hours: 24
+      ph_target: 6.2
+      ec_target: 1.8
+      temp_air_target: 23.0
+      irrigation_mode: SUBSTRATE
+
+  - step: publish_revision
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/publish
+    payload: {}
+
+  # Создаем и запускаем цикл
+  - step: create_cycle
+    type: api_post
+    endpoint: /api/zones/${zone_id}/grow-cycles
+    payload:
+      recipe_revision_id: ${revision_response.data.id}
+      plant_id: 1
+      start_immediately: true
+    save: cycle_response
+
+  - step: set_cycle_id
+    type: set
+    cycle_id: ${cycle_response.data.id}
+
+  # Проверяем начальную фазу
+  - step: check_initial_phase
+    type: database_query
+    query: |
+      SELECT current_phase_index, phase_started_at
+      FROM grow_cycles
+      WHERE id = :cycle_id
+    params:
+      cycle_id: ${cycle_id}
+    save: initial_phase
+
+  # Ждем завершения фазы 0 (36 секунд)
+  - step: wait_for_phase_completion
+    type: wait_until
+    condition: |
+      # Проверяем, что фаза завершилась и перешла на следующую
+      from runner.steps.database import DatabaseStepExecutor
+      from runner.schema.variables import VariableResolver
+      resolver = VariableResolver(context)
+      db_exec = DatabaseStepExecutor(context.get('db'), resolver)
+      import asyncio
+      result = asyncio.run(db_exec.execute_db_step('database_query', {
+        'query': 'SELECT current_phase_index FROM grow_cycles WHERE id = :cycle_id',
+        'params': {'cycle_id': context['cycle_id']}
+      }))
+      result and result[0]['current_phase_index'] == 1
+    timeout: 60.0  # Даем время на завершение фазы + переход
+    interval: 5.0
+
+  # Проверяем финальную фазу
+  - step: check_final_phase
+    type: database_query
+    query: |
+      SELECT current_phase_index, phase_started_at
+      FROM grow_cycles
+      WHERE id = :cycle_id
+    params:
+      cycle_id: ${cycle_id}
+    save: final_phase
+
+  # Проверяем, что effective-targets обновились для новой фазы
+  - step: check_phase_targets_updated
+    type: database_query
+    query: |
+      SELECT ph_target, ec_target, temp_air_target
+      FROM effective_targets
+      WHERE cycle_id = :cycle_id
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      cycle_id: ${cycle_id}
+    save: phase_targets
+
+assertions:
+  # Проверка 1: Начальная фаза 0
+  - name: initial_phase_zero
+    type: json_assertion
+    data: ${initial_phase}
+    expected:
+      - field: current_phase_index
+        operator: equals
+        value: 0
+      - field: phase_started_at
+        operator: is_not_null
+
+  # Проверка 2: Переход на фазу 1
+  - name: transitioned_to_phase_one
+    type: json_assertion
+    data: ${final_phase}
+    expected:
+      - field: current_phase_index
+        operator: equals
+        value: 1
+      - field: phase_started_at
+        operator: is_not_null
+
+  # Проверка 3: Effective-targets обновились для фазы 1
+  - name: targets_updated_for_phase_one
+    type: json_assertion
+    data: ${phase_targets}
+    expected:
+      - field: ph_target
+        operator: equals
+        value: 6.2
+      - field: ec_target
+        operator: equals
+        value: 1.8
+      - field: temp_air_target
+        operator: equals
+        value: 23.0
+
+  # Проверка 4: Переход выполнен через API (проверяем логи или статус)
+  - name: transition_via_api
+    type: database_query
+    query: |
+      SELECT COUNT(*) as transition_count
+      FROM grow_cycle_events
+      WHERE cycle_id = :cycle_id
+      AND event_type = 'PHASE_ADVANCED'
+      AND created_at > NOW() - INTERVAL '2 minutes'
+    params:
+      cycle_id: ${cycle_id}
+    expected:
+      - field: transition_count
+        operator: greater_than
+        value: 0
+
+cleanup:
+  - step: abort_cycle
+    type: api_post
+    endpoint: /api/grow-cycles/${cycle_id}/abort
+    payload: {}
+    optional: true
+
+  - step: delete_recipe
+    type: api_delete
+    endpoint: /api/recipes/${recipe_response.data.id}
+    optional: true

@@ -47,8 +47,15 @@ class SimulationController extends Controller
 
         // Если initial_state пустой, получаем текущее состояние зоны из telemetry_last
         if (empty($scenario['initial_state'])) {
-            $telemetry = TelemetryLast::where('zone_id', $zone->id)
-                ->whereIn('metric_type', ['ph', 'ec', 'temp_air', 'temp_water', 'humidity_air'])
+            $telemetry = TelemetryLast::query()
+                ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
+                ->where('sensors.zone_id', $zone->id)
+                ->whereNotNull('sensors.zone_id')
+                ->whereIn('sensors.type', ['ph', 'ec', 'temp_air', 'temp_water', 'humidity_air'])
+                ->select([
+                    'sensors.type as metric_type',
+                    'telemetry_last.last_value as value'
+                ])
                 ->get()
                 ->pluck('value', 'metric_type')
                 ->toArray();

@@ -1,7 +1,7 @@
 # Индекс документации hydro 2.0
 
 **Версия:** 2.0  
-**Дата обновления:** 2025-01-27
+**Дата обновления:** 2025-12-26
 
 Этот документ служит главной точкой входа в документацию проекта hydro 2.0.
 
@@ -17,11 +17,8 @@
 
 ### Статус и планы
 - **[IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md)** — статус реализации компонентов
-- **[GAPS_AND_INCONSISTENCIES_REPORT.md](GAPS_AND_INCONSISTENCIES_REPORT.md)** — отчет о несоответствиях и недоделках
-- **[SYNC_PLAN.md](SYNC_PLAN.md)** — план синхронизации проекта с документацией
-- **[DEEP_AUDIT_AND_OPTIMIZATION_REPORT.md](DEEP_AUDIT_AND_OPTIMIZATION_REPORT.md)** — полный отчет об аудите и оптимизации документации
-
-**Примечание:** Промежуточные отчеты об аудите и оптимизации перемещены в архив: `00_ARCHIVE/REPORTS/`
+- **[DEVELOPMENT_PRIORITIES.md](DEVELOPMENT_PRIORITIES.md)** — текущие приоритеты разработки
+- **[ROADMAP_2.0.md](ROADMAP_2.0.md)** — дорожная карта развития системы
 
 ### Работа с ИИ-агентами
 - **[TASKS_FOR_AI_AGENTS.md](TASKS_FOR_AI_AGENTS.md)** — правила постановки задач для ИИ-агентов

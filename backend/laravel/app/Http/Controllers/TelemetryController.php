@@ -37,7 +37,19 @@ class TelemetryController extends Controller
         }
         
         $rows = TelemetryLast::query()
-            ->where('zone_id', $zoneId)
+            ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
+            ->where('sensors.zone_id', $zoneId)
+            ->whereNotNull('sensors.zone_id')
+            ->select([
+                'sensors.zone_id',
+                'sensors.node_id',
+                'sensors.label as channel',
+                'sensors.type as metric_type',
+                'telemetry_last.last_value as value',
+                'telemetry_last.last_ts as ts',
+                'telemetry_last.last_quality as quality',
+                'telemetry_last.updated_at'
+            ])
             ->get();
 
         return response()->json([
@@ -77,18 +89,25 @@ class TelemetryController extends Controller
             'to' => ['nullable', 'date'],
         ]);
 
-        $q = TelemetrySample::query()->where('zone_id', $zoneId)
-            ->where('metric_type', $validated['metric'])
-            ->orderBy('ts', 'asc');
+        $q = TelemetrySample::query()
+            ->join('sensors', 'telemetry_samples.sensor_id', '=', 'sensors.id')
+            ->where('telemetry_samples.zone_id', $zoneId)
+            ->where('sensors.type', $validated['metric'])
+            ->orderBy('telemetry_samples.ts', 'asc');
 
         if (!empty($validated['from'])) {
-            $q->where('ts', '>=', $validated['from']);
+            $q->where('telemetry_samples.ts', '>=', $validated['from']);
         }
         if (!empty($validated['to'])) {
-            $q->where('ts', '<=', $validated['to']);
+            $q->where('telemetry_samples.ts', '<=', $validated['to']);
         }
 
-        $rows = $q->limit(5000)->get(['ts', 'value', 'node_id', 'channel']);
+        $rows = $q->limit(5000)->get([
+            'telemetry_samples.ts',
+            'telemetry_samples.value',
+            'sensors.node_id',
+            'sensors.type as channel'
+        ]);
 
         return response()->json([
             'status' => 'ok',
@@ -122,7 +141,19 @@ class TelemetryController extends Controller
         }
         
         $rows = TelemetryLast::query()
-            ->where('node_id', $nodeId)
+            ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
+            ->where('sensors.node_id', $nodeId)
+            ->whereNotNull('sensors.node_id')
+            ->select([
+                'sensors.zone_id',
+                'sensors.node_id',
+                'sensors.label as channel',
+                'sensors.type as metric_type',
+                'telemetry_last.last_value as value',
+                'telemetry_last.last_ts as ts',
+                'telemetry_last.last_quality as quality',
+                'telemetry_last.updated_at'
+            ])
             ->get();
 
         return response()->json([

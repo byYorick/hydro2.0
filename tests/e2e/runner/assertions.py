@@ -205,3 +205,42 @@ class Assertions:
             raise AssertionError(msg)
         return True
 
+    @staticmethod
+    def table_absent(db_probe, table_name: str) -> bool:
+        """
+        Проверить, что таблица отсутствует в базе данных.
+
+        Args:
+            db_probe: Экземпляр DBProbe
+            table_name: Имя таблицы, которая должна отсутствовать
+
+        Returns:
+            True если таблица отсутствует
+
+        Raises:
+            AssertionError: Если таблица существует
+        """
+        if db_probe.table_exists(table_name):
+            raise AssertionError(f"Table '{table_name}' should not exist but it does")
+        return True
+
+    @staticmethod
+    def column_absent(db_probe, table_name: str, column_name: str) -> bool:
+        """
+        Проверить, что колонка отсутствует в таблице.
+
+        Args:
+            db_probe: Экземпляр DBProbe
+            table_name: Имя таблицы
+            column_name: Имя колонки, которая должна отсутствовать
+
+        Returns:
+            True если колонка отсутствует
+
+        Raises:
+            AssertionError: Если колонка существует
+        """
+        if db_probe.column_exists(table_name, column_name):
+            raise AssertionError(f"Column '{column_name}' should not exist in table '{table_name}' but it does")
+        return True
+

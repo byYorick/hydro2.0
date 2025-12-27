@@ -188,13 +188,13 @@ class GreenhouseController extends Controller
             ], 403);
         }
 
-        // Получаем зоны с активными рецептами
+        // Получаем зоны с активными циклами выращивания
         $zones = \App\Models\Zone::query()
             ->where('greenhouse_id', $greenhouse->id)
             ->with([
-                'recipeInstance.recipe.phases' => function ($query) {
-                    $query->orderBy('phase_index');
-                },
+                'activeGrowCycle.recipeRevision.recipe',
+                'activeGrowCycle.currentPhase',
+                'activeGrowCycle.phases',
             ])
             ->withCount([
                 'alerts as alerts_count' => function ($query) {
@@ -213,9 +213,17 @@ class GreenhouseController extends Controller
         // Получаем телеметрию для всех зон
         $telemetryByZone = [];
         if (!empty($zoneIds)) {
+            // Запрос к telemetry_last с join на sensors для получения zone_id и типа метрики
             $telemetryAll = \App\Models\TelemetryLast::query()
-                ->whereIn('zone_id', $zoneIds)
-                ->get(['zone_id', 'metric_type', 'value']);
+                ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
+                ->whereIn('sensors.zone_id', $zoneIds)
+                ->whereNotNull('sensors.zone_id')
+                ->select([
+                    'sensors.zone_id',
+                    'sensors.type as metric_type',
+                    'telemetry_last.last_value as value'
+                ])
+                ->get();
 
             foreach ($telemetryAll as $metric) {
                 $key = strtolower($metric->metric_type ?? '');
@@ -268,74 +276,63 @@ class GreenhouseController extends Controller
 
         // Формируем данные для каждой зоны
         $zonesData = $zones->map(function ($zone) use ($telemetryByZone, $alertsByZone) {
-            $recipeInstance = $zone->recipeInstance;
+            $growCycle = $zone->activeGrowCycle;
             $currentPhase = null;
             $cycleProgress = null;
             $stageInfo = null;
             $etaToNextStage = null;
             $etaToHarvest = null;
+            $recipe = null;
 
-            if ($recipeInstance && $recipeInstance->recipe && $recipeInstance->recipe->phases) {
-                $currentPhaseIndex = $recipeInstance->current_phase_index ?? -1;
-                $phases = $recipeInstance->recipe->phases->sortBy('phase_index');
-                $currentPhase = $phases->firstWhere('phase_index', $currentPhaseIndex);
+            if ($growCycle) {
+                $currentPhase = $growCycle->currentPhase;
+                $recipe = $growCycle->recipeRevision?->recipe ? [
+                    'id' => $growCycle->recipeRevision->recipe->id,
+                    'name' => $growCycle->recipeRevision->recipe->name,
+                ] : null;
 
-                if ($currentPhase && $recipeInstance->started_at) {
-                    // Вычисляем прогресс цикла
-                    $totalHours = $phases->sum('duration_hours');
-                    $elapsedHours = $recipeInstance->started_at->diffInHours(now(), false);
-                    
-                    if ($totalHours > 0 && $elapsedHours >= 0) {
-                        // Вычисляем прошедшие часы до текущей фазы
-                        $completedHours = $phases->takeWhile(function ($phase) use ($currentPhaseIndex) {
-                            return $phase->phase_index < $currentPhaseIndex;
-                        })->sum('duration_hours');
+                if ($currentPhase && $growCycle->phase_started_at) {
+                    // Вычисляем прогресс фазы
+                    $elapsedHours = $growCycle->phase_started_at->diffInHours(now(), false);
 
-                        // Прогресс в текущей фазе
-                        $phaseProgress = 0;
-                        if ($currentPhase->duration_hours > 0) {
-                            $timeInPhase = $elapsedHours - $completedHours;
-                            $phaseProgress = min(100, max(0, ($timeInPhase / $currentPhase->duration_hours) * 100));
-                        }
+                    if ($currentPhase->duration_hours && $elapsedHours >= 0) {
+                        $phaseProgress = min(100.0, ($elapsedHours / $currentPhase->duration_hours) * 100.0);
 
-                        // Общий прогресс
-                        $currentPhaseCompleted = ($currentPhase->duration_hours ?? 0) * ($phaseProgress / 100);
-                        $totalCompleted = $completedHours + $currentPhaseCompleted;
-                        $cycleProgress = min(100, max(0, ($totalCompleted / $totalHours) * 100));
+                        $cycleProgress = [
+                            'phase_progress' => $phaseProgress,
+                            'phase_elapsed_hours' => $elapsedHours,
+                            'phase_total_hours' => $currentPhase->duration_hours,
+                        ];
 
                         // ETA до следующей стадии
-                        $remainingInPhase = ($currentPhase->duration_hours ?? 0) * (1 - $phaseProgress / 100);
+                        $remainingInPhase = $currentPhase->duration_hours - $elapsedHours;
                         if ($remainingInPhase > 0) {
-                            $etaToNextStage = \Carbon\Carbon::now()->addHours($remainingInPhase)->toIso8601String();
+                            $etaToNextStage = now()->addHours($remainingInPhase)->toIso8601String();
                         }
+                    }
 
-                        // ETA до сбора (конец последней фазы)
-                        $remainingHours = $totalHours - $totalCompleted;
-                        if ($remainingHours > 0) {
-                            $etaToHarvest = \Carbon\Carbon::now()->addHours($remainingHours)->toIso8601String();
+                    // Определяем стадию по фазе
+                    if ($currentPhase) {
+                        $phaseName = strtolower($currentPhase->name ?? '');
+                        if (str_contains($phaseName, 'посадк') || str_contains($phaseName, 'germ') || str_contains($phaseName, 'seed')) {
+                            $stageInfo = ['id' => 'planting', 'label' => 'Посадка'];
+                        } elseif (str_contains($phaseName, 'укорен') || str_contains($phaseName, 'root') || str_contains($phaseName, 'seedling')) {
+                            $stageInfo = ['id' => 'rooting', 'label' => 'Укоренение'];
+                        } elseif (str_contains($phaseName, 'вега') || str_contains($phaseName, 'veg') || str_contains($phaseName, 'рост')) {
+                            $stageInfo = ['id' => 'veg', 'label' => 'Вега'];
+                        } elseif (str_contains($phaseName, 'цвет') || str_contains($phaseName, 'flower') || str_contains($phaseName, 'bloom')) {
+                            $stageInfo = ['id' => 'flowering', 'label' => 'Цветение'];
+                        } elseif (str_contains($phaseName, 'сбор') || str_contains($phaseName, 'harvest') || str_contains($phaseName, 'finish')) {
+                            $stageInfo = ['id' => 'harvest', 'label' => 'Сбор'];
+                        } else {
+                            $stageInfo = ['id' => 'unknown', 'label' => $currentPhase->name ?? 'Неизвестно'];
                         }
                     }
                 }
 
-                // Определяем стадию по фазе
-                if ($currentPhase) {
-                    $phaseName = strtolower($currentPhase->name);
-                    if (str_contains($phaseName, 'посадк') || str_contains($phaseName, 'germ') || str_contains($phaseName, 'seed')) {
-                        $stageInfo = ['id' => 'planting', 'label' => 'Посадка'];
-                    } elseif (str_contains($phaseName, 'укорен') || str_contains($phaseName, 'root') || str_contains($phaseName, 'seedling')) {
-                        $stageInfo = ['id' => 'rooting', 'label' => 'Укоренение'];
-                    } elseif (str_contains($phaseName, 'вега') || str_contains($phaseName, 'veg') || str_contains($phaseName, 'рост')) {
-                        $stageInfo = ['id' => 'veg', 'label' => 'Вега'];
-                    } elseif (str_contains($phaseName, 'цвет') || str_contains($phaseName, 'flower') || str_contains($phaseName, 'bloom')) {
-                        $stageInfo = ['id' => 'flowering', 'label' => 'Цветение'];
-                    } elseif (str_contains($phaseName, 'сбор') || str_contains($phaseName, 'harvest') || str_contains($phaseName, 'finish')) {
-                        $stageInfo = ['id' => 'harvest', 'label' => 'Сбор'];
-                    } else {
-                        // По умолчанию используем индекс фазы
-                        $defaultStages = ['planting', 'rooting', 'veg', 'flowering', 'harvest'];
-                        $stageIndex = min($currentPhaseIndex, count($defaultStages) - 1);
-                        $stageInfo = ['id' => $defaultStages[$stageIndex], 'label' => $defaultStages[$stageIndex]];
-                    }
+                // ETA до сбора урожая
+                if ($growCycle->expected_harvest_at) {
+                    $etaToHarvest = $growCycle->expected_harvest_at->toIso8601String();
                 }
             }
 
@@ -363,10 +360,7 @@ class GreenhouseController extends Controller
                 'alerts_count' => $zone->alerts_count ?? 0,
                 'nodes_online' => $zone->nodes_online ?? 0,
                 'nodes_total' => $zone->nodes_total ?? 0,
-                'recipe' => $recipeInstance?->recipe ? [
-                    'id' => $recipeInstance->recipe->id,
-                    'name' => $recipeInstance->recipe->name,
-                ] : null,
+                'recipe' => $recipe,
             ];
         });
 

@@ -77,8 +77,8 @@ class ZoneRepository:
     
     async def get_active_zones(self) -> List[Dict[str, Any]]:
         """
-        Получить список активных зон с рецептами.
-        
+        Получить список активных зон с grow cycles.
+
         Returns:
             Список зон с id и status
         """
@@ -86,8 +86,9 @@ class ZoneRepository:
             """
             SELECT DISTINCT z.id, z.status
             FROM zones z
-            JOIN zone_recipe_instances zri ON zri.zone_id = z.id
+            JOIN grow_cycles gc ON gc.zone_id = z.id
             WHERE z.status IN ('online', 'warning', 'RUNNING', 'PAUSED')
+            AND gc.status IN ('PLANNED', 'RUNNING', 'PAUSED')
             """
         )
         return zones if zones else []

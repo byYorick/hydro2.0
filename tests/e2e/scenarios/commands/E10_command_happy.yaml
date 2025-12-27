@@ -44,26 +44,26 @@ actions:
 
   - step: find_test_zone_and_node
     type: set
-    # Используем zone_id и node_id из контекста (установлены runner'ом из setup)
-    test_zone_id: ${zone_id}
-    test_node_id: ${node_id}
+    # Получаем реальные zone_id и node_id из API ответов
+    test_zone_id: ${zones_response.data.data[0].id}
+    test_node_id: ${nodes_response.data.data[0].id}
 
   - step: subscribe_command_channel
     type: websocket_subscribe
-    channel: "private-commands.${test_zone_id}"
+    channel: "commands.1"
 
   - step: subscribe_zone_channel
     type: websocket_subscribe
-    channel: "private-hydro.zones.${test_zone_id}"
+    channel: "hydro.zones.1"
 
   - step: send_command
     type: api_post
-    endpoint: /api/nodes/${test_node_id}/commands
+    endpoint: /api/nodes/1/commands
     payload:
-      cmd: set_relay_state
+      cmd: set_state
       channel: main_pump
       params:
-        state: false
+        state: 0
     save: command_response
 
   - step: save_command_id
@@ -82,11 +82,13 @@ actions:
     expected_rows: 1
     save: command_status
 
-  # Если статус ACCEPTED, ждем еще немного для перехода в DONE
+  # Если статус ACCEPTED, ждем перехода в DONE
   # Node-sim обычно отвечает DONE после выполнения команды
   - step: wait_for_done_status
-    type: sleep
-    seconds: 10
+    type: wait_until
+    condition: "context.get('command_status', [{}])[0].get('status') == 'DONE'"
+    timeout: 15.0
+    interval: 1.0
 
   # Проверяем, что команда естественным образом дошла до статуса DONE (node-sim сам отправляет DONE)
   - step: check_final_status_done

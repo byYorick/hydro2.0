@@ -1,0 +1,111 @@
+# E58: Cycle Completion - automatic completion on final phase
+# DoD: automatic completion on final phase
+
+name: E58_cycle_completion
+description: |
+  Проверяет автоматическое завершение цикла:
+  - Цикл достигает финальной фазы
+  - Статус автоматически меняется на COMPLETED
+  - Harvest данные фиксируются
+
+actions:
+  - step: get_zones
+    type: api_get
+    endpoint: /api/zones
+    save: zones_response
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zones_response.data.data[0].id}
+
+  # Создаем простой цикл с одной фазой для быстрого завершения
+  - step: create_quick_cycle
+    type: api_post
+    endpoint: /api/zones/${zone_id}/grow-cycles
+    payload:
+      recipe_revision_id: 1  # Предполагаем, что есть тестовый рецепт
+      plant_id: 1           # Предполагаем, что есть тестовое растение
+      start_immediately: true
+    save: cycle_response
+
+  - step: set_cycle_id
+    type: set
+    cycle_id: ${cycle_response.data.id}
+
+  # Имитируем завершение фазы
+  - step: advance_to_final_phase
+    type: database_execute
+    query: |
+      UPDATE grow_cycles
+      SET current_phase_index = 0,
+          phase_started_at = NOW() - INTERVAL '25 hours',
+          updated_at = NOW()
+      WHERE id = :cycle_id
+    params:
+      cycle_id: ${cycle_id}
+
+  # Ждем автоматического завершения
+  - step: wait_for_completion
+    type: wait_until
+    condition: |
+      # Проверяем, что статус изменился на COMPLETED
+      from runner.steps.database import DatabaseStepExecutor
+      from runner.schema.variables import VariableResolver
+      resolver = VariableResolver(context)
+      db_exec = DatabaseStepExecutor(context.get('db'), resolver)
+      import asyncio
+      result = asyncio.run(db_exec.execute_db_step('database_query', {
+        'query': 'SELECT status FROM grow_cycles WHERE id = :cycle_id',
+        'params': {'cycle_id': context['cycle_id']}
+      }))
+      result[0]['status'] == 'COMPLETED' if result else False
+    timeout: 30.0
+    interval: 2.0
+
+assertions:
+  # Проверка 1: Цикл завершен со статусом COMPLETED
+  - name: cycle_status_completed
+    type: database_query
+    query: |
+      SELECT status, completed_at
+      FROM grow_cycles
+      WHERE id = :cycle_id
+    params:
+      cycle_id: ${cycle_id}
+    expected:
+      - field: status
+        operator: equals
+        value: COMPLETED
+      - field: completed_at
+        operator: is_not_null
+
+  # Проверка 2: Harvest данные записаны
+  - name: harvest_data_recorded
+    type: database_query
+    query: |
+      SELECT COUNT(*) as harvest_count
+      FROM cycle_harvests
+      WHERE cycle_id = :cycle_id
+    params:
+      cycle_id: ${cycle_id}
+    expected:
+      - field: harvest_count
+        operator: greater_than
+        value: 0
+
+cleanup:
+  - step: delete_test_cycle
+    type: database_execute
+    query: |
+      DELETE FROM grow_cycles WHERE id = :cycle_id
+    params:
+      cycle_id: ${cycle_id}
+    optional: true
+
+  - step: delete_harvest_data
+    type: database_execute
+    query: |
+      DELETE FROM cycle_harvests WHERE cycle_id = :cycle_id
+    params:
+      cycle_id: ${cycle_id}
+    optional: true

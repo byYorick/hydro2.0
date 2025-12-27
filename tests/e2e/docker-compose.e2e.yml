@@ -25,7 +25,10 @@ services:
       retries: 10
       start_period: 10s
     networks:
-    - backend
+      backend:
+        aliases:
+          - postgres
+          - db
   redis:
     image: redis:7-alpine
     ports:
@@ -286,7 +289,7 @@ services:
       test:
       - CMD-SHELL
       - python -c 'import socket; s=socket.socket(); s.settimeout(1); s.connect(("localhost",
-        9401)); s.close()' || exit 1
+        9500)); s.close()' || exit 1
       interval: 15s
       timeout: 5s
       retries: 10
@@ -295,8 +298,8 @@ services:
     # profiles:
     # - automation
     ports:
-    - "9401:9401"
-    - "9405:9405"
+    - "9500:9500"
+    - "9505:9505"
     networks:
     - backend
   node-sim:

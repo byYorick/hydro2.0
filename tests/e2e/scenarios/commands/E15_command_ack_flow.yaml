@@ -1,0 +1,118 @@
+# E15: Command ACK Flow - detailed ACK flow with WS/DB invariants
+# DoD: detailed ACK flow with WS/DB invariants
+
+name: E15_command_ack_flow
+description: |
+  Проверяет детальный поток ACK команд:
+  - Команда отправляется в MQTT
+  - Node-sim получает и отвечает ACCEPTED
+  - WS событие CommandStatusUpdated
+  - DB статус обновляется на ACCEPTED
+  - Все тайминги фиксируются корректно
+
+actions:
+  - step: get_zones
+    type: api_get
+    endpoint: /api/zones
+    save: zones_response
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zones_response.data.data[0].id}
+
+  - step: get_nodes
+    type: api_get
+    endpoint: /api/nodes
+    save: nodes_response
+
+  - step: set_node_id
+    type: set
+    node_id: ${nodes_response.data.data[0].id}
+    test_zone_id: 1  # Используем фиксированный zone_id для каналов
+    test_node_id: ${nodes_response.data.data[0].id}
+
+  - step: send_test_command
+    type: api_post
+    endpoint: /api/zones/1/commands
+    payload:
+      type: FORCE_IRRIGATION
+      params:
+        duration_sec: 5
+    save: command_response
+
+  - step: extract_command_id
+    type: set
+    command_id: ${command_response.data.id}
+
+  # Ждем ACK через WS
+  - step: wait_for_ack_ws_event
+    type: websocket_event
+    event_type: ".App\\Events\\CommandStatusUpdated"
+    filter:
+      command.id: ${command_id}
+      command.status: "ACCEPTED"
+    timeout: 10.0
+    save: ws_ack_event
+
+  # Проверяем DB статус сразу после WS события
+  - step: check_ack_db_status
+    type: database_query
+    query: |
+      SELECT status, acknowledged_at, sent_at
+      FROM commands
+      WHERE id = :command_id
+    params:
+      command_id: ${command_id}
+    save: ack_status
+
+assertions:
+  # Проверка 1: WS событие содержит правильные данные
+  - name: ws_ack_event_data
+    type: json_assertion
+    data: ${ws_ack_event}
+    expected:
+      - field: command.status
+        operator: equals
+        value: "ACCEPTED"
+      - field: command.id
+        operator: equals
+        value: ${command_id}
+
+  # Проверка 2: DB статус ACCEPTED
+  - name: db_ack_status
+    type: json_assertion
+    data: ${ack_status}
+    expected:
+      - field: status
+        operator: equals
+        value: "ACCEPTED"
+      - field: acknowledged_at
+        operator: is_not_null
+      - field: sent_at
+        operator: is_not_null
+
+  # Проверка 3: Тайминги консистентны (sent_at <= acknowledged_at)
+  - name: timing_consistency
+    type: custom_assert
+    condition: |
+      sent_at = context.get('ack_status', {}).get('sent_at')
+      ack_at = context.get('ack_status', {}).get('acknowledged_at')
+      sent_at and ack_at and sent_at <= ack_at
+
+cleanup:
+  - step: wait_for_command_completion
+    type: eventually
+    condition: |
+      # Ждем завершения команды
+      from runner.steps.database import DatabaseStepExecutor
+      from runner.schema.variables import VariableResolver
+      resolver = VariableResolver(context)
+      db_exec = DatabaseStepExecutor(context.get('db'), resolver)
+      import asyncio
+      result = asyncio.run(db_exec.execute_db_step('database_query', {
+        'query': 'SELECT status FROM commands WHERE id = :command_id',
+        'params': {'command_id': context.get('command_id')}
+      }))
+      result and result[0]['status'] in ['DONE', 'FAILED', 'TIMEOUT']
+    timeout: 30.0
+    optional: true

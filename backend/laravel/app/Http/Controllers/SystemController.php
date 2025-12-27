@@ -347,7 +347,7 @@ class SystemController extends Controller
                             // Загружаем каналы без чувствительных данных из config
                             $channelQuery->select('id', 'node_id', 'channel', 'type', 'metric', 'unit');
                             // Исключаем config из каналов для предотвращения утечки данных
-                        }, 'recipeInstance.recipe']);
+                        }, 'activeGrowCycle.recipeRevision.recipe']);
                 },
             ])->get();
 

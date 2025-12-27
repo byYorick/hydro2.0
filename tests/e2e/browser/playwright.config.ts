@@ -11,7 +11,7 @@ export default defineConfig({
     ['junit', { outputFile: '../reports/playwright/junit.xml' }],
   ],
   use: {
-    baseURL: process.env.LARAVEL_URL || 'http://localhost:8081',
+    baseURL: process.env.LARAVEL_URL || 'http://localhost',
     trace: 'on-first-retry',
     video: 'retain-on-failure',
     screenshot: 'only-on-failure',
@@ -27,12 +27,22 @@ export default defineConfig({
     },
     {
       name: 'chromium',
-      use: { 
-        ...devices['Desktop Chrome'], 
+      use: {
+        ...devices['Desktop Chrome'],
         headless: process.env.HEADLESS !== 'false',
         storageState: process.env.CI ? './playwright/.auth/storageState.json' : './playwright/.auth/user.json',
       },
       dependencies: ['setup'],
+    },
+    {
+      name: 'smoke',
+      testMatch: '**/00-smoke.spec.ts',
+      use: {
+        ...devices['Desktop Chrome'],
+        headless: process.env.HEADLESS !== 'false',
+        // Smoke тесты не требуют авторизации - проверяют отсутствие 500 ошибок
+      },
+      // Нет dependencies - smoke тесты работают без setup
     },
   ],
   webServer: process.env.SKIP_WEBSERVER ? undefined : {

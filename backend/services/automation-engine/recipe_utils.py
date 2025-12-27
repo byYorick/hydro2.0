@@ -32,6 +32,8 @@ async def get_recipe_phases(recipe_id: int) -> List[Dict[str, Any]]:
     Fetch all phases for a recipe, ordered by phase_index (legacy).
     """
     logger.warning('get_recipe_phases() is deprecated - use recipe_revisions instead')
+    # LEGACY FUNCTION DISABLED - tables removed
+    return []
     # Пытаемся получить из новой модели
     try:
         revision_rows = await fetch(
@@ -105,6 +107,8 @@ async def get_zone_recipe_instance(zone_id: int) -> Optional[Dict[str, Any]]:
     Fetch active recipe instance for zone (legacy).
     """
     logger.warning('get_zone_recipe_instance() is deprecated - use GrowCycleRepository instead')
+    # LEGACY FUNCTION DISABLED - tables removed
+    return None
     # Пытаемся получить из новой модели
     try:
         from repositories.grow_cycle_repository import GrowCycleRepository
@@ -147,6 +151,8 @@ async def calculate_current_phase(zone_id: int) -> Optional[Dict[str, Any]]:
     - phase_progress: 0.0-1.0 progress in current phase
     - should_transition: bool indicating if phase should change
     """
+    # LEGACY FUNCTION DISABLED - tables removed
+    return None
     instance = await get_zone_recipe_instance(zone_id)
     if not instance:
         return None

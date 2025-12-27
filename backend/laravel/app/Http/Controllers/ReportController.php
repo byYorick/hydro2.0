@@ -173,9 +173,9 @@ class ReportController extends Controller
         // Если есть recipe_id, можно обновить аналитику
         if ($harvest->recipe_id) {
             try {
-                // Проверяем, есть ли активный recipe instance для зоны
+                // Проверяем, есть ли активный цикл выращивания для зоны
                 $zone = Zone::find($harvest->zone_id);
-                if ($zone && $zone->recipeInstance) {
+                if ($zone && $zone->activeGrowCycle) {
                     \App\Jobs\CalculateRecipeAnalyticsJob::dispatch($harvest->zone_id);
                 }
             } catch (\Exception $e) {

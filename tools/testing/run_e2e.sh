@@ -73,8 +73,8 @@ check_services_health() {
     local attempt=0
     
     while [ $attempt -lt $max_attempts ]; do
-        # Проверка Laravel
-        if curl -sf "${LARAVEL_URL}/api/system/health" > /dev/null 2>&1; then
+        # Проверка Laravel через docker exec
+        if docker-compose -f docker-compose.e2e.yml exec -T laravel curl -sf http://localhost/api/system/health > /dev/null 2>&1; then
             log_info "✓ Laravel готов"
         else
             log_warn "Laravel еще не готов (попытка $((attempt+1))/$max_attempts)"
@@ -233,15 +233,49 @@ run_scenario() {
         PYTHON_BIN="$E2E_DIR/venv/bin/python3"
     fi
     
-    # Запуск сценария
+    # Запуск сценария через новый suite CLI
     cd "$E2E_DIR"
-    "$PYTHON_BIN" -m runner.e2e_runner "$scenario_path" || {
+    PYTHONPATH="$E2E_DIR" "$PYTHON_BIN" -m runner.suite "$scenario_path" || {
         log_error "Сценарий $scenario завершился с ошибкой"
         return 1
     }
     
     log_info "✓ Сценарий $scenario завершен успешно"
     return 0
+}
+
+# Функция для запуска UI smoke тестов через Playwright
+run_ui_smoke() {
+    log_info "Запуск UI smoke тестов через Playwright..."
+
+    # Проверяем наличие Docker
+    if ! command -v docker &> /dev/null; then
+        log_error "Docker не найден. Требуется для запуска UI тестов."
+        return 1
+    fi
+
+    # Проверяем, что Laravel контейнер запущен
+    if ! docker ps | grep -q "e2e-laravel"; then
+        log_error "Laravel контейнер не запущен. Запустите инфраструктуру: $0 up"
+        return 1
+    fi
+
+    # Запускаем UI smoke тесты через run-tests-in-container.sh
+    local container_script="$E2E_DIR/browser/run-tests-in-container.sh"
+    if [ ! -f "$container_script" ]; then
+        log_error "Скрипт запуска UI тестов не найден: $container_script"
+        return 1
+    fi
+
+    # Запускаем smoke тесты через обновленный скрипт
+    log_info "Запуск smoke тестов..."
+    if "$container_script" smoke; then
+        log_info "UI smoke тесты прошли успешно"
+        return 0
+    else
+        log_error "UI smoke тесты провалились"
+        return 1
+    fi
 }
 
 # Главная функция
@@ -298,7 +332,11 @@ main() {
             
             # Запуск всех сценариев кроме CHAOS (core + commands + alerts + snapshot + infra + grow_cycle + automation_engine)
             SCENARIOS=(
-                # CORE
+                # CORE - SMOKE
+                "core/E00_schema_smoke"
+                "core/E00_api_smoke"
+
+                # CORE - BASIC
                 "core/E01_bootstrap"
                 "core/E02_auth_ws_api"
                 
@@ -431,13 +469,76 @@ main() {
                 exit 0
             fi
             ;;
+        "smoke")
+            log_info "Запуск smoke тестов (API + UI без 500 ошибок)"
+            log_info "Запуск инфраструктуры..."
+            docker-compose -f "$E2E_DIR/docker-compose.e2e.yml" up -d
+            if ! check_services_health; then
+                log_error "Не удалось запустить инфраструктуру"
+                exit 1
+            fi
+
+            # Запуск API smoke через YAML runner
+            log_info "Запуск API smoke тестов..."
+            if run_scenario "core/E00_api_smoke"; then
+                log_info "✓ API smoke passed"
+            else
+                log_error "✗ API smoke failed"
+                exit 1
+            fi
+
+            # Запуск UI smoke через Playwright
+            log_info "Запуск UI smoke тестов..."
+            if run_ui_smoke; then
+                log_info "✓ UI smoke passed"
+            else
+                log_error "✗ UI smoke failed"
+                exit 1
+            fi
+
+            log_info "Все smoke тесты прошли успешно!"
+            ;;
         "all")
-            log_info "Полный цикл: запуск инфраструктуры + тесты"
-            log_info "Runner автоматически проверит и поднимет инфраструктуру при необходимости"
-            log_info "Для принудительного запуска используйте: $0 up && $0 test"
-            # Runner сам поднимет инфраструктуру через _ensure_infra_started()
-            # Передаем управление в test
-            bash "$SCRIPT_DIR/run_e2e.sh" test
+            log_info "Полный цикл: запуск инфраструктуры + smoke тесты (YAML + UI)"
+            log_info "Запуск инфраструктуры..."
+            if ! check_services_health; then
+                log_error "Не удалось запустить инфраструктуру"
+                exit 1
+            fi
+
+            log_info "Запуск smoke тестов..."
+            # Запуск smoke тестов (API + UI без 500 ошибок)
+            API_SMOKE_FAILED=false
+            UI_SMOKE_FAILED=false
+            FAILED_SCENARIOS=()
+
+            # Запуск API smoke через YAML runner
+            log_info "Запуск API smoke тестов..."
+            if run_scenario "core/E00_api_smoke"; then
+                log_info "✓ API smoke passed"
+            else
+                log_error "✗ API smoke failed"
+                FAILED_SCENARIOS+=("API smoke")
+                API_SMOKE_FAILED=true
+            fi
+
+            # Запуск UI smoke через Playwright
+            log_info "Запуск UI smoke тестов..."
+            if run_ui_smoke; then
+                log_info "✓ UI smoke passed"
+            else
+                log_error "✗ UI smoke failed"
+                FAILED_SCENARIOS+=("UI smoke")
+                UI_SMOKE_FAILED=true
+            fi
+
+            if [ "$API_SMOKE_FAILED" = true ] || [ "$UI_SMOKE_FAILED" = true ]; then
+                log_error "Smoke тесты провалились: ${FAILED_SCENARIOS[*]}"
+                exit 1
+            else
+                log_info "✓ Все smoke тесты прошли успешно!"
+                exit 0
+            fi
             ;;
         "logs")
             log_info "Просмотр логов..."
@@ -449,12 +550,13 @@ main() {
             log_info "Данные очищены."
             ;;
         *)
-            echo "Использование: $0 {up|down|restart|test|all|logs|clean}"
+            echo "Использование: $0 {up|down|restart|smoke|test|all|logs|clean}"
             echo ""
             echo "Команды:"
             echo "  up       - Запустить E2E инфраструктуру"
             echo "  down     - Остановить E2E инфраструктуру"
             echo "  restart  - Перезапустить E2E инфраструктуру"
+            echo "  smoke    - Запустить smoke тесты (API + UI без 500 ошибок)"
             echo "  test     - Запустить E2E тесты (требует запущенной инфраструктуры)"
             echo "  all      - Запустить инфраструктуру и тесты"
             echo "  logs     - Просмотр логов (опционально: имя сервиса)"

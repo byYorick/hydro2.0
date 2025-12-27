@@ -25,6 +25,46 @@ class GrowCycleController extends Controller
         private EffectiveTargetsService $effectiveTargetsService
     ) {
     }
+
+    /**
+     * Получить список всех grow cycles
+     * GET /api/grow-cycles
+     */
+    public function index(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized',
+            ], 401);
+        }
+
+        // Получить зоны, к которым пользователь имеет доступ
+        $accessibleZoneIds = ZoneAccessHelper::getAccessibleZoneIds($user);
+
+        if (empty($accessibleZoneIds)) {
+            return response()->json([
+                'status' => 'ok',
+                'data' => [],
+            ]);
+        }
+
+        $cycles = GrowCycle::whereIn('zone_id', $accessibleZoneIds)
+            ->with([
+                'zone',
+                'plant',
+                'recipeRevision',
+                'currentPhase',
+            ])
+            ->orderBy('created_at', 'desc')
+            ->paginate($request->get('per_page', 50));
+
+        return response()->json([
+            'status' => 'ok',
+            'data' => $cycles,
+        ]);
+    }
     /**
      * Запустить цикл (из PLANNED в RUNNING)
      * POST /api/grow-cycles/{id}/start

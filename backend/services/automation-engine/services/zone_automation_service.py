@@ -9,7 +9,7 @@ from common.utils.time import utcnow
 from common.db import create_zone_event
 from common.water_flow import check_water_level, ensure_water_level_alert
 from common.pump_safety import can_run_pump
-from recipe_utils import calculate_current_phase, advance_phase
+# from recipe_utils import calculate_current_phase, advance_phase  # DEPRECATED - legacy functions removed
 from light_controller import check_and_control_lighting
 from climate_controller import check_and_control_climate
 from irrigation_controller import check_and_control_irrigation, check_and_control_recirculation
@@ -550,23 +550,29 @@ class ZoneAutomationService:
                 )
     
     async def _check_phase_transitions(self, zone_id: int) -> None:
-        """Проверка и переход между фазами рецепта."""
-        phase_calc = await calculate_current_phase(zone_id)
-        if not phase_calc:
-            return
-        
-        if phase_calc.get("should_transition") and phase_calc["target_phase_index"] > phase_calc["phase_index"]:
-            new_phase_index = phase_calc["target_phase_index"]
-            success = await advance_phase(zone_id, new_phase_index)
-            if success:
-                await create_zone_event(
-                    zone_id,
-                    'PHASE_TRANSITION',
-                    {
-                        'from_phase': phase_calc["phase_index"],
-                        'to_phase': new_phase_index
-                    }
-                )
+        """
+        Проверка и переход между фазами рецепта.
+
+        TODO: Реализовать переходы фаз через GrowCyclePhase/Transition API вместо legacy calculate_current_phase.
+        Пока что логика переходов фаз отключена для обеспечения стабильности после удаления legacy.
+        """
+        # phase_calc = await calculate_current_phase(zone_id)
+        # if not phase_calc:
+        #     return
+
+        # if phase_calc.get("should_transition") and phase_calc["target_phase_index"] > phase_calc["phase_index"]:
+        #     new_phase_index = phase_calc["target_phase_index"]
+        #     success = await advance_phase(zone_id, new_phase_index)
+        #     if success:
+        #         await create_zone_event(
+        #             zone_id,
+        #             'PHASE_TRANSITION',
+        #             {
+        #                 'from_phase': phase_calc["phase_index"],
+        #             'to_phase': new_phase_index
+        #             }
+        #         )
+        pass
     
     async def _process_light_controller(
         self,

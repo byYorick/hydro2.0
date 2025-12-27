@@ -1,0 +1,151 @@
+# E80: Irrigation Schedule Happy - scheduled irrigation execution
+# DoD: scheduled irrigation execution
+
+name: E80_irrigation_schedule_happy
+description: |
+  Проверяет выполнение запланированного полива:
+  - Создается расписание полива
+  - Scheduler создает команды в нужное время
+  - Команды выполняются успешно
+  - Интервалы соблюдаются
+
+actions:
+  - step: get_zones
+    type: api_get
+    endpoint: /api/zones
+    save: zones_response
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zones_response.data.data[0].id}
+
+  - step: get_nodes
+    type: api_get
+    endpoint: /api/nodes
+    save: nodes_response
+
+  - step: set_node_id
+    type: set
+    node_id: ${nodes_response.data.data[0].id}
+
+  # Создаем расписание полива на ближайшие минуты
+  - step: create_irrigation_schedule
+    type: api_post
+    endpoint: /api/zones/${zone_id}/irrigation-schedules
+    payload:
+      name: test-irrigation-schedule-${TIMESTAMP_S}
+      enabled: true
+      cron_expression: "*/2 * * * *"  # Каждые 2 минуты
+      duration_sec: 30
+      node_id: ${node_id}
+    save: schedule_response
+
+  - step: set_schedule_id
+    type: set
+    schedule_id: ${schedule_response.data.id}
+
+  # Ждем выполнения расписания (минимум 2 выполнения)
+  - step: wait_for_schedule_executions
+    type: wait_until
+    condition: |
+      # Проверяем, что были созданы команды полива
+      from runner.steps.database import DatabaseStepExecutor
+      from runner.schema.variables import VariableResolver
+      resolver = VariableResolver(context)
+      db_exec = DatabaseStepExecutor(context.get('db'), resolver)
+      import asyncio
+      result = asyncio.run(db_exec.execute_db_step('database_query', {
+        'query': 'SELECT COUNT(*) as cmd_count FROM commands WHERE zone_id = :zone_id AND type = :cmd_type AND created_at > NOW() - INTERVAL \"5 minutes\"',
+        'params': {'zone_id': context['zone_id'], 'cmd_type': 'IRRIGATION'}
+      }))
+      result and result[0]['cmd_count'] >= 2
+    timeout: 300.0  # 5 минут на 2 выполнения
+    interval: 30.0
+
+  # Проверяем выполненные команды
+  - step: check_executed_commands
+    type: database_query
+    query: |
+      SELECT
+        COUNT(*) as total_commands,
+        COUNT(CASE WHEN status = 'DONE' THEN 1 END) as completed_commands,
+        AVG(EXTRACT(EPOCH FROM (updated_at - created_at))) as avg_execution_time
+      FROM commands
+      WHERE zone_id = :zone_id
+      AND type = 'IRRIGATION'
+      AND created_at > NOW() - INTERVAL '5 minutes'
+    params:
+      zone_id: ${zone_id}
+    save: execution_stats
+
+  # Проверяем интервалы между выполнениями
+  - step: check_schedule_intervals
+    type: database_query
+    query: |
+      SELECT
+        EXTRACT(EPOCH FROM (lead(created_at) OVER (ORDER BY created_at) - created_at)) / 60 as interval_minutes
+      FROM commands
+      WHERE zone_id = :zone_id
+      AND type = 'IRRIGATION'
+      AND created_at > NOW() - INTERVAL '5 minutes'
+      ORDER BY created_at
+      LIMIT 5
+    params:
+      zone_id: ${zone_id}
+    save: intervals
+
+assertions:
+  # Проверка 1: Команды были созданы по расписанию
+  - name: commands_created_by_schedule
+    type: json_assertion
+    data: ${execution_stats}
+    expected:
+      - field: total_commands
+        operator: greater_than_or_equal
+        value: 2
+
+  # Проверка 2: Команды выполнены успешно
+  - name: commands_completed_successfully
+    type: json_assertion
+    data: ${execution_stats}
+    expected:
+      - field: completed_commands
+        operator: greater_than_or_equal
+        value: 1
+
+  # Проверка 3: Время выполнения разумное
+  - name: reasonable_execution_time
+    type: json_assertion
+    data: ${execution_stats}
+    expected:
+      - field: avg_execution_time
+        operator: less_than
+        value: 120  # Менее 2 минут
+
+  # Проверка 4: Интервалы соответствуют расписанию (~2 минуты)
+  - name: schedule_intervals_correct
+    type: custom_assert
+    condition: |
+      intervals = context.get('intervals', {}).get('data', [])
+      if not intervals:
+          return False
+      # Проверяем, что интервалы близки к 2 минутам (±30 сек)
+      for interval in intervals:
+          if interval and interval.get('interval_minutes'):
+              minutes = float(interval['interval_minutes'])
+              if abs(minutes - 2.0) > 0.5:  # ±30 секунд
+                  return False
+      return True
+
+cleanup:
+  - step: disable_schedule
+    type: api_patch
+    endpoint: /api/irrigation-schedules/${schedule_id}
+    payload:
+      enabled: false
+    optional: true
+
+  - step: delete_schedule
+    type: api_delete
+    endpoint: /api/irrigation-schedules/${schedule_id}
+    optional: true

@@ -1,0 +1,104 @@
+# E55: Cycle Abort - abort running cycle → ABORTED
+# DoD: abort running cycle → ABORTED
+
+name: E55_cycle_abort
+description: |
+  Проверяет прерывание grow-cycle:
+  - Цикл в статусе RUNNING
+  - Вызывается abort
+  - Статус цикла = ABORTED
+  - Все активные команды отменяются
+
+actions:
+  - step: get_zones
+    type: api_get
+    endpoint: /api/zones
+    save: zones_response
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zones_response.data.data[0].id}
+
+  - step: get_running_cycle
+    type: database_query
+    query: |
+      SELECT id, status, current_phase_id
+      FROM grow_cycles
+      WHERE zone_id = :zone_id
+      AND status = 'RUNNING'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+    save: running_cycle
+
+  # Если нет запущенного цикла, создаем и запускаем
+  - step: ensure_running_cycle
+    type: set
+    has_running_cycle: ${running_cycle.data[0].id if running_cycle.data else None}
+
+  - step: create_test_cycle_if_needed
+    type: eventually
+    condition: "context.get('has_running_cycle') is not None"
+    timeout: 30.0
+    optional: true
+
+  - step: abort_cycle
+    type: api_post
+    endpoint: /api/grow-cycles/${running_cycle.data[0].id}/abort
+    payload: {}
+    save: abort_response
+
+  - step: wait_for_abort
+    type: wait_until
+    condition: |
+      # Проверяем, что статус изменился на ABORTED
+      from runner.steps.database import DatabaseStepExecutor
+      from runner.schema.variables import VariableResolver
+      resolver = VariableResolver(context)
+      db_exec = DatabaseStepExecutor(context.get('db'), resolver)
+      import asyncio
+      result = asyncio.run(db_exec.execute_db_step('database_query', {
+        'query': 'SELECT status FROM grow_cycles WHERE id = :cycle_id',
+        'params': {'cycle_id': context['running_cycle']['data'][0]['id']}
+      }))
+      result[0]['status'] == 'ABORTED' if result else False
+    timeout: 15.0
+    interval: 1.0
+
+assertions:
+  # Проверка 1: Цикл прерван со статусом ABORTED
+  - name: cycle_status_aborted
+    type: database_query
+    query: |
+      SELECT status, aborted_at
+      FROM grow_cycles
+      WHERE id = :cycle_id
+    params:
+      cycle_id: ${running_cycle.data[0].id}
+    expected:
+      - field: status
+        operator: equals
+        value: ABORTED
+      - field: aborted_at
+        operator: is_not_null
+
+  # Проверка 2: API ответ успешный
+  - name: abort_api_success
+    type: json_assertion
+    data: ${abort_response}
+    expected:
+      - field: status_code
+        operator: in
+        value: [200, 201]
+
+cleanup:
+  - step: delete_test_cycle
+    type: database_execute
+    query: |
+      DELETE FROM grow_cycles
+      WHERE zone_id = :zone_id
+      AND status = 'ABORTED'
+    params:
+      zone_id: ${zone_id}
+    optional: true

@@ -1,8 +1,15 @@
 # API_SPEC_FRONTEND_BACKEND_FULL.md
 # Полная детальная спецификация API между Frontend и Backend (2.0)
+# **ОБНОВЛЕНО ПОСЛЕ МЕГА-РЕФАКТОРИНГА 2025-12-25**
 
 Документ описывает REST и WebSocket-API, которые использует frontend (Web/Android)
 для работы с системой 2.0.
+
+**КЛЮЧЕВЫЕ ИЗМЕНЕНИЯ ПОСЛЕ РЕФАКТОРИНГА:**
+- ✅ Новые эндпоинты для GrowCycle: `/api/grow-cycles/*`
+- ✅ Удалены legacy эндпоинты: `/api/zones/*/attach-recipe`
+- ✅ Новый internal API: `/api/internal/effective-targets/batch`
+- ✅ Версионирование рецептов: `/api/recipe-revisions/*`
 
 Задача документа:
 - зафиксировать **контракты**;
@@ -100,7 +107,128 @@
 
 ---
 
-## 3. Greenhouses / Zones / Nodes
+## 3. Grow Cycles API (НОВОЕ после рефакторинга)
+
+**Аутентификация:** Все эндпоинты требуют `auth:sanctum`, роль `agronomist`.
+
+**Центр API для управления циклами выращивания.**
+
+### 3.1. GET /api/zones/{zone}/grow-cycle
+
+- **Описание:** Получить активный цикл зоны с effective targets
+- **Аутентификация:** Требуется `auth:sanctum`
+- **Ответ:**
+```json
+{
+  "status": "ok",
+  "data": {
+    "id": 123,
+    "zone_id": 5,
+    "plant": {"id": 1, "name": "Tomato"},
+    "recipe_revision": {
+      "id": 456,
+      "recipe": {"name": "Standard Tomato"},
+      "version": 2
+    },
+    "current_phase": {
+      "id": 789,
+      "name": "VEG",
+      "started_at": "2025-01-01T10:00:00Z",
+      "progress": 0.3
+    },
+    "status": "RUNNING",
+    "effective_targets": {
+      "ph": {"target": 6.0, "min": 5.8, "max": 6.2},
+      "ec": {"target": 1.5, "min": 1.3, "max": 1.7}
+      // ... остальные цели
+    }
+  }
+}
+```
+
+### 3.2. POST /api/zones/{zone}/grow-cycles
+
+- **Описание:** Создать новый цикл выращивания
+- **Тело запроса:**
+```json
+{
+  "recipe_revision_id": 456,
+  "plant_id": 1,
+  "planting_at": "2025-01-01T08:00:00Z",
+  "batch_label": "Batch 2025-001",
+  "notes": "Test cycle"
+}
+```
+
+### 3.3. POST /api/grow-cycles/{id}/pause
+
+- **Описание:** Приостановить цикл
+
+### 3.4. POST /api/grow-cycles/{id}/resume
+
+- **Описание:** Возобновить цикл
+
+### 3.5. POST /api/grow-cycles/{id}/set-phase
+
+- **Описание:** Ручной переход на фазу
+- **Тело:** `{"phase_index": 1, "comment": "Early transition due to plant health"}`
+
+### 3.6. POST /api/grow-cycles/{id}/advance-phase
+
+- **Описание:** Перейти на следующую фазу
+
+### 3.7. POST /api/grow-cycles/{id}/change-recipe-revision
+
+- **Описание:** Сменить ревизию рецепта
+- **Тело:** `{"recipe_revision_id": 789, "apply_at_next_phase": true}`
+
+### 3.8. POST /api/grow-cycles/{id}/harvest
+
+- **Описание:** Завершить цикл сбором урожая
+- **Тело:** `{"actual_harvest_at": "2025-02-01T12:00:00Z", "yield_kg": 15.5}`
+
+---
+
+## 4. Recipe Revisions API (НОВОЕ)
+
+**Аутентификация:** Требуется `auth:sanctum`, роль `agronomist`.
+
+### 4.1. GET /api/recipes/{recipe}/revisions
+
+- **Описание:** Список ревизий рецепта
+
+### 4.2. POST /api/recipes/{recipe}/revisions
+
+- **Описание:** Создать новую ревизию из существующей
+- **Тело:** `{"from_revision_id": 456, "description": "Optimized for summer conditions"}`
+
+### 4.3. PATCH /api/recipe-revisions/{id}
+
+- **Описание:** Редактировать DRAFT ревизию
+
+### 4.4. POST /api/recipe-revisions/{id}/publish
+
+- **Описание:** Опубликовать DRAFT ревизию
+
+### 4.5. GET /api/recipe-revisions/{id}
+
+- **Описание:** Получить ревизию с фазами
+
+---
+
+## 5. Internal API (для Python сервисов)
+
+**Аутентификация:** Token-based (LARAVEL_API_TOKEN)
+
+### 5.1. POST /api/internal/effective-targets/batch
+
+- **Описание:** Batch получение effective targets для зон
+- **Тело:** `{"zone_ids": [1, 2, 3]}`
+- **Ответ:** Массив effective targets по зонам
+
+---
+
+## 6. Greenhouses / Zones / Nodes (ОБНОВЛЕНО)
 
 **Аутентификация:** Все эндпоинты требуют `auth:sanctum`.
 

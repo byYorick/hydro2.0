@@ -1,6 +1,5 @@
 <?php
 
-use App\Http\Controllers\CycleCenterController;
 use App\Http\Controllers\PlantController;
 use App\Http\Controllers\ProfileController;
 use App\Models\Alert;
@@ -10,7 +9,7 @@ use App\Models\Recipe;
 use App\Models\SystemLog;
 use App\Models\TelemetryLast;
 use App\Models\Zone;
-use App\Models\ZoneCycle;
+use App\Models\GrowCycle;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Broadcast;
@@ -236,16 +235,6 @@ Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
         ]);
 
         return $response;
-    } catch (\Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException $e) {
-        // PusherBroadcaster::auth throws AccessDeniedHttpException for unauthorized / invalid channel_name/socket_id.
-        // Treat it as 403 to avoid turning auth failures into 500s (important for E2E clarity).
-        \Log::warning('Broadcasting auth: Access denied', [
-            'ip' => $request->ip(),
-            'channel' => $request->input('channel_name'),
-            'user_id' => auth()->id(),
-        ]);
-
-        return response()->json(['message' => 'Unauthorized.'], 403);
     } catch (\Illuminate\Broadcasting\BroadcastException $broadcastException) {
         // Отказ в доступе к каналу - возвращаем 403, а не 500
         \Log::warning('Broadcasting auth: Channel authorization denied', [
@@ -273,11 +262,7 @@ Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
 
         return response()->json(['message' => 'Authorization failed.'], 500);
     }
-})
-    // IMPORTANT: allow token-based auth for WS clients (E2E runner, mobile, etc.).
-    // The handler itself supports both session and Sanctum PAT; do not block it with the default auth middleware.
-    ->withoutMiddleware([\Illuminate\Auth\Middleware\Authenticate::class, \App\Http\Middleware\HandleInertiaRequests::class])
-    ->middleware(['web', \App\Http\Middleware\AuthenticateWithApiToken::class, 'throttle:300,1']); // Rate limiting: 300/min
+})->middleware(['web', 'auth', 'throttle:300,1'])->withoutMiddleware([\App\Http\Middleware\HandleInertiaRequests::class]); // Rate limiting: 300 запросов в минуту для поддержки множественных каналов и переподключений
 
 Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->group(function () {
     /**
@@ -700,7 +685,9 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
         $zones = Zone::query()
             ->where('greenhouse_id', $greenhouse->id)
             ->with([
-                'recipeInstance.recipe:id,name,description',
+                'activeGrowCycle.recipeRevision.recipe:id,name,description',
+                'activeGrowCycle.currentPhase',
+                'activeGrowCycle.plant:id,name',
             ])
             ->withCount([
                 'alerts as alerts_count',
@@ -719,9 +706,17 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
 
         $telemetryByZone = [];
         if (! empty($zoneIds)) {
+            // Запрос к telemetry_last с join на sensors для получения zone_id и типа метрики
             $telemetryAll = TelemetryLast::query()
-                ->whereIn('zone_id', $zoneIds)
-                ->get(['zone_id', 'metric_type', 'value']);
+                ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
+                ->whereIn('sensors.zone_id', $zoneIds)
+                ->whereNotNull('sensors.zone_id')
+                ->select([
+                    'sensors.zone_id',
+                    'sensors.type as metric_type',
+                    'telemetry_last.last_value as value'
+                ])
+                ->get();
 
             foreach ($telemetryAll as $metric) {
                 $key = strtolower($metric->metric_type ?? '');
@@ -784,23 +779,6 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
     })->name('greenhouses.show');
 
     /**
-     * Cycle Center - основной операционный экран циклов выращивания
-     */
-    Route::get('/cycles', [CycleCenterController::class, 'index'])->name('cycles.center');
-
-    /**
-     * Grow Cycle Wizard - мастер запуска цикла выращивания
-     *
-     * Inertia Props:
-     * - auth: { user: { role: 'viewer'|'operator'|'admin'|'agronomist' } }
-     */
-    Route::get('/grow-cycle-wizard', function () {
-        return Inertia::render('GrowCycles/Wizard', [
-            'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
-        ]);
-    })->name('grow-cycle-wizard');
-
-    /**
      * Zones routes
      */
     Route::prefix('zones')->group(function () {
@@ -830,7 +808,9 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                     ->select(['id', 'name', 'status', 'description', 'greenhouse_id'])
                     ->with([
                         'greenhouse:id,name',
-                        'recipeInstance.recipe:id,name', // Загружаем рецепт для отображения
+                        'activeGrowCycle.recipeRevision.recipe:id,name',
+                        'activeGrowCycle.currentPhase',
+                        'activeGrowCycle.plant:id,name',
                     ])
                     ->get();
             });
@@ -840,9 +820,17 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
             $telemetryByZone = [];
 
             if (! empty($zoneIds)) {
+                // Запрос к telemetry_last с join на sensors для получения zone_id и типа метрики
                 $telemetryAll = \App\Models\TelemetryLast::query()
-                    ->whereIn('zone_id', $zoneIds)
-                    ->get(['zone_id', 'metric_type', 'value']);
+                    ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
+                    ->whereIn('sensors.zone_id', $zoneIds)
+                    ->whereNotNull('sensors.zone_id')
+                    ->select([
+                        'sensors.zone_id',
+                        'sensors.type as metric_type',
+                        'telemetry_last.last_value as value'
+                    ])
+                    ->get();
 
                 // Группируем по zone_id и преобразуем в формат {ph, ec, temperature, humidity}
                 $telemetryByZone = $telemetryAll->groupBy('zone_id')->map(function ($metrics) {
@@ -939,23 +927,44 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
             // Convert zoneId to integer
             $zoneIdInt = (int) $zoneId;
 
-            // Загружаем зону с recipeInstance и recipe
+            // Загружаем зону с активным циклом выращивания
             // ВАЖНО: Используем fresh() чтобы получить свежие данные из БД
             $zone = Zone::query()
                 ->with([
                     'greenhouse:id,name',
-                    'recipeInstance.recipe:id,name,description',
+                    'activeGrowCycle.recipeRevision.recipe:id,name,description',
+                    'activeGrowCycle.currentPhase',
+                    'activeGrowCycle.plant:id,name',
                 ])
                 ->findOrFail($zoneIdInt);
 
             // Обновляем зону, чтобы гарантировать загрузку свежих данных
             $zone->refresh();
-            $zone->loadMissing(['recipeInstance.recipe']);
+            $zone->loadMissing([
+                'activeGrowCycle.recipeRevision.recipe',
+                'activeGrowCycle.currentPhase',
+                'activeGrowCycle.plant',
+            ]);
+
+            // Логируем для отладки
+            \Log::info('Loading zone for web route', [
+                'zone_id' => $zoneIdInt,
+                'has_active_grow_cycle' => $zone->activeGrowCycle !== null,
+                'grow_cycle_id' => $zone->activeGrowCycle?->id,
+                'recipe_revision_id' => $zone->activeGrowCycle?->recipe_revision_id,
+                'recipe_name' => $zone->activeGrowCycle?->recipeRevision?->recipe?->name,
+            ]);
 
             // Загрузить телеметрию
             $telemetryLast = \App\Models\TelemetryLast::query()
-                ->where('zone_id', $zoneIdInt)
-                ->get(['metric_type', 'value'])
+                ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
+                ->where('sensors.zone_id', $zoneIdInt)
+                ->whereNotNull('sensors.zone_id')
+                ->select([
+                    'sensors.type as metric_type',
+                    'telemetry_last.last_value as value'
+                ])
+                ->get()
                 ->mapWithKeys(function ($item) {
                     $key = strtolower($item->metric_type ?? '');
                     if ($key === 'ph') {
@@ -975,7 +984,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 })
                 ->toArray();
 
-            // Загрузить цели из активного цикла выращивания (новая модель)
+            // Загрузить эффективные цели через API
             $targets = [];
             $activeGrowCycle = $zone->activeGrowCycle;
             if ($activeGrowCycle) {
@@ -991,167 +1000,38 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                     ]);
                 }
             }
-            
-            // Fallback на legacy recipeInstance если активного цикла нет
-            if (empty($targets) && $zone->recipeInstance?->recipe) {
-                $currentPhaseIndex = $zone->recipeInstance->current_phase_index ?? 0;
-                $zone->load(['recipeInstance.recipe.phases' => function ($q) use ($currentPhaseIndex) {
-                    $q->where('phase_index', $currentPhaseIndex);
-                }]);
-                $currentPhase = $zone->recipeInstance->recipe->phases->first();
-                if ($currentPhase && $currentPhase->targets) {
-                    $targets = $currentPhase->targets;
-                }
-            }
 
-            // Нормализованный блок current_phase с UTC-таймингами и агрегированными таргетами
-            // Используем activeGrowCycle (новая модель) вместо recipeInstance
+            // Нормализованный блок current_phase через effective targets
             $currentPhaseNormalized = null;
-            if ($activeGrowCycle && $activeGrowCycle->currentPhase) {
+            $activeGrowCycle = $zone->activeGrowCycle;
+            if ($activeGrowCycle) {
                 try {
                     $effectiveTargetsService = app(\App\Services\EffectiveTargetsService::class);
                     $effectiveTargets = $effectiveTargetsService->getEffectiveTargets($activeGrowCycle->id);
                     $phase = $effectiveTargets['phase'] ?? null;
-                    $effectiveTargetsData = $effectiveTargets['targets'] ?? [];
-                    
+
                     if ($phase) {
                         $currentPhaseNormalized = [
-                            'index' => $activeGrowCycle->currentPhase->phase_index ?? 0,
-                            'name' => $phase['name'] ?? $phase['code'] ?? "Фаза " . ($activeGrowCycle->currentPhase->phase_index ?? 0),
-                            'duration_hours' => $activeGrowCycle->currentPhase->duration_hours ?? ($activeGrowCycle->currentPhase->duration_days * 24 ?? 0),
-                            'phase_started_at' => $activeGrowCycle->phase_started_at?->toIso8601String() ?? $phase['started_at'],
+                            'index' => $phase['id'] ?? 0,
+                            'name' => $phase['name'] ?? 'Неизвестная фаза',
+                            'duration_hours' => 0, // Не доступно в новом API
+                            'phase_started_at' => $phase['started_at'] ?? null,
                             'phase_ends_at' => $phase['due_at'] ?? null,
-                            'targets' => $effectiveTargetsData,
+                            'targets' => $targets, // Используем уже загруженные targets
                         ];
                     }
                 } catch (\Exception $e) {
-                    \Log::warning('Failed to get effective targets for current phase', [
+                    \Log::warning('Failed to get current phase normalized', [
                         'zone_id' => $zone->id,
                         'cycle_id' => $activeGrowCycle->id,
                         'error' => $e->getMessage(),
                     ]);
                 }
             }
-            
-            // Fallback на legacy recipeInstance если activeGrowCycle не доступен
-            if (!$currentPhaseNormalized && $zone->recipeInstance?->recipe && $zone->recipeInstance->started_at) {
-                $instance = $zone->recipeInstance;
-                $phases = $instance->recipe->phases()
-                    ->orderBy('phase_index')
-                    ->get();
-
-                if ($phases->isNotEmpty()) {
-                    $currentPhaseIndex = $instance->current_phase_index ?? 0;
-                    $currentPhase = $phases->firstWhere('phase_index', $currentPhaseIndex);
-
-                    if ($currentPhase) {
-                        // Кумулятивное время начала текущей фазы (в часах)
-                        $phaseStartCumulative = 0.0;
-                        foreach ($phases as $phase) {
-                            if ($phase->phase_index < $currentPhaseIndex) {
-                                $phaseStartCumulative += max(0.0, (float) ($phase->duration_hours ?? 0));
-                            } else {
-                                break;
-                            }
-                        }
-
-                        $startedAt = $instance->started_at->clone()->setTimezone('UTC');
-                        $phaseStartedAt = $startedAt->clone()->addHours($phaseStartCumulative);
-                        
-                        // Проверяем, что duration_hours валиден (больше 0)
-                        $durationHours = max(0.0, (float) ($currentPhase->duration_hours ?? 0));
-                        if ($durationHours <= 0) {
-                            // Если длительность фазы не задана или равна 0, используем текущее время как phase_ends_at
-                            $phaseEndsAt = $phaseStartedAt->clone()->addHours(24); // Дефолт: 24 часа
-                        } else {
-                            $phaseEndsAt = $phaseStartedAt->clone()->addHours($durationHours);
-                        }
-
-                        $rawTargets = $currentPhase->targets ?? [];
-
-                        // pH
-                        $phMin = $rawTargets['ph_min'] ?? ($rawTargets['ph']['min'] ?? null);
-                        $phMax = $rawTargets['ph_max'] ?? ($rawTargets['ph']['max'] ?? null);
-
-                        // EC
-                        $ecMin = $rawTargets['ec_min'] ?? ($rawTargets['ec']['min'] ?? null);
-                        $ecMax = $rawTargets['ec_max'] ?? ($rawTargets['ec']['max'] ?? null);
-
-                        // Climate (температура / влажность воздуха)
-                        $climateTemp = $rawTargets['temp_air'] ?? ($rawTargets['climate']['temperature'] ?? null);
-                        $climateHumidity = $rawTargets['humidity_air'] ?? ($rawTargets['climate']['humidity'] ?? null);
-
-                        // Lighting
-                        $lightingHoursOn = $rawTargets['light_hours_on'] ?? $rawTargets['light_hours'] ?? ($rawTargets['lighting']['hours_on'] ?? null);
-                        $lightingHoursOff = $rawTargets['light_hours_off'] ?? ($rawTargets['lighting']['hours_off'] ?? null);
-
-                        // Irrigation
-                        $irrigationIntervalMinutes = null;
-                        if (isset($rawTargets['irrigation_interval_min'])) {
-                            $irrigationIntervalMinutes = (float) $rawTargets['irrigation_interval_min'];
-                        } elseif (isset($rawTargets['irrigation_interval_sec'])) {
-                            $irrigationIntervalMinutes = (float) $rawTargets['irrigation_interval_sec'] / 60.0;
-                        } elseif (isset($rawTargets['irrigation']['interval_minutes'])) {
-                            $irrigationIntervalMinutes = (float) $rawTargets['irrigation']['interval_minutes'];
-                        }
-
-                        $irrigationDurationSeconds = null;
-                        if (isset($rawTargets['irrigation_duration_sec'])) {
-                            $irrigationDurationSeconds = (float) $rawTargets['irrigation_duration_sec'];
-                        } elseif (isset($rawTargets['irrigation']['duration_seconds'])) {
-                            $irrigationDurationSeconds = (float) $rawTargets['irrigation']['duration_seconds'];
-                        }
-
-                        // Формируем таргеты только если есть оба значения для диапазонов или одно значение для скалярных
-                        $targets = [];
-                        
-                        // pH: требуем оба значения (min и max)
-                        if ($phMin !== null && $phMax !== null && is_numeric($phMin) && is_numeric($phMax)) {
-                            $targets['ph'] = ['min' => (float)$phMin, 'max' => (float)$phMax];
-                        }
-                        
-                        // EC: требуем оба значения (min и max)
-                        if ($ecMin !== null && $ecMax !== null && is_numeric($ecMin) && is_numeric($ecMax)) {
-                            $targets['ec'] = ['min' => (float)$ecMin, 'max' => (float)$ecMax];
-                        }
-                        
-                        // Climate: требуем оба значения (temperature и humidity)
-                        if ($climateTemp !== null && $climateHumidity !== null && is_numeric($climateTemp) && is_numeric($climateHumidity)) {
-                            $targets['climate'] = ['temperature' => (float)$climateTemp, 'humidity' => (float)$climateHumidity];
-                        }
-                        
-                        // Lighting: требуем hours_on, hours_off опционален (вычисляется как 24 - hours_on)
-                        if ($lightingHoursOn !== null && is_numeric($lightingHoursOn)) {
-                            $targets['lighting'] = [
-                                'hours_on' => (float)$lightingHoursOn,
-                                'hours_off' => ($lightingHoursOff !== null && is_numeric($lightingHoursOff)) ? (float)$lightingHoursOff : (24.0 - (float)$lightingHoursOn)
-                            ];
-                        }
-                        
-                        // Irrigation: требуем оба значения (interval_minutes и duration_seconds)
-                        if ($irrigationIntervalMinutes !== null && $irrigationDurationSeconds !== null && is_numeric($irrigationIntervalMinutes) && is_numeric($irrigationDurationSeconds)) {
-                            $targets['irrigation'] = [
-                                'interval_minutes' => (int)$irrigationIntervalMinutes,
-                                'duration_seconds' => (int)$irrigationDurationSeconds
-                            ];
-                        }
-
-                        $currentPhaseNormalized = [
-                            'index' => $currentPhaseIndex,
-                            'name' => $currentPhase->name ?? "Фаза {$currentPhaseIndex}",
-                            'duration_hours' => $currentPhase->duration_hours ?? 0,
-                            'phase_started_at' => $phaseStartedAt->toIso8601String(),
-                            'phase_ends_at' => $phaseEndsAt->toIso8601String(),
-                            'targets' => $targets,
-                        ];
-                    }
-                }
-            }
-
             // Агрегированный цикл выращивания (один активный на зону).
-            $activeCycleModel = ZoneCycle::query()
+            $activeCycleModel = GrowCycle::query()
                 ->where('zone_id', $zone->id)
-                ->where('status', 'active')
+                ->whereIn('status', ['PLANNED', 'RUNNING', 'PAUSED'])
                 ->latest('started_at')
                 ->first();
 
@@ -1325,33 +1205,21 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
             // Формируем данные для отправки в Inertia
             // ВАЖНО: Используем оригинальную модель, так как Inertia правильно сериализует отношения
             // Но убеждаемся, что все отношения загружены
-            if (! $zone->relationLoaded('recipeInstance')) {
-                $zone->load('recipeInstance.recipe');
+            if (! $zone->relationLoaded('activeGrowCycle')) {
+                $zone->load('activeGrowCycle.recipeRevision.recipe');
             }
-
-            // Дополнительная проверка: если recipeInstance есть, но recipe не загружен - загружаем
-            if ($zone->recipeInstance && ! $zone->recipeInstance->relationLoaded('recipe')) {
-                $zone->recipeInstance->load('recipe');
-            }
-
-            // Загружаем активный цикл выращивания
-            $activeGrowCycle = \App\Models\GrowCycle::where('zone_id', $zone->id)
-                ->whereIn('status', ['PLANNED', 'RUNNING', 'PAUSED'])
-                ->latest('started_at')
-                ->first();
 
             // Логируем данные перед отправкой в Inertia
             \Log::info('Sending zone data to Inertia', [
                 'zone_id' => $zone->id,
                 'zone_name' => $zone->name,
-                'has_active_grow_cycle' => $activeGrowCycle !== null,
-                'active_grow_cycle' => $activeGrowCycle ? [
-                    'id' => $activeGrowCycle->id,
-                    'status' => $activeGrowCycle->status,
-                    'recipe_revision_id' => $activeGrowCycle->recipe_revision_id,
-                    'current_phase_id' => $activeGrowCycle->current_phase_id,
+                'has_active_grow_cycle' => $zone->activeGrowCycle !== null,
+                'grow_cycle' => $zone->activeGrowCycle ? [
+                    'id' => $zone->activeGrowCycle->id,
+                    'recipe_revision_id' => $zone->activeGrowCycle->recipe_revision_id,
+                    'recipe_name' => $zone->activeGrowCycle->recipeRevision?->recipe?->name,
+                    'current_phase_id' => $zone->activeGrowCycle->current_phase_id,
                 ] : null,
-                'has_recipe_instance' => $zone->recipeInstance !== null,
             ]);
 
             return Inertia::render('Zones/Show', [
@@ -1362,13 +1230,11 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 'targets' => $targets,
                 'current_phase' => $currentPhaseNormalized,
                 'active_cycle' => $activeCycle,
-                'active_grow_cycle' => $activeGrowCycle,
                 'devices' => $devices,
                 'events' => $events,
                 'cycles' => $cycles,
             ]);
         })->name('zones.show');
-
     });
 
     /**
@@ -1476,7 +1342,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
         Route::get('/{nodeId}', function (string $nodeId) {
             // Support both ID (int) and UID (string) lookup
             $query = DeviceNode::query()
-                ->with(['channels:id,node_id,channel,type,metric,unit,config', 'zone:id,name']);
+                ->with(['channels:id,node_id,channel,type,metric,unit', 'zone:id,name']);
 
             // Try to find by ID if nodeId is numeric, otherwise by UID
             if (is_numeric($nodeId)) {
@@ -1523,14 +1389,19 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
             $recipes = \Illuminate\Support\Facades\Cache::remember($cacheKey, 10, function () {
                 return Recipe::query()
                     ->select(['id', 'name', 'description'])
-                    ->withCount('phases')
+                    ->with(['revisions.phases'])
                     ->get()
                     ->map(function ($recipe) {
+                        // Подсчитываем общее количество фаз во всех ревизиях рецепта
+                        $phasesCount = $recipe->revisions->sum(function ($revision) {
+                            return $revision->phases->count();
+                        });
+
                         return [
                             'id' => $recipe->id,
                             'name' => $recipe->name,
                             'description' => $recipe->description,
-                            'phases_count' => $recipe->phases_count ?? 0,
+                            'phases_count' => $phasesCount,
                         ];
                     });
             });
@@ -1555,12 +1426,16 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
          */
         Route::get('/{recipeId}', function (int $recipeId) {
             $recipe = Recipe::query()
-                ->with('phases:id,recipe_id,phase_index,name,duration_hours,targets')
+                ->with(['latestPublishedRevision.phases'])
                 ->findOrFail($recipeId);
+
+            // Для совместимости с фронтендом добавляем phases на уровень recipe
+            $recipeArray = $recipe->toArray();
+            $recipeArray['phases'] = $recipe->latestPublishedRevision?->phases?->toArray() ?? [];
 
             return Inertia::render('Recipes/Show', [
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
-                'recipe' => $recipe,
+                'recipe' => $recipeArray,
             ]);
         })->name('recipes.show');
 
@@ -1587,12 +1462,16 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
 
         Route::get('/{recipeId}/edit', function (int $recipeId) {
             $recipe = Recipe::query()
-                ->with('phases:id,recipe_id,phase_index,name,duration_hours,targets')
+                ->with(['latestDraftRevision.phases'])
                 ->findOrFail($recipeId);
+
+            // Для совместимости с фронтендом добавляем phases на уровень recipe
+            $recipeArray = $recipe->toArray();
+            $recipeArray['phases'] = $recipe->latestDraftRevision?->phases?->toArray() ?? [];
 
             return Inertia::render('Recipes/Edit', [
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
-                'recipe' => $recipe,
+                'recipe' => $recipeArray,
             ]);
         })->name('recipes.edit');
     });
@@ -1697,6 +1576,9 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                     ->limit(1000)
                     ->get();
 
+                // Логируем для отладки
+                \Log::info('Audit logs loaded', ['count' => $result->count()]);
+
                 return $result;
             } catch (\Exception $e) {
                 \Log::error('Failed to load audit logs', ['error' => $e->getMessage()]);
@@ -1727,39 +1609,70 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 'label' => 'Automation Engine',
                 'description' => 'События ядра автоматики и командные переходы.',
             ],
-            'history-logger' => [
-                'label' => 'History Logger',
-                'description' => 'Архив событий телеметрии и подтверждений команд.',
-            ],
-            'scheduler' => [
-                'label' => 'Scheduler',
-                'description' => 'Запуск расписаний полива, освещения и заданий.',
-            ],
-            'mqtt-bridge' => [
-                'label' => 'MQTT Bridge',
-                'description' => 'REST→MQTT мост и публикация команд.',
-            ],
-            'laravel' => [
-                'label' => 'Laravel',
-                'description' => 'Веб-приложение, фоновые задачи и WebSocket.',
+            'history-locker' => [
+                'label' => 'History Locker',
+                'description' => 'Архив событий, восстановления и следов действия оператора.',
             ],
             'system' => [
-                'label' => 'System',
-                'description' => 'Общие события: очередь, cron, миграции.',
+                'label' => 'System Services',
+                'description' => 'Системные сервисы, очередь, запуск крон-заданий.',
             ],
         ];
 
+        $levelFilter = $request->query('level');
+        $serviceFilter = $request->query('service');
+        if ($serviceFilter === 'all') {
+            $serviceFilter = null;
+        }
+
+        $logsByService = collect($serviceCatalog)
+            ->map(function ($meta, $serviceKey) use ($levelFilter) {
+                $query = SystemLog::query()
+                    ->select(['id', 'level', 'message', 'context', 'created_at'])
+                    ->orderBy('created_at', 'desc')
+                    ->when($serviceKey, fn ($q) => $q->where('context->service', $serviceKey));
+
+                if ($levelFilter) {
+                    $query->whereRaw('UPPER(level) = ?', [strtoupper($levelFilter)]);
+                }
+
+                return [
+                    'key' => $serviceKey,
+                    'label' => $meta['label'],
+                    'description' => $meta['description'],
+                    'entries' => $query->limit(75)->get()->map(function ($log) {
+                        return [
+                            'id' => $log->id,
+                            'level' => strtoupper($log->level ?? 'info'),
+                            'message' => $log->message,
+                            'context' => $log->context ?? [],
+                            'created_at' => (string) $log->created_at,
+                        ];
+                    }),
+                ];
+            })
+            ->filter(fn ($item) => ! $serviceFilter || $item['key'] === $serviceFilter)
+            ->values()
+            ->toArray();
+
+        $levelFilters = collect($logsByService)
+            ->flatMap(fn ($service) => collect($service['entries'])->pluck('level'))
+            ->unique()
+            ->values()
+            ->toArray();
+
         $serviceOptions = collect($serviceCatalog)
-            ->map(fn ($meta, $key) => ['key' => $key, 'label' => $meta['label'], 'description' => $meta['description']])
+            ->map(fn ($meta, $key) => ['key' => $key, 'label' => $meta['label']])
             ->values()
             ->toArray();
 
         return Inertia::render('Logs/Index', [
             'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
+            'serviceLogs' => $logsByService,
             'serviceOptions' => $serviceOptions,
-            'defaultService' => $request->query('service', 'all'),
-            'defaultLevel' => $request->query('level', ''),
-            'defaultSearch' => $request->query('search', ''),
+            'levelFilters' => $levelFilters,
+            'selectedService' => $serviceFilter ?? 'all',
+            'selectedLevel' => $levelFilter ?? '',
         ]);
     })->name('logs.index');
 
@@ -1962,3 +1875,6 @@ if (app()->environment('testing')) {
         return redirect()->intended('/');
     })->name('testing.login');
 }
+
+// Подключаем дополнительные файлы маршрутов
+require __DIR__.'/web/greenhouses-zones.php';

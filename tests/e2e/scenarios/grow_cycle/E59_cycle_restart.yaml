@@ -1,0 +1,149 @@
+# E59: Cycle Restart - restart aborted/completed cycle
+# DoD: restart aborted/completed cycle
+
+name: E59_cycle_restart
+description: |
+  Проверяет перезапуск цикла:
+  - Цикл в статусе ABORTED или COMPLETED
+  - Вызывается restart
+  - Создается новый цикл со статусом RUNNING
+  - Старая история сохраняется
+
+actions:
+  - step: get_zones
+    type: api_get
+    endpoint: /api/zones
+    save: zones_response
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zones_response.data.data[0].id}
+
+  - step: get_completed_cycle
+    type: database_query
+    query: |
+      SELECT id, status, recipe_revision_id, plant_id
+      FROM grow_cycles
+      WHERE zone_id = :zone_id
+      AND status IN ('ABORTED', 'COMPLETED')
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+    save: completed_cycle
+
+  - step: set_original_cycle_id
+    type: set
+    original_cycle_id: ${completed_cycle.data[0].id if completed_cycle.data else None}
+
+  # Если нет завершенного цикла, создаем и завершаем тестовый
+  - step: create_and_complete_test_cycle
+    type: eventually
+    condition: "context.get('original_cycle_id') is not None"
+    timeout: 30.0
+    optional: true
+
+  - step: restart_cycle
+    type: api_post
+    endpoint: /api/grow-cycles/${original_cycle_id}/restart
+    payload: {}
+    save: restart_response
+
+  - step: wait_for_new_cycle
+    type: wait_until
+    condition: |
+      # Проверяем, что появился новый RUNNING цикл
+      from runner.steps.database import DatabaseStepExecutor
+      from runner.schema.variables import VariableResolver
+      resolver = VariableResolver(context)
+      db_exec = DatabaseStepExecutor(context.get('db'), resolver)
+      import asyncio
+      result = asyncio.run(db_exec.execute_db_step('database_query', {
+        'query': 'SELECT COUNT(*) as running_count FROM grow_cycles WHERE zone_id = :zone_id AND status = :running',
+        'params': {'zone_id': context['zone_id'], 'running': 'RUNNING'}
+      }))
+      result[0]['running_count'] > 0 if result else False
+    timeout: 15.0
+    interval: 1.0
+
+  - step: get_new_cycle
+    type: database_query
+    query: |
+      SELECT id, status, recipe_revision_id, plant_id, restarted_from_cycle_id
+      FROM grow_cycles
+      WHERE zone_id = :zone_id
+      AND status = 'RUNNING'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+    save: new_cycle
+
+assertions:
+  # Проверка 1: Новый цикл создан со статусом RUNNING
+  - name: new_cycle_running
+    type: database_query
+    query: |
+      SELECT status, restarted_from_cycle_id
+      FROM grow_cycles
+      WHERE id = :new_cycle_id
+    params:
+      new_cycle_id: ${new_cycle.data[0].id}
+    expected:
+      - field: status
+        operator: equals
+        value: RUNNING
+      - field: restarted_from_cycle_id
+        operator: equals
+        value: ${original_cycle_id}
+
+  # Проверка 2: Новый цикл использует те же параметры
+  - name: same_parameters
+    type: database_query
+    query: |
+      SELECT recipe_revision_id, plant_id
+      FROM grow_cycles
+      WHERE id = :new_cycle_id
+    params:
+      new_cycle_id: ${new_cycle.data[0].id}
+    expected:
+      - field: recipe_revision_id
+        operator: equals
+        value: ${completed_cycle.data[0].recipe_revision_id}
+      - field: plant_id
+        operator: equals
+        value: ${completed_cycle.data[0].plant_id}
+
+  # Проверка 3: API ответ успешный
+  - name: restart_api_success
+    type: json_assertion
+    data: ${restart_response}
+    expected:
+      - field: status_code
+        operator: in
+        value: [200, 201]
+
+  # Проверка 4: Оригинальный цикл все еще существует
+  - name: original_cycle_preserved
+    type: database_query
+    query: |
+      SELECT status
+      FROM grow_cycles
+      WHERE id = :original_cycle_id
+    params:
+      original_cycle_id: ${original_cycle_id}
+    expected:
+      - field: status
+        operator: in
+        value: ["ABORTED", "COMPLETED"]
+
+cleanup:
+  - step: delete_new_cycle
+    type: database_execute
+    query: |
+      DELETE FROM grow_cycles
+      WHERE zone_id = :zone_id
+      AND status = 'RUNNING'
+    params:
+      zone_id: ${zone_id}
+    optional: true

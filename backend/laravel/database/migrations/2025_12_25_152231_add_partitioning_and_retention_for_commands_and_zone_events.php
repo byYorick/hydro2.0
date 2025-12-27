@@ -36,7 +36,30 @@ return new class extends Migration
                     DB::statement("
                         -- Создаем новую партиционированную таблицу
                         CREATE TABLE IF NOT EXISTS commands_partitioned (
-                            LIKE commands INCLUDING ALL
+                            id BIGSERIAL,
+                            zone_id BIGINT,
+                            node_id BIGINT,
+                            channel VARCHAR(255),
+                            cmd VARCHAR(255) NOT NULL,
+                            params JSONB,
+                            status VARCHAR(255) DEFAULT 'pending',
+                            cmd_id VARCHAR(255) NOT NULL,
+                            created_at TIMESTAMP(0) WITHOUT TIME ZONE,
+                            updated_at TIMESTAMP(0) WITHOUT TIME ZONE,
+                            sent_at TIMESTAMP(0) WITHOUT TIME ZONE,
+                            ack_at TIMESTAMP(0) WITHOUT TIME ZONE,
+                            failed_at TIMESTAMP(0) WITHOUT TIME ZONE,
+                            cycle_id BIGINT,
+                            context_type VARCHAR(255),
+                            context_id BIGINT,
+                            source VARCHAR(255),
+                            error_message TEXT,
+                            acknowledged_at TIMESTAMP(0) WITHOUT TIME ZONE,
+                            timeout_sec INTEGER,
+                            timed_out_at TIMESTAMP(0) WITHOUT TIME ZONE,
+                            CONSTRAINT commands_partitioned_cmd_id_unique UNIQUE (cmd_id),
+                            CONSTRAINT commands_partitioned_zone_id_foreign FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE SET NULL,
+                            CONSTRAINT commands_partitioned_node_id_foreign FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE SET NULL
                         ) PARTITION BY RANGE (created_at);
                     ");
 

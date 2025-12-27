@@ -96,8 +96,10 @@ actions:
   # Шаг 4: Ждем публикации телеметрии от node-sim (он работает автоматически)
   # node-sim публикует телеметрию каждые 2 секунды, ждем минимум одну публикацию
   - step: wait_for_telemetry_publish
-    type: sleep
-    seconds: 8
+    type: wait_for_telemetry
+    zone_id: ${zone_id}
+    node_id: ${node_id}
+    timeout: 15.0
 
 assertions:
   # Проверка 1: Телеметрия в БД (ОБЯЗАТЕЛЬНАЯ - DoD требует телеметрию в БД)

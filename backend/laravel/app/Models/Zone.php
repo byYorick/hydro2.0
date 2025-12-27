@@ -84,13 +84,6 @@ class Zone extends Model
         )->where('infrastructure_instances.owner_type', 'zone');
     }
 
-    /**
-     * @deprecated Используйте activeGrowCycle() вместо recipeInstance()
-     */
-    public function recipeInstance(): HasOne
-    {
-        return $this->hasOne(ZoneRecipeInstance::class);
-    }
 
     public function alerts(): HasMany
     {
@@ -132,21 +125,6 @@ class Zone extends Model
         return $this->hasMany(GrowCycle::class);
     }
 
-    /**
-     * @deprecated Используйте infrastructureInstances() вместо infrastructure()
-     */
-    public function infrastructure(): HasMany
-    {
-        return $this->hasMany(ZoneInfrastructure::class);
-    }
-
-    /**
-     * @deprecated Используйте channelBindings() (новая модель) вместо старой
-     */
-    public function legacyChannelBindings(): HasMany
-    {
-        return $this->hasMany(ZoneChannelBinding::class);
-    }
 
     /**
      * Проверка валидности инфраструктуры зоны (новая модель)

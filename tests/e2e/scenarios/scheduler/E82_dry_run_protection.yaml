@@ -1,0 +1,204 @@
+# E82: Dry Run Protection - scheduler dry-run mode protection
+# DoD: scheduler dry-run mode protection
+
+name: E82_dry_run_protection
+description: |
+  Проверяет защиту dry-run режима:
+  - Scheduler в dry-run режиме не создает реальные команды
+  - Создаются только лог-записи о планируемых действиях
+  - При отключении dry-run команды начинают выполняться
+  - Нет ложных выполнений
+
+actions:
+  - step: get_zones
+    type: api_get
+    endpoint: /api/zones
+    save: zones_response
+
+  - step: set_zone_id
+    type: set
+    zone_id: ${zones_response.data.data[0].id}
+
+  - step: get_nodes
+    type: api_get
+    endpoint: /api/nodes
+    save: nodes_response
+
+  - step: set_node_id
+    type: set
+    node_id: ${nodes_response.data.data[0].id}
+
+  # Включаем dry-run режим для scheduler
+  - step: enable_scheduler_dry_run
+    type: api_post
+    endpoint: /api/test-utils/scheduler/dry-run
+    payload:
+      enabled: true
+      zone_id: ${zone_id}
+    optional: true
+
+  # Создаем расписание полива в dry-run режиме
+  - step: create_schedule_in_dry_run
+    type: api_post
+    endpoint: /api/zones/${zone_id}/irrigation-schedules
+    payload:
+      name: dry-run-test-schedule-${TIMESTAMP_S}
+      enabled: true
+      cron_expression: "*/1 * * * *"  # Каждую минуту
+      duration_sec: 15
+      node_id: ${node_id}
+    save: schedule_response
+
+  - step: set_schedule_id
+    type: set
+    schedule_id: ${schedule_response.data.id}
+
+  # Ждем "выполнения" расписания в dry-run режиме
+  - step: wait_for_dry_run_logs
+    type: wait_until
+    condition: |
+      # Проверяем логи dry-run (предполагаем, что они пишутся в БД)
+      from runner.steps.database import DatabaseStepExecutor
+      from runner.schema.variables import VariableResolver
+      resolver = VariableResolver(context)
+      db_exec = DatabaseStepExecutor(context.get('db'), resolver)
+      import asyncio
+      result = asyncio.run(db_exec.execute_db_step('database_query', {
+        'query': 'SELECT COUNT(*) as log_count FROM scheduler_dry_run_logs WHERE zone_id = :zone_id AND created_at > NOW() - INTERVAL \"3 minutes\"',
+        'params': {'zone_id': context['zone_id']}
+      }))
+      result and result[0]['log_count'] >= 2
+    timeout: 180.0  # 3 минуты
+    interval: 30.0
+
+  # Проверяем, что реальные команды НЕ были созданы
+  - step: check_no_real_commands
+    type: database_query
+    query: |
+      SELECT COUNT(*) as real_command_count
+      FROM commands
+      WHERE zone_id = :zone_id
+      AND type = 'IRRIGATION'
+      AND created_at > NOW() - INTERVAL '3 minutes'
+    params:
+      zone_id: ${zone_id}
+    save: real_commands_check
+
+  # Отключаем dry-run режим
+  - step: disable_scheduler_dry_run
+    type: api_post
+    endpoint: /api/test-utils/scheduler/dry-run
+    payload:
+      enabled: false
+      zone_id: ${zone_id}
+    optional: true
+
+  # Ждем реального выполнения после отключения dry-run
+  - step: wait_for_real_execution
+    type: wait_until
+    condition: |
+      # Теперь должны быть реальные команды
+      from runner.steps.database import DatabaseStepExecutor
+      from runner.schema.variables import VariableResolver
+      resolver = VariableResolver(context)
+      db_exec = DatabaseStepExecutor(context.get('db'), resolver)
+      import asyncio
+      result = asyncio.run(db_exec.execute_db_step('database_query', {
+        'query': 'SELECT COUNT(*) as cmd_count FROM commands WHERE zone_id = :zone_id AND type = :cmd_type AND created_at > NOW() - INTERVAL \"2 minutes\"',
+        'params': {'zone_id': context['zone_id'], 'cmd_type': 'IRRIGATION'}
+      }))
+      result and result[0]['cmd_count'] >= 1
+    timeout: 120.0  # 2 минуты
+    interval: 15.0
+
+  # Проверяем, что теперь команды выполняются
+  - step: check_real_commands_after_dry_run
+    type: database_query
+    query: |
+      SELECT COUNT(*) as real_command_count
+      FROM commands
+      WHERE zone_id = :zone_id
+      AND type = 'IRRIGATION'
+      AND created_at > NOW() - INTERVAL '2 minutes'
+    params:
+      zone_id: ${zone_id}
+    save: real_commands_after
+
+assertions:
+  # Проверка 1: В dry-run режиме реальные команды не создавались
+  - name: no_real_commands_in_dry_run
+    type: json_assertion
+    data: ${real_commands_check}
+    expected:
+      - field: real_command_count
+        operator: equals
+        value: 0
+
+  # Проверка 2: После отключения dry-run команды создаются
+  - name: real_commands_after_dry_run_disabled
+    type: json_assertion
+    data: ${real_commands_after}
+    expected:
+      - field: real_command_count
+        operator: greater_than
+        value: 0
+
+  # Проверка 3: Dry-run логи были записаны
+  - name: dry_run_logs_exist
+    type: database_query
+    query: |
+      SELECT COUNT(*) as log_count
+      FROM scheduler_dry_run_logs
+      WHERE zone_id = :zone_id
+      AND schedule_id = :schedule_id
+      AND created_at > NOW() - INTERVAL '5 minutes'
+    params:
+      zone_id: ${zone_id}
+      schedule_id: ${schedule_id}
+    expected:
+      - field: log_count
+        operator: greater_than
+        value: 0
+
+  # Проверка 4: Dry-run логи содержат правильную информацию
+  - name: dry_run_logs_contain_schedule_info
+    type: database_query
+    query: |
+      SELECT
+        COUNT(CASE WHEN schedule_id IS NOT NULL THEN 1 END) as has_schedule_id,
+        COUNT(CASE WHEN command_type = 'IRRIGATION' THEN 1 END) as irrigation_commands
+      FROM scheduler_dry_run_logs
+      WHERE zone_id = :zone_id
+      AND created_at > NOW() - INTERVAL '5 minutes'
+    params:
+      zone_id: ${zone_id}
+    expected:
+      - field: has_schedule_id
+        operator: greater_than
+        value: 0
+      - field: irrigation_commands
+        operator: greater_than
+        value: 0
+
+cleanup:
+  - step: disable_schedule
+    type: api_patch
+    endpoint: /api/irrigation-schedules/${schedule_id}
+    payload:
+      enabled: false
+    optional: true
+
+  - step: delete_schedule
+    type: api_delete
+    endpoint: /api/irrigation-schedules/${schedule_id}
+    optional: true
+
+  - step: cleanup_dry_run_logs
+    type: database_execute
+    query: |
+      DELETE FROM scheduler_dry_run_logs
+      WHERE zone_id = :zone_id
+      AND created_at > NOW() - INTERVAL '1 hour'
+    params:
+      zone_id: ${zone_id}
+    optional: true
