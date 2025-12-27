@@ -124,6 +124,24 @@ const sampleZone = {
   name: 'Test Zone',
   status: 'RUNNING',
   description: 'Test Description',
+  activeGrowCycle: {
+    id: 101,
+    status: 'RUNNING',
+    started_at: '2025-01-27T10:00:00Z',
+    recipeRevision: {
+      recipe_id: 1,
+      recipe: { id: 1, name: 'Test Recipe' },
+    },
+    currentPhase: {
+      id: 11,
+      phase_index: 0,
+      name: 'Phase 1',
+    },
+    phases: [
+      { id: 11, phase_index: 0, name: 'Phase 1', duration_hours: 24 },
+      { id: 12, phase_index: 1, name: 'Phase 2', duration_hours: 24 },
+    ],
+  },
   recipeInstance: {
     recipe: { id: 1, name: 'Test Recipe' },
     current_phase_index: 0,
@@ -257,9 +275,11 @@ vi.mock('@/composables/useTelemetry', () => ({
 
 vi.mock('@/composables/useZones', () => ({
   useZones: () => ({
+    fetchZone: vi.fn(),
     pause: vi.fn(),
     resume: vi.fn(),
     nextPhase: vi.fn(),
+    reloadZone: vi.fn(),
     loading: { value: {} },
   }),
 }))
@@ -275,6 +295,7 @@ vi.mock('@/composables/useApi', () => ({
 
 vi.mock('@/composables/useWebSocket', () => ({
   useWebSocket: () => ({
+    subscribeToZoneCommands: vi.fn(() => () => {}),
     subscribe: vi.fn(),
     unsubscribe: vi.fn(),
     connectionState: { value: 'connected' },
@@ -289,6 +310,16 @@ vi.mock('@/composables/useErrorHandler', () => ({
 
 vi.mock('@/composables/useOptimisticUpdate', () => ({
   useOptimisticUpdate: () => ({
+    performUpdate: vi.fn(async (_id: string, options: any) => {
+      if (options?.applyUpdate) options.applyUpdate()
+      if (options?.syncWithServer) {
+        const result = await options.syncWithServer()
+        if (options?.onSuccess) options.onSuccess(result)
+        return result
+      }
+      if (options?.onSuccess) options.onSuccess({})
+      return {}
+    }),
     update: vi.fn(),
   }),
   createOptimisticZoneUpdate: vi.fn(),
@@ -676,4 +707,3 @@ describe('Zones/Show.vue', () => {
     expect(wrapper.text()).toBeTruthy()
   })
 })
-

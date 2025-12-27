@@ -26,14 +26,14 @@ actions:
 
   - step: set_zone_id
     type: set
-    test_zone_id: ${zones_response.data.data[0].id}
+    test_zone_id: 225  # zn-test-1
 
   - step: connect_websocket
     type: websocket_connect
 
   - step: subscribe_to_zone_channel
     type: websocket_subscribe
-    channel: private-hydro.zones.${test_zone_id}
+    channel: private-hydro.zones.225
 
   # Тест 2: Истёкший токен - автоматический re-auth
   - step: invalidate_auth_token

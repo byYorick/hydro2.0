@@ -17,22 +17,42 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 from urllib.parse import urlparse, urljoin
 
-from .api_client import APIClient, AuthenticationError
-from .auth_client import AuthClient
-from .ws_client import WSClient
-from .db_probe import DBProbe
-from .mqtt_probe import MQTTProbe
-from .assertions import Assertions, AssertionError
-from .reporting import TestReporter
+try:
+    # When run as module
+    from .api_client import APIClient, AuthenticationError
+    from .auth_client import AuthClient
+    from .ws_client import WSClient
+    from .db_probe import DBProbe
+    from .mqtt_probe import MQTTProbe
+    from .assertions import Assertions, AssertionError
+    from .reporting import TestReporter
 
-# New modular imports
-from .schema.validation import SchemaValidator
-from .schema.variables import VariableResolver
-from .steps.api import APIStepExecutor
-from .steps.websocket import WebSocketStepExecutor
-from .steps.database import DatabaseStepExecutor
-from .steps.mqtt import MQTTStepExecutor
-from .steps.waiting import WaitingStepExecutor
+    # New modular imports
+    from .schema.validation import SchemaValidator
+    from .schema.variables import VariableResolver
+    from .steps.api import APIStepExecutor
+    from .steps.websocket import WebSocketStepExecutor
+    from .steps.database import DatabaseStepExecutor
+    from .steps.mqtt import MQTTStepExecutor
+    from .steps.waiting import WaitingStepExecutor
+except ImportError:
+    # When run directly - use absolute imports
+    from api_client import APIClient, AuthenticationError
+    from auth_client import AuthClient
+    from ws_client import WSClient
+    from db_probe import DBProbe
+    from mqtt_probe import MQTTProbe
+    from assertions import Assertions, AssertionError
+    from reporting import TestReporter
+
+    # New modular imports
+    from schema.validation import SchemaValidator
+    from schema.variables import VariableResolver
+    from steps.api import APIStepExecutor
+    from steps.websocket import WebSocketStepExecutor
+    from steps.database import DatabaseStepExecutor
+    from steps.mqtt import MQTTStepExecutor
+    from steps.waiting import WaitingStepExecutor
 
 logging.basicConfig(
     level=logging.INFO,
@@ -557,6 +577,8 @@ class E2ERunner:
             # Fallback to old logic if not initialized
             return self._resolve_variables_legacy(value, required_vars)
 
+        # Update VariableResolver context to current context
+        self.variable_resolver.context = self.context
         return self.variable_resolver.resolve_variables(value, required_vars)
 
     def _resolve_variables_legacy(self, value: Any, required_vars: Optional[List[str]] = None) -> Any:
@@ -993,7 +1015,8 @@ class E2ERunner:
         step_type_mapping = {
             "database.query": "database_query",
             "database.execute": "database_execute",
-            "db.wait": "db_wait"
+            "db.wait": "db_wait",
+            "wait_for_telemetry": "wait_for_telemetry"
         }
 
         new_step_type = step_type_mapping.get(step_type, step_type)
@@ -2066,12 +2089,15 @@ class E2ERunner:
         if a_type == "database_query":
             query = self._resolve_variables(assertion.get("query"))
             params = self._resolve_variables(assertion.get("params", {}))
+            logger.info(f"Database assertion '{assertion.get('name', 'unknown')}' params: {params}")
             self._validate_critical_params(params)
             rows = await self.db.wait(query, params=params, timeout=float(assertion.get("timeout", 10.0)), expected_rows=assertion.get("expected_rows"))
+            logger.info(f"Database assertion '{assertion.get('name', 'unknown')}' found {len(rows)} rows")
             expected = assertion.get("expected", [])
             if not rows:
-                raise AssertionError("No rows returned for database_query assertion")
+                raise AssertionError(f"No rows returned for database_query assertion '{assertion.get('name', 'unknown')}'")
             row0 = rows[0]
+            logger.info(f"Database assertion '{assertion.get('name', 'unknown')}' row0: {row0}")
             self._assert_row_expected(row0, expected)
             return
 

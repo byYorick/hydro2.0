@@ -24,12 +24,12 @@
           </div>
           <div class="flex flex-wrap items-center gap-2 justify-end">
             <template v-if="canOperateZone">
-              <Button size="sm" variant="secondary" @click="onToggle" :disabled="loading.toggle" class="flex-1 sm:flex-none min-w-[140px]" :data-testid="zone.status === 'PAUSED' ? 'zone-resume-btn' : 'zone-pause-btn'">
+              <Button size="sm" variant="secondary" @click="onToggle" :disabled="loading.toggle" class="flex-1 sm:flex-none min-w-[140px]" :data-testid="toggleStatus === 'PAUSED' ? 'zone-resume-btn' : 'zone-pause-btn'">
                 <template v-if="loading.toggle">
                   <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
                 </template>
-                <span class="hidden sm:inline">{{ zone.status === 'PAUSED' ? 'Возобновить' : 'Приостановить' }}</span>
-                <span class="sm:hidden">{{ zone.status === 'PAUSED' ? '▶' : '⏸' }}</span>
+                <span class="hidden sm:inline">{{ toggleStatus === 'PAUSED' ? 'Возобновить' : 'Приостановить' }}</span>
+                <span class="sm:hidden">{{ toggleStatus === 'PAUSED' ? '▶' : '⏸' }}</span>
               </Button>
               <Button size="sm" variant="outline" @click="openActionModal('FORCE_IRRIGATION')" :disabled="loading.irrigate" class="flex-1 sm:flex-none" data-testid="force-irrigation-button">
                 <template v-if="loading.irrigate">
@@ -658,7 +658,7 @@ const { showToast } = useToast()
 // Инициализация composables с Toast
 const { sendZoneCommand, reloadZoneAfterCommand, updateCommandStatus, pendingCommands } = useCommands(showToast)
 const { fetchHistory } = useTelemetry(showToast)
-const { reloadZone } = useZones(showToast)
+const { fetchZone, reloadZone } = useZones(showToast)
 const { api } = useApi(showToast)
 const { subscribeToZoneCommands } = useWebSocket(showToast)
 const { handleError } = useErrorHandler(showToast)
@@ -1395,18 +1395,24 @@ const variant = computed<'success' | 'neutral' | 'warning' | 'danger'>(() => {
   }
 })
 
+const toggleStatus = computed(() => {
+  return activeGrowCycle.value?.status || zone.value.status
+})
+
 async function onToggle(): Promise<void> {
   if (!zoneId.value) return
   
-  // Получаем актуальное состояние зоны из store или props
-  const currentZone = zone.value
-  const currentStatus = currentZone?.status
+  const currentCycle = activeGrowCycle.value
+  if (!currentCycle?.id) {
+    showToast('Нет активного цикла для паузы или возобновления', 'error', TOAST_TIMEOUT.NORMAL)
+    return
+  }
   
-  // Определяем действие на основе актуального статуса
+  const currentStatus = toggleStatus.value
   const isPaused = currentStatus === 'PAUSED'
   const newStatus = isPaused ? 'RUNNING' : 'PAUSED'
   const action = isPaused ? 'resume' : 'pause'
-  const actionText = isPaused ? 'возобновлена' : 'приостановлена'
+  const actionText = isPaused ? 'возобновлен' : 'приостановлен'
   
   setLoading('toggle', true)
   
@@ -1414,7 +1420,7 @@ async function onToggle(): Promise<void> {
   const optimisticUpdate = createOptimisticZoneUpdate(
     zonesStore,
     zoneId.value,
-    { status: newStatus }
+    { activeGrowCycle: { ...currentCycle, status: newStatus } }
   )
   
   try {
@@ -1425,41 +1431,20 @@ async function onToggle(): Promise<void> {
         applyUpdate: optimisticUpdate.applyUpdate,
         rollback: optimisticUpdate.rollback,
         syncWithServer: async () => {
-          // Выполняем операцию на сервере
-          const response = await api.post(`/api/zones/${zoneId.value}/${action}`, {})
-          
-          // Обновляем зону в store с данными с сервера
-          const updatedZone = extractData<Zone>(response.data) || currentZone
-          
-          if (updatedZone.id) {
-            zonesStore.upsert(updatedZone, false)
-          }
-          
-          return updatedZone
+          await api.post(`/api/grow-cycles/${currentCycle.id}/${action}`, {})
+          return await fetchZone(zoneId.value, true)
         },
-        onSuccess: async () => {
-          showToast(`Зона успешно ${actionText}`, 'success', TOAST_TIMEOUT.NORMAL)
-          // Обновляем зону через API и store вместо reload для сохранения состояния
-          if (zoneId.value) {
-            try {
-              // Используем уже инициализированный useZones composable
-              const { fetchZone } = useZones(showToast)
-              const updatedZone = await fetchZone(zoneId.value, true)
-              if (updatedZone?.id) {
-                zonesStore.upsert(updatedZone, false)
-              }
-            } catch (error) {
-              logger.error('[Zones/Show] Failed to fetch updated zone after toggle:', error)
-              // Fallback к частичному reload при ошибке
-              reloadZone(zoneId.value, ['zone'])
-            }
+        onSuccess: async (updatedZone) => {
+          showToast(`Цикл успешно ${actionText}`, 'success', TOAST_TIMEOUT.NORMAL)
+          if (updatedZone?.id) {
+            zonesStore.upsert(updatedZone, false)
           }
         },
         onError: async (error) => {
           logger.error('Failed to toggle zone:', error)
           let errorMessage = ERROR_MESSAGES.UNKNOWN
           
-          // Проверяем, если это ошибка 422 (Zone is not paused/paused), синхронизируем статус
+          // Проверяем, если это ошибка 422 (Cycle is not paused/running), синхронизируем статус
           const is422Error = error && typeof error === 'object' && 'response' in error && 
                            (error as any).response?.status === 422
           
@@ -1472,7 +1457,7 @@ async function onToggle(): Promise<void> {
             }
           }
           
-          showToast(`Ошибка при изменении статуса зоны: ${errorMessage}`, 'error', TOAST_TIMEOUT.LONG)
+          showToast(`Ошибка при изменении статуса цикла: ${errorMessage}`, 'error', TOAST_TIMEOUT.LONG)
           
           // При ошибке 422 откладываем синхронизацию, чтобы избежать rate limiting
           // Используем setTimeout с задержкой и reloadZone, который делает fallback к Inertia reload

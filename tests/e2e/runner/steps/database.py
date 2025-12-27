@@ -43,8 +43,10 @@ class DatabaseStepExecutor:
         params = config.get("params", {})
 
         # Resolve variables in query and params
+        logger.info(f"Database executor _execute_database_query: resolving params {params}, context has zone_id: {'zone_id' in self.variable_resolver.context}")
         resolved_query = self.variable_resolver.resolve_variables(query)
         resolved_params = self.variable_resolver.resolve_variables(params)
+        logger.info(f"Database executor _execute_database_query: resolved params {resolved_params}")
 
         # Validate critical params
         self.variable_resolver.validate_critical_params(resolved_params)
@@ -73,8 +75,10 @@ class DatabaseStepExecutor:
         expected_rows = config.get("expected_rows")
 
         # Resolve variables in query and params
+        logger.info(f"Database executor _execute_db_wait: resolving params {params}, context has zone_id: {'zone_id' in self.variable_resolver.context}")
         resolved_query = self.variable_resolver.resolve_variables(query)
         resolved_params = self.variable_resolver.resolve_variables(params)
+        logger.info(f"Database executor _execute_db_wait: resolved params {resolved_params}")
 
         # Validate critical params
         self.variable_resolver.validate_critical_params(resolved_params)

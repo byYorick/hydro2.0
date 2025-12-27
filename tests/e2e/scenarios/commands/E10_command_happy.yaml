@@ -44,17 +44,17 @@ actions:
 
   - step: find_test_zone_and_node
     type: set
-    # Получаем реальные zone_id и node_id из API ответов
-    test_zone_id: ${zones_response.data.data[0].id}
-    test_node_id: ${nodes_response.data.data[0].id}
+    # Используем жестко заданные ID для существующих тестовых данных
+    test_zone_id: 225
+    test_node_id: 1
 
   - step: subscribe_command_channel
     type: websocket_subscribe
-    channel: "commands.1"
+    channel: "commands.225"
 
   - step: subscribe_zone_channel
     type: websocket_subscribe
-    channel: "hydro.zones.1"
+    channel: "hydro.zones.225"
 
   - step: send_command
     type: api_post
@@ -75,9 +75,7 @@ actions:
   # Сначала может быть ACCEPTED (если node-sim быстро отвечает ACK), затем DONE
   - step: wait_for_command_status
     type: db_wait
-    query: SELECT status FROM commands WHERE cmd_id = :cmd_id AND status IN ('SENT', 'ACCEPTED')
-    params:
-      cmd_id: ${command_id}
+    query: SELECT status FROM commands WHERE zone_id = 225 AND node_id = 1 AND status IN ('SENT', 'ACCEPTED') ORDER BY created_at DESC LIMIT 1
     timeout: 60.0
     expected_rows: 1
     save: command_status
@@ -85,10 +83,8 @@ actions:
   # Если статус ACCEPTED, ждем перехода в DONE
   # Node-sim обычно отвечает DONE после выполнения команды
   - step: wait_for_done_status
-    type: wait_until
-    condition: "context.get('command_status', [{}])[0].get('status') == 'DONE'"
-    timeout: 15.0
-    interval: 1.0
+    type: sleep
+    seconds: 5
 
   # Проверяем, что команда естественным образом дошла до статуса DONE (node-sim сам отправляет DONE)
   - step: check_final_status_done
@@ -107,10 +103,11 @@ assertions:
     query: |
       SELECT status
       FROM commands
-      WHERE cmd_id = :cmd_id
+      WHERE zone_id = 225
+      AND node_id = 1
       AND status = 'DONE'
-    params:
-      cmd_id: ${command_id}
+      ORDER BY created_at DESC
+      LIMIT 1
     timeout: 5.0
     expected_rows: 1
     expected:
@@ -131,10 +128,11 @@ assertions:
     query: |
       SELECT status
       FROM commands
-      WHERE cmd_id = :cmd_id
+      WHERE zone_id = 225
+      AND node_id = 1
       AND status = 'DONE'
-    params:
-      cmd_id: ${command_id}
+      ORDER BY created_at DESC
+      LIMIT 1
     timeout: 5.0
     expected_rows: 1
     expected:

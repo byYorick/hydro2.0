@@ -1,149 +1,175 @@
 {
-  "test_suite": "E00_api_smoke",
-  "generated_at": "2025-12-26T16:41:53.824931",
+  "test_suite": "E01_bootstrap",
+  "generated_at": "2025-12-27T17:14:34.259258",
   "test_cases": [
     {
-      "name": "check_health",
+      "name": "start_node_simulator",
       "status": "passed",
-      "duration": 0.13153362274169922,
+      "duration": 5.708674907684326,
       "error_message": null,
       "steps": [
         {
-          "name": "check_health",
+          "name": "start_node_simulator",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-26T16:41:52.961112"
+      "timestamp": "2025-12-27T17:14:18.720294"
     },
     {
-      "name": "check_login_endpoint",
+      "name": "get_zones",
       "status": "passed",
-      "duration": 0.2803010940551758,
+      "duration": 0.07133340835571289,
       "error_message": null,
       "steps": [
         {
-          "name": "check_login_endpoint",
+          "name": "get_zones",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-26T16:41:53.241434"
+      "timestamp": "2025-12-27T17:14:18.791650"
     },
     {
-      "name": "check_zones_protected",
+      "name": "get_nodes",
       "status": "passed",
-      "duration": 0.08543276786804199,
+      "duration": 0.05802106857299805,
       "error_message": null,
       "steps": [
         {
-          "name": "check_zones_protected",
+          "name": "get_nodes",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-26T16:41:53.326892"
+      "timestamp": "2025-12-27T17:14:18.849684"
     },
     {
-      "name": "check_nodes_protected",
+      "name": "find_test_zone_and_node",
       "status": "passed",
-      "duration": 0.141387939453125,
+      "duration": 3.337860107421875e-06,
       "error_message": null,
       "steps": [
         {
-          "name": "check_nodes_protected",
+          "name": "find_test_zone_and_node",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-26T16:41:53.468324"
+      "timestamp": "2025-12-27T17:14:18.849698"
     },
     {
-      "name": "check_cycles_protected",
+      "name": "find_zone_by_uid",
       "status": "passed",
-      "duration": 0.09921789169311523,
+      "duration": 0.07019782066345215,
       "error_message": null,
       "steps": [
         {
-          "name": "check_cycles_protected",
+          "name": "find_zone_by_uid",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-26T16:41:53.567634"
+      "timestamp": "2025-12-27T17:14:18.919903"
     },
     {
-      "name": "check_greenhouses_protected",
+      "name": "find_node_by_uid",
       "status": "passed",
-      "duration": 0.0922694206237793,
+      "duration": 0.05729794502258301,
       "error_message": null,
       "steps": [
         {
-          "name": "check_greenhouses_protected",
+          "name": "find_node_by_uid",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-26T16:41:53.659933"
+      "timestamp": "2025-12-27T17:14:18.977215"
     },
     {
-      "name": "check_commands_protected",
+      "name": "set_zone_and_node_ids",
       "status": "passed",
-      "duration": 0.16429376602172852,
+      "duration": 2.384185791015625e-06,
       "error_message": null,
       "steps": [
         {
-          "name": "check_commands_protected",
+          "name": "set_zone_and_node_ids",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-26T16:41:53.824250"
+      "timestamp": "2025-12-27T17:14:18.977228"
     },
     {
-      "name": "health_endpoint_works",
+      "name": "debug_variables",
       "status": "passed",
-      "duration": 1.9550323486328125e-05,
+      "duration": 1.430511474609375e-06,
       "error_message": null,
       "steps": [
         {
-          "name": "health_endpoint_works",
+          "name": "debug_variables",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-26T16:41:53.824293"
+      "timestamp": "2025-12-27T17:14:18.977233"
     },
     {
-      "name": "no_500_errors_on_endpoints",
+      "name": "wait_for_telemetry_publish",
       "status": "passed",
-      "duration": 0.0002372264862060547,
+      "duration": 5.0050928592681885,
       "error_message": null,
       "steps": [
         {
-          "name": "no_500_errors_on_endpoints",
+          "name": "wait_for_telemetry_publish",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-26T16:41:53.824537"
+      "timestamp": "2025-12-27T17:14:23.982333"
     },
     {
-      "name": "login_returns_validation_error",
+      "name": "telemetry_in_db",
       "status": "passed",
-      "duration": 3.4332275390625e-05,
+      "duration": 0.008283853530883789,
       "error_message": null,
       "steps": [
         {
-          "name": "login_returns_validation_error",
+          "name": "telemetry_in_db",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-26T16:41:53.824579"
+      "timestamp": "2025-12-27T17:14:23.990640"
+    },
+    {
+      "name": "node_status_online",
+      "status": "passed",
+      "duration": 0.0019268989562988281,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "node_status_online",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-27T17:14:23.992573"
+    },
+    {
+      "name": "node_attached_to_zone",
+      "status": "passed",
+      "duration": 0.00040268898010253906,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "node_attached_to_zone",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-27T17:14:23.992982"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E00_api_smoke": {
+    "E01_bootstrap": {
       "ws_messages": [],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
-        "zone_id": 1,
-        "zone_uid": "zn-test-1",
+        "zone_id": 225,
         "node_id": 1,
-        "node_uid": "nd-ph-esp32una"
+        "debug_zone_id": "${zone_id}",
+        "debug_node_id": "${node_id}"
       }
     }
   }
