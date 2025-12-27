@@ -20,6 +20,7 @@ __pycache__/
 # IDE
 .idea/
 .vscode/
+.cache/clangd/
 
 # CMake / ESP-IDF
 build/
@@ -32,5 +33,4 @@ CMakeBuilds.json
 
 # Environment
 .env
-
 
