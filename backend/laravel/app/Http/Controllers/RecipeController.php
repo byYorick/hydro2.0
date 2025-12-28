@@ -12,8 +12,7 @@ class RecipeController extends Controller
 {
     public function __construct(
         private RecipeService $recipeService
-    ) {
-    }
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -21,22 +20,23 @@ class RecipeController extends Controller
         $validated = $request->validate([
             'search' => ['nullable', 'string', 'max:255'],
         ]);
-        
+
         $query = Recipe::query()->with([
             'latestPublishedRevision.phases',
             'latestDraftRevision.phases',
+            'plants:id,name',
         ]);
-        
+
         // Поиск по имени или описанию
         if (isset($validated['search']) && $validated['search']) {
             // Экранируем специальные символы LIKE для защиты от SQL injection
             $searchTerm = addcslashes($validated['search'], '%_');
             $query->where(function ($q) use ($searchTerm) {
                 $q->where('name', 'ILIKE', "%{$searchTerm}%")
-                  ->orWhere('description', 'ILIKE', "%{$searchTerm}%");
+                    ->orWhere('description', 'ILIKE', "%{$searchTerm}%");
             });
         }
-        
+
         $items = $query->latest('id')->paginate(25);
 
         $items->getCollection()->transform(function (Recipe $recipe) {
@@ -51,6 +51,10 @@ class RecipeController extends Controller
                 'phases_count' => $revisionForCount?->phases?->count() ?? 0,
                 'latest_published_revision_id' => $published?->id,
                 'latest_draft_revision_id' => $draft?->id,
+                'plants' => $recipe->plants->map(fn ($plant) => [
+                    'id' => $plant->id,
+                    'name' => $plant->name,
+                ]),
             ];
         });
 
@@ -62,9 +66,11 @@ class RecipeController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
+            'plant_id' => ['required', 'integer', 'exists:plants,id'],
         ]);
 
-        $recipe = $this->recipeService->create($data);
+        $recipe = $this->recipeService->create($data, $data['plant_id']);
+
         return response()->json(['status' => 'ok', 'data' => $recipe], Response::HTTP_CREATED);
     }
 
@@ -73,6 +79,7 @@ class RecipeController extends Controller
         $recipe->load([
             'latestPublishedRevision.phases',
             'latestDraftRevision.phases',
+            'plants:id,name',
         ]);
 
         $recipeArray = $recipe->toArray();
@@ -81,6 +88,10 @@ class RecipeController extends Controller
         $recipeArray['phases'] = $recipe->latestDraftRevision?->phases?->toArray()
             ?? $recipe->latestPublishedRevision?->phases?->toArray()
             ?? [];
+        $recipeArray['plants'] = $recipe->plants->map(fn ($plant) => [
+            'id' => $plant->id,
+            'name' => $plant->name,
+        ])->toArray();
 
         return response()->json(['status' => 'ok', 'data' => $recipeArray]);
     }
@@ -100,7 +111,7 @@ class RecipeController extends Controller
         $stageMap = $recipe->metadata['stage_map'] ?? null;
 
         // Если нет stage-map, генерируем автоматически на основе названий фаз
-        if (!$stageMap && $phases->count() > 0) {
+        if (! $stageMap && $phases->count() > 0) {
             $stageMap = [];
             foreach ($phases as $phase) {
                 $stageMap[] = [
@@ -110,7 +121,7 @@ class RecipeController extends Controller
                 ];
             }
         }
-        
+
         return response()->json([
             'status' => 'ok',
             'data' => [
@@ -150,7 +161,7 @@ class RecipeController extends Controller
     private function inferStageFromPhaseName(string $phaseName, int $phaseIndex): string
     {
         $normalized = strtolower(trim($phaseName));
-        
+
         $mapping = [
             'planting' => ['посадка', 'посев', 'germination', 'germ', 'seed', 'семена'],
             'rooting' => ['укоренение', 'rooting', 'root', 'seedling', 'рассада', 'ростки'],
@@ -169,6 +180,7 @@ class RecipeController extends Controller
 
         // Fallback по индексу
         $defaultStages = ['planting', 'rooting', 'veg', 'flowering', 'harvest'];
+
         return $defaultStages[min($phaseIndex, count($defaultStages) - 1)] ?? 'veg';
     }
 
@@ -177,8 +189,10 @@ class RecipeController extends Controller
         $data = $request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
+            'plant_id' => ['sometimes', 'integer', 'exists:plants,id'],
         ]);
         $recipe = $this->recipeService->update($recipe, $data);
+
         return response()->json(['status' => 'ok', 'data' => $recipe]);
     }
 
@@ -186,6 +200,7 @@ class RecipeController extends Controller
     {
         try {
             $this->recipeService->delete($recipe);
+
             return response()->json(['status' => 'ok']);
         } catch (\DomainException $e) {
             return response()->json([
@@ -195,4 +210,3 @@ class RecipeController extends Controller
         }
     }
 }
-

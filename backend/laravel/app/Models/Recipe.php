@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Recipe extends Model
@@ -68,30 +69,14 @@ class Recipe extends Model
             ->orderBy('revision_number', 'desc');
     }
 
-    // Legacy методы (deprecated, будут удалены после полного перехода)
     /**
-     * @deprecated Используйте revisions() вместо phases()
+     * Растения, с которыми связан рецепт
      */
-    public function phases(): HasMany
+    public function plants(): BelongsToMany
     {
-        return $this->hasMany(RecipePhase::class);
-    }
-
-    /**
-     * @deprecated Используйте growCycles через revisions
-     */
-    public function zoneRecipeInstances(): HasMany
-    {
-        return $this->hasMany(\App\Models\ZoneRecipeInstance::class);
-    }
-
-    /**
-     * @deprecated Используйте stage_template_id в recipe_revision_phases
-     */
-    public function stageMaps(): HasMany
-    {
-        return $this->hasMany(RecipeStageMap::class)->orderBy('order_index');
+        return $this
+            ->belongsToMany(Plant::class, 'plant_recipe')
+            ->withPivot(['season', 'site_type', 'is_default', 'metadata'])
+            ->withTimestamps();
     }
 }
-
-

@@ -11,6 +11,10 @@ class RecipeRevisionPhase extends Model
 {
     use HasFactory;
 
+    protected $appends = [
+        'targets',
+    ];
+
     protected $fillable = [
         'recipe_revision_id',
         'stage_template_id',
@@ -108,5 +112,32 @@ class RecipeRevisionPhase extends Model
     {
         return $this->hasMany(GrowCycleTransition::class, 'to_phase_id');
     }
-}
 
+    /**
+     * Сформировать совместимые targets для фронтенда (legacy-формат)
+     */
+    public function getTargetsAttribute(): array
+    {
+        $targets = [];
+
+        $phMin = $this->ph_min ?? $this->ph_target;
+        $phMax = $this->ph_max ?? $this->ph_target;
+        if ($phMin !== null || $phMax !== null) {
+            $targets['ph'] = [
+                'min' => $phMin,
+                'max' => $phMax,
+            ];
+        }
+
+        $ecMin = $this->ec_min ?? $this->ec_target;
+        $ecMax = $this->ec_max ?? $this->ec_target;
+        if ($ecMin !== null || $ecMax !== null) {
+            $targets['ec'] = [
+                'min' => $ecMin,
+                'max' => $ecMax,
+            ];
+        }
+
+        return $targets;
+    }
+}

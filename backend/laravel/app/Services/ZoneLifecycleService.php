@@ -3,10 +3,7 @@
 namespace App\Services;
 
 use App\Enums\GrowCycleStatus;
-use App\Helpers\ZoneAccessHelper;
 use App\Models\Zone;
-use App\Services\ZoneService;
-use Illuminate\Support\Facades\Log;
 
 class ZoneLifecycleService
 {
@@ -15,40 +12,11 @@ class ZoneLifecycleService
     ) {}
 
     /**
-     * Присоединить рецепт к зоне
-     */
-    public function attachRecipe(Zone $zone, int $recipeId, ?\DateTime $startAt = null)
-    {
-        return $this->zoneService->attachRecipe($zone, $recipeId, $startAt);
-    }
-
-    /**
-     * Изменить фазу зоны
-     */
-    public function changePhase(Zone $zone, int $phaseIndex): void
-    {
-        $this->zoneService->changePhase($zone, $phaseIndex);
-    }
-
-    /**
-     * Перейти к следующей фазе
-     */
-    public function nextPhase(Zone $zone): void
-    {
-        if (!$zone->activeGrowCycle) {
-            throw new \DomainException('No active grow cycle found for this zone');
-        }
-
-        $currentPhaseIndex = $zone->activeGrowCycle->current_phase_index ?? 0;
-        $this->changePhase($zone, $currentPhaseIndex + 1);
-    }
-
-    /**
      * Приостановить зону
      */
     public function pause(Zone $zone): void
     {
-        if (!$zone->activeGrowCycle) {
+        if (! $zone->activeGrowCycle) {
             throw new \DomainException('No active grow cycle found for this zone');
         }
 
@@ -64,7 +32,7 @@ class ZoneLifecycleService
      */
     public function resume(Zone $zone): void
     {
-        if (!$zone->activeGrowCycle) {
+        if (! $zone->activeGrowCycle) {
             throw new \DomainException('No active grow cycle found for this zone');
         }
 
@@ -80,7 +48,7 @@ class ZoneLifecycleService
      */
     public function harvest(Zone $zone): void
     {
-        if (!$zone->activeGrowCycle) {
+        if (! $zone->activeGrowCycle) {
             throw new \DomainException('No active grow cycle found for this zone');
         }
 
@@ -95,8 +63,8 @@ class ZoneLifecycleService
         // Проверяем готовность зоны
         $readiness = app(\App\Services\ZoneReadinessService::class)->checkZoneReadiness($zone);
 
-        if (!$readiness['ready']) {
-            throw new \DomainException('Zone is not ready to start: ' . implode(', ', $readiness['errors']));
+        if (! $readiness['ready']) {
+            throw new \DomainException('Zone is not ready to start: '.implode(', ', $readiness['errors']));
         }
 
         \Illuminate\Support\Facades\DB::transaction(function () use ($zone, $readiness) {

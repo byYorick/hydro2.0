@@ -5,11 +5,11 @@ use App\Http\Controllers\ProfileController;
 use App\Models\Alert;
 use App\Models\DeviceNode;
 use App\Models\Greenhouse;
+use App\Models\GrowCycle;
 use App\Models\Recipe;
 use App\Models\SystemLog;
 use App\Models\TelemetryLast;
 use App\Models\Zone;
-use App\Models\GrowCycle;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Broadcast;
@@ -483,7 +483,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                                 $zoneQuery->whereIn('id', $accessibleZoneIds ?: [0]);
                             })
                             // ИЛИ теплицы без зон (чтобы новые теплицы тоже отображались)
-                            ->orWhereDoesntHave('zones');
+                                ->orWhereDoesntHave('zones');
                         });
                     }
                     $greenhouses = $greenhousesQuery
@@ -624,21 +624,21 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
     Route::get('/greenhouses', function () {
         $user = auth()->user();
         $accessibleZoneIds = \App\Helpers\ZoneAccessHelper::getAccessibleZoneIds($user);
-        
+
         try {
             $greenhousesQuery = Greenhouse::query()
                 ->select(['id', 'uid', 'name', 'type', 'description', 'timezone', 'created_at']);
-            
+
             if (! $user->isAdmin()) {
                 // Показываем все теплицы, включая те, у которых ещё нет зон
                 $greenhousesQuery->where(function ($q) use ($accessibleZoneIds) {
                     $q->whereHas('zones', function ($zoneQuery) use ($accessibleZoneIds) {
                         $zoneQuery->whereIn('id', $accessibleZoneIds ?: [0]);
                     })
-                    ->orWhereDoesntHave('zones');
+                        ->orWhereDoesntHave('zones');
                 });
             }
-            
+
             $greenhouses = $greenhousesQuery
                 ->withCount([
                     'zones' => function ($q) use ($user, $accessibleZoneIds) {
@@ -662,7 +662,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
             ]);
             $greenhouses = collect([]);
         }
-        
+
         return Inertia::render('Greenhouses/Index', [
             'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
             'greenhouses' => $greenhouses,
@@ -714,7 +714,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 ->select([
                     'sensors.zone_id',
                     'sensors.type as metric_type',
-                    'telemetry_last.last_value as value'
+                    'telemetry_last.last_value as value',
                 ])
                 ->get();
 
@@ -828,7 +828,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                     ->select([
                         'sensors.zone_id',
                         'sensors.type as metric_type',
-                        'telemetry_last.last_value as value'
+                        'telemetry_last.last_value as value',
                     ])
                     ->get();
 
@@ -962,7 +962,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                 ->whereNotNull('sensors.zone_id')
                 ->select([
                     'sensors.type as metric_type',
-                    'telemetry_last.last_value as value'
+                    'telemetry_last.last_value as value',
                 ])
                 ->get()
                 ->mapWithKeys(function ($item) {
@@ -1080,7 +1080,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                             if (isset($subs['ph']['enabled']) && $subs['ph']['enabled'] === true && isset($subs['ph']['targets']) && is_array($subs['ph']['targets'])) {
                                 $t = $subs['ph']['targets'];
                                 if (isset($t['min']) && isset($t['max'])) {
-                                    $parts[] = sprintf('pH %.1f–%.1f', (float)$t['min'], (float)$t['max']);
+                                    $parts[] = sprintf('pH %.1f–%.1f', (float) $t['min'], (float) $t['max']);
                                 }
                             }
 
@@ -1088,7 +1088,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                             if (isset($subs['ec']['enabled']) && $subs['ec']['enabled'] === true && isset($subs['ec']['targets']) && is_array($subs['ec']['targets'])) {
                                 $t = $subs['ec']['targets'];
                                 if (isset($t['min']) && isset($t['max'])) {
-                                    $parts[] = sprintf('EC %.1f–%.1f', (float)$t['min'], (float)$t['max']);
+                                    $parts[] = sprintf('EC %.1f–%.1f', (float) $t['min'], (float) $t['max']);
                                 }
                             }
 
@@ -1096,7 +1096,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                             if (isset($subs['climate']['enabled']) && $subs['climate']['enabled'] === true && isset($subs['climate']['targets']) && is_array($subs['climate']['targets'])) {
                                 $t = $subs['climate']['targets'];
                                 if (isset($t['temperature']) && isset($t['humidity'])) {
-                                    $parts[] = sprintf('Климат t=%.1f°C, RH=%.0f%%', (float)$t['temperature'], (float)$t['humidity']);
+                                    $parts[] = sprintf('Климат t=%.1f°C, RH=%.0f%%', (float) $t['temperature'], (float) $t['humidity']);
                                 }
                             }
 
@@ -1104,7 +1104,7 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                             if (isset($subs['lighting']['enabled']) && $subs['lighting']['enabled'] === true && isset($subs['lighting']['targets']) && is_array($subs['lighting']['targets'])) {
                                 $t = $subs['lighting']['targets'];
                                 if (isset($t['hours_on']) && isset($t['hours_off'])) {
-                                    $parts[] = sprintf('Свет %.1fч / пауза %.1fч', (float)$t['hours_on'], (float)$t['hours_off']);
+                                    $parts[] = sprintf('Свет %.1fч / пауза %.1fч', (float) $t['hours_on'], (float) $t['hours_off']);
                                 }
                             }
 
@@ -1112,16 +1112,16 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                             if (isset($subs['irrigation']['enabled']) && $subs['irrigation']['enabled'] === true && isset($subs['irrigation']['targets']) && is_array($subs['irrigation']['targets'])) {
                                 $t = $subs['irrigation']['targets'];
                                 if (isset($t['interval_minutes']) && isset($t['duration_seconds'])) {
-                                    $parts[] = sprintf('Полив каждые %d мин, %d с', (int)$t['interval_minutes'], (int)$t['duration_seconds']);
+                                    $parts[] = sprintf('Полив каждые %d мин, %d с', (int) $t['interval_minutes'], (int) $t['duration_seconds']);
                                 }
                             }
 
-                            if (!empty($parts)) {
+                            if (! empty($parts)) {
                                 $message = implode('; ', $parts);
                             }
                         }
 
-                        if (!$message) {
+                        if (! $message) {
                             $message = $event->type ?? '';
                         }
 
@@ -1279,12 +1279,12 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                     $query = DeviceNode::query()
                         ->select(['id', 'uid', 'zone_id', 'name', 'type', 'status', 'fw_version', 'last_seen_at'])
                         ->with('zone:id,name');
-                    
+
                     // Фильтруем по доступным нодам (кроме админов)
-                    if (!$user->isAdmin()) {
+                    if (! $user->isAdmin()) {
                         $query->whereIn('id', $accessibleNodeIds);
                     }
-                    
+
                     return $query->latest('id') // Сортируем по ID, чтобы новые ноды были сверху
                         ->get();
                 });
@@ -1294,12 +1294,12 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                     $query = DeviceNode::query()
                         ->select(['id', 'uid', 'zone_id', 'name', 'type', 'status', 'fw_version', 'last_seen_at'])
                         ->with('zone:id,name');
-                    
+
                     // Фильтруем по доступным нодам (кроме админов)
-                    if (!$user->isAdmin()) {
+                    if (! $user->isAdmin()) {
                         $query->whereIn('id', $accessibleNodeIds);
                     }
-                    
+
                     return $query->latest('id') // Сортируем по ID, чтобы новые ноды были сверху
                         ->get();
                 });
@@ -1821,8 +1821,20 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
         Route::get('/recipes', function () {
             $recipes = Recipe::query()
                 ->select(['id', 'name', 'description'])
-                ->withCount('phases')
-                ->get();
+                ->with(['revisions.phases'])
+                ->get()
+                ->map(function (Recipe $recipe) {
+                    $phasesCount = $recipe->revisions->sum(function ($revision) {
+                        return $revision->phases->count();
+                    });
+
+                    return [
+                        'id' => $recipe->id,
+                        'name' => $recipe->name,
+                        'description' => $recipe->description,
+                        'phases_count' => $phasesCount,
+                    ];
+                });
 
             return Inertia::render('Admin/Recipes', [
                 'auth' => ['user' => ['role' => auth()->user()->role ?? 'viewer']],
@@ -1858,7 +1870,7 @@ Route::middleware(['web', 'auth'])->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
-    
+
     /**
      * Monitoring - страница мониторинга системы
      *

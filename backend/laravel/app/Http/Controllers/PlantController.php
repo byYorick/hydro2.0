@@ -18,9 +18,7 @@ use Inertia\Response;
 
 class PlantController extends Controller
 {
-    public function __construct(private readonly ProfitabilityCalculator $profitability)
-    {
-    }
+    public function __construct(private readonly ProfitabilityCalculator $profitability) {}
 
     public function index(Request $request): Response|JsonResponse
     {
@@ -73,13 +71,17 @@ class PlantController extends Controller
     {
         $profitability = $this->profitability->calculatePlant($plant);
 
-        // Загружаем связанные рецепты с фазами
-        $plant->load(['recipes.phases' => function ($query) {
-            $query->orderBy('phase_index');
-        }]);
+        // Загружаем связанные рецепты с фазами ревизий
+        $plant->load([
+            'recipes.latestPublishedRevision.phases',
+            'recipes.latestDraftRevision.phases',
+        ]);
 
         // Формируем данные рецептов с фазами
         $recipes = $plant->recipes->map(function ($recipe) {
+            $revision = $recipe->latestPublishedRevision ?? $recipe->latestDraftRevision;
+            $phases = $revision?->phases ?? collect();
+
             return [
                 'id' => $recipe->id,
                 'name' => $recipe->name,
@@ -87,7 +89,7 @@ class PlantController extends Controller
                 'is_default' => $recipe->pivot->is_default ?? false,
                 'season' => $recipe->pivot->season,
                 'site_type' => $recipe->pivot->site_type,
-                'phases' => $recipe->phases->map(function ($phase) {
+                'phases' => $phases->map(function ($phase) {
                     return [
                         'id' => $phase->id,
                         'phase_index' => $phase->phase_index,
@@ -96,7 +98,7 @@ class PlantController extends Controller
                         'targets' => $phase->targets,
                     ];
                 })->sortBy('phase_index')->values(),
-                'phases_count' => $recipe->phases->count(),
+                'phases_count' => $phases->count(),
             ];
         });
 
@@ -136,13 +138,13 @@ class PlantController extends Controller
     public function store(StorePlantRequest $request)
     {
         $validated = $request->validated();
-        
+
         // Маппинг scientific_name -> species для обратной совместимости с тестами
-        if (isset($validated['scientific_name']) && !isset($validated['species'])) {
+        if (isset($validated['scientific_name']) && ! isset($validated['species'])) {
             $validated['species'] = $validated['scientific_name'];
             unset($validated['scientific_name']);
         }
-        
+
         $payload = $this->preparePayload($validated);
         $plant = Plant::create($payload);
 

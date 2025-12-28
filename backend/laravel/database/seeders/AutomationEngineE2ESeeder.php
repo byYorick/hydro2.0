@@ -2,25 +2,25 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Seeder;
-use App\Models\Greenhouse;
-use App\Models\Zone;
+use App\Models\ChannelBinding;
 use App\Models\DeviceNode;
+use App\Models\Greenhouse;
+use App\Models\GrowStageTemplate;
+use App\Models\InfrastructureInstance;
 use App\Models\NodeChannel;
+use App\Models\Plant;
 use App\Models\Recipe;
-use App\Models\RecipePhase;
-use App\Models\ZoneRecipeInstance;
-use App\Models\GrowCycle;
-use App\Models\GrowCycleStage;
-use App\Models\ZoneInfrastructure;
-use App\Models\ZoneChannelBinding;
+use App\Models\RecipeRevision;
+use App\Models\RecipeRevisionPhase;
+use App\Models\Zone;
+use App\Services\GrowCycleService;
 use Carbon\Carbon;
-use Illuminate\Support\Str;
+use Illuminate\Database\Seeder;
 
 /**
  * Seeder для E2E тестов Automation Engine.
  * Создает зону с полным набором capabilities, bindings и активным grow-cycle.
- * 
+ *
  * Зона соответствует UID из node-sim-config.yaml:
  * - gh_uid: gh-test-1
  * - zone_uid: zn-test-1
@@ -119,7 +119,7 @@ class AutomationEngineE2ESeeder extends Seeder
             );
         }
 
-        $this->command->info("✓ Channels created for node");
+        $this->command->info('✓ Channels created for node');
 
         // 5. Создаем actuators (каналы типа actuator)
         $actuators = [
@@ -146,7 +146,7 @@ class AutomationEngineE2ESeeder extends Seeder
             );
         }
 
-        $this->command->info("✓ Actuators created for node");
+        $this->command->info('✓ Actuators created for node');
 
         // 6. Создаем инфраструктуру зоны
         $infrastructure = [
@@ -167,33 +167,32 @@ class AutomationEngineE2ESeeder extends Seeder
         ];
 
         foreach ($infrastructure as $infraData) {
-            $infra = ZoneInfrastructure::firstOrCreate(
+            $infra = InfrastructureInstance::firstOrCreate(
                 [
-                    'zone_id' => $zone->id,
+                    'owner_type' => 'zone',
+                    'owner_id' => $zone->id,
                     'asset_type' => $infraData['asset_type'],
                 ],
-                array_merge($infraData, [
-                    'role' => $infraData['asset_type'],
-                ])
+                [
+                    'label' => $infraData['label'],
+                    'required' => $infraData['required'],
+                ]
             );
 
-            // Создаем bindings для required инфраструктуры
             if ($infraData['required']) {
                 $channel = NodeChannel::where('node_id', $node->id)
                     ->where('name', $infraData['asset_type'])
                     ->first();
 
                 if ($channel) {
-                    $direction = in_array($infraData['asset_type'], ['ph_sensor', 'ec_sensor', 'temperature_sensor', 'humidity_sensor', 'co2_sensor', 'water_level_sensor', 'flow_sensor']) 
-                        ? 'sensor' 
+                    $direction = in_array($infraData['asset_type'], ['ph_sensor', 'ec_sensor', 'temperature_sensor', 'humidity_sensor', 'co2_sensor', 'water_level_sensor', 'flow_sensor'])
+                        ? 'sensor'
                         : 'actuator';
-                    
-                    ZoneChannelBinding::firstOrCreate(
+
+                    ChannelBinding::firstOrCreate(
                         [
-                            'zone_id' => $zone->id,
-                            'asset_id' => $infra->id,
-                            'node_id' => $node->id,
-                            'channel' => $channel->name,
+                            'infrastructure_instance_id' => $infra->id,
+                            'node_channel_id' => $channel->id,
                         ],
                         [
                             'direction' => $direction,
@@ -204,123 +203,102 @@ class AutomationEngineE2ESeeder extends Seeder
             }
         }
 
-        $this->command->info("✓ Infrastructure and bindings created");
+        $this->command->info('✓ Infrastructure and bindings created');
 
-        // 7. Создаем рецепт с фазами
+        // 7. Создаем рецепт и ревизию с фазами
         $recipe = Recipe::firstOrCreate(
             ['name' => 'E2E Test Recipe'],
             [
                 'description' => 'Recipe for E2E automation engine tests',
-                'crop_type' => 'lettuce',
-                'duration_days' => 30,
             ]
         );
 
-        // Фаза 1: Germination
-        $phase1 = RecipePhase::firstOrCreate(
+        $plant = Plant::firstOrCreate([
+            'name' => 'E2E Test Plant',
+            'slug' => 'e2e-test-plant',
+        ]);
+
+        $recipe->plants()->syncWithoutDetaching([$plant->id]);
+
+        $revision = RecipeRevision::firstOrCreate([
+            'recipe_id' => $recipe->id,
+            'revision_number' => 1,
+        ], [
+            'status' => 'PUBLISHED',
+            'description' => 'E2E baseline revision',
+            'created_by' => 1,
+        ]);
+
+        $germinationTemplate = GrowStageTemplate::firstOrCreate([
+            'code' => 'GERMINATION',
+        ], [
+            'name' => 'Проращивание',
+            'order_index' => 0,
+            'default_duration_days' => 3,
+            'ui_meta' => ['color' => '#CDDC39', 'icon' => 'sprout'],
+        ]);
+
+        $vegTemplate = GrowStageTemplate::firstOrCreate([
+            'code' => 'VEG',
+        ], [
+            'name' => 'Вегетация',
+            'order_index' => 1,
+            'default_duration_days' => 14,
+            'ui_meta' => ['color' => '#2196F3', 'icon' => 'leaf'],
+        ]);
+
+        RecipeRevisionPhase::firstOrCreate(
             [
-                'recipe_id' => $recipe->id,
+                'recipe_revision_id' => $revision->id,
                 'phase_index' => 0,
             ],
             [
+                'stage_template_id' => $germinationTemplate->id,
                 'name' => 'Germination',
                 'duration_hours' => 72,
-                'targets' => [
-                    'ph' => ['min' => 5.8, 'max' => 6.2, 'target' => 6.0],
-                    'ec' => ['min' => 0.8, 'max' => 1.2, 'target' => 1.0],
-                    'air_temp_c' => ['min' => 20.0, 'max' => 24.0, 'target' => 22.0],
-                    'air_rh' => ['min' => 60.0, 'max' => 80.0, 'target' => 70.0],
-                    'co2_ppm' => ['min' => 400.0, 'max' => 800.0, 'target' => 600.0],
-                ],
+                'ph_target' => 6.0,
+                'ph_min' => 5.8,
+                'ph_max' => 6.2,
+                'ec_target' => 1.0,
+                'ec_min' => 0.8,
+                'ec_max' => 1.2,
+                'temp_air_target' => 22.0,
+                'humidity_target' => 70.0,
             ]
         );
 
-        // Фаза 2: Growth
-        $phase2 = RecipePhase::firstOrCreate(
+        RecipeRevisionPhase::firstOrCreate(
             [
-                'recipe_id' => $recipe->id,
+                'recipe_revision_id' => $revision->id,
                 'phase_index' => 1,
             ],
             [
+                'stage_template_id' => $vegTemplate->id,
                 'name' => 'Growth',
-                'duration_hours' => 336, // 14 days
-                'targets' => [
-                    'ph' => ['min' => 5.5, 'max' => 6.5, 'target' => 6.0],
-                    'ec' => ['min' => 1.2, 'max' => 1.8, 'target' => 1.5],
-                    'air_temp_c' => ['min' => 22.0, 'max' => 26.0, 'target' => 24.0],
-                    'air_rh' => ['min' => 55.0, 'max' => 75.0, 'target' => 65.0],
-                    'co2_ppm' => ['min' => 400.0, 'max' => 1000.0, 'target' => 800.0],
-                ],
+                'duration_hours' => 336,
+                'ph_target' => 6.0,
+                'ph_min' => 5.5,
+                'ph_max' => 6.5,
+                'ec_target' => 1.5,
+                'ec_min' => 1.2,
+                'ec_max' => 1.8,
+                'temp_air_target' => 24.0,
+                'humidity_target' => 65.0,
             ]
         );
 
-        $this->command->info("✓ Recipe and phases created");
+        $this->command->info('✓ Recipe revision and phases created');
 
-        // 8. Создаем экземпляр рецепта в зоне
-        $recipeInstance = ZoneRecipeInstance::firstOrCreate(
-            ['zone_id' => $zone->id],
-            [
-                'recipe_id' => $recipe->id,
-                'current_phase_index' => 1, // Активная фаза Growth
-                'started_at' => Carbon::now()->subDays(5),
-            ]
-        );
+        // 8. Создаем активный grow-cycle
+        $service = app(GrowCycleService::class);
+        $growCycle = $service->createCycle($zone, $revision, $plant->id, [
+            'start_immediately' => true,
+            'planting_at' => Carbon::now()->subDays(5),
+        ]);
 
-        $this->command->info("✓ Recipe instance created (phase: {$recipeInstance->current_phase_index})");
+        $this->command->info("✓ Grow cycle created: {$growCycle->id}");
 
-        // 9. Создаем активный grow-cycle со стадиями
-        $growCycle = GrowCycle::firstOrCreate(
-            [
-                'zone_id' => $zone->id,
-                'status' => 'RUNNING',
-            ],
-            [
-                'greenhouse_id' => $greenhouse->id,
-                'recipe_id' => $recipe->id,
-                'started_at' => Carbon::now()->subDays(5),
-                'planned_harvest_at' => Carbon::now()->addDays(25),
-            ]
-        );
-
-        // Создаем стадии для grow-cycle
-        $stages = [
-            [
-                'stage_index' => 0,
-                'name' => 'Germination',
-                'started_at' => Carbon::now()->subDays(5),
-                'planned_duration_hours' => 72,
-                'targets_override' => [
-                    'ph' => ['min' => 5.8, 'max' => 6.2, 'target' => 6.0],
-                    'ec' => ['min' => 0.8, 'max' => 1.2, 'target' => 1.0],
-                    'air_temp_c' => ['min' => 20.0, 'max' => 24.0, 'target' => 22.0],
-                ],
-            ],
-            [
-                'stage_index' => 1,
-                'name' => 'Growth',
-                'started_at' => Carbon::now()->subDays(2),
-                'planned_duration_hours' => 336,
-                'targets_override' => [
-                    'ph' => ['min' => 5.5, 'max' => 6.5, 'target' => 6.0],
-                    'ec' => ['min' => 1.2, 'max' => 1.8, 'target' => 1.5],
-                    'air_temp_c' => ['min' => 22.0, 'max' => 26.0, 'target' => 24.0],
-                ],
-            ],
-        ];
-
-        foreach ($stages as $stageData) {
-            GrowCycleStage::firstOrCreate(
-                [
-                    'grow_cycle_id' => $growCycle->id,
-                    'stage_index' => $stageData['stage_index'],
-                ],
-                $stageData
-            );
-        }
-
-        $this->command->info("✓ Grow cycle and stages created");
-
-        $this->command->info("=== E2E Automation Engine seed completed ===");
+        $this->command->info('=== E2E Automation Engine seed completed ===');
         $this->command->info("Zone ID: {$zone->id}");
         $this->command->info("Zone UID: {$zone->uid}");
         $this->command->info("Node UID: {$node->uid}");
@@ -328,4 +306,3 @@ class AutomationEngineE2ESeeder extends Seeder
         $this->command->info("Grow Cycle ID: {$growCycle->id}");
     }
 }
-

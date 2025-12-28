@@ -9,15 +9,14 @@ class GrowCyclePresenter
 {
     public function __construct(
         private GrowCycleService $growCycleService
-    ) {
-    }
+    ) {}
 
     public function buildCycleDto(GrowCycle $cycle): array
     {
-        $recipe = $cycle->recipe;
         $plantingAt = $cycle->planting_at ?? $cycle->started_at;
 
-        if (!$recipe || !$plantingAt) {
+        $revision = $cycle->recipeRevision;
+        if (! $revision || ! $plantingAt) {
             return [
                 'cycle' => [
                     'id' => $cycle->id,
@@ -26,44 +25,25 @@ class GrowCyclePresenter
             ];
         }
 
-        $stageMaps = $recipe->stageMaps()
-            ->with('stageTemplate')
-            ->orderBy('order_index')
-            ->get();
-
-        if ($stageMaps->isEmpty()) {
-            $this->growCycleService->ensureRecipeStageMap($recipe);
-            $stageMaps = $recipe->stageMaps()
-                ->with('stageTemplate')
-                ->orderBy('order_index')
-                ->get();
-        }
+        $timeline = $this->growCycleService->buildStageTimeline($revision);
+        $segments = $timeline['segments'];
+        $totalHours = $timeline['total_hours'];
 
         $plantingDate = Carbon::parse($plantingAt);
         $now = now();
-        $daysSincePlanting = $now->diffInDays($plantingDate);
+        $hoursSincePlanting = $now->diffInHours($plantingDate, false);
 
         $stages = [];
         $currentStageIndex = -1;
         $overallProgress = 0;
-        $totalDays = 0;
+        $currentPhaseIndex = $cycle->currentPhase?->phase_index;
+        $cumulativeHours = 0.0;
 
-        foreach ($stageMaps as $map) {
-            $duration = $map->end_offset_days
-                ? ($map->end_offset_days - ($map->start_offset_days ?? 0))
-                : ($map->stageTemplate->default_duration_days ?? 0);
-            $totalDays += $duration;
-        }
-
-        foreach ($stageMaps as $index => $map) {
-            $template = $map->stageTemplate;
-            $startOffset = $map->start_offset_days ?? 0;
-            $endOffset = $map->end_offset_days ?? $totalDays;
-
-            $stageStart = $plantingDate->copy()->addDays($startOffset);
-            $stageEnd = $endOffset ? $plantingDate->copy()->addDays($endOffset) : null;
-
-            $stageDuration = $endOffset ? ($endOffset - $startOffset) : ($template->default_duration_days ?? 0);
+        foreach ($segments as $index => $segment) {
+            $stageStart = $plantingDate->copy()->addHours($cumulativeHours);
+            $stageEnd = $segment['duration_hours'] > 0
+                ? $stageStart->copy()->addHours($segment['duration_hours'])
+                : null;
 
             $state = 'UPCOMING';
             $pct = 0;
@@ -74,46 +54,44 @@ class GrowCyclePresenter
                     $pct = 100;
                 } else {
                     $state = 'ACTIVE';
-                    if ($stageDuration > 0) {
-                        $elapsed = $now->diffInDays($stageStart);
-                        $pct = min(100, max(0, ($elapsed / $stageDuration) * 100));
+                    if ($segment['duration_hours'] > 0) {
+                        $elapsed = max(0, $now->diffInHours($stageStart, false));
+                        $pct = min(100, max(0, ($elapsed / $segment['duration_hours']) * 100));
                     }
                 }
             }
 
-            if ($template->code === $cycle->current_stage_code) {
+            if ($currentPhaseIndex !== null && in_array($currentPhaseIndex, $segment['phase_indices'], true)) {
                 $currentStageIndex = $index;
             }
 
             $stages[] = [
-                'code' => $template->code,
-                'name' => $template->name,
+                'code' => $segment['code'],
+                'name' => $segment['name'],
                 'from' => $stageStart->toIso8601String(),
                 'to' => $stageEnd?->toIso8601String(),
                 'pct' => round($pct, 1),
                 'state' => $state,
-                'phase_indices' => $map->phase_indices ?? [],
+                'phase_indices' => $segment['phase_indices'],
             ];
+
+            $cumulativeHours += $segment['duration_hours'];
         }
 
-        if ($totalDays > 0 && $daysSincePlanting > 0) {
-            $overallProgress = min(100, max(0, ($daysSincePlanting / $totalDays) * 100));
+        if ($totalHours > 0 && $hoursSincePlanting > 0) {
+            $overallProgress = min(100, max(0, ($hoursSincePlanting / $totalHours) * 100));
         }
 
         $currentStage = null;
-        if ($cycle->current_stage_code) {
-            $currentMap = $stageMaps->firstWhere('stageTemplate.code', $cycle->current_stage_code);
-            if ($currentMap) {
-                $currentTemplate = $currentMap->stageTemplate;
-                $currentStage = [
-                    'code' => $currentTemplate->code,
-                    'name' => $currentTemplate->name,
-                    'started_at' => $cycle->current_stage_started_at?->toIso8601String(),
-                ];
-            }
+        if ($currentStageIndex >= 0 && isset($stages[$currentStageIndex])) {
+            $currentStage = [
+                'code' => $stages[$currentStageIndex]['code'],
+                'name' => $stages[$currentStageIndex]['name'],
+                'started_at' => $stages[$currentStageIndex]['from'],
+            ];
         }
 
-        if (!$currentStage && !empty($stages)) {
+        if (! $currentStage) {
             foreach ($stages as $stage) {
                 if ($stage['state'] === 'ACTIVE') {
                     $currentStage = [

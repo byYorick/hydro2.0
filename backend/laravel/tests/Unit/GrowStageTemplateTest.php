@@ -3,7 +3,7 @@
 namespace Tests\Unit;
 
 use App\Models\GrowStageTemplate;
-use App\Models\RecipeStageMap;
+use App\Models\RecipeRevisionPhase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -12,14 +12,14 @@ class GrowStageTemplateTest extends TestCase
     use RefreshDatabase;
 
     /** @test */
-    public function it_has_recipe_stage_maps_relationship()
+    public function it_has_phases_relationship()
     {
         $template = GrowStageTemplate::factory()->create();
-        $map = RecipeStageMap::factory()->create([
+        $phase = RecipeRevisionPhase::factory()->create([
             'stage_template_id' => $template->id,
         ]);
 
-        $this->assertTrue($template->recipeStageMaps->contains($map));
+        $this->assertTrue($template->phases->contains($phase));
     }
 
     /** @test */
@@ -33,4 +33,3 @@ class GrowStageTemplateTest extends TestCase
         $this->assertEquals('#ff0000', $template->ui_meta['color']);
     }
 }
-

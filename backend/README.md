@@ -12,7 +12,7 @@ Backend-сервисы для гидропонной системы управл
 
 ### Быстрые гайды
 - **Мониторинг:** `MONITORING_QUICK_START.md` - быстрый старт
-- **Анализ логов:** `LOGS_ANALYSIS.md`
+- **Просмотр логов:** `docs/LOGS_VIEWING.md`
 
 ### История изменений
 - **Changelog:** `CHANGELOG.md` - важные изменения
@@ -94,7 +94,7 @@ Laravel выполняет роль API Gateway и предоставляет:
 
 ### Актуальные документы
 - `MONITORING_QUICK_START.md` - быстрый старт мониторинга
-- `LOGS_ANALYSIS.md` - анализ логов Grafana и БД
+- `docs/LOGS_VIEWING.md` - просмотр логов Grafana и БД
 - `CHANGELOG.md` - история важных изменений
 
 ### Документация в подкаталогах
@@ -133,4 +133,3 @@ docker-compose -f docker-compose.dev.yml exec mqtt-bridge pytest
 ---
 
 **Полная документация проекта:** `../doc_ai/INDEX.md`
-

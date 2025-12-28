@@ -29,6 +29,24 @@
               autocomplete="off"
             />
           </div>
+          <div>
+            <label for="recipe-plant" class="block text-xs text-[color:var(--text-muted)] mb-1">Культура</label>
+            <select
+              id="recipe-plant"
+              name="plant_id"
+              v-model.number="form.plant_id"
+              class="input-field h-9 w-full"
+              :disabled="plantsLoading"
+            >
+              <option :value="null" disabled>Выберите культуру</option>
+              <option v-for="plant in plants" :key="plant.id" :value="plant.id">
+                {{ plant.name }}
+              </option>
+            </select>
+            <div v-if="!plantsLoading && plants.length === 0" class="text-xs text-[color:var(--text-dim)] mt-1">
+              Нет доступных культур — добавьте культуру в справочнике.
+            </div>
+          </div>
         </div>
       </div>
 
@@ -158,7 +176,7 @@
       <Button
         size="sm"
         @click="onCreate"
-        :disabled="!form.name || form.phases.length === 0 || creating"
+        :disabled="!form.name || !form.plant_id || form.phases.length === 0 || creating"
       >
         {{ creating ? 'Создание...' : 'Создать рецепт' }}
       </Button>
@@ -167,7 +185,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
+import { onMounted, ref, reactive, watch } from 'vue'
 import Modal from './Modal.vue'
 import Button from './Button.vue'
 import { logger } from '@/utils/logger'
@@ -196,6 +214,11 @@ interface Phase {
   }
 }
 
+interface PlantOption {
+  id: number
+  name: string
+}
+
 const props = defineProps<Props>()
 const emit = defineEmits<{
   close: []
@@ -208,6 +231,7 @@ const { api } = useApi(showToast)
 const form = reactive({
   name: '',
   description: '',
+  plant_id: null as number | null,
   phases: [
     {
       phase_index: 0,
@@ -224,12 +248,15 @@ const form = reactive({
 const creating = ref(false)
 const createdRecipe = ref<Recipe | null>(null)
 const error = ref<string | null>(null)
+const plants = ref<PlantOption[]>([])
+const plantsLoading = ref(false)
 
 watch(() => props.show, (show) => {
   if (show) {
     // Сброс формы при открытии
     form.name = ''
     form.description = ''
+    form.plant_id = null
     form.phases = [
       {
         phase_index: 0,
@@ -243,7 +270,35 @@ watch(() => props.show, (show) => {
     ]
     createdRecipe.value = null
     error.value = null
+
+    if (!plants.value.length) {
+      loadPlants()
+    }
   }
+})
+
+const loadPlants = async (): Promise<void> => {
+  try {
+    plantsLoading.value = true
+    const response = await api.get('/plants')
+    const data = response.data?.data || []
+    plants.value = Array.isArray(data)
+      ? data.map((plant: any) => ({ id: plant.id, name: plant.name }))
+      : []
+
+    if (!form.plant_id && plants.value.length === 1) {
+      form.plant_id = plants.value[0].id
+    }
+  } catch (err) {
+    logger.error('Failed to load plants:', err)
+    showToast('Не удалось загрузить список культур', 'error', TOAST_TIMEOUT.NORMAL)
+  } finally {
+    plantsLoading.value = false
+  }
+}
+
+onMounted(() => {
+  loadPlants()
 })
 
 function addPhase(): void {
@@ -275,6 +330,11 @@ async function onCreate(): Promise<void> {
     return
   }
 
+  if (!form.plant_id) {
+    error.value = 'Выберите культуру для рецепта'
+    return
+  }
+
   if (form.phases.length === 0) {
     error.value = 'Добавьте хотя бы одну фазу'
     return
@@ -296,7 +356,8 @@ async function onCreate(): Promise<void> {
       '/recipes',
       {
         name: form.name.trim(),
-        description: form.description.trim() || null
+        description: form.description.trim() || null,
+        plant_id: form.plant_id,
       }
     )
 

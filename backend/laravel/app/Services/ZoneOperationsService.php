@@ -115,7 +115,7 @@ class ZoneOperationsService
      */
     private function validateZoneOperation(Zone $zone, string $operation): void
     {
-        if ($zone->status !== ZoneStatus::ONLINE) {
+        if ($zone->status !== ZoneStatus::ONLINE->value) {
             throw new \DomainException("Zone must be online to perform {$operation} operation");
         }
 

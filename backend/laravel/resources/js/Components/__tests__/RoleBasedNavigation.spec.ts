@@ -3,13 +3,11 @@ import { mount } from '@vue/test-utils'
 import RoleBasedNavigation from '../RoleBasedNavigation.vue'
 import NavLink from '../NavLink.vue'
 
-// Mock useRole
-const mockUseRole = vi.fn()
-vi.mock('@/composables/useRole', () => ({
-  useRole: () => mockUseRole()
+const mockPage = vi.fn()
+vi.mock('@inertiajs/vue3', () => ({
+  usePage: () => mockPage()
 }))
 
-// Mock NavLink
 vi.mock('../NavLink.vue', () => ({
   default: {
     name: 'NavLink',
@@ -23,123 +21,83 @@ describe('RoleBasedNavigation', () => {
     vi.clearAllMocks()
   })
 
-  it('should render common navigation items for all roles', () => {
-    mockUseRole.mockReturnValue({
-      isAgronomist: { value: false },
-      isAdmin: { value: false },
-      isEngineer: { value: false },
-      isOperator: { value: false },
-      isViewer: { value: false },
+  it('renders dashboard and common items for viewer', () => {
+    mockPage.mockReturnValue({
+      props: {
+        auth: {
+          user: { role: 'viewer' }
+        }
+      }
     })
 
     const wrapper = mount(RoleBasedNavigation)
-    
-    expect(wrapper.text()).toContain('Панель управления')
+
+    expect(wrapper.text()).toContain('Дашборд')
+    expect(wrapper.text()).toContain('Центр циклов')
+    expect(wrapper.text()).toContain('Зоны')
+    expect(wrapper.text()).toContain('Теплицы')
+    expect(wrapper.text()).toContain('Устройства')
     expect(wrapper.text()).toContain('Алерты')
-  })
-
-  it('should render agronomist navigation', () => {
-    mockUseRole.mockReturnValue({
-      isAgronomist: { value: true },
-      isAdmin: { value: false },
-      isEngineer: { value: false },
-      isOperator: { value: false },
-      isViewer: { value: false },
-    })
-
-    const wrapper = mount(RoleBasedNavigation)
-    
-    expect(wrapper.text()).toContain('Зоны')
-    expect(wrapper.text()).toContain('Рецепты')
     expect(wrapper.text()).toContain('Аналитика')
+    expect(wrapper.text()).toContain('Сервисы')
     expect(wrapper.text()).toContain('Настройки')
+    expect(wrapper.text()).not.toContain('Рецепты')
+    expect(wrapper.text()).not.toContain('Культуры')
+    expect(wrapper.text()).not.toContain('Операторы')
+    expect(wrapper.text()).not.toContain('Логи')
+    expect(wrapper.text()).not.toContain('Аудит')
   })
 
-  it('should render admin navigation', () => {
-    mockUseRole.mockReturnValue({
-      isAgronomist: { value: false },
-      isAdmin: { value: true },
-      isEngineer: { value: false },
-      isOperator: { value: false },
-      isViewer: { value: false },
+  it('renders agronomist-only items', () => {
+    mockPage.mockReturnValue({
+      props: {
+        auth: {
+          user: { role: 'agronomist' }
+        }
+      }
     })
 
     const wrapper = mount(RoleBasedNavigation)
-    
-    expect(wrapper.text()).toContain('Зоны')
-    expect(wrapper.text()).toContain('Устройства')
+
     expect(wrapper.text()).toContain('Рецепты')
-    expect(wrapper.text()).toContain('Пользователи')
-    expect(wrapper.text()).toContain('Логи')
-    expect(wrapper.text()).toContain('Настройки')
+    expect(wrapper.text()).toContain('Культуры')
+    expect(wrapper.text()).toContain('Аналитика')
+    expect(wrapper.text()).not.toContain('Операторы')
+    expect(wrapper.text()).not.toContain('Логи')
+    expect(wrapper.text()).not.toContain('Аудит')
   })
 
-  it('should render engineer navigation', () => {
-    mockUseRole.mockReturnValue({
-      isAgronomist: { value: false },
-      isAdmin: { value: false },
-      isEngineer: { value: true },
-      isOperator: { value: false },
-      isViewer: { value: false },
+  it('renders admin-only items', () => {
+    mockPage.mockReturnValue({
+      props: {
+        auth: {
+          user: { role: 'admin' }
+        }
+      }
     })
 
     const wrapper = mount(RoleBasedNavigation)
-    
-    expect(wrapper.text()).toContain('Зоны')
-    expect(wrapper.text()).toContain('Устройства')
-    expect(wrapper.text()).toContain('Система')
-    expect(wrapper.text()).toContain('Логи')
-    expect(wrapper.text()).toContain('Настройки')
-  })
 
-  it('should render operator navigation', () => {
-    mockUseRole.mockReturnValue({
-      isAgronomist: { value: false },
-      isAdmin: { value: false },
-      isEngineer: { value: false },
-      isOperator: { value: true },
-      isViewer: { value: false },
-    })
-
-    const wrapper = mount(RoleBasedNavigation)
-    
-    expect(wrapper.text()).toContain('Зоны')
-    expect(wrapper.text()).toContain('Устройства')
     expect(wrapper.text()).toContain('Рецепты')
+    expect(wrapper.text()).toContain('Культуры')
+    expect(wrapper.text()).toContain('Аналитика')
+    expect(wrapper.text()).toContain('Операторы')
     expect(wrapper.text()).toContain('Логи')
-    expect(wrapper.text()).toContain('Настройки')
+    expect(wrapper.text()).toContain('Аудит')
   })
 
-  it('should render viewer navigation without settings', () => {
-    mockUseRole.mockReturnValue({
-      isAgronomist: { value: false },
-      isAdmin: { value: false },
-      isEngineer: { value: false },
-      isOperator: { value: false },
-      isViewer: { value: true },
-    })
-
-    const wrapper = mount(RoleBasedNavigation)
-    
-    expect(wrapper.text()).toContain('Зоны')
-    expect(wrapper.text()).toContain('Устройства')
-    expect(wrapper.text()).toContain('Рецепты')
-    expect(wrapper.text()).not.toContain('Настройки')
-  })
-
-  it('should render all NavLink components', () => {
-    mockUseRole.mockReturnValue({
-      isAgronomist: { value: false },
-      isAdmin: { value: true },
-      isEngineer: { value: false },
-      isOperator: { value: false },
-      isViewer: { value: false },
+  it('renders NavLink components for visible items', () => {
+    mockPage.mockReturnValue({
+      props: {
+        auth: {
+          user: { role: 'viewer' }
+        }
+      }
     })
 
     const wrapper = mount(RoleBasedNavigation)
     const navLinks = wrapper.findAllComponents(NavLink)
-    
+
     expect(navLinks.length).toBeGreaterThan(0)
   })
 })
-

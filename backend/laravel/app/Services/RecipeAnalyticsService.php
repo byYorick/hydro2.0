@@ -2,13 +2,12 @@
 
 namespace App\Services;
 
-use App\Models\ZoneRecipeInstance;
-use App\Models\RecipeAnalytics;
 use App\Models\Alert;
+use App\Models\RecipeAnalytics;
 use App\Models\TelemetrySample;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Carbon\Carbon;
 
 class RecipeAnalyticsService
 {
@@ -25,12 +24,12 @@ class RecipeAnalyticsService
                     ->whereIn('status', [GrowCycleStatus::PLANNED, GrowCycleStatus::RUNNING, GrowCycleStatus::PAUSED])
                     ->first();
 
-            if (!$cycle) {
+            if (! $cycle) {
                 throw new \DomainException("No active grow cycle found for zone {$zoneId}");
             }
 
             $revision = $cycle->recipeRevision;
-            if (!$revision) {
+            if (! $revision) {
                 throw new \DomainException("Grow cycle {$cycle->id} has no recipe revision");
             }
 
@@ -71,8 +70,8 @@ class RecipeAnalyticsService
                 }
             }
 
-            $avgPhDeviation = !empty($phDeviations) ? array_sum($phDeviations) / count($phDeviations) : null;
-            $avgEcDeviation = !empty($ecDeviations) ? array_sum($ecDeviations) / count($ecDeviations) : null;
+            $avgPhDeviation = ! empty($phDeviations) ? array_sum($phDeviations) / count($phDeviations) : null;
+            $avgEcDeviation = ! empty($ecDeviations) ? array_sum($ecDeviations) / count($ecDeviations) : null;
 
             // Подсчитать количество аварий
             $alertsCount = Alert::where('zone_id', $zoneId)
@@ -194,4 +193,3 @@ class RecipeAnalyticsService
         return max(0.0, min(100.0, $score));
     }
 }
-

@@ -6,7 +6,7 @@
 
 - `app/android/` — Android-приложение на Kotlin
   - Архитектура: Clean Architecture (data, domain, presentation)
-  - DI: Koin
+  - DI: Hilt
   - Networking: Retrofit
   - Realtime: WebSocket через Laravel Reverb
 - `configs/` — конфигурации для разных окружений:
@@ -23,13 +23,14 @@ app/android/
 │   │   ├── core/          # Общие компоненты
 │   │   │   ├── data/      # Репозитории, API клиенты
 │   │   │   ├── domain/    # Модели, use cases
-│   │   │   ├── di/        # Dependency Injection (Koin)
+│   │   │   ├── di/        # Dependency Injection (Hilt)
 │   │   │   ├── network/   # Сетевой слой
-│   │   │   ├── prefs/     # SharedPreferences
+│   │   │   ├── prefs/     # DataStore
 │   │   │   └── realtime/  # WebSocket сервис
 │   │   ├── features/      # Функциональные модули
 │   │   │   ├── auth/      # Авторизация
 │   │   │   ├── greenhouses/ # Теплицы
+│   │   │   ├── provisioning/ # Provisioning
 │   │   │   ├── zones/     # Зоны
 │   │   │   └── alerts/     # Алерты
 │   │   ├── ui/            # UI компоненты
@@ -37,10 +38,6 @@ app/android/
 │   └── build.gradle.kts
 └── build.gradle.kts
 ```
-
-## Статус
-
-Реализация в процессе. См. `doc_ai/IMPLEMENTATION_STATUS.md` (раздел 8).
 
 ## Документация
 
@@ -53,5 +50,4 @@ app/android/
 ## Примечание
 
 Согласно документации, структура может включать также iOS-приложение в будущем.
-
 

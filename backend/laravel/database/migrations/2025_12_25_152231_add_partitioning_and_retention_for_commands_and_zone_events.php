@@ -8,7 +8,7 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     * 
+     *
      * Настройка партиционирования и retention policies для commands и zone_events.
      * Вместо архивных таблиц используем партиционирование по времени и автоматическое удаление старых данных.
      */
@@ -30,54 +30,66 @@ return new class extends Migration
                     ) as is_partitioned
                 ");
 
-                if (!$isPartitioned || !$isPartitioned->is_partitioned) {
-                    // Создаем партиционированную таблицу
-                    // Для PostgreSQL 10+ используем native partitioning
-                    DB::statement("
-                        -- Создаем новую партиционированную таблицу
-                        CREATE TABLE IF NOT EXISTS commands_partitioned (
-                            id BIGSERIAL,
-                            zone_id BIGINT,
-                            node_id BIGINT,
-                            channel VARCHAR(255),
-                            cmd VARCHAR(255) NOT NULL,
-                            params JSONB,
-                            status VARCHAR(255) DEFAULT 'pending',
-                            cmd_id VARCHAR(255) NOT NULL,
-                            created_at TIMESTAMP(0) WITHOUT TIME ZONE,
-                            updated_at TIMESTAMP(0) WITHOUT TIME ZONE,
-                            sent_at TIMESTAMP(0) WITHOUT TIME ZONE,
-                            ack_at TIMESTAMP(0) WITHOUT TIME ZONE,
-                            failed_at TIMESTAMP(0) WITHOUT TIME ZONE,
-                            cycle_id BIGINT,
-                            context_type VARCHAR(255),
-                            context_id BIGINT,
-                            source VARCHAR(255),
-                            error_message TEXT,
-                            acknowledged_at TIMESTAMP(0) WITHOUT TIME ZONE,
-                            timeout_sec INTEGER,
-                            timed_out_at TIMESTAMP(0) WITHOUT TIME ZONE,
-                            CONSTRAINT commands_partitioned_cmd_id_unique UNIQUE (cmd_id),
-                            CONSTRAINT commands_partitioned_zone_id_foreign FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE SET NULL,
-                            CONSTRAINT commands_partitioned_node_id_foreign FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE SET NULL
-                        ) PARTITION BY RANGE (created_at);
-                    ");
+                if (! $isPartitioned || ! $isPartitioned->is_partitioned) {
+                    // Создаем партиционированную таблицу, копируя схему commands
+                    DB::statement('
+                        CREATE TABLE IF NOT EXISTS commands_partitioned
+                        (LIKE commands INCLUDING DEFAULTS INCLUDING IDENTITY)
+                        PARTITION BY RANGE (created_at)
+                    ');
+
+                    DB::statement('
+                        DO $$
+                        BEGIN
+                            ALTER TABLE commands_partitioned
+                                ADD CONSTRAINT commands_partitioned_cmd_id_created_at_unique UNIQUE (cmd_id, created_at);
+                        EXCEPTION WHEN duplicate_object THEN
+                            NULL;
+                        END $$;
+                    ');
+
+                    DB::statement('
+                        DO $$
+                        BEGIN
+                            ALTER TABLE commands_partitioned
+                                ADD CONSTRAINT commands_partitioned_zone_id_foreign
+                                FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE SET NULL;
+                        EXCEPTION WHEN duplicate_object THEN
+                            NULL;
+                        END $$;
+                    ');
+
+                    DB::statement('
+                        DO $$
+                        BEGIN
+                            ALTER TABLE commands_partitioned
+                                ADD CONSTRAINT commands_partitioned_node_id_foreign
+                                FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE SET NULL;
+                        EXCEPTION WHEN duplicate_object THEN
+                            NULL;
+                        END $$;
+                    ');
+
+                    DB::statement('
+                        CREATE INDEX IF NOT EXISTS commands_partitioned_cmd_id_idx
+                        ON commands_partitioned (cmd_id)
+                    ');
 
                     // Создаем партиции на год вперед (по месяцам)
                     $this->createMonthlyPartitions('commands_partitioned', 'commands', 'created_at', 12);
 
                     // Копируем данные из старой таблицы
-                    DB::statement("
+                    DB::statement('
                         INSERT INTO commands_partitioned 
                         SELECT * FROM commands;
-                    ");
+                    ');
 
                     // Переименовываем таблицы
-                    DB::statement("ALTER TABLE commands RENAME TO commands_old");
-                    DB::statement("ALTER TABLE commands_partitioned RENAME TO commands");
+                    DB::statement('ALTER TABLE commands RENAME TO commands_old');
+                    DB::statement('ALTER TABLE commands_partitioned RENAME TO commands');
 
                     // Удаляем старую таблицу
-                    DB::statement("DROP TABLE commands_old CASCADE");
+                    DB::statement('DROP TABLE commands_old CASCADE');
 
                     \Log::info('Partitioned commands table by created_at (monthly partitions)');
                 }
@@ -92,23 +104,54 @@ return new class extends Migration
                     ) as is_partitioned
                 ");
 
-                if (!$isPartitioned || !$isPartitioned->is_partitioned) {
-                    DB::statement("
-                        CREATE TABLE IF NOT EXISTS zone_events_partitioned (
-                            LIKE zone_events INCLUDING ALL
-                        ) PARTITION BY RANGE (created_at);
-                    ");
+                if (! $isPartitioned || ! $isPartitioned->is_partitioned) {
+                    DB::statement('
+                        CREATE TABLE IF NOT EXISTS zone_events_partitioned
+                        (LIKE zone_events INCLUDING DEFAULTS INCLUDING IDENTITY)
+                        PARTITION BY RANGE (created_at)
+                    ');
+
+                    DB::statement('
+                        DO $$
+                        BEGIN
+                            ALTER TABLE zone_events_partitioned
+                                ADD CONSTRAINT zone_events_partitioned_pkey PRIMARY KEY (id, created_at);
+                        EXCEPTION WHEN duplicate_object THEN
+                            NULL;
+                        END $$;
+                    ');
+
+                    DB::statement('
+                        DO $$
+                        BEGIN
+                            ALTER TABLE zone_events_partitioned
+                                ADD CONSTRAINT zone_events_partitioned_zone_id_foreign
+                                FOREIGN KEY (zone_id) REFERENCES zones(id) ON DELETE CASCADE;
+                        EXCEPTION WHEN duplicate_object THEN
+                            NULL;
+                        END $$;
+                    ');
+
+                    DB::statement('
+                        CREATE INDEX IF NOT EXISTS zone_events_partitioned_zone_id_created_at_idx
+                        ON zone_events_partitioned (zone_id, created_at)
+                    ');
+
+                    DB::statement('
+                        CREATE INDEX IF NOT EXISTS zone_events_partitioned_type_idx
+                        ON zone_events_partitioned (type)
+                    ');
 
                     $this->createMonthlyPartitions('zone_events_partitioned', 'zone_events', 'created_at', 12);
 
-                    DB::statement("
+                    DB::statement('
                         INSERT INTO zone_events_partitioned 
                         SELECT * FROM zone_events;
-                    ");
+                    ');
 
-                    DB::statement("ALTER TABLE zone_events RENAME TO zone_events_old");
-                    DB::statement("ALTER TABLE zone_events_partitioned RENAME TO zone_events");
-                    DB::statement("DROP TABLE zone_events_old CASCADE");
+                    DB::statement('ALTER TABLE zone_events RENAME TO zone_events_old');
+                    DB::statement('ALTER TABLE zone_events_partitioned RENAME TO zone_events');
+                    DB::statement('DROP TABLE zone_events_old CASCADE');
 
                     \Log::info('Partitioned zone_events table by created_at (monthly partitions)');
                 }
@@ -117,7 +160,7 @@ return new class extends Migration
             // 3. Retention policies через PostgreSQL (если TimescaleDB не используется)
             // Для commands: удаляем данные старше 365 дней
             $this->createRetentionPolicy('commands', 'created_at', 365);
-            
+
             // Для zone_events: удаляем данные старше 365 дней
             $this->createRetentionPolicy('zone_events', 'created_at', 365);
 
@@ -137,13 +180,13 @@ return new class extends Migration
                     ) as exists
                 ");
 
-                if (!$isCommandsHypertable || !$isCommandsHypertable->exists) {
+                if (! $isCommandsHypertable || ! $isCommandsHypertable->exists) {
                     // Преобразуем в hypertable для TimescaleDB
                     try {
                         DB::statement("SELECT create_hypertable('commands', 'created_at', chunk_time_interval => INTERVAL '1 month')");
                         \Log::info('Converted commands to TimescaleDB hypertable');
                     } catch (\Exception $e) {
-                        \Log::warning('Failed to convert commands to hypertable: ' . $e->getMessage());
+                        \Log::warning('Failed to convert commands to hypertable: '.$e->getMessage());
                     }
                 }
 
@@ -154,12 +197,12 @@ return new class extends Migration
                     ) as exists
                 ");
 
-                if (!$isEventsHypertable || !$isEventsHypertable->exists) {
+                if (! $isEventsHypertable || ! $isEventsHypertable->exists) {
                     try {
                         DB::statement("SELECT create_hypertable('zone_events', 'created_at', chunk_time_interval => INTERVAL '1 month')");
                         \Log::info('Converted zone_events to TimescaleDB hypertable');
                     } catch (\Exception $e) {
-                        \Log::warning('Failed to convert zone_events to hypertable: ' . $e->getMessage());
+                        \Log::warning('Failed to convert zone_events to hypertable: '.$e->getMessage());
                     }
                 }
 
@@ -174,7 +217,7 @@ return new class extends Migration
                     ");
                     \Log::info('Added TimescaleDB retention policy for commands (365 days)');
                 } catch (\Exception $e) {
-                    \Log::warning('Failed to add retention policy for commands: ' . $e->getMessage());
+                    \Log::warning('Failed to add retention policy for commands: '.$e->getMessage());
                 }
 
                 try {
@@ -187,12 +230,12 @@ return new class extends Migration
                     ");
                     \Log::info('Added TimescaleDB retention policy for zone_events (365 days)');
                 } catch (\Exception $e) {
-                    \Log::warning('Failed to add retention policy for zone_events: ' . $e->getMessage());
+                    \Log::warning('Failed to add retention policy for zone_events: '.$e->getMessage());
                 }
             }
 
         } catch (\Exception $e) {
-            \Log::warning('Failed to setup partitioning and retention: ' . $e->getMessage());
+            \Log::warning('Failed to setup partitioning and retention: '.$e->getMessage());
             // Не прерываем миграцию, так как это оптимизация
         }
     }
@@ -203,12 +246,12 @@ return new class extends Migration
     private function createMonthlyPartitions(string $tableName, string $sourceTable, string $dateColumn, int $monthsAhead): void
     {
         $startDate = now()->startOfMonth();
-        
+
         for ($i = -1; $i <= $monthsAhead; $i++) {
             $partitionStart = $startDate->copy()->addMonths($i);
             $partitionEnd = $partitionStart->copy()->addMonth();
-            $partitionName = $tableName . '_' . $partitionStart->format('Y_m');
-            
+            $partitionName = $tableName.'_'.$partitionStart->format('Y_m');
+
             try {
                 DB::statement("
                     CREATE TABLE IF NOT EXISTS {$partitionName} 
@@ -216,7 +259,7 @@ return new class extends Migration
                     FOR VALUES FROM ('{$partitionStart->toDateString()}') TO ('{$partitionEnd->toDateString()}');
                 ");
             } catch (\Exception $e) {
-                \Log::warning("Failed to create partition {$partitionName}: " . $e->getMessage());
+                \Log::warning("Failed to create partition {$partitionName}: ".$e->getMessage());
             }
         }
     }
@@ -228,7 +271,7 @@ return new class extends Migration
     {
         // Создаем функцию для автоматического удаления старых данных
         $functionName = "retention_policy_{$tableName}";
-        
+
         try {
             DB::statement("
                 CREATE OR REPLACE FUNCTION {$functionName}()
@@ -252,10 +295,10 @@ return new class extends Migration
                 ");
                 \Log::info("Created retention policy function and cron job for {$tableName}");
             } catch (\Exception $e) {
-                \Log::info("pg_cron not available, retention policy function created but not scheduled: " . $e->getMessage());
+                \Log::info('pg_cron not available, retention policy function created but not scheduled: '.$e->getMessage());
             }
         } catch (\Exception $e) {
-            \Log::warning("Failed to create retention policy for {$tableName}: " . $e->getMessage());
+            \Log::warning("Failed to create retention policy for {$tableName}: ".$e->getMessage());
         }
     }
 
@@ -271,7 +314,7 @@ return new class extends Migration
         try {
             // Удаляем retention policies
             $tables = ['commands', 'zone_events'];
-            
+
             foreach ($tables as $table) {
                 try {
                     // Удаляем TimescaleDB retention policies
@@ -297,7 +340,7 @@ return new class extends Migration
                 }
             }
         } catch (\Exception $e) {
-            \Log::warning('Failed to remove retention policies: ' . $e->getMessage());
+            \Log::warning('Failed to remove retention policies: '.$e->getMessage());
         }
     }
 };

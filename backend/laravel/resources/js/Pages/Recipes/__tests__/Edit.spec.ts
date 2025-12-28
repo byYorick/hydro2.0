@@ -56,6 +56,12 @@ const sampleRecipe = vi.hoisted(() => ({
   id: 1,
   name: 'Test Recipe',
   description: 'Test Description',
+  plants: [
+    {
+      id: 1,
+      name: 'Test Plant',
+    },
+  ],
   phases: [
     {
       id: 1,
@@ -75,6 +81,7 @@ const useFormMock = vi.hoisted(() => {
     const formData = {
       name: initialData?.name || '',
       description: initialData?.description || '',
+      plant_id: initialData?.plant_id ?? null,
       phases: Array.isArray(initialData?.phases) ? [...initialData.phases] : []
     }
     const form = {
@@ -148,6 +155,12 @@ const useFormMock = vi.hoisted(() => {
       enumerable: true,
       configurable: true
     })
+    Object.defineProperty(form, 'plant_id', {
+      get: () => formData.plant_id,
+      set: (v) => { formData.plant_id = v },
+      enumerable: true,
+      configurable: true
+    })
     return form
   })
 })
@@ -180,6 +193,11 @@ describe('Recipes/Edit.vue', () => {
   beforeEach(() => {
     axiosPatchMock.mockClear()
     routerVisitMock.mockClear()
+    mockAxiosInstance.get.mockResolvedValue({
+      data: {
+        data: [{ id: 1, name: 'Test Plant' }],
+      },
+    })
     axiosPatchMock.mockResolvedValue({ data: { status: 'ok' } })
   })
 
@@ -198,6 +216,7 @@ describe('Recipes/Edit.vue', () => {
     if (formInstance) {
       expect(formInstance.data.name).toBe('Test Recipe')
       expect(formInstance.data.description).toBe('Test Description')
+      expect(formInstance.data.plant_id).toBe(1)
       expect(formInstance.data.phases.length).toBeGreaterThan(0)
     }
   })
@@ -404,6 +423,11 @@ describe('Recipes/Edit.vue', () => {
       await descInput.setValue('New Description')
       await wrapper.vm.$nextTick()
     }
+
+    const formInstance = useFormMock.mock.results[0]?.value
+    if (formInstance) {
+      formInstance.plant_id = 1
+    }
     
     const form = wrapper.find('form')
     if (form.exists()) {
@@ -433,6 +457,7 @@ describe('Recipes/Edit.vue', () => {
         expect(postCall[1]).toMatchObject({
           name: expect.any(String),
           description: expect.any(String),
+          plant_id: 1,
         })
       }
     }
@@ -461,7 +486,7 @@ describe('Recipes/Edit.vue', () => {
     if (formInstance) {
       expect(formInstance.data.name).toBe('Test Recipe')
       expect(formInstance.data.description).toBe('Test Description')
+      expect(formInstance.data.plant_id).toBe(1)
     }
   })
 })
-

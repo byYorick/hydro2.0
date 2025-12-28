@@ -89,10 +89,10 @@ import { computed } from 'vue'
 import { Link } from '@inertiajs/vue3'
 import Card from './Card.vue'
 import Badge from './Badge.vue'
-import type { ZoneRecipeInstance } from '@/types'
+import type { RecipeInstance } from '@/types'
 
 interface Props {
-  recipeInstance?: ZoneRecipeInstance | null
+  recipeInstance?: RecipeInstance | null
   phaseProgress?: number | null // Прогресс текущей фазы (0-100)
   phaseDaysElapsed?: number | null // Дней в текущей фазе
   phaseDaysTotal?: number | null // Всего дней в текущей фазе

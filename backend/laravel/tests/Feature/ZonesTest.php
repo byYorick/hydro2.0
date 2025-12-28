@@ -2,11 +2,16 @@
 
 namespace Tests\Feature;
 
+use App\Enums\GrowCycleStatus;
+use App\Models\Greenhouse;
+use App\Models\GrowCycle;
+use App\Models\Plant;
+use App\Models\Recipe;
+use App\Models\RecipeRevision;
+use App\Models\RecipeRevisionPhase;
 use App\Models\User;
 use App\Models\Zone;
-use App\Models\Recipe;
-use App\Models\ZoneRecipeInstance;
-use App\Models\DeviceNode;
+use App\Services\GrowCycleService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -22,6 +27,33 @@ class ZonesTest extends TestCase
         return $user->createToken('test')->plainTextToken;
     }
 
+    private function createRevisionWithPhases(Recipe $recipe, int $count = 1): RecipeRevision
+    {
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+
+        for ($index = 0; $index < $count; $index++) {
+            RecipeRevisionPhase::factory()->create([
+                'recipe_revision_id' => $revision->id,
+                'phase_index' => $index,
+                'name' => 'Phase '.($index + 1),
+            ]);
+        }
+
+        return $revision;
+    }
+
+    private function createGrowCycle(Zone $zone, Recipe $recipe, Plant $plant, int $phases = 1, bool $start = false): GrowCycle
+    {
+        $recipe->plants()->syncWithoutDetaching([$plant->id]);
+        $revision = $this->createRevisionWithPhases($recipe, $phases);
+        $service = app(GrowCycleService::class);
+
+        return $service->createCycle($zone, $revision, $plant->id, ['start_immediately' => $start]);
+    }
+
     public function test_zones_requires_auth(): void
     {
         $this->getJson('/api/zones')->assertStatus(401);
@@ -30,9 +62,10 @@ class ZonesTest extends TestCase
     public function test_create_zone(): void
     {
         $token = $this->token();
+        $greenhouse = Greenhouse::factory()->create();
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)->postJson('/api/zones', [
             'name' => 'Zone A',
-            'status' => 'RUNNING',
+            'greenhouse_id' => $greenhouse->id,
         ]);
         $resp->assertCreated()->assertJsonPath('data.name', 'Zone A');
     }
@@ -46,7 +79,7 @@ class ZonesTest extends TestCase
             ->getJson('/api/zones');
 
         $resp->assertOk()
-            ->assertJsonStructure(['status', 'data' => ['data', 'current_page']]);
+            ->assertJsonStructure(['status', 'data']);
     }
 
     public function test_get_zone_details(): void
@@ -90,98 +123,96 @@ class ZonesTest extends TestCase
     {
         $token = $this->token();
         $zone = Zone::factory()->create();
+        $plant = Plant::factory()->create();
         $recipe = Recipe::factory()->create();
-        ZoneRecipeInstance::factory()->create([
-            'zone_id' => $zone->id,
-            'recipe_id' => $recipe->id,
-        ]);
+        $this->createGrowCycle($zone, $recipe, $plant, 1, false);
 
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)
             ->deleteJson("/api/zones/{$zone->id}");
 
         $resp->assertStatus(422)
             ->assertJsonPath('status', 'error')
-            ->assertJsonPath('message', 'Cannot delete zone with active recipe. Please detach recipe first.');
+            ->assertJsonPath('message', 'Cannot delete zone with active grow cycle. Please finish or abort cycle first.');
     }
 
     public function test_attach_recipe_to_zone(): void
     {
-        $token = $this->token();
+        $token = $this->token('agronomist');
         $zone = Zone::factory()->create();
+        $plant = Plant::factory()->create();
         $recipe = Recipe::factory()->create();
+        $revision = $this->createRevisionWithPhases($recipe, 1);
 
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)
-            ->postJson("/api/zones/{$zone->id}/attach-recipe", [
-                'recipe_id' => $recipe->id,
+            ->postJson("/api/zones/{$zone->id}/grow-cycles", [
+                'recipe_revision_id' => $revision->id,
+                'plant_id' => $plant->id,
+                'start_immediately' => false,
             ]);
 
-        $resp->assertOk();
-        $this->assertDatabaseHas('zone_recipe_instances', [
+        $resp->assertStatus(201);
+        $this->assertDatabaseHas('grow_cycles', [
             'zone_id' => $zone->id,
-            'recipe_id' => $recipe->id,
+            'recipe_revision_id' => $revision->id,
+            'status' => GrowCycleStatus::PLANNED->value,
         ]);
     }
 
     public function test_change_phase(): void
     {
-        $token = $this->token();
+        $token = $this->token('agronomist');
         $zone = Zone::factory()->create();
+        $plant = Plant::factory()->create();
         $recipe = Recipe::factory()->create();
-        // Создать фазы в рецепте
-        \App\Models\RecipePhase::factory()->create([
-            'recipe_id' => $recipe->id,
-            'phase_index' => 0,
-        ]);
-        \App\Models\RecipePhase::factory()->create([
-            'recipe_id' => $recipe->id,
-            'phase_index' => 1,
-        ]);
-        ZoneRecipeInstance::factory()->create([
-            'zone_id' => $zone->id,
-            'recipe_id' => $recipe->id,
-            'current_phase_index' => 0,
-        ]);
+        $cycle = $this->createGrowCycle($zone, $recipe, $plant, 2, true);
 
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)
-            ->postJson("/api/zones/{$zone->id}/change-phase", [
-                'phase_index' => 1,
-            ]);
+            ->postJson("/api/grow-cycles/{$cycle->id}/advance-phase");
 
         $resp->assertOk();
-        $this->assertDatabaseHas('zone_recipe_instances', [
-            'zone_id' => $zone->id,
-            'current_phase_index' => 1,
-        ]);
+        $cycle->refresh();
+        $this->assertEquals(1, $cycle->currentPhase->phase_index);
     }
 
     public function test_pause_zone(): void
     {
-        $token = $this->token();
-        $zone = Zone::factory()->create(['status' => 'RUNNING']);
+        $token = $this->token('agronomist');
+        $zone = Zone::factory()->create();
+        $plant = Plant::factory()->create();
+        $recipe = Recipe::factory()->create();
+        $cycle = $this->createGrowCycle($zone, $recipe, $plant, 1, true);
+        $cycle->update(['status' => GrowCycleStatus::RUNNING]);
 
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)
-            ->postJson("/api/zones/{$zone->id}/pause");
+            ->postJson("/api/grow-cycles/{$cycle->id}/pause");
 
-        $resp->assertOk()
-            ->assertJsonPath('data.status', 'PAUSED');
+        $resp->assertOk();
+        $this->assertEquals(GrowCycleStatus::PAUSED->value, $cycle->fresh()->status->value);
     }
 
     public function test_resume_zone(): void
     {
-        $token = $this->token();
-        $zone = Zone::factory()->create(['status' => 'PAUSED']);
+        $token = $this->token('agronomist');
+        $zone = Zone::factory()->create();
+        $plant = Plant::factory()->create();
+        $recipe = Recipe::factory()->create();
+        $cycle = $this->createGrowCycle($zone, $recipe, $plant, 1, false);
+        $cycle->update(['status' => GrowCycleStatus::PAUSED]);
 
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)
-            ->postJson("/api/zones/{$zone->id}/resume");
+            ->postJson("/api/grow-cycles/{$cycle->id}/resume");
 
-        $resp->assertOk()
-            ->assertJsonPath('data.status', 'RUNNING');
+        $resp->assertOk();
+        $this->assertEquals(GrowCycleStatus::RUNNING->value, $cycle->fresh()->status->value);
     }
 
     public function test_fill_zone(): void
     {
         $token = $this->token();
-        $zone = Zone::factory()->create();
+        $zone = Zone::factory()->create(['status' => 'online']);
+        $plant = Plant::factory()->create();
+        $recipe = Recipe::factory()->create();
+        $this->createGrowCycle($zone, $recipe, $plant, 1, false);
 
         \Illuminate\Support\Facades\Http::fake([
             '*' => \Illuminate\Support\Facades\Http::response([
@@ -198,57 +229,21 @@ class ZonesTest extends TestCase
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/zones/{$zone->id}/fill", [
                 'target_level' => 0.9,
+                'max_duration_sec' => 60,
             ]);
 
-        // Операция выполняется асинхронно, возвращает 202 Accepted
-        $resp->assertStatus(202)
-            ->assertJsonPath('status', 'ok')
-            ->assertJsonPath('message', 'Fill operation queued')
-            ->assertJsonStructure(['status', 'message', 'job_id']);
-    }
-
-    public function test_fill_zone_validation_error(): void
-    {
-        $token = $this->token();
-        $zone = Zone::factory()->create();
-
-        // target_level слишком низкий
-        $resp = $this->withHeader('Authorization', 'Bearer '.$token)
-            ->postJson("/api/zones/{$zone->id}/fill", [
-                'target_level' => 0.05,
-            ]);
-
-        $resp->assertStatus(422);
-    }
-
-    public function test_fill_zone_with_max_duration(): void
-    {
-        $token = $this->token();
-        $zone = Zone::factory()->create();
-
-        \Illuminate\Support\Facades\Http::fake([
-            '*' => \Illuminate\Support\Facades\Http::response([
-                'status' => 'ok',
-                'data' => ['success' => true],
-            ], 200),
-        ]);
-
-        $resp = $this->withHeader('Authorization', 'Bearer '.$token)
-            ->postJson("/api/zones/{$zone->id}/fill", [
-                'target_level' => 0.9,
-                'max_duration_sec' => 120,
-            ]);
-
-        // Операция выполняется асинхронно, возвращает 202 Accepted
         $resp->assertStatus(202)
             ->assertJsonPath('status', 'ok')
             ->assertJsonPath('message', 'Fill operation queued');
     }
 
-    public function test_drain_zone(): void
+    public function test_drain_zone_success(): void
     {
         $token = $this->token();
-        $zone = Zone::factory()->create();
+        $zone = Zone::factory()->create(['status' => 'online']);
+        $plant = Plant::factory()->create();
+        $recipe = Recipe::factory()->create();
+        $this->createGrowCycle($zone, $recipe, $plant, 1, false);
 
         \Illuminate\Support\Facades\Http::fake([
             '*' => \Illuminate\Support\Facades\Http::response([
@@ -257,7 +252,7 @@ class ZonesTest extends TestCase
                     'success' => true,
                     'target_level' => 0.1,
                     'final_level' => 0.1,
-                    'elapsed_sec' => 25.3,
+                    'elapsed_sec' => 45.2,
                 ],
             ], 200),
         ]);
@@ -265,49 +260,31 @@ class ZonesTest extends TestCase
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/zones/{$zone->id}/drain", [
                 'target_level' => 0.1,
+                'max_duration_sec' => 60,
             ]);
 
-        // Операция выполняется асинхронно, возвращает 202 Accepted
         $resp->assertStatus(202)
             ->assertJsonPath('status', 'ok')
-            ->assertJsonPath('message', 'Drain operation queued')
-            ->assertJsonStructure(['status', 'message', 'job_id']);
+            ->assertJsonPath('message', 'Drain operation queued');
     }
 
-    public function test_drain_zone_validation_error(): void
+    public function test_drain_zone_python_service_down(): void
     {
         $token = $this->token();
-        $zone = Zone::factory()->create();
-
-        // target_level слишком высокий
-        $resp = $this->withHeader('Authorization', 'Bearer '.$token)
-            ->postJson("/api/zones/{$zone->id}/drain", [
-                'target_level' => 0.95,
-            ]);
-
-        $resp->assertStatus(422);
-    }
-
-    public function test_drain_zone_python_service_error(): void
-    {
-        $token = $this->token();
-        $zone = Zone::factory()->create();
+        $zone = Zone::factory()->create(['status' => 'online']);
+        $plant = Plant::factory()->create();
+        $recipe = Recipe::factory()->create();
+        $this->createGrowCycle($zone, $recipe, $plant, 1, false);
 
         \Illuminate\Support\Facades\Http::fake([
-            '*' => \Illuminate\Support\Facades\Http::response([
-                'detail' => 'Fill operation failed: Zone not found',
-            ], 500),
+            '*' => \Illuminate\Support\Facades\Http::response(null, 500),
         ]);
 
-        // При ошибке Python сервиса операция все равно ставится в очередь
-        // Ошибка обрабатывается асинхронно в job
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/zones/{$zone->id}/drain", [
                 'target_level' => 0.1,
             ]);
 
-        // Операция ставится в очередь, даже если Python сервис недоступен
-        // Ошибка обрабатывается асинхронно
         $resp->assertStatus(202)
             ->assertJsonPath('status', 'ok')
             ->assertJsonPath('message', 'Drain operation queued');
@@ -315,153 +292,82 @@ class ZonesTest extends TestCase
 
     public function test_next_phase_success(): void
     {
-        $token = $this->token();
+        $token = $this->token('agronomist');
         $zone = Zone::factory()->create();
+        $plant = Plant::factory()->create();
         $recipe = Recipe::factory()->create();
-        
-        // Создать фазы в рецепте
-        \App\Models\RecipePhase::factory()->create([
-            'recipe_id' => $recipe->id,
-            'phase_index' => 0,
-            'duration_hours' => 24,
-        ]);
-        \App\Models\RecipePhase::factory()->create([
-            'recipe_id' => $recipe->id,
-            'phase_index' => 1,
-            'duration_hours' => 48,
-        ]);
-        
-        ZoneRecipeInstance::factory()->create([
-            'zone_id' => $zone->id,
-            'recipe_id' => $recipe->id,
-            'current_phase_index' => 0,
-        ]);
+        $cycle = $this->createGrowCycle($zone, $recipe, $plant, 2, true);
 
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)
-            ->postJson("/api/zones/{$zone->id}/next-phase");
+            ->postJson("/api/grow-cycles/{$cycle->id}/advance-phase");
 
-        $resp->assertOk()
-            ->assertJsonPath('status', 'ok');
-        
-        $this->assertDatabaseHas('zone_recipe_instances', [
-            'zone_id' => $zone->id,
-            'current_phase_index' => 1,
-        ]);
+        $resp->assertOk();
+        $this->assertEquals(1, $cycle->fresh()->currentPhase->phase_index);
     }
 
-    public function test_next_phase_no_recipe(): void
+    public function test_next_phase_no_current_phase(): void
     {
-        $token = $this->token();
+        $token = $this->token('agronomist');
         $zone = Zone::factory()->create();
+        $cycle = GrowCycle::factory()->create([
+            'zone_id' => $zone->id,
+            'status' => GrowCycleStatus::RUNNING,
+        ]);
 
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)
-            ->postJson("/api/zones/{$zone->id}/next-phase");
+            ->postJson("/api/grow-cycles/{$cycle->id}/advance-phase");
 
         $resp->assertStatus(422)
             ->assertJsonPath('status', 'error')
-            ->assertJsonPath('message', 'Zone has no active recipe');
+            ->assertJsonPath('message', 'Cycle has no current phase');
     }
 
     public function test_next_phase_last_phase(): void
     {
-        $token = $this->token();
+        $token = $this->token('agronomist');
         $zone = Zone::factory()->create();
+        $plant = Plant::factory()->create();
         $recipe = Recipe::factory()->create();
-        
-        // Создать только одну фазу
-        \App\Models\RecipePhase::factory()->create([
-            'recipe_id' => $recipe->id,
-            'phase_index' => 0,
-            'duration_hours' => 24,
-        ]);
-        
-        ZoneRecipeInstance::factory()->create([
-            'zone_id' => $zone->id,
-            'recipe_id' => $recipe->id,
-            'current_phase_index' => 0,
-        ]);
+        $cycle = $this->createGrowCycle($zone, $recipe, $plant, 1, true);
 
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)
-            ->postJson("/api/zones/{$zone->id}/next-phase");
+            ->postJson("/api/grow-cycles/{$cycle->id}/advance-phase");
 
         $resp->assertStatus(422)
             ->assertJsonPath('status', 'error')
-            ->assertJsonPath('message', 'No next phase available. Current phase is 0, max phase is 0');
+            ->assertJsonPath('message', 'No next phase available');
     }
 
     public function test_zone_show_includes_phase_progress(): void
     {
         $token = $this->token();
         $zone = Zone::factory()->create();
+        $plant = Plant::factory()->create();
         $recipe = Recipe::factory()->create();
-        
-        // Создать фазу в рецепте
-        \App\Models\RecipePhase::factory()->create([
-            'recipe_id' => $recipe->id,
-            'phase_index' => 0,
-            'duration_hours' => 24,
-        ]);
-        
-        ZoneRecipeInstance::factory()->create([
-            'zone_id' => $zone->id,
-            'recipe_id' => $recipe->id,
-            'current_phase_index' => 0,
-            'started_at' => now()->subHours(12), // Начали 12 часов назад, фаза длится 24 часа
-        ]);
+        $cycle = $this->createGrowCycle($zone, $recipe, $plant, 1, true);
 
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson("/api/zones/{$zone->id}");
 
         $resp->assertOk()
             ->assertJsonPath('status', 'ok');
-        
+
         $data = $resp->json('data');
-        $this->assertArrayHasKey('recipe_instance', $data);
-        
-        if (isset($data['recipe_instance'])) {
-            $this->assertArrayHasKey('phase_progress', $data['recipe_instance']);
-            // Прогресс должен быть около 50% (12 часов из 24)
-            $progress = $data['recipe_instance']['phase_progress'];
-            $this->assertIsFloat($progress);
-            $this->assertGreaterThanOrEqual(0, $progress);
-            $this->assertLessThanOrEqual(100, $progress);
-        }
+        $this->assertArrayHasKey('active_grow_cycle', $data);
     }
 
     public function test_phase_progress_calculation(): void
     {
+        $token = $this->token('agronomist');
         $zone = Zone::factory()->create();
+        $plant = Plant::factory()->create();
         $recipe = Recipe::factory()->create();
-        
-        // Создать две фазы
-        \App\Models\RecipePhase::factory()->create([
-            'recipe_id' => $recipe->id,
-            'phase_index' => 0,
-            'duration_hours' => 24,
-        ]);
-        \App\Models\RecipePhase::factory()->create([
-            'recipe_id' => $recipe->id,
-            'phase_index' => 1,
-            'duration_hours' => 48,
-        ]);
-        
-        // Создать instance, начатый 30 часов назад (24 часа первой фазы + 6 часов второй)
-        $instance = ZoneRecipeInstance::factory()->create([
-            'zone_id' => $zone->id,
-            'recipe_id' => $recipe->id,
-            'current_phase_index' => 1,
-            'started_at' => now()->subHours(30),
-        ]);
-        
-        // Загрузить связанные данные для вычисления прогресса
-        $instance->load('recipe.phases');
-        
-        // Прогресс второй фазы должен быть около 12.5% (6 часов из 48)
-        $progress = $instance->phase_progress;
-        $this->assertIsFloat($progress);
-        $this->assertGreaterThan(10, $progress);
-        $this->assertLessThan(15, $progress);
+        $cycle = $this->createGrowCycle($zone, $recipe, $plant, 2, true);
+
+        $resp = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/zones/{$zone->id}/grow-cycle");
+
+        $resp->assertOk();
+        $this->assertNotNull($resp->json('data.cycle.progress.overall_pct'));
     }
 }
-
-

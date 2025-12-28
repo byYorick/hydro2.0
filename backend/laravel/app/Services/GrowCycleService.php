@@ -2,18 +2,16 @@
 
 namespace App\Services;
 
+use App\Enums\GrowCycleStatus;
 use App\Events\GrowCycleUpdated;
 use App\Models\GrowCycle;
 use App\Models\GrowCyclePhase;
 use App\Models\GrowCycleTransition;
 use App\Models\GrowStageTemplate;
-use App\Models\Recipe;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
-use App\Models\RecipeStageMap;
 use App\Models\Zone;
 use App\Models\ZoneEvent;
-use App\Enums\GrowCycleStatus;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
@@ -44,13 +42,13 @@ class GrowCycleService
 
         // Получаем первую фазу
         $firstPhase = $revision->phases()->orderBy('phase_index')->first();
-        if (!$firstPhase) {
+        if (! $firstPhase) {
             throw new \DomainException('Revision has no phases');
         }
 
         return DB::transaction(function () use ($zone, $revision, $firstPhase, $plantId, $data, $userId) {
-            $plantingAt = isset($data['planting_at']) && $data['planting_at'] 
-                ? Carbon::parse($data['planting_at']) 
+            $plantingAt = isset($data['planting_at']) && $data['planting_at']
+                ? Carbon::parse($data['planting_at'])
                 : now();
 
             $startImmediately = $data['start_immediately'] ?? false;
@@ -127,7 +125,7 @@ class GrowCycleService
 
         return DB::transaction(function () use ($cycle, $plantingAt) {
             $plantingAt = $plantingAt ?? now();
-            
+
             // Обновляем phase_started_at для текущей фазы
             if ($cycle->current_phase_id) {
                 $currentPhase = GrowCyclePhase::find($cycle->current_phase_id);
@@ -135,7 +133,7 @@ class GrowCycleService
                     $currentPhase->update(['started_at' => $plantingAt]);
                 }
             }
-            
+
             $cycle->update([
                 'status' => GrowCycleStatus::RUNNING,
                 'planting_at' => $plantingAt,
@@ -167,53 +165,58 @@ class GrowCycleService
         }
 
         return DB::transaction(function () use ($cycle, $targetStageCode) {
-            $recipe = $cycle->recipe;
-            if (!$recipe) {
-                throw new \DomainException('Cycle must have a recipe to advance stage');
+            $revision = $cycle->recipeRevision;
+            if (! $revision) {
+                throw new \DomainException('Cycle must have a recipe revision to advance stage');
             }
 
-            $stageMaps = $recipe->stageMaps()->orderBy('order_index')->get();
-            
+            $timeline = $this->buildStageTimeline($revision);
+            $segments = $timeline['segments'];
+
+            if (empty($segments)) {
+                throw new \DomainException('No stages available for this recipe revision');
+            }
+
             if ($targetStageCode) {
-                // Ручной переход на указанную стадию
-                $targetMap = $stageMaps->firstWhere('stageTemplate.code', $targetStageCode);
-                if (!$targetMap) {
-                    throw new \DomainException("Stage {$targetStageCode} not found in recipe stage map");
+                $targetIndex = collect($segments)->search(
+                    fn (array $segment) => $segment['code'] === $targetStageCode
+                );
+                if ($targetIndex === false) {
+                    throw new \DomainException("Stage {$targetStageCode} not found in recipe revision");
                 }
             } else {
-                // Автоматический переход на следующую стадию
-                $currentMap = $stageMaps->firstWhere('stageTemplate.code', $cycle->current_stage_code);
-                if (!$currentMap) {
-                    // Если текущей стадии нет в маппинге, берем первую
-                    $targetMap = $stageMaps->first();
-                } else {
-                    $currentIndex = $currentMap->order_index;
-                    $targetMap = $stageMaps->firstWhere('order_index', $currentIndex + 1);
+                $currentPhaseIndex = $cycle->currentPhase?->phase_index;
+                $currentIndex = null;
+                if ($currentPhaseIndex !== null) {
+                    foreach ($segments as $index => $segment) {
+                        if (in_array($currentPhaseIndex, $segment['phase_indices'], true)) {
+                            $currentIndex = $index;
+                            break;
+                        }
+                    }
                 }
-
-                if (!$targetMap) {
+                $targetIndex = $currentIndex === null ? 0 : $currentIndex + 1;
+                if (! isset($segments[$targetIndex])) {
                     throw new \DomainException('No next stage available');
                 }
             }
 
-            $stageTemplate = $targetMap->stageTemplate;
-            
+            $targetSegment = $segments[$targetIndex];
             $oldStageCode = $cycle->current_stage_code;
-            
+
             $cycle->update([
-                'current_stage_code' => $stageTemplate->code,
+                'current_stage_code' => $targetSegment['code'],
                 'current_stage_started_at' => now(),
             ]);
-            
+
             $cycle->refresh();
 
-            // Отправляем событие об обновлении цикла для автоматического обновления targets в AE
             GrowCycleUpdated::dispatch($cycle, 'STAGE_ADVANCED');
 
             Log::info('Grow cycle stage advanced', [
                 'cycle_id' => $cycle->id,
                 'old_stage_code' => $oldStageCode,
-                'new_stage_code' => $stageTemplate->code,
+                'new_stage_code' => $targetSegment['code'],
             ]);
 
             return $cycle->fresh();
@@ -221,117 +224,140 @@ class GrowCycleService
     }
 
     /**
-     * @deprecated Этот метод использует legacy модель RecipeStageMap и zone_recipe_instances.
-     * В новой модели фазы устанавливаются при создании цикла через createPhaseSnapshot().
-     * Метод оставлен для обратной совместимости, но больше не используется.
-     */
-    public function computeStageFromRecipeInstance(GrowCycle $cycle): void
-    {
-        // В новой модели фазы уже установлены при создании цикла
-        // Этот метод больше не нужен, но оставлен для обратной совместимости
-        Log::warning('computeStageFromRecipeInstance called but deprecated - phases are set via snapshots', [
-            'cycle_id' => $cycle->id,
-        ]);
-    }
-
-    /**
      * Вычислить ожидаемую дату сбора урожая
      */
     public function computeExpectedHarvest(GrowCycle $cycle): void
     {
-        $recipe = $cycle->recipe;
-        if (!$recipe) {
-            return;
-        }
-
-        $stageMaps = $recipe->stageMaps()->with('stageTemplate')->orderBy('order_index')->get();
-        
-        if ($stageMaps->isEmpty()) {
+        $revision = $cycle->recipeRevision;
+        if (! $revision) {
             return;
         }
 
         $plantingAt = $cycle->planting_at ?? $cycle->started_at;
-        if (!$plantingAt) {
+        if (! $plantingAt) {
             return;
         }
 
-        // Находим последнюю стадию (обычно HARVEST)
-        $lastMap = $stageMaps->last();
-        $harvestOffset = $lastMap->end_offset_days ?? $lastMap->start_offset_days;
-
-        if ($harvestOffset) {
-            $expectedHarvestAt = Carbon::parse($plantingAt)->addDays($harvestOffset);
+        $timeline = $this->buildStageTimeline($revision);
+        $totalHours = $timeline['total_hours'];
+        if ($totalHours > 0) {
+            $expectedHarvestAt = Carbon::parse($plantingAt)->addHours($totalHours);
             $cycle->update(['expected_harvest_at' => $expectedHarvestAt]);
-        } else {
-            // Если offset не задан, вычисляем на основе default_duration_days стадий
-            $totalDays = 0;
-            foreach ($stageMaps as $map) {
-                $duration = $map->end_offset_days 
-                    ? ($map->end_offset_days - ($map->start_offset_days ?? 0))
-                    : ($map->stageTemplate->default_duration_days ?? 0);
-                $totalDays += $duration;
-            }
-            
-            if ($totalDays > 0) {
-                $expectedHarvestAt = Carbon::parse($plantingAt)->addDays($totalDays);
-                $cycle->update(['expected_harvest_at' => $expectedHarvestAt]);
-            }
         }
     }
 
     /**
-     * Убедиться, что у рецепта есть stage-map (создать автоматически, если нет)
+     * Построить последовательность стадий по фазам ревизии
+     *
+     * @return array{segments: array<int, array{code: string, name: string, phase_indices: array<int>, duration_hours: float, ui_meta: array|null}>, total_hours: float}
      */
-    public function ensureRecipeStageMap(Recipe $recipe): void
+    public function buildStageTimeline(RecipeRevision $revision): array
     {
-        if ($recipe->stageMaps()->exists()) {
-            return;
-        }
-
-        // Автоматически генерируем stage-map на основе фаз рецепта
-        $phases = $recipe->phases()->orderBy('phase_index')->get();
-        
-        if ($phases->isEmpty()) {
-            return;
-        }
-
-        // Получаем стандартные шаблоны стадий
         $templates = GrowStageTemplate::orderBy('order_index')->get();
-        
         if ($templates->isEmpty()) {
-            // Если шаблонов нет, создаем базовые
             $this->createDefaultStageTemplates();
             $templates = GrowStageTemplate::orderBy('order_index')->get();
         }
 
-        // Маппим фазы на стадии
-        $phaseCount = $phases->count();
-        $stageCount = $templates->count();
-        
-        $phasesPerStage = max(1, (int) ceil($phaseCount / $stageCount));
-        
-        $orderIndex = 0;
-        $phaseIndex = 0;
-        
-        foreach ($templates as $template) {
-            $phaseIndices = [];
-            for ($i = 0; $i < $phasesPerStage && $phaseIndex < $phaseCount; $i++) {
-                $phaseIndices[] = $phases[$phaseIndex]->phase_index;
-                $phaseIndex++;
-            }
+        $templatesById = $templates->keyBy('id');
+        $templatesByCode = $templates->keyBy('code');
 
-            if (!empty($phaseIndices) || $orderIndex === 0) {
-                // Первая стадия всегда создается, даже если фаз нет
-                RecipeStageMap::create([
-                    'recipe_id' => $recipe->id,
-                    'stage_template_id' => $template->id,
-                    'order_index' => $orderIndex,
-                    'phase_indices' => $phaseIndices,
-                    'start_offset_days' => $orderIndex === 0 ? 0 : null, // Первая стадия начинается с 0
-                ]);
-                $orderIndex++;
+        $phases = $revision->phases()->orderBy('phase_index')->get();
+        $segments = [];
+        $totalHours = 0.0;
+
+        foreach ($phases as $phase) {
+            $template = $this->resolveStageTemplate($revision, $phase, $templatesById, $templatesByCode);
+            $code = $template?->code ?? 'VEG';
+            $name = $template?->name ?? 'Вегетация';
+            $uiMeta = $template?->ui_meta;
+
+            $durationHours = (float) ($phase->duration_hours
+                ?? ($phase->duration_days ? $phase->duration_days * 24 : 0));
+
+            $totalHours += $durationHours;
+
+            $lastIndex = count($segments) - 1;
+            if ($lastIndex >= 0 && $segments[$lastIndex]['code'] === $code) {
+                $segments[$lastIndex]['phase_indices'][] = $phase->phase_index;
+                $segments[$lastIndex]['duration_hours'] += $durationHours;
+            } else {
+                $segments[] = [
+                    'code' => $code,
+                    'name' => $name,
+                    'phase_indices' => [$phase->phase_index],
+                    'duration_hours' => $durationHours,
+                    'ui_meta' => $uiMeta,
+                ];
             }
         }
+
+        return [
+            'segments' => $segments,
+            'total_hours' => $totalHours,
+        ];
+    }
+
+    private function resolveStageTemplate(
+        RecipeRevision $revision,
+        RecipeRevisionPhase $phase,
+        \Illuminate\Support\Collection $templatesById,
+        \Illuminate\Support\Collection $templatesByCode
+    ): ?GrowStageTemplate {
+        if ($phase->stage_template_id && $templatesById->has($phase->stage_template_id)) {
+            return $templatesById->get($phase->stage_template_id);
+        }
+
+        $code = $this->inferStageCode($revision->recipe?->name ?? '', $phase->name ?? '', $phase->phase_index);
+
+        return $templatesByCode->get($code)
+            ?? $templatesByCode->get('VEG')
+            ?? $templatesById->first();
+    }
+
+    private function inferStageCode(string $recipeName, string $phaseName, int $phaseIndex): string
+    {
+        $normalizedPhase = mb_strtolower(trim($phaseName));
+        $normalizedRecipe = mb_strtolower(trim($recipeName));
+
+        $mapping = [
+            'GERMINATION' => ['проращ', 'germin'],
+            'PLANTING' => ['посадка', 'посев', 'seed', 'семена', 'sowing'],
+            'ROOTING' => ['укоренение', 'rooting', 'root', 'seedling', 'рассада', 'ростки', 'sprouting'],
+            'VEG' => ['вега', 'вегетация', 'vegetative', 'veg', 'growth', 'рост', 'вегетативный', 'vegetation'],
+            'FLOWER' => ['цветение', 'flowering', 'flower', 'bloom', 'blooming', 'цвет', 'floral'],
+            'FRUIT' => ['плод', 'созрев', 'fruit'],
+            'HARVEST' => ['сбор', 'harvest', 'finishing', 'finish', 'урожай', 'harvesting'],
+        ];
+
+        foreach ($mapping as $code => $keywords) {
+            foreach ($keywords as $keyword) {
+                if ($normalizedPhase !== '' && str_contains($normalizedPhase, $keyword)) {
+                    return $code;
+                }
+            }
+        }
+
+        if (str_contains($normalizedRecipe, 'салат') || str_contains($normalizedRecipe, 'lettuce')) {
+            return match ($phaseIndex) {
+                0 => 'GERMINATION',
+                1 => 'VEG',
+                default => 'HARVEST',
+            };
+        }
+
+        if (str_contains($normalizedRecipe, 'томат') || str_contains($normalizedRecipe, 'tomato')) {
+            return match ($phaseIndex) {
+                0 => 'GERMINATION',
+                1 => 'VEG',
+                2 => 'FLOWER',
+                default => 'FRUIT',
+            };
+        }
+
+        $fallbacks = ['PLANTING', 'ROOTING', 'VEG', 'FLOWER', 'FRUIT', 'HARVEST'];
+
+        return $fallbacks[min($phaseIndex, count($fallbacks) - 1)] ?? 'VEG';
     }
 
     /**
@@ -543,18 +569,18 @@ class GrowCycleService
     public function advancePhase(GrowCycle $cycle, int $userId): GrowCycle
     {
         $revision = $cycle->recipeRevision;
-        if (!$revision) {
+        if (! $revision) {
             throw new \DomainException('Cycle has no recipe revision');
         }
 
         $currentPhase = $cycle->currentPhase;
-        if (!$currentPhase) {
+        if (! $currentPhase) {
             throw new \DomainException('Cycle has no current phase');
         }
 
         // Получаем шаблон текущей фазы для поиска следующей
         $currentPhaseTemplate = $currentPhase->recipeRevisionPhase;
-        if (!$currentPhaseTemplate) {
+        if (! $currentPhaseTemplate) {
             throw new \DomainException('Current phase has no template reference');
         }
 
@@ -564,7 +590,7 @@ class GrowCycleService
             ->orderBy('phase_index')
             ->first();
 
-        if (!$nextPhaseTemplate) {
+        if (! $nextPhaseTemplate) {
             throw new \DomainException('No next phase available');
         }
 
@@ -624,7 +650,7 @@ class GrowCycleService
     public function setPhase(GrowCycle $cycle, RecipeRevisionPhase $newPhase, string $comment, int $userId): GrowCycle
     {
         $revision = $cycle->recipeRevision;
-        if (!$revision) {
+        if (! $revision) {
             throw new \DomainException('Cycle has no recipe revision');
         }
 
@@ -706,8 +732,8 @@ class GrowCycleService
             if ($applyMode === 'now') {
                 // Применяем сейчас: меняем ревизию и сбрасываем фазу на первую
                 $firstPhaseTemplate = $newRevision->phases()->orderBy('phase_index')->first();
-                
-                if (!$firstPhaseTemplate) {
+
+                if (! $firstPhaseTemplate) {
                     throw new \DomainException('Revision has no phases');
                 }
 
@@ -793,11 +819,10 @@ class GrowCycleService
 
     /**
      * Создать снапшот фазы из шаблона
-     * 
-     * @param GrowCycle|null $cycle Цикл (может быть null при создании цикла)
-     * @param RecipeRevisionPhase $templatePhase Шаблонная фаза
-     * @param Carbon|null $startedAt Время начала фазы
-     * @return GrowCyclePhase
+     *
+     * @param  GrowCycle|null  $cycle  Цикл (может быть null при создании цикла)
+     * @param  RecipeRevisionPhase  $templatePhase  Шаблонная фаза
+     * @param  Carbon|null  $startedAt  Время начала фазы
      */
     private function createPhaseSnapshot(?GrowCycle $cycle, RecipeRevisionPhase $templatePhase, ?Carbon $startedAt = null): GrowCyclePhase
     {
@@ -834,4 +859,3 @@ class GrowCycleService
         ]);
     }
 }
-

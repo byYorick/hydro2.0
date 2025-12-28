@@ -3,57 +3,57 @@
 namespace Tests\Unit;
 
 use App\Models\GrowStageTemplate;
-use App\Models\Recipe;
-use App\Models\RecipeStageMap;
+use App\Models\RecipeRevision;
+use App\Models\RecipeRevisionPhase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
-class RecipeStageMapTest extends TestCase
+class RecipeRevisionPhaseTest extends TestCase
 {
     use RefreshDatabase;
 
     /** @test */
-    public function it_belongs_to_recipe()
+    public function it_belongs_to_revision()
     {
-        $recipe = Recipe::factory()->create();
-        $map = RecipeStageMap::factory()->create([
-            'recipe_id' => $recipe->id,
+        $revision = RecipeRevision::factory()->create();
+        $phase = RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
         ]);
 
-        $this->assertEquals($recipe->id, $map->recipe->id);
+        $this->assertEquals($revision->id, $phase->recipeRevision->id);
     }
 
     /** @test */
     public function it_belongs_to_stage_template()
     {
         $template = GrowStageTemplate::factory()->create();
-        $map = RecipeStageMap::factory()->create([
+        $phase = RecipeRevisionPhase::factory()->create([
             'stage_template_id' => $template->id,
         ]);
 
-        $this->assertEquals($template->id, $map->stageTemplate->id);
+        $this->assertEquals($template->id, $phase->stageTemplate->id);
     }
 
     /** @test */
-    public function it_casts_phase_indices_to_array()
+    public function it_casts_extensions_to_array()
     {
-        $map = RecipeStageMap::factory()->create([
-            'phase_indices' => [0, 1, 2],
+        $phase = RecipeRevisionPhase::factory()->create([
+            'extensions' => ['notes' => 'extra'],
         ]);
 
-        $this->assertIsArray($map->phase_indices);
-        $this->assertEquals([0, 1, 2], $map->phase_indices);
+        $this->assertIsArray($phase->extensions);
+        $this->assertEquals('extra', $phase->extensions['notes']);
     }
 
     /** @test */
-    public function it_casts_targets_override_to_array()
+    public function it_appends_targets_attribute()
     {
-        $map = RecipeStageMap::factory()->create([
-            'targets_override' => ['ph' => ['min' => 5.5, 'max' => 6.5]],
+        $phase = RecipeRevisionPhase::factory()->create([
+            'ph_min' => 5.5,
+            'ph_max' => 6.5,
         ]);
 
-        $this->assertIsArray($map->targets_override);
-        $this->assertEquals(5.5, $map->targets_override['ph']['min']);
+        $this->assertIsArray($phase->targets);
+        $this->assertEquals(5.5, $phase->targets['ph']['min']);
     }
 }
-

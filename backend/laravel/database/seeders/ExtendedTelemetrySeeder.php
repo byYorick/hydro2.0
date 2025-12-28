@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Models\DeviceNode;
 use App\Models\NodeChannel;
+use App\Models\Sensor;
 use App\Models\TelemetryLast;
 use App\Models\TelemetrySample;
 use App\Models\Zone;
@@ -29,16 +30,16 @@ class ExtendedTelemetrySeeder extends Seeder
         $lastUpdated = 0;
 
         foreach ($zones as $zone) {
-            $nodes = DeviceNode::where('zone_id', $zone->id)->get();
-            if ($nodes->isEmpty()) {
+            $sensors = $this->getOrCreateZoneSensors($zone);
+            if ($sensors->isEmpty()) {
                 continue;
             }
 
-            // Создаем исторические данные за последние 7 дней
-            $samplesCreated += $this->seedHistoricalTelemetry($zone, $nodes);
-            
+            // Создаем исторические данные
+            $samplesCreated += $this->seedHistoricalTelemetry($zone, $sensors);
+
             // Обновляем последние значения
-            $lastUpdated += $this->seedTelemetryLast($zone, $nodes);
+            $lastUpdated += $this->seedTelemetryLast($zone, $sensors);
         }
 
         $this->command->info("Создано samples: " . number_format($samplesCreated));
@@ -47,38 +48,31 @@ class ExtendedTelemetrySeeder extends Seeder
         $this->command->info("Всего last значений: " . TelemetryLast::count());
     }
 
-    private function seedHistoricalTelemetry(Zone $zone, $nodes): int
+    private function seedHistoricalTelemetry(Zone $zone, $sensors): int
     {
         $samplesCreated = 0;
-        $daysBack = 7;
         $intervalMinutes = 5; // Интервал между измерениями
 
         $metricTypes = ['ph', 'ec', 'temperature', 'humidity'];
         
         // Определяем количество дней в зависимости от статуса зоны
-        $daysBack = match ($zone->status) {
-            'RUNNING' => 7,
-            'PAUSED' => 3,
-            'STOPPED' => 1,
+        $status = strtolower((string) $zone->status);
+        $daysBack = match ($status) {
+            'running', 'online' => 7,
+            'paused', 'warning' => 3,
+            'stopped', 'critical' => 1,
             default => 1,
         };
 
         $now = now();
         $startTime = $now->copy()->subDays($daysBack)->startOfDay();
 
-        // Получаем каналы для узлов зоны
-        $nodeIds = $nodes->pluck('id')->toArray();
-        $channels = NodeChannel::whereIn('node_id', $nodeIds)->get();
-
-        // Группируем каналы по метрикам
-        $channelsByMetric = [];
-        foreach ($channels as $channel) {
-            $metric = strtolower($channel->metric);
-            if (in_array($metric, $metricTypes)) {
-                if (!isset($channelsByMetric[$metric])) {
-                    $channelsByMetric[$metric] = [];
-                }
-                $channelsByMetric[$metric][] = $channel;
+        // Группируем сенсоры по метрикам
+        $sensorsByMetric = [];
+        foreach ($sensors as $sensor) {
+            $metric = $this->metricFromSensorType($sensor->type);
+            if ($metric && in_array($metric, $metricTypes, true)) {
+                $sensorsByMetric[$metric][] = $sensor;
             }
         }
 
@@ -86,17 +80,12 @@ class ExtendedTelemetrySeeder extends Seeder
         $currentTime = $startTime->copy();
         while ($currentTime->lt($now)) {
             foreach ($metricTypes as $metricType) {
-                if (!isset($channelsByMetric[$metricType])) {
+                if (empty($sensorsByMetric[$metricType])) {
                     continue;
                 }
 
-                // Выбираем случайный канал для этой метрики
-                $channel = $channelsByMetric[$metricType][array_rand($channelsByMetric[$metricType])];
-                $node = $nodes->firstWhere('id', $channel->node_id);
-
-                if (!$node) {
-                    continue;
-                }
+                // Выбираем случайный сенсор для этой метрики
+                $sensor = $sensorsByMetric[$metricType][array_rand($sensorsByMetric[$metricType])];
 
                 // Генерируем реалистичное значение с небольшими колебаниями
                 $baseValue = $this->getBaseValue($metricType, $zone);
@@ -104,11 +93,15 @@ class ExtendedTelemetrySeeder extends Seeder
 
                 TelemetrySample::create([
                     'zone_id' => $zone->id,
-                    'node_id' => $node->id,
-                    'channel' => $channel->channel,
-                    'metric_type' => $metricType,
+                    'sensor_id' => $sensor->id,
+                    'cycle_id' => $zone->activeGrowCycle?->id,
                     'value' => $value,
                     'ts' => $currentTime,
+                    'quality' => 'GOOD',
+                    'metadata' => [
+                        'metric' => $metricType,
+                        'source' => 'seeder',
+                    ],
                 ]);
 
                 $samplesCreated++;
@@ -120,48 +113,37 @@ class ExtendedTelemetrySeeder extends Seeder
         return $samplesCreated;
     }
 
-    private function seedTelemetryLast(Zone $zone, $nodes): int
+    private function seedTelemetryLast(Zone $zone, $sensors): int
     {
         $updated = 0;
         $metricTypes = ['ph', 'ec', 'temperature', 'humidity'];
 
-        $nodeIds = $nodes->pluck('id')->toArray();
-        $channels = NodeChannel::whereIn('node_id', $nodeIds)->get();
-
         foreach ($metricTypes as $metricType) {
-            // Находим канал для этой метрики
-            $channel = $channels->first(function ($ch) use ($metricType) {
-                return strtolower($ch->metric) === $metricType;
+            $sensor = $sensors->first(function ($sensor) use ($metricType) {
+                return $this->metricFromSensorType($sensor->type) === $metricType;
             });
 
-            if (!$channel) {
-                continue;
-            }
-
-            $node = $nodes->firstWhere('id', $channel->node_id);
-            if (!$node) {
+            if (!$sensor) {
                 continue;
             }
 
             // Получаем последнее значение из samples или генерируем новое
-            $lastSample = TelemetrySample::where('zone_id', $zone->id)
-                ->where('metric_type', $metricType)
+            $lastSample = TelemetrySample::where('sensor_id', $sensor->id)
                 ->orderBy('ts', 'desc')
                 ->first();
 
-            $value = $lastSample 
-                ? $lastSample->value 
+            $value = $lastSample
+                ? $lastSample->value
                 : $this->getBaseValue($metricType, $zone);
 
             TelemetryLast::updateOrCreate(
                 [
-                    'zone_id' => $zone->id,
-                    'metric_type' => $metricType,
+                    'sensor_id' => $sensor->id,
                 ],
                 [
-                    'node_id' => $node->id,
-                    'value' => $value,
-                    'updated_at' => now(),
+                    'last_value' => $value,
+                    'last_ts' => $lastSample?->ts ?? now(),
+                    'last_quality' => 'GOOD',
                 ]
             );
 
@@ -223,5 +205,89 @@ class ExtendedTelemetrySeeder extends Seeder
             default => $value,
         };
     }
-}
 
+    private function getOrCreateZoneSensors(Zone $zone)
+    {
+        $sensors = Sensor::query()
+            ->where('zone_id', $zone->id)
+            ->where('is_active', true)
+            ->get();
+
+        if ($sensors->isNotEmpty()) {
+            return $sensors;
+        }
+
+        $nodes = DeviceNode::where('zone_id', $zone->id)->get();
+        if ($nodes->isEmpty()) {
+            return collect();
+        }
+
+        $channels = NodeChannel::whereIn('node_id', $nodes->pluck('id')->toArray())
+            ->where('type', 'sensor')
+            ->get();
+
+        foreach ($channels as $channel) {
+            $sensorType = $this->sensorTypeFromMetric($channel->metric);
+            if (! $sensorType) {
+                continue;
+            }
+
+            Sensor::firstOrCreate(
+                [
+                    'greenhouse_id' => $zone->greenhouse_id,
+                    'zone_id' => $zone->id,
+                    'node_id' => $channel->node_id,
+                    'type' => $sensorType,
+                    'label' => $this->buildSensorLabel($channel, $sensorType),
+                ],
+                [
+                    'scope' => 'inside',
+                    'unit' => $channel->unit,
+                    'specs' => [
+                        'channel' => $channel->channel,
+                        'metric' => $channel->metric,
+                    ],
+                    'is_active' => true,
+                ]
+            );
+        }
+
+        return Sensor::query()
+            ->where('zone_id', $zone->id)
+            ->where('is_active', true)
+            ->get();
+    }
+
+    private function sensorTypeFromMetric(?string $metric): ?string
+    {
+        $metric = strtoupper((string) $metric);
+
+        return match (true) {
+            $metric === 'PH' => 'PH',
+            $metric === 'EC' => 'EC',
+            str_contains($metric, 'TEMP') => 'TEMPERATURE',
+            str_contains($metric, 'HUM') => 'HUMIDITY',
+            default => null,
+        };
+    }
+
+    private function metricFromSensorType(?string $type): ?string
+    {
+        return match (strtoupper((string) $type)) {
+            'PH' => 'ph',
+            'EC' => 'ec',
+            'TEMPERATURE' => 'temperature',
+            'HUMIDITY' => 'humidity',
+            default => null,
+        };
+    }
+
+    private function buildSensorLabel(NodeChannel $channel, string $sensorType): string
+    {
+        $base = $channel->channel ?: strtolower($sensorType);
+        $base = str_replace('_', ' ', strtolower($base));
+        $base = trim($base) ?: strtolower($sensorType);
+
+        return ucfirst($base);
+    }
+}

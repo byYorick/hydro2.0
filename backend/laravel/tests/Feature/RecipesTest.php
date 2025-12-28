@@ -2,10 +2,12 @@
 
 namespace Tests\Feature;
 
-use App\Models\User;
+use App\Models\GrowCycle;
+use App\Models\Plant;
 use App\Models\Recipe;
-use App\Models\RecipePhase;
-use App\Models\ZoneRecipeInstance;
+use App\Models\RecipeRevision;
+use App\Models\RecipeRevisionPhase;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -29,9 +31,11 @@ class RecipesTest extends TestCase
     public function test_create_recipe(): void
     {
         $token = $this->token();
+        $plant = Plant::factory()->create();
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)->postJson('/api/recipes', [
             'name' => 'Test Recipe',
             'description' => 'Test Description',
+            'plant_id' => $plant->id,
         ]);
         $resp->assertCreated()->assertJsonPath('data.name', 'Test Recipe');
     }
@@ -52,7 +56,13 @@ class RecipesTest extends TestCase
     {
         $token = $this->token();
         $recipe = Recipe::factory()->create();
-        RecipePhase::factory()->count(2)->create(['recipe_id' => $recipe->id]);
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+        RecipeRevisionPhase::factory()->count(2)->create([
+            'recipe_revision_id' => $revision->id,
+        ]);
 
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson("/api/recipes/{$recipe->id}");
@@ -91,33 +101,46 @@ class RecipesTest extends TestCase
     {
         $token = $this->token();
         $recipe = Recipe::factory()->create();
-        ZoneRecipeInstance::factory()->create(['recipe_id' => $recipe->id]);
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+        GrowCycle::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'recipe_id' => $recipe->id,
+            'status' => \App\Enums\GrowCycleStatus::PLANNED,
+        ]);
 
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)
             ->deleteJson("/api/recipes/{$recipe->id}");
 
         $resp->assertStatus(422)
             ->assertJsonPath('status', 'error')
-            ->assertJsonPath('message', 'Cannot delete recipe that is used in 1 zone(s). Please detach from zones first.');
+            ->assertJsonPath('message', 'Cannot delete recipe that is used in 1 active grow cycle(s). Please finish or abort cycles first.');
     }
 
     public function test_add_phase_to_recipe(): void
     {
         $token = $this->token();
         $recipe = Recipe::factory()->create();
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'DRAFT',
+        ]);
 
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)
-            ->postJson("/api/recipes/{$recipe->id}/phases", [
+            ->postJson("/api/recipe-revisions/{$revision->id}/phases", [
                 'phase_index' => 0,
                 'name' => 'Phase 1',
                 'duration_hours' => 24,
-                'targets' => ['ph' => ['min' => 5.6, 'max' => 6.0]],
+                'ph_min' => 5.6,
+                'ph_max' => 6.0,
             ]);
 
         $resp->assertCreated()
             ->assertJsonPath('data.name', 'Phase 1');
-        $this->assertDatabaseHas('recipe_phases', [
-            'recipe_id' => $recipe->id,
+        $this->assertDatabaseHas('recipe_revision_phases', [
+            'recipe_revision_id' => $revision->id,
             'name' => 'Phase 1',
         ]);
     }
@@ -125,10 +148,10 @@ class RecipesTest extends TestCase
     public function test_update_phase(): void
     {
         $token = $this->token();
-        $phase = RecipePhase::factory()->create(['name' => 'Old Phase']);
+        $phase = RecipeRevisionPhase::factory()->create(['name' => 'Old Phase']);
 
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)
-            ->patchJson("/api/recipe-phases/{$phase->id}", [
+            ->patchJson("/api/recipe-revision-phases/{$phase->id}", [
                 'name' => 'New Phase',
             ]);
 
@@ -139,13 +162,12 @@ class RecipesTest extends TestCase
     public function test_delete_phase(): void
     {
         $token = $this->token();
-        $phase = RecipePhase::factory()->create();
+        $phase = RecipeRevisionPhase::factory()->create();
 
         $resp = $this->withHeader('Authorization', 'Bearer '.$token)
-            ->deleteJson("/api/recipe-phases/{$phase->id}");
+            ->deleteJson("/api/recipe-revision-phases/{$phase->id}");
 
         $resp->assertOk();
-        $this->assertDatabaseMissing('recipe_phases', ['id' => $phase->id]);
+        $this->assertDatabaseMissing('recipe_revision_phases', ['id' => $phase->id]);
     }
 }
-

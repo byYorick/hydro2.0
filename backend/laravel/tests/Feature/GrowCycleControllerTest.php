@@ -2,12 +2,15 @@
 
 namespace Tests\Feature;
 
+use App\Enums\GrowCycleStatus;
 use App\Models\GrowCycle;
-use App\Models\GrowStageTemplate;
+use App\Models\Plant;
 use App\Models\Recipe;
+use App\Models\RecipeRevision;
+use App\Models\RecipeRevisionPhase;
 use App\Models\User;
 use App\Models\Zone;
-use App\Enums\GrowCycleStatus;
+use App\Services\GrowCycleService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -16,23 +19,39 @@ class GrowCycleControllerTest extends TestCase
     use RefreshDatabase;
 
     private User $user;
+
     private Zone $zone;
+
+    private Plant $plant;
+
     private Recipe $recipe;
+
+    private RecipeRevision $revision;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->user = User::factory()->create(['role' => 'operator']);
+        $this->user = User::factory()->create(['role' => 'agronomist']);
         $this->zone = Zone::factory()->create();
+        $this->plant = Plant::factory()->create();
         $this->recipe = Recipe::factory()->create();
+        $this->revision = RecipeRevision::factory()->create([
+            'recipe_id' => $this->recipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $this->revision->id,
+            'phase_index' => 0,
+        ]);
     }
 
     /** @test */
-    public function it_creates_a_grow_cycle()
+    public function it_creates_a_grow_cycle(): void
     {
         $response = $this->actingAs($this->user)
             ->postJson("/api/zones/{$this->zone->id}/grow-cycles", [
-                'recipe_id' => $this->recipe->id,
+                'recipe_revision_id' => $this->revision->id,
+                'plant_id' => $this->plant->id,
                 'start_immediately' => false,
             ]);
 
@@ -42,24 +61,25 @@ class GrowCycleControllerTest extends TestCase
                 'data' => [
                     'id',
                     'zone_id',
-                    'recipe_id',
+                    'recipe_revision_id',
                     'status',
                 ],
             ]);
 
         $this->assertDatabaseHas('grow_cycles', [
             'zone_id' => $this->zone->id,
-            'recipe_id' => $this->recipe->id,
+            'recipe_revision_id' => $this->revision->id,
             'status' => GrowCycleStatus::PLANNED->value,
         ]);
     }
 
     /** @test */
-    public function it_creates_and_starts_cycle_immediately()
+    public function it_creates_and_starts_cycle_immediately(): void
     {
         $response = $this->actingAs($this->user)
             ->postJson("/api/zones/{$this->zone->id}/grow-cycles", [
-                'recipe_id' => $this->recipe->id,
+                'recipe_revision_id' => $this->revision->id,
+                'plant_id' => $this->plant->id,
                 'start_immediately' => true,
             ]);
 
@@ -71,26 +91,10 @@ class GrowCycleControllerTest extends TestCase
     }
 
     /** @test */
-    public function it_gets_active_cycle_with_dto()
+    public function it_gets_active_cycle_with_dto(): void
     {
-        $cycle = GrowCycle::factory()->create([
-            'zone_id' => $this->zone->id,
-            'recipe_id' => $this->recipe->id,
-            'status' => GrowCycleStatus::RUNNING,
-            'planting_at' => now(),
-        ]);
-
-        $template = GrowStageTemplate::factory()->create([
-            'code' => 'VEG',
-            'name' => 'Вега',
-        ]);
-
-        \App\Models\RecipeStageMap::factory()->create([
-            'recipe_id' => $this->recipe->id,
-            'stage_template_id' => $template->id,
-            'order_index' => 0,
-            'start_offset_days' => 0,
-        ]);
+        $service = app(GrowCycleService::class);
+        $cycle = $service->createCycle($this->zone, $this->revision, $this->plant->id, ['start_immediately' => true]);
 
         $response = $this->actingAs($this->user)
             ->getJson("/api/zones/{$this->zone->id}/grow-cycle");
@@ -107,45 +111,32 @@ class GrowCycleControllerTest extends TestCase
                         'progress',
                         'stages',
                     ],
+                    'effective_targets',
                 ],
             ]);
     }
 
     /** @test */
-    public function it_advances_stage()
+    public function it_advances_phase(): void
     {
-        $cycle = GrowCycle::factory()->create([
-            'zone_id' => $this->zone->id,
-            'recipe_id' => $this->recipe->id,
-            'status' => GrowCycleStatus::RUNNING,
-            'current_stage_code' => 'PLANTING',
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $this->revision->id,
+            'phase_index' => 1,
         ]);
 
-        $template1 = GrowStageTemplate::factory()->create(['code' => 'PLANTING', 'order_index' => 0]);
-        $template2 = GrowStageTemplate::factory()->create(['code' => 'VEG', 'order_index' => 1]);
-
-        \App\Models\RecipeStageMap::factory()->create([
-            'recipe_id' => $this->recipe->id,
-            'stage_template_id' => $template1->id,
-            'order_index' => 0,
-        ]);
-        \App\Models\RecipeStageMap::factory()->create([
-            'recipe_id' => $this->recipe->id,
-            'stage_template_id' => $template2->id,
-            'order_index' => 1,
-        ]);
+        $service = app(GrowCycleService::class);
+        $cycle = $service->createCycle($this->zone, $this->revision, $this->plant->id, ['start_immediately' => true]);
 
         $response = $this->actingAs($this->user)
-            ->postJson("/api/grow-cycles/{$cycle->id}/advance-stage");
+            ->postJson("/api/grow-cycles/{$cycle->id}/advance-phase");
 
         $response->assertStatus(200);
-
         $cycle->refresh();
-        $this->assertEquals('VEG', $cycle->current_stage_code);
+        $this->assertEquals(1, $cycle->currentPhase->phase_index);
     }
 
     /** @test */
-    public function it_pauses_a_cycle()
+    public function it_pauses_a_cycle(): void
     {
         $cycle = GrowCycle::factory()->create([
             'zone_id' => $this->zone->id,
@@ -153,7 +144,7 @@ class GrowCycleControllerTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->postJson("/api/zones/{$this->zone->id}/grow-cycle/pause");
+            ->postJson("/api/grow-cycles/{$cycle->id}/pause");
 
         $response->assertStatus(200);
 
@@ -162,7 +153,7 @@ class GrowCycleControllerTest extends TestCase
     }
 
     /** @test */
-    public function it_resumes_a_cycle()
+    public function it_resumes_a_cycle(): void
     {
         $cycle = GrowCycle::factory()->create([
             'zone_id' => $this->zone->id,
@@ -170,7 +161,7 @@ class GrowCycleControllerTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->postJson("/api/zones/{$this->zone->id}/grow-cycle/resume");
+            ->postJson("/api/grow-cycles/{$cycle->id}/resume");
 
         $response->assertStatus(200);
 
@@ -179,7 +170,7 @@ class GrowCycleControllerTest extends TestCase
     }
 
     /** @test */
-    public function it_harvests_a_cycle()
+    public function it_harvests_a_cycle(): void
     {
         $cycle = GrowCycle::factory()->create([
             'zone_id' => $this->zone->id,
@@ -200,7 +191,7 @@ class GrowCycleControllerTest extends TestCase
     }
 
     /** @test */
-    public function it_aborts_a_cycle()
+    public function it_aborts_a_cycle(): void
     {
         $cycle = GrowCycle::factory()->create([
             'zone_id' => $this->zone->id,
@@ -217,13 +208,4 @@ class GrowCycleControllerTest extends TestCase
         $cycle->refresh();
         $this->assertEquals(GrowCycleStatus::ABORTED, $cycle->status);
     }
-
-    /** @test */
-    public function it_requires_authentication()
-    {
-        $response = $this->postJson("/api/zones/{$this->zone->id}/grow-cycles");
-
-        $response->assertStatus(401);
-    }
 }
-

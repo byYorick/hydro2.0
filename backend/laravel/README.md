@@ -27,7 +27,6 @@
   - `README_TELEMETRY_SEEDERS.md` - сидеры телеметрии
 - `tests/` - тесты и тестовая документация
   - `TESTING_PID.md` - тестирование PID
-  - `TEST_RESULTS.md` - результаты тестов
   - `TESTS_P1_P2_P3.md` - тесты по фазам
   - `README_PID_TESTS.md` - документация PID тестов
   - `WEBSOCKET_TESTING.md` - тестирование WebSocket

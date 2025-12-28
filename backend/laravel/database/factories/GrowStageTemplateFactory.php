@@ -17,16 +17,17 @@ class GrowStageTemplateFactory extends Factory
         $colors = ['#10b981', '#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6'];
         
         $index = $this->faker->numberBetween(0, count($codes) - 1);
+        $suffix = strtoupper($this->faker->unique()->lexify('????'));
 
         return [
-            'name' => $names[$index],
-            'code' => $codes[$index],
+            'name' => $names[$index].' '.$suffix,
+            'code' => $codes[$index].'_'.$suffix,
             'order_index' => $index,
             'default_duration_days' => $this->faker->numberBetween(1, 30),
             'ui_meta' => [
                 'color' => $colors[$index],
                 'icon' => $icons[$index],
-                'description' => $names[$index],
+                'description' => $names[$index].' '.$suffix,
             ],
         ];
     }
@@ -61,4 +62,3 @@ class GrowStageTemplateFactory extends Factory
         ]);
     }
 }
-

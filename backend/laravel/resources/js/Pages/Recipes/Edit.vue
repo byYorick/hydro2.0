@@ -14,6 +14,26 @@
             <input id="recipe-description" name="description" v-model="form.description" data-testid="recipe-description-input" class="input-field" :class="form.errors.description ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''" />
             <div v-if="form.errors.description" class="text-xs text-[color:var(--badge-danger-text)] mt-1">{{ form.errors.description }}</div>
           </div>
+          <div>
+            <label for="recipe-plant" class="block text-xs text-[color:var(--text-muted)] mb-1">Культура</label>
+            <select
+              id="recipe-plant"
+              name="plant_id"
+              v-model.number="form.plant_id"
+              class="input-field"
+              :disabled="plantsLoading"
+              :class="form.errors.plant_id ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''"
+            >
+              <option :value="null" disabled>Выберите культуру</option>
+              <option v-for="plant in plants" :key="plant.id" :value="plant.id">
+                {{ plant.name }}
+              </option>
+            </select>
+            <div v-if="form.errors.plant_id" class="text-xs text-[color:var(--badge-danger-text)] mt-1">{{ form.errors.plant_id }}</div>
+            <div v-else-if="!plantsLoading && plants.length === 0" class="text-xs text-[color:var(--text-dim)] mt-1">
+              Нет доступных культур — добавьте культуру в справочнике.
+            </div>
+          </div>
         </div>
 
         <div>
@@ -83,7 +103,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { Link, usePage, router, useForm } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
@@ -91,6 +111,7 @@ import Button from '@/Components/Button.vue'
 import { logger } from '@/utils/logger'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import type { Recipe, RecipePhase } from '@/types'
 
 const { showToast } = useToast()
@@ -115,6 +136,7 @@ interface RecipePhaseForm {
 interface RecipeFormData {
   name: string
   description: string
+  plant_id: number | null
   phases: RecipePhaseForm[]
 }
 
@@ -123,11 +145,21 @@ interface PageProps {
 }
 
 const page = usePage<PageProps>()
-const recipe = page.props.recipe || {}
+const recipe = (page.props.recipe || {}) as Partial<Recipe>
+
+interface PlantOption {
+  id: number
+  name: string
+}
+
+const plants = ref<PlantOption[]>([])
+const plantsLoading = ref(false)
+const initialPlantId = recipe.plants?.[0]?.id ?? null
 
 const form = useForm<RecipeFormData>({
   name: recipe.name || '',
   description: recipe.description || '',
+  plant_id: initialPlantId,
   phases: (recipe.phases || []).length > 0 ? (recipe.phases || []).map((p: RecipePhase & Record<string, any>) => {
     const phMin = typeof p.ph_min === 'number' ? p.ph_min : (typeof p.targets?.ph?.min === 'number' ? p.targets.ph.min : 5.8)
     const phMax = typeof p.ph_max === 'number' ? p.ph_max : (typeof p.targets?.ph?.max === 'number' ? p.targets.ph.max : 6.0)
@@ -165,6 +197,39 @@ const form = useForm<RecipeFormData>({
   }],
 })
 
+const loadPlants = async (): Promise<void> => {
+  try {
+    plantsLoading.value = true
+    const response = await api.get('/plants')
+    const data = response.data?.data || []
+    plants.value = Array.isArray(data)
+      ? data.map((plant: any) => ({ id: plant.id, name: plant.name }))
+      : []
+
+    if (!form.plant_id && recipe.id) {
+      const recipeResponse = await api.get(`/recipes/${recipe.id}`)
+      const recipeData = recipeResponse.data?.data || {}
+      const apiPlantId = recipeData.plants?.[0]?.id ?? null
+      if (apiPlantId) {
+        form.plant_id = apiPlantId
+      }
+    }
+
+    if (!form.plant_id && plants.value.length === 1) {
+      form.plant_id = plants.value[0].id
+    }
+  } catch (error) {
+    logger.error('Failed to load plants:', error)
+    showToast('Не удалось загрузить список культур', 'error', TOAST_TIMEOUT.NORMAL)
+  } finally {
+    plantsLoading.value = false
+  }
+}
+
+onMounted(() => {
+  loadPlants()
+})
+
 const sortedPhases = computed<RecipePhaseForm[]>(() => {
   return [...form.phases].sort((a, b) => (a.phase_index || 0) - (b.phase_index || 0))
 })
@@ -190,12 +255,18 @@ const onAddPhase = (): void => {
 }
 
 const onSave = async (): Promise<void> => {
+  if (!form.plant_id) {
+    showToast('Выберите культуру для рецепта', 'error', TOAST_TIMEOUT.NORMAL)
+    return
+  }
+
   try {
     form.processing = true
     if (recipe.id) {
       await api.patch(`/recipes/${recipe.id}`, {
         name: form.name,
-        description: form.description
+        description: form.description,
+        plant_id: form.plant_id,
       })
 
       let draftRevisionId = (recipe as any).draft_revision_id as number | undefined
@@ -267,7 +338,8 @@ const onSave = async (): Promise<void> => {
         '/recipes',
         {
           name: form.name,
-          description: form.description
+          description: form.description,
+          plant_id: form.plant_id,
         }
       )
       

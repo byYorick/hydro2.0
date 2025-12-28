@@ -2,10 +2,8 @@
 
 namespace App\Services;
 
-use App\Models\Zone;
-use App\Models\GrowCycle;
-use App\Enums\GrowCycleStatus;
 use App\Events\ZoneUpdated;
+use App\Models\Zone;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -23,38 +21,38 @@ class ZoneService
             if (empty($data['uid'])) {
                 $data['uid'] = $this->generateZoneUid($data['name'] ?? 'untitled');
             }
-            
+
             $zone = Zone::create($data);
             Log::info('Zone created', ['zone_id' => $zone->id, 'uid' => $zone->uid, 'name' => $zone->name]);
-            
+
             // Dispatch event для уведомления Python-сервиса
             event(new ZoneUpdated($zone));
-            
+
             return $zone;
         });
     }
 
     /**
      * Генерирует UID для зоны на основе названия
-     * 
-     * @param string $name Название зоны (может быть на русском)
+     *
+     * @param  string  $name  Название зоны (может быть на русском)
      * @return string Сгенерированный UID в формате zn-{transliterated-name}
      */
     private function generateZoneUid(string $name): string
     {
         $prefix = 'zn-';
-        
+
         if (empty($name) || trim($name) === '') {
-            return $prefix . 'untitled-' . strtolower(Str::random(6));
+            return $prefix.'untitled-'.strtolower(Str::random(6));
         }
 
         // Используем Str::slug для транслитерации и нормализации
         // Str::slug автоматически транслитерирует русские буквы
         $transliterated = Str::slug(trim($name), '-');
-        
+
         // Если после обработки ничего не осталось, используем значение по умолчанию
         if (empty($transliterated)) {
-            $transliterated = 'untitled-' . strtolower(Str::random(6));
+            $transliterated = 'untitled-'.strtolower(Str::random(6));
         }
 
         // Ограничиваем длину (оставляем место для префикса и суффикса)
@@ -65,21 +63,21 @@ class ZoneService
             $transliterated = rtrim($transliterated, '-');
         }
 
-        $uid = $prefix . $transliterated;
-        
+        $uid = $prefix.$transliterated;
+
         // Проверяем уникальность UID и добавляем суффикс, если нужно
         $counter = 0;
         $originalUid = $uid;
         while (Zone::where('uid', $uid)->exists()) {
             $counter++;
-            $suffix = '-' . $counter;
+            $suffix = '-'.$counter;
             $maxLengthWithSuffix = $maxLength - strlen($suffix);
             $base = substr($transliterated, 0, $maxLengthWithSuffix);
-            $uid = $prefix . rtrim($base, '-') . $suffix;
-            
+            $uid = $prefix.rtrim($base, '-').$suffix;
+
             // Защита от бесконечного цикла
             if ($counter > 1000) {
-                $uid = $originalUid . '-' . time();
+                $uid = $originalUid.'-'.time();
                 break;
             }
         }
@@ -96,10 +94,10 @@ class ZoneService
             $zone->update($data);
             Log::info('Zone updated', ['zone_id' => $zone->id]);
             $zone = $zone->fresh();
-            
+
             // Dispatch event для уведомления Python-сервиса
             event(new ZoneUpdated($zone));
-            
+
             return $zone;
         });
     }
@@ -128,51 +126,6 @@ class ZoneService
     }
 
     /**
-     * Назначить рецепт на зону
-     * 
-     * @deprecated Используйте GrowCycleService::createCycle() вместо этого метода
-     * Этот метод оставлен для обратной совместимости, но создает только ZoneRecipeInstance без GrowCycle
-     */
-    public function attachRecipe(Zone $zone, int $recipeId, ?\DateTimeInterface $startAt = null)
-    {
-        Log::warning('ZoneService::attachRecipe() is deprecated. Use GrowCycleService::createCycle() instead.', [
-            'zone_id' => $zone->id,
-            'recipe_id' => $recipeId,
-        ]);
-
-        throw new \DomainException('ZoneService::attachRecipe() is deprecated. Please use GrowCycleService::createCycle() to create a new grow cycle with a recipe revision.');
-    }
-
-    /**
-     * Изменить фазу рецепта зоны
-     * 
-     * @deprecated Используйте GrowCycleService::setPhase() или GrowCycleService::advancePhase() вместо этого метода
-     */
-    public function changePhase(Zone $zone, int $phaseIndex)
-    {
-        Log::warning('ZoneService::changePhase() is deprecated. Use GrowCycleService::setPhase() or GrowCycleService::advancePhase() instead.', [
-            'zone_id' => $zone->id,
-            'phase_index' => $phaseIndex,
-        ]);
-
-        throw new \DomainException('ZoneService::changePhase() is deprecated. Please use GrowCycleService::setPhase() or GrowCycleService::advancePhase() to change phases in a grow cycle.');
-    }
-
-    /**
-     * Перейти на следующую фазу рецепта
-     * 
-     * @deprecated Используйте GrowCycleService::advancePhase() вместо этого метода
-     */
-    public function nextPhase(Zone $zone)
-    {
-        Log::warning('ZoneService::nextPhase() is deprecated. Use GrowCycleService::advancePhase() instead.', [
-            'zone_id' => $zone->id,
-        ]);
-
-        throw new \DomainException('ZoneService::nextPhase() is deprecated. Please use GrowCycleService::advancePhase() to advance to the next phase in a grow cycle.');
-    }
-
-    /**
      * Пауза/возобновление зоны
      */
     public function pause(Zone $zone): Zone
@@ -185,34 +138,34 @@ class ZoneService
             try {
                 $oldStatus = $zone->status;
                 $zone->update(['status' => 'PAUSED']);
-                
+
                 // Создаем zone_event
                 $hasPayloadJson = Schema::hasColumn('zone_events', 'payload_json');
-                
+
                 $eventPayload = json_encode([
                     'zone_id' => $zone->id,
                     'from_status' => $oldStatus ?? null,
                     'to_status' => 'PAUSED',
                     'paused_at' => now()->toIso8601String(),
                 ]);
-                
+
                 $eventData = [
                     'zone_id' => $zone->id,
                     'type' => 'CYCLE_PAUSED',
                     'created_at' => now(),
                 ];
-                
+
                 if ($hasPayloadJson) {
                     $eventData['payload_json'] = $eventPayload;
                 } else {
                     $eventData['details'] = $eventPayload;
                 }
-                
+
                 DB::table('zone_events')->insert($eventData);
 
                 Log::info('Zone paused', ['zone_id' => $zone->id]);
                 $zone = $zone->fresh();
-                
+
                 // Dispatch event для уведомления Python-сервиса
                 try {
                     event(new ZoneUpdated($zone));
@@ -220,16 +173,16 @@ class ZoneService
                     // Игнорируем ошибки при dispatch event, это не критично
                     Log::warning('Failed to dispatch ZoneUpdated event', [
                         'zone_id' => $zone->id,
-                        'error' => $e->getMessage()
+                        'error' => $e->getMessage(),
                     ]);
                 }
-                
+
                 return $zone;
             } catch (\Exception $e) {
                 Log::error('Error in ZoneService::pause', [
                     'zone_id' => $zone->id,
                     'error' => $e->getMessage(),
-                    'trace' => $e->getTraceAsString()
+                    'trace' => $e->getTraceAsString(),
                 ]);
                 throw $e;
             }
@@ -247,37 +200,37 @@ class ZoneService
 
         return DB::transaction(function () use ($zone) {
             $zone->update(['status' => 'RUNNING']);
-            
+
             // Создаем zone_event
             $hasPayloadJson = Schema::hasColumn('zone_events', 'payload_json');
-            
+
             $eventPayload = json_encode([
                 'zone_id' => $zone->id,
                 'from_status' => 'PAUSED',
                 'to_status' => 'RUNNING',
                 'resumed_at' => now()->toIso8601String(),
             ]);
-            
+
             $eventData = [
                 'zone_id' => $zone->id,
                 'type' => 'CYCLE_RESUMED',
                 'created_at' => now(),
             ];
-            
+
             if ($hasPayloadJson) {
                 $eventData['payload_json'] = $eventPayload;
             } else {
                 $eventData['details'] = $eventPayload;
             }
-            
+
             DB::table('zone_events')->insert($eventData);
 
             Log::info('Zone resumed', ['zone_id' => $zone->id]);
             $zone = $zone->fresh();
-            
+
             // Dispatch event для уведомления Python-сервиса
             event(new ZoneUpdated($zone));
-            
+
             return $zone;
         });
     }
@@ -289,10 +242,10 @@ class ZoneService
     {
         // Используем history-logger для всех операций с нодами
         $baseUrl = config('services.history_logger.url');
-        if (!$baseUrl) {
+        if (! $baseUrl) {
             throw new \DomainException('History Logger URL not configured');
         }
-        
+
         $token = config('services.history_logger.token') ?? config('services.python_bridge.token'); // Fallback на старый токен
         $headers = $token ? ['Authorization' => "Bearer {$token}"] : [];
 
@@ -308,14 +261,14 @@ class ZoneService
                 ->timeout(350) // Больше чем max_duration_sec (300) + запас
                 ->post("{$baseUrl}/zones/{$zone->id}/fill", $payload);
 
-            if (!$response->successful()) {
+            if (! $response->successful()) {
                 Log::error('ZoneService: Fill operation failed', [
                     'zone_id' => $zone->id,
                     'target_level' => $data['target_level'],
                     'status' => $response->status(),
                     'response' => substr($response->body(), 0, 500),
                 ]);
-                throw new \DomainException('Fill operation failed: ' . substr($response->body(), 0, 200));
+                throw new \DomainException('Fill operation failed: '.substr($response->body(), 0, 200));
             }
 
             Log::info('Zone fill executed', [
@@ -356,10 +309,10 @@ class ZoneService
     {
         // Используем history-logger для всех операций с нодами
         $baseUrl = config('services.history_logger.url');
-        if (!$baseUrl) {
+        if (! $baseUrl) {
             throw new \DomainException('History Logger URL not configured');
         }
-        
+
         $token = config('services.history_logger.token') ?? config('services.python_bridge.token'); // Fallback на старый токен
         $headers = $token ? ['Authorization' => "Bearer {$token}"] : [];
 
@@ -375,14 +328,14 @@ class ZoneService
                 ->timeout(350) // Больше чем max_duration_sec (300) + запас
                 ->post("{$baseUrl}/zones/{$zone->id}/drain", $payload);
 
-            if (!$response->successful()) {
+            if (! $response->successful()) {
                 Log::error('ZoneService: Drain operation failed', [
                     'zone_id' => $zone->id,
                     'target_level' => $data['target_level'],
                     'status' => $response->status(),
                     'response' => substr($response->body(), 0, 500),
                 ]);
-                throw new \DomainException('Drain operation failed: ' . substr($response->body(), 0, 200));
+                throw new \DomainException('Drain operation failed: '.substr($response->body(), 0, 200));
             }
 
             Log::info('Zone drain executed', [
@@ -423,10 +376,10 @@ class ZoneService
     {
         // Используем history-logger для всех операций с нодами
         $baseUrl = config('services.history_logger.url');
-        if (!$baseUrl) {
+        if (! $baseUrl) {
             throw new \DomainException('History Logger URL not configured');
         }
-        
+
         $token = config('services.history_logger.token') ?? config('services.python_bridge.token'); // Fallback на старый токен
         $headers = $token ? ['Authorization' => "Bearer {$token}"] : [];
 
@@ -443,7 +396,7 @@ class ZoneService
                 ->timeout(30) // Калибровка занимает ~12 секунд (10 сек насос + 2 сек ожидание)
                 ->post("{$baseUrl}/zones/{$zone->id}/calibrate-flow", $payload);
 
-            if (!$response->successful()) {
+            if (! $response->successful()) {
                 Log::error('ZoneService: Flow calibration failed', [
                     'zone_id' => $zone->id,
                     'node_id' => $data['node_id'] ?? null,
@@ -451,7 +404,7 @@ class ZoneService
                     'status' => $response->status(),
                     'response' => substr($response->body(), 0, 500),
                 ]);
-                throw new \DomainException('Flow calibration failed: ' . substr($response->body(), 0, 200));
+                throw new \DomainException('Flow calibration failed: '.substr($response->body(), 0, 200));
             }
 
             Log::info('Flow calibration executed', [
@@ -496,13 +449,13 @@ class ZoneService
     {
         return DB::transaction(function () use ($zone) {
             // Проверяем, что зона в статусе RUNNING или PAUSED
-            if (!in_array($zone->status, ['RUNNING', 'PAUSED'])) {
+            if (! in_array($zone->status, ['RUNNING', 'PAUSED'])) {
                 throw new \DomainException("Zone must be RUNNING or PAUSED to harvest. Current status: {$zone->status}");
             }
 
             // Обновляем статус зоны на HARVESTED
             $zone->update(['status' => 'HARVESTED']);
-            
+
             // Закрываем активный цикл, если есть
             if ($zone->activeGrowCycle) {
                 // Завершаем цикл через GrowCycleService
@@ -515,25 +468,25 @@ class ZoneService
 
             // Создаем zone_event
             $hasPayloadJson = Schema::hasColumn('zone_events', 'payload_json');
-            
+
             $eventPayload = json_encode([
                 'zone_id' => $zone->id,
                 'status' => 'HARVESTED',
                 'harvested_at' => now()->toIso8601String(),
             ]);
-            
+
             $eventData = [
                 'zone_id' => $zone->id,
                 'type' => 'CYCLE_HARVESTED',
                 'created_at' => now(),
             ];
-            
+
             if ($hasPayloadJson) {
                 $eventData['payload_json'] = $eventPayload;
             } else {
                 $eventData['details'] = $eventPayload;
             }
-            
+
             DB::table('zone_events')->insert($eventData);
 
             Log::info('Zone cycle harvested', [
@@ -541,12 +494,11 @@ class ZoneService
             ]);
 
             $zone = $zone->fresh();
-            
+
             // Dispatch event для уведомления Python-сервиса
             event(new ZoneUpdated($zone));
-            
+
             return $zone;
         });
     }
 }
-

@@ -24,9 +24,8 @@ class GrowStageTemplate extends Model
         'ui_meta' => 'array',
     ];
 
-    public function recipeStageMaps(): HasMany
+    public function phases(): HasMany
     {
-        return $this->hasMany(RecipeStageMap::class, 'stage_template_id');
+        return $this->hasMany(RecipeRevisionPhase::class, 'stage_template_id');
     }
 }
-

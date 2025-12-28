@@ -109,8 +109,7 @@ doc_ai/
 │  ├─ ANDROID_APP_API_INTEGRATION.md
 │  └─ ...
 ├─ INDEX.md                       # Главный индекс документации
-├─ README_STRUCTURE.md            # Описание структуры папок
-└─ IMPLEMENTATION_STATUS.md
+└─ README_STRUCTURE.md            # Описание структуры папок
 ```
 
 **Боевой проект** подразумевает, что все ключевые `.md` из этих папок **заполнены полностью** и согласованы между собой.
@@ -377,7 +376,7 @@ tools/
 1. В `doc_ai/` заполнены и согласованы:
    - `SYSTEM_OVERVIEW.md`,
    - все ключевые спеки по нодам, MQTT и backend,
-   - `IMPLEMENTATION_STATUS.md` актуален.
+   - индексы и README отражают текущую структуру и код.
 2. В `firmware/`:
    - есть рабочие проекты `pump_node`, `ph_node`, `ec_node`, `climate_node`,
    - реализован и протестирован `ina209`-драйвер,

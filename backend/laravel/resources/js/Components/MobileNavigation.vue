@@ -6,6 +6,17 @@
   >
     <div class="flex items-center justify-around h-16">
       <NavLink
+        href="/"
+        :label="'Дашборд'"
+        class="flex flex-col items-center justify-center flex-1 h-full"
+        :mobile="true"
+      >
+        <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h7v7H4V6zm9 0h7v4h-7V6zM4 15h7v3H4v-3zm9-3h7v6h-7v-6z" />
+        </svg>
+      </NavLink>
+
+      <NavLink
         href="/cycles"
         :label="'Циклы'"
         class="flex flex-col items-center justify-center flex-1 h-full"
@@ -73,6 +84,29 @@
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
         </svg>
       </NavLink>
+
+      <NavLink
+        href="/analytics"
+        :label="'Аналитика'"
+        class="flex flex-col items-center justify-center flex-1 h-full"
+        :mobile="true"
+      >
+        <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3v18h18M7 15l4-4 3 3 4-6" />
+        </svg>
+      </NavLink>
+
+      <NavLink
+        v-if="canViewLogs"
+        href="/logs"
+        :label="'Логи'"
+        class="flex flex-col items-center justify-center flex-1 h-full"
+        :mobile="true"
+      >
+        <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 6h8M8 10h8M8 14h6M5 4h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z" />
+        </svg>
+      </NavLink>
       
       <NavLink
         v-if="!isViewer"
@@ -95,13 +129,14 @@ import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRole } from '@/composables/useRole'
 import NavLink from '@/Components/NavLink.vue'
 
-const { isViewer, canEdit } = useRole()
+const { isViewer, hasAnyRole } = useRole()
 
 const isMobile = ref(false)
 
 const canViewZones = computed(() => true) // Все роли могут видеть зоны
 const canViewDevices = computed(() => true) // Все роли могут видеть устройства
 const canViewRecipes = computed(() => true) // Все роли могут видеть рецепты
+const canViewLogs = computed(() => hasAnyRole(['admin', 'operator', 'engineer']))
 
 function checkMobile() {
   isMobile.value = window.innerWidth < 1024 // lg breakpoint

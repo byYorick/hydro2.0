@@ -17,11 +17,8 @@ hydro2.0 Monorepo (skeleton)
 - Папка `docs/` является mirror структуры из `doc_ai/` для совместимости
 - Все изменения в документации вносятся только в `doc_ai/`
 - **Начните с:** `doc_ai/INDEX.md` — главный индекс документации
-- Статус реализации: `doc_ai/IMPLEMENTATION_STATUS.md`
-- Roadmap: `doc_ai/ROADMAP_2.0.md`
-
-**Приоритеты разработки:**
-- См. приоритеты: `doc_ai/DEVELOPMENT_PRIORITIES.md`
+**Конвенции разработки:**
+- См. правила: `doc_ai/DEV_CONVENTIONS.md`
 
 **WebSocket (Real-time обновления):**
 - Архитектура: `backend/laravel/docs/WEBSOCKET_ARCHITECTURE.md`
@@ -33,5 +30,3 @@ hydro2.0 Monorepo (skeleton)
 - Запуск Reverb: `php artisan reverb:start`
 
 См. подробности в `doc_ai/01_SYSTEM/01_PROJECT_STRUCTURE_PROD.md`.
-
-

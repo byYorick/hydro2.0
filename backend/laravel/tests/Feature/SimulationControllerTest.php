@@ -2,10 +2,13 @@
 
 namespace Tests\Feature;
 
-use App\Models\Zone;
+use App\Models\Plant;
 use App\Models\Recipe;
+use App\Models\RecipeRevision;
+use App\Models\RecipeRevisionPhase;
 use App\Models\User;
-use App\Models\ZoneRecipeInstance;
+use App\Models\Zone;
+use App\Services\GrowCycleService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -19,7 +22,7 @@ class SimulationControllerTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        
+
         // Создаём пользователя для аутентификации с ролью operator для мутационных операций
         $this->user = User::factory()->create(['role' => 'operator']);
     }
@@ -108,17 +111,20 @@ class SimulationControllerTest extends TestCase
             ], 200),
         ]);
 
+        $plant = Plant::factory()->create();
         $recipe = Recipe::factory()->create();
-        $zone = Zone::factory()->create();
-        
-        // Обновляем проверку, чтобы использовать созданный recipe
-        
-        // Создаём ZoneRecipeInstance для связи зоны с рецептом
-        ZoneRecipeInstance::factory()->create([
-            'zone_id' => $zone->id,
+        $revision = RecipeRevision::factory()->create([
             'recipe_id' => $recipe->id,
-            'current_phase_index' => 0,
+            'status' => 'PUBLISHED',
         ]);
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 0,
+        ]);
+        $zone = Zone::factory()->create();
+
+        $service = app(GrowCycleService::class);
+        $service->createCycle($zone, $revision, $plant->id, ['start_immediately' => true]);
 
         $response = $this->actingAs($this->user)
             ->postJson("/api/zones/{$zone->id}/simulate", [

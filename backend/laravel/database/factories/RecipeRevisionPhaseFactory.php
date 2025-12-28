@@ -21,7 +21,7 @@ class RecipeRevisionPhaseFactory extends Factory
         return [
             'recipe_revision_id' => RecipeRevision::factory(),
             'stage_template_id' => GrowStageTemplate::factory(),
-            'phase_index' => $this->faker->numberBetween(0, 10),
+            'phase_index' => $this->faker->unique()->numberBetween(0, 10000),
             'name' => 'Phase ' . $this->faker->numberBetween(1, 10),
             // Обязательные параметры
             'ph_target' => $this->faker->randomFloat(2, 5.5, 6.5),

@@ -4,12 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Helpers\ZoneAccessHelper;
 use App\Models\Zone;
-use App\Services\ZoneService;
-use App\Services\ZoneReadinessService;
 use App\Services\EffectiveTargetsService;
+use App\Services\ZoneDataService;
 use App\Services\ZoneLifecycleService;
 use App\Services\ZoneOperationsService;
-use App\Services\ZoneDataService;
+use App\Services\ZoneReadinessService;
+use App\Services\ZoneService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -23,19 +23,18 @@ class ZoneController extends Controller
         private ZoneLifecycleService $lifecycleService,
         private ZoneOperationsService $operationsService,
         private ZoneDataService $dataService
-    ) {
-    }
+    ) {}
 
     /**
      * Проверить авторизацию и доступ к зоне
      */
     private function authorizeZoneAccess($user, Zone $zone): void
     {
-        if (!$user) {
+        if (! $user) {
             abort(401, 'Unauthorized');
         }
 
-        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+        if (! ZoneAccessHelper::canAccessZone($user, $zone)) {
             abort(403, 'Forbidden: Access denied to this zone');
         }
     }
@@ -43,7 +42,7 @@ class ZoneController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -65,7 +64,7 @@ class ZoneController extends Controller
             ->withCount('nodes') // Счетчик узлов
             ->with(['greenhouse:id,name', 'preset:id,name']); // Загружаем только нужные поля
 
-        if (!$user?->isAdmin()) {
+        if (! $user?->isAdmin()) {
             $query->whereIn('id', $accessibleZoneIds ?: [0]);
         }
 
@@ -79,7 +78,7 @@ class ZoneController extends Controller
         }
 
         if (isset($validated['search'])) {
-            $query->where('name', 'ILIKE', '%' . $validated['search'] . '%');
+            $query->where('name', 'ILIKE', '%'.$validated['search'].'%');
         }
 
         $zones = $query->orderBy('name')->get();
@@ -93,7 +92,7 @@ class ZoneController extends Controller
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -107,7 +106,7 @@ class ZoneController extends Controller
             'settings' => ['nullable', 'array'],
         ]);
 
-        $zone = $this->zoneService->createZone($data, $user);
+        $zone = $this->zoneService->create($data);
 
         return response()->json([
             'status' => 'ok',
@@ -146,7 +145,7 @@ class ZoneController extends Controller
             'status' => ['sometimes', 'string', 'in:online,offline,warning'],
         ]);
 
-        $zone = $this->zoneService->updateZone($zone, $data);
+        $zone = $this->zoneService->update($zone, $data);
 
         return response()->json([
             'status' => 'ok',
@@ -158,81 +157,12 @@ class ZoneController extends Controller
     {
         $this->authorizeZoneAccess($request->user(), $zone);
 
-        $this->zoneService->deleteZone($zone);
-
-        return response()->json([
-            'status' => 'ok',
-        ]);
-    }
-
-    public function attachRecipe(Request $request, Zone $zone): JsonResponse
-    {
-        $this->authorizeZoneAccess($request->user(), $zone);
-
-        $data = $request->validate([
-            'recipe_id' => ['required', 'integer', 'exists:recipes,id'],
-            'start_at' => ['nullable', 'date'],
-        ]);
-
         try {
-            $instance = $this->lifecycleService->attachRecipe(
-                $zone,
-                $data['recipe_id'],
-                isset($data['start_at']) ? new \DateTime($data['start_at']) : null
-            );
-
-            // Загружаем обновленную зону с активным циклом
-            $zone->refresh();
-            $zone->load(['activeGrowCycle.recipeRevision']);
+            $this->zoneService->delete($zone);
 
             return response()->json([
                 'status' => 'ok',
-                'data' => [
-                    'zone_id' => $zone->id,
-                    'recipe_instance_id' => $instance->id,
-                    'recipe_id' => $instance->recipe_id,
-                ]
             ]);
-        } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error('Failed to attach recipe', [
-                'zone_id' => $zone->id,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-
-            return response()->json([
-                'status' => 'error',
-                'message' => $e->getMessage(),
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
-        }
-    }
-
-    public function changePhase(Request $request, Zone $zone): JsonResponse
-    {
-        $this->authorizeZoneAccess($request->user(), $zone);
-
-        $data = $request->validate([
-            'phase_index' => ['required', 'integer', 'min:0'],
-        ]);
-
-        try {
-            $this->lifecycleService->changePhase($zone, $data['phase_index']);
-            return response()->json(['status' => 'ok']);
-        } catch (\DomainException $e) {
-            return response()->json([
-                'status' => 'error',
-                'message' => $e->getMessage(),
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
-        }
-    }
-
-    public function nextPhase(Request $request, Zone $zone): JsonResponse
-    {
-        $this->authorizeZoneAccess($request->user(), $zone);
-
-        try {
-            $this->lifecycleService->nextPhase($zone);
-            return response()->json(['status' => 'ok']);
         } catch (\DomainException $e) {
             return response()->json([
                 'status' => 'error',
@@ -247,6 +177,7 @@ class ZoneController extends Controller
 
         try {
             $this->lifecycleService->pause($zone);
+
             return response()->json(['status' => 'ok']);
         } catch (\DomainException $e) {
             return response()->json([
@@ -262,6 +193,7 @@ class ZoneController extends Controller
 
         try {
             $this->lifecycleService->resume($zone);
+
             return response()->json(['status' => 'ok']);
         } catch (\DomainException $e) {
             return response()->json([
@@ -277,6 +209,7 @@ class ZoneController extends Controller
 
         try {
             $this->lifecycleService->harvest($zone);
+
             return response()->json(['status' => 'ok']);
         } catch (\DomainException $e) {
             return response()->json([
@@ -292,6 +225,7 @@ class ZoneController extends Controller
 
         try {
             $this->lifecycleService->start($zone, []);
+
             return response()->json(['status' => 'ok']);
         } catch (\DomainException $e) {
             return response()->json([

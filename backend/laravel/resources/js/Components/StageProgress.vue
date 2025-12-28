@@ -142,8 +142,6 @@ import {
 } from '@/utils/growStages'
 import type { RecipeInstance } from '@/types'
 
-// ZoneRecipeInstance is an alias used in PhaseProgress, we use RecipeInstance directly
-
 interface Props {
   recipeInstance?: RecipeInstance | null
   growCycle?: any | null // GrowCycle из новой модели

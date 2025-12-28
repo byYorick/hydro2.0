@@ -2,18 +2,17 @@
 
 namespace Tests\Feature;
 
-use App\Models\GrowCycle;
-use App\Models\GrowStageTemplate;
-use App\Models\Recipe;
-use App\Models\RecipePhase;
-use App\Models\RecipeStageMap;
-use App\Models\Zone;
-use App\Models\ZoneRecipeInstance;
 use App\Enums\GrowCycleStatus;
+use App\Models\GrowStageTemplate;
+use App\Models\Plant;
+use App\Models\Recipe;
+use App\Models\RecipeRevision;
+use App\Models\RecipeRevisionPhase;
+use App\Models\Zone;
 use App\Services\GrowCycleService;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
-use Carbon\Carbon;
 
 class GrowCycleServiceTest extends TestCase
 {
@@ -28,94 +27,79 @@ class GrowCycleServiceTest extends TestCase
     }
 
     /** @test */
-    public function it_creates_a_grow_cycle()
+    public function it_creates_a_grow_cycle(): void
     {
         $zone = Zone::factory()->create();
+        $plant = Plant::factory()->create();
         $recipe = Recipe::factory()->create();
-        
-        $cycle = $this->service->createCycle($zone, $recipe);
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 0,
+        ]);
+
+        $cycle = $this->service->createCycle($zone, $revision, $plant->id);
 
         $this->assertDatabaseHas('grow_cycles', [
             'id' => $cycle->id,
             'zone_id' => $zone->id,
-            'recipe_id' => $recipe->id,
+            'recipe_revision_id' => $revision->id,
+            'plant_id' => $plant->id,
             'status' => GrowCycleStatus::PLANNED->value,
         ]);
+        $this->assertNotNull($cycle->current_phase_id);
     }
 
     /** @test */
-    public function it_creates_stage_map_when_creating_cycle()
+    public function it_starts_a_cycle(): void
     {
         $zone = Zone::factory()->create();
+        $plant = Plant::factory()->create();
         $recipe = Recipe::factory()->create();
-        
-        // Создаем фазы рецепта
-        RecipePhase::factory()->count(3)->create([
+        $revision = RecipeRevision::factory()->create([
             'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
+        ]);
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
             'phase_index' => 0,
         ]);
-        RecipePhase::factory()->create([
-            'recipe_id' => $recipe->id,
-            'phase_index' => 1,
-        ]);
-        RecipePhase::factory()->create([
-            'recipe_id' => $recipe->id,
-            'phase_index' => 2,
-        ]);
 
-        $cycle = $this->service->createCycle($zone, $recipe);
-
-        $this->assertTrue($recipe->stageMaps()->exists());
-    }
-
-    /** @test */
-    public function it_starts_a_cycle()
-    {
-        $zone = Zone::factory()->create();
-        $recipe = Recipe::factory()->create();
-        
-        $cycle = $this->service->createCycle($zone, $recipe);
+        $cycle = $this->service->createCycle($zone, $revision, $plant->id);
         $plantingAt = Carbon::now();
 
         $startedCycle = $this->service->startCycle($cycle, $plantingAt);
 
         $this->assertEquals(GrowCycleStatus::RUNNING, $startedCycle->status);
         $this->assertNotNull($startedCycle->planting_at);
-        $this->assertNotNull($startedCycle->current_stage_code);
     }
 
     /** @test */
-    public function it_computes_expected_harvest()
+    public function it_computes_expected_harvest(): void
     {
         $zone = Zone::factory()->create();
+        $plant = Plant::factory()->create();
         $recipe = Recipe::factory()->create();
-        
-        // Создаем стадии с offset
-        $template1 = GrowStageTemplate::factory()->create([
-            'code' => 'PLANTING',
-            'default_duration_days' => 1,
-        ]);
-        $template2 = GrowStageTemplate::factory()->create([
-            'code' => 'VEG',
-            'default_duration_days' => 30,
+        $revision = RecipeRevision::factory()->create([
+            'recipe_id' => $recipe->id,
+            'status' => 'PUBLISHED',
         ]);
 
-        RecipeStageMap::factory()->create([
-            'recipe_id' => $recipe->id,
-            'stage_template_id' => $template1->id,
-            'order_index' => 0,
-            'start_offset_days' => 0,
-            'end_offset_days' => 1,
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 0,
+            'duration_hours' => 24,
         ]);
-        RecipeStageMap::factory()->create([
-            'recipe_id' => $recipe->id,
-            'stage_template_id' => $template2->id,
-            'order_index' => 1,
-            'start_offset_days' => 1,
-            'end_offset_days' => 31,
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 1,
+            'duration_hours' => 24 * 30,
         ]);
 
-        $cycle = $this->service->createCycle($zone, $recipe);
+        $cycle = $this->service->createCycle($zone, $revision, $plant->id);
         $plantingAt = Carbon::now();
         $startedCycle = $this->service->startCycle($cycle, $plantingAt);
 
@@ -125,11 +109,12 @@ class GrowCycleServiceTest extends TestCase
     }
 
     /** @test */
-    public function it_advances_stage_automatically()
+    public function it_advances_stage_automatically(): void
     {
         $zone = Zone::factory()->create();
+        $plant = Plant::factory()->create();
         $recipe = Recipe::factory()->create();
-        
+
         $template1 = GrowStageTemplate::factory()->create([
             'code' => 'PLANTING',
             'order_index' => 0,
@@ -139,18 +124,23 @@ class GrowCycleServiceTest extends TestCase
             'order_index' => 1,
         ]);
 
-        RecipeStageMap::factory()->create([
+        $revision = RecipeRevision::factory()->create([
             'recipe_id' => $recipe->id,
-            'stage_template_id' => $template1->id,
-            'order_index' => 0,
-        ]);
-        RecipeStageMap::factory()->create([
-            'recipe_id' => $recipe->id,
-            'stage_template_id' => $template2->id,
-            'order_index' => 1,
+            'status' => 'PUBLISHED',
         ]);
 
-        $cycle = $this->service->createCycle($zone, $recipe);
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 0,
+            'stage_template_id' => $template1->id,
+        ]);
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 1,
+            'stage_template_id' => $template2->id,
+        ]);
+
+        $cycle = $this->service->createCycle($zone, $revision, $plant->id);
         $cycle = $this->service->startCycle($cycle);
         $cycle->update(['current_stage_code' => 'PLANTING']);
 
@@ -160,32 +150,38 @@ class GrowCycleServiceTest extends TestCase
     }
 
     /** @test */
-    public function it_advances_to_specific_stage()
+    public function it_advances_to_specific_stage(): void
     {
         $zone = Zone::factory()->create();
+        $plant = Plant::factory()->create();
         $recipe = Recipe::factory()->create();
-        
+
         $template1 = GrowStageTemplate::factory()->create(['code' => 'PLANTING', 'order_index' => 0]);
         $template2 = GrowStageTemplate::factory()->create(['code' => 'VEG', 'order_index' => 1]);
         $template3 = GrowStageTemplate::factory()->create(['code' => 'FLOWER', 'order_index' => 2]);
 
-        RecipeStageMap::factory()->create([
+        $revision = RecipeRevision::factory()->create([
             'recipe_id' => $recipe->id,
-            'stage_template_id' => $template1->id,
-            'order_index' => 0,
-        ]);
-        RecipeStageMap::factory()->create([
-            'recipe_id' => $recipe->id,
-            'stage_template_id' => $template2->id,
-            'order_index' => 1,
-        ]);
-        RecipeStageMap::factory()->create([
-            'recipe_id' => $recipe->id,
-            'stage_template_id' => $template3->id,
-            'order_index' => 2,
+            'status' => 'PUBLISHED',
         ]);
 
-        $cycle = $this->service->createCycle($zone, $recipe);
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 0,
+            'stage_template_id' => $template1->id,
+        ]);
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 1,
+            'stage_template_id' => $template2->id,
+        ]);
+        RecipeRevisionPhase::factory()->create([
+            'recipe_revision_id' => $revision->id,
+            'phase_index' => 2,
+            'stage_template_id' => $template3->id,
+        ]);
+
+        $cycle = $this->service->createCycle($zone, $revision, $plant->id);
         $cycle = $this->service->startCycle($cycle);
         $cycle->update(['current_stage_code' => 'PLANTING']);
 
@@ -193,55 +189,4 @@ class GrowCycleServiceTest extends TestCase
 
         $this->assertEquals('FLOWER', $advancedCycle->current_stage_code);
     }
-
-    /** @test */
-    public function it_computes_stage_from_recipe_instance()
-    {
-        $zone = Zone::factory()->create();
-        $recipe = Recipe::factory()->create();
-        $instance = ZoneRecipeInstance::factory()->create([
-            'zone_id' => $zone->id,
-            'recipe_id' => $recipe->id,
-        ]);
-        $zone->recipeInstance()->associate($instance);
-
-        $template = GrowStageTemplate::factory()->create([
-            'code' => 'VEG',
-            'order_index' => 0,
-        ]);
-
-        RecipeStageMap::factory()->create([
-            'recipe_id' => $recipe->id,
-            'stage_template_id' => $template->id,
-            'order_index' => 0,
-            'start_offset_days' => 0,
-        ]);
-
-        $cycle = $this->service->createCycle($zone, $recipe);
-        $cycle = $this->service->startCycle($cycle);
-
-        $this->service->computeStageFromRecipeInstance($cycle);
-
-        $this->assertNotNull($cycle->fresh()->current_stage_code);
-    }
-
-    /** @test */
-    public function it_ensures_recipe_stage_map_exists()
-    {
-        $recipe = Recipe::factory()->create();
-        
-        RecipePhase::factory()->count(3)->create([
-            'recipe_id' => $recipe->id,
-            'phase_index' => 0,
-        ]);
-        RecipePhase::factory()->create([
-            'recipe_id' => $recipe->id,
-            'phase_index' => 1,
-        ]);
-
-        $this->service->ensureRecipeStageMap($recipe);
-
-        $this->assertTrue($recipe->stageMaps()->exists());
-    }
 }
-

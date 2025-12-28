@@ -6,16 +6,19 @@ use App\Models\Alert;
 use App\Models\Command;
 use App\Models\DeviceNode;
 use App\Models\Greenhouse;
+use App\Models\GrowCycle;
 use App\Models\NodeChannel;
+use App\Models\Plant;
 use App\Models\Preset;
 use App\Models\Recipe;
-use App\Models\RecipePhase;
+use App\Models\RecipeRevision;
+use App\Models\RecipeRevisionPhase;
 use App\Models\TelemetryLast;
 use App\Models\TelemetrySample;
 use App\Models\User;
 use App\Models\Zone;
 use App\Models\ZoneEvent;
-use App\Models\ZoneRecipeInstance;
+use App\Services\GrowCycleService;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -274,6 +277,23 @@ class FullServiceTestSeeder extends Seeder
         $this->command->info('Создание рецептов...');
 
         $recipes = [];
+        $creatorId = User::query()->value('id');
+
+        $lettucePlant = Plant::firstOrCreate(
+            ['slug' => 'lettuce-service'],
+            [
+                'name' => 'Lettuce',
+                'species' => 'Lactuca sativa',
+            ]
+        );
+
+        $tomatoPlant = Plant::firstOrCreate(
+            ['slug' => 'tomato-service'],
+            [
+                'name' => 'Tomato',
+                'species' => 'Solanum lycopersicum',
+            ]
+        );
 
         $recipe1 = Recipe::firstOrCreate(
             ['name' => 'Lettuce Growing Recipe'],
@@ -282,20 +302,46 @@ class FullServiceTestSeeder extends Seeder
             ]
         );
 
+        $recipe1->plants()->syncWithoutDetaching([
+            $lettucePlant->id => ['is_default' => true],
+        ]);
+
+        $revision1 = RecipeRevision::firstOrCreate(
+            ['recipe_id' => $recipe1->id, 'revision_number' => 1],
+            [
+                'status' => 'PUBLISHED',
+                'description' => 'Initial revision',
+                'created_by' => $creatorId,
+                'published_at' => now(),
+            ]
+        );
+
         // Фазы для рецепта 1
         $phases1 = [
-            ['phase_index' => 0, 'name' => 'Germination', 'duration_hours' => 72, 'targets' => ['ph' => ['min' => 5.8, 'max' => 6.0], 'ec' => ['min' => 0.8, 'max' => 1.0]]],
-            ['phase_index' => 1, 'name' => 'Vegetative', 'duration_hours' => 336, 'targets' => ['ph' => ['min' => 5.9, 'max' => 6.2], 'ec' => ['min' => 1.4, 'max' => 1.6]]],
-            ['phase_index' => 2, 'name' => 'Maturation', 'duration_hours' => 720, 'targets' => ['ph' => ['min' => 6.0, 'max' => 6.5], 'ec' => ['min' => 1.6, 'max' => 1.8]]],
+            ['phase_index' => 0, 'name' => 'Germination', 'duration_hours' => 72, 'ph_min' => 5.8, 'ph_max' => 6.0, 'ec_min' => 0.8, 'ec_max' => 1.0],
+            ['phase_index' => 1, 'name' => 'Vegetative', 'duration_hours' => 336, 'ph_min' => 5.9, 'ph_max' => 6.2, 'ec_min' => 1.4, 'ec_max' => 1.6],
+            ['phase_index' => 2, 'name' => 'Maturation', 'duration_hours' => 720, 'ph_min' => 6.0, 'ph_max' => 6.5, 'ec_min' => 1.6, 'ec_max' => 1.8],
         ];
 
         foreach ($phases1 as $phaseData) {
-            RecipePhase::firstOrCreate(
+            $phTarget = ($phaseData['ph_min'] + $phaseData['ph_max']) / 2;
+            $ecTarget = ($phaseData['ec_min'] + $phaseData['ec_max']) / 2;
+
+            RecipeRevisionPhase::firstOrCreate(
                 [
-                    'recipe_id' => $recipe1->id,
+                    'recipe_revision_id' => $revision1->id,
                     'phase_index' => $phaseData['phase_index'],
                 ],
-                $phaseData
+                [
+                    'name' => $phaseData['name'],
+                    'duration_hours' => $phaseData['duration_hours'],
+                    'ph_min' => $phaseData['ph_min'],
+                    'ph_max' => $phaseData['ph_max'],
+                    'ph_target' => $phTarget,
+                    'ec_min' => $phaseData['ec_min'],
+                    'ec_max' => $phaseData['ec_max'],
+                    'ec_target' => $ecTarget,
+                ]
             );
         }
 
@@ -308,20 +354,46 @@ class FullServiceTestSeeder extends Seeder
             ]
         );
 
+        $recipe2->plants()->syncWithoutDetaching([
+            $tomatoPlant->id => ['is_default' => true],
+        ]);
+
+        $revision2 = RecipeRevision::firstOrCreate(
+            ['recipe_id' => $recipe2->id, 'revision_number' => 1],
+            [
+                'status' => 'PUBLISHED',
+                'description' => 'Initial revision',
+                'created_by' => $creatorId,
+                'published_at' => now(),
+            ]
+        );
+
         // Фазы для рецепта 2
         $phases2 = [
-            ['phase_index' => 0, 'name' => 'Seedling', 'duration_hours' => 336, 'targets' => ['ph' => ['min' => 6.0, 'max' => 6.3], 'ec' => ['min' => 1.2, 'max' => 1.5]]],
-            ['phase_index' => 1, 'name' => 'Vegetative', 'duration_hours' => 720, 'targets' => ['ph' => ['min' => 6.2, 'max' => 6.5], 'ec' => ['min' => 1.8, 'max' => 2.2]]],
-            ['phase_index' => 2, 'name' => 'Fruiting', 'duration_hours' => 1008, 'targets' => ['ph' => ['min' => 6.3, 'max' => 6.8], 'ec' => ['min' => 2.2, 'max' => 2.5]]],
+            ['phase_index' => 0, 'name' => 'Seedling', 'duration_hours' => 336, 'ph_min' => 6.0, 'ph_max' => 6.3, 'ec_min' => 1.2, 'ec_max' => 1.5],
+            ['phase_index' => 1, 'name' => 'Vegetative', 'duration_hours' => 720, 'ph_min' => 6.2, 'ph_max' => 6.5, 'ec_min' => 1.8, 'ec_max' => 2.2],
+            ['phase_index' => 2, 'name' => 'Fruiting', 'duration_hours' => 1008, 'ph_min' => 6.3, 'ph_max' => 6.8, 'ec_min' => 2.2, 'ec_max' => 2.5],
         ];
 
         foreach ($phases2 as $phaseData) {
-            RecipePhase::firstOrCreate(
+            $phTarget = ($phaseData['ph_min'] + $phaseData['ph_max']) / 2;
+            $ecTarget = ($phaseData['ec_min'] + $phaseData['ec_max']) / 2;
+
+            RecipeRevisionPhase::firstOrCreate(
                 [
-                    'recipe_id' => $recipe2->id,
+                    'recipe_revision_id' => $revision2->id,
                     'phase_index' => $phaseData['phase_index'],
                 ],
-                $phaseData
+                [
+                    'name' => $phaseData['name'],
+                    'duration_hours' => $phaseData['duration_hours'],
+                    'ph_min' => $phaseData['ph_min'],
+                    'ph_max' => $phaseData['ph_max'],
+                    'ph_target' => $phTarget,
+                    'ec_min' => $phaseData['ec_min'],
+                    'ec_max' => $phaseData['ec_max'],
+                    'ec_target' => $ecTarget,
+                ]
             );
         }
 
@@ -332,7 +404,9 @@ class FullServiceTestSeeder extends Seeder
 
     private function seedRecipeInstances(array $zones, array $recipes): void
     {
-        $this->command->info('Создание экземпляров рецептов...');
+        $this->command->info('Создание циклов выращивания...');
+        $growCycleService = app(GrowCycleService::class);
+        $creatorId = User::query()->value('id');
 
         foreach ($zones as $index => $zone) {
             if ($zone->status !== 'RUNNING') {
@@ -340,17 +414,29 @@ class FullServiceTestSeeder extends Seeder
             }
 
             $recipe = $recipes[$index % count($recipes)];
+            $revision = RecipeRevision::query()
+                ->where('recipe_id', $recipe->id)
+                ->where('status', 'PUBLISHED')
+                ->orderByDesc('revision_number')
+                ->first();
+
+            $plant = $recipe->plants()->first();
+
+            if (! $revision || ! $plant || $zone->activeGrowCycle) {
+                continue;
+            }
+
             $startedAt = now()->subDays(rand(5, 15));
 
-            ZoneRecipeInstance::firstOrCreate(
+            $growCycleService->createCycle(
+                $zone,
+                $revision,
+                $plant->id,
                 [
-                    'zone_id' => $zone->id,
+                    'start_immediately' => true,
+                    'planting_at' => $startedAt,
                 ],
-                [
-                    'recipe_id' => $recipe->id,
-                    'started_at' => $startedAt,
-                    'current_phase_index' => rand(0, 2),
-                ]
+                $creatorId
             );
         }
     }
@@ -464,8 +550,8 @@ class FullServiceTestSeeder extends Seeder
 
                 $createdAt = $dayStart->copy()->addHours(rand(0, 23))->addMinutes(rand(0, 59));
                 $sentAt = $status !== Command::STATUS_QUEUED ? $createdAt->copy()->addMinutes(rand(1, 5)) : null;
-                $ackAt = in_array($status, [Command::STATUS_DONE, Command::STATUS_FAILED, Command::STATUS_TIMEOUT]) 
-                    ? ($sentAt ? $sentAt->copy()->addMinutes(rand(1, 10)) : $createdAt->copy()->addMinutes(rand(1, 10))) 
+                $ackAt = in_array($status, [Command::STATUS_DONE, Command::STATUS_FAILED, Command::STATUS_TIMEOUT])
+                    ? ($sentAt ? $sentAt->copy()->addMinutes(rand(1, 10)) : $createdAt->copy()->addMinutes(rand(1, 10)))
                     : null;
 
                 Command::create([
@@ -573,8 +659,8 @@ class FullServiceTestSeeder extends Seeder
                 ->where('zone_id', $zone->id)
                 ->where('model_type', 'growth_prediction')
                 ->exists();
-            
-            if (!$exists) {
+
+            if (! $exists) {
                 DB::table('zone_model_params')->insert([
                     'zone_id' => $zone->id,
                     'model_type' => 'growth_prediction',
@@ -724,8 +810,8 @@ class FullServiceTestSeeder extends Seeder
         $this->command->info('Nodes: '.DeviceNode::count());
         $this->command->info('Node Channels: '.NodeChannel::count());
         $this->command->info('Recipes: '.Recipe::count());
-        $this->command->info('Recipe Phases: '.RecipePhase::count());
-        $this->command->info('Recipe Instances: '.ZoneRecipeInstance::count());
+        $this->command->info('Recipe Phases: '.RecipeRevisionPhase::count());
+        $this->command->info('Grow Cycles: '.GrowCycle::count());
         $this->command->info('Telemetry Samples: '.number_format(TelemetrySample::count()));
         $this->command->info('Telemetry Last: '.TelemetryLast::count());
         $this->command->info('Commands: '.Command::count());

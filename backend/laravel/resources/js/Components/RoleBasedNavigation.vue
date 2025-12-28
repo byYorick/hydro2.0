@@ -21,6 +21,7 @@ interface NavItem {
 }
 
 const navigationItems: NavItem[] = [
+  { href: '/', label: 'Дашборд' },
   { href: '/cycles', label: 'Центр циклов' },
   { href: '/zones', label: 'Зоны' },
   { href: '/greenhouses', label: 'Теплицы' },
@@ -28,7 +29,10 @@ const navigationItems: NavItem[] = [
   { href: '/plants', label: 'Культуры', roles: ['admin', 'agronomist'] },
   { href: '/devices', label: 'Устройства' },
   { href: '/alerts', label: 'Алерты' },
+  { href: '/analytics', label: 'Аналитика' },
   { href: '/monitoring', label: 'Сервисы' },
+  { href: '/logs', label: 'Логи', roles: ['admin', 'operator', 'engineer'] },
+  { href: '/audit', label: 'Аудит', roles: ['admin'] },
   { href: '/users', label: 'Операторы', roles: ['admin'] },
   { href: '/settings', label: 'Настройки' },
 ]

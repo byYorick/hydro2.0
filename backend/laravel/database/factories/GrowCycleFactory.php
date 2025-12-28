@@ -2,12 +2,12 @@
 
 namespace Database\Factories;
 
-use App\Models\GrowCycle;
-use App\Models\Greenhouse;
-use App\Models\Zone;
-use App\Models\Recipe;
-use App\Models\Plant;
 use App\Enums\GrowCycleStatus;
+use App\Models\Greenhouse;
+use App\Models\GrowCycle;
+use App\Models\Plant;
+use App\Models\Recipe;
+use App\Models\Zone;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 class GrowCycleFactory extends Factory
@@ -16,16 +16,18 @@ class GrowCycleFactory extends Factory
 
     public function definition(): array
     {
+        $plant = Plant::factory()->create();
         $recipe = Recipe::factory()->create();
+        $recipe->plants()->syncWithoutDetaching([$plant->id]);
         $revision = \App\Models\RecipeRevision::factory()->create([
             'recipe_id' => $recipe->id,
             'status' => 'PUBLISHED',
         ]);
-        
+
         return [
             'greenhouse_id' => Greenhouse::factory(),
             'zone_id' => Zone::factory(),
-            'plant_id' => null,
+            'plant_id' => $plant->id,
             'recipe_id' => $recipe->id,
             'recipe_revision_id' => $revision->id,
             'status' => GrowCycleStatus::PLANNED,
@@ -73,4 +75,3 @@ class GrowCycleFactory extends Factory
         ]);
     }
 }
-
