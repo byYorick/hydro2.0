@@ -2,7 +2,6 @@
 
 namespace Database\Seeders;
 
-use App\Enums\GrowCycleStatus;
 use App\Models\GrowCycle;
 use App\Models\GrowStageTemplate;
 use App\Models\Plant;
@@ -132,189 +131,22 @@ class ExtendedRecipesCyclesSeeder extends Seeder
         return GrowStageTemplate::orderBy('order_index')->get();
     }
 
-    private function seedRecipes(Collection $templates): array
+    private function seedRecipes(Collection $templates): Collection
     {
-        $revisions = [];
-
-        $recipeConfigs = [
-            [
-                'name' => 'Рецепт Салата Стандартный',
-                'description' => 'Полный цикл выращивания салата от семени до урожая',
-                'phases' => [
-                    [
-                        'phase_index' => 0,
-                        'name' => 'Проращивание',
-                        'duration_hours' => 72,
-                        'targets' => [
-                            'ph' => ['min' => 5.8, 'max' => 6.0],
-                            'ec' => ['min' => 0.8, 'max' => 1.0],
-                            'temperature' => ['min' => 20, 'max' => 22],
-                            'humidity' => ['min' => 70, 'max' => 80],
-                        ],
-                    ],
-                    [
-                        'phase_index' => 1,
-                        'name' => 'Вегетативная',
-                        'duration_hours' => 336,
-                        'targets' => [
-                            'ph' => ['min' => 5.9, 'max' => 6.2],
-                            'ec' => ['min' => 1.4, 'max' => 1.6],
-                            'temperature' => ['min' => 20, 'max' => 24],
-                            'humidity' => ['min' => 55, 'max' => 65],
-                        ],
-                    ],
-                    [
-                        'phase_index' => 2,
-                        'name' => 'Созревание',
-                        'duration_hours' => 720,
-                        'targets' => [
-                            'ph' => ['min' => 6.0, 'max' => 6.5],
-                            'ec' => ['min' => 1.6, 'max' => 1.8],
-                            'temperature' => ['min' => 20, 'max' => 24],
-                            'humidity' => ['min' => 55, 'max' => 65],
-                        ],
-                    ],
-                ],
-            ],
-            [
-                'name' => 'Рецепт Томата Производственный',
-                'description' => 'Оптимизированный рецепт для промышленного выращивания томатов',
-                'phases' => [
-                    [
-                        'phase_index' => 0,
-                        'name' => 'Рассада',
-                        'duration_hours' => 336,
-                        'targets' => [
-                            'ph' => ['min' => 6.0, 'max' => 6.3],
-                            'ec' => ['min' => 1.2, 'max' => 1.5],
-                            'temperature' => ['min' => 22, 'max' => 24],
-                            'humidity' => ['min' => 60, 'max' => 70],
-                        ],
-                    ],
-                    [
-                        'phase_index' => 1,
-                        'name' => 'Вегетативная',
-                        'duration_hours' => 720,
-                        'targets' => [
-                            'ph' => ['min' => 6.2, 'max' => 6.5],
-                            'ec' => ['min' => 1.8, 'max' => 2.2],
-                            'temperature' => ['min' => 22, 'max' => 26],
-                            'humidity' => ['min' => 60, 'max' => 70],
-                        ],
-                    ],
-                    [
-                        'phase_index' => 2,
-                        'name' => 'Плодоношение',
-                        'duration_hours' => 1008,
-                        'targets' => [
-                            'ph' => ['min' => 6.3, 'max' => 6.8],
-                            'ec' => ['min' => 2.2, 'max' => 2.5],
-                            'temperature' => ['min' => 22, 'max' => 26],
-                            'humidity' => ['min' => 60, 'max' => 70],
-                        ],
-                    ],
-                ],
-            ],
-            [
-                'name' => 'Рецепт Базилика Быстрый',
-                'description' => 'Быстрый цикл выращивания базилика',
-                'phases' => [
-                    [
-                        'phase_index' => 0,
-                        'name' => 'Проращивание',
-                        'duration_hours' => 120,
-                        'targets' => [
-                            'ph' => ['min' => 5.8, 'max' => 6.2],
-                            'ec' => ['min' => 1.0, 'max' => 1.2],
-                            'temperature' => ['min' => 22, 'max' => 26],
-                            'humidity' => ['min' => 60, 'max' => 70],
-                        ],
-                    ],
-                    [
-                        'phase_index' => 1,
-                        'name' => 'Рост',
-                        'duration_hours' => 480,
-                        'targets' => [
-                            'ph' => ['min' => 5.8, 'max' => 6.5],
-                            'ec' => ['min' => 1.0, 'max' => 1.6],
-                            'temperature' => ['min' => 22, 'max' => 26],
-                            'humidity' => ['min' => 55, 'max' => 65],
-                        ],
-                    ],
-                ],
-            ],
-            [
-                'name' => 'Рецепт Микрозелени',
-                'description' => 'Короткий цикл для микрозелени',
-                'phases' => [
-                    [
-                        'phase_index' => 0,
-                        'name' => 'Проращивание',
-                        'duration_hours' => 48,
-                        'targets' => [
-                            'ph' => ['min' => 5.8, 'max' => 6.2],
-                            'ec' => ['min' => 0.8, 'max' => 1.0],
-                            'temperature' => ['min' => 18, 'max' => 22],
-                            'humidity' => ['min' => 50, 'max' => 60],
-                        ],
-                    ],
-                    [
-                        'phase_index' => 1,
-                        'name' => 'Рост',
-                        'duration_hours' => 168,
-                        'targets' => [
-                            'ph' => ['min' => 5.8, 'max' => 6.2],
-                            'ec' => ['min' => 0.8, 'max' => 1.2],
-                            'temperature' => ['min' => 18, 'max' => 22],
-                            'humidity' => ['min' => 50, 'max' => 60],
-                        ],
-                    ],
-                ],
-            ],
-            [
-                'name' => 'Рецепт Огурца',
-                'description' => 'Рецепт для выращивания огурцов',
-                'phases' => [
-                    [
-                        'phase_index' => 0,
-                        'name' => 'Рассада',
-                        'duration_hours' => 336,
-                        'targets' => [
-                            'ph' => ['min' => 5.5, 'max' => 6.0],
-                            'ec' => ['min' => 1.5, 'max' => 2.0],
-                            'temperature' => ['min' => 22, 'max' => 26],
-                            'humidity' => ['min' => 65, 'max' => 75],
-                        ],
-                    ],
-                    [
-                        'phase_index' => 1,
-                        'name' => 'Вегетативная',
-                        'duration_hours' => 720,
-                        'targets' => [
-                            'ph' => ['min' => 5.5, 'max' => 6.5],
-                            'ec' => ['min' => 2.0, 'max' => 2.5],
-                            'temperature' => ['min' => 22, 'max' => 26],
-                            'humidity' => ['min' => 65, 'max' => 75],
-                        ],
-                    ],
-                    [
-                        'phase_index' => 2,
-                        'name' => 'Плодоношение',
-                        'duration_hours' => 1200,
-                        'targets' => [
-                            'ph' => ['min' => 5.5, 'max' => 6.5],
-                            'ec' => ['min' => 2.5, 'max' => 3.0],
-                            'temperature' => ['min' => 22, 'max' => 26],
-                            'humidity' => ['min' => 65, 'max' => 75],
-                        ],
-                    ],
-                ],
-            ],
-        ];
-
+        $revisions = collect();
+        $recipeConfigs = $this->recipeConfigs();
         $createdBy = User::where('role', 'admin')->value('id') ?? User::value('id');
+        $defaultRecipeByPlant = [];
 
         foreach ($recipeConfigs as $recipeConfig) {
+            $plantSlugs = $recipeConfig['plant_slugs'] ?? [];
+            $plants = Plant::query()->whereIn('slug', $plantSlugs)->get();
+
+            if ($plants->isEmpty()) {
+                $this->command->warn('Растения не найдены для рецепта: '.$recipeConfig['name']);
+                continue;
+            }
+
             $recipe = Recipe::firstOrCreate(
                 ['name' => $recipeConfig['name']],
                 [
@@ -322,9 +154,42 @@ class ExtendedRecipesCyclesSeeder extends Seeder
                     'metadata' => [
                         'created_by' => 'system',
                         'version' => '1.0',
+                        'crop_slugs' => $plantSlugs,
+                        'source' => 'seed',
                     ],
                 ]
             );
+
+            $metadata = $recipe->metadata ?? [];
+            if (empty($metadata['crop_slugs'])) {
+                $metadata['crop_slugs'] = $plantSlugs;
+            }
+            $metadata['source'] = $metadata['source'] ?? 'seed';
+            $metadata['version'] = $metadata['version'] ?? '1.0';
+            $metadata['created_by'] = $metadata['created_by'] ?? 'system';
+
+            if (! $recipe->description) {
+                $recipe->description = $recipeConfig['description'];
+            }
+
+            $recipe->metadata = $metadata;
+            $recipe->save();
+
+            $pivotData = [];
+            foreach ($plants as $plant) {
+                $isDefault = empty($defaultRecipeByPlant[$plant->id]);
+                $pivotData[$plant->id] = [
+                    'season' => $recipeConfig['season'] ?? 'all_year',
+                    'site_type' => $recipeConfig['site_type'] ?? 'indoor',
+                    'is_default' => $isDefault,
+                    'metadata' => json_encode([
+                        'source' => 'seed',
+                        'crop_slug' => $plant->slug,
+                    ], JSON_UNESCAPED_UNICODE),
+                ];
+                $defaultRecipeByPlant[$plant->id] = true;
+            }
+            $recipe->plants()->syncWithoutDetaching($pivotData);
 
             $revision = RecipeRevision::firstOrCreate(
                 [
@@ -339,47 +204,1399 @@ class ExtendedRecipesCyclesSeeder extends Seeder
                 ]
             );
 
-            // Создаем фазы рецепта
             foreach ($recipeConfig['phases'] as $phaseData) {
-                $targets = $phaseData['targets'] ?? [];
-                $ph = $targets['ph'] ?? [];
-                $ec = $targets['ec'] ?? [];
-                $temperature = $targets['temperature'] ?? [];
-                $humidity = $targets['humidity'] ?? [];
-                $stageTemplate = $this->resolveStageTemplate($recipe, $phaseData, $templates);
+                $payload = $this->buildPhasePayload($recipe, $phaseData, $templates);
 
-                RecipeRevisionPhase::firstOrCreate(
+                RecipeRevisionPhase::updateOrCreate(
                     [
                         'recipe_revision_id' => $revision->id,
                         'phase_index' => $phaseData['phase_index'],
                     ],
-                    [
-                        'name' => $phaseData['name'],
-                        'stage_template_id' => $stageTemplate?->id,
-                        'ph_target' => $this->averageTarget($ph),
-                        'ph_min' => $ph['min'] ?? null,
-                        'ph_max' => $ph['max'] ?? null,
-                        'ec_target' => $this->averageTarget($ec),
-                        'ec_min' => $ec['min'] ?? null,
-                        'ec_max' => $ec['max'] ?? null,
-                        'temp_air_target' => $this->averageTarget($temperature),
-                        'humidity_target' => $this->averageTarget($humidity),
-                        'duration_hours' => $phaseData['duration_hours'],
-                        'progress_model' => 'TIME',
-                        'irrigation_mode' => 'RECIRC',
-                        'irrigation_interval_sec' => rand(900, 3600),
-                        'irrigation_duration_sec' => rand(30, 120),
-                    ]
+                    $payload
                 );
             }
 
-            $revisions[] = $revision;
+            $revisions->push($revision->load('recipe.plants'));
         }
 
         return $revisions;
     }
 
-    private function seedGrowCycles(array $revisions): void
+    private function recipeConfigs(): array
+    {
+        return [
+            [
+                'name' => 'Томат тепличный (индет, интенсивный)',
+                'description' => 'Высокоинтенсивный рецепт для индетерминантных томатов с контролем DLI и CO2.',
+                'plant_slugs' => ['tomato'],
+                'season' => 'all_year',
+                'site_type' => 'indoor',
+                'phases' => [
+                    $this->phase(0, 'Проращивание', 'GERMINATION', 4, [
+                        'ph' => ['min' => 5.6, 'max' => 6.0],
+                        'ec' => ['min' => 0.6, 'max' => 1.0],
+                        'temp_air' => ['min' => 24, 'max' => 27],
+                        'humidity' => ['min' => 85, 'max' => 95],
+                        'co2' => ['min' => 400, 'max' => 700],
+                        'dli' => ['min' => 6, 'max' => 10],
+                        'lighting' => ['photoperiod_hours' => 18, 'ppfd' => 150],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 900, 'duration_sec' => 20],
+                        'mist' => ['interval_sec' => 600, 'duration_sec' => 15, 'mode' => 'SPRAY'],
+                        'agronomy' => [
+                            'critical_controls' => 'Стерильность субстрата, равномерная влажность, без переувлажнения.',
+                            'risk_focus' => 'Корневая гниль, демпфинг-офф.',
+                        ],
+                    ]),
+                    $this->phase(1, 'Рассада', 'ROOTING', 21, [
+                        'ph' => ['min' => 5.7, 'max' => 6.2],
+                        'ec' => ['min' => 1.2, 'max' => 1.8],
+                        'temp_air' => ['min' => 22, 'max' => 25],
+                        'humidity' => ['min' => 70, 'max' => 80],
+                        'co2' => ['min' => 600, 'max' => 900],
+                        'dli' => ['min' => 12, 'max' => 18],
+                        'lighting' => ['photoperiod_hours' => 18, 'ppfd' => 220],
+                        'irrigation' => [
+                            'mode' => 'SUBSTRATE',
+                            'interval_sec' => 1800,
+                            'duration_sec' => 45,
+                            'drain_target_percent' => 10,
+                        ],
+                        'agronomy' => [
+                            'nutrition_focus' => 'Азот/кальций для активного наращивания листа.',
+                            'quality_check' => 'Толщина стебля, отсутствие вытягивания.',
+                        ],
+                    ]),
+                    $this->phase(2, 'Вегетация', 'VEG', 28, [
+                        'ph' => ['min' => 5.8, 'max' => 6.3],
+                        'ec' => ['min' => 2.2, 'max' => 2.8],
+                        'temp_air' => ['min' => 21, 'max' => 24],
+                        'humidity' => ['min' => 65, 'max' => 75],
+                        'co2' => ['min' => 800, 'max' => 1100],
+                        'dli' => ['min' => 18, 'max' => 24],
+                        'lighting' => ['photoperiod_hours' => 18, 'ppfd' => 320],
+                        'irrigation' => [
+                            'mode' => 'SUBSTRATE',
+                            'interval_sec' => 1200,
+                            'duration_sec' => 75,
+                            'drain_target_percent' => 20,
+                            'drain_ec_target' => 2.6,
+                        ],
+                        'agronomy' => [
+                            'training' => 'Ведение в 1 стебель, регулярное пасынкование.',
+                            'critical_controls' => 'VPD 0.7–1.0 кПа, дренаж 15–25%.',
+                        ],
+                    ]),
+                    $this->phase(3, 'Цветение и завязь', 'FLOWER', 21, [
+                        'ph' => ['min' => 5.8, 'max' => 6.3],
+                        'ec' => ['min' => 2.6, 'max' => 3.2],
+                        'temp_air' => ['min' => 21, 'max' => 24],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 900, 'max' => 1200],
+                        'dli' => ['min' => 20, 'max' => 26],
+                        'lighting' => ['photoperiod_hours' => 18, 'ppfd' => 360],
+                        'irrigation' => [
+                            'mode' => 'SUBSTRATE',
+                            'interval_sec' => 1200,
+                            'duration_sec' => 90,
+                            'drain_target_percent' => 25,
+                        ],
+                        'agronomy' => [
+                            'pollination' => 'Виброопыление или шмели 2–3 раза в неделю.',
+                            'risk_focus' => 'Проблемы с завязью при высокой влажности.',
+                        ],
+                    ]),
+                    $this->phase(4, 'Плодоношение', 'FRUIT', 42, [
+                        'ph' => ['min' => 5.8, 'max' => 6.3],
+                        'ec' => ['min' => 3.0, 'max' => 3.5],
+                        'temp_air' => ['min' => 20, 'max' => 24],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 900, 'max' => 1200],
+                        'dli' => ['min' => 20, 'max' => 26],
+                        'lighting' => ['photoperiod_hours' => 18, 'ppfd' => 360],
+                        'irrigation' => [
+                            'mode' => 'SUBSTRATE',
+                            'interval_sec' => 1200,
+                            'duration_sec' => 100,
+                            'drain_target_percent' => 25,
+                            'drain_ec_target' => 3.2,
+                        ],
+                        'agronomy' => [
+                            'defoliation' => 'Удаление нижних листьев по мере налива кистей.',
+                            'quality_check' => 'Контроль сахара/кислотности, равномерность окраски.',
+                        ],
+                    ]),
+                ],
+            ],
+            [
+                'name' => 'Томат тепличный (короткий оборот)',
+                'description' => 'Укороченный цикл для детерминантных томатов с меньшей нагрузкой по DLI.',
+                'plant_slugs' => ['tomato'],
+                'season' => 'all_year',
+                'site_type' => 'indoor',
+                'phases' => [
+                    $this->phase(0, 'Проращивание', 'GERMINATION', 4, [
+                        'ph' => ['min' => 5.6, 'max' => 6.0],
+                        'ec' => ['min' => 0.6, 'max' => 1.0],
+                        'temp_air' => ['min' => 24, 'max' => 27],
+                        'humidity' => ['min' => 85, 'max' => 95],
+                        'co2' => ['min' => 400, 'max' => 700],
+                        'dli' => ['min' => 6, 'max' => 10],
+                        'lighting' => ['photoperiod_hours' => 18, 'ppfd' => 140],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 900, 'duration_sec' => 20],
+                        'mist' => ['interval_sec' => 600, 'duration_sec' => 15, 'mode' => 'SPRAY'],
+                    ]),
+                    $this->phase(1, 'Рассада', 'ROOTING', 18, [
+                        'ph' => ['min' => 5.7, 'max' => 6.2],
+                        'ec' => ['min' => 1.2, 'max' => 1.7],
+                        'temp_air' => ['min' => 22, 'max' => 24],
+                        'humidity' => ['min' => 70, 'max' => 80],
+                        'co2' => ['min' => 600, 'max' => 900],
+                        'dli' => ['min' => 10, 'max' => 16],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 200],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 1800, 'duration_sec' => 45],
+                    ]),
+                    $this->phase(2, 'Вегетация', 'VEG', 21, [
+                        'ph' => ['min' => 5.8, 'max' => 6.3],
+                        'ec' => ['min' => 2.0, 'max' => 2.6],
+                        'temp_air' => ['min' => 21, 'max' => 24],
+                        'humidity' => ['min' => 65, 'max' => 75],
+                        'co2' => ['min' => 800, 'max' => 1000],
+                        'dli' => ['min' => 16, 'max' => 22],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 280],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 1500, 'duration_sec' => 75],
+                    ]),
+                    $this->phase(3, 'Плодоношение', 'FRUIT', 35, [
+                        'ph' => ['min' => 5.8, 'max' => 6.3],
+                        'ec' => ['min' => 2.6, 'max' => 3.2],
+                        'temp_air' => ['min' => 20, 'max' => 23],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 800, 'max' => 1100],
+                        'dli' => ['min' => 18, 'max' => 24],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 320],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 1500, 'duration_sec' => 90],
+                        'agronomy' => [
+                            'critical_controls' => 'Контроль равномерности питания, избегать стрессов по влаге.',
+                        ],
+                    ]),
+                ],
+            ],
+            [
+                'name' => 'Огурец партенокарпический',
+                'description' => 'Рецепт для партенокарпических огурцов с акцентом на влажность и стабильный дренаж.',
+                'plant_slugs' => ['cucumber'],
+                'season' => 'all_year',
+                'site_type' => 'indoor',
+                'phases' => [
+                    $this->phase(0, 'Проращивание', 'GERMINATION', 3, [
+                        'ph' => ['min' => 5.5, 'max' => 6.0],
+                        'ec' => ['min' => 0.6, 'max' => 1.0],
+                        'temp_air' => ['min' => 26, 'max' => 28],
+                        'humidity' => ['min' => 85, 'max' => 95],
+                        'co2' => ['min' => 400, 'max' => 700],
+                        'dli' => ['min' => 8, 'max' => 12],
+                        'lighting' => ['photoperiod_hours' => 18, 'ppfd' => 180],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 900, 'duration_sec' => 20],
+                        'mist' => ['interval_sec' => 600, 'duration_sec' => 15, 'mode' => 'SPRAY'],
+                    ]),
+                    $this->phase(1, 'Рассада', 'ROOTING', 10, [
+                        'ph' => ['min' => 5.6, 'max' => 6.1],
+                        'ec' => ['min' => 1.2, 'max' => 1.8],
+                        'temp_air' => ['min' => 24, 'max' => 26],
+                        'humidity' => ['min' => 75, 'max' => 85],
+                        'co2' => ['min' => 600, 'max' => 900],
+                        'dli' => ['min' => 12, 'max' => 16],
+                        'lighting' => ['photoperiod_hours' => 18, 'ppfd' => 240],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 1800, 'duration_sec' => 45],
+                    ]),
+                    $this->phase(2, 'Вегетация', 'VEG', 18, [
+                        'ph' => ['min' => 5.6, 'max' => 6.2],
+                        'ec' => ['min' => 1.8, 'max' => 2.4],
+                        'temp_air' => ['min' => 22, 'max' => 25],
+                        'humidity' => ['min' => 70, 'max' => 80],
+                        'co2' => ['min' => 800, 'max' => 1100],
+                        'dli' => ['min' => 16, 'max' => 22],
+                        'lighting' => ['photoperiod_hours' => 18, 'ppfd' => 320],
+                        'irrigation' => [
+                            'mode' => 'SUBSTRATE',
+                            'interval_sec' => 1200,
+                            'duration_sec' => 75,
+                            'drain_target_percent' => 20,
+                        ],
+                        'agronomy' => [
+                            'training' => 'Удаление боковых побегов до 5–6 узла, формирование.',
+                        ],
+                    ]),
+                    $this->phase(3, 'Плодоношение', 'FRUIT', 28, [
+                        'ph' => ['min' => 5.6, 'max' => 6.2],
+                        'ec' => ['min' => 2.4, 'max' => 2.8],
+                        'temp_air' => ['min' => 21, 'max' => 24],
+                        'humidity' => ['min' => 70, 'max' => 80],
+                        'co2' => ['min' => 900, 'max' => 1200],
+                        'dli' => ['min' => 18, 'max' => 24],
+                        'lighting' => ['photoperiod_hours' => 18, 'ppfd' => 340],
+                        'irrigation' => [
+                            'mode' => 'SUBSTRATE',
+                            'interval_sec' => 1200,
+                            'duration_sec' => 90,
+                            'drain_target_percent' => 25,
+                        ],
+                        'agronomy' => [
+                            'critical_controls' => 'Стабильность влажности субстрата, контроль кривизны плодов.',
+                        ],
+                    ]),
+                ],
+            ],
+            [
+                'name' => 'Клубника нейтрального дня',
+                'description' => 'Интенсивный рецепт для ремонтантной клубники с контролем фотопериода.',
+                'plant_slugs' => ['strawberry'],
+                'season' => 'all_year',
+                'site_type' => 'indoor',
+                'phases' => [
+                    $this->phase(0, 'Укоренение', 'ROOTING', 14, [
+                        'ph' => ['min' => 5.4, 'max' => 6.0],
+                        'ec' => ['min' => 0.8, 'max' => 1.2],
+                        'temp_air' => ['min' => 18, 'max' => 21],
+                        'humidity' => ['min' => 80, 'max' => 90],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 8, 'max' => 12],
+                        'lighting' => ['photoperiod_hours' => 14, 'ppfd' => 200],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 1800, 'duration_sec' => 45],
+                    ]),
+                    $this->phase(1, 'Вегетация', 'VEG', 21, [
+                        'ph' => ['min' => 5.5, 'max' => 6.2],
+                        'ec' => ['min' => 1.2, 'max' => 1.6],
+                        'temp_air' => ['min' => 18, 'max' => 22],
+                        'humidity' => ['min' => 65, 'max' => 75],
+                        'co2' => ['min' => 600, 'max' => 900],
+                        'dli' => ['min' => 12, 'max' => 16],
+                        'lighting' => ['photoperiod_hours' => 14, 'ppfd' => 260],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 1500, 'duration_sec' => 60],
+                    ]),
+                    $this->phase(2, 'Цветение', 'FLOWER', 21, [
+                        'ph' => ['min' => 5.5, 'max' => 6.2],
+                        'ec' => ['min' => 1.4, 'max' => 1.8],
+                        'temp_air' => ['min' => 17, 'max' => 21],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 700, 'max' => 900],
+                        'dli' => ['min' => 14, 'max' => 18],
+                        'lighting' => ['photoperiod_hours' => 14, 'ppfd' => 280],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 1500, 'duration_sec' => 75],
+                        'agronomy' => [
+                            'pollination' => 'Виброопыление или шмели.',
+                            'risk_focus' => 'Серая гниль при повышенной влажности.',
+                        ],
+                    ]),
+                    $this->phase(3, 'Плодоношение', 'FRUIT', 35, [
+                        'ph' => ['min' => 5.5, 'max' => 6.2],
+                        'ec' => ['min' => 1.5, 'max' => 1.9],
+                        'temp_air' => ['min' => 16, 'max' => 20],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 700, 'max' => 900],
+                        'dli' => ['min' => 14, 'max' => 18],
+                        'lighting' => ['photoperiod_hours' => 14, 'ppfd' => 280],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 1500, 'duration_sec' => 75],
+                        'agronomy' => [
+                            'quality_check' => 'Контроль сахара/кислотности, плотность ягоды.',
+                        ],
+                    ]),
+                ],
+            ],
+            [
+                'name' => 'Голубика (кислый субстрат)',
+                'description' => 'Рецепт для голубики с кислотной зоной корней и умеренной EC.',
+                'plant_slugs' => ['blueberry'],
+                'season' => 'all_year',
+                'site_type' => 'indoor',
+                'phases' => [
+                    $this->phase(0, 'Адаптация', 'ROOTING', 21, [
+                        'ph' => ['min' => 4.5, 'max' => 5.2],
+                        'ec' => ['min' => 0.8, 'max' => 1.2],
+                        'temp_air' => ['min' => 18, 'max' => 22],
+                        'humidity' => ['min' => 70, 'max' => 85],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 10, 'max' => 14],
+                        'lighting' => ['photoperiod_hours' => 14, 'ppfd' => 220],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 2400, 'duration_sec' => 90],
+                        'agronomy' => [
+                            'critical_controls' => 'Стабильный pH 4.5–5.2, избегать засоления.',
+                        ],
+                    ]),
+                    $this->phase(1, 'Вегетация', 'VEG', 28, [
+                        'ph' => ['min' => 4.5, 'max' => 5.2],
+                        'ec' => ['min' => 1.0, 'max' => 1.6],
+                        'temp_air' => ['min' => 18, 'max' => 24],
+                        'humidity' => ['min' => 65, 'max' => 75],
+                        'co2' => ['min' => 600, 'max' => 900],
+                        'dli' => ['min' => 12, 'max' => 18],
+                        'lighting' => ['photoperiod_hours' => 14, 'ppfd' => 260],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 2400, 'duration_sec' => 90],
+                    ]),
+                    $this->phase(2, 'Цветение', 'FLOWER', 21, [
+                        'ph' => ['min' => 4.5, 'max' => 5.2],
+                        'ec' => ['min' => 1.0, 'max' => 1.6],
+                        'temp_air' => ['min' => 16, 'max' => 22],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 600, 'max' => 900],
+                        'dli' => ['min' => 12, 'max' => 18],
+                        'lighting' => ['photoperiod_hours' => 14, 'ppfd' => 260],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 2400, 'duration_sec' => 90],
+                    ]),
+                    $this->phase(3, 'Плодоношение', 'FRUIT', 42, [
+                        'ph' => ['min' => 4.5, 'max' => 5.2],
+                        'ec' => ['min' => 1.0, 'max' => 1.6],
+                        'temp_air' => ['min' => 16, 'max' => 22],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 600, 'max' => 900],
+                        'dli' => ['min' => 12, 'max' => 18],
+                        'lighting' => ['photoperiod_hours' => 14, 'ppfd' => 260],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 2400, 'duration_sec' => 90],
+                    ]),
+                ],
+            ],
+            [
+                'name' => 'Малина ремонтантная',
+                'description' => 'Рецепт для малины с контролем дренажа и умеренной EC.',
+                'plant_slugs' => ['raspberry'],
+                'season' => 'all_year',
+                'site_type' => 'indoor',
+                'phases' => [
+                    $this->phase(0, 'Укоренение', 'ROOTING', 21, [
+                        'ph' => ['min' => 5.5, 'max' => 6.2],
+                        'ec' => ['min' => 1.0, 'max' => 1.4],
+                        'temp_air' => ['min' => 18, 'max' => 22],
+                        'humidity' => ['min' => 70, 'max' => 85],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 10, 'max' => 14],
+                        'lighting' => ['photoperiod_hours' => 14, 'ppfd' => 220],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 2400, 'duration_sec' => 90],
+                    ]),
+                    $this->phase(1, 'Вегетация', 'VEG', 28, [
+                        'ph' => ['min' => 5.6, 'max' => 6.4],
+                        'ec' => ['min' => 1.4, 'max' => 2.0],
+                        'temp_air' => ['min' => 18, 'max' => 24],
+                        'humidity' => ['min' => 65, 'max' => 75],
+                        'co2' => ['min' => 600, 'max' => 900],
+                        'dli' => ['min' => 14, 'max' => 18],
+                        'lighting' => ['photoperiod_hours' => 14, 'ppfd' => 260],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 2400, 'duration_sec' => 90],
+                    ]),
+                    $this->phase(2, 'Цветение', 'FLOWER', 21, [
+                        'ph' => ['min' => 5.6, 'max' => 6.4],
+                        'ec' => ['min' => 1.6, 'max' => 2.2],
+                        'temp_air' => ['min' => 18, 'max' => 22],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 600, 'max' => 900],
+                        'dli' => ['min' => 14, 'max' => 18],
+                        'lighting' => ['photoperiod_hours' => 14, 'ppfd' => 260],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 2400, 'duration_sec' => 90],
+                    ]),
+                    $this->phase(3, 'Плодоношение', 'FRUIT', 35, [
+                        'ph' => ['min' => 5.6, 'max' => 6.4],
+                        'ec' => ['min' => 1.6, 'max' => 2.2],
+                        'temp_air' => ['min' => 18, 'max' => 22],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 600, 'max' => 900],
+                        'dli' => ['min' => 14, 'max' => 18],
+                        'lighting' => ['photoperiod_hours' => 14, 'ppfd' => 260],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 2400, 'duration_sec' => 90],
+                    ]),
+                ],
+            ],
+            [
+                'name' => 'Ежевика тепличная',
+                'description' => 'Рецепт для ежевики с умеренными температурами и стабильным pH.',
+                'plant_slugs' => ['blackberry'],
+                'season' => 'all_year',
+                'site_type' => 'indoor',
+                'phases' => [
+                    $this->phase(0, 'Укоренение', 'ROOTING', 21, [
+                        'ph' => ['min' => 5.5, 'max' => 6.3],
+                        'ec' => ['min' => 1.0, 'max' => 1.4],
+                        'temp_air' => ['min' => 18, 'max' => 22],
+                        'humidity' => ['min' => 70, 'max' => 85],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 10, 'max' => 14],
+                        'lighting' => ['photoperiod_hours' => 14, 'ppfd' => 220],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 2400, 'duration_sec' => 90],
+                    ]),
+                    $this->phase(1, 'Вегетация', 'VEG', 28, [
+                        'ph' => ['min' => 5.6, 'max' => 6.4],
+                        'ec' => ['min' => 1.4, 'max' => 2.0],
+                        'temp_air' => ['min' => 18, 'max' => 24],
+                        'humidity' => ['min' => 65, 'max' => 75],
+                        'co2' => ['min' => 600, 'max' => 900],
+                        'dli' => ['min' => 14, 'max' => 18],
+                        'lighting' => ['photoperiod_hours' => 14, 'ppfd' => 260],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 2400, 'duration_sec' => 90],
+                    ]),
+                    $this->phase(2, 'Цветение', 'FLOWER', 21, [
+                        'ph' => ['min' => 5.6, 'max' => 6.4],
+                        'ec' => ['min' => 1.6, 'max' => 2.2],
+                        'temp_air' => ['min' => 18, 'max' => 22],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 600, 'max' => 900],
+                        'dli' => ['min' => 14, 'max' => 18],
+                        'lighting' => ['photoperiod_hours' => 14, 'ppfd' => 260],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 2400, 'duration_sec' => 90],
+                    ]),
+                    $this->phase(3, 'Плодоношение', 'FRUIT', 35, [
+                        'ph' => ['min' => 5.6, 'max' => 6.4],
+                        'ec' => ['min' => 1.6, 'max' => 2.2],
+                        'temp_air' => ['min' => 18, 'max' => 22],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 600, 'max' => 900],
+                        'dli' => ['min' => 14, 'max' => 18],
+                        'lighting' => ['photoperiod_hours' => 14, 'ppfd' => 260],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 2400, 'duration_sec' => 90],
+                    ]),
+                ],
+            ],
+            [
+                'name' => 'Перец сладкий',
+                'description' => 'Рецепт для сладкого перца с повышенной температурой и контролем EC.',
+                'plant_slugs' => ['pepper-sweet'],
+                'season' => 'all_year',
+                'site_type' => 'indoor',
+                'phases' => [
+                    $this->phase(0, 'Проращивание', 'GERMINATION', 6, [
+                        'ph' => ['min' => 5.7, 'max' => 6.2],
+                        'ec' => ['min' => 0.8, 'max' => 1.2],
+                        'temp_air' => ['min' => 26, 'max' => 28],
+                        'humidity' => ['min' => 85, 'max' => 95],
+                        'co2' => ['min' => 400, 'max' => 700],
+                        'dli' => ['min' => 8, 'max' => 12],
+                        'lighting' => ['photoperiod_hours' => 18, 'ppfd' => 180],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 900, 'duration_sec' => 20],
+                        'mist' => ['interval_sec' => 600, 'duration_sec' => 15, 'mode' => 'SPRAY'],
+                    ]),
+                    $this->phase(1, 'Рассада', 'ROOTING', 21, [
+                        'ph' => ['min' => 5.8, 'max' => 6.4],
+                        'ec' => ['min' => 1.4, 'max' => 2.0],
+                        'temp_air' => ['min' => 23, 'max' => 26],
+                        'humidity' => ['min' => 70, 'max' => 80],
+                        'co2' => ['min' => 600, 'max' => 900],
+                        'dli' => ['min' => 12, 'max' => 18],
+                        'lighting' => ['photoperiod_hours' => 18, 'ppfd' => 260],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 1800, 'duration_sec' => 60],
+                    ]),
+                    $this->phase(2, 'Вегетация', 'VEG', 28, [
+                        'ph' => ['min' => 5.8, 'max' => 6.5],
+                        'ec' => ['min' => 2.2, 'max' => 2.8],
+                        'temp_air' => ['min' => 22, 'max' => 25],
+                        'humidity' => ['min' => 60, 'max' => 75],
+                        'co2' => ['min' => 800, 'max' => 1100],
+                        'dli' => ['min' => 18, 'max' => 24],
+                        'lighting' => ['photoperiod_hours' => 18, 'ppfd' => 320],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 1500, 'duration_sec' => 90],
+                    ]),
+                    $this->phase(3, 'Плодоношение', 'FRUIT', 42, [
+                        'ph' => ['min' => 5.8, 'max' => 6.5],
+                        'ec' => ['min' => 2.6, 'max' => 3.2],
+                        'temp_air' => ['min' => 21, 'max' => 24],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 800, 'max' => 1100],
+                        'dli' => ['min' => 18, 'max' => 24],
+                        'lighting' => ['photoperiod_hours' => 18, 'ppfd' => 320],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 1500, 'duration_sec' => 90],
+                    ]),
+                ],
+            ],
+            [
+                'name' => 'Баклажан тепличный',
+                'description' => 'Рецепт для баклажана с высокими температурами и повышенной EC.',
+                'plant_slugs' => ['eggplant'],
+                'season' => 'all_year',
+                'site_type' => 'indoor',
+                'phases' => [
+                    $this->phase(0, 'Проращивание', 'GERMINATION', 6, [
+                        'ph' => ['min' => 5.7, 'max' => 6.2],
+                        'ec' => ['min' => 0.8, 'max' => 1.2],
+                        'temp_air' => ['min' => 26, 'max' => 28],
+                        'humidity' => ['min' => 85, 'max' => 95],
+                        'co2' => ['min' => 400, 'max' => 700],
+                        'dli' => ['min' => 8, 'max' => 12],
+                        'lighting' => ['photoperiod_hours' => 18, 'ppfd' => 180],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 900, 'duration_sec' => 20],
+                        'mist' => ['interval_sec' => 600, 'duration_sec' => 15, 'mode' => 'SPRAY'],
+                    ]),
+                    $this->phase(1, 'Рассада', 'ROOTING', 21, [
+                        'ph' => ['min' => 5.8, 'max' => 6.4],
+                        'ec' => ['min' => 1.6, 'max' => 2.2],
+                        'temp_air' => ['min' => 24, 'max' => 27],
+                        'humidity' => ['min' => 70, 'max' => 80],
+                        'co2' => ['min' => 600, 'max' => 900],
+                        'dli' => ['min' => 12, 'max' => 18],
+                        'lighting' => ['photoperiod_hours' => 18, 'ppfd' => 260],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 1800, 'duration_sec' => 60],
+                    ]),
+                    $this->phase(2, 'Вегетация', 'VEG', 28, [
+                        'ph' => ['min' => 5.8, 'max' => 6.5],
+                        'ec' => ['min' => 2.4, 'max' => 3.0],
+                        'temp_air' => ['min' => 24, 'max' => 28],
+                        'humidity' => ['min' => 60, 'max' => 75],
+                        'co2' => ['min' => 800, 'max' => 1100],
+                        'dli' => ['min' => 18, 'max' => 24],
+                        'lighting' => ['photoperiod_hours' => 18, 'ppfd' => 320],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 1500, 'duration_sec' => 90],
+                    ]),
+                    $this->phase(3, 'Плодоношение', 'FRUIT', 42, [
+                        'ph' => ['min' => 5.8, 'max' => 6.5],
+                        'ec' => ['min' => 2.8, 'max' => 3.5],
+                        'temp_air' => ['min' => 23, 'max' => 27],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 800, 'max' => 1100],
+                        'dli' => ['min' => 18, 'max' => 24],
+                        'lighting' => ['photoperiod_hours' => 18, 'ppfd' => 320],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 1500, 'duration_sec' => 90],
+                    ]),
+                ],
+            ],
+            [
+                'name' => 'Горох овощной',
+                'description' => 'Рецепт для гороха с прохладным климатом и умеренной EC.',
+                'plant_slugs' => ['peas'],
+                'season' => 'all_year',
+                'site_type' => 'indoor',
+                'phases' => [
+                    $this->phase(0, 'Проращивание', 'GERMINATION', 5, [
+                        'ph' => ['min' => 5.8, 'max' => 6.4],
+                        'ec' => ['min' => 1.0, 'max' => 1.4],
+                        'temp_air' => ['min' => 18, 'max' => 22],
+                        'humidity' => ['min' => 75, 'max' => 85],
+                        'co2' => ['min' => 400, 'max' => 700],
+                        'dli' => ['min' => 10, 'max' => 14],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 200],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 1200, 'duration_sec' => 120],
+                    ]),
+                    $this->phase(1, 'Вегетация', 'VEG', 21, [
+                        'ph' => ['min' => 5.8, 'max' => 6.5],
+                        'ec' => ['min' => 1.2, 'max' => 1.8],
+                        'temp_air' => ['min' => 16, 'max' => 20],
+                        'humidity' => ['min' => 60, 'max' => 75],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 12, 'max' => 16],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 240],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 1200, 'duration_sec' => 150],
+                    ]),
+                    $this->phase(2, 'Цветение', 'FLOWER', 14, [
+                        'ph' => ['min' => 5.8, 'max' => 6.5],
+                        'ec' => ['min' => 1.4, 'max' => 2.0],
+                        'temp_air' => ['min' => 16, 'max' => 20],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 12, 'max' => 16],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 240],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 1200, 'duration_sec' => 150],
+                    ]),
+                    $this->phase(3, 'Налив бобов', 'FRUIT', 21, [
+                        'ph' => ['min' => 5.8, 'max' => 6.5],
+                        'ec' => ['min' => 1.4, 'max' => 2.0],
+                        'temp_air' => ['min' => 16, 'max' => 20],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 12, 'max' => 16],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 240],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 1200, 'duration_sec' => 150],
+                    ]),
+                ],
+            ],
+            [
+                'name' => 'Салат листовой (стандарт)',
+                'description' => 'Классический рецепт для листового салата с умеренным DLI.',
+                'plant_slugs' => ['lettuce'],
+                'season' => 'all_year',
+                'site_type' => 'indoor',
+                'phases' => [
+                    $this->phase(0, 'Проращивание', 'GERMINATION', 3, [
+                        'ph' => ['min' => 5.5, 'max' => 6.0],
+                        'ec' => ['min' => 0.6, 'max' => 0.9],
+                        'temp_air' => ['min' => 18, 'max' => 21],
+                        'humidity' => ['min' => 85, 'max' => 95],
+                        'co2' => ['min' => 400, 'max' => 700],
+                        'dli' => ['min' => 6, 'max' => 10],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 160],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 120],
+                    ]),
+                    $this->phase(1, 'Рассада', 'ROOTING', 10, [
+                        'ph' => ['min' => 5.6, 'max' => 6.2],
+                        'ec' => ['min' => 0.8, 'max' => 1.2],
+                        'temp_air' => ['min' => 18, 'max' => 21],
+                        'humidity' => ['min' => 70, 'max' => 80],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 10, 'max' => 14],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 200],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 120],
+                    ]),
+                    $this->phase(2, 'Вегетация', 'VEG', 18, [
+                        'ph' => ['min' => 5.6, 'max' => 6.2],
+                        'ec' => ['min' => 1.2, 'max' => 1.6],
+                        'temp_air' => ['min' => 18, 'max' => 22],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 12, 'max' => 16],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 240],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 150],
+                        'agronomy' => [
+                            'critical_controls' => 'Предотвратить tip-burn: кальций, влажность 60–70%.',
+                        ],
+                    ]),
+                    $this->phase(3, 'Сбор', 'HARVEST', 7, [
+                        'ph' => ['min' => 5.6, 'max' => 6.2],
+                        'ec' => ['min' => 1.0, 'max' => 1.4],
+                        'temp_air' => ['min' => 16, 'max' => 20],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 10, 'max' => 14],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 220],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 150],
+                    ]),
+                ],
+            ],
+            [
+                'name' => 'Салат листовой (ускоренный оборот)',
+                'description' => 'Ускоренный цикл салата с повышенным DLI и питанием.',
+                'plant_slugs' => ['lettuce'],
+                'season' => 'all_year',
+                'site_type' => 'indoor',
+                'phases' => [
+                    $this->phase(0, 'Проращивание', 'GERMINATION', 2, [
+                        'ph' => ['min' => 5.5, 'max' => 6.0],
+                        'ec' => ['min' => 0.6, 'max' => 0.9],
+                        'temp_air' => ['min' => 19, 'max' => 22],
+                        'humidity' => ['min' => 85, 'max' => 95],
+                        'co2' => ['min' => 400, 'max' => 700],
+                        'dli' => ['min' => 8, 'max' => 12],
+                        'lighting' => ['photoperiod_hours' => 18, 'ppfd' => 200],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 120],
+                    ]),
+                    $this->phase(1, 'Вегетация', 'VEG', 16, [
+                        'ph' => ['min' => 5.6, 'max' => 6.2],
+                        'ec' => ['min' => 1.4, 'max' => 1.8],
+                        'temp_air' => ['min' => 18, 'max' => 22],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 600, 'max' => 900],
+                        'dli' => ['min' => 14, 'max' => 18],
+                        'lighting' => ['photoperiod_hours' => 18, 'ppfd' => 260],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 150],
+                        'agronomy' => [
+                            'critical_controls' => 'Контроль tip-burn: кальций, VPD 0.6–0.8.',
+                        ],
+                    ]),
+                    $this->phase(2, 'Сбор', 'HARVEST', 6, [
+                        'ph' => ['min' => 5.6, 'max' => 6.2],
+                        'ec' => ['min' => 1.2, 'max' => 1.6],
+                        'temp_air' => ['min' => 16, 'max' => 20],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 12, 'max' => 16],
+                        'lighting' => ['photoperiod_hours' => 18, 'ppfd' => 240],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 150],
+                    ]),
+                ],
+            ],
+            [
+                'name' => 'Салат Айсберг',
+                'description' => 'Рецепт для Айсберга с длительным формированием кочана.',
+                'plant_slugs' => ['lettuce-iceberg'],
+                'season' => 'all_year',
+                'site_type' => 'indoor',
+                'phases' => [
+                    $this->phase(0, 'Проращивание', 'GERMINATION', 3, [
+                        'ph' => ['min' => 5.6, 'max' => 6.2],
+                        'ec' => ['min' => 0.8, 'max' => 1.2],
+                        'temp_air' => ['min' => 16, 'max' => 19],
+                        'humidity' => ['min' => 85, 'max' => 95],
+                        'co2' => ['min' => 400, 'max' => 700],
+                        'dli' => ['min' => 6, 'max' => 10],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 160],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 120],
+                    ]),
+                    $this->phase(1, 'Рассада', 'ROOTING', 10, [
+                        'ph' => ['min' => 5.6, 'max' => 6.2],
+                        'ec' => ['min' => 1.0, 'max' => 1.4],
+                        'temp_air' => ['min' => 16, 'max' => 20],
+                        'humidity' => ['min' => 70, 'max' => 80],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 10, 'max' => 14],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 200],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 120],
+                    ]),
+                    $this->phase(2, 'Формирование кочана', 'VEG', 28, [
+                        'ph' => ['min' => 5.7, 'max' => 6.2],
+                        'ec' => ['min' => 1.4, 'max' => 1.8],
+                        'temp_air' => ['min' => 14, 'max' => 20],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 12, 'max' => 16],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 220],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 150],
+                    ]),
+                    $this->phase(3, 'Сбор', 'HARVEST', 7, [
+                        'ph' => ['min' => 5.7, 'max' => 6.2],
+                        'ec' => ['min' => 1.2, 'max' => 1.6],
+                        'temp_air' => ['min' => 14, 'max' => 18],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 10, 'max' => 14],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 200],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 150],
+                    ]),
+                ],
+            ],
+            [
+                'name' => 'Руккола',
+                'description' => 'Рецепт для рукколы с быстрым оборотом и умеренным питанием.',
+                'plant_slugs' => ['arugula'],
+                'season' => 'all_year',
+                'site_type' => 'indoor',
+                'phases' => [
+                    $this->phase(0, 'Проращивание', 'GERMINATION', 3, [
+                        'ph' => ['min' => 5.5, 'max' => 6.2],
+                        'ec' => ['min' => 0.8, 'max' => 1.2],
+                        'temp_air' => ['min' => 18, 'max' => 21],
+                        'humidity' => ['min' => 85, 'max' => 95],
+                        'co2' => ['min' => 400, 'max' => 700],
+                        'dli' => ['min' => 8, 'max' => 12],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 180],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 120],
+                    ]),
+                    $this->phase(1, 'Вегетация', 'VEG', 16, [
+                        'ph' => ['min' => 5.6, 'max' => 6.5],
+                        'ec' => ['min' => 1.2, 'max' => 1.6],
+                        'temp_air' => ['min' => 18, 'max' => 22],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 12, 'max' => 16],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 220],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 150],
+                    ]),
+                    $this->phase(2, 'Сбор', 'HARVEST', 5, [
+                        'ph' => ['min' => 5.6, 'max' => 6.5],
+                        'ec' => ['min' => 1.0, 'max' => 1.4],
+                        'temp_air' => ['min' => 16, 'max' => 20],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 10, 'max' => 14],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 200],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 150],
+                    ]),
+                ],
+            ],
+            [
+                'name' => 'Пекинская капуста',
+                'description' => 'Рецепт для пекинской капусты с умеренной температурой и высоким DLI.',
+                'plant_slugs' => ['chinese-cabbage'],
+                'season' => 'all_year',
+                'site_type' => 'indoor',
+                'phases' => [
+                    $this->phase(0, 'Проращивание', 'GERMINATION', 4, [
+                        'ph' => ['min' => 5.5, 'max' => 6.2],
+                        'ec' => ['min' => 0.8, 'max' => 1.2],
+                        'temp_air' => ['min' => 18, 'max' => 21],
+                        'humidity' => ['min' => 85, 'max' => 95],
+                        'co2' => ['min' => 400, 'max' => 700],
+                        'dli' => ['min' => 8, 'max' => 12],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 180],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 120],
+                    ]),
+                    $this->phase(1, 'Вегетация', 'VEG', 21, [
+                        'ph' => ['min' => 5.6, 'max' => 6.5],
+                        'ec' => ['min' => 1.6, 'max' => 2.2],
+                        'temp_air' => ['min' => 18, 'max' => 22],
+                        'humidity' => ['min' => 60, 'max' => 75],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 12, 'max' => 18],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 240],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 150],
+                    ]),
+                    $this->phase(2, 'Формирование кочана', 'VEG', 21, [
+                        'ph' => ['min' => 5.6, 'max' => 6.5],
+                        'ec' => ['min' => 1.8, 'max' => 2.4],
+                        'temp_air' => ['min' => 16, 'max' => 20],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 12, 'max' => 18],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 240],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 150],
+                    ]),
+                    $this->phase(3, 'Сбор', 'HARVEST', 7, [
+                        'ph' => ['min' => 5.6, 'max' => 6.5],
+                        'ec' => ['min' => 1.4, 'max' => 2.0],
+                        'temp_air' => ['min' => 16, 'max' => 18],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 10, 'max' => 14],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 220],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 150],
+                    ]),
+                ],
+            ],
+            [
+                'name' => 'Шпинат',
+                'description' => 'Рецепт для шпината с прохладной температурой и повышенной EC.',
+                'plant_slugs' => ['spinach'],
+                'season' => 'all_year',
+                'site_type' => 'indoor',
+                'phases' => [
+                    $this->phase(0, 'Проращивание', 'GERMINATION', 4, [
+                        'ph' => ['min' => 5.8, 'max' => 6.4],
+                        'ec' => ['min' => 1.2, 'max' => 1.6],
+                        'temp_air' => ['min' => 16, 'max' => 20],
+                        'humidity' => ['min' => 85, 'max' => 95],
+                        'co2' => ['min' => 400, 'max' => 700],
+                        'dli' => ['min' => 8, 'max' => 12],
+                        'lighting' => ['photoperiod_hours' => 14, 'ppfd' => 160],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 120],
+                    ]),
+                    $this->phase(1, 'Вегетация', 'VEG', 21, [
+                        'ph' => ['min' => 5.8, 'max' => 6.5],
+                        'ec' => ['min' => 1.8, 'max' => 2.3],
+                        'temp_air' => ['min' => 14, 'max' => 18],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 12, 'max' => 18],
+                        'lighting' => ['photoperiod_hours' => 14, 'ppfd' => 200],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 150],
+                    ]),
+                    $this->phase(2, 'Сбор', 'HARVEST', 7, [
+                        'ph' => ['min' => 5.8, 'max' => 6.5],
+                        'ec' => ['min' => 1.6, 'max' => 2.0],
+                        'temp_air' => ['min' => 12, 'max' => 16],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 10, 'max' => 14],
+                        'lighting' => ['photoperiod_hours' => 14, 'ppfd' => 180],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 150],
+                    ]),
+                ],
+            ],
+            [
+                'name' => 'Кейл',
+                'description' => 'Рецепт для кейла с умеренной температурой и стабильной EC.',
+                'plant_slugs' => ['kale'],
+                'season' => 'all_year',
+                'site_type' => 'indoor',
+                'phases' => [
+                    $this->phase(0, 'Проращивание', 'GERMINATION', 4, [
+                        'ph' => ['min' => 5.6, 'max' => 6.2],
+                        'ec' => ['min' => 0.8, 'max' => 1.2],
+                        'temp_air' => ['min' => 18, 'max' => 22],
+                        'humidity' => ['min' => 85, 'max' => 95],
+                        'co2' => ['min' => 400, 'max' => 700],
+                        'dli' => ['min' => 8, 'max' => 12],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 180],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 120],
+                    ]),
+                    $this->phase(1, 'Вегетация', 'VEG', 28, [
+                        'ph' => ['min' => 5.6, 'max' => 6.5],
+                        'ec' => ['min' => 1.8, 'max' => 2.4],
+                        'temp_air' => ['min' => 16, 'max' => 20],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 12, 'max' => 18],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 220],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 150],
+                    ]),
+                    $this->phase(2, 'Сбор', 'HARVEST', 7, [
+                        'ph' => ['min' => 5.6, 'max' => 6.5],
+                        'ec' => ['min' => 1.6, 'max' => 2.0],
+                        'temp_air' => ['min' => 14, 'max' => 18],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 10, 'max' => 14],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 200],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 150],
+                    ]),
+                ],
+            ],
+            [
+                'name' => 'Мангольд',
+                'description' => 'Рецепт для мангольда с умеренными температурами и стабильной EC.',
+                'plant_slugs' => ['chard'],
+                'season' => 'all_year',
+                'site_type' => 'indoor',
+                'phases' => [
+                    $this->phase(0, 'Проращивание', 'GERMINATION', 5, [
+                        'ph' => ['min' => 5.6, 'max' => 6.2],
+                        'ec' => ['min' => 0.8, 'max' => 1.2],
+                        'temp_air' => ['min' => 18, 'max' => 22],
+                        'humidity' => ['min' => 85, 'max' => 95],
+                        'co2' => ['min' => 400, 'max' => 700],
+                        'dli' => ['min' => 8, 'max' => 12],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 180],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 120],
+                    ]),
+                    $this->phase(1, 'Вегетация', 'VEG', 28, [
+                        'ph' => ['min' => 5.6, 'max' => 6.5],
+                        'ec' => ['min' => 1.8, 'max' => 2.3],
+                        'temp_air' => ['min' => 18, 'max' => 22],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 12, 'max' => 18],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 220],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 150],
+                    ]),
+                    $this->phase(2, 'Сбор', 'HARVEST', 7, [
+                        'ph' => ['min' => 5.6, 'max' => 6.5],
+                        'ec' => ['min' => 1.6, 'max' => 2.0],
+                        'temp_air' => ['min' => 16, 'max' => 20],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 10, 'max' => 14],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 200],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 150],
+                    ]),
+                ],
+            ],
+            [
+                'name' => 'Укроп',
+                'description' => 'Рецепт для укропа с умеренной температурой и низкой EC.',
+                'plant_slugs' => ['dill'],
+                'season' => 'all_year',
+                'site_type' => 'indoor',
+                'phases' => [
+                    $this->phase(0, 'Проращивание', 'GERMINATION', 5, [
+                        'ph' => ['min' => 5.6, 'max' => 6.2],
+                        'ec' => ['min' => 0.8, 'max' => 1.2],
+                        'temp_air' => ['min' => 18, 'max' => 22],
+                        'humidity' => ['min' => 85, 'max' => 95],
+                        'co2' => ['min' => 400, 'max' => 700],
+                        'dli' => ['min' => 8, 'max' => 12],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 180],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 120],
+                    ]),
+                    $this->phase(1, 'Вегетация', 'VEG', 21, [
+                        'ph' => ['min' => 5.6, 'max' => 6.5],
+                        'ec' => ['min' => 1.2, 'max' => 1.8],
+                        'temp_air' => ['min' => 18, 'max' => 22],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 12, 'max' => 16],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 220],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 150],
+                    ]),
+                    $this->phase(2, 'Сбор', 'HARVEST', 7, [
+                        'ph' => ['min' => 5.6, 'max' => 6.5],
+                        'ec' => ['min' => 1.0, 'max' => 1.4],
+                        'temp_air' => ['min' => 16, 'max' => 20],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 10, 'max' => 14],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 200],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 150],
+                    ]),
+                ],
+            ],
+            [
+                'name' => 'Петрушка',
+                'description' => 'Рецепт для петрушки с длительной вегетацией.',
+                'plant_slugs' => ['parsley'],
+                'season' => 'all_year',
+                'site_type' => 'indoor',
+                'phases' => [
+                    $this->phase(0, 'Проращивание', 'GERMINATION', 7, [
+                        'ph' => ['min' => 5.6, 'max' => 6.2],
+                        'ec' => ['min' => 0.8, 'max' => 1.2],
+                        'temp_air' => ['min' => 18, 'max' => 22],
+                        'humidity' => ['min' => 85, 'max' => 95],
+                        'co2' => ['min' => 400, 'max' => 700],
+                        'dli' => ['min' => 8, 'max' => 12],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 180],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 120],
+                    ]),
+                    $this->phase(1, 'Вегетация', 'VEG', 28, [
+                        'ph' => ['min' => 5.6, 'max' => 6.5],
+                        'ec' => ['min' => 1.4, 'max' => 2.0],
+                        'temp_air' => ['min' => 18, 'max' => 22],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 12, 'max' => 16],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 220],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 150],
+                    ]),
+                    $this->phase(2, 'Сбор', 'HARVEST', 7, [
+                        'ph' => ['min' => 5.6, 'max' => 6.5],
+                        'ec' => ['min' => 1.2, 'max' => 1.6],
+                        'temp_air' => ['min' => 16, 'max' => 20],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 10, 'max' => 14],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 200],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 150],
+                    ]),
+                ],
+            ],
+            [
+                'name' => 'Кинза',
+                'description' => 'Рецепт для кинзы с умеренным питанием и контролем стрелкования.',
+                'plant_slugs' => ['cilantro'],
+                'season' => 'all_year',
+                'site_type' => 'indoor',
+                'phases' => [
+                    $this->phase(0, 'Проращивание', 'GERMINATION', 7, [
+                        'ph' => ['min' => 5.6, 'max' => 6.2],
+                        'ec' => ['min' => 0.8, 'max' => 1.2],
+                        'temp_air' => ['min' => 18, 'max' => 22],
+                        'humidity' => ['min' => 85, 'max' => 95],
+                        'co2' => ['min' => 400, 'max' => 700],
+                        'dli' => ['min' => 8, 'max' => 12],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 180],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 120],
+                    ]),
+                    $this->phase(1, 'Вегетация', 'VEG', 21, [
+                        'ph' => ['min' => 5.6, 'max' => 6.5],
+                        'ec' => ['min' => 1.2, 'max' => 1.8],
+                        'temp_air' => ['min' => 18, 'max' => 22],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 12, 'max' => 16],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 220],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 150],
+                        'agronomy' => [
+                            'critical_controls' => 'Не перегревать, чтобы избежать стрелкования.',
+                        ],
+                    ]),
+                    $this->phase(2, 'Сбор', 'HARVEST', 7, [
+                        'ph' => ['min' => 5.6, 'max' => 6.5],
+                        'ec' => ['min' => 1.0, 'max' => 1.4],
+                        'temp_air' => ['min' => 16, 'max' => 20],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 10, 'max' => 14],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 200],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 150],
+                    ]),
+                ],
+            ],
+            [
+                'name' => 'Мята',
+                'description' => 'Рецепт для мяты с акцентом на чистоту и стабильную влажность субстрата.',
+                'plant_slugs' => ['mint'],
+                'season' => 'all_year',
+                'site_type' => 'indoor',
+                'phases' => [
+                    $this->phase(0, 'Укоренение', 'ROOTING', 10, [
+                        'ph' => ['min' => 5.6, 'max' => 6.2],
+                        'ec' => ['min' => 1.0, 'max' => 1.4],
+                        'temp_air' => ['min' => 20, 'max' => 24],
+                        'humidity' => ['min' => 75, 'max' => 85],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 10, 'max' => 14],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 200],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 1200, 'duration_sec' => 120],
+                    ]),
+                    $this->phase(1, 'Вегетация', 'VEG', 21, [
+                        'ph' => ['min' => 5.6, 'max' => 6.5],
+                        'ec' => ['min' => 1.4, 'max' => 2.0],
+                        'temp_air' => ['min' => 18, 'max' => 24],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 12, 'max' => 18],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 220],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 1200, 'duration_sec' => 150],
+                    ]),
+                    $this->phase(2, 'Сбор', 'HARVEST', 7, [
+                        'ph' => ['min' => 5.6, 'max' => 6.5],
+                        'ec' => ['min' => 1.2, 'max' => 1.6],
+                        'temp_air' => ['min' => 18, 'max' => 22],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 12, 'max' => 16],
+                        'lighting' => ['photoperiod_hours' => 16, 'ppfd' => 220],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 1200, 'duration_sec' => 150],
+                    ]),
+                ],
+            ],
+            [
+                'name' => 'Базилик (Генуэзский)',
+                'description' => 'Базовый рецепт для базилика с акцентом на ароматические масла.',
+                'plant_slugs' => ['basil-genovese'],
+                'season' => 'all_year',
+                'site_type' => 'indoor',
+                'phases' => [
+                    $this->phase(0, 'Проращивание', 'GERMINATION', 4, [
+                        'ph' => ['min' => 5.5, 'max' => 6.2],
+                        'ec' => ['min' => 0.8, 'max' => 1.2],
+                        'temp_air' => ['min' => 22, 'max' => 26],
+                        'humidity' => ['min' => 85, 'max' => 95],
+                        'co2' => ['min' => 400, 'max' => 700],
+                        'dli' => ['min' => 10, 'max' => 14],
+                        'lighting' => ['photoperiod_hours' => 18, 'ppfd' => 220],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 120],
+                    ]),
+                    $this->phase(1, 'Вегетация', 'VEG', 21, [
+                        'ph' => ['min' => 5.6, 'max' => 6.4],
+                        'ec' => ['min' => 1.4, 'max' => 1.8],
+                        'temp_air' => ['min' => 20, 'max' => 26],
+                        'humidity' => ['min' => 55, 'max' => 70],
+                        'co2' => ['min' => 600, 'max' => 900],
+                        'dli' => ['min' => 14, 'max' => 18],
+                        'lighting' => ['photoperiod_hours' => 18, 'ppfd' => 260],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 150],
+                        'agronomy' => [
+                            'quality_check' => 'Контроль эфирных масел: не перегревать.',
+                        ],
+                    ]),
+                    $this->phase(2, 'Сбор', 'HARVEST', 7, [
+                        'ph' => ['min' => 5.6, 'max' => 6.4],
+                        'ec' => ['min' => 1.2, 'max' => 1.6],
+                        'temp_air' => ['min' => 20, 'max' => 24],
+                        'humidity' => ['min' => 55, 'max' => 70],
+                        'co2' => ['min' => 600, 'max' => 900],
+                        'dli' => ['min' => 12, 'max' => 16],
+                        'lighting' => ['photoperiod_hours' => 18, 'ppfd' => 240],
+                        'irrigation' => ['mode' => 'RECIRC', 'interval_sec' => 900, 'duration_sec' => 150],
+                    ]),
+                ],
+            ],
+            [
+                'name' => 'Смородина черная',
+                'description' => 'Рецепт для черной смородины с умеренным питанием и стабильным климатом.',
+                'plant_slugs' => ['currant-black'],
+                'season' => 'all_year',
+                'site_type' => 'indoor',
+                'phases' => [
+                    $this->phase(0, 'Укоренение', 'ROOTING', 21, [
+                        'ph' => ['min' => 5.5, 'max' => 6.2],
+                        'ec' => ['min' => 1.0, 'max' => 1.4],
+                        'temp_air' => ['min' => 18, 'max' => 22],
+                        'humidity' => ['min' => 70, 'max' => 85],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 10, 'max' => 14],
+                        'lighting' => ['photoperiod_hours' => 14, 'ppfd' => 220],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 2400, 'duration_sec' => 90],
+                    ]),
+                    $this->phase(1, 'Вегетация', 'VEG', 28, [
+                        'ph' => ['min' => 5.6, 'max' => 6.4],
+                        'ec' => ['min' => 1.4, 'max' => 2.0],
+                        'temp_air' => ['min' => 18, 'max' => 24],
+                        'humidity' => ['min' => 65, 'max' => 75],
+                        'co2' => ['min' => 600, 'max' => 900],
+                        'dli' => ['min' => 12, 'max' => 18],
+                        'lighting' => ['photoperiod_hours' => 14, 'ppfd' => 260],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 2400, 'duration_sec' => 90],
+                    ]),
+                    $this->phase(2, 'Цветение', 'FLOWER', 21, [
+                        'ph' => ['min' => 5.6, 'max' => 6.4],
+                        'ec' => ['min' => 1.6, 'max' => 2.2],
+                        'temp_air' => ['min' => 16, 'max' => 22],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 600, 'max' => 900],
+                        'dli' => ['min' => 12, 'max' => 18],
+                        'lighting' => ['photoperiod_hours' => 14, 'ppfd' => 260],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 2400, 'duration_sec' => 90],
+                    ]),
+                    $this->phase(3, 'Плодоношение', 'FRUIT', 35, [
+                        'ph' => ['min' => 5.6, 'max' => 6.4],
+                        'ec' => ['min' => 1.6, 'max' => 2.2],
+                        'temp_air' => ['min' => 16, 'max' => 22],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 600, 'max' => 900],
+                        'dli' => ['min' => 12, 'max' => 18],
+                        'lighting' => ['photoperiod_hours' => 14, 'ppfd' => 260],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 2400, 'duration_sec' => 90],
+                    ]),
+                ],
+            ],
+            [
+                'name' => 'Крыжовник',
+                'description' => 'Рецепт для крыжовника с умеренным питанием и контролем влажности.',
+                'plant_slugs' => ['gooseberry'],
+                'season' => 'all_year',
+                'site_type' => 'indoor',
+                'phases' => [
+                    $this->phase(0, 'Укоренение', 'ROOTING', 21, [
+                        'ph' => ['min' => 5.5, 'max' => 6.2],
+                        'ec' => ['min' => 1.0, 'max' => 1.4],
+                        'temp_air' => ['min' => 18, 'max' => 22],
+                        'humidity' => ['min' => 70, 'max' => 85],
+                        'co2' => ['min' => 500, 'max' => 800],
+                        'dli' => ['min' => 10, 'max' => 14],
+                        'lighting' => ['photoperiod_hours' => 14, 'ppfd' => 220],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 2400, 'duration_sec' => 90],
+                    ]),
+                    $this->phase(1, 'Вегетация', 'VEG', 28, [
+                        'ph' => ['min' => 5.6, 'max' => 6.4],
+                        'ec' => ['min' => 1.4, 'max' => 2.0],
+                        'temp_air' => ['min' => 18, 'max' => 24],
+                        'humidity' => ['min' => 65, 'max' => 75],
+                        'co2' => ['min' => 600, 'max' => 900],
+                        'dli' => ['min' => 12, 'max' => 18],
+                        'lighting' => ['photoperiod_hours' => 14, 'ppfd' => 260],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 2400, 'duration_sec' => 90],
+                    ]),
+                    $this->phase(2, 'Цветение', 'FLOWER', 21, [
+                        'ph' => ['min' => 5.6, 'max' => 6.4],
+                        'ec' => ['min' => 1.6, 'max' => 2.2],
+                        'temp_air' => ['min' => 16, 'max' => 22],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 600, 'max' => 900],
+                        'dli' => ['min' => 12, 'max' => 18],
+                        'lighting' => ['photoperiod_hours' => 14, 'ppfd' => 260],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 2400, 'duration_sec' => 90],
+                    ]),
+                    $this->phase(3, 'Плодоношение', 'FRUIT', 35, [
+                        'ph' => ['min' => 5.6, 'max' => 6.4],
+                        'ec' => ['min' => 1.6, 'max' => 2.2],
+                        'temp_air' => ['min' => 16, 'max' => 22],
+                        'humidity' => ['min' => 60, 'max' => 70],
+                        'co2' => ['min' => 600, 'max' => 900],
+                        'dli' => ['min' => 12, 'max' => 18],
+                        'lighting' => ['photoperiod_hours' => 14, 'ppfd' => 260],
+                        'irrigation' => ['mode' => 'SUBSTRATE', 'interval_sec' => 2400, 'duration_sec' => 90],
+                    ]),
+                ],
+            ],
+        ];
+    }
+
+    private function phase(int $index, string $name, string $stageCode, int $durationDays, array $data = []): array
+    {
+        return array_merge([
+            'phase_index' => $index,
+            'name' => $name,
+            'stage_code' => $stageCode,
+            'duration_days' => $durationDays,
+            'progress_model' => $data['progress_model'] ?? 'TIME',
+        ], $data);
+    }
+
+    private function buildPhasePayload(Recipe $recipe, array $phaseData, Collection $templates): array
+    {
+        $stageTemplate = $this->resolveStageTemplate($recipe, $phaseData, $templates);
+
+        $ph = $phaseData['ph'] ?? [];
+        $ec = $phaseData['ec'] ?? [];
+        $tempAir = $phaseData['temp_air'] ?? [];
+        $humidity = $phaseData['humidity'] ?? [];
+        $co2 = $phaseData['co2'] ?? [];
+        $dli = $phaseData['dli'] ?? [];
+        $lighting = $phaseData['lighting'] ?? [];
+        $irrigation = $phaseData['irrigation'] ?? [];
+        $mist = $phaseData['mist'] ?? [];
+
+        $phMin = $phaseData['ph_min'] ?? $ph['min'] ?? null;
+        $phMax = $phaseData['ph_max'] ?? $ph['max'] ?? null;
+        $phTarget = $phaseData['ph_target'] ?? $ph['target'] ?? $this->averageTarget(['min' => $phMin, 'max' => $phMax]);
+
+        $ecMin = $phaseData['ec_min'] ?? $ec['min'] ?? null;
+        $ecMax = $phaseData['ec_max'] ?? $ec['max'] ?? null;
+        $ecTarget = $phaseData['ec_target'] ?? $ec['target'] ?? $this->averageTarget(['min' => $ecMin, 'max' => $ecMax]);
+
+        $tempMin = $phaseData['temp_air_min'] ?? $tempAir['min'] ?? null;
+        $tempMax = $phaseData['temp_air_max'] ?? $tempAir['max'] ?? null;
+        $tempTarget = $phaseData['temp_air_target'] ?? $tempAir['target'] ?? $this->averageTarget(['min' => $tempMin, 'max' => $tempMax]);
+
+        $humidityMin = $phaseData['humidity_min'] ?? $humidity['min'] ?? null;
+        $humidityMax = $phaseData['humidity_max'] ?? $humidity['max'] ?? null;
+        $humidityTarget = $phaseData['humidity_target'] ?? $humidity['target'] ?? $this->averageTarget(['min' => $humidityMin, 'max' => $humidityMax]);
+
+        $co2Min = $phaseData['co2_min'] ?? $co2['min'] ?? null;
+        $co2Max = $phaseData['co2_max'] ?? $co2['max'] ?? null;
+        $co2Target = $phaseData['co2_target'] ?? $co2['target'] ?? $this->averageTarget(['min' => $co2Min, 'max' => $co2Max]);
+
+        $dliMin = $phaseData['dli_min'] ?? $dli['min'] ?? null;
+        $dliMax = $phaseData['dli_max'] ?? $dli['max'] ?? null;
+        $dliTarget = $phaseData['dli_target'] ?? $dli['target'] ?? $this->averageTarget(['min' => $dliMin, 'max' => $dliMax]);
+
+        $durationDays = $phaseData['duration_days'] ?? null;
+        $durationHours = $phaseData['duration_hours'] ?? null;
+        if ($durationHours === null && $durationDays !== null) {
+            $durationHours = (int) round($durationDays * 24);
+        }
+
+        $irrigationMode = $phaseData['irrigation_mode'] ?? $irrigation['mode'] ?? null;
+        if ($irrigationMode === null && ! empty($irrigation)) {
+            $irrigationMode = 'SUBSTRATE';
+        }
+
+        $mistMode = $phaseData['mist_mode'] ?? $mist['mode'] ?? null;
+        if ($mistMode === null && ! empty($mist)) {
+            $mistMode = 'NORMAL';
+        }
+
+        $extensions = $this->buildPhaseExtensions($phaseData);
+
+        return [
+            'stage_template_id' => $stageTemplate?->id,
+            'phase_index' => $phaseData['phase_index'],
+            'name' => $phaseData['name'],
+            'ph_target' => $phTarget,
+            'ph_min' => $phMin,
+            'ph_max' => $phMax,
+            'ec_target' => $ecTarget,
+            'ec_min' => $ecMin,
+            'ec_max' => $ecMax,
+            'irrigation_mode' => $irrigationMode,
+            'irrigation_interval_sec' => $phaseData['irrigation_interval_sec'] ?? $irrigation['interval_sec'] ?? null,
+            'irrigation_duration_sec' => $phaseData['irrigation_duration_sec'] ?? $irrigation['duration_sec'] ?? null,
+            'lighting_photoperiod_hours' => $phaseData['lighting_photoperiod_hours'] ?? $lighting['photoperiod_hours'] ?? null,
+            'lighting_start_time' => $phaseData['lighting_start_time'] ?? $lighting['start_time'] ?? null,
+            'mist_interval_sec' => $phaseData['mist_interval_sec'] ?? $mist['interval_sec'] ?? null,
+            'mist_duration_sec' => $phaseData['mist_duration_sec'] ?? $mist['duration_sec'] ?? null,
+            'mist_mode' => $mistMode,
+            'temp_air_target' => $tempTarget,
+            'humidity_target' => $humidityTarget,
+            'co2_target' => $co2Target !== null ? (int) round($co2Target) : null,
+            'progress_model' => $phaseData['progress_model'] ?? 'TIME',
+            'duration_hours' => $durationHours,
+            'duration_days' => $durationDays,
+            'base_temp_c' => $phaseData['base_temp_c'] ?? null,
+            'target_gdd' => $phaseData['target_gdd'] ?? null,
+            'dli_target' => $dliTarget,
+            'extensions' => $extensions,
+        ];
+    }
+
+    private function buildPhaseExtensions(array $phaseData): ?array
+    {
+        $extensions = $phaseData['extensions'] ?? [];
+
+        if (! empty($phaseData['agronomy'])) {
+            $extensions['agronomy'] = $phaseData['agronomy'];
+        }
+
+        foreach (['temp_air' => 'temp_air', 'humidity' => 'humidity', 'co2' => 'co2', 'dli' => 'dli'] as $key => $prefix) {
+            $range = $phaseData[$key] ?? null;
+            if (! is_array($range)) {
+                continue;
+            }
+            if (array_key_exists('min', $range)) {
+                $extensions[$prefix.'_min'] = $range['min'];
+            }
+            if (array_key_exists('max', $range)) {
+                $extensions[$prefix.'_max'] = $range['max'];
+            }
+        }
+
+        $lighting = $phaseData['lighting'] ?? null;
+        if (is_array($lighting)) {
+            $lightingMeta = array_intersect_key($lighting, array_flip(['ppfd', 'ppfd_max', 'spectrum', 'dimming_percent']));
+            if (! empty($lightingMeta)) {
+                $extensions['lighting'] = $lightingMeta;
+            }
+        }
+
+        $irrigation = $phaseData['irrigation'] ?? null;
+        if (is_array($irrigation)) {
+            $irrigationMeta = array_intersect_key(
+                $irrigation,
+                array_flip(['drain_target_percent', 'drain_ec_target', 'drain_ph_target', 'pulse_count_per_day', 'start_time', 'end_time'])
+            );
+            if (! empty($irrigationMeta)) {
+                $extensions['irrigation'] = $irrigationMeta;
+            }
+        }
+
+        if (! empty($phaseData['vpd_target_kpa'])) {
+            $extensions['vpd_target_kpa'] = $phaseData['vpd_target_kpa'];
+        }
+
+        return empty($extensions) ? null : $extensions;
+    }
+
+    private function seedGrowCycles(Collection $revisions): void
     {
         $zones = Zone::all();
         if ($zones->isEmpty()) {
@@ -395,8 +1612,18 @@ class ExtendedRecipesCyclesSeeder extends Seeder
             return;
         }
 
-        if (empty($revisions)) {
+        if ($revisions->isEmpty()) {
             $this->command->warn('Ревизии рецептов не найдены.');
+
+            return;
+        }
+
+        $revisionPool = $revisions->filter(function (RecipeRevision $revision) {
+            return $revision->recipe && $revision->recipe->plants->isNotEmpty();
+        });
+
+        if ($revisionPool->isEmpty()) {
+            $this->command->warn('Ревизии рецептов без привязанных растений.');
 
             return;
         }
@@ -409,9 +1636,18 @@ class ExtendedRecipesCyclesSeeder extends Seeder
                 continue;
             }
 
-            $revision = $revisions[array_rand($revisions)];
-            $plant = $plants->random();
+            /** @var RecipeRevision $revision */
+            $revision = $revisionPool->random();
+            $plantsForRecipe = $revision->recipe->plants;
+            $plant = $plantsForRecipe->firstWhere('pivot.is_default', true) ?? $plantsForRecipe->first();
+
+            if (! $plant) {
+                continue;
+            }
+
             $startedAt = now()->subDays(rand(1, 30));
+            $zoneStatus = strtolower((string) $zone->status);
+            $startImmediately = ! in_array($zoneStatus, ['offline', 'critical'], true);
 
             try {
                 $cycle = $growCycleService->createCycle(
@@ -420,20 +1656,12 @@ class ExtendedRecipesCyclesSeeder extends Seeder
                     $plant->id,
                     [
                         'planting_at' => $startedAt->format('Y-m-d H:i:s'),
-                        'start_immediately' => $zone->status !== 'STOPPED',
+                        'start_immediately' => $startImmediately,
                         'batch_label' => 'BATCH-'.Str::upper(Str::random(6)),
                         'notes' => "Цикл выращивания для зоны {$zone->name}",
                     ],
                     $userId
                 );
-
-                if ($zone->status === 'PAUSED' && $userId) {
-                    $growCycleService->pause($cycle, $userId);
-                }
-
-                if ($zone->status === 'STOPPED' && $userId && $cycle->status === GrowCycleStatus::RUNNING) {
-                    $growCycleService->abort($cycle, ['reason' => 'zone_stopped'], $userId);
-                }
             } catch (\Throwable $e) {
                 $this->command->warn("Не удалось создать цикл для зоны {$zone->id}: {$e->getMessage()}");
             }
@@ -442,6 +1670,11 @@ class ExtendedRecipesCyclesSeeder extends Seeder
 
     private function resolveStageTemplate(Recipe $recipe, array $phaseData, Collection $templates): ?GrowStageTemplate
     {
+        $stageCode = strtoupper((string) ($phaseData['stage_code'] ?? ''));
+        if ($stageCode !== '') {
+            return $templates->firstWhere('code', $stageCode) ?? $templates->first();
+        }
+
         $phaseName = Str::lower($phaseData['name'] ?? '');
         $recipeName = Str::lower($recipe->name);
 

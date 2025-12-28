@@ -8,7 +8,6 @@ use App\Models\PlantPriceVersion;
 use App\Models\PlantSalePrice;
 use App\Models\Recipe;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Str;
 
 /**
  * Расширенный сидер для растений
@@ -190,9 +189,18 @@ class ExtendedPlantsSeeder extends Seeder
     {
         $created = 0;
 
-        // Связываем растение с 1-3 рецептами
-        $recipeCount = rand(1, min(3, $recipes->count()));
-        $selectedRecipes = $recipes->random($recipeCount);
+        $selectedRecipes = $recipes->filter(function (Recipe $recipe) use ($plant) {
+            $metadata = $recipe->metadata ?? [];
+            $slugs = $metadata['crop_slugs'] ?? [];
+
+            return is_array($slugs) && in_array($plant->slug, $slugs, true);
+        });
+
+        if ($selectedRecipes->isEmpty()) {
+            return 0;
+        }
+
+        $hasDefault = $plant->recipes()->wherePivot('is_default', true)->exists();
 
         foreach ($selectedRecipes as $recipe) {
             // Проверяем, есть ли уже связь
@@ -205,19 +213,19 @@ class ExtendedPlantsSeeder extends Seeder
             }
 
             $plant->recipes()->attach($recipe->id, [
-                'season' => ['spring', 'summer', 'autumn', 'winter', 'all_year'][rand(0, 4)],
-                'site_type' => ['indoor', 'outdoor', 'both'][rand(0, 2)],
-                'is_default' => rand(0, 1) === 1,
+                'season' => 'all_year',
+                'site_type' => 'indoor',
+                'is_default' => ! $hasDefault,
                 'metadata' => json_encode([
                     'recommended' => true,
                     'created_by' => 'system',
-                ]),
+                ], JSON_UNESCAPED_UNICODE),
             ]);
 
+            $hasDefault = true;
             $created++;
         }
 
         return $created;
     }
 }
-
