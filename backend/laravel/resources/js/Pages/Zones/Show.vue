@@ -42,7 +42,6 @@
       <ZoneCycleTab
         v-show="activeTab === 'cycle'"
         :active-grow-cycle="activeGrowCycle"
-        :active-cycle="activeCycle"
         :current-phase="currentPhase"
         :cycles-list="cyclesList"
         :computed-phase-progress="computedPhaseProgress"
@@ -80,7 +79,7 @@
         :zone="zone"
         :devices="devices"
         :can-manage-devices="canManageDevices"
-        @attach="showAttachNodesModal = true"
+        @attach="modals.open('attachNodes')"
         @configure="(device) => openNodeConfig(device.id, device)"
       />
     </div>
@@ -108,7 +107,7 @@
       v-if="showAttachNodesModal"
       :show="showAttachNodesModal"
       :zone-id="zoneId"
-      @close="showAttachNodesModal = false"
+      @close="modals.close('attachNodes')"
       @attached="onNodesAttached"
     />
     
@@ -1109,7 +1108,7 @@ async function onToggle(): Promise<void> {
 
 function openActionModal(actionType: CommandType): void {
   currentActionType.value = actionType
-  showActionModal.value = true
+  modals.open('action')
 }
 
 async function onActionSubmit({ actionType, params }: { actionType: CommandType; params: Record<string, unknown> }): Promise<void> {
