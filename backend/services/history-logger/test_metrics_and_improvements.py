@@ -165,7 +165,7 @@ class TestMetrics:
         
         with patch("telemetry_processing.execute", new_callable=AsyncMock) as mock_execute, \
              patch("telemetry_processing.fetch", new_callable=AsyncMock) as mock_fetch, \
-             patch("telemetry_processing.upsert_telemetry_last", new_callable=AsyncMock):
+             patch("telemetry_processing._sensor_cache", {(1, 1, "PH", "PH"): 101}):
             mock_fetch.return_value = [{"id": 1, "uid": "nd-ph-1"}]
             
             await process_telemetry_batch(samples)
@@ -297,7 +297,7 @@ class TestMetrics:
         
         with patch("telemetry_processing.execute", new_callable=AsyncMock) as mock_execute, \
              patch("telemetry_processing.fetch", new_callable=AsyncMock) as mock_fetch, \
-             patch("telemetry_processing.upsert_telemetry_last", new_callable=AsyncMock):
+             patch("telemetry_processing._sensor_cache", {(1, 1, "PH", "PH"): 101}):
             mock_fetch.return_value = [{"id": 1, "uid": "nd-ph-1"}]
             # Симулируем ошибку БД
             mock_execute.side_effect = Exception("Database connection failed")
@@ -358,7 +358,7 @@ class TestImprovedLogging:
         
         with patch("telemetry_processing.execute", new_callable=AsyncMock) as mock_execute, \
              patch("telemetry_processing.fetch", new_callable=AsyncMock) as mock_fetch, \
-             patch("telemetry_processing.upsert_telemetry_last", new_callable=AsyncMock), \
+             patch("telemetry_processing._sensor_cache", {(1, 1, "PH", "PH"): 101}), \
              patch('telemetry_processing.logger') as mock_logger:
             mock_fetch.return_value = [{"id": 1, "uid": "nd-ph-1"}]
             mock_execute.side_effect = Exception("Database error")

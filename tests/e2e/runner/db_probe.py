@@ -266,7 +266,7 @@ class DBProbe:
                     SELECT 1
                     FROM information_schema.tables
                     WHERE table_schema = 'public'
-                    AND table_name = %s
+                    AND table_name = :table_name
                 )
             """
             result = self.query(query, {"table_name": table_name})
@@ -296,8 +296,8 @@ class DBProbe:
                     SELECT 1
                     FROM information_schema.columns
                     WHERE table_schema = 'public'
-                    AND table_name = %s
-                    AND column_name = %s
+                    AND table_name = :table_name
+                    AND column_name = :column_name
                 )
             """
             result = self.query(query, {"table_name": table_name, "column_name": column_name})

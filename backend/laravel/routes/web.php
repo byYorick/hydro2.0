@@ -262,7 +262,7 @@ Route::post('/broadcasting/auth', function (\Illuminate\Http\Request $request) {
 
         return response()->json(['message' => 'Authorization failed.'], 500);
     }
-})->middleware(['web', 'auth', 'throttle:300,1'])->withoutMiddleware([\App\Http\Middleware\HandleInertiaRequests::class]); // Rate limiting: 300 запросов в минуту для поддержки множественных каналов и переподключений
+})->middleware(['web', 'throttle:300,1'])->withoutMiddleware([\App\Http\Middleware\HandleInertiaRequests::class]); // Rate limiting: 300 запросов в минуту для поддержки множественных каналов и переподключений
 
 Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->group(function () {
     /**

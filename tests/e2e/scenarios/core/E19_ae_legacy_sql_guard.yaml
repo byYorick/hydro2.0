@@ -14,16 +14,58 @@ actions:
     endpoint: /api/zones
     save: zones_response
 
+  - step: fetch_zone_id
+    type: database_query
+    query: |
+      SELECT id
+      FROM zones
+      WHERE uid = 'zn-test-1'
+      LIMIT 1
+    expected_rows: 1
+    save: zone_row
+
   - step: set_zone_id
     type: set
-    zone_id: ${zones_response.data.data[0].id}
+    zone_id: ${zone_row.0.id}
+
+  - step: create_recipe
+    type: database_query
+    query: |
+      INSERT INTO recipes (name, description, created_at, updated_at)
+      VALUES ('E2E Recipe', 'E2E test recipe', NOW(), NOW())
+      RETURNING id
+    save: recipe_row
+
+  - step: create_recipe_revision
+    type: database_query
+    query: |
+      INSERT INTO recipe_revisions (recipe_id, revision_number, status, created_at, updated_at)
+      VALUES (:recipe_id, 1, 'PUBLISHED', NOW(), NOW())
+      RETURNING id
+    params:
+      recipe_id: ${recipe_row.0.id}
+    save: revision_row
+
+  - step: create_revision_phase
+    type: database_execute
+    query: |
+      INSERT INTO recipe_revision_phases (
+        recipe_revision_id,
+        phase_index,
+        name,
+        created_at,
+        updated_at
+      )
+      VALUES (:revision_id, 0, 'Phase 1', NOW(), NOW())
+    params:
+      revision_id: ${revision_row.0.id}
 
   # Создаем цикл выращивания (это вызовет AE сервис)
   - step: create_grow_cycle
     type: api_post
     endpoint: /api/zones/${zone_id}/grow-cycles
     payload:
-      recipe_revision_id: 1  # Assume test recipe exists
+      recipe_revision_id: ${revision_row.0.id}
       plant_id: 1           # Assume test plant exists
       start_immediately: true
     save: cycle_response

@@ -201,6 +201,15 @@ class E2ERunner:
             logger.info("✓ Database connected")
         except Exception as e:
             logger.warning(f"⚠ Database connection failed: {e}")
+
+        # Инициализация модульных компонентов (нужны для резолвинга переменных в сценариях)
+        self.variable_resolver = VariableResolver(self.context)
+        self.schema_validator = SchemaValidator(self.context)
+        self.api_executor = APIStepExecutor(self.api, self.variable_resolver)
+        self.ws_executor = WebSocketStepExecutor(self.ws, self.schema_validator)
+        self.db_executor = DatabaseStepExecutor(self.db, self.variable_resolver)
+        self.mqtt_executor = MQTTStepExecutor(self.mqtt, self.variable_resolver)
+        self.waiting_executor = WaitingStepExecutor(self.variable_resolver)
     
     async def teardown(self):
         """Очистка ресурсов."""
@@ -1301,7 +1310,7 @@ class E2ERunner:
                 logger.warning(f"Failed to ensure test zone/node: {e}")
 
         # actions
-        actions = scenario.get("actions", [])
+        actions = scenario.get("actions") or []
         for i, action in enumerate(actions):
             step_name = action.get("step", action.get("name", f"Action {i+1}"))
             step_type = action.get("type")

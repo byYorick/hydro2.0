@@ -15,6 +15,11 @@ async def test_batch_upsert_single_query():
     # Мокаем кеш
     with patch('telemetry_processing._zone_cache', {('zn-1', 'gh-1'): 1}), \
          patch('telemetry_processing._node_cache', {('nd-1', 'gh-1'): (1, 1)}), \
+         patch('telemetry_processing._sensor_cache', {
+             (1, 1, "TEMPERATURE", "TEMP_AIR"): 101,
+             (1, 1, "HUMIDITY", "HUMIDITY"): 102,
+             (1, 1, "PH", "PH"): 103,
+         }), \
          patch('telemetry_processing._cache_last_update', 9999999999.0):  # Кеш свежий
         
         samples = [
@@ -72,6 +77,9 @@ async def test_batch_upsert_latest_timestamp():
     # Мокаем кеш
     with patch('telemetry_processing._zone_cache', {('zn-1', 'gh-1'): 1}), \
          patch('telemetry_processing._node_cache', {('nd-1', 'gh-1'): (1, 1)}), \
+         patch('telemetry_processing._sensor_cache', {
+             (1, 1, "TEMPERATURE", "TEMP_AIR"): 101,
+         }), \
          patch('telemetry_processing._cache_last_update', 9999999999.0):
         
         base_time = datetime.utcnow()
@@ -117,6 +125,9 @@ async def test_batch_upsert_fallback():
     # Мокаем кеш
     with patch('telemetry_processing._zone_cache', {('zn-1', 'gh-1'): 1}), \
          patch('telemetry_processing._node_cache', {('nd-1', 'gh-1'): (1, 1)}), \
+         patch('telemetry_processing._sensor_cache', {
+             (1, 1, "TEMPERATURE", "TEMP_AIR"): 101,
+         }), \
          patch('telemetry_processing._cache_last_update', 9999999999.0):
         
         samples = [
@@ -136,17 +147,20 @@ async def test_batch_upsert_fallback():
             nonlocal call_count
             call_count += 1
             query_str = str(args[0]) if args else ""
-            if 'telemetry_last' in query_str and 'ON CONFLICT' in query_str:
+            if 'telemetry_last' in query_str and 'ON CONFLICT' in query_str and call_count == 1:
                 # Первый вызов (batch) выбрасывает ошибку
                 raise Exception("Batch upsert failed")
             # Последующие вызовы (fallback) успешны
             return None
         
-        with patch('telemetry_processing.execute', side_effect=mock_execute_side_effect), \
-             patch('telemetry_processing.fetch', return_value=[]), \
-             patch('telemetry_processing.upsert_telemetry_last', new_callable=AsyncMock) as mock_upsert:
+        with patch('telemetry_processing.execute', side_effect=mock_execute_side_effect) as mock_execute, \
+             patch('telemetry_processing.fetch', return_value=[]):
             
             await process_telemetry_batch(samples)
             
             # Проверяем, что был вызван fallback (индивидуальный upsert)
-            assert mock_upsert.called
+            telemetry_calls = [
+                call for call in mock_execute.call_args_list
+                if 'telemetry_last' in str(call)
+            ]
+            assert len(telemetry_calls) >= 2

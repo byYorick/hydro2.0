@@ -8,7 +8,7 @@ from typing import Dict, List, Optional
 import httpx
 
 import state
-from common.db import create_zone_event, execute, fetch, upsert_telemetry_last
+from common.db import create_zone_event, execute, fetch
 from common.env import get_settings
 from common.redis_queue import TelemetryQueueItem
 from common.utils.time import utcnow
@@ -45,6 +45,8 @@ REDIS_PUSH_RETRY_BACKOFF_BASE = 2
 # Глобальный кеш для резолва zone_id и node_id (с TTL refresh)
 _zone_cache: dict[tuple[str, Optional[str]], int] = {}
 _node_cache: dict[tuple[str, Optional[str]], tuple[int, Optional[int]]] = {}
+_zone_greenhouse_cache: dict[int, int] = {}
+_sensor_cache: dict[tuple[int, Optional[int], str, str], int] = {}
 _cache_last_update = 0.0
 _cache_ttl = 60.0
 
@@ -52,6 +54,52 @@ _cache_ttl = 60.0
 _broadcast_error_count = 0
 _broadcast_last_error_time: Optional[float] = None
 _broadcast_backoff_until: Optional[float] = None
+
+
+def _normalize_metric_type(metric_type: str) -> str:
+    return (metric_type or "").strip().upper()
+
+
+def _infer_sensor_type(metric_type: str) -> str:
+    normalized = _normalize_metric_type(metric_type)
+    if normalized in {"PH"}:
+        return "PH"
+    if normalized in {"EC"}:
+        return "EC"
+    if "TEMP" in normalized:
+        return "TEMPERATURE"
+    if "HUM" in normalized:
+        return "HUMIDITY"
+    if "CO2" in normalized:
+        return "CO2"
+    if "LIGHT" in normalized or "LUX" in normalized:
+        return "LIGHT_INTENSITY"
+    if "WATER_LEVEL" in normalized or normalized.endswith("_LEVEL"):
+        return "WATER_LEVEL"
+    if "SOIL" in normalized:
+        return "SOIL_MOISTURE"
+    if "PRESSURE" in normalized:
+        return "PRESSURE"
+    if "WIND_SPEED" in normalized:
+        return "WIND_SPEED"
+    if "WIND_DIRECTION" in normalized or "WIND_DIR" in normalized:
+        return "WIND_DIRECTION"
+    return "OTHER"
+
+
+def _build_sensor_label(metric_type: str, channel: Optional[str], sensor_type: str) -> str:
+    if channel:
+        return channel
+    if metric_type:
+        return metric_type
+    return sensor_type
+
+
+def _normalize_ts_for_db(sample_ts: Optional[datetime]) -> datetime:
+    ts_value = sample_ts or utcnow()
+    if getattr(ts_value, "tzinfo", None):
+        return ts_value.astimezone(timezone.utc).replace(tzinfo=None)
+    return ts_value.replace(tzinfo=None)
 
 
 def _get_telemetry_queue():
@@ -350,12 +398,13 @@ async def refresh_caches() -> None:
     try:
         zones = await fetch(
             """
-            SELECT z.id, z.uid, g.uid as gh_uid
+            SELECT z.id, z.uid, g.uid as gh_uid, g.id as greenhouse_id
             FROM zones z
             JOIN greenhouses g ON g.id = z.greenhouse_id
             """
         )
         _zone_cache.clear()
+        _zone_greenhouse_cache.clear()
         for zone in zones:
             zone_uid = zone.get("uid")
             zone_id = zone.get("id")
@@ -366,6 +415,9 @@ async def refresh_caches() -> None:
             _zone_cache[key] = zone_id
             if (zone_uid, None) not in _zone_cache:
                 _zone_cache[(zone_uid, None)] = zone_id
+            greenhouse_id = zone.get("greenhouse_id")
+            if greenhouse_id is not None:
+                _zone_greenhouse_cache[zone_id] = greenhouse_id
 
         nodes = await fetch(
             """
@@ -579,7 +631,8 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                         extra={"node_uid": node_uid, "gh_uid": gh_uid},
                     )
 
-    grouped: dict[tuple[int, str, Optional[int], Optional[str]], list[TelemetrySampleModel]] = {}
+    resolved_samples: list[dict] = []
+    zone_ids_for_greenhouse: set[int] = set()
 
     for sample in samples:
         zone_id = sample.zone_id if sample.zone_id is not None else None
@@ -668,28 +721,188 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                         exc_info=True,
                     )
 
-        key = (zone_id, sample.metric_type, node_id, sample.channel)
-        grouped.setdefault(key, []).append(sample)
-
-    telemetry_last_updates: dict[tuple[int, str], dict] = {}
-    for (zone_id, metric_type, node_id, channel), group_samples in grouped.items():
-        if not group_samples:
-            continue
-        latest_sample = max(
-            group_samples,
-            key=lambda s: s.ts if s.ts else datetime.min.replace(tzinfo=None),
-        )
-        key = (zone_id, metric_type)
-        existing_ts = telemetry_last_updates.get(key, {}).get("ts") or datetime.min.replace(
-            tzinfo=None
-        )
-        new_ts = latest_sample.ts or datetime.min.replace(tzinfo=None)
-        if key not in telemetry_last_updates or new_ts > existing_ts:
-            telemetry_last_updates[key] = {
+        resolved_samples.append(
+            {
+                "sample": sample,
+                "zone_id": zone_id,
                 "node_id": node_id,
-                "channel": channel,
-                "value": latest_sample.value,
-                "ts": latest_sample.ts,
+            }
+        )
+        zone_ids_for_greenhouse.add(zone_id)
+
+    if not resolved_samples:
+        return
+
+    missing_zone_ids = [
+        zone_id
+        for zone_id in zone_ids_for_greenhouse
+        if zone_id not in _zone_greenhouse_cache
+    ]
+    if missing_zone_ids:
+        zone_rows = await fetch(
+            """
+            SELECT id, greenhouse_id
+            FROM zones
+            WHERE id = ANY($1)
+            """,
+            missing_zone_ids,
+        )
+        for zone in zone_rows:
+            zone_id = zone.get("id")
+            greenhouse_id = zone.get("greenhouse_id")
+            if zone_id is not None and greenhouse_id is not None:
+                _zone_greenhouse_cache[zone_id] = greenhouse_id
+
+    missing_sensor_keys: set[tuple[int, Optional[int], str, str]] = set()
+    for item in resolved_samples:
+        sample = item["sample"]
+        sensor_type = _infer_sensor_type(sample.metric_type)
+        sensor_label = _build_sensor_label(sample.metric_type, sample.channel, sensor_type)
+        sensor_key = (item["zone_id"], item["node_id"], sensor_type, sensor_label)
+        item["sensor_key"] = sensor_key
+        item["sensor_type"] = sensor_type
+        item["sensor_label"] = sensor_label
+        if sensor_key not in _sensor_cache:
+            missing_sensor_keys.add(sensor_key)
+
+    if missing_sensor_keys:
+        zone_ids = list({key[0] for key in missing_sensor_keys})
+        node_ids = list({key[1] for key in missing_sensor_keys if key[1] is not None})
+        existing_rows = []
+        if zone_ids:
+            if node_ids:
+                existing_rows = await fetch(
+                    """
+                    SELECT id, zone_id, node_id, type, label
+                    FROM sensors
+                    WHERE zone_id = ANY($1)
+                      AND (node_id = ANY($2) OR node_id IS NULL)
+                    """,
+                    zone_ids,
+                    node_ids,
+                )
+            else:
+                existing_rows = await fetch(
+                    """
+                    SELECT id, zone_id, node_id, type, label
+                    FROM sensors
+                    WHERE zone_id = ANY($1)
+                      AND node_id IS NULL
+                    """,
+                    zone_ids,
+                )
+
+        for row in existing_rows:
+            zone_id = row.get("zone_id")
+            sensor_type = row.get("type")
+            sensor_label = row.get("label")
+            sensor_id = row.get("id")
+            if zone_id is not None and sensor_type and sensor_label and sensor_id is not None:
+                sensor_key = (zone_id, row.get("node_id"), sensor_type, sensor_label)
+                _sensor_cache[sensor_key] = sensor_id
+
+        to_create = [
+            key for key in missing_sensor_keys if key not in _sensor_cache
+        ]
+        if to_create:
+            values_list = []
+            params_list = []
+            param_index = 1
+            for zone_id, node_id, sensor_type, sensor_label in to_create:
+                greenhouse_id = _zone_greenhouse_cache.get(zone_id)
+                if greenhouse_id is None:
+                    logger.warning(
+                        "Greenhouse not found for zone_id=%s, skipping sensor creation",
+                        zone_id,
+                    )
+                    continue
+                values_list.append(
+                    f"(${param_index}, ${param_index + 1}, ${param_index + 2}, ${param_index + 3}, "
+                    f"${param_index + 4}, ${param_index + 5}, ${param_index + 6}, NOW(), NOW())"
+                )
+                params_list.extend(
+                    [
+                        greenhouse_id,
+                        zone_id,
+                        node_id,
+                        "inside",
+                        sensor_type,
+                        sensor_label,
+                        True,
+                    ]
+                )
+                param_index += 7
+
+            if values_list:
+                query = f"""
+                    INSERT INTO sensors (
+                        greenhouse_id, zone_id, node_id, scope, type, label, is_active,
+                        created_at, updated_at
+                    )
+                    VALUES {', '.join(values_list)}
+                    RETURNING id, zone_id, node_id, type, label
+                """
+                created_rows = await fetch(query, *params_list)
+                for row in created_rows:
+                    zone_id = row.get("zone_id")
+                    sensor_type = row.get("type")
+                    sensor_label = row.get("label")
+                    sensor_id = row.get("id")
+                    if (
+                        zone_id is not None
+                        and sensor_type
+                        and sensor_label
+                        and sensor_id is not None
+                    ):
+                        sensor_key = (
+                            zone_id,
+                            row.get("node_id"),
+                            sensor_type,
+                            sensor_label,
+                        )
+                        _sensor_cache[sensor_key] = sensor_id
+
+    resolved_with_sensor: list[dict] = []
+    for item in resolved_samples:
+        sensor_id = _sensor_cache.get(item["sensor_key"])
+        if sensor_id is None:
+            logger.warning(
+                "Sensor not resolved for telemetry sample",
+                extra={
+                    "zone_id": item["zone_id"],
+                    "node_id": item["node_id"],
+                    "metric_type": item["sample"].metric_type,
+                    "channel": item["sample"].channel,
+                },
+            )
+            TELEMETRY_DROPPED.labels(reason="sensor_not_resolved").inc()
+            continue
+        item["sensor_id"] = sensor_id
+        resolved_with_sensor.append(item)
+
+    if not resolved_with_sensor:
+        return
+
+    broadcast_groups: dict[
+        tuple[int, str, Optional[int], Optional[str]], list[dict]
+    ] = {}
+    for item in resolved_with_sensor:
+        sample = item["sample"]
+        key = (item["zone_id"], sample.metric_type, item["node_id"], sample.channel)
+        broadcast_groups.setdefault(key, []).append(item)
+
+    telemetry_last_updates: dict[int, dict] = {}
+    for item in resolved_with_sensor:
+        sample = item["sample"]
+        sensor_id = item["sensor_id"]
+        sample_ts = _normalize_ts_for_db(sample.ts)
+        existing_ts = telemetry_last_updates.get(sensor_id, {}).get("ts")
+        if existing_ts is None or sample_ts > existing_ts:
+            telemetry_last_updates[sensor_id] = {
+                "value": sample.value,
+                "ts": sample_ts,
+                "quality": "GOOD",
+                "updated_at": sample_ts,
             }
 
     if telemetry_last_updates:
@@ -697,152 +910,189 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
             values_list = []
             params_list = []
             param_index = 1
-
-            for (zone_id, metric_type), update_data in telemetry_last_updates.items():
-                node_id = update_data["node_id"] if update_data["node_id"] is not None else -1
-                channel = update_data["channel"]
-                value = update_data["value"]
-                sample_ts = update_data.get("ts")
-                if sample_ts and getattr(sample_ts, "tzinfo", None):
-                    sample_ts = sample_ts.astimezone(timezone.utc).replace(tzinfo=None)
-                if not sample_ts:
-                    sample_ts = utcnow()
-
+            for sensor_id, update_data in telemetry_last_updates.items():
                 values_list.append(
-                    f"(${param_index}, ${param_index + 1}, ${param_index + 2}, ${param_index + 3}, ${param_index + 4}, ${param_index + 5})"
+                    f"(${param_index}, ${param_index + 1}, ${param_index + 2}, "
+                    f"${param_index + 3}, ${param_index + 4})"
                 )
                 params_list.extend(
-                    [zone_id, node_id, metric_type, channel, value, sample_ts]
+                    [
+                        sensor_id,
+                        update_data["value"],
+                        update_data["ts"],
+                        update_data["quality"],
+                        update_data["updated_at"],
+                    ]
                 )
-                param_index += 6
+                param_index += 5
 
             if values_list:
                 query = f"""
-                    INSERT INTO telemetry_last (zone_id, node_id, metric_type, channel, value, updated_at)
+                    INSERT INTO telemetry_last (
+                        sensor_id, last_value, last_ts, last_quality, updated_at
+                    )
                     VALUES {', '.join(values_list)}
-                    ON CONFLICT (zone_id, node_id, metric_type)
+                    ON CONFLICT (sensor_id)
                     DO UPDATE SET
-                        channel = EXCLUDED.channel,
-                        value = EXCLUDED.value,
+                        last_value = EXCLUDED.last_value,
+                        last_ts = EXCLUDED.last_ts,
+                        last_quality = EXCLUDED.last_quality,
                         updated_at = EXCLUDED.updated_at
                 """
                 await execute(query, *params_list)
                 logger.debug(
-                    f"Batch upserted {len(telemetry_last_updates)} telemetry_last records"
+                    "Batch upserted %s telemetry_last records",
+                    len(telemetry_last_updates),
                 )
         except Exception as e:
             logger.error(f"Failed to batch upsert telemetry_last: {e}", exc_info=True)
-            for (zone_id, metric_type), update_data in telemetry_last_updates.items():
+            for sensor_id, update_data in telemetry_last_updates.items():
                 try:
-                    await upsert_telemetry_last(
-                        zone_id,
-                        metric_type,
-                        update_data["node_id"],
-                        update_data["channel"],
+                    await execute(
+                        """
+                        INSERT INTO telemetry_last (
+                            sensor_id, last_value, last_ts, last_quality, updated_at
+                        )
+                        VALUES ($1, $2, $3, $4, $5)
+                        ON CONFLICT (sensor_id)
+                        DO UPDATE SET
+                            last_value = EXCLUDED.last_value,
+                            last_ts = EXCLUDED.last_ts,
+                            last_quality = EXCLUDED.last_quality,
+                            updated_at = EXCLUDED.updated_at
+                        """,
+                        sensor_id,
                         update_data["value"],
-                        update_data.get("ts"),
+                        update_data["ts"],
+                        update_data["quality"],
+                        update_data["updated_at"],
                     )
                 except Exception as e2:
                     logger.error(
-                        "Failed to upsert telemetry_last for zone_id=%s, metric_type=%s: %s",
-                        zone_id,
-                        metric_type,
+                        "Failed to upsert telemetry_last for sensor_id=%s: %s",
+                        sensor_id,
                         e2,
                     )
 
     processed_count = 0
-    for (zone_id, metric_type, node_id, channel), group_samples in grouped.items():
+    values_list = []
+    params_list = []
+    param_index = 1
+    for item in resolved_with_sensor:
+        sample = item["sample"]
+        metadata = {
+            "metric_type": sample.metric_type,
+            "channel": sample.channel,
+            "node_uid": sample.node_uid,
+        }
+        if sample.raw is not None:
+            metadata["raw"] = sample.raw
+        if metadata and not metadata.get("channel"):
+            metadata.pop("channel", None)
+        if metadata and not metadata.get("node_uid"):
+            metadata.pop("node_uid", None)
+        values_list.append(
+            f"(${param_index}, ${param_index + 1}, ${param_index + 2}, "
+            f"${param_index + 3}, ${param_index + 4}, ${param_index + 5})"
+        )
+        params_list.extend(
+            [
+                item["sensor_id"],
+                _normalize_ts_for_db(sample.ts),
+                item["zone_id"],
+                sample.value,
+                "GOOD",
+                metadata or None,
+            ]
+        )
+        param_index += 6
+
+    if values_list:
+        query = f"""
+            INSERT INTO telemetry_samples (
+                sensor_id, ts, zone_id, value, quality, metadata
+            )
+            VALUES {', '.join(values_list)}
+        """
+        try:
+            await execute(query, *params_list)
+            processed_count = len(resolved_with_sensor)
+            logger.info(
+                "[TELEMETRY] Written: count=%s, unique_sensors=%s",
+                processed_count,
+                len(telemetry_last_updates),
+            )
+        except Exception as e:
+            error_type = type(e).__name__
+            DATABASE_ERRORS.labels(error_type=error_type).inc()
+            logger.error(
+                "Failed to insert telemetry batch",
+                extra={
+                    "error_type": error_type,
+                    "error": str(e),
+                    "samples_count": len(resolved_with_sensor),
+                },
+                exc_info=True,
+            )
+
+    for (zone_id, metric_type, node_id, channel), group_items in broadcast_groups.items():
         logger.info(
             f"[BROADCAST] Processing group: zone_id={zone_id}, node_id={node_id}, "
-            f"metric={metric_type}, samples={len(group_samples)}"
+            f"metric={metric_type}, samples={len(group_items)}"
         )
-        values_list = []
-        params_list = []
-        param_index = 1
 
-        for sample in group_samples:
-            ts = sample.ts or utcnow()
-            value = sample.value
+        if not group_items:
+            continue
 
-            values_list.append(
-                f"(${param_index}, ${param_index + 1}, ${param_index + 2}, ${param_index + 3}, ${param_index + 4}, ${param_index + 5})"
+        latest_item = max(
+            group_items,
+            key=lambda item: item["sample"].ts
+            if item["sample"].ts
+            else datetime.min.replace(tzinfo=None),
+        )
+        latest_sample = latest_item["sample"]
+        logger.info(
+            f"[BROADCAST] After upsert: node_id={node_id}, shutdown={_shutdown_event().is_set()}, group_samples={len(group_items)}"
+        )
+        if node_id and not _shutdown_event().is_set():
+            logger.info(
+                f"[BROADCAST] Scheduling broadcast for node_id={node_id}, metric={metric_type}, value={latest_sample.value}"
             )
-            params_list.extend([zone_id, node_id, metric_type, channel, value, ts])
-            param_index += 6
-
-        if values_list:
-            query = f"""
-                INSERT INTO telemetry_samples (zone_id, node_id, metric_type, channel, value, ts)
-                VALUES {', '.join(values_list)}
-            """
             try:
-                await execute(query, *params_list)
-                processed_count += len(group_samples)
-                logger.info(
-                    f"[TELEMETRY] Written: zone_id={zone_id}, node_id={node_id}, metric={metric_type}, count={len(group_samples)}"
+                task = asyncio.create_task(
+                    _broadcast_telemetry_to_laravel(
+                        node_id=node_id,
+                        channel=channel or "",
+                        metric_type=metric_type,
+                        value=latest_sample.value,
+                        timestamp=latest_sample.ts or utcnow(),
+                    )
+                )
+
+                def log_task_error(t):
+                    try:
+                        if t.done() and t.exception():
+                            exc = t.exception()
+                            if not isinstance(
+                                exc, (httpx.TimeoutException, httpx.RequestError)
+                            ):
+                                logger.warning(
+                                    f"[BROADCAST] Unhandled exception in broadcast task: {exc}",
+                                    exc_info=True,
+                                )
+                    except Exception:
+                        pass
+
+                task.add_done_callback(log_task_error)
+            except RuntimeError as e:
+                logger.debug(
+                    f"[BROADCAST] Cannot create task (event loop may be closed): {e}"
                 )
             except Exception as e:
-                error_type = type(e).__name__
-                DATABASE_ERRORS.labels(error_type=error_type).inc()
-                logger.error(
-                    "Failed to insert telemetry batch",
-                    extra={
-                        "error_type": error_type,
-                        "error": str(e),
-                        "zone_id": zone_id,
-                        "metric_type": metric_type,
-                        "samples_count": len(group_samples),
-                    },
+                logger.warning(
+                    f"[BROADCAST] Failed to create broadcast task: {e}",
                     exc_info=True,
                 )
-
-        if group_samples:
-            latest_sample = max(
-                group_samples,
-                key=lambda s: s.ts if s.ts else datetime.min.replace(tzinfo=None),
-            )
-            logger.info(
-                f"[BROADCAST] After upsert: node_id={node_id}, shutdown={_shutdown_event().is_set()}, group_samples={len(group_samples)}"
-            )
-            if node_id and not _shutdown_event().is_set():
-                logger.info(
-                    f"[BROADCAST] Scheduling broadcast for node_id={node_id}, metric={metric_type}, value={latest_sample.value}"
-                )
-                try:
-                    task = asyncio.create_task(
-                        _broadcast_telemetry_to_laravel(
-                            node_id=node_id,
-                            channel=channel or "",
-                            metric_type=metric_type,
-                            value=latest_sample.value,
-                            timestamp=latest_sample.ts or utcnow(),
-                        )
-                    )
-
-                    def log_task_error(t):
-                        try:
-                            if t.done() and t.exception():
-                                exc = t.exception()
-                                if not isinstance(
-                                    exc, (httpx.TimeoutException, httpx.RequestError)
-                                ):
-                                    logger.warning(
-                                        f"[BROADCAST] Unhandled exception in broadcast task: {exc}",
-                                        exc_info=True,
-                                    )
-                        except Exception:
-                            pass
-
-                    task.add_done_callback(log_task_error)
-                except RuntimeError as e:
-                    logger.debug(
-                        f"[BROADCAST] Cannot create task (event loop may be closed): {e}"
-                    )
-                except Exception as e:
-                    logger.warning(
-                        f"[BROADCAST] Failed to create broadcast task: {e}",
-                        exc_info=True,
-                    )
 
     processing_duration = time.time() - start_time
     TELEMETRY_PROCESSING_DURATION.observe(processing_duration)

@@ -167,59 +167,59 @@ async def test_process_telemetry_batch_includes_ts_parameter():
     # Мокаем execute для проверки SQL запроса
     with patch("telemetry_processing.execute", new_callable=AsyncMock) as mock_execute:
         # Мокаем fetch для получения node_id
-        with patch("telemetry_processing.fetch", new_callable=AsyncMock) as mock_fetch:
+        with patch("telemetry_processing.fetch", new_callable=AsyncMock) as mock_fetch, \
+             patch("telemetry_processing._sensor_cache", {
+                 (1, 1, "PH", "ph_sensor"): 101,
+             }):
             mock_fetch.return_value = [
                 {"id": 1, "uid": "nd-ph-1"}
             ]
+
+            # Создаём тестовые образцы
+            samples = [
+                TelemetrySampleModel(
+                    node_uid="nd-ph-1",
+                    zone_uid="zn-1",
+                    zone_id=1,
+                    metric_type="PH",
+                    value=6.5,
+                    ts=datetime(2025, 1, 27, 10, 0, 0),
+                    channel="ph_sensor"
+                ),
+                TelemetrySampleModel(
+                    node_uid="nd-ph-1",
+                    zone_uid="zn-1",
+                    zone_id=1,
+                    metric_type="PH",
+                    value=6.6,
+                    ts=datetime(2025, 1, 27, 10, 1, 0),
+                    channel="ph_sensor"
+                ),
+            ]
             
-            # Мокаем upsert_telemetry_last
-            with patch("telemetry_processing.upsert_telemetry_last", new_callable=AsyncMock) as mock_upsert:
-                # Создаём тестовые образцы
-                samples = [
-                    TelemetrySampleModel(
-                        node_uid="nd-ph-1",
-                        zone_uid="zn-1",
-                        zone_id=1,
-                        metric_type="PH",
-                        value=6.5,
-                        ts=datetime(2025, 1, 27, 10, 0, 0),
-                        channel="ph_sensor"
-                    ),
-                    TelemetrySampleModel(
-                        node_uid="nd-ph-1",
-                        zone_uid="zn-1",
-                        zone_id=1,
-                        metric_type="PH",
-                        value=6.6,
-                        ts=datetime(2025, 1, 27, 10, 1, 0),
-                        channel="ph_sensor"
-                    ),
-                ]
-                
-                # Запускаем функцию
-                await process_telemetry_batch(samples)
-                
-                # Проверяем, что execute был вызван
-                assert mock_execute.called
-                
-                # Получаем аргументы вызова
-                call_args = mock_execute.call_args
-                query = call_args[0][0]  # Первый позиционный аргумент - SQL запрос
-                params = call_args[0][1:]  # Остальные - параметры
-                
-                # Проверяем, что в запросе есть 6 плейсхолдеров для каждого образца
-                # Формат: ($1, $2, $3, $4, $5, $6) для каждого образца
-                assert "$6" in query or "$12" in query  # Должен быть 6-й параметр
-                
-                # Проверяем, что параметров достаточно (6 на образец)
-                # 2 образца * 6 параметров = 12 параметров
-                assert len(params) >= 12
-                
-                # Проверяем, что ts присутствует в параметрах
-                # ts должен быть в позициях 5, 11 (для каждого образца)
-                # Формат: zone_id, node_id, metric_type, channel, value, ts
-                assert isinstance(params[5], datetime)  # ts для первого образца
-                assert isinstance(params[11], datetime)  # ts для второго образца
+            # Запускаем функцию
+            await process_telemetry_batch(samples)
+            
+            # Проверяем, что execute был вызван
+            assert mock_execute.called
+            
+            # Получаем аргументы вызова для вставки telemetry_samples
+            call_args = next(
+                call for call in mock_execute.call_args_list
+                if "telemetry_samples" in str(call)
+            )
+            query = call_args[0][0]  # SQL запрос
+            params = call_args[0][1:]  # Параметры
+            
+            # Проверяем, что в запросе есть 6 плейсхолдеров для каждого образца
+            assert "$6" in query or "$12" in query
+            
+            # Проверяем, что параметров достаточно (6 на образец)
+            assert len(params) >= 12
+            
+            # Проверяем, что ts присутствует в параметрах (позиции 2 и 8)
+            assert isinstance(params[1], datetime)
+            assert isinstance(params[7], datetime)
 
 
 @pytest.mark.asyncio
@@ -278,7 +278,7 @@ async def test_process_telemetry_batch_with_zone_id_extraction():
     
     with patch("telemetry_processing.execute", new_callable=AsyncMock) as mock_execute, \
          patch("telemetry_processing.fetch", new_callable=AsyncMock) as mock_fetch, \
-         patch("telemetry_processing.upsert_telemetry_last", new_callable=AsyncMock):
+         patch("telemetry_processing._sensor_cache", {(1, 1, "PH", "PH"): 101}):
         mock_fetch.return_value = [{"id": 1, "uid": "nd-ph-1"}]
         
         await process_telemetry_batch(samples)
@@ -287,6 +287,9 @@ async def test_process_telemetry_batch_with_zone_id_extraction():
         assert mock_execute.called
         
         # Проверяем, что zone_id был правильно извлечен (должен быть 1)
-        call_args = mock_execute.call_args
-        params = call_args[0][1:]  # Параметры
-        assert params[0] == 1  # zone_id должен быть 1
+        call_args = next(
+            call for call in mock_execute.call_args_list
+            if "telemetry_samples" in str(call)
+        )
+        params = call_args[0][1:]
+        assert params[2] == 1

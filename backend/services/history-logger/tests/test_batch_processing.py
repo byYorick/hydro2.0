@@ -8,6 +8,7 @@ from datetime import datetime
 from telemetry_processing import (
     _node_cache,
     _zone_cache,
+    _sensor_cache,
     process_telemetry_batch,
     refresh_caches,
 )
@@ -26,6 +27,7 @@ async def test_batch_resolve_zones():
         # Очищаем кеш
         global _zone_cache
         _zone_cache.clear()
+        _sensor_cache.clear()
         
         samples = [
             TelemetrySampleModel(
@@ -89,6 +91,9 @@ async def test_batch_upsert_telemetry_last():
                 ts=datetime.utcnow()
             ),
         ]
+
+        _sensor_cache.clear()
+        _sensor_cache[(1, None, "TEMPERATURE", "TEMP_AIR")] = 101
         
         await process_telemetry_batch(samples)
         

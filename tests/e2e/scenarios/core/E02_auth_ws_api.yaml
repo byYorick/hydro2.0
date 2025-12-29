@@ -24,16 +24,26 @@ actions:
     endpoint: /api/zones
     save: zones_response
 
+  - step: fetch_zone_id
+    type: database_query
+    query: |
+      SELECT id
+      FROM zones
+      WHERE uid = 'zn-test-1'
+      LIMIT 1
+    expected_rows: 1
+    save: zone_row
+
   - step: set_zone_id
     type: set
-    test_zone_id: 225  # zn-test-1
+    test_zone_id: ${zone_row.0.id}
 
   - step: connect_websocket
     type: websocket_connect
 
   - step: subscribe_to_zone_channel
     type: websocket_subscribe
-    channel: private-hydro.zones.225
+    channel: private-hydro.zones.${test_zone_id}
 
   # Тест 2: Истёкший токен - автоматический re-auth
   - step: invalidate_auth_token
@@ -86,5 +96,3 @@ assertions:
         operator: equals
         value: 1
         optional: true
-
-

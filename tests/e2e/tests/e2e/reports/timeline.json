@@ -1,82 +1,152 @@
 {
-  "test_suite": "E22_unassigned_error_capture",
-  "generated_at": "2025-12-29T13:22:25.477253",
+  "test_suite": "E19_ae_legacy_sql_guard",
+  "generated_at": "2025-12-29T14:30:58.659840",
   "test_cases": [
     {
-      "name": "start_node_simulator",
+      "name": "get_zones",
       "status": "passed",
-      "duration": 5.820401668548584,
+      "duration": 0.10066795349121094,
       "error_message": null,
       "steps": [
         {
-          "name": "start_node_simulator",
+          "name": "get_zones",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-29T13:22:04.933976"
+      "timestamp": "2025-12-29T14:30:58.239128"
     },
     {
-      "name": "publish_unassigned_error",
+      "name": "fetch_zone_id",
       "status": "passed",
-      "duration": 5.111496925354004,
+      "duration": 0.0037767887115478516,
       "error_message": null,
       "steps": [
         {
-          "name": "publish_unassigned_error",
+          "name": "fetch_zone_id",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-29T13:22:10.045508"
+      "timestamp": "2025-12-29T14:30:58.243024"
     },
     {
-      "name": "wait_for_error_capture",
+      "name": "set_zone_id",
       "status": "passed",
-      "duration": 5.09222936630249,
+      "duration": 9.059906005859375e-06,
       "error_message": null,
       "steps": [
         {
-          "name": "wait_for_error_capture",
+          "name": "set_zone_id",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-29T13:22:15.137761"
+      "timestamp": "2025-12-29T14:30:58.243510"
     },
     {
-      "name": "error_in_unassigned_errors",
+      "name": "create_recipe",
       "status": "passed",
-      "duration": 0.005621194839477539,
+      "duration": 0.002931833267211914,
       "error_message": null,
       "steps": [
         {
-          "name": "error_in_unassigned_errors",
+          "name": "create_recipe",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-29T13:22:15.143409"
+      "timestamp": "2025-12-29T14:30:58.246644"
     },
     {
-      "name": "no_alert_created",
+      "name": "create_recipe_revision",
       "status": "passed",
-      "duration": 0.001795053482055664,
+      "duration": 0.00598907470703125,
       "error_message": null,
       "steps": [
         {
-          "name": "no_alert_created",
+          "name": "create_recipe_revision",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-29T13:22:15.145225"
+      "timestamp": "2025-12-29T14:30:58.255138"
+    },
+    {
+      "name": "create_revision_phase",
+      "status": "passed",
+      "duration": 0.0042493343353271484,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "create_revision_phase",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-29T14:30:58.259860"
+    },
+    {
+      "name": "create_grow_cycle",
+      "status": "passed",
+      "duration": 0.17750120162963867,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "create_grow_cycle",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-29T14:30:58.437805"
+    },
+    {
+      "name": "set_cycle_id",
+      "status": "passed",
+      "duration": 1.239776611328125e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_cycle_id",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-29T14:30:58.441312"
+    },
+    {
+      "name": "get_effective_targets",
+      "status": "failed",
+      "duration": 0.07140970230102539,
+      "error_message": "Server error '500 Internal Server Error' for url 'http://localhost:8081/api/zones/1/effective-targets'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500",
+      "steps": [
+        {
+          "name": "get_effective_targets",
+          "status": "failed",
+          "error": "Server error '500 Internal Server Error' for url 'http://localhost:8081/api/zones/1/effective-targets'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+        }
+      ],
+      "timestamp": "2025-12-29T14:30:58.513461"
+    },
+    {
+      "name": "cycle_created_successfully",
+      "status": "failed",
+      "duration": 0.0007560253143310547,
+      "error_message": "Expected status_code = 201, got None",
+      "steps": [
+        {
+          "name": "cycle_created_successfully",
+          "status": "failed",
+          "error": "Expected status_code = 201, got None"
+        }
+      ],
+      "timestamp": "2025-12-29T14:30:58.515051"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E22_unassigned_error_capture": {
+    "E19_ae_legacy_sql_guard": {
       "ws_messages": [],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
         "zone_id": 1,
-        "zone_uid": "zn-test-1"
+        "zone_uid": "zn-test-1",
+        "node_id": 1,
+        "node_uid": "nd-ph-esp32una",
+        "cycle_id": 2
       }
     }
   }
