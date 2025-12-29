@@ -6,8 +6,6 @@ use App\Enums\NodeLifecycleState;
 use App\Http\Requests\PublishNodeConfigRequest;
 use App\Http\Requests\UpdateNodeRequest;
 use App\Models\DeviceNode;
-use App\Services\ConfigPublishLockService;
-use App\Services\ConfigSignatureService;
 use App\Services\NodeConfigService;
 use App\Services\NodeLifecycleService;
 use App\Services\NodeRegistryService;
@@ -23,9 +21,7 @@ class NodeController extends Controller
         private NodeRegistryService $registryService,
         private NodeConfigService $configService,
         private NodeSwapService $swapService,
-        private NodeLifecycleService $lifecycleService,
-        private ConfigSignatureService $configSignatureService,
-        private ConfigPublishLockService $configPublishLockService
+        private NodeLifecycleService $lifecycleService
     ) {}
 
     public function index(Request $request)
@@ -400,9 +396,8 @@ class NodeController extends Controller
     }
 
     /**
-     * Получить NodeConfig для узла.
+     * Получить сохраненный NodeConfig для узла.
      * Для безопасности не включает Wi-Fi пароли и MQTT креды.
-     * Для публикации конфига через MQTT используется publishConfig, который включает креды.
      */
     public function getConfig(Request $request, DeviceNode $node)
     {
@@ -424,7 +419,7 @@ class NodeController extends Controller
 
         try {
             // Для API запросов не включаем креды (безопасность)
-            $config = $this->configService->generateNodeConfig($node, null, false);
+            $config = $this->configService->getStoredConfig($node, false);
 
             return response()->json(['status' => 'ok', 'data' => $config]);
         } catch (\InvalidArgumentException $e) {
@@ -456,247 +451,14 @@ class NodeController extends Controller
 
     /**
      * Опубликовать NodeConfig через MQTT.
-     * Это проксирует запрос в history-logger для публикации конфига (все общение с нодами через history-logger).
-     * Использует pessimistic/optimistic locking и advisory lock для дедупликации.
+     * Конфиг больше не публикуется с сервера: ноды отправляют config_report на подключении.
      */
     public function publishConfig(PublishNodeConfigRequest $request, DeviceNode $node)
     {
-        $user = $request->user();
-        if (! $user) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Unauthorized',
-            ], 401);
-        }
-
-        $this->authorize('publishConfig', $node);
-
-        try {
-            // Получаем pessimistic lock для предотвращения одновременной публикации
-            // ВАЖНО: acquirePessimisticLock использует DB::transaction(), который завершается внутри метода
-            // После завершения транзакции SELECT FOR UPDATE блокировка автоматически освобождается
-            $lockedNode = $this->configPublishLockService->acquirePessimisticLock($node);
-            if (! $lockedNode) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Failed to acquire lock for config publishing',
-                ], Response::HTTP_CONFLICT);
-            }
-
-            // Получаем optimistic lock для проверки версии
-            $optimisticLock = $this->configPublishLockService->acquireOptimisticLock($lockedNode);
-            if (! $optimisticLock) {
-                // Pessimistic lock уже освобожден автоматически после завершения транзакции в acquirePessimisticLock
-                // Advisory lock еще не был получен, поэтому не нужно его освобождать
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Failed to acquire optimistic lock',
-                ], Response::HTTP_CONFLICT);
-            }
-
-            // Получаем advisory lock для дедупликации
-            $advisoryLockAcquired = $this->configPublishLockService->acquireAdvisoryLock($lockedNode);
-            if (! $advisoryLockAcquired) {
-                // Advisory lock не был получен, поэтому не нужно его освобождать
-                // Pessimistic lock уже освобожден автоматически после завершения транзакции в acquirePessimisticLock
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Config publishing is already in progress',
-                ], Response::HTTP_CONFLICT);
-            }
-
-            try {
-                // Для публикации через MQTT включаем креды (нужны для подключения ноды)
-                $config = $this->configService->generateNodeConfig($lockedNode, null, true);
-
-                // Проверяем дедупликацию через хеш конфигурации
-                // Используем JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE для консистентности
-                // Сортируем ключи рекурсивно для детерминированного хеша
-                $sortedConfig = $this->recursiveKsort($config);
-                $configJson = json_encode($sortedConfig, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-                if (json_last_error() !== JSON_ERROR_NONE) {
-                    throw new \RuntimeException('Failed to encode config to JSON: '.json_last_error_msg());
-                }
-                $configHash = hash('sha256', $configJson);
-
-                if ($this->configPublishLockService->isDuplicate($lockedNode, $configHash)) {
-                    // Освобождаем advisory lock перед возвратом
-                    $this->configPublishLockService->releaseAdvisoryLock($lockedNode);
-
-                    return response()->json([
-                        'status' => 'error',
-                        'message' => 'This configuration was already published recently',
-                    ], Response::HTTP_CONFLICT);
-                }
-
-                // Подписываем конфигурацию HMAC подписью
-                $config = $this->configSignatureService->signConfig($lockedNode, $config);
-
-                // Проверяем, что узел привязан к зоне
-                if (! $lockedNode->zone_id) {
-                    // Освобождаем advisory lock перед возвратом
-                    $this->configPublishLockService->releaseAdvisoryLock($lockedNode);
-
-                    return response()->json([
-                        'status' => 'error',
-                        'message' => 'Node must be assigned to a zone before publishing config',
-                    ], Response::HTTP_BAD_REQUEST);
-                }
-
-                // Проверяем optimistic lock перед публикацией
-                if (! $this->configPublishLockService->checkOptimisticLock($lockedNode, $optimisticLock['version'])) {
-                    // Освобождаем advisory lock перед возвратом
-                    $this->configPublishLockService->releaseAdvisoryLock($lockedNode);
-
-                    return response()->json([
-                        'status' => 'error',
-                        'message' => 'Node was modified during config publishing. Please try again.',
-                    ], Response::HTTP_CONFLICT);
-                }
-
-                // Получаем greenhouse_uid
-                $lockedNode->load('zone.greenhouse');
-                $greenhouseUid = $lockedNode->zone?->greenhouse?->uid;
-                if (! $greenhouseUid) {
-                    // Освобождаем advisory lock перед возвратом
-                    $this->configPublishLockService->releaseAdvisoryLock($lockedNode);
-
-                    return response()->json([
-                        'status' => 'error',
-                        'message' => 'Zone must have a greenhouse before publishing config',
-                    ], Response::HTTP_BAD_REQUEST);
-                }
-
-                // Вызываем history-logger API для публикации (все общение бэка с нодами через history-logger)
-                $baseUrl = config('services.history_logger.url');
-                $token = config('services.history_logger.token') ?? config('services.python_bridge.token'); // Fallback на старый токен
-
-                if (! $baseUrl) {
-                    // Освобождаем advisory lock перед возвратом
-                    $this->configPublishLockService->releaseAdvisoryLock($lockedNode);
-
-                    return response()->json([
-                        'status' => 'error',
-                        'message' => 'History Logger URL not configured',
-                    ], Response::HTTP_INTERNAL_SERVER_ERROR);
-                }
-
-                $headers = [];
-                if ($token) {
-                    $headers['Authorization'] = "Bearer {$token}";
-                }
-
-                // Используем короткий таймаут, чтобы не блокировать workers
-                $timeout = 10; // секунд
-
-                try {
-                    $response = \Illuminate\Support\Facades\Http::withHeaders($headers)
-                        ->timeout($timeout)
-                        ->post("{$baseUrl}/nodes/{$lockedNode->uid}/config", [
-                            'node_uid' => $lockedNode->uid,
-                            'zone_id' => $lockedNode->zone_id,
-                            'greenhouse_uid' => $greenhouseUid,
-                            'config' => $config,
-                            'hardware_id' => $lockedNode->hardware_id, // Передаем hardware_id для временного топика
-                        ]);
-
-                    if ($response->successful()) {
-                        // Помечаем конфигурацию как опубликованную (для дедупликации)
-                        $this->configPublishLockService->markAsPublished($lockedNode, $configHash);
-
-                        return response()->json([
-                            'status' => 'ok',
-                            'data' => [
-                                'node' => $lockedNode->fresh(['channels']),
-                                'published_config' => $config,
-                                'bridge_response' => $response->json(),
-                            ],
-                        ]);
-                    }
-
-                    \Illuminate\Support\Facades\Log::warning('NodeController: Failed to publish config - non-successful response', [
-                        'node_id' => $lockedNode->id,
-                        'node_uid' => $lockedNode->uid,
-                        'status' => $response->status(),
-                        'response_preview' => substr($response->body(), 0, 500),
-                    ]);
-
-                    return response()->json([
-                        'status' => 'error',
-                        'message' => 'Failed to publish config via MQTT bridge',
-                        'details' => $response->json(),
-                    ], $response->status());
-                } catch (\Illuminate\Http\Client\ConnectionException $e) {
-                    \Illuminate\Support\Facades\Log::error('NodeController: Connection error on publishConfig', [
-                        'node_id' => $lockedNode->id,
-                        'node_uid' => $lockedNode->uid,
-                        'error' => $e->getMessage(),
-                    ]);
-
-                    return response()->json([
-                        'status' => 'error',
-                        'code' => 'SERVICE_UNAVAILABLE',
-                        'message' => 'MQTT bridge service is currently unavailable. Please try again later.',
-                    ], 503);
-                } catch (\Illuminate\Http\Client\TimeoutException $e) {
-                    \Illuminate\Support\Facades\Log::error('NodeController: Timeout error on publishConfig', [
-                        'node_id' => $lockedNode->id,
-                        'node_uid' => $lockedNode->uid,
-                        'timeout' => $timeout,
-                    ]);
-
-                    return response()->json([
-                        'status' => 'error',
-                        'code' => 'SERVICE_TIMEOUT',
-                        'message' => 'MQTT bridge service did not respond in time. Please try again later.',
-                    ], 503);
-                } catch (\Illuminate\Http\Client\RequestException $e) {
-                    \Illuminate\Support\Facades\Log::error('NodeController: Request error on publishConfig', [
-                        'node_id' => $lockedNode->id,
-                        'node_uid' => $lockedNode->uid,
-                        'error' => $e->getMessage(),
-                        'status' => $e->response?->status(),
-                    ]);
-
-                    return response()->json([
-                        'status' => 'error',
-                        'code' => 'PUBLISH_FAILED',
-                        'message' => 'Failed to publish config via MQTT bridge',
-                    ], 500);
-                } finally {
-                    // Освобождаем advisory lock
-                    $this->configPublishLockService->releaseAdvisoryLock($lockedNode);
-                }
-            } catch (\Exception $e) {
-                // Освобождаем advisory lock в случае ошибки
-                $this->configPublishLockService->releaseAdvisoryLock($lockedNode);
-                throw $e;
-            }
-        } catch (\InvalidArgumentException $e) {
-            \Illuminate\Support\Facades\Log::warning('NodeController: Invalid argument on publishConfig', [
-                'node_id' => $node->id,
-                'node_uid' => $node->uid,
-                'error' => $e->getMessage(),
-            ]);
-
-            return response()->json([
-                'status' => 'error',
-                'message' => $e->getMessage(),
-            ], Response::HTTP_BAD_REQUEST);
-        } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error('NodeController: Failed to publish config', [
-                'node_id' => $node->id,
-                'node_uid' => $node->uid,
-                'error' => $e->getMessage(),
-                'exception' => get_class($e),
-                'trace' => $e->getTraceAsString(),
-            ]);
-
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Failed to publish config: '.$e->getMessage(),
-            ], Response::HTTP_INTERNAL_SERVER_ERROR);
-        }
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Config publishing from server is disabled. Nodes publish config_report on connect.',
+        ], Response::HTTP_GONE);
     }
 
     /**

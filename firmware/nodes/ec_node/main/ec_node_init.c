@@ -176,6 +176,9 @@ void ec_node_mqtt_connection_cb(bool connected, void *user_ctx) {
         
         // Запрашиваем время у сервера для синхронизации
         node_utils_request_time();
+
+        // Публикуем текущий NodeConfig на сервер
+        node_utils_publish_config_report();
     } else {
         ESP_LOGW(TAG, "MQTT disconnected - ec_node is offline");
     }
@@ -316,4 +319,3 @@ esp_err_t ec_node_init_components(void) {
     
     return ESP_OK;
 }
-

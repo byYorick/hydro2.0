@@ -12,6 +12,7 @@ from .mqtt_client import MqttClient
 from .model import NodeModel, NodeType
 from .commands import CommandHandler
 from .telemetry import TelemetryPublisher
+from .config_report import publish_config_report
 from .state_machine import FailureMode
 from .config import MqttConfig, NodeConfig, TelemetryConfig, FailureModeConfig
 
@@ -76,7 +77,8 @@ class MultiNodeOrchestrator:
         
         # Подключаемся к MQTT
         try:
-            await mqtt.connect()
+            if not mqtt.connect():
+                raise RuntimeError("Failed to connect to MQTT broker")
             logger.info(f"Connected MQTT for node {node_config.node_uid}")
         except Exception as e:
             logger.error(f"Failed to connect MQTT for node {node_config.node_uid}: {e}")
@@ -89,8 +91,18 @@ class MultiNodeOrchestrator:
             node_uid=node_config.node_uid,
             hardware_id=node_config.hardware_id,
             node_type=NodeType(node_config.node_type),
-            mode=node_config.mode
+            mode=node_config.mode,
+            sensors=node_config.sensors,
+            actuators=node_config.actuators,
         )
+        
+        # Публикуем config_report один раз при старте (если включено)
+        if node_config.config_report_on_start:
+            publish_config_report(
+                node=node,
+                mqtt=mqtt,
+                telemetry_interval_s=telemetry_config.interval_seconds,
+            )
         
         # Создаем публикатор телеметрии
         telemetry = TelemetryPublisher(
@@ -268,6 +280,8 @@ async def create_orchestrator_from_config(config_data: Dict) -> MultiNodeOrchest
     nodes_data = config_data.get("nodes", [])
     if not nodes_data:
         raise ValueError("No nodes defined in configuration")
+
+    default_node = NodeConfig()
     
     for node_data in nodes_data:
         # Конфигурация ноды
@@ -278,8 +292,9 @@ async def create_orchestrator_from_config(config_data: Dict) -> MultiNodeOrchest
             hardware_id=node_data.get("hardware_id"),
             node_type=node_data.get("node_type", "unknown"),
             mode=node_data.get("mode", "preconfig"),
-            channels=node_data.get("channels", []),
-            actuators=node_data.get("actuators", [])
+            config_report_on_start=node_data.get("config_report_on_start", True),
+            sensors=node_data.get("sensors", node_data.get("channels", default_node.sensors)),
+            actuators=node_data.get("actuators", default_node.actuators),
         )
         
         # Проверяем обязательные поля

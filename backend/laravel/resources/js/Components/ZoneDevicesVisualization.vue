@@ -191,7 +191,7 @@
           </div>
         </div>
 
-        <!-- Кнопка настройки (для управляющих ролей) -->
+        <!-- Кнопка просмотра конфигурации (для управляющих ролей) -->
         <div
           v-if="canManage"
           class="mt-2 flex justify-center"
@@ -203,7 +203,7 @@
             @click.stop="$emit('configure', device)"
             class="text-xs w-full"
           >
-            Настроить
+            Просмотр конфига
           </Button>
         </div>
       </Link>

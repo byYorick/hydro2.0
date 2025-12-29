@@ -5,16 +5,17 @@
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from datetime import datetime
-from main import process_telemetry_batch, TelemetrySampleModel, refresh_caches
+from telemetry_processing import process_telemetry_batch, refresh_caches
+from models import TelemetrySampleModel
 
 
 @pytest.mark.asyncio
 async def test_batch_upsert_single_query():
     """Тест, что batch upsert использует один запрос для всех обновлений."""
     # Мокаем кеш
-    with patch('main._zone_cache', {('zn-1', 'gh-1'): 1}), \
-         patch('main._node_cache', {('nd-1', 'gh-1'): (1, 1)}), \
-         patch('main._cache_last_update', 9999999999.0):  # Кеш свежий
+    with patch('telemetry_processing._zone_cache', {('zn-1', 'gh-1'): 1}), \
+         patch('telemetry_processing._node_cache', {('nd-1', 'gh-1'): (1, 1)}), \
+         patch('telemetry_processing._cache_last_update', 9999999999.0):  # Кеш свежий
         
         samples = [
             TelemetrySampleModel(
@@ -44,8 +45,8 @@ async def test_batch_upsert_single_query():
         ]
         
         # Мокаем execute для проверки количества вызовов
-        with patch('main.execute') as mock_execute, \
-             patch('main.fetch', return_value=[]):
+        with patch('telemetry_processing.execute') as mock_execute, \
+             patch('telemetry_processing.fetch', return_value=[]):
             
             await process_telemetry_batch(samples)
             
@@ -69,9 +70,9 @@ async def test_batch_upsert_single_query():
 async def test_batch_upsert_latest_timestamp():
     """Тест, что batch upsert выбирает сэмпл с максимальным timestamp."""
     # Мокаем кеш
-    with patch('main._zone_cache', {('zn-1', 'gh-1'): 1}), \
-         patch('main._node_cache', {('nd-1', 'gh-1'): (1, 1)}), \
-         patch('main._cache_last_update', 9999999999.0):
+    with patch('telemetry_processing._zone_cache', {('zn-1', 'gh-1'): 1}), \
+         patch('telemetry_processing._node_cache', {('nd-1', 'gh-1'): (1, 1)}), \
+         patch('telemetry_processing._cache_last_update', 9999999999.0):
         
         base_time = datetime.utcnow()
         
@@ -95,8 +96,8 @@ async def test_batch_upsert_latest_timestamp():
         ]
         
         # Мокаем execute для проверки значения
-        with patch('main.execute') as mock_execute, \
-             patch('main.fetch', return_value=[]):
+        with patch('telemetry_processing.execute') as mock_execute, \
+             patch('telemetry_processing.fetch', return_value=[]):
             
             await process_telemetry_batch(samples)
             
@@ -114,9 +115,9 @@ async def test_batch_upsert_latest_timestamp():
 async def test_batch_upsert_fallback():
     """Тест fallback на индивидуальные upsert при ошибке batch."""
     # Мокаем кеш
-    with patch('main._zone_cache', {('zn-1', 'gh-1'): 1}), \
-         patch('main._node_cache', {('nd-1', 'gh-1'): (1, 1)}), \
-         patch('main._cache_last_update', 9999999999.0):
+    with patch('telemetry_processing._zone_cache', {('zn-1', 'gh-1'): 1}), \
+         patch('telemetry_processing._node_cache', {('nd-1', 'gh-1'): (1, 1)}), \
+         patch('telemetry_processing._cache_last_update', 9999999999.0):
         
         samples = [
             TelemetrySampleModel(
@@ -141,12 +142,11 @@ async def test_batch_upsert_fallback():
             # Последующие вызовы (fallback) успешны
             return None
         
-        with patch('main.execute', side_effect=mock_execute_side_effect), \
-             patch('main.fetch', return_value=[]), \
-             patch('main.upsert_telemetry_last', new_callable=AsyncMock) as mock_upsert:
+        with patch('telemetry_processing.execute', side_effect=mock_execute_side_effect), \
+             patch('telemetry_processing.fetch', return_value=[]), \
+             patch('telemetry_processing.upsert_telemetry_last', new_callable=AsyncMock) as mock_upsert:
             
             await process_telemetry_batch(samples)
             
             # Проверяем, что был вызван fallback (индивидуальный upsert)
             assert mock_upsert.called
-

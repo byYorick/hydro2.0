@@ -142,7 +142,7 @@ static esp_err_t ph_node_init_channel_callback(
     // Инициализация насосов
     // Примечание: pump_driver инициализируется через pump_driver_init_from_config()
     // после применения всех каналов, поэтому здесь только логируем
-    if (strcasecmp(actuator_type, "PUMP") == 0) {
+    if (strcasecmp(actuator_type, "PUMP") == 0 || strcasecmp(actuator_type, "PERISTALTIC_PUMP") == 0) {
         cJSON *pin_item = cJSON_GetObjectItem(channel_config, "pin");
         cJSON *gpio_item = cJSON_GetObjectItem(channel_config, "gpio");
         cJSON *pin_src = cJSON_IsNumber(pin_item) ? pin_item : (cJSON_IsNumber(gpio_item) ? gpio_item : NULL);

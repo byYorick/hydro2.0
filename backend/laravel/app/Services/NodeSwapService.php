@@ -43,8 +43,7 @@ class NodeSwapService
                 $newNode->type = $oldNode->type;
                 $newNode->name = $oldNode->name . ' (заменён)';
                 $newNode->zone_id = $oldNode->zone_id;
-                // НЕ переводим сразу в ASSIGNED_TO_ZONE - это произойдет только после успешной публикации конфига
-                // и получения config_response от ноды
+                // НЕ переводим сразу в ASSIGNED_TO_ZONE - это произойдет только после получения config_report от ноды
                 $newNode->lifecycle_state = NodeLifecycleState::REGISTERED_BACKEND;
                 $newNode->validated = true;
                 $newNode->first_seen_at = now();
@@ -60,8 +59,7 @@ class NodeSwapService
                 if (!$newNode->zone_id && $oldNode->zone_id) {
                     $newNode->zone_id = $oldNode->zone_id;
                 }
-                // НЕ переводим сразу в ASSIGNED_TO_ZONE - это произойдет только после успешной публикации конфига
-                // и получения config_response от ноды
+                // НЕ переводим сразу в ASSIGNED_TO_ZONE - это произойдет только после получения config_report от ноды
                 // Если узел был в ASSIGNED_TO_ZONE или ACTIVE, переводим в REGISTERED_BACKEND,
                 // чтобы конфиг был опубликован заново и нода подтвердила установку
                 $previousState = $newNode->lifecycle_state;
@@ -243,4 +241,3 @@ class NodeSwapService
         return $newUid;
     }
 }
-

@@ -442,7 +442,6 @@
       :node-id="selectedNodeId"
       :node="selectedNode"
       @close="modals.close('nodeConfig')"
-      @published="onNodeConfigPublished"
     />
     
     <!-- Модальное окно запуска/корректировки цикла выращивания -->
@@ -1606,12 +1605,6 @@ async function onNodesAttached(nodeIds: number[]): Promise<void> {
     // Fallback к частичному reload при ошибке
     reloadZone(zoneId.value, ['zone', 'devices'])
   }
-}
-
-function onNodeConfigPublished(): void {
-  // Конфигурация уже обновлена в store через NodeConfigModal
-  // Дополнительное обновление не требуется, так как данные приходят через WebSocket
-  logger.debug('[Zones/Show] Node config published, store already updated')
 }
 
 async function onNextPhase(): Promise<void> {

@@ -30,6 +30,7 @@ class NodeConfig:
     hardware_id: str = "esp32-sim-001"
     node_type: str = "unknown"
     mode: str = "preconfig"  # preconfig | configured
+    config_report_on_start: bool = True
     # sensors = список "channel" ключей, которые идут в MQTT topic сегмент {channel}
     # (например, ph_sensor, ec_sensor, air_temp_c, air_rh, co2_ppm, lux, solution_temp_c)
     sensors: List[str] = field(default_factory=lambda: ["ph_sensor", "ec_sensor", "solution_temp_c", "air_temp_c", "air_rh"])
@@ -114,6 +115,7 @@ class SimConfig:
             hardware_id=node_data.get("hardware_id", "esp32-sim-001"),
             node_type=node_data.get("node_type", "unknown"),
             mode=node_data.get("mode", "preconfig"),
+            config_report_on_start=node_data.get("config_report_on_start", True),
             # Поддержка старого поля channels: считаем, что это те же MQTT channel keys
             sensors=node_data.get("sensors", node_data.get("channels", ["ph_sensor", "ec_sensor", "solution_temp_c"])),
             actuators=node_data.get("actuators", ["main_pump", "drain_pump", "fan", "heater", "light", "mister"])
@@ -175,4 +177,3 @@ class SimConfig:
         
         if errors:
             raise ValueError(f"Configuration validation failed:\n" + "\n".join(f"  - {e}" for e in errors))
-

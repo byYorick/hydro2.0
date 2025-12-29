@@ -505,13 +505,13 @@ esp_err_t mqtt_manager_publish_command_response(const char *channel, const char 
     return mqtt_manager_publish_internal(topic, data, 1, 0);
 }
 
-esp_err_t mqtt_manager_publish_config_response(const char *data) {
+esp_err_t mqtt_manager_publish_config_report(const char *data) {
     if (!data) {
         return ESP_ERR_INVALID_ARG;
     }
 
     char topic[192];
-    esp_err_t err = build_topic(topic, sizeof(topic), "config_response", NULL);
+    esp_err_t err = build_topic(topic, sizeof(topic), "config_report", NULL);
     if (err != ESP_OK) {
         return err;
     }

@@ -102,6 +102,11 @@ class NodeModel:
     
     def __post_init__(self):
         """Инициализация после создания."""
+        # Эти сенсоры нужны для внутренней логики (INA209 и flow_present)
+        for required in ("ina209_ma", "flow_present"):
+            if required not in self.sensors:
+                self.sensors.append(required)
+
         # Инициализируем состояния актуаторов
         for act in self.actuators:
             if act not in self.actuator_states:

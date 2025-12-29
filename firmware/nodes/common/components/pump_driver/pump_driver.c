@@ -277,16 +277,22 @@ esp_err_t pump_driver_init_from_config(void) {
             continue;
         }
         
-        // Ищем только актуаторы типа PUMP
+        // Ищем только актуаторы типа PUMP/PERISTALTIC_PUMP
         if (strcmp(type_item->valuestring, "ACTUATOR") == 0) {
             cJSON *actuator_type = cJSON_GetObjectItem(channel, "actuator_type");
             if (actuator_type != NULL && cJSON_IsString(actuator_type)) {
                 const char *act_type = actuator_type->valuestring;
-                if (strcmp(act_type, "PUMP") == 0) {
+                if (strcmp(act_type, "PUMP") == 0 || strcmp(act_type, "PERISTALTIC_PUMP") == 0) {
                     cJSON *name_item = cJSON_GetObjectItem(channel, "name");
                     cJSON *gpio_item = cJSON_GetObjectItem(channel, "gpio");
-                    cJSON *fail_safe_item = cJSON_GetObjectItem(channel, "fail_safe_mode");
                     cJSON *safe_limits = cJSON_GetObjectItem(channel, "safe_limits");
+                    cJSON *fail_safe_item = NULL;
+                    if (safe_limits != NULL && cJSON_IsObject(safe_limits)) {
+                        fail_safe_item = cJSON_GetObjectItem(safe_limits, "fail_safe_mode");
+                    }
+                    if (fail_safe_item == NULL) {
+                        fail_safe_item = cJSON_GetObjectItem(channel, "fail_safe_mode");
+                    }
                     
                     if (name_item != NULL && cJSON_IsString(name_item) &&
                         gpio_item != NULL && cJSON_IsNumber(gpio_item)) {

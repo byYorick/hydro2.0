@@ -148,6 +148,8 @@ void light_node_mqtt_connection_cb(bool connected, void *user_ctx) {
         }
         
         node_utils_request_time();
+
+        node_utils_publish_config_report();
     } else {
         ESP_LOGW(TAG, "MQTT disconnected - light_node is offline");
     }

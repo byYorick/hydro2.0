@@ -10,6 +10,8 @@ from typing import Optional, List
 from dataclasses import dataclass, asdict
 from pydantic import BaseModel
 
+from .db import create_zone_event
+
 try:
     from prometheus_client import Counter, Gauge
     
@@ -146,6 +148,7 @@ class TelemetryQueue:
             # Backpressure: применяем sampling при >95% заполнения (менее агрессивно)
             utilization = size / self.MAX_QUEUE_SIZE if self.MAX_QUEUE_SIZE > 0 else 0.0
             if utilization > 0.95:
+                await self._send_overflow_alert(size)
                 # Пропускаем 20% сообщений при 95-98% заполнении
                 # Пропускаем 50% сообщений при >98% заполнении
                 sample_rate = 0.8 if utilization < 0.98 else 0.5
@@ -209,7 +212,6 @@ class TelemetryQueue:
             
             # Отправляем в систему алертов (если доступна)
             try:
-                from common.db import create_zone_event
                 await create_zone_event(
                     zone_id=None,  # Системный алерт
                     event_type='system_queue_overflow',
@@ -355,4 +357,3 @@ async def close_redis_client():
             logger.error(f"Error closing Redis client: {e}")
         finally:
             _redis_client = None
-

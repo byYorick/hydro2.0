@@ -25,7 +25,7 @@
 | `node_config_handler` | Парсит NodeConfig, пишет `config_storage`, публикует ответы и позволяет `config_apply_mqtt`. | `firmware/nodes/common/components/node_framework/node_config_handler.c`. |
 | `config_storage` | Хранит JSON-конфиг. Любой модуль может получить текущий конфиг и перезаписать `channels`. | `firmware/nodes/common/components/config_storage`. |
 | `mqtt_manager` | Обслуживает подписки/публикации и вызывает `node_config_handler_process`. | `firmware/nodes/common/components/mqtt_manager`. |
-| `node_channel_map` | Массивы `sensor` + `actuator`, заданы в прошивке, используются для `node_config_handler` и `config_response`. | `ph_node_channel_map.c`, `relay_node_hw_map.c`. |
+| `node_channel_map` | Массивы `sensor` + `actuator`, заданы в прошивке, используются для `node_config_handler` и `config_report`. | `ph_node_channel_map.c`, `relay_node_hw_map.c`. |
 
 ## Принципы обработки `channels`
 

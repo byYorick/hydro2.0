@@ -68,7 +68,7 @@ static cJSON *ec_node_build_actuator_entry(const ec_node_actuator_channel_t *act
     cJSON_AddStringToObject(entry, "name", actuator->name);
     cJSON_AddStringToObject(entry, "channel", actuator->name);
     cJSON_AddStringToObject(entry, "type", "ACTUATOR");
-    cJSON_AddStringToObject(entry, "actuator_type", "PUMP");
+    cJSON_AddStringToObject(entry, "actuator_type", "PERISTALTIC_PUMP");
     cJSON_AddNumberToObject(entry, "gpio", actuator->gpio);
 
     cJSON *safe_limits = cJSON_CreateObject();

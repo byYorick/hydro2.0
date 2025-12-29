@@ -1,7 +1,8 @@
 """Tests for format synchronization between firmware and history-logger."""
 import pytest
 from datetime import datetime
-from main import TelemetryPayloadModel, _extract_channel_from_topic, _extract_node_uid, _extract_zone_uid
+from models import TelemetryPayloadModel
+from utils import _extract_channel_from_topic, _extract_node_uid, _extract_zone_uid
 
 
 class TestTelemetryPayloadFormat:
@@ -94,22 +95,22 @@ class TestTelemetryTopicFormat:
         assert _extract_zone_uid(topic_with_3_parts) == "format"
 
 
-class TestConfigResponseFormat:
-    """Тесты формата config_response."""
+class TestConfigReportFormat:
+    """Тесты формата config_report."""
     
-    def test_config_response_ack_format(self):
-        """Тест обработки config_response со статусом ACK (от прошивок)."""
-        # Этот тест проверяет, что history-logger принимает только "ACK"
-        # Реальная проверка будет в интеграционных тестах
+    def test_config_report_minimal_format(self):
+        """Тест минимального payload config_report от прошивок."""
         data = {
-            "status": "ACK",
-            "applied_at": 1737979.2,
-            "restarted": ["pump_driver"]
+            "node_id": "nd-ph-1",
+            "version": 1,
+            "channels": [
+                {"name": "ph_sensor", "type": "SENSOR", "metric": "PH"}
+            ],
         }
         
-        # Проверяем, что статус должен быть "ACK"
-        status = data.get("status", "").upper()
-        assert status == "ACK"
+        assert data["node_id"] == "nd-ph-1"
+        assert data["version"] == 1
+        assert isinstance(data["channels"], list)
 
 
 class TestHeartbeatFormat:
@@ -157,4 +158,3 @@ class TestNodeHelloFormat:
         # Опциональные поля могут отсутствовать
         assert "hardware_revision" not in payload  # Опциональное
         assert "provisioning_meta" not in payload  # Опциональное
-

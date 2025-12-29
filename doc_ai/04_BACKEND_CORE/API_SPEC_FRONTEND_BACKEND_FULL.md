@@ -307,7 +307,7 @@
 ### 3.9.2. PATCH /api/nodes/{id}
 
 - **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
-- Обновление конфигурации узла.
+- Обновление метаданных узла (name, zone_id).
 
 ### 3.9.3. DELETE /api/nodes/{id}
 
@@ -317,7 +317,7 @@
 ### 3.9.4. GET /api/nodes/{id}/config
 
 - **Аутентификация:** Требуется `auth:sanctum`
-- Получение конфигурации узла (NodeConfig) для отправки на ESP32.
+- Получение сохраненного NodeConfig (read-only), полученного от ноды через `config_report`.
 
 Ответ:
 ```json
@@ -335,36 +335,16 @@
 ### 3.9.5. POST /api/nodes/{id}/config/publish
 
 - **Аутентификация:** Требуется `auth:sanctum`, роль `operator` или `admin`
-- **Безопасность:** Использует pessimistic/optimistic locking и advisory lock для предотвращения дублирования
-- **HMAC подпись:** Конфигурация автоматически подписывается HMAC с timestamp
-- Публикация конфигурации узла через MQTT для отправки на ESP32.
-
-**Защита от дублирования:**
-- Pessimistic lock (SELECT FOR UPDATE) предотвращает одновременную публикацию
-- Optimistic lock проверяет, что узел не был изменен во время публикации
-- Advisory lock (PostgreSQL) предотвращает параллельную публикацию из разных процессов
-- Кеш-дедупликация предотвращает повторную публикацию одинаковых конфигураций в течение 60 секунд
+- Публикация конфигурации узла через MQTT **отключена**.
+- Узлы отправляют конфиг самостоятельно (config_report), сервер хранит и использует его.
 
 Ответ:
 ```json
 {
- "status": "ok",
- "data": {
-   "node": {...},
-   "published_config": {
-     "node_id": "nd-001",
-     "version": 3,
-     "ts": 1737355500,
-     "sig": "hmacsha256_signature"
-   },
-   "bridge_response": {...}
- }
+ "status": "error",
+ "message": "Config publishing from server is disabled. Nodes send config_report on connect."
 }
 ```
-
-**Ошибки:**
-- `409 Conflict` - если конфигурация уже публикуется или была опубликована недавно
-- `409 Conflict` - если узел был изменен во время публикации (optimistic lock failed)
 
 ### 3.9.6. POST /api/nodes/{id}/swap
 

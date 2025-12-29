@@ -17,6 +17,7 @@ node:
   hardware_id: esp32-sim-001
   node_type: ph  # ph, ec, climate, pump, irrig, light, unknown
   mode: preconfig  # preconfig | configured
+  config_report_on_start: true  # публиковать config_report при старте
   channels:
     - ph_sensor
     - ec_sensor
@@ -42,4 +43,3 @@ failure_mode:
   delay_ms: 0               # Задержка в миллисекундах
   drop_response: false       # Пропуск ответа
   duplicate_response: false  # Дублирование ответа
-

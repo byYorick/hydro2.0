@@ -1,106 +1,58 @@
 <template>
-  <Modal :open="show" :title="`Настройка узла ${node?.uid || node?.id}`" @close="handleClose">
-    <div v-if="loading" class="text-sm text-[color:var(--text-muted)]">Загрузка конфигурации...</div>
-    <div v-else class="space-y-4">
-      <div class="text-xs text-[color:var(--text-muted)] mb-2">
-        Настройте каналы узла. Конфигурация будет отправлена узлу через MQTT.
+  <Modal :open="show" :title="`Конфигурация узла ${node?.uid || node?.id}`" @close="handleClose">
+    <div class="space-y-4">
+      <div class="text-xs text-[color:var(--text-muted)]">
+        Конфиг приходит от ноды через config_report. Редактирование отключено; изменения вносятся в прошивке или локальном provisioning.
       </div>
 
       <div v-if="errorMessage" class="text-xs text-[color:var(--badge-warning-text)] bg-[color:var(--badge-warning-bg)] border border-[color:var(--badge-warning-border)] rounded-lg p-3">
         {{ errorMessage }}
       </div>
 
-      <div v-if="!hasChannels && !loading" class="text-sm text-[color:var(--text-muted)]">
-        У узла нет настроенных каналов
-      </div>
+      <div v-if="loading" class="text-sm text-[color:var(--text-muted)]">Загрузка конфигурации...</div>
 
-      <div v-else class="space-y-3 max-h-[420px] overflow-y-auto pr-1 scrollbar-glow">
-        <div
-          v-for="(channel, index) in channels"
-          :key="channel.id || index"
-          class="p-3 rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] space-y-2"
-        >
-          <div class="flex items-center justify-between gap-2">
-            <div>
-              <div class="text-xs uppercase tracking-[0.2em] text-[color:var(--text-dim)]">Канал {{ index + 1 }}</div>
-            </div>
-            <button
-              v-if="channels.length > 1"
-              type="button"
-              class="text-xs text-[color:var(--accent-red)] hover:text-[color:var(--badge-danger-text)]"
-              @click="removeChannel(index)"
-            >
-              Удалить
-            </button>
-          </div>
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div>
-              <label class="block text-xs text-[color:var(--text-muted)] mb-1">Channel</label>
-              <input
-                v-model="channel.channel"
-                type="text"
-                placeholder="example_channel"
-                class="input-field h-9 w-full text-xs"
-              />
-            </div>
-            <div>
-              <label class="block text-xs text-[color:var(--text-muted)] mb-1">Type</label>
-              <select
-                v-model="channel.type"
-                class="input-select h-9 w-full text-xs"
+      <div v-else class="space-y-3">
+        <div v-if="channels.length === 0" class="text-sm text-[color:var(--text-muted)]">
+          Нет данных по каналам
+        </div>
+        <div v-else class="rounded-lg border border-[color:var(--border-muted)] overflow-hidden">
+          <table class="min-w-full text-xs">
+            <thead class="bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)]">
+              <tr>
+                <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">Channel</th>
+                <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">Type</th>
+                <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">Metric</th>
+                <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">Actuator</th>
+                <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">Unit</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="(channel, index) in channels"
+                :key="`${channel.name}-${index}`"
+                class="odd:bg-[color:var(--bg-surface-strong)] even:bg-[color:var(--bg-surface)]"
               >
-                <option v-for="option in availableTypes" :key="option.value" :value="option.value">
-                  {{ option.label }}
-                </option>
-              </select>
-            </div>
-            <div>
-              <label class="block text-xs text-[color:var(--text-muted)] mb-1">Unit</label>
-              <input
-                v-model="channel.unit"
-                type="text"
-                placeholder="единицы измерения"
-                class="input-field h-9 w-full text-xs"
-              />
-            </div>
-          </div>
-          <div class="grid grid-cols-2 gap-3 text-xs text-[color:var(--text-muted)]">
-            <div>
-              <label class="block text-[0.6rem] uppercase text-[color:var(--text-dim)]">Min</label>
-              <input
-                v-model.number="channel.min"
-                type="number"
-                step="0.01"
-                class="input-field h-8 w-full text-xs"
-              />
-            </div>
-            <div>
-              <label class="block text-[0.6rem] uppercase text-[color:var(--text-dim)]">Max</label>
-              <input
-                v-model.number="channel.max"
-                type="number"
-                step="0.01"
-                class="input-field h-8 w-full text-xs"
-              />
-            </div>
-          </div>
+                <td class="px-3 py-2 border-b border-[color:var(--border-muted)]">{{ channel.name }}</td>
+                <td class="px-3 py-2 border-b border-[color:var(--border-muted)] uppercase">{{ channel.type }}</td>
+                <td class="px-3 py-2 border-b border-[color:var(--border-muted)]">{{ channel.metric || '-' }}</td>
+                <td class="px-3 py-2 border-b border-[color:var(--border-muted)]">{{ channel.actuator_type || '-' }}</td>
+                <td class="px-3 py-2 border-b border-[color:var(--border-muted)]">{{ channel.unit || '-' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="space-y-2">
+          <div class="text-xs text-[color:var(--text-dim)]">Полный JSON</div>
+          <pre class="text-xs text-[color:var(--text-muted)] overflow-auto">{{ prettyConfig }}</pre>
         </div>
       </div>
-
-      <div class="flex flex-wrap items-center gap-3">
-        <Button size="sm" variant="secondary" @click="addChannel">Добавить канал</Button>
-        <span class="text-xs text-[color:var(--text-muted)]">Для сохранения отправьте конфигурацию</span>
-      </div>
     </div>
-    
+
     <template #footer>
-      <Button size="sm" variant="secondary" @click="handleClose">Отмена</Button>
-      <Button
-        size="sm"
-        @click="onPublish"
-        :disabled="publishing || loading || !hasChannels"
-      >
-        {{ publishing ? 'Отправка...' : 'Опубликовать конфигурацию' }}
+      <Button size="sm" variant="secondary" @click="handleClose">Закрыть</Button>
+      <Button size="sm" variant="outline" :disabled="loading" @click="loadNodeConfig">
+        {{ loading ? 'Обновление...' : 'Обновить' }}
       </Button>
     </template>
   </Modal>
@@ -111,7 +63,6 @@ import { ref, watch, computed } from 'vue'
 import Modal from './Modal.vue'
 import Button from './Button.vue'
 import { logger } from '@/utils/logger'
-import { router } from '@inertiajs/vue3'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
 
@@ -124,38 +75,43 @@ interface Props {
   }
 }
 
-interface Channel {
-  id?: string | number
-  channel: string
-  type: 'sensor' | 'actuator' | 'controller' | 'pump' | 'climate'
-  unit?: string
-  min?: number | null
-  max?: number | null
+interface ChannelView {
+  name: string
+  type: string
+  metric?: string | null
+  actuator_type?: string | null
+  unit?: string | null
 }
 
 const props = defineProps<Props>()
 const emit = defineEmits<{
   close: []
-  published: []
 }>()
 
 const { showToast } = useToast()
 const { api } = useApi(showToast)
 
 const loading = ref<boolean>(false)
-const publishing = ref<boolean>(false)
-const channels = ref<Channel[]>([])
+const nodeConfigData = ref<Record<string, any> | null>(null)
 const errorMessage = ref<string>('')
 
-const availableTypes = [
-  { value: 'sensor', label: 'Sensor' },
-  { value: 'actuator', label: 'Actuator' },
-  { value: 'controller', label: 'Controller' },
-  { value: 'pump', label: 'Pump' },
-  { value: 'climate', label: 'Climate' },
-]
+const channels = computed<ChannelView[]>(() => {
+  const list = nodeConfigData.value?.channels
+  if (!Array.isArray(list)) return []
 
-const hasChannels = computed(() => channels.value.length > 0)
+  return list.map((entry: any) => ({
+    name: String(entry?.name || entry?.channel || '-'),
+    type: String(entry?.type || entry?.channel_type || '-').toUpperCase(),
+    metric: entry?.metric || entry?.metrics || null,
+    actuator_type: entry?.actuator_type || null,
+    unit: entry?.unit || null,
+  }))
+})
+
+const prettyConfig = computed(() => {
+  if (!nodeConfigData.value) return ''
+  return JSON.stringify(nodeConfigData.value, null, 2)
+})
 
 watch(() => props.show, (show) => {
   if (show) {
@@ -172,60 +128,8 @@ watch(() => props.nodeId, (nodeId, prev) => {
 })
 
 function resetState() {
-  channels.value = []
+  nodeConfigData.value = null
   errorMessage.value = ''
-  publishing.value = false
-}
-
-function normalizeChannel(source: Partial<Channel> = {}): Channel {
-  return {
-    id: source.id,
-    channel: source.channel?.toString() || '',
-    type: source.type || 'sensor',
-    unit: source.unit?.toString() || '',
-    min: source.min ?? null,
-    max: source.max ?? null,
-  }
-}
-
-async function loadNodeConfig() {
-  if (!props.nodeId) {
-    channels.value = []
-    return
-  }
-
-  loading.value = true
-  errorMessage.value = ''
-
-  try {
-    interface ConfigResponse {
-      data?: {
-        config?: {
-          channels?: Channel[]
-        }
-      }
-    }
-
-    const response = await api.get<ConfigResponse>(`/nodes/${props.nodeId}/config`)
-
-    const payload = response.data?.data?.config?.channels || []
-    channels.value = Array.isArray(payload) ? payload.map(normalizeChannel) : []
-  } catch (error) {
-    // Ошибка уже обработана в useApi через showToast
-    logger.error('Failed to load node config:', error)
-    errorMessage.value = 'Не удалось загрузить каналы. Попробуйте позже.'
-    channels.value = []
-  } finally {
-    loading.value = false
-  }
-}
-
-function addChannel() {
-  channels.value.push(normalizeChannel())
-}
-
-function removeChannel(index: number) {
-  channels.value.splice(index, 1)
 }
 
 function handleClose() {
@@ -233,50 +137,26 @@ function handleClose() {
   resetState()
 }
 
-async function onPublish() {
-  if (!props.nodeId || !hasChannels.value) return
+async function loadNodeConfig() {
+  if (!props.nodeId) {
+    nodeConfigData.value = null
+    return
+  }
 
-  publishing.value = true
+  loading.value = true
+  errorMessage.value = ''
+
   try {
-    const sanitizedChannels = channels.value.map((channel) => ({
-      channel: channel.channel.trim(),
-      type: channel.type,
-      unit: channel.unit?.trim() || undefined,
-      min: channel.min ?? undefined,
-      max: channel.max ?? undefined,
-    }))
-
-    const response = await api.post(
-      `/nodes/${props.nodeId}/config/publish`,
-      {
-        config: {
-          channels: sanitizedChannels,
-        },
-      }
-    )
-
-    // Обновляем устройство в store из ответа API, если он содержит данные
-    try {
-      const responseData = response.data?.data?.node || response.data?.data || response.data
-      if (responseData?.id) {
-        const { useDevicesStore } = await import('@/stores/devices')
-        const devicesStore = useDevicesStore()
-        devicesStore.upsert(responseData)
-        logger.debug('[NodeConfigModal] Device updated in store after config publish', { deviceId: responseData.id })
-      }
-    } catch (storeError) {
-      logger.warn('[NodeConfigModal] Failed to update device store', { error: storeError })
-    }
-    
-    showToast('Конфигурация успешно опубликована', 'success', TOAST_TIMEOUT.NORMAL)
-    emit('published')
-    emit('close')
+    const response = await api.get<{ data?: Record<string, unknown> }>(`/nodes/${props.nodeId}/config`)
+    const payload = response.data?.data
+    nodeConfigData.value = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : null
   } catch (error) {
     // Ошибка уже обработана в useApi через showToast
-    logger.error('Failed to publish node config:', error)
-    errorMessage.value = error.response?.data?.message || 'Ошибка при публикации конфигурации'
+    logger.error('Failed to load node config:', error)
+    errorMessage.value = 'Не удалось загрузить конфигурацию. Попробуйте позже.'
+    nodeConfigData.value = null
   } finally {
-    publishing.value = false
+    loading.value = false
   }
 }
 </script>

@@ -25,7 +25,7 @@ class TestExtractZoneIdFromUid:
     
     def test_extract_zone_id_valid(self):
         """Тест извлечения zone_id из валидного zone_uid."""
-        from main import extract_zone_id_from_uid
+        from utils import extract_zone_id_from_uid
         
         assert extract_zone_id_from_uid("zn-1") == 1
         assert extract_zone_id_from_uid("zn-123") == 123
@@ -33,7 +33,7 @@ class TestExtractZoneIdFromUid:
     
     def test_extract_zone_id_invalid_format(self):
         """Тест обработки невалидного формата."""
-        from main import extract_zone_id_from_uid
+        from utils import extract_zone_id_from_uid
         
         assert extract_zone_id_from_uid("zone-1") is None
         assert extract_zone_id_from_uid("zn") is None
@@ -43,7 +43,7 @@ class TestExtractZoneIdFromUid:
     
     def test_extract_zone_id_invalid_number(self):
         """Тест обработки невалидного числа."""
-        from main import extract_zone_id_from_uid
+        from utils import extract_zone_id_from_uid
         
         assert extract_zone_id_from_uid("zn-abc") is None
         assert extract_zone_id_from_uid("zn-") is None
@@ -54,7 +54,7 @@ class TestTelemetryPayloadValidation:
     
     def test_valid_payload(self):
         """Тест валидного payload."""
-        from main import TelemetryPayloadModel
+        from models import TelemetryPayloadModel
         
         payload = TelemetryPayloadModel(
             metric_type="PH",
@@ -70,7 +70,7 @@ class TestTelemetryPayloadValidation:
     
     def test_payload_min_length_validation(self):
         """Тест валидации минимальной длины metric_type."""
-        from main import TelemetryPayloadModel
+        from models import TelemetryPayloadModel
         from pydantic import ValidationError
         
         with pytest.raises(ValidationError):
@@ -81,7 +81,7 @@ class TestTelemetryPayloadValidation:
     
     def test_payload_max_length_validation(self):
         """Тест валидации максимальной длины."""
-        from main import TelemetryPayloadModel
+        from models import TelemetryPayloadModel
         from pydantic import ValidationError
         
         # metric_type max_length=50
@@ -106,7 +106,8 @@ class TestMetrics:
     @pytest.mark.asyncio
     async def test_telemetry_queue_size_metric(self):
         """Тест метрики размера очереди."""
-        from main import TELEMETRY_QUEUE_SIZE, process_telemetry_queue
+        from metrics import TELEMETRY_QUEUE_SIZE
+        from telemetry_processing import process_telemetry_queue
         from unittest.mock import AsyncMock
         
         mock_queue = AsyncMock()
@@ -124,10 +125,10 @@ class TestMetrics:
         
         mock_shutdown.is_set = is_set
         
-        with patch('main.telemetry_queue', mock_queue), \
-             patch('main.shutdown_event', mock_shutdown), \
-             patch('main.process_telemetry_batch', new_callable=AsyncMock), \
-             patch('main.get_settings') as mock_settings:
+        with patch('state.telemetry_queue', mock_queue), \
+             patch('state.shutdown_event', mock_shutdown), \
+             patch('telemetry_processing.process_telemetry_batch', new_callable=AsyncMock), \
+             patch('telemetry_processing.get_settings') as mock_settings:
             mock_settings.return_value.telemetry_batch_size = 200
             mock_settings.return_value.telemetry_flush_ms = 500
             mock_settings.return_value.queue_check_interval_sec = 0.1
@@ -142,7 +143,9 @@ class TestMetrics:
     @pytest.mark.asyncio
     async def test_telemetry_processing_duration_metric(self):
         """Тест метрики времени обработки батча."""
-        from main import TELEMETRY_PROCESSING_DURATION, process_telemetry_batch, TelemetrySampleModel
+        from metrics import TELEMETRY_PROCESSING_DURATION
+        from telemetry_processing import process_telemetry_batch
+        from models import TelemetrySampleModel
         from unittest.mock import AsyncMock
         from prometheus_client import REGISTRY
         
@@ -160,9 +163,9 @@ class TestMetrics:
         # Получаем начальное количество наблюдений
         initial_samples = TELEMETRY_PROCESSING_DURATION._buckets[0]._value
         
-        with patch("main.execute", new_callable=AsyncMock) as mock_execute, \
-             patch("main.fetch", new_callable=AsyncMock) as mock_fetch, \
-             patch("main.upsert_telemetry_last", new_callable=AsyncMock):
+        with patch("telemetry_processing.execute", new_callable=AsyncMock) as mock_execute, \
+             patch("telemetry_processing.fetch", new_callable=AsyncMock) as mock_fetch, \
+             patch("telemetry_processing.upsert_telemetry_last", new_callable=AsyncMock):
             mock_fetch.return_value = [{"id": 1, "uid": "nd-ph-1"}]
             
             await process_telemetry_batch(samples)
@@ -174,7 +177,8 @@ class TestMetrics:
     @pytest.mark.asyncio
     async def test_redis_operation_duration_metric(self):
         """Тест метрики времени операций Redis."""
-        from main import REDIS_OPERATION_DURATION, handle_telemetry
+        from metrics import REDIS_OPERATION_DURATION
+        from telemetry_processing import handle_telemetry
         from unittest.mock import AsyncMock
         
         topic = "hydro/gh-1/zn-1/nd-ph-1/telemetry/PH"
@@ -185,8 +189,8 @@ class TestMetrics:
         
         initial_samples = sum(bucket._value for bucket in REDIS_OPERATION_DURATION._buckets)
         
-        with patch('main.telemetry_queue', mock_queue), \
-             patch('main._push_with_retry', new_callable=AsyncMock) as mock_push:
+        with patch('state.telemetry_queue', mock_queue), \
+             patch('telemetry_processing._push_with_retry', new_callable=AsyncMock) as mock_push:
             mock_push.return_value = True
             
             await handle_telemetry(topic, payload)
@@ -198,7 +202,8 @@ class TestMetrics:
     @pytest.mark.asyncio
     async def test_laravel_api_duration_metric(self):
         """Тест метрики времени запросов Laravel API."""
-        from main import LARAVEL_API_DURATION, handle_node_hello
+        from metrics import LARAVEL_API_DURATION
+        from mqtt_handlers import handle_node_hello
         from unittest.mock import AsyncMock, MagicMock
         import httpx
         
@@ -212,7 +217,7 @@ class TestMetrics:
         
         initial_samples = sum(bucket._value for bucket in LARAVEL_API_DURATION._buckets)
         
-        with patch('main.get_settings') as mock_settings, \
+        with patch('mqtt_handlers.get_settings') as mock_settings, \
              patch('httpx.AsyncClient') as mock_client:
             mock_settings.return_value.laravel_api_url = "http://laravel"
             mock_settings.return_value.laravel_api_token = "test-token"
@@ -230,7 +235,8 @@ class TestMetrics:
     @pytest.mark.asyncio
     async def test_telemetry_dropped_metric(self):
         """Тест метрики потерянных сообщений."""
-        from main import TELEMETRY_DROPPED, handle_telemetry
+        from metrics import TELEMETRY_DROPPED
+        from telemetry_processing import handle_telemetry
         from unittest.mock import AsyncMock
         from prometheus_client import REGISTRY
         
@@ -245,8 +251,8 @@ class TestMetrics:
                     if sample.labels.get('reason') == 'queue_push_failed':
                         initial_value = sample.value
         
-        with patch('main.telemetry_queue', AsyncMock()), \
-             patch('main._push_with_retry', new_callable=AsyncMock) as mock_push:
+        with patch('state.telemetry_queue', AsyncMock()), \
+             patch('telemetry_processing._push_with_retry', new_callable=AsyncMock) as mock_push:
             mock_push.return_value = False
             
             await handle_telemetry(topic, payload)
@@ -264,7 +270,9 @@ class TestMetrics:
     @pytest.mark.asyncio
     async def test_database_errors_metric(self):
         """Тест метрики ошибок БД."""
-        from main import DATABASE_ERRORS, process_telemetry_batch, TelemetrySampleModel
+        from metrics import DATABASE_ERRORS
+        from telemetry_processing import process_telemetry_batch
+        from models import TelemetrySampleModel
         from unittest.mock import AsyncMock
         from prometheus_client import REGISTRY
         
@@ -287,9 +295,9 @@ class TestMetrics:
                     if sample.labels.get('error_type') == 'Exception':
                         initial_value = sample.value
         
-        with patch("main.execute", new_callable=AsyncMock) as mock_execute, \
-             patch("main.fetch", new_callable=AsyncMock) as mock_fetch, \
-             patch("main.upsert_telemetry_last", new_callable=AsyncMock):
+        with patch("telemetry_processing.execute", new_callable=AsyncMock) as mock_execute, \
+             patch("telemetry_processing.fetch", new_callable=AsyncMock) as mock_fetch, \
+             patch("telemetry_processing.upsert_telemetry_last", new_callable=AsyncMock):
             mock_fetch.return_value = [{"id": 1, "uid": "nd-ph-1"}]
             # Симулируем ошибку БД
             mock_execute.side_effect = Exception("Database connection failed")
@@ -313,15 +321,15 @@ class TestImprovedLogging:
     @pytest.mark.asyncio
     async def test_structured_logging_on_validation_error(self):
         """Тест структурированного логирования при ошибке валидации."""
-        from main import handle_telemetry
+        from telemetry_processing import handle_telemetry
         from unittest.mock import AsyncMock, patch
         import logging
         
         topic = "hydro/gh-1/zn-1/nd-ph-1/telemetry/PH"
         payload = b'{"invalid": "data"}'  # Нет обязательных полей
         
-        with patch('main.telemetry_queue', AsyncMock()), \
-             patch('main.logger') as mock_logger:
+        with patch('state.telemetry_queue', AsyncMock()), \
+             patch('telemetry_processing.logger') as mock_logger:
             await handle_telemetry(topic, payload)
             
             # Проверяем, что был вызван warning с extra параметрами
@@ -332,7 +340,8 @@ class TestImprovedLogging:
     @pytest.mark.asyncio
     async def test_structured_logging_on_database_error(self):
         """Тест структурированного логирования при ошибке БД."""
-        from main import process_telemetry_batch, TelemetrySampleModel
+        from telemetry_processing import process_telemetry_batch
+        from models import TelemetrySampleModel
         from unittest.mock import AsyncMock, patch
         import logging
         
@@ -347,10 +356,10 @@ class TestImprovedLogging:
             )
         ]
         
-        with patch("main.execute", new_callable=AsyncMock) as mock_execute, \
-             patch("main.fetch", new_callable=AsyncMock) as mock_fetch, \
-             patch("main.upsert_telemetry_last", new_callable=AsyncMock), \
-             patch('main.logger') as mock_logger:
+        with patch("telemetry_processing.execute", new_callable=AsyncMock) as mock_execute, \
+             patch("telemetry_processing.fetch", new_callable=AsyncMock) as mock_fetch, \
+             patch("telemetry_processing.upsert_telemetry_last", new_callable=AsyncMock), \
+             patch('telemetry_processing.logger') as mock_logger:
             mock_fetch.return_value = [{"id": 1, "uid": "nd-ph-1"}]
             mock_execute.side_effect = Exception("Database error")
             
@@ -368,7 +377,7 @@ class TestHandleTelemetryImprovements:
     @pytest.mark.asyncio
     async def test_handle_telemetry_with_pydantic_validation(self):
         """Тест обработки телеметрии с валидацией через Pydantic."""
-        from main import handle_telemetry
+        from telemetry_processing import handle_telemetry
         from unittest.mock import AsyncMock
         
         topic = "hydro/gh-1/zn-1/nd-ph-1/telemetry/PH"
@@ -377,8 +386,8 @@ class TestHandleTelemetryImprovements:
         mock_queue = AsyncMock()
         mock_queue.push = AsyncMock(return_value=True)
         
-        with patch('main.telemetry_queue', mock_queue), \
-             patch('main._push_with_retry', new_callable=AsyncMock) as mock_push:
+        with patch('state.telemetry_queue', mock_queue), \
+             patch('telemetry_processing._push_with_retry', new_callable=AsyncMock) as mock_push:
             mock_push.return_value = True
             
             await handle_telemetry(topic, payload)
@@ -389,7 +398,7 @@ class TestHandleTelemetryImprovements:
     @pytest.mark.asyncio
     async def test_handle_telemetry_invalid_payload_dropped(self):
         """Тест обработки невалидного payload с метрикой dropped."""
-        from main import handle_telemetry
+        from telemetry_processing import handle_telemetry
         from unittest.mock import AsyncMock
         from prometheus_client import REGISTRY
         
@@ -404,7 +413,7 @@ class TestHandleTelemetryImprovements:
                     if sample.labels.get('reason') == 'validation_failed':
                         initial_value = sample.value
         
-        with patch('main.telemetry_queue', AsyncMock()):
+        with patch('state.telemetry_queue', AsyncMock()):
             await handle_telemetry(topic, payload)
             
             # Проверяем, что метрика dropped была обновлена
@@ -420,7 +429,7 @@ class TestHandleTelemetryImprovements:
     @pytest.mark.asyncio
     async def test_handle_telemetry_missing_metric_type_dropped(self):
         """Тест обработки payload без metric_type."""
-        from main import handle_telemetry
+        from telemetry_processing import handle_telemetry
         from unittest.mock import AsyncMock
         from prometheus_client import REGISTRY
         
@@ -435,7 +444,7 @@ class TestHandleTelemetryImprovements:
                     if sample.labels.get('reason') == 'missing_metric_type':
                         initial_value = sample.value
         
-        with patch('main.telemetry_queue', AsyncMock()):
+        with patch('state.telemetry_queue', AsyncMock()):
             await handle_telemetry(topic, payload)
             
             # Проверяем, что метрика dropped была обновлена
@@ -447,4 +456,3 @@ class TestHandleTelemetryImprovements:
                             new_value = sample.value
             
             assert new_value >= initial_value
-

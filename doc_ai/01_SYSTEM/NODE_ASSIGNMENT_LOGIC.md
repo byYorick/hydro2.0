@@ -13,9 +13,9 @@
 
 ### Новая логика:
 1. При установке `zone_id` нода остается в `REGISTERED_BACKEND`
-2. Конфиг публикуется через событие `NodeConfigUpdated`
-3. **Только после успешной публикации конфига** нода переводится в `ASSIGNED_TO_ZONE`
-4. Если публикация не удалась, привязка откатывается (`zone_id = null`)
+2. Нода отправляет `config_report` при подключении
+3. **Только после получения `config_report`** нода переводится в `ASSIGNED_TO_ZONE`
+4. Сервер не публикует конфиги на ноды
 
 ---
 
@@ -23,29 +23,24 @@
 
 ### 1. NodeService::update()
 - Убрана автоматическая установка `ASSIGNED_TO_ZONE` при привязке к зоне
-- Нода остается в `REGISTERED_BACKEND` до успешной публикации конфига
+- Нода остается в `REGISTERED_BACKEND` до получения `config_report`
 
-### 2. PublishNodeConfigOnUpdate
-- Публикует конфиг в MQTT
-- **НЕ** переводит ноду в `ASSIGNED_TO_ZONE` (это происходит после получения config_response)
-- При ошибке публикации откатывает привязку (`zone_id = null`)
+### 2. history-logger::handle_config_report
+- Обрабатывает `config_report` от ноды
+- Сохраняет `nodes.config`, синхронизирует `node_channels`
+- Переводит ноду в `ASSIGNED_TO_ZONE` через Laravel API
 
-### 3. history-logger::handle_config_response
-- Обрабатывает `config_response` от ноды
-- При `status: "OK"` переводит ноду в `ASSIGNED_TO_ZONE` через Laravel API
-- При `status: "ERROR"` логирует ошибку
-
-### 4. NodeRegistryService::registerNodeFromHello()
+### 3. NodeRegistryService::registerNodeFromHello()
 - Убрана автоматическая установка `ASSIGNED_TO_ZONE`
 - Всегда оставляет ноду в `REGISTERED_BACKEND`
 
-### 5. NodeSwapService
+### 4. NodeSwapService
 - Убрана автоматическая установка `ASSIGNED_TO_ZONE` при swap
-- Нода остается в `REGISTERED_BACKEND` до публикации конфига
+- Нода остается в `REGISTERED_BACKEND` до получения `config_report`
 
-### 6. Frontend (Add.vue)
+### 5. Frontend (Add.vue)
 - Обновлено сообщение об успешной привязке
-- Показывает предупреждение, если конфиг еще не опубликован
+- Показывает ожидание `config_report` от ноды
 
 ---
 
@@ -53,39 +48,23 @@
 
 1. Пользователь привязывает ноду к зоне через UI
 2. `NodeService::update()` устанавливает `zone_id`, но оставляет `lifecycle_state = REGISTERED_BACKEND`
-3. Срабатывает событие `NodeConfigUpdated`
-4. `PublishNodeConfigOnUpdate` публикует конфиг в MQTT
-   - **НЕ** переводит ноду в `ASSIGNED_TO_ZONE` сразу
-5. Нода получает конфиг из MQTT и применяет его
-6. Нода отправляет `config_response` с `status: "OK"` в топик `hydro/{gh}/{zone}/{node}/config_response`
-7. **history-logger обрабатывает `config_response`:**
-   - При `status: "OK"`:
-     - Проверяет, что нода в `REGISTERED_BACKEND` и имеет `zone_id`
-     - Вызывает Laravel API для перевода в `ASSIGNED_TO_ZONE`
-     - Нода считается привязанной
-   - При `status: "ERROR"`:
-     - Логирует ошибку
-     - Нода остается в `REGISTERED_BACKEND`
-8. **Если публикация конфига не удалась:**
-   - Привязка откатывается (`zone_id = null`)
-   - Нода остается в `REGISTERED_BACKEND`
-   - Пользователь может попробовать снова
+3. Нода подключается и отправляет `config_report` в `hydro/{gh}/{zone}/{node}/config_report`
+4. **history-logger обрабатывает `config_report`:**
+   - сохраняет NodeConfig и синхронизирует каналы
+   - переводит ноду в `ASSIGNED_TO_ZONE`
+5. Нода считается привязанной
 
 ---
 
 ## Преимущества
 
-1. ✅ Нода считается привязанной только после подтверждения установки конфига от ноды
-2. ✅ Гарантия, что нода получила и применила конфиг перед началом работы
-3. ✅ Обратная связь от ноды - система знает, что конфиг действительно установлен
-4. ✅ Автоматический откат при ошибках публикации
-5. ✅ Более надежная логика привязки с подтверждением от ноды
+1. ✅ Нода считается привязанной только после `config_report`
+2. ✅ Сервер использует актуальный конфиг, присланный нодой
+3. ✅ Нет риска рассинхронизации из-за публикации конфига с сервера
+4. ✅ Привязка подтверждается фактическим подключением ноды
 
 ---
 
 ## Важные замечания
 
-- Откат привязки происходит только для новых привязок (в течение 60 секунд)
-- Старые привязки не откатываются при ошибках публикации
 - Нода должна быть в состоянии `REGISTERED_BACKEND` для привязки к зоне
-

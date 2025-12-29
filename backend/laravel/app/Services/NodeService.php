@@ -81,11 +81,10 @@ class NodeService
              * Сценарий 1: Пользователь привязывает/перепривязывает узел к зоне (UI)
              *   - Приходит: {"zone_id": 6} (БЕЗ pending_zone_id в запросе)
              *   - Устанавливаем: pending_zone_id = 6, zone_id = null
-             *   - Публикуется конфиг
-             *   - Узел получает конфиг и отправляет config_response
+             *   - Узел публикует config_report после подключения/инициализации
              *   - History Logger делает финализацию
              * 
-             * Сценарий 2: History Logger завершает привязку после config_response
+             * Сценарий 2: History Logger завершает привязку после config_report
              *   - Приходит: {"zone_id": 6, "pending_zone_id": null} (С pending_zone_id в запросе)
              *   - Устанавливаем: zone_id = 6, pending_zone_id = null
              *   - Конфиг НЕ публикуется (узел уже имеет конфиг)
@@ -142,7 +141,7 @@ class NodeService
                 
                 /**
                  * КРИТИЧНО: ВСЕГДА сохраняем в pending_zone_id для получения подтверждения от ноды
-                 * zone_id будет обновлен только после config_response от ноды
+                 * zone_id будет обновлен только после config_report от ноды
                  */
                 $data['pending_zone_id'] = $newZoneId;
                 unset($data['zone_id']); // Удаляем zone_id из данных обновления!
@@ -189,7 +188,7 @@ class NodeService
                     'new_zone_id' => $node->zone_id,
                     'new_pending_zone_id' => $node->pending_zone_id,
                     'lifecycle_state' => $node->lifecycle_state?->value,
-                    'reason' => 'History-logger completed node binding after config_response',
+                    'reason' => 'History-logger completed node binding after config_report',
                 ]);
 
                 // Превращаем накопленные unassigned ошибки в alerts теперь, когда зона известна.
@@ -323,4 +322,3 @@ class NodeService
         });
     }
 }
-

@@ -6,7 +6,7 @@
  * - Парсинг JSON
  * - Валидация обязательных полей
  * - Применение конфигурации
- * - Формирование config_response
+ * - Формирование ответа на изменения конфига и публикация config_report
  */
 
 #ifndef NODE_CONFIG_HANDLER_H
@@ -77,7 +77,7 @@ esp_err_t node_config_handler_apply_with_result(
 );
 
 /**
- * @brief Публикация ответа на конфиг
+ * @brief Публикация результата применения конфига
  * 
  * @param status Статус: "ACK" или "ERROR"
  * @param error_msg Сообщение об ошибке (если status == "ERROR")
@@ -93,7 +93,7 @@ esp_err_t node_config_handler_publish_response(
 );
 
 /**
- * @brief Callback для формирования списка каналов в config_response.
+ * @brief Callback для формирования списка каналов в ответе на конфиг.
  *
  * Владелец callback должен вернуть cJSON массив. node_config_handler берет
  * владение объектом и освободит его после публикации.
@@ -101,7 +101,7 @@ esp_err_t node_config_handler_publish_response(
 typedef cJSON *(*node_config_channels_callback_t)(void *user_ctx);
 
 /**
- * @brief Регистрация callback для формирования channels в config_response.
+ * @brief Регистрация callback для формирования channels в ответе на конфиг.
  *
  * Если callback не задан, handler попытается взять channels из сохраненного NodeConfig.
  *

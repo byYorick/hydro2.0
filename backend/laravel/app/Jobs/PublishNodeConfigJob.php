@@ -46,6 +46,12 @@ class PublishNodeConfigJob implements ShouldQueue
      */
     public function handle(NodeConfigService $configService): void
     {
+        Log::info('PublishNodeConfigJob: Config publishing disabled, skipping', [
+            'node_id' => $this->nodeId,
+            'dedupe_key' => $this->dedupeKey,
+        ]);
+        return;
+
         // Быстрая проверка через Redis (для производительности)
         $lockKey = "lock:{$this->dedupeKey}";
         $lock = Cache::lock($lockKey, 60); // Блокировка на 60 секунд

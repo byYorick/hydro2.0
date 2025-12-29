@@ -111,6 +111,7 @@ static esp_err_t climate_node_init_channel_callback(
     // Примечание: relay_driver и pwm_driver инициализируются через init_from_config()
     // после применения всех каналов, поэтому здесь только логируем
     if (strcasecmp(actuator_type, "RELAY") == 0 ||
+        strcasecmp(actuator_type, "VALVE") == 0 ||
         strcasecmp(actuator_type, "PWM") == 0 ||
         strcasecmp(actuator_type, "FAN") == 0 ||
         strcasecmp(actuator_type, "HEATER") == 0 ||

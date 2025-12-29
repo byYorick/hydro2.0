@@ -90,16 +90,13 @@
             <div class="text-sm font-semibold">Channels</div>
             <div class="text-xs text-[color:var(--text-dim)]">
               <span v-if="configLoading">Обновляем конфиг...</span>
-              <span v-else>Текущий конфиг ноды</span>
+              <span v-else>Текущий конфиг ноды (read-only)</span>
               <span v-if="configError" class="text-[color:var(--accent-amber)] ml-2">{{ configError }}</span>
             </div>
           </div>
           <div class="flex items-center gap-2">
             <Button size="sm" variant="outline" :disabled="configLoading" @click="loadNodeConfig">
               {{ configLoading ? 'Обновление...' : 'Обновить' }}
-            </Button>
-            <Button size="sm" @click="showConfigWizard = true">
-              Редактировать конфиг
             </Button>
           </div>
         </div>
@@ -112,20 +109,13 @@
       </Card>
       <Card>
         <div class="flex items-center justify-between mb-2">
-          <div class="text-sm font-semibold">NodeConfig</div>
-          <div class="text-[11px] text-[color:var(--text-dim)]" v-if="configLoading">Загрузка...</div>
+        <div class="text-sm font-semibold">NodeConfig</div>
+        <div class="text-[11px] text-[color:var(--text-dim)]" v-if="configLoading">Загрузка...</div>
         </div>
+        <div class="text-[11px] text-[color:var(--text-dim)] mb-2">Конфиг присылается нодой через config_report и хранится на сервере.</div>
         <pre class="text-xs text-[color:var(--text-muted)] overflow-auto">{{ nodeConfig }}</pre>
       </Card>
     </div>
-
-    <RelayConfigWizard
-      :show="showConfigWizard"
-      :node-id="device.id"
-      :initial-channels="wizardInitialChannels"
-      @close="showConfigWizard = false"
-      @published="onConfigPublished"
-    />
 
     <ConfirmModal
       :open="detachModalOpen"
@@ -150,7 +140,6 @@ import Button from '@/Components/Button.vue'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
 import NodeLifecycleBadge from '@/Components/NodeLifecycleBadge.vue'
 import DeviceChannelsTable from '@/Pages/Devices/DeviceChannelsTable.vue'
-import RelayConfigWizard from '@/Pages/Devices/RelayConfigWizard.vue'
 import MultiSeriesTelemetryChart from '@/Components/MultiSeriesTelemetryChart.vue'
 import { logger } from '@/utils/logger'
 import { useHistory } from '@/composables/useHistory'
@@ -174,7 +163,6 @@ const testingChannels = ref<Set<string>>(new Set())
 const nodeConfigData = ref<any | null>(null)
 const configLoading = ref(false)
 const configError = ref('')
-const showConfigWizard = ref(false)
 const detaching = ref(false)
 const detachModalOpen = ref(false)
 const { showToast } = useToast()
@@ -417,25 +405,6 @@ const nodeConfig = computed(() => {
   return JSON.stringify(fallback, null, 2)
 })
 
-const wizardInitialChannels = computed(() => {
-  if (nodeConfigData.value?.channels) {
-    return nodeConfigData.value.channels
-  }
-
-  if (channels.value.length > 0) {
-    return channels.value.map(ch => ({
-      name: ch.channel,
-      channel: ch.channel,
-      type: ch.type,
-      metric: ch.metric,
-      unit: ch.unit,
-      config: ch.config,
-    }))
-  }
-
-  return []
-})
-
 const loadNodeConfig = async (): Promise<void> => {
   if (!device.value.id) return
 
@@ -445,18 +414,14 @@ const loadNodeConfig = async (): Promise<void> => {
     const response = await api.get<{ status: string; data?: Record<string, unknown> }>(
       `/nodes/${device.value.id}/config`
     )
-    nodeConfigData.value = response.data?.data || null
+    const payload = response.data?.data
+    nodeConfigData.value = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : null
   } catch (error) {
     configError.value = 'Не удалось загрузить конфиг'
     logger.error('[Devices/Show] Failed to load node config', error)
   } finally {
     configLoading.value = false
   }
-}
-
-const onConfigPublished = async (): Promise<void> => {
-  await loadNodeConfig()
-  showConfigWizard.value = false
 }
 
 const onRestart = async (): Promise<void> => {

@@ -372,6 +372,24 @@ esp_err_t node_utils_publish_node_hello(
     return ESP_OK;
 }
 
+esp_err_t node_utils_publish_config_report(void) {
+    static char config_json[CONFIG_STORAGE_MAX_JSON_SIZE];
+
+    esp_err_t err = config_storage_get_json(config_json, sizeof(config_json));
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to load NodeConfig for config_report: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    ESP_LOGI(TAG, "Publishing config_report (%zu bytes)", strlen(config_json));
+    err = mqtt_manager_publish_config_report(config_json);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to publish config_report: %s", esp_err_to_name(err));
+    }
+
+    return err;
+}
+
 /**
  * @brief Запрос времени у сервера через MQTT
  * 

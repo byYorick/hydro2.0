@@ -68,8 +68,8 @@ mqtt_client_publish_heartbeat(json_data);
 // Ответ на команду
 mqtt_client_publish_command_response("pump_acid", json_data);
 
-// Ответ на конфигурацию
-mqtt_client_publish_config_response(json_data);
+// Отчет о конфигурации
+mqtt_client_publish_config_report(json_data);
 ```
 
 ## Формат топиков
@@ -83,7 +83,7 @@ mqtt_client_publish_config_response(json_data);
 - LWT: `hydro/{gh}/{zone}/{node}/lwt`
 - Heartbeat: `hydro/{gh}/{zone}/{node}/heartbeat`
 - Command Response: `hydro/{gh}/{zone}/{node}/{channel}/command_response`
-- Config Response: `hydro/{gh}/{zone}/{node}/config_response`
+- Config Report: `hydro/{gh}/{zone}/{node}/config_report`
 
 Где:
 - `{gh}` — UID теплицы (например `gh-1`)
@@ -187,4 +187,3 @@ mqtt_client_publish_config_response(json_data);
 - Спецификация MQTT: `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
 - Стандарты кодирования: `doc_ai/02_HARDWARE_FIRMWARE/ESP32_C_CODING_STANDARDS.md`
 - Спецификация NodeConfig: `firmware/NODE_CONFIG_SPEC.md`
-

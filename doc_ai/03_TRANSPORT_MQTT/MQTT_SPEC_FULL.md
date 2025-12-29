@@ -18,9 +18,10 @@ MQTT используется как **единая шина данных** ме
 - Узлы используют только:
  - Telemetry → НАВЕРХ
  - Status/LWT → НАВЕРХ
- - Config/Command → ВНИЗ
+ - Config_report → НАВЕРХ
+ - Command → ВНИЗ
 - Backend слушает всё.
-- Узлы подписываются только на свои config/command.
+- Узлы подписываются только на свои command (config — опционально, legacy).
 
 ---
 
@@ -30,6 +31,11 @@ MQTT используется как **единая шина данных** ме
 
 ```
 hydro/{gh}/{zone}/{node}/{channel}/{type}
+```
+
+Для системных сообщений без канала используется сокращённый формат:
+```
+hydro/{gh}/{zone}/{node}/{type}
 ```
 
 Где:
@@ -43,8 +49,8 @@ hydro/{gh}/{zone}/{node}/{channel}/{type}
 - **telemetry**
 - **command**
 - **command_response**
-- **config**
-- **config_response**
+- **config_report**
+- **config** (legacy)
 - **status**
 - **lwt**
 
@@ -123,7 +129,7 @@ hydro/{gh}/{zone}/{node}/status
 **Требования:**
 - QoS = 1
 - Retain = true
-- Публикация выполняется **сразу после** успешного подключения, до подписки на config/command топики
+- Публикация выполняется **сразу после** успешного подключения, до подписки на command топики
 - Поле `ts` содержит Unix timestamp в секундах (время публикации)
 - Backend использует этот статус для обновления `nodes.status` и `nodes.last_seen_at`
 
@@ -131,8 +137,8 @@ hydro/{gh}/{zone}/{node}/status
 1. Установка LWT (Last Will and Testament) — выполняется при инициализации MQTT клиента
 2. Подключение к брокеру
 3. **Публикация status с "ONLINE"** ← ОБЯЗАТЕЛЬНО
-4. Подписка на `hydro/{gh}/{zone}/{node}/config`
-5. Подписка на `hydro/{gh}/{zone}/{node}/+/command` (wildcard для всех каналов)
+4. Подписка на `hydro/{gh}/{zone}/{node}/+/command` (wildcard для всех каналов)
+5. (Опционально) Подписка на `hydro/{gh}/{zone}/{node}/config` для legacy/сервисного сценария
 6. Вызов connection callback (если зарегистрирован)
 
 **Статус реализации:** ✅ **РЕАЛИЗОВАНО** (mqtt_manager.c, строки 370-374)
@@ -151,11 +157,11 @@ payload: "offline"
 
 ---
 
-# 5. NodeConfig (backend → узлы)
+# 5. NodeConfig (узлы → backend)
 
 ## 5.1. Топик
 ```
-hydro/{gh}/{zone}/{node}/config
+hydro/{gh}/{zone}/{node}/config_report
 ```
 
 ## 5.2. Пример полного NodeConfig:
@@ -196,51 +202,17 @@ hydro/{gh}/{zone}/{node}/config
 - QoS = 1
 - Retain = false
 - Узел сохраняет конфиг в NVS
-- Узел отправляет config_response
+- Узел отправляет `config_report` при подключении
 
 ---
 
-# 6. Config Response (узлы → backend)
+# 6. Обработка config_report на backend
 
-## 6.1. Топик
-```
-hydro/{gh}/{zone}/{node}/config_response
-```
+Backend подписывается на `hydro/+/+/+/config_report` через сервис `history-logger`:
 
-## 6.2. Пример JSON
-
-При успешной установке конфига:
-```json
-{
- "status": "OK",
- "node_id": "nd-ph-1",
- "applied": true,
- "timestamp": 1710002222
-}
-```
-
-Если ошибка:
-```json
-{
- "status": "ERROR",
- "error": "Invalid channel ph_sensor",
- "timestamp": 1710002223
-}
-```
-
-## 6.3. Обработка на backend
-
-Backend подписывается на топик `hydro/+/+/+/config_response` через сервис `history-logger` и обрабатывает сообщения:
-
-- **При `status: "OK"`:**
-  - Если нода в состоянии `REGISTERED_BACKEND` и имеет `zone_id`, backend переводит ноду в `ASSIGNED_TO_ZONE` через Laravel API `/api/nodes/{node}/lifecycle/transition`
-  - Это гарантирует, что нода считается привязанной к зоне только после успешной установки конфига
-- **При `status: "ERROR"`:**
-  - Backend логирует ошибку
-  - Нода остается в состоянии `REGISTERED_BACKEND`
-  - Нода не считается привязанной к зоне
-
-**Важно:** Переход в `ASSIGNED_TO_ZONE` происходит только после получения успешного `config_response` от ноды. Это обеспечивает надежность привязки и гарантирует, что нода получила и применила конфиг перед началом работы.
+- сохраняет NodeConfig в `nodes.config`
+- синхронизирует `node_channels`
+- переводит ноду в `ASSIGNED_TO_ZONE`, если она в `REGISTERED_BACKEND` и имеет `zone_id`/`pending_zone_id`
 
 ---
 
@@ -510,7 +482,7 @@ hydro/{gh}/{zone}/{node}/node_hello
 **Requirements:**
 - QoS = 1
 - Retain = false
-- Backend обрабатывает и создаёт/обновляет `DeviceNode` с `logical_node_id` (uid). Поля `greenhouse_token` и `zone_id` из `provisioning_meta` игнорируются; привязка теплицы/зоны выполняется только вручную через UI/Android, после чего публикуется `NodeConfig`.
+- Backend обрабатывает и создаёт/обновляет `DeviceNode` с `logical_node_id` (uid). Поля `greenhouse_token` и `zone_id` из `provisioning_meta` игнорируются; привязка теплицы/зоны выполняется только вручную через UI/Android, после чего нода отправляет `config_report`.
 
 **Статус реализации:** ✅ **РЕАЛИЗОВАНО** (обработчик `handle_node_hello` в history-logger, интеграция с Laravel API; автопривязка по token отключена)
 
@@ -602,8 +574,7 @@ hydro/{node}/debug
 | telemetry | 1 | false |
 | command | 1 | false |
 | command_response | 1 | false |
-| config | 1 | false |
-| config_response | 1 | false |
+| config_report | 1 | false |
 | status | 1 | true |
 | lwt | 1 | true |
 | node_hello | 1 | false |
@@ -645,16 +616,16 @@ node → mqtt → listener → router → handler → TelemetryService
 controller → CommandService → NodeCoordinator → mqtt → node
 ```
 
-## Config → Node
+## Config → Backend
 ```
-backend → NodeConfigService → mqtt-bridge → mqtt → node → config_response
+node → mqtt → history-logger → Laravel API → nodes.config + node_channels
 ```
 
 **Автоматическая синхронизация:**
-- При изменении узла или каналов автоматически генерируется и публикуется новый NodeConfig через Event/Listener систему
-- Публикация выполняется через `mqtt-bridge` сервис
+- Нода отправляет `config_report` при подключении (или после обновления прошивки)
+- Сервер сохраняет конфиг и синхронизирует каналы
 
-**Статус реализации:** ✅ **РЕАЛИЗОВАНО** (NodeConfigService, автоматическая синхронизация через Events)
+**Статус реализации:** ✅ **РЕАЛИЗОВАНО** (history-logger config_report handler)
 
 ## Status → Backend
 ```
@@ -678,8 +649,10 @@ node → heartbeat → history-logger → nodes table (uptime, free_heap, rssi)
 ## 13.1. Подписки (обязательные)
 
 Узел **ОБЯЗАН** подписаться на:
-- `hydro/{gh}/{zone}/{node}/config` — для получения конфигурации
 - `hydro/{gh}/{zone}/{node}/+/command` — для получения команд по всем каналам (wildcard)
+
+Опционально (legacy/сервисный сценарий):
+- `hydro/{gh}/{zone}/{node}/config` — получение конфигурации с сервера, если она публикуется вручную
 
 ## 13.2. Публикации (обязательные)
 
@@ -694,7 +667,7 @@ node → heartbeat → history-logger → nodes table (uptime, free_heap, rssi)
 
 ### По запросу:
 - **command_response** (`hydro/{gh}/{zone}/{node}/{channel}/command_response`) — на каждую команду
-- **config_response** (`hydro/{gh}/{zone}/{node}/config_response`) — при получении config
+- **config_report** (`hydro/{gh}/{zone}/{node}/config_report`) — при подключении/инициализации (отправка текущего NodeConfig)
 
 ### При регистрации:
 - **node_hello** (`hydro/node_hello` или `hydro/{gh}/{zone}/{node}/node_hello`) — при первой регистрации
@@ -705,7 +678,7 @@ node → heartbeat → history-logger → nodes table (uptime, free_heap, rssi)
 ## 13.3. Общие требования
 
 - JSON строго формализован согласно спецификации
-- Ошибки всегда возвращаются через command_response или config_response
+- Ошибки команд возвращаются через command_response
 - Все публикации должны соответствовать форматам из разделов 3-9
 - QoS и Retain должны соответствовать таблице из раздела 10
 
@@ -717,7 +690,7 @@ node → heartbeat → history-logger → nodes table (uptime, free_heap, rssi)
 - QoS = 1
 - хранение команд
 - таймаут команд (если нет ACK)
-- NodeConfig пересылать при изменениях (✅ реализовано через автоматическую синхронизацию)
+- хранить NodeConfig из `config_report` и использовать его для команд/телеметрии
 - обработка node_hello для регистрации узлов (✅ реализовано в history-logger)
 - обработка heartbeat для мониторинга узлов (✅ реализовано в history-logger)
 - алерты при offline / telemetry out of range

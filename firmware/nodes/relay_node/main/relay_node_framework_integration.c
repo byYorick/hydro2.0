@@ -18,6 +18,7 @@
 #include "mqtt_manager.h"
 #include "config_storage.h"
 #include "esp_log.h"
+#include <string.h>
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -245,6 +246,13 @@ static void relay_node_cancel_auto_off(const char *channel, bool clear_cmd_id) {
     }
 }
 
+static bool relay_node_is_valve_channel(const char *channel_name) {
+    if (channel_name == NULL) {
+        return false;
+    }
+    return strncmp(channel_name, "valve", 5) == 0;
+}
+
 static cJSON *relay_node_build_channels_from_hw_map(void) {
     cJSON *channels = cJSON_CreateArray();
     if (!channels) {
@@ -266,10 +274,17 @@ static cJSON *relay_node_build_channels_from_hw_map(void) {
         cJSON_AddStringToObject(entry, "name", hw->channel_name);
         cJSON_AddStringToObject(entry, "channel", hw->channel_name);
         cJSON_AddStringToObject(entry, "type", "ACTUATOR");
-        cJSON_AddStringToObject(entry, "actuator_type", "RELAY");
-        cJSON_AddStringToObject(entry, "metric", "RELAY");
+        const char *actuator_type = relay_node_is_valve_channel(hw->channel_name) ? "VALVE" : "RELAY";
+        cJSON_AddStringToObject(entry, "actuator_type", actuator_type);
+        cJSON_AddStringToObject(entry, "metric", actuator_type);
         cJSON_AddBoolToObject(entry, "active_high", hw->active_high);
         cJSON_AddStringToObject(entry, "relay_type", hw->relay_type == RELAY_TYPE_NC ? "NC" : "NO");
+
+        cJSON *safe_limits = cJSON_CreateObject();
+        if (safe_limits) {
+            cJSON_AddStringToObject(safe_limits, "fail_safe_mode", hw->relay_type == RELAY_TYPE_NC ? "NC" : "NO");
+            cJSON_AddItemToObject(entry, "safe_limits", safe_limits);
+        }
         cJSON_AddItemToArray(channels, entry);
     }
 
@@ -393,7 +408,7 @@ static esp_err_t relay_node_init_channel_callback(
         cJSON *actuator_type = cJSON_GetObjectItem(channel_config, "actuator_type");
         if (actuator_type && cJSON_IsString(actuator_type)) {
             const char *act_type = actuator_type->valuestring;
-            if (strcmp(act_type, "RELAY") == 0) {
+            if (strcmp(act_type, "RELAY") == 0 || strcmp(act_type, "VALVE") == 0) {
                 // GPIO теперь задаётся только в прошивке; наличие или отсутствие в конфиге не критично
                 ESP_LOGI(TAG, "Relay channel %s acknowledged (GPIO resolved in firmware)", channel_name);
                 return ESP_OK;

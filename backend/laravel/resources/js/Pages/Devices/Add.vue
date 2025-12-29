@@ -346,16 +346,16 @@ async function assignNode(node) {
       
       if (updatedNode?.lifecycle_state === 'ASSIGNED_TO_ZONE') {
         // Полностью завершено (редкий случай - обычно это происходит асинхронно)
-        showToast(`Нода "${node.uid}" успешно привязана к зоне и получила конфиг`, 'success', TOAST_TIMEOUT.NORMAL)
+        showToast(`Нода "${node.uid}" успешно привязана к зоне и отправила конфиг`, 'success', TOAST_TIMEOUT.NORMAL)
         
         // Удалить ноду из списка новых (так как она теперь привязана)
         newNodes.value = newNodes.value.filter(n => n.id !== node.id)
         delete assignmentForms[node.id]
         delete pendingAssignments[node.id]
       } else if (updatedNode?.pending_zone_id && !updatedNode?.zone_id) {
-        // Конфиг публикуется, ожидаем подтверждения от ноды (через history-logger)
+        // Ожидаем config_report от ноды (через history-logger)
         showToast(
-          `Нода "${node.uid}" привязывается к зоне. Конфиг публикуется, ожидайте подтверждения (~2-5 сек)...`,
+          `Нода "${node.uid}" привязывается к зоне. Ждём config_report от ноды (~2-5 сек)...`,
           'info',
           5000
         )

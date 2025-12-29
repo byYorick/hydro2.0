@@ -304,7 +304,7 @@ scheduler/
 **Направление:** Двустороннее
 
 **Подписки:**
-- `history-logger`: `hydro/+/+/+/telemetry`, `hydro/+/+/+/heartbeat`, `hydro/node_hello`, `hydro/+/+/+/node_hello`, `hydro/+/+/+/config_response`, `hydro/+/+/+/+/command_response`
+- `history-logger`: `hydro/+/+/+/telemetry`, `hydro/+/+/+/heartbeat`, `hydro/node_hello`, `hydro/+/+/+/node_hello`, `hydro/+/+/+/config_report`, `hydro/+/+/+/+/command_response`
 - `automation-engine`: может подписываться на события (опционально)
 
 **Публикации:**
@@ -577,4 +577,3 @@ pytest --cov=backend/services/history-logger backend/services/history-logger/
 - Backend архитектура: `doc_ai/04_BACKEND_CORE/BACKEND_ARCH_FULL.md`
 - MQTT спецификация: `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
 - Общий README: `backend/services/README.md`
-

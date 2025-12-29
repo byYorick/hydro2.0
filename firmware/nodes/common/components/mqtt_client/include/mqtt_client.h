@@ -36,7 +36,7 @@ typedef mqtt_connection_callback_t mqtt_client_connection_callback_t;
 #define mqtt_client_publish_status mqtt_manager_publish_status
 #define mqtt_client_publish_heartbeat mqtt_manager_publish_heartbeat
 #define mqtt_client_publish_command_response mqtt_manager_publish_command_response
-#define mqtt_client_publish_config_response mqtt_manager_publish_config_response
+#define mqtt_client_publish_config_report mqtt_manager_publish_config_report
 #define mqtt_client_is_connected mqtt_manager_is_connected
 #define mqtt_client_reconnect mqtt_manager_reconnect
 
@@ -45,4 +45,3 @@ typedef mqtt_connection_callback_t mqtt_client_connection_callback_t;
 #endif
 
 #endif // MQTT_CLIENT_H
-

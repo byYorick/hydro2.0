@@ -61,7 +61,7 @@
 | GET | /api/nodes | auth:sanctum | Список узлов |
 | POST | /api/nodes | auth:sanctum (operator/admin) | Зарегистрировать узел |
 | GET | /api/nodes/{id} | auth:sanctum | Детали узла |
-| PATCH | /api/nodes/{id} | auth:sanctum (operator/admin) | Обновить конфигурацию |
+| PATCH | /api/nodes/{id} | auth:sanctum (operator/admin) | Обновить метаданные узла (name, zone_id) |
 | DELETE| /api/nodes/{id} | auth:sanctum (admin) | Удалить узел |
 
 Доп. действия:
@@ -69,6 +69,7 @@
 | Метод | Путь | Auth | Описание |
 |-------|------------------------------------|------|--------------------------------------------------|
 | GET | /api/nodes/{id}/telemetry/last | auth:sanctum | Последняя телеметрия по узлу |
+| GET | /api/nodes/{id}/config | auth:sanctum | Получить сохраненный NodeConfig (read-only) |
 | POST | /api/nodes/{id}/commands | auth:sanctum (operator/admin) | Отправка низкоуровневых команд |
 
 ---

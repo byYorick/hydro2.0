@@ -128,6 +128,25 @@ def heartbeat(gh: str, zone: str, node: str) -> str:
     return f"hydro/{gh}/{zone}/{node}/heartbeat"
 
 
+def config_report(gh: str, zone: str, node: str) -> str:
+    """
+    Генерирует топик для config_report.
+    
+    Args:
+        gh: UID теплицы (greenhouses.uid)
+        zone: UID зоны (zones.uid)
+        node: UID узла (nodes.uid)
+    
+    Returns:
+        Топик в формате: hydro/{gh}/{zone}/{node}/config_report
+    
+    Example:
+        >>> config_report("gh-1", "zn-1", "nd-ph-1")
+        'hydro/gh-1/zn-1/nd-ph-1/config_report'
+    """
+    return f"hydro/{gh}/{zone}/{node}/config_report"
+
+
 def temp_command(node_uid_or_hw: str, ch: str) -> str:
     """
     Генерирует временный топик для команд (до привязки к зоне).
@@ -184,6 +203,19 @@ def temp_status(node_uid_or_hw: str) -> str:
         'hydro/gh-temp/zn-temp/esp32-ABCD1234/status'
     """
     return f"hydro/gh-temp/zn-temp/{node_uid_or_hw}/status"
+
+
+def temp_config_report(node_uid: str) -> str:
+    """
+    Генерирует временный топик для config_report (до привязки к зоне).
+    
+    Args:
+        node_uid: UID узла (nodes.uid)
+    
+    Returns:
+        Топик в формате: hydro/gh-temp/zn-temp/{node_uid}/config_report
+    """
+    return f"hydro/gh-temp/zn-temp/{node_uid}/config_report"
 
 
 # Дополнительные функции для полноты (не указаны в требованиях, но могут быть полезны)

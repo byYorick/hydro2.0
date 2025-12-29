@@ -40,6 +40,7 @@ python -m node_sim.cli multi --config multi.yaml
 
 - `mqtt`: Настройки подключения к MQTT брокеру
 - `node`: Идентификаторы ноды (gh_uid, zone_uid, node_uid, hardware_id)
+- `node.config_report_on_start`: Публикация config_report при старте
 - `telemetry`: Интервалы публикации телеметрии и heartbeat
 - `failure_mode`: Режимы отказов для тестирования (опционально)
 
@@ -53,6 +54,7 @@ python -m node_sim.cli multi --config multi.yaml
 - ✅ Публикация телеметрии для всех каналов
 - ✅ Публикация тока INA209 в телеметрии
 - ✅ Публикация heartbeat и online status (в обоих режимах: preconfig/configured)
+- ✅ Публикация config_report при старте (если включено)
 - ✅ Обработка команд с дедупликацией по cmd_id
 - ✅ Отправка command_response (ACCEPTED быстро, DONE/FAILED после выполнения)
 - ✅ Мониторинг доставленных команд (cmd_id, тайминги, статистика)
@@ -163,4 +165,3 @@ python -m node_sim.cli run --config sim.example.yaml --log-level DEBUG
 - MQTT протокол системы Hydro 2.0
 - Форматы топиков согласно MQTT_SPEC_FULL.md
 - Форматы команд и ответов согласно единому контракту
-

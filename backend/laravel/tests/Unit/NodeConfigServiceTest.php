@@ -3,7 +3,6 @@
 namespace Tests\Unit;
 
 use App\Models\DeviceNode;
-use App\Models\NodeChannel;
 use App\Services\NodeConfigService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -12,35 +11,46 @@ class NodeConfigServiceTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_generate_config_does_not_include_channels(): void
+    public function test_get_stored_config_sanitizes_credentials_and_gpio(): void
     {
-        $zone = \App\Models\Zone::factory()->create();
         $node = DeviceNode::factory()->create([
-            'zone_id' => $zone->id,
-            'type' => 'relay',
-        ]);
-
-        NodeChannel::create([
-            'node_id' => $node->id,
-            'channel' => 'relay1',
-            'type' => 'ACTUATOR',
-            'metric' => 'RELAY',
-            'unit' => null,
             'config' => [
-                'gpio' => 26,
-                'pin' => 99,
-                'safe_limits' => [
-                    'max_duration_ms' => 1000,
-                    'min_off_ms' => 2000,
+                'node_id' => 'nd-ph-1',
+                'version' => 3,
+                'type' => 'ph_node',
+                'wifi' => [
+                    'ssid' => 'HydroFarm',
+                    'pass' => 'super-secret',
+                ],
+                'mqtt' => [
+                    'host' => 'mqtt',
+                    'port' => 1883,
+                    'password' => 'super-secret',
+                ],
+                'channels' => [
+                    [
+                        'name' => 'pump_acid',
+                        'type' => 'ACTUATOR',
+                        'gpio' => 26,
+                        'safe_limits' => [
+                            'max_duration_ms' => 1000,
+                            'min_off_ms' => 2000,
+                            'fail_safe_mode' => 'NC',
+                        ],
+                    ],
                 ],
             ],
         ]);
 
         /** @var NodeConfigService $service */
         $service = $this->app->make(NodeConfigService::class);
-        $config = $service->generateNodeConfig($node, null, false);
+        $config = $service->getStoredConfig($node, false);
 
+        $this->assertSame(['configured' => true], $config['wifi']);
+        $this->assertSame(['configured' => true], $config['mqtt']);
         $this->assertArrayHasKey('channels', $config);
-        $this->assertSame([], $config['channels'], 'Сервер не должен отправлять каналы на ноду');
+        $this->assertSame('pump_acid', $config['channels'][0]['name']);
+        $this->assertArrayNotHasKey('gpio', $config['channels'][0]);
+        $this->assertSame('NC', $config['channels'][0]['safe_limits']['fail_safe_mode']);
     }
 }

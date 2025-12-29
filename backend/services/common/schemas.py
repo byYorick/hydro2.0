@@ -1,5 +1,5 @@
 from typing import Any, Dict, Optional, Literal
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from datetime import datetime
 import time
 
@@ -184,6 +184,8 @@ class LegacyCommandResponse(BaseModel):
 
 class NodeConfigModel(BaseModel):
     """Модель для конфигурации узла."""
+    model_config = ConfigDict(extra="allow")
+
     node_id: Optional[str] = Field(None, max_length=128, description="Node UID")
     version: Optional[int] = Field(None, ge=1, description="Config version")
     type: Optional[str] = Field(None, max_length=32, description="Node type")
@@ -198,9 +200,6 @@ class NodeConfigModel(BaseModel):
     calibration: Optional[Dict[str, Any]] = None
     thresholds: Optional[Dict[str, float]] = None
     schedule: Optional[Dict[str, Any]] = None
-    
-    class Config:
-        extra = "allow"  # Разрешаем дополнительные поля для обратной совместимости
     
     @field_validator('node_type', 'type')
     @classmethod

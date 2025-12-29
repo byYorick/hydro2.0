@@ -2,9 +2,7 @@
 
 namespace App\Providers;
 
-use App\Events\NodeConfigUpdated;
 use App\Events\ZoneUpdated;
-use App\Listeners\PublishNodeConfigOnUpdate;
 use App\Listeners\PublishZoneConfigUpdate;
 use App\Models\Command;
 use App\Models\ZoneEvent;
@@ -54,13 +52,6 @@ class AppServiceProvider extends ServiceProvider
         Event::listen(
             ZoneUpdated::class,
             PublishZoneConfigUpdate::class
-        );
-        
-        // Регистрируем listener с afterCommit, чтобы он выполнялся после коммита транзакции
-        // Это предотвращает блокировку БД при зависании history-logger
-        Event::listen(
-            NodeConfigUpdated::class,
-            PublishNodeConfigOnUpdate::class
         );
         
         // Регистрация Observer для Command

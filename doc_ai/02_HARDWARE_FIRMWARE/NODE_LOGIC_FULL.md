@@ -97,7 +97,7 @@ SAFE_MODE → ограниченный режим
  - telemetry
  - status
  - command_response
- - config_response
+ - config_report
  - heartbeat
 - авто‑reconnect
 
@@ -117,15 +117,12 @@ SAFE_MODE → ограниченный режим
 3. Проверить валидность каналов.
 4. Сохранить в NVS.
 5. Перезапустить sensor loops.
-6. Ответить config_response.
+6. Опубликовать config_report.
 
 В случае ошибки:
-```json
-{
- "status": "ERROR",
- "error": "Invalid channel name"
-}
-```
+- логировать причину,
+- оставить текущую конфигурацию без изменений,
+- не публиковать обновление.
 
 ---
 
@@ -359,8 +356,8 @@ on_command_received for pump_channel:
 
 При повреждении конфигурации:
 - fallback в SAFE MODE
-- запросить config с backend
-- отправить config_response(ERROR)
+- перейти на встроенный NodeConfig или provisioning
+- после восстановления опубликовать config_report
 
 ---
 
@@ -439,18 +436,15 @@ hydro/{node}/debug
 Цепочка:
 
 ```
-backend → build NodeConfig
-backend → publish config
+firmware → build NodeConfig
 node → validate config
 node → save in NVS
 node → restart sensor loops
-node → config_response(OK)
+node → publish config_report
+backend → store NodeConfig + sync channels
 ```
 
-Если ошибка:
-```
-node → config_response(ERROR)
-```
+Если ошибка: логировать причину и оставить текущую конфигурацию.
 
 ---
 

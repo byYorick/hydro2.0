@@ -2,7 +2,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch, AsyncMock
-from main import app
+from app import app
 
 
 @pytest.fixture
@@ -11,16 +11,26 @@ def client():
     return TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+def bypass_ingest_auth():
+    """Disable auth for ingest endpoint tests."""
+    with patch("ingest_routes._auth_ingest") as mock_auth:
+        mock_auth.return_value = None
+        yield mock_auth
+
+
 def test_health_endpoint(client):
     """Test health check endpoint."""
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    data = response.json()
+    assert data["status"] in {"ok", "degraded"}
+    assert "components" in data
 
 
 def test_ingest_telemetry_endpoint(client):
     """Test telemetry ingestion endpoint."""
-    with patch("main.process_telemetry_batch") as mock_process:
+    with patch("ingest_routes.process_telemetry_batch") as mock_process:
         mock_process.return_value = None  # async function
         
         payload = {
@@ -48,7 +58,7 @@ def test_ingest_telemetry_endpoint(client):
 
 def test_ingest_telemetry_endpoint_multiple_samples(client):
     """Test telemetry ingestion with multiple samples."""
-    with patch("main.process_telemetry_batch") as mock_process:
+    with patch("ingest_routes.process_telemetry_batch") as mock_process:
         payload = {
             "samples": [
                 {
@@ -76,7 +86,7 @@ def test_ingest_telemetry_endpoint_multiple_samples(client):
 
 def test_ingest_telemetry_endpoint_with_ts_string(client):
     """Test telemetry ingestion with timestamp as ISO string."""
-    with patch("main.process_telemetry_batch") as mock_process:
+    with patch("ingest_routes.process_telemetry_batch") as mock_process:
         payload = {
             "samples": [
                 {
@@ -96,7 +106,7 @@ def test_ingest_telemetry_endpoint_with_ts_string(client):
 
 def test_ingest_telemetry_endpoint_with_ts_numeric(client):
     """Test telemetry ingestion with ts as numeric (seconds from firmware)."""
-    with patch("main.process_telemetry_batch") as mock_process:
+    with patch("ingest_routes.process_telemetry_batch") as mock_process:
         payload = {
             "samples": [
                 {
@@ -129,7 +139,7 @@ def test_ingest_telemetry_endpoint_invalid_payload(client):
 
 def test_ingest_telemetry_endpoint_with_zone_uid(client):
     """Test telemetry ingestion with zone_uid."""
-    with patch("main.process_telemetry_batch") as mock_process:
+    with patch("ingest_routes.process_telemetry_batch") as mock_process:
         payload = {
             "samples": [
                 {
@@ -150,19 +160,20 @@ def test_ingest_telemetry_endpoint_with_zone_uid(client):
 async def test_process_telemetry_batch_includes_ts_parameter():
     """Test that process_telemetry_batch includes ts parameter in SQL query."""
     from unittest.mock import patch, AsyncMock
-    from main import process_telemetry_batch, TelemetrySampleModel
+    from telemetry_processing import process_telemetry_batch
+    from models import TelemetrySampleModel
     from datetime import datetime
     
     # Мокаем execute для проверки SQL запроса
-    with patch("main.execute", new_callable=AsyncMock) as mock_execute:
+    with patch("telemetry_processing.execute", new_callable=AsyncMock) as mock_execute:
         # Мокаем fetch для получения node_id
-        with patch("main.fetch", new_callable=AsyncMock) as mock_fetch:
+        with patch("telemetry_processing.fetch", new_callable=AsyncMock) as mock_fetch:
             mock_fetch.return_value = [
                 {"id": 1, "uid": "nd-ph-1"}
             ]
             
             # Мокаем upsert_telemetry_last
-            with patch("main.upsert_telemetry_last", new_callable=AsyncMock) as mock_upsert:
+            with patch("telemetry_processing.upsert_telemetry_last", new_callable=AsyncMock) as mock_upsert:
                 # Создаём тестовые образцы
                 samples = [
                     TelemetrySampleModel(
@@ -214,7 +225,7 @@ async def test_process_telemetry_batch_includes_ts_parameter():
 @pytest.mark.asyncio
 async def test_extract_zone_id_from_uid():
     """Test extract_zone_id_from_uid function."""
-    from main import extract_zone_id_from_uid
+    from utils import extract_zone_id_from_uid
     
     # Валидные значения
     assert extract_zone_id_from_uid("zn-1") == 1
@@ -230,7 +241,7 @@ async def test_extract_zone_id_from_uid():
 @pytest.mark.asyncio
 async def test_telemetry_payload_model_validation():
     """Test TelemetryPayloadModel validation."""
-    from main import TelemetryPayloadModel
+    from models import TelemetryPayloadModel
     from pydantic import ValidationError
     
     # Валидный payload
@@ -250,7 +261,8 @@ async def test_telemetry_payload_model_validation():
 @pytest.mark.asyncio
 async def test_process_telemetry_batch_with_zone_id_extraction():
     """Test process_telemetry_batch with zone_id extraction from zone_uid."""
-    from main import process_telemetry_batch, TelemetrySampleModel
+    from telemetry_processing import process_telemetry_batch
+    from models import TelemetrySampleModel
     from unittest.mock import patch, AsyncMock
     from datetime import datetime
     
@@ -264,9 +276,9 @@ async def test_process_telemetry_batch_with_zone_id_extraction():
         )
     ]
     
-    with patch("main.execute", new_callable=AsyncMock) as mock_execute, \
-         patch("main.fetch", new_callable=AsyncMock) as mock_fetch, \
-         patch("main.upsert_telemetry_last", new_callable=AsyncMock):
+    with patch("telemetry_processing.execute", new_callable=AsyncMock) as mock_execute, \
+         patch("telemetry_processing.fetch", new_callable=AsyncMock) as mock_fetch, \
+         patch("telemetry_processing.upsert_telemetry_last", new_callable=AsyncMock):
         mock_fetch.return_value = [{"id": 1, "uid": "nd-ph-1"}]
         
         await process_telemetry_batch(samples)
@@ -278,4 +290,3 @@ async def test_process_telemetry_batch_with_zone_id_extraction():
         call_args = mock_execute.call_args
         params = call_args[0][1:]  # Параметры
         assert params[0] == 1  # zone_id должен быть 1
-

@@ -145,24 +145,19 @@ NodeConfig определяет:
 - безопасные лимиты,
 - параметры Wi‑Fi/MQTT.
 
-Узел не имеет своей логики — всё определяется этим файлом.
+Узел использует этот файл как источник настроек, конфиг хранится в прошивке/NVS.
 
 ## 5.2. Шаги
 
-1. Backend генерирует NodeConfig.
-2. Публикует MQTT config в топик `hydro/{gh}/{zone}/{node}/config`.
-3. Узел принимает config.
-4. Валидирует.
-5. Сохраняет в NVS.
-6. Перезапускает каналы.
-7. Отправляет config_response в топик `hydro/{gh}/{zone}/{node}/config_response`.
-8. **Backend обрабатывает config_response:**
-   - При `status: "OK"`: если нода в состоянии `REGISTERED_BACKEND` и имеет `zone_id`, переводит в `ASSIGNED_TO_ZONE`
-   - При `status: "ERROR"`: логирует ошибку, нода остается в `REGISTERED_BACKEND`
+1. Нода формирует NodeConfig в прошивке/NVS.
+2. Отправляет `config_report` в топик `hydro/{gh}/{zone}/{node}/config_report`.
+3. Backend сохраняет конфиг и синхронизирует `node_channels`.
+4. Нода валидирует и применяет конфиг локально.
+5. **Backend переводит ноду в `ASSIGNED_TO_ZONE`** после получения `config_report`.
 
 ## 5.3. Топик
 ```
-hydro/{gh}/{zone}/{node}/config
+hydro/{gh}/{zone}/{node}/config_report
 ```
 
 ## 5.4. Пример payload
@@ -206,13 +201,13 @@ hydro/{gh}/{zone}/{node}/status
 1. Установка LWT при инициализации MQTT клиента
 2. Подключение к брокеру
 3. **Публикация status с "ONLINE"** ← ОБЯЗАТЕЛЬНО (выполняется сразу после `MQTT_EVENT_CONNECTED`)
-4. Подписка на config и command топики
+4. Подписка на command топики (config — опционально, legacy)
 5. Вызов connection callback (если зарегистрирован)
 
 **Требования:**
 - QoS = 1
 - Retain = true
-- Публикация выполняется **до** подписки на config/command топики
+- Публикация выполняется **до** подписки на command топики
 - Backend обновляет `nodes.status = 'ONLINE'` и `nodes.last_seen_at = NOW()`
 
 **Статус реализации:** ✅ **РЕАЛИЗОВАНО** (mqtt_manager.c, строки 370-374)
@@ -348,11 +343,10 @@ pH_sensor → telemetry
 1. Пользователь жмёт «Next Phase» 
 2. Фронтенд → Backend (REST) 
 3. Backend обновляет модель Zone 
-4. Backend генерирует новый NodeConfig для всех узлов зоны 
-5. MQTT → config 
-6. Узлы применяют config 
-7. Узлы → config_response 
-8. Backend → Events → Фронтенд 
+4. Backend обновляет target-параметры и расчёты 
+5. Backend → Commands → MQTT 
+6. Узлы выполняют команды 
+7. Backend → Events → Фронтенд 
 
 ---
 
@@ -380,7 +374,7 @@ pH_sensor → telemetry
 
 [BACKEND CONTROLLER] → decision → command JSON → MQTT → node → execute → command_response → backend → UI
 
-[BACKEND CONFIG MANAGER] → config JSON → MQTT → node → apply → config_response → backend
+[NODE CONFIG] → config_report JSON → MQTT → backend → DB/Channels
 
 [NODE WIFI] → status/connectivity → status/LWT → MQTT → backend → alert
 

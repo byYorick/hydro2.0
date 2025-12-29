@@ -95,9 +95,16 @@ async def close_http_client():
     global _http_client, _http_semaphore
     
     if _http_client is not None:
-        await _http_client.aclose()
-        _http_client = None
-        logger.info("Closed unified httpx.AsyncClient")
+        try:
+            await _http_client.aclose()
+            logger.info("Closed unified httpx.AsyncClient")
+        except RuntimeError as e:
+            if "Event loop is closed" in str(e):
+                logger.warning("HTTP client close skipped: event loop is closed")
+            else:
+                raise
+        finally:
+            _http_client = None
     
     _http_semaphore = None
 
@@ -230,4 +237,3 @@ async def make_request(
             raise
         finally:
             HTTP_CONCURRENT_REQUESTS.dec()
-

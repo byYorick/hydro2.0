@@ -31,6 +31,7 @@ nodes:
     zone_uid: zn-1
     node_type: ph
     mode: configured
+    config_report_on_start: true
     channels:
       - ph_sensor
       - solution_temp_c
@@ -187,4 +188,3 @@ nodes:
 #    telemetry:
 #      interval_seconds: 2.0  # Более частые обновления
 #      heartbeat_interval_seconds: 15.0
-

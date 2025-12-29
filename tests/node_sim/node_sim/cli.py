@@ -32,6 +32,7 @@ async def run_simulator(config: SimConfig):
         from .commands import CommandHandler
         from .telemetry import TelemetryPublisher
         from .status import StatusPublisher
+        from .config_report import publish_config_report
     except ImportError as e:
         logger.error(f"Failed to import components: {e}")
         logger.error("Make sure all dependencies are installed: pip install -r requirements.txt")
@@ -68,8 +69,18 @@ async def run_simulator(config: SimConfig):
         node_uid=config.node.node_uid,
         hardware_id=config.node.hardware_id,
         node_type=NodeType(config.node.node_type),
-        mode=config.node.mode
+        mode=config.node.mode,
+        sensors=config.node.sensors,
+        actuators=config.node.actuators,
     )
+    
+    # Публикуем config_report один раз при старте (если включено)
+    if config.node.config_report_on_start:
+        publish_config_report(
+            node=node,
+            mqtt=mqtt,
+            telemetry_interval_s=config.telemetry.interval_seconds,
+        )
     
     # Создаем публикатор телеметрии
     telemetry = TelemetryPublisher(
@@ -200,6 +211,8 @@ async def run_scenario(config: SimConfig, scenario_name: str):
         from .model import NodeModel, NodeType
         from .commands import CommandHandler
         from .telemetry import TelemetryPublisher
+        from .status import StatusPublisher
+        from .config_report import publish_config_report
         from .errors import ErrorPublisher, create_error_callback, create_overcurrent_error
         # Создаем MQTT клиент
         mqtt = MqttClient(
@@ -230,18 +243,18 @@ async def run_scenario(config: SimConfig, scenario_name: str):
             node_uid=config.node.node_uid,
             hardware_id=config.node.hardware_id,
             node_type=NodeType(config.node.node_type),
-            mode=config.node.mode
+            mode=config.node.mode,
+            sensors=config.node.sensors,
+            actuators=config.node.actuators,
         )
-        # Переопределяем sensors и actuators из конфига, если указаны
-        if hasattr(config.node, 'sensors') and config.node.sensors:
-            node.sensors = config.node.sensors
-        if hasattr(config.node, 'actuators') and config.node.actuators:
-            node.actuators = config.node.actuators
-        # Переопределяем sensors и actuators из конфига, если указаны
-        if config.node.sensors:
-            node.sensors = config.node.sensors
-        if config.node.actuators:
-            node.actuators = config.node.actuators
+        
+        # Публикуем config_report один раз при старте (если включено)
+        if config.node.config_report_on_start:
+            publish_config_report(
+                node=node,
+                mqtt=mqtt,
+                telemetry_interval_s=config.telemetry.interval_seconds,
+            )
         
         # Создаем публикатор ошибок
         error_publisher = ErrorPublisher(
@@ -253,9 +266,6 @@ async def run_scenario(config: SimConfig, scenario_name: str):
             mode=config.node.mode,
         )
         node.register_error_callback(create_error_callback(error_publisher))
-        
-        # Создаем обработчик команд
-        command_handler = CommandHandler(node, mqtt, event_loop=loop)
         
         # Создаем публикатор телеметрии
         telemetry = TelemetryPublisher(
@@ -279,6 +289,7 @@ async def run_scenario(config: SimConfig, scenario_name: str):
         try:
             await command_handler.start()
             await telemetry.start()
+            await status_publisher.start()
             
             logger.info("Node simulator is running. Press Ctrl+C to stop.")
             logger.info("Waiting 5 seconds before triggering overcurrent scenario...")

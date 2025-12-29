@@ -5,13 +5,19 @@
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from datetime import datetime
-from main import process_telemetry_batch, TelemetrySampleModel, refresh_caches, _zone_cache, _node_cache
+from telemetry_processing import (
+    _node_cache,
+    _zone_cache,
+    process_telemetry_batch,
+    refresh_caches,
+)
+from models import TelemetrySampleModel
 
 
 @pytest.mark.asyncio
 async def test_batch_resolve_zones():
     """Тест batch resolve для зон."""
-    with patch('main.fetch') as mock_fetch:
+    with patch('telemetry_processing.fetch') as mock_fetch:
         mock_fetch.return_value = [
             {'id': 1, 'uid': 'zn-1', 'gh_uid': 'gh-1'},
             {'id': 2, 'uid': 'zn-2', 'gh_uid': 'gh-1'},
@@ -41,7 +47,7 @@ async def test_batch_resolve_zones():
         ]
         
         # Первый вызов должен сделать batch resolve
-        with patch('main.execute') as mock_execute:
+        with patch('telemetry_processing.execute') as mock_execute:
             mock_execute.return_value = None
             await process_telemetry_batch(samples)
         
@@ -52,7 +58,7 @@ async def test_batch_resolve_zones():
 @pytest.mark.asyncio
 async def test_cache_refresh():
     """Тест обновления кеша."""
-    with patch('main.fetch') as mock_fetch:
+    with patch('telemetry_processing.fetch') as mock_fetch:
         mock_fetch.return_value = [
             {'id': 1, 'uid': 'zn-1', 'gh_uid': 'gh-1'},
         ]
@@ -66,8 +72,8 @@ async def test_cache_refresh():
 @pytest.mark.asyncio
 async def test_batch_upsert_telemetry_last():
     """Тест batch upsert для telemetry_last."""
-    with patch('main.fetch') as mock_fetch, \
-         patch('main.execute') as mock_execute:
+    with patch('telemetry_processing.fetch') as mock_fetch, \
+         patch('telemetry_processing.execute') as mock_execute:
         
         mock_fetch.return_value = [
             {'id': 1, 'uid': 'zn-1', 'gh_uid': 'gh-1'},
@@ -90,4 +96,3 @@ async def test_batch_upsert_telemetry_last():
         upsert_calls = [call for call in mock_execute.call_args_list 
                        if 'telemetry_last' in str(call)]
         assert len(upsert_calls) > 0
-

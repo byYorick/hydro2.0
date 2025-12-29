@@ -157,6 +157,16 @@ esp_err_t node_utils_publish_node_hello(
 );
 
 /**
+ * @brief Публикация NodeConfig отчета на сервер
+ *
+ * Отправляет полный NodeConfig, сохраненный в NVS, в топик
+ * hydro/{gh}/{zone}/{node}/config_report.
+ *
+ * @return ESP_OK при успехе
+ */
+esp_err_t node_utils_publish_config_report(void);
+
+/**
  * @brief Запрос времени у сервера через MQTT
  * 
  * Публикует запрос времени в топик hydro/time/request

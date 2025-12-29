@@ -29,7 +29,7 @@ class UpdateNodeRequest extends FormRequest
             'type' => ['nullable', 'string', 'max:64'],
             'fw_version' => ['nullable', 'string', 'max:64'],
             'status' => ['nullable', 'string', 'max:32'],
-            'config' => ['nullable', 'array'],
+            'config' => ['prohibited'],
         ];
     }
 }
