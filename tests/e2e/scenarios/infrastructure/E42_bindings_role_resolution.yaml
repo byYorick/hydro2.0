@@ -21,7 +21,7 @@ actions:
 
   - step: set_zone_and_node
     type: set
-    zone_id: ${zones_response.data.data[0].id}
+    zone_id: ${zones_response.data[0].id}
     node_id: ${nodes_response.data.data[0].id}
 
   # Создаем binding (role → node/channel)

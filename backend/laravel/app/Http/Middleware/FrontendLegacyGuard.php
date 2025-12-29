@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use Closure;
+use App\Models\SystemLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
@@ -55,7 +56,7 @@ class FrontendLegacyGuard
 
         foreach (self::LEGACY_URL_PATTERNS as $pattern) {
             if (str_contains($url, $pattern) || str_contains($path, $pattern)) {
-                Log::warning('FRONT_LEGACY_GUARD: Legacy URL pattern detected', [
+                $this->recordLegacyAccess('warning', 'FRONT_LEGACY_GUARD: Legacy URL pattern detected', [
                     'url' => $url,
                     'path' => $path,
                     'pattern' => $pattern,
@@ -77,7 +78,7 @@ class FrontendLegacyGuard
 
         foreach (self::LEGACY_QUERY_PARAMS as $param) {
             if ($request->has($param)) {
-                Log::error('FRONT_LEGACY_GUARD: Legacy query parameter detected', [
+                $this->recordLegacyAccess('error', 'FRONT_LEGACY_GUARD: Legacy query parameter detected', [
                     'url' => $request->fullUrl(),
                     'param' => $param,
                     'value' => $request->query($param),
@@ -88,6 +89,24 @@ class FrontendLegacyGuard
                     'trace' => $this->getFilteredTrace(),
                 ]);
             }
+        }
+    }
+
+    protected function recordLegacyAccess(string $level, string $message, array $context): void
+    {
+        Log::log($level, $message, $context);
+
+        try {
+            SystemLog::create([
+                'level' => $level,
+                'message' => $message,
+                'context' => array_merge(['service' => 'frontend'], $context),
+                'created_at' => now(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('FRONT_LEGACY_GUARD: Failed to persist system log', [
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 

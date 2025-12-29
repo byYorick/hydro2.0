@@ -532,6 +532,16 @@ Examples:
             else:
                 scenarios = self.discover_scenarios(parsed_args.scenarios or ["smoke"])
 
+            # Filter out empty scenario files to avoid YAML load errors
+            non_empty_scenarios = []
+            for scenario in scenarios:
+                scenario_path = Path(scenario)
+                if scenario_path.is_file() and scenario_path.stat().st_size == 0:
+                    logger.warning(f"Skipping empty scenario file: {scenario}")
+                    continue
+                non_empty_scenarios.append(scenario)
+            scenarios = non_empty_scenarios
+
             # Apply tag filters
             if parsed_args.tags or parsed_args.exclude_tags:
                 scenarios = self.filter_scenarios_by_tags(

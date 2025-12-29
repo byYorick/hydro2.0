@@ -1666,6 +1666,31 @@ class E2ERunner:
             # Просто игнорируем, т.к. в текущей реализации нет явной отписки
             logger.info("websocket_unsubscribe (noop)")
             return
+        if step_type == "websocket_event":
+            event_type = cfg.get("event_type") or cfg.get("event")
+            timeout = float(cfg.get("timeout_seconds", cfg.get("timeout", 10.0)))
+            filter_dict = cfg.get("filter")
+            if filter_dict:
+                filter_dict = self._resolve_variables(filter_dict)
+            lookback = cfg.get("lookback_messages")
+            if lookback is None and filter_dict:
+                lookback = 100
+            if lookback is not None:
+                lookback = int(lookback)
+            ev = await self.ws.wait_event(event_type, timeout=timeout, filter=filter_dict, lookback=lookback)
+            if ev is None:
+                raise TimeoutError(f"Timeout waiting for WebSocket event: {event_type}")
+            if isinstance(ev, dict):
+                raw_data = ev.get("data")
+                if isinstance(raw_data, str):
+                    try:
+                        import json
+                        ev["data"] = json.loads(raw_data)
+                    except Exception:
+                        pass
+            if "save" in cfg:
+                self.context[cfg["save"]] = ev
+            return ev
         if step_type == "create_ws_client_without_token":
             # Создает WSClient без токена для тестирования ошибок авторизации
             from .ws_client import WSClient
@@ -2122,7 +2147,15 @@ class E2ERunner:
         if a_type == "websocket_event":
             event_type = assertion.get("event_type") or assertion.get("event")
             timeout = float(assertion.get("timeout_seconds", assertion.get("timeout", 10.0)))
-            ev = await self.ws.wait_event(event_type, timeout=timeout)
+            filter_dict = assertion.get("filter")
+            if filter_dict:
+                filter_dict = self._resolve_variables(filter_dict)
+            lookback = assertion.get("lookback_messages")
+            if lookback is None and filter_dict:
+                lookback = 100
+            if lookback is not None:
+                lookback = int(lookback)
+            ev = await self.ws.wait_event(event_type, timeout=timeout, filter=filter_dict, lookback=lookback)
             if ev is None:
                 raise TimeoutError(f"Timeout waiting for WebSocket event: {event_type}")
             return

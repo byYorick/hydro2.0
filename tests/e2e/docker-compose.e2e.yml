@@ -149,6 +149,7 @@ services:
     - MQTT_TLS=0
     - MQTT_USER=${MQTT_HISTORY_LOGGER_USER:-history_logger}
     - MQTT_PASS=${MQTT_HISTORY_LOGGER_PASS:-logger_pass}
+    - MQTT_CLIENT_ID=hydro-core-e2e
     - PG_HOST=postgres
     - PG_DB=${POSTGRES_DB:-hydro_e2e}
     - PG_USER=${POSTGRES_USER:-hydro}
@@ -196,6 +197,7 @@ services:
     - MQTT_TLS=0
     - MQTT_USER=${MQTT_MQTT_BRIDGE_USER:-mqtt_bridge}
     - MQTT_PASS=${MQTT_MQTT_BRIDGE_PASS:-bridge_pass}
+    - MQTT_CLIENT_ID=hydro-core-e2e
     - PG_HOST=postgres
     - PG_DB=${POSTGRES_DB:-hydro_e2e}
     - PG_USER=${POSTGRES_USER:-hydro}

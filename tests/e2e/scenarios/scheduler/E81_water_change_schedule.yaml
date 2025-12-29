@@ -16,7 +16,7 @@ actions:
 
   - step: set_zone_id
     type: set
-    zone_id: ${zones_response.data.data[0].id}
+    zone_id: ${zones_response.data[0].id}
 
   # Создаем расписание смены воды (ежедневно в определенное время)
   - step: create_water_change_schedule

@@ -55,7 +55,7 @@ fi
 
 # Установка значений по умолчанию
 export LARAVEL_URL=${LARAVEL_URL:-http://localhost:8081}
-export LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
+# LARAVEL_API_TOKEN опционален: используем только если передан явно
 export MQTT_HOST=${MQTT_HOST:-localhost}
 export MQTT_PORT=${MQTT_PORT:-1884}
 export DB_HOST=${DB_HOST:-localhost}

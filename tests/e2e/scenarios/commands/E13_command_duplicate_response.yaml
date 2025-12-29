@@ -63,21 +63,22 @@ actions:
 
   - step: find_test_zone_and_node
     type: set
-    test_zone_id: ${zones.data.data[0].id}
+    test_zone_id: ${nodes.data.data[0].zone_id}
     test_node_id: ${nodes.data.data[0].id}
 
   # Шаг 2: Подписка на WebSocket канал команд зоны
   - step: subscribe_ws_commands
     type: websocket_subscribe
-    channel: "commands.1"
+    channel: "private-commands.${test_zone_id}"
     wait_seconds: 1
 
   # Шаг 3: Отправка команды через API
   - step: send_command
     type: api_post
-    endpoint: "/api/nodes/1/commands"
+    endpoint: "/api/nodes/${test_node_id}/commands"
     payload:
       cmd: "set_relay_state"
+      channel: "main_pump"
       params:
         channel: "main_pump"
         state: false

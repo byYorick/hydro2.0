@@ -38,7 +38,7 @@ actions:
 
   - step: set_zone_id
     type: set
-    zone_id: ${zones_response.data.data[0].id}
+    zone_id: ${zones_response.data[0].id}
 
   - step: cleanup_old_alerts
     type: db.execute

@@ -5,7 +5,7 @@ actions:
   type: api_get
 - step: set_zone_id
   type: set
-  zone_id: ${zones_response.data.data[0].id}
+  zone_id: ${zones_response.data[0].id}
 - config_ref: node_sim.config
   optional: true
   step: start_node_simulator_unassigned

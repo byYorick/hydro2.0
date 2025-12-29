@@ -18,7 +18,7 @@ actions:
 
   - step: set_zone_id
     type: set
-    zone_id: ${zones_response.data.data[0].id}
+    zone_id: ${zones_response.data[0].id}
 
   - step: get_nodes
     type: api_get
@@ -28,29 +28,46 @@ actions:
   - step: set_node_id
     type: set
     node_id: ${nodes_response.data.data[0].id}
-    test_zone_id: 1  # Используем фиксированный zone_id для каналов
+    test_zone_id: ${nodes_response.data.data[0].zone_id}
     test_node_id: ${nodes_response.data.data[0].id}
+    test_node_uid: ${nodes_response.data.data[0].uid}
+
+  - step: subscribe_commands_channel
+    type: websocket_subscribe
+    channel: private-commands.${test_zone_id}
 
   - step: send_test_command
     type: api_post
-    endpoint: /api/zones/1/commands
+    endpoint: /api/zones/${test_zone_id}/commands
     payload:
       type: FORCE_IRRIGATION
+      node_uid: ${test_node_uid}
+      channel: main_pump
       params:
         duration_sec: 5
     save: command_response
 
   - step: extract_command_id
     type: set
-    command_id: ${command_response.data.id}
+    command_id: ${command_response.data.command_id}
+
+  - step: node_sends_ack
+    type: mqtt_publish
+    topic: "hydro/gh-test-1/zn-test-1/${test_node_uid}/main_pump/command_response"
+    payload:
+      cmd_id: ${command_id}
+      status: "ACK"
+      ts: ${TIMESTAMP_MS}
+    qos: 1
+    wait_seconds: 1
 
   # Ждем ACK через WS
   - step: wait_for_ack_ws_event
     type: websocket_event
     event_type: ".App\\Events\\CommandStatusUpdated"
     filter:
-      command.id: ${command_id}
-      command.status: "ACCEPTED"
+      commandId: ${command_id}
+      status: "ACCEPTED"
     timeout: 10.0
     save: ws_ack_event
 
@@ -58,9 +75,9 @@ actions:
   - step: check_ack_db_status
     type: database_query
     query: |
-      SELECT status, acknowledged_at, sent_at
+      SELECT status, ack_at, sent_at
       FROM commands
-      WHERE id = :command_id
+      WHERE cmd_id = :command_id
     params:
       command_id: ${command_id}
     save: ack_status
@@ -68,15 +85,8 @@ actions:
 assertions:
   # Проверка 1: WS событие содержит правильные данные
   - name: ws_ack_event_data
-    type: json_assertion
-    data: ${ws_ack_event}
-    expected:
-      - field: command.status
-        operator: equals
-        value: "ACCEPTED"
-      - field: command.id
-        operator: equals
-        value: ${command_id}
+    type: custom_assert
+    condition: context.get('ws_ack_event', {}).get('data', {}).get('status') == 'ACCEPTED' and str(context.get('ws_ack_event', {}).get('data', {}).get('commandId')) == str(context.get('command_id'))
 
   # Проверка 2: DB статус ACCEPTED
   - name: db_ack_status
@@ -86,7 +96,7 @@ assertions:
       - field: status
         operator: equals
         value: "ACCEPTED"
-      - field: acknowledged_at
+      - field: ack_at
         operator: is_not_null
       - field: sent_at
         operator: is_not_null
@@ -96,7 +106,7 @@ assertions:
     type: custom_assert
     condition: |
       sent_at = context.get('ack_status', {}).get('sent_at')
-      ack_at = context.get('ack_status', {}).get('acknowledged_at')
+      ack_at = context.get('ack_status', {}).get('ack_at')
       sent_at and ack_at and sent_at <= ack_at
 
 cleanup:
@@ -110,7 +120,7 @@ cleanup:
       db_exec = DatabaseStepExecutor(context.get('db'), resolver)
       import asyncio
       result = asyncio.run(db_exec.execute_db_step('database_query', {
-        'query': 'SELECT status FROM commands WHERE id = :command_id',
+        'query': 'SELECT status FROM commands WHERE cmd_id = :command_id',
         'params': {'command_id': context.get('command_id')}
       }))
       result and result[0]['status'] in ['DONE', 'FAILED', 'TIMEOUT']

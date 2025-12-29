@@ -51,21 +51,22 @@ actions:
 
   - step: set_zone_and_node
     type: set
-    test_zone_id: ${zones_response.data.data[0].id}
+    test_zone_id: ${nodes_response.data.data[0].zone_id}
     test_node_id: ${nodes_response.data.data[0].id}
 
   - step: subscribe_zone_channel
     type: websocket_subscribe
-    channel: hydro.zones.1
+    channel: hydro.zones.${test_zone_id}
 
   # Отправляем команду
   - step: send_command
     type: api_post
-    endpoint: /api/nodes/1/commands
+    endpoint: /api/nodes/${test_node_id}/commands
     payload:
       cmd: set_relay_state
       channel: main_pump
       params:
+        channel: main_pump
         state: true
     save: command_response
     optional: true  # Может вернуть 503 если bridge недоступен
@@ -80,11 +81,11 @@ actions:
     type: database_query
     query: |
       INSERT INTO commands (zone_id, node_id, cmd, channel, params, status, source, cmd_id, created_at, updated_at)
-      VALUES (:zone_id, :node_id, 'set_relay_state', 'main_pump', '{"state": true}'::jsonb, 'SENT', 'test', gen_random_uuid()::text, NOW(), NOW())
+      VALUES (:zone_id, :node_id, 'set_relay_state', 'main_pump', '{"state": true, "channel": "main_pump"}'::jsonb, 'SENT', 'test', gen_random_uuid()::text, NOW(), NOW())
       RETURNING cmd_id
     params:
-      zone_id: 1
-      node_id: 1
+      zone_id: ${test_zone_id}
+      node_id: ${test_node_id}
     save: manual_command
     condition: ${!command_id || command_id == '' || command_id == null}
 
@@ -129,5 +130,4 @@ cleanup:
   - step: stop_node_simulator
     type: stop_simulator
     optional: true  # fault injection не работает в контейнере
-
 

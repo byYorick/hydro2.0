@@ -23,7 +23,7 @@ actions:
 
   - step: set_zone_id
     type: set
-    zone_id: ${zones_response.data.data[0].id}
+    zone_id: ${zones_response.data[0].id}
 
   # Получаем snapshot для определения last_event_id
   - step: get_snapshot

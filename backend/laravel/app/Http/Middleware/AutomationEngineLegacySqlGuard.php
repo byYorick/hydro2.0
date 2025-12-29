@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use Closure;
+use App\Models\SystemLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -32,6 +33,7 @@ class AutomationEngineLegacySqlGuard
      */
     protected const AE_PATHS = [
         'api/zones/*/grow-cycles',
+        'api/zones/*/grow-cycle',
         'api/zones/*/effective-targets',
         'api/zones/*/commands',
         'api/grow-cycles',
@@ -84,7 +86,7 @@ class AutomationEngineLegacySqlGuard
         // Проверяем доступ к legacy таблицам
         foreach (self::LEGACY_TABLES as $table) {
             if (str_contains($sql, $table)) {
-                Log::warning('AE_LEGACY_SQL_GUARD: Доступ к legacy таблице в Automation Engine', [
+                $this->recordLegacyAccess('warning', 'AE_LEGACY_SQL_GUARD: Доступ к legacy таблице в Automation Engine', [
                     'table' => $table,
                     'sql' => $query->sql,
                     'bindings' => $query->bindings,
@@ -97,7 +99,7 @@ class AutomationEngineLegacySqlGuard
         // Проверяем доступ к legacy колонкам
         foreach (self::LEGACY_COLUMNS as $column) {
             if (str_contains($sql, $column)) {
-                Log::error('AE_LEGACY_SQL_GUARD: Доступ к legacy колонке в Automation Engine', [
+                $this->recordLegacyAccess('error', 'AE_LEGACY_SQL_GUARD: Доступ к legacy колонке в Automation Engine', [
                     'column' => $column,
                     'sql' => $query->sql,
                     'bindings' => $query->bindings,
@@ -105,6 +107,24 @@ class AutomationEngineLegacySqlGuard
                     'trace' => $this->getFilteredTrace(),
                 ]);
             }
+        }
+    }
+
+    protected function recordLegacyAccess(string $level, string $message, array $context): void
+    {
+        Log::log($level, $message, $context);
+
+        try {
+            SystemLog::create([
+                'level' => $level,
+                'message' => $message,
+                'context' => array_merge(['service' => 'automation-engine'], $context),
+                'created_at' => now(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('AE_LEGACY_SQL_GUARD: Failed to persist system log', [
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 

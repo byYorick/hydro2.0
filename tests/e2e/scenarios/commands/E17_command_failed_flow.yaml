@@ -17,7 +17,7 @@ actions:
 
   - step: set_zone_id
     type: set
-    zone_id: ${zones_response.data.data[0].id}
+    zone_id: ${zones_response.data[0].id}
 
   - step: get_nodes
     type: api_get
@@ -27,47 +27,67 @@ actions:
   - step: set_node_id
     type: set
     node_id: ${nodes_response.data.data[0].id}
-    test_zone_id: 1  # Используем фиксированный zone_id для каналов
+    test_zone_id: ${nodes_response.data.data[0].zone_id}
     test_node_id: ${nodes_response.data.data[0].id}
 
-  # Настраиваем node-sim на failure mode
-  - step: set_node_failure_mode
-    type: api_post
-    endpoint: /api/test-utils/node-sim/failure-mode
-    payload:
-      mode: "command_failure"
-      enabled: true
-    optional: true
+  - step: subscribe_commands_channel
+    type: websocket_subscribe
+    channel: private-commands.${test_zone_id}
 
   - step: send_failure_command
     type: api_post
-    endpoint: /api/zones/1/commands
+    endpoint: /api/nodes/${test_node_id}/commands
     payload:
-      type: FORCE_IRRIGATION
+      cmd: set_relay_state
+      channel: main_pump
       params:
-        duration_sec: 10
+        channel: main_pump
+        state: true
     save: failure_command_response
 
   - step: extract_failure_command_id
     type: set
-    failure_command_id: ${failure_command_response.data.id}
+    failure_command_id: ${failure_command_response.data.command_id}
+
+  - step: node_sends_ack
+    type: mqtt_publish
+    topic: "hydro/gh-test-1/zn-test-1/nd-ph-esp32una/main_pump/command_response"
+    payload:
+      cmd_id: ${failure_command_id}
+      status: "ACK"
+      ts: ${TIMESTAMP_MS}
+    qos: 1
+    wait_seconds: 1
+
+  - step: node_sends_error
+    type: mqtt_publish
+    topic: "hydro/gh-test-1/zn-test-1/nd-ph-esp32una/main_pump/command_response"
+    payload:
+      cmd_id: ${failure_command_id}
+      status: "ERROR"
+      details:
+        error_code: "test_failure"
+        error_message: "Simulated failure"
+      ts: ${TIMESTAMP_MS}
+    qos: 1
+    wait_seconds: 1
 
   # Ждем WS события ACCEPTED
   - step: wait_for_accepted_ws_event
     type: websocket_event
     event_type: ".App\\Events\\CommandStatusUpdated"
     filter:
-      command.id: ${failure_command_id}
-      command.status: "ACCEPTED"
+      commandId: ${failure_command_id}
+      status: "ACCEPTED"
     timeout: 10.0
 
   # Ждем WS события FAILED
   - step: wait_for_failed_ws_event
     type: websocket_event
-    event_type: ".App\\Events\\CommandStatusUpdated"
+    event_type: ".App\\Events\\CommandFailed"
     filter:
-      command.id: ${failure_command_id}
-      command.status: "FAILED"
+      commandId: ${failure_command_id}
+      status: "FAILED"
     timeout: 15.0
     save: ws_failed_event
 
@@ -77,32 +97,16 @@ actions:
     query: |
       SELECT status, failed_at, error_message
       FROM commands
-      WHERE id = :command_id
+      WHERE cmd_id = :command_id
     params:
       command_id: ${failure_command_id}
     save: failed_status
 
-  # Отключаем failure mode
-  - step: disable_node_failure_mode
-    type: api_post
-    endpoint: /api/test-utils/node-sim/failure-mode
-    payload:
-      mode: "command_failure"
-      enabled: false
-    optional: true
-
 assertions:
   # Проверка 1: WS событие FAILED содержит детали ошибки
   - name: ws_failed_event_data
-    type: json_assertion
-    data: ${ws_failed_event}
-    expected:
-      - field: command.status
-        operator: equals
-        value: "FAILED"
-      - field: command.id
-        operator: equals
-        value: ${failure_command_id}
+    type: custom_assert
+    condition: context.get('ws_failed_event', {}).get('data', {}).get('status') == 'FAILED' and str(context.get('ws_failed_event', {}).get('data', {}).get('commandId')) == str(context.get('failure_command_id'))
 
   # Проверка 2: DB статус FAILED с деталями ошибки
   - name: db_failed_status
@@ -129,7 +133,7 @@ assertions:
     query: |
       SELECT COUNT(*) as intermediate_count
       FROM commands
-      WHERE id = :command_id
+      WHERE cmd_id = :command_id
       AND status NOT IN ('DONE', 'FAILED', 'TIMEOUT')
       AND updated_at < NOW() - INTERVAL '30 seconds'
     params:

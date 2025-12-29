@@ -115,7 +115,10 @@ Route::middleware([
     Route::get('zones/{zone}/events', [ZoneController::class, 'events']);
     Route::get('zones/{zone}/snapshot', [ZoneController::class, 'snapshot']);
     Route::get('zones/{zone}/infrastructure', [ZoneInfrastructureController::class, 'show']);
-    Route::get('zones/{zone}/grow-cycle', [GrowCycleController::class, 'getActive']);
+    Route::get('zones/{zone}/grow-cycle', [GrowCycleController::class, 'getActive'])
+        ->middleware('ae.legacy.sql.guard');
+    Route::get('zones/{zone}/effective-targets', [ZoneController::class, 'effectiveTargets'])
+        ->middleware('ae.legacy.sql.guard');
     Route::get('greenhouses/{greenhouse}/grow-cycles', [GrowCycleController::class, 'indexByGreenhouse']);
     
     // Recipe revisions

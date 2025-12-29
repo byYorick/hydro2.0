@@ -1,129 +1,134 @@
 <template>
   <AppLayout>
-    <div class="flex items-center justify-between mb-4">
-      <h1 class="text-lg font-semibold">Устройства</h1>
-      <Link href="/devices/add">
-        <Button size="sm" variant="primary">
-          <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-          </svg>
-          Добавить ноду
-        </Button>
-      </Link>
-    </div>
-    <div class="mb-3 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
-      <div class="flex items-center gap-2 flex-1 sm:flex-none">
-        <label class="text-sm text-[color:var(--text-muted)] shrink-0">Тип:</label>
-        <select v-model="type" class="input-select flex-1 sm:w-auto sm:min-w-[140px]">
-          <option value="">Все</option>
-          <option value="sensor">Датчик</option>
-          <option value="actuator">Актуатор</option>
-          <option value="controller">Контроллер</option>
-        </select>
-      </div>
-      <div class="flex items-center gap-2 flex-1 sm:flex-none">
-        <label class="text-sm text-[color:var(--text-muted)] shrink-0">Поиск:</label>
-        <input v-model="query" placeholder="ID устройства..." class="input-field flex-1 sm:w-56" />
-      </div>
-      <div class="flex items-center gap-2 flex-1 sm:flex-none">
-        <button
-          @click="showOnlyFavorites = !showOnlyFavorites"
-          class="h-9 px-3 rounded-md border text-sm transition-colors flex items-center gap-1.5 bg-[color:var(--bg-elevated)]"
-          :class="showOnlyFavorites
-            ? 'border-[color:var(--badge-warning-border)] text-[color:var(--accent-amber)]'
-            : 'border-[color:var(--border-muted)] text-[color:var(--text-muted)] hover:border-[color:var(--border-strong)]'"
-        >
-          <svg
-            class="w-4 h-4"
-            :class="showOnlyFavorites ? 'fill-[color:var(--accent-amber)]' : ''"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
+    <div class="space-y-4">
+      <PageHeader title="Устройства" subtitle="Список узлов, статусы и быстрые действия." eyebrow="инфраструктура">
+        <template #actions>
+          <Link href="/devices/add">
+            <Button size="sm" variant="primary">
+              <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+              </svg>
+              Добавить ноду
+            </Button>
+          </Link>
+        </template>
+      </PageHeader>
+
+      <FilterBar>
+        <div class="flex items-center gap-2 flex-1 sm:flex-none">
+          <label class="text-sm text-[color:var(--text-muted)] shrink-0">Тип:</label>
+          <select v-model="type" class="input-select flex-1 sm:w-auto sm:min-w-[140px]">
+            <option value="">Все</option>
+            <option value="sensor">Датчик</option>
+            <option value="actuator">Актуатор</option>
+            <option value="controller">Контроллер</option>
+          </select>
+        </div>
+        <div class="flex items-center gap-2 flex-1 sm:flex-none">
+          <label class="text-sm text-[color:var(--text-muted)] shrink-0">Поиск:</label>
+          <input v-model="query" placeholder="ID устройства..." class="input-field flex-1 sm:w-56" />
+        </div>
+        <div class="flex items-center gap-2 flex-1 sm:flex-none">
+          <button
+            @click="showOnlyFavorites = !showOnlyFavorites"
+            class="h-9 px-3 rounded-md border text-sm transition-colors flex items-center gap-1.5 bg-[color:var(--bg-elevated)]"
+            :class="showOnlyFavorites
+              ? 'border-[color:var(--badge-warning-border)] text-[color:var(--accent-amber)]'
+              : 'border-[color:var(--border-muted)] text-[color:var(--text-muted)] hover:border-[color:var(--border-strong)]'"
           >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"
-            />
-          </svg>
-          <span>Избранные</span>
-        </button>
-      </div>
-    </div>
-    <div class="rounded-xl border border-[color:var(--border-muted)] overflow-hidden max-h-[720px] flex flex-col">
-      <div class="overflow-auto flex-1">
-        <table class="w-full border-collapse">
-          <thead class="bg-[color:var(--bg-surface-strong)] text-[color:var(--text-muted)] text-sm sticky top-0 z-10">
-            <tr>
-              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">
-                <div class="flex items-center gap-2">
-                  <div class="w-5"></div>
-                  <span>UID</span>
-                </div>
-              </th>
-              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Зона</th>
-              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Имя</th>
-              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Тип</th>
-              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Статус</th>
-              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Версия ПО</th>
-              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Последний раз видели</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="(r, index) in rows"
-              :key="r[0]"
-              :class="index % 2 === 0 ? 'bg-[color:var(--bg-surface-strong)]' : 'bg-[color:var(--bg-surface)]'"
-              class="text-sm border-b border-[color:var(--border-muted)] hover:bg-[color:var(--bg-surface-strong)] transition-colors"
+            <svg
+              class="w-4 h-4"
+              :class="showOnlyFavorites ? 'fill-[color:var(--accent-amber)]' : ''"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
             >
-              <td class="px-3 py-2">
-                <div class="flex items-center gap-2 min-w-0">
-                  <button
-                    @click.stop="toggleDeviceFavorite(getDeviceIdFromRow(r))"
-                    class="p-0.5 rounded hover:bg-[color:var(--bg-surface-strong)] transition-colors shrink-0 w-5 h-5 flex items-center justify-center"
-                    :title="isDeviceFavorite(getDeviceIdFromRow(r)) ? 'Удалить из избранного' : 'Добавить в избранное'"
-                  >
-                    <svg
-                      class="w-3.5 h-3.5 transition-colors"
-                      :class="isDeviceFavorite(getDeviceIdFromRow(r)) ? 'text-[color:var(--accent-amber)] fill-[color:var(--accent-amber)]' : 'text-[color:var(--text-dim)]'"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"
+              />
+            </svg>
+            <span>Избранные</span>
+          </button>
+        </div>
+      </FilterBar>
+
+      <div class="rounded-xl border border-[color:var(--border-muted)] overflow-hidden max-h-[720px] flex flex-col">
+        <div class="overflow-auto flex-1">
+          <table class="w-full border-collapse">
+            <thead class="bg-[color:var(--bg-surface-strong)] text-[color:var(--text-muted)] text-sm sticky top-0 z-10">
+              <tr>
+                <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">
+                  <div class="flex items-center gap-2">
+                    <div class="w-5"></div>
+                    <span>UID</span>
+                  </div>
+                </th>
+                <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Зона</th>
+                <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Имя</th>
+                <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Тип</th>
+                <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Статус</th>
+                <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Версия ПО</th>
+                <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Последний раз видели</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="(r, index) in rows"
+                :key="r[0]"
+                :class="index % 2 === 0 ? 'bg-[color:var(--bg-surface-strong)]' : 'bg-[color:var(--bg-surface)]'"
+                class="text-sm border-b border-[color:var(--border-muted)] hover:bg-[color:var(--bg-surface-strong)] transition-colors"
+              >
+                <td class="px-3 py-2">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <button
+                      @click.stop="toggleDeviceFavorite(getDeviceIdFromRow(r))"
+                      class="p-0.5 rounded hover:bg-[color:var(--bg-surface-strong)] transition-colors shrink-0 w-5 h-5 flex items-center justify-center"
+                      :title="isDeviceFavorite(getDeviceIdFromRow(r)) ? 'Удалить из избранного' : 'Добавить в избранное'"
                     >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"
-                      />
-                    </svg>
-                  </button>
-                  <Link :href="`/devices/${r[0]}`" class="text-[color:var(--accent-cyan)] hover:underline truncate min-w-0">{{ r[0] }}</Link>
-                </div>
-              </td>
-              <td class="px-3 py-2 text-xs text-[color:var(--text-dim)]">
-                <span class="truncate block">{{ r[1] || '-' }}</span>
-              </td>
-              <td class="px-3 py-2 text-xs text-[color:var(--text-dim)]">
-                <span class="truncate block">{{ r[2] || '-' }}</span>
-              </td>
-              <td class="px-3 py-2 text-xs text-[color:var(--text-dim)]">{{ r[3] || '-' }}</td>
-              <td class="px-3 py-2 text-xs text-[color:var(--text-dim)]">{{ r[4] || '-' }}</td>
-              <td class="px-3 py-2 text-xs text-[color:var(--text-dim)]">{{ r[5] || '-' }}</td>
-              <td class="px-3 py-2 text-xs text-[color:var(--text-dim)]">{{ r[6] || '-' }}</td>
-            </tr>
-            <tr v-if="!rows.length">
-              <td colspan="7" class="px-3 py-6 text-sm text-[color:var(--text-dim)] text-center">Нет устройств по текущим фильтрам</td>
-            </tr>
-          </tbody>
-        </table>
+                      <svg
+                        class="w-3.5 h-3.5 transition-colors"
+                        :class="isDeviceFavorite(getDeviceIdFromRow(r)) ? 'text-[color:var(--accent-amber)] fill-[color:var(--accent-amber)]' : 'text-[color:var(--text-dim)]'"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"
+                        />
+                      </svg>
+                    </button>
+                    <Link :href="`/devices/${r[0]}`" class="text-[color:var(--accent-cyan)] hover:underline truncate min-w-0">{{ r[0] }}</Link>
+                  </div>
+                </td>
+                <td class="px-3 py-2 text-xs text-[color:var(--text-dim)]">
+                  <span class="truncate block">{{ r[1] || '-' }}</span>
+                </td>
+                <td class="px-3 py-2 text-xs text-[color:var(--text-dim)]">
+                  <span class="truncate block">{{ r[2] || '-' }}</span>
+                </td>
+                <td class="px-3 py-2 text-xs text-[color:var(--text-dim)]">{{ r[3] || '-' }}</td>
+                <td class="px-3 py-2 text-xs text-[color:var(--text-dim)]">{{ r[4] || '-' }}</td>
+                <td class="px-3 py-2 text-xs text-[color:var(--text-dim)]">{{ r[5] || '-' }}</td>
+                <td class="px-3 py-2 text-xs text-[color:var(--text-dim)]">{{ r[6] || '-' }}</td>
+              </tr>
+              <tr v-if="!rows.length">
+                <td colspan="7" class="px-3 py-6 text-sm text-[color:var(--text-dim)] text-center">Нет устройств по текущим фильтрам</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <Pagination
+          v-model:current-page="currentPage"
+          v-model:per-page="perPage"
+          :total="filtered.length"
+        />
       </div>
-      <Pagination
-        v-model:current-page="currentPage"
-        v-model:per-page="perPage"
-        :total="filtered.length"
-      />
     </div>
   </AppLayout>
 </template>
@@ -133,7 +138,9 @@ import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { Link, usePage, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Button from '@/Components/Button.vue'
+import FilterBar from '@/Components/FilterBar.vue'
 import Pagination from '@/Components/Pagination.vue'
+import PageHeader from '@/Components/PageHeader.vue'
 import { useDevicesStore } from '@/stores/devices'
 import { useStoreEvents } from '@/composables/useStoreEvents'
 import { useFavorites } from '@/composables/useFavorites'

@@ -17,7 +17,7 @@ actions:
 
   - step: set_zone_id
     type: set
-    zone_id: ${zones_response.data.data[0].id}
+    zone_id: ${zones_response.data[0].id}
 
   # Удаляем старые циклы для чистой проверки
   - step: cleanup_old_cycles

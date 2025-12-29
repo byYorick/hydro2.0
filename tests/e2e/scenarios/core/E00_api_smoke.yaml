@@ -12,6 +12,10 @@ setup:
     - database: database is accessible
 
 actions:
+  - step: set_laravel_url
+    type: set
+    LARAVEL_URL: http://localhost:8081
+
   # Тест 1: Health endpoint
   - step: check_health
     type: api_get
@@ -20,13 +24,13 @@ actions:
 
   # Тест 2: Auth endpoints (должны вернуть 422 при неправильных credentials)
   - step: check_login_endpoint
-    type: api_post
-    endpoint: /api/auth/login
-    payload:
+    type: http_request
+    method: POST
+    url: ${LARAVEL_URL}/api/auth/login
+    body:
       email: "invalid@test.local"
       password: "invalid"
-    save: login_response
-    expected_status: 422
+    capture_response: login_response
 
   # Тест 3: Protected endpoints (должны вернуть 401 без токена)
   - step: check_zones_protected

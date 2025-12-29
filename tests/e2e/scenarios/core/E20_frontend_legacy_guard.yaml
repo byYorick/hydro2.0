@@ -9,15 +9,19 @@ description: |
   - Убеждается, что guard логирует, но не блокирует работу системы
 
 actions:
+  - step: set_laravel_url
+    type: set
+    LARAVEL_URL: http://localhost:8081
+
   # Создаем HTTP запрос к странице с legacy параметром (имитируем frontend запрос)
   - step: request_with_legacy_param
     type: http_request
     method: GET
-    url: ${LARAVEL_URL}/dashboard?zone_recipe_instance_id=123&legacy_mode=true
+    url: ${LARAVEL_URL}/login?zone_recipe_instance_id=123&legacy_mode=true
     headers:
       Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
       User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36
-    save: legacy_request_response
+    capture_response: legacy_request_response
 
   # Ждем немного, чтобы логи были записаны
   - step: wait_for_logging
@@ -31,7 +35,7 @@ actions:
       SELECT COUNT(*) as guard_warning_count
       FROM system_logs
       WHERE level = 'warning'
-      AND message LIKE '%FRONT_LEGACY_GUARD%'
+      AND message LIKE '%%FRONT_LEGACY_GUARD%%'
       AND created_at > NOW() - INTERVAL '5 minutes'
     save: guard_warnings
 
@@ -42,8 +46,8 @@ actions:
       SELECT COUNT(*) as guard_error_count
       FROM system_logs
       WHERE level = 'error'
-      AND message LIKE '%FRONT_LEGACY_GUARD%'
-      AND message LIKE '%query parameter%'
+      AND message LIKE '%%FRONT_LEGACY_GUARD%%'
+      AND message LIKE '%%query parameter%%'
       AND created_at > NOW() - INTERVAL '5 minutes'
     save: guard_errors
 
@@ -51,7 +55,7 @@ assertions:
   # Проверка 1: HTTP запрос выполнен (guard не блокирует)
   - name: request_succeeds
     type: json_assertion
-    data: ${legacy_request_response}
+    source: legacy_request_response
     expected:
       - field: status_code
         operator: in
@@ -60,7 +64,8 @@ assertions:
   # Проверка 2: Guard логирует legacy URL паттерны (предупреждения)
   - name: guard_logs_legacy_patterns
     type: json_assertion
-    data: ${guard_warnings}
+    source: guard_warnings
+    path: "[0]"
     expected:
       - field: guard_warning_count
         operator: greater_than_or_equal
@@ -69,7 +74,8 @@ assertions:
   # Проверка 3: Guard логирует legacy query параметры (ошибки)
   - name: guard_logs_legacy_params
     type: json_assertion
-    data: ${guard_errors}
+    source: guard_errors
+    path: "[0]"
     expected:
       - field: guard_error_count
         operator: greater_than
@@ -78,10 +84,7 @@ assertions:
   # Проверка 4: Система продолжает работать (нет критических ошибок)
   - name: system_still_works
     type: custom_assert
-    condition: |
-      # Проверяем, что запрос был обработан (даже если вернул 404)
-      status = context.get('legacy_request_response', {}).get('status_code', 0)
-      status > 0  # Любой HTTP статус означает, что система работает
+    condition: "context.get('legacy_request_response', {}).get('status_code', 0) > 0"
 
 cleanup:
   # Очищаем логи guard (опционально, для чистоты тестов)
@@ -90,6 +93,6 @@ cleanup:
     query: |
       DELETE FROM system_logs
       WHERE (level IN ('warning', 'error'))
-      AND message LIKE '%FRONT_LEGACY_GUARD%'
+      AND message LIKE '%%FRONT_LEGACY_GUARD%%'
       AND created_at > NOW() - INTERVAL '10 minutes'
     optional: true

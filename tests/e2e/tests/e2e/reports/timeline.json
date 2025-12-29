@@ -1,37 +1,37 @@
 {
-  "test_suite": "E19_ae_legacy_sql_guard",
-  "generated_at": "2025-12-29T14:30:58.659840",
+  "test_suite": "E61_fail_closed_corrections",
+  "generated_at": "2025-12-29T16:34:34.011452",
   "test_cases": [
     {
-      "name": "get_zones",
+      "name": "get_automation_zone",
       "status": "passed",
-      "duration": 0.10066795349121094,
+      "duration": 0.1060781478881836,
       "error_message": null,
       "steps": [
         {
-          "name": "get_zones",
+          "name": "get_automation_zone",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-29T14:30:58.239128"
+      "timestamp": "2025-12-29T16:34:23.606387"
     },
     {
-      "name": "fetch_zone_id",
+      "name": "set_zone_id_from_uid",
       "status": "passed",
-      "duration": 0.0037767887115478516,
+      "duration": 0.011160612106323242,
       "error_message": null,
       "steps": [
         {
-          "name": "fetch_zone_id",
+          "name": "set_zone_id_from_uid",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-29T14:30:58.243024"
+      "timestamp": "2025-12-29T16:34:23.617597"
     },
     {
       "name": "set_zone_id",
       "status": "passed",
-      "duration": 9.059906005859375e-06,
+      "duration": 8.106231689453125e-06,
       "error_message": null,
       "steps": [
         {
@@ -39,114 +39,46 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-29T14:30:58.243510"
+      "timestamp": "2025-12-29T16:34:23.617669"
     },
     {
-      "name": "create_recipe",
-      "status": "passed",
-      "duration": 0.002931833267211914,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "create_recipe",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-29T14:30:58.246644"
-    },
-    {
-      "name": "create_recipe_revision",
-      "status": "passed",
-      "duration": 0.00598907470703125,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "create_recipe_revision",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-29T14:30:58.255138"
-    },
-    {
-      "name": "create_revision_phase",
-      "status": "passed",
-      "duration": 0.0042493343353271484,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "create_revision_phase",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-29T14:30:58.259860"
-    },
-    {
-      "name": "create_grow_cycle",
-      "status": "passed",
-      "duration": 0.17750120162963867,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "create_grow_cycle",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-29T14:30:58.437805"
-    },
-    {
-      "name": "set_cycle_id",
-      "status": "passed",
-      "duration": 1.239776611328125e-05,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_cycle_id",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-29T14:30:58.441312"
-    },
-    {
-      "name": "get_effective_targets",
+      "name": "enable_capabilities",
       "status": "failed",
-      "duration": 0.07140970230102539,
-      "error_message": "Server error '500 Internal Server Error' for url 'http://localhost:8081/api/zones/1/effective-targets'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500",
+      "duration": 0.0006422996520996094,
+      "error_message": "invalid input syntax for type bigint: \"\"\nCONTEXT:  unnamed portal parameter $1 = ''",
       "steps": [
         {
-          "name": "get_effective_targets",
+          "name": "enable_capabilities",
           "status": "failed",
-          "error": "Server error '500 Internal Server Error' for url 'http://localhost:8081/api/zones/1/effective-targets'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+          "error": "invalid input syntax for type bigint: \"\"\nCONTEXT:  unnamed portal parameter $1 = ''"
         }
       ],
-      "timestamp": "2025-12-29T14:30:58.513461"
+      "timestamp": "2025-12-29T16:34:23.618472"
     },
     {
-      "name": "cycle_created_successfully",
+      "name": "no_dosing_commands",
       "status": "failed",
-      "duration": 0.0007560253143310547,
-      "error_message": "Expected status_code = 201, got None",
+      "duration": 0.0013370513916015625,
+      "error_message": "invalid input syntax for type bigint: \"\"\nCONTEXT:  unnamed portal parameter $1 = ''",
       "steps": [
         {
-          "name": "cycle_created_successfully",
+          "name": "no_dosing_commands",
           "status": "failed",
-          "error": "Expected status_code = 201, got None"
+          "error": "invalid input syntax for type bigint: \"\"\nCONTEXT:  unnamed portal parameter $1 = ''"
         }
       ],
-      "timestamp": "2025-12-29T14:30:58.515051"
+      "timestamp": "2025-12-29T16:34:23.619951"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E19_ae_legacy_sql_guard": {
+    "E61_fail_closed_corrections": {
       "ws_messages": [],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
-        "zone_id": 1,
-        "zone_uid": "zn-test-1",
-        "node_id": 1,
-        "node_uid": "nd-ph-esp32una",
-        "cycle_id": 2
+        "zone_id": "",
+        "node_id": 1
       }
     }
   }

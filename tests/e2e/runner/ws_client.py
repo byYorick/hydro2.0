@@ -370,7 +370,8 @@ class WSClient:
         event_type: str,
         timeout: float = 10.0,
         condition: Optional[Callable[[Dict[str, Any]], bool]] = None,
-        filter: Optional[Dict[str, Any]] = None
+        filter: Optional[Dict[str, Any]] = None,
+        lookback: Optional[int] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Ожидать событие определенного типа.
@@ -380,6 +381,7 @@ class WSClient:
             timeout: Таймаут ожидания в секундах
             condition: Дополнительное условие для фильтрации событий
             filter: Словарь для фильтрации по полям (например, {"status": "ACCEPTED"})
+            lookback: Сколько последних сообщений просматривать перед ожиданием новых
             
         Returns:
             Данные события или None при таймауте
@@ -388,9 +390,15 @@ class WSClient:
         start_time = time.time()
         
         # Отслеживаем индекс последнего проверенного сообщения, чтобы не проверять старые
-        if not hasattr(self, '_last_checked_message_index'):
-            self._last_checked_message_index = len(self._message_queue)
-        start_index = self._last_checked_message_index
+        queue_length = len(self._message_queue)
+        if lookback is not None:
+            if lookback < 0:
+                lookback = 0
+            start_index = max(0, queue_length - lookback)
+        else:
+            if not hasattr(self, '_last_checked_message_index'):
+                self._last_checked_message_index = queue_length
+            start_index = self._last_checked_message_index
         
         # Нормализуем имя события (может быть полным классом или коротким именем)
         event_type_normalized = event_type
@@ -524,4 +532,3 @@ class WSClient:
             await asyncio.sleep(0.1)
         
         return False
-

@@ -13,6 +13,7 @@ use App\Services\ZoneService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Log;
 
 class ZoneController extends Controller
 {
@@ -131,6 +132,40 @@ class ZoneController extends Controller
             'status' => 'ok',
             'data' => $zone,
         ]);
+    }
+
+    public function effectiveTargets(Request $request, Zone $zone): JsonResponse
+    {
+        $this->authorizeZoneAccess($request->user(), $zone);
+
+        $cycle = $zone->activeGrowCycle;
+        if (! $cycle) {
+            return response()->json([
+                'status' => 'ok',
+                'data' => null,
+            ]);
+        }
+
+        try {
+            $effectiveTargets = $this->effectiveTargetsService->getEffectiveTargets($cycle->id);
+
+            return response()->json([
+                'status' => 'ok',
+                'data' => $effectiveTargets,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to get effective targets for zone', [
+                'zone_id' => $zone->id,
+                'cycle_id' => $cycle->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'status' => 'ok',
+                'data' => null,
+                'warning' => 'Failed to load effective targets: '.$e->getMessage(),
+            ]);
+        }
     }
 
     public function update(Request $request, Zone $zone): JsonResponse

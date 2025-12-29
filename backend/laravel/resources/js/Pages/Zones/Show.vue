@@ -1,411 +1,88 @@
 <template>
   <AppLayout>
     <div class="space-y-4">
-      <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-5">
-        <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div class="flex-1 min-w-0">
-            <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">зона выращивания</p>
-            <div class="flex items-center gap-3 mt-1">
-              <div class="text-2xl font-semibold truncate">{{ zone.name }}</div>
-              <Badge :variant="variant" class="shrink-0" data-testid="zone-status-badge">{{ translateStatus(zone.status) }}</Badge>
-            </div>
-            <div class="text-sm text-[color:var(--text-dim)] mt-1 space-y-1">
-              <div v-if="zone.description" class="truncate">{{ zone.description }}</div>
-              <div v-if="activeGrowCycle?.recipeRevision" class="flex items-center gap-2 text-xs uppercase tracking-[0.12em]">
-                <span class="text-[color:var(--text-dim)]">Рецепт</span>
-                <span class="text-[color:var(--accent-cyan)] font-semibold">
-                  {{ activeGrowCycle.recipeRevision.recipe.name }}
-                </span>
-                <span v-if="activeGrowCycle?.currentPhase" class="text-[color:var(--text-dim)]">
-                  фаза {{ activeGrowCycle.currentPhase.phase_index + 1 }}
-                </span>
-              </div>
-            </div>
-          </div>
-          <div class="flex flex-wrap items-center gap-2 justify-end">
-            <template v-if="canOperateZone">
-              <Button size="sm" variant="secondary" @click="onToggle" :disabled="loading.toggle" class="flex-1 sm:flex-none min-w-[140px]" :data-testid="toggleStatus === 'PAUSED' ? 'zone-resume-btn' : 'zone-pause-btn'">
-                <template v-if="loading.toggle">
-                  <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
-                </template>
-                <span class="hidden sm:inline">{{ toggleStatus === 'PAUSED' ? 'Возобновить' : 'Приостановить' }}</span>
-                <span class="sm:hidden">{{ toggleStatus === 'PAUSED' ? '▶' : '⏸' }}</span>
-              </Button>
-              <Button size="sm" variant="outline" @click="openActionModal('FORCE_IRRIGATION')" :disabled="loading.irrigate" class="flex-1 sm:flex-none" data-testid="force-irrigation-button">
-                <template v-if="loading.irrigate">
-                  <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
-                </template>
-                <span class="hidden sm:inline">Полить сейчас</span>
-                <span class="sm:hidden">💧</span>
-              </Button>
-              <Button size="sm" @click="onNextPhase" :disabled="loading.nextPhase" class="flex-1 sm:flex-none" data-testid="next-phase-button">
-                <template v-if="loading.nextPhase">
-                  <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
-                </template>
-                <span class="hidden sm:inline">Следующая фаза</span>
-                <span class="sm:hidden">⏭</span>
-              </Button>
-              <Button
-                v-if="!activeCycle"
-                size="sm"
-                class="flex-1 sm:flex-none"
-                :disabled="loading.cycleConfig"
-                @click="onRunCycle"
-              >
-                Запустить цикл выращивания
-              </Button>
-              <Button
-                v-else
-                size="sm"
-                variant="outline"
-                class="flex-1 sm:flex-none"
-                :disabled="loading.cycleConfig"
-                @click="onRunCycle"
-              >
-                Настройки цикла
-              </Button>
-              <Button
-                v-if="activeGrowCycle?.status === 'RUNNING'"
-                size="sm"
-                variant="secondary"
-                class="flex-1 sm:flex-none"
-                :disabled="loading.cyclePause"
-                @click="onCyclePause"
-              >
-                <template v-if="loading.cyclePause">
-                  <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
-                </template>
-                Пауза
-              </Button>
-              <Button
-                v-if="activeGrowCycle"
-                size="sm"
-                variant="danger"
-                class="flex-1 sm:flex-none"
-                :disabled="loading.cycleAbort"
-                @click="onCycleAbort"
-              >
-                <template v-if="loading.cycleAbort">
-                  <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
-                </template>
-                Стоп
-              </Button>
-              <div
-                v-if="growthCycleCommandStatus"
-                class="flex items-center gap-1 text-[10px] text-[color:var(--text-dim)] w-full"
-              >
-                <div
-                  class="w-1.5 h-1.5 rounded-full"
-                  :class="{
-                    'bg-[color:var(--accent-amber)] animate-pulse': ['QUEUED', 'SENT', 'ACCEPTED', 'pending', 'executing'].includes(growthCycleCommandStatus || ''),
-                    'bg-[color:var(--accent-green)]': ['DONE', 'completed', 'ack'].includes(growthCycleCommandStatus || ''),
-                    'bg-[color:var(--accent-red)]': ['FAILED', 'TIMEOUT', 'SEND_FAILED', 'failed'].includes(growthCycleCommandStatus || '')
-                  }"
-                ></div>
-                <span>{{ getCommandStatusText(growthCycleCommandStatus) }}</span>
-              </div>
-            </template>
-            <Button size="sm" variant="outline" @click="modals.open('simulation')" class="flex-1 sm:flex-none">
-              <span class="hidden sm:inline">Симуляция</span>
-              <span class="sm:hidden">🧪</span>
-            </Button>
-          </div>
-        </div>
+      <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-3">
+        <Tabs v-model="activeTab" :tabs="zoneTabs" aria-label="Разделы зоны" />
       </div>
 
-      <!-- Одна колонка: все элементы последовательно -->
-      <div class="space-y-4">
-        <!-- Целевые значения телеметрии -->
-        <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
-          <ZoneTargets v-if="targets && (targets.ph || targets.ec || targets.temp || targets.humidity)" :telemetry="telemetry" :targets="targets" />
-          <div v-else class="text-center py-6">
-            <div class="text-4xl mb-2">🎯</div>
-            <div class="text-sm font-medium text-[color:var(--text-primary)] mb-1">
-              Целевые значения не настроены
-            </div>
-            <div class="text-xs text-[color:var(--text-muted)]">
-              Настройте целевые значения для отслеживания параметров зоны
-            </div>
-          </div>
-        </div>
-        <!-- Прогресс цикла выращивания -->
-        <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
-          <StageProgress
-            v-if="activeGrowCycle"
-            :grow-cycle="activeGrowCycle"
-            :phase-progress="computedPhaseProgress"
-            :phase-days-elapsed="computedPhaseDaysElapsed"
-            :phase-days-total="computedPhaseDaysTotal"
-            :started-at="activeGrowCycle.started_at"
-          />
-          <div v-else-if="activeGrowCycle || activeCycle || zone.status === 'RUNNING'" class="text-center py-6">
-            <div class="text-4xl mb-2">🌱</div>
-            <div class="text-sm font-medium text-[color:var(--text-primary)] mb-1">
-              Цикл выращивания активен
-            </div>
-            <div class="text-xs text-[color:var(--text-muted)] space-y-1">
-              <div v-if="zone.status">
-                Статус зоны: <span class="font-semibold">{{ translateStatus(zone.status) }}</span>
-              </div>
-              <div v-if="activeGrowCycle?.status">
-                Статус цикла: <span class="font-semibold">{{ translateStatus(activeGrowCycle.status) }}</span>
-              </div>
-              <div v-if="activeGrowCycle?.started_at">
-                Запущен: {{ formatTimeShort(new Date(activeGrowCycle.started_at)) }}
-              </div>
-              <div class="mt-2 text-[color:var(--text-dim)]">
-                Привяжите рецепт для детального отслеживания прогресса фаз
-              </div>
-            </div>
-          </div>
-          <div v-else class="text-center py-6">
-            <div class="text-4xl mb-2">🌱</div>
-            <div class="text-sm font-medium text-[color:var(--text-primary)] mb-1">
-              Цикл выращивания не запущен
-            </div>
-            <div class="text-xs text-[color:var(--text-muted)]">
-              Привяжите рецепт и запустите цикл выращивания для отслеживания прогресса
-            </div>
-          </div>
-        </div>
-        <!-- Графики телеметрии pH и EC -->
-        <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
-          <div class="mb-3">
-            <div class="text-sm font-semibold text-[color:var(--text-primary)]">Графики телеметрии</div>
-            <div class="text-xs text-[color:var(--text-muted)] mt-1">pH и EC</div>
-          </div>
-          
-          <div v-if="chartDataPh.length > 0 || chartDataEc.length > 0">
-            <!-- Мульти-серии график pH + EC -->
-            <MultiSeriesTelemetryChart
-              title="pH и EC"
-              :series="multiSeriesData"
-              :time-range="chartTimeRange"
-              @time-range-change="onChartTimeRangeChange"
-            />
-          </div>
-          <div v-else-if="showSeparateCharts" class="space-y-3">
-            <!-- Отдельные графики как fallback или опционально -->
-            <ZoneTelemetryChart 
-              title="pH" 
-              :data="chartDataPh" 
-              series-name="pH"
-              :time-range="chartTimeRange"
-              @time-range-change="onChartTimeRangeChange"
-            />
-            <ZoneTelemetryChart 
-              title="EC" 
-              :data="chartDataEc" 
-              series-name="EC"
-              :time-range="chartTimeRange"
-              @time-range-change="onChartTimeRangeChange"
-            />
-          </div>
-          <div v-else class="text-center py-6">
-            <!-- Сообщение если нет данных для графиков -->
-            <div class="text-4xl mb-2">📊</div>
-            <div class="text-sm font-medium text-[color:var(--text-primary)] mb-1">
-              Нет данных для графиков
-            </div>
-            <div class="text-xs text-[color:var(--text-muted)]">
-              Данные телеметрии появятся после начала работы датчиков в зоне
-            </div>
-          </div>
-        </div>
-        <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
-          <ZoneDevicesVisualization
-            :zone-name="zone.name"
-            :zone-status="zone.status"
-            :devices="devices"
-            :can-manage="canManageDevices"
-            @attach="showAttachNodesModal = true"
-            @configure="(device) => openNodeConfig(device.id, device)"
-          />
-        </div>
-        <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
-          <UnassignedNodeErrorsWidget :zone-id="zone.id" :limit="5" />
-        </div>
-        <!-- AI Прогнозы -->
-        <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
-          <AIPredictionsSection
-            :zone-id="zone.id"
-            :targets="targets"
-            :horizon-minutes="60"
-            :auto-refresh="true"
-            :default-expanded="true"
-          />
-        </div>
-        <Card>
-            <div class="flex items-center justify-between mb-2">
-              <div class="text-sm font-semibold">Рецепт</div>
-              <template v-if="canManageRecipe">
-                <Button
-                  size="sm"
-                  :variant="activeGrowCycle ? 'secondary' : 'primary'"
-                  @click="activeGrowCycle ? onCycleChangeRecipe() : onRunCycle()"
-                  data-testid="recipe-attach-btn"
-                >
-                  {{ activeGrowCycle ? 'Сменить ревизию' : 'Запустить цикл' }}
-                </Button>
-              </template>
-            </div>
-            <div v-if="activeGrowCycle?.recipeRevision?.recipe" class="text-sm text-[color:var(--text-muted)]">
-              <div class="font-semibold">
-                {{ activeGrowCycle.recipeRevision.recipe.name }}
-              </div>
-              <div class="text-xs text-[color:var(--text-dim)]">
-                Фаза {{ (activeGrowCycle?.currentPhase?.phase_index ?? 0) + 1 }}
-                из {{ activeGrowCycle?.phases?.length || 0 }}
-                <span v-if="activeGrowCycle?.currentPhase?.name">
-                  — {{ activeGrowCycle.currentPhase.name }}
-                </span>
-              </div>
-              <div class="mt-2 flex flex-wrap items-center gap-2">
-                <Badge :variant="cycleStatusVariant" class="text-[10px] px-2 py-0.5">
-                  {{ cycleStatusLabel }}
-                </Badge>
-                <span v-if="phaseTimeLeftLabel" class="text-[11px] text-[color:var(--text-dim)]">
-                  {{ phaseTimeLeftLabel }}
-                </span>
-              </div>
-            </div>
-            <div v-else class="space-y-2">
-              <div class="text-sm text-[color:var(--text-dim)]">
-                Цикл выращивания не запущен
-              </div>
-              <template v-if="canManageRecipe">
-                <div class="text-xs text-[color:var(--text-dim)]">
-                  Запустите цикл выращивания, чтобы применить рецепт и отслеживать фазы
-                </div>
-              </template>
-            </div>
-          </Card>
-      </div>
+      <ZoneOverviewTab
+        v-show="activeTab === 'overview'"
+        :zone="zone"
+        :variant="variant"
+        :active-grow-cycle="activeGrowCycle"
+        :active-cycle="activeCycle"
+        :toggle-status="toggleStatus"
+        :loading="loading"
+        :can-operate-zone="canOperateZone"
+        :growth-cycle-command-status="growthCycleCommandStatus"
+        :targets="targets"
+        :telemetry="telemetry"
+        :computed-phase-progress="computedPhaseProgress"
+        :computed-phase-days-elapsed="computedPhaseDaysElapsed"
+        :computed-phase-days-total="computedPhaseDaysTotal"
+        :events="events"
+        @toggle="onToggle"
+        @force-irrigation="openActionModal('FORCE_IRRIGATION')"
+        @next-phase="onNextPhase"
+        @run-cycle="onRunCycle"
+        @open-simulation="modals.open('simulation')"
+      />
 
-      <!-- Cycles (расписание подсистем) -->
-      <Card>
-        <div class="text-sm font-semibold mb-3">Циклы</div>
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
-          <div v-for="cycle in cyclesList" :key="cycle.type" class="text-xs text-[color:var(--text-dim)] p-3 rounded border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] hover:border-[color:var(--border-strong)] transition-colors">
-            <div class="font-semibold text-sm mb-1 text-[color:var(--text-primary)] flex items-center justify-between gap-2">
-              <span>{{ translateCycleType(cycle.type) }}</span>
-              <span
-                class="px-1.5 py-0.5 rounded-full text-[10px]"
-                :class="cycle.required ? 'bg-[color:var(--badge-success-bg)] text-[color:var(--badge-success-text)]' : 'bg-[color:var(--bg-elevated)] text-[color:var(--text-dim)]'"
-              >
-                {{ cycle.required ? 'Обязательно' : 'Опционально' }}
-              </span>
-            </div>
+      <ZoneTelemetryTab
+        v-show="activeTab === 'telemetry'"
+        :zone-id="zoneId"
+        :chart-time-range="chartTimeRange"
+        :chart-data-ph="chartDataPh"
+        :chart-data-ec="chartDataEc"
+        :telemetry="telemetry"
+        :targets="targets"
+        @time-range-change="onChartTimeRangeChange"
+      />
 
-            <!-- Таргеты текущей фазы (baseline рецепта) -->
-            <div class="text-[11px] mb-2 space-y-0.5 text-[color:var(--text-muted)]">
-              <div v-if="cycle.recipeTargets && cycle.type === 'PH_CONTROL' && typeof cycle.recipeTargets.min === 'number' && typeof cycle.recipeTargets.max === 'number'">
-                pH: {{ cycle.recipeTargets.min }}–{{ cycle.recipeTargets.max }}
-              </div>
-              <div v-else-if="cycle.recipeTargets && cycle.type === 'EC_CONTROL' && typeof cycle.recipeTargets.min === 'number' && typeof cycle.recipeTargets.max === 'number'">
-                EC: {{ cycle.recipeTargets.min }}–{{ cycle.recipeTargets.max }}
-              </div>
-              <div v-else-if="cycle.recipeTargets && cycle.type === 'CLIMATE' && typeof cycle.recipeTargets.temperature === 'number' && typeof cycle.recipeTargets.humidity === 'number'">
-                Климат: t={{ cycle.recipeTargets.temperature }}°C, RH={{ cycle.recipeTargets.humidity }}%
-              </div>
-              <div v-else-if="cycle.recipeTargets && cycle.type === 'LIGHTING' && typeof cycle.recipeTargets.hours_on === 'number'">
-                Свет: {{ cycle.recipeTargets.hours_on }}ч / пауза {{ typeof cycle.recipeTargets.hours_off === 'number' ? cycle.recipeTargets.hours_off : (24 - cycle.recipeTargets.hours_on) }}ч
-              </div>
-              <div v-else-if="cycle.recipeTargets && cycle.type === 'IRRIGATION' && typeof cycle.recipeTargets.interval_minutes === 'number' && typeof cycle.recipeTargets.duration_seconds === 'number'">
-                Полив: каждые {{ cycle.recipeTargets.interval_minutes }} мин, {{ cycle.recipeTargets.duration_seconds }} с
-              </div>
-              <div v-else class="text-[color:var(--text-dim)]">
-                Таргеты для этой фазы не заданы
-              </div>
-            </div>
-
-            <div class="text-xs mb-1">Стратегия: {{ translateStrategy(cycle.strategy || 'periodic') }}</div>
-            <div class="text-xs mb-2">Интервал: {{ cycle.interval ? formatInterval(cycle.interval) : 'Не настроено' }}</div>
-            
-            <!-- Последний запуск с индикатором -->
-            <div class="mb-2">
-              <div class="text-xs text-[color:var(--text-dim)] mb-1">Последний запуск:</div>
-              <div class="flex items-center gap-2">
-                <div v-if="cycle.last_run" class="w-2 h-2 rounded-full bg-[color:var(--accent-green)]"></div>
-                <div v-else class="w-2 h-2 rounded-full bg-[color:var(--text-dim)]"></div>
-                <span class="text-xs text-[color:var(--text-muted)]">{{ formatTimeShort(cycle.last_run) }}</span>
-              </div>
-            </div>
-            
-            <!-- Следующий запуск с прогресс-баром -->
-            <div class="mb-2">
-              <div class="text-xs text-[color:var(--text-dim)] mb-1">Следующий запуск:</div>
-              <div v-if="cycle.next_run" class="space-y-1">
-                <div class="flex items-center gap-2">
-                  <div class="w-2 h-2 rounded-full bg-[color:var(--accent-amber)] animate-pulse"></div>
-                  <span class="text-xs text-[color:var(--text-muted)]">{{ formatTimeShort(cycle.next_run) }}</span>
-                </div>
-                <!-- Прогресс-бар до следующего запуска -->
-                <div v-if="cycle.last_run && cycle.interval" class="w-full h-1.5 bg-[color:var(--border-muted)] rounded-full overflow-hidden">
-                  <div 
-                    class="h-full bg-[color:var(--accent-amber)] transition-all duration-300"
-                    :style="{ width: `${getProgressToNextRun(cycle)}%` }"
-                  ></div>
-                </div>
-                <div v-if="cycle.last_run && cycle.interval" class="text-xs text-[color:var(--text-dim)]">
-                  {{ getTimeUntilNextRun(cycle) }}
-                </div>
-              </div>
-              <div v-else class="text-xs text-[color:var(--text-dim)]">Не запланирован</div>
-            </div>
-          </div>
-        </div>
-      </Card>
-
-      <!-- Cycle Control Panel -->
-      <CycleControlPanel
-        v-if="activeGrowCycle"
-        :cycle="activeGrowCycle"
-        :grow-cycle="activeGrowCycle"
-        :phase-progress="computedPhaseProgress"
-        :phase-days-elapsed="computedPhaseDaysElapsed"
-        :phase-days-total="computedPhaseDaysTotal"
-        :can-manage="canManageCycle"
-        :loading="loading.cyclePause || loading.cycleResume || loading.cycleHarvest || loading.cycleAbort"
+      <ZoneCycleTab
+        v-show="activeTab === 'cycle'"
+        :active-grow-cycle="activeGrowCycle"
+        :active-cycle="activeCycle"
+        :current-phase="currentPhase"
+        :cycles-list="cyclesList"
+        :computed-phase-progress="computedPhaseProgress"
+        :computed-phase-days-elapsed="computedPhaseDaysElapsed"
+        :computed-phase-days-total="computedPhaseDaysTotal"
+        :cycle-status-label="cycleStatusLabel"
+        :cycle-status-variant="cycleStatusVariant"
+        :phase-time-left-label="phaseTimeLeftLabel"
+        :can-manage-recipe="canManageRecipe"
+        :can-manage-cycle="canManageCycle"
+        :loading="loading"
+        @run-cycle="onRunCycle"
+        @change-recipe="onCycleChangeRecipe"
         @pause="onCyclePause"
         @resume="onCycleResume"
         @harvest="onCycleHarvest"
         @abort="onCycleAbort"
+        @next-phase="onNextPhase"
       />
 
-      <!-- Automation Engine -->
-      <AutomationEngine :zone-id="zoneId" />
+      <ZoneAutomationTab
+        v-show="activeTab === 'automation'"
+        :zone-id="zoneId"
+        :targets="targets"
+      />
 
-      <!-- Events (история событий) -->
-      <Card>
-        <div class="text-sm font-semibold mb-2">События</div>
-        <div v-if="events.length > 0" class="space-y-1 max-h-[400px] overflow-y-auto" data-testid="zone-events-list">
-          <div
-            v-for="e in events"
-            :key="e.id"
-            :data-testid="`zone-event-item-${e.id}`"
-            class="text-sm text-[color:var(--text-muted)] flex items-start gap-2 py-1 border-b border-[color:var(--border-muted)] last:border-0"
-          >
-            <Badge
-              :variant="
-                e.kind === 'ALERT' ? 'danger' :
-                e.kind === 'WARNING' ? 'warning' :
-                e.kind === 'INFO' ? 'info' : 'neutral'
-              "
-              class="text-xs shrink-0"
-            >
-              {{ translateEventKind(e.kind) }}
-            </Badge>
-            <div class="flex-1 min-w-0">
-              <div class="text-xs text-[color:var(--text-dim)]">
-                {{ new Date(e.occurred_at).toLocaleString('ru-RU') }}
-              </div>
-              <div class="text-sm">{{ e.message }}</div>
-            </div>
-          </div>
-        </div>
-        <div v-else class="text-sm text-[color:var(--text-dim)]">Нет событий</div>
-      </Card>
+      <ZoneEventsTab
+        v-show="activeTab === 'events'"
+        :events="events"
+        :zone-id="zoneId"
+      />
+
+      <ZoneDevicesTab
+        v-show="activeTab === 'devices'"
+        :zone="zone"
+        :devices="devices"
+        :can-manage-devices="canManageDevices"
+        @attach="showAttachNodesModal = true"
+        @configure="(device) => openNodeConfig(device.id, device)"
+      />
     </div>
     
     <!-- Digital Twin Simulation Modal -->
@@ -533,29 +210,23 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
-import Card from '@/Components/Card.vue'
-import Button from '@/Components/Button.vue'
-import Badge from '@/Components/Badge.vue'
-import { useHistory } from '@/composables/useHistory'
-import ZoneTargets from '@/Components/ZoneTargets.vue'
-import StageProgress from '@/Components/StageProgress.vue'
-import ZoneDevicesVisualization from '@/Components/ZoneDevicesVisualization.vue'
-import LoadingState from '@/Components/LoadingState.vue'
-import UnassignedNodeErrorsWidget from '@/Components/UnassignedNodeErrorsWidget.vue'
-import AIPredictionsSection from '@/Components/AIPredictionsSection.vue'
+import Tabs from '@/Components/Tabs.vue'
 import ZoneSimulationModal from '@/Components/ZoneSimulationModal.vue'
 import ZoneActionModal from '@/Components/ZoneActionModal.vue'
 import GrowthCycleWizard from '@/Components/GrowCycle/GrowthCycleWizard.vue'
 import AttachNodesModal from '@/Components/AttachNodesModal.vue'
 import NodeConfigModal from '@/Components/NodeConfigModal.vue'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
-import AutomationEngine from '@/Components/AutomationEngine.vue'
-import CycleControlPanel from '@/Components/GrowCycle/CycleControlPanel.vue'
-import { translateStatus, translateEventKind, translateCycleType, translateStrategy } from '@/utils/i18n'
-import { formatTimeShort, formatInterval } from '@/utils/formatTime'
+import ZoneAutomationTab from '@/Pages/Zones/Tabs/ZoneAutomationTab.vue'
+import ZoneCycleTab from '@/Pages/Zones/Tabs/ZoneCycleTab.vue'
+import ZoneDevicesTab from '@/Pages/Zones/Tabs/ZoneDevicesTab.vue'
+import ZoneEventsTab from '@/Pages/Zones/Tabs/ZoneEventsTab.vue'
+import ZoneOverviewTab from '@/Pages/Zones/Tabs/ZoneOverviewTab.vue'
+import ZoneTelemetryTab from '@/Pages/Zones/Tabs/ZoneTelemetryTab.vue'
+import { useHistory } from '@/composables/useHistory'
 import { logger } from '@/utils/logger'
 
 // Используем logger напрямую (logger уже проверен и доступен)
@@ -567,20 +238,16 @@ import { useWebSocket } from '@/composables/useWebSocket'
 import { useErrorHandler } from '@/composables/useErrorHandler'
 import { useOptimisticUpdate, createOptimisticZoneUpdate } from '@/composables/useOptimisticUpdate'
 import { useZonesStore } from '@/stores/zones'
-import { useOptimizedUpdates, useTelemetryBatch } from '@/composables/useOptimizedUpdates'
+import { useTelemetryBatch } from '@/composables/useOptimizedUpdates'
 import { useToast } from '@/composables/useToast'
 import { useModal } from '@/composables/useModal'
 import { useLoading } from '@/composables/useLoading'
-import { useTheme } from '@/composables/useTheme'
-import { extractData } from '@/utils/apiHelpers'
+import { useUrlState } from '@/composables/useUrlState'
 import { usePageProps } from '@/composables/usePageProps'
-import { DEBOUNCE_DELAY, ANIMATION_DELAY, TOAST_TIMEOUT } from '@/constants/timeouts'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { ERROR_MESSAGES } from '@/constants/messages'
 import type { Zone, Device, ZoneTelemetry, ZoneTargets as ZoneTargetsType, Cycle, CommandType } from '@/types'
 import type { ZoneEvent } from '@/types/ZoneEvent'
-
-const ZoneTelemetryChart = defineAsyncComponent(() => import('@/Pages/Zones/ZoneTelemetryChart.vue'))
-const MultiSeriesTelemetryChart = defineAsyncComponent(() => import('@/Components/MultiSeriesTelemetryChart.vue'))
 
 interface PageProps {
   zone?: Zone
@@ -601,6 +268,25 @@ interface PageProps {
 }
 
 const page = usePage<PageProps>()
+
+const zoneTabs = [
+  { id: 'overview', label: 'Обзор' },
+  { id: 'telemetry', label: 'Телеметрия' },
+  { id: 'cycle', label: 'Цикл' },
+  { id: 'automation', label: 'Автоматизация' },
+  { id: 'events', label: 'События' },
+  { id: 'devices', label: 'Устройства' },
+]
+
+const activeTab = useUrlState<string>({
+  key: 'tab',
+  defaultValue: zoneTabs[0].id,
+  parse: (value) => {
+    if (!value) return zoneTabs[0].id
+    return zoneTabs.some((tab) => tab.id === value) ? value : zoneTabs[0].id
+  },
+  serialize: (value) => value,
+})
 
 // Modal states using useModal composable
 const modals = useModal<{
@@ -640,7 +326,7 @@ interface LoadingState {
   cycleChangeRecipe: boolean
 }
 
-const { loading, setLoading, startLoading, stopLoading } = useLoading<LoadingState>({
+const { loading, setLoading } = useLoading<LoadingState>({
   toggle: false,
   irrigate: false,
   nextPhase: false,
@@ -1020,41 +706,6 @@ const cyclesList = computed(() => {
   >
 })
 
-// Функции для вычисления прогресса до следующего запуска
-function getProgressToNextRun(cycle: Cycle & { last_run?: string | null; next_run?: string | null; interval?: number | null }): number {
-  if (!cycle.last_run || !cycle.next_run || !cycle.interval) return 0
-  
-  const now = new Date().getTime()
-  const lastRun = new Date(cycle.last_run).getTime()
-  const nextRun = new Date(cycle.next_run).getTime()
-  
-  if (now >= nextRun) return 100
-  if (now <= lastRun) return 0
-  
-  const total = nextRun - lastRun
-  const elapsed = now - lastRun
-  return Math.min(100, Math.max(0, (elapsed / total) * 100))
-}
-
-function getTimeUntilNextRun(cycle: Cycle & { next_run?: string | null }): string {
-  if (!cycle.next_run) return ''
-  
-  const now = new Date().getTime()
-  const nextRun = new Date(cycle.next_run).getTime()
-  const diff = nextRun - now
-  
-  if (diff <= 0) return 'Просрочено'
-  
-  const minutes = Math.floor(diff / 60000)
-  const hours = Math.floor(minutes / 60)
-  const days = Math.floor(hours / 24)
-  
-  if (days > 0) return `Через ${days} дн.`
-  if (hours > 0) return `Через ${hours} ч.`
-  if (minutes > 0) return `Через ${minutes} мин.`
-  return 'Скоро'
-}
-
 // Функции для отображения статуса команд
 const growthCycleCommandStatus = computed(() => {
   const activeStatuses = ['QUEUED', 'SENT', 'ACCEPTED', 'DONE', 'FAILED', 'TIMEOUT', 'SEND_FAILED', 'pending', 'executing', 'completed', 'failed', 'ack']
@@ -1064,80 +715,28 @@ const growthCycleCommandStatus = computed(() => {
   return matching[0]?.status || null
 })
 
-function getCommandStatusText(status: string | null): string {
-  if (!status) return ''
-  const texts: Record<string, string> = {
-    'QUEUED': 'В очереди',
-    'SENT': 'Отправлено',
-    'ACCEPTED': 'Принято',
-    'DONE': 'Выполнено',
-    'FAILED': 'Ошибка',
-    'TIMEOUT': 'Таймаут',
-    'SEND_FAILED': 'Ошибка отправки',
-    'pending': 'Ожидание...',
-    'executing': 'Выполняется...',
-    'completed': 'Выполнено',
-    'ack': 'Выполнено',
-    'failed': 'Ошибка'
-  }
-  return texts[status] || status
-}
-
 // Графики: загрузка данных истории
-const chartTimeRange = ref<'1H' | '24H' | '7D' | '30D' | 'ALL'>('24H')
+const telemetryRanges = ['1H', '24H', '7D', '30D', 'ALL'] as const
+type TelemetryRange = typeof telemetryRanges[number]
+
+const chartTimeRange = ref<TelemetryRange>('24H')
 const chartDataPh = ref<Array<{ ts: number; value: number }>>([])
 const chartDataEc = ref<Array<{ ts: number; value: number }>>([])
-const showSeparateCharts = ref(false) // Опция для показа отдельных графиков
 
-const { theme } = useTheme()
-const resolveCssColor = (variable: string, fallback: string): string => {
-  if (typeof window === 'undefined') {
-    return fallback
-  }
-  const value = getComputedStyle(document.documentElement).getPropertyValue(variable).trim()
-  return value || fallback
+const telemetryRangeKey = computed(() => {
+  return zoneId.value ? `zone:${zoneId.value}:telemetryRange` : null
+})
+
+const getStoredTelemetryRange = (): TelemetryRange | null => {
+  if (typeof window === 'undefined') return null
+  const key = telemetryRangeKey.value
+  if (!key) return null
+  const stored = window.localStorage.getItem(key)
+  return telemetryRanges.includes(stored as TelemetryRange) ? (stored as TelemetryRange) : null
 }
 
-const chartPalette = computed(() => {
-  theme.value
-  return {
-    ph: resolveCssColor('--accent-cyan', '#3b82f6'),
-    ec: resolveCssColor('--accent-green', '#10b981'),
-  }
-})
-
-// Мульти-серии данные для комбинированного графика
-const multiSeriesData = computed(() => {
-  return [
-    {
-      name: 'ph',
-      label: 'pH',
-      color: chartPalette.value.ph,
-      data: chartDataPh.value,
-      currentValue: telemetry.value.ph,
-      yAxisIndex: 0,
-      targetRange: targets.value.ph ? {
-        min: targets.value.ph.min,
-        max: targets.value.ph.max,
-      } : undefined,
-    },
-    {
-      name: 'ec',
-      label: 'EC',
-      color: chartPalette.value.ec,
-      data: chartDataEc.value,
-      currentValue: telemetry.value.ec,
-      yAxisIndex: 1, // Используем правую ось Y для EC
-      targetRange: targets.value.ec ? {
-        min: targets.value.ec.min,
-        max: targets.value.ec.max,
-      } : undefined,
-    },
-  ]
-})
-
 // Загрузка данных истории для графиков через useTelemetry
-async function loadChartData(metric: 'PH' | 'EC', timeRange: string): Promise<Array<{ ts: number; value: number }>> {
+async function loadChartData(metric: 'PH' | 'EC', timeRange: TelemetryRange): Promise<Array<{ ts: number; value: number }>> {
   if (!zoneId.value) return []
   
   const now = new Date()
@@ -1171,11 +770,19 @@ async function loadChartData(metric: 'PH' | 'EC', timeRange: string): Promise<Ar
   }
 }
 
-async function onChartTimeRangeChange(newRange: string): Promise<void> {
-  chartTimeRange.value = newRange as '1H' | '24H' | '7D' | '30D' | 'ALL'
+async function onChartTimeRangeChange(newRange: TelemetryRange): Promise<void> {
+  if (chartTimeRange.value === newRange) return
+  chartTimeRange.value = newRange
   chartDataPh.value = await loadChartData('PH', newRange)
   chartDataEc.value = await loadChartData('EC', newRange)
 }
+
+watch(chartTimeRange, (value) => {
+  if (typeof window === 'undefined') return
+  const key = telemetryRangeKey.value
+  if (!key) return
+  window.localStorage.setItem(key, value)
+})
 
 // Watch для отслеживания изменений zone props (отключен для производительности)
 // watch(() => page.props.zone, (newZone: any, oldZone: any) => {
@@ -1207,6 +814,11 @@ onMounted(async () => {
   const params = new URLSearchParams(window.location.search)
   if (params.get('start_cycle') === '1') {
     modals.open('growthCycle')
+  }
+
+  const storedRange = getStoredTelemetryRange()
+  if (storedRange) {
+    chartTimeRange.value = storedRange
   }
 
   // Загрузить данные для графиков

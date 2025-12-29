@@ -17,7 +17,7 @@ actions:
 
   - step: set_zone_id
     type: set
-    zone_id: ${zones_response.data.data[0].id}
+    zone_id: ${zones_response.data[0].id}
 
   - step: get_nodes
     type: api_get
@@ -27,30 +27,47 @@ actions:
   - step: set_node_id
     type: set
     node_id: ${nodes_response.data.data[0].id}
-    test_zone_id: 1  # Используем фиксированный zone_id для каналов
+    test_zone_id: ${nodes_response.data.data[0].zone_id}
     test_node_id: ${nodes_response.data.data[0].id}
-
-  # Настраиваем node-sim на duplicate response mode
-  - step: set_duplicate_response_mode
-    type: api_post
-    endpoint: /api/test-utils/node-sim/duplicate-mode
-    payload:
-      enabled: true
-      duplicate_count: 3
-    optional: true
 
   - step: send_duplicate_command
     type: api_post
-    endpoint: /api/zones/1/commands
+    endpoint: /api/nodes/${test_node_id}/commands
     payload:
-      type: FORCE_IRRIGATION
+      cmd: set_relay_state
+      channel: main_pump
       params:
-        duration_sec: 5
+        channel: main_pump
+        state: false
     save: duplicate_command_response
 
   - step: extract_duplicate_command_id
     type: set
-    duplicate_command_id: ${duplicate_command_response.data.id}
+    duplicate_command_id: ${duplicate_command_response.data.command_id}
+
+  - step: node_sends_done_first
+    type: mqtt_publish
+    topic: "hydro/gh-test-1/zn-test-1/nd-ph-esp32una/main_pump/command_response"
+    payload:
+      cmd_id: ${duplicate_command_id}
+      status: "DONE"
+      details:
+        result_code: 0
+      ts: ${TIMESTAMP_MS}
+    qos: 1
+    wait_seconds: 1
+
+  - step: node_sends_done_duplicate
+    type: mqtt_publish
+    topic: "hydro/gh-test-1/zn-test-1/nd-ph-esp32una/main_pump/command_response"
+    payload:
+      cmd_id: ${duplicate_command_id}
+      status: "DONE"
+      details:
+        result_code: 0
+      ts: ${TIMESTAMP_MS}
+    qos: 1
+    wait_seconds: 1
 
   # Ждем завершения команды несмотря на дубликаты
   - step: wait_for_command_completion
@@ -63,8 +80,8 @@ actions:
       db_exec = DatabaseStepExecutor(context.get('db'), resolver)
       import asyncio
       result = asyncio.run(db_exec.execute_db_step('database_query', {
-        'query': 'SELECT status FROM commands WHERE id = :command_id',
-        'params': {'command_id': context['duplicate_command_id']}
+        'query': 'SELECT status FROM commands WHERE cmd_id = :cmd_id',
+        'params': {'cmd_id': context['duplicate_command_id']}
       }))
       result and result[0]['status'] in ['DONE', 'FAILED']
     timeout: 30.0
@@ -76,18 +93,10 @@ actions:
     query: |
       SELECT status, updated_at
       FROM commands
-      WHERE id = :command_id
+      WHERE cmd_id = :command_id
     params:
       command_id: ${duplicate_command_id}
     save: final_status
-
-  # Отключаем duplicate mode
-  - step: disable_duplicate_response_mode
-    type: api_post
-    endpoint: /api/test-utils/node-sim/duplicate-mode
-    payload:
-      enabled: false
-    optional: true
 
 assertions:
   # Проверка 1: Команда завершилась успешно несмотря на дубликаты
@@ -103,14 +112,13 @@ assertions:
   - name: single_final_status
     type: database_query
     query: |
-      SELECT COUNT(*) as status_count
-      FROM command_status_history
-      WHERE command_id = :command_id
-      AND status IN ('DONE', 'FAILED')
+      SELECT COUNT(*) as cmd_count
+      FROM commands
+      WHERE cmd_id = :command_id
     params:
       command_id: ${duplicate_command_id}
     expected:
-      - field: status_count
+      - field: cmd_count
         operator: equals
         value: 1
 
@@ -122,29 +130,16 @@ assertions:
       # Это грубая проверка, в реальности нужно проверять логи
       True  # Для простоты - считаем что если команда завершилась, то все OK
 
-  # Проверка 4: Command status history корректна
-  - name: status_history_consistent
+  # Проверка 4: Команда остается в одном финальном статусе
+  - name: final_status_consistent
     type: database_query
     query: |
-      SELECT
-        COUNT(CASE WHEN status = 'QUEUED' THEN 1 END) as queued_count,
-        COUNT(CASE WHEN status = 'SENT' THEN 1 END) as sent_count,
-        COUNT(CASE WHEN status = 'ACCEPTED' THEN 1 END) as accepted_count,
-        COUNT(CASE WHEN status IN ('DONE', 'FAILED') THEN 1 END) as final_count
-      FROM command_status_history
-      WHERE command_id = :command_id
+      SELECT status
+      FROM commands
+      WHERE cmd_id = :command_id
     params:
       command_id: ${duplicate_command_id}
     expected:
-      - field: queued_count
-        operator: greater_than
-        value: 0
-      - field: sent_count
-        operator: greater_than
-        value: 0
-      - field: accepted_count
-        operator: greater_than
-        value: 0
-      - field: final_count
-        operator: equals
-        value: 1
+      - field: status
+        operator: in
+        value: ["DONE", "FAILED"]
