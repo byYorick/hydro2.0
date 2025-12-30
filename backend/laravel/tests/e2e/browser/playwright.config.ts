@@ -1,11 +1,14 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const envWorkers = process.env.PW_WORKERS ? Number(process.env.PW_WORKERS) : undefined;
+const workerCount = Number.isFinite(envWorkers) && envWorkers && envWorkers > 0 ? envWorkers : 2;
+
 export default defineConfig({
   testDir: './specs',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  workers: process.env.CI ? 1 : workerCount,
   reporter: [
     ['html', { outputFolder: '../reports/playwright' }],
     ['junit', { outputFile: '../reports/playwright/junit.xml' }],
@@ -52,4 +55,3 @@ export default defineConfig({
     timeout: 120000,
   },
 });
-

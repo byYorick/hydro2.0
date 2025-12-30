@@ -164,6 +164,10 @@ class RecipeAnalyticsServiceTest extends TestCase
 
         $service = app(GrowCycleService::class);
         $cycle = $service->createCycle($zone, $revision, $plant->id, ['start_immediately' => true]);
+        $cycle->update([
+            'started_at' => Carbon::now()->subDays(10),
+            'planting_at' => Carbon::now()->subDays(10),
+        ]);
 
         for ($i = 0; $i < 5; $i++) {
             \App\Models\Alert::factory()->create([

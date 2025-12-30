@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Enums\GrowCycleStatus;
 use App\Enums\ZoneStatus;
 use App\Models\Alert;
+use App\Models\Command;
+use App\Models\DeviceNode;
 use App\Models\GrowCycle;
 use App\Models\TelemetryLast;
 use App\Models\UnassignedNodeError;
@@ -32,6 +34,34 @@ class ZoneDataService
 
             // Получаем телеметрию
             $telemetry = $this->getZoneTelemetryGrouped($zone->id);
+            $latestTelemetryPerChannel = $this->getLatestTelemetryPerChannel($zone->id);
+
+            $devices = DeviceNode::query()
+                ->where('zone_id', $zone->id)
+                ->orderBy('id')
+                ->get()
+                ->map(fn ($node) => [
+                    'id' => $node->id,
+                    'uid' => $node->uid,
+                    'status' => $node->status,
+                    'updated_at' => $node->updated_at?->toIso8601String(),
+                ])
+                ->values();
+
+            $commandsRecent = Command::query()
+                ->where('zone_id', $zone->id)
+                ->orderBy('created_at', 'desc')
+                ->limit(10)
+                ->get()
+                ->map(fn ($command) => [
+                    'id' => $command->id,
+                    'cmd_id' => $command->cmd_id,
+                    'cmd' => $command->cmd,
+                    'status' => $command->status,
+                    'node_id' => $command->node_id,
+                    'created_at' => $command->created_at?->toIso8601String(),
+                ])
+                ->values();
 
             // Получаем активные алерты
             $alerts = Alert::where('zone_id', $zone->id)
@@ -84,7 +114,7 @@ class ZoneDataService
                     ->get()
                     ->map(function ($event) {
                         return [
-                            'id' => $event->id,
+                            'event_id' => $event->id,
                             'type' => $event->type,
                             'data' => $event->data,
                             'created_at' => $event->created_at?->toIso8601String(),
@@ -97,11 +127,14 @@ class ZoneDataService
                 'server_ts' => $serverTs,
                 'zone_id' => $zone->id,
                 'last_event_id' => $lastEventId,
+                'devices_online_state' => $devices,
                 'zone' => $zoneInfo,
                 'cycle' => $cycleInfo,
                 'telemetry' => $telemetry,
+                'latest_telemetry_per_channel' => $latestTelemetryPerChannel,
                 'active_alerts' => $alerts,
-                'recent_commands' => $recentEvents,
+                'commands_recent' => $commandsRecent,
+                'recent_events' => $recentEvents,
                 'nodes' => [], // Пока пустой массив, может быть заполнен позже
             ];
         });
@@ -113,6 +146,27 @@ class ZoneDataService
     public function getEvents(Zone $zone, Request $request): array
     {
         $query = ZoneEvent::where('zone_id', $zone->id);
+        $afterId = $request->integer('after_id');
+
+        if ($afterId > 0) {
+            return ZoneEvent::where('zone_id', $zone->id)
+                ->where('id', '>', $afterId)
+                ->orderBy('id', 'asc')
+                ->get()
+                ->map(function ($event) {
+                    return [
+                        'event_id' => $event->id,
+                        'type' => $event->type,
+                        'entity_type' => $event->entity_type,
+                        'entity_id' => $event->entity_id,
+                        'payload' => $event->payload_json,
+                        'server_ts' => $event->server_ts,
+                        'created_at' => $event->created_at?->toIso8601String(),
+                    ];
+                })
+                ->values()
+                ->all();
+        }
 
         // Фильтрация по типу события
         if ($request->has('type')) {
@@ -136,7 +190,17 @@ class ZoneDataService
             ->paginate($perPage, ['*'], 'page', $page);
 
         return [
-            'events' => $events->items(),
+            'events' => collect($events->items())->map(function ($event) {
+                return [
+                    'event_id' => $event->id,
+                    'type' => $event->type,
+                    'entity_type' => $event->entity_type,
+                    'entity_id' => $event->entity_id,
+                    'payload' => $event->payload_json,
+                    'server_ts' => $event->server_ts,
+                    'created_at' => $event->created_at?->toIso8601String(),
+                ];
+            })->values()->all(),
             'pagination' => [
                 'current_page' => $events->currentPage(),
                 'last_page' => $events->lastPage(),
@@ -255,6 +319,47 @@ class ZoneDataService
             $telemetry[$nodeId][$channel] = [
                 'metric_type' => $item->metric_type,
                 'value' => (float) $item->value,
+                'updated_at' => $item->updated_at?->toIso8601String(),
+            ];
+        }
+
+        return $telemetry;
+    }
+
+    private function getLatestTelemetryPerChannel(int $zoneId): array
+    {
+        $telemetryRaw = TelemetryLast::query()
+            ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
+            ->where('sensors.zone_id', $zoneId)
+            ->whereNotNull('sensors.zone_id')
+            ->select([
+                'sensors.node_id',
+                'sensors.label as channel',
+                'sensors.type as metric_type',
+                'telemetry_last.last_value as value',
+                'telemetry_last.last_ts',
+                'telemetry_last.updated_at',
+            ])
+            ->orderBy('telemetry_last.updated_at', 'desc')
+            ->get();
+
+        $telemetry = [];
+        foreach ($telemetryRaw as $item) {
+            $channel = $item->channel ?: 'default';
+            $nodeId = $item->node_id ?? 'unknown';
+
+            if (!isset($telemetry[$channel])) {
+                $telemetry[$channel] = [];
+            }
+
+            if (!isset($telemetry[$channel][$nodeId])) {
+                $telemetry[$channel][$nodeId] = [];
+            }
+
+            $telemetry[$channel][$nodeId][] = [
+                'metric_type' => $item->metric_type,
+                'value' => (float) $item->value,
+                'ts' => $item->last_ts?->toIso8601String(),
                 'updated_at' => $item->updated_at?->toIso8601String(),
             ];
         }

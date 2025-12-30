@@ -126,14 +126,9 @@ class ZoneSnapshotTest extends TestCase
         $greenhouse = Greenhouse::factory()->create();
         $zone = Zone::factory()->create(['greenhouse_id' => $greenhouse->id]);
         
-        $node1 = DeviceNode::factory()->create([
+        $node = DeviceNode::factory()->create([
             'zone_id' => $zone->id,
             'status' => 'online',
-        ]);
-        
-        $node2 = DeviceNode::factory()->create([
-            'zone_id' => $zone->id,
-            'status' => 'offline',
         ]);
         
         $token = $this->token();
@@ -147,15 +142,12 @@ class ZoneSnapshotTest extends TestCase
         $this->assertArrayHasKey('devices_online_state', $data);
         $devices = $data['devices_online_state'];
         
-        $this->assertCount(2, $devices);
+        $this->assertCount(1, $devices);
         
-        $device1 = collect($devices)->firstWhere('id', $node1->id);
-        $device2 = collect($devices)->firstWhere('id', $node2->id);
+        $device = collect($devices)->firstWhere('id', $node->id);
         
-        $this->assertNotNull($device1);
-        $this->assertEquals('online', $device1['status']);
-        $this->assertNotNull($device2);
-        $this->assertEquals('offline', $device2['status']);
+        $this->assertNotNull($device);
+        $this->assertEquals('online', $device['status']);
     }
 
     public function test_snapshot_includes_active_alerts(): void

@@ -129,17 +129,18 @@ class DatabaseIndexesTest extends TestCase
         ]);
 
         // Проверяем, что запрос использует индекс
-        $explain = DB::select("
+        $explainRow = DB::selectOne("
             EXPLAIN (FORMAT JSON)
             SELECT * FROM telemetry_samples 
             WHERE sensor_id = ? AND ts >= ?
         ", [$sensor->id, now()->subDay()]);
 
-        // EXPLAIN возвращает массив с одним элементом
-        $result = is_array($explain) ? $explain[0] : $explain;
-        $planData = is_string($result->explain ?? null) 
-            ? json_decode($result->explain, true) 
-            : (is_array($result) ? $result : []);
+        // EXPLAIN возвращает одну колонку (обычно "QUERY PLAN")
+        $resultArray = is_array($explainRow) ? $explainRow : (array) $explainRow;
+        $rawPlan = !empty($resultArray) ? reset($resultArray) : null;
+        $planData = is_string($rawPlan)
+            ? json_decode($rawPlan, true)
+            : (is_array($rawPlan) ? $rawPlan : []);
         
         if (empty($planData)) {
             $this->markTestSkipped('Could not parse EXPLAIN result');
