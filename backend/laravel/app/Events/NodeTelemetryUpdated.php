@@ -29,6 +29,7 @@ class NodeTelemetryUpdated implements ShouldBroadcast
         public string $metricType,
         public float $value,
         public int $timestamp,
+        public ?int $zoneId = null,
     ) {
         // Генерируем event_id и server_ts для reconciliation
         $sequence = EventSequenceService::generateEventId();
@@ -41,6 +42,17 @@ class NodeTelemetryUpdated implements ShouldBroadcast
      */
     public function broadcastOn(): PrivateChannel
     {
+        $zoneId = $this->zoneId;
+        if (! $zoneId) {
+            $zoneId = DeviceNode::query()
+                ->whereKey($this->nodeId)
+                ->value('zone_id');
+        }
+
+        if ($zoneId) {
+            return new PrivateChannel("hydro.zones.{$zoneId}");
+        }
+
         return new PrivateChannel('hydro.devices');
     }
 
@@ -77,22 +89,28 @@ class NodeTelemetryUpdated implements ShouldBroadcast
     public function broadcasted(): void
     {
         // Получаем узел для определения zone_id
-        $node = DeviceNode::find($this->nodeId);
-        if (!$node || !$node->zone_id) {
+        $zoneId = $this->zoneId;
+        if (! $zoneId) {
+            $zoneId = DeviceNode::query()
+                ->whereKey($this->nodeId)
+                ->value('zone_id');
+        }
+
+        if (! $zoneId) {
             return;
         }
 
         // Проверяем, нужно ли записывать это событие в ledger
         // Записываем только значимые изменения (превышающие порог) и не чаще минимального интервала
         $filter = app(\App\Services\TelemetryLedgerFilter::class);
-        if (!$filter->shouldRecord($node->zone_id, $this->metricType, $this->value)) {
+        if (! $filter->shouldRecord($zoneId, $this->metricType, $this->value)) {
             // Не записываем - это незначимое изменение или слишком часто
             return;
         }
 
         // Записываем только значимые изменения
         $this->recordZoneEvent(
-            zoneId: $node->zone_id,
+            zoneId: $zoneId,
             type: 'telemetry_updated',
             entityType: 'telemetry',
             entityId: $this->nodeId,
@@ -107,4 +125,3 @@ class NodeTelemetryUpdated implements ShouldBroadcast
         );
     }
 }
-

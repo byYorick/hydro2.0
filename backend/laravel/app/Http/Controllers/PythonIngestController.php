@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Events\NodeTelemetryUpdated;
+use App\Events\TelemetryBatchUpdated;
 use App\Models\DeviceNode;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -166,20 +166,23 @@ class PythonIngestController extends Controller
             }
 
             // Broadcast телеметрии через WebSocket для real-time обновления графиков
-            if ($nodeId) {
+            if ($nodeId && $data['zone_id']) {
                 Log::debug('PythonIngestController: Broadcasting telemetry via WebSocket', [
                     'node_id' => $nodeId,
                     'channel' => $data['channel'] ?? '',
                     'metric_type' => $data['metric_type'],
                     'value' => $data['value'],
                 ]);
-                
-                event(new NodeTelemetryUpdated(
-                    nodeId: $nodeId,
-                    channel: $data['channel'] ?? '',
-                    metricType: $data['metric_type'],
-                    value: (float) $data['value'],
-                    timestamp: $timestamp->getTimestamp() * 1000, // Конвертируем в миллисекунды
+
+                event(new TelemetryBatchUpdated(
+                    zoneId: (int) $data['zone_id'],
+                    updates: [[
+                        'node_id' => (int) $nodeId,
+                        'channel' => $data['channel'] ?? null,
+                        'metric_type' => (string) $data['metric_type'],
+                        'value' => (float) $data['value'],
+                        'ts' => (int) ($timestamp->getTimestamp() * 1000),
+                    ]]
                 ));
             }
 
@@ -426,6 +429,7 @@ class PythonIngestController extends Controller
         $this->ensureToken($request);
         $data = $request->validate([
             'node_id' => ['required', 'integer', 'exists:nodes,id'],
+            'zone_id' => ['nullable', 'integer', 'exists:zones,id'],
             'channel' => ['nullable', 'string', 'max:64'],
             'metric_type' => ['required', 'string', 'max:64'],
             'value' => ['required', 'numeric'],
@@ -439,12 +443,31 @@ class PythonIngestController extends Controller
             'value' => $data['value'],
         ]);
 
-        event(new NodeTelemetryUpdated(
-            nodeId: $data['node_id'],
-            channel: $data['channel'] ?? '',
-            metricType: $data['metric_type'],
-            value: (float) $data['value'],
-            timestamp: $data['timestamp'],
+        $zoneId = $data['zone_id'] ?? null;
+        if (! $zoneId) {
+            $zoneId = DeviceNode::query()
+                ->whereKey($data['node_id'])
+                ->value('zone_id');
+        }
+
+        if (! $zoneId) {
+            Log::debug('PythonIngestController: Skipping telemetry broadcast (zone not resolved)', [
+                'node_id' => $data['node_id'],
+                'metric_type' => $data['metric_type'],
+            ]);
+
+            return Response::json(['status' => 'skipped']);
+        }
+
+        event(new TelemetryBatchUpdated(
+            zoneId: (int) $zoneId,
+            updates: [[
+                'node_id' => (int) $data['node_id'],
+                'channel' => $data['channel'] ?? null,
+                'metric_type' => (string) $data['metric_type'],
+                'value' => (float) $data['value'],
+                'ts' => (int) $data['timestamp'],
+            ]]
         ));
 
         return Response::json(['status' => 'ok']);

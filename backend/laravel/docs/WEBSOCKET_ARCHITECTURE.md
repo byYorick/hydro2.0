@@ -64,8 +64,8 @@
 | Канал | Тип | Источник событий | Авторизация (`routes/channels.php`) | Клиентское использование |
 | --- | --- | --- | --- | --- |
 | `hydro.alerts` | Public Channel | `AlertCreated` | Любой аутентифицированный пользователь | Глобальная панель алертов (`HeaderStatusBar.vue`) |
-| `hydro.devices` | Public Channel | `NodeConfigUpdated` | Любой аутентифицированный пользователь | Страницы устройств/зон, список устройств |
-| `hydro.zones.{zoneId}` | Private Channel | `ZoneUpdated` | Проверка `user !== null`, логирование отказов с `zoneId` | Подписка компонент зоны (`Zones/Show.vue`) |
+| `hydro.devices` | Public Channel | `NodeConfigUpdated` (только без зоны) | Любой аутентифицированный пользователь | Список устройств (unassigned) |
+| `hydro.zones.{zoneId}` | Private Channel | `ZoneUpdated`, `NodeConfigUpdated`, `TelemetryBatchUpdated` | Проверка `user !== null`, логирование отказов с `zoneId` | Подписка компонент зоны (`Zones/Show.vue`), realtime телеметрия |
 | `commands.{zoneId}` | Private Channel | `CommandStatusUpdated`, `CommandFailed` | Проверка `user !== null` | Карточка команды конкретной зоны, всплывающие статусы |
 | `commands.global` | Private Channel | `CommandStatusUpdated`, `CommandFailed` без `zoneId` | Проверка `user !== null` | Глобальный список команд, дашборд |
 | `events.global` | Public Channel | `EventCreated` | Публичный канал, авторизация не требуется | Лента событий/активностей |
@@ -75,7 +75,8 @@
 | Event класс | Broadcast name | Канал | Payload | Очередь |
 | --- | --- | --- | --- | --- |
 | `AlertCreated` | по умолчанию имя класса | `hydro.alerts` | `alert` (массив) | очередь `broadcasts` (через `ShouldBroadcast`) |
-| `NodeConfigUpdated` | `device.updated` | `hydro.devices` | `device` с ключевыми полями `DeviceNode` | очередь `broadcasts` |
+| `NodeConfigUpdated` | `device.updated` | `hydro.zones.{id}` (fallback: `hydro.devices` без зоны) | `device` с ключевыми полями `DeviceNode` | очередь `broadcasts` |
+| `TelemetryBatchUpdated` | `telemetry.batch.updated` | `hydro.zones.{id}` | `zone_id`, `updates[]` | очередь `broadcasts` |
 | `ZoneUpdated` | по умолчанию имя класса | `hydro.zones.{id}` | `zone.id`, `zone.name`, `zone.status` | очередь `broadcasts` |
 | `CommandStatusUpdated` | `CommandStatusUpdated` | `commands.{zoneId}` или `commands.global` | `commandId`, `status`, `message`, `error`, `zoneId` | очередь `broadcasts` |
 | `CommandFailed` | `CommandFailed` | `commands.{zoneId}` или `commands.global` | `commandId`, `status=failed`, `message`, `error`, `zoneId` | очередь `broadcasts` |

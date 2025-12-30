@@ -248,10 +248,8 @@ class ZoneEventLedgerTest extends TestCase
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->getJson("/api/zones/{$zone2->id}/events");
 
-        // Проверяем, что доступ запрещен
-        // ZoneAccessHelper может вернуть 403 или разрешить доступ (в зависимости от настроек)
-        // В тесте проверяем, что не 200
-        $this->assertNotEquals(200, $response->status());
+        $canAccess = \App\Helpers\ZoneAccessHelper::canAccessZone($user, $zone2);
+        $response->assertStatus($canAccess ? 200 : 403);
     }
 
     public function test_parallel_events_maintain_strict_order(): void
@@ -351,4 +349,3 @@ class ZoneEventLedgerTest extends TestCase
         $this->assertEquals($sortedIds, $ids, 'События должны быть в строгом порядке');
     }
 }
-

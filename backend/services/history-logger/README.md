@@ -69,6 +69,9 @@ MQTT Topics → handle_telemetry() → Redis Queue → process_telemetry_queue()
 #### History Logger специфичные настройки
 - `TELEMETRY_BATCH_SIZE` - размер батча для записи в БД (по умолчанию: `1000`)
 - `TELEMETRY_FLUSH_MS` - интервал принудительного flush в мс (по умолчанию: `200`)
+- `REALTIME_QUEUE_MAX_SIZE` - лимит очереди realtime обновлений (по умолчанию: `5000`)
+- `REALTIME_FLUSH_MS` - интервал flush realtime обновлений в мс (по умолчанию: `500`)
+- `REALTIME_BATCH_MAX_UPDATES` - максимум realtime обновлений в одном запросе (по умолчанию: `200`)
 - `SHUTDOWN_WAIT_SEC` - время ожидания перед закрытием Redis (по умолчанию: `2`)
 - `SHUTDOWN_TIMEOUT_SEC` - таймаут graceful shutdown в секундах (по умолчанию: `30.0`)
 - `FINAL_BATCH_MULTIPLIER` - множитель для финального батча при shutdown (по умолчанию: `10`)
@@ -255,6 +258,7 @@ hydro/{gh_uid}/{zone_uid}/{node_uid}/{channel}/telemetry
 - `telemetry_received_total` - общее количество полученных сообщений
 - `telemetry_processed_total` - общее количество обработанных сообщений
 - `telemetry_dropped_total{reason}` - количество отброшенных сообщений
+- `dropped_updates_count{reason}` - отброшенные realtime обновления
 - `heartbeat_received_total{node_uid}` - heartbeat по узлам
 - `status_received_total{node_uid,status}` - статусы узлов
 - `diagnostics_received_total{node_uid}` - диагностика узлов
@@ -279,10 +283,12 @@ hydro/{gh_uid}/{zone_uid}/{node_uid}/{channel}/telemetry
 - `telemetry_processing_duration_seconds` - время обработки батча телеметрии
 - `laravel_api_request_duration_seconds` - длительность запросов к Laravel API
 - `redis_operation_duration_seconds` - длительность Redis операций
+- `flush_latency_ms` - latency flush realtime обновлений
 
 ### Gauge метрики
 - `telemetry_queue_size` - текущий размер очереди Redis
 - `telemetry_queue_age_seconds` - возраст самого старого элемента в очереди
+- `realtime_queue_len` - размер очереди realtime обновлений
 
 ### Histogram метрики (время обработки)
 - `telemetry_processing_duration_seconds` - время обработки батча

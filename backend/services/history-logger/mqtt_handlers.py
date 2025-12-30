@@ -291,9 +291,35 @@ async def handle_heartbeat(topic: str, payload: bytes) -> None:
         logger.warning(f"[HEARTBEAT] Could not extract node_uid from topic {topic}")
         return
 
+    gh_uid = _extract_gh_uid(topic)
+    zone_uid = _extract_zone_uid(topic)
+    is_temp_topic = gh_uid == "gh-temp" and zone_uid == "zn-temp"
+
     logger.info(
-        f"[HEARTBEAT] Processing heartbeat for node_uid: {node_uid}, data: {data}"
+        f"[HEARTBEAT] Extracted gh_uid='{gh_uid}', zone_uid='{zone_uid}', is_temp_topic={is_temp_topic}, topic='{topic}'"
     )
+
+    if is_temp_topic:
+        # Для temp топиков node_uid на самом деле hardware_id
+        hardware_id = node_uid
+        logger.info(
+            f"[HEARTBEAT] Processing heartbeat for temp topic, hardware_id: {hardware_id}, data: {data}"
+        )
+
+        # Найдем реальный node_uid по hardware_id
+        node_rows = await fetch(
+            "SELECT uid FROM nodes WHERE hardware_id = $1",
+            hardware_id,
+        )
+        if not node_rows:
+            logger.warning(f"[HEARTBEAT] Node not found for hardware_id: {hardware_id}")
+            return
+        node_uid = node_rows[0]["uid"]
+        logger.info(f"[HEARTBEAT] Found node_uid: {node_uid} for hardware_id: {hardware_id}")
+    else:
+        logger.info(
+            f"[HEARTBEAT] Processing heartbeat for node_uid: {node_uid}, data: {data}"
+        )
 
     uptime = data.get("uptime")
     free_heap = data.get("free_heap") or data.get("free_heap_bytes")

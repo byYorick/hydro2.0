@@ -226,6 +226,27 @@
 - **Тело:** `{"zone_ids": [1, 2, 3]}`
 - **Ответ:** Массив effective targets по зонам
 
+### 5.2. POST /api/internal/realtime/telemetry-batch
+
+- **Описание:** Batched realtime ingest телеметрии для WebSocket
+- **Тело:**
+```json
+{
+  "updates": [
+    {
+      "zone_id": 1,
+      "node_id": 10,
+      "channel": "ph_sensor",
+      "metric_type": "PH",
+      "value": 6.2,
+      "timestamp": 1700000000000
+    }
+  ]
+}
+```
+- **Ограничения:** `REALTIME_BATCH_MAX_UPDATES`, `REALTIME_BATCH_MAX_BYTES`
+- **Ответ:** `{"status":"ok","broadcasted":1,"updates":1}`
+
 ---
 
 ## 6. Greenhouses / Zones / Nodes (ОБНОВЛЕНО)
@@ -756,9 +777,9 @@
 
 **Основные каналы:**
 
-- `hydro.zones.{id}` — обновления по зоне (событие `ZoneUpdated`);
+- `hydro.zones.{id}` — обновления по зоне (`ZoneUpdated`, `NodeConfigUpdated`, `TelemetryBatchUpdated`);
 - `hydro.alerts` — новые алерты (событие `AlertCreated`);
-- `nodes.{id}.status` — статусы узлов (событие `NodeStatusUpdated`).
+- `hydro.devices` — обновления устройств без зоны (fallback для `NodeConfigUpdated`).
 
 **Формат событий:**
 ```json

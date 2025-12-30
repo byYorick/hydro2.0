@@ -29,7 +29,7 @@ from mqtt_handlers import (
     monitor_offline_nodes,
 )
 from system_routes import router as system_router
-from telemetry_processing import handle_telemetry, process_telemetry_queue
+from telemetry_processing import handle_telemetry, process_realtime_queue, process_telemetry_queue
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +50,9 @@ async def lifespan(app: FastAPI):
 
     task = asyncio.create_task(process_telemetry_queue())
     state.background_tasks.append(task)
+
+    realtime_task = asyncio.create_task(process_realtime_queue())
+    state.background_tasks.append(realtime_task)
 
     command_retry_task = asyncio.create_task(
         command_retry_worker(interval=30.0, shutdown_event=state.shutdown_event)

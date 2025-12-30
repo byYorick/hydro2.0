@@ -735,7 +735,8 @@ function onChartTimeRangeChange(newRange: '1H' | '24H' | '7D' | '30D' | 'ALL'): 
 
 // WebSocket подписка на телеметрию
 const nodeId = computed(() => device.value.id)
-const { subscribe: subscribeTelemetry, unsubscribe: unsubscribeTelemetry } = useNodeTelemetry(nodeId)
+const zoneId = computed(() => device.value.zone?.id ?? null)
+const { subscribe: subscribeTelemetry, unsubscribe: unsubscribeTelemetry } = useNodeTelemetry(nodeId, zoneId)
 let unsubscribeTelemetryFn: (() => void) | null = null
 
 // Обработчик обновления телеметрии через WebSocket
@@ -824,8 +825,12 @@ onUnmounted(() => {
 
 // Перезагружаем графики и переподписываемся при изменении устройства
 watch(device, (newDevice, oldDevice) => {
-  // Если изменился nodeId, нужно переподписаться
-  if (newDevice?.id !== oldDevice?.id) {
+  const oldZoneId = oldDevice?.zone?.id ?? null
+  const newZoneId = newDevice?.zone?.id ?? null
+  const nodeChanged = newDevice?.id !== oldDevice?.id
+  const zoneChanged = newZoneId !== oldZoneId
+
+  if (nodeChanged || zoneChanged) {
     loadNodeConfig().catch((error) => {
       logger.error('[Devices/Show] Error reloading config on device change:', error)
     })

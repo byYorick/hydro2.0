@@ -85,16 +85,19 @@
 2. `node_status_updated`
  - изменение статуса узла (online/offline/degraded/maintenance).
 
-3. `alert_created`
+3. `telemetry_batch_updated`
+ - пакетное обновление телеметрии по зоне (batched realtime).
+
+4. `alert_created`
  - новый алерт.
 
-4. `alert_updated`
+5. `alert_updated`
  - изменение статуса алерта (подтверждён, закрыт и т.п.).
 
-5. `recipe_assigned_to_zone`
+6. `recipe_assigned_to_zone`
  - назначен новый рецепт зоне.
 
-6. `recipe_stage_changed`
+7. `recipe_stage_changed`
  - переход стадии рецепта.
 
 При необходимости добавляются новые типы, но без ломки старых.
@@ -146,7 +149,29 @@
 }
 ```
 
-### 4.3. alert_created
+### 4.3. telemetry_batch_updated
+
+```json
+{
+ "event_type": "telemetry_batch_updated",
+ "event_id": "uuid-777",
+ "occurred_at": "2025-01-01T12:00:10Z",
+ "payload": {
+ "zone_id": "zone-1",
+ "updates": [
+   {
+     "node_id": "node-1234",
+     "metric_type": "PH",
+     "channel": "ph_sensor",
+     "value": 6.2,
+     "ts": 1735732810000
+   }
+ ]
+ }
+}
+```
+
+### 4.4. alert_created
 
 ```json
 {
@@ -186,6 +211,7 @@
  ],
  "event_types": [
  "zone_state_updated",
+ "telemetry_batch_updated",
  "node_status_updated",
  "alert_created",
  "alert_updated"

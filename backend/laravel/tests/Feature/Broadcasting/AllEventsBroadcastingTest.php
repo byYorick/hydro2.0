@@ -7,7 +7,9 @@ use App\Events\CommandFailed;
 use App\Events\CommandStatusUpdated;
 use App\Events\EventCreated;
 use App\Events\NodeConfigUpdated;
+use App\Events\TelemetryBatchUpdated;
 use App\Events\ZoneUpdated;
+use App\Models\Command;
 use App\Models\DeviceNode;
 use App\Models\Greenhouse;
 use App\Models\Zone;
@@ -54,10 +56,22 @@ class AllEventsBroadcastingTest extends TestCase
             return $e->broadcastOn()->name === "private-hydro.zones.{$zone->id}";
         });
 
-        // NodeConfigUpdated - канал устройств
+        // NodeConfigUpdated - канал зоны
         event(new NodeConfigUpdated($node));
-        Event::assertDispatched(NodeConfigUpdated::class, function ($e) {
-            return $e->broadcastOn()->name === 'private-hydro.devices';
+        Event::assertDispatched(NodeConfigUpdated::class, function ($e) use ($zone) {
+            return $e->broadcastOn()->name === "private-hydro.zones.{$zone->id}";
+        });
+
+        // TelemetryBatchUpdated - канал зоны
+        event(new TelemetryBatchUpdated($zone->id, [[
+            'node_id' => $node->id,
+            'channel' => 'ph_sensor',
+            'metric_type' => 'PH',
+            'value' => 6.2,
+            'ts' => 1700000000000,
+        ]]));
+        Event::assertDispatched(TelemetryBatchUpdated::class, function ($e) use ($zone) {
+            return $e->broadcastOn()->name === "private-hydro.zones.{$zone->id}";
         });
 
         // AlertCreated - канал алертов
@@ -97,7 +111,7 @@ class AllEventsBroadcastingTest extends TestCase
         $failedEvent = new CommandFailed(200, 'Failed', 'Error', $zone->id);
         $failedData = $failedEvent->broadcastWith();
         $this->assertEquals(200, $failedData['commandId']);
-        $this->assertEquals('failed', $failedData['status']);
+        $this->assertEquals(Command::STATUS_FAILED, $failedData['status']);
         $this->assertEquals('Error', $failedData['error']);
 
         // ZoneUpdated
@@ -112,6 +126,18 @@ class AllEventsBroadcastingTest extends TestCase
         $nodeData = $nodeEvent->broadcastWith();
         $this->assertArrayHasKey('device', $nodeData);
         $this->assertEquals($node->id, $nodeData['device']['id']);
+
+        // TelemetryBatchUpdated
+        $telemetryEvent = new TelemetryBatchUpdated($zone->id, [[
+            'node_id' => $node->id,
+            'channel' => 'ph_sensor',
+            'metric_type' => 'PH',
+            'value' => 6.2,
+            'ts' => 1700000000000,
+        ]]);
+        $telemetryData = $telemetryEvent->broadcastWith();
+        $this->assertEquals($zone->id, $telemetryData['zone_id']);
+        $this->assertCount(1, $telemetryData['updates']);
 
         // AlertCreated
         $alertEvent = new AlertCreated(['id' => 1, 'type' => 'ALERT']);
@@ -139,8 +165,10 @@ class AllEventsBroadcastingTest extends TestCase
         $failedEvent = new CommandFailed(1, 'Failed', 'Error', $zone->id);
         $this->assertEquals('CommandFailed', $failedEvent->broadcastAs());
 
+        $telemetryEvent = new TelemetryBatchUpdated($zone->id, []);
+        $this->assertEquals('telemetry.batch.updated', $telemetryEvent->broadcastAs());
+
         $eventCreated = new EventCreated(1, 'INFO', 'Test');
         $this->assertEquals('EventCreated', $eventCreated->broadcastAs());
     }
 }
-

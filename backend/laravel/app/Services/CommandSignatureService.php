@@ -160,6 +160,22 @@ class CommandSignatureService
             return $this->formatNumber($value);
         }
 
+        if (is_object($value)) {
+            $vars = get_object_vars($value);
+            $keys = array_keys($vars);
+            sort($keys, SORT_STRING);
+
+            $items = [];
+            foreach ($keys as $key) {
+                $encodedKey = json_encode((string) $key, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                if ($encodedKey === false) {
+                    throw new \RuntimeException('Failed to encode command key for signature');
+                }
+                $items[] = $encodedKey . ':' . $this->encodeCanonical($this->canonicalizeValue($vars[$key]));
+            }
+            return '{' . implode(',', $items) . '}';
+        }
+
         if (is_string($value)) {
             $encoded = json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
             if ($encoded === false) {

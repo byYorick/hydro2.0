@@ -249,7 +249,7 @@ Broadcast::channel('events.global', function ($user) {
     return ['id' => $user->id, 'name' => $user->name];
 });
 
-// Канал для обновлений устройств (публичный, но требует авторизации)
+// Канал для обновлений устройств без зоны (публичный, но требует авторизации)
 Broadcast::channel('hydro.devices', function ($user) {
     if (! $user) {
         Log::warning('WebSocket channel authorization denied: unauthenticated', [

@@ -148,8 +148,132 @@ import { onWsStateChange } from '@/utils/echoClient'
 const page = usePage<{ devices?: Device[] }>()
 const devicesStore = useDevicesStore()
 const { subscribeWithCleanup } = useStoreEvents()
-let cleanupDevicesChannel: (() => void) | null = null
-let devicesChannel: any = null
+const deviceUpdateEventName = '.device.updated'
+const zoneChannels = new Map<number, any>()
+let unassignedChannel: any = null
+
+const zoneIds = computed(() => {
+  const ids = new Set<number>()
+  devicesStore.allDevices.forEach(device => {
+    const zoneId = device.zone?.id ?? device.zone_id ?? null
+    if (zoneId) {
+      ids.add(zoneId)
+    }
+  })
+  return Array.from(ids)
+})
+
+const handleDeviceUpdate = (event: any): void => {
+  logger.debug('[Devices/Index] Received device update via WebSocket', event)
+
+  if (event.device) {
+    const device = event.device as Device
+    devicesStore.upsert(device)
+
+    if (event.device.was_recently_created) {
+      logger.info('[Devices/Index] New device created:', device.uid)
+    }
+  }
+}
+
+const subscribeZoneChannel = (zoneId: number): void => {
+  if (zoneChannels.has(zoneId)) {
+    return
+  }
+
+  if (!window.Echo) {
+    logger.debug('[Devices/Index] Echo not available, will retry on connection', { zoneId })
+    return
+  }
+
+  const channelName = `hydro.zones.${zoneId}`
+  try {
+    const channel = window.Echo.private(channelName)
+    channel.listen(deviceUpdateEventName, handleDeviceUpdate)
+    zoneChannels.set(zoneId, channel)
+    logger.debug('[Devices/Index] Subscribed to zone device channel', { channel: channelName })
+  } catch (err) {
+    logger.error('[Devices/Index] Failed to subscribe to zone device channel', { zoneId, err })
+  }
+}
+
+const unsubscribeZoneChannel = (zoneId: number): void => {
+  const channel = zoneChannels.get(zoneId)
+  if (!channel) {
+    return
+  }
+
+  const channelName = `hydro.zones.${zoneId}`
+  try {
+    channel.stopListening(deviceUpdateEventName)
+    if (typeof window.Echo?.leave === 'function') {
+      window.Echo.leave(channelName)
+    }
+  } catch (error) {
+    logger.warn('[Devices/Index] Failed to cleanup zone channel', { zoneId, error })
+  }
+
+  zoneChannels.delete(zoneId)
+}
+
+const subscribeUnassignedChannel = (): void => {
+  if (unassignedChannel) {
+    return
+  }
+
+  if (!window.Echo) {
+    logger.debug('[Devices/Index] Echo not available for unassigned channel', {})
+    return
+  }
+
+  try {
+    unassignedChannel = window.Echo.private('hydro.devices')
+    unassignedChannel.listen(deviceUpdateEventName, handleDeviceUpdate)
+    logger.debug('[Devices/Index] Subscribed to unassigned devices channel')
+  } catch (err) {
+    logger.error('[Devices/Index] Failed to subscribe to unassigned devices channel', err)
+    unassignedChannel = null
+  }
+}
+
+const unsubscribeUnassignedChannel = (): void => {
+  if (!unassignedChannel) {
+    return
+  }
+
+  try {
+    unassignedChannel.stopListening(deviceUpdateEventName)
+    if (typeof window.Echo?.leave === 'function') {
+      window.Echo.leave('hydro.devices')
+    }
+  } catch (error) {
+    logger.warn('[Devices/Index] Failed to cleanup unassigned channel', { error })
+  }
+
+  unassignedChannel = null
+}
+
+const syncDeviceChannels = (): void => {
+  const targetZoneIds = new Set(zoneIds.value)
+
+  Array.from(zoneChannels.keys()).forEach(zoneId => {
+    if (!targetZoneIds.has(zoneId)) {
+      unsubscribeZoneChannel(zoneId)
+    }
+  })
+
+  targetZoneIds.forEach(zoneId => {
+    if (!zoneChannels.has(zoneId)) {
+      subscribeZoneChannel(zoneId)
+    }
+  })
+  subscribeUnassignedChannel()
+}
+
+const resetDeviceChannels = (): void => {
+  Array.from(zoneChannels.keys()).forEach(zoneId => unsubscribeZoneChannel(zoneId))
+  unsubscribeUnassignedChannel()
+}
 
 onMounted(() => {
   devicesStore.initFromProps(page.props)
@@ -173,89 +297,27 @@ onMounted(() => {
     logger.debug('[Devices/Index] Device lifecycle transitioned, cache invalidated', { deviceId, fromState, toState })
   })
   
-  // Подписка на WebSocket события обновления устройств с ресабскрайбом
-      const channelName = 'hydro.devices'
-      const eventName = '.device.updated'
-  
-  const subscribeToDevicesChannel = () => {
-    // Очищаем предыдущую подписку, если есть
-    if (cleanupDevicesChannel) {
-      cleanupDevicesChannel()
-      cleanupDevicesChannel = null
-    }
-    
-    if (!window.Echo) {
-      logger.debug('[Devices/Index] Echo not available, will retry on connection', {})
-      return
-    }
-    
-    try {
-      devicesChannel = window.Echo.private(channelName)
-      
-      // Слушаем события обновления устройств
-      // Используем broadcastAs имя 'device.updated'
-      devicesChannel.listen(eventName, (event: any) => {
-        logger.debug('[Devices/Index] Received device update via WebSocket', event)
-        
-        if (event.device) {
-          const device = event.device as Device
-          // Обновляем устройство в store
-          devicesStore.upsert(device)
-          
-          // Если это новое устройство, эмитим событие создания
-          if (event.device.was_recently_created) {
-            logger.info('[Devices/Index] New device created:', device.uid)
-          }
-        }
-      })
-      
-      cleanupDevicesChannel = () => {
-        try {
-          if (devicesChannel) {
-            devicesChannel.stopListening(eventName)
-          }
-          if (typeof window.Echo?.leave === 'function') {
-            window.Echo.leave(channelName)
-          }
-        } catch (error) {
-          logger.warn('[Devices/Index] Failed to cleanup device channel', { error })
-        }
-        devicesChannel = null
-      }
-      
-      logger.debug('[Devices/Index] Subscribed to hydro.devices WebSocket channel')
-      
-    } catch (err) {
-      logger.error('[Devices/Index] Failed to subscribe to devices WebSocket:', err)
-      devicesChannel = null
-    }
-  }
-  
-  // Пытаемся подписаться сразу, если Echo доступен
-  subscribeToDevicesChannel()
-  
-  // Ресабскрайб при подключении WebSocket
+  const stopChannelWatcher = watch(zoneIds, () => {
+    syncDeviceChannels()
+  }, { immediate: true })
+
   const unsubscribeWsState = onWsStateChange((state) => {
     if (state === 'connected') {
-      logger.debug('[Devices/Index] WebSocket connected, resubscribing to devices channel')
-      // Небольшая задержка для гарантии, что Echo полностью готов
+      logger.debug('[Devices/Index] WebSocket connected, resubscribing device channels')
       setTimeout(() => {
-        subscribeToDevicesChannel()
+        resetDeviceChannels()
+        syncDeviceChannels()
       }, 100)
+    } else if (state === 'disconnected') {
+      resetDeviceChannels()
     }
   })
-  
-  // Очищаем все подписки при размонтировании компонента
+
   onUnmounted(() => {
-    // Очищаем подписку на состояние WebSocket
+    stopChannelWatcher()
     unsubscribeWsState()
-    // Очищаем подписку на канал устройств
-    if (cleanupDevicesChannel) {
-      cleanupDevicesChannel()
-      cleanupDevicesChannel = null
-      devicesChannel = null
-      logger.debug('[Devices/Index] Cleaned up devices channel on unmount')
-    }
+    resetDeviceChannels()
+    logger.debug('[Devices/Index] Cleaned up device channels on unmount')
   })
 })
 const type = useUrlState<string>({

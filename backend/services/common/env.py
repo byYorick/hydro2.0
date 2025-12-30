@@ -31,6 +31,9 @@ class Settings:
 
     telemetry_batch_size: int = int(os.getenv("TELEMETRY_BATCH_SIZE", "1000"))  # Увеличено для высокой нагрузки
     telemetry_flush_ms: int = int(os.getenv("TELEMETRY_FLUSH_MS", "200"))  # Уменьшено для быстрой обработки
+    realtime_queue_max_size: int = int(os.getenv("REALTIME_QUEUE_MAX_SIZE", "5000"))
+    realtime_flush_ms: int = int(os.getenv("REALTIME_FLUSH_MS", "500"))
+    realtime_batch_max_updates: int = int(os.getenv("REALTIME_BATCH_MAX_UPDATES", "200"))
     command_timeout_sec: int = int(os.getenv("COMMAND_TIMEOUT_SEC", "30"))
     mqtt_zone_format: str = os.getenv("MQTT_ZONE_FORMAT", "id")  # id | uid
     service_port: int = int(os.getenv("SERVICE_PORT", "9300"))  # Порт для history-logger

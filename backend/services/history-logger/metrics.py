@@ -83,6 +83,20 @@ TELEMETRY_QUEUE_AGE = Gauge(
     "telemetry_queue_age_seconds",
     "Age of oldest item in queue in seconds",
 )
+REALTIME_QUEUE_LEN = Gauge(
+    "realtime_queue_len",
+    "Current realtime updates queue length",
+)
+REALTIME_DROPPED_UPDATES = Counter(
+    "dropped_updates_count",
+    "Total dropped realtime updates",
+    ["reason"],
+)
+REALTIME_FLUSH_LATENCY_MS = Histogram(
+    "flush_latency_ms",
+    "Realtime telemetry flush latency in milliseconds",
+    buckets=[25, 50, 100, 250, 500, 1000, 2000, 5000],
+)
 TELEMETRY_PROCESSING_DURATION = Histogram(
     "telemetry_processing_duration_seconds",
     "Time to process telemetry batch",

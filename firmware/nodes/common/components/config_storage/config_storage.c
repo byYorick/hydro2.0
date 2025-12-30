@@ -12,6 +12,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include <string.h>
+#include <strings.h>
 
 static const char *TAG = "config_storage";
 static const char *NVS_NAMESPACE = "node_config";
@@ -968,6 +969,80 @@ esp_err_t config_storage_validate(const char *json_config, size_t json_len,
         }
     }
     
+    // Дополнительная валидация каналов: relay_type обязателен для реле-актуаторов
+    int channels_count = cJSON_GetArraySize(channels);
+    for (int i = 0; i < channels_count; i++) {
+        cJSON *channel = cJSON_GetArrayItem(channels, i);
+        if (channel == NULL || !cJSON_IsObject(channel)) {
+            continue;
+        }
+
+        cJSON *type_item = cJSON_GetObjectItem(channel, "type");
+        if (!cJSON_IsString(type_item) || type_item->valuestring == NULL) {
+            continue;
+        }
+        if (strcasecmp(type_item->valuestring, "ACTUATOR") != 0) {
+            continue;
+        }
+
+        cJSON *actuator_type_item = cJSON_GetObjectItem(channel, "actuator_type");
+        if (!cJSON_IsString(actuator_type_item) || actuator_type_item->valuestring == NULL) {
+            continue;
+        }
+
+        const char *act_type = actuator_type_item->valuestring;
+        bool requires_relay_type =
+            (strcasecmp(act_type, "RELAY") == 0 ||
+             strcasecmp(act_type, "VALVE") == 0 ||
+             strcasecmp(act_type, "FAN") == 0 ||
+             strcasecmp(act_type, "HEATER") == 0);
+
+        if (!requires_relay_type) {
+            continue;
+        }
+
+        cJSON *relay_type_item = cJSON_GetObjectItem(channel, "relay_type");
+        if (!cJSON_IsString(relay_type_item) || relay_type_item->valuestring == NULL ||
+            relay_type_item->valuestring[0] == '\0') {
+            const char *name = NULL;
+            cJSON *name_item = cJSON_GetObjectItem(channel, "name");
+            if (cJSON_IsString(name_item) && name_item->valuestring) {
+                name = name_item->valuestring;
+            }
+            if (error_msg && error_msg_size > 0) {
+                if (name) {
+                    snprintf(error_msg, error_msg_size,
+                             "Missing relay_type for actuator channel '%s'", name);
+                } else {
+                    snprintf(error_msg, error_msg_size,
+                             "Missing relay_type for actuator channel");
+                }
+            }
+            cJSON_Delete(config);
+            return ESP_ERR_INVALID_ARG;
+        }
+
+        if (strcasecmp(relay_type_item->valuestring, "NC") != 0 &&
+            strcasecmp(relay_type_item->valuestring, "NO") != 0) {
+            const char *name = NULL;
+            cJSON *name_item = cJSON_GetObjectItem(channel, "name");
+            if (cJSON_IsString(name_item) && name_item->valuestring) {
+                name = name_item->valuestring;
+            }
+            if (error_msg && error_msg_size > 0) {
+                if (name) {
+                    snprintf(error_msg, error_msg_size,
+                             "Invalid relay_type for actuator channel '%s' (expected NC/NO)", name);
+                } else {
+                    snprintf(error_msg, error_msg_size,
+                             "Invalid relay_type for actuator channel (expected NC/NO)");
+                }
+            }
+            cJSON_Delete(config);
+            return ESP_ERR_INVALID_ARG;
+        }
+    }
+
     cJSON_Delete(config);
     return ESP_OK;
 }

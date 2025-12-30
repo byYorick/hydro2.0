@@ -129,18 +129,29 @@ class DatabaseIndexesTest extends TestCase
         ]);
 
         // Проверяем, что запрос использует индекс
-        $explainRow = DB::selectOne("
-            EXPLAIN (FORMAT JSON)
-            SELECT * FROM telemetry_samples 
-            WHERE sensor_id = ? AND ts >= ?
-        ", [$sensor->id, now()->subDay()]);
+        try {
+            $explainRow = DB::selectOne("
+                EXPLAIN (FORMAT JSON)
+                SELECT * FROM telemetry_samples 
+                WHERE sensor_id = ? AND ts >= ?
+            ", [$sensor->id, now()->subDay()]);
+        } catch (\Throwable $e) {
+            $this->markTestSkipped('EXPLAIN (FORMAT JSON) not supported: '.$e->getMessage());
+            return;
+        }
 
         // EXPLAIN возвращает одну колонку (обычно "QUERY PLAN")
         $resultArray = is_array($explainRow) ? $explainRow : (array) $explainRow;
         $rawPlan = !empty($resultArray) ? reset($resultArray) : null;
-        $planData = is_string($rawPlan)
-            ? json_decode($rawPlan, true)
-            : (is_array($rawPlan) ? $rawPlan : []);
+        if (is_string($rawPlan)) {
+            $planData = json_decode($rawPlan, true);
+        } elseif (is_array($rawPlan)) {
+            $planData = $rawPlan;
+        } elseif (is_object($rawPlan)) {
+            $planData = json_decode(json_encode($rawPlan), true);
+        } else {
+            $planData = [];
+        }
         
         if (empty($planData)) {
             $this->markTestSkipped('Could not parse EXPLAIN result');

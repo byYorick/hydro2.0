@@ -68,7 +68,7 @@ class ZoneEventStorage(private val context: Context) {
 
 3. **Подписаться на WebSocket**
    ```kotlin
-   websocket.subscribe("hydro.zone.${zoneId}")
+   websocket.subscribe("hydro.zones.${zoneId}")
    ```
 
 ### Полный пример onResume
@@ -90,7 +90,7 @@ suspend fun syncZone(zoneId: Int) {
         storage.saveLastEventId(zoneId, snapshot.last_event_id)
         
         // 4. Подписываемся на WebSocket
-        websocket.subscribe("hydro.zone.${zoneId}")
+        websocket.subscribe("hydro.zones.${zoneId}")
         
     } catch (e: Exception) {
         Log.e(TAG, "Failed to sync zone $zoneId", e)
@@ -370,4 +370,3 @@ Response:
    - Показывать индикатор загрузки при catch-up
    - Не блокировать UI на долгое время
    - Предупреждать пользователя при большом gap
-

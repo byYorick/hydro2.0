@@ -82,7 +82,7 @@ class ZoneController extends Controller
             $query->where('name', 'ILIKE', '%'.$validated['search'].'%');
         }
 
-        $zones = $query->orderBy('name')->get();
+        $zones = $query->orderBy('name')->paginate(25);
 
         return response()->json([
             'status' => 'ok',
@@ -353,10 +353,7 @@ class ZoneController extends Controller
 
         $result = $this->dataService->getUnassignedErrors($zone, $request);
 
-        return response()->json([
-            'status' => 'ok',
-            'data' => $result,
-        ]);
+        return response()->json(array_merge(['status' => 'ok'], $result));
     }
 
     public function snapshot(Request $request, Zone $zone): JsonResponse
@@ -377,10 +374,7 @@ class ZoneController extends Controller
 
         $result = $this->dataService->getEvents($zone, $request);
 
-        return response()->json([
-            'status' => 'ok',
-            'data' => $result,
-        ]);
+        return response()->json(array_merge(['status' => 'ok'], $result));
     }
 
     public function updateInfrastructure(Request $request, Zone $zone): JsonResponse

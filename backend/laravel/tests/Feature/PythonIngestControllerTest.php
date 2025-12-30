@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\User;
 use App\Models\Zone;
 use App\Models\DeviceNode;
+use App\Models\Command;
 use App\Models\TelemetrySample;
 use App\Models\TelemetryLast;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -268,4 +269,3 @@ class PythonIngestControllerTest extends TestCase
         ])->assertStatus(401);
     }
 }
-

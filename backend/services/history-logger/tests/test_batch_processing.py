@@ -12,6 +12,7 @@ from telemetry_processing import (
     _node_cache,
     _zone_cache,
     _sensor_cache,
+    _zone_greenhouse_cache,
     process_telemetry_batch,
     refresh_caches,
 )
@@ -115,9 +116,11 @@ async def test_sensor_insert_uses_on_conflict_and_caches_id():
         _zone_cache.clear()
         _node_cache.clear()
         _sensor_cache.clear()
+        _zone_greenhouse_cache.clear()
 
         _zone_cache[('zn-1', 'gh-1')] = 1
         _node_cache[('nd-1', 'gh-1')] = (10, 1)
+        _zone_greenhouse_cache[1] = 99
 
         mock_fetch.side_effect = [
             [],

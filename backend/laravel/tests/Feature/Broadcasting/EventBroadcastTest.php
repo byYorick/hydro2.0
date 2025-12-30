@@ -7,7 +7,9 @@ use App\Events\CommandFailed;
 use App\Events\CommandStatusUpdated;
 use App\Events\EventCreated;
 use App\Events\NodeConfigUpdated;
+use App\Events\TelemetryBatchUpdated;
 use App\Events\ZoneUpdated;
+use App\Models\Command;
 use App\Models\DeviceNode;
 use App\Models\Zone;
 use Illuminate\Support\Carbon;
@@ -65,7 +67,7 @@ class EventBroadcastTest extends TestCase
 
         $event = new NodeConfigUpdated($node);
 
-        $this->assertSame('private-hydro.devices', $event->broadcastOn()->name);
+        $this->assertSame("private-hydro.zones.{$zone->id}", $event->broadcastOn()->name);
         $this->assertSame('device.updated', $event->broadcastAs());
 
         $payload = $event->broadcastWith();
@@ -75,6 +77,24 @@ class EventBroadcastTest extends TestCase
         $this->assertSame($node->zone_id, $payload['device']['zone_id']);
         $this->assertArrayHasKey('status', $payload['device']);
         $this->assertArrayHasKey('was_recently_created', $payload['device']);
+    }
+
+    public function test_telemetry_batch_updated_targets_zone_channel(): void
+    {
+        $event = new TelemetryBatchUpdated(9, [[
+            'node_id' => 501,
+            'channel' => 'ph_sensor',
+            'metric_type' => 'PH',
+            'value' => 6.1,
+            'ts' => 1700000000000,
+        ]]);
+
+        $this->assertSame('private-hydro.zones.9', $event->broadcastOn()->name);
+        $this->assertSame('telemetry.batch.updated', $event->broadcastAs());
+
+        $payload = $event->broadcastWith();
+        $this->assertSame(9, $payload['zone_id']);
+        $this->assertCount(1, $payload['updates']);
     }
 
     public function test_zone_updated_targets_private_zone_channel(): void
@@ -102,14 +122,14 @@ class EventBroadcastTest extends TestCase
         );
 
         $this->assertSame('private-commands.7', $event->broadcastOn()->name);
-
-        $this->assertSame([
-            'commandId' => 501,
-            'status' => 'queued',
-            'message' => 'Ожидание исполнения',
-            'error' => null,
-            'zoneId' => 7,
-        ], $event->broadcastWith());
+        $payload = $event->broadcastWith();
+        $this->assertSame(501, $payload['commandId']);
+        $this->assertSame('queued', $payload['status']);
+        $this->assertSame('Ожидание исполнения', $payload['message']);
+        $this->assertNull($payload['error']);
+        $this->assertSame(7, $payload['zoneId']);
+        $this->assertArrayHasKey('event_id', $payload);
+        $this->assertArrayHasKey('server_ts', $payload);
     }
 
     public function test_command_status_updated_falls_back_to_global_channel(): void
@@ -134,14 +154,14 @@ class EventBroadcastTest extends TestCase
         );
 
         $this->assertSame('private-commands.12', $event->broadcastOn()->name);
-
-        $this->assertSame([
-            'commandId' => 321,
-            'status' => Command::STATUS_FAILED,
-            'message' => 'Ошибка выполнения',
-            'error' => 'Timeout',
-            'zoneId' => 12,
-        ], $event->broadcastWith());
+        $payload = $event->broadcastWith();
+        $this->assertSame(321, $payload['commandId']);
+        $this->assertSame(Command::STATUS_FAILED, $payload['status']);
+        $this->assertSame('Ошибка выполнения', $payload['message']);
+        $this->assertSame('Timeout', $payload['error']);
+        $this->assertSame(12, $payload['zoneId']);
+        $this->assertArrayHasKey('event_id', $payload);
+        $this->assertArrayHasKey('server_ts', $payload);
     }
 
     public function test_command_failed_uses_global_channel_without_zone(): void

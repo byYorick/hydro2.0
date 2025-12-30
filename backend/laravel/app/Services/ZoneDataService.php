@@ -145,68 +145,87 @@ class ZoneDataService
      */
     public function getEvents(Zone $zone, Request $request): array
     {
-        $query = ZoneEvent::where('zone_id', $zone->id);
         $afterId = $request->integer('after_id');
+        $limit = $request->integer('limit', 50);
+        $limit = min(max($limit, 1), 200);
+
+        $cycleOnly = $request->boolean('cycle_only', false);
+
+        $query = DB::table('zone_events')
+            ->where('zone_id', $zone->id);
+
+        if ($cycleOnly) {
+            $cycleEventTypes = [
+                'CYCLE_CREATED',
+                'CYCLE_STARTED',
+                'CYCLE_PAUSED',
+                'CYCLE_RESUMED',
+                'CYCLE_HARVESTED',
+                'CYCLE_ABORTED',
+                'CYCLE_RECIPE_REBASED',
+                'PHASE_TRANSITION',
+                'RECIPE_PHASE_CHANGED',
+                'ZONE_COMMAND',
+            ];
+
+            $query->where(function ($q) use ($cycleEventTypes) {
+                $q->whereIn('type', $cycleEventTypes);
+            });
+
+            $detailsColumn = DB::getSchemaBuilder()->hasColumn('zone_events', 'payload_json')
+                ? 'payload_json'
+                : 'details';
+
+            $query->orWhere(function ($q) use ($detailsColumn) {
+                $q->whereIn('type', ['ALERT_CREATED', 'alert_created'])
+                    ->whereRaw("{$detailsColumn}->>'severity' = 'CRITICAL'");
+            });
+        }
+
+        $detailsColumn = DB::getSchemaBuilder()->hasColumn('zone_events', 'payload_json')
+            ? 'payload_json'
+            : 'details';
 
         if ($afterId > 0) {
-            return ZoneEvent::where('zone_id', $zone->id)
-                ->where('id', '>', $afterId)
-                ->orderBy('id', 'asc')
-                ->get()
-                ->map(function ($event) {
-                    return [
-                        'event_id' => $event->id,
-                        'type' => $event->type,
-                        'entity_type' => $event->entity_type,
-                        'entity_id' => $event->entity_id,
-                        'payload' => $event->payload_json,
-                        'server_ts' => $event->server_ts,
-                        'created_at' => $event->created_at?->toIso8601String(),
-                    ];
-                })
-                ->values()
-                ->all();
+            $query->where('id', '>', $afterId);
         }
 
-        // Фильтрация по типу события
-        if ($request->has('type')) {
-            $query->where('type', $request->string('type'));
+        $events = $query->orderBy('id', 'asc')
+            ->limit($limit)
+            ->get([
+                'id as event_id',
+                'zone_id',
+                'type',
+                'server_ts',
+                DB::raw("{$detailsColumn} as details"),
+                'created_at',
+            ])
+            ->map(function ($event) {
+                if (is_string($event->details)) {
+                    $event->details = json_decode($event->details, true) ?? [];
+                }
+                $event->payload = $event->details;
+                $event->payload_json = json_encode($event->details);
+                return $event;
+            })
+            ->values();
+
+        $lastEventId = $events->isNotEmpty()
+            ? $events->last()->event_id
+            : ($afterId > 0 ? $afterId : null);
+
+        $hasMore = false;
+        if ($lastEventId) {
+            $hasMore = DB::table('zone_events')
+                ->where('zone_id', $zone->id)
+                ->where('id', '>', $lastEventId)
+                ->exists();
         }
-
-        // Фильтрация по времени
-        if ($request->has('since')) {
-            $query->where('created_at', '>', $request->date('since'));
-        }
-
-        if ($request->has('until')) {
-            $query->where('created_at', '<=', $request->date('until'));
-        }
-
-        // Пагинация
-        $perPage = $request->integer('per_page', 50);
-        $page = $request->integer('page', 1);
-
-        $events = $query->orderBy('created_at', 'desc')
-            ->paginate($perPage, ['*'], 'page', $page);
 
         return [
-            'events' => collect($events->items())->map(function ($event) {
-                return [
-                    'event_id' => $event->id,
-                    'type' => $event->type,
-                    'entity_type' => $event->entity_type,
-                    'entity_id' => $event->entity_id,
-                    'payload' => $event->payload_json,
-                    'server_ts' => $event->server_ts,
-                    'created_at' => $event->created_at?->toIso8601String(),
-                ];
-            })->values()->all(),
-            'pagination' => [
-                'current_page' => $events->currentPage(),
-                'last_page' => $events->lastPage(),
-                'per_page' => $events->perPage(),
-                'total' => $events->total(),
-            ],
+            'data' => $events->all(),
+            'last_event_id' => $lastEventId,
+            'has_more' => $hasMore,
         ];
     }
 
@@ -249,21 +268,30 @@ class ZoneDataService
      */
     public function getUnassignedErrors(Zone $zone, Request $request): array
     {
-        $limit = $request->get('limit', 10);
+        $limit = (int) $request->get('per_page', $request->get('limit', 10));
+        $limit = min(max($limit, 1), 100);
+        $severity = $request->get('severity');
 
         // Получаем ошибки из таблицы unassigned_node_errors для узлов зоны
-        $errors = UnassignedNodeError::whereHas('node', function ($query) use ($zone) {
-            $query->where('zone_id', $zone->id);
-        })
-        ->orWhere(function ($query) use ($zone) {
-            // Также включаем ошибки без node_id, но которые могут быть связаны с зоной
-            // (в старой архитектуре могли быть ошибки без node_id)
-            $query->whereNull('node_id');
-        })
-        ->orderBy('last_seen_at', 'desc')
-        ->limit($limit)
-        ->get()
-        ->map(function ($error) {
+        $query = UnassignedNodeError::where(function ($query) use ($zone) {
+            $query->whereHas('node', function ($inner) use ($zone) {
+                $inner->where('zone_id', $zone->id);
+            })
+            ->orWhere(function ($inner) {
+                // Также включаем ошибки без node_id, но которые могут быть связаны с зоной
+                // (в старой архитектуре могли быть ошибки без node_id)
+                $inner->whereNull('node_id');
+            });
+        });
+
+        if ($severity) {
+            $query->where('severity', strtoupper($severity));
+        }
+
+        $errors = $query->orderBy('last_seen_at', 'desc')
+            ->paginate($limit);
+
+        $mapped = collect($errors->items())->map(function ($error) {
             return [
                 'id' => $error->id,
                 'hardware_id' => $error->hardware_id,
@@ -282,8 +310,13 @@ class ZoneDataService
         });
 
         return [
-            'errors' => $errors,
-            'total' => $errors->count(),
+            'data' => $mapped->values()->all(),
+            'meta' => [
+                'current_page' => $errors->currentPage(),
+                'last_page' => $errors->lastPage(),
+                'per_page' => $errors->perPage(),
+                'total' => $errors->total(),
+            ],
         ];
     }
 

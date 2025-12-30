@@ -158,6 +158,18 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 }
 ```
 
+Пример для реле:
+
+```json
+{
+  "name": "fan_1",
+  "type": "ACTUATOR",
+  "actuator_type": "FAN",
+  "relay_type": "NO",
+  "gpio": 27
+}
+```
+
 **Поля:**
 - `name` (string, обязательное) — имя канала
 - `type` (string, обязательное) — `"ACTUATOR"`
@@ -165,7 +177,8 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 - `safe_limits` (object, необязательное) — безопасные лимиты:
   - `max_duration_ms` — максимальная длительность работы в мс
   - `min_off_ms` — минимальное время простоя в мс
-  - `fail_safe_mode` — режим НЗ/НО: `NC` или `NO`
+  - `fail_safe_mode` — режим НЗ/НО: `NC` или `NO` (для насосов/приводов)
+- `relay_type` (string, обязательное для `RELAY`/`VALVE`/`FAN`/`HEATER`) — тип реле: `NC` или `NO`
 - `channel` (string, необязательное) — физический канал (для pump_node)
 
 #### 3.4.3. Канал актуатора DRIVE (привод)

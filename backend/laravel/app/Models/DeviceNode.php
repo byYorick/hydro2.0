@@ -64,30 +64,44 @@ class DeviceNode extends Model
     {
         parent::boot();
 
+        // Публикуем событие для новых нод, чтобы они появлялись в UI (unassigned list)
+        static::created(function (DeviceNode $node) {
+            \Illuminate\Support\Facades\Log::info('DeviceNode: Dispatching NodeConfigUpdated event (node created)', [
+                'node_id' => $node->id,
+                'uid' => $node->uid,
+                'zone_id' => $node->zone_id,
+                'pending_zone_id' => $node->pending_zone_id,
+                'lifecycle_state' => $node->lifecycle_state?->value,
+            ]);
+
+            \Illuminate\Support\Facades\DB::afterCommit(function () use ($node) {
+                event(new NodeConfigUpdated($node));
+            });
+        });
+
         // КРИТИЧНО: Отправляем обновление на фронтенд только при привязке узла к зоне (изменение pending_zone_id)
         // Используем afterCommit, чтобы событие срабатывало только после коммита транзакции
         static::saved(function (DeviceNode $node) {
+            $isNewNode = $node->wasRecentlyCreated;
+
             // ВАЖНО: Обновление фронтенда отправляется ТОЛЬКО при изменении pending_zone_id (привязка к зоне через UI)
             // Не отправляем событие при:
             // - Изменении других полей (config, zone_id, type, uid)
             // - Обновлении узла от history-logger (завершение привязки)
             // - Первичной регистрации узла (node_hello)
-            $shouldBroadcastOnAttach = $node->pending_zone_id && !$node->zone_id && $node->wasChanged('pending_zone_id');
-            
-            // ВАЖНО: НЕ отправляем событие для новых узлов без zone_id или pending_zone_id
-            // Если нода отправила node_hello, значит у неё уже есть рабочие настройки WiFi/MQTT
-            // Обновление фронтенда произойдет только после привязки к зоне (установки pending_zone_id)
-            $skipNewNodeWithoutZone = $node->wasRecentlyCreated && !$node->zone_id && !$node->pending_zone_id;
+            $shouldBroadcastOnAttach = !$isNewNode && $node->pending_zone_id && !$node->zone_id && $node->wasChanged('pending_zone_id');
             
             // НЕ отправляем событие если узел уже в ASSIGNED_TO_ZONE и zone_id установлен
             $skipAlreadyAssigned = $node->lifecycleState() === NodeLifecycleState::ASSIGNED_TO_ZONE && $node->zone_id;
             
-            if ($skipNewNodeWithoutZone) {
-                \Illuminate\Support\Facades\Log::info('DeviceNode: Skipping node update broadcast for new node without zone assignment', [
+            if ($isNewNode) {
+                \Illuminate\Support\Facades\Log::info('DeviceNode: Skipping node update broadcast on save (handled on create)', [
                     'node_id' => $node->id,
                     'uid' => $node->uid,
-                    'reason' => 'Node sent node_hello, already has working WiFi/MQTT config',
+                    'zone_id' => $node->zone_id,
+                    'pending_zone_id' => $node->pending_zone_id,
                     'lifecycle_state' => $node->lifecycle_state?->value,
+                    'reason' => 'NodeConfigUpdated dispatched in created hook',
                 ]);
             } elseif ($skipAlreadyAssigned) {
                 \Illuminate\Support\Facades\Log::info('DeviceNode: Skipping node update broadcast for already assigned node', [

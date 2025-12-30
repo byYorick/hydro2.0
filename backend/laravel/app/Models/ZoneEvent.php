@@ -16,6 +16,7 @@ class ZoneEvent extends Model
         'zone_id',
         'type',
         'payload_json',  // Используем payload_json вместо details (колонка переименована в миграции)
+        'details', // Обратная совместимость для тестов/кода, использующего details
         'entity_type',
         'entity_id',
         'server_ts',
@@ -43,4 +44,3 @@ class ZoneEvent extends Model
         return $this->belongsTo(Zone::class);
     }
 }
-

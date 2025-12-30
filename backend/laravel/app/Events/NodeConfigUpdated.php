@@ -38,6 +38,10 @@ class NodeConfigUpdated implements ShouldBroadcast
      */
     public function broadcastOn(): PrivateChannel
     {
+        if ($this->node->zone_id) {
+            return new PrivateChannel("hydro.zones.{$this->node->zone_id}");
+        }
+
         return new PrivateChannel('hydro.devices');
     }
 

@@ -36,8 +36,8 @@ typedef enum {
  * @brief Состояние реле
  */
 typedef enum {
-    RELAY_STATE_OPEN = 0,   ///< Реле разомкнуто (насос OFF для NC, ON для NO)
-    RELAY_STATE_CLOSED = 1  ///< Реле замкнуто (насос ON для NC, OFF для NO)
+    RELAY_STATE_OPEN = 0,   ///< Контакты разомкнуты
+    RELAY_STATE_CLOSED = 1  ///< Контакты замкнуты
 } relay_state_t;
 
 /**

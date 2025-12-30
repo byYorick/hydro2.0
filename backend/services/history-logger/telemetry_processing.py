@@ -16,6 +16,9 @@ from common.utils.time import utcnow
 from metrics import (
     DATABASE_ERRORS,
     LARAVEL_API_DURATION,
+    REALTIME_DROPPED_UPDATES,
+    REALTIME_FLUSH_LATENCY_MS,
+    REALTIME_QUEUE_LEN,
     REDIS_OPERATION_DURATION,
     TELEM_BATCH_SIZE,
     TELEM_PROCESSED,
@@ -56,6 +59,9 @@ _cache_ttl = 60.0
 _broadcast_error_count = 0
 _broadcast_last_error_time: Optional[float] = None
 _broadcast_backoff_until: Optional[float] = None
+
+_realtime_updates: "OrderedDict[tuple, dict]" = OrderedDict()
+_realtime_lock = asyncio.Lock()
 
 
 def _normalize_metric_type(metric_type: str) -> str:
@@ -104,20 +110,38 @@ def _normalize_ts_for_db(sample_ts: Optional[datetime]) -> datetime:
     return ts_value.replace(tzinfo=None)
 
 
+def _sensor_cache_touch(key: tuple[int, Optional[int], str, str]) -> None:
+    if hasattr(_sensor_cache, "move_to_end"):
+        _sensor_cache.move_to_end(key)
+
+
+def _sensor_cache_pop_oldest() -> None:
+    try:
+        _sensor_cache.popitem(last=False)
+        return
+    except TypeError:
+        pass
+    try:
+        oldest_key = next(iter(_sensor_cache))
+    except StopIteration:
+        return
+    del _sensor_cache[oldest_key]
+
+
 def _sensor_cache_get(key: tuple[int, Optional[int], str, str]) -> Optional[int]:
     sensor_id = _sensor_cache.get(key)
     if sensor_id is not None:
-        _sensor_cache.move_to_end(key)
+        _sensor_cache_touch(key)
     return sensor_id
 
 
 def _sensor_cache_set(key: tuple[int, Optional[int], str, str], sensor_id: int) -> None:
     _sensor_cache[key] = sensor_id
-    _sensor_cache.move_to_end(key)
+    _sensor_cache_touch(key)
     if _sensor_cache_max_size <= 0:
         return
     while len(_sensor_cache) > _sensor_cache_max_size:
-        _sensor_cache.popitem(last=False)
+        _sensor_cache_pop_oldest()
 
 
 def _get_telemetry_queue():
@@ -127,6 +151,257 @@ def _get_telemetry_queue():
 def _shutdown_event():
     return state.shutdown_event
 
+
+def _to_timestamp_ms(timestamp: Optional[datetime]) -> int:
+    if timestamp is None:
+        return int(time.time() * 1000)
+
+    if isinstance(timestamp, datetime):
+        if timestamp.tzinfo is None:
+            timestamp_utc = timestamp.replace(tzinfo=timezone.utc)
+        else:
+            timestamp_utc = timestamp
+        return int(timestamp_utc.timestamp() * 1000)
+
+    return int(timestamp * 1000)
+
+
+def _build_realtime_key(
+    sensor_id: Optional[int],
+    zone_id: int,
+    node_id: Optional[int],
+    metric_type: str,
+    channel: Optional[str],
+) -> tuple:
+    if sensor_id is not None:
+        return ("sensor", sensor_id)
+    return ("legacy", zone_id, node_id or 0, metric_type or "", channel or "")
+
+
+def _build_realtime_key_from_update(update: dict) -> tuple:
+    return (
+        "legacy",
+        int(update.get("zone_id") or 0),
+        int(update.get("node_id") or 0),
+        str(update.get("metric_type") or ""),
+        str(update.get("channel") or ""),
+    )
+
+
+async def _enqueue_realtime_update(key: tuple, update: dict) -> None:
+    s = get_settings()
+    async with _realtime_lock:
+        _realtime_updates[key] = update
+        _realtime_updates.move_to_end(key)
+
+        max_size = getattr(s, "realtime_queue_max_size", 0)
+        if max_size > 0 and len(_realtime_updates) > max_size:
+            _realtime_updates.popitem(last=False)
+            REALTIME_DROPPED_UPDATES.labels(reason="queue_full").inc()
+
+        REALTIME_QUEUE_LEN.set(len(_realtime_updates))
+
+
+async def _pop_realtime_updates(limit: int) -> list[dict]:
+    async with _realtime_lock:
+        if not _realtime_updates:
+            return []
+
+        count = min(limit, len(_realtime_updates))
+        updates = []
+        for _ in range(count):
+            _, update = _realtime_updates.popitem(last=False)
+            updates.append(update)
+
+        REALTIME_QUEUE_LEN.set(len(_realtime_updates))
+        return updates
+
+
+async def _requeue_realtime_updates(updates: list[dict]) -> None:
+    s = get_settings()
+    async with _realtime_lock:
+        for update in updates:
+            key = _build_realtime_key_from_update(update)
+            _realtime_updates[key] = update
+            _realtime_updates.move_to_end(key)
+
+            max_size = getattr(s, "realtime_queue_max_size", 0)
+            if max_size > 0 and len(_realtime_updates) > max_size:
+                _realtime_updates.popitem(last=False)
+                REALTIME_DROPPED_UPDATES.labels(reason="queue_full").inc()
+
+        REALTIME_QUEUE_LEN.set(len(_realtime_updates))
+
+
+def _broadcast_in_backoff(current_time: float) -> bool:
+    return _broadcast_backoff_until is not None and current_time < _broadcast_backoff_until
+
+
+async def _broadcast_telemetry_batch_to_laravel(updates: list[dict]) -> bool:
+    """
+    Отправляет batched realtime updates в Laravel.
+    """
+    global _broadcast_error_count, _broadcast_last_error_time, _broadcast_backoff_until
+
+    if _shutdown_event().is_set():
+        logger.debug("[BROADCAST] Shutdown in progress, skipping telemetry batch broadcast")
+        return False
+
+    current_time = time.time()
+    if _broadcast_in_backoff(current_time):
+        logger.debug(
+            "[BROADCAST] In backoff mode, skipping batch broadcast. "
+            f"Backoff until: {_broadcast_backoff_until:.2f}, current: {current_time:.2f}, "
+            f"error_count: {_broadcast_error_count}"
+        )
+        return False
+
+    s = get_settings()
+    laravel_url = s.laravel_api_url if hasattr(s, "laravel_api_url") else None
+    ingest_token = (
+        s.history_logger_api_token
+        if hasattr(s, "history_logger_api_token") and s.history_logger_api_token
+        else (s.ingest_token if hasattr(s, "ingest_token") and s.ingest_token else None)
+    )
+
+    if not laravel_url:
+        logger.warning(
+            "[BROADCAST] Laravel API URL not configured, skipping telemetry batch broadcast."
+        )
+        return True
+
+    if not ingest_token:
+        logger.warning(
+            "[BROADCAST] Ingest token not configured, skipping telemetry batch broadcast."
+        )
+        return True
+
+    logger.info(
+        "[BROADCAST] Sending telemetry batch: updates=%s, url=%s",
+        len(updates),
+        laravel_url,
+    )
+
+    try:
+        from common.http_client_pool import make_request
+
+        api_start = time.time()
+        response = await make_request(
+            "post",
+            f"{laravel_url}/api/internal/realtime/telemetry-batch",
+            endpoint="telemetry_broadcast_batch",
+            json={"updates": updates},
+            headers={
+                "Authorization": f"Bearer {ingest_token}",
+                "Content-Type": "application/json",
+            },
+        )
+        api_duration = time.time() - api_start
+        LARAVEL_API_DURATION.observe(api_duration)
+
+        if response.status_code == 200:
+            if _broadcast_error_count > 0:
+                logger.info(
+                    "[BROADCAST] Success after %s errors, resetting error count and backoff",
+                    _broadcast_error_count,
+                )
+            _broadcast_error_count = 0
+            _broadcast_backoff_until = None
+            return True
+
+        _broadcast_error_count += 1
+        _broadcast_last_error_time = current_time
+        backoff_delay = _calculate_broadcast_backoff(_broadcast_error_count)
+        _broadcast_backoff_until = current_time + backoff_delay
+
+        logger.warning(
+            "[BROADCAST] Failed to broadcast telemetry batch: status=%s, error_count=%s, backoff=%.2fs",
+            response.status_code,
+            _broadcast_error_count,
+            backoff_delay,
+            extra={
+                "status_code": response.status_code,
+                "response": response.text[:200],
+                "error_count": _broadcast_error_count,
+                "backoff_seconds": backoff_delay,
+            },
+        )
+        return False
+    except (httpx.TimeoutException, httpx.RequestError, httpx.NetworkError) as e:
+        _broadcast_error_count += 1
+        _broadcast_last_error_time = current_time
+        backoff_delay = _calculate_broadcast_backoff(_broadcast_error_count)
+        _broadcast_backoff_until = current_time + backoff_delay
+
+        logger.warning(
+            "[BROADCAST] Network error broadcasting telemetry batch: %s, error_count=%s, backoff=%.2fs",
+            e,
+            _broadcast_error_count,
+            backoff_delay,
+            extra={
+                "error_count": _broadcast_error_count,
+                "backoff_seconds": backoff_delay,
+            },
+        )
+        return False
+    except Exception as e:
+        _broadcast_error_count += 1
+        _broadcast_last_error_time = current_time
+        backoff_delay = _calculate_broadcast_backoff(_broadcast_error_count)
+        _broadcast_backoff_until = current_time + backoff_delay
+
+        logger.warning(
+            "[BROADCAST] Error broadcasting telemetry batch: %s, error_count=%s, backoff=%.2fs",
+            e,
+            _broadcast_error_count,
+            backoff_delay,
+            extra={
+                "error_count": _broadcast_error_count,
+                "backoff_seconds": backoff_delay,
+            },
+            exc_info=True,
+        )
+        return False
+
+
+async def _flush_realtime_updates(force: bool = False) -> None:
+    s = get_settings()
+
+    if not force and _broadcast_in_backoff(time.time()):
+        return
+
+    updates = await _pop_realtime_updates(
+        getattr(s, "realtime_batch_max_updates", 200)
+    )
+    if not updates:
+        return
+
+    flush_start = time.time()
+    success = await _broadcast_telemetry_batch_to_laravel(updates)
+    REALTIME_FLUSH_LATENCY_MS.observe((time.time() - flush_start) * 1000)
+
+    if not success and not force:
+        await _requeue_realtime_updates(updates)
+
+
+async def process_realtime_queue() -> None:
+    """
+    Фоновая задача для batched realtime telemetry.
+    """
+    s = get_settings()
+    logger.info("Starting realtime telemetry broadcaster")
+
+    while not _shutdown_event().is_set():
+        try:
+            await _flush_realtime_updates()
+            await asyncio.sleep(getattr(s, "realtime_flush_ms", 500) / 1000)
+        except Exception as e:
+            logger.error("Error in realtime telemetry broadcaster: %s", e, exc_info=True)
+            await asyncio.sleep(s.queue_error_retry_delay_sec)
+
+    logger.info("Realtime telemetry broadcaster shutting down, flushing remaining updates...")
+    await _flush_realtime_updates(force=True)
+    logger.info("Realtime telemetry broadcaster stopped")
 
 async def _push_with_retry(
     queue_item: TelemetryQueueItem, max_retries: int = REDIS_PUSH_MAX_RETRIES
@@ -1057,11 +1332,6 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
             )
 
     for (zone_id, metric_type, node_id, channel), group_items in broadcast_groups.items():
-        logger.info(
-            f"[BROADCAST] Processing group: zone_id={zone_id}, node_id={node_id}, "
-            f"metric={metric_type}, samples={len(group_items)}"
-        )
-
         if not group_items:
             continue
 
@@ -1072,210 +1342,32 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
             else datetime.min.replace(tzinfo=None),
         )
         latest_sample = latest_item["sample"]
-        logger.info(
-            f"[BROADCAST] After upsert: node_id={node_id}, shutdown={_shutdown_event().is_set()}, group_samples={len(group_items)}"
+
+        if not zone_id or not node_id or _shutdown_event().is_set():
+            REALTIME_DROPPED_UPDATES.labels(reason="missing_zone_or_node").inc()
+            continue
+
+        update = {
+            "zone_id": zone_id,
+            "node_id": node_id,
+            "channel": channel or None,
+            "metric_type": metric_type,
+            "value": latest_sample.value,
+            "timestamp": _to_timestamp_ms(latest_sample.ts),
+        }
+        realtime_key = _build_realtime_key(
+            latest_item.get("sensor_id"),
+            zone_id,
+            node_id,
+            metric_type,
+            channel,
         )
-        if node_id and not _shutdown_event().is_set():
-            logger.info(
-                f"[BROADCAST] Scheduling broadcast for node_id={node_id}, metric={metric_type}, value={latest_sample.value}"
-            )
-            try:
-                task = asyncio.create_task(
-                    _broadcast_telemetry_to_laravel(
-                        node_id=node_id,
-                        channel=channel or "",
-                        metric_type=metric_type,
-                        value=latest_sample.value,
-                        timestamp=latest_sample.ts or utcnow(),
-                    )
-                )
-
-                def log_task_error(t):
-                    try:
-                        if t.done() and t.exception():
-                            exc = t.exception()
-                            if not isinstance(
-                                exc, (httpx.TimeoutException, httpx.RequestError)
-                            ):
-                                logger.warning(
-                                    f"[BROADCAST] Unhandled exception in broadcast task: {exc}",
-                                    exc_info=True,
-                                )
-                    except Exception:
-                        pass
-
-                task.add_done_callback(log_task_error)
-            except RuntimeError as e:
-                logger.debug(
-                    f"[BROADCAST] Cannot create task (event loop may be closed): {e}"
-                )
-            except Exception as e:
-                logger.warning(
-                    f"[BROADCAST] Failed to create broadcast task: {e}",
-                    exc_info=True,
-                )
+        await _enqueue_realtime_update(realtime_key, update)
 
     processing_duration = time.time() - start_time
     TELEMETRY_PROCESSING_DURATION.observe(processing_duration)
     TELEM_PROCESSED.inc(processed_count)
     TELEM_BATCH_SIZE.observe(processed_count)
-
-
-async def _broadcast_telemetry_to_laravel(
-    node_id: int,
-    channel: str,
-    metric_type: str,
-    value: float,
-    timestamp: datetime,
-) -> None:
-    """
-    Вызывает Laravel API для broadcast телеметрии.
-    """
-    global _broadcast_error_count, _broadcast_last_error_time, _broadcast_backoff_until
-
-    if _shutdown_event().is_set():
-        logger.debug("[BROADCAST] Shutdown in progress, skipping telemetry broadcast")
-        return
-
-    current_time = time.time()
-    if _broadcast_backoff_until is not None and current_time < _broadcast_backoff_until:
-        logger.debug(
-            "[BROADCAST] In backoff mode, skipping broadcast. "
-            f"Backoff until: {_broadcast_backoff_until:.2f}, current: {current_time:.2f}, "
-            f"error_count: {_broadcast_error_count}"
-        )
-        return
-
-    s = get_settings()
-    laravel_url = s.laravel_api_url if hasattr(s, "laravel_api_url") else None
-    ingest_token = (
-        s.history_logger_api_token
-        if hasattr(s, "history_logger_api_token") and s.history_logger_api_token
-        else (s.ingest_token if hasattr(s, "ingest_token") and s.ingest_token else None)
-    )
-
-    if not laravel_url:
-        logger.warning(
-            "[BROADCAST] Laravel API URL not configured, skipping telemetry broadcast. "
-            "Set LARAVEL_API_URL environment variable."
-        )
-        return
-
-    if not ingest_token:
-        logger.warning(
-            "[BROADCAST] Ingest token not configured, skipping telemetry broadcast. "
-            "Set HISTORY_LOGGER_API_TOKEN or PY_INGEST_TOKEN environment variable."
-        )
-        return
-
-    logger.info(
-        f"[BROADCAST] Starting broadcast: node_id={node_id}, metric={metric_type}, url={laravel_url}"
-    )
-
-    try:
-        if isinstance(timestamp, datetime):
-            if timestamp.tzinfo is None:
-                timestamp_utc = timestamp.replace(tzinfo=timezone.utc)
-                timestamp_ms = int(timestamp_utc.timestamp() * 1000)
-            else:
-                timestamp_ms = int(timestamp.timestamp() * 1000)
-        else:
-            timestamp_ms = int(timestamp * 1000)
-
-        api_data = {
-            "node_id": node_id,
-            "channel": channel,
-            "metric_type": metric_type,
-            "value": value,
-            "timestamp": timestamp_ms,
-        }
-
-        if _shutdown_event().is_set():
-            logger.debug("[BROADCAST] Shutdown in progress, skipping HTTP request")
-            return
-
-        from common.http_client_pool import make_request
-
-        api_start = time.time()
-        response = await make_request(
-            "post",
-            f"{laravel_url}/api/python/broadcast/telemetry",
-            endpoint="telemetry_broadcast",
-            json=api_data,
-            headers={
-                "Authorization": f"Bearer {ingest_token}",
-                "Content-Type": "application/json",
-            },
-        )
-        api_duration = time.time() - api_start
-        LARAVEL_API_DURATION.observe(api_duration)
-
-        if response.status_code == 200:
-            if _broadcast_error_count > 0:
-                logger.info(
-                    "[BROADCAST] Success after %s errors, resetting error count and backoff",
-                    _broadcast_error_count,
-                )
-            _broadcast_error_count = 0
-            _broadcast_backoff_until = None
-            logger.info(
-                f"[BROADCAST] Telemetry broadcasted successfully: node_id={node_id}, metric={metric_type}, value={value}"
-            )
-        else:
-            _broadcast_error_count += 1
-            _broadcast_last_error_time = current_time
-            backoff_delay = _calculate_broadcast_backoff(_broadcast_error_count)
-            _broadcast_backoff_until = current_time + backoff_delay
-
-            logger.warning(
-                "[BROADCAST] Failed to broadcast telemetry: status=%s, error_count=%s, backoff=%.2fs",
-                response.status_code,
-                _broadcast_error_count,
-                backoff_delay,
-                extra={
-                    "node_id": node_id,
-                    "metric_type": metric_type,
-                    "status_code": response.status_code,
-                    "response": response.text[:200],
-                    "error_count": _broadcast_error_count,
-                    "backoff_seconds": backoff_delay,
-                },
-            )
-    except (httpx.TimeoutException, httpx.RequestError, httpx.NetworkError) as e:
-        _broadcast_error_count += 1
-        _broadcast_last_error_time = current_time
-        backoff_delay = _calculate_broadcast_backoff(_broadcast_error_count)
-        _broadcast_backoff_until = current_time + backoff_delay
-
-        logger.warning(
-            "[BROADCAST] Network error broadcasting telemetry: %s, error_count=%s, backoff=%.2fs",
-            e,
-            _broadcast_error_count,
-            backoff_delay,
-            extra={
-                "node_id": node_id,
-                "error_count": _broadcast_error_count,
-                "backoff_seconds": backoff_delay,
-            },
-        )
-    except Exception as e:
-        _broadcast_error_count += 1
-        _broadcast_last_error_time = current_time
-        backoff_delay = _calculate_broadcast_backoff(_broadcast_error_count)
-        _broadcast_backoff_until = current_time + backoff_delay
-
-        logger.warning(
-            "[BROADCAST] Error broadcasting telemetry: %s, error_count=%s, backoff=%.2fs",
-            e,
-            _broadcast_error_count,
-            backoff_delay,
-            extra={
-                "node_id": node_id,
-                "error_count": _broadcast_error_count,
-                "backoff_seconds": backoff_delay,
-            },
-            exc_info=True,
-        )
 
 
 async def process_telemetry_queue() -> None:

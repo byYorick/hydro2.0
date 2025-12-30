@@ -323,6 +323,7 @@ Route::prefix('python')->middleware('throttle:'.$apiThrottle)->group(function ()
 // Internal API для Python сервисов (требует verify.python.service middleware)
 Route::prefix('internal')->middleware(['verify.python.service', 'throttle:'.$apiThrottle])->group(function () {
     Route::post('effective-targets/batch', [\App\Http\Controllers\InternalApiController::class, 'getEffectiveTargetsBatch']);
+    Route::post('realtime/telemetry-batch', [\App\Http\Controllers\InternalRealtimeController::class, 'telemetryBatch']);
 });
 
 // Node registration and service updates (token-based) - умеренный лимит
