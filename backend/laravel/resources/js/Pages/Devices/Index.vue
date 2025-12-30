@@ -56,73 +56,57 @@
       </FilterBar>
 
       <div class="rounded-xl border border-[color:var(--border-muted)] overflow-hidden max-h-[720px] flex flex-col">
-        <div class="overflow-auto flex-1">
-          <table class="w-full border-collapse">
-            <thead class="bg-[color:var(--bg-surface-strong)] text-[color:var(--text-muted)] text-sm sticky top-0 z-10">
-              <tr>
-                <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">
-                  <div class="flex items-center gap-2">
-                    <div class="w-5"></div>
-                    <span>UID</span>
-                  </div>
-                </th>
-                <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Зона</th>
-                <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Имя</th>
-                <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Тип</th>
-                <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Статус</th>
-                <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Версия ПО</th>
-                <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Последний раз видели</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="(r, index) in rows"
-                :key="r[0]"
-                :class="index % 2 === 0 ? 'bg-[color:var(--bg-surface-strong)]' : 'bg-[color:var(--bg-surface)]'"
-                class="text-sm border-b border-[color:var(--border-muted)] hover:bg-[color:var(--bg-surface-strong)] transition-colors"
+        <DataTableV2
+          :columns="columns"
+          :rows="paginatedData"
+          empty-title="Нет устройств по текущим фильтрам"
+          empty-description="Попробуйте изменить фильтры или дождитесь новых устройств."
+          container-class="max-h-[720px]"
+        >
+          <template #cell-uid="{ row }">
+            <div class="flex items-center gap-2 min-w-0">
+              <button
+                @click.stop="toggleDeviceFavorite(row.id)"
+                class="p-0.5 rounded hover:bg-[color:var(--bg-surface-strong)] transition-colors shrink-0 w-5 h-5 flex items-center justify-center"
+                :title="isDeviceFavorite(row.id) ? 'Удалить из избранного' : 'Добавить в избранное'"
               >
-                <td class="px-3 py-2">
-                  <div class="flex items-center gap-2 min-w-0">
-                    <button
-                      @click.stop="toggleDeviceFavorite(getDeviceIdFromRow(r))"
-                      class="p-0.5 rounded hover:bg-[color:var(--bg-surface-strong)] transition-colors shrink-0 w-5 h-5 flex items-center justify-center"
-                      :title="isDeviceFavorite(getDeviceIdFromRow(r)) ? 'Удалить из избранного' : 'Добавить в избранное'"
-                    >
-                      <svg
-                        class="w-3.5 h-3.5 transition-colors"
-                        :class="isDeviceFavorite(getDeviceIdFromRow(r)) ? 'text-[color:var(--accent-amber)] fill-[color:var(--accent-amber)]' : 'text-[color:var(--text-dim)]'"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="2"
-                          d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"
-                        />
-                      </svg>
-                    </button>
-                    <Link :href="`/devices/${r[0]}`" class="text-[color:var(--accent-cyan)] hover:underline truncate min-w-0">{{ r[0] }}</Link>
-                  </div>
-                </td>
-                <td class="px-3 py-2 text-xs text-[color:var(--text-dim)]">
-                  <span class="truncate block">{{ r[1] || '-' }}</span>
-                </td>
-                <td class="px-3 py-2 text-xs text-[color:var(--text-dim)]">
-                  <span class="truncate block">{{ r[2] || '-' }}</span>
-                </td>
-                <td class="px-3 py-2 text-xs text-[color:var(--text-dim)]">{{ r[3] || '-' }}</td>
-                <td class="px-3 py-2 text-xs text-[color:var(--text-dim)]">{{ r[4] || '-' }}</td>
-                <td class="px-3 py-2 text-xs text-[color:var(--text-dim)]">{{ r[5] || '-' }}</td>
-                <td class="px-3 py-2 text-xs text-[color:var(--text-dim)]">{{ r[6] || '-' }}</td>
-              </tr>
-              <tr v-if="!rows.length">
-                <td colspan="7" class="px-3 py-6 text-sm text-[color:var(--text-dim)] text-center">Нет устройств по текущим фильтрам</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+                <svg
+                  class="w-3.5 h-3.5 transition-colors"
+                  :class="isDeviceFavorite(row.id) ? 'text-[color:var(--accent-amber)] fill-[color:var(--accent-amber)]' : 'text-[color:var(--text-dim)]'"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"
+                  />
+                </svg>
+              </button>
+              <Link :href="`/devices/${row.uid || row.id}`" class="text-[color:var(--accent-cyan)] hover:underline truncate min-w-0">{{ row.uid || row.id }}</Link>
+            </div>
+          </template>
+          <template #cell-zone="{ row }">
+            <span class="truncate block">{{ row.zone?.name || '-' }}</span>
+          </template>
+          <template #cell-name="{ row }">
+            <span class="truncate block">{{ row.name || '-' }}</span>
+          </template>
+          <template #cell-type="{ row }">
+            {{ row.type ? translateDeviceType(row.type) : '-' }}
+          </template>
+          <template #cell-status="{ row }">
+            {{ row.status ? translateStatus(row.status) : 'неизвестно' }}
+          </template>
+          <template #cell-fw_version="{ row }">
+            {{ row.fw_version || '-' }}
+          </template>
+          <template #cell-last_seen_at="{ row }">
+            {{ row.last_seen_at ? new Date(row.last_seen_at).toLocaleString('ru-RU') : '-' }}
+          </template>
+        </DataTableV2>
         <Pagination
           v-model:current-page="currentPage"
           v-model:per-page="perPage"
@@ -134,22 +118,23 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
-import { Link, usePage, router } from '@inertiajs/vue3'
+import { computed, watch, onMounted, onUnmounted } from 'vue'
+import { Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Button from '@/Components/Button.vue'
+import DataTableV2 from '@/Components/DataTableV2.vue'
 import FilterBar from '@/Components/FilterBar.vue'
 import Pagination from '@/Components/Pagination.vue'
 import PageHeader from '@/Components/PageHeader.vue'
 import { useDevicesStore } from '@/stores/devices'
 import { useStoreEvents } from '@/composables/useStoreEvents'
 import { useFavorites } from '@/composables/useFavorites'
+import { useUrlState } from '@/composables/useUrlState'
 import { translateDeviceType, translateStatus } from '@/utils/i18n'
 import type { Device } from '@/types'
 import { logger } from '@/utils/logger'
 import { onWsStateChange } from '@/utils/echoClient'
 
-const headers = ['UID', 'Зона', 'Имя', 'Тип', 'Статус', 'Версия ПО', 'Последний раз видели']
 const page = usePage<{ devices?: Device[] }>()
 const devicesStore = useDevicesStore()
 const { subscribeWithCleanup } = useStoreEvents()
@@ -263,11 +248,42 @@ onMounted(() => {
     }
   })
 })
-const type = ref<string>('')
-const query = ref<string>('')
-const showOnlyFavorites = ref<boolean>(false)
-const currentPage = ref<number>(1)
-const perPage = ref<number>(25)
+const type = useUrlState<string>({
+  key: 'type',
+  defaultValue: '',
+  parse: (value) => value ?? '',
+  serialize: (value) => value || null,
+})
+const query = useUrlState<string>({
+  key: 'query',
+  defaultValue: '',
+  parse: (value) => value ?? '',
+  serialize: (value) => value || null,
+})
+const showOnlyFavorites = useUrlState<boolean>({
+  key: 'favorites',
+  defaultValue: false,
+  parse: (value) => value === '1',
+  serialize: (value) => (value ? '1' : null),
+})
+const currentPage = useUrlState<number>({
+  key: 'page',
+  defaultValue: 1,
+  parse: (value) => {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 1
+  },
+  serialize: (value) => (value > 1 ? String(value) : null),
+})
+const perPage = useUrlState<number>({
+  key: 'perPage',
+  defaultValue: 25,
+  parse: (value) => {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 25
+  },
+  serialize: (value) => (value !== 25 ? String(value) : null),
+})
 
 const { isDeviceFavorite, toggleDeviceFavorite } = useFavorites()
 
@@ -312,68 +328,33 @@ const paginatedData = computed(() => {
   return filtered.value.slice(start, end)
 })
 
-const rows = computed(() => {
-  return paginatedData.value.map(d => [
-  d.uid || d.id,
-  d.zone?.name || '-',
-  d.name || '-',
-  d.type ? translateDeviceType(d.type) : '-',
-  d.status ? translateStatus(d.status) : 'неизвестно',
-  d.fw_version || '-',
-  d.last_seen_at ? new Date(d.last_seen_at).toLocaleString('ru-RU') : '-',
-  d.id // Добавляем ID в конец для удобства доступа
-  ])
-})
+const columns = [
+  { key: 'uid', label: 'UID', sortable: true, headerClass: 'min-w-[200px]', class: 'min-w-[200px]' },
+  {
+    key: 'zone',
+    label: 'Зона',
+    sortable: true,
+    headerClass: 'min-w-[140px]',
+    class: 'min-w-[140px]',
+    sortAccessor: (device: Device) => device.zone?.name || '',
+  },
+  { key: 'name', label: 'Имя', sortable: true, headerClass: 'min-w-[140px]', class: 'min-w-[140px]' },
+  { key: 'type', label: 'Тип', sortable: true, headerClass: 'min-w-[110px]', class: 'min-w-[110px]' },
+  { key: 'status', label: 'Статус', sortable: true, headerClass: 'min-w-[110px]', class: 'min-w-[110px]' },
+  { key: 'fw_version', label: 'Версия ПО', sortable: true, headerClass: 'min-w-[110px]', class: 'min-w-[110px]' },
+  {
+    key: 'last_seen_at',
+    label: 'Последний раз видели',
+    sortable: true,
+    headerClass: 'min-w-[180px]',
+    class: 'min-w-[180px]',
+    sortAccessor: (device: Device) => (device.last_seen_at ? new Date(device.last_seen_at).getTime() : 0),
+  },
+]
 
 // Сбрасываем на первую страницу при изменении фильтров
 watch([type, query, showOnlyFavorites], () => {
   currentPage.value = 1
 })
 
-// Функция для получения ID устройства из строки таблицы
-function getDeviceIdFromRow(row: (string | number)[]): number {
-  // Последний элемент строки - это ID
-  const id = row[row.length - 1]
-  return typeof id === 'number' ? id : 0
-}
-
 </script>
-
-<style scoped>
-table {
-  table-layout: auto;
-}
-
-th, td {
-  white-space: nowrap;
-}
-
-th:first-child,
-td:first-child {
-  white-space: normal;
-  min-width: 200px;
-  max-width: 300px;
-}
-
-th:nth-child(2),
-td:nth-child(2),
-th:nth-child(3),
-td:nth-child(3) {
-  min-width: 120px;
-  max-width: 200px;
-}
-
-th:nth-child(4),
-td:nth-child(4),
-th:nth-child(5),
-td:nth-child(5),
-th:nth-child(6),
-td:nth-child(6) {
-  min-width: 100px;
-}
-
-th:last-child,
-td:last-child {
-  min-width: 180px;
-}
-</style>

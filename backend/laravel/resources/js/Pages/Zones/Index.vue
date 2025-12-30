@@ -88,77 +88,59 @@
       </div>
 
       <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl overflow-hidden shadow-[var(--shadow-card)] max-h-[720px] flex flex-col">
-        <div class="overflow-auto flex-1">
-          <table class="w-full border-collapse">
-            <thead class="bg-[color:var(--bg-surface-strong)] text-[color:var(--text-primary)] text-sm sticky top-0 z-10 backdrop-blur-md">
-              <tr>
-                <th class="text-left px-4 py-3 font-semibold border-b border-[color:var(--border-muted)]">
-                  <div class="flex items-center gap-2">
-                    <div class="w-5"></div>
-                    <span>Название</span>
-                  </div>
-                </th>
-                <th class="text-left px-4 py-3 font-semibold border-b border-[color:var(--border-muted)]">Статус</th>
-                <th class="text-left px-4 py-3 font-semibold border-b border-[color:var(--border-muted)]">Теплица</th>
-                <th class="text-left px-4 py-3 font-semibold border-b border-[color:var(--border-muted)]">pH</th>
-                <th class="text-left px-4 py-3 font-semibold border-b border-[color:var(--border-muted)]">EC</th>
-                <th class="text-left px-4 py-3 font-semibold border-b border-[color:var(--border-muted)]">Температура</th>
-                <th class="text-left px-4 py-3 font-semibold border-b border-[color:var(--border-muted)]">Действия</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="(r, index) in rows"
-                :key="r[0]"
-                :class="index % 2 === 0 ? 'bg-[color:var(--bg-surface-strong)]' : 'bg-[color:var(--bg-surface)]'"
-                class="text-sm border-b border-[color:var(--border-muted)] hover:bg-[color:var(--bg-elevated)] transition-colors"
+        <DataTableV2
+          :columns="columns"
+          :rows="paginatedZones"
+          empty-title="Нет зон по текущим фильтрам"
+          empty-description="Попробуйте изменить фильтры или дождитесь новых зон."
+          container-class="max-h-[720px]"
+        >
+          <template #cell-name="{ row }">
+            <div class="flex items-center gap-2 min-w-0">
+              <button
+                @click.stop="toggleZoneFavorite(row.id)"
+                class="p-1 rounded-md hover:bg-[color:var(--bg-elevated)] transition-colors shrink-0 w-8 h-8 flex items-center justify-center"
+                :title="isZoneFavorite(row.id) ? 'Удалить из избранного' : 'Добавить в избранное'"
               >
-                <td class="px-4 py-3">
-                  <div class="flex items-center gap-2 min-w-0">
-                    <button
-                      @click.stop="toggleZoneFavorite(getZoneIdFromRow(r))"
-                      class="p-1 rounded-md hover:bg-[color:var(--bg-elevated)] transition-colors shrink-0 w-8 h-8 flex items-center justify-center"
-                      :title="isZoneFavorite(getZoneIdFromRow(r)) ? 'Удалить из избранного' : 'Добавить в избранное'"
-                    >
-                      <svg
-                        class="w-4 h-4 transition-colors"
-                        :class="isZoneFavorite(getZoneIdFromRow(r)) ? 'text-[color:var(--accent-amber)] fill-[color:var(--accent-amber)]' : 'text-[color:var(--text-dim)]'"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="2"
-                          d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"
-                        />
-                      </svg>
-                    </button>
-                    <Link :href="`/zones/${r[0]}`" class="text-[color:var(--accent-cyan)] hover:underline truncate min-w-0 font-semibold">{{ r[1] }}</Link>
-                  </div>
-                </td>
-                <td class="px-4 py-3">
-                  <Badge :variant="getStatusVariant(r[2])" class="shrink-0">{{ r[2] }}</Badge>
-                </td>
-                <td class="px-4 py-3 text-xs text-[color:var(--text-muted)]">
-                  <span class="truncate block">{{ r[3] || '-' }}</span>
-                </td>
-                <td class="px-4 py-3 text-xs text-[color:var(--text-muted)]">{{ r[4] || '-' }}</td>
-                <td class="px-4 py-3 text-xs text-[color:var(--text-muted)]">{{ r[5] || '-' }}</td>
-                <td class="px-4 py-3 text-xs text-[color:var(--text-muted)]">{{ r[6] || '-' }}</td>
-                <td class="px-4 py-3">
-                  <Link :href="`/zones/${r[0]}`">
-                    <Button size="sm" variant="secondary">Подробнее</Button>
-                  </Link>
-                </td>
-              </tr>
-              <tr v-if="!rows.length">
-                <td colspan="7" class="px-4 py-6 text-sm text-[color:var(--text-dim)] text-center">Нет зон по текущим фильтрам</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+                <svg
+                  class="w-4 h-4 transition-colors"
+                  :class="isZoneFavorite(row.id) ? 'text-[color:var(--accent-amber)] fill-[color:var(--accent-amber)]' : 'text-[color:var(--text-dim)]'"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"
+                  />
+                </svg>
+              </button>
+              <Link :href="`/zones/${row.id}`" class="text-[color:var(--accent-cyan)] hover:underline truncate min-w-0 font-semibold">{{ row.name || '-' }}</Link>
+            </div>
+          </template>
+          <template #cell-status="{ row }">
+            <Badge :variant="getStatusVariant(row.status)" class="shrink-0">{{ translateStatus(row.status) }}</Badge>
+          </template>
+          <template #cell-greenhouse="{ row }">
+            <span class="truncate block">{{ row.greenhouse?.name || '-' }}</span>
+          </template>
+          <template #cell-ph="{ row }">
+            {{ formatNumber(row.telemetry?.ph, 2) }}
+          </template>
+          <template #cell-ec="{ row }">
+            {{ formatNumber(row.telemetry?.ec, 1) }}
+          </template>
+          <template #cell-temperature="{ row }">
+            {{ formatTemperature(row.telemetry?.temperature) }}
+          </template>
+          <template #cell-actions="{ row }">
+            <Link :href="`/zones/${row.id}`">
+              <Button size="sm" variant="secondary">Подробнее</Button>
+            </Link>
+          </template>
+        </DataTableV2>
         <Pagination
           v-model:current-page="currentPage"
           v-model:per-page="perPage"
@@ -183,15 +165,16 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 import ZoneComparisonModal from '@/Components/ZoneComparisonModal.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
+import DataTableV2 from '@/Components/DataTableV2.vue'
 import Pagination from '@/Components/Pagination.vue'
 import { useZonesStore } from '@/stores/zones'
 import { useStoreEvents } from '@/composables/useStoreEvents'
 import { useBatchUpdates } from '@/composables/useOptimizedUpdates'
 import { useFavorites } from '@/composables/useFavorites'
+import { useUrlState } from '@/composables/useUrlState'
 import { translateStatus } from '@/utils/i18n'
 import type { Zone } from '@/types'
 
-const headers = ['Название', 'Статус', 'Теплица', 'pH', 'EC', 'Температура', 'Действия']
 const page = usePage<{ zones?: Zone[] }>()
 const zonesStore = useZonesStore()
 const { subscribeWithCleanup } = useStoreEvents()
@@ -274,14 +257,43 @@ watch(() => zonesStore.cacheVersion, () => {
   // Но лучше обновить через Inertia только если зоны действительно изменились
 })
 
-// Инициализация статуса из URL параметров
-const urlParams = new URLSearchParams(window.location.search)
-const status = ref<string>(urlParams.get('status') || '')
-const query = ref<string>('')
+const status = useUrlState<string>({
+  key: 'status',
+  defaultValue: '',
+  parse: (value) => value ?? '',
+  serialize: (value) => value || null,
+})
+const query = useUrlState<string>({
+  key: 'query',
+  defaultValue: '',
+  parse: (value) => value ?? '',
+  serialize: (value) => value || null,
+})
 const showComparisonModal = ref<boolean>(false)
-const showOnlyFavorites = ref<boolean>(false)
-const currentPage = ref<number>(1)
-const perPage = ref<number>(25)
+const showOnlyFavorites = useUrlState<boolean>({
+  key: 'favorites',
+  defaultValue: false,
+  parse: (value) => value === '1',
+  serialize: (value) => (value ? '1' : null),
+})
+const currentPage = useUrlState<number>({
+  key: 'page',
+  defaultValue: 1,
+  parse: (value) => {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 1
+  },
+  serialize: (value) => (value > 1 ? String(value) : null),
+})
+const perPage = useUrlState<number>({
+  key: 'perPage',
+  defaultValue: 25,
+  parse: (value) => {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 25
+  },
+  serialize: (value) => (value !== 25 ? String(value) : null),
+})
 
 const { isZoneFavorite, toggleZoneFavorite } = useFavorites()
 
@@ -320,42 +332,37 @@ const paginatedZones = computed(() => {
   return filteredZones.value.slice(start, end)
 })
 
-// Преобразуем зоны в строки таблицы
-const rows = computed(() => {
-  return paginatedZones.value.map(z => {
-    // Безопасное форматирование чисел
-    const formatNumber = (value: unknown, decimals: number): string => {
-      if (value === null || value === undefined) return '-'
-      const num = typeof value === 'number' ? value : Number(value)
-      return !isNaN(num) && isFinite(num) ? num.toFixed(decimals) : '-'
-    }
-    
-    return [
-      z.id,
-      z.name || '-',
-      translateStatus(z.status),
-      z.greenhouse?.name || '-',
-      formatNumber(z.telemetry?.ph, 2),
-      formatNumber(z.telemetry?.ec, 1),
-      z.telemetry?.temperature !== null && z.telemetry?.temperature !== undefined 
-        ? (() => {
-            const temp = typeof z.telemetry.temperature === 'number' 
-              ? z.telemetry.temperature 
-              : Number(z.telemetry.temperature)
-            return !isNaN(temp) && isFinite(temp) ? `${temp.toFixed(1)}°C` : '-'
-          })()
-        : '-',
-      z.id // Добавляем ID в конец для удобства доступа
-    ]
-  })
-})
-
-// Функция для получения ID зоны из строки таблицы
-function getZoneIdFromRow(row: (string | number)[]): number {
-  // Последний элемент строки - это ID
-  const id = row[row.length - 1]
-  return typeof id === 'number' ? id : 0
-}
+const columns = [
+  {
+    key: 'name',
+    label: 'Название',
+    headerClass: 'min-w-[200px] max-w-[300px]',
+    class: 'min-w-[200px] max-w-[300px]',
+  },
+  { key: 'status', label: 'Статус', headerClass: 'min-w-[120px]', class: 'min-w-[120px]' },
+  {
+    key: 'greenhouse',
+    label: 'Теплица',
+    headerClass: 'min-w-[120px] max-w-[200px]',
+    class: 'min-w-[120px] max-w-[200px]',
+  },
+  { key: 'ph', label: 'pH', headerClass: 'min-w-[60px]', class: 'min-w-[60px]', align: 'center' },
+  { key: 'ec', label: 'EC', headerClass: 'min-w-[60px]', class: 'min-w-[60px]', align: 'center' },
+  {
+    key: 'temperature',
+    label: 'Температура',
+    headerClass: 'min-w-[100px]',
+    class: 'min-w-[100px]',
+    align: 'center',
+  },
+  {
+    key: 'actions',
+    label: 'Действия',
+    headerClass: 'min-w-[120px]',
+    class: 'min-w-[120px]',
+    align: 'center',
+  },
+]
 
 // Сбрасываем на первую страницу при изменении фильтров
 watch([status, query, showOnlyFavorites], () => {
@@ -363,15 +370,27 @@ watch([status, query, showOnlyFavorites], () => {
 })
 
 // Функция для получения варианта Badge по статусу
+const formatNumber = (value: unknown, decimals: number): string => {
+  if (value === null || value === undefined) return '-'
+  const num = typeof value === 'number' ? value : Number(value)
+  return !isNaN(num) && isFinite(num) ? num.toFixed(decimals) : '-'
+}
+
+const formatTemperature = (value: unknown): string => {
+  if (value === null || value === undefined) return '-'
+  const num = typeof value === 'number' ? value : Number(value)
+  return !isNaN(num) && isFinite(num) ? `${num.toFixed(1)}°C` : '-'
+}
+
 function getStatusVariant(status: string): string {
   switch (status) {
-    case 'Запущено':
+    case 'RUNNING':
       return 'success'
-    case 'Приостановлено':
+    case 'PAUSED':
       return 'neutral'
-    case 'Предупреждение':
+    case 'WARNING':
       return 'warning'
-    case 'Тревога':
+    case 'ALARM':
       return 'danger'
     default:
       return 'neutral'
@@ -379,45 +398,3 @@ function getStatusVariant(status: string): string {
 }
 
 </script>
-
-<style scoped>
-table {
-  table-layout: auto;
-}
-
-th, td {
-  white-space: nowrap;
-}
-
-th:first-child,
-td:first-child {
-  white-space: normal;
-  min-width: 200px;
-  max-width: 300px;
-}
-
-th:nth-child(3),
-td:nth-child(3) {
-  min-width: 120px;
-  max-width: 200px;
-}
-
-th:nth-child(4),
-td:nth-child(4),
-th:nth-child(5),
-td:nth-child(5) {
-  min-width: 60px;
-  text-align: center;
-}
-
-th:nth-child(6),
-td:nth-child(6) {
-  min-width: 100px;
-}
-
-th:last-child,
-td:last-child {
-  min-width: 120px;
-  text-align: center;
-}
-</style>

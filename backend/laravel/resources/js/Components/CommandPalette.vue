@@ -85,17 +85,29 @@
     @close="confirmModal.open = false"
     @confirm="confirmAction"
   />
+
+  <ZoneActionModal
+    v-if="actionModal.open && actionModal.zoneId"
+    :show="actionModal.open"
+    :action-type="actionModal.actionType"
+    :zone-id="actionModal.zoneId"
+    :default-params="actionModal.defaultParams"
+    @close="closeActionModal"
+    @submit="onActionModalSubmit"
+  />
 </template>
 
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, computed, watch, nextTick } from 'vue'
-import { router } from '@inertiajs/vue3'
+import { router, usePage } from '@inertiajs/vue3'
 import { logger } from '@/utils/logger'
 import { useApi } from '@/composables/useApi'
 import { useCommands } from '@/composables/useCommands'
 import { useRole } from '@/composables/useRole'
+import { buildCommandItems, groupCommandItems, type CommandItem, type CommandHistoryItem, type CommandSearchResults, type CommandActionType, type CommandCycleType } from '@/commands/registry'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
-import type { Zone, Device, Recipe } from '@/types'
+import ZoneActionModal from '@/Components/ZoneActionModal.vue'
+import type { CommandParams, CommandType } from '@/types'
 
 // Debounce для предотвращения множественных вызовов router.visit
 const visitTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -127,40 +139,11 @@ function safeVisit(url: string, options: { preserveScroll?: boolean } = {}): voi
   }, VISIT_DEBOUNCE_MS))
 }
 
-interface CommandItem {
-  type: 'nav' | 'zone' | 'node' | 'recipe' | 'action'
-  id?: number | string
-  label: string
-  icon?: string
-  category?: string
-  shortcut?: string
-  action?: () => void
-  actionFn?: () => void | Promise<void>
-  requiresConfirm?: boolean
-  zoneId?: number
-  zoneName?: string
-  recipeId?: number
-  recipeName?: string
-  actionType?: string
-  cycleType?: string
-}
-
-interface GroupedResult {
-  category: string
-  items: CommandItem[]
-}
-
 interface ConfirmModalState {
   open: boolean
   title: string
   message: string
   action: (() => void | Promise<void>) | null
-}
-
-interface SearchResults {
-  zones: Zone[]
-  nodes: Device[]
-  recipes: Recipe[]
 }
 
 const open = ref<boolean>(false)
@@ -169,12 +152,13 @@ const selectedIndex = ref<number>(0)
 const inputRef = ref<HTMLInputElement | null>(null)
 const loading = ref<boolean>(false)
 
+const page = usePage()
 const { api } = useApi()
 const { sendZoneCommand } = useCommands()
-const { isAdmin, isOperator, isAgronomist, isEngineer } = useRole()
+const { role } = useRole()
 
 // История команд (хранится в localStorage)
-const commandHistory = ref<Array<{ label: string; timestamp: number; action: string }>>([])
+const commandHistory = ref<CommandHistoryItem[]>([])
 const maxHistorySize = 10
 
 // Загрузка истории из localStorage
@@ -220,81 +204,38 @@ const confirmModal = ref<ConfirmModalState>({
   action: null
 })
 
-// Статические команды навигации (базовые для всех)
-const baseStaticCommands: CommandItem[] = [
-  { type: 'nav', label: 'Открыть Dashboard', icon: '📊', category: 'Навигация', action: () => safeVisit('/') },
-  { type: 'nav', label: 'Открыть Zones', icon: '🌱', category: 'Навигация', action: () => safeVisit('/zones') },
-  { type: 'nav', label: 'Открыть Devices', icon: '📱', category: 'Навигация', action: () => safeVisit('/devices') },
-  { type: 'nav', label: 'Открыть Recipes', icon: '📋', category: 'Навигация', action: () => safeVisit('/recipes') },
-  { type: 'nav', label: 'Открыть Alerts', icon: '⚠️', category: 'Навигация', action: () => safeVisit('/alerts') },
-]
-
-// Ролевые команды
-const roleBasedCommands = computed<CommandItem[]>(() => {
-  const commands: CommandItem[] = []
-  
-  // Команды для админа
-  if (isAdmin.value) {
-    commands.push(
-      { type: 'nav', label: 'Управление пользователями', icon: '👥', category: 'Администрирование', action: () => safeVisit('/users') },
-      { type: 'nav', label: 'Системные настройки', icon: '⚙️', category: 'Администрирование', action: () => safeVisit('/settings') },
-      { type: 'nav', label: 'Аудит', icon: '📝', category: 'Администрирование', action: () => safeVisit('/audit') },
-    )
-  }
-  
-  // Команды для агронома
-  if (isAgronomist.value) {
-    commands.push(
-      { type: 'nav', label: 'Аналитика', icon: '📈', category: 'Аналитика', action: () => safeVisit('/analytics') },
-      { type: 'nav', label: 'Создать рецепт', icon: '➕', category: 'Создание', action: () => safeVisit('/recipes/create') },
-    )
-  }
-  
-  // Команды для инженера
-  if (isEngineer.value) {
-    commands.push(
-      { type: 'nav', label: 'Системные метрики', icon: '📊', category: 'Система', action: () => safeVisit('/system') },
-      { type: 'nav', label: 'Логи', icon: '📋', category: 'Система', action: () => safeVisit('/logs') },
-    )
-  }
-  
-  // Команды для оператора и админа
-  if (isOperator.value || isAdmin.value) {
-    commands.push(
-      { type: 'nav', label: 'Теплицы', icon: '🏠', category: 'Управление', action: () => safeVisit('/greenhouses') },
-    )
-  }
-  
-  return commands
+const actionModal = ref<{
+  open: boolean
+  zoneId: number | null
+  actionType: CommandType
+  defaultParams: CommandParams
+}>({
+  open: false,
+  zoneId: null,
+  actionType: 'FORCE_IRRIGATION',
+  defaultParams: {},
 })
 
-// Объединенные статические команды
-const staticCommands = computed(() => [...baseStaticCommands, ...roleBasedCommands.value])
-
 // Результаты поиска
-const searchResults = ref<SearchResults>({
+const searchResults = ref<CommandSearchResults>({
   zones: [],
   nodes: [],
   recipes: []
 })
 
-// Fuzzy search функция
-function fuzzyMatch(text: string, query: string): boolean {
-  if (!query) return true
-  const textLower = text.toLowerCase()
-  const queryLower = query.toLowerCase()
-  let textIndex = 0
-  let queryIndex = 0
-  
-  while (textIndex < textLower.length && queryIndex < queryLower.length) {
-    if (textLower[textIndex] === queryLower[queryIndex]) {
-      queryIndex++
-    }
-    textIndex++
-  }
-  
-  return queryIndex === queryLower.length
-}
+const targetsCache = new Map<number, unknown>()
+const currentZoneId = computed(() => {
+  const props = page.props as Record<string, any>
+  return props.zone?.id ?? props.zoneId ?? null
+})
+const currentPhaseTargets = computed(() => {
+  const props = page.props as Record<string, any>
+  return props.current_phase?.targets ?? null
+})
+const legacyTargets = computed(() => {
+  const props = page.props as Record<string, any>
+  return props.targets ?? null
+})
 
 // Интерфейс для сегмента текста
 interface TextSegment {
@@ -393,226 +334,23 @@ watch(q, (newQuery: string) => {
   }, 300)
 })
 
-// Формируем результаты с группировкой
-const groupedResults = computed<GroupedResult[]>(() => {
-  const query = q.value.toLowerCase()
-  const flatResults: CommandItem[] = []
-  
-  // Если запрос пустой, показываем историю и статические команды
-  if (!query) {
-    // Добавляем историю команд
-    if (commandHistory.value.length > 0) {
-      commandHistory.value.forEach((historyItem, index) => {
-        flatResults.push({
-          type: 'nav',
-          label: historyItem.label,
-          icon: '🕐',
-          category: 'История',
-          shortcut: index === 0 ? 'Недавно' : undefined,
-          action: () => {
-            // Восстанавливаем действие из истории (упрощенная версия)
-            const matchingCommand = staticCommands.value.find(cmd => cmd.label === historyItem.label)
-            if (matchingCommand?.action) {
-              matchingCommand.action()
-            }
-          }
-        })
-      })
-    }
-    // Добавляем статические команды
-    flatResults.push(...staticCommands.value)
-  } else {
-  
-    // Фильтруем статические команды
-    staticCommands.value.forEach(cmd => {
-      if (fuzzyMatch(cmd.label, query)) {
-        flatResults.push(cmd)
-      }
-    })
-    
-    // Фильтруем историю
-    commandHistory.value.forEach(historyItem => {
-      if (fuzzyMatch(historyItem.label, query)) {
-        flatResults.push({
-          type: 'nav',
-          label: historyItem.label,
-          icon: '🕐',
-          category: 'История',
-          action: () => {
-            const matchingCommand = staticCommands.value.find(cmd => cmd.label === historyItem.label)
-            if (matchingCommand?.action) {
-              matchingCommand.action()
-            }
-          }
-        })
-      }
-    })
-
-    // Добавляем зоны с быстрыми действиями
-    searchResults.value.zones.forEach(zone => {
-      if (fuzzyMatch(zone.name, query)) {
-        // Переход к зоне
-        flatResults.push({
-          type: 'zone',
-          id: zone.id,
-          label: zone.name,
-          icon: '🌱',
-          category: 'Зона',
-          action: () => safeVisit(`/zones/${zone.id}`)
-        })
-      
-        // Быстрые действия для зоны
-        if (zone.status === 'PAUSED') {
-          flatResults.push({
-            type: 'action',
-            id: `zone-${zone.id}-resume`,
-            label: `Возобновить зону "${zone.name}"`,
-            icon: '▶️',
-            category: 'Действие',
-            zoneId: zone.id,
-            zoneName: zone.name,
-            actionType: 'resume',
-            requiresConfirm: false,
-            actionFn: () => executeZoneAction(zone.id, 'resume', zone.name)
-          })
-        } else if (zone.status === 'RUNNING') {
-          flatResults.push({
-            type: 'action',
-            id: `zone-${zone.id}-pause`,
-            label: `Приостановить зону "${zone.name}"`,
-            icon: '⏸️',
-            category: 'Действие',
-            zoneId: zone.id,
-            zoneName: zone.name,
-            actionType: 'pause',
-            requiresConfirm: true,
-            actionFn: () => executeZoneAction(zone.id, 'pause', zone.name)
-          })
-          
-          // Быстрые действия для циклов
-          flatResults.push({
-            type: 'action',
-            id: `zone-${zone.id}-irrigate`,
-            label: `Полить зону "${zone.name}"`,
-            icon: '💧',
-            category: 'Цикл',
-            zoneId: zone.id,
-            zoneName: zone.name,
-            actionType: 'irrigate',
-            requiresConfirm: true,
-            actionFn: () => executeZoneCycle(zone.id, 'IRRIGATION', zone.name)
-          })
-          flatResults.push({
-            type: 'action',
-            id: `zone-${zone.id}-ph-control`,
-            label: `Коррекция pH в зоне "${zone.name}"`,
-            icon: '🧪',
-            category: 'Цикл',
-            zoneId: zone.id,
-            zoneName: zone.name,
-            actionType: 'ph-control',
-            requiresConfirm: true,
-            actionFn: () => executeZoneCycle(zone.id, 'PH_CONTROL', zone.name)
-          })
-          flatResults.push({
-            type: 'action',
-            id: `zone-${zone.id}-ec-control`,
-            label: `Коррекция EC в зоне "${zone.name}"`,
-            icon: '⚡',
-            category: 'Цикл',
-            zoneId: zone.id,
-            zoneName: zone.name,
-            actionType: 'ec-control',
-            requiresConfirm: true,
-            actionFn: () => executeZoneCycle(zone.id, 'EC_CONTROL', zone.name)
-          })
-          flatResults.push({
-            type: 'action',
-            id: `zone-${zone.id}-next-phase`,
-            label: `Следующая фаза в зоне "${zone.name}"`,
-            icon: '⏭️',
-            category: 'Рецепт',
-            zoneId: zone.id,
-            zoneName: zone.name,
-            actionType: 'next-phase',
-            requiresConfirm: true,
-            actionFn: () => executeZoneAction(zone.id, 'next-phase', zone.name)
-          })
-        }
-      }
-    })
-
-    // Добавляем узлы
-    searchResults.value.nodes.forEach(node => {
-      const label = node.name || node.uid || `Node #${node.id}`
-      if (fuzzyMatch(label, query)) {
-        flatResults.push({
-          type: 'node',
-          id: node.id,
-          label,
-          icon: '📱',
-          category: 'Устройство',
-          action: () => safeVisit(`/devices/${node.id}`)
-        })
-      }
-    })
-
-    // Добавляем рецепты с действиями
-    searchResults.value.recipes.forEach(recipe => {
-      if (fuzzyMatch(recipe.name, query)) {
-        // Переход к рецепту
-        flatResults.push({
-          type: 'recipe',
-          id: recipe.id,
-          label: recipe.name,
-          icon: '📋',
-          category: 'Рецепт',
-          action: () => safeVisit(`/recipes/${recipe.id}`)
-        })
-        
-        // Действие: открыть мастер цикла для зоны
-        searchResults.value.zones.forEach(zone => {
-          if (fuzzyMatch(zone.name, query) || query.includes(zone.name.toLowerCase())) {
-            flatResults.push({
-              type: 'action',
-              id: `recipe-${recipe.id}-apply-zone-${zone.id}`,
-              label: `Открыть мастер цикла для зоны "${zone.name}"`,
-              icon: '🔄',
-              category: 'Рецепт',
-              zoneId: zone.id,
-              zoneName: zone.name,
-              recipeId: recipe.id,
-              recipeName: recipe.name,
-              actionType: 'open-cycle-wizard',
-              requiresConfirm: false,
-              actionFn: () => openGrowCycleWizardForZone(zone.id, recipe.id, zone.name, recipe.name)
-            })
-          }
-        })
-      }
-    })
-  }
-  
-  // Группируем результаты по категориям
-  const grouped = new Map<string, CommandItem[]>()
-  flatResults.forEach(item => {
-    const category = item.category || 'Другое'
-    if (!grouped.has(category)) {
-      grouped.set(category, [])
-    }
-    grouped.get(category)!.push(item)
+const commandItems = computed<CommandItem[]>(() => {
+  return buildCommandItems({
+    query: q.value,
+    role: role.value,
+    searchResults: searchResults.value,
+    history: commandHistory.value,
+    handlers: {
+      navigate: safeVisit,
+      zoneAction: executeZoneAction,
+      zoneCycle: executeZoneCycle,
+      openGrowCycleWizard: openGrowCycleWizardForZone,
+    },
   })
-  
-  // Преобразуем в массив и сортируем категории
-  const categoryOrder = ['История', 'Навигация', 'Зона', 'Устройство', 'Рецепт', 'Действие', 'Цикл', 'Создание', 'Настройка', 'Администрирование', 'Аналитика', 'Система', 'Другое']
-  return Array.from(grouped.entries())
-    .map(([category, items]) => ({ category, items }))
-    .sort((a, b) => {
-      const aIndex = categoryOrder.indexOf(a.category)
-      const bIndex = categoryOrder.indexOf(b.category)
-      return (aIndex === -1 ? 999 : aIndex) - (bIndex === -1 ? 999 : bIndex)
-    })
 })
+
+// Формируем результаты с группировкой
+const groupedResults = computed(() => groupCommandItems(commandItems.value))
 
 // Вычисляем индекс элемента в плоском списке
 function getItemIndex(groupIndex: number, itemIndex: number): number {
@@ -690,7 +428,111 @@ const run = (item: CommandItem | undefined): void => {
   close()
 }
 
-async function executeZoneAction(zoneId: number, action: string, zoneName: string): Promise<void> {
+const normalizeTargets = (payload: unknown): Record<string, any> | null => {
+  if (!payload || typeof payload !== 'object') return null
+  const raw = payload as Record<string, any>
+  if (raw.targets && typeof raw.targets === 'object') {
+    return raw.targets as Record<string, any>
+  }
+  return raw
+}
+
+const resolveTargetValue = (target: any): number | null => {
+  if (target === null || target === undefined) return null
+  if (typeof target === 'number') return target
+  if (typeof target.target === 'number') return target.target
+  const min = typeof target.min === 'number' ? target.min : null
+  const max = typeof target.max === 'number' ? target.max : null
+  if (min !== null && max !== null) {
+    return (min + max) / 2
+  }
+  return min ?? max
+}
+
+const resolveIrrigationDuration = (targets: Record<string, any> | null): number | null => {
+  if (!targets) return null
+  const candidates = [
+    targets.irrigation?.duration_sec,
+    targets.irrigation?.duration_seconds,
+    targets.irrigation_duration_sec,
+    targets.irrigation_duration_seconds,
+  ]
+  const match = candidates.find((value) => typeof value === 'number')
+  return typeof match === 'number' ? match : null
+}
+
+const resolveCycleParams = async (zoneId: number, cycleType: CommandCycleType): Promise<CommandParams | null> => {
+  let targets: Record<string, any> | null = null
+
+  if (currentZoneId.value === zoneId) {
+    targets = normalizeTargets(currentPhaseTargets.value) || normalizeTargets(legacyTargets.value)
+  } else if (targetsCache.has(zoneId)) {
+    targets = normalizeTargets(targetsCache.get(zoneId)) as Record<string, any> | null
+  } else {
+    try {
+      const response = await api.get(`/api/zones/${zoneId}/effective-targets`)
+      const payload = response?.data?.data ?? null
+      targets = normalizeTargets(payload)
+      targetsCache.set(zoneId, targets)
+    } catch (err) {
+      logger.warn('[CommandPalette] Failed to load effective targets', err)
+      targetsCache.set(zoneId, null)
+    }
+  }
+
+  if (!targets) return null
+
+  if (cycleType === 'IRRIGATION') {
+    const duration = resolveIrrigationDuration(targets)
+    return duration !== null ? { duration_sec: duration } : null
+  }
+
+  if (cycleType === 'PH_CONTROL') {
+    const phTarget = resolveTargetValue(targets.ph ?? { min: targets.ph_min, max: targets.ph_max })
+    return phTarget !== null ? { target_ph: phTarget } : null
+  }
+
+  if (cycleType === 'EC_CONTROL') {
+    const ecTarget = resolveTargetValue(targets.ec ?? { min: targets.ec_min, max: targets.ec_max })
+    return ecTarget !== null ? { target_ec: ecTarget } : null
+  }
+
+  return null
+}
+
+const openActionModalForCycle = (zoneId: number, cycleType: CommandCycleType): void => {
+  const actionMap: Record<CommandCycleType, CommandType> = {
+    IRRIGATION: 'FORCE_IRRIGATION',
+    PH_CONTROL: 'FORCE_PH_CONTROL',
+    EC_CONTROL: 'FORCE_EC_CONTROL',
+  }
+  actionModal.value = {
+    open: true,
+    zoneId,
+    actionType: actionMap[cycleType],
+    defaultParams: {},
+  }
+}
+
+const closeActionModal = (): void => {
+  actionModal.value.open = false
+  actionModal.value.zoneId = null
+  actionModal.value.defaultParams = {}
+}
+
+const onActionModalSubmit = async ({ actionType, params }: { actionType: CommandType; params: CommandParams }): Promise<void> => {
+  if (!actionModal.value.zoneId) return
+
+  try {
+    await sendZoneCommand(actionModal.value.zoneId, actionType, params)
+  } catch (err) {
+    logger.error('[CommandPalette] Failed to execute action from modal', err)
+  } finally {
+    closeActionModal()
+  }
+}
+
+async function executeZoneAction(zoneId: number, action: CommandActionType, zoneName: string): Promise<void> {
   try {
     const cycleResponse = await api.get(`/api/zones/${zoneId}/grow-cycle`)
     const growCycleId = cycleResponse.data?.data?.id
@@ -723,9 +565,9 @@ async function executeZoneAction(zoneId: number, action: string, zoneName: strin
  * @deprecated После рефакторинга циклы управляются через GrowCycle API.
  * Эта функция оставлена для обратной совместимости с ручными командами.
  */
-async function executeZoneCycle(zoneId: number, cycleType: string, zoneName: string): Promise<void> {
+async function executeZoneCycle(zoneId: number, cycleType: CommandCycleType, zoneName: string): Promise<void> {
   try {
-    const commandType = `FORCE_${cycleType}` as any
+    const commandType = `FORCE_${cycleType}` as CommandType
     const cycleNames: Record<string, string> = {
       'IRRIGATION': 'Полив',
       'PH_CONTROL': 'Коррекция pH',
@@ -734,32 +576,15 @@ async function executeZoneCycle(zoneId: number, cycleType: string, zoneName: str
       'LIGHTING': 'Управление освещением'
     }
     const cycleName = cycleNames[cycleType] || cycleType
-    
-    // Используем параметры по умолчанию из targets/recipe (как в Zone Detail)
-    // Для простоты используем базовые значения, в реальности нужно получать из API
-    const defaultParams: Record<string, unknown> = {}
-    
-    switch (cycleType) {
-      case 'IRRIGATION':
-        defaultParams.duration_sec = 10
-        break
-      case 'PH_CONTROL':
-        defaultParams.target_ph = 6.0
-        break
-      case 'EC_CONTROL':
-        defaultParams.target_ec = 1.5
-        break
-      case 'CLIMATE':
-        defaultParams.target_temp = 22
-        defaultParams.target_humidity = 60
-        break
-      case 'LIGHTING':
-        defaultParams.duration_hours = 12
-        defaultParams.intensity = 80
-        break
+
+    const params = await resolveCycleParams(zoneId, cycleType)
+    if (!params) {
+      openActionModalForCycle(zoneId, cycleType)
+      close()
+      return
     }
-    
-    await sendZoneCommand(zoneId, commandType, defaultParams)
+
+    await sendZoneCommand(zoneId, commandType, params)
     logger.info(`[CommandPalette] Цикл "${cycleName}" запущен в зоне "${zoneName}"`)
     close()
   } catch (err) {

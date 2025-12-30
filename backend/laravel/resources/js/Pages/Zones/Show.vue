@@ -83,128 +83,39 @@
         @configure="(device) => openNodeConfig(device.id, device)"
       />
     </div>
-    
-    <!-- Digital Twin Simulation Modal -->
-    <ZoneSimulationModal
-      :show="showSimulationModal"
-      :zone-id="zoneId"
-      :default-recipe-id="activeGrowCycle?.recipeRevision?.recipe_id"
-      @close="modals.close('simulation')"
-    />
-    
-    <!-- Модальное окно для действий с параметрами -->
-    <ZoneActionModal
-      v-if="showActionModal"
-      :show="showActionModal"
-      :action-type="currentActionType"
-      :zone-id="zoneId"
-      @close="modals.close('action')"
-      @submit="onActionSubmit"
-    />
-    
-    <!-- Модальное окно привязки узлов -->
-    <AttachNodesModal
-      v-if="showAttachNodesModal"
-      :show="showAttachNodesModal"
-      :zone-id="zoneId"
-      @close="modals.close('attachNodes')"
-      @attached="onNodesAttached"
-    />
-    
-    <!-- Модальное окно настройки узла -->
-    <NodeConfigModal
-      v-if="showNodeConfigModal && selectedNodeId"
-      :show="showNodeConfigModal"
-      :node-id="selectedNodeId"
-      :node="selectedNode"
-      @close="modals.close('nodeConfig')"
-    />
-    
-    <!-- Модальное окно запуска/корректировки цикла выращивания -->
-    <GrowthCycleWizard
-      v-if="showGrowthCycleModal && zoneId"
-      :show="showGrowthCycleModal"
+    <ZoneDetailModals
+      :show-simulation-modal="showSimulationModal"
+      :show-action-modal="showActionModal"
+      :show-growth-cycle-modal="showGrowthCycleModal"
+      :show-attach-nodes-modal="showAttachNodesModal"
+      :show-node-config-modal="showNodeConfigModal"
       :zone-id="zoneId"
       :zone-name="zone.name"
+      :default-recipe-id="activeGrowCycle?.recipeRevision?.recipe_id || null"
       :current-phase-targets="currentPhase?.targets || null"
       :active-cycle="activeCycle"
-      @close="modals.close('growthCycle')"
-      @submit="onGrowthCycleWizardSubmit"
+      :selected-node-id="selectedNodeId"
+      :selected-node="selectedNode"
+      :current-action-type="currentActionType"
+      :harvest-modal="harvestModal"
+      :abort-modal="abortModal"
+      :change-recipe-modal="changeRecipeModal"
+      :loading="loading"
+      @close-simulation="modals.close('simulation')"
+      @close-action="modals.close('action')"
+      @submit-action="onActionSubmit"
+      @close-attach-nodes="modals.close('attachNodes')"
+      @nodes-attached="onNodesAttached"
+      @close-node-config="modals.close('nodeConfig')"
+      @close-growth-cycle="modals.close('growthCycle')"
+      @submit-growth-cycle="onGrowthCycleWizardSubmit"
+      @close-harvest="closeHarvestModal"
+      @confirm-harvest="confirmHarvest"
+      @close-abort="closeAbortModal"
+      @confirm-abort="confirmAbort"
+      @close-change-recipe="closeChangeRecipeModal"
+      @confirm-change-recipe="confirmChangeRecipe"
     />
-
-    <ConfirmModal
-      :open="harvestModal.open"
-      title="Зафиксировать сбор"
-      message=" "
-      confirm-text="Подтвердить"
-      :loading="loading.cycleHarvest"
-      @close="closeHarvestModal"
-      @confirm="confirmHarvest"
-    >
-      <div class="space-y-3 text-sm text-[color:var(--text-muted)]">
-        <div>Зафиксировать сбор урожая и завершить цикл?</div>
-        <div>
-          <label class="text-xs text-[color:var(--text-dim)]">Метка партии (опционально)</label>
-          <input v-model="harvestModal.batchLabel" class="input-field mt-1 w-full" placeholder="Например: Batch-042" />
-        </div>
-      </div>
-    </ConfirmModal>
-
-    <ConfirmModal
-      :open="abortModal.open"
-      title="Аварийная остановка"
-      message=" "
-      confirm-text="Остановить"
-      confirm-variant="danger"
-      :loading="loading.cycleAbort"
-      @close="closeAbortModal"
-      @confirm="confirmAbort"
-    >
-      <div class="space-y-3 text-sm text-[color:var(--text-muted)]">
-        <div>Остановить цикл? Это действие нельзя отменить.</div>
-        <div>
-          <label class="text-xs text-[color:var(--text-dim)]">Причина (опционально)</label>
-          <textarea v-model="abortModal.notes" class="input-field mt-1 w-full h-20 resize-none" placeholder="Короткое описание причины"></textarea>
-        </div>
-      </div>
-    </ConfirmModal>
-
-    <ConfirmModal
-      :open="changeRecipeModal.open"
-      title="Сменить рецепт"
-      message=" "
-      confirm-text="Подтвердить"
-      :confirm-disabled="!changeRecipeModal.recipeRevisionId"
-      :loading="loading.cycleChangeRecipe"
-      @close="closeChangeRecipeModal"
-      @confirm="confirmChangeRecipe"
-    >
-      <div class="space-y-3 text-sm text-[color:var(--text-muted)]">
-        <div>Введите ID ревизии рецепта и выберите режим применения.</div>
-        <div>
-          <label class="text-xs text-[color:var(--text-dim)]">ID ревизии рецепта</label>
-          <input v-model="changeRecipeModal.recipeRevisionId" class="input-field mt-1 w-full" placeholder="Например: 42" />
-        </div>
-        <div class="flex flex-wrap gap-2">
-          <button
-            type="button"
-            class="btn btn-outline h-9 px-3 text-xs"
-            :class="changeRecipeModal.applyMode === 'now' ? 'border-[color:var(--accent-green)]' : ''"
-            @click="changeRecipeModal.applyMode = 'now'"
-          >
-            Применить сейчас
-          </button>
-          <button
-            type="button"
-            class="btn btn-outline h-9 px-3 text-xs"
-            :class="changeRecipeModal.applyMode === 'next_phase' ? 'border-[color:var(--accent-green)]' : ''"
-            @click="changeRecipeModal.applyMode = 'next_phase'"
-          >
-            Со следующей фазы
-          </button>
-        </div>
-      </div>
-    </ConfirmModal>
   </AppLayout>
 </template>
 
@@ -213,18 +124,13 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Tabs from '@/Components/Tabs.vue'
-import ZoneSimulationModal from '@/Components/ZoneSimulationModal.vue'
-import ZoneActionModal from '@/Components/ZoneActionModal.vue'
-import GrowthCycleWizard from '@/Components/GrowCycle/GrowthCycleWizard.vue'
-import AttachNodesModal from '@/Components/AttachNodesModal.vue'
-import NodeConfigModal from '@/Components/NodeConfigModal.vue'
-import ConfirmModal from '@/Components/ConfirmModal.vue'
 import ZoneAutomationTab from '@/Pages/Zones/Tabs/ZoneAutomationTab.vue'
 import ZoneCycleTab from '@/Pages/Zones/Tabs/ZoneCycleTab.vue'
 import ZoneDevicesTab from '@/Pages/Zones/Tabs/ZoneDevicesTab.vue'
 import ZoneEventsTab from '@/Pages/Zones/Tabs/ZoneEventsTab.vue'
 import ZoneOverviewTab from '@/Pages/Zones/Tabs/ZoneOverviewTab.vue'
 import ZoneTelemetryTab from '@/Pages/Zones/Tabs/ZoneTelemetryTab.vue'
+import ZoneDetailModals from '@/Pages/Zones/ZoneDetailModals.vue'
 import { useHistory } from '@/composables/useHistory'
 import { logger } from '@/utils/logger'
 
@@ -888,102 +794,6 @@ onMounted(async () => {
   
 })
 
-/**
- * Получить параметры по умолчанию для команды цикла на основе targets/recipe
- */
-function getDefaultCycleParams(cycleType: string): Record<string, unknown> {
-  const params: Record<string, unknown> = {}
-  
-  switch (cycleType) {
-    case 'IRRIGATION':
-      // Используем длительность полива из targets или рецепта
-      if (targets.value.irrigation_duration_sec) {
-        // Важно: это может приходить либо из текущей фазы рецепта, либо из агрегированных targets зоны
-        params.duration_sec = targets.value.irrigation_duration_sec
-      } else {
-        params.duration_sec = 10
-      }
-      break
-      
-    case 'PH_CONTROL':
-      // Используем целевой pH из targets или рецепта
-      if (typeof targets.value.ph_min === 'number' && typeof targets.value.ph_max === 'number') {
-        // Бэкенд отдаёт цели текущей фазы в виде плоских snake_case полей (ph_min, ph_max, ...)
-        params.target_ph = (targets.value.ph_min + targets.value.ph_max) / 2
-      } else if (typeof targets.value.ph_min === 'number' || typeof targets.value.ph_max === 'number') {
-        // Если есть только одна граница — используем её как целевое значение
-        params.target_ph = (targets.value.ph_min ?? targets.value.ph_max) as number
-      } else if ((targets.value as any).ph?.min && (targets.value as any).ph?.max) {
-        // Back-compat: старый формат с вложенным объектом ph { min, max }
-        const ph = (targets.value as any).ph
-        params.target_ph = (ph.min + ph.max) / 2
-      } else if (typeof (targets.value as any).ph === 'number') {
-        // Back-compat: старый формат с одним числовым значением pH
-        params.target_ph = (targets.value as any).ph
-      } else {
-        params.target_ph = 6.0
-      }
-      break
-      
-    case 'EC_CONTROL':
-      // Используем целевой EC из targets или рецепта
-      if (typeof targets.value.ec_min === 'number' && typeof targets.value.ec_max === 'number') {
-        params.target_ec = (targets.value.ec_min + targets.value.ec_max) / 2
-      } else if (typeof targets.value.ec_min === 'number' || typeof targets.value.ec_max === 'number') {
-        params.target_ec = (targets.value.ec_min ?? targets.value.ec_max) as number
-      } else if ((targets.value as any).ec?.min && (targets.value as any).ec?.max) {
-        // Back-compat: старый формат с вложенным объектом ec { min, max }
-        const ec = (targets.value as any).ec
-        params.target_ec = (ec.min + ec.max) / 2
-      } else if (typeof (targets.value as any).ec === 'number') {
-        params.target_ec = (targets.value as any).ec
-      } else {
-        params.target_ec = 1.5
-      }
-      break
-      
-    case 'CLIMATE':
-      // Используем целевые параметры климата из targets или рецепта
-      // Температура
-      if (typeof targets.value.temp_min === 'number' && typeof targets.value.temp_max === 'number') {
-        params.target_temp = (targets.value.temp_min + targets.value.temp_max) / 2
-      } else if (typeof targets.value.temp_min === 'number' || typeof targets.value.temp_max === 'number') {
-        params.target_temp = (targets.value.temp_min ?? targets.value.temp_max) as number
-      } else if ((targets.value as any).temp_air) {
-        // Back-compat: старый формат, когда приходило одно значение temp_air
-        params.target_temp = (targets.value as any).temp_air
-      } else {
-        params.target_temp = 22
-      }
-      
-      // Влажность
-      if (typeof targets.value.humidity_min === 'number' && typeof targets.value.humidity_max === 'number') {
-        params.target_humidity = (targets.value.humidity_min + targets.value.humidity_max) / 2
-      } else if (typeof targets.value.humidity_min === 'number' || typeof targets.value.humidity_max === 'number') {
-        params.target_humidity = (targets.value.humidity_min ?? targets.value.humidity_max) as number
-      } else if ((targets.value as any).humidity_air) {
-        // Back-compat: старый формат, когда приходило одно значение humidity_air
-        params.target_humidity = (targets.value as any).humidity_air
-      } else {
-        params.target_humidity = 60
-      }
-      break
-      
-    case 'LIGHTING':
-      // Используем параметры освещения из targets или рецепта
-      if (targets.value.light_hours) {
-        params.duration_hours = targets.value.light_hours
-      } else {
-        params.duration_hours = 12
-      }
-      
-      params.intensity = 80 // Интенсивность по умолчанию
-      break
-  }
-  
-  return params
-}
-
 async function onRunCycle(): Promise<void> {
   if (!zoneId.value) {
     logger.warn('[onRunCycle] zoneId is missing')
@@ -1143,54 +953,6 @@ async function onActionSubmit({ actionType, params }: { actionType: CommandType;
 async function onGrowthCycleWizardSubmit({ zoneId, recipeId, startedAt, expectedHarvestAt }: { zoneId: number; recipeId: number; startedAt: string; expectedHarvestAt?: string }): Promise<void> {
   // Новый wizard уже создал цикл через API, нужно только обновить данные
   reloadZoneAfterCommand(zoneId, ['zone', 'cycles', 'active_grow_cycle'])
-}
-
-async function onGrowthCycleSubmit({ mode, subsystems }: { mode: 'start' | 'adjust'; subsystems: Record<string, { enabled: boolean; targets: any }> }): Promise<void> {
-  if (!zoneId.value) return
-  
-  setLoading('irrigate', true)
-  
-  try {
-    // Отправляем команду GROWTH_CYCLE_CONFIG с mode и subsystems
-    await sendZoneCommand(zoneId.value, 'GROWTH_CYCLE_CONFIG' as CommandType, {
-      mode,
-      subsystems
-    })
-    
-    const modeText = mode === 'start' ? 'запущен' : 'скорректирован'
-    showToast(`Цикл выращивания успешно ${modeText}`, 'success', TOAST_TIMEOUT.NORMAL)
-    
-    // Обновляем зону и cycles через Inertia partial reload
-    reloadZoneAfterCommand(zoneId.value, ['zone', 'cycles'])
-  } catch (err) {
-    logger.error(`Failed to execute GROWTH_CYCLE_CONFIG:`, err)
-    let errorMessage = ERROR_MESSAGES.UNKNOWN
-    
-    // Обработка ошибок валидации с бэкенда (422)
-    if (err && typeof err === 'object' && 'response' in err) {
-      const response = (err as any).response
-      if (response?.status === 422 && response?.data) {
-        // Пытаемся извлечь детальное сообщение об ошибке
-        if (response.data.message) {
-          errorMessage = String(response.data.message)
-        } else if (response.data.errors && typeof response.data.errors === 'object') {
-          // Если есть объект errors, собираем все сообщения
-          const errorMessages = Object.values(response.data.errors).flat()
-          errorMessage = errorMessages.length > 0 ? String(errorMessages[0]) : ERROR_MESSAGES.VALIDATION
-        } else if (response.data.code === 'VALIDATION_ERROR') {
-          errorMessage = response.data.message || ERROR_MESSAGES.VALIDATION
-        }
-      } else if (response?.data?.message) {
-        errorMessage = String(response.data.message)
-      }
-    } else if (err && typeof err === 'object' && 'message' in err) {
-      errorMessage = String(err.message)
-    }
-    
-    showToast(`Ошибка при выполнении цикла выращивания: ${errorMessage}`, 'error', TOAST_TIMEOUT.LONG)
-  } finally {
-    setLoading('irrigate', false)
-  }
 }
 
 function openNodeConfig(nodeId: number, node: any): void {
@@ -1381,7 +1143,6 @@ async function confirmChangeRecipe(): Promise<void> {
     if (response.data?.status === 'ok') {
       showToast('Ревизия рецепта обновлена', 'success', TOAST_TIMEOUT.NORMAL)
       await reloadZone(zoneId.value, ['zone', 'active_grow_cycle'])
-      await loadCycleEvents()
       closeChangeRecipeModal()
     }
   } catch (err) {
@@ -1390,82 +1151,6 @@ async function confirmChangeRecipe(): Promise<void> {
   } finally {
     setLoading('cycleChangeRecipe', false)
   }
-}
-
-// Вспомогательные функции для отображения циклов
-function getCycleStatusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    PLANNED: 'Запланирован',
-    RUNNING: 'Запущен',
-    PAUSED: 'Приостановлен',
-    HARVESTED: 'Собран',
-    ABORTED: 'Прерван',
-  }
-  return labels[status] || status
-}
-
-function getCycleStatusVariant(status: string): 'success' | 'neutral' | 'warning' | 'danger' {
-  const variants: Record<string, 'success' | 'neutral' | 'warning' | 'danger'> = {
-    PLANNED: 'neutral',
-    RUNNING: 'success',
-    PAUSED: 'warning',
-    HARVESTED: 'success',
-    ABORTED: 'danger',
-  }
-  return variants[status] || 'neutral'
-}
-
-function getCycleEventVariant(type: string): 'success' | 'neutral' | 'warning' | 'danger' {
-  if (type.includes('HARVESTED') || type.includes('STARTED') || type.includes('RESUMED')) {
-    return 'success'
-  }
-  if (type.includes('ABORTED') || type.includes('CRITICAL')) {
-    return 'danger'
-  }
-  if (type.includes('PAUSED') || type.includes('WARNING')) {
-    return 'warning'
-  }
-  return 'neutral'
-}
-
-function getCycleEventTypeLabel(type: string): string {
-  const labels: Record<string, string> = {
-    CYCLE_CREATED: 'Создан цикл',
-    CYCLE_STARTED: 'Запущен цикл',
-    CYCLE_PAUSED: 'Приостановлен',
-    CYCLE_RESUMED: 'Возобновлен',
-    CYCLE_HARVESTED: 'Собран урожай',
-    CYCLE_ABORTED: 'Прерван',
-    CYCLE_RECIPE_REBASED: 'Рецепт изменен',
-    PHASE_TRANSITION: 'Смена фазы',
-    RECIPE_PHASE_CHANGED: 'Изменена фаза',
-    ZONE_COMMAND: 'Ручное вмешательство',
-    ALERT_CREATED: 'Критическое предупреждение',
-  }
-  return labels[type] || type
-}
-
-function getCycleEventMessage(event: any): string {
-  const details = event.details || event.payload || {}
-  const type = event.type
-
-  if (type === 'CYCLE_HARVESTED') {
-    return `Урожай собран${details.batch_label ? ` (партия: ${details.batch_label})` : ''}`
-  }
-  if (type === 'CYCLE_ABORTED') {
-    return `Цикл прерван${details.reason ? `: ${details.reason}` : ''}`
-  }
-  if (type === 'PHASE_TRANSITION' || type === 'RECIPE_PHASE_CHANGED') {
-    return `Фаза ${details.from_phase ?? ''} → ${details.to_phase ?? ''}`
-  }
-  if (type === 'ZONE_COMMAND') {
-    return `Ручное вмешательство: ${details.command_type || 'команда'}`
-  }
-  if (type === 'ALERT_CREATED') {
-    return `Критическое предупреждение: ${details.message || details.code || 'alert'}`
-  }
-
-  return getCycleEventTypeLabel(type)
 }
 
 // События цикла теперь загружаются внутри CycleControlPanel
