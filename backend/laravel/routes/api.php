@@ -33,6 +33,8 @@ use App\Http\Controllers\ChannelBindingController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Http\Request;
 
+$apiThrottle = in_array(env('APP_ENV'), ['testing', 'e2e'], true) ? '1000,1' : '120,1';
+
 // Auth роуты с более строгим rate limiting для предотвращения брутфорса
 Route::prefix('auth')->middleware('throttle:10,1')->group(function () {
     Route::post('/login', [AuthController::class, 'login']);
@@ -101,8 +103,8 @@ Route::middleware([
     \App\Http\Middleware\AuthenticateWithApiToken::class,
     // API routes should accept Sanctum bearer tokens (E2E / services) and also work for session-auth SPA if needed.
     'auth:sanctum',
-    'throttle:120,1', // Увеличен лимит до 120 запросов в минуту для поддержки множественных компонентов
-])->group(function () {
+    'throttle:'.$apiThrottle, // Увеличен лимит для тестов и множественных компонентов
+])->group(function () use ($apiThrottle) {
     // Read-only endpoints (viewer+)
     Route::get('greenhouses', [GreenhouseController::class, 'index']);
     Route::get('greenhouses/{greenhouse}', [GreenhouseController::class, 'show']);
@@ -288,7 +290,7 @@ Route::middleware([
     Route::get('commands/{cmdId}/status', [\App\Http\Controllers\CommandStatusController::class, 'show']);
 
     // Alerts (viewer+)
-    Route::get('alerts', [AlertController::class, 'index'])->middleware('throttle:120,1');
+    Route::get('alerts', [AlertController::class, 'index'])->middleware('throttle:'.$apiThrottle);
     Route::get('alerts/{alert}', [AlertController::class, 'show']);
     // SSE stream с ограничением подключений для предотвращения DoS (максимум 5 подключений на пользователя в минуту)
     Route::get('alerts/stream', [AlertStreamController::class, 'stream'])->middleware('throttle:5,1');
@@ -310,7 +312,7 @@ Route::middleware([
 });
 
 // Python ingest (token-based) - более высокий лимит для внутренних сервисов
-Route::prefix('python')->middleware('throttle:120,1')->group(function () {
+Route::prefix('python')->middleware('throttle:'.$apiThrottle)->group(function () {
     Route::post('ingest/telemetry', [PythonIngestController::class, 'telemetry']);
     Route::post('commands/ack', [PythonIngestController::class, 'commandAck']);
     Route::post('broadcast/telemetry', [PythonIngestController::class, 'broadcastTelemetry']);
@@ -319,7 +321,7 @@ Route::prefix('python')->middleware('throttle:120,1')->group(function () {
 });
 
 // Internal API для Python сервисов (требует verify.python.service middleware)
-Route::prefix('internal')->middleware(['verify.python.service', 'throttle:120,1'])->group(function () {
+Route::prefix('internal')->middleware(['verify.python.service', 'throttle:'.$apiThrottle])->group(function () {
     Route::post('effective-targets/batch', [\App\Http\Controllers\InternalApiController::class, 'getEffectiveTargetsBatch']);
 });
 

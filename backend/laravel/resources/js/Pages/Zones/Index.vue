@@ -47,7 +47,11 @@
         <div class="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
           <div class="flex items-center gap-2 flex-1 sm:flex-none">
             <label class="text-sm text-[color:var(--text-muted)] shrink-0">Статус:</label>
-            <select v-model="status" class="input-select h-10 flex-1 sm:w-auto sm:min-w-[160px]">
+            <select
+              v-model="status"
+              class="input-select h-10 flex-1 sm:w-auto sm:min-w-[160px]"
+              data-testid="zones-filter-status"
+            >
               <option value="">Все</option>
               <option value="RUNNING">Запущено</option>
               <option value="PAUSED">Приостановлено</option>
@@ -57,7 +61,12 @@
           </div>
           <div class="flex items-center gap-2 flex-1 sm:flex-none">
             <label class="text-sm text-[color:var(--text-muted)] shrink-0">Поиск:</label>
-            <input v-model="query" placeholder="Имя зоны..." class="input-field h-10 flex-1 sm:w-64" />
+            <input
+              v-model="query"
+              placeholder="Имя зоны..."
+              class="input-field h-10 flex-1 sm:w-64"
+              data-testid="zones-filter-query"
+            />
           </div>
           <div class="flex items-center gap-2 flex-1 sm:flex-none">
             <button
@@ -66,6 +75,7 @@
               :class="showOnlyFavorites
                 ? 'border-[color:var(--badge-warning-border)] text-[color:var(--accent-amber)] shadow-[0_0_0_1px_var(--badge-warning-border)]'
                 : 'border-[color:var(--border-muted)] text-[color:var(--text-primary)] hover:border-[color:var(--border-strong)]'"
+              data-testid="zones-filter-favorites"
             >
               <svg
                 class="w-4 h-4"

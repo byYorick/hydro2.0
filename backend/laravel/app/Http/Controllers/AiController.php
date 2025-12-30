@@ -74,6 +74,13 @@ class AiController extends Controller
 
         // Генерируем объяснения
         $explanations = $this->aiService->explainZoneState($zone, $telemetry, $predictions, $targets);
+        $forecasts = $predictions->map(fn ($prediction) => [
+            'metric_type' => $prediction->metric_type,
+            'predicted_value' => $prediction->predicted_value,
+            'confidence' => $prediction->confidence,
+            'predicted_at' => $prediction->predicted_at?->toIso8601String(),
+            'horizon_minutes' => $prediction->horizon_minutes,
+        ])->values();
 
         return response()->json([
             'status' => 'ok',

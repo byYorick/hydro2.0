@@ -6,6 +6,7 @@ use App\Models\Plant;
 use App\Models\Recipe;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
+use App\Models\Sensor;
 use App\Models\TelemetrySample;
 use App\Models\Zone;
 use App\Services\GrowCycleService;
@@ -49,13 +50,34 @@ class RecipeAnalyticsServiceTest extends TestCase
         ]);
 
         $node = \App\Models\DeviceNode::factory()->create(['zone_id' => $zone->id]);
+        $phSensor = Sensor::query()->create([
+            'greenhouse_id' => $zone->greenhouse_id,
+            'zone_id' => $zone->id,
+            'node_id' => $node->id,
+            'scope' => 'inside',
+            'type' => 'PH',
+            'label' => 'ph_sensor',
+            'unit' => null,
+            'specs' => null,
+            'is_active' => true,
+        ]);
+        $ecSensor = Sensor::query()->create([
+            'greenhouse_id' => $zone->greenhouse_id,
+            'zone_id' => $zone->id,
+            'node_id' => $node->id,
+            'scope' => 'inside',
+            'type' => 'EC',
+            'label' => 'ec_sensor',
+            'unit' => null,
+            'specs' => null,
+            'is_active' => true,
+        ]);
         $endDate = Carbon::now();
 
         for ($i = 0; $i < 2500; $i++) {
             TelemetrySample::create([
                 'zone_id' => $zone->id,
-                'node_id' => $node->id,
-                'metric_type' => 'PH',
+                'sensor_id' => $phSensor->id,
                 'value' => 6.5 + ($i % 10) * 0.1,
                 'ts' => $startDate->copy()->addHours($i / 250),
                 'created_at' => $startDate->copy()->addHours($i / 250),
@@ -65,17 +87,17 @@ class RecipeAnalyticsServiceTest extends TestCase
         for ($i = 0; $i < 2500; $i++) {
             TelemetrySample::create([
                 'zone_id' => $zone->id,
-                'node_id' => $node->id,
-                'metric_type' => 'EC',
+                'sensor_id' => $ecSensor->id,
                 'value' => 1.8 + ($i % 10) * 0.05,
                 'ts' => $startDate->copy()->addHours($i / 250),
                 'created_at' => $startDate->copy()->addHours($i / 250),
             ]);
         }
 
-        $phCount = TelemetrySample::where('zone_id', $zone->id)
-            ->where('metric_type', 'PH')
-            ->whereBetween('ts', [$startDate, $endDate])
+        $phCount = TelemetrySample::where('telemetry_samples.zone_id', $zone->id)
+            ->join('sensors', 'telemetry_samples.sensor_id', '=', 'sensors.id')
+            ->where('sensors.type', 'PH')
+            ->whereBetween('telemetry_samples.ts', [$startDate, $endDate])
             ->count();
         $this->assertEquals(2500, $phCount);
 

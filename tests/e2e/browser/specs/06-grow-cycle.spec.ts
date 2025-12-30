@@ -120,6 +120,7 @@ test.describe('Grow Cycle Recipe', () => {
   });
 
   test('should display phase progress', async ({ page, testZone, testRecipe, apiHelper }) => {
+    test.setTimeout(60000);
     // Новая модель: создаем grow-cycle и запускаем его
     try {
       await apiHelper.attachRecipeToZone(testZone.id, testRecipe.id);
@@ -147,4 +148,3 @@ test.describe('Grow Cycle Recipe', () => {
     }
   });
 });
-

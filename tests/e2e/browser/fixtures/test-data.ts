@@ -73,10 +73,11 @@ export const test = base.extend<TestDataFixtures>({
     await apiHelper.deleteRecipe(recipe.id).catch(() => {});
   },
 
-  testZone: async ({ apiHelper, testGreenhouse }, use) => {
+  testZone: async ({ apiHelper, testGreenhouse, testRecipe }, use) => {
     // Добавляем задержку для избежания rate limiting
     await new Promise(resolve => setTimeout(resolve, 500));
     const zone = await apiHelper.createTestZone(testGreenhouse.id);
+    await apiHelper.attachRecipeToZone(zone.id, testRecipe.id);
     await use(zone);
     // Очистка после теста
     await apiHelper.deleteZone(zone.id).catch(() => {});
@@ -84,4 +85,3 @@ export const test = base.extend<TestDataFixtures>({
 });
 
 export { expect } from '@playwright/test';
-

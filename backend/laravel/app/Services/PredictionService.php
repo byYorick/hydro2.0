@@ -19,15 +19,26 @@ class PredictionService
     public function predict(Zone $zone, string $metricType, int $horizonMinutes = 60): ?ParameterPrediction
     {
         try {
+            $sensorType = $this->metricTypeToSensorType($metricType);
+            if (! $sensorType) {
+                Log::warning('Unsupported metric type for prediction', [
+                    'zone_id' => $zone->id,
+                    'metric_type' => $metricType,
+                ]);
+
+                return null;
+            }
+
             // Получаем последние данные за 2 часа для анализа тренда
             $from = Carbon::now()->subHours(2);
 
             $samples = TelemetrySample::query()
-                ->where('zone_id', $zone->id)
-                ->where('metric_type', $metricType)
-                ->where('ts', '>=', $from)
-                ->orderBy('ts', 'asc')
-                ->get(['ts', 'value'])
+                ->join('sensors', 'telemetry_samples.sensor_id', '=', 'sensors.id')
+                ->where('sensors.zone_id', $zone->id)
+                ->where('sensors.type', $sensorType)
+                ->where('telemetry_samples.ts', '>=', $from)
+                ->orderBy('telemetry_samples.ts', 'asc')
+                ->get(['telemetry_samples.ts', 'telemetry_samples.value'])
                 ->filter(fn ($s) => $s->value !== null);
 
             if ($samples->count() < 3) {
@@ -147,6 +158,22 @@ class PredictionService
             'value' => $predictedValue,
             'confidence' => $confidence,
         ];
+    }
+
+    /**
+     * Привести metric_type к типу сенсора.
+     */
+    private function metricTypeToSensorType(string $metricType): ?string
+    {
+        $normalized = strtoupper(trim($metricType));
+
+        return match ($normalized) {
+            'PH' => 'PH',
+            'EC' => 'EC',
+            'TEMP_AIR', 'TEMP_WATER', 'TEMPERATURE' => 'TEMPERATURE',
+            'HUMIDITY', 'HUMIDITY_AIR' => 'HUMIDITY',
+            default => null,
+        };
     }
 
     /**

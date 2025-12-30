@@ -46,6 +46,11 @@ RUN mkdir -p /app/node_modules/.vite && \
 # Copy application files
 COPY . .
 
+# Ensure cache/storage dirs are writable for artisan commands during build
+RUN mkdir -p /app/bootstrap/cache /app/storage && \
+    chown -R application:application /app/bootstrap/cache /app/storage 2>/dev/null || \
+    chmod -R 777 /app/bootstrap/cache /app/storage || true
+
 # Run composer scripts now that all files are in place
 RUN if [ -f composer.json ] && [ -f artisan ]; then \
         php artisan package:discover --ansi || true; \
@@ -115,4 +120,3 @@ COPY nginx-vite-proxy.conf /opt/docker/etc/nginx/vhost.common.d/vite-proxy.conf
 COPY nginx-fastcgi-buffers.conf /opt/docker/etc/nginx/vhost.common.d/20-fastcgi-buffers.conf
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-

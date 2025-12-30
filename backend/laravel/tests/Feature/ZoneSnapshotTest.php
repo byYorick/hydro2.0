@@ -9,6 +9,7 @@ use App\Models\DeviceNode;
 use App\Models\Alert;
 use App\Models\Command;
 use App\Models\TelemetryLast;
+use App\Models\Sensor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -204,22 +205,40 @@ class ZoneSnapshotTest extends TestCase
         $node = DeviceNode::factory()->create(['zone_id' => $zone->id]);
         
         // Создаем телеметрию для разных каналов
-        TelemetryLast::create([
+        $phSensor = Sensor::query()->create([
+            'greenhouse_id' => $zone->greenhouse_id,
             'zone_id' => $zone->id,
             'node_id' => $node->id,
-            'channel' => 'ph_sensor',
-            'metric_type' => 'pH',
-            'value' => 6.5,
-            'updated_at' => now(),
+            'scope' => 'inside',
+            'type' => 'PH',
+            'label' => 'ph_sensor',
+            'unit' => null,
+            'specs' => null,
+            'is_active' => true,
+        ]);
+        $ecSensor = Sensor::query()->create([
+            'greenhouse_id' => $zone->greenhouse_id,
+            'zone_id' => $zone->id,
+            'node_id' => $node->id,
+            'scope' => 'inside',
+            'type' => 'EC',
+            'label' => 'ec_sensor',
+            'unit' => null,
+            'specs' => null,
+            'is_active' => true,
+        ]);
+        TelemetryLast::create([
+            'sensor_id' => $phSensor->id,
+            'last_value' => 6.5,
+            'last_ts' => now(),
+            'last_quality' => 'GOOD',
         ]);
         
         TelemetryLast::create([
-            'zone_id' => $zone->id,
-            'node_id' => $node->id,
-            'channel' => 'ec_sensor',
-            'metric_type' => 'EC',
-            'value' => 1.8,
-            'updated_at' => now(),
+            'sensor_id' => $ecSensor->id,
+            'last_value' => 1.8,
+            'last_ts' => now(),
+            'last_quality' => 'GOOD',
         ]);
         
         $token = $this->token();
@@ -242,7 +261,7 @@ class ZoneSnapshotTest extends TestCase
         $this->assertNotEmpty($phData);
         $this->assertNotEmpty($ecData);
         
-        $phValue = collect($phData)->firstWhere('metric_type', 'pH');
+        $phValue = collect($phData)->firstWhere('metric_type', 'PH');
         $ecValue = collect($ecData)->firstWhere('metric_type', 'EC');
         
         $this->assertNotNull($phValue);
@@ -379,4 +398,3 @@ class ZoneSnapshotTest extends TestCase
         $response->assertStatus(401);
     }
 }
-

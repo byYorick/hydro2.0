@@ -184,19 +184,25 @@ async def aggregate_1m() -> int:
                         value_avg, value_min, value_max, value_median, sample_count, ts
                     )
                     SELECT 
-                        zone_id,
-                        node_id,
-                        channel,
-                        metric_type,
-                        AVG(value)::float as value_avg,
-                        MIN(value)::float as value_min,
-                        MAX(value)::float as value_max,
-                        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY value)::float as value_median,
+                        ts.zone_id,
+                        s.node_id,
+                        ts.metadata->>'channel' as channel,
+                        COALESCE(ts.metadata->>'metric_type', s.type::text) as metric_type,
+                        AVG(ts.value)::float as value_avg,
+                        MIN(ts.value)::float as value_min,
+                        MAX(ts.value)::float as value_max,
+                        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ts.value)::float as value_median,
                         COUNT(*)::int as sample_count,
-                        time_bucket('1 minute', ts) as ts
-                    FROM telemetry_samples
-                    WHERE ts > $1 AND ts <= NOW()
-                    GROUP BY zone_id, node_id, channel, metric_type, time_bucket('1 minute', ts)
+                        time_bucket('1 minute', ts.ts) as ts
+                    FROM telemetry_samples ts
+                    LEFT JOIN sensors s ON s.id = ts.sensor_id
+                    WHERE ts.ts > $1 AND ts.ts <= NOW()
+                    GROUP BY
+                        ts.zone_id,
+                        s.node_id,
+                        ts.metadata->>'channel',
+                        COALESCE(ts.metadata->>'metric_type', s.type::text),
+                        time_bucket('1 minute', ts.ts)
                     ON CONFLICT (zone_id, node_id, channel, metric_type, ts) 
                     DO UPDATE SET
                         value_avg = EXCLUDED.value_avg,
@@ -217,19 +223,25 @@ async def aggregate_1m() -> int:
                         value_avg, value_min, value_max, value_median, sample_count, ts
                     )
                     SELECT 
-                        zone_id,
-                        node_id,
-                        channel,
-                        metric_type,
-                        AVG(value)::float as value_avg,
-                        MIN(value)::float as value_min,
-                        MAX(value)::float as value_max,
-                        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY value)::float as value_median,
+                        ts.zone_id,
+                        s.node_id,
+                        ts.metadata->>'channel' as channel,
+                        COALESCE(ts.metadata->>'metric_type', s.type::text) as metric_type,
+                        AVG(ts.value)::float as value_avg,
+                        MIN(ts.value)::float as value_min,
+                        MAX(ts.value)::float as value_max,
+                        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ts.value)::float as value_median,
                         COUNT(*)::int as sample_count,
-                        date_trunc('minute', ts) as ts
-                    FROM telemetry_samples
-                    WHERE ts > $1 AND ts <= NOW()
-                    GROUP BY zone_id, node_id, channel, metric_type, date_trunc('minute', ts)
+                        date_trunc('minute', ts.ts) as ts
+                    FROM telemetry_samples ts
+                    LEFT JOIN sensors s ON s.id = ts.sensor_id
+                    WHERE ts.ts > $1 AND ts.ts <= NOW()
+                    GROUP BY
+                        ts.zone_id,
+                        s.node_id,
+                        ts.metadata->>'channel',
+                        COALESCE(ts.metadata->>'metric_type', s.type::text),
+                        date_trunc('minute', ts.ts)
                     ON CONFLICT (zone_id, node_id, channel, metric_type, ts) 
                     DO UPDATE SET
                         value_avg = EXCLUDED.value_avg,
@@ -633,4 +645,3 @@ if __name__ == "__main__":
         handlers=[logging.StreamHandler()]  # Явно указываем stdout для Docker
     )
     asyncio.run(main())
-

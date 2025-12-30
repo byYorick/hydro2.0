@@ -16,6 +16,7 @@ use App\Models\Zone;
 use App\Services\GrowCycleService;
 use Carbon\Carbon;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Str;
 
 /**
  * Seeder для E2E тестов Automation Engine.
@@ -41,8 +42,13 @@ class AutomationEngineE2ESeeder extends Seeder
                 'type' => 'indoor',
                 'coordinates' => ['lat' => 0.0, 'lon' => 0.0],
                 'description' => 'Greenhouse for E2E automation engine tests',
+                'provisioning_token' => Str::random(32),
             ]
         );
+        if (! $greenhouse->provisioning_token) {
+            $greenhouse->provisioning_token = Str::random(32);
+            $greenhouse->save();
+        }
 
         // 2. Создаем зону с полным набором capabilities
         $zone = Zone::firstOrCreate(
@@ -84,12 +90,16 @@ class AutomationEngineE2ESeeder extends Seeder
                 'uid' => 'nd-ph-esp32una',
             ],
             [
-                'greenhouse_id' => $greenhouse->id,
                 'hardware_id' => 'esp32-test-001',
                 'type' => 'ph',
                 'name' => 'E2E Test PH Node',
                 'status' => 'online',
+                'lifecycle_state' => 'ASSIGNED_TO_ZONE',
                 'last_seen_at' => Carbon::now(),
+                'config' => [
+                    'sensors' => ['ph_sensor', 'ec_sensor', 'solution_temp_c', 'air_temp_c', 'air_rh'],
+                    'actuators' => ['main_pump', 'drain_pump', 'fan', 'heater', 'light', 'mister'],
+                ],
             ]
         );
 
@@ -97,25 +107,25 @@ class AutomationEngineE2ESeeder extends Seeder
 
         // 4. Создаем каналы для узла
         $channels = [
-            ['name' => 'ph_sensor', 'metric_type' => 'PH', 'unit' => 'pH', 'data_type' => 'float'],
-            ['name' => 'ec_sensor', 'metric_type' => 'EC', 'unit' => 'mS/cm', 'data_type' => 'float'],
-            ['name' => 'air_temp_c', 'metric_type' => 'TEMP_AIR', 'unit' => '°C', 'data_type' => 'float'],
-            ['name' => 'air_rh', 'metric_type' => 'HUMIDITY_AIR', 'unit' => '%', 'data_type' => 'float'],
-            ['name' => 'solution_temp_c', 'metric_type' => 'TEMP_SOLUTION', 'unit' => '°C', 'data_type' => 'float'],
-            ['name' => 'co2_ppm', 'metric_type' => 'CO2', 'unit' => 'ppm', 'data_type' => 'float'],
-            ['name' => 'water_level', 'metric_type' => 'WATER_LEVEL', 'unit' => 'cm', 'data_type' => 'float'],
-            ['name' => 'flow_rate', 'metric_type' => 'FLOW_RATE', 'unit' => 'L/min', 'data_type' => 'float'],
+            ['channel' => 'ph_sensor', 'metric' => 'PH', 'unit' => 'pH', 'type' => 'sensor', 'data_type' => 'float'],
+            ['channel' => 'ec_sensor', 'metric' => 'EC', 'unit' => 'mS/cm', 'type' => 'sensor', 'data_type' => 'float'],
+            ['channel' => 'solution_temp_c', 'metric' => 'TEMP_SOLUTION', 'unit' => '°C', 'type' => 'sensor', 'data_type' => 'float'],
+            ['channel' => 'air_temp_c', 'metric' => 'TEMP_AIR', 'unit' => '°C', 'type' => 'sensor', 'data_type' => 'float'],
+            ['channel' => 'air_rh', 'metric' => 'HUMIDITY_AIR', 'unit' => '%', 'type' => 'sensor', 'data_type' => 'float'],
         ];
 
         foreach ($channels as $channelData) {
             NodeChannel::firstOrCreate(
                 [
                     'node_id' => $node->id,
-                    'name' => $channelData['name'],
+                    'channel' => $channelData['channel'],
                 ],
-                array_merge($channelData, [
-                    'zone_id' => $zone->id,
-                ])
+                [
+                    'type' => $channelData['type'],
+                    'metric' => $channelData['metric'],
+                    'unit' => $channelData['unit'],
+                    'config' => ['data_type' => $channelData['data_type']],
+                ]
             );
         }
 
@@ -123,26 +133,26 @@ class AutomationEngineE2ESeeder extends Seeder
 
         // 5. Создаем actuators (каналы типа actuator)
         $actuators = [
-            ['name' => 'main_pump', 'metric_type' => null, 'unit' => null, 'data_type' => 'boolean'],
-            ['name' => 'drain_pump', 'metric_type' => null, 'unit' => null, 'data_type' => 'boolean'],
-            ['name' => 'fan', 'metric_type' => null, 'unit' => null, 'data_type' => 'boolean'],
-            ['name' => 'heater', 'metric_type' => null, 'unit' => null, 'data_type' => 'boolean'],
-            ['name' => 'light', 'metric_type' => null, 'unit' => null, 'data_type' => 'boolean'],
-            ['name' => 'mister', 'metric_type' => null, 'unit' => null, 'data_type' => 'boolean'],
-            ['name' => 'ph_doser', 'metric_type' => null, 'unit' => null, 'data_type' => 'boolean'],
-            ['name' => 'ec_doser', 'metric_type' => null, 'unit' => null, 'data_type' => 'boolean'],
+            ['channel' => 'main_pump', 'metric' => 'RELAY', 'unit' => 'bool', 'type' => 'actuator', 'data_type' => 'boolean'],
+            ['channel' => 'drain_pump', 'metric' => 'RELAY', 'unit' => 'bool', 'type' => 'actuator', 'data_type' => 'boolean'],
+            ['channel' => 'fan', 'metric' => 'RELAY', 'unit' => 'bool', 'type' => 'actuator', 'data_type' => 'boolean'],
+            ['channel' => 'heater', 'metric' => 'RELAY', 'unit' => 'bool', 'type' => 'actuator', 'data_type' => 'boolean'],
+            ['channel' => 'light', 'metric' => 'RELAY', 'unit' => 'bool', 'type' => 'actuator', 'data_type' => 'boolean'],
+            ['channel' => 'mister', 'metric' => 'RELAY', 'unit' => 'bool', 'type' => 'actuator', 'data_type' => 'boolean'],
         ];
 
         foreach ($actuators as $actuatorData) {
             NodeChannel::firstOrCreate(
                 [
                     'node_id' => $node->id,
-                    'name' => $actuatorData['name'],
+                    'channel' => $actuatorData['channel'],
                 ],
-                array_merge($actuatorData, [
-                    'zone_id' => $zone->id,
-                    'channel_type' => 'actuator',
-                ])
+                [
+                    'type' => $actuatorData['type'],
+                    'metric' => $actuatorData['metric'],
+                    'unit' => $actuatorData['unit'],
+                    'config' => ['data_type' => $actuatorData['data_type']],
+                ]
             );
         }
 
@@ -150,20 +160,12 @@ class AutomationEngineE2ESeeder extends Seeder
 
         // 6. Создаем инфраструктуру зоны
         $infrastructure = [
-            ['asset_type' => 'ph_sensor', 'label' => 'pH Sensor', 'required' => true],
-            ['asset_type' => 'ec_sensor', 'label' => 'EC Sensor', 'required' => true],
-            ['asset_type' => 'temperature_sensor', 'label' => 'Temperature Sensor', 'required' => true],
-            ['asset_type' => 'humidity_sensor', 'label' => 'Humidity Sensor', 'required' => true],
-            ['asset_type' => 'co2_sensor', 'label' => 'CO2 Sensor', 'required' => false],
-            ['asset_type' => 'water_level_sensor', 'label' => 'Water Level Sensor', 'required' => true],
-            ['asset_type' => 'flow_sensor', 'label' => 'Flow Sensor', 'required' => false],
-            ['asset_type' => 'ph_doser', 'label' => 'pH Doser', 'required' => true],
-            ['asset_type' => 'ec_doser', 'label' => 'EC Doser', 'required' => true],
-            ['asset_type' => 'heater', 'label' => 'Heater', 'required' => true],
-            ['asset_type' => 'fan', 'label' => 'Fan', 'required' => true],
-            ['asset_type' => 'light', 'label' => 'Light', 'required' => false],
-            ['asset_type' => 'main_pump', 'label' => 'Main Pump', 'required' => true],
-            ['asset_type' => 'drain_pump', 'label' => 'Drain Pump', 'required' => false],
+            ['asset_type' => 'PUMP', 'channel' => 'main_pump', 'label' => 'Main Pump', 'required' => true],
+            ['asset_type' => 'DRAIN', 'channel' => 'drain_pump', 'label' => 'Drain Pump', 'required' => false],
+            ['asset_type' => 'FAN', 'channel' => 'fan', 'label' => 'Fan', 'required' => true],
+            ['asset_type' => 'HEATER', 'channel' => 'heater', 'label' => 'Heater', 'required' => true],
+            ['asset_type' => 'LIGHT', 'channel' => 'light', 'label' => 'Light', 'required' => false],
+            ['asset_type' => 'MISTER', 'channel' => 'mister', 'label' => 'Mister', 'required' => false],
         ];
 
         foreach ($infrastructure as $infraData) {
@@ -180,14 +182,15 @@ class AutomationEngineE2ESeeder extends Seeder
             );
 
             if ($infraData['required']) {
-                $channel = NodeChannel::where('node_id', $node->id)
-                    ->where('name', $infraData['asset_type'])
-                    ->first();
+                $channelName = $infraData['channel'] ?? null;
+                $channel = $channelName
+                    ? NodeChannel::where('node_id', $node->id)
+                        ->where('channel', $channelName)
+                        ->first()
+                    : null;
 
                 if ($channel) {
-                    $direction = in_array($infraData['asset_type'], ['ph_sensor', 'ec_sensor', 'temperature_sensor', 'humidity_sensor', 'co2_sensor', 'water_level_sensor', 'flow_sensor'])
-                        ? 'sensor'
-                        : 'actuator';
+                    $direction = $channel->type === 'actuator' ? 'actuator' : 'sensor';
 
                     ChannelBinding::firstOrCreate(
                         [

@@ -6,6 +6,7 @@ use App\Models\Plant;
 use App\Models\Recipe;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
+use App\Models\Sensor;
 use App\Models\TelemetryLast;
 use App\Models\TelemetrySample;
 use App\Models\User;
@@ -40,13 +41,24 @@ class AiControllerTest extends TestCase
     public function test_predict_endpoint(): void
     {
         $zone = Zone::factory()->create(['status' => 'RUNNING']);
+        $sensor = Sensor::query()->create([
+            'greenhouse_id' => $zone->greenhouse_id,
+            'zone_id' => $zone->id,
+            'node_id' => null,
+            'scope' => 'inside',
+            'type' => 'PH',
+            'label' => 'ph_sensor',
+            'unit' => null,
+            'specs' => null,
+            'is_active' => true,
+        ]);
 
         // Создаем телеметрию
         $now = Carbon::now();
         for ($i = 0; $i < 10; $i++) {
             TelemetrySample::create([
                 'zone_id' => $zone->id,
-                'metric_type' => 'ph',
+                'sensor_id' => $sensor->id,
                 'value' => 6.0 + ($i * 0.05),
                 'ts' => $now->copy()->subHours(2)->addMinutes($i * 12),
             ]);
@@ -111,17 +123,39 @@ class AiControllerTest extends TestCase
         $service->createCycle($zone, $revision, $plant->id, ['start_immediately' => true]);
 
         // Создаем телеметрию
-        TelemetryLast::create([
+        $phSensor = Sensor::query()->create([
+            'greenhouse_id' => $zone->greenhouse_id,
             'zone_id' => $zone->id,
-            'metric_type' => 'ph',
-            'value' => 6.5, // выше цели
-            'updated_at' => now(),
+            'node_id' => null,
+            'scope' => 'inside',
+            'type' => 'PH',
+            'label' => 'ph_sensor',
+            'unit' => null,
+            'specs' => null,
+            'is_active' => true,
+        ]);
+        $ecSensor = Sensor::query()->create([
+            'greenhouse_id' => $zone->greenhouse_id,
+            'zone_id' => $zone->id,
+            'node_id' => null,
+            'scope' => 'inside',
+            'type' => 'EC',
+            'label' => 'ec_sensor',
+            'unit' => null,
+            'specs' => null,
+            'is_active' => true,
         ]);
         TelemetryLast::create([
-            'zone_id' => $zone->id,
-            'metric_type' => 'ec',
-            'value' => 1.0, // ниже цели
-            'updated_at' => now(),
+            'sensor_id' => $phSensor->id,
+            'last_value' => 6.5, // выше цели
+            'last_ts' => now(),
+            'last_quality' => 'GOOD',
+        ]);
+        TelemetryLast::create([
+            'sensor_id' => $ecSensor->id,
+            'last_value' => 1.0, // ниже цели
+            'last_ts' => now(),
+            'last_quality' => 'GOOD',
         ]);
 
         $response = $this->withHeader('Authorization', 'Bearer '.$this->token)
@@ -165,17 +199,39 @@ class AiControllerTest extends TestCase
         $service->createCycle($zone, $revision, $plant->id, ['start_immediately' => true]);
 
         // Создаем телеметрию с отклонениями
-        TelemetryLast::create([
+        $phSensor = Sensor::query()->create([
+            'greenhouse_id' => $zone->greenhouse_id,
             'zone_id' => $zone->id,
-            'metric_type' => 'ph',
-            'value' => 6.5, // выше цели на 0.5
-            'updated_at' => now(),
+            'node_id' => null,
+            'scope' => 'inside',
+            'type' => 'PH',
+            'label' => 'ph_sensor',
+            'unit' => null,
+            'specs' => null,
+            'is_active' => true,
+        ]);
+        $ecSensor = Sensor::query()->create([
+            'greenhouse_id' => $zone->greenhouse_id,
+            'zone_id' => $zone->id,
+            'node_id' => null,
+            'scope' => 'inside',
+            'type' => 'EC',
+            'label' => 'ec_sensor',
+            'unit' => null,
+            'specs' => null,
+            'is_active' => true,
         ]);
         TelemetryLast::create([
-            'zone_id' => $zone->id,
-            'metric_type' => 'ec',
-            'value' => 0.8, // ниже цели на 0.4
-            'updated_at' => now(),
+            'sensor_id' => $phSensor->id,
+            'last_value' => 6.5, // выше цели на 0.5
+            'last_ts' => now(),
+            'last_quality' => 'GOOD',
+        ]);
+        TelemetryLast::create([
+            'sensor_id' => $ecSensor->id,
+            'last_value' => 0.8, // ниже цели на 0.4
+            'last_ts' => now(),
+            'last_quality' => 'GOOD',
         ]);
 
         $response = $this->withHeader('Authorization', 'Bearer '.$this->token)

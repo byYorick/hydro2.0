@@ -218,9 +218,13 @@
 - `scope` (enum: inside|outside)
 - `type` (enum: TEMPERATURE|HUMIDITY|CO2|PH|EC|...)
 - `label` (string)
+- `unit` (string nullable)
 - `specs` (jsonb nullable)
+- `is_active` (boolean, default true)
+- `last_read_at` (timestamp nullable)
 - `created_at`, `updated_at`
-- **Index:** `(zone_id)`, `(greenhouse_id, scope)`
+- **Index:** `(zone_id)`, `(greenhouse_id, scope)`, `(greenhouse_id, type)`, `(node_id)`, `(is_active)`
+- **UNIQUE:** `(zone_id, node_id, scope, type, label)`
 
 #### `telemetry_samples` (партиционирование)
 - `id` (PK)
@@ -384,4 +388,3 @@
 - **Режим:** `migrate:fresh --seed` (без обратной совместимости)
 - **Legacy таблицы:** удаляются жёстко
 - **Data migration:** только если критично сохранить данные (на этом этапе проще не сохранять)
-

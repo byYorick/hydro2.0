@@ -33,7 +33,7 @@ test.describe('Alerts', () => {
       
       // Меняем значение фильтра
       try {
-        await activeFilter.first().selectOption('true');
+        await activeFilter.first().selectOption('active');
         await page.waitForTimeout(1000);
       } catch (e) {
         console.log('Failed to change filter:', e);
@@ -62,13 +62,30 @@ test.describe('Alerts', () => {
       if (isVisible) {
         await expect(zoneFilter.first()).toBeVisible({ timeout: 5000 });
 
-        // Вводим название зоны в фильтр
-        try {
-          await zoneFilter.first().fill(testZone.name);
-          await page.waitForTimeout(2000);
-        } catch (e) {
-          console.log('Failed to fill filter:', e);
+        const filterEl = zoneFilter.first();
+        const tagName = await filterEl.evaluate(el => el.tagName.toLowerCase());
+        if (tagName === 'select') {
+          const options = await filterEl.locator('option').evaluateAll(nodes =>
+            nodes.map(node => ({
+              value: (node as HTMLOptionElement).value,
+              label: (node as HTMLOptionElement).textContent?.trim() || '',
+            }))
+          );
+          const match = options.find(option =>
+            option.value === String(testZone.id) || option.label === testZone.name
+          );
+          if (match) {
+            await filterEl.selectOption(match.value);
+          } else {
+            const fallback = options.find(option => option.value);
+            if (fallback) {
+              await filterEl.selectOption(fallback.value);
+            }
+          }
+        } else {
+          await filterEl.fill(testZone.name);
         }
+        await page.waitForTimeout(2000);
 
         // Проверяем, что таблица все еще видна
         const alertsTable = page.locator(`[data-testid="${TEST_IDS.ALERTS_TABLE}"]`)
@@ -154,4 +171,3 @@ test.describe('Alerts', () => {
     }
   });
 });
-

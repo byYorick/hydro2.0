@@ -61,6 +61,128 @@ export class APITestHelper {
     return headers;
   }
 
+  private async getActiveCycle(zoneId: number, maxAttempts = 3): Promise<any | null> {
+    const headers = await this.getHeaders();
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const response = await this.request.get(`${baseURL}/api/zones/${zoneId}/grow-cycle`, { headers });
+      if (response.ok()) {
+        const data = await response.json();
+        const payload = data.data;
+        const cycle = payload?.cycle ?? payload;
+        return cycle?.id ? cycle : null;
+      }
+
+      const status = response.status();
+      const text = await response.text();
+      lastError = new Error(`Failed to get grow cycle: ${status} ${text}`);
+      if (status !== 429) {
+        throw lastError;
+      }
+
+      const retryAfterHeader = response.headers()['retry-after'];
+      const retryAfter = retryAfterHeader ? Number(retryAfterHeader) : 0;
+      const delay = Number.isFinite(retryAfter) && retryAfter > 0
+        ? retryAfter * 1000
+        : Math.min(2000 * Math.pow(2, attempt), 16000);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+
+    throw lastError || new Error('Failed to get grow cycle after retries');
+  }
+
+  private async postWithRetry(url: string, label: string, data?: Record<string, any>, maxAttempts = 3): Promise<void> {
+    const headers = await this.getHeaders();
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const response = await this.request.post(url, {
+        headers,
+        data,
+      });
+      if (response.ok()) {
+        return;
+      }
+
+      const status = response.status();
+      const text = await response.text();
+      lastError = new Error(`Failed to ${label}: ${status} ${text}`);
+      if (status !== 429) {
+        throw lastError;
+      }
+
+      const retryAfterHeader = response.headers()['retry-after'];
+      const retryAfter = retryAfterHeader ? Number(retryAfterHeader) : 0;
+      const delay = Number.isFinite(retryAfter) && retryAfter > 0
+        ? retryAfter * 1000
+        : Math.min(2000 * Math.pow(2, attempt), 16000);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+
+    throw lastError || new Error(`Failed to ${label} after retries`);
+  }
+
+  private async postJsonWithRetry(
+    url: string,
+    label: string,
+    data?: Record<string, any>,
+    maxAttempts = 3
+  ): Promise<any> {
+    const headers = await this.getHeaders();
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const response = await this.request.post(url, {
+        headers,
+        data,
+      });
+
+      if (response.ok()) {
+        return response.json();
+      }
+
+      const status = response.status();
+      const text = await response.text();
+      lastError = new Error(`Failed to ${label}: ${status} ${text}`);
+      if (status !== 429) {
+        throw lastError;
+      }
+
+      const retryAfterHeader = response.headers()['retry-after'];
+      const retryAfter = retryAfterHeader ? Number(retryAfterHeader) : 0;
+      const delay = Number.isFinite(retryAfter) && retryAfter > 0
+        ? retryAfter * 1000
+        : Math.min(2000 * Math.pow(2, attempt), 16000);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+
+    throw lastError || new Error(`Failed to ${label} after retries`);
+  }
+
+  private async ensurePlantId(): Promise<number> {
+    const headers = await this.getHeaders();
+    const plantsResponse = await this.request.get(`${baseURL}/api/plants`, { headers });
+    if (plantsResponse.ok()) {
+      const plantsData = await plantsResponse.json();
+      if (plantsData.data && plantsData.data.length > 0) {
+        return plantsData.data[0].id;
+      }
+    }
+
+    const createPlantResponse = await this.request.post(`${baseURL}/api/plants`, {
+      headers,
+      data: {
+        name: `Test Plant ${Date.now()}`,
+        scientific_name: 'Test Plant',
+      },
+    });
+
+    if (!createPlantResponse.ok()) {
+      throw new Error(`Failed to create plant: ${createPlantResponse.status()} ${await createPlantResponse.text()}`);
+    }
+
+    const plantData = await createPlantResponse.json();
+    return plantData.data.id;
+  }
+
   async createTestGreenhouse(data?: Partial<TestGreenhouse>): Promise<TestGreenhouse> {
     const payload = {
       uid: data?.uid || `test-gh-${Date.now()}`,
@@ -103,37 +225,24 @@ export class APITestHelper {
   }
 
   async createTestRecipe(data?: Partial<TestRecipe>, phases?: TestRecipePhase[]): Promise<TestRecipe> {
+    const plantId = await this.ensurePlantId();
     const payload = {
       name: data?.name || `Test Recipe ${Date.now()}`,
       description: data?.description || 'Test recipe description',
+      plant_id: plantId,
       ...data,
     };
 
-    const response = await this.request.post(`${baseURL}/api/recipes`, {
-      headers: await this.getHeaders(),
-      data: payload,
-    });
-
-    if (!response.ok()) {
-      throw new Error(`Failed to create recipe: ${response.status()} ${await response.text()}`);
-    }
-
-    const result = await response.json();
-    const recipe = result.data;
+    const recipeResult = await this.postJsonWithRetry(`${baseURL}/api/recipes`, 'create recipe', payload, 5);
+    const recipe = recipeResult.data;
 
     // Создаем ревизию рецепта (новая модель)
-    const revisionResponse = await this.request.post(`${baseURL}/api/recipes/${recipe.id}/revisions`, {
-      headers: await this.getHeaders(),
-      data: {
-        description: 'Test revision',
-      },
-    });
-
-    if (!revisionResponse.ok()) {
-      throw new Error(`Failed to create recipe revision: ${revisionResponse.status()} ${await revisionResponse.text()}`);
-    }
-
-    const revisionResult = await revisionResponse.json();
+    const revisionResult = await this.postJsonWithRetry(
+      `${baseURL}/api/recipes/${recipe.id}/revisions`,
+      'create recipe revision',
+      { description: 'Test revision' },
+      5
+    );
     const revision = revisionResult.data;
 
     // Создаем фазы ревизии, если они указаны
@@ -173,24 +282,21 @@ export class APITestHelper {
         }
         phasePayload.irrigation_mode = 'SUBSTRATE';
 
-        const phaseResponse = await this.request.post(`${baseURL}/api/recipe-revisions/${revision.id}/phases`, {
-          headers: await this.getHeaders(),
-          data: phasePayload,
-        });
-
-        if (!phaseResponse.ok()) {
-          throw new Error(`Failed to create recipe revision phase: ${phaseResponse.status()} ${await phaseResponse.text()}`);
-        }
+        await this.postWithRetry(
+          `${baseURL}/api/recipe-revisions/${revision.id}/phases`,
+          'create recipe revision phase',
+          phasePayload,
+          5
+        );
       }
 
       // Публикуем ревизию после создания всех фаз
-      const publishResponse = await this.request.post(`${baseURL}/api/recipe-revisions/${revision.id}/publish`, {
-        headers: await this.getHeaders(),
-      });
-
-      if (!publishResponse.ok()) {
-        throw new Error(`Failed to publish recipe revision: ${publishResponse.status()} ${await publishResponse.text()}`);
-      }
+      await this.postWithRetry(
+        `${baseURL}/api/recipe-revisions/${revision.id}/publish`,
+        'publish recipe revision',
+        undefined,
+        5
+      );
     }
 
     return recipe;
@@ -239,9 +345,15 @@ export class APITestHelper {
 
   async attachRecipeToZone(zoneId: number, recipeId: number, startAt?: string, plantId?: number): Promise<any> {
     // Новая модель: создаем grow-cycle вместо attach-recipe
+    const headers = await this.getHeaders();
+    const existingCycle = await this.getActiveCycle(zoneId, 5);
+    if (existingCycle) {
+      return existingCycle;
+    }
+
     // Сначала получаем опубликованную ревизию рецепта
     const recipeResponse = await this.request.get(`${baseURL}/api/recipes/${recipeId}`, {
-      headers: await this.getHeaders(),
+      headers,
     });
 
     if (!recipeResponse.ok()) {
@@ -251,23 +363,24 @@ export class APITestHelper {
     const recipeData = await recipeResponse.json();
     const recipe = recipeData.data;
 
-    // Находим опубликованную ревизию
-    let publishedRevision = null;
-    if (recipe.revisions && Array.isArray(recipe.revisions)) {
-      publishedRevision = recipe.revisions.find((r: any) => r.status === 'PUBLISHED');
+    let publishedRevisionId = recipe.latest_published_revision_id || null;
+    if (!publishedRevisionId && recipe.latestPublishedRevision?.id) {
+      publishedRevisionId = recipe.latestPublishedRevision.id;
     }
 
-    if (!publishedRevision) {
-      // Если нет опубликованной ревизии, получаем первую доступную
-      const revisionsResponse = await this.request.get(`${baseURL}/api/recipes/${recipeId}`, {
-        headers: await this.getHeaders(),
-      });
-      const revisionsData = await revisionsResponse.json();
-      if (revisionsData.data.revisions && revisionsData.data.revisions.length > 0) {
-        publishedRevision = revisionsData.data.revisions[0];
-      } else {
-        throw new Error(`Recipe ${recipeId} has no published revision`);
+    if (!publishedRevisionId && recipe.latest_draft_revision_id) {
+      const publishResponse = await this.request.post(
+        `${baseURL}/api/recipe-revisions/${recipe.latest_draft_revision_id}/publish`,
+        { headers }
+      );
+      if (!publishResponse.ok()) {
+        throw new Error(`Failed to publish draft revision: ${publishResponse.status()} ${await publishResponse.text()}`);
       }
+      publishedRevisionId = recipe.latest_draft_revision_id;
+    }
+
+    if (!publishedRevisionId) {
+      throw new Error(`Recipe ${recipeId} has no published revision`);
     }
 
     // Получаем или создаем plant (если не указан)
@@ -275,7 +388,7 @@ export class APITestHelper {
     if (!finalPlantId) {
       // Получаем первый доступный plant
       const plantsResponse = await this.request.get(`${baseURL}/api/plants`, {
-        headers: await this.getHeaders(),
+        headers,
       });
       if (plantsResponse.ok()) {
         const plantsData = await plantsResponse.json();
@@ -287,7 +400,7 @@ export class APITestHelper {
       // Если нет растений, создаем тестовое
       if (!finalPlantId) {
         const createPlantResponse = await this.request.post(`${baseURL}/api/plants`, {
-          headers: await this.getHeaders(),
+          headers,
           data: {
             name: `Test Plant ${Date.now()}`,
             scientific_name: 'Test Plant',
@@ -305,7 +418,7 @@ export class APITestHelper {
     }
 
     const payload: any = {
-      recipe_revision_id: publishedRevision.id,
+      recipe_revision_id: publishedRevisionId,
       plant_id: finalPlantId,
       start_immediately: !!startAt,
     };
@@ -313,17 +426,51 @@ export class APITestHelper {
       payload.planting_at = startAt;
     }
 
-    const response = await this.request.post(`${baseURL}/api/zones/${zoneId}/grow-cycles`, {
-      headers: await this.getHeaders(),
-      data: payload,
-    });
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const response = await this.request.post(`${baseURL}/api/zones/${zoneId}/grow-cycles`, {
+        headers,
+        data: payload,
+      });
 
-    if (!response.ok()) {
-      throw new Error(`Failed to create grow cycle: ${response.status()} ${await response.text()}`);
+      if (response.ok()) {
+        const result = await response.json();
+        return result.data;
+      }
+
+      const status = response.status();
+      const text = await response.text();
+      let message = text;
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed?.message) {
+          message = parsed.message;
+        }
+      } catch {
+        // ignore JSON parse errors
+      }
+
+      if (status === 422 && typeof message === 'string' && message.toLowerCase().includes('active cycle')) {
+        const activeCycle = await this.getActiveCycle(zoneId, 5);
+        if (activeCycle) {
+          return activeCycle;
+        }
+      }
+
+      lastError = new Error(`Failed to create grow cycle: ${status} ${text}`);
+      if (status !== 429) {
+        throw lastError;
+      }
+
+      const retryAfterHeader = response.headers()['retry-after'];
+      const retryAfter = retryAfterHeader ? Number(retryAfterHeader) : 0;
+      const delay = Number.isFinite(retryAfter) && retryAfter > 0
+        ? retryAfter * 1000
+        : Math.min(2000 * Math.pow(2, attempt), 16000);
+      await new Promise(resolve => setTimeout(resolve, delay));
     }
 
-    const result = await response.json();
-    return result.data;
+    throw lastError || new Error('Failed to create grow cycle after retries');
   }
 
   async createBinding(zoneId: number, nodeId: number, channelId: number, role: string): Promise<void> {
@@ -343,110 +490,48 @@ export class APITestHelper {
 
   async startZone(zoneId: number): Promise<void> {
     // Получаем активный цикл зоны
-    const cycleResponse = await this.request.get(`${baseURL}/api/zones/${zoneId}/grow-cycle`, {
-      headers: await this.getHeaders(),
-    });
-
-    if (!cycleResponse.ok()) {
-      throw new Error(`Failed to get grow cycle: ${cycleResponse.status()} ${await cycleResponse.text()}`);
-    }
-
-    const cycleData = await cycleResponse.json();
-    const cycle = cycleData.data?.cycle;
+    const cycle = await this.getActiveCycle(zoneId, 2);
 
     if (!cycle || !cycle.id) {
       throw new Error(`Zone ${zoneId} has no active grow cycle`);
     }
 
-    // Запускаем цикл через start endpoint зоны (legacy поддержка) или напрямую через grow-cycle
-    const response = await this.request.post(`${baseURL}/api/zones/${zoneId}/start`, {
-      headers: await this.getHeaders(),
-    });
-
-    if (!response.ok()) {
-      throw new Error(`Failed to start zone: ${response.status()} ${await response.text()}`);
-    }
+    await this.postWithRetry(`${baseURL}/api/grow-cycles/${cycle.id}/start`, 'start cycle', undefined, 2);
   }
 
   async pauseZone(zoneId: number): Promise<void> {
     // Получаем активный цикл зоны
-    const cycleResponse = await this.request.get(`${baseURL}/api/zones/${zoneId}/grow-cycle`, {
-      headers: await this.getHeaders(),
-    });
-
-    if (!cycleResponse.ok()) {
-      throw new Error(`Failed to get grow cycle: ${cycleResponse.status()} ${await cycleResponse.text()}`);
-    }
-
-    const cycleData = await cycleResponse.json();
-    const cycle = cycleData.data?.cycle;
+    const cycle = await this.getActiveCycle(zoneId, 2);
 
     if (!cycle || !cycle.id) {
       throw new Error(`Zone ${zoneId} has no active grow cycle`);
     }
 
-    const response = await this.request.post(`${baseURL}/api/grow-cycles/${cycle.id}/pause`, {
-      headers: await this.getHeaders(),
-    });
-
-    if (!response.ok()) {
-      throw new Error(`Failed to pause cycle: ${response.status()} ${await response.text()}`);
-    }
+    await this.postWithRetry(`${baseURL}/api/grow-cycles/${cycle.id}/pause`, 'pause cycle', undefined, 2);
   }
 
   async resumeZone(zoneId: number): Promise<void> {
     // Получаем активный цикл зоны
-    const cycleResponse = await this.request.get(`${baseURL}/api/zones/${zoneId}/grow-cycle`, {
-      headers: await this.getHeaders(),
-    });
-
-    if (!cycleResponse.ok()) {
-      throw new Error(`Failed to get grow cycle: ${cycleResponse.status()} ${await cycleResponse.text()}`);
-    }
-
-    const cycleData = await cycleResponse.json();
-    const cycle = cycleData.data?.cycle;
+    const cycle = await this.getActiveCycle(zoneId, 2);
 
     if (!cycle || !cycle.id) {
       throw new Error(`Zone ${zoneId} has no active grow cycle`);
     }
 
-    const response = await this.request.post(`${baseURL}/api/grow-cycles/${cycle.id}/resume`, {
-      headers: await this.getHeaders(),
-    });
-
-    if (!response.ok()) {
-      throw new Error(`Failed to resume cycle: ${response.status()} ${await response.text()}`);
-    }
+    await this.postWithRetry(`${baseURL}/api/grow-cycles/${cycle.id}/resume`, 'resume cycle', undefined, 2);
   }
 
   async harvestZone(zoneId: number): Promise<void> {
     // Получаем активный цикл зоны
-    const cycleResponse = await this.request.get(`${baseURL}/api/zones/${zoneId}/grow-cycle`, {
-      headers: await this.getHeaders(),
-    });
-
-    if (!cycleResponse.ok()) {
-      throw new Error(`Failed to get grow cycle: ${cycleResponse.status()} ${await cycleResponse.text()}`);
-    }
-
-    const cycleData = await cycleResponse.json();
-    const cycle = cycleData.data?.cycle;
+    const cycle = await this.getActiveCycle(zoneId, 2);
 
     if (!cycle || !cycle.id) {
       throw new Error(`Zone ${zoneId} has no active grow cycle`);
     }
 
-    const response = await this.request.post(`${baseURL}/api/grow-cycles/${cycle.id}/harvest`, {
-      headers: await this.getHeaders(),
-      data: {
-        batch_label: `Test Batch ${Date.now()}`,
-      },
-    });
-
-    if (!response.ok()) {
-      throw new Error(`Failed to harvest cycle: ${response.status()} ${await response.text()}`);
-    }
+    await this.postWithRetry(`${baseURL}/api/grow-cycles/${cycle.id}/harvest`, 'harvest cycle', {
+      batch_label: `Test Batch ${Date.now()}`,
+    }, 2);
   }
 
   async getZone(zoneId: number): Promise<TestZone> {
@@ -515,4 +600,3 @@ export class APITestHelper {
     }
   }
 }
-

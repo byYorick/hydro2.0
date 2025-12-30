@@ -3,8 +3,10 @@
 namespace App\Services;
 
 use App\Models\Alert;
+use App\Models\GrowCycle;
 use App\Models\RecipeAnalytics;
 use App\Models\TelemetrySample;
+use App\Enums\GrowCycleStatus;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -144,10 +146,30 @@ class RecipeAnalyticsService
      */
     private function getTelemetrySamples(int $zoneId, string $metricType, Carbon $startDate, Carbon $endDate): \Illuminate\Database\Eloquent\Collection
     {
-        return TelemetrySample::where('zone_id', $zoneId)
-            ->where('metric_type', $metricType)
-            ->whereBetween('ts', [$startDate, $endDate])
-            ->get();
+        $sensorType = $this->metricTypeToSensorType($metricType);
+        if (! $sensorType) {
+            return new \Illuminate\Database\Eloquent\Collection();
+        }
+
+        return TelemetrySample::query()
+            ->join('sensors', 'telemetry_samples.sensor_id', '=', 'sensors.id')
+            ->where('sensors.zone_id', $zoneId)
+            ->where('sensors.type', $sensorType)
+            ->whereBetween('telemetry_samples.ts', [$startDate, $endDate])
+            ->get(['telemetry_samples.ts', 'telemetry_samples.value']);
+    }
+
+    private function metricTypeToSensorType(string $metricType): ?string
+    {
+        $normalized = strtoupper(trim($metricType));
+
+        return match ($normalized) {
+            'PH' => 'PH',
+            'EC' => 'EC',
+            'TEMP_AIR', 'TEMP_WATER', 'TEMPERATURE' => 'TEMPERATURE',
+            'HUMIDITY', 'HUMIDITY_AIR' => 'HUMIDITY',
+            default => null,
+        };
     }
 
     /**

@@ -35,6 +35,10 @@ class ExtendedTelemetryAggregatedSeeder extends Seeder
     {
         $created = 0;
         $metricTypes = ['ph', 'ec', 'temperature', 'humidity'];
+        $batch = [];
+        $batchSize = 500;
+        $uniqueBy = ['zone_id', 'node_id', 'channel', 'metric_type', 'ts'];
+        $updateColumns = ['value_avg', 'value_min', 'value_max', 'value_median', 'sample_count', 'created_at'];
 
         // Создаем данные за последние 7 дней, по 1 минуте
         foreach ($zones as $zone) {
@@ -54,28 +58,33 @@ class ExtendedTelemetryAggregatedSeeder extends Seeder
                         $baseValue = $this->getBaseValue($metricType, $zone);
                         $value = $baseValue + (rand(-10, 10) / 100);
 
-                        DB::table('telemetry_agg_1m')->updateOrInsert(
-                            [
-                                'zone_id' => $zone->id,
-                                'node_id' => $node->id,
-                                'channel' => $metricType,
-                                'metric_type' => $metricType,
-                                'ts' => $ts,
-                            ],
-                            [
-                                'value_avg' => $value,
-                                'value_min' => $value - 0.1,
-                                'value_max' => $value + 0.1,
-                                'value_median' => $value,
-                                'sample_count' => rand(10, 12),
-                                'created_at' => $ts,
-                            ]
-                        );
+                        $batch[] = [
+                            'zone_id' => $zone->id,
+                            'node_id' => $node->id,
+                            'channel' => $metricType,
+                            'metric_type' => $metricType,
+                            'ts' => $ts,
+                            'value_avg' => $value,
+                            'value_min' => $value - 0.1,
+                            'value_max' => $value + 0.1,
+                            'value_median' => $value,
+                            'sample_count' => rand(10, 12),
+                            'created_at' => $ts,
+                        ];
 
                         $created++;
+
+                        if (count($batch) >= $batchSize) {
+                            DB::table('telemetry_agg_1m')->upsert($batch, $uniqueBy, $updateColumns);
+                            $batch = [];
+                        }
                     }
                 }
             }
+        }
+
+        if (!empty($batch)) {
+            DB::table('telemetry_agg_1m')->upsert($batch, $uniqueBy, $updateColumns);
         }
 
         return $created;
@@ -85,6 +94,10 @@ class ExtendedTelemetryAggregatedSeeder extends Seeder
     {
         $created = 0;
         $metricTypes = ['ph', 'ec', 'temperature', 'humidity'];
+        $batch = [];
+        $batchSize = 500;
+        $uniqueBy = ['zone_id', 'node_id', 'channel', 'metric_type', 'ts'];
+        $updateColumns = ['value_avg', 'value_min', 'value_max', 'value_median', 'sample_count', 'created_at'];
 
         // Создаем данные за последние 30 дней, по 1 часу
         foreach ($zones as $zone) {
@@ -104,28 +117,33 @@ class ExtendedTelemetryAggregatedSeeder extends Seeder
                         $baseValue = $this->getBaseValue($metricType, $zone);
                         $value = $baseValue + (rand(-20, 20) / 100);
 
-                        DB::table('telemetry_agg_1h')->updateOrInsert(
-                            [
-                                'zone_id' => $zone->id,
-                                'node_id' => $node->id,
-                                'channel' => $metricType,
-                                'metric_type' => $metricType,
-                                'ts' => $ts,
-                            ],
-                            [
-                                'value_avg' => $value,
-                                'value_min' => $value - 0.2,
-                                'value_max' => $value + 0.2,
-                                'value_median' => $value,
-                                'sample_count' => rand(50, 60),
-                                'created_at' => $ts,
-                            ]
-                        );
+                        $batch[] = [
+                            'zone_id' => $zone->id,
+                            'node_id' => $node->id,
+                            'channel' => $metricType,
+                            'metric_type' => $metricType,
+                            'ts' => $ts,
+                            'value_avg' => $value,
+                            'value_min' => $value - 0.2,
+                            'value_max' => $value + 0.2,
+                            'value_median' => $value,
+                            'sample_count' => rand(50, 60),
+                            'created_at' => $ts,
+                        ];
 
                         $created++;
+
+                        if (count($batch) >= $batchSize) {
+                            DB::table('telemetry_agg_1h')->upsert($batch, $uniqueBy, $updateColumns);
+                            $batch = [];
+                        }
                     }
                 }
             }
+        }
+
+        if (!empty($batch)) {
+            DB::table('telemetry_agg_1h')->upsert($batch, $uniqueBy, $updateColumns);
         }
 
         return $created;
@@ -135,6 +153,10 @@ class ExtendedTelemetryAggregatedSeeder extends Seeder
     {
         $created = 0;
         $metricTypes = ['ph', 'ec', 'temperature', 'humidity'];
+        $batch = [];
+        $batchSize = 500;
+        $uniqueBy = ['zone_id', 'node_id', 'channel', 'metric_type', 'date'];
+        $updateColumns = ['value_avg', 'value_min', 'value_max', 'value_median', 'sample_count', 'created_at'];
 
         // Создаем данные за последние 90 дней
         foreach ($zones as $zone) {
@@ -153,27 +175,32 @@ class ExtendedTelemetryAggregatedSeeder extends Seeder
                     $baseValue = $this->getBaseValue($metricType, $zone);
                     $value = $baseValue + (rand(-30, 30) / 100);
 
-                    DB::table('telemetry_daily')->updateOrInsert(
-                        [
-                            'zone_id' => $zone->id,
-                            'node_id' => $node->id,
-                            'channel' => $metricType,
-                            'metric_type' => $metricType,
-                            'date' => $date->toDateString(),
-                        ],
-                        [
-                            'value_avg' => $value,
-                            'value_min' => $value - 0.5,
-                            'value_max' => $value + 0.5,
-                            'value_median' => $value,
-                            'sample_count' => rand(200, 300),
-                            'created_at' => $date,
-                        ]
-                    );
+                    $batch[] = [
+                        'zone_id' => $zone->id,
+                        'node_id' => $node->id,
+                        'channel' => $metricType,
+                        'metric_type' => $metricType,
+                        'date' => $date->toDateString(),
+                        'value_avg' => $value,
+                        'value_min' => $value - 0.5,
+                        'value_max' => $value + 0.5,
+                        'value_median' => $value,
+                        'sample_count' => rand(200, 300),
+                        'created_at' => $date,
+                    ];
 
                     $created++;
+
+                    if (count($batch) >= $batchSize) {
+                        DB::table('telemetry_daily')->upsert($batch, $uniqueBy, $updateColumns);
+                        $batch = [];
+                    }
                 }
             }
+        }
+
+        if (!empty($batch)) {
+            DB::table('telemetry_daily')->upsert($batch, $uniqueBy, $updateColumns);
         }
 
         return $created;
@@ -202,4 +229,3 @@ class ExtendedTelemetryAggregatedSeeder extends Seeder
         };
     }
 }
-

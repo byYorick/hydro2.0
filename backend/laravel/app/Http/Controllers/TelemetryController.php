@@ -89,10 +89,12 @@ class TelemetryController extends Controller
             'to' => ['nullable', 'date'],
         ]);
 
+        $metric = strtoupper($validated['metric']);
         $q = TelemetrySample::query()
             ->join('sensors', 'telemetry_samples.sensor_id', '=', 'sensors.id')
-            ->where('telemetry_samples.zone_id', $zoneId)
-            ->where('sensors.type', $validated['metric'])
+            ->where('sensors.zone_id', $zoneId)
+            ->whereNotNull('sensors.zone_id')
+            ->where('sensors.type', $metric)
             ->orderBy('telemetry_samples.ts', 'asc');
 
         if (!empty($validated['from'])) {
@@ -106,7 +108,8 @@ class TelemetryController extends Controller
             'telemetry_samples.ts',
             'telemetry_samples.value',
             'sensors.node_id',
-            'sensors.type as channel'
+            'sensors.label as channel',
+            'sensors.type as metric_type',
         ]);
 
         return response()->json([
@@ -197,22 +200,31 @@ class TelemetryController extends Controller
             'to' => ['nullable', 'date'],
         ]);
 
-        $q = TelemetrySample::query()->where('node_id', $nodeId)
-            ->where('metric_type', $validated['metric'])
-            ->orderBy('ts', 'asc');
+        $metric = strtoupper($validated['metric']);
+        $q = TelemetrySample::query()
+            ->join('sensors', 'telemetry_samples.sensor_id', '=', 'sensors.id')
+            ->where('sensors.node_id', $nodeId)
+            ->whereNotNull('sensors.node_id')
+            ->where('sensors.type', $metric)
+            ->orderBy('telemetry_samples.ts', 'asc');
 
         if (!empty($validated['channel'])) {
-            $q->where('channel', $validated['channel']);
+            $q->where('sensors.label', $validated['channel']);
         }
 
         if (!empty($validated['from'])) {
-            $q->where('ts', '>=', $validated['from']);
+            $q->where('telemetry_samples.ts', '>=', $validated['from']);
         }
         if (!empty($validated['to'])) {
-            $q->where('ts', '<=', $validated['to']);
+            $q->where('telemetry_samples.ts', '<=', $validated['to']);
         }
 
-        $rows = $q->limit(5000)->get(['ts', 'value', 'channel']);
+        $rows = $q->limit(5000)->get([
+            'telemetry_samples.ts',
+            'telemetry_samples.value',
+            'sensors.label as channel',
+            'sensors.type as metric_type',
+        ]);
 
         return response()->json([
             'status' => 'ok',
@@ -339,16 +351,17 @@ class TelemetryController extends Controller
             // Fallback: используем raw samples с date_trunc
             $query = "
                 SELECT 
-                    date_trunc('hour', ts) as ts,
-                    AVG(value) as avg_value,
-                    MIN(value) as min_value,
-                    MAX(value) as max_value
+                    date_trunc('hour', telemetry_samples.ts) as ts,
+                    AVG(telemetry_samples.value) as avg_value,
+                    MIN(telemetry_samples.value) as min_value,
+                    MAX(telemetry_samples.value) as max_value
                 FROM telemetry_samples
-                WHERE zone_id = ?
-                    AND metric_type = ?
-                    AND ts >= ?
-                    AND ts <= ?
-                GROUP BY date_trunc('hour', ts)
+                JOIN sensors ON telemetry_samples.sensor_id = sensors.id
+                WHERE sensors.zone_id = ?
+                    AND sensors.type = ?
+                    AND telemetry_samples.ts >= ?
+                    AND telemetry_samples.ts <= ?
+                GROUP BY date_trunc('hour', telemetry_samples.ts)
                 ORDER BY ts ASC
             ";
 
@@ -376,5 +389,4 @@ class TelemetryController extends Controller
         }
     }
 }
-
 

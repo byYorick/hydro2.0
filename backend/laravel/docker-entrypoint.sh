@@ -13,6 +13,15 @@ if [ ! -f /app/.env ] || ! grep -q "APP_KEY=base64:" /app/.env 2>/dev/null; then
     php artisan key:generate --force || true
 fi
 
+# В dev-режиме сбрасываем закешированную конфигурацию, чтобы не ловить устаревший DB_HOST
+if [ "${APP_ENV:-production}" = "local" ]; then
+    if [ -f /app/bootstrap/cache/config.php ]; then
+        echo "Clearing cached config for local environment..."
+        rm -f /app/bootstrap/cache/config.php 2>/dev/null || true
+        php artisan config:clear >/dev/null 2>&1 || true
+    fi
+fi
+
 # Wait for database to be ready (dev + testing)
 if [ "${APP_ENV:-production}" = "local" ] || [ "${APP_ENV:-production}" = "testing" ]; then
     echo "Waiting for database connection..."

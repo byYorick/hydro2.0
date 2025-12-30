@@ -10,6 +10,7 @@ use App\Models\Command;
 use App\Models\Alert;
 use App\Models\ZoneEvent;
 use App\Models\TelemetryLast;
+use App\Models\Sensor;
 use Carbon\Carbon;
 use Illuminate\Support\Str;
 
@@ -356,20 +357,38 @@ class ComprehensiveDashboardSeeder extends Seeder
         foreach ($zones as $zone) {
             foreach ($zone->nodes as $node) {
                 foreach ($metricTypes as $metricType) {
+                    $sensorType = $this->sensorTypeFromMetric($metricType);
                     $baseValue = $baseValues[$metricType] ?? 0.0;
                     $variation = $this->getVariationForMetric($metricType);
                     $value = $baseValue + (rand(-100, 100) / 100) * $variation;
 
-                    TelemetryLast::updateOrCreate(
+                    $sensor = Sensor::firstOrCreate(
                         [
+                            'greenhouse_id' => $zone->greenhouse_id,
                             'zone_id' => $zone->id,
-                            'metric_type' => $metricType,
+                            'node_id' => $node->id,
+                            'scope' => 'inside',
+                            'type' => $sensorType,
+                            'label' => $this->buildSensorLabel($metricType, $sensorType),
                         ],
                         [
-                            'node_id' => $node->id,
-                            'channel' => 'default',
-                            'value' => round($value, 2),
-                            'updated_at' => Carbon::now()->subMinutes(rand(1, 30)),
+                            'unit' => null,
+                            'specs' => [
+                                'metric' => $metricType,
+                                'channel' => 'default',
+                            ],
+                            'is_active' => true,
+                        ]
+                    );
+
+                    TelemetryLast::updateOrCreate(
+                        [
+                            'sensor_id' => $sensor->id,
+                        ],
+                        [
+                            'last_value' => round($value, 2),
+                            'last_ts' => Carbon::now()->subMinutes(rand(1, 30)),
+                            'last_quality' => 'GOOD',
                         ]
                     );
                     $updated++;
@@ -481,5 +500,27 @@ class ComprehensiveDashboardSeeder extends Seeder
             default => 1.0,
         };
     }
-}
 
+    private function sensorTypeFromMetric(string $metric): string
+    {
+        $metric = strtoupper($metric);
+
+        return match (true) {
+            $metric === 'PH' => 'PH',
+            $metric === 'EC' => 'EC',
+            str_contains($metric, 'TEMP') => 'TEMPERATURE',
+            str_contains($metric, 'HUM') => 'HUMIDITY',
+            $metric === 'WATER_LEVEL' => 'WATER_LEVEL',
+            $metric === 'FLOW_RATE' => 'OTHER',
+            default => 'OTHER',
+        };
+    }
+
+    private function buildSensorLabel(string $metricType, string $sensorType): string
+    {
+        $base = str_replace('_', ' ', strtolower($metricType));
+        $base = trim($base) ?: strtolower($sensorType);
+
+        return ucfirst($base);
+    }
+}

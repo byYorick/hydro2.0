@@ -35,6 +35,22 @@ export const TEST_IDS = {
   ALERT_ROW: (id: number) => `alert-row-${id}`,
   ALERT_RESOLVE_BTN: (id: number) => `alert-resolve-btn-${id}`,
 
+  // Analytics
+  ANALYTICS_FILTER_ZONE: 'analytics-filter-zone',
+  ANALYTICS_FILTER_METRIC: 'analytics-filter-metric',
+  ANALYTICS_FILTER_PERIOD: 'analytics-filter-period',
+  ANALYTICS_CHART: 'analytics-telemetry-chart',
+
+  // Devices
+  DEVICES_FILTER_TYPE: 'devices-filter-type',
+  DEVICES_FILTER_QUERY: 'devices-filter-query',
+  DEVICES_FILTER_FAVORITES: 'devices-filter-favorites',
+
+  // Zones
+  ZONES_FILTER_STATUS: 'zones-filter-status',
+  ZONES_FILTER_QUERY: 'zones-filter-query',
+  ZONES_FILTER_FAVORITES: 'zones-filter-favorites',
+
   // Toast
   TOAST: (variant: string) => `toast-${variant}`,
   TOAST_MESSAGE: 'toast-message',
@@ -62,4 +78,3 @@ export const TEST_DATA = {
   RECIPE_NAME: (timestamp: number) => `Test Recipe ${timestamp}`,
   RECIPE_DESCRIPTION: 'Test recipe description for e2e tests',
 } as const;
-

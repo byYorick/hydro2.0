@@ -3,7 +3,7 @@ import { test as setup, expect } from '@playwright/test';
 const authFile = './playwright/.auth/user.json';
 
 setup('authenticate', async ({ page }) => {
-  const email = process.env.E2E_AUTH_EMAIL || 'admin@example.com';
+  const email = process.env.E2E_AUTH_EMAIL || 'agronomist@example.com';
   const password = process.env.E2E_AUTH_PASSWORD || 'password';
   const baseURL = process.env.LARAVEL_URL || 'http://localhost:8081';
 
@@ -72,4 +72,3 @@ setup('authenticate', async ({ page }) => {
   // Сохраняем состояние авторизации
   await page.context().storageState({ path: authFile });
 });
-

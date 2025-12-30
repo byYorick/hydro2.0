@@ -11,10 +11,14 @@
         <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)] mb-3">
           Сохранённые виды
         </div>
-        <FilterBar>
+        <FilterBar data-testid="analytics-views-filters">
           <div class="flex items-center gap-2 flex-1 sm:flex-none">
             <label class="text-sm text-[color:var(--text-muted)] shrink-0">Вид:</label>
-            <select v-model="activeViewId" class="input-select flex-1 sm:w-auto sm:min-w-[220px]">
+            <select
+              v-model="activeViewId"
+              class="input-select flex-1 sm:w-auto sm:min-w-[220px]"
+              data-testid="analytics-view-select"
+            >
               <option value="">— выбрать —</option>
               <option v-for="view in savedViews" :key="view.id" :value="view.id">
                 {{ view.name }}
@@ -23,13 +27,30 @@
           </div>
           <div class="flex items-center gap-2 flex-1 sm:flex-none">
             <label class="text-sm text-[color:var(--text-muted)] shrink-0">Имя:</label>
-            <input v-model="newViewName" placeholder="Название вида" class="input-field flex-1 sm:w-60" />
+            <input
+              v-model="newViewName"
+              placeholder="Название вида"
+              class="input-field flex-1 sm:w-60"
+              data-testid="analytics-view-name"
+            />
           </div>
           <template #actions>
-            <Button size="sm" variant="secondary" @click="saveView" :disabled="!canSaveView">
+            <Button
+              size="sm"
+              variant="secondary"
+              @click="saveView"
+              :disabled="!canSaveView"
+              data-testid="analytics-view-save"
+            >
               Сохранить
             </Button>
-            <Button size="sm" variant="outline" @click="deleteView" :disabled="!activeViewId">
+            <Button
+              size="sm"
+              variant="outline"
+              @click="deleteView"
+              :disabled="!activeViewId"
+              data-testid="analytics-view-delete"
+            >
               Удалить
             </Button>
           </template>
@@ -41,10 +62,14 @@
           <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)] mb-3">
             Агрегаты телеметрии
           </div>
-          <FilterBar>
+          <FilterBar data-testid="analytics-telemetry-filters">
             <div class="flex items-center gap-2 flex-1 sm:flex-none">
               <label class="text-sm text-[color:var(--text-muted)] shrink-0">Зона:</label>
-              <select v-model="selectedZoneId" class="input-select flex-1 sm:w-auto sm:min-w-[200px]">
+              <select
+                v-model="selectedZoneId"
+                class="input-select flex-1 sm:w-auto sm:min-w-[200px]"
+                data-testid="analytics-filter-zone"
+              >
                 <option value="">Выберите зону</option>
                 <option v-for="zone in zoneOptions" :key="zone.id" :value="String(zone.id)">
                   {{ zone.name }}
@@ -53,7 +78,11 @@
             </div>
             <div class="flex items-center gap-2 flex-1 sm:flex-none">
               <label class="text-sm text-[color:var(--text-muted)] shrink-0">Метрика:</label>
-              <select v-model="selectedMetric" class="input-select flex-1 sm:w-auto sm:min-w-[160px]">
+              <select
+                v-model="selectedMetric"
+                class="input-select flex-1 sm:w-auto sm:min-w-[160px]"
+                data-testid="analytics-filter-metric"
+              >
                 <option v-for="metric in metricOptions" :key="metric.value" :value="metric.value">
                   {{ metric.label }}
                 </option>
@@ -61,7 +90,11 @@
             </div>
             <div class="flex items-center gap-2 flex-1 sm:flex-none">
               <label class="text-sm text-[color:var(--text-muted)] shrink-0">Период:</label>
-              <select v-model="selectedPeriod" class="input-select flex-1 sm:w-auto sm:min-w-[120px]">
+              <select
+                v-model="selectedPeriod"
+                class="input-select flex-1 sm:w-auto sm:min-w-[120px]"
+                data-testid="analytics-filter-period"
+              >
                 <option v-for="period in periodOptions" :key="period.value" :value="period.value">
                   {{ period.label }}
                 </option>
@@ -75,12 +108,19 @@
                   ? 'border-[color:var(--accent-amber)] text-[color:var(--accent-amber)] bg-[color:var(--bg-elevated)]'
                   : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:border-[color:var(--border-strong)]'"
                 @click="showMedian = !showMedian"
+                data-testid="analytics-filter-median"
               >
                 Median
               </button>
             </div>
             <template #actions>
-              <Button size="sm" variant="outline" @click="loadTelemetryAggregates" :disabled="telemetryLoading || !selectedZoneId">
+              <Button
+                size="sm"
+                variant="outline"
+                @click="loadTelemetryAggregates"
+                :disabled="telemetryLoading || !selectedZoneId"
+                data-testid="analytics-telemetry-refresh"
+              >
                 {{ telemetryLoading ? 'Загрузка...' : 'Обновить' }}
               </Button>
             </template>
@@ -94,6 +134,7 @@
           :metric="selectedMetric"
           :period="selectedPeriodLabel"
           :show-median="showMedian"
+          test-id="analytics-telemetry-chart"
         />
       </section>
 
@@ -102,10 +143,14 @@
           <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)] mb-3">
             Эффективность рецептов
           </div>
-          <FilterBar>
+          <FilterBar data-testid="analytics-recipe-filters">
             <div class="flex items-center gap-2 flex-1 sm:flex-none">
               <label class="text-sm text-[color:var(--text-muted)] shrink-0">Рецепт:</label>
-              <select v-model="selectedRecipeId" class="input-select flex-1 sm:w-auto sm:min-w-[220px]">
+              <select
+                v-model="selectedRecipeId"
+                class="input-select flex-1 sm:w-auto sm:min-w-[220px]"
+                data-testid="analytics-filter-recipe"
+              >
                 <option value="">Выберите рецепт</option>
                 <option v-for="recipe in recipeOptions" :key="recipe.id" :value="String(recipe.id)">
                   {{ recipe.name }}
@@ -113,7 +158,13 @@
               </select>
             </div>
             <template #actions>
-              <Button size="sm" variant="outline" @click="loadRecipeAnalytics" :disabled="recipeLoading || !selectedRecipeId">
+              <Button
+                size="sm"
+                variant="outline"
+                @click="loadRecipeAnalytics"
+                :disabled="recipeLoading || !selectedRecipeId"
+                data-testid="analytics-recipe-refresh"
+              >
                 {{ recipeLoading ? 'Загрузка...' : 'Обновить' }}
               </Button>
             </template>

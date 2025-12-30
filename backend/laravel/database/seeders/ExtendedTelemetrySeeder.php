@@ -52,6 +52,8 @@ class ExtendedTelemetrySeeder extends Seeder
     {
         $samplesCreated = 0;
         $intervalMinutes = 5; // Интервал между измерениями
+        $batch = [];
+        $batchSize = 500;
 
         $metricTypes = ['ph', 'ec', 'temperature', 'humidity'];
         
@@ -91,23 +93,32 @@ class ExtendedTelemetrySeeder extends Seeder
                 $baseValue = $this->getBaseValue($metricType, $zone);
                 $value = $this->generateRealisticValue($baseValue, $metricType, $currentTime);
 
-                TelemetrySample::create([
+                $batch[] = [
                     'zone_id' => $zone->id,
                     'sensor_id' => $sensor->id,
                     'cycle_id' => $zone->activeGrowCycle?->id,
                     'value' => $value,
                     'ts' => $currentTime,
                     'quality' => 'GOOD',
-                    'metadata' => [
+                    'metadata' => json_encode([
                         'metric' => $metricType,
                         'source' => 'seeder',
-                    ],
-                ]);
+                    ], JSON_UNESCAPED_UNICODE),
+                ];
 
                 $samplesCreated++;
+
+                if (count($batch) >= $batchSize) {
+                    \DB::table('telemetry_samples')->insert($batch);
+                    $batch = [];
+                }
             }
 
             $currentTime->addMinutes($intervalMinutes);
+        }
+
+        if (!empty($batch)) {
+            \DB::table('telemetry_samples')->insert($batch);
         }
 
         return $samplesCreated;

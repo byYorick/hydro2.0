@@ -6,6 +6,7 @@ use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Artisan;
 use App\Models\Zone;
 use App\Models\DeviceNode;
+use App\Models\Sensor;
 use App\Models\TelemetrySample;
 use App\Models\TelemetryLast;
 use Carbon\Carbon;
@@ -41,6 +42,29 @@ class TelemetrySeeder extends Seeder
                     }
 
                     $metricType = strtoupper($channel->metric ?? 'PH'); // Преобразуем в верхний регистр
+                    $sensorType = $this->sensorTypeFromMetric($metricType);
+                    if (! $sensorType) {
+                        continue;
+                    }
+
+                    $sensor = Sensor::firstOrCreate(
+                        [
+                            'greenhouse_id' => $zone->greenhouse_id,
+                            'zone_id' => $zone->id,
+                            'node_id' => $node->id,
+                            'scope' => 'inside',
+                            'type' => $sensorType,
+                            'label' => $this->buildSensorLabel($channel->channel ?? null, $sensorType),
+                        ],
+                        [
+                            'unit' => $channel->unit,
+                            'specs' => [
+                                'channel' => $channel->channel,
+                                'metric' => $channel->metric,
+                            ],
+                            'is_active' => true,
+                        ]
+                    );
                     $baseValue = $this->getBaseValueForMetric($metricType);
                     $variation = $this->getVariationForMetric($metricType);
 
@@ -60,12 +84,15 @@ class TelemetrySeeder extends Seeder
                         
                         $samples[] = [
                             'zone_id' => $zone->id,
-                            'node_id' => $node->id,
-                            'channel' => $channel->channel ?? 'default',
-                            'metric_type' => $metricType,
+                            'sensor_id' => $sensor->id,
                             'value' => round($value, 2),
                             'ts' => $ts,
                             'created_at' => $ts,
+                            'quality' => 'GOOD',
+                            'metadata' => json_encode([
+                                'metric_type' => $metricType,
+                                'channel' => $channel->channel ?? 'default',
+                            ], JSON_UNESCAPED_UNICODE),
                         ];
 
                         if (count($samples) >= 500) {
@@ -89,12 +116,15 @@ class TelemetrySeeder extends Seeder
                         
                         $samples[] = [
                             'zone_id' => $zone->id,
-                            'node_id' => $node->id,
-                            'channel' => $channel->channel ?? 'default',
-                            'metric_type' => $metricType,
+                            'sensor_id' => $sensor->id,
                             'value' => round($value, 2),
                             'ts' => $ts,
                             'created_at' => $ts,
+                            'quality' => 'GOOD',
+                            'metadata' => json_encode([
+                                'metric_type' => $metricType,
+                                'channel' => $channel->channel ?? 'default',
+                            ], JSON_UNESCAPED_UNICODE),
                         ];
 
                         if (count($samples) >= 500) {
@@ -118,12 +148,15 @@ class TelemetrySeeder extends Seeder
                         
                         $samples[] = [
                             'zone_id' => $zone->id,
-                            'node_id' => $node->id,
-                            'channel' => $channel->channel ?? 'default',
-                            'metric_type' => $metricType,
+                            'sensor_id' => $sensor->id,
                             'value' => round($value, 2),
                             'ts' => $ts,
                             'created_at' => $ts,
+                            'quality' => 'GOOD',
+                            'metadata' => json_encode([
+                                'metric_type' => $metricType,
+                                'channel' => $channel->channel ?? 'default',
+                            ], JSON_UNESCAPED_UNICODE),
                         ];
 
                         if (count($samples) >= 500) {
@@ -139,22 +172,19 @@ class TelemetrySeeder extends Seeder
 
                     // Обновляем telemetry_last с последним значением
                     $lastSample = TelemetrySample::where('zone_id', $zone->id)
-                        ->where('node_id', $node->id)
-                        ->where('metric_type', $metricType)
+                        ->where('sensor_id', $sensor->id)
                         ->orderBy('ts', 'desc')
                         ->first();
 
                     if ($lastSample) {
                         TelemetryLast::updateOrCreate(
                             [
-                                'zone_id' => $zone->id,
-                                'metric_type' => $metricType,
+                                'sensor_id' => $sensor->id,
                             ],
                             [
-                                'node_id' => $node->id,
-                                'channel' => $channel->channel ?? 'default',
-                                'value' => $lastSample->value,
-                                'updated_at' => $lastSample->ts,
+                                'last_value' => $lastSample->value,
+                                'last_ts' => $lastSample->ts,
+                                'last_quality' => $lastSample->quality ?? 'GOOD',
                             ]
                         );
                     }
@@ -231,5 +261,26 @@ class TelemetrySeeder extends Seeder
             default => 1.0,
         };
     }
-}
 
+    private function sensorTypeFromMetric(string $metric): ?string
+    {
+        $metric = strtoupper($metric);
+
+        return match (true) {
+            $metric === 'PH' => 'PH',
+            $metric === 'EC' => 'EC',
+            str_contains($metric, 'TEMP') => 'TEMPERATURE',
+            str_contains($metric, 'HUM') => 'HUMIDITY',
+            default => null,
+        };
+    }
+
+    private function buildSensorLabel(?string $channel, string $sensorType): string
+    {
+        $base = $channel ?: strtolower($sensorType);
+        $base = str_replace('_', ' ', strtolower($base));
+        $base = trim($base) ?: strtolower($sensorType);
+
+        return ucfirst($base);
+    }
+}

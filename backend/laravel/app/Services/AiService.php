@@ -34,7 +34,7 @@ class AiService
                 'telemetry_last.updated_at'
             ])
             ->get()
-            ->keyBy('metric_type');
+            ->keyBy(fn ($item) => strtolower((string) $item->metric_type));
     }
 
     /**
@@ -145,6 +145,29 @@ class AiService
         }
 
         // Рекомендации по EC аналогично...
+        if ($telemetry->has('ec') && $targets && isset($targets['ec']['target'])) {
+            $ecCurrent = $telemetry->get('ec')->value;
+            $ecTarget = $targets['ec']['target'];
+            $ecDiff = $ecCurrent - $ecTarget;
+
+            if (abs($ecDiff) > 0.1) {
+                if ($ecCurrent > $ecTarget) {
+                    $recommendations[] = [
+                        'type' => 'ec_correction',
+                        'priority' => abs($ecDiff) > 0.3 ? 'high' : 'medium',
+                        'action' => 'dilute_solution',
+                        'message' => sprintf('EC слишком высокий (%.2f, цель %.2f). Разбавьте раствор.', $ecCurrent, $ecTarget),
+                    ];
+                } else {
+                    $recommendations[] = [
+                        'type' => 'ec_correction',
+                        'priority' => abs($ecDiff) > 0.3 ? 'high' : 'medium',
+                        'action' => 'add_nutrients',
+                        'message' => sprintf('EC слишком низкий (%.2f, цель %.2f). Добавьте питательный концентрат.', $ecCurrent, $ecTarget),
+                    ];
+                }
+            }
+        }
 
         return $recommendations;
     }

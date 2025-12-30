@@ -146,61 +146,50 @@ class NodeSwapService
     private function migrateTelemetryHistory(int $oldNodeId, int $newNodeId): array
     {
         try {
-            // Подсчитываем количество записей для миграции
-            $samplesCount = DB::table('telemetry_samples')
+            $sensorIds = DB::table('sensors')
                 ->where('node_id', $oldNodeId)
-                ->count();
-            
-            $lastCount = DB::table('telemetry_last')
-                ->where('node_id', $oldNodeId)
-                ->count();
-            
-            // Обновляем telemetry_samples
-            $samplesUpdated = DB::table('telemetry_samples')
-                ->where('node_id', $oldNodeId)
-                ->update(['node_id' => $newNodeId]);
-            
-            // Обновляем telemetry_last
-            $lastUpdated = DB::table('telemetry_last')
+                ->pluck('id');
+
+            $sensorsCount = $sensorIds->count();
+            $samplesCount = $sensorIds->isEmpty()
+                ? 0
+                : DB::table('telemetry_samples')->whereIn('sensor_id', $sensorIds)->count();
+            $lastCount = $sensorIds->isEmpty()
+                ? 0
+                : DB::table('telemetry_last')->whereIn('sensor_id', $sensorIds)->count();
+
+            // Переносим привязку сенсоров к новой ноде
+            $sensorsUpdated = DB::table('sensors')
                 ->where('node_id', $oldNodeId)
                 ->update(['node_id' => $newNodeId]);
-            
-            // Проверяем, что все записи были обновлены
+
+            // Проверяем, что все сенсоры были обновлены
             $warning = null;
-            if ($samplesUpdated !== $samplesCount) {
-                $warning = "Expected to migrate {$samplesCount} telemetry_samples, but only {$samplesUpdated} were updated.";
-                Log::warning('Telemetry migration: samples count mismatch', [
+            if ($sensorsUpdated !== $sensorsCount) {
+                $warning = "Expected to migrate {$sensorsCount} sensors, but only {$sensorsUpdated} were updated.";
+                Log::warning('Telemetry migration: sensors count mismatch', [
                     'old_node_id' => $oldNodeId,
                     'new_node_id' => $newNodeId,
-                    'expected' => $samplesCount,
-                    'updated' => $samplesUpdated,
-                ]);
-            }
-            
-            if ($lastUpdated !== $lastCount) {
-                $warning = ($warning ? $warning . ' ' : '') . 
-                    "Expected to migrate {$lastCount} telemetry_last records, but only {$lastUpdated} were updated.";
-                Log::warning('Telemetry migration: last records count mismatch', [
-                    'old_node_id' => $oldNodeId,
-                    'new_node_id' => $newNodeId,
-                    'expected' => $lastCount,
-                    'updated' => $lastUpdated,
+                    'expected' => $sensorsCount,
+                    'updated' => $sensorsUpdated,
                 ]);
             }
             
             Log::info('Telemetry history migrated', [
                 'old_node_id' => $oldNodeId,
                 'new_node_id' => $newNodeId,
-                'samples_migrated' => $samplesUpdated,
-                'last_migrated' => $lastUpdated,
+                'sensors_migrated' => $sensorsUpdated,
+                'samples_affected' => $samplesCount,
+                'last_affected' => $lastCount,
             ]);
             
             return [
                 'success' => true,
                 'error' => null,
                 'warning' => $warning,
-                'samples_migrated' => $samplesUpdated,
-                'last_migrated' => $lastUpdated,
+                'samples_migrated' => $samplesCount,
+                'last_migrated' => $lastCount,
+                'sensors_migrated' => $sensorsUpdated,
             ];
         } catch (\Exception $e) {
             Log::error('Failed to migrate telemetry history', [

@@ -1,5 +1,8 @@
 <template>
-  <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4">
+  <div
+    class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4"
+    :data-testid="testId"
+  >
     <div class="flex items-center justify-between mb-3">
       <div>
         <div class="text-sm font-semibold text-[color:var(--text-primary)]">
@@ -56,6 +59,7 @@ interface Props {
   metric?: string
   period?: string
   showMedian?: boolean
+  testId?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -65,6 +69,7 @@ const props = withDefaults(defineProps<Props>(), {
   metric: '',
   period: '',
   showMedian: false,
+  testId: undefined,
 })
 
 const title = computed(() => `Агрегаты телеметрии${props.metric ? ` · ${props.metric}` : ''}`)

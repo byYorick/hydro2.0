@@ -17,7 +17,11 @@
       <FilterBar>
         <div class="flex items-center gap-2 flex-1 sm:flex-none">
           <label class="text-sm text-[color:var(--text-muted)] shrink-0">Тип:</label>
-          <select v-model="type" class="input-select flex-1 sm:w-auto sm:min-w-[140px]">
+          <select
+            v-model="type"
+            class="input-select flex-1 sm:w-auto sm:min-w-[140px]"
+            data-testid="devices-filter-type"
+          >
             <option value="">Все</option>
             <option value="sensor">Датчик</option>
             <option value="actuator">Актуатор</option>
@@ -26,7 +30,12 @@
         </div>
         <div class="flex items-center gap-2 flex-1 sm:flex-none">
           <label class="text-sm text-[color:var(--text-muted)] shrink-0">Поиск:</label>
-          <input v-model="query" placeholder="ID устройства..." class="input-field flex-1 sm:w-56" />
+          <input
+            v-model="query"
+            placeholder="ID устройства..."
+            class="input-field flex-1 sm:w-56"
+            data-testid="devices-filter-query"
+          />
         </div>
         <div class="flex items-center gap-2 flex-1 sm:flex-none">
           <button
@@ -35,6 +44,7 @@
             :class="showOnlyFavorites
               ? 'border-[color:var(--badge-warning-border)] text-[color:var(--accent-amber)]'
               : 'border-[color:var(--border-muted)] text-[color:var(--text-muted)] hover:border-[color:var(--border-strong)]'"
+            data-testid="devices-filter-favorites"
           >
             <svg
               class="w-4 h-4"

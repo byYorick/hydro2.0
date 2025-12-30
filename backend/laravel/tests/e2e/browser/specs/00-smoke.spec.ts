@@ -143,7 +143,7 @@ test.describe('UI Smoke Tests - No 500 Errors', () => {
 test.describe('API Smoke Tests - No 500 Errors', () => {
   test('should call effective-targets batch API without 500 errors', async ({ request }) => {
     // Проверяем API endpoint для effective targets batch
-    const response = await request.post('/api/internal/effective-targets/batch', {
+    const response = await request.post('http://localhost/api/internal/effective-targets/batch', {
       data: {
         zone_ids: [1, 2, 3] // Тестовые ID, которые могут не существовать
       }
@@ -158,9 +158,9 @@ test.describe('API Smoke Tests - No 500 Errors', () => {
 
   test('should call zones API without 500 errors', async ({ request }) => {
     // Проверяем API endpoint для зон
-    const response = await request.get('/zones');
+    const response = await request.get('http://localhost/api/zones');
 
-    // Проверяем, что нет 500 ошибки (302 редирект на login - нормально)
+    // Проверяем, что нет 500 ошибки (401 неавторизован - нормально)
     expect(response.status()).not.toBe(500);
     expect(response.status()).not.toBe(502);
     expect(response.status()).not.toBe(503);
@@ -169,9 +169,9 @@ test.describe('API Smoke Tests - No 500 Errors', () => {
 
   test('should call greenhouses API without 500 errors', async ({ request }) => {
     // Проверяем API endpoint для теплиц
-    const response = await request.get('/greenhouses');
+    const response = await request.get('http://localhost/api/greenhouses');
 
-    // Проверяем, что нет 500 ошибки (302 редирект на login - нормально)
+    // Проверяем, что нет 500 ошибки (401 неавторизован - нормально)
     expect(response.status()).not.toBe(500);
     expect(response.status()).not.toBe(502);
     expect(response.status()).not.toBe(503);
@@ -180,9 +180,9 @@ test.describe('API Smoke Tests - No 500 Errors', () => {
 
   test('should call grow-cycles API without 500 errors', async ({ request }) => {
     // Проверяем API endpoint для grow cycles
-    const response = await request.get('/api/grow-cycles');
+    const response = await request.get('http://localhost/api/grow-cycles');
 
-    // Проверяем, что нет 500 ошибки (302 редирект на login - нормально)
+    // Проверяем, что нет 500 ошибки (401 неавторизован - нормально)
     expect(response.status()).not.toBe(500);
     expect(response.status()).not.toBe(502);
     expect(response.status()).not.toBe(503);
@@ -191,9 +191,9 @@ test.describe('API Smoke Tests - No 500 Errors', () => {
 
   test('should call zone detail API without 500 errors', async ({ request }) => {
     // Проверяем API endpoint для детальной информации о зоне
-    const response = await request.get('/zones/1'); // Тестовый ID
+    const response = await request.get('http://localhost/api/zones/1'); // Тестовый ID
 
-    // Проверяем, что нет 500 ошибки (302 редирект на login - нормально) (может быть 404, но не 500)
+    // Проверяем, что нет 500 ошибки (401 неавторизован или 404 не найдено - нормально)
     expect(response.status()).not.toBe(500);
     expect(response.status()).not.toBe(502);
     expect(response.status()).not.toBe(503);

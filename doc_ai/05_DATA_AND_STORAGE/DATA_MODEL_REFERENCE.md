@@ -124,45 +124,67 @@ updated_at
 
 # 4. Таблицы телеметрии
 
-## 4.1. telemetry_samples (история)
+## 4.1. sensors (идентичность сенсора)
 
 ```
 id BIGSERIAL PK
-zone_id FK
-node_id FK
-channel VARCHAR
-metric_type VARCHAR
-value FLOAT
-raw JSONB
-ts TIMESTAMP
+greenhouse_id FK
+zone_id FK NULL
+node_id FK NULL
+scope ENUM(inside|outside)
+type ENUM(TEMPERATURE|HUMIDITY|CO2|PH|EC|WATER_LEVEL|...)
+label VARCHAR
+unit VARCHAR NULL
+specs JSONB NULL
+is_active BOOLEAN
+last_read_at TIMESTAMP NULL
 created_at
-```
-
-Индексы:
-```
-telemetry_samples_zone_metric_ts_idx
-```
-
----
-
-## 4.2. telemetry_last (последние значения)
-
-```
-zone_id PK
-node_id PK
-metric_type PK
-channel
-value FLOAT
 updated_at
 ```
 
 Индексы:
 ```
-telemetry_last_pk (zone_id, node_id, metric_type) -- PRIMARY KEY
-telemetry_last_node_id_idx (node_id) WHERE node_id IS NOT NULL
-telemetry_last_zone_node_idx (zone_id, node_id) WHERE node_id IS NOT NULL
-telemetry_last_updated_at_idx (updated_at) WHERE updated_at IS NOT NULL
-telemetry_last_zone_metric_idx (zone_id, metric_type)
+sensors_zone_idx
+sensors_greenhouse_scope_idx
+sensors_greenhouse_type_idx
+sensors_node_idx
+sensors_active_idx
+UNIQUE(zone_id, node_id, scope, type, label)
+```
+
+---
+
+## 4.2. telemetry_samples (история)
+
+```
+id BIGSERIAL PK
+sensor_id FK
+ts TIMESTAMP
+zone_id FK NULL
+cycle_id FK NULL
+value DECIMAL
+quality ENUM(GOOD|BAD|UNCERTAIN)
+metadata JSONB
+created_at
+```
+
+Индексы:
+```
+telemetry_samples_sensor_ts_idx
+telemetry_samples_zone_ts_idx
+telemetry_samples_cycle_ts_idx
+```
+
+---
+
+## 4.3. telemetry_last (последние значения)
+
+```
+sensor_id PK FK
+last_value DECIMAL
+last_ts TIMESTAMP
+last_quality ENUM
+updated_at
 ```
 
 ---
@@ -540,8 +562,11 @@ grow_cycle 1—N grow_cycle_transitions
 ```
 zone 1—N nodes (1 node = 1 zone enforced)
 node 1—N node_channels
-zone 1—N telemetry_samples
-zone 1—1 telemetry_last (composite PK)
+greenhouse 1—N sensors
+zone 1—N sensors
+node 1—N sensors
+sensor 1—N telemetry_samples
+sensor 1—1 telemetry_last
 zone 1—N alerts
 zone 1—N zone_events
 zone 1—N commands

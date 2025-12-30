@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use App\Models\Sensor;
 use Tests\TestCase;
 
 class DatabaseIndexesTest extends TestCase
@@ -26,14 +27,16 @@ class DatabaseIndexesTest extends TestCase
         $indexNames = array_column($indexes, 'indexname');
         
         // Базовые индексы должны существовать
-        $this->assertContains('telemetry_samples_zone_metric_ts_idx', $indexNames);
+        $this->assertContains('telemetry_samples_sensor_ts_idx', $indexNames);
+        $this->assertContains('telemetry_samples_zone_ts_idx', $indexNames);
         
         // Дополнительные индексы могут быть созданы позже (из другой миграции)
         // Проверяем, что хотя бы базовые индексы есть
-        $hasNodeTs = in_array('telemetry_samples_node_ts_idx', $indexNames) || 
-                     in_array('telemetry_samples_node_channel_ts_idx', $indexNames);
-        $this->assertTrue($hasNodeTs || count($indexNames) >= 2, 
-            'Should have at least zone_metric_ts index and one more index');
+        $hasExtra = in_array('telemetry_samples_cycle_ts_idx', $indexNames) ||
+            in_array('telemetry_samples_quality_idx', $indexNames) ||
+            in_array('telemetry_samples_ts_idx', $indexNames);
+        $this->assertTrue($hasExtra || count($indexNames) >= 3,
+            'Should have at least sensor_ts, zone_ts, and one more index');
     }
 
     /**
@@ -116,13 +119,12 @@ class DatabaseIndexesTest extends TestCase
     public function test_indexes_are_used_in_queries(): void
     {
         // Создаем тестовые данные
-        $zone = \App\Models\Zone::factory()->create();
-        $node = \App\Models\DeviceNode::factory()->create(['zone_id' => $zone->id]);
-        
+        $sensor = Sensor::factory()->create();
+        $zoneId = $sensor->zone_id;
+
         \App\Models\TelemetrySample::factory()->create([
-            'zone_id' => $zone->id,
-            'node_id' => $node->id,
-            'metric_type' => 'PH',
+            'sensor_id' => $sensor->id,
+            'zone_id' => $zoneId,
             'ts' => now(),
         ]);
 
@@ -130,8 +132,8 @@ class DatabaseIndexesTest extends TestCase
         $explain = DB::select("
             EXPLAIN (FORMAT JSON)
             SELECT * FROM telemetry_samples 
-            WHERE zone_id = ? AND metric_type = ? AND ts >= ?
-        ", [$zone->id, 'PH', now()->subDay()]);
+            WHERE sensor_id = ? AND ts >= ?
+        ", [$sensor->id, now()->subDay()]);
 
         // EXPLAIN возвращает массив с одним элементом
         $result = is_array($explain) ? $explain[0] : $explain;
@@ -176,4 +178,3 @@ class DatabaseIndexesTest extends TestCase
         return false;
     }
 }
-

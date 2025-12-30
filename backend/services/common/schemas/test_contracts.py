@@ -5,20 +5,25 @@
 CI падает при несовместимом payload - это основная цель тестов.
 """
 import json
-import pytest
 from pathlib import Path
 from typing import Dict, Any, List
+
 import jsonschema
+import pytest
 from jsonschema import validate, ValidationError
+
+from common.telemetry_contracts import TelemetrySample
 
 # Пути к схемам и fixtures
 SCHEMAS_DIR = Path(__file__).parent
 FIXTURES_DIR = SCHEMAS_DIR / "fixtures"
+LARAVEL_SCHEMA_DIR = Path(__file__).resolve().parents[3] / "laravel" / "resources" / "schemas"
 
 # JSON Schema файлы
 COMMAND_SCHEMA = SCHEMAS_DIR / "command.schema.json"
 COMMAND_RESPONSE_SCHEMA = SCHEMAS_DIR / "command_response.schema.json"
 TELEMETRY_SCHEMA = SCHEMAS_DIR / "telemetry.schema.json"
+TELEMETRY_SAMPLE_SCHEMA = LARAVEL_SCHEMA_DIR / "telemetry_sample.schema.json"
 ERROR_ALERT_SCHEMA = SCHEMAS_DIR / "error_alert.schema.json"
 ZONE_EVENTS_SCHEMA = SCHEMAS_DIR / "zone_events.schema.json"
 
@@ -191,6 +196,20 @@ class TestTelemetryContracts:
             validate_against_schema(invalid, telemetry_schema)
 
 
+class TestTelemetrySampleContracts:
+    """Contract tests for canonical telemetry samples."""
+
+    @pytest.fixture
+    def telemetry_sample_schema(self):
+        """Load telemetry sample schema from Laravel resources."""
+        return load_schema(TELEMETRY_SAMPLE_SCHEMA)
+
+    def test_telemetry_sample_validates_schema_and_pydantic(self, telemetry_sample_schema):
+        fixture = load_json_file(FIXTURES_DIR / "telemetry_sample_canonical.json")
+        validate_against_schema(fixture, telemetry_sample_schema)
+        TelemetrySample.model_validate(fixture)
+
+
 class TestErrorAlertContracts:
     """Контрактные тесты для error/alert payload."""
     
@@ -334,4 +353,3 @@ class TestContractCompatibility:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-

@@ -8,7 +8,7 @@ test.describe('Login/Logout', () => {
     
     const email = process.env.E2E_AUTH_EMAIL || 'admin@example.com';
     const password = process.env.E2E_AUTH_PASSWORD || 'password';
-    const baseURL = process.env.LARAVEL_URL || 'http://localhost:80';
+    const baseURL = process.env.LARAVEL_URL || 'http://localhost:8081';
 
     await page.goto(`${baseURL}/login`, { waitUntil: 'networkidle' });
 
@@ -37,7 +37,7 @@ test.describe('Login/Logout', () => {
     // Очищаем cookies для этого теста
     await context.clearCookies();
     
-    const baseURL = process.env.LARAVEL_URL || 'http://localhost:80';
+    const baseURL = process.env.LARAVEL_URL || 'http://localhost:8081';
 
     await page.goto(`${baseURL}/login`, { waitUntil: 'networkidle' });
 
@@ -65,7 +65,7 @@ test.describe('Login/Logout', () => {
   });
 
   test('should logout successfully', async ({ page }) => {
-    const baseURL = process.env.LARAVEL_URL || 'http://localhost:80';
+    const baseURL = process.env.LARAVEL_URL || 'http://localhost:8081';
 
     // Используем сохраненное состояние авторизации
     await page.goto(`${baseURL}/dashboard`, { waitUntil: 'networkidle' });

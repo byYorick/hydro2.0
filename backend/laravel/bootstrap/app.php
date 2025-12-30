@@ -44,8 +44,9 @@ return Application::configure(basePath: dirname(__DIR__))
         // Стандартный лимит: 120 запросов в минуту для всех API роутов
         // Более строгие лимиты применяются на уровне отдельных роутов
         // Увеличен для поддержки множественных компонентов на одной странице
+        $apiThrottle = in_array(env('APP_ENV'), ['testing', 'e2e'], true) ? '1000,1' : '120,1';
         $middleware->api(prepend: [
-            \Illuminate\Routing\Middleware\ThrottleRequests::class.':120,1',
+            \Illuminate\Routing\Middleware\ThrottleRequests::class.':'.$apiThrottle,
         ]);
 
         // CSRF protection: исключаем только token-based API роуты и broadcasting
@@ -288,6 +289,15 @@ return Application::configure(basePath: dirname(__DIR__))
                     ], 404);
                 }
 
+                if ($e instanceof \Symfony\Component\HttpKernel\Exception\NotFoundHttpException) {
+                    return response()->json([
+                        'status' => 'error',
+                        'code' => 'NOT_FOUND',
+                        'message' => $isDev ? $e->getMessage() : 'Resource not found',
+                        'correlation_id' => $correlationId,
+                    ], 404);
+                }
+
                 // AuthenticationException уже обработано выше, здесь не должно попасть
                 // Но оставляем для безопасности
                 if ($e instanceof \Illuminate\Auth\AuthenticationException) {
@@ -325,6 +335,40 @@ return Application::configure(basePath: dirname(__DIR__))
                     ], 503);
                 }
 
+                if ($e instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface) {
+                    $status = $e->getStatusCode();
+                    $message = $isDev ? $e->getMessage() : match ($status) {
+                        401 => 'Unauthenticated.',
+                        403 => 'Forbidden.',
+                        404 => 'Resource not found',
+                        default => 'Request failed.',
+                    };
+
+                    return response()->json([
+                        'status' => 'error',
+                        'code' => 'HTTP_ERROR',
+                        'message' => $message,
+                        'correlation_id' => $correlationId,
+                    ], $status);
+                }
+
+                if (method_exists($e, 'getStatusCode')) {
+                    $status = $e->getStatusCode();
+                    $message = $isDev ? $e->getMessage() : match ($status) {
+                        401 => 'Unauthenticated.',
+                        403 => 'Forbidden.',
+                        404 => 'Resource not found',
+                        default => 'Request failed.',
+                    };
+
+                    return response()->json([
+                        'status' => 'error',
+                        'code' => 'HTTP_ERROR',
+                        'message' => $message,
+                        'correlation_id' => $correlationId,
+                    ], $status);
+                }
+
                 // Общая обработка для всех остальных исключений
                 $response = [
                     'status' => 'error',
@@ -347,14 +391,17 @@ return Application::configure(basePath: dirname(__DIR__))
             if ($isInertia || $request->is('*')) {
                 // Для Inertia запросов возвращаем Inertia-ответ с ошибкой
                 if ($isInertia) {
+                    $status = $e instanceof \Symfony\Component\HttpKernel\Exception\NotFoundHttpException ? 404 : 500;
                     return \Inertia\Inertia::render('Error', [
-                        'status' => 500,
-                        'message' => $isDev ? $e->getMessage() : 'Произошла ошибка. Пожалуйста, попробуйте позже.',
+                        'status' => $status,
+                        'message' => $isDev
+                            ? $e->getMessage()
+                            : ($status === 404 ? 'Страница не найдена.' : 'Произошла ошибка. Пожалуйста, попробуйте позже.'),
                         'correlation_id' => $correlationId,
                         'exception' => $isDev ? get_class($e) : null,
                         'file' => $isDev ? $e->getFile() : null,
                         'line' => $isDev ? $e->getLine() : null,
-                    ])->toResponse($request)->setStatusCode(500);
+                    ])->toResponse($request)->setStatusCode($status);
                 }
 
                 // Для обычных веб-запросов возвращаем дружелюбную страницу ошибки

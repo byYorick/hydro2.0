@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import time
+from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
@@ -46,7 +47,8 @@ REDIS_PUSH_RETRY_BACKOFF_BASE = 2
 _zone_cache: dict[tuple[str, Optional[str]], int] = {}
 _node_cache: dict[tuple[str, Optional[str]], tuple[int, Optional[int]]] = {}
 _zone_greenhouse_cache: dict[int, int] = {}
-_sensor_cache: dict[tuple[int, Optional[int], str, str], int] = {}
+_sensor_cache: "OrderedDict[tuple[int, Optional[int], str, str], int]" = OrderedDict()
+_sensor_cache_max_size = int(os.getenv("SENSOR_CACHE_MAX_SIZE", "5000"))
 _cache_last_update = 0.0
 _cache_ttl = 60.0
 
@@ -100,6 +102,22 @@ def _normalize_ts_for_db(sample_ts: Optional[datetime]) -> datetime:
     if getattr(ts_value, "tzinfo", None):
         return ts_value.astimezone(timezone.utc).replace(tzinfo=None)
     return ts_value.replace(tzinfo=None)
+
+
+def _sensor_cache_get(key: tuple[int, Optional[int], str, str]) -> Optional[int]:
+    sensor_id = _sensor_cache.get(key)
+    if sensor_id is not None:
+        _sensor_cache.move_to_end(key)
+    return sensor_id
+
+
+def _sensor_cache_set(key: tuple[int, Optional[int], str, str], sensor_id: int) -> None:
+    _sensor_cache[key] = sensor_id
+    _sensor_cache.move_to_end(key)
+    if _sensor_cache_max_size <= 0:
+        return
+    while len(_sensor_cache) > _sensor_cache_max_size:
+        _sensor_cache.popitem(last=False)
 
 
 def _get_telemetry_queue():
@@ -762,7 +780,7 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
         item["sensor_key"] = sensor_key
         item["sensor_type"] = sensor_type
         item["sensor_label"] = sensor_label
-        if sensor_key not in _sensor_cache:
+        if _sensor_cache_get(sensor_key) is None:
             missing_sensor_keys.add(sensor_key)
 
     if missing_sensor_keys:
@@ -799,10 +817,10 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
             sensor_id = row.get("id")
             if zone_id is not None and sensor_type and sensor_label and sensor_id is not None:
                 sensor_key = (zone_id, row.get("node_id"), sensor_type, sensor_label)
-                _sensor_cache[sensor_key] = sensor_id
+                _sensor_cache_set(sensor_key, sensor_id)
 
         to_create = [
-            key for key in missing_sensor_keys if key not in _sensor_cache
+            key for key in missing_sensor_keys if _sensor_cache_get(key) is None
         ]
         if to_create:
             values_list = []
@@ -840,6 +858,9 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                         created_at, updated_at
                     )
                     VALUES {', '.join(values_list)}
+                    ON CONFLICT (zone_id, node_id, scope, type, label)
+                    DO UPDATE SET
+                        updated_at = EXCLUDED.updated_at
                     RETURNING id, zone_id, node_id, type, label
                 """
                 created_rows = await fetch(query, *params_list)
@@ -860,11 +881,11 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
                             sensor_type,
                             sensor_label,
                         )
-                        _sensor_cache[sensor_key] = sensor_id
+                        _sensor_cache_set(sensor_key, sensor_id)
 
     resolved_with_sensor: list[dict] = []
     for item in resolved_samples:
-        sensor_id = _sensor_cache.get(item["sensor_key"])
+        sensor_id = _sensor_cache_get(item["sensor_key"])
         if sensor_id is None:
             logger.warning(
                 "Sensor not resolved for telemetry sample",

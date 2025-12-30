@@ -13,6 +13,7 @@ use App\Models\Preset;
 use App\Models\Recipe;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
+use App\Models\Sensor;
 use App\Models\TelemetryLast;
 use App\Models\TelemetrySample;
 use App\Models\User;
@@ -447,6 +448,41 @@ class FullServiceTestSeeder extends Seeder
 
         $metricTypes = ['ph', 'ec', 'temperature', 'humidity'];
         $now = now();
+        $sensorsByZoneMetric = [];
+
+        foreach ($zones as $zone) {
+            $zoneNodes = array_filter($nodes, fn ($n) => $n->zone_id === $zone->id);
+            if (empty($zoneNodes)) {
+                $zoneNodes = $nodes; // Fallback если нет узлов для зоны
+            }
+
+            foreach ($metricTypes as $metricType) {
+                $sensorType = $this->sensorTypeFromMetric($metricType);
+                if (! $sensorType) {
+                    continue;
+                }
+
+                $randomNode = $zoneNodes[array_rand($zoneNodes)];
+                $sensor = Sensor::firstOrCreate(
+                    [
+                        'greenhouse_id' => $zone->greenhouse_id,
+                        'zone_id' => $zone->id,
+                        'node_id' => $randomNode->id,
+                        'scope' => 'inside',
+                        'type' => $sensorType,
+                        'label' => $this->buildSensorLabel($metricType, $sensorType),
+                    ],
+                    [
+                        'unit' => null,
+                        'specs' => [
+                            'metric' => $metricType,
+                        ],
+                        'is_active' => true,
+                    ]
+                );
+                $sensorsByZoneMetric[$zone->id][$metricType] = $sensor;
+            }
+        }
 
         // Создаем samples за последние 24 часа (каждые 5 минут)
         $samplesCount = 0;
@@ -458,6 +494,11 @@ class FullServiceTestSeeder extends Seeder
 
                 foreach ($zones as $zone) {
                     foreach ($metricTypes as $metricType) {
+                        $sensor = $sensorsByZoneMetric[$zone->id][$metricType] ?? null;
+                        if (! $sensor) {
+                            continue;
+                        }
+
                         // Генерируем реалистичные значения
                         $value = match ($metricType) {
                             'ph' => 6.0 + (rand(0, 20) / 10), // 6.0-8.0
@@ -467,14 +508,16 @@ class FullServiceTestSeeder extends Seeder
                             default => rand(0, 100) / 10,
                         };
 
-                        $randomNode = $nodes[array_rand($nodes)];
                         TelemetrySample::create([
                             'zone_id' => $zone->id,
-                            'node_id' => $randomNode->id,
-                            'channel' => $metricType,
-                            'metric_type' => $metricType,
+                            'sensor_id' => $sensor->id,
                             'value' => $value,
                             'ts' => $sampleTime,
+                            'quality' => 'GOOD',
+                            'metadata' => [
+                                'metric_type' => strtoupper($metricType),
+                                'channel' => $metricType,
+                            ],
                         ]);
 
                         $samplesCount++;
@@ -484,36 +527,54 @@ class FullServiceTestSeeder extends Seeder
         }
 
         // Создаем последние значения (telemetry_last)
-        // Primary key: (zone_id, metric_type) - только одна запись на зону и метрику
         foreach ($zones as $zone) {
-            $zoneNodes = array_filter($nodes, fn ($n) => $n->zone_id === $zone->id);
-            if (empty($zoneNodes)) {
-                $zoneNodes = $nodes; // Fallback если нет узлов для зоны
-            }
-
             foreach ($metricTypes as $metricType) {
-                $randomNode = $zoneNodes[array_rand($zoneNodes)];
+                $sensor = $sensorsByZoneMetric[$zone->id][$metricType] ?? null;
+                if (! $sensor) {
+                    continue;
+                }
+
                 TelemetryLast::updateOrCreate(
                     [
-                        'zone_id' => $zone->id,
-                        'metric_type' => $metricType,
+                        'sensor_id' => $sensor->id,
                     ],
                     [
-                        'node_id' => $randomNode->id,
-                        'value' => match ($metricType) {
+                        'last_value' => match ($metricType) {
                             'ph' => 6.5,
                             'ec' => 1.8,
                             'temperature' => 22.5,
                             'humidity' => 65.0,
                             default => 0,
                         },
-                        'updated_at' => now(),
+                        'last_ts' => now(),
+                        'last_quality' => 'GOOD',
                     ]
                 );
             }
         }
 
         $this->command->info("Создано {$samplesCount} samples телеметрии");
+    }
+
+    private function sensorTypeFromMetric(string $metric): ?string
+    {
+        $metric = strtoupper($metric);
+
+        return match (true) {
+            $metric === 'PH' => 'PH',
+            $metric === 'EC' => 'EC',
+            str_contains($metric, 'TEMP') => 'TEMPERATURE',
+            str_contains($metric, 'HUM') => 'HUMIDITY',
+            default => null,
+        };
+    }
+
+    private function buildSensorLabel(string $metricType, string $sensorType): string
+    {
+        $base = str_replace('_', ' ', strtolower($metricType));
+        $base = trim($base) ?: strtolower($sensorType);
+
+        return ucfirst($base);
     }
 
     private function seedCommands(array $zones, array $nodes): void

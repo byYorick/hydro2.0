@@ -59,21 +59,23 @@ Python-сервис:
 
 1. Принимает сообщение из MQTT.
 2. Валидирует структуру JSON (формат, диапазоны).
-3. Преобразует во внутреннюю структуру (zone_id, node_id, channel_id, metric, value, ts).
-4. Записывает:
+3. Резолвит `sensor_id` через таблицу `sensors` (по `zone_id`, `node_id`, `metric_type`, `channel`, `scope`).
+4. Преобразует во внутреннюю структуру (sensor_id, ts, value, quality, metadata, zone_id/cycle_id).
+5. Записывает:
 
  - в таблицу `telemetry_samples` — полная история;
- - в таблицу `telemetry_last` — последнее значение по связке (`zone`, `node`, `channel`, `metric`).
+ - в таблицу `telemetry_last` — последнее значение по `sensor_id`.
 
 Пример записи в `telemetry_samples` (логика, не SQL):
 
 - `id`
-- `zone_id`
-- `node_id`
-- `channel_id`
-- `metric`
-- `value`
+- `sensor_id`
 - `ts`
+- `zone_id` (optional)
+- `cycle_id` (optional)
+- `value`
+- `quality`
+- `metadata`
 
 ---
 
