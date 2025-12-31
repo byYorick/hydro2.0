@@ -123,19 +123,19 @@ class VerifyPythonServiceToken
     private function getServiceUser(): ?User
     {
         // Пытаемся найти пользователя с ролью viewer (минимальные права - только чтение)
-        $viewer = User::where('role', 'viewer')->first();
+        $viewer = User::where('role', 'viewer')->latest('id')->first();
         if ($viewer) {
             return $viewer;
         }
 
         // Если viewer нет, используем оператора (но не админа для безопасности)
-        $operator = User::whereIn('role', ['operator', 'engineer', 'agronomist'])->first();
+        $operator = User::whereIn('role', ['operator', 'engineer', 'agronomist'])->latest('id')->first();
         if ($operator) {
             return $operator;
         }
 
         // В крайнем случае используем админа, но логируем предупреждение
-        $admin = User::where('role', 'admin')->first();
+        $admin = User::where('role', 'admin')->latest('id')->first();
         if ($admin) {
             Log::warning('Service token using admin user - consider creating a viewer user for better security', [
                 'admin_id' => $admin->id,
@@ -146,7 +146,7 @@ class VerifyPythonServiceToken
 
         // Если нет подходящих пользователей, возвращаем первого пользователя
         // (в продакшене должен быть хотя бы один пользователь)
-        $user = User::first();
+        $user = User::latest('id')->first();
         if ($user) {
             Log::warning('Service token using first available user - consider creating a dedicated viewer user', [
                 'user_id' => $user->id,

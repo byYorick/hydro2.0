@@ -202,7 +202,7 @@ hydro/{gh}/{zone}/{node}/{channel}/{message_type}
 {
   "node_id": "nd-pump-1",
   "channel": "pump_bus_current",
-  "metric_type": "CURRENT_MA",
+  "metric_type": "PUMP_CURRENT",
   "value": 220.5,
   "timestamp": 1710005555
 }

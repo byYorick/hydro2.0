@@ -13,7 +13,7 @@ class PredictionService
     /**
      * Прогнозирование параметра для зоны
      *
-     * @param  string  $metricType  ph, ec, temp_air, humidity_air
+     * @param  string  $metricType  PH, EC, TEMPERATURE, HUMIDITY
      * @param  int  $horizonMinutes  горизонт прогноза в минутах (по умолчанию 60)
      */
     public function predict(Zone $zone, string $metricType, int $horizonMinutes = 60): ?ParameterPrediction
@@ -196,7 +196,7 @@ class PredictionService
      * @param  array  $metricTypes  массив типов метрик для прогнозирования
      * @return int количество созданных прогнозов
      */
-    public function generatePredictionsForActiveZones(array $metricTypes = ['ph', 'ec']): int
+    public function generatePredictionsForActiveZones(array $metricTypes = ['PH', 'EC']): int
     {
         $zones = Zone::query()
             ->whereIn('status', ['online', 'warning'])

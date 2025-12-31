@@ -67,7 +67,7 @@ class AiControllerTest extends TestCase
         $response = $this->withHeader('Authorization', 'Bearer '.$this->token)
             ->postJson('/api/ai/predict', [
                 'zone_id' => $zone->id,
-                'metric_type' => 'ph',
+                'metric_type' => 'PH',
                 'horizon_minutes' => 60,
             ]);
 
@@ -94,7 +94,7 @@ class AiControllerTest extends TestCase
         $response = $this->withHeader('Authorization', 'Bearer '.$this->token)
             ->postJson('/api/ai/predict', [
                 'zone_id' => $zone->id,
-                'metric_type' => 'ph',
+                'metric_type' => 'PH',
                 'horizon_minutes' => 60,
             ]);
 

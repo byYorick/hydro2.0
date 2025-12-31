@@ -70,14 +70,14 @@ hydro/{gh}/{zone}/{node}/{channel}/telemetry
 ## 3.2. Пример JSON
 ```json
 {
- "metric_type": "ph",
+ "metric_type": "PH",
  "value": 5.86,
  "ts": 1710001234
 }
 ```
 
 **Обязательные поля:**
-- `metric_type` (string, lowercase) — тип метрики: `ph`, `ec`, `air_temp_c`, `air_rh`, `co2_ppm`, `ina209_ma`, `flow_present`, `solution_temp_c`, `light_level`
+- `metric_type` (string, UPPERCASE) — тип метрики: `PH`, `EC`, `TEMPERATURE`, `HUMIDITY`, `CO2`, `LIGHT_INTENSITY`, `WATER_LEVEL`, `FLOW_RATE`, `PUMP_CURRENT`
 - `value` (number) — значение метрики
 - `ts` (integer) — UTC timestamp в секундах (Unix timestamp)
 

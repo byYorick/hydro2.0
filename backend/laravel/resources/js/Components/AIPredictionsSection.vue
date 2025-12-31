@@ -89,28 +89,28 @@ const metrics = computed(() => {
   
   return [
     {
-      type: 'ph' as const,
+      type: 'PH' as const,
       targetRange: targets.ph ? {
         min: targets.ph.min || 0,
         max: targets.ph.max || 14,
       } : undefined,
     },
     {
-      type: 'ec' as const,
+      type: 'EC' as const,
       targetRange: targets.ec ? {
         min: targets.ec.min || 0,
         max: targets.ec.max || 5,
       } : undefined,
     },
     {
-      type: 'temp_air' as const,
+      type: 'TEMPERATURE' as const,
       targetRange: targets.temp_air ? {
         min: targets.temp_air.min || 0,
         max: targets.temp_air.max || 50,
       } : undefined,
     },
     {
-      type: 'humidity_air' as const,
+      type: 'HUMIDITY' as const,
       targetRange: targets.humidity_air ? {
         min: targets.humidity_air.min || 0,
         max: targets.humidity_air.max || 100,
@@ -119,4 +119,3 @@ const metrics = computed(() => {
   ]
 })
 </script>
-

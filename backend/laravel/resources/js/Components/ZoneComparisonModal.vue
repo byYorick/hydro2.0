@@ -163,7 +163,7 @@ const hasMinimumSelection = computed(() => selectedZoneIds.value.length >= 2)
 const metrics = [
   { key: 'ph', label: 'pH', unit: '' },
   { key: 'ec', label: 'EC', unit: 'мСм/см' },
-  { key: 'temp_air', label: 'Температура', unit: '°C' },
+  { key: 'temperature', label: 'Температура', unit: '°C' },
   { key: 'humidity', label: 'Влажность', unit: '%' },
 ]
 

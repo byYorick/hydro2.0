@@ -231,14 +231,14 @@ NodeConfig полностью формируется на backend.
 ## 6.1. Формат
 ```json
 {
- "metric_type": "ph",
+ "metric_type": "PH",
  "value": 5.82,
  "ts": 1710001234
 }
 ```
 
 **Обязательные поля:**
-- `metric_type` (string, lowercase) — тип метрики: `ph`, `ec`, `air_temp_c`, `air_rh` и т.д.
+- `metric_type` (string, UPPERCASE) — тип метрики: `PH`, `EC`, `TEMPERATURE`, `HUMIDITY` и т.д.
 - `value` (number) — значение метрики
 - `ts` (integer) — UTC timestamp в секундах (Unix timestamp)
 

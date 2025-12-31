@@ -27,18 +27,17 @@ async def test_create_alert_with_all_fields():
         # Проверяем, что был поиск существующего алерта
         mock_fetch.assert_called_once()
         
-        # Проверяем, что был INSERT
-        mock_execute.assert_called_once()
-        call_args = mock_execute.call_args
-        assert "INSERT INTO alerts" in call_args[0][0]
-        assert call_args[0][1] == 1  # zone_id
-        assert call_args[0][2] == AlertSource.BIZ.value  # source
-        assert call_args[0][3] == AlertCode.BIZ_NO_FLOW.value  # code
-        assert call_args[0][4] == "No water flow detected"  # type
+        # Новый алерт отправляется в Laravel API, вставки в БД нет
+        mock_execute.assert_not_called()
+        mock_send.assert_called_once()
+        call_args = mock_send.call_args
+        assert call_args.kwargs["zone_id"] == 1
+        assert call_args.kwargs["source"] == AlertSource.BIZ.value
+        assert call_args.kwargs["code"] == AlertCode.BIZ_NO_FLOW.value
+        assert call_args.kwargs["type"] == "No water flow detected"
         
         # Проверяем, что details содержит count=1 и last_seen_at
-        details_json = call_args[0][5]
-        details = json.loads(details_json)
+        details = call_args.kwargs["details"]
         assert details["count"] == 1
         assert "last_seen_at" in details
         assert details["flow_value"] == 0.0
@@ -62,11 +61,10 @@ async def test_create_alert_without_details():
             type="MQTT connection lost"
         )
         
-        # Проверяем, что был INSERT
-        mock_execute.assert_called_once()
-        call_args = mock_execute.call_args
-        details_json = call_args[0][5]
-        details = json.loads(details_json)
+        # Новый алерт отправляется в Laravel API, вставки в БД нет
+        mock_execute.assert_not_called()
+        mock_send.assert_called_once()
+        details = mock_send.call_args.kwargs["details"]
         assert details["count"] == 1
         assert "last_seen_at" in details
 
@@ -88,9 +86,9 @@ async def test_create_alert_with_null_zone_id():
             type="Service unavailable"
         )
         
-        mock_execute.assert_called_once()
-        call_args = mock_execute.call_args
-        assert call_args[0][1] is None  # zone_id is None
+        mock_execute.assert_not_called()
+        mock_send.assert_called_once()
+        assert mock_send.call_args.kwargs["zone_id"] is None
 
 
 def test_alert_source_enum():

@@ -5,13 +5,14 @@ namespace Tests\Unit;
 use App\Models\GrowStageTemplate;
 use App\Models\RecipeRevisionPhase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class GrowStageTemplateTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function it_has_phases_relationship()
     {
         $template = GrowStageTemplate::factory()->create();
@@ -22,7 +23,7 @@ class GrowStageTemplateTest extends TestCase
         $this->assertTrue($template->phases->contains($phase));
     }
 
-    /** @test */
+    #[Test]
     public function it_casts_ui_meta_to_array()
     {
         $template = GrowStageTemplate::factory()->create([

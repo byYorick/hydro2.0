@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Alert;
 use App\Models\Zone;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -91,6 +92,46 @@ class ZoneReadinessService
             'ready' => empty($errors),
             'warnings' => $warnings,
             'errors' => $errors
+        ];
+    }
+
+    /**
+     * Получить сводное состояние здоровья зоны для API.
+     *
+     * @return array{
+     *   zone_id: int,
+     *   ready: bool,
+     *   warnings: array,
+     *   errors: array,
+     *   nodes_total: int,
+     *   nodes_online: int,
+     *   active_alerts_count: int
+     * }
+     */
+    public function getZoneHealth(Zone $zone): array
+    {
+        $readiness = $this->checkZoneReadiness($zone);
+
+        $nodes = $zone->nodes()
+            ->select('id', 'status')
+            ->get();
+
+        $nodesTotal = $nodes->count();
+        $nodesOnline = $nodes->filter(fn ($node) => $node->status === 'online')->count();
+
+        $activeAlertsCount = Alert::query()
+            ->where('zone_id', $zone->id)
+            ->where('status', 'ACTIVE')
+            ->count();
+
+        return [
+            'zone_id' => $zone->id,
+            'ready' => $readiness['ready'],
+            'warnings' => $readiness['warnings'],
+            'errors' => $readiness['errors'],
+            'nodes_total' => $nodesTotal,
+            'nodes_online' => $nodesOnline,
+            'active_alerts_count' => $activeAlertsCount,
         ];
     }
 

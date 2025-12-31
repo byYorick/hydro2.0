@@ -125,6 +125,7 @@ class GrowCycleService
 
         return DB::transaction(function () use ($cycle, $plantingAt) {
             $plantingAt = $plantingAt ?? now();
+            $plantingAt->setMicrosecond(0);
 
             // Обновляем phase_started_at для текущей фазы
             if ($cycle->current_phase_id) {
@@ -241,7 +242,8 @@ class GrowCycleService
         $timeline = $this->buildStageTimeline($revision);
         $totalHours = $timeline['total_hours'];
         if ($totalHours > 0) {
-            $expectedHarvestAt = Carbon::parse($plantingAt)->addHours($totalHours);
+            $baseTime = $plantingAt instanceof Carbon ? $plantingAt->copy() : Carbon::parse($plantingAt);
+            $expectedHarvestAt = $baseTime->addSeconds((int) round($totalHours * 3600));
             $cycle->update(['expected_harvest_at' => $expectedHarvestAt]);
         }
     }
@@ -264,7 +266,7 @@ class GrowCycleService
 
         $phases = $revision->phases()->orderBy('phase_index')->get();
         $segments = [];
-        $totalHours = 0.0;
+        $totalSeconds = 0;
 
         foreach ($phases as $phase) {
             $template = $this->resolveStageTemplate($revision, $phase, $templatesById, $templatesByCode);
@@ -274,19 +276,21 @@ class GrowCycleService
 
             $durationHours = (float) ($phase->duration_hours
                 ?? ($phase->duration_days ? $phase->duration_days * 24 : 0));
+            $durationSeconds = (int) round($durationHours * 3600);
+            $durationHoursNormalized = $durationSeconds / 3600;
 
-            $totalHours += $durationHours;
+            $totalSeconds += $durationSeconds;
 
             $lastIndex = count($segments) - 1;
             if ($lastIndex >= 0 && $segments[$lastIndex]['code'] === $code) {
                 $segments[$lastIndex]['phase_indices'][] = $phase->phase_index;
-                $segments[$lastIndex]['duration_hours'] += $durationHours;
+                $segments[$lastIndex]['duration_hours'] += $durationHoursNormalized;
             } else {
                 $segments[] = [
                     'code' => $code,
                     'name' => $name,
                     'phase_indices' => [$phase->phase_index],
-                    'duration_hours' => $durationHours,
+                    'duration_hours' => $durationHoursNormalized,
                     'ui_meta' => $uiMeta,
                 ];
             }
@@ -294,7 +298,7 @@ class GrowCycleService
 
         return [
             'segments' => $segments,
-            'total_hours' => $totalHours,
+            'total_hours' => $totalSeconds / 3600,
         ];
     }
 

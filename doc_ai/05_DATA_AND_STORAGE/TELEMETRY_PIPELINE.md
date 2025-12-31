@@ -23,14 +23,14 @@ Payload (пример):
 
 ```json
 {
- "metric_type": "air_temp_c",
+ "metric_type": "TEMPERATURE",
  "value": 23.4,
  "ts": 1737355600
 }
 ```
 
 **Обязательные поля:**
-- `metric_type` (string, lowercase) — тип метрики: `ph`, `ec`, `air_temp_c`, `air_rh`, `co2_ppm` и т.д.
+- `metric_type` (string, UPPERCASE) — тип метрики: `PH`, `EC`, `TEMPERATURE`, `HUMIDITY`, `CO2`, `LIGHT_INTENSITY`, `WATER_LEVEL`, `FLOW_RATE`, `PUMP_CURRENT` и т.д.
 - `value` (float или int) — значение метрики
 - `ts` (integer) — unix-время в секундах (не миллисекундах)
 

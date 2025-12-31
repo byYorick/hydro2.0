@@ -155,12 +155,12 @@ SensorChannel {
 - PH
 - EC
 - TEMPERATURE
-- TEMPERATURE
 - HUMIDITY
-- LUX
+- LIGHT_INTENSITY
 - CO2 (опционально)
 - WATER_LEVEL
 - FLOW_RATE
+- PUMP_CURRENT
 
 ---
 
@@ -306,13 +306,13 @@ on_command_received for pump_channel:
 ## 5.1. Стандартный JSON
 ```json
 {
- "metric_type": "ph",
+ "metric_type": "PH",
  "value": 5.82,
  "ts": 1710012567
 }
 ```
 
-> **Важно:** Формат соответствует эталону node-sim. Поля `node_id` и `channel` не включаются в JSON, так как они уже есть в топике. `metric_type` в lowercase, `ts` в секундах.
+> **Важно:** Формат соответствует эталону node-sim. Поля `node_id` и `channel` не включаются в JSON, так как они уже есть в топике. `metric_type` в UPPERCASE, `ts` в секундах.
 
 ## 5.2. Правила:
 - отправка с QoS=1

@@ -32,10 +32,16 @@ class TransactionHelper
 
         while ($attempt < $maxRetries) {
             try {
+                if (DB::transactionLevel() > 0) {
+                    return DB::transaction(function () use ($callback) {
+                        return $callback();
+                    });
+                }
+
                 return DB::transaction(function () use ($callback) {
                     // Устанавливаем SERIALIZABLE isolation level для критичных операций
                     DB::statement('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE');
-                    
+
                     return $callback();
                 });
             } catch (QueryException $e) {
@@ -165,4 +171,3 @@ class TransactionHelper
         return $callback();
     }
 }
-

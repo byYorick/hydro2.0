@@ -5,13 +5,22 @@ use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
+    public $withinTransaction = false;
+
     /**
      * Run the migrations.
      */
     public function up(): void
     {
-        DB::statement("ALTER TYPE sensors_type_enum ADD VALUE IF NOT EXISTS 'FLOW_RATE'");
-        DB::statement("ALTER TYPE sensors_type_enum ADD VALUE IF NOT EXISTS 'PUMP_CURRENT'");
+        DB::statement(<<<'SQL'
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'sensors_type_enum') THEN
+                    ALTER TYPE sensors_type_enum ADD VALUE IF NOT EXISTS 'FLOW_RATE';
+                    ALTER TYPE sensors_type_enum ADD VALUE IF NOT EXISTS 'PUMP_CURRENT';
+                END IF;
+            END $$;
+        SQL);
     }
 
     /**

@@ -27,37 +27,29 @@ class TelemetrySampleModel(BaseModel):
 
 
 def _normalize_metric_type(metric_type: str) -> str:
-    return (metric_type or "").strip().lower()
+    return (metric_type or "").strip().upper()
 
 
 def _infer_sensor_type(metric_type: str) -> str:
     normalized = _normalize_metric_type(metric_type)
-    if normalized in {"ph"}:
-        return "PH"
-    if normalized in {"ec"}:
-        return "EC"
-    if "temp" in normalized:
-        return "TEMPERATURE"
-    if "flow" in normalized:
-        return "FLOW_RATE"
-    if "current" in normalized:
-        return "PUMP_CURRENT"
-    if "hum" in normalized:
-        return "HUMIDITY"
-    if "co2" in normalized:
-        return "CO2"
-    if "light" in normalized or "lux" in normalized:
-        return "LIGHT_INTENSITY"
-    if "water_level" in normalized or normalized.endswith("_level"):
-        return "WATER_LEVEL"
-    if "soil" in normalized:
-        return "SOIL_MOISTURE"
-    if "pressure" in normalized:
-        return "PRESSURE"
-    if "wind_speed" in normalized:
-        return "WIND_SPEED"
-    if "wind_direction" in normalized or "wind_dir" in normalized:
-        return "WIND_DIRECTION"
+    valid_types = {
+        "PH",
+        "EC",
+        "TEMPERATURE",
+        "HUMIDITY",
+        "CO2",
+        "LIGHT_INTENSITY",
+        "WATER_LEVEL",
+        "FLOW_RATE",
+        "PUMP_CURRENT",
+        "SOIL_MOISTURE",
+        "PRESSURE",
+        "WIND_SPEED",
+        "WIND_DIRECTION",
+        "OTHER",
+    }
+    if normalized in valid_types:
+        return normalized
     return "OTHER"
 
 

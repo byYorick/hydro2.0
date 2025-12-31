@@ -211,6 +211,11 @@ return Application::configure(basePath: dirname(__DIR__))
                 return null;
             }
 
+            // Пропускаем HttpResponseException, чтобы сохранить исходный HTTP ответ (например, 429)
+            if ($e instanceof \Illuminate\Http\Exceptions\HttpResponseException) {
+                return null;
+            }
+
             $correlationId = $generateCorrelationId();
             $isDev = app()->environment(['local', 'testing', 'development']);
             $isApi = $request->is('api/*') || $request->expectsJson();

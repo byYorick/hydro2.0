@@ -95,7 +95,7 @@ class TestLaravelDown:
     def laravel_url(self):
         """URL Laravel API."""
         settings = get_settings()
-        return getattr(settings, 'laravel_url', 'http://localhost:8080')
+        return getattr(settings, 'laravel_api_url', 'http://laravel')
     
     @pytest.mark.asyncio
     async def test_laravel_api_unavailable(self, laravel_url):
@@ -121,8 +121,8 @@ class TestLaravelDown:
                 # Используем реальный URL, но с очень коротким таймаутом
                 response = await client.get(f"{laravel_url}/api/health")
                 # Если получили ответ, это нормально
-            except httpx.TimeoutException:
-                # Ожидаем таймаут
+            except (httpx.TimeoutException, httpx.ConnectError):
+                # Ожидаем таймаут или недоступность
                 pass
     
     def test_laravel_error_response_handling(self):
@@ -361,4 +361,3 @@ class TestWebSocketEventId:
         # Проверяем совпадение
         assert ws_event["event_id"] == zone_event["payload_json"]["ws_event_id"]
         assert ws_event["server_ts"] == zone_event["server_ts"]
-

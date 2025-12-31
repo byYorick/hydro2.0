@@ -12,7 +12,7 @@ const ph_node_sensor_channel_t PH_NODE_SENSOR_CHANNELS[] = {
     },
     {
         .name = "solution_temp_c",
-        .metric = "TEMP_SOLUTION",
+        .metric = "TEMPERATURE",
         .unit = "C",
         .poll_interval_ms = PH_NODE_SOLUTION_TEMP_POLL_INTERVAL_MS,
         .precision = PH_NODE_SOLUTION_TEMP_PRECISION

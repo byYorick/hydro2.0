@@ -137,7 +137,7 @@ NodeConfig — это JSON-конфигурация узла ESP32, котора
 **Поля:**
 - `name` (string, обязательное) — имя канала
 - `type` (string, обязательное) — `"SENSOR"`
-- `metric` (string, обязательное) — тип метрики: `PH`, `EC`, `TEMPERATURE`, `TEMP_SOLUTION`, `HUMIDITY`, `CO2`, `LUX`, `CURRENT_MA`
+- `metric` (string, обязательное) — тип метрики: `PH`, `EC`, `TEMPERATURE`, `HUMIDITY`, `CO2`, `LIGHT_INTENSITY`, `WATER_LEVEL`, `FLOW_RATE`, `PUMP_CURRENT`
 - `poll_interval_ms` (integer, обязательное) — интервал опроса в миллисекундах
 - `unit` (string, необязательное) — единица измерения
 - `precision` (integer, необязательное) — точность (количество знаков после запятой)

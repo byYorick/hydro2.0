@@ -69,14 +69,14 @@ hydro/gh/zone/node/channel/telemetry
 **Payload:**
 ```json
 {
- "metric_type": "ph",
+ "metric_type": "PH",
  "value": 6.42,
  "ts": 1737355600
 }
 ```
 
 **Обязательные поля:**
-- `metric_type` (string, lowercase) — тип метрики: `ph`, `ec`, `air_temp_c`, `air_rh`, `co2_ppm`, `ina209_ma` и т.д.
+- `metric_type` (string, UPPERCASE) — тип метрики: `PH`, `EC`, `TEMPERATURE`, `HUMIDITY`, `CO2`, `LIGHT_INTENSITY`, `WATER_LEVEL`, `FLOW_RATE`, `PUMP_CURRENT` и т.д.
 - `value` (float или int) — значение метрики
 - `ts` (integer) — UNIX timestamp в секундах (не миллисекундах)
 
@@ -89,12 +89,14 @@ hydro/gh/zone/node/channel/telemetry
 > **Важно:** Формат соответствует эталону node-sim. Поля `node_id` и `channel` не включаются в JSON, так как они уже есть в топике.
 
 Каналы (channel в топике):
-- `ph_sensor` → `metric_type: "ph"`
-- `ec_sensor` → `metric_type: "ec"`
-- `air_temp_c` → `metric_type: "air_temp_c"`
-- `air_rh` → `metric_type: "air_rh"`
-- `co2_ppm` → `metric_type: "co2_ppm"`
-- `ina209_ma` → `metric_type: "ina209_ma"`
+- `ph_sensor` → `metric_type: "PH"`
+- `ec_sensor` → `metric_type: "EC"`
+- `air_temp_c` → `metric_type: "TEMPERATURE"`
+- `air_rh` → `metric_type: "HUMIDITY"`
+- `co2_ppm` → `metric_type: "CO2"`
+- `ina209_ma` → `metric_type: "PUMP_CURRENT"`
+- `flow_present` → `metric_type: "FLOW_RATE"`
+- `light_level` → `metric_type: "LIGHT_INTENSITY"`
 - и другие
 
 ## 4.2. Status (жизненный статус узла)

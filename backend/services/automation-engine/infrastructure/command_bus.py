@@ -15,6 +15,7 @@ from .command_tracker import CommandTracker
 from .command_audit import CommandAudit
 from utils.logging_context import get_trace_id
 from .circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
+from decision_context import ContextLike, normalize_context
 
 logger = logging.getLogger(__name__)
 
@@ -224,7 +225,7 @@ class CommandBus:
         self,
         zone_id: int,
         command: Dict[str, Any],
-        context: Optional[Dict[str, Any]] = None
+        context: ContextLike = None
     ) -> bool:
         """
         Публикация команды от контроллера с валидацией и отслеживанием.
@@ -245,6 +246,7 @@ class CommandBus:
         channel = command.get('channel', 'default')
         cmd = command.get('cmd')
         params = command.get('params')
+        normalized_context = normalize_context(context)
         
         if not node_uid or not cmd:
             logger.warning(f"Zone {zone_id}: Invalid command structure - missing node_uid or cmd")
@@ -272,7 +274,7 @@ class CommandBus:
         cmd_id = None
         if self.tracker:
             try:
-                cmd_id = await self.tracker.track_command(zone_id, command, context)
+                cmd_id = await self.tracker.track_command(zone_id, command, normalized_context)
                 # Добавляем cmd_id в команду для ответа
                 # ВАЖНО: если params был None, создаём пустой dict
                 if 'params' not in command or command['params'] is None:
@@ -296,7 +298,7 @@ class CommandBus:
         
         # Аудит команды (даже если не удалось отправить)
         try:
-            await self.audit.audit_command(zone_id, command, context)
+            await self.audit.audit_command(zone_id, command, normalized_context)
         except Exception as e:
             logger.warning(f"Zone {zone_id}: Failed to audit command: {e}", exc_info=True)
         

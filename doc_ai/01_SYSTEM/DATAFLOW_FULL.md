@@ -58,7 +58,7 @@ telemetry, commands, config, status/LWT, heartbeat, alerts, events,
 
 ## 3.1. Назначение
 Telemetry — это поток измерений, поступающих от узлов:
-pH, EC, t°, RH, LUX, CO₂, уровень, расход и т.п.
+pH, EC, t°, RH, LIGHT_INTENSITY, CO₂, уровень, расход и т.п.
 
 ## 3.2. Шаги
 
@@ -80,13 +80,13 @@ hydro/{gh}/{zone}/{node}/{channel}/telemetry
 ## 3.4. Пример JSON
 ```json
 {
- "metric_type": "ph",
+ "metric_type": "PH",
  "value": 5.81,
  "ts": 1710023000
 }
 ```
 
-> **Важно:** Формат соответствует эталону node-sim. Поля `node_id` и `channel` не включаются в JSON, так как они уже есть в топике. `metric_type` в lowercase, `ts` в секундах.
+> **Важно:** Формат соответствует эталону node-sim. Поля `node_id` и `channel` не включаются в JSON, так как они уже есть в топике. `metric_type` в UPPERCASE, `ts` в секундах.
 
 ## 3.5. QoS = 1 
 ## Retain = false

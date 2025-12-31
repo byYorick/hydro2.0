@@ -26,8 +26,8 @@ rows = await fetch(f"SELECT * FROM zones WHERE id = {zone_id}")
 
 ```python
 await execute(
-    "INSERT INTO telemetry_samples (zone_id, value, ts) VALUES ($1, $2, $3)",
-    zone_id, value, timestamp
+    "INSERT INTO telemetry_samples (sensor_id, ts, value) VALUES ($1, $2, $3)",
+    sensor_id, timestamp, value
 )
 ```
 
@@ -130,11 +130,11 @@ for sample in samples:
     values_list.append(
         f"(${param_index}, ${param_index + 1}, ${param_index + 2})"
     )
-    params_list.extend([zone_id, metric_type, sample.value])
+    params_list.extend([sample.sensor_id, sample.ts, sample.value])
     param_index += 3
 
 query = f"""
-    INSERT INTO telemetry_samples (zone_id, metric_type, value)
+    INSERT INTO telemetry_samples (sensor_id, ts, value)
     VALUES {', '.join(values_list)}
 """
 await execute(query, *params_list)
@@ -208,4 +208,3 @@ async def test_sql_injection_protection():
 ---
 
 **Важно:** Если вы нашли потенциальную уязвимость SQL injection, немедленно сообщите об этом и исправьте её, используя параметризованные запросы.
-

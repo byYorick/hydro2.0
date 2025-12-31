@@ -49,11 +49,11 @@ class PredictionServiceTest extends TestCase
             ]);
         }
 
-        $prediction = $this->service->predict($zone, 'ph', 60);
+        $prediction = $this->service->predict($zone, 'PH', 60);
 
         $this->assertInstanceOf(ParameterPrediction::class, $prediction);
         $this->assertEquals($zone->id, $prediction->zone_id);
-        $this->assertEquals('ph', $prediction->metric_type);
+        $this->assertEquals('PH', $prediction->metric_type);
         $this->assertEquals(60, $prediction->horizon_minutes);
         $this->assertGreaterThan(6.0, $prediction->predicted_value); // прогноз должен быть выше из-за тренда
         $this->assertNotNull($prediction->confidence);
@@ -89,7 +89,7 @@ class PredictionServiceTest extends TestCase
             'ts' => $now->copy()->subMinutes(30),
         ]);
 
-        $prediction = $this->service->predict($zone, 'ph', 60);
+        $prediction = $this->service->predict($zone, 'PH', 60);
 
         $this->assertNull($prediction);
     }
@@ -100,7 +100,7 @@ class PredictionServiceTest extends TestCase
 
         $oldPrediction = ParameterPrediction::create([
             'zone_id' => $zone->id,
-            'metric_type' => 'ph',
+            'metric_type' => 'PH',
             'predicted_value' => 6.0,
             'confidence' => 0.8,
             'horizon_minutes' => 60,
@@ -109,14 +109,14 @@ class PredictionServiceTest extends TestCase
 
         $newPrediction = ParameterPrediction::create([
             'zone_id' => $zone->id,
-            'metric_type' => 'ph',
+            'metric_type' => 'PH',
             'predicted_value' => 6.1,
             'confidence' => 0.9,
             'horizon_minutes' => 60,
             'predicted_at' => Carbon::now()->addHour(),
         ]);
 
-        $latest = $this->service->getLatestPrediction($zone, 'ph');
+        $latest = $this->service->getLatestPrediction($zone, 'PH');
 
         $this->assertInstanceOf(ParameterPrediction::class, $latest);
         $this->assertEquals($newPrediction->id, $latest->id);
@@ -197,7 +197,7 @@ class PredictionServiceTest extends TestCase
             }
         }
 
-        $count = $this->service->generatePredictionsForActiveZones(['ph', 'ec']);
+        $count = $this->service->generatePredictionsForActiveZones(['PH', 'EC']);
 
         // Должно быть создано минимум 4 прогноза (2 зоны * 2 метрики)
         // Но может быть меньше, если для какой-то зоны не хватает данных

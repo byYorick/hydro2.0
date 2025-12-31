@@ -10,6 +10,7 @@ use App\Models\Zone;
 use App\Enums\GrowCycleStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Gate;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class GrowCyclePolicyTest extends TestCase
@@ -45,43 +46,43 @@ class GrowCyclePolicyTest extends TestCase
 
     // Удален пример теста - используем реальные тесты ниже
 
-    /** @test */
+    #[Test]
     public function agronomist_can_manage_cycles()
     {
         $this->assertTrue(Gate::forUser($this->agronomist)->allows('manage', GrowCycle::class));
     }
 
-    /** @test */
+    #[Test]
     public function operator_cannot_manage_cycles()
     {
         $this->assertFalse(Gate::forUser($this->operator)->allows('manage', GrowCycle::class));
     }
 
-    /** @test */
+    #[Test]
     public function agronomist_can_create_cycle()
     {
         $this->assertTrue(Gate::forUser($this->agronomist)->allows('create', [GrowCycle::class, $this->zone]));
     }
 
-    /** @test */
+    #[Test]
     public function operator_cannot_create_cycle()
     {
         $this->assertFalse(Gate::forUser($this->operator)->allows('create', [GrowCycle::class, $this->zone]));
     }
 
-    /** @test */
+    #[Test]
     public function agronomist_can_update_cycle()
     {
         $this->assertTrue(Gate::forUser($this->agronomist)->allows('update', $this->cycle));
     }
 
-    /** @test */
+    #[Test]
     public function operator_cannot_update_cycle()
     {
         $this->assertFalse(Gate::forUser($this->operator)->allows('update', $this->cycle));
     }
 
-    /** @test */
+    #[Test]
     public function anyone_can_view_cycle()
     {
         $this->assertTrue(Gate::forUser($this->agronomist)->allows('view', $this->cycle));
@@ -89,25 +90,25 @@ class GrowCyclePolicyTest extends TestCase
         $this->assertTrue(Gate::forUser($this->viewer)->allows('view', $this->cycle));
     }
 
-    /** @test */
+    #[Test]
     public function agronomist_can_switch_phase()
     {
         $this->assertTrue(Gate::forUser($this->agronomist)->allows('switchPhase', $this->cycle));
     }
 
-    /** @test */
+    #[Test]
     public function operator_cannot_switch_phase()
     {
         $this->assertFalse(Gate::forUser($this->operator)->allows('switchPhase', $this->cycle));
     }
 
-    /** @test */
+    #[Test]
     public function agronomist_can_change_recipe_revision()
     {
         $this->assertTrue(Gate::forUser($this->agronomist)->allows('changeRecipeRevision', $this->cycle));
     }
 
-    /** @test */
+    #[Test]
     public function operator_cannot_change_recipe_revision()
     {
         $this->assertFalse(Gate::forUser($this->operator)->allows('changeRecipeRevision', $this->cycle));

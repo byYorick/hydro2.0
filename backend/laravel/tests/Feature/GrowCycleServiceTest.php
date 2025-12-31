@@ -12,6 +12,7 @@ use App\Models\Zone;
 use App\Services\GrowCycleService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class GrowCycleServiceTest extends TestCase
@@ -26,7 +27,7 @@ class GrowCycleServiceTest extends TestCase
         $this->service = app(GrowCycleService::class);
     }
 
-    /** @test */
+    #[Test]
     public function it_creates_a_grow_cycle(): void
     {
         $zone = Zone::factory()->create();
@@ -53,7 +54,7 @@ class GrowCycleServiceTest extends TestCase
         $this->assertNotNull($cycle->current_phase_id);
     }
 
-    /** @test */
+    #[Test]
     public function it_starts_a_cycle(): void
     {
         $zone = Zone::factory()->create();
@@ -77,7 +78,7 @@ class GrowCycleServiceTest extends TestCase
         $this->assertNotNull($startedCycle->planting_at);
     }
 
-    /** @test */
+    #[Test]
     public function it_computes_expected_harvest(): void
     {
         $zone = Zone::factory()->create();
@@ -108,7 +109,7 @@ class GrowCycleServiceTest extends TestCase
         $this->assertEquals(31, $plantingAt->diffInDays($expectedHarvest));
     }
 
-    /** @test */
+    #[Test]
     public function it_advances_stage_automatically(): void
     {
         $zone = Zone::factory()->create();
@@ -149,7 +150,7 @@ class GrowCycleServiceTest extends TestCase
         $this->assertEquals('VEG', $advancedCycle->current_stage_code);
     }
 
-    /** @test */
+    #[Test]
     public function it_advances_to_specific_stage(): void
     {
         $zone = Zone::factory()->create();

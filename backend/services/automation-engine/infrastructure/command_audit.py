@@ -7,6 +7,7 @@ import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
 from common.db import execute
+from decision_context import DecisionContext, ContextLike
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ class CommandAudit:
         self,
         zone_id: int,
         command: Dict[str, Any],
-        context: Optional[Dict[str, Any]] = None
+        context: ContextLike = None
     ) -> None:
         """
         Записать команду в аудит.
@@ -32,22 +33,29 @@ class CommandAudit:
             command_type = command.get('cmd', 'unknown')
             
             # Извлекаем контекст
-            telemetry_snapshot = context.get('telemetry', {}) if context else {}
-            decision_context = {
-                'current_value': context.get('current_value'),
-                'target_value': context.get('target_value'),
-                'diff': context.get('diff'),
-                'reason': context.get('reason'),
-                'pid_zone': context.get('pid_zone'),
-                'pid_output': context.get('pid_output'),
-                'pid_integral': context.get('pid_integral'),
-            } if context else {}
-            
-            pid_state = {
-                'integral': context.get('pid_integral'),
-                'prev_error': context.get('pid_prev_error'),
-                'zone': context.get('pid_zone'),
-            } if context else {}
+            if isinstance(context, DecisionContext):
+                telemetry_snapshot = context.telemetry_snapshot()
+                decision_context = context.decision_payload()
+                pid_state = context.pid_payload()
+                trace_id = context.trace_id
+            else:
+                telemetry_snapshot = context.get('telemetry', {}) if context else {}
+                decision_context = {
+                    'current_value': context.get('current_value'),
+                    'target_value': context.get('target_value'),
+                    'diff': context.get('diff'),
+                    'reason': context.get('reason'),
+                    'pid_zone': context.get('pid_zone'),
+                    'pid_output': context.get('pid_output'),
+                    'pid_integral': context.get('pid_integral'),
+                } if context else {}
+                
+                pid_state = {
+                    'integral': context.get('pid_integral'),
+                    'prev_error': context.get('pid_prev_error'),
+                    'zone': context.get('pid_zone'),
+                } if context else {}
+                trace_id = context.get('trace_id') if context else None
             
             await execute(
                 """
@@ -70,7 +78,7 @@ class CommandAudit:
                 extra={
                     'zone_id': zone_id,
                     'command_type': command_type,
-                    'trace_id': context.get('trace_id') if context else None
+                    'trace_id': trace_id
                 }
             )
         except Exception as e:
@@ -80,5 +88,4 @@ class CommandAudit:
                 exc_info=True,
                 extra={'zone_id': zone_id, 'command': command}
             )
-
 

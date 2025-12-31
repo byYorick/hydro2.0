@@ -178,12 +178,12 @@ class NodeCompatibilityTester:
                 f"Присутствуют запрещенные поля: {present_forbidden}"
             )
         
-        # Проверка формата metric_type (lowercase)
-        if telemetry["metric_type"] != telemetry["metric_type"].lower():
+        # Проверка формата metric_type (UPPERCASE)
+        if telemetry["metric_type"] != telemetry["metric_type"].upper():
             return TestResult(
                 "telemetry_format",
                 False,
-                f"metric_type должен быть в lowercase, получен: {telemetry['metric_type']}"
+                f"metric_type должен быть в UPPERCASE, получен: {telemetry['metric_type']}"
             )
         
         # Проверка типа ts (должен быть int)
@@ -500,4 +500,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

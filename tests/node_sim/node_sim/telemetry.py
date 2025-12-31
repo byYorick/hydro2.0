@@ -154,7 +154,7 @@ class TelemetryPublisher:
         
         # Формируем payload
         payload = {
-            "metric_type": "ina209_ma",
+            "metric_type": "PUMP_CURRENT",
             "value": current_ma,
             "ts": int(time.time()),
         }
@@ -175,7 +175,7 @@ class TelemetryPublisher:
         
         # Формируем payload
         payload = {
-            "metric_type": "flow_present",
+            "metric_type": "FLOW_RATE",
             "value": flow_present,
             "ts": int(time.time()),
         }
@@ -194,14 +194,27 @@ class TelemetryPublisher:
         """Определить тип метрики по имени канала."""
         channel_lower = channel.lower()
 
-        # Явные маппинги под текущий пайплайн (telemetry_last.metric_type)
+        # Явные маппинги под канонический формат метрик
         if channel_lower in ("ph_sensor", "ph"):
-            return "ph"
+            return "PH"
         if channel_lower in ("ec_sensor", "ec"):
-            return "ec"
+            return "EC"
+        if channel_lower in ("air_temp_c", "temp_air", "temperature", "temp"):
+            return "TEMPERATURE"
+        if channel_lower in ("air_rh", "humidity", "rh"):
+            return "HUMIDITY"
+        if "co2" in channel_lower:
+            return "CO2"
+        if "lux" in channel_lower or "light" in channel_lower:
+            return "LIGHT_INTENSITY"
+        if channel_lower in ("ina209_ma", "current_ma", "current", "pump_bus_current"):
+            return "PUMP_CURRENT"
+        if channel_lower in ("flow_present", "flow"):
+            return "FLOW_RATE"
+        if channel_lower in ("solution_temp_c", "temp_solution", "solution_temp"):
+            return "TEMPERATURE"
 
-        # Прочие метрики: используем стабильные строковые ключи
-        return channel_lower
+        return channel_lower.upper()
     
     def _generate_simulated_value(self, channel: str) -> float:
         """Сгенерировать симулированное значение для канала."""

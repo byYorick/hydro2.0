@@ -92,18 +92,34 @@ class NodeEmulator:
             topic = f"hydro/{self.config.greenhouse_uid}/{self.config.zone_uid}/{self.config.node_uid}/{channel}/telemetry"
             
             # Генерируем значение для канала
-            if channel == "ph":
+            channel_lower = channel.lower()
+            if channel_lower in ("ph", "ph_sensor"):
                 value = round(random.uniform(5.5, 7.5), 2)
                 metric_type = "PH"
-            elif channel == "ec":
+            elif channel_lower in ("ec", "ec_sensor"):
                 value = round(random.uniform(1.0, 3.0), 2)
                 metric_type = "EC"
-            elif channel == "temperature":
+            elif channel_lower in ("temperature", "air_temp_c", "temp_air", "temp"):
                 value = round(random.uniform(18.0, 28.0), 1)
                 metric_type = "TEMPERATURE"
-            elif channel == "humidity":
+            elif channel_lower in ("humidity", "air_rh", "humidity_air", "rh"):
                 value = round(random.uniform(40.0, 80.0), 1)
                 metric_type = "HUMIDITY"
+            elif "co2" in channel_lower:
+                value = round(random.uniform(400.0, 1200.0), 0)
+                metric_type = "CO2"
+            elif "lux" in channel_lower or "light" in channel_lower:
+                value = round(random.uniform(0, 1000), 1)
+                metric_type = "LIGHT_INTENSITY"
+            elif channel_lower in ("water_level", "level"):
+                value = round(random.uniform(0, 100), 1)
+                metric_type = "WATER_LEVEL"
+            elif channel_lower in ("flow_present", "flow"):
+                value = round(random.uniform(0, 5), 2)
+                metric_type = "FLOW_RATE"
+            elif channel_lower in ("ina209_ma", "current_ma", "current", "pump_bus_current"):
+                value = round(random.uniform(0, 500), 1)
+                metric_type = "PUMP_CURRENT"
             else:
                 value = round(random.uniform(0, 100), 2)
                 metric_type = channel.upper()
@@ -399,4 +415,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-

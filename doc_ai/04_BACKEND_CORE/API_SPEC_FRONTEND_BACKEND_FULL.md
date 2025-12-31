@@ -707,7 +707,7 @@
 ```json
 {
   "zone_id": 1,
-  "metric_type": "ph",
+  "metric_type": "PH",
   "horizon_minutes": 60
 }
 ```

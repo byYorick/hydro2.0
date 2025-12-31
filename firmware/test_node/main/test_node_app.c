@@ -149,10 +149,10 @@ static void task_publish_telemetry(void *pvParameters) {
         // Публикация телеметрии в формате эталона node-sim
         ESP_LOGI(TAG, "Publishing test telemetry");
         
-        publish_telemetry_value("ph_sensor", "ph", test_ph_value);
-        publish_telemetry_value("ec_sensor", "ec", test_ec_value);
-        publish_telemetry_value("air_temp_c", "temperature", test_temp_value);
-        publish_telemetry_value("air_rh", "humidity", test_rh_value);
+        publish_telemetry_value("ph_sensor", "PH", test_ph_value);
+        publish_telemetry_value("ec_sensor", "EC", test_ec_value);
+        publish_telemetry_value("air_temp_c", "TEMPERATURE", test_temp_value);
+        publish_telemetry_value("air_rh", "HUMIDITY", test_rh_value);
     }
 }
 

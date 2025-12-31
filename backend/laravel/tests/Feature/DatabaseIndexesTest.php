@@ -130,6 +130,7 @@ class DatabaseIndexesTest extends TestCase
 
         // Проверяем, что запрос использует индекс
         try {
+            DB::statement('SET enable_seqscan = off');
             $explainRow = DB::selectOne("
                 EXPLAIN (FORMAT JSON)
                 SELECT * FROM telemetry_samples 

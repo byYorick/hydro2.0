@@ -67,6 +67,7 @@ class PythonIngestController extends Controller
             'ts' => ['nullable', 'date'],
             'channel' => ['nullable', 'string', 'max:64'],
         ]);
+        $metricType = strtoupper(trim((string) $data['metric_type']));
 
         // Проверяем, что zone_id существует
         $zone = \App\Models\Zone::find($data['zone_id']);
@@ -142,7 +143,7 @@ class PythonIngestController extends Controller
         $sample = [
             'node_uid' => $nodeUid ?? '',
             'zone_id' => $data['zone_id'],  // Передаём zone_id напрямую
-            'metric_type' => $data['metric_type'],
+            'metric_type' => $metricType,
             'value' => $data['value'],
             'ts' => $timestamp->toIso8601String(),
             'channel' => $data['channel'] ?? null,
@@ -170,7 +171,7 @@ class PythonIngestController extends Controller
                 Log::debug('PythonIngestController: Broadcasting telemetry via WebSocket', [
                     'node_id' => $nodeId,
                     'channel' => $data['channel'] ?? '',
-                    'metric_type' => $data['metric_type'],
+                    'metric_type' => $metricType,
                     'value' => $data['value'],
                 ]);
 
@@ -179,7 +180,7 @@ class PythonIngestController extends Controller
                     updates: [[
                         'node_id' => (int) $nodeId,
                         'channel' => $data['channel'] ?? null,
-                        'metric_type' => (string) $data['metric_type'],
+                        'metric_type' => $metricType,
                         'value' => (float) $data['value'],
                         'ts' => (int) ($timestamp->getTimestamp() * 1000),
                     ]]
@@ -435,11 +436,12 @@ class PythonIngestController extends Controller
             'value' => ['required', 'numeric'],
             'timestamp' => ['required', 'integer'], // timestamp в миллисекундах
         ]);
+        $metricType = strtoupper(trim((string) $data['metric_type']));
 
         Log::debug('PythonIngestController: Broadcasting telemetry via WebSocket', [
             'node_id' => $data['node_id'],
             'channel' => $data['channel'] ?? '',
-            'metric_type' => $data['metric_type'],
+            'metric_type' => $metricType,
             'value' => $data['value'],
         ]);
 
@@ -453,7 +455,7 @@ class PythonIngestController extends Controller
         if (! $zoneId) {
             Log::debug('PythonIngestController: Skipping telemetry broadcast (zone not resolved)', [
                 'node_id' => $data['node_id'],
-                'metric_type' => $data['metric_type'],
+                'metric_type' => $metricType,
             ]);
 
             return Response::json(['status' => 'skipped']);
@@ -464,7 +466,7 @@ class PythonIngestController extends Controller
             updates: [[
                 'node_id' => (int) $data['node_id'],
                 'channel' => $data['channel'] ?? null,
-                'metric_type' => (string) $data['metric_type'],
+                'metric_type' => $metricType,
                 'value' => (float) $data['value'],
                 'ts' => (int) $data['timestamp'],
             ]]

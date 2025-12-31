@@ -9,6 +9,7 @@ from .env import get_settings
 
 
 _pool: Optional[asyncpg.pool.Pool] = None
+_pool_loop: Optional[asyncio.AbstractEventLoop] = None
 
 
 async def _init_connection(conn: asyncpg.Connection) -> None:
@@ -33,19 +34,32 @@ async def _init_connection(conn: asyncpg.Connection) -> None:
 
 
 async def get_pool() -> asyncpg.pool.Pool:
-    global _pool
-    if _pool is None:
-        s = get_settings()
-        _pool = await asyncpg.create_pool(
-            host=s.pg_host,
-            port=s.pg_port,
-            database=s.pg_db,
-            user=s.pg_user,
-            password=s.pg_pass,
-            min_size=1,
-            max_size=10,
-            init=_init_connection,
-        )
+    global _pool, _pool_loop
+    loop = asyncio.get_running_loop()
+
+    if _pool is not None:
+        if _pool_loop is loop:
+            return _pool
+        # Старый пул привязан к другому loop - закрываем и пересоздаем
+        try:
+            await _pool.close()
+        except Exception:
+            pass
+        _pool = None
+        _pool_loop = None
+
+    s = get_settings()
+    _pool = await asyncpg.create_pool(
+        host=s.pg_host,
+        port=s.pg_port,
+        database=s.pg_db,
+        user=s.pg_user,
+        password=s.pg_pass,
+        min_size=1,
+        max_size=10,
+        init=_init_connection,
+    )
+    _pool_loop = loop
     return _pool
 
 

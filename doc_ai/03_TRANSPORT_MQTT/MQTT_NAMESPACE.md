@@ -49,13 +49,13 @@ Payload (пример):
 
 ```json
 {
- "metric_type": "air_temp_c",
+ "metric_type": "TEMPERATURE",
  "value": 23.4,
  "ts": 1737355600
 }
 ```
 
-> **Важно:** Формат соответствует эталону node-sim. Поля `node_id` и `channel` не включаются в JSON, так как они уже есть в топике.
+> **Важно:** Формат соответствует эталону node-sim. Поля `node_id` и `channel` не включаются в JSON, так как они уже есть в топике. `metric_type` передается в UPPERCASE.
 
 ### 2.2. command
 

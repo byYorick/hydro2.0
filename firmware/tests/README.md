@@ -53,7 +53,7 @@ python3 firmware/tests/test_node_compatibility.py \
 ### Телеметрия
 - ✅ Наличие обязательных полей: `metric_type`, `value`, `ts`
 - ✅ Отсутствие запрещенных полей: `node_id`, `channel`
-- ✅ `metric_type` в lowercase
+- ✅ `metric_type` в UPPERCASE
 - ✅ `ts` в секундах (int)
 - ✅ Соответствие JSON схеме
 
@@ -104,7 +104,7 @@ mosquitto_sub -t 'hydro/+/+/+/+/command_response' | python3 firmware/tests/test_
 
 ```json
 {
-  "metric_type": "ph",
+  "metric_type": "PH",
   "value": 6.5,
   "ts": 1704067200
 }
@@ -154,7 +154,7 @@ mosquitto_sub -t 'hydro/+/+/+/+/command_response' | python3 firmware/tests/test_
 📨 Получено: telemetry
    Топик: hydro/gh-test-1/zn-test-1/nd-test-001/ph_sensor/telemetry
    Payload: {
-     "metric_type": "ph",
+     "metric_type": "PH",
      "value": 6.5,
      "ts": 1704067200
    }
@@ -190,4 +190,3 @@ mosquitto_sub -t 'hydro/+/+/+/+/command_response' | python3 firmware/tests/test_
 ---
 
 **Версия:** 1.0
-

@@ -38,7 +38,7 @@ def test_ingest_telemetry_endpoint(client):
                 {
                     "node_uid": "nd-ph-1",
                     "zone_id": 1,
-                    "metric_type": "ph",
+                    "metric_type": "PH",
                     "value": 6.5,
                     "channel": "ph_sensor"
                 }
@@ -64,13 +64,13 @@ def test_ingest_telemetry_endpoint_multiple_samples(client):
                 {
                     "node_uid": "nd-ph-1",
                     "zone_id": 1,
-                    "metric_type": "ph",
+                    "metric_type": "PH",
                     "value": 6.5
                 },
                 {
                     "node_uid": "nd-ec-1",
                     "zone_id": 1,
-                    "metric_type": "ec",
+                    "metric_type": "EC",
                     "value": 1.8
                 },
             ]
@@ -92,7 +92,7 @@ def test_ingest_telemetry_endpoint_with_ts_string(client):
                 {
                     "node_uid": "nd-ph-1",
                     "zone_id": 1,
-                    "metric_type": "ph",
+                    "metric_type": "PH",
                     "value": 6.5,
                     "ts": "2025-01-27T10:00:00Z"
                 }
@@ -112,7 +112,7 @@ def test_ingest_telemetry_endpoint_with_ts_numeric(client):
                 {
                     "node_uid": "nd-ph-1",
                     "zone_id": 1,
-                    "metric_type": "ph",
+                    "metric_type": "PH",
                     "value": 6.5,
                     "ts": 1737979.2  # seconds (from firmware: esp_timer_get_time() / 1000000)
                 }
@@ -145,7 +145,7 @@ def test_ingest_telemetry_endpoint_with_zone_uid(client):
                 {
                     "node_uid": "nd-ph-1",
                     "zone_uid": "zn-1",
-                    "metric_type": "ph",
+                    "metric_type": "PH",
                     "value": 6.5
                 }
             ]

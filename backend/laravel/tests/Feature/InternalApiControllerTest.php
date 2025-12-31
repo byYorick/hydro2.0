@@ -10,6 +10,7 @@ use App\Models\RecipeRevisionPhase;
 use App\Models\Zone;
 use App\Enums\GrowCycleStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class InternalApiControllerTest extends TestCase
@@ -25,7 +26,7 @@ class InternalApiControllerTest extends TestCase
         $this->apiToken = env('LARAVEL_API_TOKEN', 'test-python-service-token');
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_effective_targets_batch_for_multiple_cycles()
     {
         // Примечание: InternalApiController принимает zone_ids, а не grow_cycle_ids
@@ -120,7 +121,7 @@ class InternalApiControllerTest extends TestCase
         $this->assertEquals(6.0, $data[$zone2->id]['targets']['ph']['target']);
     }
 
-    /** @test */
+    #[Test]
     public function it_validates_zone_ids()
     {
         $response = $this->withHeaders([
@@ -132,7 +133,7 @@ class InternalApiControllerTest extends TestCase
         $response->assertStatus(422);
     }
 
-    /** @test */
+    #[Test]
     public function it_requires_authentication()
     {
         $response = $this->postJson('/api/internal/effective-targets/batch', [
@@ -142,4 +143,3 @@ class InternalApiControllerTest extends TestCase
         $response->assertStatus(401);
     }
 }
-

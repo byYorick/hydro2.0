@@ -12,9 +12,8 @@ return new class extends Migration
      * 
      * Таблица телеметрии с партиционированием по месяцам.
      * zone_id и cycle_id проставляются сервером для удобства запросов.
-     * 
-     * ВНИМАНИЕ: Заменяет старую структуру telemetry_samples (zone_id, node_id, channel, metric_type)
-     * на новую структуру с sensor_id.
+     *
+     * Таблица использует sensor_id как ключ источника телеметрии.
      */
     public function up(): void
     {
@@ -57,4 +56,3 @@ return new class extends Migration
         Schema::dropIfExists('telemetry_samples');
     }
 };
-

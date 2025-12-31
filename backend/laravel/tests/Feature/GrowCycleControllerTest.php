@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Models\Zone;
 use App\Services\GrowCycleService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class GrowCycleControllerTest extends TestCase
@@ -45,7 +46,7 @@ class GrowCycleControllerTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function it_creates_a_grow_cycle(): void
     {
         $response = $this->actingAs($this->user)
@@ -73,7 +74,7 @@ class GrowCycleControllerTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function it_creates_and_starts_cycle_immediately(): void
     {
         $response = $this->actingAs($this->user)
@@ -90,7 +91,7 @@ class GrowCycleControllerTest extends TestCase
         $this->assertNotNull($cycle->planting_at);
     }
 
-    /** @test */
+    #[Test]
     public function it_gets_active_cycle_with_dto(): void
     {
         $service = app(GrowCycleService::class);
@@ -116,7 +117,7 @@ class GrowCycleControllerTest extends TestCase
             ]);
     }
 
-    /** @test */
+    #[Test]
     public function it_advances_phase(): void
     {
         RecipeRevisionPhase::factory()->create([
@@ -135,7 +136,7 @@ class GrowCycleControllerTest extends TestCase
         $this->assertEquals(1, $cycle->currentPhase->phase_index);
     }
 
-    /** @test */
+    #[Test]
     public function it_pauses_a_cycle(): void
     {
         $cycle = GrowCycle::factory()->create([
@@ -152,7 +153,7 @@ class GrowCycleControllerTest extends TestCase
         $this->assertEquals(GrowCycleStatus::PAUSED, $cycle->status);
     }
 
-    /** @test */
+    #[Test]
     public function it_resumes_a_cycle(): void
     {
         $cycle = GrowCycle::factory()->create([
@@ -169,7 +170,7 @@ class GrowCycleControllerTest extends TestCase
         $this->assertEquals(GrowCycleStatus::RUNNING, $cycle->status);
     }
 
-    /** @test */
+    #[Test]
     public function it_harvests_a_cycle(): void
     {
         $cycle = GrowCycle::factory()->create([
@@ -190,7 +191,7 @@ class GrowCycleControllerTest extends TestCase
         $this->assertNotNull($cycle->actual_harvest_at);
     }
 
-    /** @test */
+    #[Test]
     public function it_aborts_a_cycle(): void
     {
         $cycle = GrowCycle::factory()->create([

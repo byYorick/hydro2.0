@@ -12,7 +12,7 @@ async def test_process_telemetry_batch_ignores_unvalidated_node():
     sample = TelemetrySampleModel(
         node_uid="nd-ph-1",
         zone_id=1,
-        metric_type="ph",
+        metric_type="PH",
         value=6.5
     )
     
@@ -86,7 +86,7 @@ async def test_process_telemetry_batch_validated_node():
     sample = TelemetrySampleModel(
         node_uid="nd-ph-1",
         zone_id=1,
-        metric_type="ph",
+        metric_type="PH",
         value=6.5
     )
     

@@ -16,19 +16,51 @@ return new class extends Migration
         // 1. telemetry_samples - дополнительные индексы
         // Проверяем существование таблицы перед созданием индекса
         if ($this->tableExists('telemetry_samples')) {
-            // Индекс для запросов по node_id и channel
-            if (!$this->indexExists('telemetry_samples', 'telemetry_samples_node_channel_ts_idx')) {
-                DB::statement("
-                    CREATE INDEX telemetry_samples_node_channel_ts_idx 
-                    ON telemetry_samples (node_id, channel, ts DESC)
-                    WHERE node_id IS NOT NULL AND channel IS NOT NULL;
-                ");
+            if (
+                $this->columnExists('telemetry_samples', 'sensor_id')
+                && $this->columnExists('telemetry_samples', 'ts')
+                && !$this->indexExists('telemetry_samples', 'telemetry_samples_sensor_ts_idx')
+            ) {
+                Schema::table('telemetry_samples', function (Blueprint $table) {
+                    $table->index(['sensor_id', 'ts'], 'telemetry_samples_sensor_ts_idx');
+                });
             }
 
-            // Индекс для запросов по created_at (для cleanup операций)
-            if (!$this->indexExists('telemetry_samples', 'telemetry_samples_created_at_idx')) {
+            if (
+                $this->columnExists('telemetry_samples', 'zone_id')
+                && $this->columnExists('telemetry_samples', 'ts')
+                && !$this->indexExists('telemetry_samples', 'telemetry_samples_zone_ts_idx')
+            ) {
                 Schema::table('telemetry_samples', function (Blueprint $table) {
-                    $table->index('created_at', 'telemetry_samples_created_at_idx');
+                    $table->index(['zone_id', 'ts'], 'telemetry_samples_zone_ts_idx');
+                });
+            }
+
+            if (
+                $this->columnExists('telemetry_samples', 'cycle_id')
+                && $this->columnExists('telemetry_samples', 'ts')
+                && !$this->indexExists('telemetry_samples', 'telemetry_samples_cycle_ts_idx')
+            ) {
+                Schema::table('telemetry_samples', function (Blueprint $table) {
+                    $table->index(['cycle_id', 'ts'], 'telemetry_samples_cycle_ts_idx');
+                });
+            }
+
+            if (
+                $this->columnExists('telemetry_samples', 'ts')
+                && !$this->indexExists('telemetry_samples', 'telemetry_samples_ts_idx')
+            ) {
+                Schema::table('telemetry_samples', function (Blueprint $table) {
+                    $table->index('ts', 'telemetry_samples_ts_idx');
+                });
+            }
+
+            if (
+                $this->columnExists('telemetry_samples', 'quality')
+                && !$this->indexExists('telemetry_samples', 'telemetry_samples_quality_idx')
+            ) {
+                Schema::table('telemetry_samples', function (Blueprint $table) {
+                    $table->index('quality', 'telemetry_samples_quality_idx');
                 });
             }
         }
@@ -154,11 +186,11 @@ return new class extends Migration
             $table->dropIndex('commands_zone_status_idx');
         });
 
-        Schema::table('telemetry_samples', function (Blueprint $table) {
-            $table->dropIndex('telemetry_samples_created_at_idx');
-        });
-
-        DB::statement("DROP INDEX IF EXISTS telemetry_samples_node_channel_ts_idx;");
+        DB::statement("DROP INDEX IF EXISTS telemetry_samples_sensor_ts_idx;");
+        DB::statement("DROP INDEX IF EXISTS telemetry_samples_zone_ts_idx;");
+        DB::statement("DROP INDEX IF EXISTS telemetry_samples_cycle_ts_idx;");
+        DB::statement("DROP INDEX IF EXISTS telemetry_samples_ts_idx;");
+        DB::statement("DROP INDEX IF EXISTS telemetry_samples_quality_idx;");
     }
 
     /**
@@ -173,6 +205,22 @@ return new class extends Migration
                 WHERE table_schema = 'public' AND table_name = ?
             ) as exists
         ", [$table]);
+
+        return $result && $result->exists;
+    }
+
+    /**
+     * Проверка существования колонки.
+     */
+    private function columnExists(string $table, string $column): bool
+    {
+        $result = DB::selectOne("
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = ? AND column_name = ?
+            ) as exists
+        ", [$table, $column]);
 
         return $result && $result->exists;
     }
@@ -193,4 +241,3 @@ return new class extends Migration
         return $result && $result->exists;
     }
 };
-

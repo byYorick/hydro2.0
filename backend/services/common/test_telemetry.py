@@ -11,7 +11,7 @@ async def test_process_telemetry_batch_with_node_uid():
     sample = TelemetrySampleModel(
         node_uid="nd-ph-1",
         zone_id=1,
-        metric_type="ph",
+        metric_type="PH",
         value=6.5,
         ts=datetime.utcnow(),
         channel="ph_sensor"
@@ -41,7 +41,7 @@ async def test_process_telemetry_batch_with_unknown_node():
     sample = TelemetrySampleModel(
         node_uid="unknown-node",
         zone_id=1,
-        metric_type="ph",
+        metric_type="PH",
         value=6.5
     )
     
@@ -63,7 +63,7 @@ async def test_process_telemetry_batch_with_zone_id():
     sample = TelemetrySampleModel(
         node_uid="nd-ph-1",
         zone_id=1,  # Передаём zone_id напрямую
-        metric_type="ec",
+        metric_type="EC",
         value=1.8
     )
     
@@ -143,7 +143,7 @@ async def test_process_telemetry_batch_uses_node_zone_if_not_provided():
     sample = TelemetrySampleModel(
         node_uid="nd-ph-1",
         # zone_id не указан
-        metric_type="ph",
+        metric_type="PH",
         value=6.5
     )
     
@@ -169,7 +169,7 @@ async def test_process_telemetry_batch_skips_without_zone_id():
     sample = TelemetrySampleModel(
         node_uid="nd-ph-1",
         # zone_id не указан и нода не найдена
-        metric_type="ph",
+        metric_type="PH",
         value=6.5
     )
     
@@ -192,13 +192,13 @@ async def test_process_telemetry_batch_multiple_samples():
         TelemetrySampleModel(
             node_uid="nd-ph-1",
             zone_id=1,
-            metric_type="ph",
+            metric_type="PH",
             value=6.5
         ),
         TelemetrySampleModel(
             node_uid="nd-ec-1",
             zone_id=1,
-            metric_type="ec",
+            metric_type="EC",
             value=1.8
         ),
     ]

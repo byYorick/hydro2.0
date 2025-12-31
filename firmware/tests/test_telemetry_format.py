@@ -51,11 +51,11 @@ def validate_telemetry(message_str):
             if field in message:
                 errors.append(f"Forbidden field present: {field}")
         
-        # Проверка формата metric_type (lowercase)
+        # Проверка формата metric_type (UPPERCASE)
         if "metric_type" in message:
             mt = message["metric_type"]
-            if mt != mt.lower():
-                errors.append(f"metric_type must be lowercase, got: {mt}")
+            if mt != mt.upper():
+                errors.append(f"metric_type must be UPPERCASE, got: {mt}")
         
         # Проверка типа ts (должен быть int, не float)
         if "ts" in message:
@@ -109,4 +109,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

@@ -11,11 +11,10 @@
 export interface ZoneTelemetry {
   zone_id: number
   timestamp: string
-  temp_air?: number
-  humidity_air?: number
+  temperature?: number
+  humidity?: number
   ph?: number
   ec?: number
-  temp_water?: number
   water_level?: number
   [key: string]: any // Допускаем дополнительные метрики
 }
@@ -204,4 +203,3 @@ export function isValidReconciliationData(data: any): data is ReconciliationData
     )
   )
 }
-

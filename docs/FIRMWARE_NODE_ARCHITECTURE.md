@@ -50,7 +50,7 @@
 ### ph_node (пример комбинированной системы)
 
 - Две категории каналов:
-  - Сенсоры `ph_sensor` (metric `PH`) и `solution_temp_c` (`TEMP_SOLUTION`).
+- Сенсоры `ph_sensor` (metric `PH`) и `solution_temp_c` (`TEMPERATURE`).
   - Актуаторы `ph_doser_up`/`ph_doser_down` типа `PUMP`, включая `safe_limits` и `gpio`.
 - Набор параметров (`poll_interval_ms`, `precision`, `GPIO`, `safe_limits`, `ml_per_second`) описан в `ph_node_channel_map.h`.
 - Обработчик `ph_node_config_handler_wrapper` заменяет `channels` на `ph_node_build_config_channels` и вызывает оригинальный процессор.
@@ -130,7 +130,7 @@
 
 - Каналы pH‑ноды сведены к минимальному составу:
   - `ph_sensor` (SENSOR, PH, unit pH)
-  - `solution_temp_c` (SENSOR, TEMP_SOLUTION, unit C)
+- `solution_temp_c` (SENSOR, TEMPERATURE, unit C)
   - `ph_doser_up` (ACTUATOR/PUMP)
   - `ph_doser_down` (ACTUATOR/PUMP)
 - GPIO дозаторов:

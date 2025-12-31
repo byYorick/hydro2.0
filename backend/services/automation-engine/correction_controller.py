@@ -16,6 +16,7 @@ from utils.adaptive_pid import AdaptivePid, AdaptivePidConfig, PidZone, PidZoneC
 from services.pid_config_service import get_config, invalidate_cache
 from services.pid_state_manager import PidStateManager
 from common.alerts import create_alert, AlertSource, AlertCode
+from decision_context import DecisionContext
 
 logger = logging.getLogger(__name__)
 
@@ -343,21 +344,17 @@ class CorrectionController:
         reason = command.get('reason', '')
         
         # Подготавливаем контекст для аудита
-        context = {
-            'current_value': current_val,
-            'target_value': target_val,
-            'diff': diff,
-            'reason': reason,
-            'telemetry': command.get('telemetry', {}),
-        }
-        
-        if pid:
-            context.update({
-                'pid_zone': pid.get_zone().value,
-                'pid_output': command['event_details'].get('dose_ml', 0),
-                'pid_integral': pid.integral,
-                'pid_prev_error': pid.prev_error,
-            })
+        context = DecisionContext(
+            current_value=current_val,
+            target_value=target_val,
+            diff=diff,
+            reason=reason,
+            telemetry=command.get('telemetry', {}),
+            pid_zone=pid.get_zone().value if pid else None,
+            pid_output=command['event_details'].get('dose_ml', 0) if pid else None,
+            pid_integral=pid.integral if pid else None,
+            pid_prev_error=pid.prev_error if pid else None,
+        )
         
         # Отправляем команду через Command Bus с контекстом
         await command_bus.publish_controller_command(zone_id, command, context)

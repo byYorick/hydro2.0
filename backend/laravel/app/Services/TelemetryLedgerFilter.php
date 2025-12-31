@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\MetricType;
 use Illuminate\Support\Facades\Cache;
 
 /**
@@ -51,7 +52,8 @@ class TelemetryLedgerFilter
      */
     public function shouldRecord(int $zoneId, string $metricType, float $value): bool
     {
-        $cacheKey = "telemetry_last_recorded:zone_{$zoneId}:{$metricType}";
+        $normalizedMetric = MetricType::normalize($metricType) ?? strtoupper(trim($metricType));
+        $cacheKey = "telemetry_last_recorded:zone_{$zoneId}:{$normalizedMetric}";
 
         // Получаем последнее записанное значение из кеша
         $lastRecorded = Cache::get($cacheKey);
@@ -74,7 +76,7 @@ class TelemetryLedgerFilter
         }
 
         // Проверяем значимость изменения
-        $threshold = self::THRESHOLDS[$metricType] ?? self::DEFAULT_THRESHOLD;
+        $threshold = self::THRESHOLDS[$normalizedMetric] ?? self::DEFAULT_THRESHOLD;
         $change = abs($value - $lastValue);
 
         if ($change < $threshold) {

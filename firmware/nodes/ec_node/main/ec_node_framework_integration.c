@@ -460,7 +460,7 @@ static esp_err_t handle_test_sensor(
     if (extra) {
         cJSON_AddNumberToObject(extra, "value", ec_value);
         cJSON_AddStringToObject(extra, "unit", "mS/cm");
-        cJSON_AddStringToObject(extra, "metric_type", "ec");
+        cJSON_AddStringToObject(extra, "metric_type", "EC");
         cJSON_AddNumberToObject(extra, "raw_value", raw_value);
         cJSON_AddBoolToObject(extra, "stable", true);
         if (tds_value > 0) {

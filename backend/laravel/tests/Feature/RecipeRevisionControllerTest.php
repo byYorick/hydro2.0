@@ -7,6 +7,7 @@ use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class RecipeRevisionControllerTest extends TestCase
@@ -27,7 +28,7 @@ class RecipeRevisionControllerTest extends TestCase
 
     // Удален пример теста - используем реальные тесты ниже
 
-    /** @test */
+    #[Test]
     public function it_shows_recipe_revision_with_phases()
     {
         $revision = RecipeRevision::factory()->create([
@@ -73,7 +74,7 @@ class RecipeRevisionControllerTest extends TestCase
             ]);
     }
 
-    /** @test */
+    #[Test]
     public function it_creates_new_revision_from_existing()
     {
         $sourceRevision = RecipeRevision::factory()->create([
@@ -124,7 +125,7 @@ class RecipeRevisionControllerTest extends TestCase
         $this->assertEquals(2, $newRevision->phases()->count());
     }
 
-    /** @test */
+    #[Test]
     public function it_updates_draft_revision()
     {
         $revision = RecipeRevision::factory()->create([
@@ -144,7 +145,7 @@ class RecipeRevisionControllerTest extends TestCase
         $this->assertEquals('Updated description', $revision->description);
     }
 
-    /** @test */
+    #[Test]
     public function it_publishes_draft_revision()
     {
         $revision = RecipeRevision::factory()->create([
@@ -169,7 +170,7 @@ class RecipeRevisionControllerTest extends TestCase
         $this->assertNotNull($revision->published_at);
     }
 
-    /** @test */
+    #[Test]
     public function it_prevents_non_agronomist_from_creating_revision()
     {
         $response = $this->actingAs($this->operator)
@@ -184,7 +185,7 @@ class RecipeRevisionControllerTest extends TestCase
             ]);
     }
 
-    /** @test */
+    #[Test]
     public function it_prevents_updating_published_revision()
     {
         $revision = RecipeRevision::factory()->create([

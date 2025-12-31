@@ -76,7 +76,7 @@ actions:
     type: mqtt_publish
     topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/ph_sensor/telemetry
     payload:
-      metric_type: ph
+      metric_type: PH
       value: 6.0
       ts: ${TIMESTAMP_MS - 600000}  # 10 минут назад (stale для E2E с TELEMETRY_MAX_AGE_MINUTES=5)
     qos: 1
@@ -86,7 +86,7 @@ actions:
     type: mqtt_publish
     topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/ec_sensor/telemetry
     payload:
-      metric_type: ec
+      metric_type: EC
       value: 1.2
       ts: ${TIMESTAMP_MS - 600000}  # 10 минут назад
     qos: 1
@@ -102,7 +102,7 @@ actions:
     type: mqtt_publish
     topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/ph_sensor/telemetry
     payload:
-      metric_type: ph
+      metric_type: PH
       value: 6.1
       ts: ${TIMESTAMP_MS - 600000}
     qos: 1
@@ -112,7 +112,7 @@ actions:
     type: mqtt_publish
     topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/ph_sensor/telemetry
     payload:
-      metric_type: ph
+      metric_type: PH
       value: 6.2
       ts: ${TIMESTAMP_MS - 600000}
     qos: 1
@@ -128,7 +128,7 @@ actions:
     type: mqtt_publish
     topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/ph_sensor/telemetry
     payload:
-      metric_type: ph
+      metric_type: PH
       value: 6.25
       ts: ${TIMESTAMP_MS - 600000}
     qos: 1

@@ -27,11 +27,10 @@ _METRIC_UNITS = {
     "PH": "pH",
     "EC": "mS/cm",
     "TEMPERATURE": "C",
-    "TEMP_SOLUTION": "C",
     "HUMIDITY": "%",
     "CO2": "ppm",
-    "LUX": "lux",
-    "CURRENT_MA": "mA",
+    "LIGHT_INTENSITY": "lux",
+    "PUMP_CURRENT": "mA",
 }
 
 
@@ -48,7 +47,7 @@ def _sensor_metric(sensor_name: str) -> str:
     if name in ("ec_sensor", "ec"):
         return "EC"
     if name in ("solution_temp_c", "temp_solution", "solution_temp"):
-        return "TEMP_SOLUTION"
+        return "TEMPERATURE"
     if name in ("air_temp_c", "temp_air", "temperature", "temp"):
         return "TEMPERATURE"
     if name in ("air_rh", "humidity", "rh"):
@@ -56,11 +55,11 @@ def _sensor_metric(sensor_name: str) -> str:
     if "co2" in name:
         return "CO2"
     if "lux" in name:
-        return "LUX"
+        return "LIGHT_INTENSITY"
     if name in ("ina209_ma", "current_ma", "current"):
-        return "CURRENT_MA"
+        return "PUMP_CURRENT"
     if name in ("flow_present", "flow"):
-        return "FLOW_PRESENT"
+        return "FLOW_RATE"
     return name.upper()
 
 

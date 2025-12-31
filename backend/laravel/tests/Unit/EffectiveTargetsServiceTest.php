@@ -12,6 +12,7 @@ use App\Models\Zone;
 use App\Services\EffectiveTargetsService;
 use App\Enums\GrowCycleStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class EffectiveTargetsServiceTest extends TestCase
@@ -26,7 +27,7 @@ class EffectiveTargetsServiceTest extends TestCase
         $this->service = app(EffectiveTargetsService::class);
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_effective_targets_with_correct_structure()
     {
         $zone = Zone::factory()->create();
@@ -102,7 +103,7 @@ class EffectiveTargetsServiceTest extends TestCase
         $this->assertEquals(6.2, $result['targets']['ph']['max']);
     }
 
-    /** @test */
+    #[Test]
     public function it_applies_overrides_to_targets()
     {
         $zone = Zone::factory()->create();
@@ -159,7 +160,7 @@ class EffectiveTargetsServiceTest extends TestCase
         $this->assertEquals(6.2, $result['targets']['ph']['max']);
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_batch_results_for_multiple_cycles()
     {
         $zone1 = Zone::factory()->create();
@@ -217,7 +218,7 @@ class EffectiveTargetsServiceTest extends TestCase
         $this->assertArrayHasKey('targets', $results[$cycle2->id]);
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_missing_current_phase_gracefully()
     {
         $zone = Zone::factory()->create();
@@ -240,7 +241,7 @@ class EffectiveTargetsServiceTest extends TestCase
         $this->service->getEffectiveTargets($cycle->id);
     }
 
-    /** @test */
+    #[Test]
     public function it_includes_irrigation_targets_in_response()
     {
         $zone = Zone::factory()->create();

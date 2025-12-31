@@ -6,6 +6,7 @@ use App\Models\Zone;
 use App\Models\Greenhouse;
 use App\Models\DeviceNode;
 use App\Services\TelemetryLedgerFilter;
+use App\Enums\MetricType;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
@@ -149,7 +150,8 @@ class TelemetryLedgerFilterTest extends TestCase
      */
     private function advanceTimeForMetric(string $metricType, int $seconds): void
     {
-        $cacheKey = "telemetry_last_recorded:zone_{$this->zone->id}:{$metricType}";
+        $normalizedMetric = MetricType::normalize($metricType) ?? strtoupper(trim($metricType));
+        $cacheKey = "telemetry_last_recorded:zone_{$this->zone->id}:{$normalizedMetric}";
         $lastValue = Cache::get($cacheKey);
         
         if ($lastValue) {
@@ -161,4 +163,3 @@ class TelemetryLedgerFilterTest extends TestCase
         }
     }
 }
-

@@ -168,14 +168,14 @@ Backend подписывается на топик `hydro/+/+/+/config_report` �
 ## 7.1. Payload
 ```json
 {
- "metric_type": "ph",
+ "metric_type": "PH",
  "value": 5.83,
  "ts": 1710012345
 }
 ```
 
 **Обязательные поля:**
-- `metric_type` (string, lowercase) — тип метрики: `ph`, `ec`, `air_temp_c`, `air_rh` и т.д.
+- `metric_type` (string, UPPERCASE) — тип метрики: `PH`, `EC`, `TEMPERATURE`, `HUMIDITY` и т.д.
 - `value` (number) — значение метрики
 - `ts` (integer) — UTC timestamp в секундах
 

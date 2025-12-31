@@ -16,6 +16,7 @@ help:
 	@echo "  smoke          - run bootstrap smoke (telemetry + command)"
 	@echo "  audit          - run hotspots audit report"
 	@echo "  protocol-check - run protocol contract tests"
+	@echo "  erd            - generate ERD SVG (docker mermaid-cli)"
 
 .PHONY: up
 up:
@@ -55,3 +56,7 @@ down-dev: down
 protocol-check:
 	@echo "Running protocol contract tests..."
 	@cd backend/services/common/schemas && bash run_contract_tests.sh
+
+.PHONY: erd
+erd:
+	@bash backend/laravel/generate-erd.sh

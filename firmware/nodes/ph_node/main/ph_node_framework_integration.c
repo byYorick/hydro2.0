@@ -468,7 +468,7 @@ static esp_err_t handle_test_sensor(
         if (extra) {
             cJSON_AddNumberToObject(extra, "value", ph_value);
             cJSON_AddStringToObject(extra, "unit", "pH");
-            cJSON_AddStringToObject(extra, "metric_type", "ph");
+            cJSON_AddStringToObject(extra, "metric_type", "PH");
             cJSON_AddNumberToObject(extra, "raw_value", raw_value);
             cJSON_AddBoolToObject(extra, "stable", is_stable);
         }

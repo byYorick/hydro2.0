@@ -76,7 +76,7 @@ const sampleZones: Zone[] = [
     telemetry: {
       ph: 5.8,
       ec: 2.0,
-      temp_air: 22.5,
+      temperature: 22.5,
       humidity: 65
     },
     created_at: '2025-01-01T00:00:00Z',
@@ -95,7 +95,7 @@ const sampleZones: Zone[] = [
     telemetry: {
       ph: 5.9,
       ec: 2.1,
-      temp_air: 23.0,
+      temperature: 23.0,
       humidity: 70
     },
     created_at: '2025-01-01T00:00:00Z',
@@ -114,7 +114,7 @@ const sampleZones: Zone[] = [
     telemetry: {
       ph: 5.7,
       ec: 1.9,
-      temp_air: 21.0,
+      temperature: 21.0,
       humidity: 60
     },
     created_at: '2025-01-01T00:00:00Z',
@@ -406,4 +406,3 @@ describe('ZoneComparisonModal', () => {
     })
   })
 })
-

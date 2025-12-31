@@ -6,13 +6,14 @@ use App\Models\GrowStageTemplate;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class RecipeRevisionPhaseTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @test */
+    #[Test]
     public function it_belongs_to_revision()
     {
         $revision = RecipeRevision::factory()->create();
@@ -23,7 +24,7 @@ class RecipeRevisionPhaseTest extends TestCase
         $this->assertEquals($revision->id, $phase->recipeRevision->id);
     }
 
-    /** @test */
+    #[Test]
     public function it_belongs_to_stage_template()
     {
         $template = GrowStageTemplate::factory()->create();
@@ -34,7 +35,7 @@ class RecipeRevisionPhaseTest extends TestCase
         $this->assertEquals($template->id, $phase->stageTemplate->id);
     }
 
-    /** @test */
+    #[Test]
     public function it_casts_extensions_to_array()
     {
         $phase = RecipeRevisionPhase::factory()->create([
@@ -45,7 +46,7 @@ class RecipeRevisionPhaseTest extends TestCase
         $this->assertEquals('extra', $phase->extensions['notes']);
     }
 
-    /** @test */
+    #[Test]
     public function it_appends_targets_attribute()
     {
         $phase = RecipeRevisionPhase::factory()->create([

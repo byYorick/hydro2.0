@@ -24,7 +24,7 @@ class AiController extends Controller
     {
         $validated = $request->validate([
             'zone_id' => ['required', 'integer', 'exists:zones,id'],
-            'metric_type' => ['required', 'string', 'in:ph,ec,temp_air,humidity_air'],
+            'metric_type' => ['required', 'string', 'in:PH,EC,TEMPERATURE,HUMIDITY'],
             'horizon_minutes' => ['nullable', 'integer', 'min:1', 'max:1440'], // до 24 часов
         ]);
 

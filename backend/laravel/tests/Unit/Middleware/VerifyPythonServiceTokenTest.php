@@ -8,6 +8,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
 
@@ -116,6 +117,7 @@ class VerifyPythonServiceTokenTest extends TestCase
     public function test_uses_viewer_user_when_available(): void
     {
         Config::set('services.python_bridge.token', 'test-token');
+        $this->truncateUsers();
         $viewer = User::factory()->create(['role' => 'viewer']);
         $operator = User::factory()->create(['role' => 'operator']);
 
@@ -133,6 +135,7 @@ class VerifyPythonServiceTokenTest extends TestCase
     public function test_uses_operator_when_no_viewer(): void
     {
         Config::set('services.python_bridge.token', 'test-token');
+        $this->truncateUsers();
         $operator = User::factory()->create(['role' => 'operator']);
 
         $request = Request::create('/api/system/config/full', 'GET');
@@ -150,6 +153,7 @@ class VerifyPythonServiceTokenTest extends TestCase
     {
         Config::set('services.python_bridge.token', 'test-token');
         // Не создаем пользователей - middleware должен разрешить запрос для публичных эндпоинтов
+        $this->truncateUsers();
 
         $request = Request::create('/api/system/config/full', 'GET');
         $request->headers->set('Authorization', 'Bearer test-token');
@@ -187,5 +191,9 @@ class VerifyPythonServiceTokenTest extends TestCase
             str_contains($data['message'], 'invalid service token')
         );
     }
-}
 
+    private function truncateUsers(): void
+    {
+        DB::statement('TRUNCATE TABLE users RESTART IDENTITY CASCADE');
+    }
+}

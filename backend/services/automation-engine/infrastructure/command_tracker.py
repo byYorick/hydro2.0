@@ -26,6 +26,7 @@ from common.utils.time import utcnow
 from common.db import execute, fetch, create_zone_event
 from common.commands import new_command_id
 from prometheus_client import Histogram, Counter, Gauge
+from decision_context import ContextLike, normalize_context
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +89,7 @@ class CommandTracker:
         self,
         zone_id: int,
         command: Dict[str, Any],
-        context: Optional[Dict[str, Any]] = None
+        context: ContextLike = None
     ) -> str:
         """
         Начать отслеживание команды.
@@ -110,7 +111,7 @@ class CommandTracker:
             'command_type': command.get('cmd', 'unknown'),
             'sent_at': utcnow(),
             'status': 'QUEUED',
-            'context': context or {}
+            'context': normalize_context(context)
         }
         
         self.pending_commands[cmd_id] = command_info
@@ -522,4 +523,3 @@ class CommandTracker:
         """
         # Очистка команд выполняется через Laravel, не нужно делать это здесь
         logger.debug("Command cleanup is handled by Laravel (archiving to commands_archive)")
-

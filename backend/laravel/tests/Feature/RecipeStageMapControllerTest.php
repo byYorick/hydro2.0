@@ -7,6 +7,7 @@ use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 class RecipeStageMapControllerTest extends TestCase
@@ -24,7 +25,7 @@ class RecipeStageMapControllerTest extends TestCase
         $this->recipe = Recipe::factory()->create();
     }
 
-    /** @test */
+    #[Test]
     public function it_gets_stage_map_for_recipe(): void
     {
         $revision = RecipeRevision::factory()->create([
@@ -48,7 +49,7 @@ class RecipeStageMapControllerTest extends TestCase
             ]);
     }
 
-    /** @test */
+    #[Test]
     public function it_auto_generates_stage_map_when_missing(): void
     {
         $revision = RecipeRevision::factory()->create([
@@ -75,7 +76,7 @@ class RecipeStageMapControllerTest extends TestCase
             ]);
     }
 
-    /** @test */
+    #[Test]
     public function it_updates_stage_map(): void
     {
         $response = $this->actingAs($this->user)
@@ -97,7 +98,7 @@ class RecipeStageMapControllerTest extends TestCase
             ->assertJsonCount(2, 'data.stage_map');
     }
 
-    /** @test */
+    #[Test]
     public function it_requires_authentication_to_update(): void
     {
         $response = $this->putJson("/api/recipes/{$this->recipe->id}/stage-map", [
@@ -107,7 +108,7 @@ class RecipeStageMapControllerTest extends TestCase
         $response->assertStatus(401);
     }
 
-    /** @test */
+    #[Test]
     public function it_validates_stage_map_data(): void
     {
         $response = $this->actingAs($this->user)

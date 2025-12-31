@@ -160,7 +160,7 @@ static esp_err_t handle_test_sensor(
     if (extra) {
         cJSON_AddNumberToObject(extra, "value", light_lux);
         cJSON_AddStringToObject(extra, "unit", "lux");
-        cJSON_AddStringToObject(extra, "metric_type", "light");
+        cJSON_AddStringToObject(extra, "metric_type", "LIGHT_INTENSITY");
         cJSON_AddBoolToObject(extra, "stable", true);
     }
 

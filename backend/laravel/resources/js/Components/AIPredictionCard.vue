@@ -113,7 +113,7 @@ import { logger } from '@/utils/logger'
 
 interface Props {
   zoneId: number
-  metricType: 'ph' | 'ec' | 'temp_air' | 'humidity_air'
+  metricType: 'PH' | 'EC' | 'TEMPERATURE' | 'HUMIDITY'
   horizonMinutes?: number
   autoRefresh?: boolean
   refreshInterval?: number
@@ -146,30 +146,30 @@ let refreshTimer: ReturnType<typeof setInterval> | null = null
 
 const metricLabel = computed(() => {
   const labels: Record<string, string> = {
-    ph: 'pH',
-    ec: 'EC',
-    temp_air: 'Температура воздуха',
-    humidity_air: 'Влажность воздуха',
+    PH: 'pH',
+    EC: 'EC',
+    TEMPERATURE: 'Температура',
+    HUMIDITY: 'Влажность',
   }
   return labels[props.metricType] || props.metricType
 })
 
 const metricUnit = computed(() => {
   const units: Record<string, string> = {
-    ph: '',
-    ec: 'мСм/см',
-    temp_air: '°C',
-    humidity_air: '%',
+    PH: '',
+    EC: 'мСм/см',
+    TEMPERATURE: '°C',
+    HUMIDITY: '%',
   }
   return units[props.metricType] || ''
 })
 
 const metricColor = computed(() => {
   const colors: Record<string, string> = {
-    ph: 'var(--accent-cyan)',
-    ec: 'var(--accent-green)',
-    temp_air: 'var(--accent-amber)',
-    humidity_air: 'var(--accent-blue)',
+    PH: 'var(--accent-cyan)',
+    EC: 'var(--accent-green)',
+    TEMPERATURE: 'var(--accent-amber)',
+    HUMIDITY: 'var(--accent-blue)',
   }
   return colors[props.metricType] || 'var(--text-primary)'
 })
@@ -202,16 +202,16 @@ const isAboveRange = computed(() => {
 })
 
 function formatValue(value: number): string {
-  if (props.metricType === 'ph') {
+  if (props.metricType === 'PH') {
     return value.toFixed(2)
   }
-  if (props.metricType === 'ec') {
+  if (props.metricType === 'EC') {
     return value.toFixed(2)
   }
-  if (props.metricType === 'temp_air') {
+  if (props.metricType === 'TEMPERATURE') {
     return value.toFixed(1)
   }
-  if (props.metricType === 'humidity_air') {
+  if (props.metricType === 'HUMIDITY') {
     return Math.round(value).toString()
   }
   return value.toFixed(2)
@@ -326,4 +326,3 @@ onUnmounted(() => {
   stopAutoRefresh()
 })
 </script>
-

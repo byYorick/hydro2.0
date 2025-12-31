@@ -6,7 +6,7 @@ CI падает при несовместимом payload - это основн�
 """
 import json
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 import jsonschema
 import pytest
@@ -19,11 +19,24 @@ SCHEMAS_DIR = Path(__file__).parent
 FIXTURES_DIR = SCHEMAS_DIR / "fixtures"
 LARAVEL_SCHEMA_DIR = Path(__file__).resolve().parents[3] / "laravel" / "resources" / "schemas"
 
+
+def resolve_telemetry_sample_schema() -> Path:
+    """Определить путь к схеме telemetry_sample с fallback для контейнера."""
+    laravel_schema = LARAVEL_SCHEMA_DIR / "telemetry_sample.schema.json"
+    local_schema = SCHEMAS_DIR / "telemetry_sample.schema.json"
+    if laravel_schema.exists():
+        return laravel_schema
+    if local_schema.exists():
+        return local_schema
+    raise FileNotFoundError(
+        "telemetry_sample.schema.json not found in Laravel or local schemas"
+    )
+
 # JSON Schema файлы
 COMMAND_SCHEMA = SCHEMAS_DIR / "command.schema.json"
 COMMAND_RESPONSE_SCHEMA = SCHEMAS_DIR / "command_response.schema.json"
 TELEMETRY_SCHEMA = SCHEMAS_DIR / "telemetry.schema.json"
-TELEMETRY_SAMPLE_SCHEMA = LARAVEL_SCHEMA_DIR / "telemetry_sample.schema.json"
+TELEMETRY_SAMPLE_SCHEMA = resolve_telemetry_sample_schema()
 ERROR_ALERT_SCHEMA = SCHEMAS_DIR / "error_alert.schema.json"
 ZONE_EVENTS_SCHEMA = SCHEMAS_DIR / "zone_events.schema.json"
 
@@ -52,9 +65,22 @@ def validate_against_schema(data: Dict[str, Any], schema: Dict[str, Any]) -> Non
         )
 
 
-def get_fixture_files(pattern: str) -> List[Path]:
-    """Возвращает список fixture файлов по паттерну."""
-    return sorted(FIXTURES_DIR.glob(pattern))
+def get_fixture_files(
+    pattern: str,
+    exclude_prefixes: Optional[List[str]] = None,
+    exclude_names: Optional[List[str]] = None,
+) -> List[Path]:
+    """Возвращает список fixture файлов по паттерну с исключениями."""
+    exclude_prefixes = exclude_prefixes or []
+    exclude_names = set(exclude_names or [])
+    files = []
+    for fixture_file in sorted(FIXTURES_DIR.glob(pattern)):
+        if fixture_file.name in exclude_names:
+            continue
+        if any(fixture_file.name.startswith(prefix) for prefix in exclude_prefixes):
+            continue
+        files.append(fixture_file)
+    return files
 
 
 class TestCommandContracts:
@@ -65,7 +91,10 @@ class TestCommandContracts:
         """Загружает схему command."""
         return load_schema(COMMAND_SCHEMA)
     
-    @pytest.mark.parametrize("fixture_file", get_fixture_files("command_*.json"))
+    @pytest.mark.parametrize(
+        "fixture_file",
+        get_fixture_files("command_*.json", exclude_prefixes=["command_response_"]),
+    )
     def test_command_fixture_validates(self, command_schema, fixture_file):
         """Проверяет, что все fixtures команд валидны согласно схеме."""
         fixture = load_json_file(fixture_file)
@@ -159,7 +188,13 @@ class TestTelemetryContracts:
         """Загружает схему telemetry."""
         return load_schema(TELEMETRY_SCHEMA)
     
-    @pytest.mark.parametrize("fixture_file", get_fixture_files("telemetry_*.json"))
+    @pytest.mark.parametrize(
+        "fixture_file",
+        get_fixture_files(
+            "telemetry_*.json",
+            exclude_names=["telemetry_sample_canonical.json"],
+        ),
+    )
     def test_telemetry_fixture_validates(self, telemetry_schema, fixture_file):
         """Проверяет, что все fixtures телеметрии валидны согласно схеме."""
         fixture = load_json_file(fixture_file)
@@ -331,9 +366,12 @@ class TestContractCompatibility:
     def test_all_fixtures_validate_against_schemas(self):
         """Интеграционный тест: все fixtures должны валидироваться против своих схем."""
         schema_fixture_mapping = {
-            COMMAND_SCHEMA: get_fixture_files("command_*.json"),
+            COMMAND_SCHEMA: get_fixture_files("command_*.json", exclude_prefixes=["command_response_"]),
             COMMAND_RESPONSE_SCHEMA: get_fixture_files("command_response_*.json"),
-            TELEMETRY_SCHEMA: get_fixture_files("telemetry_*.json"),
+            TELEMETRY_SCHEMA: get_fixture_files(
+                "telemetry_*.json",
+                exclude_names=["telemetry_sample_canonical.json"],
+            ),
             ERROR_ALERT_SCHEMA: get_fixture_files("error_*.json") + get_fixture_files("alert_*.json"),
             ZONE_EVENTS_SCHEMA: get_fixture_files("zone_event_*.json"),
         }

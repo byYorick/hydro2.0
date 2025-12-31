@@ -112,7 +112,8 @@ async def test_telemetry_queue_pop_batch_success(mock_redis_client):
         test_json = json.dumps(test_item).encode('utf-8')
         
         mock_redis_client.llen.return_value = 1
-        mock_pipeline = AsyncMock()
+        mock_pipeline = MagicMock()
+        mock_pipeline.lpop = MagicMock()
         mock_pipeline.execute = AsyncMock(return_value=[test_json])
         mock_redis_client.pipeline.return_value = mock_pipeline
         
@@ -186,7 +187,8 @@ async def test_telemetry_queue_pop_batch_invalid_json(mock_redis_client):
         queue._client = mock_redis_client
         
         mock_redis_client.llen.return_value = 1
-        mock_pipeline = AsyncMock()
+        mock_pipeline = MagicMock()
+        mock_pipeline.lpop = MagicMock()
         # Возвращаем невалидный JSON
         mock_pipeline.execute = AsyncMock(return_value=[b"invalid json"])
         mock_redis_client.pipeline.return_value = mock_pipeline
@@ -264,7 +266,8 @@ async def test_telemetry_queue_pop_batch_partial(mock_redis_client):
         
         # В очереди только 1 элемент, запрашиваем 100
         mock_redis_client.llen.return_value = 1
-        mock_pipeline = AsyncMock()
+        mock_pipeline = MagicMock()
+        mock_pipeline.lpop = MagicMock()
         mock_pipeline.execute = AsyncMock(return_value=[test_json, None])  # Второй lpop вернет None
         mock_redis_client.pipeline.return_value = mock_pipeline
         
@@ -272,4 +275,3 @@ async def test_telemetry_queue_pop_batch_partial(mock_redis_client):
         
         assert len(items) == 1
         assert items[0].node_uid == "nd-ph-1"
-

@@ -34,6 +34,8 @@ class GrowCycle extends Model
         'phase_started_at',
         'step_started_at',
         'progress_meta',
+        'current_stage_code',
+        'current_stage_started_at',
     ];
 
     protected $casts = [
@@ -47,6 +49,7 @@ class GrowCycle extends Model
         'step_started_at' => 'datetime',
         'settings' => 'array',
         'progress_meta' => 'array',
+        'current_stage_started_at' => 'datetime',
     ];
 
     public function greenhouse(): BelongsTo
@@ -154,4 +157,3 @@ class GrowCycle extends Model
         return $query->where('zone_id', $zoneId);
     }
 }
-
