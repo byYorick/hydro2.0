@@ -8,6 +8,8 @@ from main import (
     get_active_schedules,
     get_zone_nodes_for_type,
     execute_irrigation_schedule,
+    execute_lighting_schedule,
+    check_and_execute_schedules,
     monitor_pump_safety,
     send_command_via_automation_engine,
 )
@@ -24,25 +26,32 @@ def test_parse_time_spec():
 @pytest.mark.asyncio
 async def test_get_active_schedules():
     """Test fetching active schedules."""
-    with patch("main.fetch") as mock_fetch:
+    with patch("main.fetch") as mock_fetch, \
+         patch("repositories.laravel_api_repository.LaravelApiRepository") as mock_api_cls:
         mock_fetch.return_value = [
-            {
+            {"zone_id": 1},
+        ]
+        mock_api = AsyncMock()
+        mock_api.get_effective_targets_batch.return_value = {
+            1: {
                 "zone_id": 1,
-                "current_phase_index": 0,
+                "cycle_id": 10,
+                "phase": {"id": 2, "name": "Germination"},
                 "targets": {
-                    "ph": 6.5,
+                    "irrigation": {"interval_sec": 3600},
                     "irrigation_schedule": ["08:00", "14:00", "20:00"],
                     "lighting_schedule": "06:00-22:00",
+                    "lighting": {"photoperiod_hours": 16, "start_time": "06:00"},
                 },
-                "status": "online",
             }
-        ]
+        }
+        mock_api_cls.return_value = mock_api
         schedules = await get_active_schedules()
         assert len(schedules) > 0
         irrigation_schedules = [s for s in schedules if s["type"] == "irrigation"]
         assert len(irrigation_schedules) == 3  # Three irrigation times
         lighting_schedules = [s for s in schedules if s["type"] == "lighting"]
-        assert len(lighting_schedules) == 1  # One lighting window
+        assert len(lighting_schedules) == 1  # One lighting window from photoperiod
 
 
 @pytest.mark.asyncio
@@ -173,6 +182,37 @@ async def test_execute_irrigation_schedule():
         irrigate_calls = [call for call in mock_send_command.call_args_list 
                          if call[1]["cmd"] == "irrigate"]
         assert len(irrigate_calls) > 0
+
+
+@pytest.mark.asyncio
+async def test_execute_lighting_schedule_crosses_midnight():
+    """Test lighting schedule when window crosses midnight."""
+    with patch("main.get_zone_nodes_for_type") as mock_nodes, \
+         patch("main.create_scheduler_log") as mock_log, \
+         patch("main.send_command_via_automation_engine") as mock_send, \
+         patch("main.datetime") as mock_datetime:
+        mock_nodes.return_value = [
+            {"node_uid": "nd-light-1", "channel": "light", "type": "light"},
+        ]
+        mock_send.return_value = True
+        mock_datetime.now.return_value = datetime(2025, 1, 1, 23, 0)
+        schedule = {
+            "start_time": time(22, 0),
+            "end_time": time(6, 0),
+        }
+        await execute_lighting_schedule(1, schedule)
+        assert mock_send.called
+
+
+@pytest.mark.asyncio
+async def test_check_and_execute_schedules_passes_mqtt():
+    """Test that mqtt client is passed to water change check."""
+    mqtt = Mock()
+    with patch("main.get_active_schedules", new_callable=AsyncMock) as mock_schedules, \
+         patch("main.check_water_changes", new_callable=AsyncMock) as mock_water_changes:
+        mock_schedules.return_value = []
+        await check_and_execute_schedules(mqtt)
+        mock_water_changes.assert_awaited_once_with(mqtt)
 
 
 @pytest.mark.asyncio

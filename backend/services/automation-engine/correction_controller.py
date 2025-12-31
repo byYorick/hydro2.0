@@ -17,6 +17,7 @@ from services.pid_config_service import get_config, invalidate_cache
 from services.pid_state_manager import PidStateManager
 from common.alerts import create_alert, AlertSource, AlertCode
 from decision_context import DecisionContext
+from services.targets_accessor import get_ph_target, get_ec_target
 
 logger = logging.getLogger(__name__)
 
@@ -73,8 +74,11 @@ class CorrectionController:
         """
         target_key = self.correction_type.value
         current = telemetry.get(self.metric_name) or telemetry.get(target_key)
-        target = targets.get(target_key)
-        
+        if self.correction_type == CorrectionType.PH:
+            target, target_min, target_max = get_ph_target(targets, zone_id=zone_id)
+        else:
+            target, target_min, target_max = get_ec_target(targets, zone_id=zone_id)
+
         if target is None or current is None:
             return None
         
@@ -197,6 +201,10 @@ class CorrectionController:
         except (ValueError, TypeError) as e:
             logger.warning(f"Zone {zone_id}: Invalid {target_key} values - target={target}, current={current}: {e}")
             return None
+
+        if target_min is not None and target_max is not None:
+            if target_min <= current_val <= target_max:
+                return None
         
         diff = current_val - target_val
 

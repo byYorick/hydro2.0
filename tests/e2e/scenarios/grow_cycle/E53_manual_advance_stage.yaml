@@ -119,14 +119,14 @@ actions:
       FROM grow_cycle_phases
       WHERE id = :phase_id
     params:
-      phase_id: ${grow_cycle[0].current_phase_id}
+      phase_id: ${grow_cycle.0.current_phase_id}
     save: current_phase
     set: initial_phase_index
 
   # Выполняем advance phase через API
   - step: advance_phase
     type: api_post
-    endpoint: /api/grow-cycles/${grow_cycle[0].id}/advance-phase
+    endpoint: /api/grow-cycles/${grow_cycle.0.id}/advance-phase
     payload: {}
     save: advance_response
 
@@ -153,7 +153,7 @@ actions:
       FROM grow_cycle_phases
       WHERE id = :phase_id
     params:
-      phase_id: ${updated_cycle[0].current_phase_id}
+      phase_id: ${updated_cycle.0.current_phase_id}
     save: new_phase
 
 assertions:

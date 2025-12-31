@@ -5,6 +5,7 @@ Climate Controller - управление температурой, влажно
 from typing import Optional, Dict, Any, List, Tuple
 from common.db import fetch, execute, create_zone_event
 from alerts_manager import ensure_alert
+from services.targets_accessor import get_climate_request
 
 
 # Пороги для алертов
@@ -84,7 +85,7 @@ async def check_and_control_climate(
     
     Args:
         zone_id: ID зоны
-        targets: Целевые значения из рецепта (temp_air, humidity_air)
+        targets: Целевые значения из рецепта (climate_request)
         telemetry: Текущие значения телеметрии
         bindings: Dict[role, binding_info] из InfrastructureRepository
     
@@ -99,8 +100,7 @@ async def check_and_control_climate(
     co2 = telemetry.get("CO2")
     
     # Получаем целевые значения
-    target_temp = targets.get("temp_air")
-    target_humidity = targets.get("humidity_air")
+    target_temp, target_humidity, _ = get_climate_request(targets, zone_id=zone_id)
     
     # Получаем bindings по ролям
     nodes = get_climate_bindings(zone_id, bindings)

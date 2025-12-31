@@ -8,6 +8,7 @@ from typing import Dict, Any, Optional, List
 from common.db import fetch
 from infrastructure.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
 from repositories.laravel_api_repository import LaravelApiRepository
+from common.effective_targets import parse_effective_targets
 
 logger = logging.getLogger(__name__)
 
@@ -49,56 +50,29 @@ class RecipeRepository:
                 effective_targets = await self.laravel_api.get_effective_targets(zone_id)
                 if not effective_targets:
                     return None
-                
+                try:
+                    parsed = parse_effective_targets(effective_targets)
+                except Exception as e:
+                    logger.warning(f'Failed to parse effective targets for zone {zone_id}: {e}')
+                    return None
+
+                normalized = parsed.model_dump()
                 # Преобразуем формат из Laravel API в формат, ожидаемый кодом
-                phase = effective_targets.get('phase', {})
-                targets = effective_targets.get('targets', {})
-                
+                phase = normalized.get('phase', {})
+                targets = normalized.get('targets', {})
+
                 return {
-                    "zone_id": effective_targets.get('zone_id', zone_id),
-                    "cycle_id": effective_targets.get('cycle_id'),
+                    "zone_id": normalized.get('zone_id', zone_id),
+                    "cycle_id": normalized.get('cycle_id'),
                     "phase_index": phase.get('id'),  # Используем ID фазы как индекс
                     "targets": targets,
                     "phase_name": phase.get('name', phase.get('code', 'UNKNOWN')),
                 }
             except Exception as e:
                 logger.warning(f'Failed to get effective targets from Laravel API for zone {zone_id}: {e}')
-                # Fallback на legacy метод (если таблицы еще существуют)
-                return await self._get_zone_recipe_and_targets_legacy(zone_id)
-        
-        # Legacy метод через прямые SQL запросы
-        return await self._get_zone_recipe_and_targets_legacy(zone_id)
-    
-    async def _get_zone_recipe_and_targets_legacy(self, zone_id: int) -> Optional[Dict[str, Any]]:
-        """
-        Legacy метод для получения рецепта через прямые SQL запросы.
-        Используется как fallback если Laravel API недоступен.
-        """
-        async def _fetch():
-            return await fetch(
-                """
-                SELECT zri.zone_id, zri.current_phase_index, rp.targets, rp.name as phase_name
-                FROM zone_recipe_instances zri
-                JOIN recipe_phases rp ON rp.recipe_id = zri.recipe_id AND rp.phase_index = zri.current_phase_index
-                WHERE zri.zone_id = $1
-                """,
-                zone_id,
-            )
-        
-        try:
-            if self.db_circuit_breaker:
-                rows = await self.db_circuit_breaker.call(_fetch)
-            else:
-                rows = await _fetch()
-            if rows and len(rows) > 0:
-                return {
-                    "zone_id": rows[0]["zone_id"],
-                    "phase_index": rows[0]["current_phase_index"],
-                    "targets": rows[0]["targets"],
-                    "phase_name": rows[0]["phase_name"],
-                }
-        except Exception as e:
-            logger.error(f'Legacy SQL query failed for zone {zone_id}: {e}')
+                return None
+
+        logger.warning("Laravel API disabled; legacy recipe tables are no longer supported")
         return None
     
     async def get_zones_recipes_batch(self, zone_ids: List[int]) -> Dict[int, Optional[Dict[str, Any]]]:
@@ -121,7 +95,7 @@ class RecipeRepository:
         if self.use_laravel_api and self.laravel_api:
             try:
                 effective_targets_batch = await self.laravel_api.get_effective_targets_batch(zone_ids)
-                
+
                 # Преобразуем формат из Laravel API в формат, ожидаемый кодом
                 result: Dict[int, Optional[Dict[str, Any]]] = {}
                 for zone_id in zone_ids:
@@ -129,78 +103,44 @@ class RecipeRepository:
                     if not effective_targets or 'error' in effective_targets:
                         result[zone_id] = None
                         continue
-                    
-                    phase = effective_targets.get('phase', {})
-                    targets = effective_targets.get('targets', {})
-                    
+
+                    try:
+                        parsed = parse_effective_targets(effective_targets)
+                        normalized = parsed.model_dump()
+                    except Exception as e:
+                        logger.warning(f'Failed to parse effective targets for zone {zone_id}: {e}')
+                        result[zone_id] = None
+                        continue
+
+                    phase = normalized.get('phase', {})
+                    targets = normalized.get('targets', {})
+
                     result[zone_id] = {
-                        "zone_id": effective_targets.get('zone_id', zone_id),
-                        "cycle_id": effective_targets.get('cycle_id'),
+                        "zone_id": normalized.get('zone_id', zone_id),
+                        "cycle_id": normalized.get('cycle_id'),
                         "phase_index": phase.get('id'),  # Используем ID фазы как индекс
                         "targets": targets,
                         "phase_name": phase.get('name', phase.get('code', 'UNKNOWN')),
                     }
-                
+
                 return result
             except Exception as e:
                 logger.warning(f'Failed to get effective targets batch from Laravel API: {e}')
-                # Fallback на legacy метод
-                return await self._get_zones_recipes_batch_legacy(zone_ids)
-        
-        # Legacy метод через прямые SQL запросы
-        return await self._get_zones_recipes_batch_legacy(zone_ids)
-    
-    async def _get_zones_recipes_batch_legacy(self, zone_ids: List[int]) -> Dict[int, Optional[Dict[str, Any]]]:
-        """
-        Legacy метод для batch получения рецептов через прямые SQL запросы.
-        """
-        async def _fetch():
-            return await fetch(
-                """
-                SELECT zri.zone_id, zri.current_phase_index, rp.targets, rp.name as phase_name
-                FROM zone_recipe_instances zri
-                JOIN recipe_phases rp ON rp.recipe_id = zri.recipe_id AND rp.phase_index = zri.current_phase_index
-                WHERE zri.zone_id = ANY($1::int[])
-                """,
-                zone_ids,
-            )
-        
-        try:
-            if self.db_circuit_breaker:
-                rows = await self.db_circuit_breaker.call(_fetch)
-            else:
-                rows = await _fetch()
-            
-            result: Dict[int, Optional[Dict[str, Any]]] = {}
-            for row in rows:
-                zone_id = row["zone_id"]
-                result[zone_id] = {
-                    "zone_id": zone_id,
-                    "phase_index": row["current_phase_index"],
-                    "targets": row["targets"],
-                    "phase_name": row["phase_name"],
-                }
-            
-            # Добавляем None для зон без рецептов
-            for zone_id in zone_ids:
-                if zone_id not in result:
-                    result[zone_id] = None
-            
-            return result
-        except Exception as e:
-            logger.error(f'Legacy SQL batch query failed: {e}')
-            return {zone_id: None for zone_id in zone_ids}
+                return {zone_id: None for zone_id in zone_ids}
+
+        logger.warning("Laravel API disabled; legacy recipe tables are no longer supported")
+        return {zone_id: None for zone_id in zone_ids}
     
     async def get_zone_data_batch(self, zone_id: int) -> Dict[str, Any]:
         """
-        Получить все данные зоны одним запросом (recipe, telemetry, nodes, capabilities).
-        Оптимизированный метод для получения всех данных одной зоны.
+        Получить данные зоны одним запросом (telemetry, nodes, capabilities).
+        Targets и recipe_info здесь больше не подгружаются.
         
         Args:
             zone_id: ID зоны
         
         Returns:
-            Dict с recipe_info, telemetry, nodes, capabilities
+            Dict с recipe_info (None), telemetry, nodes, capabilities
         
         Raises:
             CircuitBreakerOpenError: Если Circuit Breaker открыт
@@ -211,14 +151,8 @@ class RecipeRepository:
                 WITH zone_info AS (
                     SELECT 
                         z.id as zone_id,
-                        z.capabilities,
-                        zri.current_phase_index,
-                        rp.targets,
-                        rp.name as phase_name
+                        z.capabilities
                     FROM zones z
-                    LEFT JOIN zone_recipe_instances zri ON zri.zone_id = z.id
-                    LEFT JOIN recipe_phases rp ON rp.recipe_id = zri.recipe_id 
-                        AND rp.phase_index = zri.current_phase_index
                     WHERE z.id = $1
                 ),
                 telemetry_data AS (
@@ -313,18 +247,8 @@ class RecipeRepository:
             from .zone_repository import ZoneRepository
             capabilities = ZoneRepository.DEFAULT_CAPABILITIES.copy()
         
-        # Формируем recipe_info
-        recipe_info = None
-        if zone_info.get("targets") is not None:
-            recipe_info = {
-                "zone_id": zone_id,
-                "phase_index": zone_info.get("current_phase_index"),
-                "targets": zone_info.get("targets"),
-                "phase_name": zone_info.get("phase_name"),
-            }
-        
         return {
-            "recipe_info": recipe_info,
+            "recipe_info": None,
             "telemetry": telemetry,
             "telemetry_timestamps": telemetry_timestamps,  # Добавляем timestamps для проверки свежести
             "nodes": nodes_dict,
@@ -334,7 +258,7 @@ class RecipeRepository:
     async def get_zones_data_batch_optimized(self, zone_ids: List[int]) -> Dict[int, Dict[str, Any]]:
         """
         Оптимизированный batch запрос для получения данных нескольких зон одним запросом.
-        Снижает количество запросов к БД с N до 1.
+        Targets и recipe_info здесь больше не подгружаются.
         
         Args:
             zone_ids: Список ID зон
@@ -354,14 +278,8 @@ class RecipeRepository:
             WITH zone_info AS (
                 SELECT 
                     z.id as zone_id,
-                    z.capabilities,
-                    zri.current_phase_index,
-                    rp.targets,
-                    rp.name as phase_name
+                    z.capabilities
                 FROM zones z
-                LEFT JOIN zone_recipe_instances zri ON zri.zone_id = z.id
-                LEFT JOIN recipe_phases rp ON rp.recipe_id = zri.recipe_id 
-                    AND rp.phase_index = zri.current_phase_index
                 WHERE z.id = ANY($1::int[])
             ),
             telemetry_data AS (
@@ -394,15 +312,7 @@ class RecipeRepository:
             SELECT 
                 zi.zone_id,
                 json_build_object(
-                    'recipe_info', CASE 
-                        WHEN zi.targets IS NOT NULL THEN json_build_object(
-                            'zone_id', zi.zone_id,
-                            'phase_index', zi.current_phase_index,
-                            'targets', zi.targets,
-                            'phase_name', zi.phase_name
-                        )
-                        ELSE NULL
-                    END,
+                    'recipe_info', NULL,
                     'telemetry', (
                         SELECT json_object_agg(
                             td.metric_type,

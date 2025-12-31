@@ -30,7 +30,8 @@ GET /api/nodes/{id}/telemetry/history
     {
       "ts": "2025-12-05T13:47:19.000000Z",
       "value": 21.015869140625,
-      "channel": "temperature"
+      "channel": "temperature",
+      "metric_type": "TEMPERATURE"
     },
     ...
   ]
@@ -41,7 +42,7 @@ GET /api/nodes/{id}/telemetry/history
 - Проверка авторизации пользователя
 - Проверка доступа к ноде через `ZoneAccessHelper`
 - Лимит 5000 записей
-- Данные берутся из таблицы `telemetry` (TimescaleDB)
+- Данные берутся из `telemetry_samples` с джоином на `sensors`
 
 #### 2. Роут
 
@@ -98,12 +99,13 @@ const metricLabels = {
 
 2. History Logger
    └─> Слушает MQTT
-   └─> Записывает в TimescaleDB (таблица telemetry)
-       └─> Поля: ts, node_id, zone_id, channel, metric_type, value, unit
+   └─> Записывает в PostgreSQL/TimescaleDB
+       ├─> telemetry_samples: sensor_id, ts, zone_id, value, quality, metadata
+       └─> sensors: node_id, zone_id, type, label (канал)
 
 3. Laravel API
    └─> TelemetryController::nodeHistory()
-   └─> SELECT FROM telemetry WHERE node_id = ? AND metric_type = ?
+   └─> SELECT FROM telemetry_samples JOIN sensors WHERE node_id = ? AND type = ?
    └─> Возвращает JSON с данными
 
 4. Frontend (Vue)
@@ -193,11 +195,12 @@ Response: { "status": "ok", "data": [...] }
 
 2. **Проверьте, что есть данные в БД**:
    ```sql
-   SELECT COUNT(*), channel, metric_type 
-   FROM telemetry 
-   WHERE node_id = 2 
-   GROUP BY channel, metric_type;
-   ```
+   SELECT COUNT(*), s.label as channel, s.type as metric_type
+   FROM telemetry_samples ts
+   JOIN sensors s ON s.id = ts.sensor_id
+   WHERE s.node_id = 2
+   GROUP BY s.label, s.type;
+```
 
 3. **Проверьте логи History Logger**:
    ```bash

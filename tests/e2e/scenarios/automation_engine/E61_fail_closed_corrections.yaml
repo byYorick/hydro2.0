@@ -29,6 +29,12 @@ setup:
         interval_seconds: 300.0
 
 actions:
+  - step: set_test_uids
+    type: set
+    test_gh_uid: ${setup.node_sim.config.node.gh_uid}
+    test_zone_uid: ${setup.node_sim.config.node.zone_uid}
+    test_node_uid: ${setup.node_sim.config.node.node_uid}
+
   # Получаем зону с UID zn-test-1 из seeder
   - step: get_automation_zone
     type: api_get
@@ -40,13 +46,15 @@ actions:
     query: |
       SELECT id
       FROM zones
-      WHERE uid = 'zn-test-1'
+      WHERE uid = :zone_uid
       LIMIT 1
+    params:
+      zone_uid: ${test_zone_uid}
     save: zone_row
   
   - step: set_zone_id
     type: set
-    zone_id: ${zone_row[0].id}
+    zone_id: ${zone_row.0.id}
 
   - step: enable_capabilities
     type: database_execute
@@ -74,7 +82,7 @@ actions:
   # Публикуем stale telemetry (ts в прошлом - больше TELEMETRY_MAX_AGE_MINUTES)
   - step: publish_stale_ph_telemetry
     type: mqtt_publish
-    topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/ph_sensor/telemetry
+    topic: hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/ph_sensor/telemetry
     payload:
       metric_type: PH
       value: 6.0
@@ -84,7 +92,7 @@ actions:
 
   - step: publish_stale_ec_telemetry
     type: mqtt_publish
-    topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/ec_sensor/telemetry
+    topic: hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/ec_sensor/telemetry
     payload:
       metric_type: EC
       value: 1.2
@@ -100,7 +108,7 @@ actions:
   # Дополнительные stale события для достижения порога алерта
   - step: publish_stale_ph_2
     type: mqtt_publish
-    topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/ph_sensor/telemetry
+    topic: hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/ph_sensor/telemetry
     payload:
       metric_type: PH
       value: 6.1
@@ -110,7 +118,7 @@ actions:
 
   - step: publish_stale_ph_3
     type: mqtt_publish
-    topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/ph_sensor/telemetry
+    topic: hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/ph_sensor/telemetry
     payload:
       metric_type: PH
       value: 6.2
@@ -126,7 +134,7 @@ actions:
   # Финальный контрольный publish со старыми данными после остановки симулятора
   - step: publish_stale_ph_final
     type: mqtt_publish
-    topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/ph_sensor/telemetry
+    topic: hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/ph_sensor/telemetry
     payload:
       metric_type: PH
       value: 6.25

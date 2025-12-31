@@ -8,6 +8,7 @@ from common.utils.time import utcnow
 from common.db import fetch, create_zone_event
 from common.water_flow import check_water_level
 from alerts_manager import ensure_alert
+from services.targets_accessor import get_irrigation_params
 
 
 async def get_last_irrigation_time(zone_id: int) -> Optional[datetime]:
@@ -77,14 +78,16 @@ async def check_and_control_irrigation(
         Команда для запуска полива или None
     """
     # Получаем параметры полива из targets
-    irrigation_interval_sec = targets.get("irrigation_interval_sec")
-    irrigation_duration_sec = targets.get("irrigation_duration_sec", 60)
-    
+    irrigation_interval_sec, irrigation_duration_sec, _ = get_irrigation_params(
+        targets,
+        zone_id=zone_id,
+    )
+    if irrigation_duration_sec is None:
+        irrigation_duration_sec = 60
+
     if irrigation_interval_sec is None:
         # Если интервал не задан, не запускаем автоматический полив
         return None
-    
-    irrigation_interval_sec = int(irrigation_interval_sec)
     
     # Получаем binding для полива (сначала через резолвер ролей, потом fallback)
     pump_binding = None

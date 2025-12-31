@@ -3,8 +3,12 @@ Grow Cycle Repository - доступ к циклам выращивания.
 Использует LaravelApiRepository для получения effective targets вместо прямых SQL запросов к legacy таблицам.
 """
 from typing import Dict, Any, Optional, List
+import logging
 from infrastructure.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
 from repositories.laravel_api_repository import LaravelApiRepository
+from common.effective_targets import parse_effective_targets
+
+logger = logging.getLogger(__name__)
 
 
 class GrowCycleRepository:
@@ -81,9 +85,16 @@ class GrowCycleRepository:
         for zone_id in zone_ids:
             zone_data = api_result.get(zone_id)
             if zone_data and "error" not in zone_data:
-                result[zone_id] = zone_data
+                try:
+                    parsed = parse_effective_targets(zone_data)
+                    result[zone_id] = parsed.model_dump()
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to parse effective targets",
+                        extra={"zone_id": zone_id, "error": str(exc)},
+                    )
+                    result[zone_id] = None
             else:
                 result[zone_id] = None
 
         return result
-

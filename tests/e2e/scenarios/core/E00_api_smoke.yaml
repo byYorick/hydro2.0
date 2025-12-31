@@ -60,10 +60,10 @@ actions:
   # Тест 4: Zone commands endpoint (должен вернуть 422 при неправильных данных)
   - step: check_commands_protected
     type: api_post
-    endpoint: /api/zones/1/commands
+    endpoint: /api/zones/${zone_id}/commands
     payload:
       type: "IRRIGATION"
-      node_id: 1
+      node_id: ${node_id}
       params:
         duration_sec: 30
     save: commands_response

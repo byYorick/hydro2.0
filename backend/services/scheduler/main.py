@@ -495,8 +495,11 @@ async def execute_lighting_schedule(
         if not start_time or not end_time:
             await create_scheduler_log(task_name, "failed", {"zone_id": zone_id, "error": "no_time_range"})
             return
-        # Check if current time is within lighting window
-        should_be_on = start_time <= now <= end_time
+        # Check if current time is within lighting window (handles midnight wrap)
+        if start_time <= end_time:
+            should_be_on = start_time <= now <= end_time
+        else:
+            should_be_on = now >= start_time or now <= end_time
         cmd = "light_on" if should_be_on else "light_off"
         for node_info in nodes:
             await send_command_via_automation_engine(
@@ -585,7 +588,7 @@ async def check_water_changes(mqtt: MqttClient):
                 )
 
 
-async def check_and_execute_schedules():
+async def check_and_execute_schedules(mqtt: MqttClient):
     """Check schedules and execute tasks if time matches.
     Команды отправляются через automation-engine REST API."""
     schedules = await get_active_schedules()
@@ -643,7 +646,7 @@ async def main():
 
     while True:
         try:
-            await check_and_execute_schedules()
+            await check_and_execute_schedules(mqtt)
         except KeyboardInterrupt:
             logger.info("Received interrupt signal, shutting down")
             break

@@ -24,7 +24,7 @@ MQTT Topics → handle_telemetry() → Redis Queue → process_telemetry_queue()
 1. **MQTT Handler** (`handle_telemetry`) - получает сообщения из MQTT, валидирует через Pydantic, добавляет в Redis queue
 2. **Redis Queue** - буферизует телеметрию для батчевой обработки
 3. **Queue Processor** (`process_telemetry_queue`) - извлекает батчи из очереди и записывает в БД
-4. **Batch Writer** (`process_telemetry_batch`) - группирует данные и выполняет batch insert
+4. **Batch Writer** (`process_telemetry_batch`) - нормализует метрику, резолвит/создает `sensors`, пишет в `telemetry_samples` и делает upsert в `telemetry_last`
 
 ### Технологический стек
 
@@ -315,8 +315,9 @@ hydro/{gh_uid}/{zone_uid}/{node_uid}/{channel}/telemetry
 
 ### Batch обработка
 
-- Группировка по `(zone_id, metric_type, node_id, channel)`
-- Один INSERT с множеством VALUES для каждой группы
+- Группировка по идентичности сенсора `(zone_id, node_id, metric_type, channel)` для получения `sensor_id`
+- Batch insert в `telemetry_samples` по `sensor_id`
+- Batch upsert в `telemetry_last` по `sensor_id`
 - Автоматический flush при достижении размера батча или интервала времени
 
 ### Graceful shutdown

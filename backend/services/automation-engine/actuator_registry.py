@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional, List
 class ActuatorRegistry:
     """Резолвер исполнительных устройств по ролям с fallback по каналам."""
 
-    # Основные роли и алиасы, которые могут приходить из zone_channel_bindings.role
+    # Основные роли и алиасы, которые могут приходить из channel_bindings.role
     ROLE_ALIASES: Dict[str, List[str]] = {
         "irrigation_pump": ["irrigation_pump", "main_pump", "pump_irrigation", "pump", "irrig"],
         "recirculation_pump": ["recirculation_pump", "recirculation", "recirc"],
@@ -76,6 +76,7 @@ class ActuatorRegistry:
                 return {
                     "node_id": info.get("node_id"),
                     "node_uid": info.get("node_uid"),
+                    "node_channel_id": info.get("node_channel_id"),
                     "channel": info.get("channel") or "default",
                     "asset_type": info.get("asset_type"),
                     "direction": info.get("direction"),
@@ -97,6 +98,7 @@ class ActuatorRegistry:
                 return {
                     "node_id": node.get("node_id"),
                     "node_uid": node.get("node_uid"),
+                    "node_channel_id": node.get("node_channel_id"),
                     "channel": node.get("channel") or "default",
                     "asset_type": node.get("type"),
                     "direction": "actuator",

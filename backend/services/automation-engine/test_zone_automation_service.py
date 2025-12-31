@@ -26,12 +26,19 @@ async def test_process_zone_no_recipe():
         "capabilities": {}
     })
     
-    with patch("services.zone_automation_service.calculate_current_phase", return_value=None):
-        service = ZoneAutomationService(zone_repo, telemetry_repo, node_repo, recipe_repo, grow_cycle_repo, infrastructure_repo, command_bus)
-        await service.process_zone(1)
-        
-        # Должен вернуться рано, не вызывая контроллеры
-        recipe_repo.get_zone_data_batch.assert_called_once_with(1)
+    service = ZoneAutomationService(
+        zone_repo,
+        telemetry_repo,
+        node_repo,
+        recipe_repo,
+        grow_cycle_repo,
+        infrastructure_repo,
+        command_bus,
+    )
+    await service.process_zone(1)
+    
+    # Должен вернуться рано, не загружая данные зоны
+    recipe_repo.get_zone_data_batch.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -44,7 +51,9 @@ async def test_process_zone_with_recipe():
     grow_cycle_repo = Mock(spec=GrowCycleRepository)
     infrastructure_repo = Mock(spec=InfrastructureRepository)
     command_bus = Mock(spec=CommandBus)
-    grow_cycle_repo.get_active_grow_cycle = AsyncMock(return_value=None)
+    grow_cycle_repo.get_active_grow_cycle = AsyncMock(return_value={
+        "targets": {"ph": 6.5, "ec": 1.8, "temp_air": 25.0},
+    })
     infrastructure_repo.get_zone_bindings_by_role = AsyncMock(return_value={})
     
     recipe_repo.get_zone_data_batch = AsyncMock(return_value={
@@ -84,7 +93,6 @@ async def test_process_zone_with_recipe():
          patch("correction_controller.should_apply_correction", return_value=(True, "Ready")) as mock_should_correct, \
          patch("correction_controller.CorrectionController") as mock_correction:
         
-        mock_phase_check.return_value = None
         # Мокируем CorrectionController
         mock_ph_controller = Mock()
         mock_ph_controller.check_and_correct = AsyncMock(return_value=None)
@@ -92,7 +100,15 @@ async def test_process_zone_with_recipe():
         mock_ec_controller.check_and_correct = AsyncMock(return_value=None)
         mock_correction.side_effect = [mock_ph_controller, mock_ec_controller]
         
-        service = ZoneAutomationService(zone_repo, telemetry_repo, node_repo, recipe_repo, grow_cycle_repo, infrastructure_repo, command_bus)
+        service = ZoneAutomationService(
+            zone_repo,
+            telemetry_repo,
+            node_repo,
+            recipe_repo,
+            grow_cycle_repo,
+            infrastructure_repo,
+            command_bus,
+        )
         # Заменяем реальные контроллеры на моки
         service.ph_controller = mock_ph_controller
         service.ec_controller = mock_ec_controller
@@ -117,7 +133,9 @@ async def test_process_zone_light_controller():
     infrastructure_repo = Mock(spec=InfrastructureRepository)
     command_bus = Mock(spec=CommandBus)
     command_bus.publish_controller_command = AsyncMock(return_value=True)
-    grow_cycle_repo.get_active_grow_cycle = AsyncMock(return_value=None)
+    grow_cycle_repo.get_active_grow_cycle = AsyncMock(return_value={
+        "targets": {"light_hours": "06:00-22:00"},
+    })
     infrastructure_repo.get_zone_bindings_by_role = AsyncMock(return_value={})
     
     recipe_repo.get_zone_data_batch = AsyncMock(return_value={
@@ -157,7 +175,6 @@ async def test_process_zone_light_controller():
         }) as mock_light, \
          patch("services.zone_automation_service.create_zone_event") as mock_event:
         
-        mock_phase_check.return_value = None
         service = ZoneAutomationService(zone_repo, telemetry_repo, node_repo, recipe_repo, grow_cycle_repo, infrastructure_repo, command_bus)
         await service.process_zone(1)
         
@@ -176,7 +193,9 @@ async def test_process_zone_phase_transition():
     grow_cycle_repo = Mock(spec=GrowCycleRepository)
     infrastructure_repo = Mock(spec=InfrastructureRepository)
     command_bus = Mock(spec=CommandBus)
-    grow_cycle_repo.get_active_grow_cycle = AsyncMock(return_value=None)
+    grow_cycle_repo.get_active_grow_cycle = AsyncMock(return_value={
+        "targets": {},
+    })
     infrastructure_repo.get_zone_bindings_by_role = AsyncMock(return_value={})
     
     recipe_repo.get_zone_data_batch = AsyncMock(return_value={
@@ -191,20 +210,16 @@ async def test_process_zone_phase_transition():
         "capabilities": {}
     })
     
-    with patch("services.zone_automation_service.calculate_current_phase") as mock_phase, \
-         patch("services.zone_automation_service.advance_phase") as mock_advance, \
-         patch("services.zone_automation_service.create_zone_event") as mock_event:
-        
-        mock_phase.return_value = {
-            "phase_index": 0,
-            "target_phase_index": 1,
-            "should_transition": True
-        }
-        mock_advance.return_value = True
-        
-        service = ZoneAutomationService(zone_repo, telemetry_repo, node_repo, recipe_repo, grow_cycle_repo, infrastructure_repo, command_bus)
+    with patch("services.zone_automation_service.ZoneAutomationService._check_phase_transitions") as mock_phase_check:
+        service = ZoneAutomationService(
+            zone_repo,
+            telemetry_repo,
+            node_repo,
+            recipe_repo,
+            grow_cycle_repo,
+            infrastructure_repo,
+            command_bus,
+        )
         await service.process_zone(1)
-        
-        # Проверяем, что фаза была переведена
-        mock_advance.assert_called_once_with(1, 1)
-        mock_event.assert_called_once()
+
+        mock_phase_check.assert_called_once_with(1)

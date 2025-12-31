@@ -1,0 +1,195 @@
+# E11: Command Failed - Узел отвечает FAILED
+# DoD: node-sim отвечает FAILED, DB status=FAILED + WS
+
+name: E11_command_failed
+description: |
+  Проверяет обработку неуспешной команды:
+  - Команда отправляется узлу
+  - Узел отвечает FAILED
+  - Статус команды в БД = FAILED
+  - WebSocket событие CommandStatusUpdated отправляется
+
+setup:
+  node_sim:
+    config:
+      mqtt:
+        host: ${MQTT_HOST:-localhost}
+        port: ${MQTT_PORT:-1884}
+      node:
+        gh_uid: gh-test-1
+        zone_uid: zn-test-1
+        node_uid: nd-ph-esp32una
+        hardware_id: esp32-test-001
+        node_type: ph
+        mode: configured
+        channels:
+          - ph_sensor
+        actuators:
+          - main_pump
+      telemetry:
+        interval_seconds: 2.0
+        heartbeat_interval_seconds: 15.0
+      # Настройка для симуляции FAILED ответа
+      # Примечание: node-sim может иметь специальную команду или режим для FAILED
+
+actions:
+  - step: start_node_simulator
+    type: start_simulator
+    config_ref: node_sim.config
+    wait_seconds: 3
+    optional: true  # node-sim уже может быть запущен
+
+  - step: set_test_uids
+    type: set
+    test_gh_uid: ${setup.node_sim.config.node.gh_uid}
+    test_zone_uid: ${setup.node_sim.config.node.zone_uid}
+    test_node_uid: ${setup.node_sim.config.node.node_uid}
+
+  - step: fetch_node_id
+    type: database_query
+    query: |
+      SELECT id AS node_id, zone_id
+      FROM nodes
+      WHERE uid = :node_uid
+      LIMIT 1
+    params:
+      node_uid: ${test_node_uid}
+    save: node_row
+
+  - step: get_zones
+    type: api_get
+    endpoint: /api/zones
+    save: zones_response
+
+  - step: get_nodes
+    type: api_get
+    endpoint: /api/nodes
+    save: nodes_response
+
+  - step: set_zone_and_node
+    type: set
+    test_zone_id: ${node_row.0.zone_id}
+    test_node_id: ${node_row.0.node_id}
+    zone_id: ${node_row.0.zone_id}
+    node_id: ${node_row.0.node_id}
+
+  - step: subscribe_zone_channel
+    type: websocket_subscribe
+    channel: hydro.zones.${test_zone_id}
+
+  - step: subscribe_commands_channel
+    type: websocket_subscribe
+    channel: commands.${test_zone_id}
+
+  # Отправляем команду, которая приведет к FAILED
+  # Примечание: Для симуляции FAILED может потребоваться специальная команда
+  # или node-sim должен быть настроен на FAILED ответ для определенных команд
+  # Здесь используем команду с неверным каналом или параметрами
+  - step: send_command_that_fails
+    type: api_post
+    endpoint: /api/nodes/${test_node_id}/commands
+    payload:
+      cmd: set_relay_state
+      channel: nonexistent_channel  # Несуществующий канал может привести к FAILED
+      params:
+        state: true
+    save: command_response
+    optional: true  # Может вернуть 503 если bridge недоступен
+
+  - step: set_command_id_from_response
+    type: set
+    command_id: ${command_response.data.command_id}
+    condition: ${command_response && command_response.data && command_response.data.command_id}
+
+  # Получаем command_id из базы данных
+  - step: get_command_id_from_db
+    type: database_query
+    query: |
+      SELECT cmd_id
+      FROM commands
+      WHERE zone_id = :zone_id
+      AND node_id = :node_id
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${test_zone_id}
+      node_id: ${test_node_id}
+    save: command_from_db
+
+  - step: set_command_id
+    type: set
+    command_id: ${command_from_db.0.cmd_id}
+
+  # Альтернативно: симулируем FAILED ответ через MQTT от node-sim
+  - step: simulate_failed_response
+    type: mqtt_publish
+    topic: hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/main_pump/command_response
+    payload:
+      cmd_id: ${command_id}
+      status: FAILED
+      message: "Command failed: invalid channel"
+      ts: ${TIMESTAMP_MS}
+    qos: 1
+    optional: true
+
+  - step: wait_after_mqtt_publish
+    type: sleep
+    seconds: 2
+    condition: ${command_id && command_id != '' && command_id != null}
+
+  # Ждем FAILED статус в БД (после симуляции ответа)
+  - step: wait_for_failed_status
+    type: db_wait
+    query: |
+      SELECT status
+      FROM commands
+      WHERE zone_id = :zone_id
+      AND node_id = :node_id
+      AND status = 'FAILED'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${test_zone_id}
+      node_id: ${test_node_id}
+    timeout: 30.0
+    expected_rows: 1
+
+  # Ждем WebSocket событие (опционально) - используем sleep, т.к. ws.wait_event не поддерживается в actions
+  - step: wait_for_failed_ws_event
+    type: sleep
+    seconds: 2
+    optional: true
+
+assertions:
+  # Проверка: Команда должна быть в статусе FAILED (DoD требует проверку статуса FAILED)
+  - name: command_status_is_failed
+    type: database_query
+    query: |
+      SELECT status
+      FROM commands
+      WHERE zone_id = :zone_id
+      AND node_id = :node_id
+      AND status = 'FAILED'
+      ORDER BY created_at DESC
+      LIMIT 1
+    params:
+      zone_id: ${test_zone_id}
+      node_id: ${test_node_id}
+    timeout: 5.0
+    expected_rows: 1
+    expected:
+      - field: status
+        operator: equals
+        value: "FAILED"
+
+  # Проверка: WebSocket событие FAILED отправлено (опционально)
+  - name: wait_for_failed_ws_event
+    type: websocket_event
+    event_type: ".App\\Events\\CommandStatusUpdated"
+    timeout_seconds: 10.0
+    optional: true
+
+cleanup:
+  - step: stop_node_simulator
+    type: stop_simulator
+    optional: true  # fault injection не работает в контейнере

@@ -4,34 +4,34 @@ use App\Http\Controllers\AiController;
 use App\Http\Controllers\AlertController;
 use App\Http\Controllers\AlertStreamController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\ChannelBindingController;
 use App\Http\Controllers\E2EAuthController;
 use App\Http\Controllers\GreenhouseController;
+use App\Http\Controllers\GrowCycleController;
+use App\Http\Controllers\InfrastructureInstanceController;
 use App\Http\Controllers\NodeCommandController;
 use App\Http\Controllers\NodeController;
+use App\Http\Controllers\PipelineHealthController;
+use App\Http\Controllers\PlantController;
 use App\Http\Controllers\PresetController;
 use App\Http\Controllers\ProfitabilityController;
 use App\Http\Controllers\PythonIngestController;
 use App\Http\Controllers\RecipeController;
+use App\Http\Controllers\RecipeRevisionController;
+use App\Http\Controllers\RecipeRevisionPhaseController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\ServiceLogController;
 use App\Http\Controllers\SimulationController;
 use App\Http\Controllers\SystemController;
 use App\Http\Controllers\TelemetryController;
+use App\Http\Controllers\UnassignedNodeErrorController;
 use App\Http\Controllers\ZoneCommandController;
 use App\Http\Controllers\ZoneController;
+use App\Http\Controllers\ZoneInfrastructureController;
 use App\Http\Controllers\ZonePidConfigController;
 use App\Http\Controllers\ZonePidLogController;
-use App\Http\Controllers\ZoneInfrastructureController;
-use App\Http\Controllers\UnassignedNodeErrorController;
-use App\Http\Controllers\PipelineHealthController;
-use App\Http\Controllers\GrowCycleController;
-use App\Http\Controllers\PlantController;
-use App\Http\Controllers\RecipeRevisionController;
-use App\Http\Controllers\RecipeRevisionPhaseController;
-use App\Http\Controllers\InfrastructureInstanceController;
-use App\Http\Controllers\ChannelBindingController;
-use Illuminate\Support\Facades\Route;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
 
 $apiThrottle = in_array(env('APP_ENV'), ['testing', 'e2e'], true) ? '1000,1' : '120,1';
 
@@ -122,7 +122,7 @@ Route::middleware([
     Route::get('zones/{zone}/effective-targets', [ZoneController::class, 'effectiveTargets'])
         ->middleware('ae.legacy.sql.guard');
     Route::get('greenhouses/{greenhouse}/grow-cycles', [GrowCycleController::class, 'indexByGreenhouse']);
-    
+
     // Recipe revisions
     Route::get('recipe-revisions/{recipeRevision}', [RecipeRevisionController::class, 'show']);
     Route::get('nodes', [NodeController::class, 'index']);
@@ -142,7 +142,7 @@ Route::middleware([
     Route::get('plants/{plant}', [PlantController::class, 'show']);
     Route::put('plants/{plant}', [PlantController::class, 'update']);
     Route::delete('plants/{plant}', [PlantController::class, 'destroy']);
-    
+
     // Grow Cycle Wizard endpoints
     Route::get('grow-cycle-wizard/data', [\App\Http\Controllers\GrowCycleWizardController::class, 'getWizardData']);
     Route::get('grow-cycle-wizard/zone/{zone}', [\App\Http\Controllers\GrowCycleWizardController::class, 'getZoneData']);
@@ -166,18 +166,18 @@ Route::middleware([
         Route::post('infrastructure-instances', [InfrastructureInstanceController::class, 'store']);
         Route::patch('infrastructure-instances/{infrastructureInstance}', [InfrastructureInstanceController::class, 'update']);
         Route::delete('infrastructure-instances/{infrastructureInstance}', [InfrastructureInstanceController::class, 'destroy']);
-        
+
         // Channel bindings
         Route::post('channel-bindings', [ChannelBindingController::class, 'store']);
         Route::patch('channel-bindings/{channelBinding}', [ChannelBindingController::class, 'update']);
         Route::delete('channel-bindings/{channelBinding}', [ChannelBindingController::class, 'destroy']);
-        
+
         Route::post('zones/{zone}/fill', [ZoneController::class, 'fill']);
         Route::post('zones/{zone}/drain', [ZoneController::class, 'drain']);
         Route::post('zones/{zone}/calibrate-flow', [ZoneController::class, 'calibrateFlow']);
         Route::put('zones/{zone}/infrastructure', [ZoneInfrastructureController::class, 'update']);
         Route::post('zones/{zone}/infrastructure/bindings', [ZoneInfrastructureController::class, 'storeBinding']);
-        Route::delete('zones/{zone}/infrastructure/bindings/{zoneChannelBinding}', [ZoneInfrastructureController::class, 'destroyBinding']);
+        Route::delete('zones/{zone}/infrastructure/bindings/{channelBinding}', [ZoneInfrastructureController::class, 'destroyBinding']);
 
         // Grow Cycle operations
         Route::get('grow-cycles', [GrowCycleController::class, 'index']);
@@ -190,8 +190,6 @@ Route::middleware([
         Route::post('grow-cycles/{growCycle}/set-phase', [GrowCycleController::class, 'setPhase']);
         Route::post('grow-cycles/{growCycle}/advance-phase', [GrowCycleController::class, 'advancePhase']);
         Route::post('grow-cycles/{growCycle}/change-recipe-revision', [GrowCycleController::class, 'changeRecipeRevision']);
-        
-
 
         // Nodes
         Route::post('nodes', [NodeController::class, 'store']);
@@ -210,12 +208,12 @@ Route::middleware([
         Route::patch('recipes/{recipe}', [RecipeController::class, 'update']);
         Route::delete('recipes/{recipe}', [RecipeController::class, 'destroy']);
         Route::put('recipes/{recipe}/stage-map', [RecipeController::class, 'updateStageMap']);
-        
+
         // Recipe revisions
         Route::post('recipes/{recipe}/revisions', [RecipeRevisionController::class, 'store']);
         Route::patch('recipe-revisions/{recipeRevision}', [RecipeRevisionController::class, 'update']);
         Route::post('recipe-revisions/{recipeRevision}/publish', [RecipeRevisionController::class, 'publish']);
-        
+
         // Recipe revision phases
         Route::post('recipe-revisions/{recipeRevision}/phases', [RecipeRevisionPhaseController::class, 'store']);
         Route::patch('recipe-revision-phases/{recipeRevisionPhase}', [RecipeRevisionPhaseController::class, 'update']);
@@ -237,7 +235,7 @@ Route::middleware([
         // Alerts (operator+)
         Route::patch('alerts/{alert}/ack', [AlertController::class, 'ack']);
         Route::post('alerts/dlq/{id}/replay', [AlertController::class, 'replayDlq']);
-        
+
         // Grow Cycle Wizard (operator+)
         Route::post('grow-cycle-wizard/create', [\App\Http\Controllers\GrowCycleWizardController::class, 'createGrowCycle']);
 
@@ -294,7 +292,7 @@ Route::middleware([
     Route::get('alerts/{alert}', [AlertController::class, 'show']);
     // SSE stream с ограничением подключений для предотвращения DoS (максимум 5 подключений на пользователя в минуту)
     Route::get('alerts/stream', [AlertStreamController::class, 'stream'])->middleware('throttle:5,1');
-    
+
     // Pipeline Health (viewer+)
     Route::get('pipeline/health', [PipelineHealthController::class, 'pipelineHealth']);
 
@@ -329,7 +327,7 @@ Route::prefix('internal')->middleware(['verify.python.service', 'throttle:'.$api
 // Node registration and service updates (token-based) - умеренный лимит
 Route::middleware(['throttle:node_register', 'ip.whitelist'])->group(function () {
     Route::post('nodes/register', [NodeController::class, 'register']);
-    
+
     // Node updates от сервисов (history-logger и т.д.) - проверка токена в контроллере
     Route::patch('nodes/{node}/service-update', [NodeController::class, 'serviceUpdate']);
     Route::post('nodes/{node}/lifecycle/service-transition', [NodeController::class, 'transitionLifecycle']);

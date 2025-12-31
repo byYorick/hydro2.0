@@ -1,11 +1,11 @@
 {
-  "test_suite": "E21_alert_dedup_count",
-  "generated_at": "2025-12-31T12:25:42.712370",
+  "test_suite": "E54_pause_resume_harvest",
+  "generated_at": "2025-12-31T13:32:39.167710",
   "test_cases": [
     {
       "name": "get_zones",
       "status": "passed",
-      "duration": 0.07257342338562012,
+      "duration": 0.07391214370727539,
       "error_message": null,
       "steps": [
         {
@@ -13,12 +13,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T12:25:32.424741"
+      "timestamp": "2025-12-31T13:32:39.106773"
     },
     {
       "name": "set_zone_id",
       "status": "passed",
-      "duration": 7.152557373046875e-06,
+      "duration": 8.106231689453125e-06,
       "error_message": null,
       "steps": [
         {
@@ -26,46 +26,62 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T12:25:32.424806"
+      "timestamp": "2025-12-31T13:32:39.106833"
     },
     {
-      "name": "cleanup_old_alerts",
-      "status": "failed",
-      "duration": 0.005113363265991211,
-      "error_message": "invalid input syntax for type bigint: \"\"\nCONTEXT:  unnamed portal parameter $1 = ''",
-      "steps": [
-        {
-          "name": "cleanup_old_alerts",
-          "status": "failed",
-          "error": "invalid input syntax for type bigint: \"\"\nCONTEXT:  unnamed portal parameter $1 = ''"
-        }
-      ],
-      "timestamp": "2025-12-31T12:25:32.430138"
-    },
-    {
-      "name": "at_least_one_active_alert",
+      "name": "cleanup_old_cycles",
       "status": "skipped",
-      "duration": 0.003170013427734375,
+      "duration": 0.002406597137451172,
       "error_message": "invalid input syntax for type bigint: \"\"\nCONTEXT:  unnamed portal parameter $1 = ''",
       "steps": [
         {
-          "name": "at_least_one_active_alert",
+          "name": "cleanup_old_cycles",
           "status": "skipped",
           "error": "invalid input syntax for type bigint: \"\"\nCONTEXT:  unnamed portal parameter $1 = ''"
         }
       ],
-      "timestamp": "2025-12-31T12:25:32.433351"
+      "timestamp": "2025-12-31T13:32:39.109287"
+    },
+    {
+      "name": "get_active_cycle",
+      "status": "failed",
+      "duration": 0.056829214096069336,
+      "error_message": "Server error '500 Internal Server Error' for url 'http://localhost:8081/api/zones/grow-cycle'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500",
+      "steps": [
+        {
+          "name": "get_active_cycle",
+          "status": "failed",
+          "error": "Server error '500 Internal Server Error' for url 'http://localhost:8081/api/zones/grow-cycle'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+        }
+      ],
+      "timestamp": "2025-12-31T13:32:39.166304"
+    },
+    {
+      "name": "zone_exists",
+      "status": "failed",
+      "duration": 0.0009520053863525391,
+      "error_message": "invalid input syntax for type bigint: \"\"\nCONTEXT:  unnamed portal parameter $1 = ''",
+      "steps": [
+        {
+          "name": "zone_exists",
+          "status": "failed",
+          "error": "invalid input syntax for type bigint: \"\"\nCONTEXT:  unnamed portal parameter $1 = ''"
+        }
+      ],
+      "timestamp": "2025-12-31T13:32:39.167323"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E21_alert_dedup_count": {
+    "E54_pause_resume_harvest": {
       "ws_messages": [],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
         "zone_id": "",
-        "node_id": 1
+        "zone_uid": "zn-test-1",
+        "node_id": 1,
+        "node_uid": "nd-ph-esp32una"
       }
     }
   }

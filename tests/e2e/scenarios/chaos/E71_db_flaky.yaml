@@ -8,7 +8,47 @@ description: |
   - Система не падает
   - queues/DLQ фиксируют данные для последующей обработки
 
+setup:
+  node_sim:
+    config:
+      mqtt:
+        host: ${MQTT_HOST:-localhost}
+        port: ${MQTT_PORT:-1884}
+        username: ${MQTT_USER:-null}
+        password: ${MQTT_PASS:-null}
+      node:
+        gh_uid: gh-test-1
+        zone_uid: zn-test-1
+        node_uid: nd-ph-esp32una
+        hardware_id: esp32-test-001
+        node_type: ph
+        mode: configured
+        channels:
+          - ph_sensor
+        actuators:
+          - main_pump
+      telemetry:
+        interval_seconds: 2.0
+        heartbeat_interval_seconds: 15.0
+
 actions:
+  - step: set_test_uids
+    type: set
+    test_gh_uid: ${setup.node_sim.config.node.gh_uid}
+    test_zone_uid: ${setup.node_sim.config.node.zone_uid}
+    test_node_uid: ${setup.node_sim.config.node.node_uid}
+
+  - step: fetch_node_id
+    type: database_query
+    query: |
+      SELECT id AS node_id, zone_id
+      FROM nodes
+      WHERE uid = :node_uid
+      LIMIT 1
+    params:
+      node_uid: ${test_node_uid}
+    save: node_row
+
   - step: get_zones
     type: api_get
     endpoint: /api/zones
@@ -16,7 +56,7 @@ actions:
 
   - step: set_zone_id
     type: set
-    zone_id: ${zones_response.data[0].id}
+    zone_id: ${node_row.0.zone_id}
 
   # Симулируем проблемы с БД (pause PostgreSQL на короткое время) - опционально
   - step: pause_postgres
@@ -33,7 +73,7 @@ actions:
   # Публикуем ошибку (не должна обработаться из-за паузы БД)
   - step: publish_error_during_db_pause
     type: mqtt_publish
-    topic: hydro/gh-test-1/zn-test-1/nd-ph-esp32una/error
+    topic: hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/error
     payload:
       level: ERROR
       component: test

@@ -8,65 +8,12 @@ from common.utils.time import utcnow
 from common.db import fetch, create_zone_event
 from common.alerts import create_alert, AlertSource, AlertCode
 from alerts_manager import ensure_alert
+from services.targets_accessor import get_lighting_window, get_light_intensity, parse_photoperiod
 
 
 # Пороги для обнаружения света
 LIGHT_SENSOR_NIGHT_LEVEL = 10  # lux - уровень ночного освещения
 LIGHT_FAILURE_THRESHOLD = 20  # lux - если свет включен, но показания < этого значения - ошибка
-
-
-def parse_photoperiod(light_hours: Any) -> Optional[tuple]:
-    """
-    Парсинг фотопериода из targets.
-    
-    Поддерживает форматы:
-    - "06:00-22:00" (строка)
-    - 16 (число часов, начиная с 06:00)
-    - {"start": "06:00", "end": "22:00"} (dict)
-    
-    Returns:
-        (start_time, end_time) или None
-    """
-    if light_hours is None:
-        return None
-    
-    if isinstance(light_hours, (int, float)):
-        # Число часов, по умолчанию начинаем с 06:00
-        hours = int(light_hours)
-        start = time(6, 0)
-        end_hour = (6 + hours) % 24
-        end = time(end_hour, 0)
-        return (start, end)
-    
-    if isinstance(light_hours, str):
-        # Формат "06:00-22:00"
-        if "-" in light_hours:
-            parts = light_hours.split("-")
-            if len(parts) == 2:
-                try:
-                    start_parts = parts[0].strip().split(":")
-                    end_parts = parts[1].strip().split(":")
-                    start = time(int(start_parts[0]), int(start_parts[1]) if len(start_parts) > 1 else 0)
-                    end = time(int(end_parts[0]), int(end_parts[1]) if len(end_parts) > 1 else 0)
-                    return (start, end)
-                except (ValueError, IndexError):
-                    pass
-    
-    if isinstance(light_hours, dict):
-        # Формат {"start": "06:00", "end": "22:00"}
-        start_str = light_hours.get("start")
-        end_str = light_hours.get("end")
-        if start_str and end_str:
-            try:
-                start_parts = start_str.split(":")
-                end_parts = end_str.split(":")
-                start = time(int(start_parts[0]), int(start_parts[1]) if len(start_parts) > 1 else 0)
-                end = time(int(end_parts[0]), int(end_parts[1]) if len(end_parts) > 1 else 0)
-                return (start, end)
-            except (ValueError, IndexError):
-                pass
-    
-    return None
 
 
 def get_light_bindings(bindings: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -168,8 +115,7 @@ async def check_and_control_lighting(
     current_time_obj = time(current_hour, current_minute)
     
     # Получаем фотопериод из targets
-    light_hours = targets.get("light_hours") or targets.get("photoperiod")
-    photoperiod = parse_photoperiod(light_hours)
+    photoperiod = get_lighting_window(targets, zone_id=zone_id)
     
     if photoperiod is None:
         # Нет настроек фотопериода
@@ -203,15 +149,10 @@ async def check_and_control_lighting(
         await ensure_light_failure_alert(zone_id)
     
     # Получаем интенсивность (если задана)
-    light_intensity = targets.get("light_intensity") or targets.get("ppfd")
-    intensity_value = None
-    if light_intensity is not None:
-        try:
-            intensity_value = int(light_intensity)
-            # Ограничиваем диапазон 0-100
-            intensity_value = max(0, min(100, intensity_value))
-        except (ValueError, TypeError):
-            intensity_value = None
+    intensity_value = get_light_intensity(targets)
+    if intensity_value is not None:
+        # Ограничиваем диапазон 0-100
+        intensity_value = max(0, min(100, intensity_value))
     
     # Формируем команду
     if should_be_on:

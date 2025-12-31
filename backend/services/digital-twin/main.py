@@ -25,6 +25,8 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()]  # Явно указываем stdout для Docker
 )
 
+logger = logging.getLogger(__name__)
+
 SIMULATIONS_RUN = Counter("simulations_run_total", "Total simulations executed")
 SIMULATION_DURATION = Histogram("simulation_duration_seconds", "Simulation execution time")
 
@@ -39,7 +41,7 @@ class SimulationResponse(BaseModel):
     data: Dict[str, Any]
 
 
-async def get_recipe_phases(recipe_id: int) -> List[Dict[str, Any]]:
+async def get_recipe_revision_phases(recipe_id: int) -> List[Dict[str, Any]]:
     """
     Получить фазы рецепта из ревизии (новая модель).
     Для симуляции используем последнюю опубликованную ревизию рецепта.
@@ -141,7 +143,7 @@ async def simulate_zone(request: SimulationRequest) -> Dict[str, Any]:
         if not recipe_id:
             raise HTTPException(status_code=400, detail="recipe_id required in scenario")
 
-        phases = await get_recipe_phases(recipe_id)
+        phases = await get_recipe_revision_phases(recipe_id)
         if not phases:
             raise HTTPException(status_code=404, detail=f"Recipe {recipe_id} not found or has no phases")
 
@@ -298,4 +300,3 @@ if __name__ == "__main__":
     settings = get_settings()
     start_http_server(9403)  # Prometheus metrics
     uvicorn.run(app, host="0.0.0.0", port=8003)
-

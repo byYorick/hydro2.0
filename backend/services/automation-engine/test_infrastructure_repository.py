@@ -25,6 +25,7 @@ async def test_get_zone_bindings_by_role():
                 "role": "vent",
                 "node_id": 1,
                 "node_uid": "nd-climate-1",
+                "node_channel_id": 101,
                 "channel": "fan_A",
                 "asset_id": 10,
                 "asset_type": "VENT",
@@ -34,6 +35,7 @@ async def test_get_zone_bindings_by_role():
                 "role": "heater",
                 "node_id": 2,
                 "node_uid": "nd-climate-1",
+                "node_channel_id": 102,
                 "channel": "heater_1",
                 "asset_id": 11,
                 "asset_type": "HEATER",
@@ -43,6 +45,7 @@ async def test_get_zone_bindings_by_role():
                 "role": "main_pump",
                 "node_id": 3,
                 "node_uid": "nd-irrig-1",
+                "node_channel_id": 103,
                 "channel": "pump_1",
                 "asset_id": 12,
                 "asset_type": "PUMP",
@@ -56,6 +59,7 @@ async def test_get_zone_bindings_by_role():
         assert "heater" in result
         assert "main_pump" in result
         assert result["vent"]["node_uid"] == "nd-climate-1"
+        assert result["vent"]["node_channel_id"] == 101
         assert result["vent"]["channel"] == "fan_A"
         assert result["heater"]["node_uid"] == "nd-climate-1"
         assert result["main_pump"]["node_uid"] == "nd-irrig-1"
@@ -87,6 +91,7 @@ async def test_get_zones_bindings_batch():
                 "role": "vent",
                 "node_id": 1,
                 "node_uid": "nd-climate-1",
+                "node_channel_id": 201,
                 "channel": "fan_A",
                 "asset_id": 10,
                 "asset_type": "VENT",
@@ -97,6 +102,7 @@ async def test_get_zones_bindings_batch():
                 "role": "main_pump",
                 "node_id": 3,
                 "node_uid": "nd-irrig-1",
+                "node_channel_id": 202,
                 "channel": "pump_1",
                 "asset_id": 12,
                 "asset_type": "PUMP",
@@ -110,20 +116,22 @@ async def test_get_zones_bindings_batch():
         assert 6 in result
         assert 7 in result  # Zone without bindings should have empty dict
         assert "vent" in result[5]
+        assert result[5]["vent"]["node_channel_id"] == 201
         assert "main_pump" in result[6]
         assert result[7] == {}  # Empty dict for zone without bindings
 
 
 @pytest.mark.asyncio
-async def test_get_zone_infrastructure_assets():
-    """Test getting infrastructure assets for zone."""
+async def test_get_zone_asset_instances():
+    """Test getting asset instances for zone."""
     repo = InfrastructureRepository()
     
     with patch("repositories.infrastructure_repository.fetch", new_callable=AsyncMock) as mock_fetch:
         mock_fetch.return_value = [
             {
                 "id": 10,
-                "zone_id": 5,
+                "owner_type": "zone",
+                "owner_id": 5,
                 "asset_type": "VENT",
                 "label": "Main Ventilation",
                 "required": True,
@@ -133,7 +141,8 @@ async def test_get_zone_infrastructure_assets():
             },
             {
                 "id": 11,
-                "zone_id": 5,
+                "owner_type": "zone",
+                "owner_id": 5,
                 "asset_type": "PUMP",
                 "label": "Main Pump",
                 "required": True,
@@ -143,11 +152,13 @@ async def test_get_zone_infrastructure_assets():
             },
         ]
         
-        result = await repo.get_zone_infrastructure_assets(5)
+        result = await repo.get_zone_asset_instances(5)
         
         assert len(result) == 2
         assert result[0]["asset_type"] == "VENT"
         assert result[1]["asset_type"] == "PUMP"
+        assert result[0]["owner_type"] == "zone"
+        assert result[1]["owner_id"] == 5
         assert result[0]["required"] is True
         assert result[1]["flow_rate"] == 50.0
 
@@ -170,6 +181,7 @@ async def test_get_zone_bindings_by_role_with_circuit_breaker():
                 "role": "vent",
                 "node_id": 1,
                 "node_uid": "nd-climate-1",
+                "node_channel_id": 301,
                 "channel": "fan_A",
                 "asset_id": 10,
                 "asset_type": "VENT",
@@ -181,4 +193,3 @@ async def test_get_zone_bindings_by_role_with_circuit_breaker():
         
         assert "vent" in result
         mock_call.assert_called_once()
-

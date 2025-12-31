@@ -30,7 +30,6 @@ from utils.logging_context import setup_structured_logging
 setup_structured_logging(level=getattr(logging, log_level, logging.INFO))
 
 logger = logging.getLogger(__name__)
-from recipe_utils import calculate_current_phase, advance_phase, get_phase_targets
 
 # Metrics for error tracking
 LOOP_ERRORS = Counter("automation_loop_errors_total", "Errors in automation main loop", ["error_type"])
@@ -197,24 +196,11 @@ async def publish_correction_command(
 
 async def check_phase_transitions(zone_id: int):
     """Check and advance phases if needed based on elapsed time."""
-    phase_calc = await calculate_current_phase(zone_id)
-    if not phase_calc:
-        return
-
-    if phase_calc.get("should_transition") and phase_calc["target_phase_index"] > phase_calc["phase_index"]:
-        # Advance to next phase
-        new_phase_index = phase_calc["target_phase_index"]
-        success = await advance_phase(zone_id, new_phase_index)
-        if success:
-            # Create zone event for phase transition
-            await create_zone_event(
-                zone_id,
-                'PHASE_TRANSITION',
-                {
-                    'from_phase': phase_calc["phase_index"],
-                    'to_phase': new_phase_index
-                }
-            )
+    logger.info(
+        "check_phase_transitions is disabled; use GrowCyclePhase transitions via Laravel instead",
+        extra={"zone_id": zone_id},
+    )
+    return
 
 
 def validate_zone_id(zone_id: Any) -> int:

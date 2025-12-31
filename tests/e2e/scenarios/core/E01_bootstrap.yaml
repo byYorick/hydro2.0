@@ -122,16 +122,17 @@ assertions:
     type: database_query
     query: |
       SELECT
-        tl.last_value,
-        tl.last_ts,
-        s.type,
+        tl.last_value as value,
+        s.label as channel,
         s.node_id,
-        s.zone_id
+        s.zone_id,
+        tl.updated_at,
+        s.type as metric_type
       FROM telemetry_last tl
       JOIN sensors s ON s.id = tl.sensor_id
       WHERE s.zone_id = :zone_id
-      AND s.node_id = :node_id
-      AND s.type = 'PH'
+        AND s.node_id = :node_id
+        AND s.type = 'PH'
       LIMIT 1
     params:
       zone_id: ${zone_id}
@@ -139,12 +140,12 @@ assertions:
     timeout: 30.0
     expected_rows: 1
     expected:
-      - field: last_value
+      - field: value
         operator: is_not_null
-      - field: type
+      - field: metric_type
         operator: equals
         value: "PH"
-      - field: last_ts
+      - field: updated_at
         operator: is_not_null
 
   # Проверка 2: Статус узла ONLINE

@@ -48,8 +48,8 @@ actions:
   step: db_lookup_node_id
   type: database_query
   wait_seconds: 1
-- node_id: ${node_row[0].id}
-  node_uid: ${node_row[0].uid}
+- node_id: ${node_row.0.id}
+  node_uid: ${node_row.0.uid}
   step: set_node_id
   type: set
 - endpoint: /api/nodes/${node_id}

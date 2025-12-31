@@ -110,14 +110,15 @@ mqtt-bridge/
 **Функционал:**
 - Подписка на топики `hydro/+/+/+/telemetry`
 - Парсинг JSON payload
-- Батчинг и upsert в `telemetry_samples`
-- Обновление `telemetry_last`
+- Резолв/создание сенсоров в `sensors`
+- Batch insert в `telemetry_samples` (по `sensor_id`)
+- Batch upsert в `telemetry_last` (по `sensor_id`)
 - Обработка ошибок и реконнект
 - **Batch processing оптимизации:**
   - Кеш `uid→id` с TTL refresh (60 секунд) для зон и нод
   - Batch resolve недостающих UID (один запрос вместо N)
-  - Batch insert для `telemetry_samples`
-  - Batch upsert для `telemetry_last` (один запрос для всех обновлений)
+  - Batch insert для `telemetry_samples` (по `sensor_id`)
+  - Batch upsert для `telemetry_last` (по `sensor_id`, один запрос для всех обновлений)
   - Backpressure при >95% заполнения очереди (sampling с коэффициентом 0.8-0.5)
   - Метрики и алерты:
     - `telemetry_queue_size` - текущий размер очереди
@@ -154,6 +155,7 @@ history-logger/
 3. Периодическая обработка батча из очереди:
    - Использование кеша для резолва zone_id/node_id
    - Batch resolve недостающих UID
+   - Поиск/создание `sensor_id` в `sensors`
    - Batch insert в `telemetry_samples`
    - Batch upsert в `telemetry_last`
 4. Мониторинг размера очереди и backpressure
@@ -217,7 +219,7 @@ automation-engine/
 2. Получение активных зон с рецептами из БД
 3. Расчет оптимальной конкурентности (если включена адаптивность)
 4. Параллельная обработка зон с ограничением конкурентности:
-   - Получение текущих значений из `telemetry_last`
+   - Получение текущих значений из `telemetry_last` (join с `sensors`)
    - Сравнение с targets из рецепта
    - Публикация команд корректировки через history-logger REST API
    - Отслеживание ошибок и метрик
@@ -344,8 +346,9 @@ Scheduler → REST (9405) → Automation-Engine → REST (9300) → History-Logg
 **Направление:** Python → PostgreSQL
 
 **Таблицы:**
-- `telemetry_samples` — история телеметрии (запись через `history-logger`)
-- `telemetry_last` — последние значения (обновление через `history-logger`)
+- `sensors` — справочник сенсоров (type/label/scope, связь с zone/node)
+- `telemetry_samples` — история телеметрии (запись через `history-logger`, `sensor_id`)
+- `telemetry_last` — последние значения (обновление через `history-logger`, `sensor_id`)
 - `zones`, `recipes`, `recipe_phases` — чтение через `automation-engine` и `scheduler`
 - `commands` — логирование команд (опционально)
 

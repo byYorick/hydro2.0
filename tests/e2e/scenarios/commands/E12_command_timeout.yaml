@@ -91,7 +91,7 @@ actions:
 
   - step: set_command_id_from_manual
     type: set
-    command_id: ${manual_command[0].cmd_id}
+    command_id: ${manual_command.0.cmd_id}
     condition: ${manual_command && len(manual_command) > 0 && manual_command[0].cmd_id}
 
   # Останавливаем node-sim чтобы гарантировать отсутствие ответа

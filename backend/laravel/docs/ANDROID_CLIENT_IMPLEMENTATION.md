@@ -212,14 +212,22 @@ when (event.type) {
 - Не обновляйте UI на каждое событие
 - Агрегируйте обновления (например, раз в секунду)
 
+В realtime используется событие `telemetry.batch.updated` (канал `hydro.zones.{id}`), payload содержит `updates[]`
+с полями `metric_type`, `value`, `channel`, `node_id`, `ts`.
+
 ```kotlin
 when (event.type) {
-    "telemetry_updated" -> {
-        val metricType = event.payload["metric_type"] as String
-        val value = event.payload["value"] as Double
-        
-        // Debounce для UI обновлений
-        telemetryUpdateDebouncer.update(metricType, value)
+    "telemetry.batch.updated" -> {
+        val updates = event.payload["updates"] as List<Map<String, Any>>
+
+        updates.forEach { update ->
+            val metricType = update["metric_type"] as String
+            val value = (update["value"] as Number).toDouble()
+            val channel = update["channel"] as? String
+
+            // Debounce для UI обновлений
+            telemetryUpdateDebouncer.update(metricType, value, channel)
+        }
     }
 }
 ```

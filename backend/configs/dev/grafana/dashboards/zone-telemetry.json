@@ -91,7 +91,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT zone_id, metric_type, value, updated_at FROM telemetry_last ORDER BY zone_id, metric_type",
+          "rawSql": "SELECT s.zone_id, s.type as metric_type, tl.last_value as value, tl.updated_at FROM telemetry_last tl JOIN sensors s ON s.id = tl.sensor_id WHERE s.zone_id IS NOT NULL ORDER BY s.zone_id, s.type",
           "format": "table",
           "refId": "A"
         }

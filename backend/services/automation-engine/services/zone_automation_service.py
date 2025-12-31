@@ -23,7 +23,6 @@ from repositories import (
     GrowCycleRepository,
     InfrastructureRepository
 )
-from services.stage_targets_resolver import StageTargetsResolver
 from infrastructure.command_bus import CommandBus
 from infrastructure.circuit_breaker import CircuitBreakerOpenError
 from services.pid_state_manager import PidStateManager
@@ -88,8 +87,6 @@ class ZoneAutomationService:
         self.ph_controller = CorrectionController(CorrectionType.PH, self.pid_state_manager)
         self.ec_controller = CorrectionController(CorrectionType.EC, self.pid_state_manager)
         
-        # Инициализация резолвера targets для стадий
-        self.stage_targets_resolver = StageTargetsResolver()
         
         # Circuit breaker: отслеживание последних ошибок контроллеров
         # Ключ: (zone_id, controller_name), значение: datetime последней ошибки
@@ -133,28 +130,13 @@ class ZoneAutomationService:
             
             # Получение данных зоны через circuit breaker
             try:
-                # Получаем активный grow_cycle (приоритет над zone_recipe_instance)
+                # Получаем активный grow_cycle и targets через effective targets
                 grow_cycle = await self.grow_cycle_repo.get_active_grow_cycle(zone_id)
-                
-                # Получаем targets для текущей стадии через StageTargetsResolver
-                targets = None
-                if grow_cycle:
-                    # Используем StageTargetsResolver для получения агрегированных targets стадии
-                    targets = await self.stage_targets_resolver.resolve_stage_targets(
-                        zone_id,
-                        grow_cycle
-                    )
-                
-                # Fallback: если нет активного цикла или стадии, используем старый способ через zone_recipe_instance
-                if not targets or not isinstance(targets, dict):
-                    zone_data = await self.recipe_repo.get_zone_data_batch(zone_id)
-                    recipe_info = zone_data.get("recipe_info")
-                    if recipe_info and recipe_info.get("targets"):
-                        targets = recipe_info["targets"]
-                
+                targets = grow_cycle.get("targets") if grow_cycle else None
+
                 if not targets or not isinstance(targets, dict):
                     return
-                
+
                 # Получаем телеметрию и capabilities
                 zone_data = await self.recipe_repo.get_zone_data_batch(zone_id)
                 telemetry = zone_data.get("telemetry", {})

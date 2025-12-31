@@ -43,6 +43,12 @@ setup:
     - websocket: WebSocket server is running
 
 actions:
+  - step: set_test_uids
+    type: set
+    test_gh_uid: ${setup.node_sim.config.node.gh_uid}
+    test_zone_uid: ${setup.node_sim.config.node.zone_uid}
+    test_node_uid: ${setup.node_sim.config.node.node_uid}
+
   # Шаг 1: Запуск симулятора узла
   - step: start_node_simulator
     type: start_simulator
@@ -93,7 +99,7 @@ actions:
   # Шаг 4: Симулятор отправляет DONE ответ (первый раз)
   - step: node_sends_done_first
     type: mqtt_publish
-    topic: "hydro/gh-test-1/zn-test-1/nd-ph-esp32una/main_pump/command_response"
+    topic: "hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/main_pump/command_response"
     payload:
       cmd_id: ${COMMAND_ID}
       status: "DONE"
@@ -106,7 +112,7 @@ actions:
   # Шаг 5: Симулятор отправляет DONE ответ второй раз (дубль)
   - step: node_sends_done_duplicate
     type: mqtt_publish
-    topic: "hydro/gh-test-1/zn-test-1/nd-ph-esp32una/main_pump/command_response"
+    topic: "hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/main_pump/command_response"
     payload:
       cmd_id: ${COMMAND_ID}
       status: "DONE"

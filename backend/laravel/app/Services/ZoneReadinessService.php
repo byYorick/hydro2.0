@@ -14,11 +14,9 @@ class ZoneReadinessService
 {
     /**
      * Получить список обязательных bindings для зоны.
-     * 
+     *
      * В E2E режиме возвращает пустой массив для гибкости тестирования.
      * В production режиме использует конфигурацию из config/zones.php.
-     * 
-     * @return array
      */
     private function getRequiredBindings(): array
     {
@@ -31,9 +29,9 @@ class ZoneReadinessService
 
         // Получаем из конфигурации
         $requiredBindings = config('zones.readiness.required_bindings', ['main_pump']);
-        
+
         // Если strict_mode отключен - возвращаем пустой массив
-        if (!config('zones.readiness.strict_mode', true)) {
+        if (! config('zones.readiness.strict_mode', true)) {
             return [];
         }
 
@@ -43,12 +41,11 @@ class ZoneReadinessService
     /**
      * Проверить готовность зоны к запуску grow-cycle
      *
-     * @param Zone $zone
      * @return array [
-     *   'ready' => bool,
-     *   'warnings' => array,
-     *   'errors' => array
-     * ]
+     *               'ready' => bool,
+     *               'warnings' => array,
+     *               'errors' => array
+     *               ]
      */
     public function checkZoneReadiness(Zone $zone): array
     {
@@ -57,14 +54,14 @@ class ZoneReadinessService
 
         // Проверка 1: Required bindings (только если strict_mode включен)
         $requiredBindings = $this->getRequiredBindings();
-        if (!empty($requiredBindings)) {
+        if (! empty($requiredBindings)) {
             $missingBindings = $this->checkRequiredBindings($zone, $requiredBindings);
-            if (!empty($missingBindings)) {
+            if (! empty($missingBindings)) {
                 $errors[] = [
                     'type' => 'missing_bindings',
-                    'message' => 'Required bindings are missing: ' . implode(', ', $missingBindings),
+                    'message' => 'Required bindings are missing: '.implode(', ', $missingBindings),
                     'bindings' => $missingBindings,
-                    'required' => $requiredBindings
+                    'required' => $requiredBindings,
                 ];
             }
         }
@@ -76,22 +73,22 @@ class ZoneReadinessService
                 'type' => 'offline_nodes',
                 'message' => "{$offlineNodesInfo['offline_count']} node(s) are offline",
                 'count' => $offlineNodesInfo['offline_count'],
-                'nodes' => $offlineNodesInfo['nodes']
+                'nodes' => $offlineNodesInfo['nodes'],
             ];
         }
 
         // Проверка 3: Recipe attached (если требуется)
-        if (!$zone->recipeInstance) {
+        if (! $zone->recipeInstance) {
             $warnings[] = [
                 'type' => 'no_recipe',
-                'message' => 'No recipe attached to zone. Zone can start without recipe, but grow-cycle features will be limited.'
+                'message' => 'No recipe attached to zone. Zone can start without recipe, but grow-cycle features will be limited.',
             ];
         }
 
         return [
             'ready' => empty($errors),
             'warnings' => $warnings,
-            'errors' => $errors
+            'errors' => $errors,
         ];
     }
 
@@ -138,8 +135,7 @@ class ZoneReadinessService
     /**
      * Проверить наличие required bindings
      *
-     * @param Zone $zone
-     * @param array $requiredBindings Список обязательных bindings
+     * @param  array  $requiredBindings  Список обязательных bindings
      * @return array Список отсутствующих bindings
      */
     private function checkRequiredBindings(Zone $zone, array $requiredBindings): array
@@ -149,30 +145,34 @@ class ZoneReadinessService
             return [];
         }
 
-        // Проверяем наличие таблицы zone_channel_bindings
-        if (!DB::getSchemaBuilder()->hasTable('zone_channel_bindings')) {
-            // Таблица не существует, пропускаем проверку (для обратной совместимости)
-            Log::warning('zone_channel_bindings table does not exist, skipping bindings check', [
+        // Проверяем наличие таблицы channel_bindings
+        if (! DB::getSchemaBuilder()->hasTable('channel_bindings')) {
+            Log::warning('channel_bindings table does not exist, skipping bindings check', [
                 'zone_id' => $zone->id,
-                'required_bindings' => $requiredBindings
+                'required_bindings' => $requiredBindings,
             ]);
+
             return [];
         }
 
-        $existingBindings = DB::table('zone_channel_bindings')
-            ->where('zone_id', $zone->id)
+        $existingBindings = \App\Models\ChannelBinding::query()
             ->whereIn('role', $requiredBindings)
+            ->whereHas('infrastructureInstance', function ($query) use ($zone) {
+                $query->where('owner_type', 'zone')
+                    ->where('owner_id', $zone->id);
+            })
             ->pluck('role')
+            ->unique()
             ->toArray();
 
         $missingBindings = array_diff($requiredBindings, $existingBindings);
+
         return array_values($missingBindings);
     }
 
     /**
      * Проверить статус узлов (online/offline)
      *
-     * @param Zone $zone
      * @return array ['offline_count' => int, 'nodes' => array]
      */
     private function checkOnlineNodes(Zone $zone): array
@@ -193,9 +193,9 @@ class ZoneReadinessService
                     'id' => $node->id,
                     'uid' => $node->uid,
                     'name' => $node->name,
-                    'status' => $node->status
+                    'status' => $node->status,
                 ];
-            })->values()->toArray()
+            })->values()->toArray(),
         ];
     }
 }

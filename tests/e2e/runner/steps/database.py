@@ -109,7 +109,7 @@ class DatabaseStepExecutor:
 
         async def check_telemetry():
             result = self.db_probe.query(
-                "SELECT COUNT(*) as count FROM telemetry_last WHERE zone_id = %s AND node_id = %s",
+                "SELECT COUNT(*) as count FROM telemetry_last tl JOIN sensors s ON s.id = tl.sensor_id WHERE s.zone_id = %s AND s.node_id = %s",
                 (resolved_zone_id, resolved_node_id)
             )
             return result[0]["count"] > 0 if result else False

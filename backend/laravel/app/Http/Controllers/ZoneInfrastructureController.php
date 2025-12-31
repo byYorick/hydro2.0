@@ -3,10 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Helpers\ZoneAccessHelper;
+use App\Models\ChannelBinding;
+use App\Models\InfrastructureInstance;
+use App\Models\NodeChannel;
 use App\Models\Zone;
-use App\Models\ZoneInfrastructure;
-use App\Models\ZoneChannelBinding;
-use App\Models\InfrastructureAsset;
 use App\Services\ZoneReadinessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -22,7 +22,7 @@ class ZoneInfrastructureController extends Controller
     public function show(Request $request, Zone $zone): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -30,20 +30,29 @@ class ZoneInfrastructureController extends Controller
         }
 
         // Проверяем доступ к зоне
-        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+        if (! ZoneAccessHelper::canAccessZone($user, $zone)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this zone',
             ], 403);
         }
 
-        $infrastructure = $zone->infrastructure()
-            ->with(['channelBindings.node:id,uid,name', 'channelBindings'])
+        $infrastructure = InfrastructureInstance::query()
+            ->where(function ($query) use ($zone) {
+                $query->where(function ($query) use ($zone) {
+                    $query->where('owner_type', 'zone')
+                        ->where('owner_id', $zone->id);
+                })->orWhere(function ($query) use ($zone) {
+                    $query->where('owner_type', 'greenhouse')
+                        ->where('owner_id', $zone->greenhouse_id);
+                });
+            })
+            ->with(['channelBindings.nodeChannel.node:id,uid,name', 'channelBindings.nodeChannel'])
             ->get();
 
         $isValid = $zone->isInfrastructureValid();
         $missingAssets = $isValid ? [] : $zone->getMissingRequiredAssets();
-        
+
         // Получаем полную информацию о readiness
         $readinessService = app(ZoneReadinessService::class);
         $readiness = $readinessService->validate($zone->id);
@@ -66,7 +75,7 @@ class ZoneInfrastructureController extends Controller
     public function update(Request $request, Zone $zone): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -74,7 +83,7 @@ class ZoneInfrastructureController extends Controller
         }
 
         // Проверяем доступ к зоне
-        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+        if (! ZoneAccessHelper::canAccessZone($user, $zone)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this zone',
@@ -83,7 +92,7 @@ class ZoneInfrastructureController extends Controller
 
         $data = $request->validate([
             'infrastructure' => ['required', 'array'],
-            'infrastructure.*.asset_type' => ['required', 'string', 'in:PUMP,MISTER,TANK_NUTRIENT,TANK_CLEAN,DRAIN,LIGHT,VENT,HEATER'],
+            'infrastructure.*.asset_type' => ['required', 'string', 'in:PUMP,MISTER,TANK_CLEAN,TANK_WORKING,TANK_NUTRIENT,DRAIN,LIGHT,VENT,HEATER,FAN,CO2_INJECTOR,OTHER'],
             'infrastructure.*.label' => ['required', 'string', 'max:255'],
             'infrastructure.*.required' => ['sometimes', 'boolean'],
             'infrastructure.*.capacity_liters' => ['nullable', 'numeric', 'min:0'],
@@ -94,13 +103,17 @@ class ZoneInfrastructureController extends Controller
         try {
             DB::beginTransaction();
 
-            // Удаляем старую инфраструктуру
-            $zone->infrastructure()->delete();
+            // Удаляем старую инфраструктуру зоны (без greenhouse assets)
+            InfrastructureInstance::query()
+                ->where('owner_type', 'zone')
+                ->where('owner_id', $zone->id)
+                ->delete();
 
             // Создаем новую инфраструктуру
             foreach ($data['infrastructure'] as $item) {
-                ZoneInfrastructure::create([
-                    'zone_id' => $zone->id,
+                InfrastructureInstance::create([
+                    'owner_type' => 'zone',
+                    'owner_id' => $zone->id,
                     'asset_type' => $item['asset_type'],
                     'label' => $item['label'],
                     'required' => $item['required'] ?? false,
@@ -113,8 +126,10 @@ class ZoneInfrastructureController extends Controller
             DB::commit();
 
             // Загружаем обновленную инфраструктуру
-            $infrastructure = $zone->infrastructure()
-                ->with(['channelBindings.node:id,uid,name', 'channelBindings'])
+            $infrastructure = InfrastructureInstance::query()
+                ->where('owner_type', 'zone')
+                ->where('owner_id', $zone->id)
+                ->with(['channelBindings.nodeChannel.node:id,uid,name', 'channelBindings.nodeChannel'])
                 ->get();
 
             $isValid = $zone->isInfrastructureValid();
@@ -137,7 +152,7 @@ class ZoneInfrastructureController extends Controller
 
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to update infrastructure: ' . $e->getMessage(),
+                'message' => 'Failed to update infrastructure: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -149,7 +164,7 @@ class ZoneInfrastructureController extends Controller
     public function storeBinding(Request $request, Zone $zone): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -157,7 +172,7 @@ class ZoneInfrastructureController extends Controller
         }
 
         // Проверяем доступ к зоне
-        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+        if (! ZoneAccessHelper::canAccessZone($user, $zone)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this zone',
@@ -165,64 +180,91 @@ class ZoneInfrastructureController extends Controller
         }
 
         $data = $request->validate([
-            'asset_id' => ['required', 'integer', 'exists:zone_infrastructure,id'],
-            'node_id' => ['required', 'integer', 'exists:nodes,id'],
-            'channel' => ['required', 'string', 'max:255'],
+            'infrastructure_instance_id' => ['required_without:asset_id', 'integer', 'exists:infrastructure_instances,id'],
+            'asset_id' => ['required_without:infrastructure_instance_id', 'integer', 'exists:infrastructure_instances,id'],
+            'node_channel_id' => ['required_without:node_id', 'integer', 'exists:node_channels,id'],
+            'node_id' => ['required_without:node_channel_id', 'integer', 'exists:nodes,id'],
+            'channel' => ['required_without:node_channel_id', 'string', 'max:255'],
             'direction' => ['required', 'string', 'in:actuator,sensor'],
             'role' => ['required', 'string', 'max:255'],
         ]);
 
-        // Проверяем, что asset принадлежит зоне
-        $asset = ZoneInfrastructure::where('id', $data['asset_id'])
-            ->where('zone_id', $zone->id)
+        $instanceId = $data['infrastructure_instance_id'] ?? $data['asset_id'];
+        // Проверяем, что инфраструктура принадлежит зоне или теплице зоны
+        $asset = InfrastructureInstance::query()
+            ->where('id', $instanceId)
+            ->where(function ($query) use ($zone) {
+                $query->where(function ($query) use ($zone) {
+                    $query->where('owner_type', 'zone')
+                        ->where('owner_id', $zone->id);
+                })->orWhere(function ($query) use ($zone) {
+                    $query->where('owner_type', 'greenhouse')
+                        ->where('owner_id', $zone->greenhouse_id);
+                });
+            })
             ->first();
 
-        if (!$asset) {
+        if (! $asset) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Asset not found in this zone',
             ], 404);
         }
 
-        // Проверяем, что node принадлежит зоне
-        $node = $zone->nodes()->where('id', $data['node_id'])->first();
-        if (!$node) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Node not found in this zone',
-            ], 404);
-        }
+        if (! empty($data['node_channel_id'])) {
+            $nodeChannel = NodeChannel::query()
+                ->where('id', $data['node_channel_id'])
+                ->whereHas('node', function ($query) use ($zone) {
+                    $query->where('zone_id', $zone->id);
+                })
+                ->first();
 
-        // Проверяем, что канал существует
-        $channelExists = $node->channels()
-            ->where('channel', $data['channel'])
-            ->exists();
+            if (! $nodeChannel) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Node channel not found in this zone',
+                ], 404);
+            }
+        } else {
+            // Проверяем, что node принадлежит зоне
+            $node = $zone->nodes()->where('id', $data['node_id'])->first();
+            if (! $node) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Node not found in this zone',
+                ], 404);
+            }
 
-        if (!$channelExists) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Channel not found in node',
-            ], 404);
+            $nodeChannel = NodeChannel::query()
+                ->where('node_id', $node->id)
+                ->where('channel', $data['channel'])
+                ->first();
+
+            if (! $nodeChannel) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Channel not found in node',
+                ], 404);
+            }
         }
 
         try {
-            // Удаляем существующую привязку для этого asset, если есть
-            ZoneChannelBinding::where('asset_id', $data['asset_id'])
-                ->where('node_id', $data['node_id'])
-                ->where('channel', $data['channel'])
+            // Удаляем существующую привязку для этого канала и роли, если есть
+            ChannelBinding::query()
+                ->where('infrastructure_instance_id', $asset->id)
+                ->where('node_channel_id', $nodeChannel->id)
+                ->where('role', $data['role'])
                 ->delete();
 
             // Создаем новую привязку
-            $binding = ZoneChannelBinding::create([
-                'zone_id' => $zone->id,
-                'asset_id' => $data['asset_id'],
-                'node_id' => $data['node_id'],
-                'channel' => $data['channel'],
+            $binding = ChannelBinding::create([
+                'infrastructure_instance_id' => $asset->id,
+                'node_channel_id' => $nodeChannel->id,
                 'direction' => $data['direction'],
                 'role' => $data['role'],
             ]);
 
-            $binding->load(['asset', 'node:id,uid,name']);
+            $binding->load(['nodeChannel.node', 'infrastructureInstance']);
 
             return response()->json([
                 'status' => 'ok',
@@ -236,19 +278,19 @@ class ZoneInfrastructureController extends Controller
 
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to create binding: ' . $e->getMessage(),
+                'message' => 'Failed to create binding: '.$e->getMessage(),
             ], 500);
         }
     }
 
     /**
      * Удалить привязку канала
-     * DELETE /zones/{zone}/infrastructure/bindings/{zoneChannelBinding}
+     * DELETE /zones/{zone}/infrastructure/bindings/{channelBinding}
      */
-    public function destroyBinding(Request $request, Zone $zone, ZoneChannelBinding $zoneChannelBinding): JsonResponse
+    public function destroyBinding(Request $request, Zone $zone, ChannelBinding $channelBinding): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -256,15 +298,25 @@ class ZoneInfrastructureController extends Controller
         }
 
         // Проверяем доступ к зоне
-        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+        if (! ZoneAccessHelper::canAccessZone($user, $zone)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this zone',
             ], 403);
         }
 
-        // Проверяем, что привязка принадлежит зоне
-        if ($zoneChannelBinding->zone_id !== $zone->id) {
+        $instance = $channelBinding->infrastructureInstance;
+        if (! $instance) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Binding not linked to infrastructure instance',
+            ], 404);
+        }
+
+        $allowed = ($instance->owner_type === 'zone' && $instance->owner_id === $zone->id)
+            || ($instance->owner_type === 'greenhouse' && $instance->owner_id === $zone->greenhouse_id);
+
+        if (! $allowed) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Binding not found in this zone',
@@ -272,7 +324,7 @@ class ZoneInfrastructureController extends Controller
         }
 
         try {
-            $zoneChannelBinding->delete();
+            $channelBinding->delete();
 
             return response()->json([
                 'status' => 'ok',
@@ -280,15 +332,14 @@ class ZoneInfrastructureController extends Controller
         } catch (\Exception $e) {
             Log::error('ZoneInfrastructureController: Failed to delete binding', [
                 'zone_id' => $zone->id,
-                'binding_id' => $zoneChannelBinding->id,
+                'binding_id' => $channelBinding->id,
                 'error' => $e->getMessage(),
             ]);
 
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to delete binding: ' . $e->getMessage(),
+                'message' => 'Failed to delete binding: '.$e->getMessage(),
             ], 500);
         }
     }
 }
-

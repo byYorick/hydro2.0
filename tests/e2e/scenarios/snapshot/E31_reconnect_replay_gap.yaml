@@ -22,6 +22,12 @@ setup:
         mode: configured
 
 actions:
+  - step: set_test_uids
+    type: set
+    test_gh_uid: ${setup.node_sim.config.node.gh_uid}
+    test_zone_uid: ${setup.node_sim.config.node.zone_uid}
+    test_node_uid: ${setup.node_sim.config.node.node_uid}
+
   - step: start_node_simulator
     type: start_simulator
     config_ref: node_sim.config
@@ -39,16 +45,18 @@ actions:
     query: |
       SELECT id
       FROM zones
-      WHERE uid = 'zn-test-1'
+      WHERE uid = :zone_uid
       ORDER BY id DESC
       LIMIT 1
+    params:
+      zone_uid: ${test_zone_uid}
     timeout: 10.0
     expected_rows: 1
     save: zone_row
 
   - step: set_zone_id
     type: set
-    zone_id: ${zone_row[0].id}
+    zone_id: ${zone_row.0.id}
 
   - step: connect_ws
     type: websocket_connect
@@ -84,7 +92,7 @@ actions:
   # Создаём событие во время "gap" (через error → alert → zone_event)
   - step: publish_error_during_gap
     type: mqtt_publish
-    topic: "hydro/gh-test-1/zn-test-1/nd-ph-esp32una/error"
+    topic: "hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/error"
     payload:
       level: "ERROR"
       component: "sensor"
