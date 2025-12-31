@@ -1,37 +1,24 @@
 {
-  "test_suite": "E61_fail_closed_corrections",
-  "generated_at": "2025-12-29T16:34:34.011452",
+  "test_suite": "E21_alert_dedup_count",
+  "generated_at": "2025-12-31T12:25:42.712370",
   "test_cases": [
     {
-      "name": "get_automation_zone",
+      "name": "get_zones",
       "status": "passed",
-      "duration": 0.1060781478881836,
+      "duration": 0.07257342338562012,
       "error_message": null,
       "steps": [
         {
-          "name": "get_automation_zone",
+          "name": "get_zones",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-29T16:34:23.606387"
-    },
-    {
-      "name": "set_zone_id_from_uid",
-      "status": "passed",
-      "duration": 0.011160612106323242,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_zone_id_from_uid",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-29T16:34:23.617597"
+      "timestamp": "2025-12-31T12:25:32.424741"
     },
     {
       "name": "set_zone_id",
       "status": "passed",
-      "duration": 8.106231689453125e-06,
+      "duration": 7.152557373046875e-06,
       "error_message": null,
       "steps": [
         {
@@ -39,40 +26,40 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-29T16:34:23.617669"
+      "timestamp": "2025-12-31T12:25:32.424806"
     },
     {
-      "name": "enable_capabilities",
+      "name": "cleanup_old_alerts",
       "status": "failed",
-      "duration": 0.0006422996520996094,
+      "duration": 0.005113363265991211,
       "error_message": "invalid input syntax for type bigint: \"\"\nCONTEXT:  unnamed portal parameter $1 = ''",
       "steps": [
         {
-          "name": "enable_capabilities",
+          "name": "cleanup_old_alerts",
           "status": "failed",
           "error": "invalid input syntax for type bigint: \"\"\nCONTEXT:  unnamed portal parameter $1 = ''"
         }
       ],
-      "timestamp": "2025-12-29T16:34:23.618472"
+      "timestamp": "2025-12-31T12:25:32.430138"
     },
     {
-      "name": "no_dosing_commands",
-      "status": "failed",
-      "duration": 0.0013370513916015625,
+      "name": "at_least_one_active_alert",
+      "status": "skipped",
+      "duration": 0.003170013427734375,
       "error_message": "invalid input syntax for type bigint: \"\"\nCONTEXT:  unnamed portal parameter $1 = ''",
       "steps": [
         {
-          "name": "no_dosing_commands",
-          "status": "failed",
+          "name": "at_least_one_active_alert",
+          "status": "skipped",
           "error": "invalid input syntax for type bigint: \"\"\nCONTEXT:  unnamed portal parameter $1 = ''"
         }
       ],
-      "timestamp": "2025-12-29T16:34:23.619951"
+      "timestamp": "2025-12-31T12:25:32.433351"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E61_fail_closed_corrections": {
+    "E21_alert_dedup_count": {
       "ws_messages": [],
       "mqtt_messages": [],
       "api_responses": [],

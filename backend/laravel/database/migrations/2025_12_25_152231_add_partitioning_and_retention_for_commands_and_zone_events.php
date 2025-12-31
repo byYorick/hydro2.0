@@ -285,6 +285,16 @@ return new class extends Migration
 
             // Создаем scheduled job (требует pg_cron extension)
             // Если pg_cron не установлен, это будет проигнорировано
+            $appEnv = $_ENV['APP_ENV'] ?? $_SERVER['APP_ENV'] ?? null;
+            $inTesting = app()->environment('testing')
+                || app()->runningUnitTests()
+                || $appEnv === 'testing'
+                || defined('PHPUNIT_COMPOSER_INSTALL')
+                || defined('__PHPUNIT_PHAR__');
+            if ($inTesting) {
+                return;
+            }
+
             try {
                 DB::statement("
                     SELECT cron.schedule(
