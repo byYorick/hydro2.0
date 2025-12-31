@@ -51,22 +51,29 @@ class SimulationController extends Controller
                 ->join('sensors', 'telemetry_last.sensor_id', '=', 'sensors.id')
                 ->where('sensors.zone_id', $zone->id)
                 ->whereNotNull('sensors.zone_id')
-                ->whereIn('sensors.type', ['ph', 'ec', 'temp_air', 'temp_water', 'humidity_air'])
+                ->whereIn('sensors.type', ['PH', 'EC', 'TEMPERATURE', 'HUMIDITY'])
                 ->select([
                     'sensors.type as metric_type',
+                    'sensors.label as channel',
                     'telemetry_last.last_value as value'
                 ])
                 ->get()
-                ->pluck('value', 'metric_type')
+                ->mapWithKeys(function ($item) {
+                    $key = strtolower($item->channel ?? $item->metric_type ?? '');
+                    if ($key === '') {
+                        return [];
+                    }
+                    return [$key => $item->value];
+                })
                 ->toArray();
 
             // Используем значения из телеметрии или дефолтные значения
             $scenario['initial_state'] = [
                 'ph' => $telemetry['ph'] ?? 6.0,
                 'ec' => $telemetry['ec'] ?? 1.2,
-                'temp_air' => $telemetry['temp_air'] ?? 22.0,
-                'temp_water' => $telemetry['temp_water'] ?? 20.0,
-                'humidity_air' => $telemetry['humidity_air'] ?? 60.0,
+                'temp_air' => $telemetry['temp_air'] ?? $telemetry['temperature'] ?? 22.0,
+                'temp_water' => $telemetry['temp_water'] ?? $telemetry['temperature'] ?? 20.0,
+                'humidity_air' => $telemetry['humidity_air'] ?? $telemetry['humidity'] ?? 60.0,
             ];
         }
 

@@ -177,7 +177,6 @@ const chartDataByChannel = ref<Record<string, Array<{ ts: number; value: number 
 // Приоритеты метрик для сортировки (меньше = выше приоритет)
 const METRIC_PRIORITY: Record<string, number> = {
   'TEMPERATURE': 1,
-  'TEMP_AIR': 1,
   'HUMIDITY': 2,
 }
 
@@ -234,7 +233,6 @@ const resolveCssColor = (variable: string, fallback: string): string => {
 const METRIC_COLORS = computed<Record<string, string>>(() => {
   theme.value
   return {
-    TEMP_AIR: resolveCssColor('--accent-amber', '#f59e0b'),
     TEMPERATURE: resolveCssColor('--accent-amber', '#f59e0b'),
     HUMIDITY: resolveCssColor('--accent-cyan', '#3b82f6'),
     CO2: resolveCssColor('--accent-green', '#10b981'),
@@ -245,7 +243,6 @@ const METRIC_COLORS = computed<Record<string, string>>(() => {
 })
 
 const METRIC_LABELS: Record<string, string> = {
-  'TEMP_AIR': 'Температура',
   'TEMPERATURE': 'Температура',
   'HUMIDITY': 'Влажность',
   'CO2': 'CO₂',
@@ -254,7 +251,6 @@ const METRIC_LABELS: Record<string, string> = {
 }
 
 const METRIC_NORMALIZATION: Record<string, string> = {
-  'TEMP_AIR': 'TEMPERATURE',
   'TEMPERATURE': 'TEMPERATURE',
   'HUMIDITY': 'HUMIDITY',
   'CO2': 'CO2',

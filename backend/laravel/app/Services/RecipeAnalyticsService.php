@@ -2,11 +2,11 @@
 
 namespace App\Services;
 
+use App\Enums\GrowCycleStatus;
 use App\Models\Alert;
 use App\Models\GrowCycle;
 use App\Models\RecipeAnalytics;
 use App\Models\TelemetrySample;
-use App\Enums\GrowCycleStatus;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -148,7 +148,7 @@ class RecipeAnalyticsService
     {
         $sensorType = $this->metricTypeToSensorType($metricType);
         if (! $sensorType) {
-            return new \Illuminate\Database\Eloquent\Collection();
+            return new \Illuminate\Database\Eloquent\Collection;
         }
 
         return TelemetrySample::query()
@@ -166,8 +166,8 @@ class RecipeAnalyticsService
         return match ($normalized) {
             'PH' => 'PH',
             'EC' => 'EC',
-            'TEMP_AIR', 'TEMP_WATER', 'TEMPERATURE' => 'TEMPERATURE',
-            'HUMIDITY', 'HUMIDITY_AIR' => 'HUMIDITY',
+            'TEMPERATURE' => 'TEMPERATURE',
+            'HUMIDITY' => 'HUMIDITY',
             default => null,
         };
     }

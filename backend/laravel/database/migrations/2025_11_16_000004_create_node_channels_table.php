@@ -13,7 +13,7 @@ return new class extends Migration
             $table->foreignId('node_id')->constrained('nodes')->cascadeOnDelete();
             $table->string('channel');
             $table->string('type')->nullable(); // sensor/actuator
-            $table->string('metric')->nullable(); // PH, EC, TEMP_AIR...
+            $table->string('metric')->nullable(); // PH, EC, TEMPERATURE...
             $table->string('unit')->nullable();
             $table->jsonb('config')->nullable();
             $table->timestamps();
@@ -26,5 +26,3 @@ return new class extends Migration
         Schema::dropIfExists('node_channels');
     }
 };
-
-

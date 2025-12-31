@@ -733,9 +733,9 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                     $telemetryByZone[$metric->zone_id]['ph'] = (float) $metric->value;
                 } elseif ($key === 'ec') {
                     $telemetryByZone[$metric->zone_id]['ec'] = (float) $metric->value;
-                } elseif (in_array($key, ['temp', 'temperature', 'air_temperature'])) {
+                } elseif ($key === 'temperature') {
                     $telemetryByZone[$metric->zone_id]['temperature'] = (float) $metric->value;
-                } elseif (in_array($key, ['humidity', 'rh'])) {
+                } elseif ($key === 'humidity') {
                     $telemetryByZone[$metric->zone_id]['humidity'] = (float) $metric->value;
                 }
             }
@@ -841,9 +841,9 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                             $result['ph'] = $metric->value;
                         } elseif ($key === 'ec') {
                             $result['ec'] = $metric->value;
-                        } elseif (in_array($key, ['temp_air', 'temp', 'temperature'])) {
+                        } elseif ($key === 'temperature') {
                             $result['temperature'] = $metric->value;
-                        } elseif (in_array($key, ['humidity', 'rh'])) {
+                        } elseif ($key === 'humidity') {
                             $result['humidity'] = $metric->value;
                         }
                     }
@@ -973,10 +973,10 @@ Route::middleware(['web', 'auth', 'role:viewer,operator,admin,agronomist'])->gro
                     if ($key === 'ec') {
                         return ['ec' => $item->value];
                     }
-                    if (in_array($key, ['temp_air', 'temp', 'temperature'])) {
+                    if ($key === 'temperature') {
                         return ['temperature' => $item->value];
                     }
-                    if (in_array($key, ['humidity', 'rh'])) {
+                    if ($key === 'humidity') {
                         return ['humidity' => $item->value];
                     }
 

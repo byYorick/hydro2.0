@@ -23,6 +23,7 @@ class ExtendedTelemetrySeeder extends Seeder
         $zones = Zone::all();
         if ($zones->isEmpty()) {
             $this->command->warn('Зоны не найдены.');
+
             return;
         }
 
@@ -42,10 +43,10 @@ class ExtendedTelemetrySeeder extends Seeder
             $lastUpdated += $this->seedTelemetryLast($zone, $sensors);
         }
 
-        $this->command->info("Создано samples: " . number_format($samplesCreated));
+        $this->command->info('Создано samples: '.number_format($samplesCreated));
         $this->command->info("Обновлено last значений: {$lastUpdated}");
-        $this->command->info("Всего samples: " . number_format(TelemetrySample::count()));
-        $this->command->info("Всего last значений: " . TelemetryLast::count());
+        $this->command->info('Всего samples: '.number_format(TelemetrySample::count()));
+        $this->command->info('Всего last значений: '.TelemetryLast::count());
     }
 
     private function seedHistoricalTelemetry(Zone $zone, $sensors): int
@@ -56,7 +57,7 @@ class ExtendedTelemetrySeeder extends Seeder
         $batchSize = 500;
 
         $metricTypes = ['ph', 'ec', 'temperature', 'humidity'];
-        
+
         // Определяем количество дней в зависимости от статуса зоны
         $status = strtolower((string) $zone->status);
         $daysBack = match ($status) {
@@ -117,7 +118,7 @@ class ExtendedTelemetrySeeder extends Seeder
             $currentTime->addMinutes($intervalMinutes);
         }
 
-        if (!empty($batch)) {
+        if (! empty($batch)) {
             \DB::table('telemetry_samples')->insert($batch);
         }
 
@@ -134,7 +135,7 @@ class ExtendedTelemetrySeeder extends Seeder
                 return $this->metricFromSensorType($sensor->type) === $metricType;
             });
 
-            if (!$sensor) {
+            if (! $sensor) {
                 continue;
             }
 
@@ -168,7 +169,7 @@ class ExtendedTelemetrySeeder extends Seeder
     {
         // Получаем базовые значения из пресета зоны, если он есть
         $preset = $zone->preset;
-        
+
         if ($preset) {
             return match ($metricType) {
                 'ph' => ($preset->ph_optimal_range['min'] ?? 6.0) + (($preset->ph_optimal_range['max'] ?? 6.5) - ($preset->ph_optimal_range['min'] ?? 6.0)) / 2,
@@ -192,7 +193,7 @@ class ExtendedTelemetrySeeder extends Seeder
     private function generateRealisticValue(float $baseValue, string $metricType, \DateTime $time): float
     {
         // Добавляем реалистичные колебания
-        $hour = (int)$time->format('H');
+        $hour = (int) $time->format('H');
         $variation = match ($metricType) {
             'ph' => 0.3, // ±0.3 pH
             'ec' => 0.2, // ±0.2 mS/cm
@@ -273,11 +274,11 @@ class ExtendedTelemetrySeeder extends Seeder
     {
         $metric = strtoupper((string) $metric);
 
-        return match (true) {
-            $metric === 'PH' => 'PH',
-            $metric === 'EC' => 'EC',
-            str_contains($metric, 'TEMP') => 'TEMPERATURE',
-            str_contains($metric, 'HUM') => 'HUMIDITY',
+        return match ($metric) {
+            'PH' => 'PH',
+            'EC' => 'EC',
+            'TEMPERATURE' => 'TEMPERATURE',
+            'HUMIDITY' => 'HUMIDITY',
             default => null,
         };
     }

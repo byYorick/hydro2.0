@@ -151,7 +151,7 @@ FIXTURE_TELEMETRY_EC = create_telemetry_fixture(
 )
 
 FIXTURE_TELEMETRY_TEMP = create_telemetry_fixture(
-    metric_type="TEMP_AIR",
+    metric_type="TEMPERATURE",
     value=22.5,
     channel="temp_air",
     temperature=22.5
@@ -218,4 +218,3 @@ def get_all_alert_fixtures() -> Dict[str, Dict[str, Any]]:
         "ph_low": FIXTURE_ALERT_PH_LOW,
         "infra": FIXTURE_ALERT_INFRA,
     }
-

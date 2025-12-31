@@ -110,17 +110,19 @@ async def analyze_trend(
     """
     cutoff_time = utcnow() - timedelta(hours=hours)
     
+    normalized_metric = (metric_type or "").upper()
     rows = await fetch(
         """
-        SELECT value, ts
-        FROM telemetry_samples
-        WHERE zone_id = $1
-          AND metric_type = $2
-          AND ts >= $3
-        ORDER BY ts ASC
+        SELECT ts.value, ts.ts
+        FROM telemetry_samples ts
+        JOIN sensors s ON s.id = ts.sensor_id
+        WHERE ts.zone_id = $1
+          AND s.type = $2
+          AND ts.ts >= $3
+        ORDER BY ts.ts ASC
         """,
         zone_id,
-        metric_type,
+        normalized_metric,
         cutoff_time,
     )
     
@@ -237,4 +239,3 @@ async def record_correction(zone_id: int, correction_type: str, details: Dict) -
     logger.info(
         f"Correction recorded: zone_id={zone_id}, type={correction_type}, details={details}"
     )
-

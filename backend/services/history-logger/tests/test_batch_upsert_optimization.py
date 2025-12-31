@@ -16,7 +16,7 @@ async def test_batch_upsert_single_query():
     with patch('telemetry_processing._zone_cache', {('zn-1', 'gh-1'): 1}), \
          patch('telemetry_processing._node_cache', {('nd-1', 'gh-1'): (1, 1)}), \
          patch('telemetry_processing._sensor_cache', {
-             (1, 1, "TEMPERATURE", "TEMP_AIR"): 101,
+             (1, 1, "TEMPERATURE", "TEMPERATURE"): 101,
              (1, 1, "HUMIDITY", "HUMIDITY"): 102,
              (1, 1, "PH", "PH"): 103,
          }), \
@@ -27,7 +27,7 @@ async def test_batch_upsert_single_query():
                 zone_uid='zn-1',
                 gh_uid='gh-1',
                 node_uid='nd-1',
-                metric_type='TEMP_AIR',
+                metric_type='TEMPERATURE',
                 value=25.0,
                 ts=datetime.utcnow()
             ),
@@ -78,7 +78,7 @@ async def test_batch_upsert_latest_timestamp():
     with patch('telemetry_processing._zone_cache', {('zn-1', 'gh-1'): 1}), \
          patch('telemetry_processing._node_cache', {('nd-1', 'gh-1'): (1, 1)}), \
          patch('telemetry_processing._sensor_cache', {
-             (1, 1, "TEMPERATURE", "TEMP_AIR"): 101,
+             (1, 1, "TEMPERATURE", "TEMPERATURE"): 101,
          }), \
          patch('telemetry_processing._cache_last_update', 9999999999.0):
         
@@ -89,7 +89,7 @@ async def test_batch_upsert_latest_timestamp():
                 zone_uid='zn-1',
                 gh_uid='gh-1',
                 node_uid='nd-1',
-                metric_type='TEMP_AIR',
+                metric_type='TEMPERATURE',
                 value=20.0,  # Старое значение
                 ts=base_time
             ),
@@ -97,7 +97,7 @@ async def test_batch_upsert_latest_timestamp():
                 zone_uid='zn-1',
                 gh_uid='gh-1',
                 node_uid='nd-1',
-                metric_type='TEMP_AIR',
+                metric_type='TEMPERATURE',
                 value=25.0,  # Новое значение (более поздний timestamp)
                 ts=datetime.fromtimestamp(base_time.timestamp() + 10)
             ),
@@ -126,7 +126,7 @@ async def test_batch_upsert_fallback():
     with patch('telemetry_processing._zone_cache', {('zn-1', 'gh-1'): 1}), \
          patch('telemetry_processing._node_cache', {('nd-1', 'gh-1'): (1, 1)}), \
          patch('telemetry_processing._sensor_cache', {
-             (1, 1, "TEMPERATURE", "TEMP_AIR"): 101,
+             (1, 1, "TEMPERATURE", "TEMPERATURE"): 101,
          }), \
          patch('telemetry_processing._cache_last_update', 9999999999.0):
         
@@ -135,7 +135,7 @@ async def test_batch_upsert_fallback():
                 zone_uid='zn-1',
                 gh_uid='gh-1',
                 node_uid='nd-1',
-                metric_type='TEMP_AIR',
+                metric_type='TEMPERATURE',
                 value=25.0,
                 ts=datetime.utcnow()
             ),

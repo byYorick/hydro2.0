@@ -412,7 +412,7 @@ const newViewName = ref<string>('')
 const metricOptions = [
   { value: 'PH', label: 'pH' },
   { value: 'EC', label: 'EC' },
-  { value: 'TEMP', label: 'Температура' },
+  { value: 'TEMPERATURE', label: 'Температура' },
   { value: 'HUMIDITY', label: 'Влажность' },
   { value: 'WATER_LEVEL', label: 'Уровень воды' },
   { value: 'FLOW_RATE', label: 'Расход' },

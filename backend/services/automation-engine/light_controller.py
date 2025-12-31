@@ -113,9 +113,16 @@ async def check_light_failure(zone_id: int, should_be_on: bool) -> bool:
     # Получаем текущее значение light_sensor
     rows = await fetch(
         """
-        SELECT value
-        FROM telemetry_last
-        WHERE zone_id = $1 AND metric_type = 'LIGHT'
+        SELECT tl.last_value as value
+        FROM telemetry_last tl
+        JOIN sensors s ON s.id = tl.sensor_id
+        WHERE s.zone_id = $1
+          AND s.type = 'LIGHT_INTENSITY'
+          AND s.is_active = TRUE
+        ORDER BY tl.last_ts DESC NULLS LAST,
+          tl.updated_at DESC NULLS LAST,
+          tl.sensor_id DESC
+        LIMIT 1
         """,
         zone_id,
     )
@@ -271,4 +278,3 @@ async def ensure_light_failure_alert(zone_id: int) -> None:
                 'message': 'Light should be on but sensor readings indicate failure'
             }
         )
-

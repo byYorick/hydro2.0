@@ -73,9 +73,9 @@ use Illuminate\Support\Facades\Route;
                             $result['ph'] = $metric->value;
                         } elseif ($key === 'ec') {
                             $result['ec'] = $metric->value;
-                        } elseif (in_array($key, ['temp_air', 'temp', 'temperature'])) {
+                        } elseif ($key === 'temperature') {
                             $result['temperature'] = $metric->value;
-                        } elseif (in_array($key, ['humidity', 'rh'])) {
+                        } elseif ($key === 'humidity') {
                             $result['humidity'] = $metric->value;
                         }
                     }
@@ -196,10 +196,10 @@ use Illuminate\Support\Facades\Route;
                     if ($key === 'ec') {
                         return ['ec' => $item->value];
                     }
-                    if (in_array($key, ['temp_air', 'temp', 'temperature'])) {
+                    if ($key === 'temperature') {
                         return ['temperature' => $item->value];
                     }
-                    if (in_array($key, ['humidity', 'rh'])) {
+                    if ($key === 'humidity') {
                         return ['humidity' => $item->value];
                     }
 

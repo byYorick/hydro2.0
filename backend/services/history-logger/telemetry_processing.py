@@ -70,28 +70,24 @@ def _normalize_metric_type(metric_type: str) -> str:
 
 def _infer_sensor_type(metric_type: str) -> str:
     normalized = _normalize_metric_type(metric_type)
-    if normalized in {"PH"}:
-        return "PH"
-    if normalized in {"EC"}:
-        return "EC"
-    if "TEMP" in normalized:
-        return "TEMPERATURE"
-    if "HUM" in normalized:
-        return "HUMIDITY"
-    if "CO2" in normalized:
-        return "CO2"
-    if "LIGHT" in normalized or "LUX" in normalized:
-        return "LIGHT_INTENSITY"
-    if "WATER_LEVEL" in normalized or normalized.endswith("_LEVEL"):
-        return "WATER_LEVEL"
-    if "SOIL" in normalized:
-        return "SOIL_MOISTURE"
-    if "PRESSURE" in normalized:
-        return "PRESSURE"
-    if "WIND_SPEED" in normalized:
-        return "WIND_SPEED"
-    if "WIND_DIRECTION" in normalized or "WIND_DIR" in normalized:
-        return "WIND_DIRECTION"
+    valid_types = {
+        "PH",
+        "EC",
+        "TEMPERATURE",
+        "HUMIDITY",
+        "CO2",
+        "LIGHT_INTENSITY",
+        "WATER_LEVEL",
+        "FLOW_RATE",
+        "PUMP_CURRENT",
+        "SOIL_MOISTURE",
+        "PRESSURE",
+        "WIND_SPEED",
+        "WIND_DIRECTION",
+        "OTHER",
+    }
+    if normalized in valid_types:
+        return normalized
     return "OTHER"
 
 

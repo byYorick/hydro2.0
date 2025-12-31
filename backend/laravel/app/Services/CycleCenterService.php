@@ -116,9 +116,9 @@ class CycleCenterService
                 $telemetryByZone[$zoneId]['ph'] = (float) $metric->value;
             } elseif ($key === 'ec') {
                 $telemetryByZone[$zoneId]['ec'] = (float) $metric->value;
-            } elseif (in_array($key, ['temp', 'temperature', 'air_temperature'], true)) {
+            } elseif ($key === 'temperature') {
                 $telemetryByZone[$zoneId]['temperature'] = (float) $metric->value;
-            } elseif (in_array($key, ['humidity', 'rh'], true)) {
+            } elseif ($key === 'humidity') {
                 $telemetryByZone[$zoneId]['humidity'] = (float) $metric->value;
             } elseif ($key === 'co2') {
                 $telemetryByZone[$zoneId]['co2'] = (float) $metric->value;

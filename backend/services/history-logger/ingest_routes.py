@@ -194,7 +194,7 @@ async def ingest_telemetry(request: Request):
             ts = utcnow()
 
         zone_uid = validated_data.zone_uid
-        zone_id = None
+        zone_id = validated_data.zone_id
         node_uid = validated_data.node_uid or ""
         gh_uid = validated_data.gh_uid
         channel = validated_data.channel

@@ -170,8 +170,8 @@ class PredictionService
         return match ($normalized) {
             'PH' => 'PH',
             'EC' => 'EC',
-            'TEMP_AIR', 'TEMP_WATER', 'TEMPERATURE' => 'TEMPERATURE',
-            'HUMIDITY', 'HUMIDITY_AIR' => 'HUMIDITY',
+            'TEMPERATURE' => 'TEMPERATURE',
+            'HUMIDITY' => 'HUMIDITY',
             default => null,
         };
     }

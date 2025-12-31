@@ -54,7 +54,7 @@ async def test_process_zone_with_recipe():
             "targets": {"ph": 6.5, "ec": 1.8, "temp_air": 25.0},
             "phase_name": "Germination"
         },
-        "telemetry": {"PH": 6.3, "EC": 1.7, "TEMP_AIR": 24.0},
+        "telemetry": {"PH": 6.3, "EC": 1.7, "TEMPERATURE": 24.0},
         "nodes": {
             "irrig:default": {"node_uid": "nd-irrig-1", "channel": "default", "type": "irrig"}
         },

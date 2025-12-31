@@ -4,16 +4,15 @@ namespace App\Enums;
 
 enum MetricType: string
 {
-    case PH = 'ph';
-    case EC = 'ec';
-    case TEMP_AIR = 'temp_air';
-    case TEMP_WATER = 'temp_water';
-    case HUMIDITY = 'humidity';
-    case CO2 = 'co2';
-    case LUX = 'lux';
-    case WATER_LEVEL = 'water_level';
-    case FLOW_RATE = 'flow_rate';
-    case PUMP_CURRENT = 'pump_current';
+    case PH = 'PH';
+    case EC = 'EC';
+    case TEMPERATURE = 'TEMPERATURE';
+    case HUMIDITY = 'HUMIDITY';
+    case CO2 = 'CO2';
+    case LIGHT_INTENSITY = 'LIGHT_INTENSITY';
+    case WATER_LEVEL = 'WATER_LEVEL';
+    case FLOW_RATE = 'FLOW_RATE';
+    case PUMP_CURRENT = 'PUMP_CURRENT';
 
     /**
      * Получить все значения enum.
@@ -28,7 +27,7 @@ enum MetricType: string
      */
     public static function isValid(string $value): bool
     {
-        return in_array(strtolower(trim($value)), self::values(), true);
+        return in_array(strtoupper(trim($value)), self::values(), true);
     }
 
     /**
@@ -36,8 +35,8 @@ enum MetricType: string
      */
     public static function normalize(string $value): ?string
     {
-        $normalized = strtolower(trim($value));
+        $normalized = strtoupper(trim($value));
+
         return self::isValid($normalized) ? $normalized : null;
     }
 }
-

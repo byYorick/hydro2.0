@@ -194,7 +194,7 @@ NodeConfig полностью формируется на backend.
 ## 5.1. SensorChannel
 Содержит:
 - имя
-- тип метрики (PH, EC, TEMP_AIR, HUMIDITY…)
+- тип метрики (PH, EC, TEMPERATURE, HUMIDITY…)
 - период измерения
 - драйвер сенсора
 - фильтрацию (усреднение)

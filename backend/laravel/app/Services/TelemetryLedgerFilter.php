@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Cache;
 
 /**
  * Сервис фильтрации телеметрии для Zone Event Ledger.
- * 
+ *
  * Определяет, нужно ли записывать событие телеметрии в ledger.
  * Записывает только значимые изменения (превышающие порог) и не чаще минимального интервала.
  */
@@ -14,24 +14,23 @@ class TelemetryLedgerFilter
 {
     /**
      * Пороги значимых изменений для разных метрик.
-     * 
+     *
      * Значение будет записано в ledger только если разница с предыдущим
      * записанным значением превышает порог.
      */
     private const THRESHOLDS = [
-        'pH' => 0.1,           // Изменение pH на 0.1 считается значимым
+        'PH' => 0.1,           // Изменение pH на 0.1 считается значимым
         'EC' => 0.2,           // Изменение EC на 0.2 mS/cm
-        'TEMP_AIR' => 1.0,     // Изменение температуры воздуха на 1°C
-        'TEMP_WATER' => 0.5,   // Изменение температуры воды на 0.5°C
+        'TEMPERATURE' => 1.0,  // Изменение температуры на 1°C
         'HUMIDITY' => 2.0,     // Изменение влажности на 2%
         'CO2' => 50,           // Изменение CO2 на 50 ppm
-        'LUX' => 100,          // Изменение освещенности на 100 lux
+        'LIGHT_INTENSITY' => 100, // Изменение освещенности на 100 lux
         // Для других метрик используем значение по умолчанию
     ];
 
     /**
      * Минимальный интервал между записями для каждой метрики (в секундах).
-     * 
+     *
      * Даже при значимом изменении событие не будет записано,
      * если прошло меньше времени, чем указано в интервале.
      */
@@ -44,22 +43,23 @@ class TelemetryLedgerFilter
 
     /**
      * Проверяет, нужно ли записывать событие телеметрии в ledger.
-     * 
-     * @param int $zoneId ID зоны
-     * @param string $metricType Тип метрики (pH, EC, TEMP_AIR, и т.д.)
-     * @param float $value Текущее значение метрики
+     *
+     * @param  int  $zoneId  ID зоны
+     * @param  string  $metricType  Тип метрики (PH, EC, TEMPERATURE, и т.д.)
+     * @param  float  $value  Текущее значение метрики
      * @return bool true, если событие нужно записать в ledger
      */
     public function shouldRecord(int $zoneId, string $metricType, float $value): bool
     {
         $cacheKey = "telemetry_last_recorded:zone_{$zoneId}:{$metricType}";
-        
+
         // Получаем последнее записанное значение из кеша
         $lastRecorded = Cache::get($cacheKey);
-        
+
         if ($lastRecorded === null) {
             // Первое значение для этой метрики в этой зоне - записываем
             $this->updateCache($cacheKey, $value);
+
             return true;
         }
 
@@ -76,7 +76,7 @@ class TelemetryLedgerFilter
         // Проверяем значимость изменения
         $threshold = self::THRESHOLDS[$metricType] ?? self::DEFAULT_THRESHOLD;
         $change = abs($value - $lastValue);
-        
+
         if ($change < $threshold) {
             // Изменение незначимо - не записываем
             return false;
@@ -84,14 +84,15 @@ class TelemetryLedgerFilter
 
         // Значимое изменение - записываем и обновляем кеш
         $this->updateCache($cacheKey, $value);
+
         return true;
     }
 
     /**
      * Обновляет кеш последнего записанного значения.
-     * 
-     * @param string $cacheKey Ключ кеша
-     * @param float $value Значение для сохранения
+     *
+     * @param  string  $cacheKey  Ключ кеша
+     * @param  float  $value  Значение для сохранения
      */
     private function updateCache(string $cacheKey, float $value): void
     {
@@ -101,4 +102,3 @@ class TelemetryLedgerFilter
         ], now()->addHours(24));
     }
 }
-

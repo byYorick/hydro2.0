@@ -22,7 +22,7 @@ async def test_queue_size_metric():
         with patch('common.redis_queue.QUEUE_SIZE') as mock_gauge:
             await queue.push(TelemetryQueueItem(
                 node_uid="nd-1",
-                metric_type="TEMP_AIR",
+                metric_type="TEMPERATURE",
                 value=25.0
             ))
             
@@ -45,7 +45,7 @@ async def test_queue_overflow_dropped():
         with patch('common.redis_queue.QUEUE_DROPPED') as mock_dropped:
             result = await queue.push(TelemetryQueueItem(
                 node_uid="nd-1",
-                metric_type="TEMP_AIR",
+                metric_type="TEMPERATURE",
                 value=25.0
             ))
             
@@ -71,7 +71,7 @@ async def test_queue_overflow_alert():
             with patch('common.redis_queue.create_zone_event', new_callable=AsyncMock):
                 result = await queue.push(TelemetryQueueItem(
                     node_uid="nd-1",
-                    metric_type="TEMP_AIR",
+                    metric_type="TEMPERATURE",
                     value=25.0
                 ))
                 
@@ -95,11 +95,10 @@ async def test_backpressure_sampling():
             with patch('common.redis_queue.QUEUE_DROPPED') as mock_dropped:
                 result = await queue.push(TelemetryQueueItem(
                     node_uid="nd-1",
-                    metric_type="TEMP_AIR",
+                    metric_type="TEMPERATURE",
                     value=25.0
                 ))
                 
                 # Проверяем, что сообщение было отклонено из-за backpressure
                 assert result is False
                 assert mock_dropped.labels.called
-

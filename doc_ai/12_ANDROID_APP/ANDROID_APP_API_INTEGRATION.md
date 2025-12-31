@@ -25,7 +25,7 @@ Android использует те же REST-эндпоинты, что и веб
 
 **Телеметрия:**
 - `GET /api/zones/{id}/telemetry/last` — последние значения по зоне
-- `GET /api/zones/{id}/telemetry/history?metric={PH|EC|TEMP_AIR|...}&from={ISO8601}&to={ISO8601}` — история для графиков
+- `GET /api/zones/{id}/telemetry/history?metric={PH|EC|TEMPERATURE|...}&from={ISO8601}&to={ISO8601}` — история для графиков
 
 **Команды:**
 - `POST /api/zones/{id}/commands` — команды на зону (требует роль operator/admin)
@@ -225,7 +225,7 @@ com.hydro.app/
 
 ### 5.4. Детальная страница зоны
 - Текущие значения телеметрии (pH, EC, температура, влажность)
-- Графики истории (выбор метрики: PH, EC, TEMP_AIR, HUMIDITY_AIR)
+- Графики истории (выбор метрики: PH, EC, TEMPERATURE, HUMIDITY_AIR)
 - Команды (запуск полива и т.п.)
 - Автоматическое обновление телеметрии
 

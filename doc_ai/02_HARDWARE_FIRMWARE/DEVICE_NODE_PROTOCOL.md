@@ -196,9 +196,9 @@ hydro/gh/zone/node/channel/command
 |----------------|--------------|------------|
 | ph_sensor | float | metric=PH |
 | ec_sensor | float | metric=EC |
-| temp_air | float | TEMP_AIR |
+| temp_air | float | TEMPERATURE |
 | humidity_air | float | HUMIDITY |
-| temp_water | float | TEMP_WATER |
+| temp_water | float | TEMPERATURE |
 | water_level | float/int | LEVEL |
 | light_sensor | float/int | LIGHT |
 

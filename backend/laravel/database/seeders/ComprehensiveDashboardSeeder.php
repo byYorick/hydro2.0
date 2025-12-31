@@ -2,21 +2,20 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Seeder;
-use App\Models\Zone;
-use App\Models\DeviceNode;
-use App\Models\NodeChannel;
-use App\Models\Command;
 use App\Models\Alert;
-use App\Models\ZoneEvent;
-use App\Models\TelemetryLast;
+use App\Models\Command;
+use App\Models\DeviceNode;
 use App\Models\Sensor;
+use App\Models\TelemetryLast;
+use App\Models\Zone;
+use App\Models\ZoneEvent;
 use Carbon\Carbon;
+use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
 
 /**
  * Комплексный сидер для заполнения всех таблиц для проверки всех Grafana dashboards
- * 
+ *
  * Dashboards:
  * - Alerts Dashboard: alerts
  * - Automation Engine Service: zones, commands
@@ -31,9 +30,10 @@ class ComprehensiveDashboardSeeder extends Seeder
     public function run(): void
     {
         $zones = Zone::with(['nodes.channels'])->get();
-        
+
         if ($zones->isEmpty()) {
             $this->command->warn('Нет зон. Сначала запустите DemoDataSeeder.');
+
             return;
         }
 
@@ -69,9 +69,9 @@ class ComprehensiveDashboardSeeder extends Seeder
             foreach ($zone->nodes as $index => $node) {
                 // Смешиваем online/offline статусы для реалистичности
                 $status = ($index % 3 === 0) ? 'offline' : 'online';
-                
+
                 // Обновляем last_seen_at в зависимости от статуса
-                $lastSeen = $status === 'online' 
+                $lastSeen = $status === 'online'
                     ? Carbon::now()->subMinutes(rand(1, 30))
                     : Carbon::now()->subHours(rand(2, 24));
 
@@ -120,10 +120,10 @@ class ComprehensiveDashboardSeeder extends Seeder
 
         $statuses = [Command::STATUS_QUEUED, Command::STATUS_SENT, Command::STATUS_DONE, Command::STATUS_FAILED];
         $statusWeights = [
-            Command::STATUS_QUEUED => 5, 
-            Command::STATUS_SENT => 20, 
-            Command::STATUS_DONE => 70, 
-            Command::STATUS_FAILED => 5
+            Command::STATUS_QUEUED => 5,
+            Command::STATUS_SENT => 20,
+            Command::STATUS_DONE => 70,
+            Command::STATUS_FAILED => 5,
         ]; // Процентное распределение
 
         $totalCommands = 0;
@@ -137,17 +137,17 @@ class ComprehensiveDashboardSeeder extends Seeder
             // Создаем команды за последние 7 дней
             for ($day = 0; $day < 7; $day++) {
                 $commandsPerDay = rand(10, 30); // 10-30 команд в день
-                
+
                 for ($i = 0; $i < $commandsPerDay; $i++) {
                     $node = $nodes->random();
                     $cmdType = array_rand($commandTypes);
                     $params = $commandTypes[$cmdType];
-                    
+
                     // Выбираем статус с учетом весов
                     $status = $this->weightedRandom($statusWeights);
-                    
+
                     $createdAt = Carbon::now()->subDays($day)->subHours(rand(0, 23))->subMinutes(rand(0, 59));
-                    
+
                     // Временные метки в зависимости от статуса
                     $sentAt = null;
                     $ackAt = null;
@@ -230,7 +230,7 @@ class ComprehensiveDashboardSeeder extends Seeder
             for ($i = 0; $i < $activeCount; $i++) {
                 $alertType = array_rand($alertTypes);
                 $details = $alertTypes[$alertType];
-                
+
                 Alert::create([
                     'zone_id' => $zone->id,
                     'type' => $alertType,
@@ -251,7 +251,7 @@ class ComprehensiveDashboardSeeder extends Seeder
                 $details = $alertTypes[$alertType];
                 $daysAgo = rand(1, 7);
                 $resolvedHoursAgo = rand(1, 24);
-                
+
                 Alert::create([
                     'zone_id' => $zone->id,
                     'type' => $alertType,
@@ -298,15 +298,15 @@ class ComprehensiveDashboardSeeder extends Seeder
 
         foreach ($zones as $zone) {
             $nodes = $zone->nodes;
-            
+
             // Создаем события за последние 7 дней
             for ($day = 0; $day < 7; $day++) {
                 $eventsPerDay = rand(15, 40); // 15-40 событий в день
-                
+
                 for ($i = 0; $i < $eventsPerDay; $i++) {
                     $eventType = array_rand($eventTypes);
                     $details = $eventTypes[$eventType];
-                    
+
                     // Добавляем node_id если есть узлы
                     if (isset($details['node_id']) && $nodes->isNotEmpty()) {
                         $randomNode = $nodes->random();
@@ -315,9 +315,9 @@ class ComprehensiveDashboardSeeder extends Seeder
                             $details['node_uid'] = $randomNode->uid;
                         }
                     }
-                    
+
                     $createdAt = Carbon::now()->subDays($day)->subHours(rand(0, 23))->subMinutes(rand(0, 59));
-                    
+
                     ZoneEvent::create([
                         'zone_id' => $zone->id,
                         'type' => $eventType,
@@ -326,7 +326,7 @@ class ComprehensiveDashboardSeeder extends Seeder
                         ]),
                         'created_at' => $createdAt,
                     ]);
-                    
+
                     $totalEvents++;
                 }
             }
@@ -342,12 +342,12 @@ class ComprehensiveDashboardSeeder extends Seeder
     {
         $this->command->info('5. Обновление последних значений телеметрии...');
 
-        $metricTypes = ['PH', 'EC', 'TEMP_AIR', 'HUMIDITY_AIR', 'WATER_LEVEL', 'FLOW_RATE'];
+        $metricTypes = ['PH', 'EC', 'TEMPERATURE', 'HUMIDITY', 'WATER_LEVEL', 'FLOW_RATE'];
         $baseValues = [
             'PH' => 5.8,
             'EC' => 1.5,
-            'TEMP_AIR' => 22.0,
-            'HUMIDITY_AIR' => 60.0,
+            'TEMPERATURE' => 22.0,
+            'HUMIDITY' => 60.0,
             'WATER_LEVEL' => 50.0,
             'FLOW_RATE' => 2.0,
         ];
@@ -414,7 +414,7 @@ class ComprehensiveDashboardSeeder extends Seeder
             'SEND_FAILED' => Command::where('status', Command::STATUS_SEND_FAILED)->count(),
         ];
 
-        $this->command->info("   - Статусы команд:");
+        $this->command->info('   - Статусы команд:');
         foreach ($stats as $status => $count) {
             $this->command->info("     * {$status}: {$count}");
         }
@@ -493,8 +493,8 @@ class ComprehensiveDashboardSeeder extends Seeder
         return match (strtoupper($metric)) {
             'PH', 'PH_VALUE' => 0.3,
             'EC', 'EC_VALUE' => 0.2,
-            'TEMP', 'TEMPERATURE', 'TEMP_AIR' => 3.0,
-            'HUMIDITY', 'HUMIDITY_AIR' => 10.0,
+            'TEMPERATURE' => 3.0,
+            'HUMIDITY' => 10.0,
             'WATER_LEVEL' => 15.0,
             'FLOW_RATE' => 0.5,
             default => 1.0,
@@ -505,13 +505,13 @@ class ComprehensiveDashboardSeeder extends Seeder
     {
         $metric = strtoupper($metric);
 
-        return match (true) {
-            $metric === 'PH' => 'PH',
-            $metric === 'EC' => 'EC',
-            str_contains($metric, 'TEMP') => 'TEMPERATURE',
-            str_contains($metric, 'HUM') => 'HUMIDITY',
-            $metric === 'WATER_LEVEL' => 'WATER_LEVEL',
-            $metric === 'FLOW_RATE' => 'OTHER',
+        return match ($metric) {
+            'PH' => 'PH',
+            'EC' => 'EC',
+            'TEMPERATURE' => 'TEMPERATURE',
+            'HUMIDITY' => 'HUMIDITY',
+            'WATER_LEVEL' => 'WATER_LEVEL',
+            'FLOW_RATE' => 'FLOW_RATE',
             default => 'OTHER',
         };
     }

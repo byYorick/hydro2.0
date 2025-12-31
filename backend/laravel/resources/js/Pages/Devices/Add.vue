@@ -161,6 +161,21 @@ const assignmentForms = reactive<Record<number, { greenhouse_id: number | null; 
 const pendingAssignments = reactive<Record<number, string>>({})
 let refreshInterval: ReturnType<typeof setInterval> | null = null
 
+function unwrapListResponse<T>(payload: unknown): T[] {
+  if (Array.isArray(payload)) {
+    return payload as T[]
+  }
+
+  if (payload && typeof payload === 'object' && 'data' in payload) {
+    const inner = (payload as { data?: unknown }).data
+    if (Array.isArray(inner)) {
+      return inner as T[]
+    }
+  }
+
+  return []
+}
+
 function formatDate(dateString) {
   if (!dateString) return '-'
   return new Date(dateString).toLocaleString('ru-RU')
@@ -210,13 +225,8 @@ async function loadNewNodes(): Promise<void> {
       { params: { unassigned: true } }
     )
     
-    const data = extractData<Device[]>(response.data) || []
-    // Обработка пагинации или прямого массива
-    if (Array.isArray(data)) {
-      newNodes.value = data
-    } else {
-      newNodes.value = []
-    }
+    const data = extractData<unknown>(response.data)
+    newNodes.value = unwrapListResponse<Device>(data)
     
     // Инициализировать формы для каждой ноды
     newNodes.value.forEach(node => {
@@ -258,13 +268,8 @@ async function loadGreenhouses(): Promise<void> {
   try {
     const response = await api.get<{ data?: Greenhouse[] } | Greenhouse[]>('/greenhouses')
     
-    const data = extractData<Greenhouse[]>(response.data) || []
-    // Обработка пагинации или прямого массива
-    if (Array.isArray(data)) {
-      greenhouses.value = data
-    } else {
-      greenhouses.value = []
-    }
+    const data = extractData<unknown>(response.data)
+    greenhouses.value = unwrapListResponse<Greenhouse>(data)
   } catch (err) {
     // Ошибка уже обработана в useApi через showToast
     logger.error('[Devices/Add] Failed to load greenhouses:', err)
@@ -275,13 +280,8 @@ async function loadZones(): Promise<void> {
   try {
     const response = await api.get<{ data?: Zone[] } | Zone[]>('/zones')
     
-    const data = extractData<Zone[]>(response.data) || []
-    // Обработка пагинации или прямого массива
-    if (Array.isArray(data)) {
-      zones.value = data
-    } else {
-      zones.value = []
-    }
+    const data = extractData<unknown>(response.data)
+    zones.value = unwrapListResponse<Zone>(data)
   } catch (err) {
     // Ошибка уже обработана в useApi через showToast
     logger.error('[Devices/Add] Failed to load zones:', err)

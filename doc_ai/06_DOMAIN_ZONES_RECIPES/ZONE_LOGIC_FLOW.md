@@ -65,7 +65,7 @@ Scheduler собирает состояние зоны:
 ```
 ph = telemetry_last["PH"]
 ec = telemetry_last["EC"]
-temp = telemetry_last["TEMP_AIR"]
+temp = telemetry_last["TEMPERATURE"]
 humidity = telemetry_last["HUMIDITY"]
 water_level = telemetry_last["WATER_LEVEL"]
 light = telemetry_last["LIGHT"]
@@ -141,8 +141,8 @@ if temp < target - hysteresis → включить нагрев
 - `CLIMATE_HEATING_ON`
 
 Алерты:
-- `TEMP_HIGH`
-- `TEMP_LOW`
+- `TEMPERATURE_HIGH`
+- `TEMPERATURE_LOW`
 
 ---
 
@@ -289,12 +289,12 @@ last_update_time
 
 ## 12.1. Сценарий: высокая температура
 
-1. TEMP_AIR = 29°C (target 24°C)
+1. TEMPERATURE = 29°C (target 24°C)
 2. Climate Controller:
  - создаёт событие `CLIMATE_OVERHEAT`
  - включает вентилятор и охлаждение
  - создаёт команду включения реле
-3. Устанавливается алерт `TEMP_HIGH`
+3. Устанавливается алерт `TEMPERATURE_HIGH`
 4. Узел выполняет команду → отправляет командный ответ
 5. Vue показывает предупреждение + изменение статуса
 

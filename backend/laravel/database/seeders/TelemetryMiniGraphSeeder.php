@@ -2,13 +2,13 @@
 
 namespace Database\Seeders;
 
+use App\Models\Sensor;
+use App\Models\TelemetryLast;
+use App\Models\TelemetrySample;
+use App\Models\Zone;
+use Carbon\Carbon;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Artisan;
-use App\Models\Zone;
-use App\Models\Sensor;
-use App\Models\TelemetrySample;
-use App\Models\TelemetryLast;
-use Carbon\Carbon;
 
 /**
  * Сидер для быстрого заполнения данных телеметрии для миниграфиков
@@ -19,9 +19,10 @@ class TelemetryMiniGraphSeeder extends Seeder
     public function run(): void
     {
         $zones = Zone::with('nodes.channels')->get();
-        
+
         if ($zones->isEmpty()) {
             $this->command->warn('Нет зон для заполнения телеметрией. Сначала запустите DemoDataSeeder.');
+
             return;
         }
 
@@ -29,7 +30,7 @@ class TelemetryMiniGraphSeeder extends Seeder
 
         foreach ($zones as $zone) {
             $nodes = $zone->nodes;
-            
+
             if ($nodes->isEmpty()) {
                 continue;
             }
@@ -38,7 +39,7 @@ class TelemetryMiniGraphSeeder extends Seeder
 
             foreach ($nodes as $node) {
                 $channels = $node->channels;
-                
+
                 foreach ($channels as $channel) {
                     if ($channel->type !== 'sensor') {
                         continue;
@@ -74,13 +75,13 @@ class TelemetryMiniGraphSeeder extends Seeder
                     // Генерируем данные за последние 24 часа - каждую минуту
                     $samples = [];
                     $startTime = Carbon::now()->subDay();
-                    
+
                     $this->command->info("  - Метрика {$metricType}: генерация 1440 точек...");
-                    
+
                     for ($i = 0; $i < 1440; $i++) {
                         $ts = $startTime->copy()->addMinutes($i);
                         $value = $this->generateValue($baseValue, $variation, $i, 1440);
-                        
+
                         $samples[] = [
                             'zone_id' => $zone->id,
                             'sensor_id' => $sensor->id,
@@ -102,7 +103,7 @@ class TelemetryMiniGraphSeeder extends Seeder
                     }
 
                     // Вставка оставшихся записей
-                    if (!empty($samples)) {
+                    if (! empty($samples)) {
                         TelemetrySample::insert($samples);
                     }
 
@@ -130,21 +131,21 @@ class TelemetryMiniGraphSeeder extends Seeder
 
         $totalSamples = TelemetrySample::count();
         $totalLast = TelemetryLast::count();
-        
-        $this->command->info("Данные для миниграфиков заполнены успешно!");
+
+        $this->command->info('Данные для миниграфиков заполнены успешно!');
         $this->command->info("- Всего samples: {$totalSamples}");
         $this->command->info("- Всего last values: {$totalLast}");
-        
+
         // Агрегируем данные
-        $this->command->info("Запуск агрегации данных...");
+        $this->command->info('Запуск агрегации данных...');
         try {
             Artisan::call('telemetry:aggregate', [
                 '--from' => Carbon::now()->subDay()->toDateTimeString(),
                 '--to' => Carbon::now()->toDateTimeString(),
             ]);
-            $this->command->info("Агрегация завершена!");
+            $this->command->info('Агрегация завершена!');
         } catch (\Exception $e) {
-            $this->command->warn("Ошибка при агрегации: " . $e->getMessage());
+            $this->command->warn('Ошибка при агрегации: '.$e->getMessage());
         }
     }
 
@@ -154,18 +155,18 @@ class TelemetryMiniGraphSeeder extends Seeder
     private function generateValue(float $baseValue, float $variation, int $index, int $total): float
     {
         $t = $index / max($total, 1);
-        
+
         // Основной тренд (медленные изменения)
         $trend = sin($t * 2 * M_PI) * ($variation * 0.3);
-        
+
         // Средние колебания (дневные циклы)
         $daily = sin($t * 2 * M_PI * 7) * ($variation * 0.4);
-        
+
         // Быстрые колебания (случайный шум)
         $noise = (rand(-100, 100) / 1000) * ($variation * 0.3);
-        
+
         $value = $baseValue + $trend + $daily + $noise;
-        
+
         return max($baseValue - $variation * 1.5, min($baseValue + $variation * 1.5, $value));
     }
 
@@ -174,8 +175,8 @@ class TelemetryMiniGraphSeeder extends Seeder
         return match (strtoupper($metric)) {
             'PH', 'PH_VALUE' => 5.8,
             'EC', 'EC_VALUE' => 1.5,
-            'TEMP', 'TEMPERATURE', 'TEMP_AIR' => 22.0,
-            'HUMIDITY', 'HUMIDITY_AIR' => 60.0,
+            'TEMPERATURE' => 22.0,
+            'HUMIDITY' => 60.0,
             'WATER_LEVEL' => 50.0,
             'FLOW_RATE' => 2.0,
             default => 0.0,
@@ -187,8 +188,8 @@ class TelemetryMiniGraphSeeder extends Seeder
         return match (strtoupper($metric)) {
             'PH', 'PH_VALUE' => 0.3,
             'EC', 'EC_VALUE' => 0.2,
-            'TEMP', 'TEMPERATURE', 'TEMP_AIR' => 3.0,
-            'HUMIDITY', 'HUMIDITY_AIR' => 10.0,
+            'TEMPERATURE' => 3.0,
+            'HUMIDITY' => 10.0,
             'WATER_LEVEL' => 15.0,
             'FLOW_RATE' => 0.5,
             default => 1.0,
@@ -199,11 +200,11 @@ class TelemetryMiniGraphSeeder extends Seeder
     {
         $metric = strtoupper($metric);
 
-        return match (true) {
-            $metric === 'PH' => 'PH',
-            $metric === 'EC' => 'EC',
-            str_contains($metric, 'TEMP') => 'TEMPERATURE',
-            str_contains($metric, 'HUM') => 'HUMIDITY',
+        return match ($metric) {
+            'PH' => 'PH',
+            'EC' => 'EC',
+            'TEMPERATURE' => 'TEMPERATURE',
+            'HUMIDITY' => 'HUMIDITY',
             default => null,
         };
     }

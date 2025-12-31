@@ -560,11 +560,11 @@ class FullServiceTestSeeder extends Seeder
     {
         $metric = strtoupper($metric);
 
-        return match (true) {
-            $metric === 'PH' => 'PH',
-            $metric === 'EC' => 'EC',
-            str_contains($metric, 'TEMP') => 'TEMPERATURE',
-            str_contains($metric, 'HUM') => 'HUMIDITY',
+        return match ($metric) {
+            'PH' => 'PH',
+            'EC' => 'EC',
+            'TEMPERATURE' => 'TEMPERATURE',
+            'HUMIDITY' => 'HUMIDITY',
             default => null,
         };
     }

@@ -27,16 +27,15 @@ async def test_extract_gh_uid_from_config():
 @pytest.mark.asyncio
 async def test_get_zone_recipe_and_targets():
     """Test fetching zone recipe and targets."""
-    # Mock database fetch
-    with patch("main.fetch") as mock_fetch:
-        mock_fetch.return_value = [
-            {
-                "zone_id": 1,
-                "current_phase_index": 0,
-                "targets": {"ph": 6.5, "ec": 1.8},
-                "phase_name": "Germination",
-            }
-        ]
+    with patch("main.RecipeRepository") as mock_repo_cls:
+        mock_repo = AsyncMock()
+        mock_repo.get_zone_recipe_and_targets.return_value = {
+            "zone_id": 1,
+            "phase_index": 0,
+            "targets": {"ph": 6.5, "ec": 1.8},
+            "phase_name": "Germination",
+        }
+        mock_repo_cls.return_value = mock_repo
         result = await get_zone_recipe_and_targets(1)
         assert result is not None
         assert result["zone_id"] == 1
@@ -46,14 +45,13 @@ async def test_get_zone_recipe_and_targets():
 @pytest.mark.asyncio
 async def test_get_zone_telemetry_last():
     """Test fetching zone telemetry last values."""
-    with patch("main.fetch") as mock_fetch:
-        mock_fetch.return_value = [
-            {"metric_type": "ph", "value": 6.3},
-            {"metric_type": "ec", "value": 1.7},
-        ]
+    with patch("main.TelemetryRepository") as mock_repo_cls:
+        mock_repo = AsyncMock()
+        mock_repo.get_last_telemetry.return_value = {"PH": 6.3, "EC": 1.7}
+        mock_repo_cls.return_value = mock_repo
         result = await get_zone_telemetry_last(1)
-        assert result["ph"] == 6.3
-        assert result["ec"] == 1.7
+        assert result["PH"] == 6.3
+        assert result["EC"] == 1.7
 
 
 @pytest.mark.asyncio
@@ -197,7 +195,7 @@ async def test_check_and_correct_zone_with_capabilities():
             "targets": {"ph": 6.5, "ec": 1.8, "temp_air": 25.0},
             "phase_name": "Germination",
         },
-        "telemetry": {"PH": 6.3, "EC": 1.7, "TEMP_AIR": 24.0},
+        "telemetry": {"PH": 6.3, "EC": 1.7, "TEMPERATURE": 24.0},
         "nodes": {
             "irrig:default": {"node_uid": "nd-irrig-1", "channel": "default", "type": "irrig"}
         },
@@ -260,4 +258,3 @@ async def test_check_and_correct_zone_with_capabilities_disabled():
         mock_process.return_value = None
         await check_and_correct_zone(1, mqtt, "gh-1", cfg, zone_repo, telemetry_repo, node_repo, recipe_repo)
         mock_process.assert_called_once_with(1)
-

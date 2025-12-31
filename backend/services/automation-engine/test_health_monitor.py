@@ -24,9 +24,9 @@ async def test_calculate_ph_stability_stable():
     with patch("health_monitor.fetch") as mock_fetch:
         # Стабильные значения pH (6.5 ± 0.05)
         mock_fetch.return_value = [
-            {"value": 6.5, "created_at": datetime.utcnow() - timedelta(hours=1)},
-            {"value": 6.52, "created_at": datetime.utcnow() - timedelta(minutes=30)},
-            {"value": 6.48, "created_at": datetime.utcnow()},
+            {"value": 6.5, "ts": datetime.utcnow() - timedelta(hours=1)},
+            {"value": 6.52, "ts": datetime.utcnow() - timedelta(minutes=30)},
+            {"value": 6.48, "ts": datetime.utcnow()},
         ]
         
         stability = await calculate_ph_stability(1, hours=2)
@@ -40,9 +40,9 @@ async def test_calculate_ph_stability_unstable():
     with patch("health_monitor.fetch") as mock_fetch:
         # Нестабильные значения pH (6.0 - 7.0)
         mock_fetch.return_value = [
-            {"value": 6.0, "created_at": datetime.utcnow() - timedelta(hours=1)},
-            {"value": 7.0, "created_at": datetime.utcnow() - timedelta(minutes=30)},
-            {"value": 6.5, "created_at": datetime.utcnow()},
+            {"value": 6.0, "ts": datetime.utcnow() - timedelta(hours=1)},
+            {"value": 7.0, "ts": datetime.utcnow() - timedelta(minutes=30)},
+            {"value": 6.5, "ts": datetime.utcnow()},
         ]
         
         stability = await calculate_ph_stability(1, hours=2)
@@ -55,8 +55,8 @@ async def test_calculate_ec_stability():
     """Test EC stability calculation."""
     with patch("health_monitor.fetch") as mock_fetch:
         mock_fetch.return_value = [
-            {"value": 1.8, "created_at": datetime.utcnow() - timedelta(hours=1)},
-            {"value": 1.82, "created_at": datetime.utcnow()},
+            {"value": 1.8, "ts": datetime.utcnow() - timedelta(hours=1)},
+            {"value": 1.82, "ts": datetime.utcnow()},
         ]
         
         stability = await calculate_ec_stability(1, hours=2)
@@ -66,13 +66,18 @@ async def test_calculate_ec_stability():
 @pytest.mark.asyncio
 async def test_calculate_climate_quality_good():
     """Test climate quality when parameters are close to targets."""
-    with patch("health_monitor.fetch") as mock_fetch:
-        # Телеметрия близка к целям
-        mock_fetch.side_effect = [
-            [{"metric_type": "TEMP_AIR", "value": 25.0}, {"metric_type": "HUMIDITY", "value": 60.0}],
-            [{"targets": {"temp_air": 25.0, "humidity_air": 60.0}}],
-        ]
-        
+    with patch("health_monitor.TelemetryRepository") as mock_repo_cls, \
+         patch("repositories.laravel_api_repository.LaravelApiRepository") as mock_laravel_cls:
+        mock_repo = AsyncMock()
+        mock_repo.get_last_telemetry.return_value = {"TEMPERATURE": 25.0, "HUMIDITY": 60.0}
+        mock_repo_cls.return_value = mock_repo
+
+        mock_laravel = AsyncMock()
+        mock_laravel.get_effective_targets.return_value = {
+            "targets": {"climate_request": {"temp_air_target": 25.0, "humidity_target": 60.0}}
+        }
+        mock_laravel_cls.return_value = mock_laravel
+
         quality = await calculate_climate_quality(1)
         # Качество должно быть высоким (>80)
         assert quality >= 80
@@ -81,13 +86,18 @@ async def test_calculate_climate_quality_good():
 @pytest.mark.asyncio
 async def test_calculate_climate_quality_bad():
     """Test climate quality when parameters are far from targets."""
-    with patch("health_monitor.fetch") as mock_fetch:
-        # Телеметрия далека от целей
-        mock_fetch.side_effect = [
-            [{"metric_type": "TEMP_AIR", "value": 30.0}, {"metric_type": "HUMIDITY", "value": 80.0}],
-            [{"targets": {"temp_air": 25.0, "humidity_air": 60.0}}],
-        ]
-        
+    with patch("health_monitor.TelemetryRepository") as mock_repo_cls, \
+         patch("repositories.laravel_api_repository.LaravelApiRepository") as mock_laravel_cls:
+        mock_repo = AsyncMock()
+        mock_repo.get_last_telemetry.return_value = {"TEMPERATURE": 30.0, "HUMIDITY": 80.0}
+        mock_repo_cls.return_value = mock_repo
+
+        mock_laravel = AsyncMock()
+        mock_laravel.get_effective_targets.return_value = {
+            "targets": {"climate_request": {"temp_air_target": 25.0, "humidity_target": 60.0}}
+        }
+        mock_laravel_cls.return_value = mock_laravel
+
         quality = await calculate_climate_quality(1)
         # Качество должно быть низким (<70)
         assert quality < 70
@@ -172,4 +182,3 @@ async def test_calculate_zone_health_alarm():
         # Должен быть статус "alarm"
         assert health["health_status"] == "alarm"
         assert health["health_score"] < 50
-

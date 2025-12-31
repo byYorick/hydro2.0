@@ -336,9 +336,16 @@ async def tick_recirculation(
     # Получаем текущий ток из telemetry_last
     current_rows = await fetch(
         """
-        SELECT value
-        FROM telemetry_last
-        WHERE zone_id = $1 AND metric_type = 'pump_current' AND node_id = $2
+        SELECT tl.last_value as value
+        FROM telemetry_last tl
+        JOIN sensors s ON s.id = tl.sensor_id
+        WHERE s.zone_id = $1
+          AND s.type = 'PUMP_CURRENT'
+          AND s.node_id = $2
+          AND s.is_active = TRUE
+        ORDER BY tl.last_ts DESC NULLS LAST,
+          tl.updated_at DESC NULLS LAST,
+          tl.sensor_id DESC
         LIMIT 1
         """,
         zone_id,
@@ -349,9 +356,15 @@ async def tick_recirculation(
     # Получаем текущий flow из telemetry_last (используем FLOW_RATE из metrics)
     flow_rows = await fetch(
         """
-        SELECT value
-        FROM telemetry_last
-        WHERE zone_id = $1 AND metric_type = 'flow_rate'
+        SELECT tl.last_value as value
+        FROM telemetry_last tl
+        JOIN sensors s ON s.id = tl.sensor_id
+        WHERE s.zone_id = $1
+          AND s.type = 'FLOW_RATE'
+          AND s.is_active = TRUE
+        ORDER BY tl.last_ts DESC NULLS LAST,
+          tl.updated_at DESC NULLS LAST,
+          tl.sensor_id DESC
         LIMIT 1
         """,
         zone_id,
@@ -454,12 +467,13 @@ async def check_water_change_required(zone_id: int) -> Tuple[bool, Optional[str]
         initial_ec_window = solution_started_at + timedelta(hours=2)
         initial_ec_rows = await fetch(
             """
-            SELECT AVG(value) as avg_value
-            FROM telemetry_samples
-            WHERE zone_id = $1 
-              AND metric_type = 'EC'
-              AND created_at >= $2
-              AND created_at <= $3
+            SELECT AVG(ts.value) as avg_value
+            FROM telemetry_samples ts
+            JOIN sensors s ON s.id = ts.sensor_id
+            WHERE ts.zone_id = $1
+              AND s.type = 'EC'
+              AND ts.ts >= $2
+              AND ts.ts <= $3
             """,
             zone_id,
             solution_started_at,
@@ -473,11 +487,12 @@ async def check_water_change_required(zone_id: int) -> Tuple[bool, Optional[str]
             recent_cutoff = now - timedelta(hours=2)
             current_ec_rows = await fetch(
                 """
-                SELECT AVG(value) as avg_value
-                FROM telemetry_samples
-                WHERE zone_id = $1 
-                  AND metric_type = 'EC'
-                  AND created_at >= $2
+                SELECT AVG(ts.value) as avg_value
+            FROM telemetry_samples ts
+            JOIN sensors s ON s.id = ts.sensor_id
+            WHERE ts.zone_id = $1
+              AND s.type = 'EC'
+              AND ts.ts >= $2
                 """,
                 zone_id,
                 recent_cutoff,
@@ -635,10 +650,16 @@ async def execute_water_change(
             # Получаем текущие pH, EC, temperature из telemetry_last
             params_rows = await fetch(
                 """
-                SELECT metric_type, value
-                FROM telemetry_last
-                WHERE zone_id = $1 
-                  AND metric_type IN ('PH', 'EC', 'TEMPERATURE')
+                SELECT s.type as metric_type, tl.last_value as value
+                FROM telemetry_last tl
+                JOIN sensors s ON s.id = tl.sensor_id
+                WHERE s.zone_id = $1
+                  AND s.type IN ('PH', 'EC', 'TEMPERATURE')
+                  AND s.is_active = TRUE
+                ORDER BY s.type,
+                  tl.last_ts DESC NULLS LAST,
+                  tl.updated_at DESC NULLS LAST,
+                  tl.sensor_id DESC
                 """,
                 zone_id,
             )
@@ -686,4 +707,3 @@ async def execute_water_change(
         'success': True,
         'state': current_state
     }
-

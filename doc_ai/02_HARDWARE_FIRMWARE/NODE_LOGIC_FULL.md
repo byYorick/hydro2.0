@@ -154,8 +154,8 @@ SensorChannel {
 
 - PH
 - EC
-- TEMP_AIR
-- TEMP_WATER
+- TEMPERATURE
+- TEMPERATURE
 - HUMIDITY
 - LUX
 - CO2 (опционально)

@@ -30,6 +30,7 @@ class TelemetryPayloadModel(BaseModel):
     event: Optional[str] = Field(None, max_length=100, description="Event (from firmware)")
     health: Optional[dict] = Field(None, description="Health metrics (from pump_node)")
     zone_uid: Optional[str] = Field(None, max_length=100, description="Zone UID (fallback from payload)")
+    zone_id: Optional[int] = Field(None, ge=1, description="Zone ID (numeric)")
     node_uid: Optional[str] = Field(None, max_length=100, description="Node UID (fallback from payload)")
     gh_uid: Optional[str] = Field(
         None, max_length=100, description="Greenhouse UID (for multi-greenhouse zone resolution)"

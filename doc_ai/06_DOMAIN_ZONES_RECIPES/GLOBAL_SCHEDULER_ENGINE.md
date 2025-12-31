@@ -206,7 +206,7 @@ Scheduler обязан:
 - SENSOR_FAIL
 - PH DRIFT
 - EC DRIFT
-- TEMP CRITICAL
+- TEMPERATURE CRITICAL
 - HUM CRITICAL
 
 Если safety активируется → контроллеры отключаются.

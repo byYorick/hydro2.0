@@ -91,7 +91,7 @@ def test_get_climate_bindings_missing():
 async def test_check_and_control_climate_with_bindings():
     """Test climate control using bindings."""
     targets = {"temp_air": 25.0, "humidity_air": 60.0}
-    telemetry = {"TEMP_AIR": 22.0, "HUMIDITY": 55.0}
+    telemetry = {"TEMPERATURE": 22.0, "HUMIDITY": 55.0}
     bindings = {
         "vent": {
             "node_id": 1,
@@ -130,7 +130,7 @@ async def test_check_and_control_climate_with_bindings():
 async def test_check_and_control_climate_missing_binding():
     """Test climate control when binding is missing - should create alert."""
     targets = {"temp_air": 25.0}
-    telemetry = {"TEMP_AIR": 22.0}
+    telemetry = {"TEMPERATURE": 22.0}
     bindings = {}  # No bindings
     
     with patch("climate_controller.check_temp_alerts", new_callable=AsyncMock) as mock_temp_alerts, \

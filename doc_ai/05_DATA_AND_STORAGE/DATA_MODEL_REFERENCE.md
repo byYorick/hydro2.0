@@ -113,7 +113,7 @@ id BIGSERIAL PK
 node_id FK → nodes
 channel VARCHAR
 type VARCHAR (sensor/actuator)
-metric VARCHAR (PH, EC, TEMP_AIR…)
+metric VARCHAR (PH, EC, TEMPERATURE…)
 unit VARCHAR
 config JSONB
 created_at
@@ -247,7 +247,7 @@ humidity_target DECIMAL(5,2) NULL
 co2_target INT NULL
 
 -- Прогресс
-progress_model VARCHAR NULL -- TIME|TIME_WITH_TEMP_CORRECTION|GDD
+progress_model VARCHAR NULL -- TIME|TIME_WITH_TEMPERATURE_CORRECTION|GDD
 duration_hours INT NULL
 duration_days INT NULL
 base_temp_c DECIMAL(4,2) NULL

@@ -18,7 +18,7 @@ from climate_controller import (
 async def test_check_and_control_climate_heating():
     """Test climate control when temperature is too low."""
     targets = {"temp_air": 25.0, "humidity_air": 60.0}
-    telemetry = {"TEMP_AIR": 22.0, "HUMIDITY": 55.0}
+    telemetry = {"TEMPERATURE": 22.0, "HUMIDITY": 55.0}
     bindings = {
         "heater": {"node_uid": "nd-climate-1", "channel": "heater_air", "direction": "actuator"},
         "vent": {"node_uid": "nd-climate-1", "channel": "fan_air", "direction": "actuator"},
@@ -45,7 +45,7 @@ async def test_check_and_control_climate_heating():
 async def test_check_and_control_climate_cooling():
     """Test climate control when temperature is too high."""
     targets = {"temp_air": 25.0, "humidity_air": 60.0}
-    telemetry = {"TEMP_AIR": 28.0, "HUMIDITY": 55.0}
+    telemetry = {"TEMPERATURE": 28.0, "HUMIDITY": 55.0}
     bindings = {
         "heater": {"node_uid": "nd-climate-1", "channel": "heater_air", "direction": "actuator"},
         "vent": {"node_uid": "nd-climate-1", "channel": "fan_air", "direction": "actuator"},
@@ -70,7 +70,7 @@ async def test_check_and_control_climate_cooling():
 async def test_check_and_control_climate_humidity_high():
     """Test climate control when humidity is too high."""
     targets = {"temp_air": 25.0, "humidity_air": 60.0}
-    telemetry = {"TEMP_AIR": 25.0, "HUMIDITY": 80.0}
+    telemetry = {"TEMPERATURE": 25.0, "HUMIDITY": 80.0}
     bindings = {
         "vent": {"node_uid": "nd-climate-1", "channel": "fan_air", "direction": "actuator"},
     }

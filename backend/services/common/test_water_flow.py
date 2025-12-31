@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, patch, Mock
 from datetime import datetime, timedelta
+from common.utils.time import utcnow
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -87,7 +88,7 @@ async def test_check_flow_no_data():
 @pytest.mark.asyncio
 async def test_check_dry_run_protection_safe():
     """Test dry run protection when pump just started."""
-    pump_start_time = datetime.utcnow() - timedelta(seconds=1)  # Прошла 1 секунда
+    pump_start_time = utcnow() - timedelta(seconds=1)  # Прошла 1 секунда
     
     with patch("common.water_flow.check_flow") as mock_check_flow:
         # Не проверяем flow если прошло меньше 3 секунд
@@ -100,7 +101,7 @@ async def test_check_dry_run_protection_safe():
 @pytest.mark.asyncio
 async def test_check_dry_run_protection_no_flow():
     """Test dry run protection when no flow detected."""
-    pump_start_time = datetime.utcnow() - timedelta(seconds=5)  # Прошло 5 секунд
+    pump_start_time = utcnow() - timedelta(seconds=5)  # Прошло 5 секунд
     
     with patch("common.water_flow.check_flow") as mock_check_flow, \
          patch("common.water_flow.create_zone_event") as mock_event:
@@ -116,7 +117,7 @@ async def test_check_dry_run_protection_no_flow():
 @pytest.mark.asyncio
 async def test_check_dry_run_protection_flow_ok():
     """Test dry run protection when flow is normal."""
-    pump_start_time = datetime.utcnow() - timedelta(seconds=5)  # Прошло 5 секунд
+    pump_start_time = utcnow() - timedelta(seconds=5)  # Прошло 5 секунд
     
     with patch("common.water_flow.check_flow") as mock_check_flow:
         mock_check_flow.return_value = (True, 2.0)  # Поток нормальный
@@ -135,8 +136,8 @@ async def test_calculate_irrigation_volume():
     # Симулируем данные flow: 2.0 L/min в течение 10 минут
     with patch("common.water_flow.fetch") as mock_fetch:
         mock_fetch.return_value = [
-            {"value": 2.0, "created_at": start_time},
-            {"value": 2.0, "created_at": end_time},
+            {"value": 2.0, "ts": start_time},
+            {"value": 2.0, "ts": end_time},
         ]
         
         volume = await calculate_irrigation_volume(1, start_time, end_time)
@@ -261,6 +262,7 @@ async def test_execute_fill_mode_success():
     with patch("common.water_flow.get_irrigation_nodes") as mock_nodes, \
          patch("common.water_flow.create_zone_event") as mock_event, \
          patch("common.water_flow.check_water_level") as mock_level, \
+         patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
          patch("asyncio.sleep", side_effect=mock_sleep):
         
         # Настройка моков
@@ -282,6 +284,8 @@ async def test_execute_fill_mode_success():
         
         mock_level.side_effect = level_side_effect
         
+        mock_send.return_value = {"status": "sent", "cmd_id": "cmd-1"}
+
         result = await execute_fill_mode(1, 0.9, mqtt_client, "gh-1", max_duration_sec=10)
         
         # Проверяем результат
@@ -293,7 +297,7 @@ async def test_execute_fill_mode_success():
         assert mock_event.call_count >= 2  # FILL_STARTED и FILL_FINISHED
         
         # Проверяем, что была отправлена команда fill и stop
-        assert mqtt_client.publish_json.call_count >= 2  # fill и stop
+        assert mock_send.call_count >= 2
 
 
 @pytest.mark.asyncio
@@ -320,7 +324,7 @@ async def test_execute_fill_mode_timeout():
     mqtt_client = Mock()
     mqtt_client.publish_json = Mock()
     
-    start_time = datetime.utcnow()
+    start_time = utcnow()
     call_count = {"sleep": 0}
     
     async def mock_sleep(delay):
@@ -329,8 +333,9 @@ async def test_execute_fill_mode_timeout():
     with patch("common.water_flow.get_irrigation_nodes") as mock_nodes, \
          patch("common.water_flow.create_zone_event") as mock_event, \
          patch("common.water_flow.check_water_level") as mock_level, \
-         patch("asyncio.sleep", side_effect=mock_sleep), \
-         patch("common.water_flow.datetime") as mock_datetime:
+         patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
+         patch("common.water_flow.utcnow") as mock_utcnow, \
+         patch("asyncio.sleep", side_effect=mock_sleep):
         
         mock_nodes.return_value = [
             {
@@ -345,14 +350,15 @@ async def test_execute_fill_mode_timeout():
         mock_level.return_value = (True, 0.5)
         
         # Симулируем таймаут - после первого sleep время превышает max_duration
-        def datetime_side_effect():
-            if call_count["sleep"] == 0:
+        def utcnow_side_effect():
+            if call_count["sleep"] <= 1:
                 return start_time
-            else:
-                return start_time + timedelta(seconds=301)  # Больше max_duration
+            return start_time + timedelta(seconds=301)
+
+        mock_utcnow.side_effect = utcnow_side_effect
         
-        mock_datetime.utcnow.side_effect = datetime_side_effect
-        
+        mock_send.return_value = {"status": "sent", "cmd_id": "cmd-1"}
+
         result = await execute_fill_mode(1, 0.9, mqtt_client, "gh-1", max_duration_sec=300)
         
         assert result["success"] is False
@@ -375,6 +381,7 @@ async def test_execute_drain_mode_success():
     with patch("common.water_flow.get_irrigation_nodes") as mock_nodes, \
          patch("common.water_flow.create_zone_event") as mock_event, \
          patch("common.water_flow.check_water_level") as mock_level, \
+         patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
          patch("asyncio.sleep", side_effect=mock_sleep):
         
         mock_nodes.return_value = [
@@ -395,6 +402,8 @@ async def test_execute_drain_mode_success():
         
         mock_level.side_effect = level_side_effect
         
+        mock_send.return_value = {"status": "sent", "cmd_id": "cmd-1"}
+
         result = await execute_drain_mode(1, 0.1, mqtt_client, "gh-1", max_duration_sec=10)
         
         assert result["success"] is True
@@ -405,7 +414,7 @@ async def test_execute_drain_mode_success():
         assert mock_event.call_count >= 2  # DRAIN_STARTED и DRAIN_FINISHED
         
         # Проверяем команду
-        assert mqtt_client.publish_json.call_count >= 2  # drain и stop
+        assert mock_send.call_count >= 2
 
 
 @pytest.mark.asyncio
@@ -448,10 +457,10 @@ async def test_calibrate_flow_success():
     
     # Данные flow для калибровки
     flow_samples = [
-        {"value": 2.0, "created_at": datetime.utcnow() - timedelta(seconds=8), "raw": {"pulses": 100}},
-        {"value": 2.1, "created_at": datetime.utcnow() - timedelta(seconds=6), "raw": {"pulses": 120}},
-        {"value": 2.0, "created_at": datetime.utcnow() - timedelta(seconds=4), "raw": {"pulses": 140}},
-        {"value": 2.2, "created_at": datetime.utcnow() - timedelta(seconds=2), "raw": {"pulses": 160}},
+        {"value": 2.0, "ts": datetime.utcnow() - timedelta(seconds=8), "metadata": {"raw": {"pulses": 100}}},
+        {"value": 2.1, "ts": datetime.utcnow() - timedelta(seconds=6), "metadata": {"raw": {"pulses": 120}}},
+        {"value": 2.0, "ts": datetime.utcnow() - timedelta(seconds=4), "metadata": {"raw": {"pulses": 140}}},
+        {"value": 2.2, "ts": datetime.utcnow() - timedelta(seconds=2), "metadata": {"raw": {"pulses": 160}}},
     ]
     
     # Мок для MQTT клиента
@@ -460,8 +469,10 @@ async def test_calibrate_flow_success():
     with patch("common.water_flow.fetch") as mock_fetch, \
          patch("common.water_flow.check_water_level") as mock_water_level, \
          patch("common.water_flow.create_zone_event") as mock_event, \
-         patch("asyncio.sleep") as mock_sleep, \
-         patch("httpx.AsyncClient") as mock_httpx_client:
+         patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
+         patch("common.command_orchestrator.send_command", new_callable=AsyncMock) as mock_orchestrator_send, \
+         patch("common.water_flow.httpx.AsyncClient") as mock_httpx_client, \
+         patch("asyncio.sleep") as mock_sleep:
         
         # Настройка моков
         mock_fetch.side_effect = [
@@ -471,12 +482,15 @@ async def test_calibrate_flow_success():
         ]
         mock_water_level.return_value = (True, 0.5)  # Нормальный уровень воды
         
-        # Мок для HTTP запроса к Laravel API
+        mock_send.return_value = {"status": "sent", "cmd_id": "cmd-1"}
+        mock_orchestrator_send.return_value = {"status": "sent", "cmd_id": "cmd-1"}
+
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.text = "OK"
         mock_http_client = AsyncMock()
-        mock_http_client.__aenter__.return_value.patch.return_value = mock_response
+        mock_http_client.__aenter__.return_value = mock_http_client
+        mock_http_client.patch.return_value = mock_response
         mock_httpx_client.return_value = mock_http_client
         
         result = await calibrate_flow(1, 1, "flow_sensor", mqtt_client, "gh-1", pump_duration_sec=10)
@@ -492,7 +506,7 @@ async def test_calibrate_flow_success():
         assert mock_event.call_count >= 2  # FLOW_CALIBRATION_STARTED и FLOW_CALIBRATION_FINISHED
         
         # Проверяем, что была отправлена команда запуска насоса
-        assert mqtt_client.publish_json.called
+        assert mock_send.called
 
 
 @pytest.mark.asyncio
@@ -588,6 +602,8 @@ async def test_calibrate_flow_insufficient_data():
     with patch("common.water_flow.fetch") as mock_fetch, \
          patch("common.water_flow.check_water_level") as mock_water_level, \
          patch("common.water_flow.create_zone_event") as mock_event, \
+         patch("common.water_flow.send_command", new_callable=AsyncMock) as mock_send, \
+         patch("common.command_orchestrator.send_command", new_callable=AsyncMock) as mock_orchestrator_send, \
          patch("asyncio.sleep") as mock_sleep:
         
         mock_fetch.side_effect = [
@@ -598,8 +614,8 @@ async def test_calibrate_flow_insufficient_data():
         mock_water_level.return_value = (True, 0.5)
         mock_event.return_value = None
         
+        mock_send.return_value = {"status": "sent", "cmd_id": "cmd-1"}
+        mock_orchestrator_send.return_value = {"status": "sent", "cmd_id": "cmd-1"}
+
         with pytest.raises(ValueError, match="Insufficient flow data"):
             await calibrate_flow(1, 1, "flow_sensor", mqtt_client, "gh-1", pump_duration_sec=10)
-
-
-

@@ -15,7 +15,7 @@ for _ in range(100):
 # Commands
 for _ in range(200):
     zone_id = random.choice([1, 2, 3, 4, 5])
-    metric = random.choice(['PH', 'EC', 'TEMP_AIR', 'TEMP_WATER', 'HUMIDITY'])
+    metric = random.choice(['PH', 'EC', 'TEMPERATURE', 'HUMIDITY'])
     COMMANDS_SENT.labels(zone_id=zone_id, metric=metric).inc()
 
 # Config fetch
@@ -33,4 +33,3 @@ for _ in range(2):
     MQTT_PUBLISH_ERRORS.labels(error_type='connection_error').inc()
 
 print('✓ Данные добавлены: zone_checks=100, commands=200, config_fetch=50, errors=10')
-

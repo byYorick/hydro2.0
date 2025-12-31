@@ -64,8 +64,8 @@ class E2eDataSeeder extends Seeder
         $sensorChannels = [
             ['channel' => 'ph', 'type' => 'sensor', 'metric' => 'PH', 'unit' => 'pH'],
             ['channel' => 'ec', 'type' => 'sensor', 'metric' => 'EC', 'unit' => 'mS/cm'],
-            ['channel' => 'solution_temp_c', 'type' => 'sensor', 'metric' => 'SOLUTION_TEMP_C', 'unit' => 'C'],
-            ['channel' => 'air_temp_c', 'type' => 'sensor', 'metric' => 'AIR_TEMP_C', 'unit' => 'C'],
+            ['channel' => 'solution_temp_c', 'type' => 'sensor', 'metric' => 'TEMPERATURE', 'unit' => 'C'],
+            ['channel' => 'air_temp_c', 'type' => 'sensor', 'metric' => 'TEMPERATURE', 'unit' => 'C'],
             ['channel' => 'air_rh', 'type' => 'sensor', 'metric' => 'AIR_RH', 'unit' => '%'],
         ];
 
@@ -91,5 +91,3 @@ class E2eDataSeeder extends Seeder
         }
     }
 }
-
-

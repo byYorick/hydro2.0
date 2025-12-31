@@ -25,7 +25,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT ts::timestamp as time, value::float, 'Zone ' || zone_id::text || ' - ' || metric_type as metric FROM telemetry_samples WHERE metric_type = 'PH' AND ts >= NOW() - INTERVAL '30 days' AND ts <= NOW() ORDER BY ts LIMIT 5000",
+          "rawSql": "SELECT ts.ts::timestamp as time, ts.value::float, 'Zone ' || ts.zone_id::text || ' - ' || s.type as metric FROM telemetry_samples ts JOIN sensors s ON s.id = ts.sensor_id WHERE s.type = 'PH' AND ts.ts >= NOW() - INTERVAL '30 days' AND ts.ts <= NOW() ORDER BY ts.ts LIMIT 5000",
           "format": "time_series",
           "refId": "A"
         }
@@ -47,7 +47,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT ts::timestamp as time, value::float, 'Zone ' || zone_id::text || ' - ' || metric_type as metric FROM telemetry_samples WHERE metric_type = 'EC' AND ts >= NOW() - INTERVAL '30 days' AND ts <= NOW() ORDER BY ts LIMIT 5000",
+          "rawSql": "SELECT ts.ts::timestamp as time, ts.value::float, 'Zone ' || ts.zone_id::text || ' - ' || s.type as metric FROM telemetry_samples ts JOIN sensors s ON s.id = ts.sensor_id WHERE s.type = 'EC' AND ts.ts >= NOW() - INTERVAL '30 days' AND ts.ts <= NOW() ORDER BY ts.ts LIMIT 5000",
           "format": "time_series",
           "refId": "A"
         }
@@ -69,7 +69,7 @@
       },
       "targets": [
         {
-          "rawSql": "SELECT ts::timestamp as time, value::float, 'Zone ' || zone_id::text || ' - ' || metric_type as metric FROM telemetry_samples WHERE metric_type = 'TEMP_AIR' AND ts >= NOW() - INTERVAL '30 days' AND ts <= NOW() ORDER BY ts LIMIT 5000",
+          "rawSql": "SELECT ts.ts::timestamp as time, ts.value::float, 'Zone ' || ts.zone_id::text || ' - ' || s.type as metric FROM telemetry_samples ts JOIN sensors s ON s.id = ts.sensor_id WHERE s.type = 'TEMPERATURE' AND ts.ts >= NOW() - INTERVAL '30 days' AND ts.ts <= NOW() ORDER BY ts.ts LIMIT 5000",
           "format": "time_series",
           "refId": "A"
         }

@@ -135,7 +135,7 @@ WHERE id = 7;
   "version": 1,
   "type": "climate",
   "channels": [
-    { "name": "temp_air", "type": "SENSOR", "metric": "TEMP_AIR" }
+    { "name": "temp_air", "type": "SENSOR", "metric": "TEMPERATURE" }
   ],
   "wifi": { "ssid": "HydroFarm", "password": "***" },
   "mqtt": { "host": "192.168.1.100", "port": 1883 }
@@ -256,7 +256,7 @@ docker compose -f docker-compose.dev.yml exec mqtt mosquitto_pub -h localhost \
 # После привязки узла к зоне через UI, узел отправляет config_report:
 docker compose -f docker-compose.dev.yml exec mqtt mosquitto_pub -h localhost \
   -t 'hydro/gh-temp/zn-temp/nd-clim-esp3278e/config_report' \
-  -m '{"node_id":"nd-clim-esp3278e","version":1,"channels":[{"name":"temp_air","type":"SENSOR","metric":"TEMP_AIR"}]}'
+  -m '{"node_id":"nd-clim-esp3278e","version":1,"channels":[{"name":"temp_air","type":"SENSOR","metric":"TEMPERATURE"}]}'
 ```
 
 **Ожидаемый результат:**

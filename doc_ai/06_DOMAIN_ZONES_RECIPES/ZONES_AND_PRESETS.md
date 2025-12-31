@@ -49,7 +49,7 @@ capabilities
 
 ```
 water_tank_volume
-sensors: pH, EC, TEMP, HUM, PAR
+sensors: pH, EC, TEMPERATURE, HUM, PAR
 actuators: pumps, valves, fans, heater, light
 ```
 
@@ -329,7 +329,7 @@ update targets
 
 - PH_HIGH / PH_LOW
 - EC_HIGH / EC_LOW
-- TEMP_HIGH / TEMP_LOW
+- TEMPERATURE_HIGH / TEMPERATURE_LOW
 - HUM_HIGH / HUM_LOW
 - LEVEL_LOW
 - NO_FLOW

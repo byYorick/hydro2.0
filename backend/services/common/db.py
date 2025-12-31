@@ -61,13 +61,15 @@ async def fetch(query: str, *args: Any):
         return await conn.fetch(query, *args)
 
 
-async def upsert_telemetry_last(zone_id: int, metric_type: str, node_id: Optional[int], channel: Optional[str], value: Optional[float], ts: Optional[datetime] = None):
+async def upsert_telemetry_last(
+    sensor_id: int,
+    value: Optional[float],
+    ts: Optional[datetime] = None,
+    quality: str = "GOOD",
+):
     """
     Обновить или вставить последнее значение телеметрии.
-    Использует (zone_id, metric_type) как уникальный ключ (текущая структура таблицы).
-    Если node_id указан, он также обновляется.
     """
-    actual_node_id = node_id if node_id is not None else -1
     sample_ts = ts
     if sample_ts and getattr(sample_ts, "tzinfo", None):
         sample_ts = sample_ts.astimezone(timezone.utc).replace(tzinfo=None)
@@ -76,15 +78,20 @@ async def upsert_telemetry_last(zone_id: int, metric_type: str, node_id: Optiona
     
     await execute(
         """
-        INSERT INTO telemetry_last (zone_id, node_id, metric_type, channel, value, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (zone_id, node_id, metric_type)
+        INSERT INTO telemetry_last (sensor_id, last_value, last_ts, last_quality, updated_at)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (sensor_id)
         DO UPDATE SET 
-            channel = EXCLUDED.channel, 
-            value = EXCLUDED.value, 
+            last_value = EXCLUDED.last_value, 
+            last_ts = EXCLUDED.last_ts, 
+            last_quality = EXCLUDED.last_quality,
             updated_at = EXCLUDED.updated_at
         """,
-        zone_id, actual_node_id, metric_type, channel, value, sample_ts
+        sensor_id,
+        value,
+        sample_ts,
+        quality,
+        sample_ts,
     )
 
 

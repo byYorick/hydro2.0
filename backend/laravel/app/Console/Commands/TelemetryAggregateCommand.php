@@ -2,9 +2,9 @@
 
 namespace App\Console\Commands;
 
+use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
-use Carbon\Carbon;
 
 class TelemetryAggregateCommand extends Command
 {
@@ -29,10 +29,10 @@ class TelemetryAggregateCommand extends Command
      */
     public function handle()
     {
-        $from = $this->option('from') 
+        $from = $this->option('from')
             ? Carbon::parse($this->option('from'))
             : Carbon::now()->subHour();
-        
+
         $to = $this->option('to')
             ? Carbon::parse($this->option('to'))
             : Carbon::now();
@@ -47,7 +47,7 @@ class TelemetryAggregateCommand extends Command
                 ts.zone_id,
                 s.node_id,
                 ts.metadata->>'channel' as channel,
-                COALESCE(ts.metadata->>'metric_type', s.type::text) as metric_type,
+                s.type::text as metric_type,
                 AVG(ts.value) as value_avg,
                 MIN(ts.value) as value_min,
                 MAX(ts.value) as value_max,
@@ -61,7 +61,7 @@ class TelemetryAggregateCommand extends Command
                 ts.zone_id,
                 s.node_id,
                 ts.metadata->>'channel',
-                COALESCE(ts.metadata->>'metric_type', s.type::text),
+                s.type::text,
                 time_bucket('1 minute', ts.ts)
             ON CONFLICT (zone_id, node_id, channel, metric_type, ts) DO NOTHING
         ", [$from, $to]);
@@ -93,7 +93,7 @@ class TelemetryAggregateCommand extends Command
 
         // Агрегация по дням (из 1h данных)
         $this->info('Агрегация по дням...');
-        $aggDaily = DB::statement("
+        $aggDaily = DB::statement('
             INSERT INTO telemetry_daily (zone_id, node_id, channel, metric_type, value_avg, value_min, value_max, value_median, sample_count, date)
             SELECT 
                 zone_id,
@@ -116,11 +116,11 @@ class TelemetryAggregateCommand extends Command
                 value_max = EXCLUDED.value_max,
                 value_median = EXCLUDED.value_median,
                 sample_count = EXCLUDED.sample_count
-        ", [$from, $to]);
+        ', [$from, $to]);
 
         $this->info('Агрегация по дням завершена.');
         $this->info('Агрегация завершена.');
-        
+
         return Command::SUCCESS;
     }
 }

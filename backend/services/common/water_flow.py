@@ -32,9 +32,16 @@ async def check_water_level(zone_id: int) -> Tuple[bool, Optional[float]]:
     """
     rows = await fetch(
         """
-        SELECT value
-        FROM telemetry_last
-        WHERE zone_id = $1 AND metric_type = 'WATER_LEVEL'
+        SELECT tl.last_value as value
+        FROM telemetry_last tl
+        JOIN sensors s ON s.id = tl.sensor_id
+        WHERE s.zone_id = $1
+          AND s.type = 'WATER_LEVEL'
+          AND s.is_active = TRUE
+        ORDER BY tl.last_ts DESC NULLS LAST,
+          tl.updated_at DESC NULLS LAST,
+          tl.sensor_id DESC
+        LIMIT 1
         """,
         zone_id,
     )
@@ -62,9 +69,16 @@ async def check_flow(zone_id: int, min_flow: float = MIN_FLOW_THRESHOLD) -> Tupl
     """
     rows = await fetch(
         """
-        SELECT value
-        FROM telemetry_last
-        WHERE zone_id = $1 AND metric_type = 'FLOW'
+        SELECT tl.last_value as value
+        FROM telemetry_last tl
+        JOIN sensors s ON s.id = tl.sensor_id
+        WHERE s.zone_id = $1
+          AND s.type = 'FLOW_RATE'
+          AND s.is_active = TRUE
+        ORDER BY tl.last_ts DESC NULLS LAST,
+          tl.updated_at DESC NULLS LAST,
+          tl.sensor_id DESC
+        LIMIT 1
         """,
         zone_id,
     )
@@ -145,13 +159,14 @@ async def calculate_irrigation_volume(
     # Получаем данные flow за период из telemetry_samples
     rows = await fetch(
         """
-        SELECT value, created_at
-        FROM telemetry_samples
-        WHERE zone_id = $1 
-          AND metric_type = 'FLOW'
-          AND created_at >= $2
-          AND created_at <= $3
-        ORDER BY created_at ASC
+        SELECT ts.value, ts.ts
+        FROM telemetry_samples ts
+        JOIN sensors s ON s.id = ts.sensor_id
+        WHERE ts.zone_id = $1
+          AND s.type = 'FLOW_RATE'
+          AND ts.ts >= $2
+          AND ts.ts <= $3
+        ORDER BY ts.ts ASC
         """,
         zone_id,
         start_time,
@@ -167,9 +182,9 @@ async def calculate_irrigation_volume(
     # Вычисляем объем как интеграл flow по времени
     for i in range(len(rows) - 1):
         flow1 = float(rows[i]["value"]) if rows[i]["value"] is not None else 0.0
-        time1 = rows[i]["created_at"]
+        time1 = rows[i]["ts"]
         flow2 = float(rows[i + 1]["value"]) if rows[i + 1]["value"] is not None else 0.0
-        time2 = rows[i + 1]["created_at"]
+        time2 = rows[i + 1]["ts"]
         
         # Средний flow за интервал
         avg_flow = (flow1 + flow2) / 2.0
@@ -739,15 +754,16 @@ async def calibrate_flow(
     # Получаем данные flow за период калибровки
     flow_rows = await fetch(
         """
-        SELECT value, created_at, raw
-        FROM telemetry_samples
-        WHERE zone_id = $1 
-          AND node_id = $2
-          AND channel = $3
-          AND metric_type = 'FLOW'
-          AND created_at >= $4
-          AND created_at <= $5
-        ORDER BY created_at ASC
+        SELECT ts.value, ts.ts, ts.metadata
+        FROM telemetry_samples ts
+        JOIN sensors s ON s.id = ts.sensor_id
+        WHERE ts.zone_id = $1
+          AND s.node_id = $2
+          AND s.label = $3
+          AND s.type = 'FLOW_RATE'
+          AND ts.ts >= $4
+          AND ts.ts <= $5
+        ORDER BY ts.ts ASC
         """,
         zone_id,
         node_id,
@@ -770,7 +786,8 @@ async def calibrate_flow(
     # Предполагаем, что raw содержит поле "pulses" или "count"
     pulse_values = []
     for row in flow_rows:
-        raw_data = row.get("raw")
+        metadata = row.get("metadata")
+        raw_data = metadata.get("raw") if isinstance(metadata, dict) else None
         if raw_data and isinstance(raw_data, dict):
             pulses = raw_data.get("pulses") or raw_data.get("count") or raw_data.get("pulse_count")
             if pulses is not None:
@@ -852,4 +869,3 @@ async def calibrate_flow(
         'pump_duration_sec': pump_duration_sec,
         'calibrated_at': calibration_end_time.isoformat()
     }
-

@@ -136,7 +136,8 @@ async def check_mcu_offline(zone_id: int, node_id: Optional[int] = None) -> tupl
             """
             SELECT n.id, n.status, MAX(tl.updated_at) as last_telemetry
             FROM nodes n
-            LEFT JOIN telemetry_last tl ON tl.node_id = n.id
+            LEFT JOIN sensors s ON s.node_id = n.id
+            LEFT JOIN telemetry_last tl ON tl.sensor_id = s.id
             WHERE n.id = $1 AND n.zone_id = $2
             GROUP BY n.id, n.status
             """,
@@ -149,7 +150,8 @@ async def check_mcu_offline(zone_id: int, node_id: Optional[int] = None) -> tupl
             """
             SELECT n.id, n.status, MAX(tl.updated_at) as last_telemetry
             FROM nodes n
-            LEFT JOIN telemetry_last tl ON tl.node_id = n.id
+            LEFT JOIN sensors s ON s.node_id = n.id
+            LEFT JOIN telemetry_last tl ON tl.sensor_id = s.id
             WHERE n.zone_id = $1
             GROUP BY n.id, n.status
             """,
@@ -445,4 +447,3 @@ async def can_run_pump(
         return False, f"Too many recent failures for pump {pump_channel}"
     
     return True, None
-

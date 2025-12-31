@@ -109,9 +109,9 @@ class AutomationEngineE2ESeeder extends Seeder
         $channels = [
             ['channel' => 'ph_sensor', 'metric' => 'PH', 'unit' => 'pH', 'type' => 'sensor', 'data_type' => 'float'],
             ['channel' => 'ec_sensor', 'metric' => 'EC', 'unit' => 'mS/cm', 'type' => 'sensor', 'data_type' => 'float'],
-            ['channel' => 'solution_temp_c', 'metric' => 'TEMP_SOLUTION', 'unit' => '°C', 'type' => 'sensor', 'data_type' => 'float'],
-            ['channel' => 'air_temp_c', 'metric' => 'TEMP_AIR', 'unit' => '°C', 'type' => 'sensor', 'data_type' => 'float'],
-            ['channel' => 'air_rh', 'metric' => 'HUMIDITY_AIR', 'unit' => '%', 'type' => 'sensor', 'data_type' => 'float'],
+            ['channel' => 'solution_temp_c', 'metric' => 'TEMPERATURE', 'unit' => '°C', 'type' => 'sensor', 'data_type' => 'float'],
+            ['channel' => 'air_temp_c', 'metric' => 'TEMPERATURE', 'unit' => '°C', 'type' => 'sensor', 'data_type' => 'float'],
+            ['channel' => 'air_rh', 'metric' => 'HUMIDITY', 'unit' => '%', 'type' => 'sensor', 'data_type' => 'float'],
         ];
 
         foreach ($channels as $channelData) {

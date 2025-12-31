@@ -222,9 +222,18 @@ class RecipeRepository:
                     WHERE z.id = $1
                 ),
                 telemetry_data AS (
-                    SELECT metric_type, value, updated_at
-                    FROM telemetry_last
-                    WHERE zone_id = $1
+                    SELECT DISTINCT ON (s.type)
+                        s.type as metric_type,
+                        tl.last_value as value,
+                        tl.last_ts as updated_at
+                    FROM telemetry_last tl
+                    JOIN sensors s ON s.id = tl.sensor_id
+                    WHERE s.zone_id = $1
+                      AND s.is_active = TRUE
+                    ORDER BY s.type,
+                        tl.last_ts DESC NULLS LAST,
+                        tl.updated_at DESC NULLS LAST,
+                        tl.sensor_id DESC
                 ),
                 nodes_data AS (
                     SELECT n.id, n.uid, n.type, nc.channel
@@ -357,8 +366,24 @@ class RecipeRepository:
             ),
             telemetry_data AS (
                 SELECT zone_id, metric_type, value, updated_at
-                FROM telemetry_last
-                WHERE zone_id = ANY($1::int[])
+                FROM (
+                    SELECT
+                        s.zone_id as zone_id,
+                        s.type as metric_type,
+                        tl.last_value as value,
+                        tl.last_ts as updated_at,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY s.zone_id, s.type
+                            ORDER BY tl.last_ts DESC NULLS LAST,
+                                tl.updated_at DESC NULLS LAST,
+                                tl.sensor_id DESC
+                        ) as rn
+                    FROM telemetry_last tl
+                    JOIN sensors s ON s.id = tl.sensor_id
+                    WHERE s.zone_id = ANY($1::int[])
+                      AND s.is_active = TRUE
+                ) ranked
+                WHERE rn = 1
             ),
             nodes_data AS (
                 SELECT n.zone_id, n.id, n.uid, n.type, nc.channel

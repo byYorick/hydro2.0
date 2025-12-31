@@ -38,7 +38,7 @@ async def test_batch_resolve_zones():
                 zone_uid='zn-1',
                 gh_uid='gh-1',
                 node_uid='nd-1',
-                metric_type='TEMP_AIR',
+                metric_type='TEMPERATURE',
                 value=25.0,
                 ts=datetime.utcnow()
             ),
@@ -90,14 +90,14 @@ async def test_batch_upsert_telemetry_last():
                 zone_uid='zn-1',
                 gh_uid='gh-1',
                 node_uid='nd-1',
-                metric_type='TEMP_AIR',
+                metric_type='TEMPERATURE',
                 value=25.0,
                 ts=datetime.utcnow()
             ),
         ]
 
         _sensor_cache.clear()
-        _sensor_cache[(1, None, "TEMPERATURE", "TEMP_AIR")] = 101
+        _sensor_cache[(1, None, "TEMPERATURE", "TEMPERATURE")] = 101
         
         await process_telemetry_batch(samples)
         

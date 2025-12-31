@@ -487,7 +487,7 @@ fun ZoneDetailsScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            listOf("PH", "EC", "TEMP_AIR", "HUMIDITY_AIR").forEach { metric ->
+                            listOf("PH", "EC", "TEMPERATURE", "HUMIDITY").forEach { metric ->
                                 FilterChip(
                                     selected = selectedMetric == metric,
                                     onClick = {

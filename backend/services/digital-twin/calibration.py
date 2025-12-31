@@ -26,15 +26,16 @@ async def calibrate_ph_model(zone_id: int, days: int = 7) -> Dict[str, float]:
     # Получаем историю pH (только валидные значения)
     ph_samples = await fetch(
         """
-        SELECT ts, value
-        FROM telemetry_samples
-        WHERE zone_id = $1
-          AND metric_type = 'PH'
-          AND ts >= $2
-          AND value IS NOT NULL
-          AND value >= 0.0
-          AND value <= 14.0
-        ORDER BY ts ASC
+        SELECT ts.ts, ts.value
+        FROM telemetry_samples ts
+        JOIN sensors s ON s.id = ts.sensor_id
+        WHERE ts.zone_id = $1
+          AND s.type = 'PH'
+          AND ts.ts >= $2
+          AND ts.value IS NOT NULL
+          AND ts.value >= 0.0
+          AND ts.value <= 14.0
+        ORDER BY ts.ts ASC
         """,
         zone_id,
         cutoff_date,
@@ -156,15 +157,16 @@ async def calibrate_ec_model(zone_id: int, days: int = 7) -> Dict[str, float]:
     # Получаем историю EC (только валидные значения)
     ec_samples = await fetch(
         """
-        SELECT ts, value
-        FROM telemetry_samples
-        WHERE zone_id = $1
-          AND metric_type = 'EC'
-          AND ts >= $2
-          AND value IS NOT NULL
-          AND value >= 0.0
-          AND value <= 10.0
-        ORDER BY ts ASC
+        SELECT ts.ts, ts.value
+        FROM telemetry_samples ts
+        JOIN sensors s ON s.id = ts.sensor_id
+        WHERE ts.zone_id = $1
+          AND s.type = 'EC'
+          AND ts.ts >= $2
+          AND ts.value IS NOT NULL
+          AND ts.value >= 0.0
+          AND ts.value <= 10.0
+        ORDER BY ts.ts ASC
         """,
         zone_id,
         cutoff_date,
@@ -287,15 +289,16 @@ async def calibrate_climate_model(zone_id: int, days: int = 7) -> Dict[str, floa
     # Получаем историю температуры и влажности (только валидные значения)
     temp_samples = await fetch(
         """
-        SELECT ts, value
-        FROM telemetry_samples
-        WHERE zone_id = $1
-          AND metric_type = 'TEMP_AIR'
-          AND ts >= $2
-          AND value IS NOT NULL
-          AND value >= -10.0
-          AND value <= 50.0
-        ORDER BY ts ASC
+        SELECT ts.ts, ts.value
+        FROM telemetry_samples ts
+        JOIN sensors s ON s.id = ts.sensor_id
+        WHERE ts.zone_id = $1
+          AND s.type = 'TEMPERATURE'
+          AND ts.ts >= $2
+          AND ts.value IS NOT NULL
+          AND ts.value >= -10.0
+          AND ts.value <= 50.0
+        ORDER BY ts.ts ASC
         """,
         zone_id,
         cutoff_date,
@@ -303,15 +306,16 @@ async def calibrate_climate_model(zone_id: int, days: int = 7) -> Dict[str, floa
     
     humidity_samples = await fetch(
         """
-        SELECT ts, value
-        FROM telemetry_samples
-        WHERE zone_id = $1
-          AND metric_type = 'HUMIDITY'
-          AND ts >= $2
-          AND value IS NOT NULL
-          AND value >= 0.0
-          AND value <= 100.0
-        ORDER BY ts ASC
+        SELECT ts.ts, ts.value
+        FROM telemetry_samples ts
+        JOIN sensors s ON s.id = ts.sensor_id
+        WHERE ts.zone_id = $1
+          AND s.type = 'HUMIDITY'
+          AND ts.ts >= $2
+          AND ts.value IS NOT NULL
+          AND ts.value >= 0.0
+          AND ts.value <= 100.0
+        ORDER BY ts.ts ASC
         """,
         zone_id,
         cutoff_date,
@@ -411,4 +415,3 @@ async def calibrate_zone_models(zone_id: int, days: int = 7) -> Dict[str, Any]:
     
     logger.info(f"Calibration completed for zone {zone_id}")
     return result
-

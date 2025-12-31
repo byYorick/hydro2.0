@@ -241,9 +241,9 @@ class GreenhouseController extends Controller
                     $telemetryByZone[$metric->zone_id]['ph'] = (float) $metric->value;
                 } elseif ($key === 'ec') {
                     $telemetryByZone[$metric->zone_id]['ec'] = (float) $metric->value;
-                } elseif (in_array($key, ['temp', 'temperature', 'air_temperature'])) {
+                } elseif ($key === 'temperature') {
                     $telemetryByZone[$metric->zone_id]['temperature'] = (float) $metric->value;
-                } elseif (in_array($key, ['humidity', 'rh'])) {
+                } elseif ($key === 'humidity') {
                     $telemetryByZone[$metric->zone_id]['humidity'] = (float) $metric->value;
                 } elseif ($key === 'co2') {
                     $telemetryByZone[$metric->zone_id]['co2'] = (float) $metric->value;
@@ -377,5 +377,4 @@ class GreenhouseController extends Controller
         ]);
     }
 }
-
 

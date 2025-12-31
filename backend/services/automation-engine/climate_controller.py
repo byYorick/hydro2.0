@@ -92,17 +92,11 @@ async def check_and_control_climate(
         Список команд для отправки узлам
     """
     commands: List[Dict[str, Any]] = []
-
-    def _first_metric(keys: List[str]) -> Optional[Any]:
-        for key in keys:
-            if key in telemetry and telemetry.get(key) is not None:
-                return telemetry.get(key)
-        return None
     
-    # Получаем текущие значения (поддерживаем разные названия метрик)
-    temp_air = _first_metric(["TEMP_AIR", "temp_air", "air_temp_c"])
-    humidity = _first_metric(["HUMIDITY", "humidity", "humidity_air", "air_rh"])
-    co2 = _first_metric(["CO2", "co2", "co2_ppm"])
+    # Получаем текущие значения
+    temp_air = telemetry.get("TEMPERATURE")
+    humidity = telemetry.get("HUMIDITY")
+    co2 = telemetry.get("CO2")
     
     # Получаем целевые значения
     target_temp = targets.get("temp_air")

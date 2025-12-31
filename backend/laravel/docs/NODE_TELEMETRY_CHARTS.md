@@ -17,7 +17,7 @@ GET /api/nodes/{id}/telemetry/history
 ```
 
 **Параметры:**
-- `metric` (required) - Тип метрики (TEMP_AIR, HUMIDITY, CO2, PH, EC и т.д.)
+- `metric` (required) - Тип метрики (TEMPERATURE, HUMIDITY, CO2, PH, EC и т.д.)
 - `channel` (optional) - Название канала для фильтрации
 - `from` (optional) - Начало временного диапазона (ISO 8601)
 - `to` (optional) - Конец временного диапазона (ISO 8601)
@@ -71,7 +71,7 @@ Route::get('nodes/{id}/telemetry/history', [TelemetryController::class, 'nodeHis
 
 ```typescript
 const metricColors = {
-  'TEMP_AIR': '#f59e0b', // amber-500
+  'TEMPERATURE': '#f59e0b', // amber-500
   'HUMIDITY': '#3b82f6', // blue-500
   'CO2': '#10b981', // emerald-500
   'PH': '#8b5cf6', // violet-500
@@ -79,7 +79,7 @@ const metricColors = {
 }
 
 const metricLabels = {
-  'TEMP_AIR': 'Температура',
+  'TEMPERATURE': 'Температура',
   'HUMIDITY': 'Влажность',
   'CO2': 'CO₂',
   'PH': 'pH',
@@ -125,7 +125,7 @@ const metricLabels = {
 ### API запрос для загрузки данных:
 
 ```bash
-curl -X GET "http://your-domain/api/nodes/2/telemetry/history?metric=TEMP_AIR&channel=temperature&from=2025-12-05T12:00:00Z" \
+curl -X GET "http://your-domain/api/nodes/2/telemetry/history?metric=TEMPERATURE&channel=temperature&from=2025-12-05T12:00:00Z" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
@@ -176,7 +176,7 @@ http://your-domain/devices/2
 
 ### 3. Откройте DevTools и проверьте Network:
 ```
-GET /api/nodes/2/telemetry/history?metric=TEMP_AIR&channel=temperature&from=...
+GET /api/nodes/2/telemetry/history?metric=TEMPERATURE&channel=temperature&from=...
 Status: 200 OK
 Response: { "status": "ok", "data": [...] }
 ```
@@ -219,4 +219,3 @@ Response: { "status": "ok", "data": [...] }
 - [ ] Добавить алерты на графике (критические значения)
 - [ ] Добавить возможность выбора конкретных каналов для отображения
 - [ ] Добавить статистику (min/max/avg) под графиком
-

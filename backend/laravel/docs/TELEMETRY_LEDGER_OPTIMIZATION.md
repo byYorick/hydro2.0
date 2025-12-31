@@ -101,8 +101,8 @@ class TelemetryLedgerFilter
     private const THRESHOLDS = [
         'pH' => 0.1,           // Изменение pH на 0.1
         'EC' => 0.2,           // Изменение EC на 0.2 mS/cm
-        'TEMP_AIR' => 1.0,     // Изменение температуры на 1°C
-        'TEMP_WATER' => 0.5,   // Изменение температуры воды на 0.5°C
+        'TEMPERATURE' => 1.0,  // Изменение температуры на 1°C
+        'TEMPERATURE' => 0.5,  // Изменение температуры на 0.5°C
         'HUMIDITY' => 2.0,     // Изменение влажности на 2%
         'CO2' => 50,           // Изменение CO2 на 50 ppm
         'LUX' => 100,          // Изменение освещенности на 100 lux
@@ -290,4 +290,3 @@ if (shouldAggregate($metricType)) {
     }
 }
 ```
-

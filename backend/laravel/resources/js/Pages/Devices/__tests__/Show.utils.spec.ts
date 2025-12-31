@@ -100,7 +100,6 @@ describe('Devices/Show.vue - Утилиты', () => {
   describe('METRIC_PRIORITY сортировка', () => {
     const METRIC_PRIORITY: Record<string, number> = {
       'TEMPERATURE': 1,
-      'TEMP_AIR': 1,
       'HUMIDITY': 2,
     }
 
@@ -127,4 +126,3 @@ describe('Devices/Show.vue - Утилиты', () => {
     })
   })
 })
-

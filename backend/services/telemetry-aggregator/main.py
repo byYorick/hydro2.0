@@ -187,7 +187,7 @@ async def aggregate_1m() -> int:
                         ts.zone_id,
                         s.node_id,
                         ts.metadata->>'channel' as channel,
-                        COALESCE(ts.metadata->>'metric_type', s.type::text) as metric_type,
+                        s.type::text as metric_type,
                         AVG(ts.value)::float as value_avg,
                         MIN(ts.value)::float as value_min,
                         MAX(ts.value)::float as value_max,
@@ -201,7 +201,7 @@ async def aggregate_1m() -> int:
                         ts.zone_id,
                         s.node_id,
                         ts.metadata->>'channel',
-                        COALESCE(ts.metadata->>'metric_type', s.type::text),
+                        s.type::text,
                         time_bucket('1 minute', ts.ts)
                     ON CONFLICT (zone_id, node_id, channel, metric_type, ts) 
                     DO UPDATE SET
@@ -226,7 +226,7 @@ async def aggregate_1m() -> int:
                         ts.zone_id,
                         s.node_id,
                         ts.metadata->>'channel' as channel,
-                        COALESCE(ts.metadata->>'metric_type', s.type::text) as metric_type,
+                        s.type::text as metric_type,
                         AVG(ts.value)::float as value_avg,
                         MIN(ts.value)::float as value_min,
                         MAX(ts.value)::float as value_max,
@@ -240,7 +240,7 @@ async def aggregate_1m() -> int:
                         ts.zone_id,
                         s.node_id,
                         ts.metadata->>'channel',
-                        COALESCE(ts.metadata->>'metric_type', s.type::text),
+                        s.type::text,
                         date_trunc('minute', ts.ts)
                     ON CONFLICT (zone_id, node_id, channel, metric_type, ts) 
                     DO UPDATE SET

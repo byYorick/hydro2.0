@@ -38,7 +38,7 @@ def inject_test_metrics():
     # Генерируем данные для automation_commands_sent_total
     print("\n2. Генерация automation_commands_sent_total...")
     zone_ids = [1, 2, 3, 4, 5]
-    metrics = ['PH', 'EC', 'TEMP_AIR', 'TEMP_WATER', 'HUMIDITY']
+    metrics = ['PH', 'EC', 'TEMPERATURE', 'HUMIDITY']
     for i in range(100):
         zone_id = random.choice(zone_ids)
         metric = random.choice(metrics)
@@ -66,4 +66,3 @@ def inject_test_metrics():
 
 if __name__ == "__main__":
     inject_test_metrics()
-
