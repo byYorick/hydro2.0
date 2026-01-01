@@ -164,7 +164,7 @@ telemetry:
 
 1. Проверьте подписку на топик команд:
 ```bash
-mosquitto_sub -h localhost -p 1883 -t "hydro/+/+/+/+/cmd" -v
+mosquitto_sub -h localhost -p 1883 -t "hydro/+/+/+/+/command" -v
 ```
 
 2. Проверьте, что узел в правильном режиме:
@@ -588,7 +588,6 @@ docker compose -f docker-compose.e2e.yml exec laravel env | grep DB
 - [TESTING_OVERVIEW.md](./TESTING_OVERVIEW.md) - Общий обзор тестирования
 - [NODE_SIM.md](./NODE_SIM.md) - Документация по симулятору узлов
 - [E2E_GUIDE.md](./E2E_GUIDE.md) - Руководство по E2E тестам
-
 
 
 

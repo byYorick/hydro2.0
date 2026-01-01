@@ -96,12 +96,12 @@ mqtt_client_publish_config_report(json_data);
 ### Telemetry (раздел 3.2 MQTT_SPEC_FULL.md)
 ```json
 {
-  "node_id": "nd-ph-1",
-  "channel": "ph_sensor",
   "metric_type": "PH",
   "value": 5.86,
+  "ts": 1710001234,
+  "unit": "pH",
   "raw": 1465,
-  "timestamp": 1710001234
+  "stable": false
 }
 ```
 

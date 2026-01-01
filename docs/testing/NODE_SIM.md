@@ -81,8 +81,10 @@ NODE_SIM_CONFIG=/path/to/config.yaml  # Путь к конфигурации
 Узел еще не привязан к зоне. Использует временные топики:
 
 ```
-hydro/{gh_uid}/unassigned/{node_uid}/...
+hydro/gh-temp/zn-temp/{hardware_id}/...
 ```
+
+Где `{hardware_id}` — hardware_id (или MAC) узла.
 
 Используется для:
 - Тестирования регистрации узлов
@@ -173,11 +175,14 @@ python -m node_sim.cli scenario --config sim.example.yaml --name S_overcurrent
 
 ```json
 {
+  "metric_type": "PH",
   "value": 6.5,
-  "ts": 1699123456789,
+  "ts": 1699123456,
   "unit": "pH"
 }
 ```
+
+Поле `ts` — Unix timestamp в секундах.
 
 Топик: `hydro/{gh_uid}/{zone_uid}/{node_uid}/{channel}/telemetry`
 
@@ -187,9 +192,8 @@ python -m node_sim.cli scenario --config sim.example.yaml --name S_overcurrent
 
 ```json
 {
-  "online": true,
-  "uptime_seconds": 3600,
-  "free_heap_bytes": 123456,
+  "uptime": 3600,
+  "free_heap": 123456,
   "rssi": -55
 }
 ```
@@ -200,9 +204,9 @@ python -m node_sim.cli scenario --config sim.example.yaml --name S_overcurrent
 
 Симулятор подписывается на топик команд и обрабатывает их:
 
-1. **Получение команды** из топика: `hydro/{gh_uid}/{zone_uid}/{node_uid}/{channel}/cmd`
+1. **Получение команды** из топика: `hydro/{gh_uid}/{zone_uid}/{node_uid}/{channel}/command`
 2. **Дедупликация** по `cmd_id`
-3. **Отправка ACCEPTED** в топик: `hydro/{gh_uid}/{zone_uid}/{node_uid}/{channel}/cmd_response`
+3. **Отправка ACCEPTED** в топик: `hydro/{gh_uid}/{zone_uid}/{node_uid}/{channel}/command_response`
 4. **Выполнение команды** (симуляция)
 5. **Отправка DONE/FAILED** в тот же топик ответов
 
@@ -342,10 +346,10 @@ mosquitto_sub -h localhost -p 1883 -t "hydro/gh-1/zn-1/nd-sim-1/+/telemetry"
 
 ```bash
 # Подписка на команды
-mosquitto_sub -h localhost -p 1883 -t "hydro/gh-1/zn-1/nd-sim-1/+/cmd"
+mosquitto_sub -h localhost -p 1883 -t "hydro/gh-1/zn-1/nd-sim-1/+/command"
 
 # Подписка на ответы
-mosquitto_sub -h localhost -p 1883 -t "hydro/gh-1/zn-1/nd-sim-1/+/cmd_response"
+mosquitto_sub -h localhost -p 1883 -t "hydro/gh-1/zn-1/nd-sim-1/+/command_response"
 ```
 
 ## Интеграция с E2E тестами
