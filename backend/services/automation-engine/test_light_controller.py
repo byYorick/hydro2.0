@@ -20,7 +20,13 @@ async def test_check_and_control_lighting_on():
     targets = {"lighting": {"photoperiod_hours": 16, "start_time": "06:00"}}
     current_time = datetime(2025, 1, 1, 12, 0)  # 12:00 - в активном периоде
     bindings = {
-        "light": {"node_uid": "nd-light-1", "channel": "white_light", "direction": "actuator"}
+        "light": {
+            "node_id": 201,
+            "node_uid": "nd-light-1",
+            "channel": "white_light",
+            "direction": "actuator",
+            "asset_type": "light",
+        }
     }
     
     with patch("light_controller.check_light_failure") as mock_failure:
@@ -40,7 +46,13 @@ async def test_check_and_control_lighting_off():
     targets = {"lighting": {"photoperiod_hours": 16, "start_time": "06:00"}}
     current_time = datetime(2025, 1, 1, 23, 0)  # 23:00 - вне активного периода
     bindings = {
-        "light": {"node_uid": "nd-light-1", "channel": "white_light", "direction": "actuator"}
+        "light": {
+            "node_id": 201,
+            "node_uid": "nd-light-1",
+            "channel": "white_light",
+            "direction": "actuator",
+            "asset_type": "light",
+        }
     }
     
     with patch("light_controller.check_light_failure") as mock_failure:
@@ -66,7 +78,13 @@ async def test_check_and_control_lighting_with_intensity():
     }
     current_time = datetime(2025, 1, 1, 12, 0)
     bindings = {
-        "light": {"node_uid": "nd-light-1", "channel": "white_light", "direction": "actuator"}
+        "light": {
+            "node_id": 201,
+            "node_uid": "nd-light-1",
+            "channel": "white_light",
+            "direction": "actuator",
+            "asset_type": "light",
+        }
     }
     
     with patch("light_controller.check_light_failure") as mock_failure:

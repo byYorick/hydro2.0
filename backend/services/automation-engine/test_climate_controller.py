@@ -20,8 +20,20 @@ async def test_check_and_control_climate_heating():
     targets = {"climate_request": {"temp_air_target": 25.0, "humidity_target": 60.0}}
     telemetry = {"TEMPERATURE": 22.0, "HUMIDITY": 55.0}
     bindings = {
-        "heater": {"node_uid": "nd-climate-1", "channel": "heater_air", "direction": "actuator"},
-        "vent": {"node_uid": "nd-climate-1", "channel": "fan_air", "direction": "actuator"},
+        "heater": {
+            "node_id": 101,
+            "node_uid": "nd-climate-1",
+            "channel": "heater_air",
+            "direction": "actuator",
+            "asset_type": "heater",
+        },
+        "vent": {
+            "node_id": 101,
+            "node_uid": "nd-climate-1",
+            "channel": "fan_air",
+            "direction": "actuator",
+            "asset_type": "fan",
+        },
     }
     
     with patch("climate_controller.check_temp_alerts") as mock_temp_alerts, \
@@ -47,8 +59,20 @@ async def test_check_and_control_climate_cooling():
     targets = {"climate_request": {"temp_air_target": 25.0, "humidity_target": 60.0}}
     telemetry = {"TEMPERATURE": 28.0, "HUMIDITY": 55.0}
     bindings = {
-        "heater": {"node_uid": "nd-climate-1", "channel": "heater_air", "direction": "actuator"},
-        "vent": {"node_uid": "nd-climate-1", "channel": "fan_air", "direction": "actuator"},
+        "heater": {
+            "node_id": 101,
+            "node_uid": "nd-climate-1",
+            "channel": "heater_air",
+            "direction": "actuator",
+            "asset_type": "heater",
+        },
+        "vent": {
+            "node_id": 101,
+            "node_uid": "nd-climate-1",
+            "channel": "fan_air",
+            "direction": "actuator",
+            "asset_type": "fan",
+        },
     }
     
     with patch("climate_controller.check_temp_alerts") as mock_temp_alerts, \
@@ -72,7 +96,13 @@ async def test_check_and_control_climate_humidity_high():
     targets = {"climate_request": {"temp_air_target": 25.0, "humidity_target": 60.0}}
     telemetry = {"TEMPERATURE": 25.0, "HUMIDITY": 80.0}
     bindings = {
-        "vent": {"node_uid": "nd-climate-1", "channel": "fan_air", "direction": "actuator"},
+        "vent": {
+            "node_id": 101,
+            "node_uid": "nd-climate-1",
+            "channel": "fan_air",
+            "direction": "actuator",
+            "asset_type": "fan",
+        },
     }
     
     with patch("climate_controller.check_temp_alerts") as mock_temp_alerts, \

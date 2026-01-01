@@ -57,15 +57,16 @@ async def test_get_zone_telemetry_last():
 @pytest.mark.asyncio
 async def test_get_zone_nodes():
     """Test fetching zone nodes."""
-    with patch("main.fetch") as mock_fetch:
-        mock_fetch.return_value = [
-            {
-                "id": 1,
-                "uid": "nd-irrig-1",
-                "type": "irrigation",
+    with patch("main.NodeRepository") as mock_repo_cls:
+        mock_repo = AsyncMock()
+        mock_repo.get_zone_nodes.return_value = {
+            "irrigation:pump1": {
+                "node_uid": "nd-irrig-1",
                 "channel": "pump1",
+                "type": "irrigation",
             }
-        ]
+        }
+        mock_repo_cls.return_value = mock_repo
         result = await get_zone_nodes(1)
         assert "irrigation:pump1" in result
         assert result["irrigation:pump1"]["node_uid"] == "nd-irrig-1"
@@ -136,21 +137,18 @@ async def test_check_and_correct_zone_ph_correction():
 @pytest.mark.asyncio
 async def test_get_zone_capabilities():
     """Test fetching zone capabilities."""
-    with patch("main.fetch") as mock_fetch:
-        # Тест с capabilities
-        mock_fetch.return_value = [
-            {
-                "capabilities": {
-                    "ph_control": True,
-                    "ec_control": True,
-                    "climate_control": False,
-                    "light_control": True,
-                    "irrigation_control": True,
-                    "recirculation": False,
-                    "flow_sensor": True,
-                }
-            }
-        ]
+    with patch("main.ZoneRepository") as mock_repo_cls:
+        mock_repo = AsyncMock()
+        mock_repo.get_zone_capabilities.return_value = {
+            "ph_control": True,
+            "ec_control": True,
+            "climate_control": False,
+            "light_control": True,
+            "irrigation_control": True,
+            "recirculation": False,
+            "flow_sensor": True,
+        }
+        mock_repo_cls.return_value = mock_repo
         result = await get_zone_capabilities(1)
         assert result["ph_control"] is True
         assert result["ec_control"] is True
@@ -164,11 +162,19 @@ async def test_get_zone_capabilities():
 @pytest.mark.asyncio
 async def test_get_zone_capabilities_default():
     """Test fetching zone capabilities when not set (defaults)."""
-    with patch("main.fetch") as mock_fetch:
-        # Тест без capabilities (None или пустой)
-        mock_fetch.return_value = [{"capabilities": None}]
+    with patch("main.ZoneRepository") as mock_repo_cls:
+        mock_repo = AsyncMock()
+        mock_repo.get_zone_capabilities.return_value = {
+            "ph_control": False,
+            "ec_control": False,
+            "climate_control": False,
+            "light_control": False,
+            "irrigation_control": False,
+            "recirculation": False,
+            "flow_sensor": False,
+        }
+        mock_repo_cls.return_value = mock_repo
         result = await get_zone_capabilities(1)
-        # Все должны быть False по умолчанию
         assert result["ph_control"] is False
         assert result["ec_control"] is False
         assert result["climate_control"] is False

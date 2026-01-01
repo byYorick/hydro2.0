@@ -99,7 +99,7 @@ async def test_get_active_grow_cycle_with_circuit_breaker():
     circuit_breaker = CircuitBreaker(
         name="test_db",
         failure_threshold=5,
-        recovery_timeout=60
+        timeout=60
     )
     repo = GrowCycleRepository(db_circuit_breaker=circuit_breaker)
     
