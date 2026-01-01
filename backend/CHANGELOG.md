@@ -251,7 +251,7 @@
 
 #### Мониторинг
 - Исправлены порты для метрик Prometheus (history-logger: 9300)
-- См. `PROMETHEUS_FIX_SUMMARY.md` для деталей
+- См. `docs/MONITORING_IMPLEMENTATION.md` для деталей
 
 ### Улучшения
 
@@ -268,4 +268,3 @@
 ---
 
 _Подробные отчеты об исправлениях см. в `docs/fixes/` (после консолидации)_
-

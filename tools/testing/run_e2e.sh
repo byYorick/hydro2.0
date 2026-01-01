@@ -29,9 +29,13 @@ log_warn() {
     echo -e "${YELLOW}[WARN]${NC} $1"
 }
 
-# Проверка наличия docker-compose
-if ! command -v docker-compose &> /dev/null; then
-    log_error "docker-compose не найден. Установите Docker Compose."
+# Проверка наличия Docker Compose (v1 или v2)
+if command -v ${DOCKER_COMPOSE[@]} &> /dev/null; then
+    DOCKER_COMPOSE=(docker-compose)
+elif command -v docker &> /dev/null && docker compose version > /dev/null 2>&1; then
+    DOCKER_COMPOSE=(docker compose)
+else
+    log_error "Docker Compose не найден. Установите ${DOCKER_COMPOSE[@]} или docker compose plugin."
     exit 1
 fi
 
@@ -74,7 +78,7 @@ check_services_health() {
     
     while [ $attempt -lt $max_attempts ]; do
         # Проверка Laravel через docker exec
-        if docker-compose -f docker-compose.e2e.yml exec -T laravel curl -sf http://localhost/api/system/health > /dev/null 2>&1; then
+        if ${DOCKER_COMPOSE[@]} -f docker-compose.e2e.yml exec -T laravel curl -sf http://localhost/api/system/health > /dev/null 2>&1; then
             log_info "✓ Laravel готов"
         else
             log_warn "Laravel еще не готов (попытка $((attempt+1))/$max_attempts)"
@@ -84,7 +88,7 @@ check_services_health() {
         fi
         
         # Проверка PostgreSQL
-        if docker-compose -f docker-compose.e2e.yml exec -T postgres pg_isready -U hydro -d hydro_e2e > /dev/null 2>&1; then
+        if ${DOCKER_COMPOSE[@]} -f docker-compose.e2e.yml exec -T postgres pg_isready -U hydro -d hydro_e2e > /dev/null 2>&1; then
             log_info "✓ PostgreSQL готов"
         else
             log_warn "PostgreSQL еще не готов (попытка $((attempt+1))/$max_attempts)"
@@ -94,7 +98,7 @@ check_services_health() {
         fi
         
         # Проверка Redis
-        if docker-compose -f docker-compose.e2e.yml exec -T redis redis-cli ping > /dev/null 2>&1; then
+        if ${DOCKER_COMPOSE[@]} -f docker-compose.e2e.yml exec -T redis redis-cli ping > /dev/null 2>&1; then
             log_info "✓ Redis готов"
         else
             log_warn "Redis еще не готов (попытка $((attempt+1))/$max_attempts)"
@@ -104,7 +108,7 @@ check_services_health() {
         fi
         
         # Проверка MQTT
-        if docker-compose -f docker-compose.e2e.yml exec -T mosquitto mosquitto_sub -h localhost -p 1883 -t '$SYS/#' -C 1 > /dev/null 2>&1; then
+        if ${DOCKER_COMPOSE[@]} -f docker-compose.e2e.yml exec -T mosquitto mosquitto_sub -h localhost -p 1883 -t '$SYS/#' -C 1 > /dev/null 2>&1; then
             log_info "✓ MQTT готов"
         else
             log_warn "MQTT еще не готов (попытка $((attempt+1))/$max_attempts)"
@@ -128,15 +132,15 @@ collect_failure_info() {
     mkdir -p "$log_dir"
     
     log_warn "  Сохранение логов сервисов для $scenario..."
-    docker-compose -f "$E2E_DIR/docker-compose.e2e.yml" logs --tail 100 laravel > "$log_dir/laravel.log" 2>&1 || true
-    docker-compose -f "$E2E_DIR/docker-compose.e2e.yml" logs --tail 100 history-logger > "$log_dir/history-logger.log" 2>&1 || true
-    docker-compose -f "$E2E_DIR/docker-compose.e2e.yml" logs --tail 100 node-sim > "$log_dir/node-sim.log" 2>&1 || true
-    docker-compose -f "$E2E_DIR/docker-compose.e2e.yml" logs --tail 100 mqtt-bridge > "$log_dir/mqtt-bridge.log" 2>&1 || true
+    ${DOCKER_COMPOSE[@]} -f "$E2E_DIR/docker-compose.e2e.yml" logs --tail 100 laravel > "$log_dir/laravel.log" 2>&1 || true
+    ${DOCKER_COMPOSE[@]} -f "$E2E_DIR/docker-compose.e2e.yml" logs --tail 100 history-logger > "$log_dir/history-logger.log" 2>&1 || true
+    ${DOCKER_COMPOSE[@]} -f "$E2E_DIR/docker-compose.e2e.yml" logs --tail 100 node-sim > "$log_dir/node-sim.log" 2>&1 || true
+    ${DOCKER_COMPOSE[@]} -f "$E2E_DIR/docker-compose.e2e.yml" logs --tail 100 mqtt-bridge > "$log_dir/mqtt-bridge.log" 2>&1 || true
     
     # Сбор последних WS и MQTT событий из логов
     log_warn "  Сбор последних WS/MQTT событий..."
-    docker-compose -f "$E2E_DIR/docker-compose.e2e.yml" logs --tail 200 history-logger 2>&1 | grep -E "(MQTT|command_response|command_status|COMMAND)" > "$log_dir/mqtt_events.log" || true
-    docker-compose -f "$E2E_DIR/docker-compose.e2e.yml" logs --tail 200 laravel 2>&1 | grep -E "(WebSocket|CommandStatusUpdated|AlertCreated|ZoneEvent)" > "$log_dir/ws_events.log" || true
+    ${DOCKER_COMPOSE[@]} -f "$E2E_DIR/docker-compose.e2e.yml" logs --tail 200 history-logger 2>&1 | grep -E "(MQTT|command_response|command_status|COMMAND)" > "$log_dir/mqtt_events.log" || true
+    ${DOCKER_COMPOSE[@]} -f "$E2E_DIR/docker-compose.e2e.yml" logs --tail 200 laravel 2>&1 | grep -E "(WebSocket|CommandStatusUpdated|AlertCreated|ZoneEvent)" > "$log_dir/ws_events.log" || true
 }
 
 # Функция для извлечения информации о последнем упавшем шаге из JUnit XML
@@ -290,7 +294,7 @@ main() {
     case "$ACTION" in
         "up"|"start")
             log_info "Запуск E2E инфраструктуры..."
-            docker-compose -f docker-compose.e2e.yml up -d
+            ${DOCKER_COMPOSE[@]} -f docker-compose.e2e.yml up -d
             log_info "Ожидание готовности сервисов..."
             sleep 10
             check_services_health
@@ -298,13 +302,13 @@ main() {
             ;;
         "down"|"stop")
             log_info "Остановка E2E инфраструктуры..."
-            docker-compose -f docker-compose.e2e.yml down
+            ${DOCKER_COMPOSE[@]} -f docker-compose.e2e.yml down
             log_info "Инфраструктура остановлена."
             ;;
         "restart")
             log_info "Перезапуск E2E инфраструктуры..."
-            docker-compose -f docker-compose.e2e.yml down
-            docker-compose -f docker-compose.e2e.yml up -d
+            ${DOCKER_COMPOSE[@]} -f docker-compose.e2e.yml down
+            ${DOCKER_COMPOSE[@]} -f docker-compose.e2e.yml up -d
             sleep 10
             check_services_health
             ;;
@@ -472,7 +476,7 @@ main() {
         "smoke")
             log_info "Запуск smoke тестов (API + UI без 500 ошибок)"
             log_info "Запуск инфраструктуры..."
-            docker-compose -f "$E2E_DIR/docker-compose.e2e.yml" up -d
+            ${DOCKER_COMPOSE[@]} -f "$E2E_DIR/docker-compose.e2e.yml" up -d
             if ! check_services_health; then
                 log_error "Не удалось запустить инфраструктуру"
                 exit 1
@@ -542,11 +546,11 @@ main() {
             ;;
         "logs")
             log_info "Просмотр логов..."
-            docker-compose -f docker-compose.e2e.yml logs -f "${2:-}"
+            ${DOCKER_COMPOSE[@]} -f docker-compose.e2e.yml logs -f "${2:-}"
             ;;
         "clean")
             log_info "Очистка данных E2E..."
-            docker-compose -f docker-compose.e2e.yml down -v
+            ${DOCKER_COMPOSE[@]} -f docker-compose.e2e.yml down -v
             log_info "Данные очищены."
             ;;
         *)

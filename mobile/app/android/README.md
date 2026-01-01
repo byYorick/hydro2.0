@@ -233,9 +233,9 @@ app/
 
 ## Дополнительная информация
 
-- **API документация:** `doc_ai/12_ANDROID_APP/ANDROID_APP_API_INTEGRATION.md`
-- **Экраны:** `doc_ai/12_ANDROID_APP/ANDROID_APP_SCREENS.md`
-- **Backend API:** `doc_ai/04_BACKEND_CORE/REST_API_REFERENCE.md`
+- **API документация:** `../../../doc_ai/12_ANDROID_APP/ANDROID_APP_API_INTEGRATION.md`
+- **Экраны:** `../../../doc_ai/12_ANDROID_APP/ANDROID_APP_SCREENS.md`
+- **Backend API:** `../../../doc_ai/04_BACKEND_CORE/REST_API_REFERENCE.md`
 
 ## Поддержка
 

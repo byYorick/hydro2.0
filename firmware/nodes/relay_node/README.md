@@ -274,8 +274,8 @@ idf.py monitor
 
 ## Документация
 
-- **Архитектура нод**: `doc_ai/02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md`
-- **MQTT спецификация**: `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
+- **Архитектура нод**: `../../../doc_ai/02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md`
+- **MQTT спецификация**: `../../../doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
 - **Relay Driver**: `firmware/nodes/common/components/relay_driver/include/relay_driver.h`
 
 ## Известные ограничения

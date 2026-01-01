@@ -21,8 +21,8 @@ Device Registry — реестр устройств, хранение и выд�
 - Миграция: `2025_01_27_000002_add_node_registry_fields.php`
 
 **Документация:**
-- Структура проекта: `doc_ai/01_SYSTEM/01_PROJECT_STRUCTURE_PROD.md`
-- Backend архитектура: `doc_ai/04_BACKEND_CORE/BACKEND_ARCH_FULL.md`
+- Структура проекта: `../../../doc_ai/01_SYSTEM/01_PROJECT_STRUCTURE_PROD.md`
+- Backend архитектура: `../../../doc_ai/04_BACKEND_CORE/BACKEND_ARCH_FULL.md`
 
 **Примечание:**
 Эта папка оставлена как placeholder для исторических целей. Функционал Device Registry полностью реализован в Laravel.

@@ -2,7 +2,7 @@
 
 Черновая реализация для работы с задачами ИИ‑агентов:
 - Структура данных описана в `task_schema.py`.
-- Цель: хранить/валидировать задачи в машинном виде, совместимом с шаблоном из `doc_ai/10_AI_DEV_GUIDES/AI_TASK_TEMPLATES_AND_PATTERNS.md`.
+- Цель: хранить/валидировать задачи в машинном виде, совместимом с шаблоном из `../../doc_ai/10_AI_DEV_GUIDES/AI_TASK_TEMPLATES_AND_PATTERNS.md`.
 
 ## Профили задач
 - **context**: архитектурный слой и ссылки на .md спецификации.
@@ -17,7 +17,7 @@
 # Валидация JSON-задачи
 python -m tools.ai_agents.task_schema examples/task.json
 
-# Парсинг Markdown задачи (шаблон из doc_ai/10_AI_DEV_GUIDES)
+# Парсинг Markdown задачи (шаблон из ../../doc_ai/10_AI_DEV_GUIDES)
 python -m tools.ai_agents.markdown_parser ../../doc_ai/TASKS_FOR_AI_AGENTS.md
 ```
 Оба скрипта валидируют структуру и печатают краткое summary. Пока без автогенерации — это стартовая точка для интеграции с планировщиком ИИ.
@@ -25,4 +25,4 @@ python -m tools.ai_agents.markdown_parser ../../doc_ai/TASKS_FOR_AI_AGENTS.md
 ## TODO
 - Парсинг задач из Markdown (разделы: Контекст/Цель/Входные/Ожидаемо/Ограничения/Формат).
 - Экспорт в структуры для планировщика (RabbitMQ/Redis или локальный runner).
-- Проверки совместимости с `DEV_CONVENTIONS.md` и MQTT/DB спецификациями.
+- Проверки совместимости с `../../doc_ai/DEV_CONVENTIONS.md` и MQTT/DB спецификациями.

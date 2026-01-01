@@ -11,7 +11,7 @@
 ```
 
 Этот скрипт:
-1. Поднимает все сервисы через docker-compose
+1. Поднимает все сервисы через Docker Compose
 2. Дожидается readiness всех сервисов
 3. Запускает обязательные E2E сценарии
 4. Генерирует отчёты
@@ -43,13 +43,13 @@ Passed: 3
 Failed: 2
 
 Failed scenarios:
-  - E02_command_happy
-  - E04_error_alert
+  - commands/E10_command_happy
+  - alerts/E20_error_to_alert_realtime
 
 Service logs:
-  docker-compose -f tests/e2e/docker-compose.e2e.yml logs laravel
-  docker-compose -f tests/e2e/docker-compose.e2e.yml logs history-logger
-  docker-compose -f tests/e2e/docker-compose.e2e.yml logs node-sim
+  docker compose -f tests/e2e/docker-compose.e2e.yml logs laravel
+  docker compose -f tests/e2e/docker-compose.e2e.yml logs history-logger
+  docker compose -f tests/e2e/docker-compose.e2e.yml logs node-sim
 ```
 
 ## Настройка
@@ -69,7 +69,7 @@ cp tests/e2e/.env.e2e.example tests/e2e/.env.e2e
 - `LARAVEL_PORT` - порт Laravel API (по умолчанию 8081)
 - `POSTGRES_PORT` - порт PostgreSQL (по умолчанию 5433)
 - `MQTT_PORT` - порт MQTT брокера (по умолчанию 1884)
-- `LARAVEL_API_TOKEN` - токен для API запросов
+- `LARAVEL_API_TOKEN` - опционально (legacy), по умолчанию используется AuthClient
 
 ## Ручной запуск
 
@@ -79,16 +79,16 @@ cp tests/e2e/.env.e2e.example tests/e2e/.env.e2e
 cd tests/e2e
 
 # Поднять сервисы
-docker-compose -f docker-compose.e2e.yml up -d
+docker compose -f docker-compose.e2e.yml up -d
 
 # Дождаться готовности
 sleep 30
 
 # Запустить сценарий
-python runner/e2e_runner.py scenarios/E01_bootstrap.yaml
+python3 -m runner.e2e_runner scenarios/core/E01_bootstrap.yaml
 
 # Остановить сервисы
-docker-compose -f docker-compose.e2e.yml down
+docker compose -f docker-compose.e2e.yml down
 ```
 
 ## Отчёты
@@ -105,24 +105,24 @@ docker-compose -f docker-compose.e2e.yml down
 
 ```bash
 # Проверить логи
-docker-compose -f tests/e2e/docker-compose.e2e.yml logs
+docker compose -f tests/e2e/docker-compose.e2e.yml logs
 
 # Проверить статус
-docker-compose -f tests/e2e/docker-compose.e2e.yml ps
+docker compose -f tests/e2e/docker-compose.e2e.yml ps
 
 # Пересоздать контейнеры
-docker-compose -f tests/e2e/docker-compose.e2e.yml down -v
-docker-compose -f tests/e2e/docker-compose.e2e.yml up -d
+docker compose -f tests/e2e/docker-compose.e2e.yml down -v
+docker compose -f tests/e2e/docker-compose.e2e.yml up -d
 ```
 
 ### node-sim не подключается к MQTT
 
 ```bash
 # Проверить логи node-sim
-docker-compose -f tests/e2e/docker-compose.e2e.yml logs node-sim
+docker compose -f tests/e2e/docker-compose.e2e.yml logs node-sim
 
 # Проверить MQTT брокер
-docker-compose -f tests/e2e/docker-compose.e2e.yml logs mosquitto
+docker compose -f tests/e2e/docker-compose.e2e.yml logs mosquitto
 
 # Проверить конфигурацию
 cat tests/e2e/node-sim-config.yaml
@@ -137,7 +137,6 @@ cat tests/e2e/node-sim-config.yaml
 
 ## Дополнительная информация
 
-- Полная документация: `docs/testing/E2E_GUIDE.md`
-- Troubleshooting: `docs/testing/TROUBLESHOOTING.md`
-- Node Simulator: `docs/testing/NODE_SIM.md`
-
+- Полная документация: `../../docs/testing/E2E_GUIDE.md`
+- Troubleshooting: `../../docs/testing/TROUBLESHOOTING.md`
+- Node Simulator: `../../docs/testing/NODE_SIM.md`

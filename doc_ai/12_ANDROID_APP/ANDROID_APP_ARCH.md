@@ -124,4 +124,4 @@
 1. ИИ должен создавать новые экраны и ViewModel’ы в соответствии с этой архитектурой.
 2. Нельзя шить бизнес-логику напрямую в Compose-экраны — только через ViewModel.
 3. Любые изменения в API-интерфейсах должны быть согласованы с
- `API_SPEC_FRONTEND_BACKEND_FULL.md` и `ANDROID_APP_API_INTEGRATION.md`.
+ `../04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md` и `ANDROID_APP_API_INTEGRATION.md`.

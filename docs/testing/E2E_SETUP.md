@@ -9,7 +9,7 @@
 ```
 
 Скрипт автоматически:
-- Поднимает все сервисы через docker-compose
+- Поднимает все сервисы через Docker Compose
 - Дожидается readiness всех компонентов
 - Запускает миграции и seeders
 - Прогоняет все обязательные сценарии
@@ -30,24 +30,27 @@ tests/e2e/
 │   ├── mqtt_probe.py        # Проверки MQTT
 │   ├── assertions.py         # Assertions
 │   └── reporting.py         # Генерация отчетов
-├── scenarios/                # YAML сценарии
-│   ├── E01_bootstrap.yaml
-│   ├── E02_command_happy.yaml
-│   ├── E04_error_alert.yaml
-│   ├── E05_unassigned_attach.yaml
-│   └── E07_ws_reconnect_snapshot_replay.yaml
+├── scenarios/                # YAML сценарии (по категориям)
+│   ├── core/
+│   ├── commands/
+│   ├── alerts/
+│   ├── snapshot/
+│   ├── infrastructure/
+│   ├── grow_cycle/
+│   ├── automation_engine/
+│   └── chaos/
 └── reports/                  # Отчеты (JUnit XML, JSON timeline)
 ```
 
 ### 3. Обязательные сценарии (DoD)
 
+Минимальный P0 набор (smoke):
 | Код | Сценарий | DoD |
 |-----|----------|-----|
-| E01 | bootstrap | telemetry в БД + online статус |
-| E02 | command_happy | команда → DONE + WS событие |
-| E04 | error_alert | error → alert ACTIVE + WS + dedup |
-| E05 | unassigned_attach | temp error → unassigned → attach → alert |
-| E07 | ws_reconnect_snapshot_replay | snapshot last_event_id + replay закрывают gap |
+| E01 | core/E01_bootstrap | telemetry в БД + online статус |
+| E10 | commands/E10_command_happy | команда → DONE + WS событие |
+
+Полный список сценариев и DoD: `E2E_SCENARIOS.md`.
 
 ### 4. Инварианты пайплайна
 
@@ -97,19 +100,19 @@ tests/e2e/
 
 #### Просмотр логов
 ```bash
-docker-compose -f tests/e2e/docker-compose.e2e.yml logs laravel
-docker-compose -f tests/e2e/docker-compose.e2e.yml logs history-logger
-docker-compose -f tests/e2e/docker-compose.e2e.yml logs node-sim
+docker compose -f tests/e2e/docker-compose.e2e.yml logs laravel
+docker compose -f tests/e2e/docker-compose.e2e.yml logs history-logger
+docker compose -f tests/e2e/docker-compose.e2e.yml logs node-sim
 ```
 
 #### Проверка БД
 ```bash
-docker-compose -f tests/e2e/docker-compose.e2e.yml exec postgres psql -U hydro -d hydro_e2e
+docker compose -f tests/e2e/docker-compose.e2e.yml exec postgres psql -U hydro -d hydro_e2e
 ```
 
 #### Проверка MQTT
 ```bash
-docker-compose -f tests/e2e/docker-compose.e2e.yml exec mosquitto mosquitto_sub -h localhost -t "#" -v
+docker compose -f tests/e2e/docker-compose.e2e.yml exec mosquitto mosquitto_sub -h localhost -t "#" -v
 ```
 
 ### 8. Автофикс до GREEN
@@ -128,7 +131,6 @@ docker-compose -f tests/e2e/docker-compose.e2e.yml exec mosquitto mosquitto_sub 
 
 ### 10. Требования
 
-- Docker и docker-compose
+- Docker и Docker Compose (docker compose или docker-compose)
 - Python 3.11+ с зависимостями из `tests/e2e/requirements.txt`
 - Доступ к портам: 5433 (Postgres), 6380 (Redis), 1884 (MQTT), 8081 (Laravel), 6002 (Reverb)
-

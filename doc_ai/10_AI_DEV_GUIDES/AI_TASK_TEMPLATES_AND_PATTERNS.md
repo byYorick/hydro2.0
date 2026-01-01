@@ -39,12 +39,12 @@
 > - Узел: [тип ноды, например PH_NODE].
 > - Репозиторий: [ссылка/путь].
 > - Архитектура прошивки описана в:
-> - `SYSTEM_ARCH_FULL.md`
-> - `HARDWARE_ARCH_FULL.md`
-> - `ESP32_C_CODING_STANDARDS.md`
+> - `../SYSTEM_ARCH_FULL.md`
+> - `../02_HARDWARE_FIRMWARE/HARDWARE_ARCH_FULL.md`
+> - `../02_HARDWARE_FIRMWARE/ESP32_C_CODING_STANDARDS.md`
 > - UI описан в:
-> - `NODE_OLED_UI_SPEC.md`
-> - `NODE_INPUT_CONTROLS.md`
+> - `../02_HARDWARE_FIRMWARE/NODE_OLED_UI_SPEC.md`
+> - `../02_HARDWARE_FIRMWARE/NODE_INPUT_CONTROLS.md`
 >
 > Цель:
 > - Реализовать [описание функции, например: «поддержку калибровки по трём точкам»].
@@ -52,7 +52,7 @@
 > Ограничения:
 > - Соблюдать ESP-IDF и C-only.
 > - Не изменять MQTT-контракт без крайней необходимости.
-> - Любое изменение MQTT-топиков необходимо описать в `MQTT_SPEC_FULL.md` и `BACKEND_NODE_CONTRACT_FULL.md`.
+> - Любое изменение MQTT-топиков необходимо описать в `../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` и `../03_TRANSPORT_MQTT/BACKEND_NODE_CONTRACT_FULL.md`.
 >
 > Что сделать:
 > 1. Описать изменения на уровне модулей (какие новые .c/.h файлы, какие изменения в существующих).
@@ -76,8 +76,8 @@
 > Контекст:
 > - Backend: [Laravel/др. стек, указать].
 > - Текущие модели описаны в:
-> - `DATA_MODEL_REFERENCE.md`
-> - `BACKEND_ARCH_FULL.md`
+> - `../05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md`
+> - `../04_BACKEND_CORE/BACKEND_ARCH_FULL.md`
 > - `DATABASE_SCHEMA_AI_GUIDE.md`
 >
 > Цель:
@@ -109,8 +109,8 @@
 
 > Контекст:
 > - Протокол описан в:
-> - `MQTT_SPEC_FULL.md`
-> - `BACKEND_NODE_CONTRACT_FULL.md`
+> - `../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
+> - `../03_TRANSPORT_MQTT/BACKEND_NODE_CONTRACT_FULL.md`
 >
 > Цель:
 > - Внести изменения в MQTT-протокол, чтобы поддержать [новую возможность].
@@ -139,8 +139,8 @@
 > Контекст:
 > - Модуль: [например, `wifi_engine` в прошивке].
 > - Связанная документация:
-> - `ESP32_C_CODING_STANDARDS.md`
-> - `WIFI_CONNECTIVITY_ENGINE.md`
+> - `../02_HARDWARE_FIRMWARE/ESP32_C_CODING_STANDARDS.md`
+> - `../02_HARDWARE_FIRMWARE/WIFI_CONNECTIVITY_ENGINE.md`
 >
 > Цель:
 > - Улучшить читаемость, распределение ответственности, тестируемость.

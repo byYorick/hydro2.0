@@ -967,22 +967,48 @@ async def process_telemetry_batch(samples: List[TelemetrySampleModel]) -> None:
             TELEMETRY_DROPPED.labels(reason="zone_id_not_found").inc()
             continue
 
-        if node_id and node_zone_id is not None:
-            if node_zone_id != zone_id:
-                logger.warning(
-                    "Security: node_uid does not belong to zone_id, dropping sample",
-                    extra={
-                        "node_uid": sample.node_uid,
-                        "node_id": node_id,
-                        "node_zone_id": node_zone_id,
-                        "requested_zone_id": zone_id,
-                        "zone_uid": sample.zone_uid,
-                        "gh_uid": sample.gh_uid,
-                        "metric_type": sample.metric_type,
-                    },
-                )
-                TELEMETRY_DROPPED.labels(reason="node_zone_mismatch").inc()
-                continue
+        if node_id is None:
+            logger.warning(
+                "Skipping sample: node_id not found for node_uid",
+                extra={
+                    "node_uid": sample.node_uid,
+                    "zone_uid": sample.zone_uid,
+                    "gh_uid": sample.gh_uid,
+                    "metric_type": sample.metric_type,
+                },
+            )
+            TELEMETRY_DROPPED.labels(reason="node_id_not_found").inc()
+            continue
+
+        if node_zone_id is None:
+            logger.warning(
+                "Skipping sample: node is not assigned to any zone",
+                extra={
+                    "node_uid": sample.node_uid,
+                    "node_id": node_id,
+                    "zone_uid": sample.zone_uid,
+                    "gh_uid": sample.gh_uid,
+                    "metric_type": sample.metric_type,
+                },
+            )
+            TELEMETRY_DROPPED.labels(reason="node_unassigned").inc()
+            continue
+
+        if node_zone_id != zone_id:
+            logger.warning(
+                "Security: node_uid does not belong to zone_id, dropping sample",
+                extra={
+                    "node_uid": sample.node_uid,
+                    "node_id": node_id,
+                    "node_zone_id": node_zone_id,
+                    "requested_zone_id": zone_id,
+                    "zone_uid": sample.zone_uid,
+                    "gh_uid": sample.gh_uid,
+                    "metric_type": sample.metric_type,
+                },
+            )
+            TELEMETRY_DROPPED.labels(reason="node_zone_mismatch").inc()
+            continue
 
         sample_ts = sample.ts
         if sample_ts:

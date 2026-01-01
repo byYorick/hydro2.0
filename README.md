@@ -15,9 +15,8 @@
 
 ## Документация
 
-- `doc_ai/` — эталонная документация (source of truth)
-- `docs/` — mirror структуры `doc_ai/` для совместимости
-- Все изменения в документации вносятся только в `doc_ai/`
+- `doc_ai/` — source of truth, правки вносятся здесь
+- `docs/` — mirror для совместимости, руками не редактируется
 
 ## Структура репозитория
 
@@ -52,9 +51,16 @@ docker compose -f docker-compose.dev.yml up -d --build
 - Архитектура: `backend/laravel/docs/WEBSOCKET_ARCHITECTURE.md`
 - Smoke test: `tools/ws-smoke-test.sh`
 - Переменные окружения:
-  - Frontend: `VITE_REVERB_APP_KEY`, `VITE_REVERB_HOST`, `VITE_REVERB_PORT`
+  - Dev через nginx (рекомендуется, `backend/docker-compose.dev.yml`):
+    - Frontend: только `VITE_REVERB_APP_KEY`
+    - Не задаём `VITE_REVERB_HOST`/`VITE_REVERB_PORT`, клиент берёт `window.location`
+  - Прямое подключение (без nginx прокси):
+    - Frontend: `VITE_REVERB_APP_KEY`, `VITE_REVERB_HOST`, `VITE_REVERB_PORT`
+    - Убедитесь, что CORS/origins настроены для этого режима
   - Backend: `REVERB_APP_ID`, `REVERB_APP_KEY`, `REVERB_APP_SECRET`, `REVERB_PORT`
-- Запуск: `php artisan reverb:start`
+- Запуск:
+  - В dev-стеке Reverb стартует автоматически (REVERB_AUTO_START=true)
+  - Вручную запускать `php artisan reverb:start` нужно только вне docker-compose
 
 ## Тестирование
 

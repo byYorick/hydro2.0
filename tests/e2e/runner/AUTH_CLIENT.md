@@ -224,6 +224,5 @@ asyncio.run(main())
 
 ## См. также
 
-- [E2E_GUIDE.md](../../docs/testing/E2E_GUIDE.md) - Руководство по E2E тестам
+- [E2E_GUIDE.md](../../../docs/testing/E2E_GUIDE.md) - Руководство по E2E тестам
 - [E2E_AUTH_BOOTSTRAP.md](../../../backend/E2E_AUTH_BOOTSTRAP.md) - E2E Auth Bootstrap
-

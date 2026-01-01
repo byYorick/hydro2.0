@@ -1,162 +1,176 @@
 {
-  "test_suite": "E00_api_smoke",
-  "generated_at": "2025-12-31T17:21:04.528395",
+  "test_suite": "E01_bootstrap",
+  "generated_at": "2026-01-01T15:54:27.647234",
   "test_cases": [
     {
-      "name": "set_laravel_url",
+      "name": "start_node_simulator",
       "status": "passed",
-      "duration": 1.1682510375976562e-05,
+      "duration": 5.634987831115723,
       "error_message": null,
       "steps": [
         {
-          "name": "set_laravel_url",
+          "name": "start_node_simulator",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T17:21:03.777220"
+      "timestamp": "2026-01-01T15:53:42.124397"
     },
     {
-      "name": "check_health",
+      "name": "get_zones",
       "status": "passed",
-      "duration": 0.08412933349609375,
+      "duration": 0.061388254165649414,
       "error_message": null,
       "steps": [
         {
-          "name": "check_health",
+          "name": "get_zones",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T17:21:03.861380"
+      "timestamp": "2026-01-01T15:53:42.185846"
     },
     {
-      "name": "check_login_endpoint",
+      "name": "get_nodes",
       "status": "passed",
-      "duration": 0.2593417167663574,
+      "duration": 0.05793428421020508,
       "error_message": null,
       "steps": [
         {
-          "name": "check_login_endpoint",
+          "name": "get_nodes",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T17:21:04.120788"
+      "timestamp": "2026-01-01T15:53:42.243818"
     },
     {
-      "name": "check_zones_protected",
+      "name": "find_test_zone_and_node",
       "status": "passed",
-      "duration": 0.07236933708190918,
+      "duration": 8.106231689453125e-06,
       "error_message": null,
       "steps": [
         {
-          "name": "check_zones_protected",
+          "name": "find_test_zone_and_node",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T17:21:04.193201"
+      "timestamp": "2026-01-01T15:53:42.243861"
     },
     {
-      "name": "check_nodes_protected",
+      "name": "find_zone_by_uid",
       "status": "passed",
-      "duration": 0.06720852851867676,
+      "duration": 0.05695796012878418,
       "error_message": null,
       "steps": [
         {
-          "name": "check_nodes_protected",
+          "name": "find_zone_by_uid",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T17:21:04.260452"
+      "timestamp": "2026-01-01T15:53:42.300835"
     },
     {
-      "name": "check_cycles_protected",
+      "name": "find_node_by_uid",
       "status": "passed",
-      "duration": 0.06562399864196777,
+      "duration": 0.05882096290588379,
       "error_message": null,
       "steps": [
         {
-          "name": "check_cycles_protected",
+          "name": "find_node_by_uid",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T17:21:04.326134"
+      "timestamp": "2026-01-01T15:53:42.359701"
     },
     {
-      "name": "check_greenhouses_protected",
+      "name": "fetch_zone_id",
       "status": "passed",
-      "duration": 0.062392473220825195,
+      "duration": 0.008103132247924805,
       "error_message": null,
       "steps": [
         {
-          "name": "check_greenhouses_protected",
+          "name": "fetch_zone_id",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T17:21:04.388570"
+      "timestamp": "2026-01-01T15:53:42.367843"
     },
     {
-      "name": "check_commands_protected",
+      "name": "fetch_node_id",
       "status": "passed",
-      "duration": 0.13907146453857422,
+      "duration": 0.0019154548645019531,
       "error_message": null,
       "steps": [
         {
-          "name": "check_commands_protected",
+          "name": "fetch_node_id",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T17:21:04.527715"
+      "timestamp": "2026-01-01T15:53:42.369806"
     },
     {
-      "name": "health_endpoint_works",
+      "name": "set_zone_and_node_ids",
       "status": "passed",
-      "duration": 6.818771362304688e-05,
+      "duration": 2.6226043701171875e-06,
       "error_message": null,
       "steps": [
         {
-          "name": "health_endpoint_works",
+          "name": "set_zone_and_node_ids",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T17:21:04.527804"
+      "timestamp": "2026-01-01T15:53:42.369844"
     },
     {
-      "name": "no_500_errors_on_endpoints",
+      "name": "debug_variables",
       "status": "passed",
-      "duration": 0.00022864341735839844,
+      "duration": 1.9073486328125e-06,
       "error_message": null,
       "steps": [
         {
-          "name": "no_500_errors_on_endpoints",
+          "name": "debug_variables",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T17:21:04.528041"
+      "timestamp": "2026-01-01T15:53:42.369863"
     },
     {
-      "name": "login_returns_validation_error",
+      "name": "wait_for_telemetry_publish",
       "status": "passed",
-      "duration": 3.457069396972656e-05,
+      "duration": 5.005106210708618,
       "error_message": null,
       "steps": [
         {
-          "name": "login_returns_validation_error",
+          "name": "wait_for_telemetry_publish",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T17:21:04.528084"
+      "timestamp": "2026-01-01T15:53:47.374979"
+    },
+    {
+      "name": "telemetry_in_db",
+      "status": "failed",
+      "duration": 30.011838674545288,
+      "error_message": "Timeout waiting for DB condition: SELECT\n  tl.last_value as value,\n  s.label as channel,\n  s.node_id,\n  s.zone_id,\n  tl.updated_at,\n  s.type as metric_type\nFROM telemetry_last tl\nJOIN sensors s ON s.id = tl.sensor_id\nWHERE s.zone_id = :zone_id\n  AND s.node_id = :node_id\n  AND s.type = 'PH'\nLIMIT 1\n",
+      "steps": [
+        {
+          "name": "telemetry_in_db",
+          "status": "failed",
+          "error": "Timeout waiting for DB condition: SELECT\n  tl.last_value as value,\n  s.label as channel,\n  s.node_id,\n  s.zone_id,\n  tl.updated_at,\n  s.type as metric_type\nFROM telemetry_last tl\nJOIN sensors s ON s.id = tl.sensor_id\nWHERE s.zone_id = :zone_id\n  AND s.node_id = :node_id\n  AND s.type = 'PH'\nLIMIT 1\n"
+        }
+      ],
+      "timestamp": "2026-01-01T15:54:17.386972"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E00_api_smoke": {
+    "E01_bootstrap": {
       "ws_messages": [],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
-        "zone_id": 225,
-        "zone_uid": "zn-test-1",
+        "zone_id": 1,
         "node_id": 1,
-        "node_uid": "nd-ph-esp32una"
+        "debug_zone_id": 1,
+        "debug_node_id": 1
       }
     }
   }

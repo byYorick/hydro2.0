@@ -4,14 +4,14 @@
 Документ описывает структуру и формат NodeConfig — конфигурации узлов ESP32.
 
 **ВАЖНО:** Эталонная версия этого документа находится здесь.  
-Копия для разработчиков прошивок: `firmware/NODE_CONFIG_SPEC.md`.
+Копия для разработчиков прошивок: `../../firmware/NODE_CONFIG_SPEC.md`.
 
 **Связанные документы:**
-- `firmware/NODE_CONFIG_SPEC.md` — копия для прошивки
-- `doc_ai/02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md` — архитектура нод
-- `doc_ai/02_HARDWARE_FIRMWARE/FIRMWARE_STRUCTURE.md` — структура прошивки
-- `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` — MQTT протокол и топики
-- `doc_ai/01_SYSTEM/DATAFLOW_FULL.md` — потоки данных
+- `../../firmware/NODE_CONFIG_SPEC.md` — копия для прошивки
+- `../02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md` — архитектура нод
+- `../02_HARDWARE_FIRMWARE/FIRMWARE_STRUCTURE.md` — структура прошивки
+- `../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` — MQTT протокол и топики
+- `../01_SYSTEM/DATAFLOW_FULL.md` — потоки данных
 - Шаблоны: `configs/nodes/*.json`
 
 ---
@@ -517,10 +517,10 @@ NodeConfig формируется в прошивке узла и хранитс
 ## 9. Ссылки
 
 - Шаблоны конфигураций: `configs/nodes/*.json`
-- Архитектура нод: `doc_ai/02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md`
-- MQTT протокол: `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
-- Структура прошивки: `doc_ai/02_HARDWARE_FIRMWARE/FIRMWARE_STRUCTURE.md`
-- Потоки данных: `doc_ai/01_SYSTEM/DATAFLOW_FULL.md`
+- Архитектура нод: `../02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md`
+- MQTT протокол: `../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
+- Структура прошивки: `../02_HARDWARE_FIRMWARE/FIRMWARE_STRUCTURE.md`
+- Потоки данных: `../01_SYSTEM/DATAFLOW_FULL.md`
 
 ---
 

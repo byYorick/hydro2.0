@@ -61,5 +61,4 @@ http://localhost:3000
 
 ## 📖 Подробнее
 
-Полное руководство: `doc_ai/08_SECURITY_AND_OPS/MONITORING_USER_GUIDE.md`
-
+Полное руководство: `../doc_ai/08_SECURITY_AND_OPS/MONITORING_USER_GUIDE.md`

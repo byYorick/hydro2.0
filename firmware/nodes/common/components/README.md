@@ -50,10 +50,10 @@
 
 ## Документация
 
-- Структура прошивки: `doc_ai/02_HARDWARE_FIRMWARE/FIRMWARE_STRUCTURE.md`
-- Стандарты кодирования: `doc_ai/02_HARDWARE_FIRMWARE/ESP32_C_CODING_STANDARDS.md`
-- Структура проекта: `doc_ai/01_SYSTEM/01_PROJECT_STRUCTURE_PROD.md`
-- Архитектура нод: `doc_ai/02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md`
+- Структура прошивки: `../../../../doc_ai/02_HARDWARE_FIRMWARE/FIRMWARE_STRUCTURE.md`
+- Стандарты кодирования: `../../../../doc_ai/02_HARDWARE_FIRMWARE/ESP32_C_CODING_STANDARDS.md`
+- Структура проекта: `../../../../doc_ai/01_SYSTEM/01_PROJECT_STRUCTURE_PROD.md`
+- Архитектура нод: `../../../../doc_ai/02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md`
 
 ## Примечание
 

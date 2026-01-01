@@ -31,7 +31,7 @@ hydro2.0/
   docker-compose.dev.yml
   docker-compose.prod.yml
   configs/              # Конфигурации для dev/prod
- doc_ai/                # Документация
+ ../                # Документация
  firmware/              # Прошивки ESP32
  mobile/                # Android приложение
  infra/                 # Инфраструктура (Terraform, Ansible, K8s)

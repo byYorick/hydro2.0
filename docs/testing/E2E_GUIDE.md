@@ -15,13 +15,13 @@ pip install -r requirements.txt
 
 ```bash
 # Запуск всех сервисов
-docker-compose -f docker-compose.e2e.yml up -d
+docker compose -f docker-compose.e2e.yml up -d
 
 # Проверка статуса
-docker-compose -f docker-compose.e2e.yml ps
+docker compose -f docker-compose.e2e.yml ps
 
 # Просмотр логов
-docker-compose -f docker-compose.e2e.yml logs -f
+docker compose -f docker-compose.e2e.yml logs -f
 ```
 
 ### 3. Запуск теста
@@ -42,10 +42,10 @@ python -m runner.e2e_runner scenarios/E01_bootstrap.yaml --verbose
 
 ```bash
 # В контейнере Laravel
-docker-compose -f docker-compose.e2e.yml exec laravel php artisan e2e:auth-bootstrap
+docker compose -f docker-compose.e2e.yml exec laravel php artisan e2e:auth-bootstrap
 
 # Или с параметрами
-docker-compose -f docker-compose.e2e.yml exec laravel php artisan e2e:auth-bootstrap --email=e2e@test.local --role=admin
+docker compose -f docker-compose.e2e.yml exec laravel php artisan e2e:auth-bootstrap --email=e2e@test.local --role=admin
 ```
 
 Команда создаёт пользователя `e2e@test.local` (если его нет) и выводит токен в stdout.
@@ -82,7 +82,6 @@ curl -X POST http://localhost:8081/api/e2e/auth/token \
 ```bash
 # Laravel API
 LARAVEL_URL=http://localhost:8081
-LARAVEL_API_TOKEN=dev-token-12345  # Автоматически получается через e2e:auth-bootstrap
 
 # База данных
 DB_CONNECTION=pgsql
@@ -96,6 +95,9 @@ DB_PASSWORD=hydro_e2e
 ### Опциональные переменные
 
 ```bash
+# Legacy/optional auth
+LARAVEL_API_TOKEN=dev-token-12345  # Опционально: AuthClient используется по умолчанию
+
 # MQTT
 MQTT_HOST=localhost
 MQTT_PORT=1884
@@ -120,7 +122,7 @@ E2E_RETRIES=3
 ```bash
 # .env
 LARAVEL_URL=http://localhost:8081
-LARAVEL_API_TOKEN=dev-token-12345
+# LARAVEL_API_TOKEN=dev-token-12345  # Опционально (legacy); по умолчанию AuthClient
 MQTT_HOST=localhost
 MQTT_PORT=1884
 WS_URL=ws://localhost:6002
@@ -437,54 +439,14 @@ endpoint: "${LARAVEL_URL}/api/zones/{zone_id}"
 
 ## Доступные E2E сценарии
 
-### E01_bootstrap.yaml
+Сценарии организованы по категориям: `core/`, `commands/`, `alerts/`, `snapshot/`,
+`infrastructure/`, `grow_cycle/`, `automation_engine/`, `chaos/`.
 
-**DoD**: telemetry в БД + online статус
+Полный список и DoD: `E2E_SCENARIOS.md`.
 
-Проверяет базовый bootstrap пайплайна:
-- Публикация телеметрии через MQTT
-- Сохранение телеметрии в БД
-- Обновление статуса узла на ONLINE
-
-### E02_command_happy.yaml
-
-**DoD**: команда → DONE + WS событие + zone_events запись
-
-Проверяет успешное выполнение команды:
-- Отправка команды через API
-- Обработка командой узла
-- WebSocket события
-- Запись в zone_events
-
-### E03_duplicate_cmd_response.yaml
-
-**DoD**: duplicate responses не ломают статус
-
-Проверяет устойчивость к дубликатам ответов.
-
-### E04_error_alert.yaml
-
-**DoD**: error → alert ACTIVE + WS + dedup
-
-Проверяет создание алертов из ошибок узлов.
-
-### E05_unassigned_attach.yaml
-
-**DoD**: temp error → unassigned → attach → alert
-
-Проверяет сценарий присвоения непривязанного узла.
-
-### E06_laravel_down_queue_recovery.yaml
-
-**DoD**: laravel down → pending_alerts растёт → восстановление → доставка
-
-Проверяет восстановление после падения Laravel.
-
-### E07_ws_reconnect_snapshot_replay.yaml
-
-**DoD**: snapshot last_event_id + replay закрывают gap
-
-Проверяет механизм восстановления после разрыва WebSocket.
+Минимальный P0 набор:
+- `scenarios/core/E01_bootstrap.yaml`
+- `scenarios/commands/E10_command_happy.yaml`
 
 ## Запуск тестов
 
@@ -492,15 +454,15 @@ endpoint: "${LARAVEL_URL}/api/zones/{zone_id}"
 
 ```bash
 cd tests/e2e
-python -m runner.e2e_runner scenarios/E01_bootstrap.yaml
+python3 -m runner.e2e_runner scenarios/core/E01_bootstrap.yaml
 ```
 
 ### Запуск всех тестов
 
 ```bash
 cd tests/e2e
-for scenario in scenarios/E*.yaml; do
-    python -m runner.e2e_runner "$scenario"
+for scenario in scenarios/*/*.yaml; do
+    python3 -m runner.e2e_runner "$scenario"
 done
 ```
 
@@ -508,13 +470,13 @@ done
 
 ```bash
 # Подробный вывод
-python -m runner.e2e_runner scenarios/E01_bootstrap.yaml --verbose
+python3 -m runner.e2e_runner scenarios/core/E01_bootstrap.yaml --verbose
 
 # Сохранить отчет в другую директорию
-E2E_REPORT_DIR=./my_reports python -m runner.e2e_runner scenarios/E01_bootstrap.yaml
+E2E_REPORT_DIR=./my_reports python3 -m runner.e2e_runner scenarios/core/E01_bootstrap.yaml
 
 # Увеличить таймаут
-E2E_TIMEOUT=600 python -m runner.e2e_runner scenarios/E01_bootstrap.yaml
+E2E_TIMEOUT=600 python3 -m runner.e2e_runner scenarios/core/E01_bootstrap.yaml
 ```
 
 ## Отчеты
@@ -574,23 +536,23 @@ python -m runner.e2e_runner scenarios/E01_bootstrap.yaml --verbose
 
 ```bash
 # Статус всех сервисов
-docker-compose -f docker-compose.e2e.yml ps
+docker compose -f docker-compose.e2e.yml ps
 
 # Логи Laravel
-docker-compose -f docker-compose.e2e.yml logs laravel
+docker compose -f docker-compose.e2e.yml logs laravel
 
 # Логи MQTT брокера
-docker-compose -f docker-compose.e2e.yml logs mosquitto
+docker compose -f docker-compose.e2e.yml logs mosquitto
 
 # Логи history-logger
-docker-compose -f docker-compose.e2e.yml logs history-logger
+docker compose -f docker-compose.e2e.yml logs history-logger
 ```
 
 ### Проверка базы данных
 
 ```bash
 # Подключение к БД
-docker-compose -f docker-compose.e2e.yml exec postgres psql -U hydro -d hydro_e2e
+docker compose -f docker-compose.e2e.yml exec postgres psql -U hydro -d hydro_e2e
 
 # Проверка таблиц
 \dt
@@ -603,7 +565,7 @@ SELECT * FROM commands ORDER BY created_at DESC LIMIT 10;
 
 ```bash
 # Подписка на все топики
-docker-compose -f docker-compose.e2e.yml exec mosquitto mosquitto_sub -h localhost -t "#" -v
+docker compose -f docker-compose.e2e.yml exec mosquitto mosquitto_sub -h localhost -t "#" -v
 ```
 
 ## Написание новых тестов
@@ -660,7 +622,7 @@ cleanup:
 - name: Run E2E tests
   run: |
     cd tests/e2e
-    docker-compose -f docker-compose.e2e.yml up -d
+    docker compose -f docker-compose.e2e.yml up -d
     sleep 60  # Ожидание запуска сервисов
     python -m runner.e2e_runner scenarios/E01_bootstrap.yaml
   env:
@@ -678,5 +640,3 @@ cleanup:
 - [TESTING_OVERVIEW.md](./TESTING_OVERVIEW.md) - Общий обзор тестирования
 - [NODE_SIM.md](./NODE_SIM.md) - Документация по симулятору узлов
 - [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) - Решение типовых проблем
-
-

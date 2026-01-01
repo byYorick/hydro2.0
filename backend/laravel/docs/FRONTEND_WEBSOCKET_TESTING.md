@@ -404,8 +404,6 @@ sudo iptables -D OUTPUT -p tcp --dport 6001 -j DROP
 
 ## 📚 Связанные документы
 
-- `backend/laravel/tests/WEBSOCKET_TESTING.md` - Backend WebSocket тесты
-- `backend/laravel/tests/WEBSOCKET_TESTS_SUMMARY.md` - Итоговая сводка backend тестов
-- `backend/laravel/docs/E2E_TESTING.md` - E2E тестирование
-- `backend/laravel/docs/WEBSOCKET_ARCHITECTURE.md` - Архитектура WebSocket
-
+- `../tests/WEBSOCKET_TESTING.md` - Backend WebSocket тесты
+- `E2E_TESTING.md` - E2E тестирование
+- `WEBSOCKET_ARCHITECTURE.md` - Архитектура WebSocket

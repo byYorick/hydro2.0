@@ -102,7 +102,7 @@
 Роль: **логический контроллер циклов выращивания**.
 
 - Подписка на весь namespace MQTT (`hydro/#`).
-- Разбор телеметрии → запись в БД (см. `TELEMETRY_PIPELINE.md`).
+- Разбор телеметрии → запись в БД (см. `../05_DATA_AND_STORAGE/TELEMETRY_PIPELINE.md`).
 - Получение **effective targets** через Laravel API (`/api/internal/effective-targets/batch`).
 - Запуск контроллеров для активных циклов:
  - pH-контроллер (поддержание целевого pH);
@@ -171,7 +171,7 @@ payload:
 3. Python-сервис:
  - валидирует payload;
  - записывает в `telemetry_samples` и `telemetry_last`;
- - обновляет состояние контроллера зоны (см. `TELEMETRY_PIPELINE.md`).
+ - обновляет состояние контроллера зоны (см. `../05_DATA_AND_STORAGE/TELEMETRY_PIPELINE.md`).
 
 4. Backend через БД и/или стримы получает обновления и отдаёт их на UI.
 
@@ -275,11 +275,11 @@ payload (пример):
  Python сервисы должны получать данные через `/api/internal/*` endpoints, а не прямые SQL запросы.
 
 4. **Не ломать MQTT namespace.**
- Любые новые топики должны соответствовать правилам `MQTT_NAMESPACE.md`.
+ Любые новые топики должны соответствовать правилам `../03_TRANSPORT_MQTT/MQTT_NAMESPACE.md`.
 
 5. **Сначала модель данных → потом код.**
  При добавлении новой сущности:
- - прописать её в `DATA_MODEL_REFERENCE.md`;
+ - прописать её в `../05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md`;
  - добавить миграции;
  - обновить Laravel API endpoints;
  - только потом менять Python/ESP32.

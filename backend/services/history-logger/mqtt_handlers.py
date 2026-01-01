@@ -906,6 +906,7 @@ async def sync_node_channels_from_payload(
 
     updated = 0
     skipped = 0
+    channel_names: list[str] = []
     for channel in channels_payload:
         if not isinstance(channel, dict):
             skipped += 1
@@ -968,7 +969,24 @@ async def sync_node_channels_from_payload(
             unit_value,
             config,
         )
+        channel_names.append(channel_name)
         updated += 1
+
+    if channel_names:
+        await execute(
+            """
+            DELETE FROM node_channels
+            WHERE node_id = $1
+              AND NOT (channel = ANY($2))
+            """,
+            node_id,
+            list(set(channel_names)),
+        )
+    else:
+        await execute(
+            "DELETE FROM node_channels WHERE node_id = $1",
+            node_id,
+        )
 
     logger.info(
         "[CONFIG_REPORT] Synced %s channel(s) for node %s, skipped %s",

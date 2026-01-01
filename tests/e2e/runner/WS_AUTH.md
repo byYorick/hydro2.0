@@ -83,19 +83,19 @@ WS получает следующие события:
 ### CommandStatusUpdated
 - **Канал:** `private-commands.{zone_id}`
 - **Пример:** `private-commands.1`
-- **Использование:** E02_command_happy, E03_duplicate_cmd_response
+- **Использование:** E10_command_happy, E13_command_duplicate_response
 
 ### AlertCreated
 - **Каналы:** 
   - `private-hydro.zones.{zone_id}` 
   - `private-hydro.alerts` (глобальный)
 - **Пример:** `private-hydro.zones.1`
-- **Использование:** E04_error_alert
+- **Использование:** E20_error_to_alert_realtime
 
 ### ZoneEventCreated / ZoneUpdated
 - **Канал:** `private-hydro.zones.{zone_id}`
 - **Пример:** `private-hydro.zones.1`
-- **Использование:** E04_error_alert, E07_ws_reconnect_snapshot_replay
+- **Использование:** E20_error_to_alert_realtime, E31_reconnect_replay_gap
 
 ## Интеграция с AuthClient
 
@@ -186,4 +186,3 @@ RuntimeError: Failed to authorize channel 'private-commands.1': Unauthenticated
 
 - [AUTH_CLIENT.md](AUTH_CLIENT.md) - Документация AuthClient
 - [API_CLIENT_AUTH.md](API_CLIENT_AUTH.md) - Авторизация API
-

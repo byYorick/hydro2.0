@@ -132,5 +132,4 @@ E2E Runner: Using AuthClient for automatic token management
 ## См. также
 
 - [AUTH_CLIENT.md](runner/AUTH_CLIENT.md) - Документация AuthClient
-- [E2E_AUTH_BOOTSTRAP.md](../../../backend/E2E_AUTH_BOOTSTRAP.md) - E2E Auth Bootstrap
-
+- [E2E_AUTH_BOOTSTRAP.md](../../backend/E2E_AUTH_BOOTSTRAP.md) - E2E Auth Bootstrap

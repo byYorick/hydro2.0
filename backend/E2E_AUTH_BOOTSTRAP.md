@@ -71,7 +71,7 @@ curl -X POST http://localhost:8081/api/e2e/auth/token \
 
 ## Интеграция с run_e2e.sh
 
-Скрипт `tools/testing/run_e2e.sh` автоматически получает токен при запуске тестов:
+Скрипт `../tools/testing/run_e2e.sh` автоматически получает токен при запуске тестов:
 
 1. Сначала пробует получить токен через API endpoint
 2. Если API недоступен, использует Artisan команду
@@ -123,6 +123,5 @@ export LARAVEL_API_TOKEN="$TOKEN"
 
 ## См. также
 
-- [E2E_GUIDE.md](../../docs/testing/E2E_GUIDE.md) - Полное руководство по E2E тестам
-- [run_e2e.sh](../../tools/testing/run_e2e.sh) - Скрипт запуска E2E тестов
-
+- [E2E_GUIDE.md](../docs/testing/E2E_GUIDE.md) - Полное руководство по E2E тестам
+- [run_e2e.sh](../tools/testing/run_e2e.sh) - Скрипт запуска E2E тестов

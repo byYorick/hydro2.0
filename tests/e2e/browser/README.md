@@ -31,7 +31,7 @@ tests/e2e/browser/
 
 ## Требования
 
-1. **Окружение**: Laravel должен быть запущен через `docker-compose -f tests/e2e/docker-compose.e2e.yml up -d`
+1. **Окружение**: Laravel должен быть запущен через `docker compose -f tests/e2e/docker-compose.e2e.yml up -d`
    - Laravel на `http://localhost:8081`
    - WebSocket Reverb на `ws://localhost:6002/app/local`
    - MQTT на порту 1884

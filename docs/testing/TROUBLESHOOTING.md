@@ -7,7 +7,7 @@
 ### Проблема: Сервисы не запускаются
 
 **Симптомы:**
-- `docker-compose up` завершается с ошибкой
+- `docker compose up` завершается с ошибкой
 - Сервисы не проходят healthcheck
 
 **Решение:**
@@ -22,13 +22,13 @@ netstat -tuln | grep -E "5433|1884|8081|6002"
 
 3. Проверьте логи:
 ```bash
-docker-compose -f docker-compose.e2e.yml logs
+docker compose -f docker-compose.e2e.yml logs
 ```
 
 4. Пересоздайте контейнеры:
 ```bash
-docker-compose -f docker-compose.e2e.yml down -v
-docker-compose -f docker-compose.e2e.yml up -d
+docker compose -f docker-compose.e2e.yml down -v
+docker compose -f docker-compose.e2e.yml up -d
 ```
 
 ### Проблема: База данных не доступна
@@ -41,12 +41,12 @@ docker-compose -f docker-compose.e2e.yml up -d
 
 1. Проверьте статус контейнера:
 ```bash
-docker-compose -f docker-compose.e2e.yml ps postgres
+docker compose -f docker-compose.e2e.yml ps postgres
 ```
 
 2. Проверьте логи:
 ```bash
-docker-compose -f docker-compose.e2e.yml logs postgres
+docker compose -f docker-compose.e2e.yml logs postgres
 ```
 
 3. Проверьте переменные окружения:
@@ -59,7 +59,7 @@ echo $POSTGRES_DB
 
 4. Попробуйте подключиться вручную:
 ```bash
-docker-compose -f docker-compose.e2e.yml exec postgres psql -U hydro -d hydro_e2e -c "SELECT 1;"
+docker compose -f docker-compose.e2e.yml exec postgres psql -U hydro -d hydro_e2e -c "SELECT 1;"
 ```
 
 ### Проблема: MQTT брокер не доступен
@@ -72,13 +72,13 @@ docker-compose -f docker-compose.e2e.yml exec postgres psql -U hydro -d hydro_e2
 
 1. Проверьте статус контейнера:
 ```bash
-docker-compose -f docker-compose.e2e.yml ps mosquitto
+docker compose -f docker-compose.e2e.yml ps mosquitto
 ```
 
 2. Проверьте доступность:
 ```bash
 # Тестовая публикация
-docker-compose -f docker-compose.e2e.yml exec mosquitto mosquitto_pub -h localhost -t test -m "test"
+docker compose -f docker-compose.e2e.yml exec mosquitto mosquitto_pub -h localhost -t test -m "test"
 ```
 
 3. Проверьте конфигурацию:
@@ -223,7 +223,7 @@ ConnectionError: Failed to connect to Laravel API
 
 1. Проверьте статус Laravel контейнера:
 ```bash
-docker-compose -f docker-compose.e2e.yml ps laravel
+docker compose -f docker-compose.e2e.yml ps laravel
 ```
 
 2. Проверьте доступность API:
@@ -239,7 +239,7 @@ echo $LARAVEL_API_TOKEN
 
 4. Проверьте логи Laravel:
 ```bash
-docker-compose -f docker-compose.e2e.yml logs laravel
+docker compose -f docker-compose.e2e.yml logs laravel
 ```
 
 ### Проблема: WebSocket соединение не устанавливается
@@ -254,7 +254,7 @@ Timeout waiting for connection
 
 1. Проверьте статус Reverb:
 ```bash
-docker-compose -f docker-compose.e2e.yml logs laravel | grep reverb
+docker compose -f docker-compose.e2e.yml logs laravel | grep reverb
 ```
 
 2. Проверьте доступность WebSocket:
@@ -271,7 +271,7 @@ echo $REVERB_APP_KEY
 
 4. Проверьте настройки Reverb в Laravel:
 ```bash
-docker-compose -f docker-compose.e2e.yml exec laravel cat .env | grep REVERB
+docker compose -f docker-compose.e2e.yml exec laravel cat .env | grep REVERB
 ```
 
 ### Проблема: Database query не находит данные
@@ -284,13 +284,13 @@ docker-compose -f docker-compose.e2e.yml exec laravel cat .env | grep REVERB
 
 1. Проверьте подключение к БД:
 ```bash
-docker-compose -f docker-compose.e2e.yml exec postgres psql -U hydro -d hydro_e2e -c "SELECT COUNT(*) FROM nodes;"
+docker compose -f docker-compose.e2e.yml exec postgres psql -U hydro -d hydro_e2e -c "SELECT COUNT(*) FROM nodes;"
 ```
 
 2. Выполните запрос вручную:
 ```bash
 # Скопируйте запрос из теста и выполните
-docker-compose -f docker-compose.e2e.yml exec postgres psql -U hydro -d hydro_e2e -c "SELECT * FROM commands WHERE cmd_id = 'test';"
+docker compose -f docker-compose.e2e.yml exec postgres psql -U hydro -d hydro_e2e -c "SELECT * FROM commands WHERE cmd_id = 'test';"
 ```
 
 3. Проверьте таймауты:
@@ -401,7 +401,7 @@ export E2E_TIMEOUT=600  # 10 минут вместо 5
 ```yaml
 - name: Show logs on failure
   if: failure()
-  run: docker-compose -f docker-compose.e2e.yml logs
+  run: docker compose -f docker-compose.e2e.yml logs
 ```
 
 ## База данных
@@ -417,12 +417,12 @@ relation "nodes" does not exist
 
 1. Примените миграции:
 ```bash
-docker-compose -f docker-compose.e2e.yml exec laravel php artisan migrate
+docker compose -f docker-compose.e2e.yml exec laravel php artisan migrate
 ```
 
 2. Проверьте таблицы:
 ```bash
-docker-compose -f docker-compose.e2e.yml exec postgres psql -U hydro -d hydro_e2e -c "\dt"
+docker compose -f docker-compose.e2e.yml exec postgres psql -U hydro -d hydro_e2e -c "\dt"
 ```
 
 ### Проблема: База данных не чистая между тестами
@@ -435,7 +435,7 @@ docker-compose -f docker-compose.e2e.yml exec postgres psql -U hydro -d hydro_e2
 
 1. Очистите БД перед тестом:
 ```bash
-docker-compose -f docker-compose.e2e.yml exec laravel php artisan migrate:fresh
+docker compose -f docker-compose.e2e.yml exec laravel php artisan migrate:fresh
 ```
 
 2. Используйте транзакции в тестах (если поддерживается)
@@ -524,7 +524,7 @@ timeout: 30.0  # Увеличьте время ожидания
 4. Проверьте, что событие действительно отправляется:
 ```bash
 # В логах Laravel должно быть
-docker-compose -f docker-compose.e2e.yml logs laravel | grep "CommandStatusUpdated"
+docker compose -f docker-compose.e2e.yml logs laravel | grep "CommandStatusUpdated"
 ```
 
 ## Полезные команды
@@ -533,10 +533,10 @@ docker-compose -f docker-compose.e2e.yml logs laravel | grep "CommandStatusUpdat
 
 ```bash
 # Остановка всех сервисов и удаление volumes
-docker-compose -f docker-compose.e2e.yml down -v
+docker compose -f docker-compose.e2e.yml down -v
 
 # Удаление всех контейнеров
-docker-compose -f docker-compose.e2e.yml rm -f
+docker compose -f docker-compose.e2e.yml rm -f
 
 # Очистка неиспользуемых ресурсов
 docker system prune -a
@@ -546,26 +546,26 @@ docker system prune -a
 
 ```bash
 # Все логи
-docker-compose -f docker-compose.e2e.yml logs -f
+docker compose -f docker-compose.e2e.yml logs -f
 
 # Логи конкретного сервиса
-docker-compose -f docker-compose.e2e.yml logs -f laravel
+docker compose -f docker-compose.e2e.yml logs -f laravel
 
 # Статус сервисов
-watch -n 1 'docker-compose -f docker-compose.e2e.yml ps'
+watch -n 1 'docker compose -f docker-compose.e2e.yml ps'
 ```
 
 ### Отладка
 
 ```bash
 # Вход в контейнер Laravel
-docker-compose -f docker-compose.e2e.yml exec laravel bash
+docker compose -f docker-compose.e2e.yml exec laravel bash
 
 # Выполнение artisan команд
-docker-compose -f docker-compose.e2e.yml exec laravel php artisan tinker
+docker compose -f docker-compose.e2e.yml exec laravel php artisan tinker
 
 # Просмотр переменных окружения
-docker-compose -f docker-compose.e2e.yml exec laravel env | grep DB
+docker compose -f docker-compose.e2e.yml exec laravel env | grep DB
 ```
 
 ## Получение помощи

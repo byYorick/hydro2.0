@@ -99,5 +99,5 @@ if (err == ESP_OK) {
 
 ## Документация
 
-- Стандарты кодирования: `doc_ai/02_HARDWARE_FIRMWARE/ESP32_C_CODING_STANDARDS.md`
+- Стандарты кодирования: `../../../../../doc_ai/02_HARDWARE_FIRMWARE/ESP32_C_CODING_STANDARDS.md`
 

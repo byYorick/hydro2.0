@@ -1,2 +1,15 @@
 <?xml version='1.0' encoding='utf-8'?>
-<testsuites name="E00_api_smoke" tests="11" failures="0" skipped="0" time="0.7504799365997314"><testsuite name="E00_api_smoke" tests="11" failures="0" skipped="0" time="0.7504799365997314"><testcase name="set_laravel_url" time="1.1682510375976562e-05" /><testcase name="check_health" time="0.08412933349609375" /><testcase name="check_login_endpoint" time="0.2593417167663574" /><testcase name="check_zones_protected" time="0.07236933708190918" /><testcase name="check_nodes_protected" time="0.06720852851867676" /><testcase name="check_cycles_protected" time="0.06562399864196777" /><testcase name="check_greenhouses_protected" time="0.062392473220825195" /><testcase name="check_commands_protected" time="0.13907146453857422" /><testcase name="health_endpoint_works" time="6.818771362304688e-05" /><testcase name="no_500_errors_on_endpoints" time="0.00022864341735839844" /><testcase name="login_returns_validation_error" time="3.457069396972656e-05" /></testsuite></testsuites>
+<testsuites name="E01_bootstrap" tests="12" failures="1" skipped="0" time="40.89706540107727"><testsuite name="E01_bootstrap" tests="12" failures="1" skipped="0" time="40.89706540107727"><testcase name="start_node_simulator" time="5.634987831115723" /><testcase name="get_zones" time="0.061388254165649414" /><testcase name="get_nodes" time="0.05793428421020508" /><testcase name="find_test_zone_and_node" time="8.106231689453125e-06" /><testcase name="find_zone_by_uid" time="0.05695796012878418" /><testcase name="find_node_by_uid" time="0.05882096290588379" /><testcase name="fetch_zone_id" time="0.008103132247924805" /><testcase name="fetch_node_id" time="0.0019154548645019531" /><testcase name="set_zone_and_node_ids" time="2.6226043701171875e-06" /><testcase name="debug_variables" time="1.9073486328125e-06" /><testcase name="wait_for_telemetry_publish" time="5.005106210708618" /><testcase name="telemetry_in_db" time="30.011838674545288"><failure message="Timeout waiting for DB condition: SELECT&#10;  tl.last_value as value,&#10;  s.label as channel,&#10;  s.node_id,&#10;  s.zone_id,&#10;  tl.updated_at,&#10;  s.type as metric_type&#10;FROM telemetry_last tl&#10;JOIN sensors s ON s.id = tl.sensor_id&#10;WHERE s.zone_id = :zone_id&#10;  AND s.node_id = :node_id&#10;  AND s.type = 'PH'&#10;LIMIT 1&#10;">Timeout waiting for DB condition: SELECT
+  tl.last_value as value,
+  s.label as channel,
+  s.node_id,
+  s.zone_id,
+  tl.updated_at,
+  s.type as metric_type
+FROM telemetry_last tl
+JOIN sensors s ON s.id = tl.sensor_id
+WHERE s.zone_id = :zone_id
+  AND s.node_id = :node_id
+  AND s.type = 'PH'
+LIMIT 1
+</failure></testcase></testsuite></testsuites>

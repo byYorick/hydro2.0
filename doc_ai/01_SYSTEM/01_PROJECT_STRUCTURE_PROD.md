@@ -26,7 +26,7 @@
 
 ```text
 hydro2.0/
-├─ doc_ai/               # Документация и спецификации (эталонная)
+├─ ../               # Документация и спецификации (эталонная)
 ├─ docs/                  # Mirror документации (опционально, для совместимости)
 ├─ firmware/              # Прошивки для всех нод на ESP32
 ├─ backend/               # Backend-сервисы, API, MQTT-мост
@@ -43,12 +43,12 @@ hydro2.0/
 
 ---
 
-## 2. `doc_ai/` — документация и спеки
+## 2. `../` — документация и спеки
 
-**Примечание:** Основная документация находится в `doc_ai/`. Папка `docs/` может существовать как mirror для совместимости, но эталоном является `doc_ai/`.
+**Примечание:** Основная документация находится в `../`. Папка `docs/` может существовать как mirror для совместимости, но эталоном является `../`.
 
 ```text
-doc_ai/
+../
 ├─ 01_SYSTEM/
 │  ├─ LOGIC_ARCH.md
 │  ├─ DATAFLOW_FULL.md
@@ -327,7 +327,7 @@ configs/
    └─ keystore_structure.md
 ```
 
-**Идея:** все ноды читают свои параметры из `NodeConfig` (JSON/CBOR), структура которого описана в `doc_ai/02_HARDWARE_FIRMWARE/NODE_CONFIG_SPEC.md`. Backend и тулзы умеют генерировать/валидировать эти конфиги.
+**Идея:** все ноды читают свои параметры из `NodeConfig` (JSON/CBOR), структура которого описана в `../02_HARDWARE_FIRMWARE/NODE_CONFIG_SPEC.md`. Backend и тулзы умеют генерировать/валидировать эти конфиги.
 
 ---
 
@@ -373,8 +373,8 @@ tools/
 
 Проект можно считать **боевым**, если:
 
-1. В `doc_ai/` заполнены и согласованы:
-   - `SYSTEM_OVERVIEW.md`,
+1. В `../` заполнены и согласованы:
+   - `../../docs/01_OVERVIEW/SYSTEM_OVERVIEW.md`,
    - все ключевые спеки по нодам, MQTT и backend,
    - индексы и README отражают текущую структуру и код.
 2. В `firmware/`:
@@ -386,7 +386,7 @@ tools/
      - отдаёт `command_response` с `ACK/ERROR` и кодами ошибок (`current_not_detected`, `overcurrent`, и т.д.),
      - уходит в `SAFE_MODE` при критических ситуациях.
 3. В `backend/`:
-   - поднят MQTT-мост и он строго следует `BACKEND_NODE_CONTRACT_FULL.md`,
+   - поднят MQTT-мост и он строго следует `../03_TRANSPORT_MQTT/BACKEND_NODE_CONTRACT_FULL.md`,
    - есть device-registry, automation-engine и history-logger,
    - настроено логирование и базовый мониторинг.
 4. В `mobile/`:

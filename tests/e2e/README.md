@@ -23,8 +23,8 @@ cp .env.e2e.example .env.e2e
 # Использовать скрипт из корня проекта
 ./tools/testing/run_e2e.sh up
 
-# Или напрямую через docker-compose
-docker-compose -f tests/e2e/docker-compose.e2e.yml up -d
+# Или напрямую через docker compose (или docker-compose)
+docker compose -f tests/e2e/docker-compose.e2e.yml up -d
 ```
 
 ### 3. Запуск тестов
@@ -35,7 +35,7 @@ docker-compose -f tests/e2e/docker-compose.e2e.yml up -d
 
 # Или напрямую через Python
 cd tests/e2e
-python3 -m runner.e2e_runner scenarios/E01_bootstrap.yaml
+python3 -m runner.e2e_runner scenarios/core/E01_bootstrap.yaml
 ```
 
 ## Структура проекта
@@ -56,11 +56,14 @@ tests/e2e/
 │   ├── assertions.py         # Кастомные assertions
 │   └── reporting.py          # Генерация отчетов
 ├── scenarios/                # YAML сценарии тестов
-│   ├── E01_bootstrap.yaml
-│   ├── E02_command_happy.yaml
-│   ├── E04_error_alert.yaml
-│   ├── E05_unassigned_attach.yaml
-│   └── E07_ws_reconnect_snapshot_replay.yaml
+│   ├── core/
+│   ├── commands/
+│   ├── alerts/
+│   ├── snapshot/
+│   ├── infrastructure/
+│   ├── grow_cycle/
+│   ├── automation_engine/
+│   └── chaos/
 └── reports/                 # Отчеты (генерируются автоматически)
     ├── junit.xml
     └── timeline.json
@@ -68,49 +71,11 @@ tests/e2e/
 
 ## Обязательные сценарии
 
-### E01_bootstrap
-**DoD**: telemetry в БД + online статус
+Минимальный P0 набор (используется в smoke):
+- `scenarios/core/E01_bootstrap.yaml` — telemetry в БД + ONLINE статус
+- `scenarios/commands/E10_command_happy.yaml` — команда → DONE + WS + zone_events
 
-Проверяет базовый bootstrap пайплайна:
-- Узел публикует телеметрию через MQTT
-- Телеметрия сохраняется в БД
-- Статус узла обновляется на ONLINE
-
-### E02_command_happy
-**DoD**: команда → DONE + WS событие + zone_events запись
-
-Проверяет успешное выполнение команды:
-- Отправка команды через API
-- Обработка командой узла
-- WebSocket события
-- Запись в zone_events
-
-### E04_error_alert
-**DoD**: error → alert ACTIVE + WS + dedup
-
-Проверяет создание алертов из ошибок узлов:
-- Узел публикует ошибку через MQTT
-- Алерт создается в БД со статусом ACTIVE
-- WebSocket событие отправляется на канал зоны
-- Повторные одинаковые ошибки не создают дубликаты алертов (dedup)
-
-### E05_unassigned_attach
-**DoD**: temp error → unassigned → attach → alert
-
-Проверяет сценарий присвоения непривязанного узла:
-- temp error → unassigned_node_errors
-- регистрация ноды
-- attach → alert
-- unassigned очищен/архивирован
-
-### E07_ws_reconnect_snapshot_replay
-**DoD**: snapshot last_event_id + replay закрывают gap
-
-Проверяет механизм восстановления после разрыва WebSocket:
-- WS disconnect
-- накопление событий
-- reconnect
-- snapshot + events догоняют состояние
+Полный список сценариев и DoD: `../../docs/testing/E2E_SCENARIOS.md`.
 
 ## Инварианты пайплайна
 
@@ -179,19 +144,19 @@ JSON Timeline содержит:
 
 ```bash
 # Все сервисы
-docker-compose -f tests/e2e/docker-compose.e2e.yml logs -f
+docker compose -f tests/e2e/docker-compose.e2e.yml logs -f
 
 # Конкретный сервис
-docker-compose -f tests/e2e/docker-compose.e2e.yml logs -f laravel
-docker-compose -f tests/e2e/docker-compose.e2e.yml logs -f history-logger
-docker-compose -f tests/e2e/docker-compose.e2e.yml logs -f node-sim
+docker compose -f tests/e2e/docker-compose.e2e.yml logs -f laravel
+docker compose -f tests/e2e/docker-compose.e2e.yml logs -f history-logger
+docker compose -f tests/e2e/docker-compose.e2e.yml logs -f node-sim
 ```
 
 ### Проверка состояния сервисов
 
 ```bash
 # Статус всех сервисов
-docker-compose -f tests/e2e/docker-compose.e2e.yml ps
+docker compose -f tests/e2e/docker-compose.e2e.yml ps
 
 # Health check Laravel
 curl http://localhost:8081/api/system/health
@@ -204,7 +169,7 @@ curl http://localhost:9302/health
 
 ```bash
 # Подключение к БД
-docker-compose -f tests/e2e/docker-compose.e2e.yml exec postgres psql -U hydro -d hydro_e2e
+docker compose -f tests/e2e/docker-compose.e2e.yml exec postgres psql -U hydro -d hydro_e2e
 
 # Проверка таблиц
 \dt
@@ -220,7 +185,7 @@ SELECT * FROM telemetry_last ORDER BY updated_at DESC LIMIT 10;
 
 ```bash
 # Подписка на все топики
-docker-compose -f tests/e2e/docker-compose.e2e.yml exec mosquitto mosquitto_sub -h localhost -p 1883 -t "#" -v
+docker compose -f tests/e2e/docker-compose.e2e.yml exec mosquitto mosquitto_sub -h localhost -p 1883 -t "#" -v
 ```
 
 ## Требования
@@ -247,8 +212,8 @@ docker-compose -f tests/e2e/docker-compose.e2e.yml exec mosquitto mosquitto_sub 
 ### Проблемы с подключением к БД
 
 1. Проверьте переменные окружения в `.env.e2e`
-2. Убедитесь, что PostgreSQL запущен: `docker-compose -f tests/e2e/docker-compose.e2e.yml ps postgres`
-3. Проверьте подключение: `docker-compose -f tests/e2e/docker-compose.e2e.yml exec postgres pg_isready -U hydro`
+2. Убедитесь, что PostgreSQL запущен: `docker compose -f tests/e2e/docker-compose.e2e.yml ps postgres`
+3. Проверьте подключение: `docker compose -f tests/e2e/docker-compose.e2e.yml exec postgres pg_isready -U hydro`
 
 ## Дополнительная документация
 

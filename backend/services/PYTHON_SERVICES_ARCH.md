@@ -4,9 +4,9 @@
 Документ описывает архитектуру Python-сервисов, их взаимодействие и структуру.
 
 **Связанные документы:**
-- `doc_ai/04_BACKEND_CORE/BACKEND_ARCH_FULL.md` — общая архитектура backend
-- `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` — спецификация MQTT
-- `doc_ai/01_SYSTEM/DATAFLOW_FULL.md` — потоки данных
+- `../../doc_ai/04_BACKEND_CORE/BACKEND_ARCH_FULL.md` — общая архитектура backend
+- `../../doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` — спецификация MQTT
+- `../../doc_ai/01_SYSTEM/DATAFLOW_FULL.md` — потоки данных
 
 ---
 
@@ -282,7 +282,7 @@ scheduler/
 **Планируемый функционал:**
 - Хранение информации по нодам (ID, тип, конфиг каналов)
 - Отдача конфига ноде при первом соединении/по запросу
-- См. `backend/services/device-registry/README.md`
+- См. `device-registry/README.md`
 
 ---
 
@@ -397,7 +397,7 @@ backend/services/
 
 ### 5.2. Планируемая структура (согласно документации)
 
-Согласно `doc_ai/01_SYSTEM/01_PROJECT_STRUCTURE_PROD.md`, структура может быть реорганизована:
+Согласно `../../doc_ai/01_SYSTEM/01_PROJECT_STRUCTURE_PROD.md`, структура может быть реорганизована:
 
 ```
 backend/services/
@@ -576,7 +576,7 @@ pytest --cov=backend/services/history-logger backend/services/history-logger/
 
 ## Ссылки
 
-- Документация проекта: `doc_ai/`
-- Backend архитектура: `doc_ai/04_BACKEND_CORE/BACKEND_ARCH_FULL.md`
-- MQTT спецификация: `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
-- Общий README: `backend/services/README.md`
+- Документация проекта: `../../doc_ai/`
+- Backend архитектура: `../../doc_ai/04_BACKEND_CORE/BACKEND_ARCH_FULL.md`
+- MQTT спецификация: `../../doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
+- Общий README: `README.md`

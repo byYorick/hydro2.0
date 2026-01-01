@@ -31,10 +31,10 @@ pip install -r requirements.txt
 cd tests/e2e
 
 # Запуск всех сервисов через Docker Compose
-docker-compose -f docker-compose.e2e.yml up -d
+docker compose -f docker-compose.e2e.yml up -d
 
 # Ожидание готовности сервисов (может занять 1-2 минуты)
-docker-compose -f docker-compose.e2e.yml ps
+docker compose -f docker-compose.e2e.yml ps
 ```
 
 ### 3. Запуск первого теста
@@ -80,15 +80,17 @@ python -m runner.e2e_runner scenarios/E01_bootstrap.yaml
 Набор критичных сценариев для проверки инвариантов пайплайна.
 
 **Доступные сценарии:**
-- `E01_bootstrap.yaml` - Bootstrap и телеметрия
-- `E02_command_happy.yaml` - Успешное выполнение команд
-- `E03_duplicate_cmd_response.yaml` - Обработка дубликатов
-- `E04_error_alert.yaml` - Создание алертов
-- `E05_unassigned_attach.yaml` - Привязка непривязанных узлов
-- `E06_laravel_down_queue_recovery.yaml` - Восстановление после падения
-- `E07_ws_reconnect_snapshot_replay.yaml` - WebSocket reconnect
+- `core/` — bootstrap и auth
+- `commands/` — команды (happy/failed/timeout/duplicate)
+- `alerts/` — алерты (error → alert, dedup, unassigned, DLQ)
+- `snapshot/` — snapshot и replay
+- `infrastructure/` — readiness и bindings
+- `grow_cycle/` — циклы выращивания
+- `automation_engine/` — автоматизация
+- `chaos/` — хаос‑тесты
 
-**Расположение:** `tests/e2e/scenarios/`
+**Расположение:** `tests/e2e/scenarios/`  
+**Полный список и DoD:** `E2E_SCENARIOS.md`
 
 ## Переменные окружения
 
@@ -114,7 +116,7 @@ MQTT_PASS=                         # Пароль (опционально)
 
 # Laravel API
 LARAVEL_URL=http://localhost:8081  # URL Laravel API (E2E использует 8081)
-LARAVEL_API_TOKEN=dev-token-12345  # Токен аутентификации
+LARAVEL_API_TOKEN=dev-token-12345  # Опционально (legacy); по умолчанию AuthClient
 
 # WebSocket (Reverb)
 WS_URL=ws://localhost:6002         # URL WebSocket сервера (E2E использует 6002)
@@ -258,7 +260,7 @@ jobs:
       - name: Start services
         run: |
           cd tests/e2e
-          docker-compose -f docker-compose.e2e.yml up -d
+          docker compose -f docker-compose.e2e.yml up -d
       
       - name: Wait for services
         run: sleep 60
@@ -288,18 +290,15 @@ jobs:
 - [NODE_SIM.md](./NODE_SIM.md) - Детальная документация по симулятору узлов
 - [E2E_GUIDE.md](./E2E_GUIDE.md) - Руководство по E2E тестам
 - [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) - Решение типовых проблем
-- [MQTT_SPEC_FULL.md](../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md) - Спецификация MQTT протокола
-- [BACKEND_NODE_CONTRACT_FULL.md](../03_TRANSPORT_MQTT/BACKEND_NODE_CONTRACT_FULL.md) - Контракт между backend и узлами
+- [MQTT_SPEC_FULL.md](../../doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md) - Спецификация MQTT протокола
+- [BACKEND_NODE_CONTRACT_FULL.md](../../doc_ai/03_TRANSPORT_MQTT/BACKEND_NODE_CONTRACT_FULL.md) - Контракт между backend и узлами
 
 ## Поддержка
 
 При возникновении проблем:
 1. Проверьте [TROUBLESHOOTING.md](./TROUBLESHOOTING.md)
-2. Проверьте логи сервисов: `docker-compose -f tests/e2e/docker-compose.e2e.yml logs`
+2. Проверьте логи сервисов: `docker compose -f tests/e2e/docker-compose.e2e.yml logs`
 3. Создайте issue с описанием проблемы и логами
-
-
-
 
 
 

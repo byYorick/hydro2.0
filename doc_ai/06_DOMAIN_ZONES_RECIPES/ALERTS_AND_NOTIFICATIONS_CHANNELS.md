@@ -3,8 +3,8 @@
 
 Документ дополняет:
 - `EVENTS_AND_ALERTS_ENGINE.md`
-- `REALTIME_UPDATES_ARCH.md`
-- `ANDROID_APP_ARCH.md`
+- `../04_BACKEND_CORE/REALTIME_UPDATES_ARCH.md`
+- `../12_ANDROID_APP/ANDROID_APP_ARCH.md`
 
 и описывает, **как алерты доставляются пользователю**.
 
@@ -17,7 +17,7 @@
 - Любое изменение статуса алерта:
  - фиксируется в БД,
  - генерирует событие `alert_created` или `alert_updated`
- (см. `REALTIME_UPDATES_ARCH.md`).
+ (см. `../04_BACKEND_CORE/REALTIME_UPDATES_ARCH.md`).
 
 ---
 

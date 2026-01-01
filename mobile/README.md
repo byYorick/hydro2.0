@@ -41,11 +41,11 @@ app/android/
 
 ## Документация
 
-- Архитектура приложения: `doc_ai/12_ANDROID_APP/ANDROID_APP_ARCH.md`
-- Экраны и UX: `doc_ai/12_ANDROID_APP/ANDROID_APP_SCREENS.md`
-- Интеграция с API: `doc_ai/12_ANDROID_APP/ANDROID_APP_API_INTEGRATION.md`
-- Структура проекта: `doc_ai/01_SYSTEM/01_PROJECT_STRUCTURE_PROD.md`
-- Backend API: `doc_ai/04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md`
+- Архитектура приложения: `../doc_ai/12_ANDROID_APP/ANDROID_APP_ARCH.md`
+- Экраны и UX: `../doc_ai/12_ANDROID_APP/ANDROID_APP_SCREENS.md`
+- Интеграция с API: `../doc_ai/12_ANDROID_APP/ANDROID_APP_API_INTEGRATION.md`
+- Структура проекта: `../doc_ai/01_SYSTEM/01_PROJECT_STRUCTURE_PROD.md`
+- Backend API: `../doc_ai/04_BACKEND_CORE/API_SPEC_FRONTEND_BACKEND_FULL.md`
 
 ## Примечание
 

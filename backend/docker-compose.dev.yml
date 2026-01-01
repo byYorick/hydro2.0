@@ -130,10 +130,10 @@ services:
       - PY_INGEST_TOKEN=${PY_INGEST_TOKEN:-dev-token-12345}
       - LARAVEL_API_TOKEN=${LARAVEL_API_TOKEN:-dev-token-12345}
       # MQTT configuration
-      # MQTT_EXTERNAL_HOST - IP адрес хоста для внешних подключений (ESP32 ноды)
+      # MQTT_EXTERNAL_HOST - host для внешних подключений (ESP32 ноды)
       # Если не указан, будет использоваться MQTT_HOST (имя сервиса для внутренних подключений)
-      # По умолчанию используем IP хоста, определенный автоматически при запуске
-      - MQTT_EXTERNAL_HOST=${MQTT_EXTERNAL_HOST:-192.168.1.115}
+      # По умолчанию используем host.docker.internal (для Linux может потребоваться явная настройка)
+      - MQTT_EXTERNAL_HOST=${MQTT_EXTERNAL_HOST:-host.docker.internal}
       - MQTT_HOST=${MQTT_HOST:-mqtt}
       - MQTT_PORT=${MQTT_PORT:-1883}
       # PHP opcache settings for development (disable caching)

@@ -215,8 +215,7 @@ steps:
 
 ## См. также
 
-- [E2E_AUTH_MASTER_TASK.md](../../doc_ai/E2E_AUTH_MASTER_TASK.md) - Мастер-задача по авторизации
-- [AUTH_CLIENT.md](../runner/AUTH_CLIENT.md) - Документация AuthClient
-- [API_CLIENT_AUTH.md](../runner/API_CLIENT_AUTH.md) - Авторизация в APIClient
-- [WS_AUTH.md](../runner/WS_AUTH.md) - Авторизация в WSClient
-
+- [AUTH_SYSTEM.md](../../doc_ai/08_SECURITY_AND_OPS/AUTH_SYSTEM.md) - Архитектура авторизации
+- [AUTH_CLIENT.md](../../tests/e2e/runner/AUTH_CLIENT.md) - Документация AuthClient
+- [API_CLIENT_AUTH.md](../../tests/e2e/runner/API_CLIENT_AUTH.md) - Авторизация в APIClient
+- [WS_AUTH.md](../../tests/e2e/runner/WS_AUTH.md) - Авторизация в WSClient

@@ -138,5 +138,4 @@ docker-compose -f docker-compose.dev.yml exec laravel npx playwright install
 
 ## Дополнительная информация
 
-Подробная документация по тестам: `backend/laravel/tests/README_PID_TESTS.md`
-
+Подробная документация по тестам: `README_PID_TESTS.md`

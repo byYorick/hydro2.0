@@ -124,7 +124,6 @@ pH-нода для измерения pH и управления насосам�
 
 ## Документация
 
-- Архитектура нод: `doc_ai/02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md`
-- MQTT спецификация: `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
-- NodeConfig: `firmware/NODE_CONFIG_SPEC.md`
-
+- Архитектура нод: `../../../doc_ai/02_HARDWARE_FIRMWARE/NODE_ARCH_FULL.md`
+- MQTT спецификация: `../../../doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
+- NodeConfig: `../../NODE_CONFIG_SPEC.md`

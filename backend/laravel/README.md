@@ -10,26 +10,26 @@
 ## Документация
 
 - `docs/` - документация Laravel приложения
-  - `WEBSOCKET_ARCHITECTURE.md` - архитектура WebSocket
-  - `FRONTEND_WEBSOCKET_TESTING.md` - покрытие тестами WebSocket
-  - `E2E_TESTING.md` - E2E тестирование
-  - `NODE_TELEMETRY_CHARTS.md` - графики телеметрии устройств
-  - `AGENTS.md` - работа с ИИ-агентами
-  - `CI_CD_SETUP.md` - настройка CI/CD
-  - `CPU_OPTIMIZATION.md` - оптимизация CPU
-  - `HOT_RELOAD.md` - горячая перезагрузка
-  - `LARAVEL_12_UPGRADE.md` - обновление до Laravel 12
-  - `PERFORMANCE_OPTIMIZATION.md` - оптимизация производительности
-  - `TESTING_SETUP.md` - настройка тестирования
-  - `README_ALL_DASHBOARDS.md` - документация по сидерам дашбордов
-  - `README_COMPREHENSIVE_DASHBOARD_SEEDER.md` - комплексный сидер дашбордов
-  - `README_MONITORING_SEEDER.md` - сидер мониторинга
-  - `README_TELEMETRY_SEEDERS.md` - сидеры телеметрии
+  - `docs/WEBSOCKET_ARCHITECTURE.md` - архитектура WebSocket
+  - `docs/FRONTEND_WEBSOCKET_TESTING.md` - покрытие тестами WebSocket
+  - `docs/E2E_TESTING.md` - E2E тестирование
+  - `docs/NODE_TELEMETRY_CHARTS.md` - графики телеметрии устройств
+  - `docs/AGENTS.md` - работа с ИИ-агентами
+  - `docs/CI_CD_SETUP.md` - настройка CI/CD
+  - `docs/CPU_OPTIMIZATION.md` - оптимизация CPU
+  - `docs/HOT_RELOAD.md` - горячая перезагрузка
+  - `docs/LARAVEL_12_UPGRADE.md` - обновление до Laravel 12
+  - `docs/PERFORMANCE_OPTIMIZATION.md` - оптимизация производительности
+  - `docs/TESTING_SETUP.md` - настройка тестирования
+  - `docs/README_ALL_DASHBOARDS.md` - документация по сидерам дашбордов
+  - `docs/README_COMPREHENSIVE_DASHBOARD_SEEDER.md` - комплексный сидер дашбордов
+  - `docs/README_MONITORING_SEEDER.md` - сидер мониторинга
+  - `docs/README_TELEMETRY_SEEDERS.md` - сидеры телеметрии
 - `tests/` - тесты и тестовая документация
-  - `TESTING_PID.md` - тестирование PID
-  - `TESTS_P1_P2_P3.md` - тесты по фазам
-  - `README_PID_TESTS.md` - документация PID тестов
-  - `WEBSOCKET_TESTING.md` - тестирование WebSocket
+  - `tests/TESTING_PID.md` - тестирование PID
+  - `tests/TESTS_P1_P2_P3.md` - тесты по фазам
+  - `tests/README_PID_TESTS.md` - документация PID тестов
+  - `tests/WEBSOCKET_TESTING.md` - тестирование WebSocket
 
 ## About Laravel
 

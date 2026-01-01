@@ -315,7 +315,7 @@ Grafana поддерживает мобильные устройства:
 
 - **Документация Grafana:** https://grafana.com/docs/
 - **Prometheus Query Language:** https://prometheus.io/docs/prometheus/latest/querying/basics/
-- **Внутренняя документация:** `doc_ai/08_SECURITY_AND_OPS/LOGGING_AND_MONITORING.md`
+- **Внутренняя документация:** `../08_SECURITY_AND_OPS/LOGGING_AND_MONITORING.md`
 
 ---
 

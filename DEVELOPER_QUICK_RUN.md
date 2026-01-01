@@ -38,8 +38,8 @@ The smoke test uses the E2E runner in `tests/e2e` and will:
 
 - bring up the E2E docker-compose stack if it is not running
 - run scenarios:
-  - `core/E01_bootstrap.yaml`
-  - `commands/E10_command_happy.yaml`
+  - `scenarios/core/E01_bootstrap.yaml`
+  - `scenarios/commands/E10_command_happy.yaml`
 - write reports to `tests/e2e/reports`
 
 Note: the E2E runner runs `php artisan migrate:fresh --seed` on the E2E database

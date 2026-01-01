@@ -53,9 +53,11 @@
   - формат топиков строго `hydro/{gh}/{zone}/{node}/{channel}/{message_type}`
     (см. `doc_ai/03_TRANSPORT_MQTT/MQTT_NAMESPACE.md`).
   - новые `message_type` или `channel` допустимы только при обновлении
-    `NODE_CHANNELS_REFERENCE.md`, `DATA_MODEL_REFERENCE.md` и обработчиков Python.
-  - любые изменения в топиках требуют обновления `MQTT_NAMESPACE.md`,
-    `MQTT_SPEC_FULL.md` и `BACKEND_NODE_CONTRACT_FULL.md`.
+    `doc_ai/02_HARDWARE_FIRMWARE/NODE_CHANNELS_REFERENCE.md`,
+    `doc_ai/05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md` и обработчиков Python.
+  - любые изменения в топиках требуют обновления `doc_ai/03_TRANSPORT_MQTT/MQTT_NAMESPACE.md`,
+    `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` и
+    `doc_ai/03_TRANSPORT_MQTT/BACKEND_NODE_CONTRACT_FULL.md`.
 
 ## 4) Как формулировать задачи для ИИ
 

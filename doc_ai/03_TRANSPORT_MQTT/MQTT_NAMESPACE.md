@@ -134,7 +134,7 @@ hydro/system/{subtopic}
 ## 4. Правила именования каналов
 
 Ключи каналов (`{channel}`) соответствуют полю `channels.key` и описаны в
-`NODE_CHANNELS_REFERENCE.md`.
+`../02_HARDWARE_FIRMWARE/NODE_CHANNELS_REFERENCE.md`.
 
 Примеры:
 
@@ -164,9 +164,9 @@ hydro/v2/{gh}/{zone}/{node}/{channel}/{message_type}
 
 Конкретные изменения протокола должны быть задокументированы и отражены в:
 
-- `TELEMETRY_PIPELINE.md`,
-- `NODE_CHANNELS_REFERENCE.md`,
-- `MQTT_TOPICS_SPEC_AI_GUIDE.md`.
+- `../05_DATA_AND_STORAGE/TELEMETRY_PIPELINE.md`,
+- `../02_HARDWARE_FIRMWARE/NODE_CHANNELS_REFERENCE.md`,
+- `../10_AI_DEV_GUIDES/MQTT_TOPICS_SPEC_AI_GUIDE.md`.
 
 ---
 
@@ -176,7 +176,7 @@ hydro/v2/{gh}/{zone}/{node}/{channel}/{message_type}
 2. Любые новые темы должны быть расширением, а не заменой.
 3. Все изменения должны быть:
 
- - согласованы с `DATA_MODEL_REFERENCE.md`;
- - отражены в `PYTHON_MQTT_SERVICE_AI_GUIDE.md` и `MQTT_TOPICS_SPEC_AI_GUIDE.md`.
+ - согласованы с `../05_DATA_AND_STORAGE/DATA_MODEL_REFERENCE.md`;
+ - отражены в `../10_AI_DEV_GUIDES/PYTHON_MQTT_SERVICE_AI_GUIDE.md` и `../10_AI_DEV_GUIDES/MQTT_TOPICS_SPEC_AI_GUIDE.md`.
 
 MQTT-namespace — это **хребет системы 2.0**, поэтому изменения здесь должны происходить крайне аккуратно.

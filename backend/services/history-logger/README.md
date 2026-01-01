@@ -223,7 +223,7 @@ hydro/{gh_uid}/{zone_uid}/{node_uid}/{channel}/telemetry
 
 Пример: `hydro/gh-1/zn-1/nd-ph-1/ph_sensor/telemetry`
 
-**Примечание:** Формат синхронизирован с прошивками ESP32 согласно `MQTT_SPEC_FULL.md`.
+**Примечание:** Формат синхронизирован с прошивками ESP32 согласно `../../../doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`.
 
 ### Формат payload телеметрии
 

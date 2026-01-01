@@ -74,6 +74,6 @@ Scheduler → REST (9405) → Automation-Engine → REST (9300) → History-Logg
 
 - Архитектура Python-сервисов: `PYTHON_SERVICES_ARCH.md`
 - Changelog: `CHANGELOG.md`
-- Общая архитектура backend: `doc_ai/04_BACKEND_CORE/BACKEND_ARCH_FULL.md`
-- MQTT спецификация: `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
+- Общая архитектура backend: `../../doc_ai/04_BACKEND_CORE/BACKEND_ARCH_FULL.md`
+- MQTT спецификация: `../../doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
 

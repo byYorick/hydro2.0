@@ -395,6 +395,5 @@ tests/node_sim/
 
 - [TESTING_OVERVIEW.md](./TESTING_OVERVIEW.md) - Общий обзор тестирования
 - [E2E_GUIDE.md](./E2E_GUIDE.md) - Руководство по E2E тестам
-- [MQTT_SPEC_FULL.md](../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md) - Спецификация MQTT протокола
-- [BACKEND_NODE_CONTRACT_FULL.md](../03_TRANSPORT_MQTT/BACKEND_NODE_CONTRACT_FULL.md) - Контракт между backend и узлами
-
+- [MQTT_SPEC_FULL.md](../../doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md) - Спецификация MQTT протокола
+- [BACKEND_NODE_CONTRACT_FULL.md](../../doc_ai/03_TRANSPORT_MQTT/BACKEND_NODE_CONTRACT_FULL.md) - Контракт между backend и узлами

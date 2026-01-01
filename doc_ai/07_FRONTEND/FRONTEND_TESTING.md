@@ -374,12 +374,11 @@ npx playwright test --debug
 
 ## 12. Связанные документы
 
-- `DEV_CONVENTIONS.md` - общие конвенции разработки
+- `../DEV_CONVENTIONS.md` - общие конвенции разработки
 - `FRONTEND_ARCH_FULL.md` - архитектура фронтенда
 - `FRONTEND_UI_UX_SPEC.md` - спецификация UI/UX
-- `08_SECURITY_AND_OPS/TESTING_AND_CICD_STRATEGY.md` - общая стратегия тестирования
+- `../08_SECURITY_AND_OPS/TESTING_AND_CICD_STRATEGY.md` - общая стратегия тестирования
 
 ---
 
 ## Конец файла FRONTEND_TESTING.md
-

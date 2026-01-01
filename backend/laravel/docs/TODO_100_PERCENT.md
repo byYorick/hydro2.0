@@ -10,7 +10,7 @@
 - **Статус:** Требует реализации
 - **Приоритет:** P0
 - **Описание:** Сохранять `last_event_id` для каждой зоны локально (SharedPreferences или локальная БД)
-- **Документация:** См. `docs/ANDROID_CLIENT_IMPLEMENTATION.md` раздел 1
+- **Документация:** См. `ANDROID_CLIENT_IMPLEMENTATION.md` раздел 1
 
 ### 1.2. onResume: snapshot → events after_id → WS subscribe
 - **Статус:** Требует реализации
@@ -19,13 +19,13 @@
   1. Получить snapshot зоны
   2. Выполнить catch-up пропущенных событий через Events API
   3. Подписаться на WebSocket
-- **Документация:** См. `docs/ANDROID_CLIENT_IMPLEMENTATION.md` раздел 2
+- **Документация:** См. `ANDROID_CLIENT_IMPLEMENTATION.md` раздел 2
 
 ### 1.3. Reconciliation строго по event_id
 - **Статус:** Требует реализации
 - **Приоритет:** P0
 - **Описание:** Использовать только `event_id` для reconciliation (НЕ использовать timestamp)
-- **Документация:** См. `docs/ANDROID_CLIENT_IMPLEMENTATION.md` раздел 3
+- **Документация:** См. `ANDROID_CLIENT_IMPLEMENTATION.md` раздел 3
 
 ---
 
@@ -47,7 +47,7 @@
   - ✅ Создан `App\Services\TelemetryLedgerFilter`
   - ✅ Интегрирован в `NodeTelemetryUpdated::broadcasted()`
   - ✅ Написаны тесты (8 тестов, 11 проверок)
-- **Документация:** См. `docs/TELEMETRY_LEDGER_OPTIMIZATION.md`
+- **Документация:** См. `TELEMETRY_LEDGER_OPTIMIZATION.md`
 
 **Интеграция:**
 ```php
@@ -70,7 +70,7 @@ if (!$filter->shouldRecord($node->zone_id, $this->metricType, $this->value)) {
   // В NodeTelemetryUpdated::broadcasted()
   // return; // Телеметрия исключена из ledger
   ```
-- **Документация:** См. `docs/TELEMETRY_LEDGER_OPTIMIZATION.md`
+- **Документация:** См. `TELEMETRY_LEDGER_OPTIMIZATION.md`
 
 **Рекомендация:** Вариант 2 (исключение) предпочтительнее для большинства случаев.
 
@@ -159,7 +159,6 @@ if (!$filter->shouldRecord($node->zone_id, $this->metricType, $this->value)) {
 
 ## 7. Ссылки на документацию
 
-- **Android-клиент:** `docs/ANDROID_CLIENT_IMPLEMENTATION.md`
-- **Telemetry оптимизация:** `docs/TELEMETRY_LEDGER_OPTIMIZATION.md`
-- **Zone Event Ledger:** `doc_ai/...` (основная документация)
-
+- **Android-клиент:** `ANDROID_CLIENT_IMPLEMENTATION.md`
+- **Telemetry оптимизация:** `TELEMETRY_LEDGER_OPTIMIZATION.md`
+- **Zone Event Ledger:** `../../../doc_ai/...` (основная документация)

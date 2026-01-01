@@ -256,7 +256,7 @@
 
 ### Подробное руководство
 
-Полное руководство пользователя доступно в: `doc_ai/08_SECURITY_AND_OPS/MONITORING_USER_GUIDE.md`
+Полное руководство пользователя доступно в: `../08_SECURITY_AND_OPS/MONITORING_USER_GUIDE.md`
 
 ---
 

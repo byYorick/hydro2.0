@@ -4,7 +4,7 @@
 
 ## Описание
 
-Компонент обеспечивает подключение к MQTT брокеру, подписки на топики конфигурации и команд, публикацию телеметрии, статусов и heartbeat согласно спецификации `MQTT_SPEC_FULL.md`.
+Компонент обеспечивает подключение к MQTT брокеру, подписки на топики конфигурации и команд, публикацию телеметрии, статусов и heartbeat согласно спецификации `../../../../../doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`.
 
 ## Возможности
 
@@ -74,7 +74,7 @@ mqtt_client_publish_config_report(json_data);
 
 ## Формат топиков
 
-Согласно `MQTT_SPEC_FULL.md` раздел 2:
+Согласно `../../../../../doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` раздел 2:
 
 - Config: `hydro/{gh}/{zone}/{node}/config`
 - Command: `hydro/{gh}/{zone}/{node}/{channel}/command`
@@ -184,6 +184,6 @@ mqtt_client_publish_config_report(json_data);
 
 ## Документация
 
-- Спецификация MQTT: `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
-- Стандарты кодирования: `doc_ai/02_HARDWARE_FIRMWARE/ESP32_C_CODING_STANDARDS.md`
-- Спецификация NodeConfig: `firmware/NODE_CONFIG_SPEC.md`
+- Спецификация MQTT: `../../../../../doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
+- Стандарты кодирования: `../../../../../doc_ai/02_HARDWARE_FIRMWARE/ESP32_C_CODING_STANDARDS.md`
+- Спецификация NodeConfig: `../../../../NODE_CONFIG_SPEC.md`

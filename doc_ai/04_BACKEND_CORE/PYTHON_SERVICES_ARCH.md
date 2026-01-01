@@ -10,9 +10,9 @@
 - ✅ Убраны прямые запросы к `zone_recipe_instances` и `recipe_phases.targets`
 
 **Связанные документы:**
-- `doc_ai/04_BACKEND_CORE/BACKEND_ARCH_FULL.md` — общая архитектура backend
-- `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` — спецификация MQTT
-- `doc_ai/01_SYSTEM/DATAFLOW_FULL.md` — потоки данных
+- `../04_BACKEND_CORE/BACKEND_ARCH_FULL.md` — общая архитектура backend
+- `../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md` — спецификация MQTT
+- `../01_SYSTEM/DATAFLOW_FULL.md` — потоки данных
 
 ---
 
@@ -324,7 +324,7 @@ scheduler/
   - `NodeRegistryService` — регистрация нод
   - API `/api/nodes/register` — регистрация новых нод
 
-**См. также:** `backend/services/device-registry/README.md` (описание legacy статуса)
+**См. также:** `../../backend/services/device-registry/README.md` (описание legacy статуса)
 
 ---
 
@@ -411,7 +411,7 @@ backend/services/
 
 ### 5.2. Планируемая структура (согласно документации)
 
-Согласно `doc_ai/01_SYSTEM/01_PROJECT_STRUCTURE_PROD.md`, структура может быть реорганизована:
+Согласно `../01_SYSTEM/01_PROJECT_STRUCTURE_PROD.md`, структура может быть реорганизована:
 
 ```
 backend/services/
@@ -552,8 +552,7 @@ pytest backend/services/
 
 ## Ссылки
 
-- Документация проекта: `doc_ai/`
-- Backend архитектура: `doc_ai/04_BACKEND_CORE/BACKEND_ARCH_FULL.md`
-- MQTT спецификация: `doc_ai/03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
-- Общий README: `backend/services/README.md`
-
+- Документация проекта: `../`
+- Backend архитектура: `../04_BACKEND_CORE/BACKEND_ARCH_FULL.md`
+- MQTT спецификация: `../03_TRANSPORT_MQTT/MQTT_SPEC_FULL.md`
+- Общий README: `../../backend/services/README.md`

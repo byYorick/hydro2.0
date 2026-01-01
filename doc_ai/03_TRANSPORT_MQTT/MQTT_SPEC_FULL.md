@@ -41,7 +41,7 @@ hydro/{gh}/{zone}/{node}/{type}
 Где:
 - `gh` — UID теплицы (`greenhouses.uid`), например `gh-1`.
 - `zone` — идентификатор зоны (обычно `zones.id` или `zones.uid`), например `zn-3`.
-- `node` — строковый UID узла (`nodes.uid`), совпадает с `node_uid` из `NODE_CHANNELS_REFERENCE.md`.
+- `node` — строковый UID узла (`nodes.uid`), совпадает с `node_uid` из `../02_HARDWARE_FIRMWARE/NODE_CHANNELS_REFERENCE.md`.
 - `channel` — имя канала (например `ph_sensor` или `pump_acid`).
 - `type` — тип сообщения:
 
