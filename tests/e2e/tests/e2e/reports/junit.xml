@@ -1,15 +1,2 @@
 <?xml version='1.0' encoding='utf-8'?>
-<testsuites name="E01_bootstrap" tests="12" failures="1" skipped="0" time="40.89706540107727"><testsuite name="E01_bootstrap" tests="12" failures="1" skipped="0" time="40.89706540107727"><testcase name="start_node_simulator" time="5.634987831115723" /><testcase name="get_zones" time="0.061388254165649414" /><testcase name="get_nodes" time="0.05793428421020508" /><testcase name="find_test_zone_and_node" time="8.106231689453125e-06" /><testcase name="find_zone_by_uid" time="0.05695796012878418" /><testcase name="find_node_by_uid" time="0.05882096290588379" /><testcase name="fetch_zone_id" time="0.008103132247924805" /><testcase name="fetch_node_id" time="0.0019154548645019531" /><testcase name="set_zone_and_node_ids" time="2.6226043701171875e-06" /><testcase name="debug_variables" time="1.9073486328125e-06" /><testcase name="wait_for_telemetry_publish" time="5.005106210708618" /><testcase name="telemetry_in_db" time="30.011838674545288"><failure message="Timeout waiting for DB condition: SELECT&#10;  tl.last_value as value,&#10;  s.label as channel,&#10;  s.node_id,&#10;  s.zone_id,&#10;  tl.updated_at,&#10;  s.type as metric_type&#10;FROM telemetry_last tl&#10;JOIN sensors s ON s.id = tl.sensor_id&#10;WHERE s.zone_id = :zone_id&#10;  AND s.node_id = :node_id&#10;  AND s.type = 'PH'&#10;LIMIT 1&#10;">Timeout waiting for DB condition: SELECT
-  tl.last_value as value,
-  s.label as channel,
-  s.node_id,
-  s.zone_id,
-  tl.updated_at,
-  s.type as metric_type
-FROM telemetry_last tl
-JOIN sensors s ON s.id = tl.sensor_id
-WHERE s.zone_id = :zone_id
-  AND s.node_id = :node_id
-  AND s.type = 'PH'
-LIMIT 1
-</failure></testcase></testsuite></testsuites>
+<testsuites name="E10_command_happy" tests="15" failures="0" skipped="1" time="26.26900339126587"><testsuite name="E10_command_happy" tests="15" failures="0" skipped="1" time="26.26900339126587"><testcase name="start_node_simulator" time="5.638213872909546" /><testcase name="check_system_health" time="0.05631589889526367" /><testcase name="get_zones" time="0.06244802474975586" /><testcase name="get_nodes" time="0.055588483810424805" /><testcase name="find_test_zone_and_node" time="2.86102294921875e-06" /><testcase name="subscribe_command_channel" time="0.17078876495361328" /><testcase name="subscribe_zone_channel" time="0.10035347938537598" /><testcase name="send_command" time="0.1375904083251953" /><testcase name="save_command_id" time="5.7220458984375e-06" /><testcase name="wait_for_command_status" time="0.011577844619750977" /><testcase name="wait_for_done_status" time="5.005211591720581" /><testcase name="check_final_status_done" time="0.0012576580047607422" /><testcase name="assert_final_status_is_done" time="0.0005612373352050781" /><testcase name="wait_for_done_ws_event" time="15.028290748596191"><skipped>Timeout waiting for WebSocket event: .App\Events\CommandStatusUpdated</skipped></testcase><testcase name="get_command_status_from_api" time="0.0007967948913574219" /></testsuite></testsuites>

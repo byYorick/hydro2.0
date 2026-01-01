@@ -1,11 +1,11 @@
 {
-  "test_suite": "E01_bootstrap",
-  "generated_at": "2026-01-01T15:54:27.647234",
+  "test_suite": "E10_command_happy",
+  "generated_at": "2026-01-01T15:57:33.236043",
   "test_cases": [
     {
       "name": "start_node_simulator",
       "status": "passed",
-      "duration": 5.634987831115723,
+      "duration": 5.638213872909546,
       "error_message": null,
       "steps": [
         {
@@ -13,12 +13,25 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T15:53:42.124397"
+      "timestamp": "2026-01-01T15:57:12.604318"
+    },
+    {
+      "name": "check_system_health",
+      "status": "passed",
+      "duration": 0.05631589889526367,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "check_system_health",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T15:57:12.660682"
     },
     {
       "name": "get_zones",
       "status": "passed",
-      "duration": 0.061388254165649414,
+      "duration": 0.06244802474975586,
       "error_message": null,
       "steps": [
         {
@@ -26,12 +39,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T15:53:42.185846"
+      "timestamp": "2026-01-01T15:57:12.723167"
     },
     {
       "name": "get_nodes",
       "status": "passed",
-      "duration": 0.05793428421020508,
+      "duration": 0.055588483810424805,
       "error_message": null,
       "steps": [
         {
@@ -39,12 +52,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T15:53:42.243818"
+      "timestamp": "2026-01-01T15:57:12.778793"
     },
     {
       "name": "find_test_zone_and_node",
       "status": "passed",
-      "duration": 8.106231689453125e-06,
+      "duration": 2.86102294921875e-06,
       "error_message": null,
       "steps": [
         {
@@ -52,125 +65,226 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T15:53:42.243861"
+      "timestamp": "2026-01-01T15:57:12.778843"
     },
     {
-      "name": "find_zone_by_uid",
+      "name": "subscribe_command_channel",
       "status": "passed",
-      "duration": 0.05695796012878418,
+      "duration": 0.17078876495361328,
       "error_message": null,
       "steps": [
         {
-          "name": "find_zone_by_uid",
+          "name": "subscribe_command_channel",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T15:53:42.300835"
+      "timestamp": "2026-01-01T15:57:12.949653"
     },
     {
-      "name": "find_node_by_uid",
+      "name": "subscribe_zone_channel",
       "status": "passed",
-      "duration": 0.05882096290588379,
+      "duration": 0.10035347938537598,
       "error_message": null,
       "steps": [
         {
-          "name": "find_node_by_uid",
+          "name": "subscribe_zone_channel",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T15:53:42.359701"
+      "timestamp": "2026-01-01T15:57:13.050066"
     },
     {
-      "name": "fetch_zone_id",
+      "name": "send_command",
       "status": "passed",
-      "duration": 0.008103132247924805,
+      "duration": 0.1375904083251953,
       "error_message": null,
       "steps": [
         {
-          "name": "fetch_zone_id",
+          "name": "send_command",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T15:53:42.367843"
+      "timestamp": "2026-01-01T15:57:13.187738"
     },
     {
-      "name": "fetch_node_id",
+      "name": "save_command_id",
       "status": "passed",
-      "duration": 0.0019154548645019531,
+      "duration": 5.7220458984375e-06,
       "error_message": null,
       "steps": [
         {
-          "name": "fetch_node_id",
+          "name": "save_command_id",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T15:53:42.369806"
+      "timestamp": "2026-01-01T15:57:13.187784"
     },
     {
-      "name": "set_zone_and_node_ids",
+      "name": "wait_for_command_status",
       "status": "passed",
-      "duration": 2.6226043701171875e-06,
+      "duration": 0.011577844619750977,
       "error_message": null,
       "steps": [
         {
-          "name": "set_zone_and_node_ids",
+          "name": "wait_for_command_status",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T15:53:42.369844"
+      "timestamp": "2026-01-01T15:57:13.199401"
     },
     {
-      "name": "debug_variables",
+      "name": "wait_for_done_status",
       "status": "passed",
-      "duration": 1.9073486328125e-06,
+      "duration": 5.005211591720581,
       "error_message": null,
       "steps": [
         {
-          "name": "debug_variables",
+          "name": "wait_for_done_status",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T15:53:42.369863"
+      "timestamp": "2026-01-01T15:57:18.204654"
     },
     {
-      "name": "wait_for_telemetry_publish",
+      "name": "check_final_status_done",
       "status": "passed",
-      "duration": 5.005106210708618,
+      "duration": 0.0012576580047607422,
       "error_message": null,
       "steps": [
         {
-          "name": "wait_for_telemetry_publish",
+          "name": "check_final_status_done",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T15:53:47.374979"
+      "timestamp": "2026-01-01T15:57:18.205998"
     },
     {
-      "name": "telemetry_in_db",
-      "status": "failed",
-      "duration": 30.011838674545288,
-      "error_message": "Timeout waiting for DB condition: SELECT\n  tl.last_value as value,\n  s.label as channel,\n  s.node_id,\n  s.zone_id,\n  tl.updated_at,\n  s.type as metric_type\nFROM telemetry_last tl\nJOIN sensors s ON s.id = tl.sensor_id\nWHERE s.zone_id = :zone_id\n  AND s.node_id = :node_id\n  AND s.type = 'PH'\nLIMIT 1\n",
+      "name": "assert_final_status_is_done",
+      "status": "passed",
+      "duration": 0.0005612373352050781,
+      "error_message": null,
       "steps": [
         {
-          "name": "telemetry_in_db",
-          "status": "failed",
-          "error": "Timeout waiting for DB condition: SELECT\n  tl.last_value as value,\n  s.label as channel,\n  s.node_id,\n  s.zone_id,\n  tl.updated_at,\n  s.type as metric_type\nFROM telemetry_last tl\nJOIN sensors s ON s.id = tl.sensor_id\nWHERE s.zone_id = :zone_id\n  AND s.node_id = :node_id\n  AND s.type = 'PH'\nLIMIT 1\n"
+          "name": "assert_final_status_is_done",
+          "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T15:54:17.386972"
+      "timestamp": "2026-01-01T15:57:18.206574"
+    },
+    {
+      "name": "wait_for_done_ws_event",
+      "status": "skipped",
+      "duration": 15.028290748596191,
+      "error_message": "Timeout waiting for WebSocket event: .App\\Events\\CommandStatusUpdated",
+      "steps": [
+        {
+          "name": "wait_for_done_ws_event",
+          "status": "skipped",
+          "error": "Timeout waiting for WebSocket event: .App\\Events\\CommandStatusUpdated"
+        }
+      ],
+      "timestamp": "2026-01-01T15:57:33.234878"
+    },
+    {
+      "name": "get_command_status_from_api",
+      "status": "passed",
+      "duration": 0.0007967948913574219,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "get_command_status_from_api",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T15:57:33.235691"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E01_bootstrap": {
-      "ws_messages": [],
+    "E10_command_happy": {
+      "ws_messages": [
+        {
+          "data": {
+            "event": "pusher_internal:subscription_succeeded",
+            "data": "{}",
+            "channel": "private-commands.1"
+          },
+          "timestamp": "2026-01-01T15:57:12.852443"
+        },
+        {
+          "data": {
+            "event": "pusher_internal:subscription_succeeded",
+            "data": "{}",
+            "channel": "hydro.zones.1"
+          },
+          "timestamp": "2026-01-01T15:57:12.952855"
+        },
+        {
+          "data": {
+            "event": "CommandStatusUpdated",
+            "data": "{\"commandId\":\"eefc833b-660c-4e43-8b4f-f4a493b29107\",\"status\":\"QUEUED\",\"message\":\"Command created\",\"error\":null,\"zoneId\":1,\"event_id\":1767272233000002103,\"server_ts\":1767272233000}",
+            "channel": "private-commands.1"
+          },
+          "timestamp": "2026-01-01T15:57:13.115294"
+        },
+        {
+          "data": {
+            "event": "CommandStatusUpdated",
+            "data": "{\"commandId\":\"eefc833b-660c-4e43-8b4f-f4a493b29107\",\"status\":\"SENT\",\"message\":\"Command status updated\",\"error\":null,\"zoneId\":1,\"event_id\":1767272233000002104,\"server_ts\":1767272233000}",
+            "channel": "private-commands.1"
+          },
+          "timestamp": "2026-01-01T15:57:13.181941"
+        },
+        {
+          "data": {
+            "event": "CommandStatusUpdated",
+            "data": "{\"commandId\":\"eefc833b-660c-4e43-8b4f-f4a493b29107\",\"status\":\"ACCEPTED\",\"message\":\"Command accepted\",\"error\":null,\"zoneId\":1,\"event_id\":1767272233000002105,\"server_ts\":1767272233000}",
+            "channel": "private-commands.1"
+          },
+          "timestamp": "2026-01-01T15:57:13.226856"
+        },
+        {
+          "data": {
+            "event": "CommandStatusUpdated",
+            "data": "{\"commandId\":\"eefc833b-660c-4e43-8b4f-f4a493b29107\",\"status\":\"ACCEPTED\",\"message\":\"Command status updated\",\"error\":null,\"zoneId\":1,\"event_id\":1767272233000002106,\"server_ts\":1767272233000}",
+            "channel": "private-commands.1"
+          },
+          "timestamp": "2026-01-01T15:57:13.236497"
+        },
+        {
+          "data": {
+            "event": "CommandStatusUpdated",
+            "data": "{\"commandId\":\"eefc833b-660c-4e43-8b4f-f4a493b29107\",\"status\":\"ACCEPTED\",\"message\":\"Command status updated\",\"error\":null,\"zoneId\":1,\"event_id\":1767272233000002107,\"server_ts\":1767272233000}",
+            "channel": "private-commands.1"
+          },
+          "timestamp": "2026-01-01T15:57:13.243114"
+        },
+        {
+          "data": {
+            "event": "CommandStatusUpdated",
+            "data": "{\"commandId\":\"eefc833b-660c-4e43-8b4f-f4a493b29107\",\"status\":\"DONE\",\"message\":\"Command completed\",\"error\":null,\"zoneId\":1,\"event_id\":1767272233000002108,\"server_ts\":1767272233000}",
+            "channel": "private-commands.1"
+          },
+          "timestamp": "2026-01-01T15:57:13.289040"
+        },
+        {
+          "data": {
+            "event": "CommandStatusUpdated",
+            "data": "{\"commandId\":\"eefc833b-660c-4e43-8b4f-f4a493b29107\",\"status\":\"DONE\",\"message\":\"Command status updated\",\"error\":null,\"zoneId\":1,\"event_id\":1767272233000002109,\"server_ts\":1767272233000}",
+            "channel": "private-commands.1"
+          },
+          "timestamp": "2026-01-01T15:57:13.297613"
+        }
+      ],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
         "zone_id": 1,
         "node_id": 1,
-        "debug_zone_id": 1,
-        "debug_node_id": 1
+        "test_node_id": 1,
+        "test_zone_id": 1,
+        "command_id": "eefc833b-660c-4e43-8b4f-f4a493b29107",
+        "ws_last_event_id": 1767272233000002109
       }
     }
   }
