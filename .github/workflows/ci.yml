@@ -11,7 +11,7 @@ jobs:
       postgres:
         image: timescale/timescaledb:2.13.0-pg15
         env:
-          POSTGRES_DB: hydro
+          POSTGRES_DB: hydro_test
           POSTGRES_USER: hydro
           POSTGRES_PASSWORD: hydro
         ports:
@@ -62,9 +62,9 @@ jobs:
             // Устанавливаем/обновляем параметры БД независимо от начальных значений
             \$env = preg_replace('/^DB_CONNECTION=.*/m', 'DB_CONNECTION=pgsql', \$env);
             if (preg_match('/^DB_DATABASE=.*/m', \$env)) {
-              \$env = preg_replace('/^DB_DATABASE=.*/m', 'DB_DATABASE=hydro', \$env);
+              \$env = preg_replace('/^DB_DATABASE=.*/m', 'DB_DATABASE=hydro_test', \$env);
             } else {
-              \$env .= PHP_EOL.'DB_DATABASE=hydro';
+              \$env .= PHP_EOL.'DB_DATABASE=hydro_test';
             }
             if (preg_match('/^DB_USERNAME=.*/m', \$env)) {
               \$env = preg_replace('/^DB_USERNAME=.*/m', 'DB_USERNAME=hydro', \$env);
@@ -77,9 +77,9 @@ jobs:
               \$env .= PHP_EOL.'DB_PASSWORD=hydro';
             }
             if (preg_match('/^DB_HOST=.*/m', \$env)) {
-              \$env = preg_replace('/^DB_HOST=.*/m', 'DB_HOST=127.0.0.1', \$env);
+              \$env = preg_replace('/^DB_HOST=.*/m', 'DB_HOST=postgres', \$env);
             } else {
-              \$env .= PHP_EOL.'DB_HOST=127.0.0.1';
+              \$env .= PHP_EOL.'DB_HOST=postgres';
             }
             if (preg_match('/^DB_PORT=.*/m', \$env)) {
               \$env = preg_replace('/^DB_PORT=.*/m', 'DB_PORT=5432', \$env);
@@ -93,27 +93,14 @@ jobs:
           php artisan config:clear
           php artisan cache:clear
           php artisan config:cache
-      - name: DB migrate + seed
-        env:
-          APP_ENV: testing
-          DB_CONNECTION: pgsql
-          DB_DATABASE: hydro
-          DB_USERNAME: hydro
-          DB_PASSWORD: hydro
-          DB_HOST: 127.0.0.1
-          DB_PORT: 5432
-          BROADCAST_CONNECTION: log
-          BROADCAST_DRIVER: log
-        run: |
-          php artisan migrate:fresh --seed --force
       - name: PHP tests (phpunit via artisan)
         env:
           APP_ENV: testing
           DB_CONNECTION: pgsql
-          DB_DATABASE: hydro
+          DB_DATABASE: hydro_test
           DB_USERNAME: hydro
           DB_PASSWORD: hydro
-          DB_HOST: 127.0.0.1
+          DB_HOST: postgres
           DB_PORT: 5432
           BROADCAST_CONNECTION: log
           BROADCAST_DRIVER: log
@@ -167,10 +154,10 @@ jobs:
         env:
           APP_ENV: testing
           DB_CONNECTION: pgsql
-          DB_DATABASE: hydro
+          DB_DATABASE: hydro_test
           DB_USERNAME: hydro
           DB_PASSWORD: hydro
-          DB_HOST: 127.0.0.1
+          DB_HOST: postgres
           DB_PORT: 5432
           BROADCAST_CONNECTION: log
           BROADCAST_DRIVER: log
