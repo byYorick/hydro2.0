@@ -10,14 +10,22 @@ description: |
   - Создается grow-cycle со статусом PLANNED
 
 actions:
-  - step: get_zones
+  - step: get_greenhouses
     type: api_get
+    endpoint: /api/greenhouses
+    save: greenhouses_response
+
+  - step: create_zone
+    type: api_post
     endpoint: /api/zones
-    save: zones_response
+    payload:
+      name: e2e-grow-zone-e50-${TIMESTAMP_S}
+      greenhouse_id: ${greenhouses_response.data.data[0].id}
+    save: zone_response
 
   - step: set_zone_id
     type: set
-    zone_id: ${zones_response.data.data[0].id}
+    zone_id: ${zone_response.data.id}
 
   - step: create_plant
     type: api_post
@@ -145,6 +153,11 @@ cleanup:
       WHERE zone_id = :zone_id
     params:
       zone_id: ${zone_id}
+    optional: true
+
+  - step: delete_zone
+    type: api_delete
+    endpoint: /api/zones/${zone_id}
     optional: true
 
   - step: delete_recipe

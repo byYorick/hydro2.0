@@ -87,7 +87,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import Card from '@/Components/Card.vue'
 import Badge from '@/Components/Badge.vue'
 

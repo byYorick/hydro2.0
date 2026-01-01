@@ -299,13 +299,11 @@ import { logger } from '@/utils/logger'
 
 const { isOpen: showMonitoringModal, open: openMonitoringModal, close: closeMonitoringModal } = useSimpleModal()
 
-const { 
-  coreStatus, 
-  dbStatus, 
-  wsStatus, 
-  mqttStatus, 
-  historyLoggerStatus,
-  automationEngineStatus,
+const {
+  coreStatus,
+  dbStatus,
+  wsStatus,
+  mqttStatus,
   lastUpdate,
   wsReconnectAttempts,
   wsLastError,
@@ -340,7 +338,7 @@ let metricsInterval: ReturnType<typeof setInterval> | null = null
 // Загрузка метрик (только алерты, данные dashboard приходят через props)
 async function loadMetrics() {
   // Проверяем, авторизован ли пользователь
-  const user = page.props.auth?.user
+  const user = (page.props.auth as any)?.user
   if (!user) {
     // Если пользователь не авторизован, не делаем запросы
     isUnauthenticated = true
@@ -364,7 +362,7 @@ async function loadMetrics() {
   }
   
   // Проверяем аутентификацию перед запросом
-  const currentUser = page.props.auth?.user
+  const currentUser = (page.props.auth as any)?.user
   if (!currentUser || isUnauthenticated) {
     return
   }
@@ -447,7 +445,7 @@ let unsubscribeMetrics: (() => void) | null = null
 
 onMounted(() => {
   // Проверяем аутентификацию перед началом загрузки метрик
-  const user = page.props.auth?.user
+  const user = (page.props.auth as any)?.user
   if (!user) {
     // Если пользователь не авторизован, не запускаем загрузку метрик
     isUnauthenticated = true
@@ -464,7 +462,7 @@ onMounted(() => {
   // Запускаем интервал только после успешной загрузки метрик
   metricsInterval = setInterval(() => {
       // Проверяем аутентификацию перед каждым запросом
-      const currentUser = page.props.auth?.user
+      const currentUser = (page.props.auth as any)?.user
       if (!currentUser || isUnauthenticated) {
         if (metricsInterval) {
           clearInterval(metricsInterval)
@@ -480,7 +478,7 @@ onMounted(() => {
   // Подписываемся на глобальные события для обновления метрик
   unsubscribeMetrics = subscribeToGlobalEvents(() => {
     // Обновляем метрики при получении событий только если авторизован
-    const currentUser = page.props.auth?.user
+    const currentUser = (page.props.auth as any)?.user
     if (currentUser && !isUnauthenticated) {
       loadMetrics()
     }
@@ -496,7 +494,7 @@ onUnmounted(() => {
   }
 })
 
-function getStatusDotClass(status) {
+function getStatusDotClass(status: string | undefined) {
   switch (status) {
     case 'ok':
       return 'bg-[color:var(--accent-green)]'
@@ -507,7 +505,7 @@ function getStatusDotClass(status) {
   }
 }
 
-function getStatusText(status) {
+function getStatusText(status: string | undefined) {
   switch (status) {
     case 'ok':
       return 'Онлайн'
@@ -518,7 +516,7 @@ function getStatusText(status) {
   }
 }
 
-function getStatusTextClass(status) {
+function getStatusTextClass(status: string | undefined) {
   switch (status) {
     case 'ok':
       return 'text-[color:var(--accent-green)]'
@@ -529,7 +527,7 @@ function getStatusTextClass(status) {
   }
 }
 
-function getWsStatusDotClass(status) {
+function getWsStatusDotClass(status: string | undefined) {
   switch (status) {
     case 'connected':
       return 'bg-[color:var(--accent-green)]'
@@ -540,7 +538,7 @@ function getWsStatusDotClass(status) {
   }
 }
 
-function getWsStatusText(status) {
+function getWsStatusText(status: string | undefined) {
   switch (status) {
     case 'connected':
       return 'Подключено'
@@ -551,7 +549,7 @@ function getWsStatusText(status) {
   }
 }
 
-function getWsStatusTextClass(status) {
+function getWsStatusTextClass(status: string | undefined) {
   switch (status) {
     case 'connected':
       return 'text-[color:var(--accent-green)]'
@@ -562,7 +560,7 @@ function getWsStatusTextClass(status) {
   }
 }
 
-function getMqttStatusDotClass(status) {
+function getMqttStatusDotClass(status: string | undefined) {
   switch (status) {
     case 'online':
       return 'bg-[color:var(--accent-green)]'
@@ -575,7 +573,7 @@ function getMqttStatusDotClass(status) {
   }
 }
 
-function getMqttStatusText(status) {
+function getMqttStatusText(status: string | undefined) {
   switch (status) {
     case 'online':
       return 'Онлайн'
@@ -588,7 +586,7 @@ function getMqttStatusText(status) {
   }
 }
 
-function getMqttStatusTextClass(status) {
+function getMqttStatusTextClass(status: string | undefined) {
   switch (status) {
     case 'online':
       return 'text-[color:var(--accent-green)]'

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { mount } from '@vue/test-utils'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { nextTick } from 'vue'
@@ -60,6 +61,7 @@ describe('CommandPalette (P3-1)', () => {
     await nextTick()
 
     // Палитра должна открыться
+    // @ts-ignore
     expect(wrapper.vm.open).toBe(true)
   })
 

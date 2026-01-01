@@ -115,6 +115,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { Link, router, usePage } from '@inertiajs/vue3'
 import { route } from '@/utils/route'
+// @ts-ignore
 import { translateRole } from '@/utils/i18n.js'
 import Badge from '@/Components/Badge.vue'
 import type { User } from '@/types/User'
@@ -122,7 +123,7 @@ import type { User } from '@/types/User'
 const page = usePage()
 const open = ref(false)
 
-const user = computed(() => page.props.auth?.user as User | undefined)
+const user = computed(() => (page.props.auth as any)?.user as User | undefined)
 
 const userInitials = computed(() => {
   if (!user.value?.name) return '?'

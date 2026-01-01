@@ -4,10 +4,9 @@
 name: E66_fail_closed_corrections
 description: |
   Проверяет fail-closed поведение AE при сбоях:
-  - Команда не выполняется (node-sim failure)
-  - AE не продолжает корректировки в failed состоянии
-  - Backoff mechanism активируется
-  - Система остается в безопасном состоянии
+  - Контроллер корректировок падает (test hook)
+  - AE создает событие CONTROLLER_FAILED
+  - Команды дозирования не публикуются
 
 actions:
   - step: get_zones
@@ -19,13 +18,69 @@ actions:
     type: set
     zone_id: ${zones_response.data.data[0].id}
 
+  - step: cleanup_old_cycles
+    type: database_execute
+    query: |
+      DELETE FROM grow_cycles
+      WHERE zone_id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
   # Создаем цикл с targets
+  - step: create_plant
+    type: api_post
+    endpoint: /api/plants
+    payload:
+      name: test-plant-e66-${TIMESTAMP_S}
+      scientific_name: Test Plant
+    save: plant_response
+
+  - step: create_recipe
+    type: api_post
+    endpoint: /api/recipes
+    payload:
+      name: test-recipe-e66-${TIMESTAMP_S}
+      description: Test recipe for E66
+      plant_id: ${plant_response.data.id}
+    save: recipe_response
+
+  - step: create_revision
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/revisions
+    payload:
+      description: Test revision for E66
+    save: revision_response
+
+  - step: add_phase
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/phases
+    payload:
+      phase_index: 0
+      name: Test Phase
+      duration_hours: 24
+      ph_target: 6.0
+      ph_min: 5.8
+      ph_max: 6.2
+      ec_target: 1.2
+      ec_min: 1.0
+      ec_max: 1.4
+      temp_air_target: 22.0
+      humidity_target: 60.0
+      irrigation_mode: SUBSTRATE
+      irrigation_interval_sec: 3600
+      irrigation_duration_sec: 300
+
+  - step: publish_revision
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/publish
+    payload: {}
+
   - step: create_simple_cycle
     type: api_post
     endpoint: /api/zones/${zone_id}/grow-cycles
     payload:
-      recipe_revision_id: 1  # Assume test recipe exists
-      plant_id: 1
+      recipe_revision_id: ${revision_response.data.id}
+      plant_id: ${plant_response.data.id}
       start_immediately: true
     save: cycle_response
 
@@ -33,141 +88,80 @@ actions:
     type: set
     cycle_id: ${cycle_response.data.id}
 
+  - step: wait_for_effective_targets
+    type: sleep
+    seconds: 2
+
   # Устанавливаем targets которые требуют коррекции
   - step: set_correction_targets
-    type: api_post
-    endpoint: /api/grow-cycles/${cycle_id}/targets
-    payload:
-      ph_target: 7.0  # Значительно отличается от текущего
-      correction_enabled: true
-    save: targets_response
+    type: database_execute
+    query: |
+      INSERT INTO grow_cycle_overrides (
+        grow_cycle_id, parameter, value_type, value, is_active, created_at, updated_at
+      )
+      VALUES (:cycle_id, 'ph.target', 'decimal', '7.0', true, NOW(), NOW());
+    params:
+      cycle_id: ${cycle_id}
 
-  # Настраиваем node-sim на failure для pH команд
-  - step: enable_ph_failure_mode
-    type: api_post
-    endpoint: /api/test-utils/node-sim/command-failure
-    payload:
-      command_type: "ADJUST_PH"
-      enabled: true
-      failure_rate: 1.0  # Все команды ADJUST_PH будут fail
-    optional: true
+  - step: enable_capabilities
+    type: database_execute
+    query: |
+      UPDATE zones
+      SET capabilities = jsonb_build_object(
+        'ph_control', true,
+        'ec_control', true,
+        'climate_control', true,
+        'light_control', true,
+        'irrigation_control', true,
+        'recirculation', true,
+        'flow_sensor', true
+      )
+      WHERE id = :zone_id;
+    params:
+      zone_id: ${zone_id}
 
-  # Ждем попыток коррекции от AE
-  - step: wait_for_correction_attempts
-    type: wait_until
-    condition: |
-      # Проверяем, что были попытки коррекции pH
-      from runner.steps.database import DatabaseStepExecutor
-      from runner.schema.variables import VariableResolver
-      resolver = VariableResolver(context)
-      db_exec = DatabaseStepExecutor(context.get('db'), resolver)
-      import asyncio
-      result = asyncio.run(db_exec.execute_db_step('database_query', {
-        'query': 'SELECT COUNT(*) as attempt_count FROM commands WHERE zone_id = :zone_id AND type = :cmd_type AND created_at > NOW() - INTERVAL \"30 seconds\"',
-        'params': {'zone_id': context['zone_id'], 'cmd_type': 'ADJUST_PH'}
-      }))
-      result and result[0]['attempt_count'] >= 2  # Минимум 2 попытки
+  - step: reset_backoff
+    type: ae_test_hook
+    url: http://localhost:9505
+    zone_id: ${zone_id}
+    action: reset_backoff
+
+  - step: inject_correction_error
+    type: ae_test_hook
+    url: http://localhost:9505
+    zone_id: ${zone_id}
+    controller: correction
+    action: inject_error
+    error_type: ControllerError
+
+  - step: wait_after_inject
+    type: sleep
+    seconds: 10
+
+  - step: wait_controller_failed_event
+    type: wait_zone_event
+    zone_id: ${zone_id}
+    event_type: CONTROLLER_FAILED
+    filter:
+      controller: correction
     timeout: 45.0
-    interval: 5.0
-
-  # Проверяем, что команды failed
-  - step: check_failed_commands
-    type: database_query
-    query: |
-      SELECT
-        COUNT(*) as total_ph_commands,
-        COUNT(CASE WHEN status = 'FAILED' THEN 1 END) as failed_count
-      FROM commands
-      WHERE zone_id = :zone_id
-      AND type = 'ADJUST_PH'
-      AND created_at > NOW() - INTERVAL '1 minute'
-    params:
-      zone_id: ${zone_id}
-    save: command_stats
-
-  # Проверяем backoff состояние
-  - step: check_backoff_state
-    type: database_query
-    query: |
-      SELECT backoff_until, consecutive_failures
-      FROM zone_automation_state
-      WHERE zone_id = :zone_id
-      AND parameter = 'ph'
-    params:
-      zone_id: ${zone_id}
-    save: backoff_state
-
-  # Отключаем failure mode
-  - step: disable_ph_failure_mode
-    type: api_post
-    endpoint: /api/test-utils/node-sim/command-failure
-    payload:
-      command_type: "ADJUST_PH"
-      enabled: false
-    optional: true
-
-  # Ждем восстановления (backoff истекает)
-  - step: wait_for_backoff_expiry
-    type: eventually
-    condition: |
-      # Проверяем, что backoff истек
-      from runner.steps.database import DatabaseStepExecutor
-      from runner.schema.variables import VariableResolver
-      resolver = VariableResolver(context)
-      db_exec = DatabaseStepExecutor(context.get('db'), resolver)
-      import asyncio
-      result = asyncio.run(db_exec.execute_db_step('database_query', {
-        'query': 'SELECT backoff_until FROM zone_automation_state WHERE zone_id = :zone_id AND parameter = :param',
-        'params': {'zone_id': context['zone_id'], 'param': 'ph'}
-      }))
-      not result or result[0]['backoff_until'] is None or result[0]['backoff_until'] < datetime.now()
-    timeout: 60.0
 
 assertions:
-  # Проверка 1: Были попытки коррекции
-  - name: correction_attempts_made
-    type: json_assertion
-    data: ${command_stats}
-    expected:
-      - field: total_ph_commands
-        operator: greater_than
-        value: 1
-
-  # Проверка 2: Большинство команд failed
-  - name: commands_failed
-    type: json_assertion
-    data: ${command_stats}
-    expected:
-      - field: failed_count
-        operator: greater_than
-        value: 0
-
-  # Проверка 3: Backoff активирован
-  - name: backoff_activated
-    type: json_assertion
-    data: ${backoff_state}
-    expected:
-      - field: backoff_until
-        operator: is_not_null
-      - field: consecutive_failures
-        operator: greater_than
-        value: 1
-
-  # Проверка 4: После восстановления коррекции возобновляются
-  - name: corrections_resume_after_backoff
+  # Проверка 1: Команды дозирования не созданы при ошибке контроллера
+  - name: no_dosing_commands
     type: database_query
     query: |
-      SELECT COUNT(*) as recent_commands
+      SELECT COUNT(*) as cmd_count
       FROM commands
       WHERE zone_id = :zone_id
-      AND type = 'ADJUST_PH'
-      AND status = 'DONE'
+      AND cmd IN ('dose', 'run_pump')
+      AND params->>'type' IN ('add_acid', 'add_base', 'add_nutrients', 'dilute')
       AND created_at > NOW() - INTERVAL '30 seconds'
     params:
       zone_id: ${zone_id}
     expected:
-      - field: recent_commands
-        operator: greater_than
+      - field: cmd_count
+        operator: equals
         value: 0
 
 cleanup:
@@ -177,6 +171,23 @@ cleanup:
     payload: {}
     optional: true
 
+  - step: clear_test_hook
+    type: ae_test_hook
+    url: http://localhost:9505
+    zone_id: ${zone_id}
+    controller: correction
+    action: clear_error
+    optional: true
+
+  - step: delete_overrides
+    type: database_execute
+    query: |
+      DELETE FROM grow_cycle_overrides
+      WHERE grow_cycle_id = :cycle_id;
+    params:
+      cycle_id: ${cycle_id}
+    optional: true
+
   - step: reset_automation_state
     type: database_execute
     query: |
@@ -184,4 +195,14 @@ cleanup:
       WHERE zone_id = :zone_id
     params:
       zone_id: ${zone_id}
+    optional: true
+
+  - step: delete_recipe
+    type: api_delete
+    endpoint: /api/recipes/${recipe_response.data.id}
+    optional: true
+
+  - step: delete_plant
+    type: api_delete
+    endpoint: /api/plants/${plant_response.data.id}
     optional: true

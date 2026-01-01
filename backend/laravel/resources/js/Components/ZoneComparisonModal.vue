@@ -222,20 +222,19 @@ function formatMetricValue(zoneId: number, metricKey: string): string {
 
 function getChartSeries(metricKey: string) {
   return selectedZoneIds.value.map((zoneId, index) => {
-    const zone = props.zones.find(z => z.id === zoneId)
     const data = telemetryData.value.get(zoneId)?.get(metricKey) || []
-    
+
     return {
       name: getZoneName(zoneId),
       label: getZoneName(zoneId),
       color: chartPalette.value[index % chartPalette.value.length],
       data: data.map(d => ({
         ts: d.ts,
-        value: d.value !== undefined ? d.value : d.avg || 0,
+        value: d.value !== undefined ? d.value : (d as any).avg || 0,
       })),
       currentValue: formatMetricValue(zoneId, metricKey),
     }
-  })
+  }) as any
 }
 
 async function loadTelemetryData(): Promise<void> {
@@ -309,7 +308,7 @@ function exportComparison(): void {
     selectedZoneIds.value.forEach(zoneId => {
       const data = telemetryData.value.get(zoneId)?.get('ph') || []
       const point = data.find(d => d.ts === ts)
-      const value = point?.value !== undefined ? point.value : point?.avg
+      const value = point?.value !== undefined ? point.value : (point as any)?.avg
       row.push(value !== undefined ? value.toFixed(2) : '')
     })
     
@@ -317,7 +316,7 @@ function exportComparison(): void {
     selectedZoneIds.value.forEach(zoneId => {
       const data = telemetryData.value.get(zoneId)?.get('ec') || []
       const point = data.find(d => d.ts === ts)
-      const value = point?.value !== undefined ? point.value : point?.avg
+      const value = point?.value !== undefined ? point.value : (point as any)?.avg
       row.push(value !== undefined ? value.toFixed(1) : '')
     })
     
@@ -343,13 +342,13 @@ function resetComparisonState() {
 
 watch(
   () => [selectedZoneIds.value.slice(), timeRange.value, props.open],
-  ([zones, , isOpen]) => {
+  ([zoneIds, , isOpen]) => {
     if (!isOpen) {
       resetComparisonState()
       return
     }
 
-    if (zones.length < 2) {
+    if ((zoneIds as any[]).length < 2) {
       telemetryData.value.clear()
       return
     }

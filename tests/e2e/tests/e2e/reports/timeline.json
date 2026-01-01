@@ -1,11 +1,24 @@
 {
-  "test_suite": "E62_controller_fault_isolation",
-  "generated_at": "2026-01-01T20:01:20.872781",
+  "test_suite": "E61_fail_closed_corrections",
+  "generated_at": "2026-01-01T22:48:14.732318",
   "test_cases": [
+    {
+      "name": "stop_node_simulator_initial",
+      "status": "passed",
+      "duration": 15.270444631576538,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "stop_node_simulator_initial",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T22:46:36.835916"
+    },
     {
       "name": "set_test_uids",
       "status": "passed",
-      "duration": 1.9073486328125e-05,
+      "duration": 1.5974044799804688e-05,
       "error_message": null,
       "steps": [
         {
@@ -13,12 +26,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T20:00:22.962246"
+      "timestamp": "2026-01-01T22:46:36.836266"
     },
     {
       "name": "get_automation_zone",
       "status": "passed",
-      "duration": 0.0698094367980957,
+      "duration": 0.07163786888122559,
       "error_message": null,
       "steps": [
         {
@@ -26,12 +39,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T20:00:23.032090"
+      "timestamp": "2026-01-01T22:46:36.907941"
     },
     {
       "name": "set_zone_id_from_uid",
       "status": "passed",
-      "duration": 0.008236885070800781,
+      "duration": 0.008244991302490234,
       "error_message": null,
       "steps": [
         {
@@ -39,7 +52,7 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T20:00:23.040375"
+      "timestamp": "2026-01-01T22:46:36.916343"
     },
     {
       "name": "set_zone_id",
@@ -52,12 +65,129 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T20:00:23.040447"
+      "timestamp": "2026-01-01T22:46:36.916478"
+    },
+    {
+      "name": "cleanup_old_cycles",
+      "status": "passed",
+      "duration": 0.009224653244018555,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "cleanup_old_cycles",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T22:46:36.925847"
+    },
+    {
+      "name": "check_active_cycle",
+      "status": "passed",
+      "duration": 0.0012941360473632812,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "check_active_cycle",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T22:46:36.927347"
+    },
+    {
+      "name": "create_plant_if_needed",
+      "status": "passed",
+      "duration": 0.05551004409790039,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "create_plant_if_needed",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T22:46:36.983064"
+    },
+    {
+      "name": "create_recipe_if_needed",
+      "status": "passed",
+      "duration": 0.06385040283203125,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "create_recipe_if_needed",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T22:46:37.047245"
+    },
+    {
+      "name": "create_revision_if_needed",
+      "status": "passed",
+      "duration": 0.07644152641296387,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "create_revision_if_needed",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T22:46:37.123951"
+    },
+    {
+      "name": "add_phase_if_needed",
+      "status": "passed",
+      "duration": 0.06151103973388672,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "add_phase_if_needed",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T22:46:37.185953"
+    },
+    {
+      "name": "publish_revision_if_needed",
+      "status": "passed",
+      "duration": 0.05962777137756348,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "publish_revision_if_needed",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T22:46:37.245820"
+    },
+    {
+      "name": "create_cycle_if_needed",
+      "status": "passed",
+      "duration": 0.10882759094238281,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "create_cycle_if_needed",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T22:46:37.355044"
+    },
+    {
+      "name": "ensure_active_grow_cycle",
+      "status": "passed",
+      "duration": 0.0027484893798828125,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "ensure_active_grow_cycle",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T22:46:37.357944"
     },
     {
       "name": "enable_capabilities",
       "status": "passed",
-      "duration": 0.0017805099487304688,
+      "duration": 0.0024116039276123047,
       "error_message": null,
       "steps": [
         {
@@ -65,156 +195,221 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T20:00:23.042278"
+      "timestamp": "2026-01-01T22:46:37.360661"
     },
     {
-      "name": "start_node_simulator",
+      "name": "wait_after_stop",
       "status": "passed",
-      "duration": 5.637215852737427,
+      "duration": 5.001546144485474,
       "error_message": null,
       "steps": [
         {
-          "name": "start_node_simulator",
+          "name": "wait_after_stop",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T20:00:28.679510"
+      "timestamp": "2026-01-01T22:46:42.362333"
     },
     {
-      "name": "enable_test_mode",
+      "name": "compute_stale_ts",
       "status": "passed",
-      "duration": 4.76837158203125e-06,
+      "duration": 0.0010275840759277344,
       "error_message": null,
       "steps": [
         {
-          "name": "enable_test_mode",
+          "name": "compute_stale_ts",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T20:00:28.679547"
+      "timestamp": "2026-01-01T22:46:42.363489"
     },
     {
-      "name": "inject_climate_error",
+      "name": "force_stale_telemetry_last",
       "status": "passed",
-      "duration": 0.026148319244384766,
+      "duration": 0.003240346908569336,
       "error_message": null,
       "steps": [
         {
-          "name": "inject_climate_error",
+          "name": "force_stale_telemetry_last",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T20:00:28.705752"
+      "timestamp": "2026-01-01T22:46:42.366906"
     },
     {
-      "name": "publish_telemetry_ph",
+      "name": "publish_stale_ph_telemetry",
       "status": "passed",
-      "duration": 2.00217342376709,
+      "duration": 2.0013930797576904,
       "error_message": null,
       "steps": [
         {
-          "name": "publish_telemetry_ph",
+          "name": "publish_stale_ph_telemetry",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T20:00:30.708002"
+      "timestamp": "2026-01-01T22:46:44.368656"
     },
     {
-      "name": "publish_telemetry_temp",
+      "name": "publish_stale_ec_telemetry",
       "status": "passed",
-      "duration": 15.003257989883423,
+      "duration": 15.014839172363281,
       "error_message": null,
       "steps": [
         {
-          "name": "publish_telemetry_temp",
+          "name": "publish_stale_ec_telemetry",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T20:00:45.711363"
+      "timestamp": "2026-01-01T22:46:59.383908"
     },
     {
-      "name": "wait_controller_failed_event",
+      "name": "wait_ae_processing",
       "status": "passed",
-      "duration": 20.052544593811035,
+      "duration": 5.003581285476685,
       "error_message": null,
       "steps": [
         {
-          "name": "wait_controller_failed_event",
+          "name": "wait_ae_processing",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T20:01:05.764068"
+      "timestamp": "2026-01-01T22:47:04.387618"
     },
     {
-      "name": "clear_test_hook",
+      "name": "publish_stale_ph_2",
       "status": "passed",
-      "duration": 0.026211023330688477,
+      "duration": 5.004709720611572,
       "error_message": null,
       "steps": [
         {
-          "name": "clear_test_hook",
+          "name": "publish_stale_ph_2",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T20:01:05.790347"
+      "timestamp": "2026-01-01T22:47:09.392673"
     },
     {
-      "name": "controller_failed_event",
+      "name": "publish_stale_ph_3",
+      "status": "passed",
+      "duration": 15.003528356552124,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "publish_stale_ph_3",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T22:47:24.396611"
+    },
+    {
+      "name": "stop_node_simulator_after_stale",
+      "status": "passed",
+      "duration": 0.13525676727294922,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "stop_node_simulator_after_stale",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T22:47:24.531974"
+    },
+    {
+      "name": "publish_stale_ph_final",
+      "status": "passed",
+      "duration": 5.004372835159302,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "publish_stale_ph_final",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T22:47:29.536661"
+    },
+    {
+      "name": "wait_after_final_stale",
+      "status": "passed",
+      "duration": 15.002941846847534,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_after_final_stale",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T22:47:44.539717"
+    },
+    {
+      "name": "force_stale_telemetry_last_final",
+      "status": "passed",
+      "duration": 0.0015234947204589844,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "force_stale_telemetry_last_final",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T22:47:44.541456"
+    },
+    {
+      "name": "wait_after_final_force",
+      "status": "passed",
+      "duration": 10.008272886276245,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "wait_after_final_force",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T22:47:54.549791"
+    },
+    {
+      "name": "no_dosing_commands",
+      "status": "passed",
+      "duration": 0.002252817153930664,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "no_dosing_commands",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T22:47:54.552071"
+    },
+    {
+      "name": "skipped_event_created",
+      "status": "passed",
+      "duration": 0.001924276351928711,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "skipped_event_created",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T22:47:54.554010"
+    },
+    {
+      "name": "freshness_alert_created",
       "status": "skipped",
-      "duration": 10.072629928588867,
-      "error_message": "Timeout waiting for DB condition: SELECT id, type, details\nFROM zone_events\nWHERE zone_id = :zone_id\nAND (type LIKE '%%CONTROLLER%%FAIL%%' OR type = 'CONTROLLER_FAILED')\nAND created_at > NOW() - INTERVAL '2 minutes'\nORDER BY created_at DESC\nLIMIT 1\n",
+      "duration": 20.041983366012573,
+      "error_message": "Timeout waiting for DB condition: SELECT id, type, status\nFROM alerts\nWHERE zone_id = :zone_id\nAND type LIKE '%%FRESHNESS%%'\nAND created_at > NOW() - INTERVAL '5 minutes'\nORDER BY created_at DESC\nLIMIT 1\n",
       "steps": [
         {
-          "name": "controller_failed_event",
+          "name": "freshness_alert_created",
           "status": "skipped",
-          "error": "Timeout waiting for DB condition: SELECT id, type, details\nFROM zone_events\nWHERE zone_id = :zone_id\nAND (type LIKE '%%CONTROLLER%%FAIL%%' OR type = 'CONTROLLER_FAILED')\nAND created_at > NOW() - INTERVAL '2 minutes'\nORDER BY created_at DESC\nLIMIT 1\n"
+          "error": "Timeout waiting for DB condition: SELECT id, type, status\nFROM alerts\nWHERE zone_id = :zone_id\nAND type LIKE '%%FRESHNESS%%'\nAND created_at > NOW() - INTERVAL '5 minutes'\nORDER BY created_at DESC\nLIMIT 1\n"
         }
       ],
-      "timestamp": "2026-01-01T20:01:15.863007"
-    },
-    {
-      "name": "other_controllers_working",
-      "status": "passed",
-      "duration": 0.003503084182739258,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "other_controllers_working",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-01T20:01:15.866548"
-    },
-    {
-      "name": "Assertion 3",
-      "status": "passed",
-      "duration": 5.004939794540405,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "Assertion 3",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-01T20:01:20.871509"
-    },
-    {
-      "name": "controller_cooldown",
-      "status": "passed",
-      "duration": 0.0009038448333740234,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "controller_cooldown",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-01T20:01:20.872438"
+      "timestamp": "2026-01-01T22:48:14.596042"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E62_controller_fault_isolation": {
+    "E61_fail_closed_corrections": {
       "ws_messages": [],
       "mqtt_messages": [],
       "api_responses": [],

@@ -37,7 +37,7 @@
           <div>
             <div class="flex items-center justify-between text-xs mb-1">
               <span class="text-[color:var(--text-muted)]">Прогресс цикла</span>
-              <span class="font-semibold text-[color:var(--accent-cyan)]">{{ Math.round(zone.cycle_progress) }}%</span>
+              <span class="font-semibold text-[color:var(--accent-cyan)]">{{ Math.round(zone.cycle_progress ?? 0) }}%</span>
             </div>
             <div class="relative w-full h-2 bg-[color:var(--border-muted)] rounded-full overflow-hidden">
               <div
@@ -93,8 +93,8 @@
       <div v-if="zone.alerts && zone.alerts.length > 0" class="pt-2 border-t border-[color:var(--border-muted)]">
         <div class="flex items-center justify-between text-xs mb-2">
           <span class="font-semibold text-[color:var(--text-primary)]">Алерты</span>
-          <span v-if="zone.alerts_count > zone.alerts.length" class="text-[color:var(--text-dim)]">
-            +{{ zone.alerts_count - zone.alerts.length }} еще
+          <span v-if="(zone.alerts_count ?? 0) > zone.alerts.length" class="text-[color:var(--text-dim)]">
+            +{{ (zone.alerts_count ?? 0) - zone.alerts.length }} еще
           </span>
         </div>
         <div class="space-y-1.5">
@@ -115,8 +115,8 @@
           </div>
         </div>
       </div>
-      <div v-else-if="zone.alerts_count > 0" class="pt-2 border-t border-[color:var(--border-muted)]">
-        <div class="text-xs text-[color:var(--text-muted)]">{{ zone.alerts_count }} алерт(ов)</div>
+      <div v-else-if="(zone.alerts_count ?? 0) > 0" class="pt-2 border-t border-[color:var(--border-muted)]">
+        <div class="text-xs text-[color:var(--text-muted)]">{{ zone.alerts_count ?? 0 }} алерт(ов)</div>
       </div>
 
       <!-- Футер с рецептом -->

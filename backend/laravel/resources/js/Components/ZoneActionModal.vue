@@ -220,6 +220,7 @@ const title = computed<string>(() => {
   return titles[props.actionType] || 'Действие'
 })
 
+// @ts-ignore - не используется сейчас, но может понадобиться
 const description = computed<string>(() => {
   const descriptions: Record<ActionType, string> = {
     'FORCE_IRRIGATION': 'Укажите длительность полива в секундах',

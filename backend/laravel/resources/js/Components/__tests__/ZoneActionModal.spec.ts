@@ -169,7 +169,7 @@ describe('ZoneActionModal', () => {
     await form.trigger('submit.prevent')
 
     expect(wrapper.emitted('submit')).toBeTruthy()
-    expect(wrapper.emitted('submit')[0][0]).toMatchObject({
+    expect((wrapper.emitted('submit') as any)[0][0]).toMatchObject({
       actionType: 'FORCE_IRRIGATION',
       params: {
         duration_sec: 30
@@ -193,7 +193,7 @@ describe('ZoneActionModal', () => {
     await form.trigger('submit.prevent')
 
     expect(wrapper.emitted('submit')).toBeTruthy()
-    expect(wrapper.emitted('submit')[0][0]).toMatchObject({
+    expect((wrapper.emitted('submit') as any)[0][0]).toMatchObject({
       actionType: 'FORCE_PH_CONTROL',
       params: {
         target_ph: 6.5
@@ -229,7 +229,7 @@ describe('ZoneActionModal', () => {
     })
 
     const input = wrapper.find('input[type="number"]')
-    expect(input.element.value).toBe('60')
+    expect((input.element as HTMLInputElement).value).toBe('60')
   })
 
   it('resets form when show changes to true', async () => {
@@ -245,7 +245,7 @@ describe('ZoneActionModal', () => {
     
     const input = wrapper.find('input[type="number"]')
     // Should reset to default value
-    expect(input.element.value).toBe('10')
+    expect((input.element as HTMLInputElement).value).toBe('10')
   })
 })
 

@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { nextTick } from 'vue'
 import ZoneActionModal from '../ZoneActionModal.vue'
 
@@ -16,7 +16,7 @@ describe('ZoneActionModal - Validation (P3-2)', () => {
     })
 
     // Устанавливаем невалидное значение
-    wrapper.vm.form.duration_sec = 0
+    ;(wrapper.vm as any).form.duration_sec = 0
     await nextTick()
 
     wrapper.vm.onSubmit()

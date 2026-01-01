@@ -76,7 +76,7 @@ import { Link } from '@inertiajs/vue3'
 import Card from '@/Components/Card.vue'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
 import { useHistory } from '@/composables/useHistory'
-import { formatTimeAgo } from '@/utils/formatTime.js'
+import { formatTimeAgo } from '@/utils/formatTime'
 
 const {
   history,

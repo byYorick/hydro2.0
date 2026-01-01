@@ -30,7 +30,7 @@
           <div class="mt-2">
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Стадия выращивания</label>
             <select
-              :value="getStageForPhase(phase.phase_index)"
+              :value="getStageForPhaseIndex(phase.phase_index)"
               @change="updateStageMapping(phase.phase_index, $event.target.value)"
               class="input-select h-8 w-full text-xs"
             >
@@ -117,7 +117,7 @@ async function loadStageMap() {
   }
 }
 
-function getStageForPhase(phaseIndex: number): GrowStage {
+function getStageForPhaseIndex(phaseIndex: number): GrowStage {
   const mapping = stageMap.value.find(m => m.phase_index === phaseIndex)
   if (mapping) {
     return mapping.stage

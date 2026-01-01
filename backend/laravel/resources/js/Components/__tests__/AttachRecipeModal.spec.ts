@@ -54,7 +54,7 @@ vi.mock('@/composables/useApi', () => ({
         const finalUrl = url && !url.startsWith('/api/') && !url.startsWith('http') ? `/api${url}` : url
         return axiosPostMock(finalUrl, data, config)
       },
-      patch: (url: string, data?: any, config?: any) => {
+      patch: (url: string, _data?: any, config?: any) => {
         const finalUrl = url && !url.startsWith('/api/') && !url.startsWith('http') ? `/api${url}` : url
         return axiosGetMock(finalUrl, config)
       },
@@ -382,7 +382,8 @@ describe('AttachRecipeModal.vue', () => {
 
   it('обрабатывает ошибки при загрузке рецептов', async () => {
     axiosGetMock.mockRejectedValue(new Error('Network error'))
-    
+
+    // @ts-ignore - wrapper не используется в этом тесте
     const wrapper = mount(AttachRecipeModal, {
       props: {
         show: true,

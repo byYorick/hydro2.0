@@ -58,7 +58,7 @@
         </div>
         <div class="flex gap-1">
           <div
-            v-for="(phase, idx) in totalPhases"
+            v-for="idx in totalPhases"
             :key="idx"
             class="flex-1 h-1.5 rounded-full transition-all duration-300"
             :class="getPhaseBarClass(idx)"

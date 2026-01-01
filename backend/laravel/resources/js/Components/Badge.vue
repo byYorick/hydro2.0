@@ -5,7 +5,7 @@
 <script setup lang="ts">
 import { computed, useAttrs } from 'vue'
 
-type BadgeVariant = 'success' | 'warning' | 'danger' | 'info' | 'neutral'
+type BadgeVariant = 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'secondary'
 type BadgeSize = 'xs' | 'sm'
 
 interface Props {
@@ -28,6 +28,7 @@ const classes = computed(() => {
     danger: 'badge--danger',
     info: 'badge--info',
     neutral: 'badge--neutral',
+    secondary: 'badge--secondary',
   }
   const sizes: Record<BadgeSize, string> = {
     xs: 'badge--xs',

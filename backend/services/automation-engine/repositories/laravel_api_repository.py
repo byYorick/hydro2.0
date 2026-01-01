@@ -32,6 +32,20 @@ class LaravelApiRepository:
         if self.api_token:
             headers['Authorization'] = f'Bearer {self.api_token}'
         return headers
+
+    @staticmethod
+    def _normalize_zone_keys(data: Dict[str, Any]) -> Dict[Any, Any]:
+        """
+        Преобразовать ключи зон из строк в int, когда это возможно.
+        JSON всегда возвращает строковые ключи, а downstream ожидает int.
+        """
+        normalized: Dict[Any, Any] = {}
+        for key, value in (data or {}).items():
+            try:
+                normalized[int(key)] = value
+            except (TypeError, ValueError):
+                normalized[key] = value
+        return normalized
     
     async def get_effective_targets_batch(self, zone_ids: List[int]) -> Dict[int, Optional[Dict[str, Any]]]:
         """
@@ -66,7 +80,7 @@ class LaravelApiRepository:
             if response.status_code == 200:
                 data = response.json()
                 if data.get('status') == 'ok':
-                    return data.get('data', {})
+                    return self._normalize_zone_keys(data.get('data', {}))
                 else:
                     logger.error(f'Laravel API returned error status: {data.get("message")}')
                     return {}
@@ -99,4 +113,3 @@ class LaravelApiRepository:
         """
         results = await self.get_effective_targets_batch([zone_id])
         return results.get(zone_id)
-

@@ -102,7 +102,7 @@
         </div>
         <div class="flex gap-1">
           <div
-            v-for="(phase, idx) in totalPhases"
+            v-for="idx in totalPhases"
             :key="idx"
             class="flex-1 h-1.5 rounded-full transition-all duration-300"
             :class="getPhaseBarClass(idx)"
@@ -207,7 +207,7 @@ const currentStage = computed<GrowStage | null>(() => {
   }
   
   // Проверяем наличие фаз
-  const hasPhases = props.growCycle?.phases?.length > 0 || props.recipeInstance?.recipe?.phases?.length > 0
+  const hasPhases = (props.growCycle?.phases?.length ?? 0) > 0 || (props.recipeInstance?.recipe?.phases?.length ?? 0) > 0
   if (!hasPhases) {
     return null
   }
@@ -234,7 +234,7 @@ const allStages = computed<GrowStage[]>(() => {
       }
     })
   } else if (props.recipeInstance?.recipe?.phases) {
-  props.recipeInstance.recipe.phases.forEach((phase, index) => {
+  props.recipeInstance.recipe.phases.forEach((phase) => {
     const stage = getStageForPhase(phase.name, phase.phase_index, totalPhases.value)
     if (!seenStages.has(stage)) {
       stages.push(stage)

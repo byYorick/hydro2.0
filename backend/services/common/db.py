@@ -194,35 +194,32 @@ async def upsert_unassigned_node_error(
 
 async def create_zone_event(zone_id: int, event_type: str, details: Optional[Dict[str, Any]] = None):
     """Create a zone event according to DATA_MODEL_REFERENCE.md section 8.1."""
-    details_json = json.dumps(details) if details else None
     await execute(
         """
         INSERT INTO zone_events (zone_id, type, payload_json, created_at)
         VALUES ($1, $2, $3, NOW())
         """,
-        zone_id, event_type, details_json
+        zone_id, event_type, details
     )
 
 
 async def create_ai_log(zone_id: Optional[int], action: str, details: Optional[Dict[str, Any]] = None):
     """Create an AI log entry."""
-    details_json = json.dumps(details) if details else None
     await execute(
         """
         INSERT INTO ai_logs (zone_id, action, details, created_at)
         VALUES ($1, $2, $3, NOW())
         """,
-        zone_id, action, details_json
+        zone_id, action, details
     )
 
 
 async def create_scheduler_log(task_name: str, status: str, details: Optional[Dict[str, Any]] = None):
     """Create a scheduler log entry."""
-    details_json = json.dumps(details) if details else None
     await execute(
         """
         INSERT INTO scheduler_logs (task_name, status, details, created_at)
         VALUES ($1, $2, $3, NOW())
         """,
-        task_name, status, details_json
+        task_name, status, details
     )

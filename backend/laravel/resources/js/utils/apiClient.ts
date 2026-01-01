@@ -5,9 +5,20 @@
 import axios, { type AxiosInstance, type AxiosRequestConfig } from 'axios'
 import { logger } from './logger'
 import { ERROR_MESSAGES } from '@/constants/messages'
+import type { ToastAction, ToastVariant } from '@/composables/useToast'
 
 // Тип функции для показа Toast
-export type ToastHandler = (message: string, variant?: string, duration?: number) => void
+export type ToastHandler = (
+  message: string,
+  variant?: ToastVariant,
+  duration?: number,
+  options?: {
+    title?: string
+    actions?: ToastAction[]
+    groupKey?: string
+    showProgress?: boolean
+  }
+) => number
 
 // Глобальная функция для показа Toast (будет установлена через setToastHandler)
 let globalShowToast: ToastHandler | null = null
@@ -145,4 +156,3 @@ export default apiClient
 
 // Экспортируем типы для удобства
 export type { AxiosInstance, AxiosRequestConfig }
-

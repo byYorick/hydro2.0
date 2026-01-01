@@ -145,7 +145,7 @@ onMounted(() => {
   // Component starts visible, so we just need to set up auto-close
   if (props.duration > 0) {
     setTimeout(() => {
-      logger.debug('[Toast] Автоматическое закрытие через', props.duration, 'мс')
+      logger.debug(`[Toast] Автоматическое закрытие через ${props.duration} мс`)
       show.value = false
     }, props.duration)
   }

@@ -142,6 +142,7 @@ import ChartBase from '@/Components/ChartBase.vue'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
 import { useLoading } from '@/composables/useLoading'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { useTheme } from '@/composables/useTheme'
 import type { EChartsOption } from 'echarts'
 

@@ -12,6 +12,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { usePage } from '@inertiajs/vue3'
+// @ts-ignore
 import NavLink from '@/Components/NavLink.vue'
 
 interface NavItem {
@@ -38,7 +39,7 @@ const navigationItems: NavItem[] = [
 ]
 
 const page = usePage()
-const role = computed(() => page.props.auth?.user?.role || 'viewer')
+const role = computed(() => (page.props.auth as any)?.user?.role || 'viewer')
 
 const visibleItems = computed(() =>
   navigationItems.filter((item) => !item.roles || item.roles.includes(role.value))

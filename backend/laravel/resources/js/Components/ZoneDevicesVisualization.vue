@@ -251,7 +251,7 @@ const emit = defineEmits<{
   configure: [device: Device]
 }>()
 
-const { isAdmin, isOperator } = useRole()
+useRole()
 const viewMode = ref<ViewMode>('grid')
 
 const zoneStatusClass = computed(() => {
@@ -320,6 +320,7 @@ function getDeviceStatus(device: Device): string {
   return 'NEUTRAL'
 }
 
+// @ts-ignore - не используется сейчас, но может понадобиться
 function getStatusDotClass(status: string | undefined): string {
   switch (status) {
     case 'online':

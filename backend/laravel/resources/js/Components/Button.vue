@@ -7,7 +7,7 @@
 <script setup lang="ts">
 import { computed, useAttrs } from 'vue'
 
-type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost'
+export type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger' | 'warning' | 'success' | 'default'
 type ButtonSize = 'sm' | 'md'
 
 interface Props {
@@ -29,6 +29,10 @@ const classes = computed(() => {
     secondary: 'btn-secondary',
     outline: 'btn-outline',
     ghost: 'btn-ghost',
+    danger: 'btn-danger',
+    warning: 'btn-warning',
+    success: 'btn-success',
+    default: 'btn-default',
   }
   const sizes: Record<ButtonSize, string> = {
     sm: 'h-9 px-3 text-xs',

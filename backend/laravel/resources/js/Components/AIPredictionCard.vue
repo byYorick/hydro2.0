@@ -136,6 +136,12 @@ interface Prediction {
   horizon_minutes: number
 }
 
+interface PredictionResponse {
+  status: string
+  data?: Prediction
+  message?: string
+}
+
 const { api } = useApi()
 const { showToast } = useToast()
 
@@ -232,7 +238,7 @@ async function fetchPrediction(): Promise<void> {
   error.value = null
 
   try {
-    const response = await api.post<{ status: string; data: Prediction }>('/api/ai/predict', {
+    const response = await api.post<PredictionResponse>('/api/ai/predict', {
       zone_id: props.zoneId,
       metric_type: props.metricType,
       horizon_minutes: props.horizonMinutes,

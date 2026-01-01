@@ -52,8 +52,6 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-
 interface Props {
   name: string
   status: string
@@ -63,7 +61,7 @@ interface Props {
   endpoint?: string
 }
 
-const props = withDefaults(defineProps<Props>(), {
+withDefaults(defineProps<Props>(), {
   icon: '📦',
   description: '',
   statusType: 'service',

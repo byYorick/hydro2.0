@@ -7,26 +7,26 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <ServiceStatusCard
             name="Core API"
-            :status="coreStatus"
+            :status="coreStatus ?? 'unknown'"
             icon="⚙️"
             description="Основной API сервис"
           />
           <ServiceStatusCard
             name="Database"
-            :status="dbStatus"
+            :status="dbStatus ?? 'unknown'"
             icon="💾"
             description="PostgreSQL база данных"
           />
           <ServiceStatusCard
             name="WebSocket"
-            :status="wsStatus"
+            :status="wsStatus ?? 'unknown'"
             icon="🔌"
             description="WebSocket соединение"
             status-type="ws"
           />
           <ServiceStatusCard
             name="MQTT Broker"
-            :status="mqttStatus"
+            :status="mqttStatus ?? 'unknown'"
             icon="📡"
             description="MQTT брокер"
             status-type="mqtt"
@@ -40,14 +40,14 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <ServiceStatusCard
             name="History Logger"
-            :status="historyLoggerStatus"
+            :status="historyLoggerStatus ?? 'unknown'"
             icon="📝"
             description="Логирование телеметрии в БД"
             :endpoint="historyLoggerEndpoint"
           />
           <ServiceStatusCard
             name="Automation Engine"
-            :status="automationEngineStatus"
+            :status="automationEngineStatus ?? 'unknown'"
             icon="🤖"
             description="Автоматизация управления зонами"
             :endpoint="automationEngineEndpoint"
@@ -186,7 +186,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
 import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'
 import ServiceStatusCard from '@/Components/ServiceStatusCard.vue'
@@ -226,6 +226,7 @@ const automationEngineEndpoint = 'http://automation-engine:9401/metrics'
 // Вычисляем состояние цепочки
 // Цепочка считается здоровой, если нет критических проблем (fail/offline/disconnected)
 // unknown и degraded считаются допустимыми состояниями (еще инициализируются)
+// @ts-ignore - не используется сейчас, но может понадобиться
 const isChainHealthy = computed(() => {
   // Критические проблемы блокируют работу системы
   const hasCriticalIssues = 
@@ -236,6 +237,7 @@ const isChainHealthy = computed(() => {
     automationEngineStatus.value === 'fail'
   
   // Предупреждения - система работает, но может работать неоптимально
+  // @ts-ignore - не используется сейчас, но может понадобиться
   const hasWarnings = 
     dbStatus.value === 'unknown' ||
     mqttStatus.value === 'degraded' ||

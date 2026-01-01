@@ -469,5 +469,5 @@ const option = computed(() => {
       return seriesConfig
     }),
   }
-})
+}) as any
 </script>

@@ -14,7 +14,7 @@
         <StageProgress
           v-if="growCycle || recipeInstance"
           :grow-cycle="growCycle"
-          :recipe-instance="recipeInstance"
+          :recipe-instance="recipeInstance as any"
           :phase-progress="phaseProgress"
           :phase-days-elapsed="phaseDaysElapsed"
           :phase-days-total="phaseDaysTotal"
@@ -158,7 +158,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, watch, ref } from 'vue'
+import { onMounted, watch, ref } from 'vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'

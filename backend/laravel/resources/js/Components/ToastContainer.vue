@@ -16,7 +16,7 @@ function handleClose(id: number) {
   removeToast(id)
 }
 
-function handleAction(id: number, action: { handler: () => void }) {
+function handleAction(_id: number, action: { handler: () => void }) {
   action.handler()
   // Можно автоматически закрыть toast после действия
   // removeToast(id)

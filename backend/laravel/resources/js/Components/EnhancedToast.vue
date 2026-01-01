@@ -13,7 +13,7 @@
       <div
         :class="[
           'min-w-[300px] max-w-md rounded-lg border p-4 shadow-[var(--shadow-card)] backdrop-blur-sm',
-          variantClasses[toast.variant],
+          variantClasses[toast.variant ?? 'info'],
           toast.grouped && 'border-l-4'
         ]"
       >
@@ -125,7 +125,7 @@
         
         <!-- Прогресс-бар для автоскрытия -->
         <div
-          v-if="toast.duration > 0 && toast.showProgress"
+          v-if="(toast.duration ?? 0) > 0 && toast.showProgress"
           class="mt-3 h-1 bg-[color:var(--border-muted)] rounded-full overflow-hidden"
         >
           <div
@@ -140,7 +140,6 @@
 </template>
 
 <script setup lang="ts">
-import { computed, watch, onMounted, onUnmounted } from 'vue'
 
 export type ToastVariant = 'success' | 'error' | 'warning' | 'info'
 
@@ -162,11 +161,9 @@ export interface Toast {
   progress?: number
 }
 
-interface Props {
+defineProps<{
   toasts: Toast[]
-}
-
-const props = defineProps<Props>()
+}>()
 
 const emit = defineEmits<{
   close: [id: number]

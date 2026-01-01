@@ -10,25 +10,22 @@ description: |
   - WebSocket событие отправляется
 
 actions:
-  - step: get_zones
+  - step: get_greenhouses
     type: api_get
+    endpoint: /api/greenhouses
+    save: greenhouses_response
+
+  - step: create_zone
+    type: api_post
     endpoint: /api/zones
-    save: zones_response
+    payload:
+      name: e2e-grow-zone-e53-${TIMESTAMP_S}
+      greenhouse_id: ${greenhouses_response.data.data[0].id}
+    save: zone_response
 
   - step: set_zone_id
     type: set
-    zone_id: ${zones_response.data.data[0].id}
-
-  # Удаляем старые циклы для чистой проверки
-  - step: cleanup_old_cycles
-    type: database_execute
-    query: |
-      DELETE FROM grow_cycles
-      WHERE zone_id = :zone_id
-      AND status IN ('PLANNED', 'RUNNING', 'PAUSED')
-    params:
-      zone_id: ${zone_id}
-    optional: true
+    zone_id: ${zone_response.data.id}
 
   - step: create_plant
     type: api_post
@@ -156,6 +153,31 @@ actions:
     params:
       phase_id: ${updated_cycle.0.current_phase_id}
     save: new_phase
+
+cleanup:
+  - step: delete_grow_cycle
+    type: database_execute
+    query: |
+      DELETE FROM grow_cycles
+      WHERE zone_id = :zone_id
+    params:
+      zone_id: ${zone_id}
+    optional: true
+
+  - step: delete_zone
+    type: api_delete
+    endpoint: /api/zones/${zone_id}
+    optional: true
+
+  - step: delete_recipe
+    type: api_delete
+    endpoint: /api/recipes/${recipe_response.data.id}
+    optional: true
+
+  - step: delete_plant
+    type: api_delete
+    endpoint: /api/plants/${plant_response.data.id}
+    optional: true
 
 assertions:
   # Проверка 1: Zone существует

@@ -107,7 +107,7 @@ const nodeSummary = computed(() => {
 })
 
 const zoneStatusList = computed(() => {
-  const statusOrder = [
+  const statusOrder: Array<{ key: string; label: string; badge: 'success' | 'info' | 'warning' | 'danger' }> = [
     { key: 'RUNNING', label: 'Запущено', badge: 'success' },
     { key: 'PAUSED', label: 'Пауза', badge: 'info' },
     { key: 'WARNING', label: 'Предупрежд.', badge: 'warning' },

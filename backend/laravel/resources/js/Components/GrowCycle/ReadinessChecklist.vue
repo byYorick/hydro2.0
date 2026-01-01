@@ -90,7 +90,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { computed } from 'vue'
 import Card from '@/Components/Card.vue'
 
 interface ReadinessCheck {

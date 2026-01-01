@@ -26,7 +26,7 @@
           <!-- Иконка стадии -->
           <div
             class="relative z-10 w-12 h-12 rounded-full flex items-center justify-center text-lg transition-all duration-300"
-            :class="getStageCircleClass(stage.id, index)"
+            :class="getStageCircleClass(index)"
             :style="getStageCircleStyle(stage.id, index)"
           >
             <span>{{ stage.icon }}</span>
@@ -36,7 +36,7 @@
           <div class="mt-2 text-center">
             <div
               class="text-xs font-medium truncate max-w-full"
-              :class="getStageLabelClass(stage.id, index)"
+              :class="getStageLabelClass(index)"
             >
               {{ stage.label }}
             </div>
@@ -56,7 +56,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { GROW_STAGES, getStageInfo, type GrowStage } from '@/utils/growStages'
+import { getStageInfo, type GrowStage } from '@/utils/growStages'
 
 interface Props {
   stages: GrowStage[]
@@ -86,11 +86,10 @@ const progressLineWidth = computed(() => {
   return baseProgress
 })
 
-function getStageCircleClass(stageId: GrowStage, index: number): string {
+function getStageCircleClass(index: number): string {
   const currentIndex = props.currentStageIndex
   const isCurrent = index === currentIndex
   const isPast = index < currentIndex
-  const isFuture = index > currentIndex
   
   if (isCurrent) {
     return 'bg-[linear-gradient(135deg,var(--accent-cyan),var(--accent-green))] scale-110 shadow-[var(--shadow-card)] ring-1 ring-[color:var(--badge-info-border)]'
@@ -118,7 +117,7 @@ function getStageCircleStyle(stageId: GrowStage, index: number): Record<string, 
   return {}
 }
 
-function getStageLabelClass(stageId: GrowStage, index: number): string {
+function getStageLabelClass(index: number): string {
   const currentIndex = props.currentStageIndex
   const isCurrent = index === currentIndex
   const isPast = index < currentIndex

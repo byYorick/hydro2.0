@@ -155,7 +155,7 @@
             :class="getDeviationColorClass(telemetry.temperature, targets.temp.min, targets.temp.max)"
             class="font-medium"
           >
-            {{ formatDeviation(telemetry.temperature, targets.temp, '°C') }}
+            {{ formatDeviation(telemetry.temperature, targets.temp) }}
           </span>
         </div>
         <div class="w-full bg-[color:var(--border-muted)] rounded-full h-1.5 overflow-hidden">
@@ -212,7 +212,7 @@
             :class="getDeviationColorClass(telemetry.humidity, targets.humidity.min, targets.humidity.max)"
             class="font-medium"
           >
-            {{ formatDeviation(telemetry.humidity, targets.humidity, '%') }}
+            {{ formatDeviation(telemetry.humidity, targets.humidity) }}
           </span>
         </div>
         <div class="w-full bg-[color:var(--border-muted)] rounded-full h-1.5 overflow-hidden">
@@ -247,7 +247,7 @@ interface Props {
   }
 }
 
-const props = withDefaults(defineProps<Props>(), {
+withDefaults(defineProps<Props>(), {
   telemetry: () => ({ ph: null, ec: null, temperature: null, humidity: null }),
   targets: () => ({})
 })
@@ -255,11 +255,10 @@ const props = withDefaults(defineProps<Props>(), {
 // Вычисляем индикатор (зеленый/желтый/красный)
 function getIndicatorVariant(value: number | null | undefined, min: number | null | undefined, max: number | null | undefined): BadgeVariant {
   if (value === null || value === undefined) return 'neutral'
-  if (min === null || max === null) return 'info'
-  
-  const target = (min + max) / 2
+  if (min === null || min === undefined || max === null || max === undefined) return 'info'
+
   const tolerance = (max - min) * 0.1 // 10% от диапазона
-  
+
   if (value >= min && value <= max) return 'success'
   if (value >= min - tolerance && value <= max + tolerance) return 'warning'
   return 'danger'
@@ -267,8 +266,8 @@ function getIndicatorVariant(value: number | null | undefined, min: number | nul
 
 function getIndicatorLabel(value: number | null | undefined, min: number | null | undefined, max: number | null | undefined): string {
   if (value === null || value === undefined) return 'Нет данных'
-  if (min === null || max === null) return 'OK'
-  
+  if (min === null || min === undefined || max === null || max === undefined) return 'OK'
+
   if (value >= min && value <= max) return 'OK'
   if (value < min) return 'Низкий'
   return 'Высокий'
@@ -333,7 +332,7 @@ function getDeviationPercent(value: number | null | undefined, target: { min?: n
 }
 
 // Форматирование отклонения
-function formatDeviation(value: number | null | undefined, target: { min?: number | null; max?: number | null; target?: number | null }, unit: string = ''): string {
+function formatDeviation(value: number | null | undefined, target: { min?: number | null; max?: number | null; target?: number | null }): string {
   const percent = getDeviationPercent(value, target)
   if (percent === null) return ''
   
@@ -348,7 +347,7 @@ function getProgressWidth(value: number | null | undefined, target: { min?: numb
   if (target.target !== null && target.target !== undefined) {
     // Если есть целевое значение, показываем отклонение от него
     const deviation = Math.abs(value - target.target)
-    const range = target.min !== null && target.max !== null ? (target.max - target.min) : 1
+    const range = (target.min !== null && target.min !== undefined && target.max !== null && target.max !== undefined) ? (target.max - target.min) : 1
     const normalized = Math.min(deviation / (range * 0.5), 1) * 100
     return normalized
   }

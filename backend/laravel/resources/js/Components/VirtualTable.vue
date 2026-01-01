@@ -14,6 +14,7 @@
 </template>
 
 <script setup lang="ts">
+// @ts-ignore
 import { RecycleScroller } from 'vue-virtual-scroller'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 

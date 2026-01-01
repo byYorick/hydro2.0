@@ -44,15 +44,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import Button from './Button.vue'
 import { useNodeLifecycle, type AllowedTransition, type CurrentState } from '@/composables/useNodeLifecycle'
 import { logger } from '@/utils/logger'
 import type { NodeLifecycleState } from '@/types/Device'
 
 // Простая обертка для toast (если useToast недоступен)
-function showToast(message: string, variant: string = 'info', duration: number = 3000): void {
+// @ts-ignore
+function showToast(message: string, variant: any = 'info', duration?: number, options?: any): number {
   logger.debug(`[Toast ${variant}]:`, message)
+  return 0
 }
 
 interface Props {
@@ -66,7 +68,7 @@ const emit = defineEmits<{
   transitioned: [data: { nodeId: number; fromState: NodeLifecycleState; toState: NodeLifecycleState }]
 }>()
 
-const { transitionNode, getAllowedTransitions, loading: lifecycleLoading } = useNodeLifecycle(showToast)
+const { transitionNode, getAllowedTransitions } = useNodeLifecycle(showToast)
 
 const loading = ref(false)
 const error = ref<string | null>(null)

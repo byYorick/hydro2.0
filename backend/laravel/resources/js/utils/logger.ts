@@ -38,6 +38,8 @@ export interface LogContext {
   [key: string]: unknown
 }
 
+export type LogContextInput = LogContext | Record<string, unknown> | unknown
+
 /**
  * Проверяет, нужно ли логировать на данном уровне
  */
@@ -78,14 +80,25 @@ function shouldSample(level: LogLevel): boolean {
 /**
  * Форматирует сообщение с префиксом уровня и контекстом
  */
-function formatMessage(level: LogLevel, message: string, context?: LogContext): unknown[] {
+function normalizeContext(context?: LogContextInput): LogContext | undefined {
+  if (context === undefined || context === null) {
+    return undefined
+  }
+  if (typeof context === 'object') {
+    return context as LogContext
+  }
+  return { value: context }
+}
+
+function formatMessage(level: LogLevel, message: string, context?: LogContextInput): unknown[] {
   const prefix = `[${level.toUpperCase()}]`
+  const normalizedContext = normalizeContext(context)
   
   // Если есть контекст, форматируем как JSON для структурированного логирования
-  if (context && Object.keys(context).length > 0) {
+  if (normalizedContext && Object.keys(normalizedContext).length > 0) {
     try {
       // Удаляем циклические ссылки перед передачей в консоль
-      const cleanedContext = removeCircularReferences(context) as LogContext
+      const cleanedContext = removeCircularReferences(normalizedContext) as LogContext
       const jsonContext = safeStringify(cleanedContext)
       
       if (isDev) {
@@ -97,7 +110,7 @@ function formatMessage(level: LogLevel, message: string, context?: LogContext): 
       }
     } catch (err) {
       // Если не удалось очистить, передаем только JSON строку
-      const jsonContext = safeStringify(context)
+      const jsonContext = safeStringify(normalizedContext)
       return [`${prefix} ${message}`, jsonContext]
     }
   }
@@ -173,16 +186,17 @@ function writeToConsole(level: LogLevel, args: unknown[]): void {
 function logWithLevel(
   level: LogLevel,
   message: string,
-  context?: LogContext,
+  context?: LogContextInput,
   err?: Error | unknown
 ): void {
   if (!shouldLog(level) || !shouldSample(level)) return
 
-  const formattedMessage = formatMessage(level, message, context)
+  const normalizedContext = normalizeContext(context)
+  const formattedMessage = formatMessage(level, message, normalizedContext)
   writeToConsole(level, formattedMessage)
 
   if (level === 'error') {
-    sendToErrorSink(level, message, context, err instanceof Error ? err : undefined)
+    sendToErrorSink(level, message, normalizedContext, err instanceof Error ? err : undefined)
   }
 }
 
@@ -200,28 +214,29 @@ function sendToErrorSink(level: LogLevel, message: string, context?: LogContext,
 /**
  * Логирует debug сообщение (только в dev режиме)
  */
-export function debug(message: string, context?: LogContext): void {
+export function debug(message: string, context?: LogContextInput): void {
   logWithLevel('debug', message, context)
 }
 
 /**
  * Логирует информационное сообщение (только в dev режиме)
  */
-export function info(message: string, context?: LogContext): void {
+export function info(message: string, context?: LogContextInput): void {
   logWithLevel('info', message, context)
 }
 
 /**
  * Логирует предупреждение (всегда)
  */
-export function warn(message: string, context?: LogContext): void {
+export function warn(message: string, context?: LogContextInput): void {
   logWithLevel('warn', message, context)
 }
 
 /**
  * Логирует ошибку (всегда)
  */
-export function error(message: string, context?: LogContext, err?: Error | unknown): void {
+export function error(message: string, context?: LogContextInput, err?: Error | unknown): void {
+  const normalizedContext = normalizeContext(context) ?? {}
   const errorDetails: LogContext = err instanceof Error
     ? {
         errorMessage: err.message,
@@ -233,7 +248,7 @@ export function error(message: string, context?: LogContext, err?: Error | unkno
       : {}
 
   const errorContext: LogContext = {
-    ...context,
+    ...normalizedContext,
     ...errorDetails,
   }
 

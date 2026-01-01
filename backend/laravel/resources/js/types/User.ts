@@ -1,7 +1,7 @@
 /**
  * Роль пользователя
  */
-export type UserRole = 'admin' | 'operator' | 'viewer' | 'agronomist'
+export type UserRole = 'admin' | 'operator' | 'viewer' | 'agronomist' | 'engineer'
 
 /**
  * Модель пользователя

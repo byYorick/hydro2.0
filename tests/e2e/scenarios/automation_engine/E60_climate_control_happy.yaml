@@ -1,0 +1,316 @@
+# E60: Climate Control Happy - telemetry → AE → команды heater/fan
+# DoD: telemetry → AE → команды fan/vent/heater
+
+name: E60_climate_control_happy
+description: |
+  Проверяет базовое управление климатом:
+  - Публикуется telemetry воздуха
+  - Targets берутся из active phase (effective targets)
+  - AE формирует команду для нагрева
+  - Команда фиксируется в БД + создается zone_event
+
+setup:
+  node_sim:
+    config:
+      mqtt:
+        host: ${MQTT_HOST:-localhost}
+        port: ${MQTT_PORT:-1884}
+      node:
+        gh_uid: gh-test-1
+        zone_uid: zn-test-1
+        node_uid: nd-ph-esp32una
+        hardware_id: esp32-test-001
+        node_type: ph
+        mode: configured
+        channels:
+          - air_temp_c
+          - air_rh
+        actuators:
+          - fan
+          - heater
+      telemetry:
+        # Если node-sim уже запущен, авто-телеметрия нам не мешает
+        interval_seconds: 60.0
+
+actions:
+  - step: set_test_uids
+    type: set
+    test_gh_uid: ${setup.node_sim.config.node.gh_uid}
+    test_zone_uid: ${setup.node_sim.config.node.zone_uid}
+    test_node_uid: ${setup.node_sim.config.node.node_uid}
+
+  - step: set_zone_id_from_uid
+    type: database_query
+    query: |
+      SELECT id
+      FROM zones
+      WHERE uid = :zone_uid
+      LIMIT 1
+    params:
+      zone_uid: ${test_zone_uid}
+    save: zone_row
+
+  - step: set_node_id_from_uid
+    type: database_query
+    query: |
+      SELECT id AS node_id
+      FROM nodes
+      WHERE uid = :node_uid
+      LIMIT 1
+    params:
+      node_uid: ${test_node_uid}
+    save: node_row
+
+  - step: set_ids
+    type: set
+    zone_id: ${zone_row.0.id}
+    node_id: ${node_row.0.node_id}
+
+  - step: cleanup_old_cycles
+    type: database_execute
+    query: |
+      DELETE FROM grow_cycles
+      WHERE zone_id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
+  # Создаем рецепт с климатическими targets
+  - step: create_plant
+    type: api_post
+    endpoint: /api/plants
+    payload:
+      name: test-plant-e60-${TIMESTAMP_S}
+      scientific_name: Test Plant
+    save: plant_response
+
+  - step: create_recipe
+    type: api_post
+    endpoint: /api/recipes
+    payload:
+      name: test-recipe-e60-${TIMESTAMP_S}
+      description: Test recipe for E60
+      plant_id: ${plant_response.data.id}
+    save: recipe_response
+
+  - step: create_revision
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/revisions
+    payload:
+      description: Test revision for E60
+    save: revision_response
+
+  - step: add_phase
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/phases
+    payload:
+      phase_index: 0
+      name: Test Phase
+      duration_hours: 24
+      temp_air_target: 22.0
+      irrigation_mode: SUBSTRATE
+      irrigation_interval_sec: 3600
+      irrigation_duration_sec: 300
+
+  - step: publish_revision
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/publish
+    payload: {}
+
+  - step: create_cycle
+    type: api_post
+    endpoint: /api/zones/${zone_id}/grow-cycles
+    payload:
+      recipe_revision_id: ${revision_response.data.id}
+      plant_id: ${plant_response.data.id}
+      start_immediately: true
+    save: cycle_response
+
+  - step: set_cycle_id
+    type: set
+    cycle_id: ${cycle_response.data.id}
+
+  - step: wait_for_effective_targets
+    type: sleep
+    seconds: 2
+
+  - step: enable_capabilities
+    type: database_execute
+    query: |
+      UPDATE zones
+      SET capabilities = jsonb_build_object(
+        'ph_control', true,
+        'ec_control', true,
+        'climate_control', true,
+        'light_control', true,
+        'irrigation_control', true,
+        'recirculation', true,
+        'flow_sensor', true
+      )
+      WHERE id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
+  # Привязки для heater/fan
+  - step: fetch_heater_channel
+    type: database_query
+    query: |
+      SELECT id AS node_channel_id
+      FROM node_channels
+      WHERE node_id = :node_id
+        AND channel = 'heater'
+      LIMIT 1
+    params:
+      node_id: ${node_id}
+    save: heater_channel_row
+
+  - step: fetch_fan_channel
+    type: database_query
+    query: |
+      SELECT id AS node_channel_id
+      FROM node_channels
+      WHERE node_id = :node_id
+        AND channel = 'fan'
+      LIMIT 1
+    params:
+      node_id: ${node_id}
+    save: fan_channel_row
+
+  - step: create_heater_infra
+    type: api_post
+    endpoint: /api/infrastructure-instances
+    payload:
+      owner_type: zone
+      owner_id: ${zone_id}
+      asset_type: HEATER
+      label: Heater (E60)
+      required: true
+    save: heater_infra_response
+
+  - step: create_fan_infra
+    type: api_post
+    endpoint: /api/infrastructure-instances
+    payload:
+      owner_type: zone
+      owner_id: ${zone_id}
+      asset_type: FAN
+      label: Fan (E60)
+      required: true
+    save: fan_infra_response
+
+  - step: bind_heater
+    type: api_post
+    endpoint: /api/channel-bindings
+    payload:
+      infrastructure_instance_id: ${heater_infra_response.data.id}
+      node_channel_id: ${heater_channel_row.0.node_channel_id}
+      direction: actuator
+      role: heater
+    save: heater_binding_response
+    optional: true
+
+  - step: bind_fan
+    type: api_post
+    endpoint: /api/channel-bindings
+    payload:
+      infrastructure_instance_id: ${fan_infra_response.data.id}
+      node_channel_id: ${fan_channel_row.0.node_channel_id}
+      direction: actuator
+      role: fan
+    save: fan_binding_response
+    optional: true
+
+  # Публикуем telemetry (ниже цели → включение heater)
+  - step: publish_temp_low
+    type: mqtt_publish
+    topic: hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/air_temp_c/telemetry
+    payload:
+      metric_type: air_temp_c
+      value: 18.0
+      ts: ${TIMESTAMP_MS}
+    qos: 1
+    wait_seconds: 2
+
+  - step: wait_for_climate_command
+    type: sleep
+    seconds: 20
+
+assertions:
+  - name: heater_command_created
+    type: database_query
+    query: |
+      SELECT COUNT(*) as cmd_count
+      FROM commands
+      WHERE zone_id = :zone_id
+        AND cmd = 'set_relay'
+        AND channel = 'heater'
+        AND params->>'state' = 'true'
+        AND created_at > NOW() - INTERVAL '2 minutes'
+    params:
+      zone_id: ${zone_id}
+    expected:
+      - field: cmd_count
+        operator: greater_than
+        value: 0
+
+  - name: climate_heating_event
+    type: database_query
+    query: |
+      SELECT COUNT(*) as event_count
+      FROM zone_events
+      WHERE zone_id = :zone_id
+        AND type = 'CLIMATE_HEATING_ON'
+        AND created_at > NOW() - INTERVAL '2 minutes'
+    params:
+      zone_id: ${zone_id}
+    expected:
+      - field: event_count
+        operator: greater_than
+        value: 0
+    optional: true
+
+cleanup:
+  - step: abort_cycle
+    type: api_post
+    endpoint: /api/grow-cycles/${cycle_id}/abort
+    payload: {}
+    optional: true
+
+  - step: delete_heater_binding
+    type: database_execute
+    query: |
+      DELETE FROM channel_bindings
+      WHERE infrastructure_instance_id = :infra_id
+        AND role = 'heater'
+    params:
+      infra_id: ${heater_infra_response.data.id}
+    optional: true
+
+  - step: delete_fan_binding
+    type: database_execute
+    query: |
+      DELETE FROM channel_bindings
+      WHERE infrastructure_instance_id = :infra_id
+        AND role = 'fan'
+    params:
+      infra_id: ${fan_infra_response.data.id}
+    optional: true
+
+  - step: delete_heater_infra
+    type: api_delete
+    endpoint: /api/infrastructure-instances/${heater_infra_response.data.id}
+    optional: true
+
+  - step: delete_fan_infra
+    type: api_delete
+    endpoint: /api/infrastructure-instances/${fan_infra_response.data.id}
+    optional: true
+
+  - step: delete_recipe
+    type: api_delete
+    endpoint: /api/recipes/${recipe_response.data.id}
+    optional: true
+
+  - step: delete_plant
+    type: api_delete
+    endpoint: /api/plants/${plant_response.data.id}
+    optional: true

@@ -31,7 +31,7 @@ setup:
 actions:
   - step: stop_node_simulator_initial
     type: stop_simulator
-    wait_seconds: 3
+    wait_seconds: 5
 
   - step: set_test_uids
     type: set
@@ -59,6 +59,89 @@ actions:
   - step: set_zone_id
     type: set
     zone_id: ${zone_row.0.id}
+
+  - step: cleanup_old_cycles
+    type: database_execute
+    query: |
+      DELETE FROM grow_cycles
+      WHERE zone_id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
+  - step: check_active_cycle
+    type: database_query
+    query: |
+      SELECT id
+      FROM grow_cycles
+      WHERE zone_id = :zone_id
+      AND status IN ('PLANNED', 'RUNNING', 'PAUSED')
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+    save: active_cycle
+
+  - step: create_plant_if_needed
+    type: api_post
+    endpoint: /api/plants
+    payload:
+      name: test-plant-e61-${TIMESTAMP_S}
+      scientific_name: Test Plant
+    save: plant_response
+    condition: ${active_cycle.length == 0}
+
+  - step: create_recipe_if_needed
+    type: api_post
+    endpoint: /api/recipes
+    payload:
+      name: test-recipe-e61-${TIMESTAMP_S}
+      description: Test recipe for E61
+      plant_id: ${plant_response.data.id}
+    save: recipe_response
+    condition: ${active_cycle.length == 0}
+
+  - step: create_revision_if_needed
+    type: api_post
+    endpoint: /api/recipes/${recipe_response.data.id}/revisions
+    payload:
+      description: Test revision for E61
+    save: revision_response
+    condition: ${active_cycle.length == 0}
+
+  - step: add_phase_if_needed
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/phases
+    payload:
+      phase_index: 0
+      name: Test Phase
+      duration_hours: 24
+      ph_target: 6.0
+      ph_min: 5.8
+      ph_max: 6.2
+      ec_target: 1.2
+      ec_min: 1.0
+      ec_max: 1.4
+      temp_air_target: 22.0
+      humidity_target: 60.0
+      irrigation_mode: SUBSTRATE
+      irrigation_interval_sec: 3600
+      irrigation_duration_sec: 300
+    condition: ${active_cycle.length == 0}
+
+  - step: publish_revision_if_needed
+    type: api_post
+    endpoint: /api/recipe-revisions/${revision_response.data.id}/publish
+    payload: {}
+    condition: ${active_cycle.length == 0}
+
+  - step: create_cycle_if_needed
+    type: api_post
+    endpoint: /api/zones/${zone_id}/grow-cycles
+    payload:
+      recipe_revision_id: ${revision_response.data.id}
+      plant_id: ${plant_response.data.id}
+      start_immediately: true
+    save: cycle_response
+    condition: ${active_cycle.length == 0}
 
   - step: ensure_active_grow_cycle
     type: database_execute
@@ -92,6 +175,16 @@ actions:
     params:
       zone_id: ${zone_id}
 
+  - step: wait_after_stop
+    type: sleep
+    seconds: 5
+
+  - step: compute_stale_ts
+    type: database_query
+    query: |
+      SELECT EXTRACT(EPOCH FROM (NOW() - INTERVAL '10 minutes'))::bigint AS stale_ts
+    save: stale_ts_row
+
   - step: force_stale_telemetry_last
     type: database_execute
     query: |
@@ -112,7 +205,7 @@ actions:
     payload:
       metric_type: PH
       value: 6.0
-      ts: ${TIMESTAMP_MS - 600000}  # 10 минут назад (stale для E2E с TELEMETRY_MAX_AGE_MINUTES=5)
+      ts: ${stale_ts_row.0.stale_ts}  # 10 минут назад (stale для E2E с TELEMETRY_MAX_AGE_MINUTES=5)
     qos: 1
     wait_seconds: 2
 
@@ -122,7 +215,7 @@ actions:
     payload:
       metric_type: EC
       value: 1.2
-      ts: ${TIMESTAMP_MS - 600000}  # 10 минут назад
+      ts: ${stale_ts_row.0.stale_ts}  # 10 минут назад
     qos: 1
     wait_seconds: 15  # Даем время AE на обработку
 
@@ -138,7 +231,7 @@ actions:
     payload:
       metric_type: PH
       value: 6.1
-      ts: ${TIMESTAMP_MS - 600000}
+      ts: ${stale_ts_row.0.stale_ts}
     qos: 1
     wait_seconds: 5
 
@@ -148,7 +241,7 @@ actions:
     payload:
       metric_type: PH
       value: 6.2
-      ts: ${TIMESTAMP_MS - 600000}
+      ts: ${stale_ts_row.0.stale_ts}
     qos: 1
     wait_seconds: 15
 
@@ -164,13 +257,30 @@ actions:
     payload:
       metric_type: PH
       value: 6.25
-      ts: ${TIMESTAMP_MS - 600000}
+      ts: ${stale_ts_row.0.stale_ts}
     qos: 1
     wait_seconds: 5
 
   - step: wait_after_final_stale
     type: sleep
     seconds: 15
+
+  - step: force_stale_telemetry_last_final
+    type: database_execute
+    query: |
+      UPDATE telemetry_last tl
+      SET last_ts = NOW() - INTERVAL '10 minutes',
+          updated_at = NOW() - INTERVAL '10 minutes'
+      FROM sensors s
+      WHERE tl.sensor_id = s.id
+        AND s.zone_id = :zone_id
+        AND s.type IN ('PH', 'EC');
+    params:
+      zone_id: ${zone_id}
+
+  - step: wait_after_final_force
+    type: sleep
+    seconds: 10
 
 assertions:
   # Проверка 1: Команды дозирования НЕ созданы (fail-closed)

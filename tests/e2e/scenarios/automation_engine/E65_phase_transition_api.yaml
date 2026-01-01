@@ -19,6 +19,14 @@ actions:
     type: set
     zone_id: ${zones_response.data.data[0].id}
 
+  - step: cleanup_old_cycles
+    type: database_execute
+    query: |
+      DELETE FROM grow_cycles
+      WHERE zone_id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
   # Создаем рецепт с несколькими фазами
   - step: create_multi_phase_recipe
     type: api_post
@@ -43,7 +51,7 @@ actions:
     payload:
       phase_index: 0
       name: Phase 0 - Quick
-      duration_hours: 0.01  # Очень короткая фаза (36 секунд)
+      duration_hours: 1
       ph_target: 6.0
       ec_target: 1.5
       temp_air_target: 22.0
@@ -85,101 +93,90 @@ actions:
   - step: check_initial_phase
     type: database_query
     query: |
-      SELECT current_phase_index, phase_started_at
-      FROM grow_cycles
-      WHERE id = :cycle_id
+      SELECT p.phase_index, p.started_at
+      FROM grow_cycles gc
+      JOIN grow_cycle_phases p ON p.id = gc.current_phase_id
+      WHERE gc.id = :cycle_id
     params:
       cycle_id: ${cycle_id}
     save: initial_phase
 
-  # Ждем завершения фазы 0 (36 секунд)
+  - step: advance_phase
+    type: api_post
+    endpoint: /api/grow-cycles/${cycle_id}/advance-phase
+    payload: {}
+
   - step: wait_for_phase_completion
-    type: wait_until
-    condition: |
-      # Проверяем, что фаза завершилась и перешла на следующую
-      from runner.steps.database import DatabaseStepExecutor
-      from runner.schema.variables import VariableResolver
-      resolver = VariableResolver(context)
-      db_exec = DatabaseStepExecutor(context.get('db'), resolver)
-      import asyncio
-      result = asyncio.run(db_exec.execute_db_step('database_query', {
-        'query': 'SELECT current_phase_index FROM grow_cycles WHERE id = :cycle_id',
-        'params': {'cycle_id': context['cycle_id']}
-      }))
-      result and result[0]['current_phase_index'] == 1
-    timeout: 60.0  # Даем время на завершение фазы + переход
-    interval: 5.0
+    type: sleep
+    seconds: 2
 
   # Проверяем финальную фазу
   - step: check_final_phase
     type: database_query
     query: |
-      SELECT current_phase_index, phase_started_at
-      FROM grow_cycles
-      WHERE id = :cycle_id
+      SELECT p.phase_index, p.started_at
+      FROM grow_cycles gc
+      JOIN grow_cycle_phases p ON p.id = gc.current_phase_id
+      WHERE gc.id = :cycle_id
     params:
       cycle_id: ${cycle_id}
     save: final_phase
 
   # Проверяем, что effective-targets обновились для новой фазы
-  - step: check_phase_targets_updated
-    type: database_query
-    query: |
-      SELECT ph_target, ec_target, temp_air_target
-      FROM effective_targets
-      WHERE cycle_id = :cycle_id
-      ORDER BY created_at DESC
-      LIMIT 1
-    params:
-      cycle_id: ${cycle_id}
+  - step: fetch_phase_targets_updated
+    type: api_get
+    endpoint: /api/zones/${zone_id}/effective-targets
     save: phase_targets
 
 assertions:
   # Проверка 1: Начальная фаза 0
   - name: initial_phase_zero
     type: json_assertion
-    data: ${initial_phase}
+    source: initial_phase
+    path: "[0]"
     expected:
-      - field: current_phase_index
+      - field: phase_index
         operator: equals
         value: 0
-      - field: phase_started_at
+      - field: started_at
         operator: is_not_null
 
   # Проверка 2: Переход на фазу 1
   - name: transitioned_to_phase_one
     type: json_assertion
-    data: ${final_phase}
+    source: final_phase
+    path: "[0]"
     expected:
-      - field: current_phase_index
+      - field: phase_index
         operator: equals
         value: 1
-      - field: phase_started_at
+      - field: started_at
         operator: is_not_null
 
   # Проверка 3: Effective-targets обновились для фазы 1
   - name: targets_updated_for_phase_one
     type: json_assertion
-    data: ${phase_targets}
+    source: phase_targets
+    path: data.targets
     expected:
-      - field: ph_target
+      - field: ph.target
         operator: equals
         value: 6.2
-      - field: ec_target
+      - field: ec.target
         operator: equals
         value: 1.8
-      - field: temp_air_target
+      - field: climate_request.temp_air_target
         operator: equals
-        value: 23.0
+        value: 23
 
   # Проверка 4: Переход выполнен через API (проверяем логи или статус)
   - name: transition_via_api
     type: database_query
     query: |
       SELECT COUNT(*) as transition_count
-      FROM grow_cycle_events
-      WHERE cycle_id = :cycle_id
-      AND event_type = 'PHASE_ADVANCED'
+      FROM grow_cycle_transitions
+      WHERE grow_cycle_id = :cycle_id
+      AND trigger_type = 'MANUAL'
       AND created_at > NOW() - INTERVAL '2 minutes'
     params:
       cycle_id: ${cycle_id}

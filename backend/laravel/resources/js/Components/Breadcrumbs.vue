@@ -80,7 +80,7 @@ const autoItems = computed(() => {
   }
   
   let currentPath = ''
-  pathParts.forEach((part, index) => {
+  pathParts.forEach((part) => {
     currentPath += `/${part}`
     
     // Пропускаем числовые ID (детальные страницы)

@@ -6,6 +6,7 @@ export interface ZoneTelemetry {
   ec?: number | null
   temperature?: number | null
   humidity?: number | null
+  co2?: number | null
   last_updated?: string
 }
 

@@ -186,7 +186,7 @@ const chartOption = computed(() => {
       grid: { left: 8, right: 8, top: 8, bottom: 8 },
       xAxis: { show: false },
       yAxis: { show: false },
-    }
+    } as any
   }
 
   return {
@@ -195,7 +195,7 @@ const chartOption = computed(() => {
       confine: false, // Не ограничиваем tooltip границами графика
       appendToBody: true, // Добавляем tooltip в body для правильного z-index
       renderMode: 'html', // Используем HTML рендеринг для лучшего контроля
-      formatter: (params) => {
+      formatter: (params: any) => {
         const point = params[0]
         const date = new Date(point.axisValue)
         // Форматируем время в понятном формате: "25.12.2024, 15:30"

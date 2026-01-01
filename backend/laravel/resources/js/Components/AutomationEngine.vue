@@ -34,12 +34,13 @@ import Card from './Card.vue'
 import PidConfigForm from './PidConfigForm.vue'
 import PidLogsTable from './PidLogsTable.vue'
 import type { PidConfigWithMeta } from '@/types/PidConfig'
+import { logger } from '@/utils/logger'
 
 interface Props {
   zoneId: number
 }
 
-const props = defineProps<Props>()
+defineProps<Props>()
 
 const activeTab = ref<'settings' | 'logs'>('settings')
 

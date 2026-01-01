@@ -75,7 +75,7 @@ const VISIT_DEBOUNCE_MS = 300
  * Безопасный переход с проверкой текущего URL и debounce
  */
 function safeVisit(url: string, options: { preserveScroll?: boolean } = {}): void {
-  const currentUrl = router.page?.url || window.location.pathname
+  const currentUrl = window.location.pathname
   const targetUrl = url.startsWith('/') ? url : `/${url}`
   
   // Если уже на целевой странице, не делаем переход
@@ -219,4 +219,3 @@ if (typeof import.meta !== 'undefined' && import.meta.hot) {
     globalShortcuts.clear()
   })
 }
-

@@ -63,33 +63,33 @@ describe('Devices Index - Virtualization (P2-1)', () => {
     const wrapper = mount(DevicesIndex)
     await wrapper.vm.$nextTick()
     
-    // Проверяем, что rows computed существует
-    expect(wrapper.vm.rows).toBeDefined()
-    expect(Array.isArray(wrapper.vm.rows)).toBe(true)
+    // Проверяем, что paginatedData computed существует
+    expect(wrapper.vm.paginatedData).toBeDefined()
+    expect(Array.isArray(wrapper.vm.paginatedData)).toBe(true)
     
     // RecycleScroller может не найтись, если rows пустой или компонент не рендерится
     const scroller = wrapper.findComponent({ name: 'RecycleScroller' })
     if (scroller.exists()) {
       expect(scroller.exists()).toBe(true)
     } else {
-      // Если RecycleScroller не найден, проверяем, что компонент смонтирован и rows доступен
+      // Если RecycleScroller не найден, проверяем, что компонент смонтирован и paginatedData доступен
       expect(wrapper.exists()).toBe(true)
-      expect(wrapper.vm.rows).toBeDefined()
+      expect(wrapper.vm.paginatedData).toBeDefined()
     }
   })
 
   it('should pass rows to RecycleScroller', async () => {
     const wrapper = mount(DevicesIndex)
     await wrapper.vm.$nextTick()
-    
+
     const scroller = wrapper.findComponent({ name: 'RecycleScroller' })
     if (scroller.exists()) {
       expect(scroller.props('items')).toBeDefined()
       expect(Array.isArray(scroller.props('items'))).toBe(true)
     } else {
-      // Если RecycleScroller не найден, проверяем rows напрямую
-      expect(wrapper.vm.rows).toBeDefined()
-      expect(Array.isArray(wrapper.vm.rows)).toBe(true)
+      // Если RecycleScroller не найден, проверяем paginatedData напрямую
+      expect(wrapper.vm.paginatedData).toBeDefined()
+      expect(Array.isArray(wrapper.vm.paginatedData)).toBe(true)
     }
   })
 
@@ -148,9 +148,9 @@ describe('Devices Index - Virtualization (P2-1)', () => {
       // Без фильтров должны быть все устройства
       expect(Array.isArray(rows)).toBe(true)
     } else {
-      // Если RecycleScroller не найден, проверяем, что rows пустой
-      expect(wrapper.vm.rows).toBeDefined()
-      expect(Array.isArray(wrapper.vm.rows)).toBe(true)
+      // Если RecycleScroller не найден, проверяем, что paginatedData пустой
+      expect(wrapper.vm.paginatedData).toBeDefined()
+      expect(Array.isArray(wrapper.vm.paginatedData)).toBe(true)
     }
   })
 })

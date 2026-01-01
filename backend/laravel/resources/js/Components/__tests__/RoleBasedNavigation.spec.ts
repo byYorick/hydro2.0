@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import RoleBasedNavigation from '../RoleBasedNavigation.vue'
+// @ts-ignore
 import NavLink from '../NavLink.vue'
 
 const mockPage = vi.fn()

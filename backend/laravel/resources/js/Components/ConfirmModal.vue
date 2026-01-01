@@ -20,11 +20,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
 import Modal from '@/Components/Modal.vue'
 import Button from '@/Components/Button.vue'
-
-type ButtonVariant = 'primary' | 'danger' | 'warning' | 'secondary'
+import type { ButtonVariant } from '@/Components/Button.vue'
 
 interface Props {
   open?: boolean
@@ -32,13 +30,13 @@ interface Props {
   message: string
   confirmText?: string
   cancelText?: string
-  confirmVariant?: ButtonVariant
+  confirmVariant: ButtonVariant
   loading?: boolean
   confirmDisabled?: boolean
   loadingText?: string
 }
 
-const props = withDefaults(defineProps<Props>(), {
+withDefaults(defineProps<Props>(), {
   open: false,
   title: 'Подтверждение',
   confirmText: 'Подтвердить',

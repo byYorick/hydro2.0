@@ -42,7 +42,6 @@ import ChartBase from '@/Components/ChartBase.vue'
 import EmptyState from '@/Components/EmptyState.vue'
 import SkeletonBlock from '@/Components/SkeletonBlock.vue'
 import { useTheme } from '@/composables/useTheme'
-import type { EChartsOption } from 'echarts'
 
 interface AggregatePoint {
   ts: string
@@ -111,7 +110,7 @@ const toTimestamp = (ts: string): number => {
   return Number.isNaN(value) ? 0 : value
 }
 
-const option = computed<EChartsOption>(() => {
+const option = computed(() => {
   const points = props.data.map((point) => ({
     ts: toTimestamp(point.ts),
     avg: point.avg,
@@ -200,5 +199,5 @@ const option = computed<EChartsOption>(() => {
       }] : []),
     ],
   }
-})
+}) as any
 </script>

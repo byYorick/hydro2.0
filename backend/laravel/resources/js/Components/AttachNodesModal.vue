@@ -66,15 +66,6 @@ interface Props {
   zoneId: number
 }
 
-interface Node {
-  id: number
-  uid: string
-  name?: string
-  type?: string
-  status?: string
-  zone_id?: number | null
-}
-
 const props = defineProps<Props>()
 const emit = defineEmits<{
   close: []

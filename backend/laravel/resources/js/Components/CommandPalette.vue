@@ -109,6 +109,8 @@ import ConfirmModal from '@/Components/ConfirmModal.vue'
 import ZoneActionModal from '@/Components/ZoneActionModal.vue'
 import type { CommandParams, CommandType } from '@/types'
 
+const page = usePage()
+
 // Debounce для предотвращения множественных вызовов router.visit
 const visitTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const VISIT_DEBOUNCE_MS = 300
@@ -117,7 +119,7 @@ const VISIT_DEBOUNCE_MS = 300
  * Безопасный переход с проверкой текущего URL и debounce
  */
 function safeVisit(url: string, options: { preserveScroll?: boolean } = {}): void {
-  const currentUrl = router.page?.url || window.location.pathname
+  const currentUrl = page.url || window.location.pathname
   const targetUrl = url.startsWith('/') ? url : `/${url}`
   
   // Если уже на целевой странице, не делаем переход
@@ -152,7 +154,6 @@ const selectedIndex = ref<number>(0)
 const inputRef = ref<HTMLInputElement | null>(null)
 const loading = ref<boolean>(false)
 
-const page = usePage()
 const { api } = useApi()
 const { sendZoneCommand } = useCommands()
 const { role } = useRole()
@@ -378,11 +379,6 @@ function runSelected(): void {
     run(selectedItem.value)
   }
 }
-
-// Плоский список для обратной совместимости
-const filteredResults = computed<CommandItem[]>(() => {
-  return groupedResults.value.flatMap(group => group.items)
-})
 
 // Общее количество элементов для навигации
 const totalItemsCount = computed(() => {
