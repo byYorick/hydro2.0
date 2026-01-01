@@ -60,6 +60,21 @@ actions:
     type: set
     zone_id: ${zone_row.0.id}
 
+  - step: ensure_active_grow_cycle
+    type: database_execute
+    query: |
+      UPDATE grow_cycles
+      SET status = 'RUNNING'
+      WHERE id = (
+        SELECT id
+        FROM grow_cycles
+        WHERE zone_id = :zone_id
+        ORDER BY created_at DESC
+        LIMIT 1
+      );
+    params:
+      zone_id: ${zone_id}
+
   - step: enable_capabilities
     type: database_execute
     query: |
@@ -74,6 +89,19 @@ actions:
         'flow_sensor', true
       )
       WHERE id = :zone_id;
+    params:
+      zone_id: ${zone_id}
+
+  - step: force_stale_telemetry_last
+    type: database_execute
+    query: |
+      UPDATE telemetry_last tl
+      SET last_ts = NOW() - INTERVAL '10 minutes',
+          updated_at = NOW() - INTERVAL '10 minutes'
+      FROM sensors s
+      WHERE tl.sensor_id = s.id
+        AND s.zone_id = :zone_id
+        AND s.type IN ('PH', 'EC');
     params:
       zone_id: ${zone_id}
 

@@ -17,7 +17,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd="pg_isready -U hydro -d hydro"
+          --health-cmd="pg_isready -U hydro -d hydro_test"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
@@ -88,6 +88,10 @@ jobs:
             }
             file_put_contents(\$file, \$env);
           "
+      - name: Install Node deps
+        run: npm ci
+      - name: Build (Vite manifest)
+        run: npm run build
       - name: PHP configs cache
         run: |
           php artisan config:clear
@@ -117,14 +121,10 @@ jobs:
           name: phpunit-junit
           path: backend/laravel/test-results/phpunit.xml
           retention-days: 7
-      - name: Install Node deps
-        run: npm ci
       - name: Typecheck (vue-tsc)
         run: npm run typecheck
       - name: Lint (ESLint)
         run: npm run lint
-      - name: Build
-        run: npm run build
       - name: NPM audit (production)
         continue-on-error: true
         run: npm audit --omit=dev || true
