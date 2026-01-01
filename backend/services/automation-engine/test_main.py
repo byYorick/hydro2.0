@@ -32,14 +32,14 @@ async def test_get_zone_recipe_and_targets():
         mock_repo.get_zone_recipe_and_targets.return_value = {
             "zone_id": 1,
             "phase_index": 0,
-            "targets": {"ph": 6.5, "ec": 1.8},
+            "targets": {"ph": {"target": 6.5}, "ec": {"target": 1.8}},
             "phase_name": "Germination",
         }
         mock_repo_cls.return_value = mock_repo
         result = await get_zone_recipe_and_targets(1)
         assert result is not None
         assert result["zone_id"] == 1
-        assert result["targets"] == {"ph": 6.5, "ec": 1.8}
+        assert result["targets"] == {"ph": {"target": 6.5}, "ec": {"target": 1.8}}
 
 
 @pytest.mark.asyncio
@@ -109,7 +109,7 @@ async def test_check_and_correct_zone_ph_correction():
     recipe_repo.get_zone_data_batch = AsyncMock(return_value={
         "recipe_info": {
             "zone_id": 1,
-            "targets": {"ph": 6.5, "ec": 1.8},
+            "targets": {"ph": {"target": 6.5}, "ec": {"target": 1.8}},
             "phase_name": "Germination",
         },
         "telemetry": {"PH": 6.2, "EC": 1.8},  # pH too low
@@ -192,7 +192,11 @@ async def test_check_and_correct_zone_with_capabilities():
         "recipe_info": {
             "zone_id": 1,
             "phase_index": 0,
-            "targets": {"ph": 6.5, "ec": 1.8, "temp_air": 25.0},
+            "targets": {
+                "ph": {"target": 6.5},
+                "ec": {"target": 1.8},
+                "climate_request": {"temp_air_target": 25.0},
+            },
             "phase_name": "Germination",
         },
         "telemetry": {"PH": 6.3, "EC": 1.7, "TEMPERATURE": 24.0},
@@ -234,7 +238,7 @@ async def test_check_and_correct_zone_with_capabilities_disabled():
         "recipe_info": {
             "zone_id": 1,
             "phase_index": 0,
-            "targets": {"ph": 6.5, "ec": 1.8},
+            "targets": {"ph": {"target": 6.5}, "ec": {"target": 1.8}},
             "phase_name": "Germination",
         },
         "telemetry": {"PH": 6.3, "EC": 1.7},

@@ -52,7 +52,11 @@ async def test_process_zone_with_recipe():
     infrastructure_repo = Mock(spec=InfrastructureRepository)
     command_bus = Mock(spec=CommandBus)
     grow_cycle_repo.get_active_grow_cycle = AsyncMock(return_value={
-        "targets": {"ph": 6.5, "ec": 1.8, "temp_air": 25.0},
+        "targets": {
+            "ph": {"target": 6.5},
+            "ec": {"target": 1.8},
+            "climate_request": {"temp_air_target": 25.0},
+        },
     })
     infrastructure_repo.get_zone_bindings_by_role = AsyncMock(return_value={})
     
@@ -60,7 +64,11 @@ async def test_process_zone_with_recipe():
         "recipe_info": {
             "zone_id": 1,
             "phase_index": 0,
-            "targets": {"ph": 6.5, "ec": 1.8, "temp_air": 25.0},
+            "targets": {
+                "ph": {"target": 6.5},
+                "ec": {"target": 1.8},
+                "climate_request": {"temp_air_target": 25.0},
+            },
             "phase_name": "Germination"
         },
         "telemetry": {"PH": 6.3, "EC": 1.7, "TEMPERATURE": 24.0},
@@ -134,7 +142,7 @@ async def test_process_zone_light_controller():
     command_bus = Mock(spec=CommandBus)
     command_bus.publish_controller_command = AsyncMock(return_value=True)
     grow_cycle_repo.get_active_grow_cycle = AsyncMock(return_value={
-        "targets": {"light_hours": "06:00-22:00"},
+        "targets": {"lighting": {"photoperiod_hours": 16, "start_time": "06:00"}},
     })
     infrastructure_repo.get_zone_bindings_by_role = AsyncMock(return_value={})
     
@@ -142,7 +150,7 @@ async def test_process_zone_light_controller():
         "recipe_info": {
             "zone_id": 1,
             "phase_index": 0,
-            "targets": {"light_hours": "06:00-22:00"},
+            "targets": {"lighting": {"photoperiod_hours": 16, "start_time": "06:00"}},
             "phase_name": "Germination"
         },
         "telemetry": {},

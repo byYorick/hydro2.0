@@ -200,7 +200,7 @@ ph_controller = CorrectionController(CorrectionType.PH)
 # Проверка и корректировка
 command = await ph_controller.check_and_correct(
     zone_id=1,
-    targets={"ph": 6.5},
+    targets={"ph": {"target": 6.5}},
     telemetry={"PH": 6.2},
     nodes={"irrig:default": {"node_uid": "nd-1", "channel": "default", "type": "irrig"}},
     water_level_ok=True
@@ -264,7 +264,6 @@ automation-engine/
 ├── irrigation_controller.py    # Контроллер полива
 ├── health_monitor.py            # Мониторинг здоровья
 ├── alerts_manager.py            # Управление алертами
-├── recipe_utils.py              # Утилиты рецептов
 ├── correction_cooldown.py      # Cooldown для корректировок
 └── test_*.py                    # Тесты
 ```

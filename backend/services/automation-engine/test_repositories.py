@@ -96,7 +96,7 @@ async def test_zone_repository_get_zone_data_batch():
             "zone_id": 1,
             "recipe_id": 10,
             "phase_index": 0,
-            "targets": {"ph": 6.5, "ec": 1.8},
+            "targets": {"ph": {"target": 6.5}, "ec": {"target": 1.8}},
             "phase_name": "Germination",
             "metric_type": "PH",
             "value": 6.3,

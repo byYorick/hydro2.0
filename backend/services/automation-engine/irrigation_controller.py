@@ -70,7 +70,7 @@ async def check_and_control_irrigation(
     
     Args:
         zone_id: ID зоны
-        targets: Целевые значения из рецепта (irrigation_interval_sec, irrigation_duration_sec)
+        targets: Целевые значения из рецепта (irrigation.interval_sec, irrigation.duration_sec)
         telemetry: Текущие значения телеметрии (не используется, но для совместимости)
         bindings: Dict[role, binding_info] из InfrastructureRepository
     

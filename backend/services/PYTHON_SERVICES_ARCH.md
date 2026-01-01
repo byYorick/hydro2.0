@@ -349,7 +349,7 @@ Scheduler → REST (9405) → Automation-Engine → REST (9300) → History-Logg
 - `sensors` — справочник сенсоров (type/label/scope, связь с zone/node)
 - `telemetry_samples` — история телеметрии (запись через `history-logger`, `sensor_id`)
 - `telemetry_last` — последние значения (обновление через `history-logger`, `sensor_id`)
-- `zones`, `recipes`, `recipe_phases` — чтение через `automation-engine` и `scheduler`
+- `zones`, `grow_cycles`, `effective_targets` — чтение через `automation-engine` и `scheduler` (через Laravel API)
 - `commands` — логирование команд (опционально)
 
 ---

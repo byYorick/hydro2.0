@@ -3,55 +3,21 @@ import pytest
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
-from datetime import datetime, time
+from datetime import datetime
 
 # Add current directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
 from light_controller import (
     check_and_control_lighting,
-    parse_photoperiod,
     check_light_failure,
 )
-
-
-def test_parse_photoperiod_string():
-    """Test parsing photoperiod from string format."""
-    result = parse_photoperiod("06:00-22:00")
-    assert result is not None
-    start, end = result
-    assert start == time(6, 0)
-    assert end == time(22, 0)
-
-
-def test_parse_photoperiod_dict():
-    """Test parsing photoperiod from dict format."""
-    result = parse_photoperiod({"start": "08:00", "end": "20:00"})
-    assert result is not None
-    start, end = result
-    assert start == time(8, 0)
-    assert end == time(20, 0)
-
-
-def test_parse_photoperiod_hours():
-    """Test parsing photoperiod from hours number."""
-    result = parse_photoperiod(16)  # 16 часов, начиная с 06:00
-    assert result is not None
-    start, end = result
-    assert start == time(6, 0)
-    assert end == time(22, 0)  # 6 + 16 = 22
-
-
-def test_parse_photoperiod_none():
-    """Test parsing photoperiod when None."""
-    result = parse_photoperiod(None)
-    assert result is None
 
 
 @pytest.mark.asyncio
 async def test_check_and_control_lighting_on():
     """Test light control when should be on."""
-    targets = {"light_hours": "06:00-22:00"}
+    targets = {"lighting": {"photoperiod_hours": 16, "start_time": "06:00"}}
     current_time = datetime(2025, 1, 1, 12, 0)  # 12:00 - в активном периоде
     bindings = {
         "light": {"node_uid": "nd-light-1", "channel": "white_light", "direction": "actuator"}
@@ -71,7 +37,7 @@ async def test_check_and_control_lighting_on():
 @pytest.mark.asyncio
 async def test_check_and_control_lighting_off():
     """Test light control when should be off."""
-    targets = {"light_hours": "06:00-22:00"}
+    targets = {"lighting": {"photoperiod_hours": 16, "start_time": "06:00"}}
     current_time = datetime(2025, 1, 1, 23, 0)  # 23:00 - вне активного периода
     bindings = {
         "light": {"node_uid": "nd-light-1", "channel": "white_light", "direction": "actuator"}
@@ -91,7 +57,13 @@ async def test_check_and_control_lighting_off():
 @pytest.mark.asyncio
 async def test_check_and_control_lighting_with_intensity():
     """Test light control with intensity setting."""
-    targets = {"light_hours": "06:00-22:00", "light_intensity": 75}
+    targets = {
+        "lighting": {
+            "photoperiod_hours": 16,
+            "start_time": "06:00",
+            "intensity": 75,
+        }
+    }
     current_time = datetime(2025, 1, 1, 12, 0)
     bindings = {
         "light": {"node_uid": "nd-light-1", "channel": "white_light", "direction": "actuator"}

@@ -8,7 +8,7 @@ from common.utils.time import utcnow
 from common.db import fetch, create_zone_event
 from common.alerts import create_alert, AlertSource, AlertCode
 from alerts_manager import ensure_alert
-from services.targets_accessor import get_lighting_window, get_light_intensity, parse_photoperiod
+from services.targets_accessor import get_lighting_window, get_light_intensity
 
 
 # Пороги для обнаружения света
@@ -100,7 +100,7 @@ async def check_and_control_lighting(
     
     Args:
         zone_id: ID зоны
-        targets: Целевые значения из рецепта (light_hours, light_intensity)
+        targets: Целевые значения из рецепта (lighting.photoperiod_hours, lighting.start_time, lighting.intensity)
         bindings: Dict[role, binding_info] из InfrastructureRepository
         current_time: Текущее время (если None, используется datetime.now())
     

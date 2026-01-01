@@ -35,8 +35,7 @@ async def test_get_last_irrigation_time():
 async def test_check_and_control_irrigation_interval_reached():
     """Test irrigation when interval is reached."""
     targets = {
-        "irrigation_interval_sec": 3600,  # 1 час
-        "irrigation_duration_sec": 60,  # 1 минута
+        "irrigation": {"interval_sec": 3600, "duration_sec": 60},  # 1 час, 1 минута
     }
     telemetry = {}
     bindings = {}
@@ -66,8 +65,7 @@ async def test_check_and_control_irrigation_interval_reached():
 async def test_check_and_control_irrigation_interval_not_reached():
     """Test irrigation when interval is not reached."""
     targets = {
-        "irrigation_interval_sec": 3600,  # 1 час
-        "irrigation_duration_sec": 60,
+        "irrigation": {"interval_sec": 3600, "duration_sec": 60},  # 1 час
     }
     telemetry = {}
     
@@ -88,8 +86,7 @@ async def test_check_and_control_irrigation_interval_not_reached():
 async def test_check_and_control_irrigation_water_level_low():
     """Test irrigation blocked when water level is low."""
     targets = {
-        "irrigation_interval_sec": 3600,
-        "irrigation_duration_sec": 60,
+        "irrigation": {"interval_sec": 3600, "duration_sec": 60},
     }
     telemetry = {}
     
@@ -111,8 +108,7 @@ async def test_check_and_control_irrigation_water_level_low():
 async def test_check_and_control_irrigation_no_nodes():
     """Test irrigation when no irrigation nodes available."""
     targets = {
-        "irrigation_interval_sec": 3600,
-        "irrigation_duration_sec": 60,
+        "irrigation": {"interval_sec": 3600, "duration_sec": 60},
     }
     telemetry = {}
     

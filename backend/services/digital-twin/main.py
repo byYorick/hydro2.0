@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from common.env import get_settings
 from common.db import fetch, execute
 from common.schemas import SimulationRequest, SimulationScenario
+from common.service_logs import send_service_log
 from prometheus_client import Counter, Histogram, start_http_server
 
 # Настройка логирования (должна быть до импорта других модулей)
@@ -34,6 +35,17 @@ app = FastAPI(title="Digital Twin Engine")
 
 # Модели для симуляции
 from models import PHModel, ECModel, ClimateModel
+
+
+@app.on_event("startup")
+async def log_startup() -> None:
+    logger.info("Digital twin service started")
+    send_service_log(
+        service="digital-twin",
+        level="info",
+        message="Digital twin service started",
+        context={"port": 8003},
+    )
 
 
 class SimulationResponse(BaseModel):

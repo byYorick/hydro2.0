@@ -22,7 +22,7 @@ async def test_ph_controller_check_and_correct_no_target():
 async def test_ph_controller_check_and_correct_no_current():
     """Test pH controller when current value is not available."""
     controller = CorrectionController(CorrectionType.PH)
-    targets = {"ph": 6.5}
+    targets = {"ph": {"target": 6.5}}
     telemetry = {}
     nodes = {}
     
@@ -35,7 +35,7 @@ async def test_ph_controller_check_and_correct_no_current():
 async def test_ph_controller_check_and_correct_small_diff():
     """Test pH controller when difference is too small."""
     controller = CorrectionController(CorrectionType.PH)
-    targets = {"ph": 6.5}
+    targets = {"ph": {"target": 6.5}}
     telemetry = {"PH": 6.4}  # diff = 0.1, меньше порога 0.2
     nodes = {}
     
@@ -48,7 +48,7 @@ async def test_ph_controller_check_and_correct_small_diff():
 async def test_ph_controller_check_and_correct_cooldown():
     """Test pH controller when in cooldown period."""
     controller = CorrectionController(CorrectionType.PH)
-    targets = {"ph": 6.5}
+    targets = {"ph": {"target": 6.5}}
     telemetry = {"PH": 6.8}  # diff = 0.3, больше порога
     nodes = {
         "irrig:default": {
@@ -74,7 +74,7 @@ async def test_ph_controller_check_and_correct_cooldown():
 async def test_ph_controller_check_and_correct_low_ph():
     """Test pH controller when pH is too low (add base)."""
     controller = CorrectionController(CorrectionType.PH)
-    targets = {"ph": 6.5}
+    targets = {"ph": {"target": 6.5}}
     telemetry = {"PH": 6.2}  # diff = -0.3, pH слишком низкий
     nodes = {}
     actuators = {
@@ -106,7 +106,7 @@ async def test_ph_controller_check_and_correct_low_ph():
 async def test_ph_controller_check_and_correct_high_ph():
     """Test pH controller when pH is too high (add acid)."""
     controller = CorrectionController(CorrectionType.PH)
-    targets = {"ph": 6.5}
+    targets = {"ph": {"target": 6.5}}
     telemetry = {"PH": 6.8}  # diff = 0.3, pH слишком высокий
     nodes = {}
     actuators = {
@@ -137,7 +137,7 @@ async def test_ph_controller_check_and_correct_high_ph():
 async def test_ph_controller_check_and_correct_no_water():
     """Test pH controller when water level is low."""
     controller = CorrectionController(CorrectionType.PH)
-    targets = {"ph": 6.5}
+    targets = {"ph": {"target": 6.5}}
     telemetry = {"PH": 6.8}
     nodes = {}
     actuators = {
@@ -164,7 +164,7 @@ async def test_ph_controller_check_and_correct_no_water():
 async def test_ph_controller_check_and_correct_no_nodes():
     """Test pH controller when no irrigation nodes available."""
     controller = CorrectionController(CorrectionType.PH)
-    targets = {"ph": 6.5}
+    targets = {"ph": {"target": 6.5}}
     telemetry = {"PH": 6.8}
     nodes = {}  # Нет узлов
     
@@ -181,7 +181,7 @@ async def test_ph_controller_check_and_correct_no_nodes():
 async def test_ec_controller_check_and_correct_low_ec():
     """Test EC controller when EC is too low (add nutrients)."""
     controller = CorrectionController(CorrectionType.EC)
-    targets = {"ec": 1.8}
+    targets = {"ec": {"target": 1.8}}
     telemetry = {"EC": 1.5}  # diff = -0.3, EC слишком низкий
     nodes = {}
     actuators = {
@@ -213,7 +213,7 @@ async def test_ec_controller_check_and_correct_low_ec():
 async def test_ec_controller_check_and_correct_high_ec():
     """Test EC controller when EC is too high (dilute)."""
     controller = CorrectionController(CorrectionType.EC)
-    targets = {"ec": 1.8}
+    targets = {"ec": {"target": 1.8}}
     telemetry = {"EC": 2.1}  # diff = 0.3, EC слишком высокий
     nodes = {}
     actuators = {

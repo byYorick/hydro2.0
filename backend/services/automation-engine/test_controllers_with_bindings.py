@@ -90,7 +90,7 @@ def test_get_climate_bindings_missing():
 @pytest.mark.asyncio
 async def test_check_and_control_climate_with_bindings():
     """Test climate control using bindings."""
-    targets = {"temp_air": 25.0, "humidity_air": 60.0}
+    targets = {"climate_request": {"temp_air_target": 25.0, "humidity_target": 60.0}}
     telemetry = {"TEMPERATURE": 22.0, "HUMIDITY": 55.0}
     bindings = {
         "vent": {
@@ -129,7 +129,7 @@ async def test_check_and_control_climate_with_bindings():
 @pytest.mark.asyncio
 async def test_check_and_control_climate_missing_binding():
     """Test climate control when binding is missing - should create alert."""
-    targets = {"temp_air": 25.0}
+    targets = {"climate_request": {"temp_air_target": 25.0}}
     telemetry = {"TEMPERATURE": 22.0}
     bindings = {}  # No bindings
     
@@ -190,7 +190,7 @@ def test_get_irrigation_binding_alternative_roles():
 @pytest.mark.asyncio
 async def test_check_and_control_irrigation_with_bindings():
     """Test irrigation control using bindings."""
-    targets = {"irrigation_interval_sec": 3600, "irrigation_duration_sec": 60}
+    targets = {"irrigation": {"interval_sec": 3600, "duration_sec": 60}}
     telemetry = {}
     bindings = {
         "main_pump": {
@@ -224,7 +224,7 @@ async def test_check_and_control_irrigation_with_bindings():
 @pytest.mark.asyncio
 async def test_check_and_control_irrigation_missing_binding():
     """Test irrigation control when binding is missing - should create alert."""
-    targets = {"irrigation_interval_sec": 3600}
+    targets = {"irrigation": {"interval_sec": 3600}}
     telemetry = {}
     bindings = {}  # No bindings
     
@@ -318,7 +318,7 @@ def test_get_light_bindings():
 @pytest.mark.asyncio
 async def test_check_and_control_lighting_with_bindings():
     """Test light control using bindings."""
-    targets = {"light_hours": 16}  # 16 hours starting from 06:00
+    targets = {"lighting": {"photoperiod_hours": 16, "start_time": "06:00"}}
     bindings = {
         "light": {
             "node_id": 1,
@@ -351,7 +351,7 @@ async def test_check_and_control_lighting_with_bindings():
 @pytest.mark.asyncio
 async def test_check_and_control_lighting_missing_binding():
     """Test light control when binding is missing - should create alert."""
-    targets = {"light_hours": 16}
+    targets = {"lighting": {"photoperiod_hours": 16, "start_time": "06:00"}}
     bindings = {}  # No bindings
     
     with patch("light_controller.utcnow") as mock_now, \
