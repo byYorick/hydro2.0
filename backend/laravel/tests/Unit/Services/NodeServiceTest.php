@@ -6,7 +6,7 @@ use App\Models\DeviceNode;
 use App\Services\NodeLifecycleService;
 use App\Services\NodeRegistryService;
 use App\Services\NodeService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class NodeServiceTest extends TestCase

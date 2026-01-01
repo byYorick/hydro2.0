@@ -7,7 +7,7 @@ use App\Models\Zone;
 use App\Models\Greenhouse;
 use App\Models\DeviceNode;
 use App\Models\Alert;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 

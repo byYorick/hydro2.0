@@ -6,7 +6,7 @@ use App\Models\User;
 use App\Models\Zone;
 use App\Models\DeviceNode;
 use App\Models\Greenhouse;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 

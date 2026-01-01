@@ -4,7 +4,7 @@ namespace Tests\Unit\Services;
 
 use App\Models\DeviceNode;
 use App\Services\ConfigPublishLockService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
 

@@ -7,7 +7,7 @@ use App\Events\ZoneUpdated;
 use App\Models\Greenhouse;
 use App\Models\User;
 use App\Models\Zone;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
 use Tests\TestCase;

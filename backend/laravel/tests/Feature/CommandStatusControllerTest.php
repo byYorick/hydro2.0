@@ -6,7 +6,7 @@ use App\Models\User;
 use App\Models\Zone;
 use App\Models\DeviceNode;
 use App\Models\Command;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class CommandStatusControllerTest extends TestCase

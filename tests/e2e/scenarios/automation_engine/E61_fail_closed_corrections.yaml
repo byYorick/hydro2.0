@@ -31,7 +31,7 @@ setup:
 actions:
   - step: stop_node_simulator_initial
     type: stop_simulator
-    optional: true
+    wait_seconds: 3
 
   - step: set_test_uids
     type: set
@@ -139,6 +139,10 @@ actions:
       ts: ${TIMESTAMP_MS - 600000}
     qos: 1
     wait_seconds: 5
+
+  - step: wait_after_final_stale
+    type: sleep
+    seconds: 15
 
 assertions:
   # Проверка 1: Команды дозирования НЕ созданы (fail-closed)

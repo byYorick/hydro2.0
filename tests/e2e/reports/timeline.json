@@ -1,24 +1,63 @@
 {
-  "test_suite": "E50_create_cycle_planned",
-  "generated_at": "2025-12-31T17:40:16.189413",
+  "test_suite": "E61_fail_closed_corrections",
+  "generated_at": "2026-01-01T20:13:32.221633",
   "test_cases": [
     {
-      "name": "get_zones",
+      "name": "stop_node_simulator_initial",
       "status": "passed",
-      "duration": 0.07001328468322754,
+      "duration": 13.255937099456787,
       "error_message": null,
       "steps": [
         {
-          "name": "get_zones",
+          "name": "stop_node_simulator_initial",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T17:40:15.586646"
+      "timestamp": "2026-01-01T20:12:19.769751"
+    },
+    {
+      "name": "set_test_uids",
+      "status": "passed",
+      "duration": 1.430511474609375e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_test_uids",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T20:12:19.769927"
+    },
+    {
+      "name": "get_automation_zone",
+      "status": "passed",
+      "duration": 0.06294393539428711,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "get_automation_zone",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T20:12:19.832889"
+    },
+    {
+      "name": "set_zone_id_from_uid",
+      "status": "passed",
+      "duration": 0.009643077850341797,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "set_zone_id_from_uid",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T20:12:19.842587"
     },
     {
       "name": "set_zone_id",
       "status": "passed",
-      "duration": 4.5299530029296875e-06,
+      "duration": 3.0994415283203125e-06,
       "error_message": null,
       "steps": [
         {
@@ -26,153 +65,162 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T17:40:15.586778"
+      "timestamp": "2026-01-01T20:12:19.842643"
     },
     {
-      "name": "create_plant",
+      "name": "enable_capabilities",
       "status": "passed",
-      "duration": 0.05696392059326172,
+      "duration": 0.0018525123596191406,
       "error_message": null,
       "steps": [
         {
-          "name": "create_plant",
+          "name": "enable_capabilities",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T17:40:15.643883"
+      "timestamp": "2026-01-01T20:12:19.844530"
     },
     {
-      "name": "create_recipe",
+      "name": "publish_stale_ph_telemetry",
       "status": "passed",
-      "duration": 0.0577692985534668,
+      "duration": 2.0022084712982178,
       "error_message": null,
       "steps": [
         {
-          "name": "create_recipe",
+          "name": "publish_stale_ph_telemetry",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T17:40:15.701845"
+      "timestamp": "2026-01-01T20:12:21.846806"
     },
     {
-      "name": "create_revision",
+      "name": "publish_stale_ec_telemetry",
       "status": "passed",
-      "duration": 0.0560154914855957,
+      "duration": 15.00171947479248,
       "error_message": null,
       "steps": [
         {
-          "name": "create_revision",
+          "name": "publish_stale_ec_telemetry",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T17:40:15.758056"
+      "timestamp": "2026-01-01T20:12:36.848627"
     },
     {
-      "name": "add_phase_0",
+      "name": "wait_ae_processing",
       "status": "passed",
-      "duration": 0.05773210525512695,
+      "duration": 5.005105972290039,
       "error_message": null,
       "steps": [
         {
-          "name": "add_phase_0",
+          "name": "wait_ae_processing",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T17:40:15.816017"
+      "timestamp": "2026-01-01T20:12:41.853768"
     },
     {
-      "name": "add_phase_1",
+      "name": "publish_stale_ph_2",
       "status": "passed",
-      "duration": 0.05664849281311035,
+      "duration": 5.001380205154419,
       "error_message": null,
       "steps": [
         {
-          "name": "add_phase_1",
+          "name": "publish_stale_ph_2",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T17:40:15.872891"
+      "timestamp": "2026-01-01T20:12:46.855255"
     },
     {
-      "name": "publish_revision",
+      "name": "publish_stale_ph_3",
       "status": "passed",
-      "duration": 0.05753636360168457,
+      "duration": 15.01518177986145,
       "error_message": null,
       "steps": [
         {
-          "name": "publish_revision",
+          "name": "publish_stale_ph_3",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T17:40:15.930587"
+      "timestamp": "2026-01-01T20:13:01.870538"
     },
     {
-      "name": "create_grow_cycle",
+      "name": "stop_node_simulator_after_stale",
       "status": "passed",
-      "duration": 0.11705279350280762,
+      "duration": 0.13261628150939941,
       "error_message": null,
       "steps": [
         {
-          "name": "create_grow_cycle",
+          "name": "stop_node_simulator_after_stale",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T17:40:16.047970"
+      "timestamp": "2026-01-01T20:13:02.003201"
     },
     {
-      "name": "set_ids_for_cleanup",
+      "name": "publish_stale_ph_final",
       "status": "passed",
-      "duration": 5.7220458984375e-06,
+      "duration": 5.000902414321899,
       "error_message": null,
       "steps": [
         {
-          "name": "set_ids_for_cleanup",
+          "name": "publish_stale_ph_final",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T17:40:16.048159"
+      "timestamp": "2026-01-01T20:13:07.004255"
     },
     {
-      "name": "cycle_status_planned",
+      "name": "wait_after_final_stale",
       "status": "passed",
-      "duration": 0.005072593688964844,
+      "duration": 15.015101671218872,
       "error_message": null,
       "steps": [
         {
-          "name": "cycle_status_planned",
+          "name": "wait_after_final_stale",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T17:40:16.053247"
+      "timestamp": "2026-01-01T20:13:22.019399"
     },
     {
-      "name": "cycle_has_revision",
+      "name": "no_dosing_commands",
+      "status": "passed",
+      "duration": 0.00313568115234375,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "no_dosing_commands",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T20:13:22.022559"
+    },
+    {
+      "name": "skipped_event_created",
       "status": "failed",
-      "duration": 0.0008056163787841797,
-      "error_message": "Expected field 'plant_id' = ${plant_response.data.id}, got 83",
+      "duration": 10.071089506149292,
+      "error_message": "Timeout waiting for DB condition: SELECT id, type, details\nFROM zone_events\nWHERE zone_id = :zone_id\nAND (type LIKE '%%SKIP%%' OR type LIKE '%%STALE%%' OR type LIKE '%%FRESHNESS%%')\nAND created_at > NOW() - INTERVAL '2 minutes'\nORDER BY created_at DESC\nLIMIT 1\n",
       "steps": [
         {
-          "name": "cycle_has_revision",
+          "name": "skipped_event_created",
           "status": "failed",
-          "error": "Expected field 'plant_id' = ${plant_response.data.id}, got 83"
+          "error": "Timeout waiting for DB condition: SELECT id, type, details\nFROM zone_events\nWHERE zone_id = :zone_id\nAND (type LIKE '%%SKIP%%' OR type LIKE '%%STALE%%' OR type LIKE '%%FRESHNESS%%')\nAND created_at > NOW() - INTERVAL '2 minutes'\nORDER BY created_at DESC\nLIMIT 1\n"
         }
       ],
-      "timestamp": "2025-12-31T17:40:16.054107"
+      "timestamp": "2026-01-01T20:13:32.093800"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E50_create_cycle_planned": {
+    "E61_fail_closed_corrections": {
       "ws_messages": [],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
-        "zone_id": 225,
-        "zone_uid": "zn-test-1",
-        "node_id": 1,
-        "node_uid": "nd-ph-esp32una",
-        "recipe_id": 136,
-        "plant_id": 83
+        "zone_id": 1,
+        "node_id": 1
       }
     }
   }

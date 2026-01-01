@@ -6,7 +6,7 @@ use App\Models\DeviceNode;
 use App\Models\NodeChannel;
 use App\Models\Zone;
 use App\Services\PythonBridgeService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;

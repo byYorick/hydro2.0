@@ -10,7 +10,7 @@ use App\Models\Alert;
 use App\Models\Command;
 use App\Models\TelemetryLast;
 use App\Models\Sensor;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 

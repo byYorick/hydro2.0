@@ -12,7 +12,7 @@ use App\Models\Zone;
 use App\Services\GrowCycleService;
 use App\Services\RecipeAnalyticsService;
 use Carbon\Carbon;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class RecipeAnalyticsServiceTest extends TestCase

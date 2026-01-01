@@ -5,7 +5,7 @@ namespace Tests\Unit\Services;
 use App\Enums\NodeLifecycleState;
 use App\Models\DeviceNode;
 use App\Services\NodeLifecycleService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class NodeLifecycleServiceTest extends TestCase

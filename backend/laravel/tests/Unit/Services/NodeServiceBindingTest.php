@@ -8,7 +8,7 @@ use App\Models\Zone;
 use App\Services\NodeLifecycleService;
 use App\Services\NodeRegistryService;
 use App\Services\NodeService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 

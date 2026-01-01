@@ -8,7 +8,7 @@ use App\Models\TelemetrySample;
 use App\Models\ParameterPrediction;
 use App\Services\PredictionService;
 use Carbon\Carbon;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class PredictionServiceTest extends TestCase

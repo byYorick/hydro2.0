@@ -4,7 +4,7 @@ namespace Tests\Unit\Middleware;
 
 use App\Http\Middleware\VerifyPythonServiceToken;
 use App\Models\User;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Config;

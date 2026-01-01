@@ -5,7 +5,7 @@ namespace Tests\Unit;
 use App\Models\GrowStageTemplate;
 use App\Models\RecipeRevision;
 use App\Models\RecipeRevisionPhase;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 

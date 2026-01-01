@@ -11,7 +11,7 @@ use App\Models\Alert;
 use App\Events\CommandStatusUpdated;
 use App\Events\AlertCreated;
 use App\Events\ZoneUpdated;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Tests\TestCase;

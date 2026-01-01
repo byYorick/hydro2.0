@@ -7,7 +7,7 @@ use App\Models\InfrastructureInstance;
 use App\Models\NodeChannel;
 use App\Models\User;
 use App\Models\Zone;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 

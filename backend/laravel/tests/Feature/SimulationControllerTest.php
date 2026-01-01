@@ -9,7 +9,7 @@ use App\Models\RecipeRevisionPhase;
 use App\Models\User;
 use App\Models\Zone;
 use App\Services\GrowCycleService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 

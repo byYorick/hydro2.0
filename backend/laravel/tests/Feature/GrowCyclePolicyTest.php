@@ -8,7 +8,7 @@ use App\Models\RecipeRevision;
 use App\Models\User;
 use App\Models\Zone;
 use App\Enums\GrowCycleStatus;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Gate;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;

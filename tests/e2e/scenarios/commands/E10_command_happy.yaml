@@ -32,21 +32,27 @@ actions:
     type: api_get
     endpoint: /api/system/health
 
-  - step: get_zones
-    type: api_get
-    endpoint: /api/zones
-    save: zones_response
-
-  - step: get_nodes
-    type: api_get
-    endpoint: /api/nodes
-    save: nodes_response
-
-  - step: find_test_zone_and_node
+  - step: set_test_uids
     type: set
-    # Берем первую доступную ноду и ее зону из API
-    test_node_id: ${nodes_response.data.data[0].id}
-    test_zone_id: ${nodes_response.data.data[0].zone_id}
+    test_gh_uid: ${setup.node_sim.config.node.gh_uid}
+    test_zone_uid: ${setup.node_sim.config.node.zone_uid}
+    test_node_uid: ${setup.node_sim.config.node.node_uid}
+
+  - step: fetch_node_id
+    type: database_query
+    query: |
+      SELECT id AS node_id, zone_id
+      FROM nodes
+      WHERE uid = :node_uid
+      LIMIT 1
+    params:
+      node_uid: ${test_node_uid}
+    save: node_row
+
+  - step: set_zone_and_node
+    type: set
+    test_zone_id: ${node_row.0.zone_id}
+    test_node_id: ${node_row.0.node_id}
 
   - step: subscribe_command_channel
     type: websocket_subscribe

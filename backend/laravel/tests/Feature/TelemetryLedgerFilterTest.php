@@ -7,7 +7,7 @@ use App\Models\Greenhouse;
 use App\Models\DeviceNode;
 use App\Services\TelemetryLedgerFilter;
 use App\Enums\MetricType;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
 

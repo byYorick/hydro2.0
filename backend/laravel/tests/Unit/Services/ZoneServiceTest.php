@@ -7,7 +7,7 @@ use App\Models\GrowCycle;
 use App\Models\RecipeRevision;
 use App\Models\Zone;
 use App\Services\ZoneService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class ZoneServiceTest extends TestCase

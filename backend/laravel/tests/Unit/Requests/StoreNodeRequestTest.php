@@ -3,7 +3,7 @@
 namespace Tests\Unit\Requests;
 
 use App\Http\Requests\StoreNodeRequest;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Validator;
 use Tests\TestCase;
 

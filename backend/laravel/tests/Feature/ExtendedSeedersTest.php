@@ -19,7 +19,7 @@ use Database\Seeders\ExtendedNodesChannelsSeeder;
 use Database\Seeders\ExtendedRecipesCyclesSeeder;
 use Database\Seeders\PlantTaxonomySeeder;
 use Database\Seeders\PresetSeeder;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class ExtendedSeedersTest extends TestCase

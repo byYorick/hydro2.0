@@ -4,7 +4,7 @@ namespace Tests\Unit;
 
 use App\Models\DeviceNode;
 use App\Services\NodeConfigService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Tests\TestCase;
 
 class NodeConfigServiceTest extends TestCase

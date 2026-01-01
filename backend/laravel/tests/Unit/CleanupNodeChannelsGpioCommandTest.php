@@ -5,7 +5,7 @@ namespace Tests\Unit;
 use App\Console\Commands\CleanupNodeChannelsGpio;
 use App\Models\DeviceNode;
 use App\Models\NodeChannel;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Tests\TestCase;
 

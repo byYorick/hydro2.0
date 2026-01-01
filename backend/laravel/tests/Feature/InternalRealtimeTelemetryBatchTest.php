@@ -5,7 +5,7 @@ namespace Tests\Feature;
 use App\Events\TelemetryBatchUpdated;
 use App\Models\DeviceNode;
 use App\Models\Zone;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 

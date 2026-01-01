@@ -8,7 +8,7 @@ use App\Models\DeviceNode;
 use App\Models\Command;
 use App\Models\TelemetrySample;
 use App\Models\TelemetryLast;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Config;
 use Tests\TestCase;
