@@ -4,13 +4,13 @@
 
 ## Описание
 
-Scheduler читает расписания из `recipe_phases.targets` и публикует команды через automation-engine REST API.
+Scheduler читает расписания из Laravel API `effective-targets` (GrowCycle) и публикует команды через automation-engine REST API.
 
 ## Функционал
 
-- Чтение расписаний из `recipe_phases.targets`:
-  - `irrigation_schedule`: список времени поливов (например, `["08:00", "14:00", "20:00"]`)
-  - `lighting_schedule`: окно освещения (например, `"06:00-22:00"`)
+- Чтение расписаний из `effective-targets.targets`:
+  - `irrigation_schedule` / `irrigation`: расписание и параметры поливов
+  - `lighting` (`photoperiod_hours`, `start_time`) и `lighting_schedule`: окно освещения (например, `"06:00-22:00"`)
 - Публикация команд через automation-engine REST API
 - Мониторинг безопасности насосов (защита от сухого хода)
 - Проверка уровня воды перед поливом
@@ -47,4 +47,3 @@ pytest scheduler/test_main.py -v
 ```
 
 **Покрытие:** 9 тестов, включая тесты REST интеграции.
-
