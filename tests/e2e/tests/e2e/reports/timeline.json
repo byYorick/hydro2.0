@@ -1,11 +1,11 @@
 {
-  "test_suite": "E13_duplicate_cmd_response",
-  "generated_at": "2026-01-01T19:54:19.137277",
+  "test_suite": "E21_alert_dedup_count",
+  "generated_at": "2026-01-01T19:56:05.734075",
   "test_cases": [
     {
       "name": "set_test_uids",
       "status": "passed",
-      "duration": 1.9550323486328125e-05,
+      "duration": 1.430511474609375e-05,
       "error_message": null,
       "steps": [
         {
@@ -13,12 +13,12 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T19:53:55.690724"
+      "timestamp": "2026-01-01T19:55:30.607996"
     },
     {
       "name": "start_node_simulator",
       "status": "passed",
-      "duration": 5.639760971069336,
+      "duration": 5.631125211715698,
       "error_message": null,
       "steps": [
         {
@@ -26,182 +26,235 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T19:54:01.330510"
+      "timestamp": "2026-01-01T19:55:36.239143"
     },
     {
-      "name": "get_zones",
+      "name": "fetch_node_id",
       "status": "passed",
-      "duration": 0.06366848945617676,
+      "duration": 0.01013040542602539,
       "error_message": null,
       "steps": [
         {
-          "name": "get_zones",
+          "name": "fetch_node_id",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T19:54:01.394232"
+      "timestamp": "2026-01-01T19:55:36.249356"
     },
     {
-      "name": "get_nodes",
+      "name": "set_zone_and_node",
       "status": "passed",
-      "duration": 0.07937765121459961,
+      "duration": 4.291534423828125e-06,
       "error_message": null,
       "steps": [
         {
-          "name": "get_nodes",
+          "name": "set_zone_and_node",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T19:54:01.473649"
+      "timestamp": "2026-01-01T19:55:36.249426"
     },
     {
-      "name": "find_test_zone_and_node",
+      "name": "cleanup_old_alerts",
       "status": "passed",
-      "duration": 3.337860107421875e-06,
+      "duration": 0.0012738704681396484,
       "error_message": null,
       "steps": [
         {
-          "name": "find_test_zone_and_node",
+          "name": "cleanup_old_alerts",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T19:54:01.473701"
+      "timestamp": "2026-01-01T19:55:36.250785"
     },
     {
-      "name": "subscribe_ws_commands",
+      "name": "subscribe_zone_channel",
       "status": "passed",
-      "duration": 1.1917827129364014,
+      "duration": 0.19288325309753418,
       "error_message": null,
       "steps": [
         {
-          "name": "subscribe_ws_commands",
+          "name": "subscribe_zone_channel",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T19:54:02.665505"
+      "timestamp": "2026-01-01T19:55:36.443699"
     },
     {
-      "name": "send_command",
+      "name": "publish_error_1",
       "status": "passed",
-      "duration": 2.15409779548645,
+      "duration": 1.000786542892456,
       "error_message": null,
       "steps": [
         {
-          "name": "send_command",
+          "name": "publish_error_1",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T19:54:04.819691"
+      "timestamp": "2026-01-01T19:55:37.444577"
     },
     {
-      "name": "set_command_id",
+      "name": "publish_error_2",
       "status": "passed",
-      "duration": 7.867813110351562e-06,
+      "duration": 1.0010666847229004,
       "error_message": null,
       "steps": [
         {
-          "name": "set_command_id",
+          "name": "publish_error_2",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T19:54:04.819759"
+      "timestamp": "2026-01-01T19:55:38.445786"
     },
     {
-      "name": "node_sends_done_first",
+      "name": "publish_error_3",
       "status": "passed",
-      "duration": 2.0026752948760986,
+      "duration": 1.001617193222046,
       "error_message": null,
       "steps": [
         {
-          "name": "node_sends_done_first",
+          "name": "publish_error_3",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T19:54:06.822489"
+      "timestamp": "2026-01-01T19:55:39.447508"
     },
     {
-      "name": "node_sends_done_duplicate",
+      "name": "publish_error_4",
       "status": "passed",
-      "duration": 2.002213716506958,
+      "duration": 1.0018069744110107,
       "error_message": null,
       "steps": [
         {
-          "name": "node_sends_done_duplicate",
+          "name": "publish_error_4",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T19:54:08.824815"
+      "timestamp": "2026-01-01T19:55:40.449416"
     },
     {
-      "name": "command_reaches_final_status_done",
+      "name": "publish_error_5",
       "status": "passed",
-      "duration": 0.009494304656982422,
+      "duration": 0.00012159347534179688,
       "error_message": null,
       "steps": [
         {
-          "name": "command_reaches_final_status_done",
+          "name": "publish_error_5",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T19:54:08.834333"
+      "timestamp": "2026-01-01T19:55:40.449666"
     },
     {
-      "name": "assert_status_is_done",
+      "name": "wait_for_alert_processing",
       "status": "passed",
-      "duration": 0.0005311965942382812,
+      "duration": 15.004122257232666,
       "error_message": null,
       "steps": [
         {
-          "name": "assert_status_is_done",
+          "name": "wait_for_alert_processing",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T19:54:08.834879"
+      "timestamp": "2026-01-01T19:55:55.453804"
+    },
+    {
+      "name": "at_least_one_active_alert",
+      "status": "passed",
+      "duration": 0.0012004375457763672,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "at_least_one_active_alert",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2026-01-01T19:55:55.455027"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E13_duplicate_cmd_response": {
+    "E21_alert_dedup_count": {
       "ws_messages": [
         {
           "data": {
             "event": "pusher_internal:subscription_succeeded",
             "data": "{}",
-            "channel": "private-commands.1"
+            "channel": "private-hydro.zones.1"
           },
-          "timestamp": "2026-01-01T19:54:01.568466"
+          "timestamp": "2026-01-01T19:55:36.347464"
         },
         {
           "data": {
-            "event": "CommandStatusUpdated",
-            "data": "{\"commandId\":\"fe77beb1-1084-4a64-aa12-26bc8221ce11\",\"status\":\"QUEUED\",\"message\":\"Command created\",\"error\":null,\"zoneId\":1,\"event_id\":1767286442000004190,\"server_ts\":1767286442000}",
-            "channel": "private-commands.1"
+            "event": "AlertCreated",
+            "data": "{\"id\":2,\"type\":\"node_error\",\"source\":\"infra\",\"code\":\"node_error_sensor_test_error\",\"status\":\"ACTIVE\",\"zone_id\":1,\"details\":{\"node_uid\":\"nd-ph-esp32una\",\"component\":\"sensor\",\"error_code\":\"test_error\",\"level\":\"error\",\"message\":\"Test error for dedup\",\"details\":{\"level\":\"ERROR\",\"component\":\"sensor\",\"error_code\":\"test_error\",\"message\":\"Test error for dedup\",\"ts\":1767286530000},\"count\":1,\"last_seen_at\":\"2026-01-01T16:55:36+00:00\",\"severity\":\"error\",\"ts_device\":\"2026-01-01T16:55:30+00:00\"},\"created_at\":\"2026-01-01T16:55:36+00:00\",\"event_id\":1767286536000004222,\"server_ts\":1767286536000}",
+            "channel": "private-hydro.zones.1"
           },
-          "timestamp": "2026-01-01T19:54:02.732217"
+          "timestamp": "2026-01-01T19:55:36.512127"
         },
         {
           "data": {
-            "event": "CommandStatusUpdated",
-            "data": "{\"commandId\":\"fe77beb1-1084-4a64-aa12-26bc8221ce11\",\"status\":\"SENT\",\"message\":\"Command status updated\",\"error\":null,\"zoneId\":1,\"event_id\":1767286442000004191,\"server_ts\":1767286442000}",
-            "channel": "private-commands.1"
+            "event": "telemetry.batch.updated",
+            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"ph_sensor\",\"metric_type\":\"PH\",\"value\":6,\"ts\":1767286536000},{\"node_id\":1,\"channel\":\"ec_sensor\",\"metric_type\":\"EC\",\"value\":1.5,\"ts\":1767286536000},{\"node_id\":1,\"channel\":\"solution_temp_c\",\"metric_type\":\"TEMPERATURE\",\"value\":20,\"ts\":1767286536000},{\"node_id\":1,\"channel\":\"air_temp_c\",\"metric_type\":\"TEMPERATURE\",\"value\":22,\"ts\":1767286536000},{\"node_id\":1,\"channel\":\"air_rh\",\"metric_type\":\"HUMIDITY\",\"value\":60,\"ts\":1767286536000},{\"node_id\":1,\"channel\":\"ina209\",\"metric_type\":\"PUMP_CURRENT\",\"value\":50,\"ts\":1767286536000},{\"node_id\":1,\"channel\":\"flow_present\",\"metric_type\":\"FLOW_RATE\",\"value\":0,\"ts\":1767286536000}],\"event_id\":1767286536000004223,\"server_ts\":1767286536000}",
+            "channel": "private-hydro.zones.1"
           },
-          "timestamp": "2026-01-01T19:54:02.810767"
+          "timestamp": "2026-01-01T19:55:36.938927"
         },
         {
           "data": {
-            "event": "CommandStatusUpdated",
-            "data": "{\"commandId\":\"fe77beb1-1084-4a64-aa12-26bc8221ce11\",\"status\":\"DONE\",\"message\":\"Command completed\",\"error\":null,\"zoneId\":1,\"event_id\":1767286444000004192,\"server_ts\":1767286444000}",
-            "channel": "private-commands.1"
+            "event": "AlertUpdated",
+            "data": "{\"id\":2,\"type\":\"node_error\",\"source\":\"infra\",\"code\":\"node_error_sensor_test_error\",\"status\":\"ACTIVE\",\"zone_id\":1,\"details\":{\"count\":2,\"level\":\"error\",\"details\":{\"level\":\"ERROR\",\"component\":\"sensor\",\"error_code\":\"test_error\",\"message\":\"Test error for dedup\",\"ts\":1767286530000},\"message\":\"Test error for dedup\",\"node_uid\":\"nd-ph-esp32una\",\"severity\":\"error\",\"component\":\"sensor\",\"ts_device\":\"2026-01-01T16:55:30+00:00\",\"error_code\":\"test_error\",\"last_seen_at\":\"2026-01-01T16:55:37+00:00\"},\"created_at\":\"2026-01-01T16:55:36+00:00\",\"event_id\":1767286537000004224,\"server_ts\":1767286537000}",
+            "channel": "private-hydro.zones.1"
           },
-          "timestamp": "2026-01-01T19:54:04.884530"
+          "timestamp": "2026-01-01T19:55:37.520150"
         },
         {
           "data": {
-            "event": "CommandStatusUpdated",
-            "data": "{\"commandId\":\"fe77beb1-1084-4a64-aa12-26bc8221ce11\",\"status\":\"DONE\",\"message\":\"Command status updated\",\"error\":null,\"zoneId\":1,\"event_id\":1767286444000004193,\"server_ts\":1767286444000}",
-            "channel": "private-commands.1"
+            "event": "AlertUpdated",
+            "data": "{\"id\":2,\"type\":\"node_error\",\"source\":\"infra\",\"code\":\"node_error_sensor_test_error\",\"status\":\"ACTIVE\",\"zone_id\":1,\"details\":{\"count\":3,\"level\":\"error\",\"details\":{\"level\":\"ERROR\",\"component\":\"sensor\",\"error_code\":\"test_error\",\"message\":\"Test error for dedup\",\"ts\":1767286530000},\"message\":\"Test error for dedup\",\"node_uid\":\"nd-ph-esp32una\",\"severity\":\"error\",\"component\":\"sensor\",\"ts_device\":\"2026-01-01T16:55:30+00:00\",\"error_code\":\"test_error\",\"last_seen_at\":\"2026-01-01T16:55:38+00:00\"},\"created_at\":\"2026-01-01T16:55:36+00:00\",\"event_id\":1767286538000004225,\"server_ts\":1767286538000}",
+            "channel": "private-hydro.zones.1"
           },
-          "timestamp": "2026-01-01T19:54:04.894423"
+          "timestamp": "2026-01-01T19:55:38.510533"
+        },
+        {
+          "data": {
+            "event": "AlertUpdated",
+            "data": "{\"id\":2,\"type\":\"node_error\",\"source\":\"infra\",\"code\":\"node_error_sensor_test_error\",\"status\":\"ACTIVE\",\"zone_id\":1,\"details\":{\"count\":4,\"level\":\"error\",\"details\":{\"level\":\"ERROR\",\"component\":\"sensor\",\"error_code\":\"test_error\",\"message\":\"Test error for dedup\",\"ts\":1767286530000},\"message\":\"Test error for dedup\",\"node_uid\":\"nd-ph-esp32una\",\"severity\":\"error\",\"component\":\"sensor\",\"ts_device\":\"2026-01-01T16:55:30+00:00\",\"error_code\":\"test_error\",\"last_seen_at\":\"2026-01-01T16:55:39+00:00\"},\"created_at\":\"2026-01-01T16:55:36+00:00\",\"event_id\":1767286539000004226,\"server_ts\":1767286539000}",
+            "channel": "private-hydro.zones.1"
+          },
+          "timestamp": "2026-01-01T19:55:39.513362"
+        },
+        {
+          "data": {
+            "event": "AlertUpdated",
+            "data": "{\"id\":2,\"type\":\"node_error\",\"source\":\"infra\",\"code\":\"node_error_sensor_test_error\",\"status\":\"ACTIVE\",\"zone_id\":1,\"details\":{\"count\":5,\"level\":\"error\",\"details\":{\"level\":\"ERROR\",\"component\":\"sensor\",\"error_code\":\"test_error\",\"message\":\"Test error for dedup\",\"ts\":1767286530000},\"message\":\"Test error for dedup\",\"node_uid\":\"nd-ph-esp32una\",\"severity\":\"error\",\"component\":\"sensor\",\"ts_device\":\"2026-01-01T16:55:30+00:00\",\"error_code\":\"test_error\",\"last_seen_at\":\"2026-01-01T16:55:40+00:00\"},\"created_at\":\"2026-01-01T16:55:36+00:00\",\"event_id\":1767286540000004227,\"server_ts\":1767286540000}",
+            "channel": "private-hydro.zones.1"
+          },
+          "timestamp": "2026-01-01T19:55:40.514450"
+        },
+        {
+          "data": {
+            "event": "telemetry.batch.updated",
+            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"ph_sensor\",\"metric_type\":\"PH\",\"value\":6,\"ts\":1767286541000},{\"node_id\":1,\"channel\":\"ec_sensor\",\"metric_type\":\"EC\",\"value\":1.5,\"ts\":1767286541000},{\"node_id\":1,\"channel\":\"solution_temp_c\",\"metric_type\":\"TEMPERATURE\",\"value\":20,\"ts\":1767286541000},{\"node_id\":1,\"channel\":\"air_temp_c\",\"metric_type\":\"TEMPERATURE\",\"value\":22,\"ts\":1767286541000},{\"node_id\":1,\"channel\":\"air_rh\",\"metric_type\":\"HUMIDITY\",\"value\":60,\"ts\":1767286541000},{\"node_id\":1,\"channel\":\"ina209\",\"metric_type\":\"PUMP_CURRENT\",\"value\":50,\"ts\":1767286541000},{\"node_id\":1,\"channel\":\"flow_present\",\"metric_type\":\"FLOW_RATE\",\"value\":0,\"ts\":1767286541000}],\"event_id\":1767286542000004228,\"server_ts\":1767286542000}",
+            "channel": "private-hydro.zones.1"
+          },
+          "timestamp": "2026-01-01T19:55:42.013474"
+        },
+        {
+          "data": {
+            "event": "telemetry.batch.updated",
+            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"ph_sensor\",\"metric_type\":\"PH\",\"value\":6,\"ts\":1767286546000},{\"node_id\":1,\"channel\":\"ec_sensor\",\"metric_type\":\"EC\",\"value\":1.5,\"ts\":1767286546000},{\"node_id\":1,\"channel\":\"solution_temp_c\",\"metric_type\":\"TEMPERATURE\",\"value\":20,\"ts\":1767286546000},{\"node_id\":1,\"channel\":\"air_temp_c\",\"metric_type\":\"TEMPERATURE\",\"value\":22,\"ts\":1767286546000},{\"node_id\":1,\"channel\":\"air_rh\",\"metric_type\":\"HUMIDITY\",\"value\":60,\"ts\":1767286546000},{\"node_id\":1,\"channel\":\"ina209\",\"metric_type\":\"PUMP_CURRENT\",\"value\":50,\"ts\":1767286546000},{\"node_id\":1,\"channel\":\"flow_present\",\"metric_type\":\"FLOW_RATE\",\"value\":0,\"ts\":1767286546000}],\"event_id\":1767286547000004229,\"server_ts\":1767286547000}",
+            "channel": "private-hydro.zones.1"
+          },
+          "timestamp": "2026-01-01T19:55:47.095222"
+        },
+        {
+          "data": {
+            "event": "telemetry.batch.updated",
+            "data": "{\"zone_id\":1,\"updates\":[{\"node_id\":1,\"channel\":\"ph_sensor\",\"metric_type\":\"PH\",\"value\":6,\"ts\":1767286551000},{\"node_id\":1,\"channel\":\"ec_sensor\",\"metric_type\":\"EC\",\"value\":1.5,\"ts\":1767286551000},{\"node_id\":1,\"channel\":\"solution_temp_c\",\"metric_type\":\"TEMPERATURE\",\"value\":20,\"ts\":1767286551000},{\"node_id\":1,\"channel\":\"air_temp_c\",\"metric_type\":\"TEMPERATURE\",\"value\":22,\"ts\":1767286551000},{\"node_id\":1,\"channel\":\"air_rh\",\"metric_type\":\"HUMIDITY\",\"value\":60,\"ts\":1767286551000},{\"node_id\":1,\"channel\":\"ina209\",\"metric_type\":\"PUMP_CURRENT\",\"value\":50,\"ts\":1767286551000},{\"node_id\":1,\"channel\":\"flow_present\",\"metric_type\":\"FLOW_RATE\",\"value\":0,\"ts\":1767286551000}],\"event_id\":1767286552000004230,\"server_ts\":1767286552000}",
+            "channel": "private-hydro.zones.1"
+          },
+          "timestamp": "2026-01-01T19:55:52.175387"
         }
       ],
       "mqtt_messages": [],
@@ -210,8 +263,8 @@
         "zone_id": 1,
         "node_id": 1,
         "test_zone_id": 1,
-        "test_node_id": 8,
-        "ws_last_event_id": 1767286444000004193
+        "test_node_id": 1,
+        "ws_last_event_id": 1767286552000004230
       }
     }
   }
