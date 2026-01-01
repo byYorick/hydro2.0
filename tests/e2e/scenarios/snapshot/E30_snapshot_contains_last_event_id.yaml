@@ -22,7 +22,7 @@ actions:
 
   - step: set_zone_id
     type: set
-    zone_id: ${zones_response.data[0].id}
+    zone_id: ${zones_response.data.data[0].id}
 
   # Получаем текущий max event_id из БД
   - step: get_max_event_id_from_db
@@ -66,4 +66,3 @@ assertions:
         operator: greater_than_or_equal
         value: 0
     optional: true
-

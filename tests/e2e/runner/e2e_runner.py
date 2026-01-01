@@ -2323,7 +2323,27 @@ class E2ERunner:
         """
         if not self.schema_validator:
             return
-        self.schema_validator.assert_row_expected(row, expected_rules)
+        resolved_rules = []
+        for rule in expected_rules or []:
+            if not isinstance(rule, dict):
+                resolved_rules.append(rule)
+                continue
+            resolved_rule = dict(rule)
+            if "value" in resolved_rule:
+                resolved_rule["value"] = self._resolve_variables(resolved_rule["value"])
+            if "or" in resolved_rule and isinstance(resolved_rule["or"], list):
+                resolved_or = []
+                for alt in resolved_rule["or"]:
+                    if isinstance(alt, dict):
+                        alt_rule = dict(alt)
+                        if "value" in alt_rule:
+                            alt_rule["value"] = self._resolve_variables(alt_rule["value"])
+                        resolved_or.append(alt_rule)
+                    else:
+                        resolved_or.append(alt)
+                resolved_rule["or"] = resolved_or
+            resolved_rules.append(resolved_rule)
+        self.schema_validator.assert_row_expected(row, resolved_rules)
 
     def _extract_json_path(self, obj: Any, path: Optional[str]) -> Any:
         """

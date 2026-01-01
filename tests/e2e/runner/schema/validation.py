@@ -83,6 +83,7 @@ class SchemaValidator:
             operator = rule.get("operator")
             expected_value = rule.get("value")
             optional = rule.get("optional", False)
+            alternatives = rule.get("or") if isinstance(rule.get("or"), list) else []
 
             if field == "length":
                 actual = len(row) if row is not None else 0
@@ -92,7 +93,25 @@ class SchemaValidator:
             try:
                 self._check_operator(actual, operator, expected_value, field)
             except AssertionError:
-                if not optional:
+                alt_passed = False
+                if alternatives:
+                    for alt in alternatives:
+                        if not isinstance(alt, dict):
+                            continue
+                        alt_field = alt.get("field")
+                        alt_operator = alt.get("operator")
+                        alt_value = alt.get("value")
+                        if alt_field == "length":
+                            alt_actual = len(row) if row is not None else 0
+                        else:
+                            alt_actual = row.get(alt_field) if isinstance(row, dict) and alt_field else None
+                        try:
+                            self._check_operator(alt_actual, alt_operator, alt_value, alt_field)
+                            alt_passed = True
+                            break
+                        except AssertionError:
+                            continue
+                if not alt_passed and not optional:
                     raise
 
     def _check_operator(self, actual: Any, operator: str, expected: Any, field: Optional[str]):

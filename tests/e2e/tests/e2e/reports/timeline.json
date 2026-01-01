@@ -1,50 +1,37 @@
 {
-  "test_suite": "E62_controller_fault_isolation",
-  "generated_at": "2026-01-01T18:33:03.020327",
+  "test_suite": "E02_auth_ws_api",
+  "generated_at": "2026-01-01T19:49:37.138497",
   "test_cases": [
     {
-      "name": "set_test_uids",
+      "name": "get_zones_api",
       "status": "passed",
-      "duration": 1.430511474609375e-05,
+      "duration": 0.06290102005004883,
       "error_message": null,
       "steps": [
         {
-          "name": "set_test_uids",
+          "name": "get_zones_api",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T18:32:05.117401"
+      "timestamp": "2026-01-01T19:49:35.964326"
     },
     {
-      "name": "get_automation_zone",
+      "name": "fetch_zone_id",
       "status": "passed",
-      "duration": 0.07030105590820312,
+      "duration": 0.003013134002685547,
       "error_message": null,
       "steps": [
         {
-          "name": "get_automation_zone",
+          "name": "fetch_zone_id",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T18:32:05.187730"
-    },
-    {
-      "name": "set_zone_id_from_uid",
-      "status": "passed",
-      "duration": 0.008205413818359375,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_zone_id_from_uid",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-01T18:32:05.195980"
+      "timestamp": "2026-01-01T19:49:35.967384"
     },
     {
       "name": "set_zone_id",
       "status": "passed",
-      "duration": 3.0994415283203125e-06,
+      "duration": 4.0531158447265625e-06,
       "error_message": null,
       "steps": [
         {
@@ -52,175 +39,147 @@
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T18:32:05.196037"
+      "timestamp": "2026-01-01T19:49:35.967455"
     },
     {
-      "name": "enable_capabilities",
+      "name": "connect_websocket",
       "status": "passed",
-      "duration": 0.0026581287384033203,
+      "duration": 4.291534423828125e-06,
       "error_message": null,
       "steps": [
         {
-          "name": "enable_capabilities",
+          "name": "connect_websocket",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T18:32:05.198732"
+      "timestamp": "2026-01-01T19:49:35.967467"
     },
     {
-      "name": "start_node_simulator",
+      "name": "subscribe_to_zone_channel",
       "status": "passed",
-      "duration": 5.647761106491089,
+      "duration": 0.18093585968017578,
       "error_message": null,
       "steps": [
         {
-          "name": "start_node_simulator",
+          "name": "subscribe_to_zone_channel",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T18:32:10.846518"
+      "timestamp": "2026-01-01T19:49:36.148443"
     },
     {
-      "name": "enable_test_mode",
+      "name": "invalidate_auth_token",
       "status": "passed",
-      "duration": 4.76837158203125e-06,
+      "duration": 9.775161743164062e-06,
       "error_message": null,
       "steps": [
         {
-          "name": "enable_test_mode",
+          "name": "invalidate_auth_token",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T18:32:10.846555"
+      "timestamp": "2026-01-01T19:49:36.148489"
     },
     {
-      "name": "inject_climate_error",
+      "name": "call_api_after_invalidate",
       "status": "passed",
-      "duration": 0.026056766510009766,
+      "duration": 0.9872424602508545,
       "error_message": null,
       "steps": [
         {
-          "name": "inject_climate_error",
+          "name": "call_api_after_invalidate",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T18:32:10.872668"
+      "timestamp": "2026-01-01T19:49:37.135774"
     },
     {
-      "name": "publish_telemetry_ph",
+      "name": "create_ws_client_without_token",
       "status": "passed",
-      "duration": 2.0021750926971436,
+      "duration": 1.2636184692382812e-05,
       "error_message": null,
       "steps": [
         {
-          "name": "publish_telemetry_ph",
+          "name": "create_ws_client_without_token",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T18:32:12.874925"
+      "timestamp": "2026-01-01T19:49:37.135809"
     },
     {
-      "name": "publish_telemetry_temp",
+      "name": "try_subscribe_without_auth",
       "status": "passed",
-      "duration": 15.002856254577637,
+      "duration": 0.0017406940460205078,
       "error_message": null,
       "steps": [
         {
-          "name": "publish_telemetry_temp",
+          "name": "try_subscribe_without_auth",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T18:32:27.877876"
+      "timestamp": "2026-01-01T19:49:37.137585"
     },
     {
-      "name": "wait_controller_failed_event",
+      "name": "api_accessible_with_valid_token",
       "status": "passed",
-      "duration": 20.035081386566162,
+      "duration": 7.319450378417969e-05,
       "error_message": null,
       "steps": [
         {
-          "name": "wait_controller_failed_event",
+          "name": "api_accessible_with_valid_token",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T18:32:47.913082"
+      "timestamp": "2026-01-01T19:49:37.137670"
     },
     {
-      "name": "clear_test_hook",
+      "name": "reauth_successful",
       "status": "passed",
-      "duration": 0.027826547622680664,
+      "duration": 4.935264587402344e-05,
       "error_message": null,
       "steps": [
         {
-          "name": "clear_test_hook",
+          "name": "reauth_successful",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T18:32:47.940987"
+      "timestamp": "2026-01-01T19:49:37.137724"
     },
     {
-      "name": "controller_failed_event",
-      "status": "skipped",
-      "duration": 10.069469690322876,
-      "error_message": "Timeout waiting for DB condition: SELECT id, type, details\nFROM zone_events\nWHERE zone_id = :zone_id\nAND (type LIKE '%%CONTROLLER%%FAIL%%' OR type = 'CONTROLLER_FAILED')\nAND created_at > NOW() - INTERVAL '2 minutes'\nORDER BY created_at DESC\nLIMIT 1\n",
-      "steps": [
-        {
-          "name": "controller_failed_event",
-          "status": "skipped",
-          "error": "Timeout waiting for DB condition: SELECT id, type, details\nFROM zone_events\nWHERE zone_id = :zone_id\nAND (type LIKE '%%CONTROLLER%%FAIL%%' OR type = 'CONTROLLER_FAILED')\nAND created_at > NOW() - INTERVAL '2 minutes'\nORDER BY created_at DESC\nLIMIT 1\n"
-        }
-      ],
-      "timestamp": "2026-01-01T18:32:58.010493"
-    },
-    {
-      "name": "other_controllers_working",
+      "name": "ws_subscription_without_token_failed",
       "status": "passed",
-      "duration": 0.003606557846069336,
+      "duration": 0.00042891502380371094,
       "error_message": null,
       "steps": [
         {
-          "name": "other_controllers_working",
+          "name": "ws_subscription_without_token_failed",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T18:32:58.014148"
-    },
-    {
-      "name": "Assertion 3",
-      "status": "passed",
-      "duration": 5.004749298095703,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "Assertion 3",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-01T18:33:03.018918"
-    },
-    {
-      "name": "controller_cooldown",
-      "status": "passed",
-      "duration": 0.0010204315185546875,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "controller_cooldown",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-01T18:33:03.019962"
+      "timestamp": "2026-01-01T19:49:37.138157"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E62_controller_fault_isolation": {
-      "ws_messages": [],
+    "E02_auth_ws_api": {
+      "ws_messages": [
+        {
+          "data": {
+            "event": "pusher_internal:subscription_succeeded",
+            "data": "{}",
+            "channel": "private-hydro.zones.1"
+          },
+          "timestamp": "2026-01-01T19:49:36.052164"
+        }
+      ],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
         "zone_id": 1,
-        "node_id": 1
+        "zone_uid": "zn-test-1",
+        "node_id": 1,
+        "node_uid": "nd-ph-esp32una",
+        "test_zone_id": 1
       }
     }
   }

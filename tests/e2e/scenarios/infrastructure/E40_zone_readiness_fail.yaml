@@ -8,6 +8,15 @@ description: |
   - Попытка запустить grow-cycle должна вернуть 422 с причинами
 
 actions:
+  - step: get_greenhouses
+    type: api_get
+    endpoint: /api/greenhouses
+    save: greenhouses_response
+
+  - step: set_greenhouse_id
+    type: set
+    greenhouse_id: ${greenhouses_response.data.data[0].id}
+
   - step: create_zone_without_bindings
     type: api_post
     endpoint: /api/zones
@@ -15,6 +24,7 @@ actions:
       name: test-zone-no-bindings
       description: Zone without required bindings
       status: PLANNED
+      greenhouse_id: ${greenhouse_id}
     save: zone_response
 
   - step: set_zone_id
@@ -114,4 +124,3 @@ cleanup:
     type: api_delete
     endpoint: /api/zones/${zone_id}
     optional: true
-

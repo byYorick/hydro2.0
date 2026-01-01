@@ -44,6 +44,7 @@ actions:
     payload:
       name: test-recipe-e53-${TIMESTAMP_S}
       description: Test recipe for E53
+      plant_id: ${plant_response.data.id}
     save: recipe_response
 
   - step: create_revision

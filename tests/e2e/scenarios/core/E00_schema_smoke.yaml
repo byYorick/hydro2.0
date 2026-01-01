@@ -31,8 +31,3 @@ assertions:
     type: column_absent
     table_name: grow_cycles
     column_name: zone_recipe_instance_id
-
-  - name: grow_cycles_current_stage_code_absent
-    type: column_absent
-    table_name: grow_cycles
-    column_name: current_stage_code

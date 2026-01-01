@@ -228,9 +228,12 @@ class NodeErrorHandler:
             if details and isinstance(details, dict):
                 ts_device = details.get("ts") or details.get("ts_device")
                 if ts_device and isinstance(ts_device, (int, float)):
-                    # Конвертируем Unix timestamp в ISO строку
+                    # Конвертируем Unix timestamp (секунды или миллисекунды) в ISO строку
                     from datetime import datetime, timezone
-                    ts_device = datetime.fromtimestamp(ts_device, tz=timezone.utc).isoformat()
+                    ts_value = float(ts_device)
+                    if ts_value > 1_000_000_000_000:
+                        ts_value = ts_value / 1000.0
+                    ts_device = datetime.fromtimestamp(ts_value, tz=timezone.utc).isoformat()
             
             success = await send_alert_to_laravel(
                 zone_id=zone_id,
@@ -266,4 +269,3 @@ def get_error_handler() -> NodeErrorHandler:
     if _error_handler is None:
         _error_handler = NodeErrorHandler()
     return _error_handler
-

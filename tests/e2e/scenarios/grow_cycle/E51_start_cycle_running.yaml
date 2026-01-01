@@ -63,6 +63,7 @@ actions:
     payload:
       name: test-recipe-e51-${TIMESTAMP_S}
       description: Test recipe for E51
+      plant_id: ${plant_response.data.id}
     save: recipe_response
     condition: ${existing_cycle.length == 0}
 

@@ -5,7 +5,7 @@ actions:
   type: api_get
 - step: set_zone_id
   type: set
-  zone_id: ${zones_response.data[0].id}
+  zone_id: ${zones_response.data.data[0].id}
 - config_ref: node_sim.config
   optional: true
   step: start_node_simulator_unassigned
@@ -19,25 +19,25 @@ actions:
     ts: ${TIMESTAMP_S}
   qos: 1
   step: node_publishes_temp_error
-  topic: hydro/gh-temp/zn-temp/esp32-unassigned-001/error
+  topic: hydro/gh-temp/zn-temp/e2e-unassigned-001/error
   type: mqtt_publish
   wait_seconds: 2
 - payload:
     fw_version: 2.0.0-sim
-    hardware_id: esp32-unassigned-001
+    hardware_id: e2e-unassigned-001
     message_type: node_hello
     node_type: ph
     ts: ${TIMESTAMP_S}
   qos: 1
   step: node_sends_node_hello
-  topic: hydro/gh-temp/zn-temp/esp32-unassigned-001/node_hello
+  topic: hydro/gh-temp/zn-temp/e2e-unassigned-001/node_hello
   type: mqtt_publish
   wait_seconds: 2
 - query: 'SELECT id, uid, zone_id, lifecycle_state
 
     FROM nodes
 
-    WHERE hardware_id = ''esp32-unassigned-001''
+    WHERE hardware_id = ''e2e-unassigned-001''
 
     ORDER BY id DESC
 
@@ -69,8 +69,8 @@ assertions:
 - name: error_was_registered_or_removed
   optional: true
   query: "SELECT \n  (SELECT COUNT(*) FROM unassigned_node_errors WHERE hardware_id\
-    \ = 'esp32-unassigned-001') as current_count,\n  (SELECT COUNT(*) FROM unassigned_node_errors_archive\
-    \ WHERE hardware_id = 'esp32-unassigned-001') as archived_count\n"
+    \ = 'e2e-unassigned-001') as current_count,\n  (SELECT COUNT(*) FROM unassigned_node_errors_archive\
+    \ WHERE hardware_id = 'e2e-unassigned-001') as archived_count\n"
   timeout: 5.0
   type: database_query
 - expected:
@@ -135,7 +135,7 @@ assertions:
 
     FROM unassigned_node_errors
 
-    WHERE hardware_id = ''esp32-unassigned-001''
+    WHERE hardware_id = ''e2e-unassigned-001''
 
     '
   timeout: 10.0
@@ -170,10 +170,10 @@ setup:
         channels:
         - ph_sensor
         gh_uid: gh-test-1
-        hardware_id: esp32-unassigned-001
+        hardware_id: e2e-unassigned-001
         mode: preconfig
         node_type: ph
-        node_uid: nd-ph-esp32una
+        node_uid: nd-ph-e2eunass
         zone_uid: zn-test-1
       telemetry:
         heartbeat_interval_seconds: 15.0

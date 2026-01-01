@@ -53,6 +53,12 @@ jobs:
           php -r "
             \$file = '.env';
             \$env = file_get_contents(\$file);
+            // Используем in-memory cache в CI, чтобы не требовать таблицу cache
+            if (preg_match('/^CACHE_STORE=.*/m', \$env)) {
+              \$env = preg_replace('/^CACHE_STORE=.*/m', 'CACHE_STORE=array', \$env);
+            } else {
+              \$env .= PHP_EOL.'CACHE_STORE=array';
+            }
             // Устанавливаем/обновляем параметры БД независимо от начальных значений
             \$env = preg_replace('/^DB_CONNECTION=.*/m', 'DB_CONNECTION=pgsql', \$env);
             if (preg_match('/^DB_DATABASE=.*/m', \$env)) {
@@ -222,4 +228,3 @@ jobs:
           name: playwright-report
           path: backend/laravel/playwright-report
           retention-days: 7
-
