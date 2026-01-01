@@ -140,6 +140,15 @@ async def simulate_zone(request: SimulationRequest) -> Dict[str, Any]:
 
         # Получаем фазы рецепта
         recipe_id = request.scenario.recipe_id
+        logger.info(
+            "Digital twin simulation requested",
+            extra={
+                "zone_id": request.zone_id,
+                "recipe_id": recipe_id,
+                "duration_hours": request.duration_hours,
+                "step_minutes": request.step_minutes,
+            },
+        )
         if not recipe_id:
             raise HTTPException(status_code=400, detail="recipe_id required in scenario")
 

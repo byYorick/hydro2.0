@@ -27,7 +27,6 @@ use App\Http\Controllers\TelemetryController;
 use App\Http\Controllers\UnassignedNodeErrorController;
 use App\Http\Controllers\ZoneCommandController;
 use App\Http\Controllers\ZoneController;
-use App\Http\Controllers\ZoneInfrastructureController;
 use App\Http\Controllers\ZonePidConfigController;
 use App\Http\Controllers\ZonePidLogController;
 use Illuminate\Http\Request;
@@ -116,7 +115,8 @@ Route::middleware([
     Route::get('zones/{zone}/unassigned-errors', [ZoneController::class, 'unassignedErrors']);
     Route::get('zones/{zone}/events', [ZoneController::class, 'events']);
     Route::get('zones/{zone}/snapshot', [ZoneController::class, 'snapshot']);
-    Route::get('zones/{zone}/infrastructure', [ZoneInfrastructureController::class, 'show']);
+    Route::get('zones/{zone}/infrastructure-instances', [InfrastructureInstanceController::class, 'indexForZone']);
+    Route::get('greenhouses/{greenhouse}/infrastructure-instances', [InfrastructureInstanceController::class, 'indexForGreenhouse']);
     Route::get('zones/{zone}/grow-cycle', [GrowCycleController::class, 'getActive'])
         ->middleware('ae.legacy.sql.guard');
     Route::get('zones/{zone}/effective-targets', [ZoneController::class, 'effectiveTargets'])
@@ -161,8 +161,6 @@ Route::middleware([
         Route::patch('zones/{zone}', [ZoneController::class, 'update']);
         Route::delete('zones/{zone}', [ZoneController::class, 'destroy']);
         // Infrastructure instances
-        Route::get('zones/{zone}/infrastructure-instances', [InfrastructureInstanceController::class, 'indexForZone']);
-        Route::get('greenhouses/{greenhouse}/infrastructure-instances', [InfrastructureInstanceController::class, 'indexForGreenhouse']);
         Route::post('infrastructure-instances', [InfrastructureInstanceController::class, 'store']);
         Route::patch('infrastructure-instances/{infrastructureInstance}', [InfrastructureInstanceController::class, 'update']);
         Route::delete('infrastructure-instances/{infrastructureInstance}', [InfrastructureInstanceController::class, 'destroy']);
@@ -175,9 +173,6 @@ Route::middleware([
         Route::post('zones/{zone}/fill', [ZoneController::class, 'fill']);
         Route::post('zones/{zone}/drain', [ZoneController::class, 'drain']);
         Route::post('zones/{zone}/calibrate-flow', [ZoneController::class, 'calibrateFlow']);
-        Route::put('zones/{zone}/infrastructure', [ZoneInfrastructureController::class, 'update']);
-        Route::post('zones/{zone}/infrastructure/bindings', [ZoneInfrastructureController::class, 'storeBinding']);
-        Route::delete('zones/{zone}/infrastructure/bindings/{channelBinding}', [ZoneInfrastructureController::class, 'destroyBinding']);
 
         // Grow Cycle operations
         Route::get('grow-cycles', [GrowCycleController::class, 'index']);

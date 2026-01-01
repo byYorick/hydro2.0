@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Helpers\ZoneAccessHelper;
 use App\Models\ChannelBinding;
 use App\Models\InfrastructureInstance;
+use App\Models\NodeChannel;
 use App\Models\Zone;
 use App\Services\ChannelBindingService;
 use Illuminate\Http\JsonResponse;
@@ -16,8 +17,7 @@ class ChannelBindingController extends Controller
 {
     public function __construct(
         private ChannelBindingService $bindingService
-    ) {
-    }
+    ) {}
 
     /**
      * Создать привязку канала
@@ -26,7 +26,7 @@ class ChannelBindingController extends Controller
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -35,23 +35,48 @@ class ChannelBindingController extends Controller
 
         $data = $request->validate([
             'infrastructure_instance_id' => ['required', 'integer', 'exists:infrastructure_instances,id'],
-            'node_id' => ['required', 'integer', 'exists:nodes,id'],
-            'channel' => ['required', 'string', 'max:50'],
-            'direction' => ['required', 'string', 'in:INPUT,OUTPUT'],
-            'role' => ['nullable', 'string', 'max:255'],
+            'node_channel_id' => ['required', 'integer', 'exists:node_channels,id'],
+            'direction' => ['required', 'string', 'in:actuator,sensor'],
+            'role' => ['required', 'string', 'max:255'],
         ]);
 
         try {
             $instance = InfrastructureInstance::findOrFail($data['infrastructure_instance_id']);
+            $nodeChannel = NodeChannel::query()
+                ->with('node')
+                ->where('id', $data['node_channel_id'])
+                ->first();
+
+            if (! $nodeChannel || ! $nodeChannel->node) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Node channel not found',
+                ], 404);
+            }
 
             // Проверяем доступ к владельцу
             if ($instance->owner_type === 'zone') {
                 $zone = Zone::findOrFail($instance->owner_id);
-                if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+                if (! ZoneAccessHelper::canAccessZone($user, $zone)) {
                     return response()->json([
                         'status' => 'error',
                         'message' => 'Forbidden: Access denied to this zone',
                     ], 403);
+                }
+                if ($nodeChannel->node->zone_id !== $zone->id) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Node channel not found in this zone',
+                    ], 404);
+                }
+            } elseif ($instance->owner_type === 'greenhouse') {
+                $zoneId = $nodeChannel->node->zone_id;
+                $zone = $zoneId ? Zone::find($zoneId) : null;
+                if (! $zone || $zone->greenhouse_id !== $instance->owner_id) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Node channel not found in this greenhouse',
+                    ], 404);
                 }
             }
 
@@ -81,7 +106,7 @@ class ChannelBindingController extends Controller
     public function update(Request $request, ChannelBinding $channelBinding): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -93,7 +118,7 @@ class ChannelBindingController extends Controller
         // Проверяем доступ к владельцу
         if ($instance->owner_type === 'zone') {
             $zone = Zone::findOrFail($instance->owner_id);
-            if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+            if (! ZoneAccessHelper::canAccessZone($user, $zone)) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Forbidden: Access denied to this zone',
@@ -102,13 +127,45 @@ class ChannelBindingController extends Controller
         }
 
         $data = $request->validate([
-            'node_id' => ['sometimes', 'required', 'integer', 'exists:nodes,id'],
-            'channel' => ['sometimes', 'required', 'string', 'max:50'],
-            'direction' => ['sometimes', 'required', 'string', 'in:INPUT,OUTPUT'],
-            'role' => ['nullable', 'string', 'max:255'],
+            'node_channel_id' => ['sometimes', 'required', 'integer', 'exists:node_channels,id'],
+            'direction' => ['sometimes', 'required', 'string', 'in:actuator,sensor'],
+            'role' => ['sometimes', 'required', 'string', 'max:255'],
         ]);
 
         try {
+            if (! empty($data['node_channel_id'])) {
+                $nodeChannel = NodeChannel::query()
+                    ->with('node')
+                    ->where('id', $data['node_channel_id'])
+                    ->first();
+
+                if (! $nodeChannel || ! $nodeChannel->node) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Node channel not found',
+                    ], 404);
+                }
+
+                if ($instance->owner_type === 'zone') {
+                    $zone = Zone::findOrFail($instance->owner_id);
+                    if ($nodeChannel->node->zone_id !== $zone->id) {
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => 'Node channel not found in this zone',
+                        ], 404);
+                    }
+                } elseif ($instance->owner_type === 'greenhouse') {
+                    $zoneId = $nodeChannel->node->zone_id;
+                    $zone = $zoneId ? Zone::find($zoneId) : null;
+                    if (! $zone || $zone->greenhouse_id !== $instance->owner_id) {
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => 'Node channel not found in this greenhouse',
+                        ], 404);
+                    }
+                }
+            }
+
             $binding = $this->bindingService->update($channelBinding, $data);
 
             return response()->json([
@@ -135,7 +192,7 @@ class ChannelBindingController extends Controller
     public function destroy(ChannelBinding $channelBinding): JsonResponse
     {
         $user = request()->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -147,7 +204,7 @@ class ChannelBindingController extends Controller
         // Проверяем доступ к владельцу
         if ($instance->owner_type === 'zone') {
             $zone = Zone::findOrFail($instance->owner_id);
-            if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+            if (! ZoneAccessHelper::canAccessZone($user, $zone)) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Forbidden: Access denied to this zone',
@@ -175,4 +232,3 @@ class ChannelBindingController extends Controller
         }
     }
 }
-

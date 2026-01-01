@@ -62,27 +62,51 @@ actions:
     zone_id: ${node_row.0.zone_id}
     node_id: ${node_row.0.node_id}
 
-  # Создаем binding (role → node/channel)
+  # Создаем binding (role → node_channel)
   # Используем правильный endpoint и таблицу согласно контракту
-  # Проверяем через БД правильную таблицу zone_channel_bindings
+  # Проверяем через БД таблицу channel_bindings
   - step: check_bindings_table
     type: database_query
     query: |
       SELECT COUNT(*) as bindings_count
-      FROM zone_channel_bindings
-      WHERE zone_id = :zone_id
+      FROM channel_bindings cb
+      JOIN infrastructure_instances ii ON ii.id = cb.infrastructure_instance_id
+      WHERE ii.owner_type = 'zone'
+        AND ii.owner_id = :zone_id
     params:
       zone_id: ${zone_id}
     optional: true
 
+  - step: fetch_node_channel_id
+    type: database_query
+    query: |
+      SELECT id as node_channel_id
+      FROM node_channels
+      WHERE node_id = :node_id
+        AND channel = 'main_pump'
+      LIMIT 1
+    params:
+      node_id: ${node_id}
+    save: node_channel_row
+
+  - step: create_infrastructure_instance
+    type: api_post
+    endpoint: /api/infrastructure-instances
+    payload:
+      owner_type: zone
+      owner_id: ${zone_id}
+      asset_type: PUMP
+      label: Main pump
+      required: true
+    save: infra_response
+
   # Создаем binding через API (правильный endpoint согласно routes/api.php)
   - step: create_binding
     type: api_post
-    endpoint: /api/zones/${zone_id}/infrastructure/bindings
+    endpoint: /api/channel-bindings
     payload:
-      asset_id: 1  # Требуется asset_id из zone_infrastructure
-      node_id: ${node_id}
-      channel: main_pump
+      infrastructure_instance_id: ${infra_response.data.id}
+      node_channel_id: ${node_channel_row.0.node_channel_id}
       direction: actuator
       role: main_pump
     save: binding_response
@@ -118,10 +142,14 @@ cleanup:
   - step: delete_binding_via_db
     type: database_execute
     query: |
-      DELETE FROM zone_channel_bindings
-      WHERE zone_id = :zone_id
-      AND role = 'main_pump'
+      DELETE FROM channel_bindings
+      WHERE infrastructure_instance_id = :infrastructure_instance_id
+        AND role = 'main_pump'
     params:
-      zone_id: ${zone_id}
+      infrastructure_instance_id: ${infra_response.data.id}
     optional: true
 
+  - step: delete_infrastructure_instance
+    type: api_delete
+    endpoint: /api/infrastructure-instances/${infra_response.data.id}
+    optional: true

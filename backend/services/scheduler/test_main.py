@@ -214,6 +214,7 @@ async def test_execute_lighting_schedule_crosses_midnight():
         }
         await execute_lighting_schedule(1, schedule)
         assert mock_send.called
+        assert mock_send.call_args_list[0][1]["cmd"] == "light_on"
 
 
 @pytest.mark.asyncio

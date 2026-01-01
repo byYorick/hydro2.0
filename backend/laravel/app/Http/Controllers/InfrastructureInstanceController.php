@@ -3,9 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Helpers\ZoneAccessHelper;
+use App\Models\Greenhouse;
 use App\Models\InfrastructureInstance;
 use App\Models\Zone;
-use App\Models\Greenhouse;
 use App\Services\InfrastructureInstanceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -16,8 +16,7 @@ class InfrastructureInstanceController extends Controller
 {
     public function __construct(
         private InfrastructureInstanceService $infrastructureService
-    ) {
-    }
+    ) {}
 
     /**
      * Получить все экземпляры инфраструктуры для зоны
@@ -26,14 +25,14 @@ class InfrastructureInstanceController extends Controller
     public function indexForZone(Request $request, Zone $zone): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
             ], 401);
         }
 
-        if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+        if (! ZoneAccessHelper::canAccessZone($user, $zone)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Forbidden: Access denied to this zone',
@@ -67,7 +66,7 @@ class InfrastructureInstanceController extends Controller
     public function indexForGreenhouse(Request $request, Greenhouse $greenhouse): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -103,7 +102,7 @@ class InfrastructureInstanceController extends Controller
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -113,7 +112,7 @@ class InfrastructureInstanceController extends Controller
         $data = $request->validate([
             'owner_type' => ['required', 'string', 'in:zone,greenhouse'],
             'owner_id' => ['required', 'integer'],
-            'asset_type' => ['required', 'string', 'in:PUMP,MISTER,TANK_CLEAN,TANK_WORKING,LIGHT,VENT,HEATER,FAN,CO2_INJECTOR'],
+            'asset_type' => ['required', 'string', 'in:PUMP,MISTER,TANK_CLEAN,TANK_WORKING,TANK_NUTRIENT,DRAIN,LIGHT,VENT,HEATER,FAN,CO2_INJECTOR,OTHER'],
             'label' => ['required', 'string', 'max:255'],
             'specs' => ['nullable', 'array'],
             'required' => ['nullable', 'boolean'],
@@ -123,7 +122,7 @@ class InfrastructureInstanceController extends Controller
             // Проверяем доступ к владельцу
             if ($data['owner_type'] === 'zone') {
                 $zone = Zone::findOrFail($data['owner_id']);
-                if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+                if (! ZoneAccessHelper::canAccessZone($user, $zone)) {
                     return response()->json([
                         'status' => 'error',
                         'message' => 'Forbidden: Access denied to this zone',
@@ -160,7 +159,7 @@ class InfrastructureInstanceController extends Controller
     public function update(Request $request, InfrastructureInstance $infrastructureInstance): JsonResponse
     {
         $user = $request->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -170,7 +169,7 @@ class InfrastructureInstanceController extends Controller
         // Проверяем доступ к владельцу
         if ($infrastructureInstance->owner_type === 'zone') {
             $zone = Zone::findOrFail($infrastructureInstance->owner_id);
-            if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+            if (! ZoneAccessHelper::canAccessZone($user, $zone)) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Forbidden: Access denied to this zone',
@@ -211,7 +210,7 @@ class InfrastructureInstanceController extends Controller
     public function destroy(InfrastructureInstance $infrastructureInstance): JsonResponse
     {
         $user = request()->user();
-        if (!$user) {
+        if (! $user) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Unauthorized',
@@ -221,7 +220,7 @@ class InfrastructureInstanceController extends Controller
         // Проверяем доступ к владельцу
         if ($infrastructureInstance->owner_type === 'zone') {
             $zone = Zone::findOrFail($infrastructureInstance->owner_id);
-            if (!ZoneAccessHelper::canAccessZone($user, $zone)) {
+            if (! ZoneAccessHelper::canAccessZone($user, $zone)) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Forbidden: Access denied to this zone',
@@ -249,4 +248,3 @@ class InfrastructureInstanceController extends Controller
         }
     }
 }
-

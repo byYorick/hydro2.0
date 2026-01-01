@@ -11,7 +11,8 @@ class ChannelBindingService
      */
     public function create(array $data): ChannelBinding
     {
-        return ChannelBinding::create($data);
+        return ChannelBinding::create($data)
+            ->load('infrastructureInstance', 'nodeChannel.node');
     }
 
     /**
@@ -21,7 +22,7 @@ class ChannelBindingService
     {
         $binding->update($data);
 
-        return $binding->fresh()->load('infrastructureInstance', 'node');
+        return $binding->fresh()->load('infrastructureInstance', 'nodeChannel.node');
     }
 
     /**
@@ -32,4 +33,3 @@ class ChannelBindingService
         $binding->delete();
     }
 }
-

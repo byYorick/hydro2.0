@@ -6,7 +6,7 @@ import json
 import logging
 from typing import Dict, Any, Optional, List
 from common.db import fetch
-from infrastructure.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
+from infrastructure.circuit_breaker import CircuitBreaker
 from repositories.laravel_api_repository import LaravelApiRepository
 from common.effective_targets import parse_effective_targets
 
@@ -16,20 +16,15 @@ logger = logging.getLogger(__name__)
 class RecipeRepository:
     """Репозиторий для работы с рецептами."""
     
-    def __init__(self, db_circuit_breaker: Optional[CircuitBreaker] = None, use_laravel_api: bool = True):
+    def __init__(self, db_circuit_breaker: Optional[CircuitBreaker] = None):
         """
         Инициализация репозитория.
         
         Args:
             db_circuit_breaker: Circuit breaker для БД (опционально)
-            use_laravel_api: Использовать Laravel API вместо прямых SQL запросов (по умолчанию True)
         """
         self.db_circuit_breaker = db_circuit_breaker
-        self.use_laravel_api = use_laravel_api
-        if use_laravel_api:
-            self.laravel_api = LaravelApiRepository()
-        else:
-            self.laravel_api = None
+        self.laravel_api = LaravelApiRepository()
     
     async def get_zone_recipe_and_targets(self, zone_id: int) -> Optional[Dict[str, Any]]:
         """
@@ -45,35 +40,31 @@ class RecipeRepository:
             CircuitBreakerOpenError: Если Circuit Breaker открыт
         """
         # Используем Laravel API для получения effective targets
-        if self.use_laravel_api and self.laravel_api:
+        try:
+            effective_targets = await self.laravel_api.get_effective_targets(zone_id)
+            if not effective_targets:
+                return None
             try:
-                effective_targets = await self.laravel_api.get_effective_targets(zone_id)
-                if not effective_targets:
-                    return None
-                try:
-                    parsed = parse_effective_targets(effective_targets)
-                except Exception as e:
-                    logger.warning(f'Failed to parse effective targets for zone {zone_id}: {e}')
-                    return None
-
-                normalized = parsed.model_dump()
-                # Преобразуем формат из Laravel API в формат, ожидаемый кодом
-                phase = normalized.get('phase', {})
-                targets = normalized.get('targets', {})
-
-                return {
-                    "zone_id": normalized.get('zone_id', zone_id),
-                    "cycle_id": normalized.get('cycle_id'),
-                    "phase_index": phase.get('id'),  # Используем ID фазы как индекс
-                    "targets": targets,
-                    "phase_name": phase.get('name', phase.get('code', 'UNKNOWN')),
-                }
+                parsed = parse_effective_targets(effective_targets)
             except Exception as e:
-                logger.warning(f'Failed to get effective targets from Laravel API for zone {zone_id}: {e}')
+                logger.warning(f'Failed to parse effective targets for zone {zone_id}: {e}')
                 return None
 
-        logger.warning("Laravel API disabled; legacy recipe tables are no longer supported")
-        return None
+            normalized = parsed.model_dump()
+            # Преобразуем формат из Laravel API в формат, ожидаемый кодом
+            phase = normalized.get('phase', {})
+            targets = normalized.get('targets', {})
+
+            return {
+                "zone_id": normalized.get('zone_id', zone_id),
+                "cycle_id": normalized.get('cycle_id'),
+                "phase_index": phase.get('id'),  # Используем ID фазы как индекс
+                "targets": targets,
+                "phase_name": phase.get('name', phase.get('code', 'UNKNOWN')),
+            }
+        except Exception as e:
+            logger.warning(f'Failed to get effective targets from Laravel API for zone {zone_id}: {e}')
+            return None
     
     async def get_zones_recipes_batch(self, zone_ids: List[int]) -> Dict[int, Optional[Dict[str, Any]]]:
         """
@@ -91,45 +82,40 @@ class RecipeRepository:
         if not zone_ids:
             return {}
         
-        # Используем Laravel API для batch запроса
-        if self.use_laravel_api and self.laravel_api:
-            try:
-                effective_targets_batch = await self.laravel_api.get_effective_targets_batch(zone_ids)
+        try:
+            effective_targets_batch = await self.laravel_api.get_effective_targets_batch(zone_ids)
 
-                # Преобразуем формат из Laravel API в формат, ожидаемый кодом
-                result: Dict[int, Optional[Dict[str, Any]]] = {}
-                for zone_id in zone_ids:
-                    effective_targets = effective_targets_batch.get(zone_id)
-                    if not effective_targets or 'error' in effective_targets:
-                        result[zone_id] = None
-                        continue
+            # Преобразуем формат из Laravel API в формат, ожидаемый кодом
+            result: Dict[int, Optional[Dict[str, Any]]] = {}
+            for zone_id in zone_ids:
+                effective_targets = effective_targets_batch.get(zone_id)
+                if not effective_targets or 'error' in effective_targets:
+                    result[zone_id] = None
+                    continue
 
-                    try:
-                        parsed = parse_effective_targets(effective_targets)
-                        normalized = parsed.model_dump()
-                    except Exception as e:
-                        logger.warning(f'Failed to parse effective targets for zone {zone_id}: {e}')
-                        result[zone_id] = None
-                        continue
+                try:
+                    parsed = parse_effective_targets(effective_targets)
+                    normalized = parsed.model_dump()
+                except Exception as e:
+                    logger.warning(f'Failed to parse effective targets for zone {zone_id}: {e}')
+                    result[zone_id] = None
+                    continue
 
-                    phase = normalized.get('phase', {})
-                    targets = normalized.get('targets', {})
+                phase = normalized.get('phase', {})
+                targets = normalized.get('targets', {})
 
-                    result[zone_id] = {
-                        "zone_id": normalized.get('zone_id', zone_id),
-                        "cycle_id": normalized.get('cycle_id'),
-                        "phase_index": phase.get('id'),  # Используем ID фазы как индекс
-                        "targets": targets,
-                        "phase_name": phase.get('name', phase.get('code', 'UNKNOWN')),
-                    }
+                result[zone_id] = {
+                    "zone_id": normalized.get('zone_id', zone_id),
+                    "cycle_id": normalized.get('cycle_id'),
+                    "phase_index": phase.get('id'),  # Используем ID фазы как индекс
+                    "targets": targets,
+                    "phase_name": phase.get('name', phase.get('code', 'UNKNOWN')),
+                }
 
-                return result
-            except Exception as e:
-                logger.warning(f'Failed to get effective targets batch from Laravel API: {e}')
-                return {zone_id: None for zone_id in zone_ids}
-
-        logger.warning("Laravel API disabled; legacy recipe tables are no longer supported")
-        return {zone_id: None for zone_id in zone_ids}
+            return result
+        except Exception as e:
+            logger.warning(f'Failed to get effective targets batch from Laravel API: {e}')
+            return {zone_id: None for zone_id in zone_ids}
     
     async def get_zone_data_batch(self, zone_id: int) -> Dict[str, Any]:
         """
@@ -170,7 +156,7 @@ class RecipeRepository:
                         tl.sensor_id DESC
                 ),
                 nodes_data AS (
-                    SELECT n.id, n.uid, n.type, nc.channel
+                    SELECT n.id, n.uid, n.type, nc.id as node_channel_id, nc.channel
                     FROM nodes n
                     LEFT JOIN node_channels nc ON nc.node_id = n.id
                     WHERE n.zone_id = $1 AND n.status = 'online'
@@ -238,6 +224,7 @@ class RecipeRepository:
                     "node_id": node.get("id"),
                     "node_uid": node.get("uid"),
                     "type": node_type,
+                    "node_channel_id": node.get("node_channel_id"),
                     "channel": channel,
                 }
         
@@ -304,7 +291,7 @@ class RecipeRepository:
                 WHERE rn = 1
             ),
             nodes_data AS (
-                SELECT n.zone_id, n.id, n.uid, n.type, nc.channel
+                SELECT n.zone_id, n.id, n.uid, n.type, nc.id as node_channel_id, nc.channel
                 FROM nodes n
                 LEFT JOIN node_channels nc ON nc.node_id = n.id
                 WHERE n.zone_id = ANY($1::int[]) AND n.status = 'online'
@@ -333,6 +320,7 @@ class RecipeRepository:
                                 'node_id', nd.id,
                                 'node_uid', nd.uid,
                                 'type', nd.type,
+                                'node_channel_id', nd.node_channel_id,
                                 'channel', nd.channel
                             )
                         )

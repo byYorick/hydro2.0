@@ -2,9 +2,9 @@
 
 namespace App\Services;
 
+use App\Models\Greenhouse;
 use App\Models\InfrastructureInstance;
 use App\Models\Zone;
-use App\Models\Greenhouse;
 use Illuminate\Database\Eloquent\Collection;
 
 class InfrastructureInstanceService
@@ -42,7 +42,7 @@ class InfrastructureInstanceService
     {
         return InfrastructureInstance::where('owner_type', 'zone')
             ->where('owner_id', $zone->id)
-            ->with('channelBindings.node')
+            ->with('channelBindings.nodeChannel.node')
             ->get();
     }
 
@@ -53,8 +53,7 @@ class InfrastructureInstanceService
     {
         return InfrastructureInstance::where('owner_type', 'greenhouse')
             ->where('owner_id', $greenhouse->id)
-            ->with('channelBindings.node')
+            ->with('channelBindings.nodeChannel.node')
             ->get();
     }
 }
-

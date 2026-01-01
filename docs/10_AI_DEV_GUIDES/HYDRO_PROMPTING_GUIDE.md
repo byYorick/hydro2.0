@@ -3,7 +3,7 @@
 A practical checklist for crafting clear, project-aware prompts when working on hydro2.0 tasks.
 
 ## Pre-flight checks before you prompt
-- Read any relevant `AGENTS.md` and conventions in the target folder; note framework versions and dependencies.
+- Start with the repo-root `AGENTS.md`, then read any relevant `AGENTS.md` and conventions in the target folder; note framework versions and dependencies.
 - Confirm the expected deliverable (file, screen, service, tests) and runtime environment (local/CI, available tokens).
 - Gather constraints: forbidden files/dirs, no new deps/migrations, rollback expectations.
 - List required checks: unit/integration/e2e, static analysis, simulators/emulators, and manual scenarios.

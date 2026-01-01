@@ -473,12 +473,18 @@ export class APITestHelper {
     throw lastError || new Error('Failed to create grow cycle after retries');
   }
 
-  async createBinding(zoneId: number, nodeId: number, channelId: number, role: string): Promise<void> {
-    const response = await this.request.post(`${baseURL}/api/zones/${zoneId}/infrastructure/bindings`, {
+  async createBinding(
+    infrastructureInstanceId: number,
+    nodeChannelId: number,
+    role: string,
+    direction: 'actuator' | 'sensor' = 'actuator',
+  ): Promise<void> {
+    const response = await this.request.post(`${baseURL}/api/channel-bindings`, {
       headers: await this.getHeaders(),
       data: {
-        node_id: nodeId,
-        channel_id: channelId,
+        infrastructure_instance_id: infrastructureInstanceId,
+        node_channel_id: nodeChannelId,
+        direction,
         role: role,
       },
     });

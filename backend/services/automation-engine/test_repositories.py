@@ -161,8 +161,8 @@ async def test_node_repository_get_zone_nodes():
     
     with patch("repositories.node_repository.fetch") as mock_fetch:
         mock_fetch.return_value = [
-            {"id": 1, "uid": "nd-irrig-1", "type": "irrig", "channel": "default"},
-            {"id": 2, "uid": "nd-light-1", "type": "light", "channel": "default"},
+            {"id": 1, "uid": "nd-irrig-1", "type": "irrig", "node_channel_id": 11, "channel": "default"},
+            {"id": 2, "uid": "nd-light-1", "type": "light", "node_channel_id": 22, "channel": "default"},
         ]
         
         result = await repo.get_zone_nodes(1)
@@ -170,6 +170,7 @@ async def test_node_repository_get_zone_nodes():
         assert "irrig:default" in result
         assert "light:default" in result
         assert result["irrig:default"]["node_uid"] == "nd-irrig-1"
+        assert result["irrig:default"]["node_channel_id"] == 11
         mock_fetch.assert_called_once()
 
 
@@ -180,8 +181,8 @@ async def test_node_repository_get_zones_nodes_batch():
     
     with patch("repositories.node_repository.fetch") as mock_fetch:
         mock_fetch.return_value = [
-            {"zone_id": 1, "id": 1, "uid": "nd-irrig-1", "type": "irrig", "channel": "default"},
-            {"zone_id": 2, "id": 2, "uid": "nd-irrig-2", "type": "irrig", "channel": "default"},
+            {"zone_id": 1, "id": 1, "uid": "nd-irrig-1", "type": "irrig", "node_channel_id": 11, "channel": "default"},
+            {"zone_id": 2, "id": 2, "uid": "nd-irrig-2", "type": "irrig", "node_channel_id": 22, "channel": "default"},
         ]
         
         result = await repo.get_zones_nodes_batch([1, 2])
@@ -200,7 +201,7 @@ async def test_recipe_repository_get_zone_recipe_and_targets():
         mock_api.get_effective_targets.return_value = {
             "zone_id": 1,
             "cycle_id": 10,
-            "phase": {"id": 2, "name": "Germination"},
+            "phase": {"id": 2, "code": "GERMINATION", "name": "Germination"},
             "targets": {"ph": {"target": 6.5}, "ec": {"target": 1.8}},
         }
         mock_api_cls.return_value = mock_api
@@ -238,13 +239,13 @@ async def test_recipe_repository_get_zones_recipes_batch():
             1: {
                 "zone_id": 1,
                 "cycle_id": 10,
-                "phase": {"id": 2, "name": "Germination"},
+                "phase": {"id": 2, "code": "GERMINATION", "name": "Germination"},
                 "targets": {"ph": {"target": 6.5}},
             },
             2: {
                 "zone_id": 2,
                 "cycle_id": 11,
-                "phase": {"id": 3, "name": "Vegetation"},
+                "phase": {"id": 3, "code": "VEGETATION", "name": "Vegetation"},
                 "targets": {"ph": {"target": 6.8}},
             },
         }
