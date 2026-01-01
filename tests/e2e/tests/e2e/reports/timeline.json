@@ -1,185 +1,217 @@
 {
-  "test_suite": "E02_auth_ws_api",
-  "generated_at": "2026-01-01T19:49:37.138497",
+  "test_suite": "E13_duplicate_cmd_response",
+  "generated_at": "2026-01-01T19:54:19.137277",
   "test_cases": [
     {
-      "name": "get_zones_api",
+      "name": "set_test_uids",
       "status": "passed",
-      "duration": 0.06290102005004883,
+      "duration": 1.9550323486328125e-05,
       "error_message": null,
       "steps": [
         {
-          "name": "get_zones_api",
+          "name": "set_test_uids",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T19:49:35.964326"
+      "timestamp": "2026-01-01T19:53:55.690724"
     },
     {
-      "name": "fetch_zone_id",
+      "name": "start_node_simulator",
       "status": "passed",
-      "duration": 0.003013134002685547,
+      "duration": 5.639760971069336,
       "error_message": null,
       "steps": [
         {
-          "name": "fetch_zone_id",
+          "name": "start_node_simulator",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T19:49:35.967384"
+      "timestamp": "2026-01-01T19:54:01.330510"
     },
     {
-      "name": "set_zone_id",
+      "name": "get_zones",
       "status": "passed",
-      "duration": 4.0531158447265625e-06,
+      "duration": 0.06366848945617676,
       "error_message": null,
       "steps": [
         {
-          "name": "set_zone_id",
+          "name": "get_zones",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T19:49:35.967455"
+      "timestamp": "2026-01-01T19:54:01.394232"
     },
     {
-      "name": "connect_websocket",
+      "name": "get_nodes",
       "status": "passed",
-      "duration": 4.291534423828125e-06,
+      "duration": 0.07937765121459961,
       "error_message": null,
       "steps": [
         {
-          "name": "connect_websocket",
+          "name": "get_nodes",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T19:49:35.967467"
+      "timestamp": "2026-01-01T19:54:01.473649"
     },
     {
-      "name": "subscribe_to_zone_channel",
+      "name": "find_test_zone_and_node",
       "status": "passed",
-      "duration": 0.18093585968017578,
+      "duration": 3.337860107421875e-06,
       "error_message": null,
       "steps": [
         {
-          "name": "subscribe_to_zone_channel",
+          "name": "find_test_zone_and_node",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T19:49:36.148443"
+      "timestamp": "2026-01-01T19:54:01.473701"
     },
     {
-      "name": "invalidate_auth_token",
+      "name": "subscribe_ws_commands",
       "status": "passed",
-      "duration": 9.775161743164062e-06,
+      "duration": 1.1917827129364014,
       "error_message": null,
       "steps": [
         {
-          "name": "invalidate_auth_token",
+          "name": "subscribe_ws_commands",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T19:49:36.148489"
+      "timestamp": "2026-01-01T19:54:02.665505"
     },
     {
-      "name": "call_api_after_invalidate",
+      "name": "send_command",
       "status": "passed",
-      "duration": 0.9872424602508545,
+      "duration": 2.15409779548645,
       "error_message": null,
       "steps": [
         {
-          "name": "call_api_after_invalidate",
+          "name": "send_command",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T19:49:37.135774"
+      "timestamp": "2026-01-01T19:54:04.819691"
     },
     {
-      "name": "create_ws_client_without_token",
+      "name": "set_command_id",
       "status": "passed",
-      "duration": 1.2636184692382812e-05,
+      "duration": 7.867813110351562e-06,
       "error_message": null,
       "steps": [
         {
-          "name": "create_ws_client_without_token",
+          "name": "set_command_id",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T19:49:37.135809"
+      "timestamp": "2026-01-01T19:54:04.819759"
     },
     {
-      "name": "try_subscribe_without_auth",
+      "name": "node_sends_done_first",
       "status": "passed",
-      "duration": 0.0017406940460205078,
+      "duration": 2.0026752948760986,
       "error_message": null,
       "steps": [
         {
-          "name": "try_subscribe_without_auth",
+          "name": "node_sends_done_first",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T19:49:37.137585"
+      "timestamp": "2026-01-01T19:54:06.822489"
     },
     {
-      "name": "api_accessible_with_valid_token",
+      "name": "node_sends_done_duplicate",
       "status": "passed",
-      "duration": 7.319450378417969e-05,
+      "duration": 2.002213716506958,
       "error_message": null,
       "steps": [
         {
-          "name": "api_accessible_with_valid_token",
+          "name": "node_sends_done_duplicate",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T19:49:37.137670"
+      "timestamp": "2026-01-01T19:54:08.824815"
     },
     {
-      "name": "reauth_successful",
+      "name": "command_reaches_final_status_done",
       "status": "passed",
-      "duration": 4.935264587402344e-05,
+      "duration": 0.009494304656982422,
       "error_message": null,
       "steps": [
         {
-          "name": "reauth_successful",
+          "name": "command_reaches_final_status_done",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T19:49:37.137724"
+      "timestamp": "2026-01-01T19:54:08.834333"
     },
     {
-      "name": "ws_subscription_without_token_failed",
+      "name": "assert_status_is_done",
       "status": "passed",
-      "duration": 0.00042891502380371094,
+      "duration": 0.0005311965942382812,
       "error_message": null,
       "steps": [
         {
-          "name": "ws_subscription_without_token_failed",
+          "name": "assert_status_is_done",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T19:49:37.138157"
+      "timestamp": "2026-01-01T19:54:08.834879"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E02_auth_ws_api": {
+    "E13_duplicate_cmd_response": {
       "ws_messages": [
         {
           "data": {
             "event": "pusher_internal:subscription_succeeded",
             "data": "{}",
-            "channel": "private-hydro.zones.1"
+            "channel": "private-commands.1"
           },
-          "timestamp": "2026-01-01T19:49:36.052164"
+          "timestamp": "2026-01-01T19:54:01.568466"
+        },
+        {
+          "data": {
+            "event": "CommandStatusUpdated",
+            "data": "{\"commandId\":\"fe77beb1-1084-4a64-aa12-26bc8221ce11\",\"status\":\"QUEUED\",\"message\":\"Command created\",\"error\":null,\"zoneId\":1,\"event_id\":1767286442000004190,\"server_ts\":1767286442000}",
+            "channel": "private-commands.1"
+          },
+          "timestamp": "2026-01-01T19:54:02.732217"
+        },
+        {
+          "data": {
+            "event": "CommandStatusUpdated",
+            "data": "{\"commandId\":\"fe77beb1-1084-4a64-aa12-26bc8221ce11\",\"status\":\"SENT\",\"message\":\"Command status updated\",\"error\":null,\"zoneId\":1,\"event_id\":1767286442000004191,\"server_ts\":1767286442000}",
+            "channel": "private-commands.1"
+          },
+          "timestamp": "2026-01-01T19:54:02.810767"
+        },
+        {
+          "data": {
+            "event": "CommandStatusUpdated",
+            "data": "{\"commandId\":\"fe77beb1-1084-4a64-aa12-26bc8221ce11\",\"status\":\"DONE\",\"message\":\"Command completed\",\"error\":null,\"zoneId\":1,\"event_id\":1767286444000004192,\"server_ts\":1767286444000}",
+            "channel": "private-commands.1"
+          },
+          "timestamp": "2026-01-01T19:54:04.884530"
+        },
+        {
+          "data": {
+            "event": "CommandStatusUpdated",
+            "data": "{\"commandId\":\"fe77beb1-1084-4a64-aa12-26bc8221ce11\",\"status\":\"DONE\",\"message\":\"Command status updated\",\"error\":null,\"zoneId\":1,\"event_id\":1767286444000004193,\"server_ts\":1767286444000}",
+            "channel": "private-commands.1"
+          },
+          "timestamp": "2026-01-01T19:54:04.894423"
         }
       ],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
         "zone_id": 1,
-        "zone_uid": "zn-test-1",
         "node_id": 1,
-        "node_uid": "nd-ph-esp32una",
-        "test_zone_id": 1
+        "test_zone_id": 1,
+        "test_node_id": 8,
+        "ws_last_event_id": 1767286444000004193
       }
     }
   }
