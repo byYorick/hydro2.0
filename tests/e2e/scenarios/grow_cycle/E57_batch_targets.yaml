@@ -16,7 +16,7 @@ actions:
 
   - step: set_zone_id
     type: set
-    zone_id: ${zones_response.data[0].id}
+    zone_id: ${zones_response.data.data[0].id}
 
   - step: get_running_cycle
     type: database_query

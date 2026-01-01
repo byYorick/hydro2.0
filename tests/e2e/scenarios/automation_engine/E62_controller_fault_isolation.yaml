@@ -85,7 +85,7 @@ actions:
   # Принудительно вызываем ошибку в climate контроллере через test hook
   - step: inject_climate_error
     type: ae_test_hook
-    url: http://localhost:9405
+    url: http://localhost:9505
     zone_id: ${zone_id}
     controller: climate
     action: inject_error

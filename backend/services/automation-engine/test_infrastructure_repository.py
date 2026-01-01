@@ -2,14 +2,10 @@
 import pytest
 import sys
 from pathlib import Path
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import patch, AsyncMock
 
 # Add current directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
-
-# Mock common.db before importing repositories
-sys.modules['common'] = MagicMock()
-sys.modules['common.db'] = MagicMock()
 
 from repositories.infrastructure_repository import InfrastructureRepository
 
@@ -171,7 +167,7 @@ async def test_get_zone_bindings_by_role_with_circuit_breaker():
     circuit_breaker = CircuitBreaker(
         name="test_db",
         failure_threshold=5,
-        recovery_timeout=60
+        timeout=60
     )
     repo = InfrastructureRepository(db_circuit_breaker=circuit_breaker)
     

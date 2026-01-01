@@ -156,7 +156,7 @@ assertions:
       zone_id: ${zone_id}
     expected:
       - field: cmd_count
-        operator: less_than_or_equal
+        operator: equals
         value: 0
     timeout: 10.0
 

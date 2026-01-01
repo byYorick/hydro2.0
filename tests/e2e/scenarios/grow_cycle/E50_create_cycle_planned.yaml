@@ -17,7 +17,7 @@ actions:
 
   - step: set_zone_id
     type: set
-    zone_id: ${zones_response.data[0].id}
+    zone_id: ${zones_response.data.data[0].id}
 
   - step: create_plant
     type: api_post
@@ -33,6 +33,7 @@ actions:
     payload:
       name: test-recipe-e50-${TIMESTAMP_S}
       description: Test recipe for E50
+      plant_id: 1
     save: recipe_response
 
   - step: create_revision

@@ -1,422 +1,178 @@
 {
-  "test_suite": "E21_alert_dedup_count",
-  "generated_at": "2025-12-31T15:52:19.699186",
+  "test_suite": "E50_create_cycle_planned",
+  "generated_at": "2025-12-31T17:40:16.189413",
   "test_cases": [
     {
-      "name": "set_test_uids",
+      "name": "get_zones",
       "status": "passed",
-      "duration": 2.2172927856445312e-05,
+      "duration": 0.07001328468322754,
       "error_message": null,
       "steps": [
         {
-          "name": "set_test_uids",
+          "name": "get_zones",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T15:51:44.561418"
+      "timestamp": "2025-12-31T17:40:15.586646"
     },
     {
-      "name": "start_node_simulator",
+      "name": "set_zone_id",
       "status": "passed",
-      "duration": 5.645374298095703,
+      "duration": 4.5299530029296875e-06,
       "error_message": null,
       "steps": [
         {
-          "name": "start_node_simulator",
+          "name": "set_zone_id",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T15:51:50.206846"
+      "timestamp": "2025-12-31T17:40:15.586778"
     },
     {
-      "name": "fetch_node_id",
+      "name": "create_plant",
       "status": "passed",
-      "duration": 0.009971857070922852,
+      "duration": 0.05696392059326172,
       "error_message": null,
       "steps": [
         {
-          "name": "fetch_node_id",
+          "name": "create_plant",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T15:51:50.217060"
+      "timestamp": "2025-12-31T17:40:15.643883"
     },
     {
-      "name": "set_zone_and_node",
+      "name": "create_recipe",
       "status": "passed",
-      "duration": 6.9141387939453125e-06,
+      "duration": 0.0577692985534668,
       "error_message": null,
       "steps": [
         {
-          "name": "set_zone_and_node",
+          "name": "create_recipe",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T15:51:50.217350"
+      "timestamp": "2025-12-31T17:40:15.701845"
     },
     {
-      "name": "cleanup_old_alerts",
+      "name": "create_revision",
       "status": "passed",
-      "duration": 0.0031821727752685547,
+      "duration": 0.0560154914855957,
       "error_message": null,
       "steps": [
         {
-          "name": "cleanup_old_alerts",
+          "name": "create_revision",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T15:51:50.220698"
+      "timestamp": "2025-12-31T17:40:15.758056"
     },
     {
-      "name": "subscribe_zone_channel",
+      "name": "add_phase_0",
       "status": "passed",
-      "duration": 0.1971886157989502,
+      "duration": 0.05773210525512695,
       "error_message": null,
       "steps": [
         {
-          "name": "subscribe_zone_channel",
+          "name": "add_phase_0",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T15:51:50.418104"
+      "timestamp": "2025-12-31T17:40:15.816017"
     },
     {
-      "name": "publish_error_1",
+      "name": "add_phase_1",
       "status": "passed",
-      "duration": 1.0011186599731445,
+      "duration": 0.05664849281311035,
       "error_message": null,
       "steps": [
         {
-          "name": "publish_error_1",
+          "name": "add_phase_1",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T15:51:51.419649"
+      "timestamp": "2025-12-31T17:40:15.872891"
     },
     {
-      "name": "publish_error_2",
+      "name": "publish_revision",
       "status": "passed",
-      "duration": 1.0007424354553223,
+      "duration": 0.05753636360168457,
       "error_message": null,
       "steps": [
         {
-          "name": "publish_error_2",
+          "name": "publish_revision",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T15:51:52.420768"
+      "timestamp": "2025-12-31T17:40:15.930587"
     },
     {
-      "name": "publish_error_3",
+      "name": "create_grow_cycle",
       "status": "passed",
-      "duration": 1.0012023448944092,
+      "duration": 0.11705279350280762,
       "error_message": null,
       "steps": [
         {
-          "name": "publish_error_3",
+          "name": "create_grow_cycle",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T15:51:53.422353"
+      "timestamp": "2025-12-31T17:40:16.047970"
     },
     {
-      "name": "publish_error_4",
+      "name": "set_ids_for_cleanup",
       "status": "passed",
-      "duration": 1.0013718605041504,
+      "duration": 5.7220458984375e-06,
       "error_message": null,
       "steps": [
         {
-          "name": "publish_error_4",
+          "name": "set_ids_for_cleanup",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T15:51:54.424199"
+      "timestamp": "2025-12-31T17:40:16.048159"
     },
     {
-      "name": "publish_error_5",
+      "name": "cycle_status_planned",
       "status": "passed",
-      "duration": 0.00019359588623046875,
+      "duration": 0.005072593688964844,
       "error_message": null,
       "steps": [
         {
-          "name": "publish_error_5",
+          "name": "cycle_status_planned",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T15:51:54.424879"
+      "timestamp": "2025-12-31T17:40:16.053247"
     },
     {
-      "name": "wait_for_alert_processing",
-      "status": "passed",
-      "duration": 15.002200603485107,
-      "error_message": null,
+      "name": "cycle_has_revision",
+      "status": "failed",
+      "duration": 0.0008056163787841797,
+      "error_message": "Expected field 'plant_id' = ${plant_response.data.id}, got 83",
       "steps": [
         {
-          "name": "wait_for_alert_processing",
-          "status": "passed"
+          "name": "cycle_has_revision",
+          "status": "failed",
+          "error": "Expected field 'plant_id' = ${plant_response.data.id}, got 83"
         }
       ],
-      "timestamp": "2025-12-31T15:52:09.427133"
-    },
-    {
-      "name": "at_least_one_active_alert",
-      "status": "passed",
-      "duration": 0.0018339157104492188,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "at_least_one_active_alert",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2025-12-31T15:52:09.428994"
+      "timestamp": "2025-12-31T17:40:16.054107"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E21_alert_dedup_count": {
-      "ws_messages": [
-        {
-          "data": {
-            "event": "pusher_internal:subscription_succeeded",
-            "data": "{}",
-            "channel": "private-hydro.zones.225"
-          },
-          "timestamp": "2025-12-31T15:51:50.322754"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":225,\"updates\":[{\"node_id\":1,\"channel\":\"ec_sensor\",\"metric_type\":\"EC\",\"value\":1.5,\"ts\":1767185513000}],\"event_id\":1767185513000013373,\"server_ts\":1767185513000}",
-            "channel": "private-hydro.zones.225"
-          },
-          "timestamp": "2025-12-31T15:51:53.146399"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":225,\"updates\":[{\"node_id\":1,\"channel\":\"ph_sensor\",\"metric_type\":\"PH\",\"value\":6,\"ts\":1767185513000}],\"event_id\":1767185513000013374,\"server_ts\":1767185513000}",
-            "channel": "private-hydro.zones.225"
-          },
-          "timestamp": "2025-12-31T15:51:53.153200"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":225,\"updates\":[{\"node_id\":1,\"channel\":\"solution_temp_c\",\"metric_type\":\"TEMPERATURE\",\"value\":20,\"ts\":1767185513000}],\"event_id\":1767185513000013375,\"server_ts\":1767185513000}",
-            "channel": "private-hydro.zones.225"
-          },
-          "timestamp": "2025-12-31T15:51:53.218201"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":225,\"updates\":[{\"node_id\":1,\"channel\":\"air_temp_c\",\"metric_type\":\"TEMPERATURE\",\"value\":22,\"ts\":1767185513000}],\"event_id\":1767185513000013376,\"server_ts\":1767185513000}",
-            "channel": "private-hydro.zones.225"
-          },
-          "timestamp": "2025-12-31T15:51:53.222776"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":225,\"updates\":[{\"node_id\":1,\"channel\":\"air_rh\",\"metric_type\":\"HUMIDITY\",\"value\":60,\"ts\":1767185513000}],\"event_id\":1767185513000013377,\"server_ts\":1767185513000}",
-            "channel": "private-hydro.zones.225"
-          },
-          "timestamp": "2025-12-31T15:51:53.287409"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":225,\"updates\":[{\"node_id\":1,\"channel\":\"ina209\",\"metric_type\":\"PUMP_CURRENT\",\"value\":50,\"ts\":1767185513000}],\"event_id\":1767185513000013378,\"server_ts\":1767185513000}",
-            "channel": "private-hydro.zones.225"
-          },
-          "timestamp": "2025-12-31T15:51:53.287465"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":225,\"updates\":[{\"node_id\":1,\"channel\":\"flow_present\",\"metric_type\":\"FLOW_RATE\",\"value\":0,\"ts\":1767185513000}],\"event_id\":1767185513000013379,\"server_ts\":1767185513000}",
-            "channel": "private-hydro.zones.225"
-          },
-          "timestamp": "2025-12-31T15:51:53.353132"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":225,\"updates\":[{\"node_id\":1,\"channel\":\"ec_sensor\",\"metric_type\":\"EC\",\"value\":1.5,\"ts\":1767185518000}],\"event_id\":1767185518000013381,\"server_ts\":1767185518000}",
-            "channel": "private-hydro.zones.225"
-          },
-          "timestamp": "2025-12-31T15:51:58.133584"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":225,\"updates\":[{\"node_id\":1,\"channel\":\"ph_sensor\",\"metric_type\":\"PH\",\"value\":6,\"ts\":1767185518000}],\"event_id\":1767185518000013380,\"server_ts\":1767185518000}",
-            "channel": "private-hydro.zones.225"
-          },
-          "timestamp": "2025-12-31T15:51:58.137748"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":225,\"updates\":[{\"node_id\":1,\"channel\":\"solution_temp_c\",\"metric_type\":\"TEMPERATURE\",\"value\":20,\"ts\":1767185518000}],\"event_id\":1767185518000013382,\"server_ts\":1767185518000}",
-            "channel": "private-hydro.zones.225"
-          },
-          "timestamp": "2025-12-31T15:51:58.197684"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":225,\"updates\":[{\"node_id\":1,\"channel\":\"air_temp_c\",\"metric_type\":\"TEMPERATURE\",\"value\":22,\"ts\":1767185518000}],\"event_id\":1767185518000013383,\"server_ts\":1767185518000}",
-            "channel": "private-hydro.zones.225"
-          },
-          "timestamp": "2025-12-31T15:51:58.210588"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":225,\"updates\":[{\"node_id\":1,\"channel\":\"air_rh\",\"metric_type\":\"HUMIDITY\",\"value\":60,\"ts\":1767185518000}],\"event_id\":1767185518000013384,\"server_ts\":1767185518000}",
-            "channel": "private-hydro.zones.225"
-          },
-          "timestamp": "2025-12-31T15:51:58.264234"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":225,\"updates\":[{\"node_id\":1,\"channel\":\"ina209\",\"metric_type\":\"PUMP_CURRENT\",\"value\":50,\"ts\":1767185518000}],\"event_id\":1767185518000013385,\"server_ts\":1767185518000}",
-            "channel": "private-hydro.zones.225"
-          },
-          "timestamp": "2025-12-31T15:51:58.275135"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":225,\"updates\":[{\"node_id\":1,\"channel\":\"flow_present\",\"metric_type\":\"FLOW_RATE\",\"value\":0,\"ts\":1767185518000}],\"event_id\":1767185518000013386,\"server_ts\":1767185518000}",
-            "channel": "private-hydro.zones.225"
-          },
-          "timestamp": "2025-12-31T15:51:58.324311"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":225,\"updates\":[{\"node_id\":1,\"channel\":\"ph_sensor\",\"metric_type\":\"PH\",\"value\":6,\"ts\":1767185523000}],\"event_id\":1767185523000013387,\"server_ts\":1767185523000}",
-            "channel": "private-hydro.zones.225"
-          },
-          "timestamp": "2025-12-31T15:52:03.125081"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":225,\"updates\":[{\"node_id\":1,\"channel\":\"ec_sensor\",\"metric_type\":\"EC\",\"value\":1.5,\"ts\":1767185523000}],\"event_id\":1767185523000013388,\"server_ts\":1767185523000}",
-            "channel": "private-hydro.zones.225"
-          },
-          "timestamp": "2025-12-31T15:52:03.129529"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":225,\"updates\":[{\"node_id\":1,\"channel\":\"air_temp_c\",\"metric_type\":\"TEMPERATURE\",\"value\":22,\"ts\":1767185523000}],\"event_id\":1767185523000013390,\"server_ts\":1767185523000}",
-            "channel": "private-hydro.zones.225"
-          },
-          "timestamp": "2025-12-31T15:52:03.193938"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":225,\"updates\":[{\"node_id\":1,\"channel\":\"solution_temp_c\",\"metric_type\":\"TEMPERATURE\",\"value\":20,\"ts\":1767185523000}],\"event_id\":1767185523000013389,\"server_ts\":1767185523000}",
-            "channel": "private-hydro.zones.225"
-          },
-          "timestamp": "2025-12-31T15:52:03.198235"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":225,\"updates\":[{\"node_id\":1,\"channel\":\"air_rh\",\"metric_type\":\"HUMIDITY\",\"value\":60,\"ts\":1767185523000}],\"event_id\":1767185523000013391,\"server_ts\":1767185523000}",
-            "channel": "private-hydro.zones.225"
-          },
-          "timestamp": "2025-12-31T15:52:03.265258"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":225,\"updates\":[{\"node_id\":1,\"channel\":\"ina209\",\"metric_type\":\"PUMP_CURRENT\",\"value\":50,\"ts\":1767185523000}],\"event_id\":1767185523000013392,\"server_ts\":1767185523000}",
-            "channel": "private-hydro.zones.225"
-          },
-          "timestamp": "2025-12-31T15:52:03.265297"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":225,\"updates\":[{\"node_id\":1,\"channel\":\"flow_present\",\"metric_type\":\"FLOW_RATE\",\"value\":0,\"ts\":1767185523000}],\"event_id\":1767185523000013393,\"server_ts\":1767185523000}",
-            "channel": "private-hydro.zones.225"
-          },
-          "timestamp": "2025-12-31T15:52:03.326839"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":225,\"updates\":[{\"node_id\":1,\"channel\":\"ph_sensor\",\"metric_type\":\"PH\",\"value\":6,\"ts\":1767185528000}],\"event_id\":1767185528000013394,\"server_ts\":1767185528000}",
-            "channel": "private-hydro.zones.225"
-          },
-          "timestamp": "2025-12-31T15:52:08.113754"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":225,\"updates\":[{\"node_id\":1,\"channel\":\"ec_sensor\",\"metric_type\":\"EC\",\"value\":1.5,\"ts\":1767185528000}],\"event_id\":1767185528000013395,\"server_ts\":1767185528000}",
-            "channel": "private-hydro.zones.225"
-          },
-          "timestamp": "2025-12-31T15:52:08.118055"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":225,\"updates\":[{\"node_id\":1,\"channel\":\"solution_temp_c\",\"metric_type\":\"TEMPERATURE\",\"value\":20,\"ts\":1767185528000}],\"event_id\":1767185528000013396,\"server_ts\":1767185528000}",
-            "channel": "private-hydro.zones.225"
-          },
-          "timestamp": "2025-12-31T15:52:08.174478"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":225,\"updates\":[{\"node_id\":1,\"channel\":\"air_temp_c\",\"metric_type\":\"TEMPERATURE\",\"value\":22,\"ts\":1767185528000}],\"event_id\":1767185528000013397,\"server_ts\":1767185528000}",
-            "channel": "private-hydro.zones.225"
-          },
-          "timestamp": "2025-12-31T15:52:08.178899"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":225,\"updates\":[{\"node_id\":1,\"channel\":\"air_rh\",\"metric_type\":\"HUMIDITY\",\"value\":60,\"ts\":1767185528000}],\"event_id\":1767185528000013398,\"server_ts\":1767185528000}",
-            "channel": "private-hydro.zones.225"
-          },
-          "timestamp": "2025-12-31T15:52:08.234211"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":225,\"updates\":[{\"node_id\":1,\"channel\":\"ina209\",\"metric_type\":\"PUMP_CURRENT\",\"value\":50,\"ts\":1767185528000}],\"event_id\":1767185528000013399,\"server_ts\":1767185528000}",
-            "channel": "private-hydro.zones.225"
-          },
-          "timestamp": "2025-12-31T15:52:08.239106"
-        },
-        {
-          "data": {
-            "event": "telemetry.batch.updated",
-            "data": "{\"zone_id\":225,\"updates\":[{\"node_id\":1,\"channel\":\"flow_present\",\"metric_type\":\"FLOW_RATE\",\"value\":0,\"ts\":1767185528000}],\"event_id\":1767185528000013400,\"server_ts\":1767185528000}",
-            "channel": "private-hydro.zones.225"
-          },
-          "timestamp": "2025-12-31T15:52:08.297854"
-        }
-      ],
+    "E50_create_cycle_planned": {
+      "ws_messages": [],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
         "zone_id": 225,
+        "zone_uid": "zn-test-1",
         "node_id": 1,
-        "test_zone_id": 225,
-        "test_node_id": 1,
-        "ws_last_event_id": 1767185528000013400
+        "node_uid": "nd-ph-esp32una",
+        "recipe_id": 136,
+        "plant_id": 83
       }
     }
   }

@@ -17,7 +17,7 @@ actions:
 
   - step: set_zone_id
     type: set
-    zone_id: ${zones_response.data[0].id}
+    zone_id: ${zones_response.data.data[0].id}
 
   # Создаем рецепт с несколькими фазами
   - step: create_multi_phase_recipe
@@ -26,6 +26,7 @@ actions:
     payload:
       name: multi-phase-recipe-${TIMESTAMP_S}
       description: Recipe with multiple phases for transition testing
+      plant_id: 1
     save: recipe_response
 
   - step: create_revision

@@ -1,84 +1,159 @@
 {
-  "test_suite": "E54_pause_resume_harvest",
-  "generated_at": "2025-12-31T13:32:39.167710",
+  "test_suite": "E00_api_smoke",
+  "generated_at": "2025-12-31T17:21:04.528395",
   "test_cases": [
     {
-      "name": "get_zones",
+      "name": "set_laravel_url",
       "status": "passed",
-      "duration": 0.07391214370727539,
+      "duration": 1.1682510375976562e-05,
       "error_message": null,
       "steps": [
         {
-          "name": "get_zones",
+          "name": "set_laravel_url",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T13:32:39.106773"
+      "timestamp": "2025-12-31T17:21:03.777220"
     },
     {
-      "name": "set_zone_id",
+      "name": "check_health",
       "status": "passed",
-      "duration": 8.106231689453125e-06,
+      "duration": 0.08412933349609375,
       "error_message": null,
       "steps": [
         {
-          "name": "set_zone_id",
+          "name": "check_health",
           "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T13:32:39.106833"
+      "timestamp": "2025-12-31T17:21:03.861380"
     },
     {
-      "name": "cleanup_old_cycles",
-      "status": "skipped",
-      "duration": 0.002406597137451172,
-      "error_message": "invalid input syntax for type bigint: \"\"\nCONTEXT:  unnamed portal parameter $1 = ''",
+      "name": "check_login_endpoint",
+      "status": "passed",
+      "duration": 0.2593417167663574,
+      "error_message": null,
       "steps": [
         {
-          "name": "cleanup_old_cycles",
-          "status": "skipped",
-          "error": "invalid input syntax for type bigint: \"\"\nCONTEXT:  unnamed portal parameter $1 = ''"
+          "name": "check_login_endpoint",
+          "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T13:32:39.109287"
+      "timestamp": "2025-12-31T17:21:04.120788"
     },
     {
-      "name": "get_active_cycle",
-      "status": "failed",
-      "duration": 0.056829214096069336,
-      "error_message": "Server error '500 Internal Server Error' for url 'http://localhost:8081/api/zones/grow-cycle'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500",
+      "name": "check_zones_protected",
+      "status": "passed",
+      "duration": 0.07236933708190918,
+      "error_message": null,
       "steps": [
         {
-          "name": "get_active_cycle",
-          "status": "failed",
-          "error": "Server error '500 Internal Server Error' for url 'http://localhost:8081/api/zones/grow-cycle'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+          "name": "check_zones_protected",
+          "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T13:32:39.166304"
+      "timestamp": "2025-12-31T17:21:04.193201"
     },
     {
-      "name": "zone_exists",
-      "status": "failed",
-      "duration": 0.0009520053863525391,
-      "error_message": "invalid input syntax for type bigint: \"\"\nCONTEXT:  unnamed portal parameter $1 = ''",
+      "name": "check_nodes_protected",
+      "status": "passed",
+      "duration": 0.06720852851867676,
+      "error_message": null,
       "steps": [
         {
-          "name": "zone_exists",
-          "status": "failed",
-          "error": "invalid input syntax for type bigint: \"\"\nCONTEXT:  unnamed portal parameter $1 = ''"
+          "name": "check_nodes_protected",
+          "status": "passed"
         }
       ],
-      "timestamp": "2025-12-31T13:32:39.167323"
+      "timestamp": "2025-12-31T17:21:04.260452"
+    },
+    {
+      "name": "check_cycles_protected",
+      "status": "passed",
+      "duration": 0.06562399864196777,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "check_cycles_protected",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-31T17:21:04.326134"
+    },
+    {
+      "name": "check_greenhouses_protected",
+      "status": "passed",
+      "duration": 0.062392473220825195,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "check_greenhouses_protected",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-31T17:21:04.388570"
+    },
+    {
+      "name": "check_commands_protected",
+      "status": "passed",
+      "duration": 0.13907146453857422,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "check_commands_protected",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-31T17:21:04.527715"
+    },
+    {
+      "name": "health_endpoint_works",
+      "status": "passed",
+      "duration": 6.818771362304688e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "health_endpoint_works",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-31T17:21:04.527804"
+    },
+    {
+      "name": "no_500_errors_on_endpoints",
+      "status": "passed",
+      "duration": 0.00022864341735839844,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "no_500_errors_on_endpoints",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-31T17:21:04.528041"
+    },
+    {
+      "name": "login_returns_validation_error",
+      "status": "passed",
+      "duration": 3.457069396972656e-05,
+      "error_message": null,
+      "steps": [
+        {
+          "name": "login_returns_validation_error",
+          "status": "passed"
+        }
+      ],
+      "timestamp": "2025-12-31T17:21:04.528084"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E54_pause_resume_harvest": {
+    "E00_api_smoke": {
       "ws_messages": [],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
-        "zone_id": "",
+        "zone_id": 225,
         "zone_uid": "zn-test-1",
         "node_id": 1,
         "node_uid": "nd-ph-esp32una"

@@ -16,7 +16,7 @@ actions:
 
   - step: set_zone_id
     type: set
-    zone_id: ${zones_response.data[0].id}
+    zone_id: ${zones_response.data.data[0].id}
 
   # Создаем цикл с известными recipe targets
   - step: create_recipe_with_targets
@@ -25,6 +25,7 @@ actions:
     payload:
       name: test-recipe-targets-${TIMESTAMP_S}
       description: Test recipe for effective targets
+      plant_id: 1
     save: recipe_response
 
   - step: create_recipe_revision

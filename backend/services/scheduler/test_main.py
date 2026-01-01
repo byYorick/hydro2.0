@@ -3,6 +3,8 @@ import pytest
 from datetime import time, datetime, timedelta
 from unittest.mock import Mock, patch, AsyncMock
 import httpx
+import sys
+import types
 from main import (
     _parse_time_spec,
     get_active_schedules,
@@ -26,6 +28,16 @@ def test_parse_time_spec():
 @pytest.mark.asyncio
 async def test_get_active_schedules():
     """Test fetching active schedules."""
+    repositories_module = types.ModuleType("repositories")
+    laravel_module = types.ModuleType("repositories.laravel_api_repository")
+
+    class DummyLaravelApiRepository:
+        pass
+
+    laravel_module.LaravelApiRepository = DummyLaravelApiRepository
+    sys.modules["repositories"] = repositories_module
+    sys.modules["repositories.laravel_api_repository"] = laravel_module
+
     with patch("main.fetch") as mock_fetch, \
          patch("repositories.laravel_api_repository.LaravelApiRepository") as mock_api_cls:
         mock_fetch.return_value = [
