@@ -77,9 +77,9 @@ jobs:
               \$env .= PHP_EOL.'DB_PASSWORD=hydro';
             }
             if (preg_match('/^DB_HOST=.*/m', \$env)) {
-              \$env = preg_replace('/^DB_HOST=.*/m', 'DB_HOST=postgres', \$env);
+              \$env = preg_replace('/^DB_HOST=.*/m', 'DB_HOST=127.0.0.1', \$env);
             } else {
-              \$env .= PHP_EOL.'DB_HOST=postgres';
+              \$env .= PHP_EOL.'DB_HOST=127.0.0.1';
             }
             if (preg_match('/^DB_PORT=.*/m', \$env)) {
               \$env = preg_replace('/^DB_PORT=.*/m', 'DB_PORT=5432', \$env);
@@ -100,7 +100,7 @@ jobs:
           DB_DATABASE: hydro_test
           DB_USERNAME: hydro
           DB_PASSWORD: hydro
-          DB_HOST: postgres
+          DB_HOST: 127.0.0.1
           DB_PORT: 5432
           BROADCAST_CONNECTION: log
           BROADCAST_DRIVER: log
@@ -157,7 +157,7 @@ jobs:
           DB_DATABASE: hydro_test
           DB_USERNAME: hydro
           DB_PASSWORD: hydro
-          DB_HOST: postgres
+          DB_HOST: 127.0.0.1
           DB_PORT: 5432
           BROADCAST_CONNECTION: log
           BROADCAST_DRIVER: log
