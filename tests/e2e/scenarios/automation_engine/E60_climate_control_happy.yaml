@@ -33,6 +33,11 @@ setup:
         interval_seconds: 60.0
 
 actions:
+  - step: stop_node_simulator_initial
+    type: stop_simulator
+    wait_seconds: 5
+    optional: true
+
   - step: set_test_uids
     type: set
     test_gh_uid: ${setup.node_sim.config.node.gh_uid}
@@ -106,7 +111,7 @@ actions:
       phase_index: 0
       name: Test Phase
       duration_hours: 24
-      temp_air_target: 22.0
+      temp_air_target: 30.0
       irrigation_mode: SUBSTRATE
       irrigation_interval_sec: 3600
       irrigation_duration_sec: 300
@@ -138,17 +143,18 @@ actions:
     query: |
       UPDATE zones
       SET capabilities = jsonb_build_object(
-        'ph_control', true,
-        'ec_control', true,
-        'climate_control', true,
-        'light_control', true,
-        'irrigation_control', true,
-        'recirculation', true,
-        'flow_sensor', true
+        'climate_control', true
       )
       WHERE id = :zone_id;
     params:
       zone_id: ${zone_id}
+
+  - step: reset_backoff
+    type: ae_test_hook
+    url: http://localhost:9505
+    zone_id: ${zone_id}
+    action: reset_backoff
+    optional: true
 
   # Привязки для heater/fan
   - step: fetch_heater_channel
@@ -163,6 +169,20 @@ actions:
       node_id: ${node_id}
     save: heater_channel_row
 
+  - step: fetch_heater_infra
+    type: database_query
+    query: |
+      SELECT id AS infra_id
+      FROM infrastructure_instances
+      WHERE owner_type = 'zone'
+        AND owner_id = :zone_id
+        AND asset_type = 'HEATER'
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+    save: heater_infra_row
+    expected_rows: 1
+
   - step: fetch_fan_channel
     type: database_query
     query: |
@@ -175,58 +195,59 @@ actions:
       node_id: ${node_id}
     save: fan_channel_row
 
-  - step: create_heater_infra
-    type: api_post
-    endpoint: /api/infrastructure-instances
-    payload:
-      owner_type: zone
-      owner_id: ${zone_id}
-      asset_type: HEATER
-      label: Heater (E60)
-      required: true
-    save: heater_infra_response
+  - step: fetch_fan_infra
+    type: database_query
+    query: |
+      SELECT id AS infra_id
+      FROM infrastructure_instances
+      WHERE owner_type = 'zone'
+        AND owner_id = :zone_id
+        AND asset_type = 'FAN'
+      LIMIT 1
+    params:
+      zone_id: ${zone_id}
+    save: fan_infra_row
+    expected_rows: 1
 
-  - step: create_fan_infra
-    type: api_post
-    endpoint: /api/infrastructure-instances
-    payload:
-      owner_type: zone
-      owner_id: ${zone_id}
-      asset_type: FAN
-      label: Fan (E60)
-      required: true
-    save: fan_infra_response
-
-  - step: bind_heater
-    type: api_post
-    endpoint: /api/channel-bindings
-    payload:
-      infrastructure_instance_id: ${heater_infra_response.data.id}
+  - step: upsert_heater_binding
+    type: database_execute
+    query: |
+      INSERT INTO channel_bindings (
+        infrastructure_instance_id, node_channel_id, direction, role, created_at, updated_at
+      )
+      VALUES (:infra_id, :node_channel_id, 'actuator', 'heater', NOW(), NOW())
+      ON CONFLICT (node_channel_id) DO UPDATE
+      SET infrastructure_instance_id = EXCLUDED.infrastructure_instance_id,
+          direction = EXCLUDED.direction,
+          role = EXCLUDED.role,
+          updated_at = NOW();
+    params:
+      infra_id: ${heater_infra_row.0.infra_id}
       node_channel_id: ${heater_channel_row.0.node_channel_id}
-      direction: actuator
-      role: heater
-    save: heater_binding_response
-    optional: true
 
-  - step: bind_fan
-    type: api_post
-    endpoint: /api/channel-bindings
-    payload:
-      infrastructure_instance_id: ${fan_infra_response.data.id}
+  - step: upsert_fan_binding
+    type: database_execute
+    query: |
+      INSERT INTO channel_bindings (
+        infrastructure_instance_id, node_channel_id, direction, role, created_at, updated_at
+      )
+      VALUES (:infra_id, :node_channel_id, 'actuator', 'fan', NOW(), NOW())
+      ON CONFLICT (node_channel_id) DO UPDATE
+      SET infrastructure_instance_id = EXCLUDED.infrastructure_instance_id,
+          direction = EXCLUDED.direction,
+          role = EXCLUDED.role,
+          updated_at = NOW();
+    params:
+      infra_id: ${fan_infra_row.0.infra_id}
       node_channel_id: ${fan_channel_row.0.node_channel_id}
-      direction: actuator
-      role: fan
-    save: fan_binding_response
-    optional: true
 
   # Публикуем telemetry (ниже цели → включение heater)
   - step: publish_temp_low
     type: mqtt_publish
     topic: hydro/${test_gh_uid}/${test_zone_uid}/${test_node_uid}/air_temp_c/telemetry
     payload:
-      metric_type: air_temp_c
-      value: 18.0
-      ts: ${TIMESTAMP_MS}
+      metric_type: TEMPERATURE
+      value: 29.0
     qos: 1
     wait_seconds: 2
 
@@ -273,36 +294,6 @@ cleanup:
     type: api_post
     endpoint: /api/grow-cycles/${cycle_id}/abort
     payload: {}
-    optional: true
-
-  - step: delete_heater_binding
-    type: database_execute
-    query: |
-      DELETE FROM channel_bindings
-      WHERE infrastructure_instance_id = :infra_id
-        AND role = 'heater'
-    params:
-      infra_id: ${heater_infra_response.data.id}
-    optional: true
-
-  - step: delete_fan_binding
-    type: database_execute
-    query: |
-      DELETE FROM channel_bindings
-      WHERE infrastructure_instance_id = :infra_id
-        AND role = 'fan'
-    params:
-      infra_id: ${fan_infra_response.data.id}
-    optional: true
-
-  - step: delete_heater_infra
-    type: api_delete
-    endpoint: /api/infrastructure-instances/${heater_infra_response.data.id}
-    optional: true
-
-  - step: delete_fan_infra
-    type: api_delete
-    endpoint: /api/infrastructure-instances/${fan_infra_response.data.id}
     optional: true
 
   - step: delete_recipe

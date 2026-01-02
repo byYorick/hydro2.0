@@ -246,7 +246,9 @@ class CommandValidator:
             return self.validate_run_pump_command(command)
         elif cmd == 'set_relay':
             # Может быть климат или свет
-            event_type = command.get('event_type', '')
+            event_type = command.get('event_type') or ''
+            if not isinstance(event_type, str):
+                event_type = ''
             if 'CLIMATE' in event_type:
                 return self.validate_climate_command(command)
             elif 'LIGHT' in event_type:
@@ -262,4 +264,3 @@ class CommandValidator:
             if 'cmd' not in command:
                 return False, "Missing required field: cmd"
             return True, None
-
