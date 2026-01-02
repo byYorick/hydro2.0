@@ -47,8 +47,8 @@ export function useZones(showToast?: ToastHandler) {
     
     // Проверяем кеш
     if (!forceRefresh && zonesCache.has(cacheKey)) {
-      const cached = zonesCache.get(cacheKey)!
-      if (Date.now() - cached.timestamp < CACHE_TTL) {
+      const cached = zonesCache.get(cacheKey)
+      if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
         return cached.data as Zone[]
       }
     }
@@ -88,8 +88,8 @@ export function useZones(showToast?: ToastHandler) {
     
     // Проверяем кеш
     if (!forceRefresh && zonesCache.has(cacheKey)) {
-      const cached = zonesCache.get(cacheKey)!
-      if (Date.now() - cached.timestamp < CACHE_TTL) {
+      const cached = zonesCache.get(cacheKey)
+      if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
         return cached.data as Zone
       }
     }
@@ -190,4 +190,3 @@ export function useZones(showToast?: ToastHandler) {
 export function clearZonesCache(): void {
   zonesCache.clear()
 }
-

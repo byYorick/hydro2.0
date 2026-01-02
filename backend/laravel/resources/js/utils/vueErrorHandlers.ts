@@ -15,7 +15,7 @@ import { logger } from './logger'
  * Обработчик ошибок Vue без перезагрузки страницы
  * Игнорирует отмененные запросы Inertia.js
  */
-function createErrorHandler(vueApp: App): (err: unknown, instance: any, info: string) => void {
+function createErrorHandler(_vueApp: App): (err: unknown, instance: any, info: string) => void {
   return (err, instance, info) => {
     // Игнорируем отмененные запросы Inertia.js
     if (
@@ -83,4 +83,3 @@ export function setupVueErrorHandlers(vueApp: App): void {
   vueApp.config.errorHandler = createErrorHandler(vueApp)
   vueApp.config.warnHandler = createWarnHandler()
 }
-

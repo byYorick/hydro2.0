@@ -3,6 +3,7 @@
  * Автоматически отключает debug логи в production
  * Поддерживает структурированное логирование с контекстом
  */
+/* eslint-disable no-console */
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 
@@ -203,7 +204,7 @@ function logWithLevel(
 /**
  * Отправляет ошибку во внешний sink (Sentry/HTTP endpoint)
  */
-function sendToErrorSink(level: LogLevel, message: string, context?: LogContext, error?: Error): void {
+function sendToErrorSink(_level: LogLevel, _message: string, _context?: LogContext, _error?: Error): void {
   // В будущем можно добавить отправку в Sentry или HTTP endpoint
   // const errorEndpoint = import.meta.env.VITE_ERROR_SINK_URL
   // if (errorEndpoint && level === 'error') {

@@ -562,7 +562,10 @@ export const groupCommandItems = (items: CommandItem[]): GroupedResult[] => {
         items: [],
       })
     }
-    grouped.get(groupId)!.items.push(item)
+    const group = grouped.get(groupId)
+    if (group) {
+      group.items.push(item)
+    }
   })
 
   return Array.from(grouped.values()).sort((a, b) => {

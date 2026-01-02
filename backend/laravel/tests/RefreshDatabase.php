@@ -40,6 +40,20 @@ trait RefreshDatabase
         }
 
         try {
+            $dropFunctionExists = DB::selectOne("
+                SELECT EXISTS (
+                    SELECT 1 FROM pg_proc WHERE proname = 'drop_hypertable'
+                ) as exists
+            ");
+        } catch (\Throwable $e) {
+            return;
+        }
+
+        if (! $dropFunctionExists || ! $dropFunctionExists->exists) {
+            return;
+        }
+
+        try {
             $schemaColumn = DB::selectOne("
                 SELECT column_name
                 FROM information_schema.columns
@@ -80,8 +94,12 @@ trait RefreshDatabase
             }
 
             try {
-                DB::statement("SELECT drop_hypertable('{$name}', if_exists => TRUE, cascade_to_materializations => TRUE);");
+                DB::statement("SELECT drop_hypertable('{$name}'::regclass, if_exists => TRUE, cascade_to_materializations => TRUE);");
             } catch (\Throwable $e) {
+                try {
+                    DB::statement("SELECT drop_hypertable('{$name}'::regclass, if_exists => TRUE);");
+                } catch (\Throwable $e) {
+                }
             }
         }
     }

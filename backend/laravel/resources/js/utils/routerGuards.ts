@@ -117,7 +117,7 @@ export function setupRouterGuards(): void {
       currentUrl: currentUrl,
       stack: new Error().stack,
     })
-    return originalRouterMethods.reload!(options)
+    return originalRouterMethods.reload ? originalRouterMethods.reload(options) : Promise.resolve()
   }
   
   // Помечаем обёрнутый метод маркером
@@ -147,7 +147,7 @@ export function setupRouterGuards(): void {
       })
       return Promise.resolve()
     }
-    return originalRouterMethods.visit!(url, options)
+    return originalRouterMethods.visit ? originalRouterMethods.visit(url, options) : Promise.resolve()
   }
   
   // Помечаем обёрнутый метод маркером

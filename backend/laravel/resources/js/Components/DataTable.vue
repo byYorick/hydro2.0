@@ -75,7 +75,8 @@ const paginatedRows = computed(() => {
   const total = props.rows.length
   if (total === 0) return []
   
-  const validPage = clampCurrentPage(total)
+  const maxPage = Math.ceil(total / perPage.value) || 1
+  const validPage = Math.min(currentPage.value, maxPage)
   const start = (validPage - 1) * perPage.value
   const end = start + perPage.value
   return props.rows.slice(start, end)

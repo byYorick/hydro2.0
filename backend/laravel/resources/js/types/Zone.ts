@@ -1,7 +1,6 @@
 import type { Greenhouse } from './Greenhouse'
 import type { RecipeInstance } from './Recipe'
 import type { Device } from './Device'
-import type { Cycle } from './Cycle'
 import type { GrowCycle } from './GrowCycle'
 import type { ZoneTargets } from './ZoneTargets'
 import type { ZoneTelemetry } from './Telemetry'
