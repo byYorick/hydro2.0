@@ -1,4 +1,4 @@
-// @ts-nocheck
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { mount } from '@vue/test-utils'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { nextTick } from 'vue'
@@ -61,15 +61,14 @@ describe('CommandPalette (P3-1)', () => {
     await nextTick()
 
     // Палитра должна открыться
-    // @ts-ignore
-    expect(wrapper.vm.open).toBe(true)
+    expect((wrapper.vm as any).open).toBe(true)
   })
 
   it('closes on Escape key', async () => {
     const wrapper = mount(CommandPalette)
     
     // Открываем палитру
-    wrapper.vm.open = true
+    ;(wrapper.vm as any).open = true
     await nextTick()
 
     // Симулируем Escape
@@ -80,12 +79,12 @@ describe('CommandPalette (P3-1)', () => {
     window.dispatchEvent(event)
     await nextTick()
 
-    expect(wrapper.vm.open).toBe(false)
+    expect((wrapper.vm as any).open).toBe(false)
   })
 
   it('displays static navigation commands', async () => {
     const wrapper = mount(CommandPalette)
-    wrapper.vm.open = true
+    ;(wrapper.vm as any).open = true
     await nextTick()
 
     expect(wrapper.text()).toContain('Открыть Zones')
@@ -95,7 +94,7 @@ describe('CommandPalette (P3-1)', () => {
 
   it('performs fuzzy search on input', async () => {
     const wrapper = mount(CommandPalette)
-    wrapper.vm.open = true
+    ;(wrapper.vm as any).open = true
     await nextTick()
 
     const input = wrapper.find('input')
@@ -103,29 +102,29 @@ describe('CommandPalette (P3-1)', () => {
     await nextTick()
 
     // Должны найтись результаты
-    expect(wrapper.vm.q).toBe('zones')
+    expect((wrapper.vm as any).q).toBe('zones')
   })
 
   it('navigates to zone when zone command is selected', async () => {
     const wrapper = mount(CommandPalette)
-    wrapper.vm.open = true
+    ;(wrapper.vm as any).open = true
     await nextTick()
 
     // Мокируем результаты поиска
-    wrapper.vm.searchResults = {
+    ;(wrapper.vm as any).searchResults = {
       zones: [{ id: 1, name: 'Test Zone' }],
       nodes: [],
       recipes: []
     }
-    wrapper.vm.q = 'test'
+    ;(wrapper.vm as any).q = 'test'
     await nextTick()
 
-    const results = wrapper.vm.filteredResults
+    const results = (wrapper.vm as any).filteredResults
     const zoneCommand = results.find((r: any) => r.type === 'zone')
-    
+
     if (zoneCommand && zoneCommand.action) {
       // Вызываем action напрямую или через run
-      wrapper.vm.run(zoneCommand)
+      (wrapper.vm as any).run(zoneCommand)
       await nextTick()
       // Ждем debounce (300ms) для router.visit
       await new Promise(resolve => setTimeout(resolve, 400))
@@ -140,7 +139,7 @@ describe('CommandPalette (P3-1)', () => {
 
   it('shows confirmation modal for actions requiring confirmation', async () => {
     const wrapper = mount(CommandPalette)
-    wrapper.vm.open = true
+    ;(wrapper.vm as any).open = true
     await nextTick()
 
     // Создаем действие, требующее подтверждения
@@ -155,54 +154,54 @@ describe('CommandPalette (P3-1)', () => {
       actionType: 'pause'
     }
 
-    wrapper.vm.run(action)
+    ;(wrapper.vm as any).run(action)
     await nextTick()
 
     // Должно открыться модальное окно подтверждения
-    expect(wrapper.vm.confirmModal.open).toBe(true)
-    expect(wrapper.vm.confirmModal.message).toContain('Test Zone')
+    expect((wrapper.vm as any).confirmModal.open).toBe(true)
+    expect((wrapper.vm as any).confirmModal.message).toContain('Test Zone')
   })
 
   it('handles keyboard navigation with arrow keys', async () => {
     const wrapper = mount(CommandPalette)
-    wrapper.vm.open = true
-    wrapper.vm.q = 'test'
+    ;(wrapper.vm as any).open = true
+    ;(wrapper.vm as any).q = 'test'
     await nextTick()
 
     const input = wrapper.find('input')
     
     // Симулируем стрелку вниз
     await input.trigger('keydown.down')
-    expect(wrapper.vm.selectedIndex).toBeGreaterThanOrEqual(0)
+    expect((wrapper.vm as any).selectedIndex).toBeGreaterThanOrEqual(0)
 
     // Симулируем стрелку вверх
     await input.trigger('keydown.up')
-    expect(wrapper.vm.selectedIndex).toBeGreaterThanOrEqual(0)
+    expect((wrapper.vm as any).selectedIndex).toBeGreaterThanOrEqual(0)
   })
 
   it('executes command on Enter key', async () => {
     const wrapper = mount(CommandPalette)
-    wrapper.vm.open = true
-    wrapper.vm.q = 'zones'
+    ;(wrapper.vm as any).open = true
+    ;(wrapper.vm as any).q = 'zones'
     await nextTick()
 
     const input = wrapper.find('input')
-    wrapper.vm.selectedIndex = 0
-    
+    ;(wrapper.vm as any).selectedIndex = 0
+
     await input.trigger('keydown.enter')
     await nextTick()
 
     // Команда должна быть выполнена
-    expect(wrapper.vm.open).toBe(false)
+    expect((wrapper.vm as any).open).toBe(false)
   })
 
   it('highlights search matches in results', async () => {
     const wrapper = mount(CommandPalette)
-    wrapper.vm.open = true
-    wrapper.vm.q = 'zones'
+    ;(wrapper.vm as any).open = true
+    ;(wrapper.vm as any).q = 'zones'
     await nextTick()
 
-    const segments = wrapper.vm.highlightMatch('Zones', 'zones')
+    const segments = (wrapper.vm as any).highlightMatch('Zones', 'zones')
     expect(Array.isArray(segments)).toBe(true)
     expect(segments.length).toBeGreaterThan(0)
     const matchSegment = segments.find((s: any) => s.match === true)
@@ -212,7 +211,7 @@ describe('CommandPalette (P3-1)', () => {
 
   it('returns single segment for empty query', () => {
     const wrapper = mount(CommandPalette)
-    const segments = wrapper.vm.highlightMatch('Test Label', '')
+    const segments = (wrapper.vm as any).highlightMatch('Test Label', '')
     expect(segments).toHaveLength(1)
     expect(segments[0].text).toBe('Test Label')
     expect(segments[0].match).toBe(false)
@@ -235,7 +234,7 @@ describe('CommandPalette (P3-1)', () => {
     ]
     
     testCases.forEach(({ text, query }) => {
-      const segments = wrapper.vm.highlightMatch(text, query)
+      const segments = (wrapper.vm as any).highlightMatch(text, query)
       expect(Array.isArray(segments)).toBe(true)
       // Должен найти совпадение
       const matchSegment = segments.find((s: any) => s.match === true)
@@ -246,7 +245,7 @@ describe('CommandPalette (P3-1)', () => {
 
   it('handles unicode and cyrillic characters', () => {
     const wrapper = mount(CommandPalette)
-    const segments = wrapper.vm.highlightMatch('Тестовая зона', 'зона')
+    const segments = (wrapper.vm as any).highlightMatch('Тестовая зона', 'зона')
     expect(Array.isArray(segments)).toBe(true)
     const matchSegment = segments.find((s: any) => s.match === true)
     expect(matchSegment).toBeDefined()
@@ -255,7 +254,7 @@ describe('CommandPalette (P3-1)', () => {
 
   it('handles case-insensitive matching', () => {
     const wrapper = mount(CommandPalette)
-    const segments = wrapper.vm.highlightMatch('Test Label', 'test')
+    const segments = (wrapper.vm as any).highlightMatch('Test Label', 'test')
     const matchSegment = segments.find((s: any) => s.match === true)
     expect(matchSegment).toBeDefined()
     expect(matchSegment?.text.toLowerCase()).toBe('test')
@@ -263,7 +262,7 @@ describe('CommandPalette (P3-1)', () => {
 
   it('handles multiple matches in text', () => {
     const wrapper = mount(CommandPalette)
-    const segments = wrapper.vm.highlightMatch('test test test', 'test')
+    const segments = (wrapper.vm as any).highlightMatch('test test test', 'test')
     const matchSegments = segments.filter((s: any) => s.match === true)
     expect(matchSegments.length).toBe(3)
     matchSegments.forEach((segment: any) => {
@@ -273,12 +272,12 @@ describe('CommandPalette (P3-1)', () => {
 
   it('prevents XSS by escaping HTML in segments', async () => {
     const wrapper = mount(CommandPalette)
-    wrapper.vm.open = true
+    ;(wrapper.vm as any).open = true
     const xssLabel = '<img src=x onerror=alert(1)>'
-    wrapper.vm.q = 'img'
+    ;(wrapper.vm as any).q = 'img'
     await nextTick()
 
-    const segments = wrapper.vm.highlightMatch(xssLabel, 'img')
+    const segments = (wrapper.vm as any).highlightMatch(xssLabel, 'img')
     expect(Array.isArray(segments)).toBe(true)
     
     // Сегменты должны содержать текст, а не HTML
