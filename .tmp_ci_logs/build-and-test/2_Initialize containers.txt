@@ -1,0 +1,106 @@
+﻿2026-01-02T17:44:19.1855173Z ##[group]Checking docker version
+2026-01-02T17:44:19.1868595Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-01-02T17:44:19.2855002Z '1.48'
+2026-01-02T17:44:19.2867593Z Docker daemon API version: '1.48'
+2026-01-02T17:44:19.2869020Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-01-02T17:44:19.3040930Z '1.48'
+2026-01-02T17:44:19.3056399Z Docker client API version: '1.48'
+2026-01-02T17:44:19.3062950Z ##[endgroup]
+2026-01-02T17:44:19.3067120Z ##[group]Clean up resources from previous jobs
+2026-01-02T17:44:19.3072894Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=e67c4f"
+2026-01-02T17:44:19.3220918Z ##[command]/usr/bin/docker network prune --force --filter "label=e67c4f"
+2026-01-02T17:44:19.3351329Z ##[endgroup]
+2026-01-02T17:44:19.3352231Z ##[group]Create local container network
+2026-01-02T17:44:19.3363803Z ##[command]/usr/bin/docker network create --label e67c4f github_network_c48a82c2b4d946b9bfd8ea1e61f4a76b
+2026-01-02T17:44:19.3851302Z c1fa8687ed676043c7ae9499fb767f5da46232b69c198928833e58c4688fa118
+2026-01-02T17:44:19.3869332Z ##[endgroup]
+2026-01-02T17:44:19.3894825Z ##[group]Starting postgres service container
+2026-01-02T17:44:19.3917238Z ##[command]/usr/bin/docker pull timescale/timescaledb:2.13.0-pg15
+2026-01-02T17:44:20.3703245Z 2.13.0-pg15: Pulling from timescale/timescaledb
+2026-01-02T17:44:20.6349168Z 96526aa774ef: Pulling fs layer
+2026-01-02T17:44:20.6352282Z f3836ccc9a67: Pulling fs layer
+2026-01-02T17:44:20.6353492Z 3625732fb368: Pulling fs layer
+2026-01-02T17:44:20.6354673Z db2cf8153bfe: Pulling fs layer
+2026-01-02T17:44:20.6355696Z 57d1e4d158ff: Pulling fs layer
+2026-01-02T17:44:20.6356717Z d4b037398667: Pulling fs layer
+2026-01-02T17:44:20.6357706Z fffdf7fd1f65: Pulling fs layer
+2026-01-02T17:44:20.6359202Z 6fbe9502899e: Pulling fs layer
+2026-01-02T17:44:20.6359822Z 8c78b9aebfc8: Pulling fs layer
+2026-01-02T17:44:20.6360298Z 70f2ee7b92e9: Pulling fs layer
+2026-01-02T17:44:20.6360780Z 1840d5f2638e: Pulling fs layer
+2026-01-02T17:44:20.6361295Z 67d7ab323107: Pulling fs layer
+2026-01-02T17:44:20.6361801Z 386cd7b21069: Pulling fs layer
+2026-01-02T17:44:20.6362255Z 6fbe9502899e: Waiting
+2026-01-02T17:44:20.6362680Z 8c78b9aebfc8: Waiting
+2026-01-02T17:44:20.6363108Z 70f2ee7b92e9: Waiting
+2026-01-02T17:44:20.6363524Z 1840d5f2638e: Waiting
+2026-01-02T17:44:20.6363939Z 386cd7b21069: Waiting
+2026-01-02T17:44:20.6364532Z db2cf8153bfe: Waiting
+2026-01-02T17:44:20.6364960Z 57d1e4d158ff: Waiting
+2026-01-02T17:44:20.6365363Z 67d7ab323107: Waiting
+2026-01-02T17:44:20.6365767Z d4b037398667: Waiting
+2026-01-02T17:44:20.6366185Z fffdf7fd1f65: Waiting
+2026-01-02T17:44:20.8704433Z 3625732fb368: Download complete
+2026-01-02T17:44:20.8745416Z f3836ccc9a67: Verifying Checksum
+2026-01-02T17:44:20.8746477Z f3836ccc9a67: Download complete
+2026-01-02T17:44:20.8950213Z 96526aa774ef: Verifying Checksum
+2026-01-02T17:44:20.8951085Z 96526aa774ef: Download complete
+2026-01-02T17:44:21.0026868Z 96526aa774ef: Pull complete
+2026-01-02T17:44:21.0281110Z f3836ccc9a67: Pull complete
+2026-01-02T17:44:21.0390762Z 3625732fb368: Pull complete
+2026-01-02T17:44:21.1326690Z 57d1e4d158ff: Verifying Checksum
+2026-01-02T17:44:21.1327737Z 57d1e4d158ff: Download complete
+2026-01-02T17:44:21.1328292Z d4b037398667: Download complete
+2026-01-02T17:44:21.3764702Z 6fbe9502899e: Verifying Checksum
+2026-01-02T17:44:21.3765975Z 6fbe9502899e: Download complete
+2026-01-02T17:44:21.3895614Z fffdf7fd1f65: Verifying Checksum
+2026-01-02T17:44:21.3896339Z fffdf7fd1f65: Download complete
+2026-01-02T17:44:21.5951912Z db2cf8153bfe: Verifying Checksum
+2026-01-02T17:44:21.5966189Z db2cf8153bfe: Download complete
+2026-01-02T17:44:21.6225924Z 8c78b9aebfc8: Verifying Checksum
+2026-01-02T17:44:21.6226554Z 8c78b9aebfc8: Download complete
+2026-01-02T17:44:21.6707519Z 70f2ee7b92e9: Verifying Checksum
+2026-01-02T17:44:21.6708097Z 70f2ee7b92e9: Download complete
+2026-01-02T17:44:22.0123163Z 67d7ab323107: Verifying Checksum
+2026-01-02T17:44:22.0123906Z 67d7ab323107: Download complete
+2026-01-02T17:44:22.0222582Z 386cd7b21069: Verifying Checksum
+2026-01-02T17:44:22.0223214Z 386cd7b21069: Download complete
+2026-01-02T17:44:22.3809464Z 1840d5f2638e: Verifying Checksum
+2026-01-02T17:44:22.3810239Z 1840d5f2638e: Download complete
+2026-01-02T17:44:24.1362004Z db2cf8153bfe: Pull complete
+2026-01-02T17:44:24.1680638Z 57d1e4d158ff: Pull complete
+2026-01-02T17:44:24.1791892Z d4b037398667: Pull complete
+2026-01-02T17:44:24.1933162Z fffdf7fd1f65: Pull complete
+2026-01-02T17:44:24.2066404Z 6fbe9502899e: Pull complete
+2026-01-02T17:44:24.2176797Z 8c78b9aebfc8: Pull complete
+2026-01-02T17:44:24.2813490Z 70f2ee7b92e9: Pull complete
+2026-01-02T17:44:25.1053976Z 1840d5f2638e: Pull complete
+2026-01-02T17:44:25.7589559Z 67d7ab323107: Pull complete
+2026-01-02T17:44:25.9496985Z 386cd7b21069: Pull complete
+2026-01-02T17:44:25.9542924Z Digest: sha256:6c0bb004b53a00ad4422b18123bce5fe7bf33c37b017b055338d07719be76730
+2026-01-02T17:44:25.9557225Z Status: Downloaded newer image for timescale/timescaledb:2.13.0-pg15
+2026-01-02T17:44:25.9568416Z docker.io/timescale/timescaledb:2.13.0-pg15
+2026-01-02T17:44:25.9633584Z ##[command]/usr/bin/docker create --name 051c8c5992fb42e5a7445b53ed9c369e_timescaletimescaledb2130pg15_e12395 --label e67c4f --network github_network_c48a82c2b4d946b9bfd8ea1e61f4a76b --network-alias postgres -p 5432:5432 --health-cmd="pg_isready -U hydro -d hydro_test" --health-interval=10s --health-timeout=5s --health-retries=5 -e "POSTGRES_DB=hydro_test" -e "POSTGRES_USER=hydro" -e "POSTGRES_PASSWORD=hydro" -e GITHUB_ACTIONS=true -e CI=true timescale/timescaledb:2.13.0-pg15
+2026-01-02T17:44:25.9909277Z 3902eb3b8b8b4277b9b24920f54e9dfb701edb632d5f8a40e02078f468bff105
+2026-01-02T17:44:25.9935059Z ##[command]/usr/bin/docker start 3902eb3b8b8b4277b9b24920f54e9dfb701edb632d5f8a40e02078f468bff105
+2026-01-02T17:44:26.2932836Z 3902eb3b8b8b4277b9b24920f54e9dfb701edb632d5f8a40e02078f468bff105
+2026-01-02T17:44:26.2955472Z ##[command]/usr/bin/docker ps --all --filter id=3902eb3b8b8b4277b9b24920f54e9dfb701edb632d5f8a40e02078f468bff105 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-01-02T17:44:26.3086178Z 3902eb3b8b8b4277b9b24920f54e9dfb701edb632d5f8a40e02078f468bff105 Up Less than a second (health: starting)
+2026-01-02T17:44:26.3108973Z ##[command]/usr/bin/docker port 3902eb3b8b8b4277b9b24920f54e9dfb701edb632d5f8a40e02078f468bff105
+2026-01-02T17:44:26.3250118Z 5432/tcp -> 0.0.0.0:5432
+2026-01-02T17:44:26.3250891Z 5432/tcp -> [::]:5432
+2026-01-02T17:44:26.3309716Z ##[endgroup]
+2026-01-02T17:44:26.3321035Z ##[group]Waiting for all services to be ready
+2026-01-02T17:44:26.3339529Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 3902eb3b8b8b4277b9b24920f54e9dfb701edb632d5f8a40e02078f468bff105
+2026-01-02T17:44:26.3474605Z starting
+2026-01-02T17:44:26.3500627Z postgres service is starting, waiting 2 seconds before checking again.
+2026-01-02T17:44:28.3508038Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 3902eb3b8b8b4277b9b24920f54e9dfb701edb632d5f8a40e02078f468bff105
+2026-01-02T17:44:28.3721268Z starting
+2026-01-02T17:44:28.3735116Z postgres service is starting, waiting 4 seconds before checking again.
+2026-01-02T17:44:32.5144939Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 3902eb3b8b8b4277b9b24920f54e9dfb701edb632d5f8a40e02078f468bff105
+2026-01-02T17:44:32.5268942Z starting
+2026-01-02T17:44:32.5283949Z postgres service is starting, waiting 9 seconds before checking again.
+2026-01-02T17:44:41.5484681Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 3902eb3b8b8b4277b9b24920f54e9dfb701edb632d5f8a40e02078f468bff105
+2026-01-02T17:44:41.5609829Z healthy
+2026-01-02T17:44:41.5631900Z postgres service is healthy.
+2026-01-02T17:44:41.5632584Z ##[endgroup]

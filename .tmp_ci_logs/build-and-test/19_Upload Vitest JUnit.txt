@@ -1,0 +1,25 @@
+﻿2026-01-02T17:47:21.5450662Z ##[group]Run actions/upload-artifact@v4
+2026-01-02T17:47:21.5450987Z with:
+2026-01-02T17:47:21.5451165Z   name: vitest-junit
+2026-01-02T17:47:21.5451399Z   path: backend/laravel/test-results/junit.xml
+2026-01-02T17:47:21.5451656Z   retention-days: 7
+2026-01-02T17:47:21.5451845Z   if-no-files-found: warn
+2026-01-02T17:47:21.5452054Z   compression-level: 6
+2026-01-02T17:47:21.5452239Z   overwrite: false
+2026-01-02T17:47:21.5452432Z   include-hidden-files: false
+2026-01-02T17:47:21.5452651Z env:
+2026-01-02T17:47:21.5452814Z   COMPOSER_PROCESS_TIMEOUT: 0
+2026-01-02T17:47:21.5453033Z   COMPOSER_NO_INTERACTION: 1
+2026-01-02T17:47:21.5453242Z   COMPOSER_NO_AUDIT: 1
+2026-01-02T17:47:21.5453422Z ##[endgroup]
+2026-01-02T17:47:21.7598027Z With the provided path, there will be 1 file uploaded
+2026-01-02T17:47:21.7602787Z Artifact name is valid!
+2026-01-02T17:47:21.7604134Z Root directory input is valid!
+2026-01-02T17:47:22.0384388Z Beginning upload of artifact content to blob storage
+2026-01-02T17:47:22.3889384Z Uploaded bytes 24995
+2026-01-02T17:47:22.4690993Z Finished uploading artifact content to blob storage!
+2026-01-02T17:47:22.4695110Z SHA256 digest of uploaded artifact zip is 9244da32c874377e8808eff150b04064e2f1cc86d62432104ec2135df00ff364
+2026-01-02T17:47:22.4696393Z Finalizing artifact upload
+2026-01-02T17:47:22.6858511Z Artifact vitest-junit.zip successfully finalized. Artifact ID 5009717047
+2026-01-02T17:47:22.6860308Z Artifact vitest-junit has been successfully uploaded! Final size is 24995 bytes. Artifact ID is 5009717047
+2026-01-02T17:47:22.6867716Z Artifact download URL: https://github.com/byYorick/hydro2.0/actions/runs/20663345422/artifacts/5009717047

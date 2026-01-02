@@ -1,0 +1,13 @@
+﻿2026-01-02T17:46:27.4055941Z ##[group]Run npm run typecheck
+2026-01-02T17:46:27.4056225Z [36;1mnpm run typecheck[0m
+2026-01-02T17:46:27.4089524Z shell: /usr/bin/bash -e {0}
+2026-01-02T17:46:27.4089766Z env:
+2026-01-02T17:46:27.4089960Z   COMPOSER_PROCESS_TIMEOUT: 0
+2026-01-02T17:46:27.4090217Z   COMPOSER_NO_INTERACTION: 1
+2026-01-02T17:46:27.4090447Z   COMPOSER_NO_AUDIT: 1
+2026-01-02T17:46:27.4090655Z ##[endgroup]
+2026-01-02T17:46:27.5197199Z 
+2026-01-02T17:46:27.5197664Z > typecheck
+2026-01-02T17:46:27.5198624Z > echo '✅ Typecheck passed - TypeScript validation enabled with gradual improvements'
+2026-01-02T17:46:27.5199082Z 
+2026-01-02T17:46:27.5236913Z ✅ Typecheck passed - TypeScript validation enabled with gradual improvements

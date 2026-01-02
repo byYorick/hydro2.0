@@ -1,0 +1,19 @@
+﻿2026-01-02T17:45:00.3834743Z ##[group]Run composer audit --no-interaction || true
+2026-01-02T17:45:00.3835153Z [36;1mcomposer audit --no-interaction || true[0m
+2026-01-02T17:45:00.3867961Z shell: /usr/bin/bash -e {0}
+2026-01-02T17:45:00.3868186Z env:
+2026-01-02T17:45:00.3868361Z   COMPOSER_PROCESS_TIMEOUT: 0
+2026-01-02T17:45:00.3868590Z   COMPOSER_NO_INTERACTION: 1
+2026-01-02T17:45:00.3868794Z   COMPOSER_NO_AUDIT: 1
+2026-01-02T17:45:00.3868984Z ##[endgroup]
+2026-01-02T17:45:00.9844922Z Found 1 security vulnerability advisory affecting 1 package:
+2026-01-02T17:45:00.9879586Z +-------------------+----------------------------------------------------------------------------------+
+2026-01-02T17:45:00.9880835Z | Package           | paragonie/sodium_compat                                                          |
+2026-01-02T17:45:00.9881918Z | Severity          |                                                                                  |
+2026-01-02T17:45:00.9883001Z | Advisory ID       | PKSA-8x19-j2j3-bn67                                                              |
+2026-01-02T17:45:00.9883799Z | CVE               | NO CVE                                                                           |
+2026-01-02T17:45:00.9885157Z | Title             | Missing check that a point is on the prime subgroup for Edwards25519             |
+2026-01-02T17:45:00.9886013Z | URL               | https://00f.net/2025/12/30/libsodium-vulnerability                               |
+2026-01-02T17:45:00.9886776Z | Affected versions | >=2,<2.5.0|<1.24.0                                                               |
+2026-01-02T17:45:00.9887498Z | Reported at       | 2025-12-30T00:00:00+00:00                                                        |
+2026-01-02T17:45:00.9888183Z +-------------------+----------------------------------------------------------------------------------+

@@ -1,0 +1,25 @@
+﻿2026-01-02T17:48:12.4936601Z ##[group]Run actions/upload-artifact@v4
+2026-01-02T17:48:12.4936901Z with:
+2026-01-02T17:48:12.4937085Z   name: vitest-coverage
+2026-01-02T17:48:12.4937301Z   path: backend/laravel/coverage
+2026-01-02T17:48:12.4937532Z   retention-days: 7
+2026-01-02T17:48:12.4937722Z   if-no-files-found: warn
+2026-01-02T17:48:12.4937937Z   compression-level: 6
+2026-01-02T17:48:12.4938131Z   overwrite: false
+2026-01-02T17:48:12.4938372Z   include-hidden-files: false
+2026-01-02T17:48:12.4938587Z env:
+2026-01-02T17:48:12.4938752Z   COMPOSER_PROCESS_TIMEOUT: 0
+2026-01-02T17:48:12.4938976Z   COMPOSER_NO_INTERACTION: 1
+2026-01-02T17:48:12.4939190Z   COMPOSER_NO_AUDIT: 1
+2026-01-02T17:48:12.4939379Z ##[endgroup]
+2026-01-02T17:48:12.7361372Z With the provided path, there will be 155 files uploaded
+2026-01-02T17:48:12.7366916Z Artifact name is valid!
+2026-01-02T17:48:12.7368054Z Root directory input is valid!
+2026-01-02T17:48:13.0257523Z Beginning upload of artifact content to blob storage
+2026-01-02T17:48:13.9975870Z Uploaded bytes 1283551
+2026-01-02T17:48:14.0719301Z Finished uploading artifact content to blob storage!
+2026-01-02T17:48:14.0722663Z SHA256 digest of uploaded artifact zip is 2c8d6e0c676da0458e51577ff12b5a69f64e6eefd41e0b57b4e44a9c7920242d
+2026-01-02T17:48:14.0724110Z Finalizing artifact upload
+2026-01-02T17:48:14.2240878Z Artifact vitest-coverage.zip successfully finalized. Artifact ID 5009721941
+2026-01-02T17:48:14.2242255Z Artifact vitest-coverage has been successfully uploaded! Final size is 1283551 bytes. Artifact ID is 5009721941
+2026-01-02T17:48:14.2249686Z Artifact download URL: https://github.com/byYorick/hydro2.0/actions/runs/20663345422/artifacts/5009721941

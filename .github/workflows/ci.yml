@@ -176,6 +176,28 @@ jobs:
           }
           trap cleanup EXIT INT TERM
           
+          # Drop Timescale hypertables/views so migrate:fresh doesn't fail on bulk DROP TABLE
+          php -r "
+            require __DIR__.'/vendor/autoload.php';
+            \$app = require __DIR__.'/bootstrap/app.php';
+            \$app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();
+            \$statements = [
+              'DROP VIEW IF EXISTS telemetry_raw',
+              \"SELECT drop_hypertable('telemetry_samples', if_exists => TRUE)\",
+              \"SELECT drop_hypertable('telemetry_agg_1m', if_exists => TRUE)\",
+              \"SELECT drop_hypertable('telemetry_agg_1h', if_exists => TRUE)\",
+              \"SELECT drop_hypertable('commands', if_exists => TRUE)\",
+              \"SELECT drop_hypertable('zone_events', if_exists => TRUE)\",
+            ];
+            foreach (\$statements as \$sql) {
+              try {
+                Illuminate\\Support\\Facades\\DB::statement(\$sql);
+              } catch (Throwable \$e) {
+                fwrite(STDERR, '[ci] '.\$e->getMessage().PHP_EOL);
+              }
+            }
+          "
+
           # Start background processes
           php artisan migrate:fresh --force &
           MIGRATE_PID=$!

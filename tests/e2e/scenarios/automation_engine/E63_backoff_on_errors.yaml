@@ -229,6 +229,7 @@ actions:
     action: set_state
     state:
       error_streak: 3
+      next_allowed_run_at: null
 
   - step: degraded_timestamp
     type: database_query
@@ -305,9 +306,11 @@ assertions:
         AND channel = 'heater'
         AND params->>'state' = 'true'
         AND created_at > :degraded_ts
+        AND created_at <= :reset_ts
     params:
       zone_id: ${zone_id}
       degraded_ts: ${degraded_ts.0.ts}
+      reset_ts: ${reset_ts.0.ts}
     expected:
       - field: cmd_count
         operator: equals

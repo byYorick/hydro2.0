@@ -1,0 +1,182 @@
+﻿2026-01-02T17:49:10.3907312Z ##[group]Run # Trap to cleanup background processes on exit
+2026-01-02T17:49:10.3907814Z [36;1m# Trap to cleanup background processes on exit[0m
+2026-01-02T17:49:10.3908110Z [36;1mcleanup() {[0m
+2026-01-02T17:49:10.3908368Z [36;1m  echo "Cleaning up background processes..."[0m
+2026-01-02T17:49:10.3908896Z [36;1m  # Kill specific processes by PID if they exist[0m
+2026-01-02T17:49:10.3909258Z [36;1m  [ -n "$MIGRATE_PID" ] && kill $MIGRATE_PID 2>/dev/null || true[0m
+2026-01-02T17:49:10.3909631Z [36;1m  [ -n "$SERVE_PID" ] && kill $SERVE_PID 2>/dev/null || true[0m
+2026-01-02T17:49:10.3909967Z [36;1m  # Fallback: kill any matching processes[0m
+2026-01-02T17:49:10.3910298Z [36;1m  pkill -f "php artisan migrate" 2>/dev/null || true[0m
+2026-01-02T17:49:10.3910641Z [36;1m  pkill -f "php artisan serve" 2>/dev/null || true[0m
+2026-01-02T17:49:10.3910965Z [36;1m  # Wait a moment for processes to terminate[0m
+2026-01-02T17:49:10.3911236Z [36;1m  sleep 2[0m
+2026-01-02T17:49:10.3911432Z [36;1m}[0m
+2026-01-02T17:49:10.3911663Z [36;1mtrap cleanup EXIT INT TERM[0m
+2026-01-02T17:49:10.3911903Z [36;1m[0m
+2026-01-02T17:49:10.3912091Z [36;1m# Start background processes[0m
+2026-01-02T17:49:10.3912364Z [36;1mphp artisan migrate:fresh --force &[0m
+2026-01-02T17:49:10.3912637Z [36;1mMIGRATE_PID=$![0m
+2026-01-02T17:49:10.3912948Z [36;1mphp artisan serve --host=127.0.0.1 --port=8000 --env=testing &[0m
+2026-01-02T17:49:10.3913284Z [36;1mSERVE_PID=$![0m
+2026-01-02T17:49:10.3913480Z [36;1m[0m
+2026-01-02T17:49:10.3913665Z [36;1m# Wait for migration to complete[0m
+2026-01-02T17:49:10.3913932Z [36;1mwait $MIGRATE_PID || true[0m
+2026-01-02T17:49:10.3914450Z [36;1mphp artisan db:seed --class=AdminUserSeeder --force[0m
+2026-01-02T17:49:10.3914781Z [36;1m[0m
+2026-01-02T17:49:10.3915006Z [36;1m# Wait for server to be ready with health check[0m
+2026-01-02T17:49:10.3915320Z [36;1mecho "Waiting for server to start..."[0m
+2026-01-02T17:49:10.3915588Z [36;1mmax_attempts=30[0m
+2026-01-02T17:49:10.3915806Z [36;1mattempt=0[0m
+2026-01-02T17:49:10.3916047Z [36;1mwhile [ $attempt -lt $max_attempts ]; do[0m
+2026-01-02T17:49:10.3916330Z [36;1m  attempt=$((attempt + 1))[0m
+2026-01-02T17:49:10.3916657Z [36;1m  if curl -f -s http://127.0.0.1:8000 > /dev/null 2>&1; then[0m
+2026-01-02T17:49:10.3916976Z [36;1m    echo "Server is ready!"[0m
+2026-01-02T17:49:10.3917220Z [36;1m    break[0m
+2026-01-02T17:49:10.3917407Z [36;1m  fi[0m
+2026-01-02T17:49:10.3917691Z [36;1m  echo "Attempt $attempt/$max_attempts: Server not ready, waiting..."[0m
+2026-01-02T17:49:10.3918027Z [36;1m  sleep 1[0m
+2026-01-02T17:49:10.3918212Z [36;1mdone[0m
+2026-01-02T17:49:10.3918413Z [36;1m[0m
+2026-01-02T17:49:10.3918617Z [36;1mif [ $attempt -eq $max_attempts ]; then[0m
+2026-01-02T17:49:10.3918977Z [36;1m  echo "ERROR: Server failed to start after $max_attempts attempts"[0m
+2026-01-02T17:49:10.3919304Z [36;1m  exit 1[0m
+2026-01-02T17:49:10.3919506Z [36;1mfi[0m
+2026-01-02T17:49:10.3919682Z [36;1m[0m
+2026-01-02T17:49:10.3919925Z [36;1m# Run Playwright tests (ошибки должны падать в CI)[0m
+2026-01-02T17:49:10.3920255Z [36;1mnpx playwright test --reporter=list,html[0m
+2026-01-02T17:49:10.3920526Z [36;1m[0m
+2026-01-02T17:49:10.3920742Z [36;1m# Cleanup will be handled by trap[0m
+2026-01-02T17:49:10.3953386Z shell: /usr/bin/bash -e {0}
+2026-01-02T17:49:10.3953654Z env:
+2026-01-02T17:49:10.3953850Z   COMPOSER_PROCESS_TIMEOUT: 0
+2026-01-02T17:49:10.3954109Z   COMPOSER_NO_INTERACTION: 1
+2026-01-02T17:49:10.3954519Z   COMPOSER_NO_AUDIT: 1
+2026-01-02T17:49:10.3954733Z   APP_ENV: testing
+2026-01-02T17:49:10.3954942Z   DB_CONNECTION: pgsql
+2026-01-02T17:49:10.3955164Z   DB_DATABASE: hydro_test
+2026-01-02T17:49:10.3955380Z   DB_USERNAME: hydro
+2026-01-02T17:49:10.3955576Z   DB_PASSWORD: hydro
+2026-01-02T17:49:10.3955774Z   DB_HOST: 127.0.0.1
+2026-01-02T17:49:10.3955971Z   DB_PORT: 5432
+2026-01-02T17:49:10.3956173Z   BROADCAST_CONNECTION: log
+2026-01-02T17:49:10.3956398Z   BROADCAST_DRIVER: log
+2026-01-02T17:49:10.3956603Z ##[endgroup]
+2026-01-02T17:49:10.6329487Z 
+2026-01-02T17:49:10.6936779Z   Dropping all tables ........................................... 55.79ms FAIL
+2026-01-02T17:49:10.7039665Z 
+2026-01-02T17:49:10.7040695Z    Illuminate\Database\QueryException 
+2026-01-02T17:49:10.7041040Z 
+2026-01-02T17:49:10.7051865Z   SQLSTATE[XX000]: Internal error: 7 ERROR:  cannot drop a hypertable along with other objects (Connection: pgsql, SQL: drop table "public"."aggregator_state", "public"."ai_logs", "public"."alerts", "public"."cache", "public"."cache_locks", "public"."channel_bindings", "public"."command_acks", "public"."commands", "public"."failed_jobs", "public"."firmware_files", "public"."greenhouses", "public"."grow_cycle_overrides", "public"."grow_cycle_phase_steps", "public"."grow_cycle_phases", "public"."grow_cycle_transitions", "public"."grow_cycles", "public"."grow_stage_templates", "public"."harvests", "public"."infrastructure_instances", "public"."job_batches", "public"."jobs", "public"."migrations", "public"."node_channels", "public"."node_logs", "public"."nodes", "public"."parameter_predictions", "public"."password_reset_tokens", "public"."pending_alerts", "public"."personal_access_tokens", "public"."plant_cost_items", "public"."plant_price_versions", "public"."plant_recipe", "public"."plant_sale_prices", "public"."plant_zone", "public"."plants", "public"."presets", "public"."recipe_analytics", "public"."recipe_revision_phase_steps", "public"."recipe_revision_phases", "public"."recipe_revisions", "public"."recipes", "public"."scheduler_logs", "public"."sensors", "public"."sessions", "public"."system_logs", "public"."telemetry_agg_1h", "public"."telemetry_agg_1m", "public"."telemetry_daily", "public"."telemetry_last", "public"."telemetry_samples", "public"."unassigned_node_errors", "public"."unassigned_node_errors_archive", "public"."users", "public"."zone_events", "public"."zone_model_params", "public"."zone_pid_configs", "public"."zone_simulations", "public"."zones" cascade)
+2026-01-02T17:49:10.7060918Z 
+2026-01-02T17:49:10.7061405Z   at vendor/laravel/framework/src/Illuminate/Database/Connection.php:824
+2026-01-02T17:49:10.7143657Z     820▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+2026-01-02T17:49:10.7144621Z     821▕                 );
+2026-01-02T17:49:10.7145117Z     822▕             }
+2026-01-02T17:49:10.7145555Z     823▕ 
+2026-01-02T17:49:10.7146081Z   ➜ 824▕             throw new QueryException(
+2026-01-02T17:49:10.7146989Z     825▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+2026-01-02T17:49:10.7147695Z     826▕             );
+2026-01-02T17:49:10.7148133Z     827▕         }
+2026-01-02T17:49:10.7148548Z     828▕     }
+2026-01-02T17:49:10.7148767Z 
+2026-01-02T17:49:10.7149051Z       [2m+37 vendor frames [22m
+2026-01-02T17:49:10.7149347Z 
+2026-01-02T17:49:10.7149500Z   38  artisan:13
+2026-01-02T17:49:10.7150069Z       Illuminate\Foundation\Application::handleCommand()
+2026-01-02T17:49:10.7150466Z 
+2026-01-02T17:49:10.9315085Z 
+2026-01-02T17:49:10.9315641Z    INFO  Seeding database.  
+2026-01-02T17:49:10.9315957Z 
+2026-01-02T17:49:11.1052889Z   PHP Warning:  JIT is incompatible with third party extensions that override zend_execute_ex(). JIT disabled. in Unknown on line 0
+2026-01-02T17:49:11.1088531Z 
+2026-01-02T17:49:11.1089011Z    INFO  Server running on [http://127.0.0.1:8000].  
+2026-01-02T17:49:11.1089562Z 
+2026-01-02T17:49:11.1092750Z   Press Ctrl+C to stop the server
+2026-01-02T17:49:11.1093610Z 
+2026-01-02T17:49:11.8992013Z Waiting for server to start...
+2026-01-02T17:49:12.1088775Z Server is ready!
+2026-01-02T17:49:12.1138036Z   2026-01-02 17:49:11 / ............................................ ~ 0.29ms
+2026-01-02T17:49:13.3777526Z 
+2026-01-02T17:49:13.3778155Z Running 9 tests using 2 workers
+2026-01-02T17:49:13.3778736Z 
+2026-01-02T17:49:13.3803872Z   -  1 tests/E2E/pid-config.spec.ts:10:3 › PID Configuration › should display Automation Engine tab
+2026-01-02T17:49:13.3806703Z   -  2 tests/E2E/pid-config.spec.ts:15:3 › PID Configuration › should switch between PID Settings and PID Logs tabs
+2026-01-02T17:49:13.3808276Z   -  3 tests/E2E/pid-config.spec.ts:26:3 › PID Configuration › should load and display PID config form
+2026-01-02T17:49:13.3809759Z   -  4 tests/E2E/pid-config.spec.ts:35:3 › PID Configuration › should validate PID config form fields
+2026-01-02T17:49:13.3810847Z   -  5 tests/E2E/pid-config.spec.ts:49:3 › PID Configuration › should save PID config
+2026-01-02T17:49:13.3812595Z   -  6 tests/E2E/pid-config.spec.ts:62:3 › PID Configuration › should display PID logs
+2026-01-02T17:49:13.3814974Z   -  7 tests/E2E/pid-config.spec.ts:71:3 › PID Configuration › should filter PID logs by type
+2026-01-02T17:49:13.6218855Z   2026-01-02 17:49:13 .............................................. ~ 0.43ms
+2026-01-02T17:49:13.6289252Z   2026-01-02 17:49:13 .............................................. ~ 7.50ms
+2026-01-02T17:49:15.1321529Z   2026-01-02 17:49:14 /testing/login/1 ........................... ~ 500.52ms
+2026-01-02T17:49:44.6493283Z   ✘  8 tests/E2E/dashboard.smoke.spec.ts:20:3 › Dashboard Smoke › shows realtime header statuses (30.0s)
+2026-01-02T17:49:45.6477718Z   2026-01-02 17:49:45 /testing/login/1 ............................. ~ 0.27ms
+2026-01-02T17:50:15.3818131Z   ✘  9 tests/E2E/dashboard.smoke.spec.ts:26:3 › Dashboard Smoke › allows navigating to zones list (30.0s)
+2026-01-02T17:50:15.3955933Z 
+2026-01-02T17:50:15.3962490Z 
+2026-01-02T17:50:15.3972821Z   1) tests/E2E/dashboard.smoke.spec.ts:20:3 › Dashboard Smoke › shows realtime header statuses ─────
+2026-01-02T17:50:15.3973549Z 
+2026-01-02T17:50:15.3974205Z     [31mTest timeout of 30000ms exceeded while running "beforeEach" hook.[39m
+2026-01-02T17:50:15.3975763Z 
+2026-01-02T17:50:15.3975930Z       14 |
+2026-01-02T17:50:15.3976400Z       15 | test.describe('Dashboard Smoke', () => {
+2026-01-02T17:50:15.3977045Z     > 16 |   test.beforeEach(async ({ page }) => {
+2026-01-02T17:50:15.3977552Z          |        ^
+2026-01-02T17:50:15.3977984Z       17 |     await loginAsAdmin(page)
+2026-01-02T17:50:15.3978517Z       18 |   })
+2026-01-02T17:50:15.3978891Z       19 |
+2026-01-02T17:50:15.3979672Z         at /home/runner/work/hydro2.0/hydro2.0/backend/laravel/tests/E2E/dashboard.smoke.spec.ts:16:8
+2026-01-02T17:50:15.3980342Z 
+2026-01-02T17:50:15.3980730Z     Error: page.waitForSelector: Test timeout of 30000ms exceeded.
+2026-01-02T17:50:15.3981346Z     Call log:
+2026-01-02T17:50:15.3982088Z     [2m  - waiting for locator('#app[data-page]') to be visible[22m
+2026-01-02T17:50:15.3982538Z 
+2026-01-02T17:50:15.3982555Z 
+2026-01-02T17:50:15.3982814Z       3 | async function loginAsAdmin(page) {
+2026-01-02T17:50:15.3983523Z       4 |   await page.goto('/testing/login/1', { waitUntil: 'load' })
+2026-01-02T17:50:15.3984508Z     > 5 |   await page.waitForSelector('#app[data-page]', { timeout: 60000 })
+2026-01-02T17:50:15.3985167Z         |              ^
+2026-01-02T17:50:15.3985536Z       6 | }
+2026-01-02T17:50:15.3985875Z       7 |
+2026-01-02T17:50:15.3986317Z       8 | async function inertiaComponent(page) {
+2026-01-02T17:50:15.3987430Z         at loginAsAdmin (/home/runner/work/hydro2.0/hydro2.0/backend/laravel/tests/E2E/dashboard.smoke.spec.ts:5:14)
+2026-01-02T17:50:15.3988748Z         at /home/runner/work/hydro2.0/hydro2.0/backend/laravel/tests/E2E/dashboard.smoke.spec.ts:17:5
+2026-01-02T17:50:15.3989433Z 
+2026-01-02T17:50:15.3990192Z     Error Context: test-results/dashboard.smoke-Dashboard--0035b-ws-realtime-header-statuses/error-context.md
+2026-01-02T17:50:15.3990979Z 
+2026-01-02T17:50:15.3991777Z   2) tests/E2E/dashboard.smoke.spec.ts:26:3 › Dashboard Smoke › allows navigating to zones list ────
+2026-01-02T17:50:15.3992372Z 
+2026-01-02T17:50:15.3992904Z     [31mTest timeout of 30000ms exceeded while running "beforeEach" hook.[39m
+2026-01-02T17:50:15.3993371Z 
+2026-01-02T17:50:15.3993495Z       14 |
+2026-01-02T17:50:15.3993939Z       15 | test.describe('Dashboard Smoke', () => {
+2026-01-02T17:50:15.3994833Z     > 16 |   test.beforeEach(async ({ page }) => {
+2026-01-02T17:50:15.3995351Z          |        ^
+2026-01-02T17:50:15.3996193Z       17 |     await loginAsAdmin(page)
+2026-01-02T17:50:15.3996654Z       18 |   })
+2026-01-02T17:50:15.3996987Z       19 |
+2026-01-02T17:50:15.3997754Z         at /home/runner/work/hydro2.0/hydro2.0/backend/laravel/tests/E2E/dashboard.smoke.spec.ts:16:8
+2026-01-02T17:50:15.3998751Z 
+2026-01-02T17:50:15.3999157Z     Error: page.waitForSelector: Test timeout of 30000ms exceeded.
+2026-01-02T17:50:15.3999759Z     Call log:
+2026-01-02T17:50:15.4000474Z     [2m  - waiting for locator('#app[data-page]') to be visible[22m
+2026-01-02T17:50:15.4000923Z 
+2026-01-02T17:50:15.4000937Z 
+2026-01-02T17:50:15.4001193Z       3 | async function loginAsAdmin(page) {
+2026-01-02T17:50:15.4001909Z       4 |   await page.goto('/testing/login/1', { waitUntil: 'load' })
+2026-01-02T17:50:15.4002768Z     > 5 |   await page.waitForSelector('#app[data-page]', { timeout: 60000 })
+2026-01-02T17:50:15.4003411Z         |              ^
+2026-01-02T17:50:15.4003784Z       6 | }
+2026-01-02T17:50:15.4004110Z       7 |
+2026-01-02T17:50:15.4004792Z       8 | async function inertiaComponent(page) {
+2026-01-02T17:50:15.4005853Z         at loginAsAdmin (/home/runner/work/hydro2.0/hydro2.0/backend/laravel/tests/E2E/dashboard.smoke.spec.ts:5:14)
+2026-01-02T17:50:15.4007207Z         at /home/runner/work/hydro2.0/hydro2.0/backend/laravel/tests/E2E/dashboard.smoke.spec.ts:17:5
+2026-01-02T17:50:15.4007887Z 
+2026-01-02T17:50:15.4008632Z     Error Context: test-results/dashboard.smoke-Dashboard--3a7a5-ws-navigating-to-zones-list/error-context.md
+2026-01-02T17:50:15.4009402Z 
+2026-01-02T17:50:15.4009564Z   2 failed
+2026-01-02T17:50:15.4010546Z     tests/E2E/dashboard.smoke.spec.ts:20:3 › Dashboard Smoke › shows realtime header statuses ──────
+2026-01-02T17:50:15.4011945Z     tests/E2E/dashboard.smoke.spec.ts:26:3 › Dashboard Smoke › allows navigating to zones list ─────
+2026-01-02T17:50:15.4012731Z   7 skipped
+2026-01-02T17:50:15.4329675Z Cleaning up background processes...
+2026-01-02T17:50:22.4740048Z ##[error]Process completed with exit code 1.
