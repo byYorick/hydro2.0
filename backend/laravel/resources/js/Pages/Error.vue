@@ -99,6 +99,7 @@ interface Props {
   status?: number
   message?: string
   errors?: Record<string, string[]>
+  // eslint-disable-next-line vue/prop-name-casing
   correlation_id?: string
   exception?: string
   file?: string

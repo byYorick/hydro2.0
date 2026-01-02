@@ -1,6 +1,12 @@
 #!/bin/bash
 set -e
 
+export APP_ENV=testing
+export APP_URL=http://127.0.0.1:8000
+export SESSION_DRIVER=file
+export QUEUE_CONNECTION=sync
+export CACHE_STORE=array
+
 cp .env.example .env
 php artisan key:generate --no-interaction
 composer install --no-interaction --prefer-dist --optimize-autoloader

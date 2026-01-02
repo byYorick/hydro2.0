@@ -360,11 +360,12 @@ export function useTelemetry(showToast?: ToastHandler) {
       if (!item.zone_id) continue
       
       const zoneId = item.zone_id
-      if (!telemetryByZone.has(zoneId)) {
-        telemetryByZone.set(zoneId, {} as ZoneTelemetry)
+      let zoneTelemetry = telemetryByZone.get(zoneId)
+      if (!zoneTelemetry) {
+        zoneTelemetry = {} as ZoneTelemetry
+        telemetryByZone.set(zoneId, zoneTelemetry)
       }
-      
-      const zoneTelemetry = telemetryByZone.get(zoneId)!
+
       const key = item.metric_type || 'unknown'
       zoneTelemetry[key] = {
         zone_id: zoneId,

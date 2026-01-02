@@ -90,6 +90,7 @@ return new class extends Migration
 
                     // Удаляем старую таблицу
                     DB::statement('DROP TABLE commands_old CASCADE');
+                    $this->ensureIdentityDefault('commands');
 
                     \Log::info('Partitioned commands table by created_at (monthly partitions)');
                 }
@@ -152,6 +153,7 @@ return new class extends Migration
                     DB::statement('ALTER TABLE zone_events RENAME TO zone_events_old');
                     DB::statement('ALTER TABLE zone_events_partitioned RENAME TO zone_events');
                     DB::statement('DROP TABLE zone_events_old CASCADE');
+                    $this->ensureIdentityDefault('zone_events');
 
                     \Log::info('Partitioned zone_events table by created_at (monthly partitions)');
                 }
@@ -179,8 +181,9 @@ return new class extends Migration
                         WHERE hypertable_name = 'commands'
                     ) as exists
                 ");
+                $commandsHypertable = (bool) ($isCommandsHypertable->exists ?? false);
 
-                if (! $isCommandsHypertable || ! $isCommandsHypertable->exists) {
+                if (! $commandsHypertable) {
                     try {
                         $isCommandsPartitioned = DB::selectOne("
                             SELECT EXISTS (
@@ -196,6 +199,7 @@ return new class extends Migration
                         try {
                             DB::statement("SELECT create_hypertable('commands', 'created_at', chunk_time_interval => INTERVAL '1 month')");
                             \Log::info('Converted commands to TimescaleDB hypertable');
+                            $commandsHypertable = true;
                         } catch (\Exception $e) {
                             \Log::warning('Failed to convert commands to hypertable: '.$e->getMessage());
                         }
@@ -210,8 +214,9 @@ return new class extends Migration
                         WHERE hypertable_name = 'zone_events'
                     ) as exists
                 ");
+                $eventsHypertable = (bool) ($isEventsHypertable->exists ?? false);
 
-                if (! $isEventsHypertable || ! $isEventsHypertable->exists) {
+                if (! $eventsHypertable) {
                     try {
                         $isEventsPartitioned = DB::selectOne("
                             SELECT EXISTS (
@@ -227,6 +232,7 @@ return new class extends Migration
                         try {
                             DB::statement("SELECT create_hypertable('zone_events', 'created_at', chunk_time_interval => INTERVAL '1 month')");
                             \Log::info('Converted zone_events to TimescaleDB hypertable');
+                            $eventsHypertable = true;
                         } catch (\Exception $e) {
                             \Log::warning('Failed to convert zone_events to hypertable: '.$e->getMessage());
                         }
@@ -235,31 +241,35 @@ return new class extends Migration
                     }
                 }
 
-                // Добавляем retention policies через TimescaleDB
-                try {
-                    DB::statement("
-                        SELECT add_retention_policy(
-                            'commands',
-                            INTERVAL '365 days',
-                            if_not_exists => TRUE
-                        );
-                    ");
-                    \Log::info('Added TimescaleDB retention policy for commands (365 days)');
-                } catch (\Exception $e) {
-                    \Log::warning('Failed to add retention policy for commands: '.$e->getMessage());
+                // Добавляем retention policies через TimescaleDB только для hypertables
+                if ($commandsHypertable) {
+                    try {
+                        DB::statement("
+                            SELECT add_retention_policy(
+                                'commands',
+                                INTERVAL '365 days',
+                                if_not_exists => TRUE
+                            );
+                        ");
+                        \Log::info('Added TimescaleDB retention policy for commands (365 days)');
+                    } catch (\Exception $e) {
+                        \Log::warning('Failed to add retention policy for commands: '.$e->getMessage());
+                    }
                 }
 
-                try {
-                    DB::statement("
-                        SELECT add_retention_policy(
-                            'zone_events',
-                            INTERVAL '365 days',
-                            if_not_exists => TRUE
-                        );
-                    ");
-                    \Log::info('Added TimescaleDB retention policy for zone_events (365 days)');
-                } catch (\Exception $e) {
-                    \Log::warning('Failed to add retention policy for zone_events: '.$e->getMessage());
+                if ($eventsHypertable) {
+                    try {
+                        DB::statement("
+                            SELECT add_retention_policy(
+                                'zone_events',
+                                INTERVAL '365 days',
+                                if_not_exists => TRUE
+                            );
+                        ");
+                        \Log::info('Added TimescaleDB retention policy for zone_events (365 days)');
+                    } catch (\Exception $e) {
+                        \Log::warning('Failed to add retention policy for zone_events: '.$e->getMessage());
+                    }
                 }
             }
 
@@ -290,6 +300,32 @@ return new class extends Migration
             } catch (\Exception $e) {
                 \Log::warning("Failed to create partition {$partitionName}: ".$e->getMessage());
             }
+        }
+    }
+
+    private function ensureIdentityDefault(string $tableName): void
+    {
+        try {
+            $default = DB::selectOne("
+                SELECT column_default
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = '{$tableName}'
+                  AND column_name = 'id'
+            ");
+
+            if ($default && $default->column_default && str_contains($default->column_default, 'nextval')) {
+                return;
+            }
+
+            $sequenceName = "{$tableName}_id_seq";
+
+            DB::statement("CREATE SEQUENCE IF NOT EXISTS {$sequenceName}");
+            DB::statement("ALTER TABLE {$tableName} ALTER COLUMN id SET DEFAULT nextval('{$sequenceName}')");
+            DB::statement("ALTER SEQUENCE {$sequenceName} OWNED BY {$tableName}.id");
+            DB::statement("SELECT setval('{$sequenceName}', COALESCE((SELECT MAX(id) FROM {$tableName}), 1), true)");
+        } catch (\Exception $e) {
+            \Log::warning("Failed to ensure identity default for {$tableName}: ".$e->getMessage());
         }
     }
 

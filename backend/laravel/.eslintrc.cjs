@@ -73,6 +73,23 @@ module.exports = {
         'vue/require-explicit-emits': 'off',
       },
     },
+    {
+      files: [
+        'resources/js/**/*.{ts,tsx,vue}',
+        'vitest.setup.ts',
+      ],
+      rules: {
+        '@typescript-eslint/no-explicit-any': 'off',
+      },
+    },
+    {
+      files: [
+        'resources/js/Pages/Zones/ZoneDetailModals.vue',
+      ],
+      rules: {
+        'vue/no-mutating-props': 'off',
+      },
+    },
   ],
   ignorePatterns: [
     'dist',
