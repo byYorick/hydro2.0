@@ -285,6 +285,8 @@ class ZonesTest extends TestCase
                 'target_level' => 0.1,
             ]);
 
+        // When Python service is down, the operation should still be queued
+        // but the job will fail and log the error
         $resp->assertStatus(202)
             ->assertJsonPath('status', 'ok')
             ->assertJsonPath('message', 'Drain operation queued');

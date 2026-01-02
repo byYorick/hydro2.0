@@ -56,7 +56,7 @@ class SimulationControllerTest extends TestCase
     public function test_simulate_zone_success(): void
     {
         Http::fake([
-            'digital-twin:8003/simulate/zone' => Http::response([
+            'http://digital-twin:8003/simulate/zone' => Http::response([
                 'status' => 'ok',
                 'data' => [
                     'points' => [
@@ -105,7 +105,7 @@ class SimulationControllerTest extends TestCase
     public function test_simulate_zone_uses_zone_active_recipe_if_no_recipe_id_provided(): void
     {
         Http::fake([
-            'digital-twin:8003/simulate/zone' => Http::response([
+            'http://digital-twin:8003/simulate/zone' => Http::response([
                 'status' => 'ok',
                 'data' => ['points' => [], 'duration_hours' => 72, 'step_minutes' => 10],
             ], 200),
@@ -140,7 +140,7 @@ class SimulationControllerTest extends TestCase
     public function test_simulate_zone_handles_digital_twin_error(): void
     {
         Http::fake([
-            'digital-twin:8003/simulate/zone' => Http::response([
+            'http://digital-twin:8003/simulate/zone' => Http::response([
                 'status' => 'error',
                 'message' => 'Recipe not found',
             ], 404),
@@ -166,9 +166,11 @@ class SimulationControllerTest extends TestCase
 
     public function test_simulate_zone_handles_connection_error(): void
     {
-        Http::fake(function () {
-            throw new \Illuminate\Http\Client\ConnectionException('Connection refused');
-        });
+        Http::fake([
+            'http://digital-twin:8003/simulate/zone' => function () {
+                throw new \Illuminate\Http\Client\ConnectionException('Connection refused');
+            },
+        ]);
 
         $zone = Zone::factory()->create();
 
@@ -191,7 +193,7 @@ class SimulationControllerTest extends TestCase
     public function test_simulate_zone_with_minimal_parameters(): void
     {
         Http::fake([
-            'digital-twin:8003/simulate/zone' => Http::response([
+            'http://digital-twin:8003/simulate/zone' => Http::response([
                 'status' => 'ok',
                 'data' => ['points' => [], 'duration_hours' => 72, 'step_minutes' => 10],
             ], 200),

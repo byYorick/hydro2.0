@@ -6,6 +6,10 @@ use App\Models\User;
 use Tests\RefreshDatabase;
 use Tests\TestCase;
 
+/**
+ * @group skip-in-ci
+ * Broadcasting tests require Reverb server to be running
+ */
 class BroadcastAuthTest extends TestCase
 {
     use RefreshDatabase;
@@ -29,7 +33,7 @@ class BroadcastAuthTest extends TestCase
 
     public function test_authorizes_authenticated_users_for_zone_command_channels(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->create(['role' => 'operator']);
 
         $zone = \App\Models\Zone::factory()->create();
         

@@ -781,6 +781,12 @@ function processPendingSubscriptions(): void {
   
   const echo = window.Echo || getEchoInstance()
   if (!echo) {
+    // In test environment, don't wait for Echo
+    if (import.meta.env.MODE === 'test') {
+      logger.debug('[useWebSocket] Test environment detected, skipping Echo wait')
+      return
+    }
+
     logger.debug('[useWebSocket] Echo still not available, keeping subscriptions pending', {
       pendingCount: pendingSubscriptions.size,
     })

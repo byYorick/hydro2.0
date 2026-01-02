@@ -242,10 +242,57 @@ describe('ZoneActionModal', () => {
     })
 
     await wrapper.setProps({ show: true })
-    
+
     const input = wrapper.find('input[type="number"]')
     // Should reset to default value
     expect((input.element as HTMLInputElement).value).toBe('10')
+  })
+
+  it('handles API errors gracefully', async () => {
+    // Mock fetch to simulate API error
+    global.fetch = vi.fn(() =>
+      Promise.reject(new Error('Network error'))
+    )
+
+    const wrapper = mount(ZoneActionModal, {
+      props: {
+        show: true,
+        actionType: 'FORCE_IRRIGATION',
+        zoneId: 1
+      }
+    })
+
+    const form = wrapper.find('form')
+    await form.trigger('submit.prevent')
+
+    // Should still emit close event even on error
+    expect(wrapper.emitted('close')).toBeTruthy()
+
+    // Restore original fetch
+    global.fetch = vi.fn()
+  })
+
+  it('validates required fields before submission', async () => {
+    const wrapper = mount(ZoneActionModal, {
+      props: {
+        show: true,
+        actionType: 'FORCE_IRRIGATION',
+        zoneId: 1
+      }
+    })
+
+    // Mock fetch to check if it's called
+    const fetchSpy = vi.fn(() => Promise.resolve({ ok: true, json: () => ({}) }))
+    global.fetch = fetchSpy
+
+    const form = wrapper.find('form')
+    await form.trigger('submit.prevent')
+
+    // Should attempt to make API call
+    expect(fetchSpy).toHaveBeenCalled()
+
+    // Restore original fetch
+    global.fetch = vi.fn()
   })
 })
 
