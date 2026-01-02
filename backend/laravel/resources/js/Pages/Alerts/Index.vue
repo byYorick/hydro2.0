@@ -234,16 +234,17 @@ import { useUrlState } from '@/composables/useUrlState'
 import { useAlertsStore } from '@/stores/alerts'
 import type { Alert } from '@/types/Alert'
 
-interface AlertRecord extends Alert {
+interface AlertRecord extends Omit<Alert, 'zone'> {
   details?: any
   code?: string
   source?: string
   message?: string
-  zone?: { id: number; name: string }
+  zone?: { id: number; name: string } | undefined
 }
 
 interface PageProps {
   alerts?: AlertRecord[]
+  [key: string]: any
 }
 
 const page = usePage<PageProps>()
@@ -293,13 +294,13 @@ const alarmsOnly = useUrlState<boolean>({
 })
 
 const initialAlerts = Array.isArray(page.props.alerts) ? page.props.alerts : []
-alertsStore.setAll(initialAlerts)
+alertsStore.setAll(initialAlerts as Alert[])
 
 watch(
   () => page.props.alerts,
   (newAlerts) => {
     if (Array.isArray(newAlerts)) {
-      alertsStore.setAll(newAlerts)
+      alertsStore.setAll(newAlerts as Alert[])
     }
   },
   { deep: true }
@@ -481,7 +482,7 @@ const closeConfirm = (): void => {
 
 const applyResolved = (id: number, updated?: AlertRecord): void => {
   if (updated) {
-    alertsStore.upsert(updated)
+    alertsStore.upsert(updated as Alert)
   } else {
     alertsStore.setResolved(id)
   }
@@ -559,9 +560,9 @@ let unsubscribeAlerts: (() => void) | null = null
 
 onMounted(() => {
   unsubscribeAlerts = subscribeAlerts((event) => {
-    const payload = (event?.alert || event) as AlertRecord
+    const payload = event as AlertRecord
     if (payload?.id) {
-      alertsStore.upsert(payload)
+      alertsStore.upsert(payload as Alert)
     }
   })
 })

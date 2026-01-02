@@ -25,10 +25,10 @@
     <Card>
       <div class="text-sm font-semibold mb-2">Zones</div>
       <ul class="text-sm text-[color:var(--text-muted)] space-y-1">
-        <li v-for="z in zones" :key="z.id">
-          {{ z.name }} — {{ z.status }}
-          <span v-if="z.description"> — {{ z.description }}</span>
-          <span v-if="z.greenhouse"> — {{ z.greenhouse.name }}</span>
+        <li v-for="z in zones" :key="(z as Zone).id">
+          {{ (z as Zone).name }} — {{ (z as Zone).status }}
+          <span v-if="(z as Zone).description"> — {{ (z as Zone).description }}</span>
+          <span v-if="(z as Zone).greenhouse"> — {{ (z as Zone).greenhouse!.name }}</span>
         </li>
       </ul>
     </Card>
@@ -44,7 +44,6 @@ import { logger } from '@/utils/logger'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
 import { usePageProps } from '@/composables/usePageProps'
-import { router } from '@inertiajs/vue3'
 import { extractData } from '@/utils/apiHelpers'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { useZonesStore } from '@/stores/zones'
@@ -59,8 +58,8 @@ const zonesStore = useZonesStore()
 
 // Используем store для получения зон, с fallback на props
 const zones = computed(() => {
-  const storeZones = zonesStore.allZones
-  return storeZones.length > 0 ? storeZones : (zonesProp.value || [])
+  const storeZones = zonesStore.allZones as Zone[]
+  return storeZones.length > 0 ? storeZones : (zonesProp?.value || [])
 })
 const { showToast } = useToast()
 const { api } = useApi(showToast)
@@ -74,8 +73,8 @@ const form = reactive<{ name: string; description: string; status: string; green
 
 onMounted(async () => {
   // Инициализируем store из props
-  if (zonesProp.value) {
-    zonesStore.initFromProps({ zones: zonesProp.value })
+  if (zonesProp?.value) {
+    zonesStore.initFromProps({ zones: zonesProp.value as Zone[] })
   }
   
   // Загружаем теплицы

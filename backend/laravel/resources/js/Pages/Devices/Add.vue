@@ -129,8 +129,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
-import { router } from '@inertiajs/vue3'
+import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
@@ -176,12 +175,12 @@ function unwrapListResponse<T>(payload: unknown): T[] {
   return []
 }
 
-function formatDate(dateString) {
+function formatDate(dateString: string | null | undefined) {
   if (!dateString) return '-'
   return new Date(dateString).toLocaleString('ru-RU')
 }
 
-function getStatusVariant(status) {
+function getStatusVariant(status: string) {
   switch (status) {
     case 'online': return 'success'
     case 'offline': return 'neutral'
@@ -191,7 +190,7 @@ function getStatusVariant(status) {
   }
 }
 
-function getLifecycleVariant(lifecycleState) {
+function getLifecycleVariant(lifecycleState: string) {
   switch (lifecycleState) {
     case 'ACTIVE': return 'success'
     case 'REGISTERED_BACKEND': return 'info'
@@ -203,12 +202,12 @@ function getLifecycleVariant(lifecycleState) {
   }
 }
 
-function getZonesForGreenhouse(greenhouseId) {
+function getZonesForGreenhouse(greenhouseId: number | null) {
   if (!greenhouseId) return []
   return zones.value.filter(z => z.greenhouse_id === greenhouseId)
 }
 
-function onGreenhouseChange(nodeId) {
+function onGreenhouseChange(nodeId: number) {
   // Сбросить zone_id при смене теплицы
   if (assignmentForms[nodeId]) {
     assignmentForms[nodeId].zone_id = null
@@ -288,7 +287,7 @@ async function loadZones(): Promise<void> {
   }
 }
 
-async function assignNode(node) {
+async function assignNode(node: any) {
   const form = assignmentForms[node.id]
   if (!form.zone_id) {
     showToast('Выберите зону для привязки', 'error', TOAST_TIMEOUT.NORMAL)
@@ -352,7 +351,7 @@ async function assignNode(node) {
         newNodes.value = newNodes.value.filter(n => n.id !== node.id)
         delete assignmentForms[node.id]
         delete pendingAssignments[node.id]
-      } else if (updatedNode?.pending_zone_id && !updatedNode?.zone_id) {
+      } else if ((updatedNode as any)?.pending_zone_id && !updatedNode?.zone_id) {
         // Ожидаем config_report от ноды (через history-logger)
         showToast(
           `Нода "${node.uid}" привязывается к зоне. Ждём config_report от ноды (~2-5 сек)...`,
@@ -372,7 +371,7 @@ async function assignNode(node) {
         setTimeout(() => {
           loadNewNodes()
         }, 3000)
-      } else if (updatedNode?.zone_id && !updatedNode?.pending_zone_id) {
+      } else if (updatedNode?.zone_id && !(updatedNode as any)?.pending_zone_id) {
         // zone_id установлен, pending_zone_id сброшен → привязка успешно завершена
         // (lifecycle может еще быть REGISTERED_BACKEND, но это не важно - привязка завершена)
         showToast(`Нода "${node.uid}" успешно привязана к зоне!`, 'success', TOAST_TIMEOUT.NORMAL)
@@ -386,7 +385,7 @@ async function assignNode(node) {
         logger.warn('[Devices/Add] Unexpected node state after assignment:', {
           node_id: node.id,
           zone_id: updatedNode?.zone_id,
-          pending_zone_id: updatedNode?.pending_zone_id,
+          pending_zone_id: (updatedNode as any)?.pending_zone_id,
           lifecycle_state: updatedNode?.lifecycle_state,
         })
         showToast(
@@ -408,10 +407,10 @@ async function assignNode(node) {
     })
     
     // Дополнительная обработка lifecycle ошибок
-    if (err?.response?.data?.message?.includes('lifecycle') || 
-        err?.response?.data?.message?.includes('state')) {
+    if ((err as any)?.response?.data?.message?.includes('lifecycle') || 
+        (err as any)?.response?.data?.message?.includes('state')) {
       showToast(
-        `Ошибка lifecycle: ${err.response.data.message}. Убедитесь, что узел в состоянии REGISTERED_BACKEND.`,
+        `Ошибка lifecycle: ${(err as any).response.data.message}. Убедитесь, что узел в состоянии REGISTERED_BACKEND.`,
         'error',
         7000
       )

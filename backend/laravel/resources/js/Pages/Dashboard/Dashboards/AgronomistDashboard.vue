@@ -224,16 +224,16 @@
           <div class="flex items-start justify-between mb-2">
             <div>
               <div class="text-sm font-semibold">{{ zone.name }}</div>
-              <div v-if="zone.crop" class="text-xs text-[color:var(--text-muted)] mt-1">
-                {{ zone.crop }}
+              <div v-if="(zone as any).crop" class="text-xs text-[color:var(--text-muted)] mt-1">
+                {{ (zone as any).crop }}
               </div>
             </div>
             <Badge :variant="zone.status === 'ALARM' ? 'danger' : 'warning'">
               {{ translateStatus(zone.status) }}
             </Badge>
           </div>
-          <div v-if="zone.issues && zone.issues.length > 0" class="text-xs text-[color:var(--accent-red)] mt-2">
-            <div v-for="issue in zone.issues" :key="issue">
+          <div v-if="(zone as any).issues && (zone as any).issues.length > 0" class="text-xs text-[color:var(--accent-red)] mt-2">
+            <div v-for="issue in (zone as any).issues" :key="issue">
               • {{ issue }}
             </div>
           </div>
@@ -256,7 +256,6 @@ import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
 import MetricCard from '@/Components/MetricCard.vue'
 import { translateStatus } from '@/utils/i18n'
-import { formatTime } from '@/utils/formatTime'
 import { useTelemetry } from '@/composables/useTelemetry'
 import type { Zone, Recipe } from '@/types'
 
@@ -295,7 +294,7 @@ const zonesByCrop = computed(() => {
   
   props.dashboard.zones.forEach(zone => {
     // Используем новую модель: activeGrowCycle -> recipeRevision -> recipe
-    const cropName = zone.activeGrowCycle?.recipeRevision?.recipe?.name 
+    const cropName = (zone as any).activeGrowCycle?.recipeRevision?.recipe?.name 
       || 'Без рецепта'
     
     if (!grouped.has(cropName)) {
@@ -390,8 +389,8 @@ onMounted(async () => {
   }
 })
 
-const phTrend = computed(() => phTrendData.value)
-const ecTrend = computed(() => ecTrendData.value)
+const phTrend = computed(() => trendToNumber(phTrendData.value))
+const ecTrend = computed(() => trendToNumber(ecTrendData.value))
 
 // Целевые значения для pH (стандартный диапазон для гидропоники)
 const phTarget = computed(() => {
@@ -441,8 +440,8 @@ const activeRecipes = computed(() => {
   if (!props.dashboard.recipes) return []
   // Рецепты считаются активными, если они применены к зонам через activeGrowCycle
   return props.dashboard.recipes.slice(0, 6).map(recipe => {
-    const zonesWithRecipe = props.dashboard.zones?.filter(z => 
-      z.activeGrowCycle?.recipeRevision?.recipe_id === recipe.id
+    const zonesWithRecipe = props.dashboard.zones?.filter(z =>
+      (z as any).activeGrowCycle?.recipeRevision?.recipe_id === recipe.id
     ) || []
     
     // Вычисляем информацию о фазах из зон
@@ -458,11 +457,11 @@ const activeRecipes = computed(() => {
       let currentPhaseIndex = 0
       let startedAt: Date | null = null
       
-      if (firstZone.activeGrowCycle?.currentPhase) {
-        currentPhaseIndex = firstZone.activeGrowCycle.currentPhase.phase_index ?? 0
-        startedAt = firstZone.activeGrowCycle.phase_started_at 
-          ? new Date(firstZone.activeGrowCycle.phase_started_at)
-          : (firstZone.activeGrowCycle.started_at ? new Date(firstZone.activeGrowCycle.started_at) : null)
+      if ((firstZone as any).activeGrowCycle?.currentPhase) {
+        currentPhaseIndex = (firstZone as any).activeGrowCycle.currentPhase.phase_index ?? 0
+        startedAt = (firstZone as any).activeGrowCycle.phase_started_at
+          ? new Date((firstZone as any).activeGrowCycle.phase_started_at)
+          : ((firstZone as any).activeGrowCycle.started_at ? new Date((firstZone as any).activeGrowCycle.started_at) : null)
       }
       
       const currentPhaseData = recipe.phases.find(p => p.phase_index === currentPhaseIndex)
@@ -473,7 +472,7 @@ const activeRecipes = computed(() => {
         // Вычисляем прогресс фазы на основе времени
         if (startedAt) {
           const now = new Date()
-          const phaseDuration = (currentPhaseData.duration_days || 0) * 24 * 60 * 60 * 1000
+          const phaseDuration = ((currentPhaseData as any).duration_days || 0) * 24 * 60 * 60 * 1000
           const elapsed = now.getTime() - startedAt.getTime()
           phaseProgress = phaseDuration > 0 ? Math.min(100, Math.max(0, (elapsed / phaseDuration) * 100)) : 0
           
@@ -518,5 +517,12 @@ function formatTimeUntil(timestamp: string | Date): string {
   if (days > 0) return `${days} дн. ${hours} ч.`
   if (hours > 0) return `${hours} ч. ${minutes} мин.`
   return `${minutes} мин.`
+}
+
+function trendToNumber(trend: TrendDirection): number | null | undefined {
+  if (trend === null) return null
+  if (trend === 'up') return 1
+  if (trend === 'down') return -1
+  return 0 // stable
 }
 </script>

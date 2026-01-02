@@ -1,422 +1,133 @@
 {
-  "test_suite": "E63_backoff_on_errors",
-  "generated_at": "2026-01-01T23:44:47.101672",
+  "test_suite": "E06_laravel_down_queue_recovery",
+  "generated_at": "2026-01-02T09:03:13.167945",
   "test_cases": [
     {
-      "name": "stop_node_simulator_initial",
+      "name": "start_node_simulator",
       "status": "passed",
-      "duration": 15.277198314666748,
+      "duration": 5.6945836544036865,
       "error_message": null,
       "steps": [
         {
-          "name": "stop_node_simulator_initial",
+          "name": "start_node_simulator",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T23:43:38.299859"
+      "timestamp": "2026-01-02T09:02:31.106126"
     },
     {
-      "name": "set_test_uids",
+      "name": "verify_laravel_running",
       "status": "passed",
-      "duration": 2.7179718017578125e-05,
+      "duration": 1.1219892501831055,
       "error_message": null,
       "steps": [
         {
-          "name": "set_test_uids",
+          "name": "verify_laravel_running",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T23:43:38.300306"
+      "timestamp": "2026-01-02T09:02:32.228253"
     },
     {
-      "name": "set_zone_id_from_uid",
+      "name": "stop_laravel",
       "status": "passed",
-      "duration": 0.009022235870361328,
+      "duration": 7.30015754699707,
       "error_message": null,
       "steps": [
         {
-          "name": "set_zone_id_from_uid",
+          "name": "stop_laravel",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T23:43:38.309478"
+      "timestamp": "2026-01-02T09:02:39.528498"
     },
     {
-      "name": "set_node_id_from_uid",
+      "name": "node_publishes_errors_during_down",
       "status": "passed",
-      "duration": 0.002371549606323242,
+      "duration": 5.004705429077148,
       "error_message": null,
       "steps": [
         {
-          "name": "set_node_id_from_uid",
+          "name": "node_publishes_errors_during_down",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T23:43:38.312082"
+      "timestamp": "2026-01-02T09:02:44.533719"
     },
     {
-      "name": "set_ids",
+      "name": "restore_laravel",
       "status": "passed",
-      "duration": 3.814697265625e-06,
+      "duration": 3.2781565189361572,
       "error_message": null,
       "steps": [
         {
-          "name": "set_ids",
+          "name": "restore_laravel",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T23:43:38.312243"
+      "timestamp": "2026-01-02T09:02:47.811973"
     },
     {
-      "name": "cleanup_old_cycles",
+      "name": "wait_queue_processing",
       "status": "passed",
-      "duration": 0.01117086410522461,
+      "duration": 15.073963165283203,
       "error_message": null,
       "steps": [
         {
-          "name": "cleanup_old_cycles",
+          "name": "wait_queue_processing",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T23:43:38.323523"
+      "timestamp": "2026-01-02T09:03:02.886034"
     },
     {
-      "name": "create_plant",
+      "name": "all_errors_processed",
       "status": "passed",
-      "duration": 0.06440162658691406,
+      "duration": 0.00887608528137207,
       "error_message": null,
       "steps": [
         {
-          "name": "create_plant",
+          "name": "all_errors_processed",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T23:43:38.388145"
+      "timestamp": "2026-01-02T09:03:02.894925"
     },
     {
-      "name": "create_recipe",
+      "name": "errors_processed_via_queue",
       "status": "passed",
-      "duration": 0.061408281326293945,
+      "duration": 0.000637054443359375,
       "error_message": null,
       "steps": [
         {
-          "name": "create_recipe",
+          "name": "errors_processed_via_queue",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T23:43:38.449822"
+      "timestamp": "2026-01-02T09:03:02.895573"
     },
     {
-      "name": "create_revision",
+      "name": "queue_processed",
       "status": "passed",
-      "duration": 0.0644066333770752,
+      "duration": 0.0009400844573974609,
       "error_message": null,
       "steps": [
         {
-          "name": "create_revision",
+          "name": "queue_processed",
           "status": "passed"
         }
       ],
-      "timestamp": "2026-01-01T23:43:38.515052"
-    },
-    {
-      "name": "add_phase",
-      "status": "passed",
-      "duration": 0.07981133460998535,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "add_phase",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-01T23:43:38.595066"
-    },
-    {
-      "name": "publish_revision",
-      "status": "passed",
-      "duration": 0.060610294342041016,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "publish_revision",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-01T23:43:38.655851"
-    },
-    {
-      "name": "create_cycle",
-      "status": "passed",
-      "duration": 0.09783744812011719,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "create_cycle",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-01T23:43:38.754031"
-    },
-    {
-      "name": "set_cycle_id",
-      "status": "passed",
-      "duration": 4.0531158447265625e-06,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_cycle_id",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-01T23:43:38.754192"
-    },
-    {
-      "name": "wait_for_effective_targets",
-      "status": "passed",
-      "duration": 2.001558542251587,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "wait_for_effective_targets",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-01T23:43:40.755792"
-    },
-    {
-      "name": "enable_capabilities",
-      "status": "passed",
-      "duration": 0.0018985271453857422,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "enable_capabilities",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-01T23:43:40.757873"
-    },
-    {
-      "name": "fetch_heater_channel",
-      "status": "passed",
-      "duration": 0.0013079643249511719,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "fetch_heater_channel",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-01T23:43:40.759394"
-    },
-    {
-      "name": "fetch_heater_infra",
-      "status": "passed",
-      "duration": 0.0016903877258300781,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "fetch_heater_infra",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-01T23:43:40.761236"
-    },
-    {
-      "name": "upsert_heater_binding",
-      "status": "passed",
-      "duration": 0.0017600059509277344,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "upsert_heater_binding",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-01T23:43:40.763230"
-    },
-    {
-      "name": "reset_backoff",
-      "status": "passed",
-      "duration": 0.02507472038269043,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "reset_backoff",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-01T23:43:40.788431"
-    },
-    {
-      "name": "publish_temp_low_baseline",
-      "status": "passed",
-      "duration": 2.0022106170654297,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "publish_temp_low_baseline",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-01T23:43:42.790910"
-    },
-    {
-      "name": "wait_for_baseline_command",
-      "status": "passed",
-      "duration": 20.004424810409546,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "wait_for_baseline_command",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-01T23:44:02.795435"
-    },
-    {
-      "name": "baseline_timestamp",
-      "status": "passed",
-      "duration": 0.0005648136138916016,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "baseline_timestamp",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-01T23:44:02.796135"
-    },
-    {
-      "name": "set_degraded_state",
-      "status": "passed",
-      "duration": 0.03021240234375,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "set_degraded_state",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-01T23:44:02.826558"
-    },
-    {
-      "name": "degraded_timestamp",
-      "status": "passed",
-      "duration": 0.0005271434783935547,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "degraded_timestamp",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-01T23:44:02.827198"
-    },
-    {
-      "name": "publish_temp_low_degraded",
-      "status": "passed",
-      "duration": 2.0029001235961914,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "publish_temp_low_degraded",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-01T23:44:04.830366"
-    },
-    {
-      "name": "wait_for_degraded_cycle",
-      "status": "passed",
-      "duration": 20.002680778503418,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "wait_for_degraded_cycle",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-01T23:44:24.833154"
-    },
-    {
-      "name": "reset_backoff_after_degraded",
-      "status": "passed",
-      "duration": 0.026401758193969727,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "reset_backoff_after_degraded",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-01T23:44:24.859742"
-    },
-    {
-      "name": "reset_timestamp",
-      "status": "passed",
-      "duration": 0.0005674362182617188,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "reset_timestamp",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-01T23:44:24.860393"
-    },
-    {
-      "name": "publish_temp_low_after_reset",
-      "status": "passed",
-      "duration": 2.002284049987793,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "publish_temp_low_after_reset",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-01T23:44:26.862972"
-    },
-    {
-      "name": "wait_for_post_reset_command",
-      "status": "passed",
-      "duration": 20.00458073616028,
-      "error_message": null,
-      "steps": [
-        {
-          "name": "wait_for_post_reset_command",
-          "status": "passed"
-        }
-      ],
-      "timestamp": "2026-01-01T23:44:46.867663"
-    },
-    {
-      "name": "baseline_heater_command_created",
-      "status": "failed",
-      "duration": 0.0005245208740234375,
-      "error_message": "the query has 3 placeholders but 2 parameters were passed",
-      "steps": [
-        {
-          "name": "baseline_heater_command_created",
-          "status": "failed",
-          "error": "the query has 3 placeholders but 2 parameters were passed"
-        }
-      ],
-      "timestamp": "2026-01-01T23:44:46.868249"
+      "timestamp": "2026-01-02T09:03:02.896519"
     }
   ],
   "timeline": [],
   "artifacts": {
-    "E63_backoff_on_errors": {
+    "E06_laravel_down_queue_recovery": {
       "ws_messages": [],
       "mqtt_messages": [],
       "api_responses": [],
       "context_vars": {
-        "zone_id": 1,
-        "node_id": 1,
-        "cycle_id": 47
+        "zone_id": 1
       }
     }
   }

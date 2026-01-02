@@ -97,8 +97,8 @@
               {{ translateStatus(zone.status) }}
             </Badge>
           </div>
-          <div v-if="zone.alertsCount > 0" class="text-xs text-[color:var(--accent-red)] mb-2">
-            Активных алертов: {{ zone.alertsCount }}
+          <div v-if="(zone as any).alertsCount > 0" class="text-xs text-[color:var(--accent-red)] mb-2">
+            Активных алертов: {{ (zone as any).alertsCount }}
           </div>
           <div class="flex gap-2 mt-3">
             <Link :href="`/zones/${zone.id}`">
@@ -272,7 +272,7 @@ async function handleQuickAction(zoneId: number, action: string) {
         nextPhase: 'переведена на следующую фазу',
       }
       showToast(`Зона ${actionNames[action] || 'обновлена'}`, 'success', TOAST_TIMEOUT.NORMAL)
-      logger.debug('[AdminDashboard] Quick action successful:', action, 'for zone:', zoneId)
+      logger.debug(`[AdminDashboard] Quick action successful: ${action} for zone: ${zoneId}`)
       
       // Обновляем страницу для получения актуальных данных
       window.location.reload()

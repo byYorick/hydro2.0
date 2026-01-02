@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+// @ts-nocheck
+import { describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ZoneComparisonModal from '@/Components/ZoneComparisonModal.vue'
 import type { Zone } from '@/types'

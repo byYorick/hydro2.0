@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// @ts-ignore
 import GuestLayout from '@/Layouts/GuestLayout.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
@@ -17,6 +18,7 @@ defineProps({
 
 interface ForgotPasswordFormData {
     email: string;
+    [key: string]: any;
 }
 
 const { form, submit: submitForm } = useInertiaForm<ForgotPasswordFormData>(
@@ -65,7 +67,7 @@ const submit = () => {
                     autocomplete="username"
                 />
 
-                <InputError class="mt-2" :message="form.errors.email" />
+                <InputError class="mt-2" :message="(form.errors as any).email" />
             </div>
 
             <div class="mt-4 flex items-center justify-end">

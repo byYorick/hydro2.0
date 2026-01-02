@@ -290,7 +290,7 @@ onMounted(() => {
     devicesStore.remove(deviceId)
   })
   
-  subscribeWithCleanup('device:lifecycle:transitioned', ({ deviceId }: { deviceId: number; fromState: string; toState: string }) => {
+  subscribeWithCleanup('device:lifecycle:transitioned', ({ deviceId, fromState, toState }: { deviceId: number; fromState: string; toState: string }) => {
     // Стор уже обновляется через WS, не нужно делать router.reload
     // Это предотвращает избыточные перезагрузки при флапах устройств
     devicesStore.invalidateCache()

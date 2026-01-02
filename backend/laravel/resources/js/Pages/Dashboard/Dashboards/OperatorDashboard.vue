@@ -43,7 +43,7 @@
           <p class="text-xs text-[color:var(--text-muted)] mt-2">
             {{ zone.description || 'Описание отсутствует' }}
           </p>
-          <div class="text-xs text-[color:var(--accent-red)] mt-2">Алертов: {{ zone.alerts_count ?? 0 }}</div>
+          <div class="text-xs text-[color:var(--accent-red)] mt-2">Алертов: {{ (zone as any).alerts_count ?? 0 }}</div>
         </Card>
       </div>
     </div>
@@ -52,13 +52,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { Link } from '@inertiajs/vue3'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
 import GreenhouseStatusCard from '@/Components/GreenhouseStatusCard.vue'
-import { translateStatus } from '@/utils/i18n'
 import { logger } from '@/utils/logger'
 import type { Zone } from '@/types'
 
@@ -74,9 +73,15 @@ const props = defineProps<DashboardProps>()
 
 const enrichedGreenhouses = computed(() => {
   return (props.dashboard.greenhouses || []).map((gh) => ({
-    ...gh,
-    zone_status_summary: gh.zone_status_summary ?? gh.zoneStatusSummary ?? {},
-    node_status_summary: gh.node_status_summary ?? gh.nodeStatusSummary ?? {},
+    id: gh.id,
+    name: gh.name,
+    type: gh.type,
+    description: gh.description,
+    zones_count: gh.zones_count,
+    zones_running: gh.zones_running,
+    alerts_count: gh.alerts_count,
+    zone_status_summary: gh.zone_status_summary ?? (gh as any).zoneStatusSummary ?? {},
+    node_status_summary: gh.node_status_summary ?? (gh as any).nodeStatusSummary ?? {},
   }))
 })
 
@@ -95,7 +100,7 @@ const zonesNeedingAttention = computed(() => {
   return (props.dashboard.zones || []).filter((zone) =>
     zone.status === 'WARNING' ||
     zone.status === 'ALARM' ||
-    (zone.alertsCount && zone.alertsCount > 0)
+    ((zone as any).alertsCount && (zone as any).alertsCount > 0)
   )
 })
 

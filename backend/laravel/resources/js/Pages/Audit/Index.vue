@@ -142,6 +142,8 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
+
+type BadgeVariant = 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'secondary'
 import Modal from '@/Components/Modal.vue'
 import Pagination from '@/Components/Pagination.vue'
 import { logger } from '@/utils/logger'
@@ -158,6 +160,7 @@ interface SystemLog {
 
 interface PageProps {
   logs?: SystemLog[]
+  [key: string]: any
 }
 
 const page = usePage<PageProps>()
@@ -198,7 +201,7 @@ const paginatedLogs = computed(() => {
   return filtered.value.slice(start, end)
 })
 
-const getLevelVariant = (level?: string): string => {
+const getLevelVariant = (level?: string): BadgeVariant => {
   if (!level) return 'neutral'
   const l = level.toLowerCase()
   if (l === 'error') return 'danger'
@@ -212,10 +215,9 @@ const loadLogs = async () => {
   try {
     // Используем router.reload с only для обновления только логов без сброса состояния
     // Это лучше, чем полный reload, так как сохраняет фильтры и scroll
-    await router.reload({ 
-      only: ['logs'], 
-      preserveScroll: true,
-      preserveState: true 
+    await router.reload({
+      only: ['logs'],
+      preserveUrl: true
     })
     // После загрузки проверяем, что текущая страница не выходит за пределы
     const maxPage = Math.ceil(all.value.length / perPage.value) || 1

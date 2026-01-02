@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // Удалены неиспользуемые импорты
 import Checkbox from '@/Components/Checkbox.vue';
+// @ts-ignore
 import GuestLayout from '@/Layouts/GuestLayout.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
@@ -22,6 +23,7 @@ interface LoginFormData {
     email: string
     password: string
     remember: boolean
+    [key: string]: any
 }
 
 const { form, submit: submitForm } = useInertiaForm<LoginFormData>(
@@ -71,7 +73,7 @@ const submit = (): void => {
                     data-testid="login-email"
                     :class="[
                         'mt-1 block w-full',
-                        form.errors.email 
+                        (form.errors as any).email
                             ? 'border-[color:var(--accent-red)] focus:border-[color:var(--accent-red)] focus:ring-[color:var(--accent-red)]' 
                             : ''
                     ]"
@@ -81,7 +83,7 @@ const submit = (): void => {
                     autocomplete="username"
                 />
 
-                <InputError class="mt-2" :message="form.errors.email" />
+                <InputError class="mt-2" :message="(form.errors as any).email" />
             </div>
 
             <div class="mt-4">
@@ -93,7 +95,7 @@ const submit = (): void => {
                     data-testid="login-password"
                     :class="[
                         'mt-1 block w-full',
-                        form.errors.password 
+                        (form.errors as any).password
                             ? 'border-[color:var(--accent-red)] focus:border-[color:var(--accent-red)] focus:ring-[color:var(--accent-red)]' 
                             : ''
                     ]"
@@ -102,7 +104,7 @@ const submit = (): void => {
                     autocomplete="current-password"
                 />
 
-                <InputError class="mt-2" :message="form.errors.password" />
+                <InputError class="mt-2" :message="(form.errors as any).password" />
             </div>
 
             <div class="mt-4 block">

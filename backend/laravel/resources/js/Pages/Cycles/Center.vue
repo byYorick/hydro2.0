@@ -418,7 +418,7 @@ interface Props {
 
 const props = defineProps<Props>()
 const page = usePage()
-const role = computed(() => page.props.auth?.user?.role || 'viewer')
+const role = computed(() => (page.props.auth as any)?.user?.role || 'viewer')
 const canOperate = computed(() => ['admin', 'operator'].includes(role.value))
 const canConfigure = computed(() => ['admin', 'agronomist'].includes(role.value))
 

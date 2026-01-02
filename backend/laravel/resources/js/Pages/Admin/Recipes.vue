@@ -28,9 +28,10 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
 import { reactive, ref, computed } from 'vue'
-import { usePage, router } from '@inertiajs/vue3'
+import { usePage } from '@inertiajs/vue3'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
+import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { useRecipesStore } from '@/stores/recipes'
 import { extractData } from '@/utils/apiHelpers'
 import { logger } from '@/utils/logger'
@@ -38,6 +39,7 @@ import type { Recipe } from '@/types/Recipe'
 
 interface PageProps {
   recipes?: Recipe[]
+  [key: string]: any
 }
 
 const page = usePage<PageProps>()
@@ -51,7 +53,7 @@ if (page.props.recipes) {
 }
 
 const recipes = computed(() => recipesStore.allRecipes)
-const selectedId = ref<number | null>(recipes[0]?.id || null)
+const selectedId = ref<number | null>(recipes.value[0]?.id || null)
 const form = reactive<{ name: string; description: string }>({ 
   name: '', 
   description: '' 

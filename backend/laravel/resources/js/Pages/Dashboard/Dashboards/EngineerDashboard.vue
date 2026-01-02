@@ -28,7 +28,7 @@
                 {{ device.type || 'Устройство' }}
               </div>
             </div>
-            <Badge :variant="device.status === 'ONLINE' ? 'success' : 'danger'">
+            <Badge :variant="(device.status as string) === 'ONLINE' || device.status === 'online' ? 'success' : 'danger'">
               {{ translateStatus(device.status) }}
             </Badge>
           </div>
@@ -162,7 +162,6 @@ import Button from '@/Components/Button.vue'
 import Badge from '@/Components/Badge.vue'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
 import { translateStatus } from '@/utils/i18n'
-import { formatTime } from '@/utils/formatTime'
 import { useApi } from '@/composables/useApi'
 import { useFilteredList } from '@/composables/useFilteredList'
 import { useToast } from '@/composables/useToast'
@@ -199,7 +198,7 @@ const restartModal = ref<{ open: boolean; deviceId: number | null }>({ open: fal
 const devices = computed(() => props.dashboard.devices || [])
 
 const problematicDevices = useFilteredList(devices, (d) => 
-  d.status !== 'ONLINE' || 
+  ((d.status as string) !== 'ONLINE' && d.status !== 'online') || 
   (d.issues && d.issues.length > 0) ||
   (d.rssi !== null && d.rssi !== undefined && d.rssi < -80)
 )

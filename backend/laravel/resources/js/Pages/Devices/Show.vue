@@ -139,6 +139,7 @@ import Badge from '@/Components/Badge.vue'
 import Button from '@/Components/Button.vue'
 import ConfirmModal from '@/Components/ConfirmModal.vue'
 import NodeLifecycleBadge from '@/Components/NodeLifecycleBadge.vue'
+// @ts-ignore
 import DeviceChannelsTable from '@/Pages/Devices/DeviceChannelsTable.vue'
 import MultiSeriesTelemetryChart from '@/Components/MultiSeriesTelemetryChart.vue'
 import { logger } from '@/utils/logger'
@@ -154,6 +155,7 @@ import type { Device, DeviceChannel } from '@/types'
 
 interface PageProps {
   device?: Device
+  [key: string]: any
 }
 
 const page = usePage<PageProps>()
@@ -200,7 +202,7 @@ const sensorChannels = computed(() => {
 const configChannels = computed(() => {
   const cfg = nodeConfigData.value
   if (cfg?.channels && Array.isArray(cfg.channels) && cfg.channels.length > 0) {
-    return cfg.channels.map((ch) => ({
+    return cfg.channels.map((ch: any) => ({
       channel: ch.name || ch.channel,
       name: ch.name || ch.channel,
       type: ch.type || ch.channel_type,
@@ -271,7 +273,7 @@ const COMMAND_ERROR_MESSAGES: Record<string, string> = {
 
 // Утилиты для работы с метриками
 const getMetricFromChannel = (channel: DeviceChannel): string => {
-  return channel.metric || channel.channel.toUpperCase()
+  return String(channel.metric || channel.channel.toUpperCase())
 }
 
 const getMetricColor = (metric: string, fallback?: string): string => {
@@ -391,7 +393,7 @@ const nodeConfig = computed(() => {
     status: device.value.status,
     fw_version: device.value.fw_version,
     config: device.value.config,
-    channels: displayChannels.value.map(c => ({
+    channels: displayChannels.value.map((c: any) => ({
       channel: c.channel,
       type: c.type,
       metric: c.metric,
