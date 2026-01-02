@@ -46,7 +46,7 @@
             </thead>
             <tbody>
               <tr
-                v-for="(plant, index) in plants"
+                v-for="(plant, index) in paginatedPlantsData"
                 :key="plant.id"
                 :class="[
                   index % 2 === 0 ? 'bg-[color:var(--bg-surface-strong)]' : 'bg-[color:var(--bg-surface)]',
@@ -382,7 +382,7 @@ const paginatedPlants = computed(() => {
   return props.plants.slice(start, end)
 })
 
-const plants = computed(() => paginatedPlants.value)
+const paginatedPlantsData = computed(() => paginatedPlants.value)
 const selectedPlant = computed(() => {
   // Ищем в полном списке, а не только в пагинированных
   return props.plants.find(plant => plant.id === selectedPlantId.value) ?? null

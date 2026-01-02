@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-expect-error - Test file with Vue component testing
 import { describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ZoneComparisonModal from '@/Components/ZoneComparisonModal.vue'

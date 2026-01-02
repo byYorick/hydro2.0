@@ -1,0 +1,77 @@
+services:
+  postgres:
+    image: timescale/timescaledb:2.13.0-pg15
+    environment:
+      POSTGRES_DB: hydro_test
+      POSTGRES_USER: hydro
+      POSTGRES_PASSWORD: hydro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hydro -d hydro_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  laravel-ci:
+    build:
+      context: ./laravel
+      dockerfile: Dockerfile
+      args:
+        INSTALL_DEV_DEPS: "true"
+        SKIP_FRONTEND_BUILD: "true"
+    working_dir: /app
+    environment:
+      - APP_ENV=testing
+      - APP_DEBUG=false
+      - SESSION_DRIVER=array
+      - CACHE_STORE=array
+      - QUEUE_CONNECTION=sync
+      - BROADCAST_CONNECTION=log
+      - LOG_CHANNEL=stderr
+      - DB_CONNECTION=pgsql
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_DATABASE=hydro_test
+      - DB_USERNAME=hydro
+      - DB_PASSWORD=hydro
+    volumes:
+      - ./laravel:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: >
+      bash -c "
+        echo '=== CI Pipeline Started ===' &&
+        echo '1. Copying .env...' &&
+        cp .env.example .env &&
+        php artisan key:generate --no-interaction &&
+        echo '2. Installing PHP dependencies...' &&
+        composer install --no-interaction --prefer-dist --optimize-autoloader &&
+        echo '3. Installing Node dependencies...' &&
+        npm ci --legacy-peer-deps &&
+        echo '4. Building frontend...' &&
+        npm run build &&
+        echo '5. Configuring PHP...' &&
+        php artisan config:clear &&
+        php artisan cache:clear &&
+        php artisan config:cache &&
+        echo '6. Running PHP tests...' &&
+        mkdir -p test-results &&
+        php artisan test --testsuite=Unit,Feature --no-coverage --log-junit test-results/phpunit.xml &&
+        echo '7. Running TypeScript typecheck...' &&
+        npm run typecheck &&
+        echo '8. Running ESLint...' &&
+        npm run lint &&
+        echo '9. Running Vitest unit tests...' &&
+        npm run test -- --reporter=dot --reporter=junit --outputFile=test-results/junit.xml &&
+        echo '10. Running Vitest coverage...' &&
+        npm run test -- --coverage --reporter=dot &&
+        echo '=== CI Pipeline Completed Successfully ==='
+      "
+
+volumes:
+  postgres_data:

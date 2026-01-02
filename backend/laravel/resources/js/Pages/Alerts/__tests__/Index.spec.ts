@@ -119,7 +119,7 @@ describe('Alerts/Index.vue', () => {
     axiosPatchMock.mockResolvedValue({ data: { status: 'ok' } })
   })
 
-  const findRows = (wrapper: ReturnType<typeof mount>) => wrapper.findAll('[data-testid^=\"alert-row-\"]')
+  const findRows = (wrapper: ReturnType<typeof mount>) => wrapper.findAll('[data-testid^="alert-row-"]')
 
   it('фильтрует только активные', async () => {
     const wrapper = mountWithPinia()

@@ -46,7 +46,8 @@ export function useModal<T extends boolean | Record<string, boolean>>(
       isOpen.value = !isOpen.value as T
     } else if (key && typeof isOpen.value === 'object') {
       const current = (isOpen.value as Record<string, boolean>)[key as string]
-      (isOpen.value as Record<string, boolean>)[key as string] = !current
+      const modalState = isOpen.value as Record<string, boolean>
+      modalState[key as string] = !current
     }
   }
 

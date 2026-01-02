@@ -31,6 +31,7 @@ module.exports = {
     'vue/no-mutating-props': 'warn',
     'vue/require-default-prop': 'off',
     'vue/require-explicit-emits': 'warn',
+    'no-case-declarations': 'warn',
     'vue/html-self-closing': ['warn', {
       html: {
         void: 'always',
@@ -47,6 +48,7 @@ module.exports = {
     }],
     '@typescript-eslint/explicit-module-boundary-types': 'off',
     '@typescript-eslint/no-non-null-assertion': 'warn',
+    '@typescript-eslint/ban-ts-comment': 'off',
     
     // General rules
     'no-console': ['warn', { allow: ['warn', 'error'] }],

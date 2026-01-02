@@ -659,14 +659,18 @@ function getMqttStatusDotClass(status: string | undefined) {
 
 function getMqttStatusText(status: string | undefined) {
   switch (status) {
-    case 'online':
+    case 'online': {
       return 'Онлайн'
-    case 'offline':
+    }
+    case 'offline': {
       return 'Офлайн'
-    case 'degraded':
+    }
+    case 'degraded': {
       return 'Частично'
-    default:
+    }
+    default: {
       return 'Неизвестно'
+    }
   }
 }
 
