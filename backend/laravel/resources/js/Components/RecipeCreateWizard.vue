@@ -1,16 +1,26 @@
 <template>
-  <Modal :open="show" title="Создать новый рецепт" @close="$emit('close')" size="large">
+  <Modal
+    :open="show"
+    title="Создать новый рецепт"
+    size="large"
+    @close="$emit('close')"
+  >
     <div class="space-y-6">
       <!-- Шаг 1: Основная информация -->
       <div>
-        <h3 class="text-sm font-semibold mb-3 text-[color:var(--text-primary)]">Основная информация</h3>
+        <h3 class="text-sm font-semibold mb-3 text-[color:var(--text-primary)]">
+          Основная информация
+        </h3>
         <div class="space-y-3">
           <div>
-            <label for="recipe-name" class="block text-xs text-[color:var(--text-muted)] mb-1">Название рецепта</label>
+            <label
+              for="recipe-name"
+              class="block text-xs text-[color:var(--text-muted)] mb-1"
+            >Название рецепта</label>
             <input
               id="recipe-name"
-              name="name"
               v-model="form.name"
+              name="name"
               type="text"
               placeholder="Например: Рецепт для салата"
               class="input-field h-9 w-full"
@@ -19,31 +29,49 @@
             />
           </div>
           <div>
-            <label for="recipe-description" class="block text-xs text-[color:var(--text-muted)] mb-1">Описание (опционально)</label>
+            <label
+              for="recipe-description"
+              class="block text-xs text-[color:var(--text-muted)] mb-1"
+            >Описание (опционально)</label>
             <textarea
               id="recipe-description"
-              name="description"
               v-model="form.description"
+              name="description"
               placeholder="Описание рецепта..."
               class="input-field w-full min-h-[60px] py-2 h-auto"
               autocomplete="off"
-            />
+            ></textarea>
           </div>
           <div>
-            <label for="recipe-plant" class="block text-xs text-[color:var(--text-muted)] mb-1">Культура</label>
+            <label
+              for="recipe-plant"
+              class="block text-xs text-[color:var(--text-muted)] mb-1"
+            >Культура</label>
             <select
               id="recipe-plant"
-              name="plant_id"
               v-model.number="form.plant_id"
+              name="plant_id"
               class="input-field h-9 w-full"
               :disabled="plantsLoading"
             >
-              <option :value="null" disabled>Выберите культуру</option>
-              <option v-for="plant in plants" :key="plant.id" :value="plant.id">
+              <option
+                :value="null"
+                disabled
+              >
+                Выберите культуру
+              </option>
+              <option
+                v-for="plant in plants"
+                :key="plant.id"
+                :value="plant.id"
+              >
                 {{ plant.name }}
               </option>
             </select>
-            <div v-if="!plantsLoading && plants.length === 0" class="text-xs text-[color:var(--text-dim)] mt-1">
+            <div
+              v-if="!plantsLoading && plants.length === 0"
+              class="text-xs text-[color:var(--text-dim)] mt-1"
+            >
               Нет доступных культур — добавьте культуру в справочнике.
             </div>
           </div>
@@ -53,8 +81,16 @@
       <!-- Шаг 2: Фазы рецепта -->
       <div>
         <div class="flex items-center justify-between mb-3">
-          <h3 class="text-sm font-semibold text-[color:var(--text-primary)]">Фазы рецепта</h3>
-          <Button size="sm" variant="secondary" @click="addPhase">+ Добавить фазу</Button>
+          <h3 class="text-sm font-semibold text-[color:var(--text-primary)]">
+            Фазы рецепта
+          </h3>
+          <Button
+            size="sm"
+            variant="secondary"
+            @click="addPhase"
+          >
+            + Добавить фазу
+          </Button>
         </div>
         <div class="space-y-3 max-h-[400px] overflow-y-auto">
           <div
@@ -63,7 +99,9 @@
             class="p-3 rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] space-y-2"
           >
             <div class="flex items-center justify-between">
-              <div class="text-xs font-semibold text-[color:var(--text-primary)]">Фаза {{ index + 1 }}</div>
+              <div class="text-xs font-semibold text-[color:var(--text-primary)]">
+                Фаза {{ index + 1 }}
+              </div>
               <Button
                 v-if="form.phases.length > 1"
                 size="sm"
@@ -75,7 +113,10 @@
             </div>
             <div class="grid grid-cols-2 gap-2">
               <div>
-                <label :for="`phase-name-${index}`" class="block text-xs text-[color:var(--text-muted)] mb-1">Название</label>
+                <label
+                  :for="`phase-name-${index}`"
+                  class="block text-xs text-[color:var(--text-muted)] mb-1"
+                >Название</label>
                 <input
                   :id="`phase-name-${index}`"
                   v-model="phase.name"
@@ -86,7 +127,10 @@
                 />
               </div>
               <div>
-                <label :for="`phase-duration-${index}`" class="block text-xs text-[color:var(--text-muted)] mb-1">Длительность (часов)</label>
+                <label
+                  :for="`phase-duration-${index}`"
+                  class="block text-xs text-[color:var(--text-muted)] mb-1"
+                >Длительность (часов)</label>
                 <input
                   :id="`phase-duration-${index}`"
                   v-model.number="phase.duration_hours"
@@ -99,7 +143,10 @@
             </div>
             <div class="grid grid-cols-2 gap-2 mt-2">
               <div>
-                <label :for="`phase-ph-min-${index}`" class="block text-xs text-[color:var(--text-muted)] mb-1">pH мин</label>
+                <label
+                  :for="`phase-ph-min-${index}`"
+                  class="block text-xs text-[color:var(--text-muted)] mb-1"
+                >pH мин</label>
                 <input
                   :id="`phase-ph-min-${index}`"
                   v-model.number="phase.targets.ph.min"
@@ -112,7 +159,10 @@
                 />
               </div>
               <div>
-                <label :for="`phase-ph-max-${index}`" class="block text-xs text-[color:var(--text-muted)] mb-1">pH макс</label>
+                <label
+                  :for="`phase-ph-max-${index}`"
+                  class="block text-xs text-[color:var(--text-muted)] mb-1"
+                >pH макс</label>
                 <input
                   :id="`phase-ph-max-${index}`"
                   v-model.number="phase.targets.ph.max"
@@ -127,7 +177,10 @@
             </div>
             <div class="grid grid-cols-2 gap-2">
               <div>
-                <label :for="`phase-ec-min-${index}`" class="block text-xs text-[color:var(--text-muted)] mb-1">EC мин</label>
+                <label
+                  :for="`phase-ec-min-${index}`"
+                  class="block text-xs text-[color:var(--text-muted)] mb-1"
+                >EC мин</label>
                 <input
                   :id="`phase-ec-min-${index}`"
                   v-model.number="phase.targets.ec.min"
@@ -139,7 +192,10 @@
                 />
               </div>
               <div>
-                <label :for="`phase-ec-max-${index}`" class="block text-xs text-[color:var(--text-muted)] mb-1">EC макс</label>
+                <label
+                  :for="`phase-ec-max-${index}`"
+                  class="block text-xs text-[color:var(--text-muted)] mb-1"
+                >EC макс</label>
                 <input
                   :id="`phase-ec-max-${index}`"
                   v-model.number="phase.targets.ec.max"
@@ -153,30 +209,47 @@
             </div>
           </div>
         </div>
-        <div v-if="form.phases.length === 0" class="text-xs text-[color:var(--text-dim)] text-center py-4">
+        <div
+          v-if="form.phases.length === 0"
+          class="text-xs text-[color:var(--text-dim)] text-center py-4"
+        >
           Нет фаз. Добавьте хотя бы одну фазу.
         </div>
       </div>
 
       <!-- Сообщение об успехе -->
-      <div v-if="createdRecipe" class="p-3 rounded-md bg-[color:var(--badge-success-bg)] border border-[color:var(--badge-success-border)]">
+      <div
+        v-if="createdRecipe"
+        class="p-3 rounded-md bg-[color:var(--badge-success-bg)] border border-[color:var(--badge-success-border)]"
+      >
         <div class="text-sm text-[color:var(--badge-success-text)]">
           ✓ Рецепт "{{ createdRecipe.name }}" успешно создан!
         </div>
       </div>
 
       <!-- Ошибка -->
-      <div v-if="error" class="p-3 rounded-md bg-[color:var(--badge-danger-bg)] border border-[color:var(--badge-danger-border)]">
-        <div class="text-sm text-[color:var(--badge-danger-text)]">{{ error }}</div>
+      <div
+        v-if="error"
+        class="p-3 rounded-md bg-[color:var(--badge-danger-bg)] border border-[color:var(--badge-danger-border)]"
+      >
+        <div class="text-sm text-[color:var(--badge-danger-text)]">
+          {{ error }}
+        </div>
       </div>
     </div>
 
     <template #footer>
-      <Button size="sm" variant="secondary" @click="$emit('close')">Отмена</Button>
       <Button
         size="sm"
-        @click="onCreate"
+        variant="secondary"
+        @click="$emit('close')"
+      >
+        Отмена
+      </Button>
+      <Button
+        size="sm"
         :disabled="!form.name || !form.plant_id || form.phases.length === 0 || creating"
+        @click="onCreate"
       >
         {{ creating ? 'Создание...' : 'Создать рецепт' }}
       </Button>

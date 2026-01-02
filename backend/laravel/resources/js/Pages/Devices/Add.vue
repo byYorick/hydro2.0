@@ -2,10 +2,26 @@
   <AppLayout>
     <div class="flex flex-col gap-4">
       <div class="flex items-center justify-between">
-        <h1 class="text-lg font-semibold">Добавление новой ноды</h1>
-        <Button size="sm" variant="secondary" @click="refreshNodes">
-          <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        <h1 class="text-lg font-semibold">
+          Добавление новой ноды
+        </h1>
+        <Button
+          size="sm"
+          variant="secondary"
+          @click="refreshNodes"
+        >
+          <svg
+            class="w-4 h-4 mr-2"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+            />
           </svg>
           Обновить список
         </Button>
@@ -13,7 +29,9 @@
 
       <!-- Инструкция -->
       <Card>
-        <div class="text-sm font-semibold mb-2">Инструкция по добавлению ноды</div>
+        <div class="text-sm font-semibold mb-2">
+          Инструкция по добавлению ноды
+        </div>
         <ol class="text-xs text-[color:var(--text-muted)] space-y-1 list-decimal list-inside">
           <li>Включите новую ноду. Она поднимет точку доступа Wi-Fi.</li>
           <li>Подключитесь с телефона к точке доступа ноды.</li>
@@ -27,33 +45,55 @@
 
       <!-- Список новых нод -->
       <Card>
-        <div class="text-sm font-semibold mb-3">Новые ноды (без привязки к зоне)</div>
-        <div v-if="loading" class="text-sm text-[color:var(--text-dim)] py-4 text-center">
+        <div class="text-sm font-semibold mb-3">
+          Новые ноды (без привязки к зоне)
+        </div>
+        <div
+          v-if="loading"
+          class="text-sm text-[color:var(--text-dim)] py-4 text-center"
+        >
           Загрузка...
         </div>
-        <div v-else-if="newNodes.length === 0" class="text-sm text-[color:var(--text-dim)] py-4 text-center">
+        <div
+          v-else-if="newNodes.length === 0"
+          class="text-sm text-[color:var(--text-dim)] py-4 text-center"
+        >
           Новых нод не найдено. Убедитесь, что нода подключена к Wi-Fi и отправила discovery сообщение.
         </div>
-        <div v-else class="space-y-3">
+        <div
+          v-else
+          class="space-y-3"
+        >
           <div
             v-for="node in newNodes"
             :key="node.id"
             class="p-3 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]"
           >
-              <div class="flex items-start justify-between mb-2">
+            <div class="flex items-start justify-between mb-2">
               <div>
-                <div class="text-sm font-semibold">{{ node.name || node.uid || `Node #${node.id}` }}</div>
+                <div class="text-sm font-semibold">
+                  {{ node.name || node.uid || `Node #${node.id}` }}
+                </div>
                 <div class="text-xs text-[color:var(--text-muted)] mt-1">
                   <span v-if="node.uid">UID: {{ node.uid }}</span>
-                  <span v-if="node.type" class="ml-2">Тип: {{ node.type }}</span>
-                  <span v-if="node.fw_version" class="ml-2">FW: {{ node.fw_version }}</span>
+                  <span
+                    v-if="node.type"
+                    class="ml-2"
+                  >Тип: {{ node.type }}</span>
+                  <span
+                    v-if="node.fw_version"
+                    class="ml-2"
+                  >FW: {{ node.fw_version }}</span>
                 </div>
                 <div class="text-xs text-[color:var(--text-dim)] mt-1">
                   <span v-if="node.last_seen_at">
                     Последний раз видели: {{ formatDate(node.last_seen_at) }}
                   </span>
                   <span v-else>Никогда не видели</span>
-                  <span v-if="node.lifecycle_state" class="ml-2">
+                  <span
+                    v-if="node.lifecycle_state"
+                    class="ml-2"
+                  >
                     · Lifecycle: <span class="text-[color:var(--accent-cyan)]">{{ getStateLabel(node.lifecycle_state) }}</span>
                   </span>
                 </div>
@@ -73,41 +113,67 @@
 
             <!-- Форма привязки к зоне -->
             <div class="mt-3 pt-3 border-t border-[color:var(--border-muted)]">
-              <div class="text-xs font-semibold mb-2 text-[color:var(--text-muted)]">Привязать к зоне:</div>
-              <form @submit.prevent="assignNode(node)" class="grid grid-cols-1 md:grid-cols-4 gap-2">
-                <label :for="`node-${node.id}-greenhouse`" class="sr-only">Теплица</label>
+              <div class="text-xs font-semibold mb-2 text-[color:var(--text-muted)]">
+                Привязать к зоне:
+              </div>
+              <form
+                class="grid grid-cols-1 md:grid-cols-4 gap-2"
+                @submit.prevent="assignNode(node)"
+              >
+                <label
+                  :for="`node-${node.id}-greenhouse`"
+                  class="sr-only"
+                >Теплица</label>
                 <select
                   :id="`node-${node.id}-greenhouse`"
-                  :name="`node_${node.id}_greenhouse_id`"
                   v-model="assignmentForms[node.id].greenhouse_id"
-                  @change="onGreenhouseChange(node.id)"
+                  :name="`node_${node.id}_greenhouse_id`"
                   class="input-select"
                   required
+                  @change="onGreenhouseChange(node.id)"
                 >
-                  <option :value="null">Выберите теплицу</option>
-                  <option v-for="gh in greenhouses" :key="gh.id" :value="gh.id">
+                  <option :value="null">
+                    Выберите теплицу
+                  </option>
+                  <option
+                    v-for="gh in greenhouses"
+                    :key="gh.id"
+                    :value="gh.id"
+                  >
                     {{ gh.name }}
                   </option>
                 </select>
-                <label :for="`node-${node.id}-zone`" class="sr-only">Зона</label>
+                <label
+                  :for="`node-${node.id}-zone`"
+                  class="sr-only"
+                >Зона</label>
                 <select
                   :id="`node-${node.id}-zone`"
-                  :name="`node_${node.id}_zone_id`"
                   v-model="assignmentForms[node.id].zone_id"
+                  :name="`node_${node.id}_zone_id`"
                   class="input-select"
                   :disabled="!assignmentForms[node.id].greenhouse_id"
                   required
                 >
-                  <option :value="null">Выберите зону</option>
-                  <option v-for="zone in getZonesForGreenhouse(assignmentForms[node.id].greenhouse_id)" :key="zone.id" :value="zone.id">
+                  <option :value="null">
+                    Выберите зону
+                  </option>
+                  <option
+                    v-for="zone in getZonesForGreenhouse(assignmentForms[node.id].greenhouse_id)"
+                    :key="zone.id"
+                    :value="zone.id"
+                  >
                     {{ zone.name }}
                   </option>
                 </select>
-                <label :for="`node-${node.id}-name`" class="sr-only">Имя ноды</label>
+                <label
+                  :for="`node-${node.id}-name`"
+                  class="sr-only"
+                >Имя ноды</label>
                 <input
                   :id="`node-${node.id}-name`"
-                  :name="`node_${node.id}_name`"
                   v-model="assignmentForms[node.id].name"
+                  :name="`node_${node.id}_name`"
                   placeholder="Имя ноды (опционально)"
                   class="input-field"
                 />

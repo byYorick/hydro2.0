@@ -1,5 +1,8 @@
 <template>
-  <span :class="classes" v-bind="$attrs"><slot /></span>
+  <span
+    :class="classes"
+    v-bind="$attrs"
+  ><slot></slot></span>
 </template>
 
 <script setup lang="ts">

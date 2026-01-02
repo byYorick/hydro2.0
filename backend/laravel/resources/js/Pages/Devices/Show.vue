@@ -2,10 +2,15 @@
   <AppLayout>
     <div class="flex items-center justify-between mb-3">
       <div>
-        <div class="text-lg font-semibold">{{ device.uid || device.name || device.id }}</div>
+        <div class="text-lg font-semibold">
+          {{ device.uid || device.name || device.id }}
+        </div>
         <div class="text-xs text-[color:var(--text-muted)]">
           <span v-if="device.zone">
-            <Link :href="`/zones/${device.zone.id}`" class="text-[color:var(--accent-cyan)] hover:underline">Zone: {{ device.zone.name }}</Link>
+            <Link
+              :href="`/zones/${device.zone.id}`"
+              class="text-[color:var(--accent-cyan)] hover:underline"
+            >Zone: {{ device.zone.name }}</Link>
           </span>
           <span v-else>Zone: -</span>
           · Type: {{ device.type || '-' }}
@@ -16,41 +21,75 @@
         <Badge :variant="device.status === 'online' ? 'success' : device.status === 'offline' ? 'danger' : 'neutral'">
           {{ device.status?.toUpperCase() || 'UNKNOWN' }}
         </Badge>
-        <NodeLifecycleBadge v-if="device.lifecycle_state" :lifecycle-state="device.lifecycle_state" />
-        <Button size="sm" variant="secondary" @click="onRestart">Restart</Button>
+        <NodeLifecycleBadge
+          v-if="device.lifecycle_state"
+          :lifecycle-state="device.lifecycle_state"
+        />
+        <Button
+          size="sm"
+          variant="secondary"
+          @click="onRestart"
+        >
+          Restart
+        </Button>
       </div>
     </div>
 
     <!-- Визуализация связи с зоной -->
-    <Card v-if="device.zone" class="mb-3">
+    <Card
+      v-if="device.zone"
+      class="mb-3"
+    >
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-3">
           <div class="w-12 h-12 rounded-lg border-2 border-[color:var(--border-strong)] bg-[color:var(--bg-elevated)] flex items-center justify-center">
             <span class="text-2xl">🌱</span>
           </div>
           <div>
-            <div class="text-sm font-semibold text-[color:var(--text-primary)]">Привязано к зоне</div>
-            <Link :href="`/zones/${device.zone.id}`" class="text-[color:var(--accent-cyan)] hover:underline text-sm">
+            <div class="text-sm font-semibold text-[color:var(--text-primary)]">
+              Привязано к зоне
+            </div>
+            <Link
+              :href="`/zones/${device.zone.id}`"
+              class="text-[color:var(--accent-cyan)] hover:underline text-sm"
+            >
               {{ device.zone.name }}
             </Link>
-            <div v-if="device.zone.status" class="text-xs text-[color:var(--text-muted)] mt-1">
+            <div
+              v-if="device.zone.status"
+              class="text-xs text-[color:var(--text-muted)] mt-1"
+            >
               Статус: {{ device.zone.status }}
             </div>
           </div>
         </div>
         <div class="flex items-center gap-2">
           <Link :href="`/zones/${device.zone.id}`">
-            <Button size="sm" variant="outline">
+            <Button
+              size="sm"
+              variant="outline"
+            >
               Перейти к зоне →
             </Button>
           </Link>
           <button 
-            @click="detachNode"
             :disabled="detaching"
             class="inline-flex items-center justify-center rounded-md font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-[color:var(--accent-red)]/50 h-8 px-3 text-xs bg-[color:var(--badge-danger-bg)] text-[color:var(--badge-danger-text)] border border-[color:var(--badge-danger-border)] hover:border-[color:var(--accent-red)] disabled:opacity-50 disabled:cursor-not-allowed"
+            @click="detachNode"
           >
-            <svg v-if="!detaching" class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            <svg
+              v-if="!detaching"
+              class="w-4 h-4 mr-2"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
             <span v-if="detaching">Отвязка...</span>
             <span v-else>Отвязать от зоны</span>
@@ -58,18 +97,37 @@
         </div>
       </div>
     </Card>
-    <Card v-else class="mb-3 border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)]">
+    <Card
+      v-else
+      class="mb-3 border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)]"
+    >
       <div class="flex items-center gap-2 text-[color:var(--badge-warning-text)]">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        <svg
+          class="w-5 h-5"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+          />
         </svg>
         <span class="text-sm">Устройство не привязано к зоне</span>
       </div>
     </Card>
 
     <!-- Графики телеметрии для сенсорных каналов (раздельно) -->
-    <div v-if="sensorChannels.length > 0" class="mb-3 space-y-3">
-      <template v-for="(channel, index) in sensorChannels" :key="channel?.channel || index">
+    <div
+      v-if="sensorChannels.length > 0"
+      class="mb-3 space-y-3"
+    >
+      <template
+        v-for="(channel, index) in sensorChannels"
+        :key="channel?.channel || index"
+      >
         <MultiSeriesTelemetryChart
           v-if="channel && getChartSeriesForChannel(channel).length > 0"
           :title="getChartTitleForChannel(channel)"
@@ -78,7 +136,10 @@
           @time-range-change="onChartTimeRangeChange"
         />
       </template>
-      <Card v-if="sensorChannels.length > 0 && !hasChartData" class="text-center text-sm text-[color:var(--text-dim)] py-8">
+      <Card
+        v-if="sensorChannels.length > 0 && !hasChartData"
+        class="text-center text-sm text-[color:var(--text-dim)] py-8"
+      >
         <div>Загрузка данных телеметрии...</div>
       </Card>
     </div>
@@ -87,15 +148,25 @@
       <Card class="xl:col-span-2">
         <div class="flex items-center justify-between gap-2 mb-2">
           <div>
-            <div class="text-sm font-semibold">Channels</div>
+            <div class="text-sm font-semibold">
+              Channels
+            </div>
             <div class="text-xs text-[color:var(--text-dim)]">
               <span v-if="configLoading">Обновляем конфиг...</span>
               <span v-else>Текущий конфиг ноды (read-only)</span>
-              <span v-if="configError" class="text-[color:var(--accent-amber)] ml-2">{{ configError }}</span>
+              <span
+                v-if="configError"
+                class="text-[color:var(--accent-amber)] ml-2"
+              >{{ configError }}</span>
             </div>
           </div>
           <div class="flex items-center gap-2">
-            <Button size="sm" variant="outline" :disabled="configLoading" @click="loadNodeConfig">
+            <Button
+              size="sm"
+              variant="outline"
+              :disabled="configLoading"
+              @click="loadNodeConfig"
+            >
               {{ configLoading ? 'Обновление...' : 'Обновить' }}
             </Button>
           </div>
@@ -109,10 +180,19 @@
       </Card>
       <Card>
         <div class="flex items-center justify-between mb-2">
-        <div class="text-sm font-semibold">NodeConfig</div>
-        <div class="text-[11px] text-[color:var(--text-dim)]" v-if="configLoading">Загрузка...</div>
+          <div class="text-sm font-semibold">
+            NodeConfig
+          </div>
+          <div
+            v-if="configLoading"
+            class="text-[11px] text-[color:var(--text-dim)]"
+          >
+            Загрузка...
+          </div>
         </div>
-        <div class="text-[11px] text-[color:var(--text-dim)] mb-2">Конфиг присылается нодой через config_report и хранится на сервере.</div>
+        <div class="text-[11px] text-[color:var(--text-dim)] mb-2">
+          Конфиг присылается нодой через config_report и хранится на сервере.
+        </div>
         <pre class="text-xs text-[color:var(--text-muted)] overflow-auto">{{ nodeConfig }}</pre>
       </Card>
     </div>

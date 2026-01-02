@@ -11,7 +11,10 @@
       />
     </div>
     <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
-      <UnassignedNodeErrorsWidget :zone-id="zone.id" :limit="5" />
+      <UnassignedNodeErrorsWidget
+        :zone-id="zone.id"
+        :limit="5"
+      />
     </div>
   </div>
 </template>

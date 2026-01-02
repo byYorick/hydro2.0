@@ -1,42 +1,71 @@
 <template>
   <Card class="relative overflow-hidden">
     <div class="flex items-center justify-between mb-3">
-      <div class="text-sm font-semibold">Устройства зоны</div>
+      <div class="text-sm font-semibold">
+        Устройства зоны
+      </div>
       <div class="flex items-center gap-2">
         <button
-          @click="viewMode = 'grid'"
           class="p-1.5 rounded border transition-colors"
           :class="viewMode === 'grid' 
             ? 'border-[color:var(--border-strong)] bg-[color:var(--bg-elevated)] text-[color:var(--text-primary)]' 
             : 'border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] text-[color:var(--text-muted)] hover:bg-[color:var(--bg-elevated)]'"
           title="Сетка"
+          @click="viewMode = 'grid'"
         >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+          <svg
+            class="w-4 h-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"
+            />
           </svg>
         </button>
         <button
-          @click="viewMode = 'graph'"
           class="p-1.5 rounded border transition-colors"
           :class="viewMode === 'graph' 
             ? 'border-[color:var(--border-strong)] bg-[color:var(--bg-elevated)] text-[color:var(--text-primary)]' 
             : 'border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] text-[color:var(--text-muted)] hover:bg-[color:var(--bg-elevated)]'"
           title="Граф"
+          @click="viewMode = 'graph'"
         >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+          <svg
+            class="w-4 h-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M13 10V3L4 14h7v7l9-11h-7z"
+            />
           </svg>
         </button>
       </div>
       <template v-if="canManage">
-        <Button size="sm" variant="secondary" @click="$emit('attach')">
+        <Button
+          size="sm"
+          variant="secondary"
+          @click="$emit('attach')"
+        >
           Привязать узлы
         </Button>
       </template>
     </div>
 
     <!-- Граф визуализация -->
-    <div v-if="viewMode === 'graph' && devices.length > 0" class="relative min-h-[300px] sm:min-h-[400px]">
+    <div
+      v-if="viewMode === 'graph' && devices.length > 0"
+      class="relative min-h-[300px] sm:min-h-[400px]"
+    >
       <div class="absolute inset-0 flex items-center justify-center">
         <!-- Центральная зона (SCADA стиль) -->
         <div
@@ -52,7 +81,9 @@
             />
           </div>
           
-          <div class="text-sm sm:text-base font-bold text-center px-3">{{ zoneName }}</div>
+          <div class="text-sm sm:text-base font-bold text-center px-3">
+            {{ zoneName }}
+          </div>
           <div class="text-xs text-[color:var(--text-muted)] mt-1 font-medium">
             {{ devices.length }} {{ devices.length === 1 ? 'устройство' : devices.length < 5 ? 'устройства' : 'устройств' }}
           </div>
@@ -112,7 +143,9 @@
               </div>
               
               <!-- Иконка устройства -->
-              <div class="text-xl sm:text-2xl mb-1">{{ getDeviceIcon(device.type) }}</div>
+              <div class="text-xl sm:text-2xl mb-1">
+                {{ getDeviceIcon(device.type) }}
+              </div>
               
               <!-- Название устройства -->
               <div class="text-[9px] sm:text-xs font-semibold text-center truncate w-full px-1">
@@ -130,7 +163,10 @@
     </div>
 
     <!-- Сетка визуализация (SCADA стиль) -->
-    <div v-else-if="viewMode === 'grid' && devices.length > 0" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+    <div
+      v-else-if="viewMode === 'grid' && devices.length > 0"
+      class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4"
+    >
       <Link
         v-for="device in devices"
         :key="device.id"
@@ -177,15 +213,24 @@
 
         <!-- Дополнительная информация (SCADA стиль) -->
         <div class="text-xs text-[color:var(--text-dim)] space-y-1.5 border-t border-[color:var(--border-muted)] pt-2">
-          <div v-if="device.fw_version" class="flex items-center justify-between">
+          <div
+            v-if="device.fw_version"
+            class="flex items-center justify-between"
+          >
             <span class="text-[color:var(--text-muted)]">FW:</span>
             <span class="font-semibold text-[color:var(--text-primary)]">{{ device.fw_version }}</span>
           </div>
-          <div v-if="device.last_seen_at" class="flex items-center justify-between">
+          <div
+            v-if="device.last_seen_at"
+            class="flex items-center justify-between"
+          >
             <span class="text-[color:var(--text-muted)]">Последний раз:</span>
             <span class="font-medium text-[color:var(--text-primary)]">{{ formatLastSeen(device.last_seen_at) }}</span>
           </div>
-          <div v-if="device.channels && device.channels.length > 0" class="flex items-center justify-between">
+          <div
+            v-if="device.channels && device.channels.length > 0"
+            class="flex items-center justify-between"
+          >
             <span class="text-[color:var(--text-muted)]">Каналов:</span>
             <span class="font-semibold text-[color:var(--accent-cyan)]">{{ device.channels.length }}</span>
           </div>
@@ -200,8 +245,8 @@
           <Button
             size="sm"
             variant="outline"
-            @click.stop="$emit('configure', device)"
             class="text-xs w-full"
+            @click.stop="$emit('configure', device)"
           >
             Просмотр конфига
           </Button>
@@ -210,11 +255,22 @@
     </div>
 
     <!-- Пустое состояние -->
-    <div v-else class="text-center py-8 text-[color:var(--text-muted)]">
-      <div class="text-4xl mb-2">📱</div>
-      <div class="text-sm mb-3">Нет устройств в зоне</div>
+    <div
+      v-else
+      class="text-center py-8 text-[color:var(--text-muted)]"
+    >
+      <div class="text-4xl mb-2">
+        📱
+      </div>
+      <div class="text-sm mb-3">
+        Нет устройств в зоне
+      </div>
       <template v-if="canManage">
-        <Button size="sm" variant="secondary" @click="$emit('attach')">
+        <Button
+          size="sm"
+          variant="secondary"
+          @click="$emit('attach')"
+        >
           Привязать узлы
         </Button>
       </template>

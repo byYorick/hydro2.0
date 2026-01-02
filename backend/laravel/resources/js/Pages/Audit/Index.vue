@@ -1,16 +1,31 @@
 <template>
   <AppLayout>
-    <h1 class="text-lg font-semibold mb-4">Аудит</h1>
+    <h1 class="text-lg font-semibold mb-4">
+      Аудит
+    </h1>
     
     <Card class="mb-4">
       <div class="mb-3 flex flex-wrap items-center gap-2">
         <label class="text-sm text-[color:var(--text-muted)]">Уровень:</label>
-        <select v-model="levelFilter" class="input-select">
-          <option value="">Все уровни</option>
-          <option value="error">Error</option>
-          <option value="warning">Warning</option>
-          <option value="info">Info</option>
-          <option value="debug">Debug</option>
+        <select
+          v-model="levelFilter"
+          class="input-select"
+        >
+          <option value="">
+            Все уровни
+          </option>
+          <option value="error">
+            Error
+          </option>
+          <option value="warning">
+            Warning
+          </option>
+          <option value="info">
+            Info
+          </option>
+          <option value="debug">
+            Debug
+          </option>
         </select>
         <label class="ml-4 text-sm text-[color:var(--text-muted)]">Поиск:</label>
         <input 
@@ -19,10 +34,19 @@
           class="input-field w-64" 
         />
         <div class="ml-auto flex gap-2">
-          <Button size="sm" @click="loadLogs" :disabled="loading">
+          <Button
+            size="sm"
+            :disabled="loading"
+            @click="loadLogs"
+          >
             {{ loading ? 'Загрузка...' : 'Обновить' }}
           </Button>
-          <Button size="sm" variant="secondary" @click="exportLogs" :disabled="loading || !filtered.length">
+          <Button
+            size="sm"
+            variant="secondary"
+            :disabled="loading || !filtered.length"
+            @click="exportLogs"
+          >
             Экспорт
           </Button>
         </div>
@@ -34,23 +58,33 @@
     </Card>
 
     <Card>
-      <div v-if="loading && all.length === 0" class="text-sm text-[color:var(--text-dim)] px-3 py-6 text-center">
+      <div
+        v-if="loading && all.length === 0"
+        class="text-sm text-[color:var(--text-dim)] px-3 py-6 text-center"
+      >
         Загрузка логов...
       </div>
-      <div v-else class="rounded-xl border border-[color:var(--border-muted)] overflow-hidden max-h-[720px] flex flex-col">
+      <div
+        v-else
+        class="rounded-xl border border-[color:var(--border-muted)] overflow-hidden max-h-[720px] flex flex-col"
+      >
         <!-- Заголовок таблицы -->
         <div class="flex-shrink-0 grid grid-cols-4 gap-0 bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)] text-sm border-b border-[color:var(--border-muted)]">
-          <div v-for="(h, i) in headers" :key="i" class="px-3 py-2 text-left font-medium">
+          <div
+            v-for="(h, i) in headers"
+            :key="i"
+            class="px-3 py-2 text-left font-medium"
+          >
             {{ h }}
           </div>
         </div>
         <!-- Виртуализированный список -->
         <div class="flex-1 overflow-hidden">
           <RecycleScroller
+            v-slot="{ item: log, index }"
             :items="paginatedLogs"
             :item-size="rowHeight"
             key-field="id"
-            v-slot="{ item: log, index }"
             class="virtual-table-body h-full"
           >
             <div 
@@ -69,21 +103,27 @@
                 {{ formatDateTime(log.created_at) }}
               </div>
               <div class="px-3 py-2 flex items-center">
-                <span class="truncate" :title="log.message">{{ log.message || '-' }}</span>
+                <span
+                  class="truncate"
+                  :title="log.message"
+                >{{ log.message || '-' }}</span>
               </div>
               <div class="px-3 py-2 flex items-center">
                 <Button 
                   size="sm" 
                   variant="secondary" 
-                  @click="showLogDetails(log)"
                   :disabled="!log.context || Object.keys(log.context).length === 0"
+                  @click="showLogDetails(log)"
                 >
                   Детали
                 </Button>
               </div>
             </div>
           </RecycleScroller>
-          <div v-if="!paginatedLogs.length" class="text-sm text-[color:var(--text-dim)] px-3 py-6 text-center">
+          <div
+            v-if="!paginatedLogs.length"
+            class="text-sm text-[color:var(--text-dim)] px-3 py-6 text-center"
+          >
             {{ all.length === 0 ? 'Логи не найдены' : 'Нет логов по текущим фильтрам' }}
           </div>
         </div>
@@ -96,8 +136,15 @@
     </Card>
 
     <!-- Modal для деталей лога -->
-    <Modal :open="selectedLog !== null" :title="`Детали лога #${selectedLog?.id}`" @close="selectedLog = null">
-      <div v-if="selectedLog" class="space-y-3">
+    <Modal
+      :open="selectedLog !== null"
+      :title="`Детали лога #${selectedLog?.id}`"
+      @close="selectedLog = null"
+    >
+      <div
+        v-if="selectedLog"
+        class="space-y-3"
+      >
         <div>
           <label class="text-xs text-[color:var(--text-muted)]">Уровень</label>
           <div class="mt-1">
@@ -124,12 +171,21 @@
             <pre class="text-xs text-[color:var(--text-muted)]">{{ JSON.stringify(selectedLog.context, null, 2) }}</pre>
           </div>
         </div>
-        <div v-else class="text-xs text-[color:var(--text-dim)]">
+        <div
+          v-else
+          class="text-xs text-[color:var(--text-dim)]"
+        >
           Нет дополнительных данных
         </div>
       </div>
       <template #footer>
-        <Button size="sm" variant="secondary" @click="selectedLog = null">Закрыть</Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          @click="selectedLog = null"
+        >
+          Закрыть
+        </Button>
       </template>
     </Modal>
   </AppLayout>

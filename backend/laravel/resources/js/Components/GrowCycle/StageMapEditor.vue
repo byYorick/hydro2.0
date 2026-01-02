@@ -2,17 +2,25 @@
   <Card>
     <div class="space-y-4">
       <div>
-        <h3 class="text-sm font-semibold mb-2">Маппинг фаз рецепта → стадии выращивания</h3>
+        <h3 class="text-sm font-semibold mb-2">
+          Маппинг фаз рецепта → стадии выращивания
+        </h3>
         <p class="text-xs text-[color:var(--text-muted)] mb-4">
           Настройте соответствие фаз рецепта стадиям выращивания растения
         </p>
       </div>
 
-      <div v-if="phases.length === 0" class="text-sm text-[color:var(--text-muted)]">
+      <div
+        v-if="phases.length === 0"
+        class="text-sm text-[color:var(--text-muted)]"
+      >
         Нет фаз в рецепте
       </div>
 
-      <div v-else class="space-y-3">
+      <div
+        v-else
+        class="space-y-3"
+      >
         <div
           v-for="(phase, index) in phases"
           :key="phase.id || index"
@@ -20,7 +28,9 @@
         >
           <div class="flex items-center justify-between mb-2">
             <div>
-              <div class="text-sm font-medium">{{ phase.name }}</div>
+              <div class="text-sm font-medium">
+                {{ phase.name }}
+              </div>
               <div class="text-xs text-[color:var(--text-muted)]">
                 Фаза {{ phase.phase_index }} • {{ phase.duration_hours }}ч
               </div>
@@ -31,8 +41,8 @@
             <label class="block text-xs text-[color:var(--text-muted)] mb-1">Стадия выращивания</label>
             <select
               :value="getStageForPhaseIndex(phase.phase_index)"
-              @change="updateStageMapping(phase.phase_index, $event.target.value)"
               class="input-select h-8 w-full text-xs"
+              @change="updateStageMapping(phase.phase_index, $event.target.value)"
             >
               <option
                 v-for="stage in availableStages"
@@ -46,9 +56,22 @@
         </div>
       </div>
 
-      <div v-if="hasChanges" class="flex gap-2">
-        <Button size="sm" variant="secondary" @click="resetChanges">Сбросить</Button>
-        <Button size="sm" @click="saveChanges" :disabled="saving">
+      <div
+        v-if="hasChanges"
+        class="flex gap-2"
+      >
+        <Button
+          size="sm"
+          variant="secondary"
+          @click="resetChanges"
+        >
+          Сбросить
+        </Button>
+        <Button
+          size="sm"
+          :disabled="saving"
+          @click="saveChanges"
+        >
           {{ saving ? 'Сохранение...' : 'Сохранить изменения' }}
         </Button>
       </div>

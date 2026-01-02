@@ -46,7 +46,7 @@ describe('useWebSocket - Resubscribe Logic', () => {
     if (!(global as any).window) {
       (global as any).window = {}
     }
-    ;(global as any).window.setInterval = (global.setInterval as any)
+    (global as any).window.setInterval = (global.setInterval as any)
     ;(global as any).window.clearInterval = (global.clearInterval as any)
     ;(global as any).window.document = global.document || {
       readyState: 'complete',

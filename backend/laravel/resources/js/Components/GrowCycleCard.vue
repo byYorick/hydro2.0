@@ -4,20 +4,30 @@
       <!-- Заголовок -->
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2 flex-1 min-w-0">
-          <h3 class="text-sm font-semibold truncate">{{ zone.name }}</h3>
-          <Badge :variant="statusVariant">{{ translateStatus(zone.status) }}</Badge>
+          <h3 class="text-sm font-semibold truncate">
+            {{ zone.name }}
+          </h3>
+          <Badge :variant="statusVariant">
+            {{ translateStatus(zone.status) }}
+          </Badge>
         </div>
         <div class="flex items-center gap-2 shrink-0">
           <!-- Индикатор узлов -->
           <div class="flex items-center gap-1 text-xs text-[color:var(--text-muted)]">
-            <div class="w-2 h-2 rounded-full" :class="nodesOnline > 0 ? 'bg-[color:var(--accent-green)]' : 'bg-[color:var(--text-dim)]'"></div>
+            <div
+              class="w-2 h-2 rounded-full"
+              :class="nodesOnline > 0 ? 'bg-[color:var(--accent-green)]' : 'bg-[color:var(--text-dim)]'"
+            ></div>
             <span>{{ nodesOnline }}/{{ nodesTotal }}</span>
           </div>
         </div>
       </div>
 
       <!-- Стадия и прогресс -->
-      <div v-if="zone.stage" class="space-y-3">
+      <div
+        v-if="zone.stage"
+        class="space-y-3"
+      >
         <!-- Бейдж стадии -->
         <div class="flex items-center justify-between">
           <GrowCycleStageHeader :stage="zone.stage.id" />
@@ -32,7 +42,10 @@
         </div>
 
         <!-- Прогресс-бары -->
-        <div v-if="zone.cycle_progress !== null" class="space-y-2">
+        <div
+          v-if="zone.cycle_progress !== null"
+          class="space-y-2"
+        >
           <!-- Общий прогресс -->
           <div>
             <div class="flex items-center justify-between text-xs mb-1">
@@ -65,16 +78,45 @@
         </div>
 
         <!-- ETA -->
-        <div v-if="zone.eta_to_next_stage || zone.eta_to_harvest" class="flex items-center gap-4 text-xs text-[color:var(--text-muted)]">
-          <div v-if="zone.eta_to_next_stage" class="flex items-center gap-1">
-            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+        <div
+          v-if="zone.eta_to_next_stage || zone.eta_to_harvest"
+          class="flex items-center gap-4 text-xs text-[color:var(--text-muted)]"
+        >
+          <div
+            v-if="zone.eta_to_next_stage"
+            class="flex items-center gap-1"
+          >
+            <svg
+              class="w-3 h-3"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
             </svg>
             <span>След. стадия: {{ formatEta(zone.eta_to_next_stage) }}</span>
           </div>
-          <div v-if="zone.eta_to_harvest" class="flex items-center gap-1">
-            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          <div
+            v-if="zone.eta_to_harvest"
+            class="flex items-center gap-1"
+          >
+            <svg
+              class="w-3 h-3"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
             </svg>
             <span>Сбор: {{ formatEta(zone.eta_to_harvest) }}</span>
           </div>
@@ -82,7 +124,10 @@
       </div>
 
       <!-- Мини-метрики -->
-      <div v-if="zone.telemetry" class="pt-2 border-t border-[color:var(--border-muted)]">
+      <div
+        v-if="zone.telemetry"
+        class="pt-2 border-t border-[color:var(--border-muted)]"
+      >
         <ZoneMiniMetrics
           :telemetry="zone.telemetry"
           :targets="zone.targets"
@@ -90,10 +135,16 @@
       </div>
 
       <!-- Активные алерты (топ-2) -->
-      <div v-if="zone.alerts && zone.alerts.length > 0" class="pt-2 border-t border-[color:var(--border-muted)]">
+      <div
+        v-if="zone.alerts && zone.alerts.length > 0"
+        class="pt-2 border-t border-[color:var(--border-muted)]"
+      >
         <div class="flex items-center justify-between text-xs mb-2">
           <span class="font-semibold text-[color:var(--text-primary)]">Алерты</span>
-          <span v-if="(zone.alerts_count ?? 0) > zone.alerts.length" class="text-[color:var(--text-dim)]">
+          <span
+            v-if="(zone.alerts_count ?? 0) > zone.alerts.length"
+            class="text-[color:var(--text-dim)]"
+          >
             +{{ (zone.alerts_count ?? 0) - zone.alerts.length }} еще
           </span>
         </div>
@@ -103,24 +154,45 @@
             :key="alert.id"
             class="flex items-start gap-2 p-2 rounded bg-[color:var(--badge-danger-bg)] border border-[color:var(--badge-danger-border)]"
           >
-            <svg class="w-4 h-4 text-[color:var(--accent-red)] shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-              <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+            <svg
+              class="w-4 h-4 text-[color:var(--accent-red)] shrink-0 mt-0.5"
+              fill="currentColor"
+              viewBox="0 0 20 20"
+            >
+              <path
+                fill-rule="evenodd"
+                d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                clip-rule="evenodd"
+              />
             </svg>
             <div class="flex-1 min-w-0">
-              <div class="text-xs font-medium text-[color:var(--accent-red)]">{{ alert.type || 'Алерт' }}</div>
-              <div v-if="alert.details" class="text-[10px] text-[color:var(--text-muted)] mt-0.5 truncate">
+              <div class="text-xs font-medium text-[color:var(--accent-red)]">
+                {{ alert.type || 'Алерт' }}
+              </div>
+              <div
+                v-if="alert.details"
+                class="text-[10px] text-[color:var(--text-muted)] mt-0.5 truncate"
+              >
                 {{ formatAlertDetails(alert.details) }}
               </div>
             </div>
           </div>
         </div>
       </div>
-      <div v-else-if="(zone.alerts_count ?? 0) > 0" class="pt-2 border-t border-[color:var(--border-muted)]">
-        <div class="text-xs text-[color:var(--text-muted)]">{{ zone.alerts_count ?? 0 }} алерт(ов)</div>
+      <div
+        v-else-if="(zone.alerts_count ?? 0) > 0"
+        class="pt-2 border-t border-[color:var(--border-muted)]"
+      >
+        <div class="text-xs text-[color:var(--text-muted)]">
+          {{ zone.alerts_count ?? 0 }} алерт(ов)
+        </div>
       </div>
 
       <!-- Футер с рецептом -->
-      <div v-if="zone.recipe" class="pt-2 border-t border-[color:var(--border-muted)] flex items-center justify-between">
+      <div
+        v-if="zone.recipe"
+        class="pt-2 border-t border-[color:var(--border-muted)] flex items-center justify-between"
+      >
         <div class="text-xs text-[color:var(--text-muted)]">
           Рецепт: <span class="text-[color:var(--text-primary)]">{{ zone.recipe.name }}</span>
         </div>

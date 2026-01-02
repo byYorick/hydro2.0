@@ -330,7 +330,7 @@ function ensureChannelControl(
   
   // Для глобальных каналов используем реестр для предотвращения множественных auth запросов
   if (isGlobalChannel(channelName)) {
-    let registry = globalChannelRegistry.get(channelName)
+    const registry = globalChannelRegistry.get(channelName)
     if (registry && registry.channelControl) {
       // Проверяем, что канал еще активен (не мертв)
       const channelStillActive = registry.channelControl.echoChannel && !isChannelDead(channelName)
@@ -669,7 +669,7 @@ function handleCommandEvent(channelName: string, payload: any, isFailure: boolea
       return
     }
     try {
-      ;(subscription.handler as ZoneCommandHandler)(normalized)
+      (subscription.handler as ZoneCommandHandler)(normalized)
     } catch (error) {
       logger.error('[useWebSocket] Zone command handler error', {
         channel: channelName,
@@ -725,7 +725,7 @@ function handleGlobalEvent(channelName: string, payload: any): void {
       return
     }
     try {
-      ;(subscription.handler as GlobalEventHandler)(normalized)
+      (subscription.handler as GlobalEventHandler)(normalized)
     } catch (error) {
       logger.error('[useWebSocket] Global event handler error', {
         channel: channelName,
@@ -800,7 +800,7 @@ function processPendingSubscriptions(): void {
     try {
       // Для глобальных каналов проверяем реестр
       if (isGlobalChannel(pending.channelName)) {
-        let registry = globalChannelRegistry.get(pending.channelName)
+        const registry = globalChannelRegistry.get(pending.channelName)
         if (registry && registry.channelControl && registry.channelControl.echoChannel && !isChannelDead(pending.channelName)) {
           // Канал уже существует и авторизован, просто добавляем handler
           registry.handlers.add(pending.handler as GlobalEventHandler)
@@ -845,7 +845,7 @@ function processPendingSubscriptions(): void {
       
       // Обновляем реестр для глобальных каналов
       if (isGlobalChannel(pending.channelName)) {
-        let registry = globalChannelRegistry.get(pending.channelName)
+        const registry = globalChannelRegistry.get(pending.channelName)
         if (registry) {
           registry.handlers.add(pending.handler as GlobalEventHandler)
           registry.subscriptionRefCount += 1

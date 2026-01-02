@@ -7,13 +7,25 @@
     <div class="bg-[color:var(--bg-surface-strong)] border border-[color:var(--border-muted)] rounded-lg shadow-[var(--shadow-card)] w-full max-w-7xl max-h-[90vh] flex flex-col">
       <!-- Header -->
       <div class="flex items-center justify-between p-4 border-b border-[color:var(--border-muted)]">
-        <h2 class="text-lg font-semibold">Сравнение зон</h2>
+        <h2 class="text-lg font-semibold">
+          Сравнение зон
+        </h2>
         <button
-          @click="$emit('close')"
           class="p-1.5 rounded hover:bg-[color:var(--bg-elevated)] transition-colors"
+          @click="$emit('close')"
         >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          <svg
+            class="w-5 h-5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M6 18L18 6M6 6l12 12"
+            />
           </svg>
         </button>
       </div>
@@ -27,29 +39,42 @@
             <button
               v-for="zone in availableZones"
               :key="zone.id"
-              @click="toggleZone(zone.id)"
               class="px-3 py-1.5 rounded border text-sm transition-colors"
               :class="selectedZoneIds.includes(zone.id)
                 ? 'border-[color:var(--accent-cyan)] bg-[color:var(--badge-info-bg)] text-[color:var(--badge-info-text)]'
                 : 'border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] text-[color:var(--text-muted)] hover:border-[color:var(--border-strong)]'"
+              @click="toggleZone(zone.id)"
             >
               {{ zone.name }}
-              <span v-if="selectedZoneIds.includes(zone.id)" class="ml-1">✓</span>
+              <span
+                v-if="selectedZoneIds.includes(zone.id)"
+                class="ml-1"
+              >✓</span>
             </button>
           </div>
-          <div v-if="selectedZoneIds.length < 2" class="text-xs text-[color:var(--accent-amber)] mt-2">
+          <div
+            v-if="selectedZoneIds.length < 2"
+            class="text-xs text-[color:var(--accent-amber)] mt-2"
+          >
             Выберите минимум 2 зоны для сравнения
           </div>
         </div>
 
         <!-- Сравнительная таблица метрик -->
-        <div v-if="selectedZoneIds.length >= 2" class="mb-6">
-          <h3 class="text-sm font-semibold mb-3">Текущие метрики</h3>
+        <div
+          v-if="selectedZoneIds.length >= 2"
+          class="mb-6"
+        >
+          <h3 class="text-sm font-semibold mb-3">
+            Текущие метрики
+          </h3>
           <div class="overflow-x-auto">
             <table class="w-full text-sm">
               <thead>
                 <tr class="border-b border-[color:var(--border-muted)]">
-                  <th class="text-left p-2 text-[color:var(--text-muted)]">Метрика</th>
+                  <th class="text-left p-2 text-[color:var(--text-muted)]">
+                    Метрика
+                  </th>
                   <th
                     v-for="zoneId in selectedZoneIds"
                     :key="zoneId"
@@ -60,8 +85,14 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="metric in metrics" :key="metric.key" class="border-b border-[color:var(--border-muted)]">
-                  <td class="p-2 font-medium">{{ metric.label }}</td>
+                <tr
+                  v-for="metric in metrics"
+                  :key="metric.key"
+                  class="border-b border-[color:var(--border-muted)]"
+                >
+                  <td class="p-2 font-medium">
+                    {{ metric.label }}
+                  </td>
                   <td
                     v-for="zoneId in selectedZoneIds"
                     :key="zoneId"
@@ -69,7 +100,10 @@
                   >
                     <div class="flex items-center gap-2">
                       <span>{{ formatMetricValue(zoneId, metric.key) }}</span>
-                      <span v-if="metric.unit" class="text-xs text-[color:var(--text-dim)]">{{ metric.unit }}</span>
+                      <span
+                        v-if="metric.unit"
+                        class="text-xs text-[color:var(--text-dim)]"
+                      >{{ metric.unit }}</span>
                     </div>
                   </td>
                 </tr>
@@ -79,9 +113,17 @@
         </div>
 
         <!-- Графики сравнения -->
-        <div v-if="selectedZoneIds.length >= 2 && !loading" class="space-y-4">
-          <div v-for="metric in chartMetrics" :key="metric.key">
-            <h3 class="text-sm font-semibold mb-2">{{ metric.label }}</h3>
+        <div
+          v-if="selectedZoneIds.length >= 2 && !loading"
+          class="space-y-4"
+        >
+          <div
+            v-for="metric in chartMetrics"
+            :key="metric.key"
+          >
+            <h3 class="text-sm font-semibold mb-2">
+              {{ metric.label }}
+            </h3>
             <Card>
               <MultiSeriesTelemetryChart
                 :title="metric.label"
@@ -94,8 +136,14 @@
         </div>
 
         <!-- Loading state -->
-        <div v-if="loading" class="flex items-center justify-center py-12">
-          <LoadingState loading size="lg" />
+        <div
+          v-if="loading"
+          class="flex items-center justify-center py-12"
+        >
+          <LoadingState
+            loading
+            size="lg"
+          />
         </div>
       </div>
 
@@ -108,8 +156,8 @@
           <Button
             size="sm"
             variant="outline"
-            @click="exportComparison"
             :disabled="selectedZoneIds.length < 2 || loading"
+            @click="exportComparison"
           >
             📥 Экспорт данных
           </Button>

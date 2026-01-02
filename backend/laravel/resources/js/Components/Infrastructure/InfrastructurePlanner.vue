@@ -2,7 +2,9 @@
   <Card>
     <div class="space-y-4">
       <div>
-        <h3 class="text-sm font-semibold mb-2">Схема оборудования зоны</h3>
+        <h3 class="text-sm font-semibold mb-2">
+          Схема оборудования зоны
+        </h3>
         <p class="text-xs text-[color:var(--text-muted)] mb-4">
           Укажите, какое оборудование установлено в зоне. Обязательное оборудование отмечено красным.
         </p>
@@ -19,15 +21,22 @@
                 ? 'border-[color:var(--accent-green)] bg-[color:var(--badge-success-bg)]'
                 : 'border-[color:var(--accent-cyan)] bg-[color:var(--badge-info-bg)]'
               : asset.required
-              ? 'border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)]'
-              : 'border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] hover:border-[color:var(--border-strong)]'
+                ? 'border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)]'
+                : 'border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] hover:border-[color:var(--border-strong)]'
           "
           @click="toggleAsset(asset.type)"
         >
           <div class="flex items-center justify-between">
             <div class="flex-1">
-              <div class="text-sm font-medium">{{ asset.icon }} {{ asset.label }}</div>
-              <div v-if="asset.required" class="text-xs text-[color:var(--accent-red)] mt-1">Обязательно</div>
+              <div class="text-sm font-medium">
+                {{ asset.icon }} {{ asset.label }}
+              </div>
+              <div
+                v-if="asset.required"
+                class="text-xs text-[color:var(--accent-red)] mt-1"
+              >
+                Обязательно
+              </div>
             </div>
             <div
               v-if="isSelected(asset.type)"
@@ -39,8 +48,13 @@
         </div>
       </div>
 
-      <div v-if="selectedAssets.length > 0" class="mt-4 p-3 rounded border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)]">
-        <div class="text-xs text-[color:var(--text-muted)] mb-2">Выбранное оборудование:</div>
+      <div
+        v-if="selectedAssets.length > 0"
+        class="mt-4 p-3 rounded border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)]"
+      >
+        <div class="text-xs text-[color:var(--text-muted)] mb-2">
+          Выбранное оборудование:
+        </div>
         <div class="flex flex-wrap gap-2">
           <Badge
             v-for="assetType in selectedAssets"
@@ -53,8 +67,13 @@
         </div>
       </div>
 
-      <div v-if="missingRequired.length > 0" class="mt-4 p-3 rounded border border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)]">
-        <div class="text-xs text-[color:var(--badge-danger-text)] mb-2">Отсутствует обязательное оборудование:</div>
+      <div
+        v-if="missingRequired.length > 0"
+        class="mt-4 p-3 rounded border border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)]"
+      >
+        <div class="text-xs text-[color:var(--badge-danger-text)] mb-2">
+          Отсутствует обязательное оборудование:
+        </div>
         <div class="flex flex-wrap gap-2">
           <Badge
             v-for="assetType in missingRequired"

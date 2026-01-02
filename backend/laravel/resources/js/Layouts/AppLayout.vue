@@ -6,10 +6,14 @@
           <aside class="hidden lg:flex w-72 shrink-0 flex-col border-r border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] backdrop-blur-xl glass-panel">
             <div class="h-16 flex items-center px-5 border-b border-[color:var(--border-muted)]">
               <div class="flex items-center gap-3">
-                <div class="h-8 w-8 rounded-xl bg-[linear-gradient(135deg,var(--accent-green),var(--accent-cyan))] shadow-[0_0_0_1px_var(--badge-success-border)]" />
+                <div class="h-8 w-8 rounded-xl bg-[linear-gradient(135deg,var(--accent-green),var(--accent-cyan))] shadow-[0_0_0_1px_var(--badge-success-border)]"></div>
                 <div>
-                  <div class="text-lg font-semibold tracking-tight">hydro 2.0</div>
-                  <div class="text-[11px] uppercase tracking-[0.2em] text-[color:var(--text-dim)]">agronomy deck</div>
+                  <div class="text-lg font-semibold tracking-tight">
+                    hydro 2.0
+                  </div>
+                  <div class="text-[11px] uppercase tracking-[0.2em] text-[color:var(--text-dim)]">
+                    agronomy deck
+                  </div>
                 </div>
               </div>
             </div>
@@ -24,7 +28,7 @@
             class="fixed inset-0 z-50 lg:hidden"
             @click="showMobileMenu = false"
           >
-            <div class="fixed inset-0 bg-[color:var(--bg-main)] opacity-80 backdrop-blur-sm" />
+            <div class="fixed inset-0 bg-[color:var(--bg-main)] opacity-80 backdrop-blur-sm"></div>
             <div
               class="fixed left-0 top-0 bottom-0 w-72 bg-[color:var(--bg-surface-strong)] border-r border-[color:var(--border-muted)] glass-panel"
               @click.stop
@@ -32,15 +36,28 @@
               <div class="h-16 flex items-center justify-between px-4 border-b border-[color:var(--border-muted)]">
                 <span class="text-base font-semibold">hydro 2.0</span>
                 <button
-                  @click="showMobileMenu = false"
                   class="p-2 rounded-md text-[color:var(--text-dim)] hover:text-[color:var(--text-primary)] hover:bg-[color:var(--bg-elevated)]"
+                  @click="showMobileMenu = false"
                 >
-                  <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  <svg
+                    class="h-6 w-6"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M6 18L18 6M6 6l12 12"
+                    />
                   </svg>
                 </button>
               </div>
-              <nav class="p-4 space-y-1 overflow-y-auto" @click="showMobileMenu = false">
+              <nav
+                class="p-4 space-y-1 overflow-y-auto"
+                @click="showMobileMenu = false"
+              >
                 <RoleBasedNavigation />
               </nav>
             </div>
@@ -55,11 +72,21 @@
             <header class="h-16 flex items-center justify-between px-4 border-b border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] lg:hidden backdrop-blur-xl shrink-0">
               <div class="flex items-center gap-3">
                 <button
-                  @click="showMobileMenu = !showMobileMenu"
                   class="p-2 rounded-md text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)] hover:bg-[color:var(--bg-elevated)]"
+                  @click="showMobileMenu = !showMobileMenu"
                 >
-                  <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                  <svg
+                    class="h-6 w-6"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M4 6h16M4 12h16M4 18h16"
+                    />
                   </svg>
                 </button>
                 <span class="text-base font-semibold">hydro 2.0</span>
@@ -76,7 +103,7 @@
                 mode="out-in"
               >
                 <div :key="$page.url">
-                  <slot />
+                  <slot></slot>
                 </div>
               </Transition>
             </div>
@@ -101,7 +128,7 @@
                 <HistoryWidget />
               </div>
               <div class="flex-1 min-h-0 px-4 pb-4 overflow-hidden">
-                <slot name="context" />
+                <slot name="context"></slot>
               </div>
             </div>
           </aside>

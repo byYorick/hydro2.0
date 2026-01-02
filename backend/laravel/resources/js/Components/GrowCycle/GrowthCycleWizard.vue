@@ -1,5 +1,10 @@
 <template>
-  <Modal :open="show" :title="wizardTitle" @close="handleClose" size="large">
+  <Modal
+    :open="show"
+    :title="wizardTitle"
+    size="large"
+    @close="handleClose"
+  >
     <ErrorBoundary>
       <!-- Прогресс-бар шагов -->
       <div class="mb-6">
@@ -16,8 +21,8 @@
                   currentStep > index
                     ? 'bg-[color:var(--accent-green)] text-white'
                     : currentStep === index
-                    ? 'bg-[color:var(--accent-cyan)] text-white ring-2 ring-[color:var(--accent-cyan)] ring-offset-2'
-                    : 'bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)]'
+                      ? 'bg-[color:var(--accent-cyan)] text-white ring-2 ring-[color:var(--accent-cyan)] ring-offset-2'
+                      : 'bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)]'
                 ]"
               >
                 <span v-if="currentStep > index">✓</span>
@@ -38,13 +43,16 @@
                 'flex-1 h-0.5 mx-4 transition-colors',
                 currentStep > index ? 'bg-[color:var(--accent-green)]' : 'bg-[color:var(--border-muted)]'
               ]"
-            />
+            ></div>
           </div>
         </div>
       </div>
 
       <!-- Шаг 1: Выбор зоны (если не передана) -->
-      <div v-if="currentStep === 0" class="space-y-4">
+      <div
+        v-if="currentStep === 0"
+        class="space-y-4"
+      >
         <div v-if="zoneId">
           <div class="p-4 rounded-lg bg-[color:var(--badge-success-bg)] border border-[color:var(--badge-success-border)]">
             <div class="text-sm font-medium text-[color:var(--badge-success-text)]">
@@ -59,7 +67,9 @@
             class="input-select w-full"
             @change="onZoneSelected"
           >
-            <option :value="null">Выберите зону</option>
+            <option :value="null">
+              Выберите зону
+            </option>
             <option
               v-for="zone in availableZones"
               :key="zone.id"
@@ -75,14 +85,19 @@
       </div>
 
       <!-- Шаг 2: Выбор растения -->
-      <div v-if="currentStep === 1" class="space-y-4">
+      <div
+        v-if="currentStep === 1"
+        class="space-y-4"
+      >
         <div>
           <label class="block text-sm font-medium mb-2">Выберите растение</label>
           <select
             v-model="selectedPlantId"
             class="input-select w-full"
           >
-            <option :value="null">Выберите растение</option>
+            <option :value="null">
+              Выберите растение
+            </option>
             <option
               v-for="plant in availablePlants"
               :key="plant.id"
@@ -98,7 +113,10 @@
       </div>
 
       <!-- Шаг 3: Выбор рецепта -->
-      <div v-if="currentStep === 2" class="space-y-4">
+      <div
+        v-if="currentStep === 2"
+        class="space-y-4"
+      >
         <div>
           <label class="block text-sm font-medium mb-2">Выберите рецепт</label>
           <div class="flex gap-2 mb-3">
@@ -124,7 +142,9 @@
               class="input-select w-full"
               @change="onRecipeSelected"
             >
-              <option :value="null">Выберите рецепт</option>
+              <option :value="null">
+                Выберите рецепт
+              </option>
               <option
                 v-for="recipe in availableRecipes"
                 :key="recipe.id"
@@ -144,13 +164,18 @@
           </div>
         </div>
 
-        <div v-if="selectedRecipe" class="space-y-2">
+        <div
+          v-if="selectedRecipe"
+          class="space-y-2"
+        >
           <label class="block text-sm font-medium mb-2">Ревизия</label>
           <select
             v-model="selectedRevisionId"
             class="input-select w-full"
           >
-            <option :value="null">Выберите ревизию</option>
+            <option :value="null">
+              Выберите ревизию
+            </option>
             <option
               v-for="revision in availableRevisions"
               :key="revision.id"
@@ -162,12 +187,22 @@
         </div>
 
         <!-- Визуализация выбранного рецепта -->
-        <div v-if="selectedRevision" class="mt-4 p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
-          <div class="text-sm font-semibold mb-2">{{ selectedRecipe.name }}</div>
-          <div v-if="selectedRecipe.description" class="text-xs text-[color:var(--text-muted)] mb-3">
+        <div
+          v-if="selectedRevision"
+          class="mt-4 p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]"
+        >
+          <div class="text-sm font-semibold mb-2">
+            {{ selectedRecipe.name }}
+          </div>
+          <div
+            v-if="selectedRecipe.description"
+            class="text-xs text-[color:var(--text-muted)] mb-3"
+          >
             {{ selectedRecipe.description }}
           </div>
-          <div class="text-xs font-medium mb-2">Фазы рецепта:</div>
+          <div class="text-xs font-medium mb-2">
+            Фазы рецепта:
+          </div>
           <div class="space-y-2">
             <div
               v-for="(phase, index) in selectedRevision.phases"
@@ -175,7 +210,9 @@
               class="flex items-center justify-between p-2 rounded bg-[color:var(--bg-surface-strong)]"
             >
               <div>
-                <div class="text-xs font-medium">{{ phase.name || `Фаза ${index + 1}` }}</div>
+                <div class="text-xs font-medium">
+                  {{ phase.name || `Фаза ${index + 1}` }}
+                </div>
                 <div class="text-xs text-[color:var(--text-dim)]">
                   {{ phase.duration_days ?? (phase.duration_hours ? Math.round(phase.duration_hours / 24) : '-') }} дней
                 </div>
@@ -194,9 +231,14 @@
       </div>
 
       <!-- Шаг 3: Параметры цикла -->
-      <div v-if="currentStep === 3" class="space-y-4">
+      <div
+        v-if="currentStep === 3"
+        class="space-y-4"
+      >
         <div>
-          <h3 class="text-sm font-semibold mb-3">Параметры запуска цикла</h3>
+          <h3 class="text-sm font-semibold mb-3">
+            Параметры запуска цикла
+          </h3>
           
           <div class="space-y-4">
             <div>
@@ -227,8 +269,13 @@
             </div>
 
             <!-- Предпросмотр длительности -->
-            <div v-if="selectedRecipe" class="p-3 rounded-lg bg-[color:var(--bg-elevated)] border border-[color:var(--border-muted)]">
-              <div class="text-xs font-medium mb-1">Предполагаемая длительность цикла:</div>
+            <div
+              v-if="selectedRecipe"
+              class="p-3 rounded-lg bg-[color:var(--bg-elevated)] border border-[color:var(--border-muted)]"
+            >
+              <div class="text-xs font-medium mb-1">
+                Предполагаемая длительность цикла:
+              </div>
               <div class="text-sm">
                 {{ Math.round(totalDurationDays) }} дней
                 <span class="text-xs text-[color:var(--text-muted)]">
@@ -241,34 +288,63 @@
       </div>
 
       <!-- Шаг 5: Предпросмотр и подтверждение -->
-      <div v-if="currentStep === 4" class="space-y-4">
+      <div
+        v-if="currentStep === 4"
+        class="space-y-4"
+      >
         <div>
-          <h3 class="text-sm font-semibold mb-3">Предпросмотр цикла выращивания</h3>
+          <h3 class="text-sm font-semibold mb-3">
+            Предпросмотр цикла выращивания
+          </h3>
           
           <div class="space-y-3">
             <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
-              <div class="text-xs text-[color:var(--text-dim)] mb-1">Зона</div>
-              <div class="text-sm font-medium">{{ zoneName || `Зона #${form.zoneId}` }}</div>
+              <div class="text-xs text-[color:var(--text-dim)] mb-1">
+                Зона
+              </div>
+              <div class="text-sm font-medium">
+                {{ zoneName || `Зона #${form.zoneId}` }}
+              </div>
             </div>
 
             <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
-              <div class="text-xs text-[color:var(--text-dim)] mb-1">Рецепт</div>
-              <div class="text-sm font-medium">{{ selectedRecipe?.name || 'Не выбран' }}</div>
+              <div class="text-xs text-[color:var(--text-dim)] mb-1">
+                Рецепт
+              </div>
+              <div class="text-sm font-medium">
+                {{ selectedRecipe?.name || 'Не выбран' }}
+              </div>
             </div>
 
             <div class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
-              <div class="text-xs text-[color:var(--text-dim)] mb-1">Дата начала</div>
-              <div class="text-sm font-medium">{{ formatDateTime(form.startedAt) }}</div>
+              <div class="text-xs text-[color:var(--text-dim)] mb-1">
+                Дата начала
+              </div>
+              <div class="text-sm font-medium">
+                {{ formatDateTime(form.startedAt) }}
+              </div>
             </div>
 
-            <div v-if="form.expectedHarvestAt" class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
-              <div class="text-xs text-[color:var(--text-dim)] mb-1">Ожидаемая дата сбора</div>
-              <div class="text-sm font-medium">{{ formatDate(form.expectedHarvestAt) }}</div>
+            <div
+              v-if="form.expectedHarvestAt"
+              class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]"
+            >
+              <div class="text-xs text-[color:var(--text-dim)] mb-1">
+                Ожидаемая дата сбора
+              </div>
+              <div class="text-sm font-medium">
+                {{ formatDate(form.expectedHarvestAt) }}
+              </div>
             </div>
 
             <!-- Timeline фаз -->
-            <div v-if="selectedRevision" class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]">
-              <div class="text-xs text-[color:var(--text-dim)] mb-2">План фаз:</div>
+            <div
+              v-if="selectedRevision"
+              class="p-4 rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)]"
+            >
+              <div class="text-xs text-[color:var(--text-dim)] mb-2">
+                План фаз:
+              </div>
               <div class="space-y-2">
                 <div
                   v-for="(phase, index) in selectedRevision.phases"
@@ -285,19 +361,32 @@
           </div>
         </div>
 
-        <div v-if="validationErrors.length > 0" class="p-3 rounded-lg bg-[color:var(--badge-danger-bg)] border border-[color:var(--badge-danger-border)]">
+        <div
+          v-if="validationErrors.length > 0"
+          class="p-3 rounded-lg bg-[color:var(--badge-danger-bg)] border border-[color:var(--badge-danger-border)]"
+        >
           <div class="text-sm font-medium text-[color:var(--badge-danger-text)] mb-1">
             Ошибки валидации:
           </div>
           <ul class="text-xs text-[color:var(--badge-danger-text)] list-disc list-inside">
-            <li v-for="error in validationErrors" :key="error">{{ error }}</li>
+            <li
+              v-for="error in validationErrors"
+              :key="error"
+            >
+              {{ error }}
+            </li>
           </ul>
         </div>
       </div>
 
       <!-- Общие ошибки -->
-      <div v-if="error" class="mt-4 p-3 rounded-lg bg-[color:var(--badge-danger-bg)] border border-[color:var(--badge-danger-border)]">
-        <div class="text-sm text-[color:var(--badge-danger-text)]">{{ error }}</div>
+      <div
+        v-if="error"
+        class="mt-4 p-3 rounded-lg bg-[color:var(--badge-danger-bg)] border border-[color:var(--badge-danger-border)]"
+      >
+        <div class="text-sm text-[color:var(--badge-danger-text)]">
+          {{ error }}
+        </div>
       </div>
     </ErrorBoundary>
 
@@ -306,8 +395,8 @@
         <Button
           v-if="currentStep > 0"
           variant="secondary"
-          @click="prevStep"
           :disabled="loading"
+          @click="prevStep"
         >
           Назад
         </Button>
@@ -316,22 +405,22 @@
         <div class="flex gap-2">
           <Button
             variant="secondary"
-            @click="handleClose"
             :disabled="loading"
+            @click="handleClose"
           >
             Отмена
           </Button>
           <Button
             v-if="currentStep < steps.length - 1"
-            @click="nextStep"
             :disabled="!canProceed || loading"
+            @click="nextStep"
           >
             Далее
           </Button>
           <Button
             v-else
-            @click="onSubmit"
             :disabled="!canSubmit || loading"
+            @click="onSubmit"
           >
             {{ loading ? 'Создание...' : 'Запустить цикл' }}
           </Button>

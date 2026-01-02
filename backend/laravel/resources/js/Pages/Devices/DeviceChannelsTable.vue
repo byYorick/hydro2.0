@@ -3,22 +3,41 @@
     <table class="min-w-full text-sm">
       <thead class="bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)]">
         <tr>
-          <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">Channel</th>
-          <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">Type</th>
-          <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">Config</th>
-          <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">Actions</th>
+          <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">
+            Channel
+          </th>
+          <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">
+            Type
+          </th>
+          <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">
+            Config
+          </th>
+          <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">
+            Actions
+          </th>
         </tr>
       </thead>
       <tbody>
-        <tr v-for="(channel, idx) in (paginatedChannels || [])" :key="idx" class="odd:bg-[color:var(--bg-surface-strong)] even:bg-[color:var(--bg-surface)]">
-          <td class="px-3 py-2 border-b border-[color:var(--border-muted)]">{{ channel.channel || channel.name || '-' }}</td>
-          <td class="px-3 py-2 border-b border-[color:var(--border-muted)] uppercase">{{ channel.type || '-' }}</td>
+        <tr
+          v-for="(channel, idx) in (paginatedChannels || [])"
+          :key="idx"
+          class="odd:bg-[color:var(--bg-surface-strong)] even:bg-[color:var(--bg-surface)]"
+        >
+          <td class="px-3 py-2 border-b border-[color:var(--border-muted)]">
+            {{ channel.channel || channel.name || '-' }}
+          </td>
+          <td class="px-3 py-2 border-b border-[color:var(--border-muted)] uppercase">
+            {{ channel.type || '-' }}
+          </td>
           <td class="px-3 py-2 border-b border-[color:var(--border-muted)]">
             <div class="text-xs text-[color:var(--text-primary)]">
               <span v-if="renderConfig(channel)">{{ renderConfig(channel) }}</span>
               <span v-else>-</span>
             </div>
-            <div v-if="channel.description || channel.config?.description" class="text-[11px] text-[color:var(--text-dim)]">
+            <div
+              v-if="channel.description || channel.config?.description"
+              class="text-[11px] text-[color:var(--text-dim)]"
+            >
               {{ channel.description || channel.config?.description }}
             </div>
           </td>
@@ -28,8 +47,8 @@
                 v-if="isPumpOrValve(channel)"
                 size="sm" 
                 variant="primary" 
-                @click="$emit('test', channel.channel || channel.name, channel.type)"
                 :disabled="testingChannels && testingChannels.has(channel.channel || channel.name)"
+                @click="$emit('test', channel.channel || channel.name, channel.type)"
               >
                 <span v-if="testingChannels && testingChannels.has(channel.channel || channel.name)">Тестирование...</span>
                 <span v-else>{{ getTestButtonLabel(channel.channel || channel.name, channel.type) }}</span>
@@ -46,7 +65,12 @@
           </td>
         </tr>
         <tr v-if="!paginatedChannels || paginatedChannels.length === 0">
-          <td colspan="4" class="px-3 py-4 text-center text-[color:var(--text-dim)]">Нет каналов</td>
+          <td
+            colspan="4"
+            class="px-3 py-4 text-center text-[color:var(--text-dim)]"
+          >
+            Нет каналов
+          </td>
         </tr>
       </tbody>
     </table>

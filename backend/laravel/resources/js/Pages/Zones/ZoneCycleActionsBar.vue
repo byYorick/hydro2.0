@@ -2,9 +2,13 @@
   <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
     <div class="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
       <div class="space-y-2">
-        <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Цикл выращивания</div>
+        <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+          Цикл выращивания
+        </div>
         <div class="flex flex-wrap items-center gap-2">
-          <Badge :variant="statusVariant">{{ statusLabel }}</Badge>
+          <Badge :variant="statusVariant">
+            {{ statusLabel }}
+          </Badge>
           <span class="text-xs text-[color:var(--text-dim)]">{{ phaseLabel }}</span>
           <span class="text-xs text-[color:var(--text-dim)]">·</span>
           <span class="text-xs text-[color:var(--text-dim)]">Сбор: {{ expectedHarvestLabel }}</span>
@@ -19,7 +23,11 @@
             @click="onPauseResume"
           >
             <template v-if="loading.cyclePause || loading.cycleResume">
-              <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
+              <LoadingState
+                loading
+                size="sm"
+                :container-class="'inline-flex mr-2'"
+              />
             </template>
             {{ pauseResumeLabel }}
           </Button>
@@ -30,7 +38,11 @@
             @click="$emit('next-phase')"
           >
             <template v-if="loading.nextPhase">
-              <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
+              <LoadingState
+                loading
+                size="sm"
+                :container-class="'inline-flex mr-2'"
+              />
             </template>
             Следующая фаза
           </Button>
@@ -41,7 +53,11 @@
             @click="$emit('harvest')"
           >
             <template v-if="loading.cycleHarvest">
-              <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
+              <LoadingState
+                loading
+                size="sm"
+                :container-class="'inline-flex mr-2'"
+              />
             </template>
             Сбор
           </Button>
@@ -52,13 +68,27 @@
             @click="$emit('abort')"
           >
             <template v-if="loading.cycleAbort">
-              <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
+              <LoadingState
+                loading
+                size="sm"
+                :container-class="'inline-flex mr-2'"
+              />
             </template>
             Аварийная остановка
           </Button>
         </template>
-        <div v-else-if="hasActiveGrowCycle" class="text-xs text-[color:var(--text-dim)]">Недостаточно прав для управления циклом</div>
-        <div v-else class="text-xs text-[color:var(--text-dim)]">Нет активного цикла для действий</div>
+        <div
+          v-else-if="hasActiveGrowCycle"
+          class="text-xs text-[color:var(--text-dim)]"
+        >
+          Недостаточно прав для управления циклом
+        </div>
+        <div
+          v-else
+          class="text-xs text-[color:var(--text-dim)]"
+        >
+          Нет активного цикла для действий
+        </div>
       </div>
     </div>
   </section>

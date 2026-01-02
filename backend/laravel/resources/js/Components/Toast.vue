@@ -8,7 +8,7 @@
       :class="[
         'fixed top-4 right-4 z-[10000] min-w-[300px] max-w-md rounded-lg border p-4 shadow-[var(--shadow-card)]',
         variantClasses[variant]
-        ]"
+      ]"
       style="position: fixed !important; z-index: 10000 !important; display: block !important; visibility: visible !important; opacity: 1 !important;"
     >
       <div class="flex items-start gap-3">
@@ -57,13 +57,23 @@
           </svg>
         </div>
         <div class="flex-1">
-          <p class="text-sm font-medium" data-testid="toast-message">{{ message }}</p>
+          <p
+            class="text-sm font-medium"
+            data-testid="toast-message"
+          >
+            {{ message }}
+          </p>
         </div>
         <button
-          @click="show = false"
           class="flex-shrink-0 rounded-md p-1 hover:bg-[color:var(--bg-elevated)]"
+          @click="show = false"
         >
-          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg
+            class="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
             <path
               stroke-linecap="round"
               stroke-linejoin="round"

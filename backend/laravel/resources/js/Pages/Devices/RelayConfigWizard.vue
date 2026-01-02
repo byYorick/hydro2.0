@@ -1,27 +1,50 @@
 <template>
-  <Modal :open="show" :title="`Редактирование конфига ноды`" @close="handleClose">
-    <div v-if="loading" class="text-sm text-[color:var(--text-dim)]">Загрузка...</div>
-    <div v-else class="space-y-4">
+  <Modal
+    :open="show"
+    :title="`Редактирование конфига ноды`"
+    @close="handleClose"
+  >
+    <div
+      v-if="loading"
+      class="text-sm text-[color:var(--text-dim)]"
+    >
+      Загрузка...
+    </div>
+    <div
+      v-else
+      class="space-y-4"
+    >
       <div class="text-xs text-[color:var(--text-muted)]">
         Настройте каналы (имя, тип, описание) и отправьте конфиг на ноду. GPIO настраивается только в прошивке.
       </div>
 
-      <div v-if="errorMessage" class="text-xs text-[color:var(--badge-warning-text)] bg-[color:var(--badge-warning-bg)] border border-[color:var(--badge-warning-border)] rounded-lg p-3">
+      <div
+        v-if="errorMessage"
+        class="text-xs text-[color:var(--badge-warning-text)] bg-[color:var(--badge-warning-bg)] border border-[color:var(--badge-warning-border)] rounded-lg p-3"
+      >
         {{ errorMessage }}
       </div>
 
-      <div v-if="editableChannels.length === 0" class="text-sm text-[color:var(--text-dim)]">
+      <div
+        v-if="editableChannels.length === 0"
+        class="text-sm text-[color:var(--text-dim)]"
+      >
         Нет каналов. Добавьте хотя бы один канал.
       </div>
 
-      <div v-else class="space-y-3 max-h-[460px] overflow-y-auto pr-1 scrollbar-glow">
+      <div
+        v-else
+        class="space-y-3 max-h-[460px] overflow-y-auto pr-1 scrollbar-glow"
+      >
         <div
           v-for="(channel, index) in editableChannels"
           :key="index"
           class="p-3 rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] space-y-3"
         >
           <div class="flex items-center justify-between gap-2">
-            <div class="text-xs uppercase tracking-[0.2em] text-[color:var(--text-dim)]">Канал {{ index + 1 }}</div>
+            <div class="text-xs uppercase tracking-[0.2em] text-[color:var(--text-dim)]">
+              Канал {{ index + 1 }}
+            </div>
             <button
               v-if="editableChannels.length > 1"
               type="button"
@@ -60,8 +83,12 @@
                 v-model="channel.type"
                 class="input-select h-9 text-xs"
               >
-                <option value="ACTUATOR">ACTUATOR</option>
-                <option value="SENSOR">SENSOR</option>
+                <option value="ACTUATOR">
+                  ACTUATOR
+                </option>
+                <option value="SENSOR">
+                  SENSOR
+                </option>
               </select>
             </div>
             <div>
@@ -71,10 +98,18 @@
                 class="input-select h-9 text-xs"
                 :disabled="channel.type !== 'ACTUATOR'"
               >
-                <option value="RELAY">RELAY</option>
-                <option value="VALVE">VALVE</option>
-                <option value="PUMP">PUMP</option>
-                <option value="FAN">FAN</option>
+                <option value="RELAY">
+                  RELAY
+                </option>
+                <option value="VALVE">
+                  VALVE
+                </option>
+                <option value="PUMP">
+                  PUMP
+                </option>
+                <option value="FAN">
+                  FAN
+                </option>
               </select>
             </div>
           </div>
@@ -103,14 +138,30 @@
       </div>
 
       <div class="flex flex-wrap items-center gap-3">
-        <Button size="sm" variant="secondary" @click="addChannel">Добавить канал</Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          @click="addChannel"
+        >
+          Добавить канал
+        </Button>
         <span class="text-xs text-[color:var(--text-muted)]">Нажмите «Отправить», чтобы применить конфиг на ноду</span>
       </div>
     </div>
 
     <template #footer>
-      <Button size="sm" variant="secondary" @click="handleClose">Отмена</Button>
-      <Button size="sm" :disabled="saving || editableChannels.length === 0" @click="publishConfig">
+      <Button
+        size="sm"
+        variant="secondary"
+        @click="handleClose"
+      >
+        Отмена
+      </Button>
+      <Button
+        size="sm"
+        :disabled="saving || editableChannels.length === 0"
+        @click="publishConfig"
+      >
         {{ saving ? 'Отправка...' : 'Отправить конфиг' }}
       </Button>
     </template>

@@ -1,8 +1,13 @@
 <template>
   <AppLayout>
-    <h1 class="text-lg font-semibold mb-4">Пользователи</h1>
+    <h1 class="text-lg font-semibold mb-4">
+      Пользователи
+    </h1>
 
-    <div v-if="isAdmin" class="mb-6">
+    <div
+      v-if="isAdmin"
+      class="mb-6"
+    >
       <Card class="mb-4">
         <div class="mb-3 flex flex-wrap items-center gap-2">
           <input
@@ -14,33 +19,60 @@
             v-model="roleFilter"
             class="input-select"
           >
-            <option value="">Все роли</option>
-            <option value="admin">Администратор</option>
-            <option value="operator">Оператор</option>
-            <option value="viewer">Наблюдатель</option>
+            <option value="">
+              Все роли
+            </option>
+            <option value="admin">
+              Администратор
+            </option>
+            <option value="operator">
+              Оператор
+            </option>
+            <option value="viewer">
+              Наблюдатель
+            </option>
           </select>
-          <Button size="sm" @click="loadUsers" :disabled="loading.load">Обновить</Button>
-          <Button size="sm" variant="secondary" @click="openCreateModal()">Создать пользователя</Button>
+          <Button
+            size="sm"
+            :disabled="loading.load"
+            @click="loadUsers"
+          >
+            Обновить
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            @click="openCreateModal()"
+          >
+            Создать пользователя
+          </Button>
         </div>
 
         <div class="rounded-xl border border-[color:var(--border-muted)] overflow-hidden max-h-[720px] flex flex-col">
-          <div v-if="loading.load && users.length === 0" class="text-sm text-[color:var(--text-dim)] px-3 py-6 text-center">
+          <div
+            v-if="loading.load && users.length === 0"
+            class="text-sm text-[color:var(--text-dim)] px-3 py-6 text-center"
+          >
             Загрузка пользователей...
           </div>
           <template v-else>
             <!-- Заголовок таблицы -->
             <div class="flex-shrink-0 grid grid-cols-6 gap-0 bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)] text-sm border-b border-[color:var(--border-muted)]">
-              <div v-for="(h, i) in headers" :key="i" class="px-3 py-2 text-left font-medium">
+              <div
+                v-for="(h, i) in headers"
+                :key="i"
+                class="px-3 py-2 text-left font-medium"
+              >
                 {{ h }}
               </div>
             </div>
             <!-- Виртуализированный список -->
             <div class="flex-1 overflow-hidden">
               <RecycleScroller
+                v-slot="{ item: r, index }"
                 :items="rows"
                 :item-size="rowHeight"
                 key-field="0"
-                v-slot="{ item: r, index }"
                 class="virtual-table-body h-full"
               >
                 <div 
@@ -48,29 +80,46 @@
                   class="grid grid-cols-6 gap-0 text-sm border-b border-[color:var(--border-muted)]"
                   style="height:44px"
                 >
-                  <div class="px-3 py-2 flex items-center">{{ r[0] }}</div>
-                  <div class="px-3 py-2 flex items-center">{{ r[1] }}</div>
-                  <div class="px-3 py-2 flex items-center text-xs text-[color:var(--text-muted)]">{{ r[2] }}</div>
+                  <div class="px-3 py-2 flex items-center">
+                    {{ r[0] }}
+                  </div>
+                  <div class="px-3 py-2 flex items-center">
+                    {{ r[1] }}
+                  </div>
+                  <div class="px-3 py-2 flex items-center text-xs text-[color:var(--text-muted)]">
+                    {{ r[2] }}
+                  </div>
                   <div class="px-3 py-2 flex items-center">
                     <Badge :variant="r[3]">
                       {{ r[4] }}
                     </Badge>
                   </div>
-                  <div class="px-3 py-2 flex items-center text-xs text-[color:var(--text-muted)]">{{ r[5] }}</div>
+                  <div class="px-3 py-2 flex items-center text-xs text-[color:var(--text-muted)]">
+                    {{ r[5] }}
+                  </div>
                   <div class="px-3 py-2 flex items-center gap-2">
-                    <Button size="sm" variant="secondary" @click="editUser(getUserFromRow(r))">Изменить</Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      @click="editUser(getUserFromRow(r))"
+                    >
+                      Изменить
+                    </Button>
                     <Button
                       size="sm"
                       variant="danger"
-                      @click="confirmDelete(getUserFromRow(r))"
                       :disabled="getUserFromRow(r).id === currentUserId"
+                      @click="confirmDelete(getUserFromRow(r))"
                     >
                       Удалить
                     </Button>
                   </div>
                 </div>
               </RecycleScroller>
-              <div v-if="!rows.length && !loading.load" class="text-sm text-[color:var(--text-dim)] px-3 py-6 text-center">
+              <div
+                v-if="!rows.length && !loading.load"
+                class="text-sm text-[color:var(--text-dim)] px-3 py-6 text-center"
+              >
                 {{ users.length === 0 ? 'Нет пользователей' : 'Нет пользователей по текущим фильтрам' }}
               </div>
             </div>
@@ -83,12 +132,19 @@
         </div>
       </Card>
     </div>
-    <div v-else class="text-sm text-[color:var(--text-dim)]">
+    <div
+      v-else
+      class="text-sm text-[color:var(--text-dim)]"
+    >
       У вас нет доступа к управлению пользователями
     </div>
 
     <!-- Create/Edit User Modal -->
-    <Modal :open="showCreateModal || editingUser !== null" title="Пользователь" @close="closeModal">
+    <Modal
+      :open="showCreateModal || editingUser !== null"
+      title="Пользователь"
+      @close="closeModal"
+    >
       <div class="space-y-3">
         <div>
           <label class="text-sm text-[color:var(--text-muted)]">Имя</label>
@@ -97,7 +153,12 @@
             class="input-field mt-1"
             :class="formErrors.name ? 'border-[color:var(--accent-red)] bg-[color:var(--bg-elevated)]' : ''"
           />
-          <div v-if="formErrors.name" class="text-xs text-[color:var(--badge-danger-text)] mt-1">{{ formErrors.name }}</div>
+          <div
+            v-if="formErrors.name"
+            class="text-xs text-[color:var(--badge-danger-text)] mt-1"
+          >
+            {{ formErrors.name }}
+          </div>
         </div>
         <div>
           <label class="text-sm text-[color:var(--text-muted)]">Email</label>
@@ -107,7 +168,12 @@
             class="input-field mt-1"
             :class="formErrors.email ? 'border-[color:var(--accent-red)] bg-[color:var(--bg-elevated)]' : ''"
           />
-          <div v-if="formErrors.email" class="text-xs text-[color:var(--badge-danger-text)] mt-1">{{ formErrors.email }}</div>
+          <div
+            v-if="formErrors.email"
+            class="text-xs text-[color:var(--badge-danger-text)] mt-1"
+          >
+            {{ formErrors.email }}
+          </div>
         </div>
         <div>
           <label class="text-sm text-[color:var(--text-muted)]">Пароль</label>
@@ -118,7 +184,12 @@
             :class="formErrors.password ? 'border-[color:var(--accent-red)] bg-[color:var(--bg-elevated)]' : ''"
             :placeholder="editingUser ? 'Оставьте пустым, чтобы не менять' : 'Минимум 8 символов'"
           />
-          <div v-if="formErrors.password" class="text-xs text-[color:var(--badge-danger-text)] mt-1">{{ formErrors.password }}</div>
+          <div
+            v-if="formErrors.password"
+            class="text-xs text-[color:var(--badge-danger-text)] mt-1"
+          >
+            {{ formErrors.password }}
+          </div>
         </div>
         <div>
           <label class="text-sm text-[color:var(--text-muted)]">Роль</label>
@@ -127,29 +198,67 @@
             class="input-select mt-1"
             :class="formErrors.role ? 'border-[color:var(--accent-red)] bg-[color:var(--bg-elevated)]' : ''"
           >
-            <option value="viewer">Наблюдатель</option>
-            <option value="operator">Оператор</option>
-            <option value="admin">Администратор</option>
+            <option value="viewer">
+              Наблюдатель
+            </option>
+            <option value="operator">
+              Оператор
+            </option>
+            <option value="admin">
+              Администратор
+            </option>
           </select>
-          <div v-if="formErrors.role" class="text-xs text-[color:var(--badge-danger-text)] mt-1">{{ formErrors.role }}</div>
+          <div
+            v-if="formErrors.role"
+            class="text-xs text-[color:var(--badge-danger-text)] mt-1"
+          >
+            {{ formErrors.role }}
+          </div>
         </div>
       </div>
       <template #footer>
-        <Button size="sm" variant="secondary" @click="closeModal" :disabled="loading.save">Отмена</Button>
-        <Button size="sm" @click="saveUser" :disabled="loading.save">
+        <Button
+          size="sm"
+          variant="secondary"
+          :disabled="loading.save"
+          @click="closeModal"
+        >
+          Отмена
+        </Button>
+        <Button
+          size="sm"
+          :disabled="loading.save"
+          @click="saveUser"
+        >
           {{ loading.save ? 'Сохранение...' : 'Сохранить' }}
         </Button>
       </template>
     </Modal>
 
     <!-- Delete Confirmation Modal -->
-    <Modal :open="deletingUser !== null" title="Удалить пользователя?" @close="deletingUser = null">
+    <Modal
+      :open="deletingUser !== null"
+      title="Удалить пользователя?"
+      @close="deletingUser = null"
+    >
       <div class="text-sm text-[color:var(--text-muted)]">
         Вы уверены, что хотите удалить пользователя <strong>{{ deletingUser?.name }}</strong>?
       </div>
       <template #footer>
-        <Button size="sm" variant="secondary" @click="deletingUser = null" :disabled="loading.delete">Отмена</Button>
-        <Button size="sm" variant="danger" @click="doDelete" :disabled="loading.delete">
+        <Button
+          size="sm"
+          variant="secondary"
+          :disabled="loading.delete"
+          @click="deletingUser = null"
+        >
+          Отмена
+        </Button>
+        <Button
+          size="sm"
+          variant="danger"
+          :disabled="loading.delete"
+          @click="doDelete"
+        >
           {{ loading.delete ? 'Удаление...' : 'Удалить' }}
         </Button>
       </template>

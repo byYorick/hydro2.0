@@ -1,9 +1,16 @@
 <template>
   <AppLayout>
-    <h1 class="text-lg font-semibold mb-4">Настройки</h1>
+    <h1 class="text-lg font-semibold mb-4">
+      Настройки
+    </h1>
 
-    <div v-if="isAdmin" class="mb-6">
-      <h2 class="text-md font-semibold mb-3 text-[color:var(--text-primary)]">Управление пользователями</h2>
+    <div
+      v-if="isAdmin"
+      class="mb-6"
+    >
+      <h2 class="text-md font-semibold mb-3 text-[color:var(--text-primary)]">
+        Управление пользователями
+      </h2>
       <Card class="mb-4">
         <div class="mb-3 flex flex-wrap items-center gap-2">
           <input
@@ -16,32 +23,73 @@
             v-model="roleFilter"
             class="input-select"
           >
-            <option value="">Все роли</option>
-            <option value="admin">Администратор</option>
-            <option value="operator">Оператор</option>
-            <option value="viewer">Наблюдатель</option>
+            <option value="">
+              Все роли
+            </option>
+            <option value="admin">
+              Администратор
+            </option>
+            <option value="operator">
+              Оператор
+            </option>
+            <option value="viewer">
+              Наблюдатель
+            </option>
           </select>
-          <Button size="sm" @click="loadUsers">Обновить</Button>
-          <Button size="sm" variant="secondary" @click="openCreateModal()">Создать пользователя</Button>
+          <Button
+            size="sm"
+            @click="loadUsers"
+          >
+            Обновить
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            @click="openCreateModal()"
+          >
+            Создать пользователя
+          </Button>
         </div>
 
         <div class="rounded-xl border border-[color:var(--border-muted)] overflow-hidden max-h-[600px] overflow-y-auto">
           <table class="min-w-full text-sm">
             <thead class="bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)]">
               <tr>
-                <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">ID</th>
-                <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">Имя</th>
-                <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">Email</th>
-                <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">Роль</th>
-                <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">Создан</th>
-                <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">Действия</th>
+                <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">
+                  ID
+                </th>
+                <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">
+                  Имя
+                </th>
+                <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">
+                  Email
+                </th>
+                <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">
+                  Роль
+                </th>
+                <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">
+                  Создан
+                </th>
+                <th class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">
+                  Действия
+                </th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="u in paginatedUsers" :key="u.id" class="odd:bg-[color:var(--bg-surface-strong)] even:bg-[color:var(--bg-surface)]">
-                <td class="px-3 py-2 border-b border-[color:var(--border-muted)]">{{ u.id }}</td>
-                <td class="px-3 py-2 border-b border-[color:var(--border-muted)]">{{ u.name }}</td>
-                <td class="px-3 py-2 border-b border-[color:var(--border-muted)]">{{ u.email }}</td>
+              <tr
+                v-for="u in paginatedUsers"
+                :key="u.id"
+                class="odd:bg-[color:var(--bg-surface-strong)] even:bg-[color:var(--bg-surface)]"
+              >
+                <td class="px-3 py-2 border-b border-[color:var(--border-muted)]">
+                  {{ u.id }}
+                </td>
+                <td class="px-3 py-2 border-b border-[color:var(--border-muted)]">
+                  {{ u.name }}
+                </td>
+                <td class="px-3 py-2 border-b border-[color:var(--border-muted)]">
+                  {{ u.email }}
+                </td>
                 <td class="px-3 py-2 border-b border-[color:var(--border-muted)]">
                   <Badge
                     :variant="u.role === 'admin' ? 'danger' : u.role === 'operator' ? 'warning' : 'info'"
@@ -54,12 +102,18 @@
                 </td>
                 <td class="px-3 py-2 border-b border-[color:var(--border-muted)]">
                   <div class="flex gap-2">
-                    <Button size="sm" variant="secondary" @click="editUser(u)">Изменить</Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      @click="editUser(u)"
+                    >
+                      Изменить
+                    </Button>
                     <Button
                       size="sm"
                       variant="danger"
-                      @click="confirmDelete(u)"
                       :disabled="u.id === currentUserId"
+                      @click="confirmDelete(u)"
                     >
                       Удалить
                     </Button>
@@ -73,7 +127,10 @@
             v-model:per-page="perPage"
             :total="filteredUsers.length"
           />
-          <div v-if="!paginatedUsers.length" class="text-sm text-[color:var(--text-dim)] px-3 py-6 text-center">
+          <div
+            v-if="!paginatedUsers.length"
+            class="text-sm text-[color:var(--text-dim)] px-3 py-6 text-center"
+          >
             Нет пользователей
           </div>
         </div>
@@ -81,15 +138,21 @@
     </div>
 
     <Card>
-      <h2 class="text-md font-semibold mb-3 text-[color:var(--text-primary)]">Профиль</h2>
+      <h2 class="text-md font-semibold mb-3 text-[color:var(--text-primary)]">
+        Профиль
+      </h2>
       <div class="space-y-3">
         <div>
           <label class="text-sm text-[color:var(--text-muted)]">Имя</label>
-          <div class="text-sm text-[color:var(--text-primary)]">{{ currentUser?.name }}</div>
+          <div class="text-sm text-[color:var(--text-primary)]">
+            {{ currentUser?.name }}
+          </div>
         </div>
         <div>
           <label class="text-sm text-[color:var(--text-muted)]">Email</label>
-          <div class="text-sm text-[color:var(--text-primary)]">{{ currentUser?.email }}</div>
+          <div class="text-sm text-[color:var(--text-primary)]">
+            {{ currentUser?.email }}
+          </div>
         </div>
         <div>
           <label class="text-sm text-[color:var(--text-muted)]">Роль</label>
@@ -105,7 +168,11 @@
     </Card>
 
     <!-- Create/Edit User Modal -->
-    <Modal :open="showCreateModal || editingUser !== null" title="Пользователь" @close="closeModal">
+    <Modal
+      :open="showCreateModal || editingUser !== null"
+      title="Пользователь"
+      @close="closeModal"
+    >
       <div class="space-y-3">
         <div>
           <label class="text-sm text-[color:var(--text-muted)]">Имя</label>
@@ -125,11 +192,14 @@
           />
         </div>
         <div>
-          <label for="user-form-password" class="text-sm text-[color:var(--text-muted)]">Пароль</label>
+          <label
+            for="user-form-password"
+            class="text-sm text-[color:var(--text-muted)]"
+          >Пароль</label>
           <input
             id="user-form-password"
-            name="password"
             v-model="userForm.password"
+            name="password"
             type="password"
             class="input-field mt-1"
             :placeholder="editingUser ? 'Оставьте пустым, чтобы не менять' : ''"
@@ -137,33 +207,69 @@
           />
         </div>
         <div>
-          <label for="user-form-role" class="text-sm text-[color:var(--text-muted)]">Роль</label>
+          <label
+            for="user-form-role"
+            class="text-sm text-[color:var(--text-muted)]"
+          >Роль</label>
           <select
             id="user-form-role"
-            name="role"
             v-model="userForm.role"
+            name="role"
             class="input-select mt-1"
           >
-            <option value="viewer">Наблюдатель</option>
-            <option value="operator">Оператор</option>
-            <option value="admin">Администратор</option>
+            <option value="viewer">
+              Наблюдатель
+            </option>
+            <option value="operator">
+              Оператор
+            </option>
+            <option value="admin">
+              Администратор
+            </option>
           </select>
         </div>
       </div>
       <template #footer>
-        <Button size="sm" variant="secondary" @click="closeModal">Отмена</Button>
-        <Button size="sm" @click="saveUser">Сохранить</Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          @click="closeModal"
+        >
+          Отмена
+        </Button>
+        <Button
+          size="sm"
+          @click="saveUser"
+        >
+          Сохранить
+        </Button>
       </template>
     </Modal>
 
     <!-- Delete Confirmation Modal -->
-    <Modal :open="deletingUser !== null" title="Удалить пользователя?" @close="deletingUser = null">
+    <Modal
+      :open="deletingUser !== null"
+      title="Удалить пользователя?"
+      @close="deletingUser = null"
+    >
       <div class="text-sm text-[color:var(--text-muted)]">
         Вы уверены, что хотите удалить пользователя <strong>{{ deletingUser?.name }}</strong>?
       </div>
       <template #footer>
-        <Button size="sm" variant="secondary" @click="deletingUser = null">Отмена</Button>
-        <Button size="sm" variant="danger" @click="doDelete">Удалить</Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          @click="deletingUser = null"
+        >
+          Отмена
+        </Button>
+        <Button
+          size="sm"
+          variant="danger"
+          @click="doDelete"
+        >
+          Удалить
+        </Button>
       </template>
     </Modal>
   </AppLayout>

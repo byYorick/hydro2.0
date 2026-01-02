@@ -17,20 +17,35 @@
       </div>
     </div>
 
-    <div v-if="loading" class="py-4">
-      <SkeletonBlock :lines="4" line-height="0.75rem" />
+    <div
+      v-if="loading"
+      class="py-4"
+    >
+      <SkeletonBlock
+        :lines="4"
+        line-height="0.75rem"
+      />
     </div>
-    <div v-else-if="error" class="text-sm text-[color:var(--accent-red)] py-6 text-center">
+    <div
+      v-else-if="error"
+      class="text-sm text-[color:var(--accent-red)] py-6 text-center"
+    >
       {{ error }}
     </div>
-    <div v-else-if="data.length === 0" class="py-6">
+    <div
+      v-else-if="data.length === 0"
+      class="py-6"
+    >
       <EmptyState
         title="Нет данных для отображения"
         description="Попробуйте выбрать другой диапазон или дождитесь новых измерений."
         container-class="py-0"
       />
     </div>
-    <div v-else class="h-[320px]">
+    <div
+      v-else
+      class="h-[320px]"
+    >
       <ChartBase :option="option" />
     </div>
   </div>

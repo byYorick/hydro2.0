@@ -22,19 +22,41 @@
         ></div>
       </div>
     </div>
-    <div class="text-2xl font-bold mb-2" :style="{ color: color }">
+    <div
+      class="text-2xl font-bold mb-2"
+      :style="{ color: color }"
+    >
       {{ currentValue !== null ? formatValue(currentValue) : '-' }}
-      <span v-if="unit" class="text-sm text-[color:var(--text-muted)] ml-1">{{ unit }}</span>
+      <span
+        v-if="unit"
+        class="text-sm text-[color:var(--text-muted)] ml-1"
+      >{{ unit }}</span>
     </div>
     <!-- Sparkline график -->
-    <div v-if="loading" class="h-16 flex items-center justify-center">
-      <div class="text-xs text-[color:var(--text-dim)]">Загрузка...</div>
+    <div
+      v-if="loading"
+      class="h-16 flex items-center justify-center"
+    >
+      <div class="text-xs text-[color:var(--text-dim)]">
+        Загрузка...
+      </div>
     </div>
-    <div v-else-if="data.length === 0" class="h-16 flex items-center justify-center">
-      <div class="text-xs text-[color:var(--text-dim)]">Нет данных</div>
+    <div
+      v-else-if="data.length === 0"
+      class="h-16 flex items-center justify-center"
+    >
+      <div class="text-xs text-[color:var(--text-dim)]">
+        Нет данных
+      </div>
     </div>
-    <div v-else class="h-16 relative">
-      <ChartBase :option="chartOption" full-height />
+    <div
+      v-else
+      class="h-16 relative"
+    >
+      <ChartBase
+        :option="chartOption"
+        full-height
+      />
       <!-- Подсказка о клике -->
       <div class="absolute bottom-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
         <div class="text-[10px] text-[color:var(--text-dim)] bg-[color:var(--bg-surface-strong)] px-1.5 py-0.5 rounded">

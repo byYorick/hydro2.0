@@ -14,21 +14,36 @@
           <div class="text-xs font-medium uppercase tracking-wide opacity-70 group-hover:opacity-100 transition-opacity">
             {{ entry.label }}
           </div>
-          <div class="w-2 h-2 rounded-full transition-all duration-200" :class="entry.dotClass"></div>
+          <div
+            class="w-2 h-2 rounded-full transition-all duration-200"
+            :class="entry.dotClass"
+          ></div>
         </div>
-        <div class="text-3xl font-bold" :class="entry.textClass">{{ entry.count }}</div>
-        <div v-if="entry.count > 0" class="text-xs opacity-60 mt-1">
+        <div
+          class="text-3xl font-bold"
+          :class="entry.textClass"
+        >
+          {{ entry.count }}
+        </div>
+        <div
+          v-if="entry.count > 0"
+          class="text-xs opacity-60 mt-1"
+        >
           {{ entry.percentage }}% от всех
         </div>
         <div
           v-if="hoveredStatus === entry.status && entry.count > 0"
           class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-[color:var(--bg-surface-strong)] border border-[color:var(--border-muted)] rounded-lg shadow-[var(--shadow-card)] text-xs z-50 whitespace-nowrap pointer-events-none"
         >
-          <div class="text-[color:var(--text-primary)] font-medium mb-1">{{ entry.label }}</div>
+          <div class="text-[color:var(--text-primary)] font-medium mb-1">
+            {{ entry.label }}
+          </div>
           <div class="text-[color:var(--text-muted)]">
             {{ entry.count }} {{ entry.countLabel }}
           </div>
-          <div class="text-[color:var(--text-dim)] mt-1">Клик для просмотра →</div>
+          <div class="text-[color:var(--text-dim)] mt-1">
+            Клик для просмотра →
+          </div>
           <div class="absolute top-full left-1/2 transform -translate-x-1/2 -mt-px">
             <div class="w-2 h-2 bg-[color:var(--bg-surface-strong)] border-r border-b border-[color:var(--border-muted)] transform rotate-45"></div>
           </div>
@@ -37,8 +52,15 @@
     </div>
 
     <div class="mt-4 pt-4 border-t border-[color:var(--border-muted)] flex flex-wrap gap-4 text-xs text-[color:var(--text-muted)]">
-      <div v-for="legend in legendItems" :key="legend.text" class="flex items-center gap-2">
-        <div :class="legend.dot" class="w-3 h-3 rounded"></div>
+      <div
+        v-for="legend in legendItems"
+        :key="legend.text"
+        class="flex items-center gap-2"
+      >
+        <div
+          :class="legend.dot"
+          class="w-3 h-3 rounded"
+        ></div>
         <span>{{ legend.text }}</span>
       </div>
     </div>

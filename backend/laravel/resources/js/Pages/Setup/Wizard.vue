@@ -1,16 +1,28 @@
 <template>
   <AppLayout>
-    <h1 class="text-lg font-semibold mb-4">Мастер настройки системы</h1>
+    <h1 class="text-lg font-semibold mb-4">
+      Мастер настройки системы
+    </h1>
     
     <Card>
       <div class="space-y-6">
         <!-- Шаг 1: Выбор/Создание теплицы -->
         <div class="border-l-4 border-[color:var(--accent-green)] pl-4">
           <div class="flex items-center justify-between mb-2">
-            <h2 class="text-base font-semibold">Шаг 1: Выбрать или создать теплицу</h2>
-            <Badge v-if="step1Complete" variant="success">Готово</Badge>
+            <h2 class="text-base font-semibold">
+              Шаг 1: Выбрать или создать теплицу
+            </h2>
+            <Badge
+              v-if="step1Complete"
+              variant="success"
+            >
+              Готово
+            </Badge>
           </div>
-          <div v-if="!step1Complete" class="space-y-3">
+          <div
+            v-if="!step1Complete"
+            class="space-y-3"
+          >
             <!-- Переключатель режима -->
             <div class="flex gap-2 mb-2">
               <Button
@@ -30,9 +42,20 @@
             </div>
 
             <!-- Выбор существующей теплицы -->
-            <div v-if="greenhouseMode === 'select'" class="space-y-3">
-              <div v-if="loading.greenhouses" class="text-sm text-[color:var(--text-dim)]">Загрузка...</div>
-              <div v-else-if="availableGreenhouses.length === 0" class="text-sm text-[color:var(--text-dim)]">
+            <div
+              v-if="greenhouseMode === 'select'"
+              class="space-y-3"
+            >
+              <div
+                v-if="loading.greenhouses"
+                class="text-sm text-[color:var(--text-dim)]"
+              >
+                Загрузка...
+              </div>
+              <div
+                v-else-if="availableGreenhouses.length === 0"
+                class="text-sm text-[color:var(--text-dim)]"
+              >
                 Нет доступных теплиц. Создайте новую.
               </div>
               <select
@@ -40,7 +63,9 @@
                 v-model="selectedGreenhouseId"
                 class="input-select w-full"
               >
-                <option :value="null">Выберите теплицу</option>
+                <option :value="null">
+                  Выберите теплицу
+                </option>
                 <option
                   v-for="gh in availableGreenhouses"
                   :key="gh.id"
@@ -51,15 +76,18 @@
               </select>
               <Button
                 size="sm"
-                @click="selectGreenhouse"
                 :disabled="!selectedGreenhouseId || loading.step1"
+                @click="selectGreenhouse"
               >
                 {{ loading.step1 ? 'Загрузка...' : 'Выбрать' }}
               </Button>
             </div>
 
             <!-- Создание новой теплицы -->
-            <div v-else class="space-y-3">
+            <div
+              v-else
+              class="space-y-3"
+            >
               <div>
                 <input
                   v-model="greenhouseForm.name"
@@ -71,23 +99,43 @@
                   UID будет сгенерирован автоматически: <span class="text-[color:var(--text-muted)]">{{ generatedUid }}</span>
                 </div>
               </div>
-              <Button size="sm" @click="createGreenhouse" :disabled="loading.step1 || !greenhouseForm.name.trim()">
+              <Button
+                size="sm"
+                :disabled="loading.step1 || !greenhouseForm.name.trim()"
+                @click="createGreenhouse"
+              >
                 {{ loading.step1 ? 'Создание...' : 'Создать теплицу' }}
               </Button>
             </div>
           </div>
-          <div v-else class="text-sm text-[color:var(--text-muted)]">
+          <div
+            v-else
+            class="text-sm text-[color:var(--text-muted)]"
+          >
             Теплица: <span class="font-semibold">{{ createdGreenhouse?.name }}</span>
           </div>
         </div>
 
         <!-- Шаг 2: Создание рецепта -->
-        <div class="border-l-4 pl-4" :class="step1Complete ? 'border-[color:var(--accent-green)]' : 'border-[color:var(--border-muted)]'">
+        <div
+          class="border-l-4 pl-4"
+          :class="step1Complete ? 'border-[color:var(--accent-green)]' : 'border-[color:var(--border-muted)]'"
+        >
           <div class="flex items-center justify-between mb-2">
-            <h2 class="text-base font-semibold">Шаг 2: Создать рецепт с фазами</h2>
-            <Badge v-if="step2Complete" variant="success">Готово</Badge>
+            <h2 class="text-base font-semibold">
+              Шаг 2: Создать рецепт с фазами
+            </h2>
+            <Badge
+              v-if="step2Complete"
+              variant="success"
+            >
+              Готово
+            </Badge>
           </div>
-          <div v-if="!step2Complete" class="space-y-3">
+          <div
+            v-if="!step2Complete"
+            class="space-y-3"
+          >
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
               <input
                 v-model="recipeForm.name"
@@ -104,7 +152,9 @@
             </div>
             
             <div class="space-y-2">
-              <div class="text-xs text-[color:var(--text-muted)]">Фазы рецепта:</div>
+              <div class="text-xs text-[color:var(--text-muted)]">
+                Фазы рецепта:
+              </div>
               <div
                 v-for="(phase, index) in recipeForm.phases"
                 :key="index"
@@ -159,54 +209,87 @@
                   />
                 </div>
               </div>
-              <Button size="sm" variant="secondary" @click="addPhase">Добавить фазу</Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                @click="addPhase"
+              >
+                Добавить фазу
+              </Button>
             </div>
             
             <Button
               size="sm"
-              @click="createRecipe"
               :disabled="loading.step2 || !step1Complete"
+              @click="createRecipe"
             >
               {{ loading.step2 ? 'Создание...' : 'Создать рецепт' }}
             </Button>
           </div>
-          <div v-else class="text-sm text-[color:var(--text-muted)]">
+          <div
+            v-else
+            class="text-sm text-[color:var(--text-muted)]"
+          >
             Рецепт: <span class="font-semibold">{{ createdRecipe?.name }}</span>
             ({{ createdRecipe?.phases?.length || 0 }} фаз)
           </div>
         </div>
 
         <!-- Шаг 3: Выбор/Создание зоны -->
-        <div class="border-l-4 pl-4" :class="step2Complete ? 'border-[color:var(--accent-green)]' : 'border-[color:var(--border-muted)]'">
+        <div
+          class="border-l-4 pl-4"
+          :class="step2Complete ? 'border-[color:var(--accent-green)]' : 'border-[color:var(--border-muted)]'"
+        >
           <div class="flex items-center justify-between mb-2">
-            <h2 class="text-base font-semibold">Шаг 3: Выбрать или создать зону</h2>
-            <Badge v-if="step3Complete" variant="success">Готово</Badge>
+            <h2 class="text-base font-semibold">
+              Шаг 3: Выбрать или создать зону
+            </h2>
+            <Badge
+              v-if="step3Complete"
+              variant="success"
+            >
+              Готово
+            </Badge>
           </div>
-          <div v-if="!step3Complete" class="space-y-3">
+          <div
+            v-if="!step3Complete"
+            class="space-y-3"
+          >
             <!-- Переключатель режима -->
             <div class="flex gap-2 mb-2">
               <Button
                 size="sm"
                 :variant="zoneMode === 'select' ? 'primary' : 'secondary'"
-                @click="zoneMode = 'select'"
                 :disabled="!step2Complete"
+                @click="zoneMode = 'select'"
               >
                 Выбрать существующую
               </Button>
               <Button
                 size="sm"
                 :variant="zoneMode === 'create' ? 'primary' : 'secondary'"
-                @click="zoneMode = 'create'"
                 :disabled="!step2Complete"
+                @click="zoneMode = 'create'"
               >
                 Создать новую
               </Button>
             </div>
 
             <!-- Выбор существующей зоны -->
-            <div v-if="zoneMode === 'select'" class="space-y-3">
-              <div v-if="loading.zones" class="text-sm text-[color:var(--text-dim)]">Загрузка...</div>
-              <div v-else-if="availableZones.length === 0" class="text-sm text-[color:var(--text-dim)]">
+            <div
+              v-if="zoneMode === 'select'"
+              class="space-y-3"
+            >
+              <div
+                v-if="loading.zones"
+                class="text-sm text-[color:var(--text-dim)]"
+              >
+                Загрузка...
+              </div>
+              <div
+                v-else-if="availableZones.length === 0"
+                class="text-sm text-[color:var(--text-dim)]"
+              >
                 Нет доступных зон в этой теплице. Создайте новую.
               </div>
               <select
@@ -214,7 +297,9 @@
                 v-model="selectedZoneId"
                 class="input-select w-full"
               >
-                <option :value="null">Выберите зону</option>
+                <option :value="null">
+                  Выберите зону
+                </option>
                 <option
                   v-for="zone in availableZones"
                   :key="zone.id"
@@ -226,15 +311,18 @@
               </select>
               <Button
                 size="sm"
-                @click="selectZone"
                 :disabled="!selectedZoneId || loading.step3 || !step2Complete"
+                @click="selectZone"
               >
                 {{ loading.step3 ? 'Загрузка...' : 'Выбрать' }}
               </Button>
             </div>
 
             <!-- Создание новой зоны -->
-            <div v-else class="space-y-3">
+            <div
+              v-else
+              class="space-y-3"
+            >
               <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <input
                   v-model="zoneForm.name"
@@ -251,55 +339,87 @@
               </div>
               <Button
                 size="sm"
-                @click="createZone"
                 :disabled="loading.step3 || !step2Complete"
+                @click="createZone"
               >
                 {{ loading.step3 ? 'Создание...' : 'Создать зону' }}
               </Button>
             </div>
           </div>
-          <div v-else class="text-sm text-[color:var(--text-muted)]">
+          <div
+            v-else
+            class="text-sm text-[color:var(--text-muted)]"
+          >
             Зона: <span class="font-semibold">{{ createdZone?.name }}</span>
           </div>
         </div>
 
         <!-- Шаг 4: Запуск цикла выращивания -->
-        <div class="border-l-4 pl-4" :class="step3Complete ? 'border-[color:var(--accent-green)]' : 'border-[color:var(--border-muted)]'">
+        <div
+          class="border-l-4 pl-4"
+          :class="step3Complete ? 'border-[color:var(--accent-green)]' : 'border-[color:var(--border-muted)]'"
+        >
           <div class="flex items-center justify-between mb-2">
-            <h2 class="text-base font-semibold">Шаг 4: Запустить цикл выращивания</h2>
-            <Badge v-if="step4Complete" variant="success">Готово</Badge>
+            <h2 class="text-base font-semibold">
+              Шаг 4: Запустить цикл выращивания
+            </h2>
+            <Badge
+              v-if="step4Complete"
+              variant="success"
+            >
+              Готово
+            </Badge>
           </div>
           <div v-if="!step4Complete">
             <Button
               size="sm"
-              @click="attachRecipeToZone"
               :disabled="loading.step4 || !step3Complete"
+              @click="attachRecipeToZone"
             >
               {{ loading.step4 ? 'Открываем...' : 'Открыть мастер цикла' }}
             </Button>
           </div>
-          <div v-else class="text-sm text-[color:var(--text-muted)]">
+          <div
+            v-else
+            class="text-sm text-[color:var(--text-muted)]"
+          >
             Мастер цикла доступен в зоне — запуск можно выполнить позже
           </div>
         </div>
 
         <!-- Шаг 5: Привязка узлов -->
-        <div class="border-l-4 pl-4" :class="step4Complete ? 'border-[color:var(--accent-green)]' : 'border-[color:var(--border-muted)]'">
+        <div
+          class="border-l-4 pl-4"
+          :class="step4Complete ? 'border-[color:var(--accent-green)]' : 'border-[color:var(--border-muted)]'"
+        >
           <div class="flex items-center justify-between mb-2">
-            <h2 class="text-base font-semibold">Шаг 5: Привязать узлы к зоне</h2>
-            <Badge v-if="step5Complete" variant="success">Готово</Badge>
+            <h2 class="text-base font-semibold">
+              Шаг 5: Привязать узлы к зоне
+            </h2>
+            <Badge
+              v-if="step5Complete"
+              variant="success"
+            >
+              Готово
+            </Badge>
           </div>
-          <div v-if="!step5Complete" class="space-y-3">
-            <div v-if="availableNodes.length > 0" class="space-y-2 max-h-[200px] overflow-y-auto">
+          <div
+            v-if="!step5Complete"
+            class="space-y-3"
+          >
+            <div
+              v-if="availableNodes.length > 0"
+              class="space-y-2 max-h-[200px] overflow-y-auto"
+            >
               <label
                 v-for="node in availableNodes"
                 :key="node.id"
                 class="flex items-center gap-2 p-2 rounded border border-[color:var(--border-muted)] hover:border-[color:var(--border-strong)] cursor-pointer"
               >
                 <input
+                  v-model="selectedNodeIds"
                   type="checkbox"
                   :value="node.id"
-                  v-model="selectedNodeIds"
                   class="rounded"
                 />
                 <div class="flex-1 text-sm">
@@ -307,39 +427,52 @@
                 </div>
               </label>
             </div>
-            <div v-else class="text-sm text-[color:var(--text-dim)]">
+            <div
+              v-else
+              class="text-sm text-[color:var(--text-dim)]"
+            >
               Нет доступных узлов для привязки. Узлы будут доступны после регистрации через MQTT.
             </div>
             <Button
               size="sm"
-              @click="loadAvailableNodes"
               :disabled="loading.nodes"
+              @click="loadAvailableNodes"
             >
               {{ loading.nodes ? 'Загрузка...' : 'Обновить список узлов' }}
             </Button>
             <Button
               size="sm"
-              @click="attachNodesToZone"
               :disabled="loading.step5 || selectedNodeIds.length === 0 || !step4Complete"
+              @click="attachNodesToZone"
             >
               {{ loading.step5 ? 'Привязка...' : `Привязать узлы (${selectedNodeIds.length})` }}
             </Button>
           </div>
-          <div v-else class="text-sm text-[color:var(--text-muted)]">
+          <div
+            v-else
+            class="text-sm text-[color:var(--text-muted)]"
+          >
             Привязано узлов: {{ attachedNodesCount }}
           </div>
         </div>
 
         <!-- Завершение -->
-        <div v-if="step5Complete" class="pt-4 border-t border-[color:var(--border-muted)]">
+        <div
+          v-if="step5Complete"
+          class="pt-4 border-t border-[color:var(--border-muted)]"
+        >
           <div class="text-center space-y-3">
-            <div class="text-lg font-semibold text-[color:var(--accent-green)]">Система настроена!</div>
+            <div class="text-lg font-semibold text-[color:var(--accent-green)]">
+              Система настроена!
+            </div>
             <div class="text-sm text-[color:var(--text-muted)]">
               Зона создана, рецепт привязан, узлы настроены. Система готова к работе.
             </div>
             <div class="flex justify-center gap-2">
               <Link :href="`/zones/${createdZone?.id}`">
-                <Button size="sm">Открыть зону</Button>
+                <Button size="sm">
+                  Открыть зону
+                </Button>
               </Link>
             </div>
           </div>

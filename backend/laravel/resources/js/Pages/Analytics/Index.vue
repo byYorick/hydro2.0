@@ -19,8 +19,14 @@
               class="input-select flex-1 sm:w-auto sm:min-w-[220px]"
               data-testid="analytics-view-select"
             >
-              <option value="">— выбрать —</option>
-              <option v-for="view in savedViews" :key="view.id" :value="view.id">
+              <option value="">
+                — выбрать —
+              </option>
+              <option
+                v-for="view in savedViews"
+                :key="view.id"
+                :value="view.id"
+              >
                 {{ view.name }}
               </option>
             </select>
@@ -38,18 +44,18 @@
             <Button
               size="sm"
               variant="secondary"
-              @click="saveView"
               :disabled="!canSaveView"
               data-testid="analytics-view-save"
+              @click="saveView"
             >
               Сохранить
             </Button>
             <Button
               size="sm"
               variant="outline"
-              @click="deleteView"
               :disabled="!activeViewId"
               data-testid="analytics-view-delete"
+              @click="deleteView"
             >
               Удалить
             </Button>
@@ -70,8 +76,14 @@
                 class="input-select flex-1 sm:w-auto sm:min-w-[200px]"
                 data-testid="analytics-filter-zone"
               >
-                <option value="">Выберите зону</option>
-                <option v-for="zone in zoneOptions" :key="zone.id" :value="String(zone.id)">
+                <option value="">
+                  Выберите зону
+                </option>
+                <option
+                  v-for="zone in zoneOptions"
+                  :key="zone.id"
+                  :value="String(zone.id)"
+                >
                   {{ zone.name }}
                 </option>
               </select>
@@ -83,7 +95,11 @@
                 class="input-select flex-1 sm:w-auto sm:min-w-[160px]"
                 data-testid="analytics-filter-metric"
               >
-                <option v-for="metric in metricOptions" :key="metric.value" :value="metric.value">
+                <option
+                  v-for="metric in metricOptions"
+                  :key="metric.value"
+                  :value="metric.value"
+                >
                   {{ metric.label }}
                 </option>
               </select>
@@ -95,7 +111,11 @@
                 class="input-select flex-1 sm:w-auto sm:min-w-[120px]"
                 data-testid="analytics-filter-period"
               >
-                <option v-for="period in periodOptions" :key="period.value" :value="period.value">
+                <option
+                  v-for="period in periodOptions"
+                  :key="period.value"
+                  :value="period.value"
+                >
                   {{ period.label }}
                 </option>
               </select>
@@ -107,8 +127,8 @@
                 :class="showMedian
                   ? 'border-[color:var(--accent-amber)] text-[color:var(--accent-amber)] bg-[color:var(--bg-elevated)]'
                   : 'border-[color:var(--border-muted)] text-[color:var(--text-dim)] hover:border-[color:var(--border-strong)]'"
-                @click="showMedian = !showMedian"
                 data-testid="analytics-filter-median"
+                @click="showMedian = !showMedian"
               >
                 Median
               </button>
@@ -117,9 +137,9 @@
               <Button
                 size="sm"
                 variant="outline"
-                @click="loadTelemetryAggregates"
                 :disabled="telemetryLoading || !selectedZoneId"
                 data-testid="analytics-telemetry-refresh"
+                @click="loadTelemetryAggregates"
               >
                 {{ telemetryLoading ? 'Загрузка...' : 'Обновить' }}
               </Button>
@@ -151,8 +171,14 @@
                 class="input-select flex-1 sm:w-auto sm:min-w-[220px]"
                 data-testid="analytics-filter-recipe"
               >
-                <option value="">Выберите рецепт</option>
-                <option v-for="recipe in recipeOptions" :key="recipe.id" :value="String(recipe.id)">
+                <option value="">
+                  Выберите рецепт
+                </option>
+                <option
+                  v-for="recipe in recipeOptions"
+                  :key="recipe.id"
+                  :value="String(recipe.id)"
+                >
                   {{ recipe.name }}
                 </option>
               </select>
@@ -161,9 +187,9 @@
               <Button
                 size="sm"
                 variant="outline"
-                @click="loadRecipeAnalytics"
                 :disabled="recipeLoading || !selectedRecipeId"
                 data-testid="analytics-recipe-refresh"
+                @click="loadRecipeAnalytics"
               >
                 {{ recipeLoading ? 'Загрузка...' : 'Обновить' }}
               </Button>
@@ -173,25 +199,33 @@
 
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
           <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Средняя эффективность</div>
+            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+              Средняя эффективность
+            </div>
             <div class="text-2xl font-semibold text-[color:var(--accent-cyan)] mt-1">
               {{ formatNumber(recipeStats?.avg_efficiency, 2) }}
             </div>
           </div>
           <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Отклонение pH</div>
+            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+              Отклонение pH
+            </div>
             <div class="text-2xl font-semibold text-[color:var(--accent-amber)] mt-1">
               {{ formatNumber(recipeStats?.avg_ph_deviation_overall, 2) }}
             </div>
           </div>
           <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Отклонение EC</div>
+            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+              Отклонение EC
+            </div>
             <div class="text-2xl font-semibold text-[color:var(--accent-amber)] mt-1">
               {{ formatNumber(recipeStats?.avg_ec_deviation_overall, 2) }}
             </div>
           </div>
           <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Средняя длительность</div>
+            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+              Средняя длительность
+            </div>
             <div class="text-2xl font-semibold text-[color:var(--accent-green)] mt-1">
               {{ formatDuration(recipeStats?.avg_duration_hours) }}
             </div>
@@ -247,14 +281,20 @@
           </div>
           <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
             <div class="surface-card border border-[color:var(--border-muted)] rounded-xl p-3">
-              <div class="text-sm font-semibold mb-2">Рецепты</div>
+              <div class="text-sm font-semibold mb-2">
+                Рецепты
+              </div>
               <div class="space-y-2 max-h-[220px] overflow-y-auto">
-                <label v-for="recipe in recipeOptions" :key="recipe.id" class="flex items-center gap-2 text-sm">
+                <label
+                  v-for="recipe in recipeOptions"
+                  :key="recipe.id"
+                  class="flex items-center gap-2 text-sm"
+                >
                   <input
+                    v-model="compareRecipeIds"
                     type="checkbox"
                     class="h-4 w-4 accent-[color:var(--accent-cyan)]"
                     :value="String(recipe.id)"
-                    v-model="compareRecipeIds"
                   />
                   <span class="text-[color:var(--text-muted)]">{{ recipe.name }}</span>
                 </label>
@@ -262,12 +302,14 @@
             </div>
             <div class="surface-card border border-[color:var(--border-muted)] rounded-xl p-3 lg:col-span-2">
               <div class="flex items-center justify-between mb-2">
-                <div class="text-sm font-semibold">Итоги сравнения</div>
+                <div class="text-sm font-semibold">
+                  Итоги сравнения
+                </div>
                 <Button
                   size="sm"
                   variant="secondary"
-                  @click="loadComparison"
                   :disabled="compareRecipeIds.length < 2 || compareLoading"
+                  @click="loadComparison"
                 >
                   {{ compareLoading ? 'Сравниваем...' : 'Сравнить' }}
                 </Button>

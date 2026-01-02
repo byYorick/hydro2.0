@@ -9,19 +9,31 @@
       </Badge>
     </div>
 
-    <div v-if="loading" class="text-center py-4">
+    <div
+      v-if="loading"
+      class="text-center py-4"
+    >
       <LoadingState />
     </div>
 
-    <div v-else-if="error" class="text-[color:var(--accent-red)] text-sm py-2">
+    <div
+      v-else-if="error"
+      class="text-[color:var(--accent-red)] text-sm py-2"
+    >
       {{ error }}
     </div>
 
-    <div v-else-if="errors.length === 0" class="text-[color:var(--text-dim)] text-sm py-4 text-center">
+    <div
+      v-else-if="errors.length === 0"
+      class="text-[color:var(--text-dim)] text-sm py-4 text-center"
+    >
       Нет ошибок {{ zoneId ? 'узлов зоны' : 'неназначенных узлов' }}
     </div>
 
-    <div v-else class="space-y-2 max-h-[400px] overflow-y-auto">
+    <div
+      v-else
+      class="space-y-2 max-h-[400px] overflow-y-auto"
+    >
       <div
         v-for="err in errors"
         :key="err.id"
@@ -37,11 +49,17 @@
               >
                 {{ err.severity }}
               </Badge>
-              <Badge v-if="err.count > 1" variant="info" size="sm">
+              <Badge
+                v-if="err.count > 1"
+                variant="info"
+                size="sm"
+              >
                 ×{{ err.count }}
               </Badge>
             </div>
-            <p class="text-sm text-[color:var(--text-primary)] mb-1">{{ err.error_message }}</p>
+            <p class="text-sm text-[color:var(--text-primary)] mb-1">
+              {{ err.error_message }}
+            </p>
             <div class="flex items-center gap-4 text-xs text-[color:var(--text-dim)] flex-wrap">
               <span v-if="err.error_code">Код: {{ err.error_code }}</span>
               <span>Последний раз: {{ formatDate(err.last_seen_at) }}</span>
@@ -54,7 +72,10 @@
       </div>
     </div>
 
-    <div v-if="errors.length > 0 && !zoneId" class="mt-4 pt-4 border-t border-[color:var(--border-muted)]">
+    <div
+      v-if="errors.length > 0 && !zoneId"
+      class="mt-4 pt-4 border-t border-[color:var(--border-muted)]"
+    >
       <a
         href="/monitoring/unassigned-errors"
         class="text-sm text-[color:var(--accent-cyan)] hover:text-[color:var(--accent-green)] transition-colors"

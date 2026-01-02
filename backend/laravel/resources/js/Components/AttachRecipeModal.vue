@@ -3,19 +3,37 @@
   Используйте GrowCycles/Wizard.vue для создания циклов выращивания с рецептами.
 -->
 <template>
-  <Modal :open="show" title="Привязать рецепт к зоне (Legacy)" @close="$emit('close')" data-testid="attach-recipe-modal">
-    <div v-if="loading" class="text-sm text-[color:var(--text-muted)]">Загрузка...</div>
-    <div v-else class="space-y-4">
+  <Modal
+    :open="show"
+    title="Привязать рецепт к зоне (Legacy)"
+    data-testid="attach-recipe-modal"
+    @close="$emit('close')"
+  >
+    <div
+      v-if="loading"
+      class="text-sm text-[color:var(--text-muted)]"
+    >
+      Загрузка...
+    </div>
+    <div
+      v-else
+      class="space-y-4"
+    >
       <div>
-        <label for="attach-recipe-select" class="block text-xs text-[color:var(--text-muted)] mb-1">Выберите рецепт</label>
+        <label
+          for="attach-recipe-select"
+          class="block text-xs text-[color:var(--text-muted)] mb-1"
+        >Выберите рецепт</label>
         <select
           id="attach-recipe-select"
-          name="recipe_id"
           v-model="selectedRecipeId"
+          name="recipe_id"
           class="input-select h-9 w-full"
           data-testid="attach-recipe-select"
         >
-          <option :value="null">Выберите рецепт</option>
+          <option :value="null">
+            Выберите рецепт
+          </option>
           <option
             v-for="recipe in recipes"
             :key="recipe.id"
@@ -27,31 +45,50 @@
       </div>
       
       <div v-if="selectedRecipeId">
-        <label for="attach-recipe-start-at" class="block text-xs text-[color:var(--text-muted)] mb-1">Дата начала (опционально)</label>
+        <label
+          for="attach-recipe-start-at"
+          class="block text-xs text-[color:var(--text-muted)] mb-1"
+        >Дата начала (опционально)</label>
         <input
           id="attach-recipe-start-at"
-          name="start_at"
           v-model="startAt"
+          name="start_at"
           type="datetime-local"
           class="input-field h-9 w-full"
           autocomplete="off"
         />
       </div>
       
-      <div v-if="selectedRecipe && selectedRecipe.phases" class="text-xs text-[color:var(--text-muted)]">
-        <div class="font-semibold mb-2">Фазы рецепта:</div>
-        <div v-for="phase in selectedRecipe.phases" :key="phase.id" :data-testid="`recipe-phase-item-${phase.id || phase.phase_index}`" class="mb-1 pl-2 border-l-2 border-[color:var(--border-muted)]">
+      <div
+        v-if="selectedRecipe && selectedRecipe.phases"
+        class="text-xs text-[color:var(--text-muted)]"
+      >
+        <div class="font-semibold mb-2">
+          Фазы рецепта:
+        </div>
+        <div
+          v-for="phase in selectedRecipe.phases"
+          :key="phase.id"
+          :data-testid="`recipe-phase-item-${phase.id || phase.phase_index}`"
+          class="mb-1 pl-2 border-l-2 border-[color:var(--border-muted)]"
+        >
           {{ phase.phase_index + 1 }}. {{ phase.name }} — {{ phase.duration_hours }}ч
         </div>
       </div>
     </div>
     
     <template #footer>
-      <Button size="sm" variant="secondary" @click="$emit('close')">Отмена</Button>
       <Button
         size="sm"
-        @click="onAttach"
+        variant="secondary"
+        @click="$emit('close')"
+      >
+        Отмена
+      </Button>
+      <Button
+        size="sm"
         :disabled="!selectedRecipeId || attaching"
+        @click="onAttach"
       >
         {{ attaching ? 'Привязка...' : 'Привязать' }}
       </Button>

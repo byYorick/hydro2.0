@@ -23,16 +23,28 @@
             class="input-field h-9 w-full sm:w-64"
             placeholder="Поиск по событию..."
           />
-          <Button size="sm" variant="secondary" @click="exportEvents">Экспорт CSV</Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            @click="exportEvents"
+          >
+            Экспорт CSV
+          </Button>
         </div>
       </div>
     </section>
 
     <section class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-4">
-      <div v-if="filteredEvents.length === 0" class="text-sm text-[color:var(--text-dim)] text-center py-6">
+      <div
+        v-if="filteredEvents.length === 0"
+        class="text-sm text-[color:var(--text-dim)] text-center py-6"
+      >
         Нет событий по текущим фильтрам
       </div>
-      <div v-else class="h-[520px]">
+      <div
+        v-else
+        class="h-[520px]"
+      >
         <VirtualList
           v-if="useVirtual"
           :items="filteredEvents"
@@ -42,32 +54,45 @@
         >
           <template #default="{ item }">
             <div class="text-sm text-[color:var(--text-muted)] flex items-start gap-2 py-2 border-b border-[color:var(--border-muted)]">
-              <Badge :variant="getEventVariant(item.kind)" class="text-xs shrink-0">
+              <Badge
+                :variant="getEventVariant(item.kind)"
+                class="text-xs shrink-0"
+              >
                 {{ translateEventKind(item.kind) }}
               </Badge>
               <div class="flex-1 min-w-0">
                 <div class="text-xs text-[color:var(--text-dim)]">
                   {{ new Date(item.occurred_at).toLocaleString('ru-RU') }}
                 </div>
-                <div class="text-sm">{{ item.message }}</div>
+                <div class="text-sm">
+                  {{ item.message }}
+                </div>
               </div>
             </div>
           </template>
         </VirtualList>
-        <div v-else class="space-y-1 max-h-[520px] overflow-y-auto">
+        <div
+          v-else
+          class="space-y-1 max-h-[520px] overflow-y-auto"
+        >
           <div
             v-for="item in filteredEvents"
             :key="item.id"
             class="text-sm text-[color:var(--text-muted)] flex items-start gap-2 py-2 border-b border-[color:var(--border-muted)]"
           >
-            <Badge :variant="getEventVariant(item.kind)" class="text-xs shrink-0">
+            <Badge
+              :variant="getEventVariant(item.kind)"
+              class="text-xs shrink-0"
+            >
               {{ translateEventKind(item.kind) }}
             </Badge>
             <div class="flex-1 min-w-0">
               <div class="text-xs text-[color:var(--text-dim)]">
                 {{ new Date(item.occurred_at).toLocaleString('ru-RU') }}
               </div>
-              <div class="text-sm">{{ item.message }}</div>
+              <div class="text-sm">
+                {{ item.message }}
+              </div>
             </div>
           </div>
         </div>

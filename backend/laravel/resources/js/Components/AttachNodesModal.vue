@@ -1,16 +1,34 @@
 <template>
-  <Modal :open="show" title="Привязать узлы к зоне" @close="$emit('close')">
-    <div v-if="loading" class="text-sm text-[color:var(--text-muted)]">Загрузка...</div>
-    <div v-else class="space-y-4">
+  <Modal
+    :open="show"
+    title="Привязать узлы к зоне"
+    @close="$emit('close')"
+  >
+    <div
+      v-if="loading"
+      class="text-sm text-[color:var(--text-muted)]"
+    >
+      Загрузка...
+    </div>
+    <div
+      v-else
+      class="space-y-4"
+    >
       <div class="text-xs text-[color:var(--text-muted)] mb-2">
         Выберите узлы для привязки к зоне {{ zoneId }}
       </div>
       
-      <div v-if="availableNodes.length === 0" class="text-sm text-[color:var(--text-muted)]">
+      <div
+        v-if="availableNodes.length === 0"
+        class="text-sm text-[color:var(--text-muted)]"
+      >
         Нет доступных узлов для привязки
       </div>
       
-      <div v-else class="space-y-2 max-h-[400px] overflow-y-auto">
+      <div
+        v-else
+        class="space-y-2 max-h-[400px] overflow-y-auto"
+      >
         <label
           v-for="node in availableNodes"
           :key="node.id"
@@ -19,10 +37,10 @@
         >
           <input
             :id="`attach-node-${node.id}`"
+            v-model="selectedNodeIds"
             :name="`node_${node.id}`"
             type="checkbox"
             :value="node.id"
-            v-model="selectedNodeIds"
             class="h-4 w-4 rounded border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] text-[color:var(--accent-green)] focus:outline-none focus:ring-2 focus:ring-[color:var(--focus-ring)]"
           />
           <div class="flex-1">
@@ -36,11 +54,17 @@
     </div>
     
     <template #footer>
-      <Button size="sm" variant="secondary" @click="$emit('close')">Отмена</Button>
       <Button
         size="sm"
-        @click="onAttach"
+        variant="secondary"
+        @click="$emit('close')"
+      >
+        Отмена
+      </Button>
+      <Button
+        size="sm"
         :disabled="selectedNodeIds.length === 0 || attaching"
+        @click="onAttach"
       >
         {{ attaching ? 'Привязка...' : `Привязать (${selectedNodeIds.length})` }}
       </Button>

@@ -1,5 +1,8 @@
 <template>
-  <Card class="metric-indicator-card surface-card-hover" :class="{ 'metric-indicator-large': size === 'large' }">
+  <Card
+    class="metric-indicator-card surface-card-hover"
+    :class="{ 'metric-indicator-large': size === 'large' }"
+  >
     <div class="flex items-start justify-between mb-2">
       <div class="flex-1 min-w-0">
         <div class="text-xs font-medium uppercase tracking-wide text-[color:var(--text-dim)] mb-1">
@@ -15,7 +18,10 @@
           >
             {{ formattedValue }}
           </div>
-          <div v-if="unit" class="text-sm text-[color:var(--text-muted)]">
+          <div
+            v-if="unit"
+            class="text-sm text-[color:var(--text-muted)]"
+          >
             {{ unit }}
           </div>
         </div>
@@ -31,14 +37,20 @@
     </div>
 
     <!-- Целевое значение и отклонение -->
-    <div v-if="target !== null && target !== undefined" class="mt-2 space-y-1">
+    <div
+      v-if="target !== null && target !== undefined"
+      class="mt-2 space-y-1"
+    >
       <div class="flex items-center justify-between text-xs">
         <span class="text-[color:var(--text-dim)]">Цель:</span>
         <span class="font-medium">{{ formatTarget(target) }}</span>
       </div>
       
       <!-- Отклонение от цели -->
-      <div v-if="deviation !== null" class="flex items-center gap-1 text-xs">
+      <div
+        v-if="deviation !== null"
+        class="flex items-center gap-1 text-xs"
+      >
         <span 
           :class="deviationClass"
         >
@@ -49,7 +61,10 @@
     </div>
 
     <!-- Тренд (sparkline или стрелка) -->
-    <div v-if="showTrend && trend !== null" class="mt-2 flex items-center gap-1">
+    <div
+      v-if="showTrend && trend !== null"
+      class="mt-2 flex items-center gap-1"
+    >
       <div 
         v-if="trend !== null"
         class="flex items-center gap-1 text-xs"
@@ -62,7 +77,12 @@
           stroke="currentColor" 
           viewBox="0 0 24 24"
         >
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
+          />
         </svg>
         <svg 
           v-else-if="trend < 0"
@@ -71,7 +91,12 @@
           stroke="currentColor" 
           viewBox="0 0 24 24"
         >
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6" />
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6"
+          />
         </svg>
         <svg 
           v-else
@@ -80,14 +105,22 @@
           stroke="currentColor" 
           viewBox="0 0 24 24"
         >
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14" />
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M5 12h14"
+          />
         </svg>
         <span>{{ Math.abs(trend).toFixed(1) }}%</span>
       </div>
     </div>
 
     <!-- Sparkline график тренда -->
-    <div v-if="sparklineData && sparklineData.length > 0" class="mt-3">
+    <div
+      v-if="sparklineData && sparklineData.length > 0"
+      class="mt-3"
+    >
       <Sparkline
         :data="sparklineData"
         :width="120"
@@ -100,7 +133,10 @@
     </div>
 
     <!-- Мини-график (gauge) -->
-    <div v-else-if="showGauge && target !== null" class="mt-3">
+    <div
+      v-else-if="showGauge && target !== null"
+      class="mt-3"
+    >
       <div class="relative h-1 bg-[color:var(--bg-elevated)] rounded-full overflow-hidden">
         <div 
           class="absolute inset-y-0 left-0 rounded-full transition-all duration-300"
@@ -111,7 +147,10 @@
     </div>
 
     <!-- Дополнительный контент (footer slot) -->
-    <div v-if="$slots.footer" class="mt-3 pt-3 border-t border-[color:var(--border-muted)]">
+    <div
+      v-if="$slots.footer"
+      class="mt-3 pt-3 border-t border-[color:var(--border-muted)]"
+    >
       <slot name="footer"></slot>
     </div>
   </Card>

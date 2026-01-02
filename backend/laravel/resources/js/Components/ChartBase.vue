@@ -1,5 +1,9 @@
 <template>
-  <div ref="el" :class="containerClass" :style="containerStyle"></div>
+  <div
+    ref="el"
+    :class="containerClass"
+    :style="containerStyle"
+  ></div>
 </template>
 
 <script setup lang="ts">

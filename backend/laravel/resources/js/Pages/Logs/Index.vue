@@ -4,7 +4,9 @@
       <header class="space-y-3">
         <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 class="text-lg font-semibold">Журнал сервисов</h1>
+            <h1 class="text-lg font-semibold">
+              Журнал сервисов
+            </h1>
             <p class="text-sm text-[color:var(--text-muted)] max-w-3xl">
               Отслеживайте события автоматизации, History Logger, MQTT Bridge и cron в одном окне.
             </p>
@@ -15,7 +17,9 @@
               v-model="filters.service"
               class="input-select"
             >
-              <option value="all">Все сервисы</option>
+              <option value="all">
+                Все сервисы
+              </option>
               <option
                 v-for="option in serviceSelectOptions"
                 :key="option.key"
@@ -28,7 +32,9 @@
               v-model="filters.level"
               class="input-select"
             >
-              <option value="">Все уровни</option>
+              <option value="">
+                Все уровни
+              </option>
               <option
                 v-for="level in levelOptions"
                 :key="level"
@@ -65,19 +71,31 @@
         </div>
       </header>
 
-      <div v-if="error" class="text-sm text-[color:var(--accent-red)]">
+      <div
+        v-if="error"
+        class="text-sm text-[color:var(--accent-red)]"
+      >
         {{ error }}
       </div>
 
-      <div v-if="loading" class="text-sm text-[color:var(--text-dim)] text-center py-8">
+      <div
+        v-if="loading"
+        class="text-sm text-[color:var(--text-dim)] text-center py-8"
+      >
         Загрузка логов...
       </div>
 
-      <div v-else-if="!hasLogs" class="text-sm text-[color:var(--text-dim)] text-center py-8">
+      <div
+        v-else-if="!hasLogs"
+        class="text-sm text-[color:var(--text-dim)] text-center py-8"
+      >
         Нет логов по выбранным фильтрам
       </div>
 
-      <div v-else class="grid gap-4 lg:grid-cols-2">
+      <div
+        v-else
+        class="grid gap-4 lg:grid-cols-2"
+      >
         <Card
           v-for="service in visibleServices"
           :key="service.key"
@@ -85,8 +103,12 @@
         >
           <div class="flex items-center justify-between gap-4">
             <div>
-              <div class="text-sm font-semibold text-[color:var(--text-primary)]">{{ service.label }}</div>
-              <p class="text-xs text-[color:var(--text-dim)]">{{ service.description ?? 'Логи сервиса' }}</p>
+              <div class="text-sm font-semibold text-[color:var(--text-primary)]">
+                {{ service.label }}
+              </div>
+              <p class="text-xs text-[color:var(--text-dim)]">
+                {{ service.description ?? 'Логи сервиса' }}
+              </p>
             </div>
             <span class="text-xs text-[color:var(--text-dim)]">{{ entriesFor(service.key).length }} записей</span>
           </div>
@@ -98,25 +120,40 @@
             >
               <div class="flex items-start justify-between gap-3">
                 <div class="space-y-1">
-                  <div class="text-sm font-semibold text-[color:var(--text-primary)]">{{ entry.message }}</div>
-                  <div class="text-xs text-[color:var(--text-dim)]">{{ summarizeContext(entry.context) }}</div>
+                  <div class="text-sm font-semibold text-[color:var(--text-primary)]">
+                    {{ entry.message }}
+                  </div>
+                  <div class="text-xs text-[color:var(--text-dim)]">
+                    {{ summarizeContext(entry.context) }}
+                  </div>
                 </div>
                 <div class="text-right">
-                  <Badge :variant="levelVariant(entry.level)" size="xs">{{ entry.level }}</Badge>
+                  <Badge
+                    :variant="levelVariant(entry.level)"
+                    size="xs"
+                  >
+                    {{ entry.level }}
+                  </Badge>
                   <div class="text-[10px] text-[color:var(--text-dim)] mt-1">
                     {{ formatTime(entry.created_at) }}
                   </div>
                 </div>
               </div>
             </div>
-            <div v-if="!entriesFor(service.key).length" class="text-xs text-[color:var(--text-dim)] text-center py-6">
+            <div
+              v-if="!entriesFor(service.key).length"
+              class="text-xs text-[color:var(--text-dim)] text-center py-6"
+            >
               Нет событий по выбранным фильтрам
             </div>
           </div>
         </Card>
       </div>
 
-      <div class="flex items-center justify-between pt-2 border-t border-[color:var(--border-muted)]" v-if="meta.total > 0">
+      <div
+        v-if="meta.total > 0"
+        class="flex items-center justify-between pt-2 border-t border-[color:var(--border-muted)]"
+      >
         <div class="text-xs text-[color:var(--text-dim)]">
           Страница {{ meta.page }} / {{ meta.last_page }} • {{ meta.total }} записей
         </div>

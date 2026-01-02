@@ -1,11 +1,14 @@
 <template>
-  <div :data-testid="`zone-card-${zone.id}`" class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] p-4 hover:border-[color:var(--border-strong)] transition-all duration-200">
+  <div
+    :data-testid="`zone-card-${zone.id}`"
+    class="rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface)] p-4 hover:border-[color:var(--border-strong)] transition-all duration-200"
+  >
     <div class="flex items-center justify-between">
       <div class="flex items-center gap-2 flex-1 min-w-0">
         <button
-          @click.stop="toggleFavorite"
           class="p-1 rounded hover:bg-[color:var(--bg-elevated)] transition-colors shrink-0"
           :title="isFavorite ? 'Удалить из избранного' : 'Добавить в избранное'"
+          @click.stop="toggleFavorite"
         >
           <svg
             class="w-4 h-4 transition-colors"
@@ -22,18 +25,35 @@
             />
           </svg>
         </button>
-        <div class="text-sm font-semibold truncate">{{ zone.name }}</div>
+        <div class="text-sm font-semibold truncate">
+          {{ zone.name }}
+        </div>
       </div>
-      <Badge :variant="variant" data-testid="zone-card-status">{{ translateStatus(zone.status) }}</Badge>
+      <Badge
+        :variant="variant"
+        data-testid="zone-card-status"
+      >
+        {{ translateStatus(zone.status) }}
+      </Badge>
     </div>
     
     <div class="mt-2 text-xs text-[color:var(--text-muted)]">
-      <div v-if="zone.description">{{ zone.description }}</div>
-      <div v-if="zone.greenhouse" class="mt-1">Теплица: {{ zone.greenhouse.name }}</div>
+      <div v-if="zone.description">
+        {{ zone.description }}
+      </div>
+      <div
+        v-if="zone.greenhouse"
+        class="mt-1"
+      >
+        Теплица: {{ zone.greenhouse.name }}
+      </div>
     </div>
 
     <!-- Стадия и прогресс -->
-    <div v-if="zone.activeGrowCycle" class="mt-3 space-y-2">
+    <div
+      v-if="zone.activeGrowCycle"
+      class="mt-3 space-y-2"
+    >
       <div class="flex items-center justify-between">
         <GrowCycleStageHeader :stage="currentStage" />
         <GrowCycleProgressRing
@@ -46,7 +66,10 @@
     </div>
 
     <!-- Мини-метрики -->
-    <div v-if="telemetry" class="mt-3">
+    <div
+      v-if="telemetry"
+      class="mt-3"
+    >
       <ZoneMiniMetrics
         :telemetry="telemetry"
         :targets="zoneTargets"
@@ -54,17 +77,37 @@
     </div>
 
     <!-- Статус узлов и алерты -->
-    <div v-if="hasStatusInfo" class="mt-3 flex items-center justify-between text-xs pt-2 border-t border-[color:var(--border-muted)]">
+    <div
+      v-if="hasStatusInfo"
+      class="mt-3 flex items-center justify-between text-xs pt-2 border-t border-[color:var(--border-muted)]"
+    >
       <div class="flex items-center gap-3">
-        <div v-if="nodesOnline !== null || nodesTotal !== null" class="flex items-center gap-1">
-          <div class="w-1.5 h-1.5 rounded-full" :class="nodesOnline && nodesOnline > 0 ? 'bg-[color:var(--accent-green)]' : 'bg-[color:var(--text-dim)]'"></div>
+        <div
+          v-if="nodesOnline !== null || nodesTotal !== null"
+          class="flex items-center gap-1"
+        >
+          <div
+            class="w-1.5 h-1.5 rounded-full"
+            :class="nodesOnline && nodesOnline > 0 ? 'bg-[color:var(--accent-green)]' : 'bg-[color:var(--text-dim)]'"
+          ></div>
           <span class="text-[color:var(--text-muted)]">
             Узлы: <span class="text-[color:var(--text-primary)]">{{ nodesOnline || 0 }}/{{ nodesTotal || 0 }}</span>
           </span>
         </div>
-        <div v-if="alertsCount !== null && alertsCount > 0" class="flex items-center gap-1 text-[color:var(--accent-red)]">
-          <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-            <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+        <div
+          v-if="alertsCount !== null && alertsCount > 0"
+          class="flex items-center gap-1 text-[color:var(--accent-red)]"
+        >
+          <svg
+            class="w-3 h-3"
+            fill="currentColor"
+            viewBox="0 0 20 20"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+              clip-rule="evenodd"
+            />
           </svg>
           <span>{{ alertsCount }}</span>
         </div>
@@ -72,8 +115,17 @@
     </div>
 
     <div class="mt-3 flex gap-2">
-      <Link :href="`/zones/${zone.id}`" class="inline-block" data-testid="zone-card-link">
-        <Button size="sm" variant="secondary">Подробнее</Button>
+      <Link
+        :href="`/zones/${zone.id}`"
+        class="inline-block"
+        data-testid="zone-card-link"
+      >
+        <Button
+          size="sm"
+          variant="secondary"
+        >
+          Подробнее
+        </Button>
       </Link>
     </div>
   </div>

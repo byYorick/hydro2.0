@@ -2,17 +2,25 @@
   <Card>
     <div class="space-y-4">
       <div>
-        <h3 class="text-sm font-semibold mb-2">Проверка готовности зоны</h3>
+        <h3 class="text-sm font-semibold mb-2">
+          Проверка готовности зоны
+        </h3>
         <p class="text-xs text-[color:var(--text-muted)] mb-4">
           Убедитесь, что все обязательные компоненты настроены и готовы к запуску
         </p>
       </div>
 
-      <div v-if="loading" class="text-sm text-[color:var(--text-muted)]">
+      <div
+        v-if="loading"
+        class="text-sm text-[color:var(--text-muted)]"
+      >
         Проверка готовности...
       </div>
 
-      <div v-else-if="readiness" class="space-y-4">
+      <div
+        v-else-if="readiness"
+        class="space-y-4"
+      >
         <!-- Основные проверки -->
         <div class="space-y-2">
           <div
@@ -30,8 +38,13 @@
               {{ check.passed ? '✓' : '✗' }}
             </span>
             <div class="flex-1">
-              <div class="text-sm font-medium">{{ check.label }}</div>
-              <div v-if="check.message" class="text-xs text-[color:var(--text-muted)] mt-1">
+              <div class="text-sm font-medium">
+                {{ check.label }}
+              </div>
+              <div
+                v-if="check.message"
+                class="text-xs text-[color:var(--text-muted)] mt-1"
+              >
                 {{ check.message }}
               </div>
             </div>
@@ -39,8 +52,13 @@
         </div>
 
         <!-- Детальные ошибки -->
-        <div v-if="errors.length > 0" class="mt-4 p-3 rounded border border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)]">
-          <div class="text-xs font-semibold text-[color:var(--accent-red)] mb-2">Обнаружены проблемы:</div>
+        <div
+          v-if="errors.length > 0"
+          class="mt-4 p-3 rounded border border-[color:var(--badge-danger-border)] bg-[color:var(--badge-danger-bg)]"
+        >
+          <div class="text-xs font-semibold text-[color:var(--accent-red)] mb-2">
+            Обнаружены проблемы:
+          </div>
           <ul class="space-y-1">
             <li
               v-for="(error, index) in errors"
@@ -82,7 +100,10 @@
         </div>
       </div>
 
-      <div v-else class="text-sm text-[color:var(--text-muted)]">
+      <div
+        v-else
+        class="text-sm text-[color:var(--text-muted)]"
+      >
         Нет данных о готовности
       </div>
     </div>

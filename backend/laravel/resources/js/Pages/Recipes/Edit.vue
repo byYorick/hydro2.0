@@ -1,101 +1,342 @@
 <template>
   <AppLayout>
-    <h1 class="text-lg font-semibold mb-4">{{ recipe.id ? 'Редактировать рецепт' : 'Создать рецепт' }}</h1>
+    <h1 class="text-lg font-semibold mb-4">
+      {{ recipe.id ? 'Редактировать рецепт' : 'Создать рецепт' }}
+    </h1>
     <Card>
-      <form class="space-y-3" @submit.prevent="onSave">
+      <form
+        class="space-y-3"
+        @submit.prevent="onSave"
+      >
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
-            <label for="recipe-name" class="block text-xs text-[color:var(--text-muted)] mb-1">Название</label>
-            <input id="recipe-name" name="name" v-model="form.name" data-testid="recipe-name-input" class="input-field" :class="(form.errors as any).name ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''" />
-            <div v-if="(form.errors as any).name" class="text-xs text-[color:var(--badge-danger-text)] mt-1">{{ (form.errors as any).name }}</div>
+            <label
+              for="recipe-name"
+              class="block text-xs text-[color:var(--text-muted)] mb-1"
+            >Название</label>
+            <input
+              id="recipe-name"
+              v-model="form.name"
+              name="name"
+              data-testid="recipe-name-input"
+              class="input-field"
+              :class="(form.errors as any).name ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''"
+            />
+            <div
+              v-if="(form.errors as any).name"
+              class="text-xs text-[color:var(--badge-danger-text)] mt-1"
+            >
+              {{ (form.errors as any).name }}
+            </div>
           </div>
           <div>
-            <label for="recipe-description" class="block text-xs text-[color:var(--text-muted)] mb-1">Описание</label>
-            <input id="recipe-description" name="description" v-model="form.description" data-testid="recipe-description-input" class="input-field" :class="(form.errors as any).description ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''" />
-            <div v-if="(form.errors as any).description" class="text-xs text-[color:var(--badge-danger-text)] mt-1">{{ (form.errors as any).description }}</div>
+            <label
+              for="recipe-description"
+              class="block text-xs text-[color:var(--text-muted)] mb-1"
+            >Описание</label>
+            <input
+              id="recipe-description"
+              v-model="form.description"
+              name="description"
+              data-testid="recipe-description-input"
+              class="input-field"
+              :class="(form.errors as any).description ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''"
+            />
+            <div
+              v-if="(form.errors as any).description"
+              class="text-xs text-[color:var(--badge-danger-text)] mt-1"
+            >
+              {{ (form.errors as any).description }}
+            </div>
           </div>
           <div>
-            <label for="recipe-plant" class="block text-xs text-[color:var(--text-muted)] mb-1">Культура</label>
+            <label
+              for="recipe-plant"
+              class="block text-xs text-[color:var(--text-muted)] mb-1"
+            >Культура</label>
             <select
               id="recipe-plant"
-              name="plant_id"
               v-model.number="form.plant_id"
+              name="plant_id"
               class="input-field"
               :disabled="plantsLoading"
               :class="(form.errors as any).plant_id ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''"
             >
-              <option :value="null" disabled>Выберите культуру</option>
-              <option v-for="plant in plants" :key="plant.id" :value="plant.id">
+              <option
+                :value="null"
+                disabled
+              >
+                Выберите культуру
+              </option>
+              <option
+                v-for="plant in plants"
+                :key="plant.id"
+                :value="plant.id"
+              >
                 {{ plant.name }}
               </option>
             </select>
-            <div v-if="(form.errors as any).plant_id" class="text-xs text-[color:var(--badge-danger-text)] mt-1">{{ (form.errors as any).plant_id }}</div>
-            <div v-else-if="!plantsLoading && plants.length === 0" class="text-xs text-[color:var(--text-dim)] mt-1">
+            <div
+              v-if="(form.errors as any).plant_id"
+              class="text-xs text-[color:var(--badge-danger-text)] mt-1"
+            >
+              {{ (form.errors as any).plant_id }}
+            </div>
+            <div
+              v-else-if="!plantsLoading && plants.length === 0"
+              class="text-xs text-[color:var(--text-dim)] mt-1"
+            >
               Нет доступных культур — добавьте культуру в справочнике.
             </div>
           </div>
         </div>
 
         <div>
-          <div class="text-sm font-semibold mb-2">Фазы</div>
-          <div v-for="(p, i) in sortedPhases" :key="p.id || i" :data-testid="`phase-item-${i}`" class="rounded-lg border border-[color:var(--border-muted)] p-3 mb-2">
+          <div class="text-sm font-semibold mb-2">
+            Фазы
+          </div>
+          <div
+            v-for="(p, i) in sortedPhases"
+            :key="p.id || i"
+            :data-testid="`phase-item-${i}`"
+            class="rounded-lg border border-[color:var(--border-muted)] p-3 mb-2"
+          >
             <div class="grid grid-cols-1 md:grid-cols-6 gap-2">
               <div>
-                <label :for="`phase-${i}-index`" class="sr-only">Индекс фазы</label>
-                <input :id="`phase-${i}-index`" :name="`phases[${i}][phase_index]`" v-model.number="p.phase_index" type="number" min="0" placeholder="Индекс" :data-testid="`phase-index-input-${i}`" class="input-field" :class="form.errors[`phases.${i}.phase_index`] ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''" />
-                <div v-if="form.errors[`phases.${i}.phase_index`]" class="text-xs text-[color:var(--badge-danger-text)] mt-1">{{ form.errors[`phases.${i}.phase_index`] }}</div>
+                <label
+                  :for="`phase-${i}-index`"
+                  class="sr-only"
+                >Индекс фазы</label>
+                <input
+                  :id="`phase-${i}-index`"
+                  v-model.number="p.phase_index"
+                  :name="`phases[${i}][phase_index]`"
+                  type="number"
+                  min="0"
+                  placeholder="Индекс"
+                  :data-testid="`phase-index-input-${i}`"
+                  class="input-field"
+                  :class="form.errors[`phases.${i}.phase_index`] ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''"
+                />
+                <div
+                  v-if="form.errors[`phases.${i}.phase_index`]"
+                  class="text-xs text-[color:var(--badge-danger-text)] mt-1"
+                >
+                  {{ form.errors[`phases.${i}.phase_index`] }}
+                </div>
               </div>
               <div>
-                <label :for="`phase-${i}-name`" class="sr-only">Имя фазы</label>
-                <input :id="`phase-${i}-name`" :name="`phases[${i}][name]`" v-model="p.name" placeholder="Имя фазы" :data-testid="`phase-name-input-${i}`" class="input-field" :class="form.errors[`phases.${i}.name`] ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''" />
-                <div v-if="form.errors[`phases.${i}.name`]" class="text-xs text-[color:var(--badge-danger-text)] mt-1">{{ form.errors[`phases.${i}.name`] }}</div>
+                <label
+                  :for="`phase-${i}-name`"
+                  class="sr-only"
+                >Имя фазы</label>
+                <input
+                  :id="`phase-${i}-name`"
+                  v-model="p.name"
+                  :name="`phases[${i}][name]`"
+                  placeholder="Имя фазы"
+                  :data-testid="`phase-name-input-${i}`"
+                  class="input-field"
+                  :class="form.errors[`phases.${i}.name`] ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''"
+                />
+                <div
+                  v-if="form.errors[`phases.${i}.name`]"
+                  class="text-xs text-[color:var(--badge-danger-text)] mt-1"
+                >
+                  {{ form.errors[`phases.${i}.name`] }}
+                </div>
               </div>
               <div>
-                <label :for="`phase-${i}-duration`" class="sr-only">Длительность (часов)</label>
-                <input :id="`phase-${i}-duration`" :name="`phases[${i}][duration_hours]`" v-model.number="p.duration_hours" type="number" min="1" placeholder="часов" :data-testid="`phase-duration-input-${i}`" class="input-field" :class="form.errors[`phases.${i}.duration_hours`] ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''" />
-                <div v-if="form.errors[`phases.${i}.duration_hours`]" class="text-xs text-[color:var(--badge-danger-text)] mt-1">{{ form.errors[`phases.${i}.duration_hours`] }}</div>
+                <label
+                  :for="`phase-${i}-duration`"
+                  class="sr-only"
+                >Длительность (часов)</label>
+                <input
+                  :id="`phase-${i}-duration`"
+                  v-model.number="p.duration_hours"
+                  :name="`phases[${i}][duration_hours]`"
+                  type="number"
+                  min="1"
+                  placeholder="часов"
+                  :data-testid="`phase-duration-input-${i}`"
+                  class="input-field"
+                  :class="form.errors[`phases.${i}.duration_hours`] ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''"
+                />
+                <div
+                  v-if="form.errors[`phases.${i}.duration_hours`]"
+                  class="text-xs text-[color:var(--badge-danger-text)] mt-1"
+                >
+                  {{ form.errors[`phases.${i}.duration_hours`] }}
+                </div>
               </div>
               <div>
-                <label :for="`phase-${i}-ph-min`" class="sr-only">pH минимум</label>
-                <input :id="`phase-${i}-ph-min`" :name="`phases[${i}][targets][ph][min]`" v-model.number="p.targets.ph.min" type="number" step="0.1" placeholder="pH min" class="input-field" :class="form.errors[`phases.${i}.targets.ph.min`] ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''" />
-                <div v-if="form.errors[`phases.${i}.targets.ph.min`]" class="text-xs text-[color:var(--badge-danger-text)] mt-1">{{ form.errors[`phases.${i}.targets.ph.min`] }}</div>
+                <label
+                  :for="`phase-${i}-ph-min`"
+                  class="sr-only"
+                >pH минимум</label>
+                <input
+                  :id="`phase-${i}-ph-min`"
+                  v-model.number="p.targets.ph.min"
+                  :name="`phases[${i}][targets][ph][min]`"
+                  type="number"
+                  step="0.1"
+                  placeholder="pH min"
+                  class="input-field"
+                  :class="form.errors[`phases.${i}.targets.ph.min`] ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''"
+                />
+                <div
+                  v-if="form.errors[`phases.${i}.targets.ph.min`]"
+                  class="text-xs text-[color:var(--badge-danger-text)] mt-1"
+                >
+                  {{ form.errors[`phases.${i}.targets.ph.min`] }}
+                </div>
               </div>
               <div>
-                <label :for="`phase-${i}-ph-max`" class="sr-only">pH максимум</label>
-                <input :id="`phase-${i}-ph-max`" :name="`phases[${i}][targets][ph][max]`" v-model.number="p.targets.ph.max" type="number" step="0.1" placeholder="pH max" class="input-field" :class="form.errors[`phases.${i}.targets.ph.max`] ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''" />
-                <div v-if="form.errors[`phases.${i}.targets.ph.max`]" class="text-xs text-[color:var(--badge-danger-text)] mt-1">{{ form.errors[`phases.${i}.targets.ph.max`] }}</div>
+                <label
+                  :for="`phase-${i}-ph-max`"
+                  class="sr-only"
+                >pH максимум</label>
+                <input
+                  :id="`phase-${i}-ph-max`"
+                  v-model.number="p.targets.ph.max"
+                  :name="`phases[${i}][targets][ph][max]`"
+                  type="number"
+                  step="0.1"
+                  placeholder="pH max"
+                  class="input-field"
+                  :class="form.errors[`phases.${i}.targets.ph.max`] ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''"
+                />
+                <div
+                  v-if="form.errors[`phases.${i}.targets.ph.max`]"
+                  class="text-xs text-[color:var(--badge-danger-text)] mt-1"
+                >
+                  {{ form.errors[`phases.${i}.targets.ph.max`] }}
+                </div>
               </div>
               <div class="md:col-span-2 grid grid-cols-2 gap-2">
                 <div>
-                  <label :for="`phase-${i}-ec-min`" class="sr-only">EC минимум</label>
-                  <input :id="`phase-${i}-ec-min`" :name="`phases[${i}][targets][ec][min]`" v-model.number="p.targets.ec.min" type="number" step="0.1" placeholder="EC min" class="input-field" :class="form.errors[`phases.${i}.targets.ec.min`] ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''" />
-                  <div v-if="form.errors[`phases.${i}.targets.ec.min`]" class="text-xs text-[color:var(--badge-danger-text)] mt-1">{{ form.errors[`phases.${i}.targets.ec.min`] }}</div>
+                  <label
+                    :for="`phase-${i}-ec-min`"
+                    class="sr-only"
+                  >EC минимум</label>
+                  <input
+                    :id="`phase-${i}-ec-min`"
+                    v-model.number="p.targets.ec.min"
+                    :name="`phases[${i}][targets][ec][min]`"
+                    type="number"
+                    step="0.1"
+                    placeholder="EC min"
+                    class="input-field"
+                    :class="form.errors[`phases.${i}.targets.ec.min`] ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''"
+                  />
+                  <div
+                    v-if="form.errors[`phases.${i}.targets.ec.min`]"
+                    class="text-xs text-[color:var(--badge-danger-text)] mt-1"
+                  >
+                    {{ form.errors[`phases.${i}.targets.ec.min`] }}
+                  </div>
                 </div>
                 <div>
-                  <label :for="`phase-${i}-ec-max`" class="sr-only">EC максимум</label>
-                  <input :id="`phase-${i}-ec-max`" :name="`phases[${i}][targets][ec][max]`" v-model.number="p.targets.ec.max" type="number" step="0.1" placeholder="EC max" class="input-field" :class="form.errors[`phases.${i}.targets.ec.max`] ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''" />
-                  <div v-if="form.errors[`phases.${i}.targets.ec.max`]" class="text-xs text-[color:var(--badge-danger-text)] mt-1">{{ form.errors[`phases.${i}.targets.ec.max`] }}</div>
+                  <label
+                    :for="`phase-${i}-ec-max`"
+                    class="sr-only"
+                  >EC максимум</label>
+                  <input
+                    :id="`phase-${i}-ec-max`"
+                    v-model.number="p.targets.ec.max"
+                    :name="`phases[${i}][targets][ec][max]`"
+                    type="number"
+                    step="0.1"
+                    placeholder="EC max"
+                    class="input-field"
+                    :class="form.errors[`phases.${i}.targets.ec.max`] ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''"
+                  />
+                  <div
+                    v-if="form.errors[`phases.${i}.targets.ec.max`]"
+                    class="text-xs text-[color:var(--badge-danger-text)] mt-1"
+                  >
+                    {{ form.errors[`phases.${i}.targets.ec.max`] }}
+                  </div>
                 </div>
               </div>
               <div class="md:col-span-6 grid grid-cols-3 gap-2 mt-2">
-                <input :id="`phase-${i}-temp-air`" :name="`phases[${i}][targets][temp_air]`" v-model.number="p.targets.temp_air" type="number" step="0.1" placeholder="Температура" class="input-field" />
-                <input :id="`phase-${i}-humidity-air`" :name="`phases[${i}][targets][humidity_air]`" v-model.number="p.targets.humidity_air" type="number" step="0.1" placeholder="Влажность" class="input-field" />
-                <input :id="`phase-${i}-light-hours`" :name="`phases[${i}][targets][light_hours]`" v-model.number="p.targets.light_hours" type="number" placeholder="Свет (часов)" class="input-field" />
+                <input
+                  :id="`phase-${i}-temp-air`"
+                  v-model.number="p.targets.temp_air"
+                  :name="`phases[${i}][targets][temp_air]`"
+                  type="number"
+                  step="0.1"
+                  placeholder="Температура"
+                  class="input-field"
+                />
+                <input
+                  :id="`phase-${i}-humidity-air`"
+                  v-model.number="p.targets.humidity_air"
+                  :name="`phases[${i}][targets][humidity_air]`"
+                  type="number"
+                  step="0.1"
+                  placeholder="Влажность"
+                  class="input-field"
+                />
+                <input
+                  :id="`phase-${i}-light-hours`"
+                  v-model.number="p.targets.light_hours"
+                  :name="`phases[${i}][targets][light_hours]`"
+                  type="number"
+                  placeholder="Свет (часов)"
+                  class="input-field"
+                />
               </div>
               <div class="md:col-span-6 grid grid-cols-2 gap-2 mt-2">
-                <input :id="`phase-${i}-irrigation-interval`" :name="`phases[${i}][targets][irrigation_interval_sec]`" v-model.number="p.targets.irrigation_interval_sec" type="number" placeholder="Интервал полива (сек)" class="input-field" />
-                <input :id="`phase-${i}-irrigation-duration`" :name="`phases[${i}][targets][irrigation_duration_sec]`" v-model.number="p.targets.irrigation_duration_sec" type="number" placeholder="Длительность полива (сек)" class="input-field" />
+                <input
+                  :id="`phase-${i}-irrigation-interval`"
+                  v-model.number="p.targets.irrigation_interval_sec"
+                  :name="`phases[${i}][targets][irrigation_interval_sec]`"
+                  type="number"
+                  placeholder="Интервал полива (сек)"
+                  class="input-field"
+                />
+                <input
+                  :id="`phase-${i}-irrigation-duration`"
+                  v-model.number="p.targets.irrigation_duration_sec"
+                  :name="`phases[${i}][targets][irrigation_duration_sec]`"
+                  type="number"
+                  placeholder="Длительность полива (сек)"
+                  class="input-field"
+                />
               </div>
             </div>
           </div>
-          <Button size="sm" variant="secondary" type="button" @click="onAddPhase" data-testid="add-phase-button">Добавить фазу</Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            type="button"
+            data-testid="add-phase-button"
+            @click="onAddPhase"
+          >
+            Добавить фазу
+          </Button>
         </div>
 
         <div class="flex justify-end gap-2">
           <Link href="/recipes">
-            <Button size="sm" variant="secondary" type="button" data-testid="cancel-button">Отмена</Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              type="button"
+              data-testid="cancel-button"
+            >
+              Отмена
+            </Button>
           </Link>
-          <Button size="sm" type="submit" :disabled="form.processing" data-testid="save-recipe-button">{{ form.processing ? 'Сохранение...' : 'Сохранить' }}</Button>
+          <Button
+            size="sm"
+            type="submit"
+            :disabled="form.processing"
+            data-testid="save-recipe-button"
+          >
+            {{ form.processing ? 'Сохранение...' : 'Сохранить' }}
+          </Button>
         </div>
       </form>
     </Card>

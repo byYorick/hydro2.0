@@ -4,8 +4,12 @@
       <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-6">
         <div class="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
           <div>
-            <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">центр циклов</p>
-            <h1 class="text-2xl font-semibold tracking-tight mt-1">Циклы выращивания</h1>
+            <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">
+              центр циклов
+            </p>
+            <h1 class="text-2xl font-semibold tracking-tight mt-1">
+              Циклы выращивания
+            </h1>
             <p class="text-sm text-[color:var(--text-muted)] mt-1">
               Операционный контроль выполнения циклов, телеметрии и критических действий.
             </p>
@@ -30,27 +34,49 @@
         </div>
         <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mt-6">
           <div class="surface-strong rounded-xl p-3 border border-[color:var(--border-muted)]">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Активные</div>
-            <div class="text-3xl font-semibold text-[color:var(--accent-green)]">{{ summary.cycles_running }}</div>
+            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+              Активные
+            </div>
+            <div class="text-3xl font-semibold text-[color:var(--accent-green)]">
+              {{ summary.cycles_running }}
+            </div>
           </div>
           <div class="surface-strong rounded-xl p-3 border border-[color:var(--border-muted)]">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Пауза</div>
-            <div class="text-3xl font-semibold text-[color:var(--accent-cyan)]">{{ summary.cycles_paused }}</div>
+            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+              Пауза
+            </div>
+            <div class="text-3xl font-semibold text-[color:var(--accent-cyan)]">
+              {{ summary.cycles_paused }}
+            </div>
           </div>
           <div class="surface-strong rounded-xl p-3 border border-[color:var(--border-muted)]">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">План</div>
-            <div class="text-3xl font-semibold text-[color:var(--accent-amber)]">{{ summary.cycles_planned }}</div>
+            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+              План
+            </div>
+            <div class="text-3xl font-semibold text-[color:var(--accent-amber)]">
+              {{ summary.cycles_planned }}
+            </div>
           </div>
           <div class="surface-strong rounded-xl p-3 border border-[color:var(--border-muted)]">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Без цикла</div>
-            <div class="text-3xl font-semibold text-[color:var(--text-primary)]">{{ summary.cycles_none }}</div>
+            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+              Без цикла
+            </div>
+            <div class="text-3xl font-semibold text-[color:var(--text-primary)]">
+              {{ summary.cycles_none }}
+            </div>
           </div>
           <div class="surface-strong rounded-xl p-3 border border-[color:var(--border-muted)]">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Алерты</div>
-            <div class="text-3xl font-semibold text-[color:var(--accent-red)]">{{ summary.alerts_active }}</div>
+            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+              Алерты
+            </div>
+            <div class="text-3xl font-semibold text-[color:var(--accent-red)]">
+              {{ summary.alerts_active }}
+            </div>
           </div>
           <div class="surface-strong rounded-xl p-3 border border-[color:var(--border-muted)]">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Устройства</div>
+            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+              Устройства
+            </div>
             <div class="text-3xl font-semibold text-[color:var(--text-primary)]">
               {{ summary.devices_online }}/{{ summary.devices_total }}
             </div>
@@ -66,16 +92,38 @@
               class="input-field flex-1"
               placeholder="Поиск зоны, культуры или теплицы"
             />
-            <select v-model="statusFilter" class="input-select w-full sm:w-44">
-              <option value="">Все статусы</option>
-              <option value="RUNNING">Активные</option>
-              <option value="PAUSED">Пауза</option>
-              <option value="PLANNED">План</option>
-              <option value="NONE">Без цикла</option>
+            <select
+              v-model="statusFilter"
+              class="input-select w-full sm:w-44"
+            >
+              <option value="">
+                Все статусы
+              </option>
+              <option value="RUNNING">
+                Активные
+              </option>
+              <option value="PAUSED">
+                Пауза
+              </option>
+              <option value="PLANNED">
+                План
+              </option>
+              <option value="NONE">
+                Без цикла
+              </option>
             </select>
-            <select v-model="greenhouseFilter" class="input-select w-full sm:w-48">
-              <option value="">Все теплицы</option>
-              <option v-for="gh in greenhouses" :key="gh.id" :value="String(gh.id)">
+            <select
+              v-model="greenhouseFilter"
+              class="input-select w-full sm:w-48"
+            >
+              <option value="">
+                Все теплицы
+              </option>
+              <option
+                v-for="gh in greenhouses"
+                :key="gh.id"
+                :value="String(gh.id)"
+              >
                 {{ gh.name }}
               </option>
             </select>
@@ -99,10 +147,16 @@
         </div>
       </section>
 
-      <div v-if="!filteredZones.length" class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-6 text-sm text-[color:var(--text-muted)] text-center">
+      <div
+        v-if="!filteredZones.length"
+        class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-6 text-sm text-[color:var(--text-muted)] text-center"
+      >
         Нет зон по текущим фильтрам.
       </div>
-      <div v-else class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+      <div
+        v-else
+        class="grid grid-cols-1 xl:grid-cols-2 gap-4"
+      >
         <div
           v-for="zone in pagedZones"
           :key="zone.id"
@@ -120,7 +174,10 @@
                 <Badge :variant="getZoneStatusVariant(zone.status)">
                   {{ translateStatus(zone.status) }}
                 </Badge>
-                <Badge v-if="zone.cycle" :variant="getCycleStatusVariant(zone.cycle.status)">
+                <Badge
+                  v-if="zone.cycle"
+                  :variant="getCycleStatusVariant(zone.cycle.status)"
+                >
                   {{ getCycleStatusLabel(zone.cycle.status) }}
                 </Badge>
               </div>
@@ -131,13 +188,24 @@
                 <span v-if="zone.devices.total">Устройства: {{ zone.devices.online }}/{{ zone.devices.total }}</span>
               </div>
             </div>
-            <div v-if="zone.alerts_count > 0" class="status-chip status-chip--alarm">
+            <div
+              v-if="zone.alerts_count > 0"
+              class="status-chip status-chip--alarm"
+            >
               Алертов: {{ zone.alerts_count }}
             </div>
-            <div v-else class="status-chip status-chip--running">ОК</div>
+            <div
+              v-else
+              class="status-chip status-chip--running"
+            >
+              ОК
+            </div>
           </div>
 
-          <div v-if="zone.cycle" class="space-y-3">
+          <div
+            v-if="zone.cycle"
+            class="space-y-3"
+          >
             <div>
               <div class="flex items-center justify-between text-xs text-[color:var(--text-muted)]">
                 <span>Прогресс цикла</span>
@@ -157,13 +225,19 @@
                   {{ zone.cycle.current_stage?.name || '—' }}
                 </span>
               </div>
-              <div class="metric-pill" v-if="zone.cycle.expected_harvest_at">
+              <div
+                v-if="zone.cycle.expected_harvest_at"
+                class="metric-pill"
+              >
                 <span class="text-[color:var(--text-dim)]">Сбор</span>
                 <span class="text-[color:var(--text-primary)] font-semibold">
                   {{ formatDate(zone.cycle.expected_harvest_at) }}
                 </span>
               </div>
-              <div class="metric-pill" v-if="zone.cycle.planting_at">
+              <div
+                v-if="zone.cycle.planting_at"
+                class="metric-pill"
+              >
                 <span class="text-[color:var(--text-dim)]">Посев</span>
                 <span class="text-[color:var(--text-primary)] font-semibold">
                   {{ formatDate(zone.cycle.planting_at) }}
@@ -172,39 +246,55 @@
             </div>
           </div>
 
-          <div v-else class="text-sm text-[color:var(--text-muted)]">
+          <div
+            v-else
+            class="text-sm text-[color:var(--text-muted)]"
+          >
             Активный цикл не запущен. Можно создать план или запустить новый цикл.
           </div>
 
           <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
             <div class="surface-strong rounded-lg px-2 py-2 border border-[color:var(--border-muted)]">
-              <div class="text-[10px] uppercase text-[color:var(--text-dim)]">pH</div>
+              <div class="text-[10px] uppercase text-[color:var(--text-dim)]">
+                pH
+              </div>
               <div class="text-[color:var(--text-primary)] font-semibold">
                 {{ formatMetric(zone.telemetry.ph, 2) }}
               </div>
             </div>
             <div class="surface-strong rounded-lg px-2 py-2 border border-[color:var(--border-muted)]">
-              <div class="text-[10px] uppercase text-[color:var(--text-dim)]">EC</div>
+              <div class="text-[10px] uppercase text-[color:var(--text-dim)]">
+                EC
+              </div>
               <div class="text-[color:var(--text-primary)] font-semibold">
                 {{ formatMetric(zone.telemetry.ec, 2) }}
               </div>
             </div>
             <div class="surface-strong rounded-lg px-2 py-2 border border-[color:var(--border-muted)]">
-              <div class="text-[10px] uppercase text-[color:var(--text-dim)]">Темп.</div>
+              <div class="text-[10px] uppercase text-[color:var(--text-dim)]">
+                Темп.
+              </div>
               <div class="text-[color:var(--text-primary)] font-semibold">
                 {{ formatMetric(zone.telemetry.temperature, 1) }}°C
               </div>
             </div>
             <div class="surface-strong rounded-lg px-2 py-2 border border-[color:var(--border-muted)]">
-              <div class="text-[10px] uppercase text-[color:var(--text-dim)]">Влажн.</div>
+              <div class="text-[10px] uppercase text-[color:var(--text-dim)]">
+                Влажн.
+              </div>
               <div class="text-[color:var(--text-primary)] font-semibold">
                 {{ formatMetric(zone.telemetry.humidity, 0) }}%
               </div>
             </div>
           </div>
 
-          <div v-if="zone.alerts_preview.length" class="space-y-1 text-xs text-[color:var(--text-dim)]">
-            <div class="font-semibold text-[color:var(--text-primary)]">Последние алерты</div>
+          <div
+            v-if="zone.alerts_preview.length"
+            class="space-y-1 text-xs text-[color:var(--text-dim)]"
+          >
+            <div class="font-semibold text-[color:var(--text-primary)]">
+              Последние алерты
+            </div>
             <div
               v-for="alert in zone.alerts_preview"
               :key="alert.id"
@@ -221,8 +311,8 @@
                 v-if="zone.cycle.status === 'RUNNING'"
                 size="sm"
                 variant="secondary"
-                @click="pauseCycle(zone)"
                 :disabled="isActionLoading(zone.id, 'pause')"
+                @click="pauseCycle(zone)"
               >
                 {{ isActionLoading(zone.id, 'pause') ? 'Пауза...' : 'Пауза' }}
               </Button>
@@ -230,8 +320,8 @@
                 v-else-if="zone.cycle.status === 'PAUSED'"
                 size="sm"
                 variant="secondary"
-                @click="resumeCycle(zone)"
                 :disabled="isActionLoading(zone.id, 'resume')"
+                @click="resumeCycle(zone)"
               >
                 {{ isActionLoading(zone.id, 'resume') ? 'Запуск...' : 'Возобновить' }}
               </Button>
@@ -245,22 +335,25 @@
               <Button
                 size="sm"
                 variant="secondary"
-                @click="openHarvestModal(zone)"
                 :disabled="isActionLoading(zone.id, 'harvest')"
+                @click="openHarvestModal(zone)"
               >
                 {{ isActionLoading(zone.id, 'harvest') ? 'Фиксация...' : 'Сбор' }}
               </Button>
               <Button
                 size="sm"
                 variant="outline"
-                @click="openAbortModal(zone)"
                 :disabled="isActionLoading(zone.id, 'abort')"
+                @click="openAbortModal(zone)"
               >
                 Стоп
               </Button>
             </template>
             <template v-else-if="canConfigure && !zone.cycle">
-              <Button size="sm" @click="router.visit('/grow-cycle-wizard')">
+              <Button
+                size="sm"
+                @click="router.visit('/grow-cycle-wizard')"
+              >
                 Запустить цикл
               </Button>
             </template>
@@ -274,7 +367,10 @@
             </Button>
           </div>
 
-          <div v-if="zone.telemetry.updated_at" class="text-[11px] text-[color:var(--text-dim)]">
+          <div
+            v-if="zone.telemetry.updated_at"
+            class="text-[11px] text-[color:var(--text-dim)]"
+          >
             Обновление: {{ formatTime(zone.telemetry.updated_at) }}
           </div>
         </div>
@@ -310,7 +406,11 @@
         <div>Зафиксировать сбор урожая и завершить цикл?</div>
         <div>
           <label class="text-xs text-[color:var(--text-dim)]">Метка партии (опционально)</label>
-          <input v-model="harvestModal.batchLabel" class="input-field mt-1 w-full" placeholder="Например: Batch-042" />
+          <input
+            v-model="harvestModal.batchLabel"
+            class="input-field mt-1 w-full"
+            placeholder="Например: Batch-042"
+          />
         </div>
       </div>
     </ConfirmModal>
@@ -329,7 +429,11 @@
         <div>Остановить цикл? Это действие нельзя отменить.</div>
         <div>
           <label class="text-xs text-[color:var(--text-dim)]">Причина (опционально)</label>
-          <textarea v-model="abortModal.notes" class="input-field mt-1 w-full h-20 resize-none" placeholder="Короткое описание причины"></textarea>
+          <textarea
+            v-model="abortModal.notes"
+            class="input-field mt-1 w-full h-20 resize-none"
+            placeholder="Короткое описание причины"
+          ></textarea>
         </div>
       </div>
     </ConfirmModal>

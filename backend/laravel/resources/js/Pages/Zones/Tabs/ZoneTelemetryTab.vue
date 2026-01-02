@@ -28,15 +28,25 @@
           </button>
         </div>
         <div class="flex items-center gap-2">
-          <Button size="sm" variant="secondary" @click="exportTelemetry">Экспорт CSV</Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            @click="exportTelemetry"
+          >
+            Экспорт CSV
+          </Button>
         </div>
       </div>
     </section>
 
     <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
       <div class="mb-3">
-        <div class="text-sm font-semibold text-[color:var(--text-primary)]">Графики телеметрии</div>
-        <div class="text-xs text-[color:var(--text-muted)] mt-1">pH и EC</div>
+        <div class="text-sm font-semibold text-[color:var(--text-primary)]">
+          Графики телеметрии
+        </div>
+        <div class="text-xs text-[color:var(--text-muted)] mt-1">
+          pH и EC
+        </div>
       </div>
 
       <div v-if="chartDataPh.length > 0 || chartDataEc.length > 0">
@@ -47,7 +57,10 @@
           :time-range="chartTimeRange"
           @time-range-change="onChartRangeChange"
         />
-        <div v-else class="space-y-3">
+        <div
+          v-else
+          class="space-y-3"
+        >
           <ZoneTelemetryChart
             title="pH"
             :data="chartDataPh"
@@ -64,8 +77,13 @@
           />
         </div>
       </div>
-      <div v-else class="text-center py-6">
-        <div class="text-4xl mb-2">📊</div>
+      <div
+        v-else
+        class="text-center py-6"
+      >
+        <div class="text-4xl mb-2">
+          📊
+        </div>
         <div class="text-sm font-medium text-[color:var(--text-primary)] mb-1">
           Нет данных для графиков
         </div>

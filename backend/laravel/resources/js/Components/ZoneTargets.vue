@@ -10,14 +10,16 @@
     >
       <div class="flex items-center justify-between mb-2">
         <div class="flex items-center gap-2">
-          <div class="text-sm font-medium">pH</div>
+          <div class="text-sm font-medium">
+            pH
+          </div>
           <div 
             v-if="telemetry.ph !== null && telemetry.ph !== undefined"
             :class="[
               'w-2 h-2 rounded-full transition-all duration-300',
               getPulseClass(telemetry.ph, targets.ph.min, targets.ph.max)
             ]"
-          />
+          ></div>
         </div>
         <Badge :variant="getIndicatorVariant(telemetry.ph, targets.ph.min, targets.ph.max)">
           {{ getIndicatorLabel(telemetry.ph, targets.ph.min, targets.ph.max) }}
@@ -33,7 +35,10 @@
       </div>
       
       <!-- Прогресс-бар отклонения -->
-      <div v-if="telemetry.ph !== null && telemetry.ph !== undefined && targets.ph" class="mt-3">
+      <div
+        v-if="telemetry.ph !== null && telemetry.ph !== undefined && targets.ph"
+        class="mt-3"
+      >
         <div class="flex items-center justify-between text-xs mb-1">
           <span class="text-[color:var(--text-muted)]">Цель: {{ formatTarget(targets.ph) }}</span>
           <span 
@@ -49,10 +54,13 @@
             :class="getProgressBarClass(telemetry.ph, targets.ph.min, targets.ph.max)"
             class="h-full transition-all duration-500 ease-out"
             :style="{ width: `${getProgressWidth(telemetry.ph, targets.ph)}%` }"
-          />
+          ></div>
         </div>
       </div>
-      <div v-else class="text-xs text-[color:var(--text-muted)] mt-1">
+      <div
+        v-else
+        class="text-xs text-[color:var(--text-muted)] mt-1"
+      >
         Цель: {{ formatTarget(targets.ph) }}
       </div>
     </Card>
@@ -67,14 +75,16 @@
     >
       <div class="flex items-center justify-between mb-2">
         <div class="flex items-center gap-2">
-          <div class="text-sm font-medium">EC</div>
+          <div class="text-sm font-medium">
+            EC
+          </div>
           <div 
             v-if="telemetry.ec !== null && telemetry.ec !== undefined"
             :class="[
               'w-2 h-2 rounded-full transition-all duration-300',
               getPulseClass(telemetry.ec, targets.ec.min, targets.ec.max)
             ]"
-          />
+          ></div>
         </div>
         <Badge :variant="getIndicatorVariant(telemetry.ec, targets.ec.min, targets.ec.max)">
           {{ getIndicatorLabel(telemetry.ec, targets.ec.min, targets.ec.max) }}
@@ -90,7 +100,10 @@
       </div>
       
       <!-- Прогресс-бар отклонения -->
-      <div v-if="telemetry.ec !== null && telemetry.ec !== undefined && targets.ec" class="mt-3">
+      <div
+        v-if="telemetry.ec !== null && telemetry.ec !== undefined && targets.ec"
+        class="mt-3"
+      >
         <div class="flex items-center justify-between text-xs mb-1">
           <span class="text-[color:var(--text-muted)]">Цель: {{ formatTarget(targets.ec) }}</span>
           <span 
@@ -106,10 +119,13 @@
             :class="getProgressBarClass(telemetry.ec, targets.ec.min, targets.ec.max)"
             class="h-full transition-all duration-500 ease-out"
             :style="{ width: `${getProgressWidth(telemetry.ec, targets.ec)}%` }"
-          />
+          ></div>
         </div>
       </div>
-      <div v-else class="text-xs text-[color:var(--text-muted)] mt-1">
+      <div
+        v-else
+        class="text-xs text-[color:var(--text-muted)] mt-1"
+      >
         Цель: {{ formatTarget(targets.ec) }}
       </div>
     </Card>
@@ -124,14 +140,16 @@
     >
       <div class="flex items-center justify-between mb-2">
         <div class="flex items-center gap-2">
-          <div class="text-sm font-medium">Температура</div>
+          <div class="text-sm font-medium">
+            Температура
+          </div>
           <div 
             v-if="telemetry.temperature !== null && telemetry.temperature !== undefined"
             :class="[
               'w-2 h-2 rounded-full transition-all duration-300',
               getPulseClass(telemetry.temperature, targets.temp.min, targets.temp.max)
             ]"
-          />
+          ></div>
         </div>
         <Badge :variant="getIndicatorVariant(telemetry.temperature, targets.temp.min, targets.temp.max)">
           {{ getIndicatorLabel(telemetry.temperature, targets.temp.min, targets.temp.max) }}
@@ -147,7 +165,10 @@
       </div>
       
       <!-- Прогресс-бар отклонения -->
-      <div v-if="telemetry.temperature !== null && telemetry.temperature !== undefined && targets.temp" class="mt-3">
+      <div
+        v-if="telemetry.temperature !== null && telemetry.temperature !== undefined && targets.temp"
+        class="mt-3"
+      >
         <div class="flex items-center justify-between text-xs mb-1">
           <span class="text-[color:var(--text-muted)]">Цель: {{ formatTarget(targets.temp, '°C') }}</span>
           <span 
@@ -163,10 +184,13 @@
             :class="getProgressBarClass(telemetry.temperature, targets.temp.min, targets.temp.max)"
             class="h-full transition-all duration-500 ease-out"
             :style="{ width: `${getProgressWidth(telemetry.temperature, targets.temp)}%` }"
-          />
+          ></div>
         </div>
       </div>
-      <div v-else class="text-xs text-[color:var(--text-muted)] mt-1">
+      <div
+        v-else
+        class="text-xs text-[color:var(--text-muted)] mt-1"
+      >
         Цель: {{ formatTarget(targets.temp, '°C') }}
       </div>
     </Card>
@@ -181,14 +205,16 @@
     >
       <div class="flex items-center justify-between mb-2">
         <div class="flex items-center gap-2">
-          <div class="text-sm font-medium">Влажность</div>
+          <div class="text-sm font-medium">
+            Влажность
+          </div>
           <div 
             v-if="telemetry.humidity !== null && telemetry.humidity !== undefined"
             :class="[
               'w-2 h-2 rounded-full transition-all duration-300',
               getPulseClass(telemetry.humidity, targets.humidity.min, targets.humidity.max)
             ]"
-          />
+          ></div>
         </div>
         <Badge :variant="getIndicatorVariant(telemetry.humidity, targets.humidity.min, targets.humidity.max)">
           {{ getIndicatorLabel(telemetry.humidity, targets.humidity.min, targets.humidity.max) }}
@@ -204,7 +230,10 @@
       </div>
       
       <!-- Прогресс-бар отклонения -->
-      <div v-if="telemetry.humidity !== null && telemetry.humidity !== undefined && targets.humidity" class="mt-3">
+      <div
+        v-if="telemetry.humidity !== null && telemetry.humidity !== undefined && targets.humidity"
+        class="mt-3"
+      >
         <div class="flex items-center justify-between text-xs mb-1">
           <span class="text-[color:var(--text-muted)]">Цель: {{ formatTarget(targets.humidity, '%') }}</span>
           <span 
@@ -220,10 +249,13 @@
             :class="getProgressBarClass(telemetry.humidity, targets.humidity.min, targets.humidity.max)"
             class="h-full transition-all duration-500 ease-out"
             :style="{ width: `${getProgressWidth(telemetry.humidity, targets.humidity)}%` }"
-          />
+          ></div>
         </div>
       </div>
-      <div v-else class="text-xs text-[color:var(--text-muted)] mt-1">
+      <div
+        v-else
+        class="text-xs text-[color:var(--text-muted)] mt-1"
+      >
         Цель: {{ formatTarget(targets.humidity, '%') }}
       </div>
     </Card>

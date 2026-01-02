@@ -1,10 +1,26 @@
 <template>
   <AppLayout>
     <div class="flex items-center justify-between mb-4">
-      <h1 class="text-lg font-semibold">Рецепты</h1>
-      <Button size="sm" variant="primary" @click="openRecipeWizard">
-        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+      <h1 class="text-lg font-semibold">
+        Рецепты
+      </h1>
+      <Button
+        size="sm"
+        variant="primary"
+        @click="openRecipeWizard"
+      >
+        <svg
+          class="w-4 h-4 mr-2"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M12 4v16m8-8H4"
+          />
         </svg>
         Новый цикл
       </Button>
@@ -12,7 +28,11 @@
     <div class="mb-3 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
       <div class="flex items-center gap-2 flex-1 sm:flex-none">
         <label class="text-sm text-[color:var(--text-muted)] shrink-0">Поиск:</label>
-        <input v-model="query" placeholder="Название или культура..." class="input-field flex-1 sm:w-56" />
+        <input
+          v-model="query"
+          placeholder="Название или культура..."
+          class="input-field flex-1 sm:w-56"
+        />
       </div>
     </div>
     <div class="rounded-xl border border-[color:var(--border-muted)] overflow-hidden max-h-[720px] flex flex-col">
@@ -20,10 +40,18 @@
         <table class="w-full border-collapse">
           <thead class="bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)] text-sm sticky top-0 z-10">
             <tr>
-              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Название</th>
-              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Описание</th>
-              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Фаз</th>
-              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Действия</th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">
+                Название
+              </th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">
+                Описание
+              </th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">
+                Фаз
+              </th>
+              <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">
+                Действия
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -34,20 +62,35 @@
               class="text-sm border-b border-[color:var(--border-muted)] hover:bg-[color:var(--bg-elevated)] transition-colors"
             >
               <td class="px-3 py-2">
-                <Link :href="`/recipes/${r[0]}`" class="text-[color:var(--accent-cyan)] hover:underline truncate block">{{ r[1] }}</Link>
+                <Link
+                  :href="`/recipes/${r[0]}`"
+                  class="text-[color:var(--accent-cyan)] hover:underline truncate block"
+                >
+                  {{ r[1] }}
+                </Link>
               </td>
               <td class="px-3 py-2 text-xs text-[color:var(--text-muted)]">
                 <span class="truncate block">{{ r[2] || 'Без описания' }}</span>
               </td>
-              <td class="px-3 py-2 text-xs text-[color:var(--text-muted)]">{{ r[3] || 0 }}</td>
+              <td class="px-3 py-2 text-xs text-[color:var(--text-muted)]">
+                {{ r[3] || 0 }}
+              </td>
               <td class="px-3 py-2">
                 <Link :href="`/recipes/${r[0]}`">
-                  <Button size="sm" variant="secondary">Открыть</Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                  >
+                    Открыть
+                  </Button>
                 </Link>
               </td>
             </tr>
             <tr v-if="!rows.length">
-              <td colspan="4" class="px-3 py-6 text-sm text-[color:var(--text-dim)] text-center">
+              <td
+                colspan="4"
+                class="px-3 py-6 text-sm text-[color:var(--text-dim)] text-center"
+              >
                 {{ all.length === 0 ? 'Рецепты не найдены' : 'Нет рецептов по текущему фильтру' }}
               </td>
             </tr>

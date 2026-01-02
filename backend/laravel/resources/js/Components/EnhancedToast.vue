@@ -84,23 +84,32 @@
           
           <!-- Контент -->
           <div class="flex-1 min-w-0">
-            <div v-if="toast.title" class="text-sm font-semibold mb-1">
+            <div
+              v-if="toast.title"
+              class="text-sm font-semibold mb-1"
+            >
               {{ toast.title }}
             </div>
-            <p class="text-sm" :class="toast.title ? 'text-[color:var(--text-muted)]' : 'font-medium'">
+            <p
+              class="text-sm"
+              :class="toast.title ? 'text-[color:var(--text-muted)]' : 'font-medium'"
+            >
               {{ toast.message }}
             </p>
             
             <!-- Действия -->
-            <div v-if="toast.actions && toast.actions.length > 0" class="flex gap-2 mt-3">
+            <div
+              v-if="toast.actions && toast.actions.length > 0"
+              class="flex gap-2 mt-3"
+            >
               <button
                 v-for="action in toast.actions"
                 :key="action.label"
-                @click="handleAction(toast.id, action)"
                 class="text-xs px-2 py-1 rounded border transition-colors"
                 :class="action.variant === 'primary' 
                   ? 'border-[color:var(--badge-info-border)] bg-[color:var(--badge-info-bg)] hover:bg-[color:var(--bg-elevated)]' 
                   : 'border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] hover:bg-[color:var(--bg-surface-strong)]'"
+                @click="handleAction(toast.id, action)"
               >
                 {{ action.label }}
               </button>
@@ -109,10 +118,15 @@
           
           <!-- Кнопка закрытия -->
           <button
-            @click="handleClose(toast.id)"
             class="flex-shrink-0 rounded-md p-1 hover:bg-[color:var(--bg-elevated)] transition-colors"
+            @click="handleClose(toast.id)"
           >
-            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg
+              class="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
               <path
                 stroke-linecap="round"
                 stroke-linejoin="round"
@@ -132,7 +146,7 @@
             class="h-full transition-all duration-100 ease-linear"
             :class="progressBarColor(toast.variant)"
             :style="{ width: `${toast.progress}%` }"
-          />
+          ></div>
         </div>
       </div>
     </div>

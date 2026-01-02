@@ -101,7 +101,7 @@ describe('echoClient - Integration Tests', () => {
       originalWindow.Pusher = previousPusher
     }
 
-    ;(import.meta as any).env = previousEnv
+    (import.meta as any).env = previousEnv
   })
 
   describe('Initialization', () => {

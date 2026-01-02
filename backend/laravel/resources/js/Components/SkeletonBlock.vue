@@ -9,7 +9,7 @@
         height: lineHeight,
         width: i === lines ? tailWidth : '100%',
       }"
-    />
+    ></div>
   </div>
 </template>
 

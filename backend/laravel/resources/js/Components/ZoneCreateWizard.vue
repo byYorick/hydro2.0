@@ -1,16 +1,25 @@
 <template>
-  <Modal :open="show" title="Создать новую зону" @close="$emit('close')">
+  <Modal
+    :open="show"
+    title="Создать новую зону"
+    @close="$emit('close')"
+  >
     <div class="space-y-4">
       <!-- Шаг 1: Основная информация -->
       <div>
-        <h3 class="text-sm font-semibold mb-3 text-[color:var(--text-primary)]">Основная информация</h3>
+        <h3 class="text-sm font-semibold mb-3 text-[color:var(--text-primary)]">
+          Основная информация
+        </h3>
         <div class="space-y-3">
           <div>
-            <label for="zone-name" class="block text-xs text-[color:var(--text-muted)] mb-1">Название зоны</label>
+            <label
+              for="zone-name"
+              class="block text-xs text-[color:var(--text-muted)] mb-1"
+            >Название зоны</label>
             <input
               id="zone-name"
-              name="name"
               v-model="form.name"
+              name="name"
               type="text"
               placeholder="Например: Зона A"
               class="input-field h-9 w-full"
@@ -19,52 +28,80 @@
             />
           </div>
           <div>
-            <label for="zone-description" class="block text-xs text-[color:var(--text-muted)] mb-1">Описание (опционально)</label>
+            <label
+              for="zone-description"
+              class="block text-xs text-[color:var(--text-muted)] mb-1"
+            >Описание (опционально)</label>
             <textarea
               id="zone-description"
-              name="description"
               v-model="form.description"
+              name="description"
               placeholder="Описание зоны..."
               class="input-field w-full min-h-[60px] py-2 h-auto"
               autocomplete="off"
-            />
+            ></textarea>
           </div>
           <div>
-            <label for="zone-status" class="block text-xs text-[color:var(--text-muted)] mb-1">Статус</label>
+            <label
+              for="zone-status"
+              class="block text-xs text-[color:var(--text-muted)] mb-1"
+            >Статус</label>
             <select
               id="zone-status"
-              name="status"
               v-model="form.status"
+              name="status"
               class="input-select h-9 w-full"
             >
-              <option value="RUNNING">Запущена</option>
-              <option value="PAUSED">Приостановлена</option>
-              <option value="WARNING">Предупреждение</option>
-              <option value="ALARM">Тревога</option>
+              <option value="RUNNING">
+                Запущена
+              </option>
+              <option value="PAUSED">
+                Приостановлена
+              </option>
+              <option value="WARNING">
+                Предупреждение
+              </option>
+              <option value="ALARM">
+                Тревога
+              </option>
             </select>
           </div>
         </div>
       </div>
 
       <!-- Сообщение об успехе -->
-      <div v-if="createdZone" class="p-3 rounded-md bg-[color:var(--badge-success-bg)] border border-[color:var(--badge-success-border)]">
+      <div
+        v-if="createdZone"
+        class="p-3 rounded-md bg-[color:var(--badge-success-bg)] border border-[color:var(--badge-success-border)]"
+      >
         <div class="text-sm text-[color:var(--badge-success-text)]">
           ✓ Зона "{{ createdZone.name }}" успешно создана!
         </div>
       </div>
 
       <!-- Ошибка -->
-      <div v-if="error" class="p-3 rounded-md bg-[color:var(--badge-danger-bg)] border border-[color:var(--badge-danger-border)]">
-        <div class="text-sm text-[color:var(--badge-danger-text)]">{{ error }}</div>
+      <div
+        v-if="error"
+        class="p-3 rounded-md bg-[color:var(--badge-danger-bg)] border border-[color:var(--badge-danger-border)]"
+      >
+        <div class="text-sm text-[color:var(--badge-danger-text)]">
+          {{ error }}
+        </div>
       </div>
     </div>
 
     <template #footer>
-      <Button size="sm" variant="secondary" @click="$emit('close')">Отмена</Button>
       <Button
         size="sm"
-        @click="onCreate"
+        variant="secondary"
+        @click="$emit('close')"
+      >
+        Отмена
+      </Button>
+      <Button
+        size="sm"
         :disabled="!form.name || creating"
+        @click="onCreate"
       >
         {{ creating ? 'Создание...' : 'Создать зону' }}
       </Button>

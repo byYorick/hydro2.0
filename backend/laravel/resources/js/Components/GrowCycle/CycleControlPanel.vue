@@ -1,11 +1,20 @@
 <template>
-  <div v-if="cycle" class="space-y-4" data-testid="cycle-control-panel">
+  <div
+    v-if="cycle"
+    class="space-y-4"
+    data-testid="cycle-control-panel"
+  >
     <!-- Информация о цикле и текущая стадия -->
     <Card>
       <div class="space-y-3">
         <div class="flex items-center justify-between">
-          <div class="text-sm font-semibold">Управление циклом</div>
-          <Badge :variant="getCycleStatusVariant(cycle.status)" data-testid="cycle-status-badge">
+          <div class="text-sm font-semibold">
+            Управление циклом
+          </div>
+          <Badge
+            :variant="getCycleStatusVariant(cycle.status)"
+            data-testid="cycle-status-badge"
+          >
             {{ getCycleStatusLabel(cycle.status) }}
           </Badge>
         </div>
@@ -24,24 +33,36 @@
         <!-- Информация о цикле -->
         <div class="grid grid-cols-2 gap-3 pt-3 border-t border-[color:var(--border-muted)] text-xs">
           <div>
-            <div class="text-[color:var(--text-dim)] mb-1">Запущен</div>
+            <div class="text-[color:var(--text-dim)] mb-1">
+              Запущен
+            </div>
             <div class="text-[color:var(--text-primary)]">
               {{ cycle.started_at ? formatDateTime(cycle.started_at) : 'Не запущен' }}
             </div>
           </div>
           <div v-if="cycle.expected_harvest_at">
-            <div class="text-[color:var(--text-dim)] mb-1">Ожидаемый сбор</div>
+            <div class="text-[color:var(--text-dim)] mb-1">
+              Ожидаемый сбор
+            </div>
             <div class="text-[color:var(--text-primary)]">
               {{ formatDateTime(cycle.expected_harvest_at) }}
             </div>
           </div>
           <div v-if="cycle.current_stage_code">
-            <div class="text-[color:var(--text-dim)] mb-1">Текущая стадия</div>
-            <div class="text-[color:var(--text-primary)]">{{ cycle.current_stage_code }}</div>
+            <div class="text-[color:var(--text-dim)] mb-1">
+              Текущая стадия
+            </div>
+            <div class="text-[color:var(--text-primary)]">
+              {{ cycle.current_stage_code }}
+            </div>
           </div>
           <div v-if="cycle.batch_label">
-            <div class="text-[color:var(--text-dim)] mb-1">Партия</div>
-            <div class="text-[color:var(--text-primary)]">{{ cycle.batch_label }}</div>
+            <div class="text-[color:var(--text-dim)] mb-1">
+              Партия
+            </div>
+            <div class="text-[color:var(--text-primary)]">
+              {{ cycle.batch_label }}
+            </div>
           </div>
         </div>
       </div>
@@ -50,18 +71,24 @@
     <!-- Кнопки управления -->
     <Card v-if="canManage">
       <div class="space-y-3">
-        <div class="text-sm font-semibold mb-2">Действия</div>
+        <div class="text-sm font-semibold mb-2">
+          Действия
+        </div>
         <div class="flex flex-wrap gap-2">
           <Button
             v-if="cycle.status === 'RUNNING'"
             size="sm"
             variant="secondary"
-            @click="$emit('pause')"
             :disabled="loading"
             data-testid="cycle-pause-button"
+            @click="$emit('pause')"
           >
             <template v-if="loading">
-              <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
+              <LoadingState
+                loading
+                size="sm"
+                :container-class="'inline-flex mr-2'"
+              />
             </template>
             Приостановить
           </Button>
@@ -70,12 +97,16 @@
             v-if="cycle.status === 'PAUSED'"
             size="sm"
             variant="secondary"
-            @click="$emit('resume')"
             :disabled="loading"
             data-testid="cycle-resume-button"
+            @click="$emit('resume')"
           >
             <template v-if="loading">
-              <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
+              <LoadingState
+                loading
+                size="sm"
+                :container-class="'inline-flex mr-2'"
+              />
             </template>
             Возобновить
           </Button>
@@ -84,12 +115,16 @@
             v-if="cycle.status === 'RUNNING' || cycle.status === 'PAUSED'"
             size="sm"
             variant="success"
-            @click="$emit('harvest')"
             :disabled="loading"
             data-testid="cycle-harvest-button"
+            @click="$emit('harvest')"
           >
             <template v-if="loading">
-              <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
+              <LoadingState
+                loading
+                size="sm"
+                :container-class="'inline-flex mr-2'"
+              />
             </template>
             Собрать урожай
           </Button>
@@ -98,11 +133,15 @@
             v-if="cycle.status === 'RUNNING' || cycle.status === 'PAUSED'"
             size="sm"
             variant="danger"
-            @click="$emit('abort')"
             :disabled="loading"
+            @click="$emit('abort')"
           >
             <template v-if="loading">
-              <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
+              <LoadingState
+                loading
+                size="sm"
+                :container-class="'inline-flex mr-2'"
+              />
             </template>
             Аварийная остановка
           </Button>
@@ -114,21 +153,31 @@
     <Card>
       <div class="space-y-2">
         <div class="flex items-center justify-between">
-          <div class="text-sm font-semibold">События цикла</div>
+          <div class="text-sm font-semibold">
+            События цикла
+          </div>
           <Button
             size="sm"
             variant="outline"
-            @click="loadEvents"
             :disabled="loadingEvents"
+            @click="loadEvents"
           >
             <template v-if="loadingEvents">
-              <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
+              <LoadingState
+                loading
+                size="sm"
+                :container-class="'inline-flex mr-2'"
+              />
             </template>
             Обновить
           </Button>
         </div>
         
-        <div v-if="events.length > 0" class="space-y-1 max-h-[400px] overflow-y-auto" data-testid="cycle-events-section">
+        <div
+          v-if="events.length > 0"
+          class="space-y-1 max-h-[400px] overflow-y-auto"
+          data-testid="cycle-events-section"
+        >
           <div
             v-for="event in events"
             :key="event.id"
@@ -145,11 +194,16 @@
               <div class="text-xs text-[color:var(--text-dim)] mb-1">
                 {{ formatDateTime(event.created_at || event.occurred_at) }}
               </div>
-              <div class="text-sm">{{ getEventMessage(event) }}</div>
+              <div class="text-sm">
+                {{ getEventMessage(event) }}
+              </div>
             </div>
           </div>
         </div>
-        <div v-else class="text-sm text-[color:var(--text-dim)] text-center py-4">
+        <div
+          v-else
+          class="text-sm text-[color:var(--text-dim)] text-center py-4"
+        >
           Нет событий цикла
         </div>
       </div>

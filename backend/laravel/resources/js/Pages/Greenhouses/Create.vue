@@ -1,33 +1,49 @@
 <template>
   <AppLayout>
-    <h1 class="text-lg font-semibold mb-4">Создать теплицу</h1>
+    <h1 class="text-lg font-semibold mb-4">
+      Создать теплицу
+    </h1>
     <Card>
-      <form @submit.prevent="onSubmit" class="space-y-4">
+      <form
+        class="space-y-4"
+        @submit.prevent="onSubmit"
+      >
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label for="greenhouse-name" class="block text-xs text-[color:var(--text-muted)] mb-1">Название <span class="text-[color:var(--accent-red)]">*</span></label>
+            <label
+              for="greenhouse-name"
+              class="block text-xs text-[color:var(--text-muted)] mb-1"
+            >Название <span class="text-[color:var(--accent-red)]">*</span></label>
             <input
               id="greenhouse-name"
-              name="name"
               v-model="form.name"
+              name="name"
               type="text"
               required
               placeholder="Main Greenhouse"
               class="input-field"
               :class="errors.name ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''"
             />
-            <div v-if="errors.name" class="text-xs text-[color:var(--badge-danger-text)] mt-1">{{ errors.name }}</div>
+            <div
+              v-if="errors.name"
+              class="text-xs text-[color:var(--badge-danger-text)] mt-1"
+            >
+              {{ errors.name }}
+            </div>
             <div class="text-xs text-[color:var(--text-dim)] mt-1">
               UID будет сгенерирован автоматически: <span class="text-[color:var(--text-muted)]">{{ generatedUid }}</span>
             </div>
           </div>
           
           <div>
-            <label for="greenhouse-timezone" class="block text-xs text-[color:var(--text-muted)] mb-1">Часовой пояс</label>
+            <label
+              for="greenhouse-timezone"
+              class="block text-xs text-[color:var(--text-muted)] mb-1"
+            >Часовой пояс</label>
             <input
               id="greenhouse-timezone"
-              name="timezone"
               v-model="form.timezone"
+              name="timezone"
               type="text"
               placeholder="Europe/Moscow"
               class="input-field"
@@ -35,26 +51,40 @@
           </div>
           
           <div>
-            <label for="greenhouse-type" class="block text-xs text-[color:var(--text-muted)] mb-1">Тип</label>
+            <label
+              for="greenhouse-type"
+              class="block text-xs text-[color:var(--text-muted)] mb-1"
+            >Тип</label>
             <select
               id="greenhouse-type"
-              name="type"
               v-model="form.type"
+              name="type"
               class="input-select"
             >
-              <option value="">Выберите тип</option>
-              <option value="indoor">Indoor (Закрытая)</option>
-              <option value="outdoor">Outdoor (Открытая)</option>
-              <option value="greenhouse">Greenhouse (Теплица)</option>
+              <option value="">
+                Выберите тип
+              </option>
+              <option value="indoor">
+                Indoor (Закрытая)
+              </option>
+              <option value="outdoor">
+                Outdoor (Открытая)
+              </option>
+              <option value="greenhouse">
+                Greenhouse (Теплица)
+              </option>
             </select>
           </div>
           
           <div class="md:col-span-2">
-            <label for="greenhouse-description" class="block text-xs text-[color:var(--text-muted)] mb-1">Описание</label>
+            <label
+              for="greenhouse-description"
+              class="block text-xs text-[color:var(--text-muted)] mb-1"
+            >Описание</label>
             <textarea
               id="greenhouse-description"
-              name="description"
               v-model="form.description"
+              name="description"
               rows="3"
               placeholder="Описание теплицы..."
               class="w-full rounded-md border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] px-2 py-1 text-sm text-[color:var(--text-primary)] focus:border-[color:var(--accent-green)] focus:outline-none"
@@ -64,9 +94,19 @@
         
         <div class="flex justify-end gap-2">
           <Link href="/">
-            <Button size="sm" variant="secondary" type="button">Отмена</Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              type="button"
+            >
+              Отмена
+            </Button>
           </Link>
-          <Button size="sm" type="submit" :disabled="loading">
+          <Button
+            size="sm"
+            type="submit"
+            :disabled="loading"
+          >
             {{ loading ? 'Создание...' : 'Создать' }}
           </Button>
         </div>

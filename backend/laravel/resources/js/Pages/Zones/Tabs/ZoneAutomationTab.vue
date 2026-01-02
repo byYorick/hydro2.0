@@ -11,8 +11,16 @@
       />
     </div>
 
-    <AutomationEngine v-if="zoneId" :zone-id="zoneId" />
-    <div v-else class="text-sm text-[color:var(--text-dim)]">Нет данных зоны для автоматизации.</div>
+    <AutomationEngine
+      v-if="zoneId"
+      :zone-id="zoneId"
+    />
+    <div
+      v-else
+      class="text-sm text-[color:var(--text-dim)]"
+    >
+      Нет данных зоны для автоматизации.
+    </div>
   </div>
 </template>
 

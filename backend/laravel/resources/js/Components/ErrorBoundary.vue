@@ -1,23 +1,45 @@
 <template>
-  <div v-if="error" class="error-container min-h-screen flex items-center justify-center bg-[color:var(--bg-main)]">
+  <div
+    v-if="error"
+    class="error-container min-h-screen flex items-center justify-center bg-[color:var(--bg-main)]"
+  >
     <Card class="max-w-md w-full">
       <div class="text-center">
-        <div class="text-6xl mb-4">⚠️</div>
-        <h2 class="text-xl font-bold mb-2 text-[color:var(--accent-red)]">Произошла ошибка</h2>
-        <p class="text-sm text-[color:var(--text-muted)] mb-4">{{ error.message }}</p>
+        <div class="text-6xl mb-4">
+          ⚠️
+        </div>
+        <h2 class="text-xl font-bold mb-2 text-[color:var(--accent-red)]">
+          Произошла ошибка
+        </h2>
+        <p class="text-sm text-[color:var(--text-muted)] mb-4">
+          {{ error.message }}
+        </p>
         
-        <div v-if="isDev" class="text-left bg-[color:var(--bg-elevated)] p-3 rounded mb-4 overflow-auto max-h-40">
+        <div
+          v-if="isDev"
+          class="text-left bg-[color:var(--bg-elevated)] p-3 rounded mb-4 overflow-auto max-h-40"
+        >
           <pre class="text-xs text-[color:var(--text-primary)]">{{ error.stack }}</pre>
         </div>
         
         <div class="flex gap-2 justify-center">
-          <Button @click="retry" variant="primary">Попробовать снова</Button>
-          <Button @click="goHome" variant="secondary">На главную</Button>
+          <Button
+            variant="primary"
+            @click="retry"
+          >
+            Попробовать снова
+          </Button>
+          <Button
+            variant="secondary"
+            @click="goHome"
+          >
+            На главную
+          </Button>
         </div>
       </div>
     </Card>
   </div>
-  <slot v-else />
+  <slot v-else></slot>
 </template>
 
 <script setup lang="ts">

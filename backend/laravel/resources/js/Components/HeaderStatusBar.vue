@@ -26,11 +26,16 @@
         <div
           class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-[color:var(--bg-surface-strong)] rounded text-xs text-[color:var(--text-primary)] opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-[var(--shadow-card)] border border-[color:var(--border-muted)]"
         >
-          <div class="font-medium">Core Service</div>
+          <div class="font-medium">
+            Core Service
+          </div>
           <div class="text-[10px] text-[color:var(--text-dim)] mt-0.5">
             Статус: {{ getStatusText(coreStatus) }}
           </div>
-          <div v-if="lastUpdate" class="text-[10px] text-[color:var(--text-dim)] mt-1">
+          <div
+            v-if="lastUpdate"
+            class="text-[10px] text-[color:var(--text-dim)] mt-1"
+          >
             Обновлено: {{ formatTime(lastUpdate) }}
           </div>
         </div>
@@ -61,18 +66,26 @@
         <div
           class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-[color:var(--bg-surface-strong)] rounded text-xs text-[color:var(--text-primary)] opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-[var(--shadow-card)] border border-[color:var(--border-muted)]"
         >
-          <div class="font-medium">Database</div>
+          <div class="font-medium">
+            Database
+          </div>
           <div class="text-[10px] text-[color:var(--text-dim)] mt-0.5">
             Статус: {{ getStatusText(dbStatus) }}
           </div>
-          <div v-if="lastUpdate" class="text-[10px] text-[color:var(--text-dim)] mt-1">
+          <div
+            v-if="lastUpdate"
+            class="text-[10px] text-[color:var(--text-dim)] mt-1"
+          >
             Обновлено: {{ formatTime(lastUpdate) }}
           </div>
         </div>
       </div>
 
       <!-- WebSocket Status -->
-      <div class="flex items-center gap-2 group relative" data-testid="ws-status-indicator">
+      <div
+        class="flex items-center gap-2 group relative"
+        data-testid="ws-status-indicator"
+      >
         <div class="relative">
           <div
             class="w-2.5 h-2.5 rounded-full transition-all duration-300"
@@ -97,28 +110,55 @@
         <div
           class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-[color:var(--bg-surface-strong)] rounded text-xs text-[color:var(--text-primary)] opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-[var(--shadow-card)] border border-[color:var(--border-muted)] max-w-xs"
         >
-          <div class="font-medium">WebSocket Connection</div>
+          <div class="font-medium">
+            WebSocket Connection
+          </div>
           <div class="text-[10px] text-[color:var(--text-dim)] mt-0.5">
             Статус: {{ getWsStatusText(wsStatus) }}
           </div>
-          <div v-if="wsStatus === 'connected'" class="text-[10px] text-[color:var(--accent-green)] mt-1">
+          <div
+            v-if="wsStatus === 'connected'"
+            class="text-[10px] text-[color:var(--accent-green)] mt-1"
+          >
             ✓ Соединение активно
-            <div v-if="wsConnectionDetails?.socketId" class="text-[color:var(--text-dim)] mt-0.5 text-[9px]">
+            <div
+              v-if="wsConnectionDetails?.socketId"
+              class="text-[color:var(--text-dim)] mt-0.5 text-[9px]"
+            >
               Socket ID: {{ wsConnectionDetails.socketId.substring(0, 8) }}...
             </div>
           </div>
-          <div v-else-if="wsStatus === 'disconnected' || wsStatus === 'connecting'" class="text-[10px] text-[color:var(--accent-red)] mt-1">
+          <div
+            v-else-if="wsStatus === 'disconnected' || wsStatus === 'connecting'"
+            class="text-[10px] text-[color:var(--accent-red)] mt-1"
+          >
             <div>✗ Соединение разорвано</div>
-            <div v-if="wsReconnectAttempts > 0" class="text-[color:var(--accent-amber)] mt-1 text-[9px]">
+            <div
+              v-if="wsReconnectAttempts > 0"
+              class="text-[color:var(--accent-amber)] mt-1 text-[9px]"
+            >
               Попыток переподключения: {{ wsReconnectAttempts }}
             </div>
-            <div v-if="wsLastError" class="text-[color:var(--badge-danger-text)] mt-1 text-[9px]">
-              <div class="font-medium">Последняя ошибка:</div>
-              <div class="break-words">{{ wsLastError.message }}</div>
-              <div v-if="wsLastError.code" class="text-[color:var(--text-dim)] mt-0.5">
+            <div
+              v-if="wsLastError"
+              class="text-[color:var(--badge-danger-text)] mt-1 text-[9px]"
+            >
+              <div class="font-medium">
+                Последняя ошибка:
+              </div>
+              <div class="break-words">
+                {{ wsLastError.message }}
+              </div>
+              <div
+                v-if="wsLastError.code"
+                class="text-[color:var(--text-dim)] mt-0.5"
+              >
                 Код: {{ wsLastError.code }}
               </div>
-              <div v-if="wsLastError.timestamp" class="text-[color:var(--text-dim)] mt-0.5">
+              <div
+                v-if="wsLastError.timestamp"
+                class="text-[color:var(--text-dim)] mt-0.5"
+              >
                 {{ formatTime(new Date(wsLastError.timestamp)) }}
               </div>
             </div>
@@ -126,15 +166,24 @@
               Проверьте настройки WebSocket
             </div>
           </div>
-          <div v-else class="text-[10px] text-[color:var(--text-dim)] mt-1">
+          <div
+            v-else
+            class="text-[10px] text-[color:var(--text-dim)] mt-1"
+          >
             ? Инициализация...
             <div class="text-[9px] text-[color:var(--text-dim)] mt-0.5">
               Ожидание подключения
             </div>
-            <div v-if="wsStatus === 'unknown'" class="text-[9px] text-[color:var(--accent-amber)] mt-1">
+            <div
+              v-if="wsStatus === 'unknown'"
+              class="text-[9px] text-[color:var(--accent-amber)] mt-1"
+            >
               WebSocket клиент не инициализирован
             </div>
-            <div v-if="wsStatus === 'unknown' && wsConnectionDetails?.reconnectAttempts > 0" class="text-[9px] text-[color:var(--accent-amber)] mt-1">
+            <div
+              v-if="wsStatus === 'unknown' && wsConnectionDetails?.reconnectAttempts > 0"
+              class="text-[9px] text-[color:var(--accent-amber)] mt-1"
+            >
               Попыток переподключения: {{ wsConnectionDetails.reconnectAttempts }}
             </div>
           </div>
@@ -166,20 +215,34 @@
         <div
           class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-[color:var(--bg-surface-strong)] rounded text-xs text-[color:var(--text-primary)] opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-[var(--shadow-card)] border border-[color:var(--border-muted)]"
         >
-          <div class="font-medium">MQTT Broker</div>
+          <div class="font-medium">
+            MQTT Broker
+          </div>
           <div class="text-[10px] text-[color:var(--text-dim)] mt-0.5">
             Статус: {{ getMqttStatusText(mqttStatus) }}
           </div>
-          <div v-if="mqttStatus === 'online'" class="text-[10px] text-[color:var(--accent-green)] mt-1">
+          <div
+            v-if="mqttStatus === 'online'"
+            class="text-[10px] text-[color:var(--accent-green)] mt-1"
+          >
             ✓ Брокер доступен
           </div>
-          <div v-else-if="mqttStatus === 'offline'" class="text-[10px] text-[color:var(--accent-red)] mt-1">
+          <div
+            v-else-if="mqttStatus === 'offline'"
+            class="text-[10px] text-[color:var(--accent-red)] mt-1"
+          >
             ✗ Брокер недоступен
           </div>
-          <div v-else-if="mqttStatus === 'degraded'" class="text-[10px] text-[color:var(--accent-amber)] mt-1">
+          <div
+            v-else-if="mqttStatus === 'degraded'"
+            class="text-[10px] text-[color:var(--accent-amber)] mt-1"
+          >
             ⚠ Частичная доступность
           </div>
-          <div v-else class="text-[10px] text-[color:var(--text-dim)] mt-1">
+          <div
+            v-else
+            class="text-[10px] text-[color:var(--text-dim)] mt-1"
+          >
             ? Статус неизвестен
           </div>
         </div>
@@ -198,11 +261,16 @@
           <div
             class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-[color:var(--bg-surface-strong)] rounded text-xs text-[color:var(--text-primary)] opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-[var(--shadow-card)] border border-[color:var(--border-muted)]"
           >
-            <div class="font-medium">Активные зоны</div>
+            <div class="font-medium">
+              Активные зоны
+            </div>
             <div class="text-[10px] text-[color:var(--text-dim)] mt-0.5">
               Всего: {{ metrics.zonesCount }}
             </div>
-            <div v-if="metrics.zonesRunning !== null" class="text-[10px] text-[color:var(--accent-green)] mt-1">
+            <div
+              v-if="metrics.zonesRunning !== null"
+              class="text-[10px] text-[color:var(--accent-green)] mt-1"
+            >
               Запущено: {{ metrics.zonesRunning }}
             </div>
           </div>
@@ -219,14 +287,22 @@
           <div
             class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-[color:var(--bg-surface-strong)] rounded text-xs text-[color:var(--text-primary)] opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-[var(--shadow-card)] border border-[color:var(--border-muted)]"
           >
-            <div class="font-medium">Устройства</div>
+            <div class="font-medium">
+              Устройства
+            </div>
             <div class="text-[10px] text-[color:var(--text-dim)] mt-0.5">
               Всего: {{ metrics.devicesCount }}
             </div>
-            <div v-if="metrics.devicesOnline !== null" class="text-[10px] text-[color:var(--accent-green)] mt-1">
+            <div
+              v-if="metrics.devicesOnline !== null"
+              class="text-[10px] text-[color:var(--accent-green)] mt-1"
+            >
               Онлайн: {{ metrics.devicesOnline }}
             </div>
-            <div v-if="metrics.devicesOffline !== null && metrics.devicesOffline > 0" class="text-[10px] text-[color:var(--accent-red)] mt-1">
+            <div
+              v-if="metrics.devicesOffline !== null && metrics.devicesOffline > 0"
+              class="text-[10px] text-[color:var(--accent-red)] mt-1"
+            >
               Офлайн: {{ metrics.devicesOffline }}
             </div>
           </div>
@@ -251,14 +327,22 @@
           <div
             class="absolute left-0 top-full mt-2 px-2 py-1.5 bg-[color:var(--bg-surface-strong)] rounded text-xs text-[color:var(--text-primary)] opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 shadow-[var(--shadow-card)] border border-[color:var(--border-muted)]"
           >
-            <div class="font-medium">Активные алерты</div>
+            <div class="font-medium">
+              Активные алерты
+            </div>
             <div class="text-[10px] text-[color:var(--text-dim)] mt-0.5">
               Всего: {{ metrics.alertsCount }}
             </div>
-            <div v-if="metrics.alertsCount > 0" class="text-[10px] text-[color:var(--accent-red)] mt-1">
+            <div
+              v-if="metrics.alertsCount > 0"
+              class="text-[10px] text-[color:var(--accent-red)] mt-1"
+            >
               ⚠️ Требуют внимания
             </div>
-            <div v-else class="text-[10px] text-[color:var(--accent-green)] mt-1">
+            <div
+              v-else
+              class="text-[10px] text-[color:var(--accent-green)] mt-1"
+            >
               ✓ Нет активных алертов
             </div>
           </div>
@@ -266,9 +350,9 @@
         
         <!-- Кнопка мониторинга сервисов -->
         <button
-          @click="openMonitoringModal()"
           class="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-[color:var(--bg-surface-strong)] transition-colors text-xs text-[color:var(--text-dim)] hover:text-[color:var(--text-primary)]"
           title="Мониторинг сервисов"
+          @click="openMonitoringModal()"
         >
           <span>📊</span>
           <span class="hidden sm:inline">Сервисы</span>

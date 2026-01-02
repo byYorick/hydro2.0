@@ -3,21 +3,40 @@
     <section class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-5">
       <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div class="flex-1 min-w-0">
-          <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">зона выращивания</p>
+          <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">
+            зона выращивания
+          </p>
           <div class="flex items-center gap-3 mt-1">
-            <div class="text-2xl font-semibold truncate">{{ zone.name }}</div>
-            <Badge :variant="variant" class="shrink-0" data-testid="zone-status-badge">
+            <div class="text-2xl font-semibold truncate">
+              {{ zone.name }}
+            </div>
+            <Badge
+              :variant="variant"
+              class="shrink-0"
+              data-testid="zone-status-badge"
+            >
               {{ translateStatus(zone.status) }}
             </Badge>
           </div>
           <div class="text-sm text-[color:var(--text-dim)] mt-1 space-y-1">
-            <div v-if="zone.description" class="truncate">{{ zone.description }}</div>
-            <div v-if="activeGrowCycle?.recipeRevision" class="flex items-center gap-2 text-xs uppercase tracking-[0.12em]">
+            <div
+              v-if="zone.description"
+              class="truncate"
+            >
+              {{ zone.description }}
+            </div>
+            <div
+              v-if="activeGrowCycle?.recipeRevision"
+              class="flex items-center gap-2 text-xs uppercase tracking-[0.12em]"
+            >
               <span class="text-[color:var(--text-dim)]">Рецепт</span>
               <span class="text-[color:var(--accent-cyan)] font-semibold">
                 {{ activeGrowCycle.recipeRevision.recipe.name }}
               </span>
-              <span v-if="activeGrowCycle?.currentPhase" class="text-[color:var(--text-dim)]">
+              <span
+                v-if="activeGrowCycle?.currentPhase"
+                class="text-[color:var(--text-dim)]"
+              >
                 фаза {{ activeGrowCycle.currentPhase.phase_index + 1 }}
               </span>
             </div>
@@ -28,13 +47,17 @@
             <Button
               size="sm"
               variant="secondary"
-              @click="$emit('toggle')"
               :disabled="loading.toggle"
               class="flex-1 sm:flex-none min-w-[140px]"
               :data-testid="toggleStatus === 'PAUSED' ? 'zone-resume-btn' : 'zone-pause-btn'"
+              @click="$emit('toggle')"
             >
               <template v-if="loading.toggle">
-                <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
+                <LoadingState
+                  loading
+                  size="sm"
+                  :container-class="'inline-flex mr-2'"
+                />
               </template>
               <span class="hidden sm:inline">{{ toggleStatus === 'PAUSED' ? 'Возобновить' : 'Приостановить' }}</span>
               <span class="sm:hidden">{{ toggleStatus === 'PAUSED' ? '▶' : '⏸' }}</span>
@@ -42,26 +65,34 @@
             <Button
               size="sm"
               variant="outline"
-              @click="$emit('force-irrigation')"
               :disabled="loading.irrigate"
               class="flex-1 sm:flex-none"
               data-testid="force-irrigation-button"
+              @click="$emit('force-irrigation')"
             >
               <template v-if="loading.irrigate">
-                <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
+                <LoadingState
+                  loading
+                  size="sm"
+                  :container-class="'inline-flex mr-2'"
+                />
               </template>
               <span class="hidden sm:inline">Полить сейчас</span>
               <span class="sm:hidden">💧</span>
             </Button>
             <Button
               size="sm"
-              @click="$emit('next-phase')"
               :disabled="loading.nextPhase"
               class="flex-1 sm:flex-none"
               data-testid="next-phase-button"
+              @click="$emit('next-phase')"
             >
               <template v-if="loading.nextPhase">
-                <LoadingState loading size="sm" :container-class="'inline-flex mr-2'" />
+                <LoadingState
+                  loading
+                  size="sm"
+                  :container-class="'inline-flex mr-2'"
+                />
               </template>
               <span class="hidden sm:inline">Следующая фаза</span>
               <span class="sm:hidden">⏭</span>
@@ -100,7 +131,12 @@
               <span>{{ getCommandStatusText(growthCycleCommandStatus) }}</span>
             </div>
           </template>
-          <Button size="sm" variant="outline" @click="$emit('open-simulation')" class="flex-1 sm:flex-none">
+          <Button
+            size="sm"
+            variant="outline"
+            class="flex-1 sm:flex-none"
+            @click="$emit('open-simulation')"
+          >
             <span class="hidden sm:inline">Симуляция</span>
             <span class="sm:hidden">🧪</span>
           </Button>
@@ -110,9 +146,18 @@
 
     <div class="space-y-4">
       <div class="surface-card surface-card--elevated border border-[color:var(--border-muted)] rounded-2xl p-4">
-        <ZoneTargets v-if="hasTargets" :telemetry="telemetry" :targets="targets" />
-        <div v-else class="text-center py-6">
-          <div class="text-4xl mb-2">🎯</div>
+        <ZoneTargets
+          v-if="hasTargets"
+          :telemetry="telemetry"
+          :targets="targets"
+        />
+        <div
+          v-else
+          class="text-center py-6"
+        >
+          <div class="text-4xl mb-2">
+            🎯
+          </div>
           <div class="text-sm font-medium text-[color:var(--text-primary)] mb-1">
             Целевые значения не настроены
           </div>
@@ -131,8 +176,13 @@
           :phase-days-total="computedPhaseDaysTotal"
           :started-at="activeGrowCycle.started_at"
         />
-        <div v-else-if="activeGrowCycle || activeCycle || zone.status === 'RUNNING'" class="text-center py-6">
-          <div class="text-4xl mb-2">🌱</div>
+        <div
+          v-else-if="activeGrowCycle || activeCycle || zone.status === 'RUNNING'"
+          class="text-center py-6"
+        >
+          <div class="text-4xl mb-2">
+            🌱
+          </div>
           <div class="text-sm font-medium text-[color:var(--text-primary)] mb-1">
             Цикл выращивания активен
           </div>
@@ -151,8 +201,13 @@
             </div>
           </div>
         </div>
-        <div v-else class="text-center py-6">
-          <div class="text-4xl mb-2">🌱</div>
+        <div
+          v-else
+          class="text-center py-6"
+        >
+          <div class="text-4xl mb-2">
+            🌱
+          </div>
           <div class="text-sm font-medium text-[color:var(--text-primary)] mb-1">
             Цикл выращивания не запущен
           </div>
@@ -164,9 +219,15 @@
 
       <Card>
         <div class="flex items-center justify-between mb-2">
-          <div class="text-sm font-semibold">События (последние {{ recentEvents.length }})</div>
+          <div class="text-sm font-semibold">
+            События (последние {{ recentEvents.length }})
+          </div>
         </div>
-        <div v-if="recentEvents.length > 0" class="space-y-1 max-h-[280px] overflow-y-auto" data-testid="zone-events-list">
+        <div
+          v-if="recentEvents.length > 0"
+          class="space-y-1 max-h-[280px] overflow-y-auto"
+          data-testid="zone-events-list"
+        >
           <div
             v-for="e in recentEvents"
             :key="e.id"
@@ -183,11 +244,18 @@
               <div class="text-xs text-[color:var(--text-dim)]">
                 {{ new Date(e.occurred_at).toLocaleString('ru-RU') }}
               </div>
-              <div class="text-sm">{{ e.message }}</div>
+              <div class="text-sm">
+                {{ e.message }}
+              </div>
             </div>
           </div>
         </div>
-        <div v-else class="text-sm text-[color:var(--text-dim)]">Нет событий</div>
+        <div
+          v-else
+          class="text-sm text-[color:var(--text-dim)]"
+        >
+          Нет событий
+        </div>
       </Card>
     </div>
   </div>

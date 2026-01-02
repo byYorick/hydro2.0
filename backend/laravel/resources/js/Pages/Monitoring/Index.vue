@@ -2,12 +2,14 @@
   <AppLayout>
     <div class="space-y-4">
       <div class="flex items-center justify-between">
-        <h1 class="text-lg font-semibold">Мониторинг системы</h1>
+        <h1 class="text-lg font-semibold">
+          Мониторинг системы
+        </h1>
         <Button
           size="sm"
           variant="secondary"
-          @click="refreshStatus"
           :disabled="refreshing"
+          @click="refreshStatus"
         >
           {{ refreshing ? 'Обновление...' : 'Обновить' }}
         </Button>
@@ -15,7 +17,9 @@
 
       <!-- Основные компоненты -->
       <div>
-        <h3 class="text-sm font-semibold mb-3 text-[color:var(--text-primary)]">Основные компоненты</h3>
+        <h3 class="text-sm font-semibold mb-3 text-[color:var(--text-primary)]">
+          Основные компоненты
+        </h3>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <ServiceStatusCard
             name="Core API"
@@ -48,7 +52,9 @@
 
       <!-- Python сервисы -->
       <div>
-        <h3 class="text-sm font-semibold mb-3 text-[color:var(--text-primary)]">Python сервисы</h3>
+        <h3 class="text-sm font-semibold mb-3 text-[color:var(--text-primary)]">
+          Python сервисы
+        </h3>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <ServiceStatusCard
             name="History Logger"
@@ -69,7 +75,9 @@
 
       <!-- Цепочка состояния -->
       <div>
-        <h3 class="text-sm font-semibold mb-3 text-[color:var(--text-primary)]">Цепочка состояния</h3>
+        <h3 class="text-sm font-semibold mb-3 text-[color:var(--text-primary)]">
+          Цепочка состояния
+        </h3>
         <div class="bg-[color:var(--bg-elevated)] rounded-lg p-4 border border-[color:var(--border-muted)]">
           <div class="flex items-center justify-between gap-4 text-xs">
             <div class="flex items-center gap-2">

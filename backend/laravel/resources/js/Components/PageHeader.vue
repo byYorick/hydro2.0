@@ -1,5 +1,8 @@
 <template>
-  <section :class="classes" v-bind="attrs">
+  <section
+    :class="classes"
+    v-bind="attrs"
+  >
     <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
       <div class="min-w-0">
         <p
@@ -11,16 +14,25 @@
         <h1 class="text-2xl font-semibold tracking-tight mt-1 text-[color:var(--text-primary)]">
           {{ title }}
         </h1>
-        <p v-if="subtitle" class="text-sm text-[color:var(--text-dim)] mt-1">
+        <p
+          v-if="subtitle"
+          class="text-sm text-[color:var(--text-dim)] mt-1"
+        >
           {{ subtitle }}
         </p>
       </div>
-      <div v-if="$slots.actions" class="flex flex-wrap gap-2 justify-end">
-        <slot name="actions" />
+      <div
+        v-if="$slots.actions"
+        class="flex flex-wrap gap-2 justify-end"
+      >
+        <slot name="actions"></slot>
       </div>
     </div>
-    <div v-if="$slots.default" class="mt-4">
-      <slot />
+    <div
+      v-if="$slots.default"
+      class="mt-4"
+    >
+      <slot></slot>
     </div>
   </section>
 </template>

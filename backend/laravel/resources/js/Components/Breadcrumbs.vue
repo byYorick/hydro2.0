@@ -1,7 +1,15 @@
 <template>
-  <nav v-if="items.length > 0" class="flex items-center gap-2 text-sm mb-4" aria-label="Breadcrumb">
+  <nav
+    v-if="items.length > 0"
+    class="flex items-center gap-2 text-sm mb-4"
+    aria-label="Breadcrumb"
+  >
     <ol class="flex items-center gap-2 flex-wrap">
-      <li v-for="(item, index) in items" :key="index" class="flex items-center gap-2">
+      <li
+        v-for="(item, index) in items"
+        :key="index"
+        class="flex items-center gap-2"
+      >
         <Link
           v-if="item.href && index < items.length - 1"
           :href="item.href"
@@ -23,7 +31,12 @@
           stroke="currentColor"
           viewBox="0 0 24 24"
         >
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M9 5l7 7-7 7"
+          />
         </svg>
       </li>
     </ol>

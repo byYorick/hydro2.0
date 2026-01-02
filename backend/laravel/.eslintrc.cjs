@@ -27,6 +27,7 @@ module.exports = {
     // Vue specific rules
     'vue/multi-word-component-names': 'off',
     'vue/no-v-html': 'warn',
+    'vue/no-side-effects-in-computed-properties': 'warn',
     'vue/require-default-prop': 'off',
     'vue/require-explicit-emits': 'warn',
     'vue/html-self-closing': ['warn', {

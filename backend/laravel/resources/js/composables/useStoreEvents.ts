@@ -89,6 +89,7 @@ export function useStoreEvents() {
   let onUnmountedHook: ((fn: () => void) => void) | null = null
   
   try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const vue = require('vue')
     onMountedHook = vue.onMounted
     onUnmountedHook = vue.onUnmounted

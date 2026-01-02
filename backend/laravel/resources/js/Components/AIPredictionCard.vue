@@ -4,16 +4,32 @@
       <div class="text-sm font-semibold text-[color:var(--text-primary)]">
         Прогноз {{ metricLabel }}
       </div>
-      <div v-if="loading" class="w-4 h-4">
-        <LoadingState loading size="sm" />
+      <div
+        v-if="loading"
+        class="w-4 h-4"
+      >
+        <LoadingState
+          loading
+          size="sm"
+        />
       </div>
-      <Badge v-else-if="prediction" :variant="confidenceVariant" class="text-xs">
+      <Badge
+        v-else-if="prediction"
+        :variant="confidenceVariant"
+        class="text-xs"
+      >
         {{ confidenceText }}
       </Badge>
     </div>
 
-    <div v-if="loading" class="py-6 text-center">
-      <LoadingState loading size="md" />
+    <div
+      v-if="loading"
+      class="py-6 text-center"
+    >
+      <LoadingState
+        loading
+        size="md"
+      />
       <div class="text-sm font-medium text-[color:var(--text-primary)] mt-3 mb-1">
         Загрузка прогноза {{ metricLabel }}
       </div>
@@ -22,25 +38,42 @@
       </div>
     </div>
 
-    <div v-else-if="error" class="py-6 text-center">
-      <div class="text-4xl mb-2">⚠️</div>
+    <div
+      v-else-if="error"
+      class="py-6 text-center"
+    >
+      <div class="text-4xl mb-2">
+        ⚠️
+      </div>
       <div class="text-sm font-medium text-[color:var(--accent-red)] mb-1">
         Ошибка загрузки прогноза
       </div>
       <div class="text-xs text-[color:var(--text-muted)] mb-3">
         {{ error }}
       </div>
-      <Button size="sm" variant="outline" @click="fetchPrediction">
+      <Button
+        size="sm"
+        variant="outline"
+        @click="fetchPrediction"
+      >
         Повторить попытку
       </Button>
     </div>
 
-    <div v-else-if="prediction" class="space-y-3">
+    <div
+      v-else-if="prediction"
+      class="space-y-3"
+    >
       <div class="flex items-baseline gap-2">
-        <div class="text-3xl font-bold" :style="{ color: metricColor }">
+        <div
+          class="text-3xl font-bold"
+          :style="{ color: metricColor }"
+        >
           {{ formatValue(prediction.predicted_value) }}
         </div>
-        <div class="text-sm text-[color:var(--text-muted)]">{{ metricUnit }}</div>
+        <div class="text-sm text-[color:var(--text-muted)]">
+          {{ metricUnit }}
+        </div>
       </div>
 
       <div class="text-xs text-[color:var(--text-dim)] space-y-1">
@@ -51,8 +84,13 @@
         </div>
       </div>
 
-      <div v-if="targetRange" class="pt-2 border-t border-[color:var(--border-muted)]">
-        <div class="text-xs text-[color:var(--text-dim)] mb-1">Целевой диапазон:</div>
+      <div
+        v-if="targetRange"
+        class="pt-2 border-t border-[color:var(--border-muted)]"
+      >
+        <div class="text-xs text-[color:var(--text-dim)] mb-1">
+          Целевой диапазон:
+        </div>
         <div class="text-sm font-medium">
           {{ formatValue(targetRange.min) }} — {{ formatValue(targetRange.max) }} {{ metricUnit }}
         </div>
@@ -66,8 +104,13 @@
       </div>
     </div>
 
-    <div v-else class="py-6 text-center">
-      <div class="text-4xl mb-2">📊</div>
+    <div
+      v-else
+      class="py-6 text-center"
+    >
+      <div class="text-4xl mb-2">
+        📊
+      </div>
       <div class="text-sm font-medium text-[color:var(--text-primary)] mb-1">
         Нет данных для прогноза
       </div>

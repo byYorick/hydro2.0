@@ -1,17 +1,27 @@
 <template>
-  <Modal :open="open" :title="title" @close="$emit('close')">
+  <Modal
+    :open="open"
+    :title="title"
+    @close="$emit('close')"
+  >
     <slot>
-      <div class="text-sm text-[color:var(--text-muted)]">{{ message }}</div>
+      <div class="text-sm text-[color:var(--text-muted)]">
+        {{ message }}
+      </div>
     </slot>
     <template #footer>
-      <Button size="sm" variant="secondary" @click="$emit('close')">
+      <Button
+        size="sm"
+        variant="secondary"
+        @click="$emit('close')"
+      >
         {{ cancelText }}
       </Button>
       <Button 
         size="sm" 
         :variant="confirmVariant"
-        @click="$emit('confirm')"
         :disabled="loading || confirmDisabled"
+        @click="$emit('confirm')"
       >
         {{ loading ? loadingText : confirmText }}
       </Button>

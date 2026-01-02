@@ -1,15 +1,26 @@
 <template>
-  <Modal :open="show" title="Создать растение" @close="handleClose" size="large">
-    <form @submit.prevent="onSubmit" class="space-y-4">
+  <Modal
+    :open="show"
+    title="Создать растение"
+    size="large"
+    @close="handleClose"
+  >
+    <form
+      class="space-y-4"
+      @submit.prevent="onSubmit"
+    >
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div class="md:col-span-2">
-          <label for="plant-name" class="block text-xs text-[color:var(--text-muted)] mb-1">
+          <label
+            for="plant-name"
+            class="block text-xs text-[color:var(--text-muted)] mb-1"
+          >
             Название <span class="text-[color:var(--accent-red)]">*</span>
           </label>
           <input
             id="plant-name"
-            name="name"
             v-model="form.name"
+            name="name"
             type="text"
             required
             placeholder="Салат Айсберг"
@@ -17,15 +28,23 @@
             :class="errors.name ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''"
             autocomplete="off"
           />
-          <div v-if="errors.name" class="text-xs text-[color:var(--accent-red)] mt-1">{{ errors.name }}</div>
+          <div
+            v-if="errors.name"
+            class="text-xs text-[color:var(--accent-red)] mt-1"
+          >
+            {{ errors.name }}
+          </div>
         </div>
 
         <div>
-          <label for="plant-species" class="block text-xs text-[color:var(--text-muted)] mb-1">Вид</label>
+          <label
+            for="plant-species"
+            class="block text-xs text-[color:var(--text-muted)] mb-1"
+          >Вид</label>
           <input
             id="plant-species"
-            name="species"
             v-model="form.species"
+            name="species"
             type="text"
             placeholder="Lactuca sativa"
             class="input-field h-9 w-full"
@@ -34,11 +53,14 @@
         </div>
 
         <div>
-          <label for="plant-variety" class="block text-xs text-[color:var(--text-muted)] mb-1">Сорт</label>
+          <label
+            for="plant-variety"
+            class="block text-xs text-[color:var(--text-muted)] mb-1"
+          >Сорт</label>
           <input
             id="plant-variety"
-            name="variety"
             v-model="form.variety"
+            name="variety"
             type="text"
             placeholder="Айсберг"
             class="input-field h-9 w-full"
@@ -47,71 +69,110 @@
         </div>
 
         <div>
-          <label for="plant-substrate" class="block text-xs text-[color:var(--text-muted)] mb-1">Субстрат</label>
+          <label
+            for="plant-substrate"
+            class="block text-xs text-[color:var(--text-muted)] mb-1"
+          >Субстрат</label>
           <select
             id="plant-substrate"
-            name="substrate_type"
             v-model="form.substrate_type"
+            name="substrate_type"
             class="input-select h-9 w-full"
           >
-            <option value="">Не выбрано</option>
-            <option v-for="option in taxonomies.substrate_type" :key="option.id" :value="option.id">
+            <option value="">
+              Не выбрано
+            </option>
+            <option
+              v-for="option in taxonomies.substrate_type"
+              :key="option.id"
+              :value="option.id"
+            >
               {{ option.label }}
             </option>
           </select>
         </div>
 
         <div>
-          <label for="plant-system" class="block text-xs text-[color:var(--text-muted)] mb-1">Система</label>
+          <label
+            for="plant-system"
+            class="block text-xs text-[color:var(--text-muted)] mb-1"
+          >Система</label>
           <select
             id="plant-system"
-            name="growing_system"
             v-model="form.growing_system"
+            name="growing_system"
             class="input-select h-9 w-full"
           >
-            <option value="">Не выбрано</option>
-            <option v-for="option in taxonomies.growing_system" :key="option.id" :value="option.id">
+            <option value="">
+              Не выбрано
+            </option>
+            <option
+              v-for="option in taxonomies.growing_system"
+              :key="option.id"
+              :value="option.id"
+            >
               {{ option.label }}
             </option>
           </select>
         </div>
 
         <div>
-          <label for="plant-photoperiod" class="block text-xs text-[color:var(--text-muted)] mb-1">Фотопериод</label>
+          <label
+            for="plant-photoperiod"
+            class="block text-xs text-[color:var(--text-muted)] mb-1"
+          >Фотопериод</label>
           <select
             id="plant-photoperiod"
-            name="photoperiod_preset"
             v-model="form.photoperiod_preset"
+            name="photoperiod_preset"
             class="input-select h-9 w-full"
           >
-            <option value="">Не выбрано</option>
-            <option v-for="option in taxonomies.photoperiod_preset" :key="option.id" :value="option.id">
+            <option value="">
+              Не выбрано
+            </option>
+            <option
+              v-for="option in taxonomies.photoperiod_preset"
+              :key="option.id"
+              :value="option.id"
+            >
               {{ option.label }}
             </option>
           </select>
         </div>
 
         <div>
-          <label for="plant-seasonality" class="block text-xs text-[color:var(--text-muted)] mb-1">Сезонность</label>
+          <label
+            for="plant-seasonality"
+            class="block text-xs text-[color:var(--text-muted)] mb-1"
+          >Сезонность</label>
           <select
             id="plant-seasonality"
-            name="seasonality"
             v-model="form.seasonality"
+            name="seasonality"
             class="input-select h-9 w-full"
           >
-            <option value="">Не выбрано</option>
-            <option v-for="option in seasonOptions" :key="option.value" :value="option.value">
+            <option value="">
+              Не выбрано
+            </option>
+            <option
+              v-for="option in seasonOptions"
+              :key="option.value"
+              :value="option.value"
+            >
               {{ option.label }}
             </option>
           </select>
         </div>
 
         <div class="md:col-span-2">
-          <label for="plant-description" class="block text-xs text-[color:var(--text-muted)] mb-1">Описание</label>
+          <label
+            for="plant-description"
+            class="block text-xs text-[color:var(--text-muted)] mb-1"
+          >Описание</label>
           <textarea
             id="plant-description"
-            name="description"
             v-model="form.description"
+            name="description"
             rows="3"
             placeholder="Описание растения..."
             class="input-field w-full"
@@ -120,14 +181,23 @@
         </div>
 
         <div class="md:col-span-2">
-          <p class="text-sm font-semibold text-[color:var(--text-primary)] mb-2">Диапазоны параметров</p>
-          <div class="grid grid-cols-2 gap-3" v-for="metric in rangeMetrics" :key="metric.key">
+          <p class="text-sm font-semibold text-[color:var(--text-primary)] mb-2">
+            Диапазоны параметров
+          </p>
+          <div
+            v-for="metric in rangeMetrics"
+            :key="metric.key"
+            class="grid grid-cols-2 gap-3"
+          >
             <div>
-              <label :for="`plant-${metric.key}-min`" class="block text-xs text-[color:var(--text-muted)] mb-1">{{ metric.label }} (мин)</label>
+              <label
+                :for="`plant-${metric.key}-min`"
+                class="block text-xs text-[color:var(--text-muted)] mb-1"
+              >{{ metric.label }} (мин)</label>
               <input
                 :id="`plant-${metric.key}-min`"
-                :name="`${metric.key}_min`"
                 v-model.number="form.environment_requirements[metric.key].min"
+                :name="`${metric.key}_min`"
                 type="number"
                 step="0.1"
                 placeholder="Мин"
@@ -136,11 +206,14 @@
               />
             </div>
             <div>
-              <label :for="`plant-${metric.key}-max`" class="block text-xs text-[color:var(--text-muted)] mb-1">{{ metric.label }} (макс)</label>
+              <label
+                :for="`plant-${metric.key}-max`"
+                class="block text-xs text-[color:var(--text-muted)] mb-1"
+              >{{ metric.label }} (макс)</label>
               <input
                 :id="`plant-${metric.key}-max`"
-                :name="`${metric.key}_max`"
                 v-model.number="form.environment_requirements[metric.key].max"
+                :name="`${metric.key}_max`"
                 type="number"
                 step="0.1"
                 placeholder="Макс"
@@ -152,11 +225,20 @@
         </div>
       </div>
 
-      <div v-if="errors.general" class="text-sm text-[color:var(--accent-red)]">{{ errors.general }}</div>
+      <div
+        v-if="errors.general"
+        class="text-sm text-[color:var(--accent-red)]"
+      >
+        {{ errors.general }}
+      </div>
     </form>
 
     <template #footer>
-      <Button type="button" @click="onSubmit" :disabled="loading || !form.name.trim()">
+      <Button
+        type="button"
+        :disabled="loading || !form.name.trim()"
+        @click="onSubmit"
+      >
         {{ loading ? 'Создание...' : 'Создать' }}
       </Button>
     </template>

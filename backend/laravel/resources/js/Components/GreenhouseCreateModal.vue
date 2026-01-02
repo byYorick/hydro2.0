@@ -1,15 +1,26 @@
 <template>
-  <Modal :open="show" title="Создать теплицу" @close="handleClose" size="large">
-    <form @submit.prevent="onSubmit" class="space-y-4">
+  <Modal
+    :open="show"
+    title="Создать теплицу"
+    size="large"
+    @close="handleClose"
+  >
+    <form
+      class="space-y-4"
+      @submit.prevent="onSubmit"
+    >
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div class="md:col-span-2">
-          <label for="greenhouse-name" class="block text-xs text-[color:var(--text-muted)] mb-1">
+          <label
+            for="greenhouse-name"
+            class="block text-xs text-[color:var(--text-muted)] mb-1"
+          >
             Название <span class="text-[color:var(--accent-red)]">*</span>
           </label>
           <input
             id="greenhouse-name"
-            name="name"
             v-model="form.name"
+            name="name"
             type="text"
             required
             placeholder="Main Greenhouse"
@@ -17,18 +28,26 @@
             :class="errors.name ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''"
             autocomplete="off"
           />
-          <div v-if="errors.name" class="text-xs text-[color:var(--accent-red)] mt-1">{{ errors.name }}</div>
+          <div
+            v-if="errors.name"
+            class="text-xs text-[color:var(--accent-red)] mt-1"
+          >
+            {{ errors.name }}
+          </div>
           <div class="text-xs text-[color:var(--text-dim)] mt-1">
             UID будет сгенерирован автоматически: <span class="text-[color:var(--text-muted)]">{{ generatedUid }}</span>
           </div>
         </div>
 
         <div>
-          <label for="greenhouse-width" class="block text-xs text-[color:var(--text-muted)] mb-1">Ширина (м)</label>
+          <label
+            for="greenhouse-width"
+            class="block text-xs text-[color:var(--text-muted)] mb-1"
+          >Ширина (м)</label>
           <input
             id="greenhouse-width"
-            name="width"
             v-model.number="form.width"
+            name="width"
             type="number"
             step="0.1"
             min="0"
@@ -39,11 +58,14 @@
         </div>
 
         <div>
-          <label for="greenhouse-length" class="block text-xs text-[color:var(--text-muted)] mb-1">Длина (м)</label>
+          <label
+            for="greenhouse-length"
+            class="block text-xs text-[color:var(--text-muted)] mb-1"
+          >Длина (м)</label>
           <input
             id="greenhouse-length"
-            name="length"
             v-model.number="form.length"
+            name="length"
             type="number"
             step="0.1"
             min="0"
@@ -54,11 +76,14 @@
         </div>
 
         <div>
-          <label for="greenhouse-height" class="block text-xs text-[color:var(--text-muted)] mb-1">Высота (м)</label>
+          <label
+            for="greenhouse-height"
+            class="block text-xs text-[color:var(--text-muted)] mb-1"
+          >Высота (м)</label>
           <input
             id="greenhouse-height"
-            name="height"
             v-model.number="form.height"
+            name="height"
             type="number"
             step="0.1"
             min="0"
@@ -69,26 +94,40 @@
         </div>
 
         <div>
-          <label for="greenhouse-type" class="block text-xs text-[color:var(--text-muted)] mb-1">Тип теплицы</label>
+          <label
+            for="greenhouse-type"
+            class="block text-xs text-[color:var(--text-muted)] mb-1"
+          >Тип теплицы</label>
           <select
             id="greenhouse-type"
-            name="type"
             v-model="form.type"
+            name="type"
             class="input-select h-9 w-full"
           >
-            <option value="">Выберите тип</option>
-            <option value="outdoor">Открытая</option>
-            <option value="greenhouse">Теплица</option>
-            <option value="indoor">Помещение</option>
+            <option value="">
+              Выберите тип
+            </option>
+            <option value="outdoor">
+              Открытая
+            </option>
+            <option value="greenhouse">
+              Теплица
+            </option>
+            <option value="indoor">
+              Помещение
+            </option>
           </select>
         </div>
 
         <div>
-          <label for="greenhouse-location" class="block text-xs text-[color:var(--text-muted)] mb-1">Расположение</label>
+          <label
+            for="greenhouse-location"
+            class="block text-xs text-[color:var(--text-muted)] mb-1"
+          >Расположение</label>
           <input
             id="greenhouse-location"
-            name="location"
             v-model="form.location"
+            name="location"
             type="text"
             placeholder="Москва, ул. Примерная, д. 1"
             class="input-field h-9 w-full"
@@ -97,11 +136,14 @@
         </div>
 
         <div class="md:col-span-2">
-          <label for="greenhouse-description" class="block text-xs text-[color:var(--text-muted)] mb-1">Описание</label>
+          <label
+            for="greenhouse-description"
+            class="block text-xs text-[color:var(--text-muted)] mb-1"
+          >Описание</label>
           <textarea
             id="greenhouse-description"
-            name="description"
             v-model="form.description"
+            name="description"
             rows="3"
             placeholder="Описание теплицы..."
             class="input-field w-full py-2 h-auto"
@@ -110,11 +152,20 @@
         </div>
       </div>
 
-      <div v-if="errors.general" class="text-sm text-[color:var(--accent-red)]">{{ errors.general }}</div>
+      <div
+        v-if="errors.general"
+        class="text-sm text-[color:var(--accent-red)]"
+      >
+        {{ errors.general }}
+      </div>
     </form>
 
     <template #footer>
-      <Button type="button" @click="onSubmit" :disabled="loading || !form.name.trim()">
+      <Button
+        type="button"
+        :disabled="loading || !form.name.trim()"
+        @click="onSubmit"
+      >
         {{ loading ? 'Создание...' : 'Создать' }}
       </Button>
     </template>

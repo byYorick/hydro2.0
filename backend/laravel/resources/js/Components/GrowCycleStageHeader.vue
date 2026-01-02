@@ -4,7 +4,10 @@
     :style="badgeStyle"
     class="font-semibold"
   >
-    <span v-if="stageInfo?.icon" class="mr-1">{{ stageInfo.icon }}</span>
+    <span
+      v-if="stageInfo?.icon"
+      class="mr-1"
+    >{{ stageInfo.icon }}</span>
     {{ stageInfo?.label || 'Неизвестно' }}
   </Badge>
 </template>

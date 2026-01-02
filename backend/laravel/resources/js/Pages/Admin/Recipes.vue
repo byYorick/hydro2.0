@@ -1,23 +1,59 @@
 <template>
   <AppLayout>
-    <h1 class="text-lg font-semibold mb-4">Admin · Recipes</h1>
+    <h1 class="text-lg font-semibold mb-4">
+      Admin · Recipes
+    </h1>
     <Card class="mb-4">
-      <div class="text-sm font-semibold mb-2">Quick Update Recipe</div>
-      <form class="grid grid-cols-1 md:grid-cols-3 gap-2" @submit.prevent="onUpdate">
-        <select v-model="selectedId" class="input-select">
-          <option v-for="r in recipes" :key="r.id" :value="r.id">{{ r.name }}</option>
+      <div class="text-sm font-semibold mb-2">
+        Quick Update Recipe
+      </div>
+      <form
+        class="grid grid-cols-1 md:grid-cols-3 gap-2"
+        @submit.prevent="onUpdate"
+      >
+        <select
+          v-model="selectedId"
+          class="input-select"
+        >
+          <option
+            v-for="r in recipes"
+            :key="r.id"
+            :value="r.id"
+          >
+            {{ r.name }}
+          </option>
         </select>
-        <input v-model="form.name" placeholder="New name" class="input-field" />
-        <input v-model="form.description" placeholder="Description" class="input-field" />
+        <input
+          v-model="form.name"
+          placeholder="New name"
+          class="input-field"
+        />
+        <input
+          v-model="form.description"
+          placeholder="Description"
+          class="input-field"
+        />
         <div class="md:col-span-3">
-          <Button size="sm" type="submit">Update</Button>
+          <Button
+            size="sm"
+            type="submit"
+          >
+            Update
+          </Button>
         </div>
       </form>
     </Card>
     <Card>
-      <div class="text-sm font-semibold mb-2">Recipes</div>
+      <div class="text-sm font-semibold mb-2">
+        Recipes
+      </div>
       <ul class="text-sm text-[color:var(--text-muted)] space-y-1">
-        <li v-for="r in recipes" :key="r.id">{{ r.name }} — {{ r.description || 'Без описания' }} — phases: {{ r.phases_count }}</li>
+        <li
+          v-for="r in recipes"
+          :key="r.id"
+        >
+          {{ r.name }} — {{ r.description || 'Без описания' }} — phases: {{ r.phases_count }}
+        </li>
       </ul>
     </Card>
   </AppLayout>

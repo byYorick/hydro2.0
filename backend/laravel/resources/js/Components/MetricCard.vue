@@ -23,8 +23,19 @@
             }"
           >
             <slot name="icon">
-              <svg class="w-5 h-5" :style="{ color: color }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              <svg
+                class="w-5 h-5"
+                :style="{ color: color }"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                />
               </svg>
             </slot>
           </div>
@@ -32,7 +43,10 @@
             <div class="text-xs font-medium uppercase tracking-wide text-[color:var(--text-muted)] group-hover:text-[color:var(--text-primary)] transition-colors">
               {{ label }}
             </div>
-            <div v-if="subtitle" class="text-xs text-[color:var(--text-dim)] mt-0.5">
+            <div
+              v-if="subtitle"
+              class="text-xs text-[color:var(--text-dim)] mt-0.5"
+            >
               {{ subtitle }}
             </div>
           </div>
@@ -57,11 +71,17 @@
           :style="{ color: color }"
         >
           {{ formattedValue }}
-          <span v-if="unit" class="text-2xl text-[color:var(--text-muted)] ml-1">{{ unit }}</span>
+          <span
+            v-if="unit"
+            class="text-2xl text-[color:var(--text-muted)] ml-1"
+          >{{ unit }}</span>
         </div>
         
         <!-- Тренд и изменение -->
-        <div v-if="trend !== null" class="flex items-center gap-2 text-sm">
+        <div
+          v-if="trend !== null"
+          class="flex items-center gap-2 text-sm"
+        >
           <div 
             class="flex items-center gap-1 font-medium"
             :class="trend > 0 ? 'text-[color:var(--accent-green)]' : trend < 0 ? 'text-[color:var(--accent-red)]' : 'text-[color:var(--text-dim)]'"
@@ -73,7 +93,12 @@
               stroke="currentColor" 
               viewBox="0 0 24 24"
             >
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
+              />
             </svg>
             <svg 
               v-else-if="trend < 0" 
@@ -82,7 +107,12 @@
               stroke="currentColor" 
               viewBox="0 0 24 24"
             >
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6" />
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6"
+              />
             </svg>
             <svg 
               v-else 
@@ -91,16 +121,27 @@
               stroke="currentColor" 
               viewBox="0 0 24 24"
             >
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14" />
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M5 12h14"
+              />
             </svg>
             <span>{{ Math.abs(trend).toFixed(decimals) }}</span>
           </div>
-          <span v-if="trendLabel" class="text-[color:var(--text-dim)] text-xs">{{ trendLabel }}</span>
+          <span
+            v-if="trendLabel"
+            class="text-[color:var(--text-dim)] text-xs"
+          >{{ trendLabel }}</span>
         </div>
       </div>
 
       <!-- Прогресс-бар для целевых значений -->
-      <div v-if="target !== null && target.min !== undefined && target.max !== undefined" class="mb-2">
+      <div
+        v-if="target !== null && target.min !== undefined && target.max !== undefined"
+        class="mb-2"
+      >
         <div class="flex items-center justify-between text-xs mb-1">
           <span class="text-[color:var(--text-muted)]">Цель: {{ target.min }}-{{ target.max }}</span>
           <span 
@@ -124,7 +165,10 @@
       </div>
 
       <!-- Дополнительная информация -->
-      <div v-if="$slots.footer" class="mt-3 pt-3 border-t border-[color:var(--border-muted)]">
+      <div
+        v-if="$slots.footer"
+        class="mt-3 pt-3 border-t border-[color:var(--border-muted)]"
+      >
         <slot name="footer"></slot>
       </div>
     </div>

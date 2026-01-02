@@ -17,19 +17,24 @@
 
     <Card>
       <div class="flex items-center justify-between mb-2">
-        <div class="text-sm font-semibold">Рецепт</div>
+        <div class="text-sm font-semibold">
+          Рецепт
+        </div>
         <template v-if="canManageRecipe">
           <Button
             size="sm"
             :variant="activeGrowCycle ? 'secondary' : 'primary'"
-            @click="activeGrowCycle ? $emit('change-recipe') : $emit('run-cycle')"
             data-testid="recipe-attach-btn"
+            @click="activeGrowCycle ? $emit('change-recipe') : $emit('run-cycle')"
           >
             {{ activeGrowCycle ? 'Сменить ревизию' : 'Запустить цикл' }}
           </Button>
         </template>
       </div>
-      <div v-if="activeGrowCycle?.recipeRevision?.recipe" class="text-sm text-[color:var(--text-muted)]">
+      <div
+        v-if="activeGrowCycle?.recipeRevision?.recipe"
+        class="text-sm text-[color:var(--text-muted)]"
+      >
         <div class="font-semibold">
           {{ activeGrowCycle.recipeRevision.recipe.name }}
         </div>
@@ -41,15 +46,24 @@
           </span>
         </div>
         <div class="mt-2 flex flex-wrap items-center gap-2">
-          <Badge :variant="cycleStatusVariant" class="text-[10px] px-2 py-0.5">
+          <Badge
+            :variant="cycleStatusVariant"
+            class="text-[10px] px-2 py-0.5"
+          >
             {{ cycleStatusLabel }}
           </Badge>
-          <span v-if="phaseTimeLeftLabel" class="text-[11px] text-[color:var(--text-dim)]">
+          <span
+            v-if="phaseTimeLeftLabel"
+            class="text-[11px] text-[color:var(--text-dim)]"
+          >
             {{ phaseTimeLeftLabel }}
           </span>
         </div>
       </div>
-      <div v-else class="space-y-2">
+      <div
+        v-else
+        class="space-y-2"
+      >
         <div class="text-sm text-[color:var(--text-dim)]">
           Цикл выращивания не запущен
         </div>
@@ -62,7 +76,9 @@
     </Card>
 
     <Card>
-      <div class="text-sm font-semibold mb-3">Циклы</div>
+      <div class="text-sm font-semibold mb-3">
+        Циклы
+      </div>
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
         <div
           v-for="cycle in cyclesList"
@@ -95,41 +111,72 @@
             <div v-else-if="cycle.recipeTargets && cycle.type === 'IRRIGATION' && typeof cycle.recipeTargets.interval_minutes === 'number' && typeof cycle.recipeTargets.duration_seconds === 'number'">
               Полив: каждые {{ cycle.recipeTargets.interval_minutes }} мин, {{ cycle.recipeTargets.duration_seconds }} с
             </div>
-            <div v-else class="text-[color:var(--text-dim)]">
+            <div
+              v-else
+              class="text-[color:var(--text-dim)]"
+            >
               Таргеты для этой фазы не заданы
             </div>
           </div>
 
-          <div class="text-xs mb-1">Стратегия: {{ translateStrategy(cycle.strategy || 'periodic') }}</div>
-          <div class="text-xs mb-2">Интервал: {{ cycle.interval ? formatInterval(cycle.interval) : 'Не настроено' }}</div>
+          <div class="text-xs mb-1">
+            Стратегия: {{ translateStrategy(cycle.strategy || 'periodic') }}
+          </div>
+          <div class="text-xs mb-2">
+            Интервал: {{ cycle.interval ? formatInterval(cycle.interval) : 'Не настроено' }}
+          </div>
 
           <div class="mb-2">
-            <div class="text-xs text-[color:var(--text-dim)] mb-1">Последний запуск:</div>
+            <div class="text-xs text-[color:var(--text-dim)] mb-1">
+              Последний запуск:
+            </div>
             <div class="flex items-center gap-2">
-              <div v-if="cycle.last_run" class="w-2 h-2 rounded-full bg-[color:var(--accent-green)]"></div>
-              <div v-else class="w-2 h-2 rounded-full bg-[color:var(--text-dim)]"></div>
+              <div
+                v-if="cycle.last_run"
+                class="w-2 h-2 rounded-full bg-[color:var(--accent-green)]"
+              ></div>
+              <div
+                v-else
+                class="w-2 h-2 rounded-full bg-[color:var(--text-dim)]"
+              ></div>
               <span class="text-xs text-[color:var(--text-muted)]">{{ formatTimeShort(cycle.last_run) }}</span>
             </div>
           </div>
 
           <div class="mb-2">
-            <div class="text-xs text-[color:var(--text-dim)] mb-1">Следующий запуск:</div>
-            <div v-if="cycle.next_run" class="space-y-1">
+            <div class="text-xs text-[color:var(--text-dim)] mb-1">
+              Следующий запуск:
+            </div>
+            <div
+              v-if="cycle.next_run"
+              class="space-y-1"
+            >
               <div class="flex items-center gap-2">
                 <div class="w-2 h-2 rounded-full bg-[color:var(--accent-amber)] animate-pulse"></div>
                 <span class="text-xs text-[color:var(--text-muted)]">{{ formatTimeShort(cycle.next_run) }}</span>
               </div>
-              <div v-if="cycle.last_run && cycle.interval" class="w-full h-1.5 bg-[color:var(--border-muted)] rounded-full overflow-hidden">
+              <div
+                v-if="cycle.last_run && cycle.interval"
+                class="w-full h-1.5 bg-[color:var(--border-muted)] rounded-full overflow-hidden"
+              >
                 <div
                   class="h-full bg-[color:var(--accent-amber)] transition-all duration-300"
                   :style="{ width: `${getProgressToNextRun(cycle)}%` }"
                 ></div>
               </div>
-              <div v-if="cycle.last_run && cycle.interval" class="text-xs text-[color:var(--text-dim)]">
+              <div
+                v-if="cycle.last_run && cycle.interval"
+                class="text-xs text-[color:var(--text-dim)]"
+              >
                 {{ getTimeUntilNextRun(cycle) }}
               </div>
             </div>
-            <div v-else class="text-xs text-[color:var(--text-dim)]">Не запланирован</div>
+            <div
+              v-else
+              class="text-xs text-[color:var(--text-dim)]"
+            >
+              Не запланирован
+            </div>
           </div>
         </div>
       </div>

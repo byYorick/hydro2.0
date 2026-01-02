@@ -1,5 +1,8 @@
 <template>
-  <div class="status-indicator-wrapper" :class="wrapperClass">
+  <div
+    class="status-indicator-wrapper"
+    :class="wrapperClass"
+  >
     <!-- Светодиодный индикатор -->
     <div
       class="status-indicator"
@@ -16,7 +19,10 @@
     </div>
     
     <!-- Текст статуса (опционально) -->
-    <span v-if="showLabel" class="status-label ml-2 text-xs font-medium">
+    <span
+      v-if="showLabel"
+      class="status-label ml-2 text-xs font-medium"
+    >
       {{ statusText }}
     </span>
   </div>

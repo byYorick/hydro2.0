@@ -2,8 +2,12 @@
   <AppLayout>
     <div class="max-w-4xl mx-auto">
       <div class="mb-6">
-        <h1 class="text-2xl font-bold mb-2">Мастер запуска цикла выращивания</h1>
-        <p class="text-sm text-[color:var(--text-muted)]">Пошаговая настройка цикла от посадки до сбора</p>
+        <h1 class="text-2xl font-bold mb-2">
+          Мастер запуска цикла выращивания
+        </h1>
+        <p class="text-sm text-[color:var(--text-muted)]">
+          Пошаговая настройка цикла от посадки до сбора
+        </p>
       </div>
 
       <GrowthCycleWizard

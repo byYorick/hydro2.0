@@ -17,8 +17,8 @@ vi.mock('@/utils/logger', () => ({
 }))
 
 // Mock echoClient
-const mockStateListeners = new Set<Function>()
-const mockOnWsStateChange = vi.fn((listener: Function) => {
+const mockStateListeners = new Set<() => void>()
+const mockOnWsStateChange = vi.fn((listener: () => void) => {
   mockStateListeners.add(listener)
   return () => mockStateListeners.delete(listener)
 })

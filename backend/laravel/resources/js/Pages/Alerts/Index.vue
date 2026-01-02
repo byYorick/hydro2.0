@@ -10,18 +10,38 @@
       <FilterBar>
         <div class="flex items-center gap-2 flex-1 sm:flex-none">
           <label class="text-sm text-[color:var(--text-muted)] shrink-0">Статус:</label>
-          <select v-model="statusFilter" data-testid="alerts-filter-active" class="input-select flex-1 sm:w-auto sm:min-w-[160px]">
-            <option value="active">Только активные</option>
-            <option value="resolved">Только решённые</option>
-            <option value="all">Все</option>
+          <select
+            v-model="statusFilter"
+            data-testid="alerts-filter-active"
+            class="input-select flex-1 sm:w-auto sm:min-w-[160px]"
+          >
+            <option value="active">
+              Только активные
+            </option>
+            <option value="resolved">
+              Только решённые
+            </option>
+            <option value="all">
+              Все
+            </option>
           </select>
         </div>
 
         <div class="flex items-center gap-2 flex-1 sm:flex-none">
           <label class="text-sm text-[color:var(--text-muted)] shrink-0">Зона:</label>
-          <select v-model="zoneIdFilter" data-testid="alerts-filter-zone" class="input-select flex-1 sm:w-auto sm:min-w-[180px]">
-            <option value="">Все зоны</option>
-            <option v-for="zone in zoneOptions" :key="zone.id" :value="String(zone.id)">
+          <select
+            v-model="zoneIdFilter"
+            data-testid="alerts-filter-zone"
+            class="input-select flex-1 sm:w-auto sm:min-w-[180px]"
+          >
+            <option value="">
+              Все зоны
+            </option>
+            <option
+              v-for="zone in zoneOptions"
+              :key="zone.id"
+              :value="String(zone.id)"
+            >
               {{ zone.name }}
             </option>
           </select>
@@ -60,10 +80,18 @@
         </div>
 
         <template #actions>
-          <div v-if="selectedCount" class="text-xs text-[color:var(--text-dim)]">
+          <div
+            v-if="selectedCount"
+            class="text-xs text-[color:var(--text-dim)]"
+          >
             Выбрано: {{ selectedCount }}
           </div>
-          <Button size="sm" variant="outline" @click="loadAlerts" :disabled="isRefreshing">
+          <Button
+            size="sm"
+            variant="outline"
+            :disabled="isRefreshing"
+            @click="loadAlerts"
+          >
             {{ isRefreshing ? 'Обновляем...' : 'Обновить' }}
           </Button>
           <Button
@@ -158,46 +186,105 @@
       @confirm="resolveSelected"
     />
 
-    <div v-if="selectedAlert" class="fixed inset-0 z-50">
-      <div class="absolute inset-0 bg-[color:var(--bg-main)] opacity-70" @click="closeDetails"></div>
+    <div
+      v-if="selectedAlert"
+      class="fixed inset-0 z-50"
+    >
+      <div
+        class="absolute inset-0 bg-[color:var(--bg-main)] opacity-70"
+        @click="closeDetails"
+      ></div>
       <div
         class="absolute right-0 top-0 h-full w-full max-w-md bg-[color:var(--bg-surface-strong)] border-l border-[color:var(--border-muted)] p-5 overflow-y-auto"
       >
         <div class="flex items-center justify-between mb-4">
-          <div class="text-base font-semibold">Детали алерта</div>
-          <Button size="sm" variant="outline" @click="closeDetails">Закрыть</Button>
+          <div class="text-base font-semibold">
+            Детали алерта
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            @click="closeDetails"
+          >
+            Закрыть
+          </Button>
         </div>
         <div class="space-y-4 text-sm text-[color:var(--text-muted)]">
           <div class="space-y-1">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Тип</div>
-            <div class="text-[color:var(--text-primary)] font-semibold">{{ selectedAlert.type }}</div>
+            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+              Тип
+            </div>
+            <div class="text-[color:var(--text-primary)] font-semibold">
+              {{ selectedAlert.type }}
+            </div>
           </div>
-          <div v-if="selectedAlert.code" class="space-y-1">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Code</div>
-            <div class="text-[color:var(--text-primary)] font-semibold">{{ selectedAlert.code }}</div>
+          <div
+            v-if="selectedAlert.code"
+            class="space-y-1"
+          >
+            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+              Code
+            </div>
+            <div class="text-[color:var(--text-primary)] font-semibold">
+              {{ selectedAlert.code }}
+            </div>
           </div>
-          <div v-if="selectedAlert.source" class="space-y-1">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Source</div>
-            <div class="text-[color:var(--text-primary)] font-semibold">{{ selectedAlert.source }}</div>
+          <div
+            v-if="selectedAlert.source"
+            class="space-y-1"
+          >
+            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+              Source
+            </div>
+            <div class="text-[color:var(--text-primary)] font-semibold">
+              {{ selectedAlert.source }}
+            </div>
           </div>
-          <div v-if="selectedAlert.message" class="space-y-1">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Сообщение</div>
-            <div class="text-[color:var(--text-primary)]">{{ selectedAlert.message }}</div>
+          <div
+            v-if="selectedAlert.message"
+            class="space-y-1"
+          >
+            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+              Сообщение
+            </div>
+            <div class="text-[color:var(--text-primary)]">
+              {{ selectedAlert.message }}
+            </div>
           </div>
           <div class="space-y-1">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Статус</div>
-            <div class="text-[color:var(--text-primary)]">{{ translateStatus(selectedAlert.status) }}</div>
+            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+              Статус
+            </div>
+            <div class="text-[color:var(--text-primary)]">
+              {{ translateStatus(selectedAlert.status) }}
+            </div>
           </div>
           <div class="space-y-1">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Создан</div>
-            <div class="text-[color:var(--text-primary)]">{{ formatDate(selectedAlert.created_at) }}</div>
+            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+              Создан
+            </div>
+            <div class="text-[color:var(--text-primary)]">
+              {{ formatDate(selectedAlert.created_at) }}
+            </div>
           </div>
-          <div v-if="selectedAlert.resolved_at" class="space-y-1">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Подтвержден</div>
-            <div class="text-[color:var(--text-primary)]">{{ formatDate(selectedAlert.resolved_at) }}</div>
+          <div
+            v-if="selectedAlert.resolved_at"
+            class="space-y-1"
+          >
+            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+              Подтвержден
+            </div>
+            <div class="text-[color:var(--text-primary)]">
+              {{ formatDate(selectedAlert.resolved_at) }}
+            </div>
           </div>
-          <div class="space-y-1" v-if="selectedAlert.zone_id">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Зона</div>
+          <div
+            v-if="selectedAlert.zone_id"
+            class="space-y-1"
+          >
+            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+              Зона
+            </div>
             <Link
               class="text-[color:var(--accent-cyan)] font-semibold hover:underline"
               :href="`/zones/${selectedAlert.zone_id}`"
@@ -205,8 +292,13 @@
               {{ selectedAlert.zone?.name || `Zone #${selectedAlert.zone_id}` }}
             </Link>
           </div>
-          <div v-if="detailsJson" class="space-y-1">
-            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">Details</div>
+          <div
+            v-if="detailsJson"
+            class="space-y-1"
+          >
+            <div class="text-xs uppercase tracking-[0.12em] text-[color:var(--text-dim)]">
+              Details
+            </div>
             <pre class="text-xs whitespace-pre-wrap rounded-lg border border-[color:var(--border-muted)] p-3 bg-[color:var(--bg-surface)]">
 {{ detailsJson }}
             </pre>

@@ -1,18 +1,29 @@
 <template>
-  <Card v-if="recipeInstance?.recipe" class="bg-[color:var(--bg-surface-strong)] border-[color:var(--border-muted)]">
+  <Card
+    v-if="recipeInstance?.recipe"
+    class="bg-[color:var(--bg-surface-strong)] border-[color:var(--border-muted)]"
+  >
     <div class="space-y-3">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
           <div class="w-2 h-2 rounded-full bg-[color:var(--accent-cyan)] animate-pulse"></div>
-          <div class="text-sm font-semibold">Прогресс рецепта</div>
+          <div class="text-sm font-semibold">
+            Прогресс рецепта
+          </div>
         </div>
-        <Badge :variant="progressVariant" class="text-xs">
+        <Badge
+          :variant="progressVariant"
+          class="text-xs"
+        >
           {{ currentPhaseName || `Фаза ${currentPhaseIndex + 1}` }}
         </Badge>
       </div>
 
       <!-- Прогресс текущей фазы -->
-      <div v-if="phaseProgress !== null" class="space-y-2">
+      <div
+        v-if="phaseProgress !== null"
+        class="space-y-2"
+      >
         <div class="flex items-center justify-between text-xs">
           <span class="text-[color:var(--text-muted)]">
             {{ currentPhaseName || `Фаза ${currentPhaseIndex + 1}` }}
@@ -40,16 +51,25 @@
         </div>
 
         <!-- Информация о следующей фазе -->
-        <div v-if="nextPhaseInfo" class="flex items-center justify-between text-xs text-[color:var(--text-muted)]">
+        <div
+          v-if="nextPhaseInfo"
+          class="flex items-center justify-between text-xs text-[color:var(--text-muted)]"
+        >
           <span>Следующая фаза: {{ nextPhaseInfo.name }}</span>
-          <span v-if="nextPhaseInfo.daysRemaining !== null" class="font-medium text-[color:var(--text-primary)]">
+          <span
+            v-if="nextPhaseInfo.daysRemaining !== null"
+            class="font-medium text-[color:var(--text-primary)]"
+          >
             через {{ formatDays(nextPhaseInfo.daysRemaining) }}
           </span>
         </div>
       </div>
 
       <!-- Общий прогресс рецепта (все фазы) -->
-      <div v-if="totalPhases > 1" class="pt-2 border-t border-[color:var(--border-muted)]">
+      <div
+        v-if="totalPhases > 1"
+        class="pt-2 border-t border-[color:var(--border-muted)]"
+      >
         <div class="flex items-center justify-between text-xs mb-1">
           <span class="text-[color:var(--text-muted)]">Общий прогресс рецепта</span>
           <span class="font-medium text-[color:var(--text-primary)]">

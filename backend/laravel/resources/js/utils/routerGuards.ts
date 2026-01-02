@@ -20,7 +20,7 @@ interface OriginalRouterMethods {
 }
 
 // Храним оригинальные методы router для предотвращения наложения обёрток при HMR
-let originalRouterMethods: OriginalRouterMethods = {
+const originalRouterMethods: OriginalRouterMethods = {
   reload: null,
   visit: null,
   isWrapped: false,

@@ -34,10 +34,16 @@
     
     <!-- Текст внутри -->
     <div class="absolute inset-0 flex flex-col items-center justify-center">
-      <span class="text-2xl font-bold" :class="textColorClass">
+      <span
+        class="text-2xl font-bold"
+        :class="textColorClass"
+      >
         {{ Math.round(progress) }}%
       </span>
-      <span v-if="label" class="text-xs text-[color:var(--text-muted)] mt-0.5">
+      <span
+        v-if="label"
+        class="text-xs text-[color:var(--text-muted)] mt-0.5"
+      >
         {{ label }}
       </span>
     </div>

@@ -4,26 +4,44 @@
       <div class="space-y-6">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 class="text-lg font-semibold">Теплицы</h1>
+            <h1 class="text-lg font-semibold">
+              Теплицы
+            </h1>
             <p class="text-sm text-[color:var(--text-muted)] max-w-2xl">
               Управление всеми теплицами системы
             </p>
           </div>
           <div class="flex flex-wrap gap-2">
-            <Button size="sm" variant="primary" @click="openCreateModal">
+            <Button
+              size="sm"
+              variant="primary"
+              @click="openCreateModal"
+            >
               Новая теплица
             </Button>
           </div>
         </div>
 
-        <div v-if="greenhouses.length === 0" class="text-center py-12">
-          <div class="text-[color:var(--text-muted)] mb-4">Нет теплиц</div>
-          <Button size="sm" variant="primary" @click="openCreateModal">
+        <div
+          v-if="greenhouses.length === 0"
+          class="text-center py-12"
+        >
+          <div class="text-[color:var(--text-muted)] mb-4">
+            Нет теплиц
+          </div>
+          <Button
+            size="sm"
+            variant="primary"
+            @click="openCreateModal"
+          >
             Создать первую теплицу
           </Button>
         </div>
 
-        <div v-else class="grid gap-4 grid-cols-1 md:grid-cols-2">
+        <div
+          v-else
+          class="grid gap-4 grid-cols-1 md:grid-cols-2"
+        >
           <Card
             v-for="greenhouse in greenhouses"
             :key="greenhouse.id"
@@ -38,22 +56,39 @@
                 <h3 class="text-lg font-semibold text-[color:var(--text-primary)] truncate">
                   {{ greenhouse.name }}
                 </h3>
-                <p v-if="greenhouse.description" class="text-xs text-[color:var(--text-dim)] mt-1 line-clamp-2">
+                <p
+                  v-if="greenhouse.description"
+                  class="text-xs text-[color:var(--text-dim)] mt-1 line-clamp-2"
+                >
                   {{ greenhouse.description }}
                 </p>
-                <div v-if="greenhouse.uid" class="text-xs text-[color:var(--text-dim)] mt-1">
+                <div
+                  v-if="greenhouse.uid"
+                  class="text-xs text-[color:var(--text-dim)] mt-1"
+                >
                   UID: <span class="text-[color:var(--text-muted)]">{{ greenhouse.uid }}</span>
                 </div>
               </div>
               <div class="text-right text-xs text-[color:var(--text-muted)] flex-shrink-0">
                 <div>Зон: <span class="font-semibold text-[color:var(--text-primary)]">{{ greenhouse.zones_count || 0 }}</span></div>
-                <div class="mt-1">Активных: <span class="font-semibold text-[color:var(--accent-green)]">{{ greenhouse.zones_running || 0 }}</span></div>
+                <div class="mt-1">
+                  Активных: <span class="font-semibold text-[color:var(--accent-green)]">{{ greenhouse.zones_running || 0 }}</span>
+                </div>
               </div>
             </div>
 
             <div class="mt-4 flex gap-2">
-              <Link :href="`/greenhouses/${greenhouse.id}`" class="flex-1">
-                <Button size="sm" variant="outline" class="w-full">Открыть</Button>
+              <Link
+                :href="`/greenhouses/${greenhouse.id}`"
+                class="flex-1"
+              >
+                <Button
+                  size="sm"
+                  variant="outline"
+                  class="w-full"
+                >
+                  Открыть
+                </Button>
               </Link>
             </div>
           </Card>

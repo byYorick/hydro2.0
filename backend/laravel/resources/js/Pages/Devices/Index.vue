@@ -1,12 +1,29 @@
 <template>
   <AppLayout>
     <div class="space-y-4">
-      <PageHeader title="Устройства" subtitle="Список узлов, статусы и быстрые действия." eyebrow="инфраструктура">
+      <PageHeader
+        title="Устройства"
+        subtitle="Список узлов, статусы и быстрые действия."
+        eyebrow="инфраструктура"
+      >
         <template #actions>
           <Link href="/devices/add">
-            <Button size="sm" variant="primary">
-              <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            <Button
+              size="sm"
+              variant="primary"
+            >
+              <svg
+                class="w-4 h-4 mr-2"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M12 4v16m8-8H4"
+                />
               </svg>
               Добавить ноду
             </Button>
@@ -22,10 +39,18 @@
             class="input-select flex-1 sm:w-auto sm:min-w-[140px]"
             data-testid="devices-filter-type"
           >
-            <option value="">Все</option>
-            <option value="sensor">Датчик</option>
-            <option value="actuator">Актуатор</option>
-            <option value="controller">Контроллер</option>
+            <option value="">
+              Все
+            </option>
+            <option value="sensor">
+              Датчик
+            </option>
+            <option value="actuator">
+              Актуатор
+            </option>
+            <option value="controller">
+              Контроллер
+            </option>
           </select>
         </div>
         <div class="flex items-center gap-2 flex-1 sm:flex-none">
@@ -39,12 +64,12 @@
         </div>
         <div class="flex items-center gap-2 flex-1 sm:flex-none">
           <button
-            @click="showOnlyFavorites = !showOnlyFavorites"
             class="h-9 px-3 rounded-md border text-sm transition-colors flex items-center gap-1.5 bg-[color:var(--bg-elevated)]"
             :class="showOnlyFavorites
               ? 'border-[color:var(--badge-warning-border)] text-[color:var(--accent-amber)]'
               : 'border-[color:var(--border-muted)] text-[color:var(--text-muted)] hover:border-[color:var(--border-strong)]'"
             data-testid="devices-filter-favorites"
+            @click="showOnlyFavorites = !showOnlyFavorites"
           >
             <svg
               class="w-4 h-4"
@@ -76,9 +101,9 @@
           <template #cell-uid="{ row }">
             <div class="flex items-center gap-2 min-w-0">
               <button
-                @click.stop="toggleDeviceFavorite(row.id)"
                 class="p-0.5 rounded hover:bg-[color:var(--bg-surface-strong)] transition-colors shrink-0 w-5 h-5 flex items-center justify-center"
                 :title="isDeviceFavorite(row.id) ? 'Удалить из избранного' : 'Добавить в избранное'"
+                @click.stop="toggleDeviceFavorite(row.id)"
               >
                 <svg
                   class="w-3.5 h-3.5 transition-colors"
@@ -95,7 +120,12 @@
                   />
                 </svg>
               </button>
-              <Link :href="`/devices/${row.uid || row.id}`" class="text-[color:var(--accent-cyan)] hover:underline truncate min-w-0">{{ row.uid || row.id }}</Link>
+              <Link
+                :href="`/devices/${row.uid || row.id}`"
+                class="text-[color:var(--accent-cyan)] hover:underline truncate min-w-0"
+              >
+                {{ row.uid || row.id }}
+              </Link>
             </div>
           </template>
           <template #cell-zone="{ row }">

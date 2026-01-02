@@ -311,7 +311,7 @@ describe('HeaderStatusBar.vue - WebSocket Integration', () => {
     if (globalEventHandler) {
       // Handler should not throw
       expect(() => {
-        ;(globalEventHandler as any)({
+        (globalEventHandler as any)({
           id: 1,
           kind: 'ERROR',
           message: 'Error occurred',

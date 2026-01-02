@@ -2,7 +2,9 @@
   <div class="space-y-4">
     <div class="flex items-center justify-between">
       <div>
-        <h3 class="text-lg font-semibold text-[color:var(--text-primary)]">AI Прогнозы</h3>
+        <h3 class="text-lg font-semibold text-[color:var(--text-primary)]">
+          AI Прогнозы
+        </h3>
         <p class="text-sm text-[color:var(--text-muted)] mt-1">
           Прогнозирование параметров на основе текущих данных и исторических паттернов
         </p>
@@ -26,8 +28,13 @@
     </div>
 
     <div v-if="expanded">
-      <div v-if="metrics.length === 0" class="py-8 text-center border border-[color:var(--border-muted)] rounded-lg bg-[color:var(--bg-elevated)]">
-        <div class="text-4xl mb-3">🤖</div>
+      <div
+        v-if="metrics.length === 0"
+        class="py-8 text-center border border-[color:var(--border-muted)] rounded-lg bg-[color:var(--bg-elevated)]"
+      >
+        <div class="text-4xl mb-3">
+          🤖
+        </div>
         <div class="text-sm font-medium text-[color:var(--text-primary)] mb-2">
           Прогнозы недоступны
         </div>
@@ -35,7 +42,10 @@
           Для отображения AI прогнозов необходимо настроить целевые значения параметров зоны в текущей фазе рецепта.
         </div>
       </div>
-      <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div
+        v-else
+        class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"
+      >
         <AIPredictionCard
           v-for="metric in metrics"
           :key="metric.type"
@@ -49,8 +59,13 @@
       </div>
     </div>
     
-    <div v-else class="py-6 text-center border border-[color:var(--border-muted)] rounded-lg bg-[color:var(--bg-elevated)]">
-      <div class="text-3xl mb-2">🔮</div>
+    <div
+      v-else
+      class="py-6 text-center border border-[color:var(--border-muted)] rounded-lg bg-[color:var(--bg-elevated)]"
+    >
+      <div class="text-3xl mb-2">
+        🔮
+      </div>
       <div class="text-sm font-medium text-[color:var(--text-primary)] mb-1">
         AI Прогнозы параметров
       </div>

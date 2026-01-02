@@ -2,7 +2,10 @@
   <div class="space-y-3">
     <div class="flex items-center justify-between text-sm">
       <span class="font-semibold text-[color:var(--text-primary)]">Стадии цикла</span>
-      <span v-if="totalStages > 0" class="text-xs text-[color:var(--text-muted)]">
+      <span
+        v-if="totalStages > 0"
+        class="text-xs text-[color:var(--text-muted)]"
+      >
         {{ currentStageIndex + 1 }} / {{ totalStages }}
       </span>
     </div>

@@ -1,9 +1,15 @@
 <template>
-  <Modal :open="show" :title="'Мониторинг системы'" @close="$emit('close')">
+  <Modal
+    :open="show"
+    :title="'Мониторинг системы'"
+    @close="$emit('close')"
+  >
     <div class="space-y-4">
       <!-- Основные компоненты -->
       <div>
-        <h3 class="text-sm font-semibold mb-3 text-[color:var(--text-primary)]">Основные компоненты</h3>
+        <h3 class="text-sm font-semibold mb-3 text-[color:var(--text-primary)]">
+          Основные компоненты
+        </h3>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <ServiceStatusCard
             name="Core API"
@@ -36,7 +42,9 @@
 
       <!-- Python сервисы -->
       <div>
-        <h3 class="text-sm font-semibold mb-3 text-[color:var(--text-primary)]">Python сервисы</h3>
+        <h3 class="text-sm font-semibold mb-3 text-[color:var(--text-primary)]">
+          Python сервисы
+        </h3>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <ServiceStatusCard
             name="History Logger"
@@ -57,7 +65,9 @@
 
       <!-- Цепочка состояния -->
       <div>
-        <h3 class="text-sm font-semibold mb-3 text-[color:var(--text-primary)]">Цепочка состояния</h3>
+        <h3 class="text-sm font-semibold mb-3 text-[color:var(--text-primary)]">
+          Цепочка состояния
+        </h3>
         <div class="bg-[color:var(--bg-surface-strong)] rounded-lg p-4 border border-[color:var(--border-muted)]">
           <div class="flex items-center justify-between gap-4 text-xs">
             <div class="flex items-center gap-2">
@@ -124,7 +134,11 @@
                 'text-[color:var(--badge-warning-text)]': chainStatus.type === 'warning',
               }"
             >
-              <li v-for="issue in chainIssues" :key="issue" class="text-xs">
+              <li
+                v-for="issue in chainIssues"
+                :key="issue"
+                class="text-xs"
+              >
                 {{ issue.replace(/^[❌⚠️]\s*/, '') }}
               </li>
             </ul>
@@ -157,9 +171,9 @@
       <div class="text-xs text-[color:var(--text-dim)] text-center">
         Последнее обновление: {{ lastUpdate ? formatTime(lastUpdate) : 'Никогда' }}
         <button
-          @click="refreshStatus"
           class="ml-2 px-2 py-1 rounded bg-[color:var(--bg-elevated)] hover:bg-[color:var(--bg-surface-strong)] transition-colors"
           :disabled="refreshing"
+          @click="refreshStatus"
         >
           {{ refreshing ? 'Обновление...' : 'Обновить' }}
         </button>

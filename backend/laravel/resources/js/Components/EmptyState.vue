@@ -1,16 +1,26 @@
 <template>
   <div :class="classes">
-    <div v-if="iconValue" class="text-3xl" :class="iconClass">
+    <div
+      v-if="iconValue"
+      class="text-3xl"
+      :class="iconClass"
+    >
       {{ iconValue }}
     </div>
     <div class="text-sm font-semibold text-[color:var(--text-primary)]">
       {{ title }}
     </div>
-    <p v-if="description" class="text-xs text-[color:var(--text-muted)] max-w-md">
+    <p
+      v-if="description"
+      class="text-xs text-[color:var(--text-muted)] max-w-md"
+    >
       {{ description }}
     </p>
-    <div v-if="$slots.action" class="mt-3">
-      <slot name="action" />
+    <div
+      v-if="$slots.action"
+      class="mt-3"
+    >
+      <slot name="action"></slot>
     </div>
   </div>
 </template>

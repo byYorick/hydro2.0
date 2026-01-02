@@ -8,12 +8,14 @@ import apiClient from './apiClient'
 function getWebSocketStore() {
   try {
     // Проверяем доступность Pinia перед использованием store
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { getActivePinia } = require('pinia')
     const pinia = getActivePinia()
     if (!pinia) {
       return null
     }
     // Динамический импорт для избежания циклических зависимостей
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { useWebSocketStore } = require('@/stores/websocket')
     return useWebSocketStore()
   } catch (err) {

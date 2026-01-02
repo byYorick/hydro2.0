@@ -2,7 +2,9 @@
   <Card>
     <div class="space-y-4">
       <div class="flex items-center justify-between">
-        <div class="text-sm font-semibold">Логи PID</div>
+        <div class="text-sm font-semibold">
+          Логи PID
+        </div>
         <div class="flex gap-2">
           <Button
             size="sm"
@@ -31,25 +33,48 @@
         </div>
       </div>
 
-      <div v-if="loading" class="text-sm text-[color:var(--text-muted)] text-center py-4">
+      <div
+        v-if="loading"
+        class="text-sm text-[color:var(--text-muted)] text-center py-4"
+      >
         Загрузка...
       </div>
 
-      <div v-else-if="logs.length === 0" class="text-sm text-[color:var(--text-muted)] text-center py-4">
+      <div
+        v-else-if="logs.length === 0"
+        class="text-sm text-[color:var(--text-muted)] text-center py-4"
+      >
         Нет логов
       </div>
 
-      <div v-else class="overflow-x-auto">
+      <div
+        v-else
+        class="overflow-x-auto"
+      >
         <table class="w-full text-sm">
           <thead>
             <tr class="border-b border-[color:var(--border-muted)]">
-              <th class="text-left py-2 px-3 text-xs font-medium text-[color:var(--text-muted)]">Время</th>
-              <th class="text-left py-2 px-3 text-xs font-medium text-[color:var(--text-muted)]">Тип</th>
-              <th class="text-left py-2 px-3 text-xs font-medium text-[color:var(--text-muted)]">Зона</th>
-              <th class="text-left py-2 px-3 text-xs font-medium text-[color:var(--text-muted)]">Output</th>
-              <th class="text-left py-2 px-3 text-xs font-medium text-[color:var(--text-muted)]">Error</th>
-              <th class="text-left py-2 px-3 text-xs font-medium text-[color:var(--text-muted)]">Current</th>
-              <th class="text-left py-2 px-3 text-xs font-medium text-[color:var(--text-muted)]">Target</th>
+              <th class="text-left py-2 px-3 text-xs font-medium text-[color:var(--text-muted)]">
+                Время
+              </th>
+              <th class="text-left py-2 px-3 text-xs font-medium text-[color:var(--text-muted)]">
+                Тип
+              </th>
+              <th class="text-left py-2 px-3 text-xs font-medium text-[color:var(--text-muted)]">
+                Зона
+              </th>
+              <th class="text-left py-2 px-3 text-xs font-medium text-[color:var(--text-muted)]">
+                Output
+              </th>
+              <th class="text-left py-2 px-3 text-xs font-medium text-[color:var(--text-muted)]">
+                Error
+              </th>
+              <th class="text-left py-2 px-3 text-xs font-medium text-[color:var(--text-muted)]">
+                Current
+              </th>
+              <th class="text-left py-2 px-3 text-xs font-medium text-[color:var(--text-muted)]">
+                Target
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -76,28 +101,49 @@
                 </Badge>
               </td>
               <td class="py-2 px-3 text-[color:var(--text-primary)]">
-                <span v-if="log.zone_state" class="text-xs">
+                <span
+                  v-if="log.zone_state"
+                  class="text-xs"
+                >
                   {{ log.zone_state }}
                 </span>
-                <span v-else class="text-xs text-[color:var(--text-dim)]">-</span>
+                <span
+                  v-else
+                  class="text-xs text-[color:var(--text-dim)]"
+                >-</span>
               </td>
               <td class="py-2 px-3 text-[color:var(--text-primary)]">
                 <span v-if="log.output !== undefined">{{ log.output.toFixed(2) }}</span>
-                <span v-else class="text-[color:var(--text-dim)]">-</span>
+                <span
+                  v-else
+                  class="text-[color:var(--text-dim)]"
+                >-</span>
               </td>
               <td class="py-2 px-3 text-[color:var(--text-primary)]">
-                <span v-if="log.error !== undefined" :class="getErrorClass(log.error)">
+                <span
+                  v-if="log.error !== undefined"
+                  :class="getErrorClass(log.error)"
+                >
                   {{ log.error.toFixed(3) }}
                 </span>
-                <span v-else class="text-[color:var(--text-dim)]">-</span>
+                <span
+                  v-else
+                  class="text-[color:var(--text-dim)]"
+                >-</span>
               </td>
               <td class="py-2 px-3 text-[color:var(--text-primary)]">
                 <span v-if="log.current !== undefined">{{ log.current.toFixed(2) }}</span>
-                <span v-else class="text-[color:var(--text-dim)]">-</span>
+                <span
+                  v-else
+                  class="text-[color:var(--text-dim)]"
+                >-</span>
               </td>
               <td class="py-2 px-3 text-[color:var(--text-primary)]">
                 <span v-if="log.target !== undefined">{{ log.target.toFixed(2) }}</span>
-                <span v-else class="text-[color:var(--text-dim)]">-</span>
+                <span
+                  v-else
+                  class="text-[color:var(--text-dim)]"
+                >-</span>
               </td>
             </tr>
           </tbody>
@@ -105,7 +151,10 @@
       </div>
 
       <!-- Пагинация -->
-      <div v-if="total > limit" class="flex items-center justify-between pt-4 border-t border-[color:var(--border-muted)]">
+      <div
+        v-if="total > limit"
+        class="flex items-center justify-between pt-4 border-t border-[color:var(--border-muted)]"
+      >
         <div class="text-xs text-[color:var(--text-muted)]">
           Показано {{ logs.length }} из {{ total }}
         </div>

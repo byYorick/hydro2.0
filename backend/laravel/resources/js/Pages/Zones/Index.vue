@@ -4,16 +4,22 @@
       <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-5 shadow-[var(--shadow-card)]">
         <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">мониторинг зон</p>
-            <h1 class="text-2xl font-semibold tracking-tight mt-1">Зоны выращивания</h1>
-            <p class="text-sm text-[color:var(--text-dim)] mt-1">Статусы, быстрые действия и сравнение зон.</p>
+            <p class="text-[11px] uppercase tracking-[0.28em] text-[color:var(--text-dim)]">
+              мониторинг зон
+            </p>
+            <h1 class="text-2xl font-semibold tracking-tight mt-1">
+              Зоны выращивания
+            </h1>
+            <p class="text-sm text-[color:var(--text-dim)] mt-1">
+              Статусы, быстрые действия и сравнение зон.
+            </p>
           </div>
           <div class="flex flex-wrap gap-2 justify-end">
             <Button
               size="sm"
               variant="secondary"
-              @click="showComparisonModal = true"
               :disabled="filteredZones.length < 2"
+              @click="showComparisonModal = true"
             >
               📊 Сравнить зоны
             </Button>
@@ -21,24 +27,44 @@
         </div>
         <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 mt-4">
           <div class="glass-panel border border-[color:var(--badge-success-border)] rounded-xl p-3 shadow-[inset_0_0_0_1px_var(--badge-success-border)]">
-            <div class="text-xs text-[color:var(--text-dim)] uppercase tracking-[0.15em] mb-1">Активные</div>
-            <div class="text-3xl font-semibold text-[color:var(--accent-green)]">{{ runningCount }}</div>
+            <div class="text-xs text-[color:var(--text-dim)] uppercase tracking-[0.15em] mb-1">
+              Активные
+            </div>
+            <div class="text-3xl font-semibold text-[color:var(--accent-green)]">
+              {{ runningCount }}
+            </div>
           </div>
           <div class="glass-panel border border-[color:var(--border-muted)] rounded-xl p-3">
-            <div class="text-xs text-[color:var(--text-dim)] uppercase tracking-[0.15em] mb-1">Пауза</div>
-            <div class="text-3xl font-semibold text-[color:var(--text-primary)]">{{ pausedCount }}</div>
+            <div class="text-xs text-[color:var(--text-dim)] uppercase tracking-[0.15em] mb-1">
+              Пауза
+            </div>
+            <div class="text-3xl font-semibold text-[color:var(--text-primary)]">
+              {{ pausedCount }}
+            </div>
           </div>
           <div class="glass-panel border border-[color:var(--badge-warning-border)] rounded-xl p-3">
-            <div class="text-xs text-[color:var(--text-dim)] uppercase tracking-[0.15em] mb-1">Warning</div>
-            <div class="text-3xl font-semibold text-[color:var(--accent-amber)]">{{ warningCount }}</div>
+            <div class="text-xs text-[color:var(--text-dim)] uppercase tracking-[0.15em] mb-1">
+              Warning
+            </div>
+            <div class="text-3xl font-semibold text-[color:var(--accent-amber)]">
+              {{ warningCount }}
+            </div>
           </div>
           <div class="glass-panel border border-[color:var(--badge-danger-border)] rounded-xl p-3">
-            <div class="text-xs text-[color:var(--text-dim)] uppercase tracking-[0.15em] mb-1">Alarm</div>
-            <div class="text-3xl font-semibold text-[color:var(--accent-red)]">{{ alarmCount }}</div>
+            <div class="text-xs text-[color:var(--text-dim)] uppercase tracking-[0.15em] mb-1">
+              Alarm
+            </div>
+            <div class="text-3xl font-semibold text-[color:var(--accent-red)]">
+              {{ alarmCount }}
+            </div>
           </div>
           <div class="glass-panel border border-[color:var(--badge-info-border)] rounded-xl p-3">
-            <div class="text-xs text-[color:var(--text-dim)] uppercase tracking-[0.15em] mb-1">Всего</div>
-            <div class="text-3xl font-semibold text-[color:var(--accent-cyan)]">{{ totalZones }}</div>
+            <div class="text-xs text-[color:var(--text-dim)] uppercase tracking-[0.15em] mb-1">
+              Всего
+            </div>
+            <div class="text-3xl font-semibold text-[color:var(--accent-cyan)]">
+              {{ totalZones }}
+            </div>
           </div>
         </div>
       </div>
@@ -52,11 +78,21 @@
               class="input-select h-10 flex-1 sm:w-auto sm:min-w-[160px]"
               data-testid="zones-filter-status"
             >
-              <option value="">Все</option>
-              <option value="RUNNING">Запущено</option>
-              <option value="PAUSED">Приостановлено</option>
-              <option value="WARNING">Предупреждение</option>
-              <option value="ALARM">Тревога</option>
+              <option value="">
+                Все
+              </option>
+              <option value="RUNNING">
+                Запущено
+              </option>
+              <option value="PAUSED">
+                Приостановлено
+              </option>
+              <option value="WARNING">
+                Предупреждение
+              </option>
+              <option value="ALARM">
+                Тревога
+              </option>
             </select>
           </div>
           <div class="flex items-center gap-2 flex-1 sm:flex-none">
@@ -70,12 +106,12 @@
           </div>
           <div class="flex items-center gap-2 flex-1 sm:flex-none">
             <button
-              @click="showOnlyFavorites = !showOnlyFavorites"
               class="h-10 px-3 rounded-lg border text-sm transition-colors flex items-center gap-1.5 bg-[color:var(--bg-surface-strong)]"
               :class="showOnlyFavorites
                 ? 'border-[color:var(--badge-warning-border)] text-[color:var(--accent-amber)] shadow-[0_0_0_1px_var(--badge-warning-border)]'
                 : 'border-[color:var(--border-muted)] text-[color:var(--text-primary)] hover:border-[color:var(--border-strong)]'"
               data-testid="zones-filter-favorites"
+              @click="showOnlyFavorites = !showOnlyFavorites"
             >
               <svg
                 class="w-4 h-4"
@@ -108,9 +144,9 @@
           <template #cell-name="{ row }">
             <div class="flex items-center gap-2 min-w-0">
               <button
-                @click.stop="toggleZoneFavorite(row.id)"
                 class="p-1 rounded-md hover:bg-[color:var(--bg-elevated)] transition-colors shrink-0 w-8 h-8 flex items-center justify-center"
                 :title="isZoneFavorite(row.id) ? 'Удалить из избранного' : 'Добавить в избранное'"
+                @click.stop="toggleZoneFavorite(row.id)"
               >
                 <svg
                   class="w-4 h-4 transition-colors"
@@ -127,11 +163,21 @@
                   />
                 </svg>
               </button>
-              <Link :href="`/zones/${row.id}`" class="text-[color:var(--accent-cyan)] hover:underline truncate min-w-0 font-semibold">{{ row.name || '-' }}</Link>
+              <Link
+                :href="`/zones/${row.id}`"
+                class="text-[color:var(--accent-cyan)] hover:underline truncate min-w-0 font-semibold"
+              >
+                {{ row.name || '-' }}
+              </Link>
             </div>
           </template>
           <template #cell-status="{ row }">
-            <Badge :variant="getStatusVariant(row.status)" class="shrink-0">{{ translateStatus(row.status) }}</Badge>
+            <Badge
+              :variant="getStatusVariant(row.status)"
+              class="shrink-0"
+            >
+              {{ translateStatus(row.status) }}
+            </Badge>
           </template>
           <template #cell-greenhouse="{ row }">
             <span class="truncate block">{{ row.greenhouse?.name || '-' }}</span>
@@ -147,7 +193,12 @@
           </template>
           <template #cell-actions="{ row }">
             <Link :href="`/zones/${row.id}`">
-              <Button size="sm" variant="secondary">Подробнее</Button>
+              <Button
+                size="sm"
+                variant="secondary"
+              >
+                Подробнее
+              </Button>
             </Link>
           </template>
         </DataTableV2>

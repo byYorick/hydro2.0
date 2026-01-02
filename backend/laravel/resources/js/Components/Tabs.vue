@@ -1,5 +1,9 @@
 <template>
-  <div class="flex flex-wrap gap-2" role="tablist" :aria-label="ariaLabel">
+  <div
+    class="flex flex-wrap gap-2"
+    role="tablist"
+    :aria-label="ariaLabel"
+  >
     <button
       v-for="(tab, index) in tabs"
       :key="tab.id"

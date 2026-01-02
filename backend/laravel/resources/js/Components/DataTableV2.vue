@@ -25,7 +25,10 @@
                 </span>
               </button>
               <span v-else>
-                <slot :name="`header-${column.key}`" :column="column">
+                <slot
+                  :name="`header-${column.key}`"
+                  :column="column"
+                >
                   {{ column.label }}
                 </slot>
               </span>
@@ -46,7 +49,10 @@
               :colspan="columns.length + (hasRowActions ? 1 : 0)"
               class="px-3 py-6"
             >
-              <SkeletonBlock :lines="skeletonLines" line-height="0.75rem" />
+              <SkeletonBlock
+                :lines="skeletonLines"
+                line-height="0.75rem"
+              />
             </td>
           </tr>
           <tr v-else-if="sortedRows.length === 0">
@@ -64,8 +70,8 @@
             </td>
           </tr>
           <tr
-            v-else
             v-for="(row, index) in sortedRows"
+            v-else
             :key="getRowKey(row, index)"
             :data-testid="getRowTestId(row, index)"
             class="border-b border-[color:var(--border-muted)] transition-colors"
@@ -87,8 +93,15 @@
                 {{ formatCellValue(getCellValue(row, column)) }}
               </slot>
             </td>
-            <td v-if="hasRowActions" class="px-3 py-2">
-              <slot name="row-actions" :row="row" :index="index" />
+            <td
+              v-if="hasRowActions"
+              class="px-3 py-2"
+            >
+              <slot
+                name="row-actions"
+                :row="row"
+                :index="index"
+              ></slot>
             </td>
           </tr>
         </tbody>
@@ -124,8 +137,15 @@
                   {{ formatCellValue(getCellValue(item, column)) }}
                 </slot>
               </td>
-              <td v-if="hasRowActions" class="px-3 py-2">
-                <slot name="row-actions" :row="item" :index="index" />
+              <td
+                v-if="hasRowActions"
+                class="px-3 py-2"
+              >
+                <slot
+                  name="row-actions"
+                  :row="item"
+                  :index="index"
+                ></slot>
               </td>
             </tr>
           </template>

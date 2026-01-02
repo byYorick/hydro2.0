@@ -4,26 +4,46 @@
     <div class="space-y-4">
       <div class="flex items-center justify-between">
         <div>
-          <h1 class="text-lg font-semibold text-[color:var(--text-primary)]">Растения</h1>
-          <p class="text-sm text-[color:var(--text-muted)]">Управление культурами и их агропрофилями</p>
+          <h1 class="text-lg font-semibold text-[color:var(--text-primary)]">
+            Растения
+          </h1>
+          <p class="text-sm text-[color:var(--text-muted)]">
+            Управление культурами и их агропрофилями
+          </p>
         </div>
-        <Button size="sm" variant="primary" @click="openCreateModal">
+        <Button
+          size="sm"
+          variant="primary"
+          @click="openCreateModal"
+        >
           Новое растение
         </Button>
       </div>
       <div class="rounded-xl border border-[color:var(--border-muted)] overflow-hidden max-h-[720px] flex flex-col">
         <div class="overflow-auto flex-1">
           <table class="w-full border-collapse">
-              <thead class="bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)] text-sm sticky top-0 z-10">
-                <tr>
-                  <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Название</th>
-                  <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Вид / Сорт</th>
-                  <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Субстрат</th>
-                  <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Система</th>
-                  <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Фотопериод</th>
-                  <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">Описание</th>
-                </tr>
-              </thead>
+            <thead class="bg-[color:var(--bg-elevated)] text-[color:var(--text-muted)] text-sm sticky top-0 z-10">
+              <tr>
+                <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">
+                  Название
+                </th>
+                <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">
+                  Вид / Сорт
+                </th>
+                <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">
+                  Субстрат
+                </th>
+                <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">
+                  Система
+                </th>
+                <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">
+                  Фотопериод
+                </th>
+                <th class="text-left px-3 py-2 font-semibold border-b border-[color:var(--border-muted)]">
+                  Описание
+                </th>
+              </tr>
+            </thead>
             <tbody>
               <tr
                 v-for="(plant, index) in plants"
@@ -34,9 +54,14 @@
                 ]"
                 class="text-sm border-b border-[color:var(--border-muted)] hover:bg-[color:var(--bg-elevated)] transition-colors"
               >
-                  <td class="px-3 py-2">
-                    <Link :href="`/plants/${plant.id}`" class="font-semibold text-[color:var(--accent-cyan)] hover:underline">{{ plant.name }}</Link>
-                  </td>
+                <td class="px-3 py-2">
+                  <Link
+                    :href="`/plants/${plant.id}`"
+                    class="font-semibold text-[color:var(--accent-cyan)] hover:underline"
+                  >
+                    {{ plant.name }}
+                  </Link>
+                </td>
                 <td class="px-3 py-2 text-xs text-[color:var(--text-muted)]">
                   <div>
                     <span v-if="plant.species">{{ plant.species }}</span>
@@ -56,16 +81,22 @@
                   <span v-if="plant.photoperiod_preset">{{ taxonomyLabel('photoperiod_preset', plant.photoperiod_preset) }}</span>
                   <span v-else>—</span>
                 </td>
-                  <td class="px-3 py-2 text-xs text-[color:var(--text-muted)]">
-                    <span v-if="plant.description" class="truncate block max-w-xs">{{ plant.description }}</span>
-                    <span v-else>—</span>
-                  </td>
+                <td class="px-3 py-2 text-xs text-[color:var(--text-muted)]">
+                  <span
+                    v-if="plant.description"
+                    class="truncate block max-w-xs"
+                  >{{ plant.description }}</span>
+                  <span v-else>—</span>
+                </td>
               </tr>
-                <tr v-if="paginatedPlants.length === 0">
-                  <td colspan="6" class="px-3 py-6 text-sm text-[color:var(--text-dim)] text-center">
-                    {{ props.plants.length === 0 ? 'Растения ещё не добавлены — создайте профиль, чтобы связать его с зонами и рецептами.' : 'Нет растений на текущей странице' }}
-                  </td>
-                </tr>
+              <tr v-if="paginatedPlants.length === 0">
+                <td
+                  colspan="6"
+                  class="px-3 py-6 text-sm text-[color:var(--text-dim)] text-center"
+                >
+                  {{ props.plants.length === 0 ? 'Растения ещё не добавлены — создайте профиль, чтобы связать его с зонами и рецептами.' : 'Нет растений на текущей странице' }}
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -78,93 +109,176 @@
     </div>
     
     <!-- Форма редактирования в модальном окне -->
-    <Modal :open="isEditing" title="Редактирование растения" @close="resetForm" size="large" v-if="selectedPlant">
-      <form @submit.prevent="handleSubmit" class="space-y-4">
-            <div>
-              <label class="block text-xs text-[color:var(--text-muted)] mb-1">Название</label>
-              <input v-model="form.name" type="text" class="input-field" />
-              <p v-if="form.errors.name" class="text-xs text-[color:var(--badge-danger-text)] mt-1">{{ form.errors.name }}</p>
-            </div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label class="block text-xs text-[color:var(--text-muted)] mb-1">Вид</label>
-                <input v-model="form.species" type="text" class="input-field" />
-              </div>
-              <div>
-                <label class="block text-xs text-[color:var(--text-muted)] mb-1">Сорт</label>
-                <input v-model="form.variety" type="text" class="input-field" />
-              </div>
-            </div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label class="block text-xs text-[color:var(--text-muted)] mb-1">Субстрат</label>
-                <select v-model="form.substrate_type" class="input-select">
-                  <option value="">Не выбрано</option>
-                  <option v-for="option in taxonomies.substrate_type" :key="option.id" :value="option.id">
-                    {{ option.label }}
-                  </option>
-                </select>
-              </div>
-              <div>
-                <label class="block text-xs text-[color:var(--text-muted)] mb-1">Система</label>
-                <select v-model="form.growing_system" class="input-select">
-                  <option value="">Не выбрано</option>
-                  <option v-for="option in taxonomies.growing_system" :key="option.id" :value="option.id">
-                    {{ option.label }}
-                  </option>
-                </select>
-              </div>
-            </div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label class="block text-xs text-[color:var(--text-muted)] mb-1">Фотопериод</label>
-                <select v-model="form.photoperiod_preset" class="input-select">
-                  <option value="">Не выбрано</option>
-                  <option v-for="option in taxonomies.photoperiod_preset" :key="option.id" :value="option.id">
-                    {{ option.label }}
-                  </option>
-                </select>
-              </div>
-              <div>
-                <label class="block text-xs text-[color:var(--text-muted)] mb-1">Сезонность</label>
-                <select v-model="form.seasonality" class="input-select">
-                  <option value="">Не выбрано</option>
-                  <option v-for="option in seasonOptions" :key="option.value" :value="option.value">
-                    {{ option.label }}
-                  </option>
-                </select>
-              </div>
-            </div>
-            <div>
-              <label class="block text-xs text-[color:var(--text-muted)] mb-1">Описание</label>
-              <textarea v-model="form.description" rows="4" class="input-field h-auto"></textarea>
-            </div>
-            <div class="space-y-2">
-              <p class="text-sm font-semibold text-[color:var(--text-primary)]">Диапазоны</p>
-              <div class="grid grid-cols-2 gap-2" v-for="metric in rangeMetrics" :key="metric.key">
-                <label class="text-xs text-[color:var(--text-muted)] col-span-2">{{ metric.label }}</label>
-                <input
-                  v-model="form.environment_requirements[metric.key].min"
-                  type="number"
-                  step="0.1"
-                  class="input-field h-8 text-xs"
-                  placeholder="Мин"
-                />
-                <input
-                  v-model="form.environment_requirements[metric.key].max"
-                  type="number"
-                  step="0.1"
-                  class="input-field h-8 text-xs"
-                  placeholder="Макс"
-                />
-              </div>
-            </div>
+    <Modal
+      v-if="selectedPlant"
+      :open="isEditing"
+      title="Редактирование растения"
+      size="large"
+      @close="resetForm"
+    >
+      <form
+        class="space-y-4"
+        @submit.prevent="handleSubmit"
+      >
+        <div>
+          <label class="block text-xs text-[color:var(--text-muted)] mb-1">Название</label>
+          <input
+            v-model="form.name"
+            type="text"
+            class="input-field"
+          />
+          <p
+            v-if="form.errors.name"
+            class="text-xs text-[color:var(--badge-danger-text)] mt-1"
+          >
+            {{ form.errors.name }}
+          </p>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Вид</label>
+            <input
+              v-model="form.species"
+              type="text"
+              class="input-field"
+            />
+          </div>
+          <div>
+            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Сорт</label>
+            <input
+              v-model="form.variety"
+              type="text"
+              class="input-field"
+            />
+          </div>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Субстрат</label>
+            <select
+              v-model="form.substrate_type"
+              class="input-select"
+            >
+              <option value="">
+                Не выбрано
+              </option>
+              <option
+                v-for="option in taxonomies.substrate_type"
+                :key="option.id"
+                :value="option.id"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Система</label>
+            <select
+              v-model="form.growing_system"
+              class="input-select"
+            >
+              <option value="">
+                Не выбрано
+              </option>
+              <option
+                v-for="option in taxonomies.growing_system"
+                :key="option.id"
+                :value="option.id"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Фотопериод</label>
+            <select
+              v-model="form.photoperiod_preset"
+              class="input-select"
+            >
+              <option value="">
+                Не выбрано
+              </option>
+              <option
+                v-for="option in taxonomies.photoperiod_preset"
+                :key="option.id"
+                :value="option.id"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs text-[color:var(--text-muted)] mb-1">Сезонность</label>
+            <select
+              v-model="form.seasonality"
+              class="input-select"
+            >
+              <option value="">
+                Не выбрано
+              </option>
+              <option
+                v-for="option in seasonOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs text-[color:var(--text-muted)] mb-1">Описание</label>
+          <textarea
+            v-model="form.description"
+            rows="4"
+            class="input-field h-auto"
+          ></textarea>
+        </div>
+        <div class="space-y-2">
+          <p class="text-sm font-semibold text-[color:var(--text-primary)]">
+            Диапазоны
+          </p>
+          <div
+            v-for="metric in rangeMetrics"
+            :key="metric.key"
+            class="grid grid-cols-2 gap-2"
+          >
+            <label class="text-xs text-[color:var(--text-muted)] col-span-2">{{ metric.label }}</label>
+            <input
+              v-model="form.environment_requirements[metric.key].min"
+              type="number"
+              step="0.1"
+              class="input-field h-8 text-xs"
+              placeholder="Мин"
+            />
+            <input
+              v-model="form.environment_requirements[metric.key].max"
+              type="number"
+              step="0.1"
+              class="input-field h-8 text-xs"
+              placeholder="Макс"
+            />
+          </div>
+        </div>
       </form>
       <template #footer>
-        <Button type="button" variant="secondary" @click="resetForm" :disabled="form.processing">
+        <Button
+          type="button"
+          variant="secondary"
+          :disabled="form.processing"
+          @click="resetForm"
+        >
           Отмена
         </Button>
-        <Button type="button" @click="handleSubmit" :disabled="form.processing">Сохранить</Button>
+        <Button
+          type="button"
+          :disabled="form.processing"
+          @click="handleSubmit"
+        >
+          Сохранить
+        </Button>
       </template>
     </Modal>
 

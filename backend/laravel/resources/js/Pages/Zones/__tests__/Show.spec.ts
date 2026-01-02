@@ -251,6 +251,7 @@ vi.mock('@/composables/useHistory', () => ({
 }))
 
 vi.mock('@/composables/useCommands', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { ref } = require('vue')
   return {
     useCommands: () => ({
@@ -361,6 +362,7 @@ vi.mock('@/composables/useModal', () => ({
 }))
 
 vi.mock('@/composables/useLoading', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { ref } = require('vue')
   return {
     useLoading: (initialState?: any) => {

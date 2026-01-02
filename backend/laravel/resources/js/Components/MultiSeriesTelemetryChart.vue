@@ -1,7 +1,9 @@
 <template>
   <Card class="relative">
     <div class="flex items-center justify-between mb-2">
-      <div class="text-sm font-semibold">{{ title }}</div>
+      <div class="text-sm font-semibold">
+        {{ title }}
+      </div>
       <div class="flex items-center gap-2">
         <div class="text-xs text-[color:var(--text-dim)] hidden sm:inline">
           <span class="mr-2">🖱️ Колесо мыши — zoom</span>
@@ -11,48 +13,48 @@
           <Button 
             size="sm" 
             variant="outline" 
-            @click="exportData"
             class="text-xs"
             title="Экспорт данных"
+            @click="exportData"
           >
             📥 Экспорт
           </Button>
           <div class="flex gap-1">
-          <Button 
-            size="sm" 
-            :variant="timeRange === '1H' ? 'default' : 'secondary'" 
-            @click="setRange('1H')"
-          >
-            1H
-          </Button>
-          <Button 
-            size="sm" 
-            :variant="timeRange === '24H' ? 'default' : 'secondary'" 
-            @click="setRange('24H')"
-          >
-            24H
-          </Button>
-          <Button 
-            size="sm" 
-            :variant="timeRange === '7D' ? 'default' : 'secondary'" 
-            @click="setRange('7D')"
-          >
-            7D
-          </Button>
-          <Button 
-            size="sm" 
-            :variant="timeRange === '30D' ? 'default' : 'secondary'" 
-            @click="setRange('30D')"
-          >
-            30D
-          </Button>
-          <Button 
-            size="sm" 
-            :variant="timeRange === 'ALL' ? 'default' : 'secondary'" 
-            @click="setRange('ALL')"
-          >
-          ALL
-        </Button>
+            <Button 
+              size="sm" 
+              :variant="timeRange === '1H' ? 'default' : 'secondary'" 
+              @click="setRange('1H')"
+            >
+              1H
+            </Button>
+            <Button 
+              size="sm" 
+              :variant="timeRange === '24H' ? 'default' : 'secondary'" 
+              @click="setRange('24H')"
+            >
+              24H
+            </Button>
+            <Button 
+              size="sm" 
+              :variant="timeRange === '7D' ? 'default' : 'secondary'" 
+              @click="setRange('7D')"
+            >
+              7D
+            </Button>
+            <Button 
+              size="sm" 
+              :variant="timeRange === '30D' ? 'default' : 'secondary'" 
+              @click="setRange('30D')"
+            >
+              30D
+            </Button>
+            <Button 
+              size="sm" 
+              :variant="timeRange === 'ALL' ? 'default' : 'secondary'" 
+              @click="setRange('ALL')"
+            >
+              ALL
+            </Button>
           </div>
         </div>
       </div>

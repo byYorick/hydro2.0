@@ -1,29 +1,52 @@
 <template>
   <div class="flex flex-col gap-2">
-    <div class="text-xs font-semibold text-[color:var(--text-primary)] mb-1">Управление Lifecycle</div>
+    <div class="text-xs font-semibold text-[color:var(--text-primary)] mb-1">
+      Управление Lifecycle
+    </div>
     
-    <div v-if="loading" class="text-xs text-[color:var(--text-muted)]">Загрузка...</div>
+    <div
+      v-if="loading"
+      class="text-xs text-[color:var(--text-muted)]"
+    >
+      Загрузка...
+    </div>
     
-    <div v-else-if="error" class="text-xs text-[color:var(--accent-red)]">{{ error }}</div>
+    <div
+      v-else-if="error"
+      class="text-xs text-[color:var(--accent-red)]"
+    >
+      {{ error }}
+    </div>
     
-    <div v-else-if="allowedTransitions.length === 0" class="text-xs text-[color:var(--text-muted)]">
+    <div
+      v-else-if="allowedTransitions.length === 0"
+      class="text-xs text-[color:var(--text-muted)]"
+    >
       Нет доступных переходов
     </div>
     
-    <div v-else class="flex items-center gap-2">
+    <div
+      v-else
+      class="flex items-center gap-2"
+    >
       <select
         v-model="selectedState"
         class="input-select h-9 flex-1"
         :disabled="transitioning"
       >
-        <option :value="null">Выберите состояние...</option>
+        <option :value="null">
+          Выберите состояние...
+        </option>
         <option 
           v-for="state in allowedTransitions" 
           :key="state.value"
           :value="state.value"
         >
           {{ state.label }}
-          <span v-if="state.is_active" class="text-[color:var(--accent-green)]">(Активно)</span>
+          <span
+            v-if="state.is_active"
+            class="text-[color:var(--accent-green)]"
+          >(Активно)</span>
         </option>
       </select>
       
@@ -37,7 +60,10 @@
       </Button>
     </div>
     
-    <div v-if="currentState" class="text-xs text-[color:var(--text-dim)]">
+    <div
+      v-if="currentState"
+      class="text-xs text-[color:var(--text-dim)]"
+    >
       Текущее состояние: <span class="text-[color:var(--text-primary)]">{{ currentState.label }}</span>
     </div>
   </div>

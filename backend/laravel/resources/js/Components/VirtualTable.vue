@@ -1,5 +1,6 @@
 <template>
   <RecycleScroller
+    v-slot="{ item, index }"
     class="virtual-table"
     :class="containerClass"
     :items="items"
@@ -7,9 +8,11 @@
     :key-field="keyField"
     :tag="tag"
     :item-tag="itemTag"
-    v-slot="{ item, index }"
   >
-    <slot :item="item" :index="index" />
+    <slot
+      :item="item"
+      :index="index"
+    ></slot>
   </RecycleScroller>
 </template>
 

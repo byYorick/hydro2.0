@@ -2,7 +2,9 @@
   <Card>
     <div class="space-y-4">
       <div class="flex items-center justify-between">
-        <div class="text-sm font-semibold">Настройки PID</div>
+        <div class="text-sm font-semibold">
+          Настройки PID
+        </div>
         <div class="flex gap-2">
           <Button
             size="sm"
@@ -23,7 +25,10 @@
         </div>
       </div>
 
-      <form @submit.prevent="onSubmit" class="space-y-4">
+      <form
+        class="space-y-4"
+        @submit.prevent="onSubmit"
+      >
         <!-- Основные параметры -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -57,7 +62,9 @@
               class="input-field w-full"
               required
             />
-            <p class="text-xs text-[color:var(--text-dim)] mt-1">Диапазон: 0-2</p>
+            <p class="text-xs text-[color:var(--text-dim)] mt-1">
+              Диапазон: 0-2
+            </p>
           </div>
 
           <div>
@@ -73,7 +80,9 @@
               class="input-field w-full"
               required
             />
-            <p class="text-xs text-[color:var(--text-dim)] mt-1">Должна быть больше dead_zone</p>
+            <p class="text-xs text-[color:var(--text-dim)] mt-1">
+              Должна быть больше dead_zone
+            </p>
           </div>
 
           <div>
@@ -89,13 +98,17 @@
               class="input-field w-full"
               required
             />
-            <p class="text-xs text-[color:var(--text-dim)] mt-1">Должна быть больше close_zone</p>
+            <p class="text-xs text-[color:var(--text-dim)] mt-1">
+              Должна быть больше close_zone
+            </p>
           </div>
         </div>
 
         <!-- Коэффициенты для близкой зоны -->
         <div class="border-t border-[color:var(--border-muted)] pt-4">
-          <div class="text-xs font-medium text-[color:var(--text-muted)] mb-3">Коэффициенты для близкой зоны</div>
+          <div class="text-xs font-medium text-[color:var(--text-muted)] mb-3">
+            Коэффициенты для близкой зоны
+          </div>
           <div class="grid grid-cols-3 gap-4">
             <div>
               <label class="block text-xs text-[color:var(--text-muted)] mb-1">Kp</label>
@@ -138,7 +151,9 @@
 
         <!-- Коэффициенты для дальней зоны -->
         <div class="border-t border-[color:var(--border-muted)] pt-4">
-          <div class="text-xs font-medium text-[color:var(--text-muted)] mb-3">Коэффициенты для дальней зоны</div>
+          <div class="text-xs font-medium text-[color:var(--text-muted)] mb-3">
+            Коэффициенты для дальней зоны
+          </div>
           <div class="grid grid-cols-3 gap-4">
             <div>
               <label class="block text-xs text-[color:var(--text-muted)] mb-1">Kp</label>
@@ -209,7 +224,9 @@
               class="input-field w-full"
               required
             />
-            <p class="text-xs text-[color:var(--text-dim)] mt-1">В миллисекундах (1000-3600000)</p>
+            <p class="text-xs text-[color:var(--text-dim)] mt-1">
+              В миллисекундах (1000-3600000)
+            </p>
           </div>
 
           <div>
@@ -225,17 +242,22 @@
               class="input-field w-full"
               required
             />
-            <p class="text-xs text-[color:var(--text-dim)] mt-1">Диапазон: 0-1</p>
+            <p class="text-xs text-[color:var(--text-dim)] mt-1">
+              Диапазон: 0-1
+            </p>
           </div>
 
           <div class="flex items-center gap-2 pt-6">
             <input
+              id="autotune"
               v-model="form.enable_autotune"
               type="checkbox"
-              id="autotune"
               class="rounded border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] text-[color:var(--accent-cyan)] focus:ring-[color:var(--focus-ring)]"
             />
-            <label for="autotune" class="text-xs font-medium text-[color:var(--text-muted)]">
+            <label
+              for="autotune"
+              class="text-xs font-medium text-[color:var(--text-muted)]"
+            >
               Включить автонастройку (autotune)
             </label>
           </div>
@@ -246,7 +268,9 @@
           v-if="needsConfirmation"
           class="rounded-md border border-[color:var(--badge-warning-border)] bg-[color:var(--badge-warning-bg)] p-3"
         >
-          <div class="text-xs font-medium text-[color:var(--badge-warning-text)] mb-1">Внимание!</div>
+          <div class="text-xs font-medium text-[color:var(--badge-warning-text)] mb-1">
+            Внимание!
+          </div>
           <div class="text-xs text-[color:var(--badge-warning-text)]">
             Обнаружены агрессивные настройки (высокие коэффициенты или короткий интервал).
             Пожалуйста, подтвердите сохранение.
@@ -255,10 +279,19 @@
 
         <!-- Кнопки -->
         <div class="flex justify-end gap-2 pt-4 border-t border-[color:var(--border-muted)]">
-          <Button type="button" variant="outline" size="sm" @click="onReset">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            @click="onReset"
+          >
             Сбросить
           </Button>
-          <Button type="submit" size="sm" :disabled="loading || (needsConfirmation && !confirmed)">
+          <Button
+            type="submit"
+            size="sm"
+            :disabled="loading || (needsConfirmation && !confirmed)"
+          >
             {{ loading ? 'Сохранение...' : 'Сохранить' }}
           </Button>
         </div>

@@ -59,7 +59,7 @@ beforeEach(() => {
   
   // Мокаем window.Echo
   if (typeof window !== 'undefined') {
-    ;(window as any).Echo = mockEcho
+    (window as any).Echo = mockEcho
   }
   
   // Сбрасываем моки

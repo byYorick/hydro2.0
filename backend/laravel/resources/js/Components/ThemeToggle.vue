@@ -1,10 +1,10 @@
 <template>
   <button
     class="btn btn-ghost h-9 px-3 text-xs"
-    @click="toggleTheme"
     type="button"
     :aria-pressed="isDark"
     aria-label="Переключить тему"
+    @click="toggleTheme"
   >
     <span class="flex items-center gap-2">
       <span

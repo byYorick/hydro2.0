@@ -3,15 +3,32 @@
     <table class="min-w-full text-sm">
       <thead class="bg-[color:var(--bg-surface-strong)] text-[color:var(--text-muted)]">
         <tr>
-          <th v-for="(h, i) in headers" :key="i" class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]">
+          <th
+            v-for="(h, i) in headers"
+            :key="i"
+            class="px-3 py-2 text-left font-medium border-b border-[color:var(--border-muted)]"
+          >
             {{ h }}
           </th>
         </tr>
       </thead>
       <tbody>
-        <tr v-for="(row, ri) in paginatedRows" :key="ri" class="odd:bg-[color:var(--bg-surface-strong)] even:bg-[color:var(--bg-surface)]">
-          <td v-for="(cell, ci) in row" :key="ci" class="px-3 py-2 border-b border-[color:var(--border-muted)]">
-            <slot :name="`cell-${ci}`" :value="cell">{{ cell }}</slot>
+        <tr
+          v-for="(row, ri) in paginatedRows"
+          :key="ri"
+          class="odd:bg-[color:var(--bg-surface-strong)] even:bg-[color:var(--bg-surface)]"
+        >
+          <td
+            v-for="(cell, ci) in row"
+            :key="ci"
+            class="px-3 py-2 border-b border-[color:var(--border-muted)]"
+          >
+            <slot
+              :name="`cell-${ci}`"
+              :value="cell"
+            >
+              {{ cell }}
+            </slot>
           </td>
         </tr>
       </tbody>

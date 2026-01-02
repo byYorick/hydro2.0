@@ -18,7 +18,7 @@
           borderColor: color,
           borderTopColor: 'transparent',
         }"
-      />
+      ></div>
       
       <!-- Message -->
       <p
@@ -47,7 +47,7 @@
         width: i === skeletonLines ? '60%' : '100%',
         marginBottom: '0.5rem',
       }"
-    />
+    ></div>
   </div>
 </template>
 

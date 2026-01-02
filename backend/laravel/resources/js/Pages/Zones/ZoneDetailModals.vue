@@ -61,7 +61,11 @@
         <div>Зафиксировать сбор урожая и завершить цикл?</div>
         <div>
           <label class="text-xs text-[color:var(--text-dim)]">Метка партии (опционально)</label>
-          <input v-model="harvestModal.batchLabel" class="input-field mt-1 w-full" placeholder="Например: Batch-042" />
+          <input
+            v-model="harvestModal.batchLabel"
+            class="input-field mt-1 w-full"
+            placeholder="Например: Batch-042"
+          />
         </div>
       </div>
     </ConfirmModal>
@@ -80,7 +84,11 @@
         <div>Остановить цикл? Это действие нельзя отменить.</div>
         <div>
           <label class="text-xs text-[color:var(--text-dim)]">Причина (опционально)</label>
-          <textarea v-model="abortModal.notes" class="input-field mt-1 w-full h-20 resize-none" placeholder="Короткое описание причины"></textarea>
+          <textarea
+            v-model="abortModal.notes"
+            class="input-field mt-1 w-full h-20 resize-none"
+            placeholder="Короткое описание причины"
+          ></textarea>
         </div>
       </div>
     </ConfirmModal>
@@ -99,7 +107,11 @@
         <div>Введите ID ревизии рецепта и выберите режим применения.</div>
         <div>
           <label class="text-xs text-[color:var(--text-dim)]">ID ревизии рецепта</label>
-          <input v-model="changeRecipeModal.recipeRevisionId" class="input-field mt-1 w-full" placeholder="Например: 42" />
+          <input
+            v-model="changeRecipeModal.recipeRevisionId"
+            class="input-field mt-1 w-full"
+            placeholder="Например: 42"
+          />
         </div>
         <div class="flex flex-wrap gap-2">
           <button

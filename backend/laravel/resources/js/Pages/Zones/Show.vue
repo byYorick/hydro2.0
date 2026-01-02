@@ -2,7 +2,11 @@
   <AppLayout>
     <div class="space-y-4">
       <div class="surface-card border border-[color:var(--border-muted)] rounded-2xl p-3">
-        <Tabs v-model="activeTab" :tabs="zoneTabs" aria-label="Разделы зоны" />
+        <Tabs
+          v-model="activeTab"
+          :tabs="zoneTabs"
+          aria-label="Разделы зоны"
+        />
       </div>
 
       <ZoneOverviewTab

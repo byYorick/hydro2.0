@@ -1,11 +1,17 @@
 <template>
-  <section :class="classes" v-bind="attrs">
+  <section
+    :class="classes"
+    v-bind="attrs"
+  >
     <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
       <div class="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 flex-1">
-        <slot />
+        <slot></slot>
       </div>
-      <div v-if="$slots.actions" class="flex flex-wrap items-center gap-2">
-        <slot name="actions" />
+      <div
+        v-if="$slots.actions"
+        class="flex flex-wrap items-center gap-2"
+      >
+        <slot name="actions"></slot>
       </div>
     </div>
   </section>

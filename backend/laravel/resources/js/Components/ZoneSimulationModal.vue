@@ -1,16 +1,34 @@
 <template>
-  <div v-if="show" class="fixed inset-0 z-50 flex items-center justify-center">
-    <div class="absolute inset-0 bg-[color:var(--bg-main)] opacity-80" @click="$emit('close')"></div>
-    <div class="relative w-full max-w-2xl rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-6 max-h-[90vh] overflow-y-auto" @click.stop>
-      <h2 class="text-lg font-semibold mb-4">Digital Twin Simulation</h2>
+  <div
+    v-if="show"
+    class="fixed inset-0 z-50 flex items-center justify-center"
+  >
+    <div
+      class="absolute inset-0 bg-[color:var(--bg-main)] opacity-80"
+      @click="$emit('close')"
+    ></div>
+    <div
+      class="relative w-full max-w-2xl rounded-xl border border-[color:var(--border-muted)] bg-[color:var(--bg-surface-strong)] p-6 max-h-[90vh] overflow-y-auto"
+      @click.stop
+    >
+      <h2 class="text-lg font-semibold mb-4">
+        Digital Twin Simulation
+      </h2>
       
-      <form @submit.prevent="onSubmit" class="space-y-4" @click.stop>
+      <form
+        class="space-y-4"
+        @submit.prevent="onSubmit"
+        @click.stop
+      >
         <div>
-          <label for="simulation-duration-hours" class="block text-sm font-medium mb-1">Duration (hours)</label>
+          <label
+            for="simulation-duration-hours"
+            class="block text-sm font-medium mb-1"
+          >Duration (hours)</label>
           <input
             id="simulation-duration-hours"
-            name="duration_hours"
             v-model.number="form.duration_hours"
+            name="duration_hours"
             type="number"
             min="1"
             max="720"
@@ -20,11 +38,14 @@
         </div>
         
         <div>
-          <label for="simulation-step-minutes" class="block text-sm font-medium mb-1">Step (minutes)</label>
+          <label
+            for="simulation-step-minutes"
+            class="block text-sm font-medium mb-1"
+          >Step (minutes)</label>
           <input
             id="simulation-step-minutes"
-            name="step_minutes"
             v-model.number="form.step_minutes"
+            name="step_minutes"
             type="number"
             min="1"
             max="60"
@@ -34,69 +55,89 @@
         </div>
         
         <div>
-          <label for="simulation-recipe-id" class="block text-sm font-medium mb-1">Recipe ID (optional)</label>
+          <label
+            for="simulation-recipe-id"
+            class="block text-sm font-medium mb-1"
+          >Recipe ID (optional)</label>
           <input
             id="simulation-recipe-id"
-            name="recipe_id"
             v-model.number="form.recipe_id"
+            name="recipe_id"
             type="number"
             class="input-field h-9 w-full"
           />
         </div>
         
         <div class="border-t border-[color:var(--border-muted)] pt-4">
-          <div class="text-sm font-medium mb-2">Initial State (optional)</div>
+          <div class="text-sm font-medium mb-2">
+            Initial State (optional)
+          </div>
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label for="simulation-initial-ph" class="block text-xs text-[color:var(--text-muted)] mb-1">pH</label>
+              <label
+                for="simulation-initial-ph"
+                class="block text-xs text-[color:var(--text-muted)] mb-1"
+              >pH</label>
               <input
                 id="simulation-initial-ph"
-                name="initial_state_ph"
                 v-model.number="form.initial_state.ph"
+                name="initial_state_ph"
                 type="number"
                 step="0.1"
                 class="input-field h-8 w-full"
               />
             </div>
             <div>
-              <label for="simulation-initial-ec" class="block text-xs text-[color:var(--text-muted)] mb-1">EC</label>
+              <label
+                for="simulation-initial-ec"
+                class="block text-xs text-[color:var(--text-muted)] mb-1"
+              >EC</label>
               <input
                 id="simulation-initial-ec"
-                name="initial_state_ec"
                 v-model.number="form.initial_state.ec"
+                name="initial_state_ec"
                 type="number"
                 step="0.1"
                 class="input-field h-8 w-full"
               />
             </div>
             <div>
-              <label for="simulation-initial-temp-air" class="block text-xs text-[color:var(--text-muted)] mb-1">Temp Air (°C)</label>
+              <label
+                for="simulation-initial-temp-air"
+                class="block text-xs text-[color:var(--text-muted)] mb-1"
+              >Temp Air (°C)</label>
               <input
                 id="simulation-initial-temp-air"
-                name="initial_state_temp_air"
                 v-model.number="form.initial_state.temp_air"
+                name="initial_state_temp_air"
                 type="number"
                 step="0.1"
                 class="input-field h-8 w-full"
               />
             </div>
             <div>
-              <label for="simulation-initial-temp-water" class="block text-xs text-[color:var(--text-muted)] mb-1">Temp Water (°C)</label>
+              <label
+                for="simulation-initial-temp-water"
+                class="block text-xs text-[color:var(--text-muted)] mb-1"
+              >Temp Water (°C)</label>
               <input
                 id="simulation-initial-temp-water"
-                name="initial_state_temp_water"
                 v-model.number="form.initial_state.temp_water"
+                name="initial_state_temp_water"
                 type="number"
                 step="0.1"
                 class="input-field h-8 w-full"
               />
             </div>
             <div class="col-span-2">
-              <label for="simulation-initial-humidity" class="block text-xs text-[color:var(--text-muted)] mb-1">Влажность (%)</label>
+              <label
+                for="simulation-initial-humidity"
+                class="block text-xs text-[color:var(--text-muted)] mb-1"
+              >Влажность (%)</label>
               <input
                 id="simulation-initial-humidity"
-                name="initial_state_humidity_air"
                 v-model.number="form.initial_state.humidity_air"
+                name="initial_state_humidity_air"
                 type="number"
                 step="0.1"
                 class="input-field h-8 w-full"
@@ -105,29 +146,53 @@
           </div>
         </div>
         
-        <div v-if="loading" class="text-sm text-[color:var(--text-muted)]">
+        <div
+          v-if="loading"
+          class="text-sm text-[color:var(--text-muted)]"
+        >
           Running simulation...
         </div>
         
-        <div v-if="error" class="text-sm text-[color:var(--accent-red)]">
+        <div
+          v-if="error"
+          class="text-sm text-[color:var(--accent-red)]"
+        >
           {{ error }}
         </div>
         
         <div class="flex justify-end gap-2 pt-4 border-t border-[color:var(--border-muted)]">
-          <Button type="button" variant="secondary" @click="$emit('close')">Cancel</Button>
-          <Button type="submit" :disabled="loading">
+          <Button
+            type="button"
+            variant="secondary"
+            @click="$emit('close')"
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            :disabled="loading"
+          >
             {{ loading ? 'Running...' : 'Run Simulation' }}
           </Button>
         </div>
       </form>
       
-      <div v-if="results" class="mt-6 border-t border-[color:var(--border-muted)] pt-4" @click.stop>
-        <div class="text-sm font-medium mb-3">Simulation Results</div>
+      <div
+        v-if="results"
+        class="mt-6 border-t border-[color:var(--border-muted)] pt-4"
+        @click.stop
+      >
+        <div class="text-sm font-medium mb-3">
+          Simulation Results
+        </div>
         <div class="text-xs text-[color:var(--text-muted)] mb-2">
           Duration: {{ results.duration_hours }}h, Step: {{ results.step_minutes }}min
         </div>
         <div class="h-64">
-          <ChartBase v-if="chartOption" :option="chartOption" />
+          <ChartBase
+            v-if="chartOption"
+            :option="chartOption"
+          />
         </div>
       </div>
     </div>
