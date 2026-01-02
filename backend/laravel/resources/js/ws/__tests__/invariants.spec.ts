@@ -172,6 +172,8 @@ describe('ws/invariants', () => {
     })
 
     it('не создает дублей при resubscribe', () => {
+      const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
       registerSubscription('commands.1', 'handler-1', '.App\\Events\\CommandStatusUpdated', 'component-1')
       
       // Симулируем resubscribe (не отписываясь сначала - это баг)
@@ -180,6 +182,8 @@ describe('ws/invariants', () => {
       const stats = getSubscriptionStats()
       // Дубликат не должен быть добавлен
       expect(stats.totalSubscriptions).toBe(1)
+
+      consoleWarnSpy.mockRestore()
     })
   })
 
@@ -219,4 +223,3 @@ describe('ws/invariants', () => {
     })
   })
 })
-

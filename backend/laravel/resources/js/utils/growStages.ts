@@ -135,24 +135,13 @@ const PHASE_TO_STAGE_MAPPING: Record<string, GrowStage> = {
 }
 
 /**
- * Маппинг по индексу фазы (для рецептов с фиксированным порядком)
- */
-const DEFAULT_STAGE_BY_PHASE_INDEX: GrowStage[] = [
-  'planting',    // фаза 0
-  'rooting',     // фаза 1
-  'veg',         // фаза 2
-  'flowering',   // фаза 3
-  'harvest',     // фаза 4+
-]
-
-/**
  * Определяет стадию на основе названия фазы
  * 
  * @param phaseName - Название фазы (может быть на русском или английском)
- * @returns Стадия или null, если не удалось определить
+ * @returns Стадия или undefined, если не удалось определить
  */
-export function getStageByPhaseName(phaseName: string | null | undefined): GrowStage | null {
-  if (!phaseName) return null
+export function getStageByPhaseName(phaseName: string | null | undefined): GrowStage | undefined {
+  if (!phaseName) return undefined
   
   const normalized = phaseName.toLowerCase().trim()
   
@@ -168,7 +157,7 @@ export function getStageByPhaseName(phaseName: string | null | undefined): GrowS
     }
   }
   
-  return null
+  return undefined
 }
 
 /**
@@ -176,15 +165,39 @@ export function getStageByPhaseName(phaseName: string | null | undefined): GrowS
  * 
  * @param phaseIndex - Индекс фазы (0-based)
  * @param totalPhases - Общее количество фаз
- * @returns Стадия
+ * @returns Стадия или undefined
  */
-export function getStageByPhaseIndex(phaseIndex: number, totalPhases: number): GrowStage {
-  if (phaseIndex < 0) return 'planting'
-  if (phaseIndex >= DEFAULT_STAGE_BY_PHASE_INDEX.length) {
-    // Для фаз после последней стадии возвращаем последнюю
-    return DEFAULT_STAGE_BY_PHASE_INDEX[DEFAULT_STAGE_BY_PHASE_INDEX.length - 1]
+function getStageMapForTotalPhases(totalPhases: number): GrowStage[] {
+  if (totalPhases >= GROW_STAGES_ORDERED.length) {
+    return GROW_STAGES_ORDERED
   }
-  return DEFAULT_STAGE_BY_PHASE_INDEX[phaseIndex]
+  if (totalPhases === 4) {
+    return ['planting', 'veg', 'veg', 'flowering']
+  }
+  if (totalPhases === 3) {
+    return ['planting', 'veg', 'flowering']
+  }
+  if (totalPhases === 2) {
+    return ['planting', 'veg']
+  }
+  return ['veg']
+}
+
+export function getStageByPhaseIndex(phaseIndex: number, totalPhases?: number): GrowStage | undefined {
+  if (phaseIndex < 0) return undefined
+
+  if (typeof totalPhases === 'number' && totalPhases > 0) {
+    const stageMap = getStageMapForTotalPhases(totalPhases)
+    if (phaseIndex >= stageMap.length) {
+      return stageMap[stageMap.length - 1]
+    }
+    return stageMap[phaseIndex]
+  }
+
+  if (phaseIndex === 0) return 'planting'
+  if (phaseIndex === 1 || phaseIndex === 2) return 'veg'
+  if (phaseIndex === 3) return 'flowering'
+  return 'veg'
 }
 
 /**
@@ -194,13 +207,13 @@ export function getStageByPhaseIndex(phaseIndex: number, totalPhases: number): G
  * @param phaseName - Название фазы
  * @param phaseIndex - Индекс фазы
  * @param totalPhases - Общее количество фаз
- * @returns Стадия
+ * @returns Стадия или undefined
  */
 export function getStageForPhase(
   phaseName: string | null | undefined,
   phaseIndex: number,
-  totalPhases: number
-): GrowStage {
+  totalPhases?: number
+): GrowStage | undefined {
   // Сначала пытаемся определить по названию
   const stageByName = getStageByPhaseName(phaseName)
   if (stageByName) {
@@ -215,44 +228,44 @@ export function getStageForPhase(
  * Получить информацию о стадии
  * 
  * @param stage - Стадия или null
- * @returns Информация о стадии или null
+ * @returns Информация о стадии или undefined
  */
-export function getStageInfo(stage: GrowStage | null): GrowStageInfo | null {
-  if (!stage) return null
-  return GROW_STAGES[stage] || null
+export function getStageInfo(stage: GrowStage | null | undefined): GrowStageInfo | undefined {
+  if (!stage || !GROW_STAGES[stage]) return undefined
+  return GROW_STAGES[stage]
 }
 
 /**
  * Получить цвет стадии
  * 
  * @param stage - Стадия или null
- * @returns CSS переменная цвета или null
+ * @returns CSS переменная цвета или undefined
  */
-export function getStageColor(stage: GrowStage | null): string | null {
+export function getStageColor(stage: GrowStage | null | undefined): string | undefined {
   const info = getStageInfo(stage)
-  return info?.color || null
+  return info?.color
 }
 
 /**
  * Получить лейбл стадии
  * 
  * @param stage - Стадия или null
- * @returns Лейбл стадии или пустая строка
+ * @returns Лейбл стадии или undefined
  */
-export function getStageLabel(stage: GrowStage | null): string {
+export function getStageLabel(stage: GrowStage | null | undefined): string | undefined {
   const info = getStageInfo(stage)
-  return info?.label || ''
+  return info?.label
 }
 
 /**
  * Получить иконку стадии
  * 
  * @param stage - Стадия или null
- * @returns Иконка стадии или пустая строка
+ * @returns Иконка стадии или undefined
  */
-export function getStageIcon(stage: GrowStage | null): string {
+export function getStageIcon(stage: GrowStage | null | undefined): string | undefined {
   const info = getStageInfo(stage)
-  return info?.icon || ''
+  return info?.icon
 }
 
 /**
@@ -261,7 +274,7 @@ export function getStageIcon(stage: GrowStage | null): string {
  * @param stage - Стадия или null
  * @returns Порядок стадии или -1
  */
-export function getStageOrder(stage: GrowStage | null): number {
+export function getStageOrder(stage: GrowStage | null | undefined): number {
   const info = getStageInfo(stage)
   return info?.order ?? -1
 }
@@ -281,16 +294,16 @@ export function isValidStage(stage: string | null | undefined): stage is GrowSta
  * Получить следующую стадию
  * 
  * @param currentStage - Текущая стадия
- * @returns Следующая стадия или null, если текущая стадия последняя
+ * @returns Следующая стадия или undefined, если текущая стадия последняя
  */
-export function getNextStage(currentStage: GrowStage | null): GrowStage | null {
-  if (!currentStage) return 'planting'
-  
+export function getNextStage(currentStage: GrowStage | null | undefined): GrowStage | undefined {
+  if (!currentStage || !isValidStage(currentStage)) return undefined
+
   const currentOrder = getStageOrder(currentStage)
   if (currentOrder < 0 || currentOrder >= GROW_STAGES_ORDERED.length - 1) {
-    return null
+    return undefined
   }
-  
+
   return GROW_STAGES_ORDERED[currentOrder + 1]
 }
 
@@ -298,16 +311,16 @@ export function getNextStage(currentStage: GrowStage | null): GrowStage | null {
  * Получить предыдущую стадию
  * 
  * @param currentStage - Текущая стадия
- * @returns Предыдущая стадия или null, если текущая стадия первая
+ * @returns Предыдущая стадия или undefined, если текущая стадия первая
  */
-export function getPrevStage(currentStage: GrowStage | null): GrowStage | null {
-  if (!currentStage) return null
-  
+export function getPrevStage(currentStage: GrowStage | null | undefined): GrowStage | undefined {
+  if (!currentStage || !isValidStage(currentStage)) return undefined
+
   const currentOrder = getStageOrder(currentStage)
   if (currentOrder <= 0) {
-    return null
+    return undefined
   }
-  
+
   return GROW_STAGES_ORDERED[currentOrder - 1]
 }
 
@@ -320,47 +333,97 @@ export function getPrevStage(currentStage: GrowStage | null): GrowStage | null {
  * @param phaseProgress - Прогресс текущей фазы (0-100)
  * @returns Прогресс цикла в процентах (0-100)
  */
+type CycleProgressInput = {
+  recipe?: { phases?: Array<{ duration_hours: number }> }
+  started_at?: string | null
+  current_phase_index?: number | null
+  phase_progress?: number | null
+}
+
+function clampPercent(value: number): number {
+  return Math.min(100, Math.max(0, value))
+}
+
+function calculateProgressFromElapsed(
+  phases: Array<{ duration_hours: number }>,
+  startedAt: string
+): number {
+  const startedAtDate = new Date(startedAt)
+  if (Number.isNaN(startedAtDate.getTime())) {
+    return 0
+  }
+
+  let remainingHours = (Date.now() - startedAtDate.getTime()) / (1000 * 60 * 60)
+  if (remainingHours <= 0) {
+    return 0
+  }
+
+  const perPhaseProgress = phases.map((phase) => {
+    const durationHours = phase?.duration_hours || 0
+    if (durationHours <= 0) {
+      return 0
+    }
+
+    if (remainingHours >= durationHours) {
+      remainingHours -= durationHours
+      return 100
+    }
+
+    const progress = (remainingHours / durationHours) * 100
+    remainingHours = 0
+    return clampPercent(progress)
+  })
+
+  const sum = perPhaseProgress.reduce((total, value) => total + value, 0)
+  return clampPercent(sum / phases.length)
+}
+
+export function calculateCycleProgress(
+  input: CycleProgressInput
+): number
 export function calculateCycleProgress(
   currentPhaseIndex: number,
   phases: Array<{ duration_hours: number }>,
   startedAt: string | null | undefined,
   phaseProgress: number | null
+): number
+export function calculateCycleProgress(
+  arg1: CycleProgressInput | number,
+  arg2?: Array<{ duration_hours: number }>,
+  arg3?: string | null,
+  arg4?: number | null
 ): number {
-  if (!startedAt || !phases || phases.length === 0) {
+  if (typeof arg1 === 'object' && arg1 !== null && !Array.isArray(arg1)) {
+    const phases = arg1.recipe?.phases || []
+    const startedAt = arg1.started_at
+    const currentPhaseIndex = arg1.current_phase_index ?? -1
+    const phaseProgress = arg1.phase_progress ?? null
+    return calculateCycleProgress(currentPhaseIndex, phases, startedAt, phaseProgress)
+  }
+
+  const currentPhaseIndex = arg1 as number
+  const phases = arg2 || []
+  const startedAt = arg3
+  const phaseProgress = arg4
+
+  if (!startedAt || phases.length === 0) {
     return 0
   }
-  
+
   if (currentPhaseIndex < 0 || currentPhaseIndex >= phases.length) {
     return 0
   }
-  
-  // Вычисляем общее время цикла
-  const totalHours = phases.reduce((sum, phase) => sum + (phase.duration_hours || 0), 0)
-  
-  if (totalHours === 0) {
-    return 0
+
+  if (typeof phaseProgress === 'number') {
+    const perPhaseProgress = phases.map((_, index) => {
+      if (index < currentPhaseIndex) return 100
+      if (index > currentPhaseIndex) return 0
+      return clampPercent(phaseProgress)
+    })
+
+    const sum = perPhaseProgress.reduce((total, value) => total + value, 0)
+    return clampPercent(sum / phases.length)
   }
-  
-  // Вычисляем прошедшее время до текущей фазы
-  let completedHours = 0
-  for (let i = 0; i < currentPhaseIndex; i++) {
-    const phase = phases[i]
-    if (phase && typeof phase.duration_hours === 'number') {
-      completedHours += phase.duration_hours
-    }
-  }
-  
-  // Добавляем прогресс текущей фазы
-  const currentPhase = phases[currentPhaseIndex]
-  if (!currentPhase) {
-    return 0
-  }
-  
-  const currentPhaseDurationHours = currentPhase.duration_hours || 0
-  const currentPhaseProgress = (phaseProgress || 0) / 100
-  const currentPhaseCompleted = currentPhaseDurationHours * currentPhaseProgress
-  
-  const totalCompleted = completedHours + currentPhaseCompleted
-  
-  return Math.min(100, Math.max(0, (totalCompleted / totalHours) * 100))
+
+  return calculateProgressFromElapsed(phases, startedAt)
 }

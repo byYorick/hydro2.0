@@ -249,7 +249,7 @@ const currentStage = computed<GrowStage | null>(() => {
     currentPhaseName.value,
     currentPhaseIndex.value,
     totalPhases.value
-  )
+  ) ?? null
 })
 
 // Определяем все стадии для timeline
@@ -261,7 +261,7 @@ const allStages = computed<GrowStage[]>(() => {
   if (props.growCycle?.phases) {
     props.growCycle.phases.forEach((phase: any) => {
       const stage = getStageForPhase(phase.name, phase.phase_index, totalPhases.value)
-      if (!seenStages.has(stage)) {
+      if (stage && !seenStages.has(stage)) {
         stages.push(stage)
         seenStages.add(stage)
       }
@@ -269,7 +269,7 @@ const allStages = computed<GrowStage[]>(() => {
   } else if (props.recipeInstance?.recipe?.phases) {
   props.recipeInstance.recipe.phases.forEach((phase) => {
     const stage = getStageForPhase(phase.name, phase.phase_index, totalPhases.value)
-    if (!seenStages.has(stage)) {
+    if (stage && !seenStages.has(stage)) {
       stages.push(stage)
       seenStages.add(stage)
     }

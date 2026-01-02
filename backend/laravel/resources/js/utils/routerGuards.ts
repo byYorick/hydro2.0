@@ -44,14 +44,14 @@ function shouldPreventReload(url: string): boolean {
   const currentUrl = url || window.location.pathname + window.location.search
   
   if (currentUrl !== lastReloadUrl) {
-    reloadCount = 0
+    reloadCount = 1
     lastReloadTime = now
     lastReloadUrl = currentUrl
     return false
   }
   
   if (now - lastReloadTime > RELOAD_WINDOW_MS) {
-    reloadCount = 0
+    reloadCount = 1
     lastReloadTime = now
     lastReloadUrl = currentUrl
     return false
@@ -185,4 +185,3 @@ if (typeof import.meta !== 'undefined' && import.meta.hot) {
     restoreRouterMethods()
   })
 }
-

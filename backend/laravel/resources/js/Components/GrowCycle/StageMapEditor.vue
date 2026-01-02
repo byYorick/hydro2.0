@@ -130,7 +130,7 @@ async function loadStageMap() {
       if (stageMap.value.length === 0 && props.phases.length > 0) {
         stageMap.value = props.phases.map(phase => ({
           phase_index: phase.phase_index,
-          stage: getStageForPhase(phase.name, phase.phase_index, props.phases.length) as GrowStage,
+          stage: getStageForPhase(phase.name, phase.phase_index, props.phases.length) ?? 'veg',
         }))
         originalStageMap.value = JSON.parse(JSON.stringify(stageMap.value))
       }
@@ -149,7 +149,7 @@ function getStageForPhaseIndex(phaseIndex: number): GrowStage {
   // Автоматическое определение
   const phase = props.phases.find(p => p.phase_index === phaseIndex)
   if (phase) {
-    return getStageForPhase(phase.name, phaseIndex, props.phases.length) as GrowStage
+    return getStageForPhase(phase.name, phaseIndex, props.phases.length) ?? 'veg'
   }
   
   return 'veg'

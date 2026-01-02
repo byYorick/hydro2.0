@@ -119,7 +119,7 @@ describe('CommandPalette (P3-1)', () => {
     ;(wrapper.vm as any).q = 'test'
     await nextTick()
 
-    const results = (wrapper.vm as any).filteredResults
+    const results = (wrapper.vm as any).commandItems || []
     const zoneCommand = results.find((r: any) => r.type === 'zone')
 
     if (zoneCommand && zoneCommand.action) {
@@ -297,4 +297,3 @@ describe('CommandPalette (P3-1)', () => {
     expect(allText).toContain('onerror')
   })
 })
-

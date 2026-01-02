@@ -149,13 +149,16 @@ const generatedUid = computed(() => {
 })
 
 async function onSubmit() {
+  errors.name = ''
+  errors.general = ''
+
   if (!form.name || !form.name.trim()) {
+    errors.name = 'Название обязательно'
     showToast('Введите название теплицы', 'error', TOAST_TIMEOUT.NORMAL)
     return
   }
 
   loading.value = true
-  errors.name = ''
   
   try {
     const uid = generatedUid.value

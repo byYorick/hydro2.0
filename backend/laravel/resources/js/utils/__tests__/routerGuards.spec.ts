@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setupRouterGuards, restoreRouterMethods } from '../routerGuards'
 
 // Мокаем router
-const mockReload = vi.fn(() => Promise.resolve())
-const mockVisit = vi.fn(() => Promise.resolve())
+const mockReload = vi.hoisted(() => vi.fn(() => Promise.resolve()))
+const mockVisit = vi.hoisted(() => vi.fn(() => Promise.resolve()))
 
 vi.mock('@inertiajs/vue3', () => ({
   router: {
@@ -108,4 +108,3 @@ describe('routerGuards', () => {
     })
   })
 })
-

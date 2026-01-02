@@ -54,6 +54,7 @@ vi.mock('axios', () => ({
 
 const sampleRecipe = vi.hoisted(() => ({
   id: 1,
+  draft_revision_id: 1,
   name: 'Test Recipe',
   description: 'Test Description',
   plants: [
@@ -192,6 +193,7 @@ import RecipesEdit from '../Edit.vue'
 describe('Recipes/Edit.vue', () => {
   beforeEach(() => {
     axiosPatchMock.mockClear()
+    axiosPostMock.mockClear()
     routerVisitMock.mockClear()
     mockAxiosInstance.get.mockResolvedValue({
       data: {
@@ -199,6 +201,7 @@ describe('Recipes/Edit.vue', () => {
       },
     })
     axiosPatchMock.mockResolvedValue({ data: { status: 'ok' } })
+    axiosPostMock.mockResolvedValue({ data: { status: 'ok' } })
   })
 
   it('отображает заголовок редактирования', () => {
@@ -267,7 +270,7 @@ describe('Recipes/Edit.vue', () => {
       await new Promise(resolve => setTimeout(resolve, 100))
       
       expect(axiosPatchMock).toHaveBeenCalled()
-      expect(axiosPatchMock.mock.calls[0][0]).toMatch(/\/api\/recipes\/\d+/)
+      expect(axiosPatchMock.mock.calls[0][0]).toMatch(/\/(api\/)?recipes\/\d+/)
     }
   })
 

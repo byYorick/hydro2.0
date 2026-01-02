@@ -66,6 +66,8 @@ describe('useKeyboardShortcuts (P3-1)', () => {
     const wrapper = mount(TestComponent)
     await wrapper.vm.$nextTick()
 
+    window.history.pushState({}, '', '/')
+
     const event = new KeyboardEvent('keydown', {
       key: 'z',
       ctrlKey: true,
@@ -93,6 +95,8 @@ describe('useKeyboardShortcuts (P3-1)', () => {
 
     const wrapper = mount(TestComponent)
     await wrapper.vm.$nextTick()
+
+    window.history.pushState({}, '', '/zones')
 
     const event = new KeyboardEvent('keydown', {
       key: 'd',
@@ -122,6 +126,8 @@ describe('useKeyboardShortcuts (P3-1)', () => {
     const wrapper = mount(TestComponent)
     await wrapper.vm.$nextTick()
 
+    window.history.pushState({}, '', '/')
+
     const event = new KeyboardEvent('keydown', {
       key: 'r',
       altKey: true
@@ -148,6 +154,8 @@ describe('useKeyboardShortcuts (P3-1)', () => {
 
     const wrapper = mount(TestComponent)
     await wrapper.vm.$nextTick()
+
+    window.history.pushState({}, '', '/')
 
     const event = new KeyboardEvent('keydown', {
       key: 'd',
@@ -253,4 +261,3 @@ describe('useKeyboardShortcuts (P3-1)', () => {
     expect(wrapper.vm.handler).not.toHaveBeenCalled()
   })
 })
-

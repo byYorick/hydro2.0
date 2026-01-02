@@ -7,6 +7,7 @@ let useWebSocketModule: UseWebSocketModule
 vi.mock('@/utils/echoClient', () => ({
   onWsStateChange: vi.fn(() => vi.fn()), // Returns unsubscribe function
   getEcho: vi.fn(() => null),
+  getEchoInstance: vi.fn(() => null),
   getReconnectAttempts: vi.fn(() => 0),
   getLastError: vi.fn(() => null),
   getConnectionState: vi.fn(() => 'disconnected'),
@@ -301,4 +302,3 @@ describe('useWebSocket', () => {
     expect(mockEcho.leave).toHaveBeenCalled()
   })
 })
-

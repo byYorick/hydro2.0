@@ -14,11 +14,16 @@ function devicesEqual(existing: Device, incoming: Device): boolean {
     return false
   }
   
-  // Сравниваем updated_at - если они одинаковы, данные не изменились
+  // Если updated_at совпадает, дополнительно проверяем ключевые поля
   if (existing.updated_at && incoming.updated_at) {
-    return existing.updated_at === incoming.updated_at
+    return existing.updated_at === incoming.updated_at &&
+      existing.name === incoming.name &&
+      existing.status === incoming.status &&
+      existing.type === incoming.type &&
+      existing.lifecycle_state === incoming.lifecycle_state &&
+      existing.zone_id === incoming.zone_id
   }
-  
+
   // Если updated_at нет, сравниваем ключевые поля
   return (
     existing.name === incoming.name &&
@@ -333,4 +338,3 @@ export const useDevicesStore = defineStore('devices', {
     },
   },
 })
-

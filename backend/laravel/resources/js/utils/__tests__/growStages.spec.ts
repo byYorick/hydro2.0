@@ -232,7 +232,7 @@ describe('growStages', () => {
       }
 
       const startedAt = new Date('2024-01-01T00:00:00Z')
-      const now = new Date('2024-01-01T50:00:00Z') // 50 hours later
+      const now = new Date('2024-01-03T02:00:00Z') // 50 hours later
       
       vi.setSystemTime(now)
 
@@ -283,4 +283,3 @@ describe('growStages', () => {
     })
   })
 })
-

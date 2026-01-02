@@ -40,7 +40,7 @@ interface Props {
   message: string
   confirmText?: string
   cancelText?: string
-  confirmVariant: ButtonVariant
+  confirmVariant?: ButtonVariant
   loading?: boolean
   confirmDisabled?: boolean
   loadingText?: string

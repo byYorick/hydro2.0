@@ -198,7 +198,7 @@ const currentStage = computed<GrowStage | null>(() => {
         currentPhase.name,
         phaseIndex,
         phases.length || 1
-      )
+      ) ?? null
     }
   }
   

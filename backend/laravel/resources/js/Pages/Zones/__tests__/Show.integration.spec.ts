@@ -27,6 +27,15 @@ vi.mock('@/Components/ZoneTargets.vue', () => ({
   },
 }))
 
+vi.mock('@/Components/ZoneSimulationModal.vue', () => ({
+  default: {
+    name: 'ZoneSimulationModal',
+    props: ['show', 'zoneId', 'defaultRecipeId'],
+    emits: ['close'],
+    template: '<div v-if="show" class="zone-simulation-modal"></div>',
+  },
+}))
+
 vi.mock('@/Pages/Zones/ZoneTelemetryChart.vue', () => ({
   default: { 
     name: 'ZoneTelemetryChart', 
@@ -277,4 +286,3 @@ describe('Zones/Show.vue - Интеграционные тесты', () => {
     consoleErrorSpy.mockRestore()
   })
 })
-

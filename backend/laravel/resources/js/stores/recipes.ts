@@ -12,11 +12,14 @@ function recipesEqual(existing: Recipe, incoming: Recipe): boolean {
     return false
   }
   
-  // Сравниваем updated_at - если они одинаковы, данные не изменились
+  // Если updated_at совпадает, дополнительно проверяем ключевые поля
   if (existing.updated_at && incoming.updated_at) {
-    return existing.updated_at === incoming.updated_at
+    return existing.updated_at === incoming.updated_at &&
+      existing.name === incoming.name &&
+      existing.description === incoming.description &&
+      existing.phases_count === incoming.phases_count
   }
-  
+
   // Если updated_at нет, сравниваем ключевые поля
   return (
     existing.name === incoming.name &&
@@ -196,4 +199,3 @@ export const useRecipesStore = defineStore('recipes', {
     },
   },
 })
-

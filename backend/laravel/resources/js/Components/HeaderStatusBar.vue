@@ -312,6 +312,7 @@
         <div 
           v-if="metrics.alertsCount !== null"
           class="flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors group relative"
+          data-testid="alerts-metric"
           :class="metrics.alertsCount > 0 
             ? 'bg-[color:var(--badge-danger-bg)] hover:bg-[color:var(--badge-danger-bg)] border border-[color:var(--badge-danger-border)]' 
             : 'bg-[color:var(--bg-elevated)] hover:bg-[color:var(--bg-surface-strong)]'"

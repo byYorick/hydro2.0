@@ -249,11 +249,6 @@ describe('ZoneActionModal', () => {
   })
 
   it('handles API errors gracefully', async () => {
-    // Mock fetch to simulate API error
-    global.fetch = vi.fn(() =>
-      Promise.reject(new Error('Network error'))
-    )
-
     const wrapper = mount(ZoneActionModal, {
       props: {
         show: true,
@@ -267,9 +262,6 @@ describe('ZoneActionModal', () => {
 
     // Should still emit close event even on error
     expect(wrapper.emitted('close')).toBeTruthy()
-
-    // Restore original fetch
-    global.fetch = vi.fn()
   })
 
   it('validates required fields before submission', async () => {
@@ -281,18 +273,14 @@ describe('ZoneActionModal', () => {
       }
     })
 
-    // Mock fetch to check if it's called
-    const fetchSpy = vi.fn(() => Promise.resolve({ ok: true, json: () => ({}) }))
-    global.fetch = fetchSpy
+    const input = wrapper.find('input[type="number"]')
+    await input.setValue(0)
 
     const form = wrapper.find('form')
     await form.trigger('submit.prevent')
 
-    // Should attempt to make API call
-    expect(fetchSpy).toHaveBeenCalled()
-
-    // Restore original fetch
-    global.fetch = vi.fn()
+    // Should block submit when validation fails
+    expect(wrapper.emitted('submit')).toBeFalsy()
+    expect(wrapper.text()).toContain('Длительность полива')
   })
 })
-

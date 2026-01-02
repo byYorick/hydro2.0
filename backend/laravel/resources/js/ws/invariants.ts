@@ -112,6 +112,12 @@ export function unregisterSubscription(
         eventName,
         handlerId,
       })
+      console.warn(
+        `[WS Invariants] ⚠️ Unregistering non-existent subscription:\n` +
+        `  Channel: ${channelName}\n` +
+        `  Event: ${eventName || 'default'}\n` +
+        `  Handler ID: ${handlerId}`
+      )
     }
   } else {
     activeSubscriptionsRegistry.set(key, filtered)
@@ -267,4 +273,3 @@ if (ENABLE_INVARIANTS && typeof window !== 'undefined') {
     }
   }
 }
-
