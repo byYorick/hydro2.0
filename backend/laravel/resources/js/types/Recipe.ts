@@ -12,6 +12,11 @@ export interface RecipePhaseTargets {
     min: number
     max: number
   }
+  temp_air?: number
+  humidity_air?: number
+  light_hours?: number
+  irrigation_interval_sec?: number
+  irrigation_duration_sec?: number
 }
 
 /**

@@ -130,7 +130,7 @@ const multiSeriesData = computed(() => {
       data: props.chartDataPh,
       currentValue: props.telemetry?.ph ?? null,
       yAxisIndex: 0,
-      targetRange: props.targets?.ph ? {
+      targetRange: (props.targets?.ph && typeof props.targets.ph === 'object' && 'min' in props.targets.ph) ? {
         min: props.targets.ph.min,
         max: props.targets.ph.max,
       } : undefined,
@@ -142,7 +142,7 @@ const multiSeriesData = computed(() => {
       data: props.chartDataEc,
       currentValue: props.telemetry?.ec ?? null,
       yAxisIndex: 1,
-      targetRange: props.targets?.ec ? {
+      targetRange: (props.targets?.ec && typeof props.targets.ec === 'object' && 'min' in props.targets.ec) ? {
         min: props.targets.ec.min,
         max: props.targets.ec.max,
       } : undefined,

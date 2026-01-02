@@ -16,7 +16,7 @@ export type CommandType =
 /**
  * Статус команды (новые значения из единого контракта)
  */
-export type CommandStatus = 
+export type CommandStatus =
   | 'QUEUED'      // Команда поставлена в очередь
   | 'SENT'        // Команда отправлена в MQTT
   | 'ACCEPTED'    // Команда принята узлом
@@ -25,6 +25,9 @@ export type CommandStatus =
   | 'TIMEOUT'     // Команда не получила ответа в срок
   | 'SEND_FAILED' // Ошибка при отправке команды
   | 'unknown'     // Неизвестный статус (для обратной совместимости)
+  | 'pending'     // Для обратной совместимости
+  | 'completed'   // Для обратной совместимости
+  | 'failed'      // Для обратной совместимости
   
 // Legacy статусы для обратной совместимости (deprecated)
 export type LegacyCommandStatus = 'pending' | 'executing' | 'completed' | 'failed' | 'ack'

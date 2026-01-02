@@ -16,7 +16,7 @@ defineProps({
     },
 });
 
-const user = usePage().props.auth.user;
+const user = (usePage().props as any).auth.user;
 
 interface UpdateProfileInformationFormData {
     name: string;

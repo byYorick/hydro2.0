@@ -174,7 +174,7 @@ import { router, Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import ZoneComparisonModal from '@/Components/ZoneComparisonModal.vue'
 import Button from '@/Components/Button.vue'
-import Badge from '@/Components/Badge.vue'
+import Badge, { type BadgeVariant } from '@/Components/Badge.vue'
 import DataTableV2 from '@/Components/DataTableV2.vue'
 import Pagination from '@/Components/Pagination.vue'
 import { useZonesStore } from '@/stores/zones'
@@ -356,8 +356,8 @@ const columns = [
     headerClass: 'min-w-[120px] max-w-[200px]',
     class: 'min-w-[120px] max-w-[200px]',
   },
-  { key: 'ph', label: 'pH', headerClass: 'min-w-[60px]', class: 'min-w-[60px]', align: 'center' },
-  { key: 'ec', label: 'EC', headerClass: 'min-w-[60px]', class: 'min-w-[60px]', align: 'center' },
+  { key: 'ph', label: 'pH', headerClass: 'min-w-[60px]', class: 'min-w-[60px]' },
+  { key: 'ec', label: 'EC', headerClass: 'min-w-[60px]', class: 'min-w-[60px]' },
   {
     key: 'temperature',
     label: 'Температура',
@@ -392,12 +392,12 @@ const formatTemperature = (value: unknown): string => {
   return !isNaN(num) && isFinite(num) ? `${num.toFixed(1)}°C` : '-'
 }
 
-function getStatusVariant(status: string): string {
+function getStatusVariant(status: string): BadgeVariant {
   switch (status) {
     case 'RUNNING':
       return 'success'
     case 'PAUSED':
-      return 'neutral'
+      return 'warning' // Changed from neutral to warning for better UX
     case 'WARNING':
       return 'warning'
     case 'ALARM':

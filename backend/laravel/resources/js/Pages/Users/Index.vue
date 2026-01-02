@@ -425,7 +425,7 @@ const closeModal = () => {
 
 onMounted(() => {
   if (isAdmin.value) {
-    const propsUsers = page.props.users || []
+    const propsUsers = (page.props.users as any[]) || []
     users.value = propsUsers.map((u) => ({
       ...u,
       created_at: u.created_at,

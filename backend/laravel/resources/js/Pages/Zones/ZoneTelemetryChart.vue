@@ -202,15 +202,15 @@ const option = computed(() => {
       containLabel: true, // Автоматически подстраивает размеры под подписи осей
     },
     xAxis: {
-      type: 'time',
+      type: 'time' as any,
       axisLabel: { 
         color: colors.textDim,
         rotate: 0, // Не поворачиваем подписи
-        formatter: (value: number) => {
+        formatter: ((value: number) => {
           // Форматируем время для компактности
           const date = new Date(value)
           return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
-        }
+        }) as any
       },
       axisLine: { lineStyle: { color: colors.borderMuted } },
       boundaryGap: false, // График начинается от края

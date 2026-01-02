@@ -94,7 +94,7 @@ const props = defineProps<Props>()
 const selectedKind = ref<'ALL' | 'ALERT' | 'WARNING' | 'INFO' | 'ACTION'>('ALL')
 const query = ref('')
 
-const kindOptions = [
+const kindOptions: Array<{ value: 'ALL' | 'ALERT' | 'WARNING' | 'INFO' | 'ACTION', label: string }> = [
   { value: 'ALL', label: 'Все' },
   { value: 'ALERT', label: 'Alert' },
   { value: 'WARNING', label: 'Warning' },

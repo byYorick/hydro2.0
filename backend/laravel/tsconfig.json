@@ -14,18 +14,18 @@
     "noEmit": true,
     "jsx": "preserve",
 
-    /* Linting - Enabled for proper type checking (noImplicitAny disabled for gradual migration) */
+    /* Linting - Enabled for proper type checking */
     "strict": true,
     "noImplicitReturns": true,
     "noImplicitOverride": true,
-    "noUnusedLocals": false,  // Temporarily disabled for gradual migration
-    "noUnusedParameters": false,  // Temporarily disabled for gradual migration
+    "noUnusedLocals": false,  // Keep disabled for now
+    "noUnusedParameters": false,  // Keep disabled for now
     "noFallthroughCasesInSwitch": true,
-    "noImplicitAny": false,  // Temporarily disabled for gradual migration
-    "strictNullChecks": false,  // Temporarily disabled for gradual migration
+    "noImplicitAny": false,  // Keep disabled for gradual migration
+    "strictNullChecks": false,  // Keep disabled for gradual migration
     "strictFunctionTypes": true,
     "strictBindCallApply": true,
-    "strictPropertyInitialization": false,  // Temporarily disabled (requires strictNullChecks)
+    "strictPropertyInitialization": false,  // Keep disabled (requires strictNullChecks)
     "noImplicitThis": true,
     "alwaysStrict": true,
 

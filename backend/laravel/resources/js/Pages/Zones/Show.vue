@@ -220,7 +220,7 @@ const selectedNodeId = ref<number | null>(null)
 const selectedNode = ref<any>(null)
 
 // Loading states using useLoading composable
-interface LoadingState {
+interface LoadingState extends Record<string, boolean> {
   toggle: boolean
   irrigate: boolean
   nextPhase: boolean
@@ -735,7 +735,7 @@ onMounted(async () => {
   if (zoneId.value) {
     unsubscribeZoneCommands = subscribeToZoneCommands(zoneId.value, (commandEvent) => {
       // Обновляем статус команды через useCommands
-      updateCommandStatus(commandEvent.commandId, commandEvent.status, commandEvent.message)
+      updateCommandStatus(commandEvent.commandId, commandEvent.status as any, commandEvent.message)
       
       // Если команда завершена, обновляем зону
       // Проверяем новые и старые статусы для обратной совместимости
@@ -865,7 +865,7 @@ async function onToggle(): Promise<void> {
         },
         onError: async (error) => {
           logger.error('Failed to toggle zone:', error)
-          let errorMessage = ERROR_MESSAGES.UNKNOWN
+          let errorMessage: string = ERROR_MESSAGES.UNKNOWN
           
           // Проверяем, если это ошибка 422 (Cycle is not paused/running), синхронизируем статус
           const is422Error = error && typeof error === 'object' && 'response' in error && 
@@ -929,15 +929,16 @@ async function onActionSubmit({ actionType, params }: { actionType: CommandType;
   
   setLoading('cycleConfig', true)
   
+  const actionNames: Record<CommandType, string> = {
+    'FORCE_IRRIGATION': 'Полив',
+    'FORCE_PH_CONTROL': 'Коррекция pH',
+    'FORCE_EC_CONTROL': 'Коррекция EC',
+    'FORCE_CLIMATE': 'Управление климатом',
+    'FORCE_LIGHTING': 'Управление освещением'
+  } as Record<CommandType, string>
+
   try {
     await sendZoneCommand(zoneId.value, actionType, params)
-    const actionNames: Record<CommandType, string> = {
-      'FORCE_IRRIGATION': 'Полив',
-      'FORCE_PH_CONTROL': 'Коррекция pH',
-      'FORCE_EC_CONTROL': 'Коррекция EC',
-      'FORCE_CLIMATE': 'Управление климатом',
-      'FORCE_LIGHTING': 'Управление освещением'
-    } as Record<CommandType, string>
     const actionName = actionNames[actionType] || 'Действие'
     showToast(`${actionName} запущено успешно`, 'success', TOAST_TIMEOUT.NORMAL)
     // Обновляем зону и cycles через Inertia partial reload
@@ -946,7 +947,7 @@ async function onActionSubmit({ actionType, params }: { actionType: CommandType;
     }
   } catch (err) {
     logger.error(`Failed to execute ${actionType}:`, err)
-    let errorMessage = ERROR_MESSAGES.UNKNOWN
+    let errorMessage: string = ERROR_MESSAGES.UNKNOWN
     if (err && typeof err === 'object' && 'message' in err) errorMessage = String(err.message)
     const actionName = actionNames[actionType] || 'Действие'
     showToast(`Ошибка при выполнении "${actionName}": ${errorMessage}`, 'error', TOAST_TIMEOUT.LONG)

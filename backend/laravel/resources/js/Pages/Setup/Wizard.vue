@@ -531,7 +531,7 @@ async function loadAvailableZones(greenhouseId?: number) {
       { params: { greenhouse_id: ghId } }
     )
     
-    const data = response.data?.data
+    const data = response.data as any
     if (data?.data && Array.isArray(data.data)) {
       availableZones.value = data.data
     } else if (Array.isArray(data)) {
@@ -671,30 +671,30 @@ async function createRecipe(): Promise<void> {
 
     // 3. Создать фазы для ревизии
     for (const phase of recipeForm.phases) {
-      const phTarget = typeof phase.targets?.ph === 'number' ? phase.targets.ph : null
-      const phMin = typeof phase.targets?.ph?.min === 'number' ? phase.targets.ph.min : phTarget
-      const phMax = typeof phase.targets?.ph?.max === 'number' ? phase.targets.ph.max : phTarget
+      const phTarget = phase.targets?.ph
+      const phMin = typeof phTarget === 'object' && phTarget?.min !== undefined ? phTarget.min : (typeof phTarget === 'number' ? phTarget : null)
+      const phMax = typeof phTarget === 'object' && phTarget?.max !== undefined ? phTarget.max : (typeof phTarget === 'number' ? phTarget : null)
 
-      const ecTarget = typeof phase.targets?.ec === 'number' ? phase.targets.ec : null
-      const ecMin = typeof phase.targets?.ec?.min === 'number' ? phase.targets.ec.min : ecTarget
-      const ecMax = typeof phase.targets?.ec?.max === 'number' ? phase.targets.ec.max : ecTarget
+      const ecTarget = phase.targets?.ec
+      const ecMin = typeof ecTarget === 'object' && ecTarget?.min !== undefined ? ecTarget.min : (typeof ecTarget === 'number' ? ecTarget : null)
+      const ecMax = typeof ecTarget === 'object' && ecTarget?.max !== undefined ? ecTarget.max : (typeof ecTarget === 'number' ? ecTarget : null)
 
       await api.post(`/recipe-revisions/${revisionId}/phases`, {
         phase_index: phase.phase_index,
         name: phase.name || `Фаза ${phase.phase_index + 1}`,
         duration_hours: phase.duration_hours,
         ph_target: phTarget,
-        ph_min: phMin,
-        ph_max: phMax,
+        ph_min: phMin ?? undefined,
+        ph_max: phMax ?? undefined,
         ec_target: ecTarget,
-        ec_min: ecMin,
-        ec_max: ecMax,
+        ec_min: ecMin ?? undefined,
+        ec_max: ecMax ?? undefined,
         temp_air_target: phase.targets?.temp_air ?? null,
         humidity_target: phase.targets?.humidity_air ?? null,
         lighting_photoperiod_hours: phase.targets?.light_hours ?? null,
         irrigation_interval_sec: phase.targets?.irrigation_interval_sec ?? null,
         irrigation_duration_sec: phase.targets?.irrigation_duration_sec ?? null,
-      })
+      } as any)
     }
 
     // 4. Опубликовать ревизию, чтобы рецепт был доступен для циклов
@@ -733,7 +733,7 @@ async function createZone(): Promise<void> {
       }
     })
     
-    createdZone.value = response.data.data
+    createdZone.value = response.data as any
     logger.info('Zone created:', createdZone.value)
     
     // Обновляем список зон

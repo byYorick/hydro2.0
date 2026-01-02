@@ -54,96 +54,100 @@ interface MetricData {
 const allMetrics = computed((): MetricData[] => {
   const t = props.telemetry || {}
   const tgts = props.targets || {}
-  
+
   const metrics: MetricData[] = []
-  
+
   // Проверяем формат targets (новый формат из current_phase или старый ZoneTargets)
   const isNewFormat = 'ph' in tgts || 'ec' in tgts || 'climate' in tgts
   const isOldFormat = 'ph_min' in tgts || 'temp_min' in tgts
-  
+
+  // Проверяем, что telemetry - объект, а не число
+  const isTelemetryObject = typeof t === 'object' && t !== null
+  const telemetryObj = isTelemetryObject ? t as any : {}
+
   // Температура
-  if (t.temperature !== null && t.temperature !== undefined) {
+  if (isTelemetryObject && telemetryObj.temperature !== null && telemetryObj.temperature !== undefined) {
     let target: number | null = null
     if (isNewFormat && 'climate' in tgts && tgts.climate?.temperature !== undefined) {
-      target = tgts.climate.temperature
+      target = tgts.climate.temperature as number
     } else if (isOldFormat && 'temp_min' in tgts && 'temp_max' in tgts) {
       target = ((tgts as ZoneTargets).temp_min + (tgts as ZoneTargets).temp_max) / 2
     }
-    const delta = target !== null ? t.temperature - target : null
+    const delta = target !== null ? telemetryObj.temperature - target : null
     metrics.push({
       key: 'temperature',
       label: 'T',
-      value: `${t.temperature.toFixed(1)}°C`,
+      value: `${telemetryObj.temperature.toFixed(1)}°C`,
       delta,
       deltaClass: getDeltaClass(delta, 2),
     })
   }
   
   // Влажность
-  if (t.humidity !== null && t.humidity !== undefined) {
+  if (isTelemetryObject && telemetryObj.humidity !== null && telemetryObj.humidity !== undefined) {
     let target: number | null = null
     if (isNewFormat && 'climate' in tgts && tgts.climate?.humidity !== undefined) {
-      target = tgts.climate.humidity
+      target = tgts.climate.humidity as number
     } else if (isOldFormat && 'humidity_min' in tgts && 'humidity_max' in tgts) {
       target = ((tgts as ZoneTargets).humidity_min + (tgts as ZoneTargets).humidity_max) / 2
     }
-    const delta = target !== null ? t.humidity - target : null
+    const delta = target !== null ? telemetryObj.humidity - target : null
     metrics.push({
       key: 'humidity',
       label: 'RH',
-      value: `${t.humidity.toFixed(1)}%`,
+      value: `${telemetryObj.humidity.toFixed(1)}%`,
       delta,
       deltaClass: getDeltaClass(delta, 5),
     })
   }
   
   // pH
-  if (t.ph !== null && t.ph !== undefined) {
+  if (isTelemetryObject && telemetryObj.ph !== null && telemetryObj.ph !== undefined) {
     let target: number | null = null
-    if (isNewFormat && 'ph' in tgts && tgts.ph) {
+    if (isNewFormat && 'ph' in tgts && tgts.ph && typeof tgts.ph === 'object' && 'min' in tgts.ph && 'max' in tgts.ph) {
       target = (tgts.ph.min + tgts.ph.max) / 2
     } else if (isOldFormat && 'ph_min' in tgts && 'ph_max' in tgts) {
       target = ((tgts as ZoneTargets).ph_min + (tgts as ZoneTargets).ph_max) / 2
     }
-    const delta = target !== null ? t.ph - target : null
+    const delta = target !== null ? telemetryObj.ph - target : null
     metrics.push({
       key: 'ph',
       label: 'pH',
-      value: t.ph.toFixed(2),
+      value: telemetryObj.ph.toFixed(2),
       delta,
       deltaClass: getDeltaClass(delta, 0.2),
     })
   }
   
   // EC
-  if (t.ec !== null && t.ec !== undefined) {
+  if (isTelemetryObject && telemetryObj.ec !== null && telemetryObj.ec !== undefined) {
     let target: number | null = null
-    if (isNewFormat && 'ec' in tgts && tgts.ec) {
+    if (isNewFormat && 'ec' in tgts && tgts.ec && typeof tgts.ec === 'object' && 'min' in tgts.ec && 'max' in tgts.ec) {
       target = (tgts.ec.min + tgts.ec.max) / 2
     } else if (isOldFormat && 'ec_min' in tgts && 'ec_max' in tgts) {
       target = ((tgts as ZoneTargets).ec_min + (tgts as ZoneTargets).ec_max) / 2
     }
-    const delta = target !== null ? t.ec - target : null
+    const delta = target !== null ? telemetryObj.ec - target : null
     metrics.push({
       key: 'ec',
       label: 'EC',
-      value: t.ec.toFixed(1),
+      value: telemetryObj.ec.toFixed(1),
       delta,
       deltaClass: getDeltaClass(delta, 0.2),
     })
   }
   
   // CO2 (если есть в телеметрии)
-  if (t.co2 !== null && t.co2 !== undefined) {
+  if (isTelemetryObject && telemetryObj.co2 !== null && telemetryObj.co2 !== undefined) {
     let target: number | null = null
     if (isNewFormat && 'climate' in tgts && tgts.climate?.co2 !== undefined) {
-      target = tgts.climate.co2
+      target = tgts.climate.co2 as number
     }
-    const delta = target !== null ? t.co2 - target : null
+    const delta = target !== null ? telemetryObj.co2 - target : null
     metrics.push({
       key: 'co2',
       label: 'CO₂',
-      value: `${t.co2.toFixed(0)} ppm`,
+      value: `${telemetryObj.co2.toFixed(0)} ppm`,
       delta,
       deltaClass: getDeltaClass(delta, 100),
     })
