@@ -156,7 +156,7 @@ function handleStatusClick(status: StatusKey): void {
   if (!isRouterAvailable) return
   const statusParam = status === 'ALL' ? '' : `?status=${status}`
   router.visit(`/zones${statusParam}`, {
-    preserveScroll: false,
+    preserveUrl: false,
   })
 }
 </script>

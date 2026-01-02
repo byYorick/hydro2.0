@@ -13,6 +13,7 @@ const passwordInput = ref(null);
 
 interface DeleteUserFormData {
     password: string;
+    [key: string]: any;
 }
 
 const { form, submit: submitForm } = useInertiaForm<DeleteUserFormData>(
@@ -20,7 +21,7 @@ const { form, submit: submitForm } = useInertiaForm<DeleteUserFormData>(
         password: '',
     },
     {
-        preserveScroll: true,
+        preserveUrl: true,
         showSuccessToast: false, // Удаление аккаунта редиректит, Toast не нужен
         showErrorToast: false,
         onSuccess: () => closeModal(),

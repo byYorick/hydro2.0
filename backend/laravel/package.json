@@ -4,7 +4,7 @@
     "scripts": {
         "dev": "vite",
         "build": "vite build",
-        "typecheck": "vue-tsc --noEmit -p tsconfig.json",
+        "typecheck": "vue-tsc --noEmit",
         "lint": "eslint . --ext .ts,.tsx,.vue",
         "test": "vitest run",
         "test:ui": "vitest --ui",

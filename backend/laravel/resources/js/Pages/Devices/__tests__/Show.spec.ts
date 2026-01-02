@@ -363,7 +363,7 @@ describe('Devices/Show.vue', () => {
     await new Promise(resolve => setTimeout(resolve, 100))
     
     // Проверяем, что компонент MultiSeriesTelemetryChart отображается
-    const charts = wrapper.findAllComponents({ name: 'MultiSeriesTelemetryChart' })
+    wrapper.findAllComponents({ name: 'MultiSeriesTelemetryChart' })
     // Графики могут не отображаться сразу, если нет данных, но компонент должен быть доступен
     // Проверяем, что компонент существует в шаблоне
     expect(wrapper.html()).toBeTruthy()

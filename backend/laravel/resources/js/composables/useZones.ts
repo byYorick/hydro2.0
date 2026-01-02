@@ -126,7 +126,7 @@ export function useZones(showToast?: ToastHandler) {
    * Обновить зону через API и store (вместо Inertia reload)
    * Сохраняет состояние страницы и избегает лишних перерисовок
    */
-  async function reloadZone(zoneId: number, only: string[] = ['zone'], preserveScroll: boolean = true): Promise<void> {
+  async function reloadZone(zoneId: number, only: string[] = ['zone'], preserveUrl: boolean = true): Promise<void> {
     try {
       const updatedZone = await fetchZone(zoneId, true) // forceRefresh = true
       if (updatedZone?.id) {
@@ -138,7 +138,7 @@ export function useZones(showToast?: ToastHandler) {
     } catch (error) {
       logger.error('[useZones] Failed to update zone via API, falling back to reload', { zoneId, error })
       // Fallback к частичному reload при ошибке
-      router.reload({ only, preserveScroll })
+      router.reload({ only, preserveUrl })
     }
   }
 
@@ -146,7 +146,7 @@ export function useZones(showToast?: ToastHandler) {
    * Обновить список зон через API и store (вместо Inertia reload)
    * Сохраняет состояние страницы и избегает лишних перерисовок
    */
-  async function reloadZones(only: string[] = ['zones'], preserveScroll: boolean = true): Promise<void> {
+  async function reloadZones(only: string[] = ['zones'], preserveUrl: boolean = true): Promise<void> {
     try {
       const updatedZones = await fetchZones(true) // forceRefresh = true
       if (updatedZones && updatedZones.length > 0) {
@@ -158,7 +158,7 @@ export function useZones(showToast?: ToastHandler) {
     } catch (error) {
       logger.error('[useZones] Failed to update zones via API, falling back to reload', { error })
       // Fallback к частичному reload при ошибке
-      router.reload({ only, preserveScroll })
+      router.reload({ only, preserveUrl })
     }
   }
 

@@ -80,7 +80,7 @@ export interface UseInertiaFormOptions<T extends Record<string, unknown>> {
   /**
    * Сохранять ли прокрутку (по умолчанию true)
    */
-  preserveScroll?: boolean
+  preserveUrl?: boolean
 
   /**
    * Сохранять ли состояние (по умолчанию false)
@@ -108,7 +108,7 @@ export function useInertiaForm<T extends Record<string, unknown>>(
     onFinish: customOnFinish,
     onStoreUpdate,
     reloadOnSuccess = false,
-    preserveScroll = true,
+    preserveUrl = true,
     preserveState = false,
   } = options
 
@@ -153,9 +153,9 @@ export function useInertiaForm<T extends Record<string, unknown>>(
       // eslint-disable-next-line no-console
       console.warn('[useInertiaForm] reloadOnSuccess is deprecated. Use onStoreUpdate callback instead.')
       if (Array.isArray(reloadOnSuccess)) {
-        router.reload({ only: reloadOnSuccess, preserveScroll, preserveState })
+        router.reload({ only: reloadOnSuccess, preserveUrl, preserveState })
       } else {
-        router.reload({ preserveScroll, preserveState })
+        router.reload({ preserveUrl, preserveState })
       }
     }
 
@@ -212,7 +212,7 @@ export function useInertiaForm<T extends Record<string, unknown>>(
     method: 'get' | 'post' | 'put' | 'patch' | 'delete',
     url: string,
     options: {
-      preserveScroll?: boolean
+      preserveUrl?: boolean
       preserveState?: boolean
       only?: string[]
       onSuccess?: (page: any) => void
@@ -221,7 +221,7 @@ export function useInertiaForm<T extends Record<string, unknown>>(
     } = {}
   ) {
     const {
-      preserveScroll: optionPreserveScroll = preserveScroll,
+      preserveUrl: optionPreserveScroll = preserveUrl,
       preserveState: optionPreserveState = preserveState,
       only,
       onSuccess: optionOnSuccess,
@@ -253,7 +253,7 @@ export function useInertiaForm<T extends Record<string, unknown>>(
 
     // Создаем опции для submit
     const submitOptions: any = {
-      preserveScroll: optionPreserveScroll,
+      preserveUrl: optionPreserveScroll,
       preserveState: optionPreserveState,
       onSuccess: combinedOnSuccess,
       onError: combinedOnError,

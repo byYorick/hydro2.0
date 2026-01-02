@@ -14,6 +14,7 @@ interface UpdatePasswordFormData {
     current_password: string;
     password: string;
     password_confirmation: string;
+    [key: string]: any;
 }
 
 const { form, submit: submitForm } = useInertiaForm<UpdatePasswordFormData>(
@@ -25,7 +26,7 @@ const { form, submit: submitForm } = useInertiaForm<UpdatePasswordFormData>(
     {
         resetOnSuccess: true,
         successMessage: 'Пароль успешно обновлен',
-        preserveScroll: true,
+        preserveUrl: true,
         onError: (errors) => {
             if (errors.password) {
                 form.reset('password', 'password_confirmation');

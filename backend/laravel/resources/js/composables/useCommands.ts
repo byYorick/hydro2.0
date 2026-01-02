@@ -307,7 +307,7 @@ export function useCommands(showToast?: ToastHandler) {
    * Обновить зону после выполнения команды через API и store (вместо reload)
    * Используется для сохранения состояния страницы и избежания лишних перерисовок
    */
-  function reloadZoneAfterCommand(zoneId: number, only: string[] = ['zone', 'cycles'], preserveScroll: boolean = true): void {
+  function reloadZoneAfterCommand(zoneId: number, only: string[] = ['zone', 'cycles'], preserveUrl: boolean = true): void {
     const key = `${zoneId}:${only.join(',')}`
     
     if (reloadTimers.has(key)) {
@@ -333,7 +333,7 @@ export function useCommands(showToast?: ToastHandler) {
       } catch (error) {
         logger.error('[useCommands] Failed to update zone after command, falling back to reload', { zoneId, error })
         // Fallback к частичному reload при ошибке
-        router.reload({ only, preserveScroll })
+        router.reload({ only, preserveUrl })
       }
     }, RELOAD_DEBOUNCE_MS))
   }

@@ -471,8 +471,8 @@ const confirmDetachNode = async (): Promise<void> => {
       // Обновляем device локально, убирая zone_id, вместо полного reload
       const updatedDevice = response.data?.data || {
         ...device.value,
-        zone_id: null,
-        zone: null,
+        zone_id: undefined,
+        zone: undefined,
       }
       
       // Обновляем device в store для мгновенного отображения
@@ -566,7 +566,7 @@ const onTestPump = async (channelName: string, channelType: string): Promise<voi
 }
 
 // Функция для получения читаемого названия канала
-function getChannelLabel(channelName, channelType) {
+function getChannelLabel(channelName: string, channelType: string): string {
   const name = (channelName || '').toLowerCase()
   const nodeType = (device.value.type || '').toLowerCase()
   const type = (channelType || '').toLowerCase()
@@ -719,7 +719,7 @@ async function loadAllCharts(): Promise<void> {
   }
   
   for (const channel of sensorChannels.value) {
-    const metric = channel.metric || channel.channel.toUpperCase()
+    const metric = String(channel.metric || channel.channel.toUpperCase())
     const data = await loadChartData(channel.channel, metric, chartTimeRange.value)
     chartDataByChannel.value[channel.channel] = data
   }
@@ -738,19 +738,25 @@ const { subscribe: subscribeTelemetry, unsubscribe: unsubscribeTelemetry } = use
 let unsubscribeTelemetryFn: (() => void) | null = null
 
 // Обработчик обновления телеметрии через WebSocket
-const handleTelemetryUpdate = (data: { node_id: number; channel: string; metric_type: string; value: number; ts: number }) => {
+const handleTelemetryUpdate = (data: { node_id: number; channel: string | null; metric_type: string; value: number; ts: number }) => {
   try {
-    const channel = sensorChannels.value.find(ch => ch.channel === data.channel)
+    // Пропускаем данные с null channel
+    if (!data.channel) {
+      return
+    }
+
+    const channelName = data.channel
+    const channel = sensorChannels.value.find(ch => ch.channel === channelName)
     if (!channel) {
       return
     }
 
     // Получаем или создаем массив данных для канала
-    if (!chartDataByChannel.value[data.channel]) {
-      chartDataByChannel.value[data.channel] = []
+    if (!chartDataByChannel.value[channelName]) {
+      chartDataByChannel.value[channelName] = []
     }
-    
-    const existingData = chartDataByChannel.value[data.channel]
+
+    const existingData = chartDataByChannel.value[channelName]
 
     // Проверяем, не дублируется ли точка (по timestamp)
     const isDuplicate = existingData.length > 0 && 
@@ -771,7 +777,7 @@ const handleTelemetryUpdate = (data: { node_id: number; channel: string; metric_
       }
 
       logger.debug('[Devices/Show] Updated chart data via WebSocket', {
-        channel: data.channel,
+        channel: channelName,
         value: data.value,
         pointsCount: existingData.length,
       })

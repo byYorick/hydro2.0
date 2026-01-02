@@ -64,8 +64,8 @@ describe('Devices Index - Virtualization (P2-1)', () => {
     await wrapper.vm.$nextTick()
     
     // Проверяем, что paginatedData computed существует
-    expect(wrapper.vm.paginatedData).toBeDefined()
-    expect(Array.isArray(wrapper.vm.paginatedData)).toBe(true)
+    expect((wrapper.vm as any).paginatedData).toBeDefined()
+    expect(Array.isArray((wrapper.vm as any).paginatedData)).toBe(true)
     
     // RecycleScroller может не найтись, если rows пустой или компонент не рендерится
     const scroller = wrapper.findComponent({ name: 'RecycleScroller' })
@@ -74,7 +74,7 @@ describe('Devices Index - Virtualization (P2-1)', () => {
     } else {
       // Если RecycleScroller не найден, проверяем, что компонент смонтирован и paginatedData доступен
       expect(wrapper.exists()).toBe(true)
-      expect(wrapper.vm.paginatedData).toBeDefined()
+      expect((wrapper.vm as any).paginatedData).toBeDefined()
     }
   })
 
@@ -88,8 +88,8 @@ describe('Devices Index - Virtualization (P2-1)', () => {
       expect(Array.isArray(scroller.props('items'))).toBe(true)
     } else {
       // Если RecycleScroller не найден, проверяем paginatedData напрямую
-      expect(wrapper.vm.paginatedData).toBeDefined()
-      expect(Array.isArray(wrapper.vm.paginatedData)).toBe(true)
+      expect((wrapper.vm as any).paginatedData).toBeDefined()
+      expect(Array.isArray((wrapper.vm as any).paginatedData)).toBe(true)
     }
   })
 
@@ -131,7 +131,7 @@ describe('Devices Index - Virtualization (P2-1)', () => {
       await wrapper.vm.$nextTick()
       
       // queryLower должен быть мемоизирован
-      expect(wrapper.vm.queryLower).toBe('dev001')
+      expect((wrapper.vm as any).queryLower).toBe('dev001')
     } else {
       // Если input не найден, пропускаем проверку
       expect(true).toBe(true)
@@ -149,8 +149,8 @@ describe('Devices Index - Virtualization (P2-1)', () => {
       expect(Array.isArray(rows)).toBe(true)
     } else {
       // Если RecycleScroller не найден, проверяем, что paginatedData пустой
-      expect(wrapper.vm.paginatedData).toBeDefined()
-      expect(Array.isArray(wrapper.vm.paginatedData)).toBe(true)
+      expect((wrapper.vm as any).paginatedData).toBeDefined()
+      expect(Array.isArray((wrapper.vm as any).paginatedData)).toBe(true)
     }
   })
 })

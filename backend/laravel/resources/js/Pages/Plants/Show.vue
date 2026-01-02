@@ -172,49 +172,49 @@
                     <div v-if="hasTargetValue(phase.targets?.ph)" class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3">
                       <div class="text-xs text-[color:var(--text-muted)] mb-1 uppercase tracking-wide">pH</div>
                       <div class="text-base font-semibold text-[color:var(--text-primary)]">
-                        {{ formatTargetRange(phase.targets.ph) }}
+                        {{ formatTargetRange(phase.targets?.ph) }}
                       </div>
                     </div>
                     <!-- EC -->
                     <div v-if="hasTargetValue(phase.targets?.ec)" class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3">
                       <div class="text-xs text-[color:var(--text-muted)] mb-1 uppercase tracking-wide">EC (мСм/см)</div>
                       <div class="text-base font-semibold text-[color:var(--text-primary)]">
-                        {{ formatTargetRange(phase.targets.ec) }}
+                        {{ formatTargetRange(phase.targets?.ec) }}
                       </div>
                     </div>
                     <!-- Температура -->
                     <div v-if="hasTargetValue(phase.targets?.temp_air)" class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3">
                       <div class="text-xs text-[color:var(--text-muted)] mb-1 uppercase tracking-wide">Температура воздуха</div>
                       <div class="text-base font-semibold text-[color:var(--text-primary)]">
-                        {{ phase.targets.temp_air }}°C
+                        {{ phase.targets?.temp_air }}°C
                       </div>
                     </div>
                     <!-- Влажность -->
                     <div v-if="hasTargetValue(phase.targets?.humidity_air)" class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3">
                       <div class="text-xs text-[color:var(--text-muted)] mb-1 uppercase tracking-wide">Влажность воздуха</div>
                       <div class="text-base font-semibold text-[color:var(--text-primary)]">
-                        {{ phase.targets.humidity_air }}%
+                        {{ phase.targets?.humidity_air }}%
                       </div>
                     </div>
                     <!-- Свет -->
                     <div v-if="hasTargetValue(phase.targets?.light_hours)" class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3">
                       <div class="text-xs text-[color:var(--text-muted)] mb-1 uppercase tracking-wide">Световой день</div>
                       <div class="text-base font-semibold text-[color:var(--text-primary)]">
-                        {{ phase.targets.light_hours }} ч
+                        {{ phase.targets?.light_hours }} ч
                       </div>
                     </div>
                     <!-- Интервал полива -->
                     <div v-if="hasTargetValue(phase.targets?.irrigation_interval_sec)" class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3">
                       <div class="text-xs text-[color:var(--text-muted)] mb-1 uppercase tracking-wide">Интервал полива</div>
                       <div class="text-base font-semibold text-[color:var(--text-primary)]">
-                        {{ formatIrrigationInterval(phase.targets.irrigation_interval_sec) }}
+                        {{ formatIrrigationInterval(phase.targets?.irrigation_interval_sec) }}
                       </div>
                     </div>
                     <!-- Длительность полива -->
                     <div v-if="hasTargetValue(phase.targets?.irrigation_duration_sec)" class="rounded-lg border border-[color:var(--border-muted)] bg-[color:var(--bg-elevated)] p-3">
                       <div class="text-xs text-[color:var(--text-muted)] mb-1 uppercase tracking-wide">Длительность полива</div>
                       <div class="text-base font-semibold text-[color:var(--text-primary)]">
-                        {{ phase.targets.irrigation_duration_sec }} сек
+                        {{ phase.targets?.irrigation_duration_sec }} сек
                       </div>
                     </div>
                   </div>
@@ -412,14 +412,15 @@ interface TaxonomyOption {
 interface PageProps {
   plant?: PlantSummary
   taxonomies?: Record<string, TaxonomyOption[]>
+  [key: string]: any
 }
 
 const { plant: plantProp, taxonomies: taxonomiesProp } = usePageProps<PageProps>(['plant', 'taxonomies'])
 const plant = computed(() => (plantProp.value || {}) as PlantSummary)
 const taxonomies = computed(() => ({
-  substrate_type: taxonomiesProp.value?.substrate_type ?? [],
-  growing_system: taxonomiesProp.value?.growing_system ?? [],
-  photoperiod_preset: taxonomiesProp.value?.photoperiod_preset ?? [],
+  substrate_type: (taxonomiesProp.value as any)?.substrate_type ?? [],
+  growing_system: (taxonomiesProp.value as any)?.growing_system ?? [],
+  photoperiod_preset: (taxonomiesProp.value as any)?.photoperiod_preset ?? [],
 }))
 
 const { showToast } = useToast()
@@ -530,11 +531,11 @@ function formatDuration(hours: number | null | undefined): string {
   return `${days} дн ${remainder} ч`
 }
 
-function formatTargetRange(target: { min?: number; max?: number } | number): string {
+function formatTargetRange(target: { min?: number; max?: number } | number | undefined | null): string {
+  if (target === undefined || target === null) return '-'
   if (typeof target === 'number') {
     return target.toString()
   }
-  if (!target) return '-'
   const min = target.min ?? ''
   const max = target.max ?? ''
   if (min === '' && max === '') return '-'
@@ -542,7 +543,7 @@ function formatTargetRange(target: { min?: number; max?: number } | number): str
   return min !== '' ? `от ${min}` : `до ${max}`
 }
 
-function formatIrrigationInterval(seconds: number): string {
+function formatIrrigationInterval(seconds: number | undefined | null): string {
   if (!seconds) return '-'
   if (seconds < 60) return `${seconds} сек`
   if (seconds < 3600) {
@@ -600,7 +601,7 @@ watch(() => showEditModal.value, (newVal: boolean) => {
       seasonality: plant.value.seasonality || '',
       description: plant.value.description || '',
       environment_requirements: populateEnvironment(plant.value.environment_requirements),
-    })
+    } as any)
     form.clearErrors()
   }
 })

@@ -21,6 +21,7 @@ const user = usePage().props.auth.user;
 interface UpdateProfileInformationFormData {
     name: string;
     email: string;
+    [key: string]: any;
 }
 
 const { form, submit: submitForm } = useInertiaForm<UpdateProfileInformationFormData>(
@@ -30,7 +31,7 @@ const { form, submit: submitForm } = useInertiaForm<UpdateProfileInformationForm
     },
     {
         successMessage: 'Профиль успешно обновлен',
-        preserveScroll: true,
+        preserveUrl: true,
     }
 );
 

@@ -74,7 +74,7 @@ const VISIT_DEBOUNCE_MS = 300
 /**
  * Безопасный переход с проверкой текущего URL и debounce
  */
-function safeVisit(url: string, options: { preserveScroll?: boolean } = {}): void {
+function safeVisit(url: string, options: { preserveUrl?: boolean } = {}): void {
   const currentUrl = window.location.pathname
   const targetUrl = url.startsWith('/') ? url : `/${url}`
   
@@ -93,7 +93,7 @@ function safeVisit(url: string, options: { preserveScroll?: boolean } = {}): voi
   // Устанавливаем новый таймер с debounce
   visitTimers.set(key, setTimeout(() => {
     visitTimers.delete(key)
-    router.visit(targetUrl, { preserveScroll: options.preserveScroll ?? true })
+    router.visit(targetUrl, { preserveUrl: options.preserveUrl ?? true })
   }, VISIT_DEBOUNCE_MS))
 }
 
@@ -108,19 +108,19 @@ function initializeDefaultShortcuts(): void {
 
   // Регистрируем стандартные shortcuts для навигации с безопасным переходом
   // Ctrl+Shift+Z - Zones (изменено с Ctrl+Z, чтобы не конфликтовать с Undo)
-  globalShortcuts.set('ctrl+shift+z', () => safeVisit('/zones', { preserveScroll: true }))
+  globalShortcuts.set('ctrl+shift+z', () => safeVisit('/zones', { preserveUrl: true }))
 
   // Ctrl+Shift+D - Dashboard (изменено с Alt+D, чтобы не конфликтовать с переходом в адресную строку)
-  globalShortcuts.set('ctrl+shift+d', () => safeVisit('/', { preserveScroll: true }))
+  globalShortcuts.set('ctrl+shift+d', () => safeVisit('/', { preserveUrl: true }))
 
   // Ctrl+Shift+A - Alerts (изменено с Ctrl+A, чтобы не конфликтовать с "Выделить всё")
-  globalShortcuts.set('ctrl+shift+a', () => safeVisit('/alerts', { preserveScroll: true }))
+  globalShortcuts.set('ctrl+shift+a', () => safeVisit('/alerts', { preserveUrl: true }))
 
   // Alt+R - Recipes (изменено с Ctrl+R, чтобы не конфликтовать с перезагрузкой страницы)
-  globalShortcuts.set('alt+r', () => safeVisit('/recipes', { preserveScroll: true }))
+  globalShortcuts.set('alt+r', () => safeVisit('/recipes', { preserveUrl: true }))
 
   // Shift+D - Devices (чтобы не конфликтовать с Ctrl+D)
-  globalShortcuts.set('shift+d', () => safeVisit('/devices', { preserveScroll: true }))
+  globalShortcuts.set('shift+d', () => safeVisit('/devices', { preserveUrl: true }))
 }
 
 /**

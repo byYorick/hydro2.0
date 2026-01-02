@@ -22,6 +22,7 @@ describe('Devices/Show.vue - Утилиты', () => {
         channel: 'humidity_sensor',
         type: 'SENSOR',
         unit: '%',
+        metric: null,
       }
       const metric = channel.metric || channel.channel.toUpperCase()
       expect(metric).toBe('HUMIDITY_SENSOR')

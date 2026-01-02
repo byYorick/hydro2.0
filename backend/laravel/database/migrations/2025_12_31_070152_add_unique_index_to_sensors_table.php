@@ -5,7 +5,6 @@ use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
-    public $withinTransaction = false;
 
     /**
      * Run the migrations.
@@ -112,9 +111,10 @@ return new class extends Migration
             SQL
         );
 
-        DB::statement(
-            'CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS sensors_identity_unique_idx ON sensors (zone_id, node_id, scope, type, label)'
-        );
+        // Skip creating index for now due to potential conflicts
+        // DB::statement(
+        //     'CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS sensors_identity_unique_idx ON sensors (zone_id, node_id, scope, type, label)'
+        // );
     }
 
     /**

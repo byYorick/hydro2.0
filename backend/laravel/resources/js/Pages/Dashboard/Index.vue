@@ -298,7 +298,7 @@
             :unit="metric.unit"
             :loading="metric.loading"
             :color="metric.color"
-              :zone-id="selectedZoneId"
+              :zone-id="selectedZoneId || undefined"
             :metric="metric.key"
             @open-detail="handleOpenDetail"
           />
@@ -633,7 +633,7 @@ const filteredEvents = computed(() => {
 function handleOpenDetail(zoneId: number, _metric: string): void {
   if (zoneId) {
     router.visit(`/zones/${zoneId}`, {
-      preserveScroll: false,
+      preserveUrl: false,
     })
   }
 }

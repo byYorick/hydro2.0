@@ -118,7 +118,7 @@ const VISIT_DEBOUNCE_MS = 300
 /**
  * Безопасный переход с проверкой текущего URL и debounce
  */
-function safeVisit(url: string, options: { preserveScroll?: boolean } = {}): void {
+function safeVisit(url: string, options: { preserveUrl?: boolean } = {}): void {
   const currentUrl = page.url || window.location.pathname
   const targetUrl = url.startsWith('/') ? url : `/${url}`
   
@@ -137,7 +137,7 @@ function safeVisit(url: string, options: { preserveScroll?: boolean } = {}): voi
   // Устанавливаем новый таймер с debounce
   visitTimers.set(key, setTimeout(() => {
     visitTimers.delete(key)
-    router.visit(targetUrl, { preserveScroll: options.preserveScroll ?? true })
+    router.visit(targetUrl, { preserveUrl: options.preserveUrl ?? true })
   }, VISIT_DEBOUNCE_MS))
 }
 

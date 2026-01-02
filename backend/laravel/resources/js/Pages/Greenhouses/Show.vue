@@ -129,7 +129,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
@@ -183,7 +183,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const { isOpen: showZoneWizard, open: openZoneWizard, close: closeZoneWizard } = useSimpleModal()
 
-function onZoneCreated(zone: Zone): void {
+function onZoneCreated(_zone: Zone): void {
   // Обновляем страницу для отображения новой зоны
   router.reload({ only: ['zones'] })
 }
@@ -193,30 +193,30 @@ const cycles = computed(() => {
     return []
   }
   return props.zones
-    .filter((zone) => zone.activeGrowCycle)
+    .filter((zone) => zone.cycles && zone.cycles.length > 0)
     .map((zone) => {
-      // Используем новую модель: activeGrowCycle
-      if (zone.activeGrowCycle) {
-        const cycle = zone.activeGrowCycle
-        const currentPhase = cycle.currentPhase
-        const phaseIndex = (currentPhase?.phase_index ?? 0) + 1
+      // Используем cycles массив для поиска активного цикла
+      const activeCycle = zone.cycles?.find(cycle => cycle.status === 'RUNNING')
+      if (activeCycle) {
+        const phaseIndex = (activeCycle.current_phase_index ?? 0) + 1
         
         // Вычисляем прогресс фазы
         let progress = 0
-        if (cycle.phase_started_at && currentPhase) {
-          const startedAt = new Date(cycle.phase_started_at)
+        const currentPhase = activeCycle.recipe?.phases?.[activeCycle.current_phase_index ?? 0]
+        if (currentPhase && activeCycle.started_at) {
+          const startedAt = new Date(activeCycle.started_at)
           const now = new Date()
-          const durationHours = currentPhase.duration_hours || (currentPhase.duration_days ? currentPhase.duration_days * 24 : 0)
+          const durationHours = currentPhase.duration_hours
           const phaseEndAt = new Date(startedAt.getTime() + durationHours * 60 * 60 * 1000)
           const totalMs = phaseEndAt.getTime() - startedAt.getTime()
           const elapsedMs = now.getTime() - startedAt.getTime()
           progress = totalMs > 0 ? Math.min(100, Math.max(0, (elapsedMs / totalMs) * 100)) : 0
         }
-        
+
         return {
           zone_id: zone.id,
           zone,
-          recipe: cycle.recipeRevision?.recipe,
+          recipe: activeCycle.recipe,
           phaseIndex,
           statusLabel: progress >= 85 ? 'Старт' : progress >= 45 ? 'В процессе' : 'Начало',
           progress,

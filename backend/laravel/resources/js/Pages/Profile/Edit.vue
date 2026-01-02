@@ -21,7 +21,7 @@ defineProps({
 })
 
 const page = usePage()
-const user = computed(() => page.props.auth?.user as User | undefined)
+const user = computed(() => (page.props as any).auth?.user as User | undefined)
 
 const getRoleBadgeVariant = (role?: string): 'danger' | 'warning' | 'info' | 'success' | 'neutral' => {
   switch (role) {

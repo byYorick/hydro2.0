@@ -2,7 +2,8 @@
  * Composable для улучшенной валидации и обработки ошибок форм
  */
 import { computed, type Ref } from 'vue'
-import type { FormErrors, UseFormReturn } from '@inertiajs/vue3'
+import type { Errors as FormErrors } from '@inertiajs/core'
+import type { UseFormReturn } from '@inertiajs/vue3'
 
 /**
  * Улучшенная обработка ошибок формы

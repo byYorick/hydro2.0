@@ -37,14 +37,14 @@ const { form, submit: submitForm } = useInertiaForm<LoginFormData>(
         showSuccessToast: false, // Auth формы обычно не показывают Toast при успехе
         showErrorToast: true, // Показываем toast при ошибке аутентификации
         errorMessage: 'Неверный email или пароль. Проверьте правильность введенных данных.',
-        preserveScroll: true, // Сохраняем позицию прокрутки при ошибке
+        preserveUrl: true, // Сохраняем позицию прокрутки при ошибке
         preserveState: true, // Сохраняем состояние формы при ошибке
     }
 );
 
 const submit = (): void => {
     submitForm('post', route('login'));
-    // preserveScroll и preserveState уже настроены в useInertiaForm
+    // preserveUrl и preserveState уже настроены в useInertiaForm
     // Toast уведомления обрабатываются автоматически
     // Форма остается на странице логина при ошибке валидации
 };

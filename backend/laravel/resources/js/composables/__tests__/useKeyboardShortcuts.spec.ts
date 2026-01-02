@@ -77,7 +77,7 @@ describe('useKeyboardShortcuts (P3-1)', () => {
     // Ждем debounce (300ms)
     await new Promise(resolve => setTimeout(resolve, 350))
     
-    expect(mockRouter.visit).toHaveBeenCalledWith('/zones', { preserveScroll: true })
+    expect(mockRouter.visit).toHaveBeenCalledWith('/zones', { preserveUrl: true })
   })
 
   it('should handle Ctrl+Shift+D shortcut for Dashboard', async () => {
@@ -105,7 +105,7 @@ describe('useKeyboardShortcuts (P3-1)', () => {
     // Ждем debounce (300ms)
     await new Promise(resolve => setTimeout(resolve, 350))
     
-    expect(mockRouter.visit).toHaveBeenCalledWith('/', { preserveScroll: true })
+    expect(mockRouter.visit).toHaveBeenCalledWith('/', { preserveUrl: true })
   })
 
   it('should handle Alt+R shortcut for Recipes', async () => {
@@ -132,7 +132,7 @@ describe('useKeyboardShortcuts (P3-1)', () => {
     // Ждем debounce (300ms)
     await new Promise(resolve => setTimeout(resolve, 350))
     
-    expect(mockRouter.visit).toHaveBeenCalledWith('/recipes', { preserveScroll: true })
+    expect(mockRouter.visit).toHaveBeenCalledWith('/recipes', { preserveUrl: true })
   })
 
   it('should handle Shift+D shortcut for Devices', async () => {
@@ -159,7 +159,7 @@ describe('useKeyboardShortcuts (P3-1)', () => {
     // Ждем debounce (300ms)
     await new Promise(resolve => setTimeout(resolve, 350))
     
-    expect(mockRouter.visit).toHaveBeenCalledWith('/devices', { preserveScroll: true })
+    expect(mockRouter.visit).toHaveBeenCalledWith('/devices', { preserveUrl: true })
   })
 
   it('should ignore shortcuts when focus is in input', async () => {

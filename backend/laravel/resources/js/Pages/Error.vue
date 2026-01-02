@@ -59,11 +59,8 @@ interface Props {
   line?: number
 }
 
-const props = withDefaults(defineProps<Props>(), {
-  status: 500,
-  message: 'Произошла непредвиденная ошибка',
-  errors: () => ({}),
-})
+// Props are used implicitly by Vue template
+defineProps<Props>()
 
 const isDev = computed(() => import.meta.env.DEV)
 

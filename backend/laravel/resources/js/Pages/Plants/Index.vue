@@ -193,9 +193,7 @@
 import { Head, useForm, router, Link } from '@inertiajs/vue3'
 import { computed, ref, watch } from 'vue'
 import AppLayout from '@/Layouts/AppLayout.vue'
-import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
-import Badge from '@/Components/Badge.vue'
 import Modal from '@/Components/Modal.vue'
 import PlantCreateModal from '@/Components/PlantCreateModal.vue'
 import Pagination from '@/Components/Pagination.vue'
@@ -275,8 +273,6 @@ const selectedPlant = computed(() => {
   // Ищем в полном списке, а не только в пагинированных
   return props.plants.find(plant => plant.id === selectedPlantId.value) ?? null
 })
-const currentProfitability = computed(() => selectedPlant.value?.profitability ?? null)
-const canEditPricing = computed(() => selectedPlantId.value !== null)
 
 const taxonomies = computed(() => ({
   substrate_type: props.taxonomies?.substrate_type ?? [],
@@ -308,15 +304,6 @@ const rangeMetrics = [
   { key: 'ec', label: 'EC (мСм/см)' },
 ]
 
-const costFields = [
-  { key: 'seedling_cost', label: 'Посадочный материал' },
-  { key: 'substrate_cost', label: 'Субстрат' },
-  { key: 'nutrient_cost', label: 'Питательные растворы' },
-  { key: 'labor_cost', label: 'Труд' },
-  { key: 'protection_cost', label: 'Защита' },
-  { key: 'logistics_cost', label: 'Логистика' },
-  { key: 'other_cost', label: 'Прочее' },
-]
 
 const emptyEnvironment = () =>
   rangeMetrics.reduce((acc, metric) => {
@@ -366,38 +353,7 @@ function resetForm(): void {
   form.clearErrors()
 }
 
-function startEdit(plant: PlantSummary): void {
-  selectedPlantId.value = plant.id
-  form.reset({
-    name: plant.name,
-    slug: plant.slug,
-    species: plant.species || '',
-    variety: plant.variety || '',
-    substrate_type: plant.substrate_type || '',
-    growing_system: plant.growing_system || '',
-    photoperiod_preset: plant.photoperiod_preset || '',
-    seasonality: plant.seasonality || '',
-    description: plant.description || '',
-    environment_requirements: populateEnvironment(plant.environment_requirements),
-  })
-  form.clearErrors()
-}
 
-function populateEnvironment(env?: Record<string, EnvironmentRange> | null): Record<string, EnvironmentRange> {
-  const template = emptyEnvironment()
-  if (!env) {
-    return template
-  }
-
-  Object.keys(template).forEach((key) => {
-    template[key] = {
-      min: env[key]?.min ?? '',
-      max: env[key]?.max ?? '',
-    }
-  })
-
-  return template
-}
 
 function handleSubmit(): void {
   if (!isEditing.value || !selectedPlantId.value) {
@@ -419,9 +375,6 @@ function onPlantCreated(plant: any): void {
   // Страница уже обновится через router.reload в модальном окне
 }
 
-function deletePlant(plant: PlantSummary): void {
-  deleteModal.value = { open: true, plant }
-}
 
 function confirmDeletePlant(): void {
   const plant = deleteModal.value.plant
@@ -440,56 +393,10 @@ function confirmDeletePlant(): void {
   })
 }
 
-function hasEnvironment(plant: PlantSummary): boolean {
-  return Boolean(plant.environment_requirements && Object.keys(plant.environment_requirements).length > 0)
-}
 
-function formatRange(range: EnvironmentRange | undefined): string {
-  if (!range) return '—'
-  const min = range.min ?? ''
-  const max = range.max ?? ''
-  if (min === '' && max === '') return '—'
-  if (min !== '' && max !== '') return `${min} – ${max}`
-  return min !== '' ? `от ${min}` : `до ${max}`
-}
 
-function formatCurrency(value: number | string | null | undefined, currency = 'RUB'): string {
-  if (value === null || value === undefined || value === '') {
-    return '—'
-  }
 
-  const numeric = typeof value === 'string' ? Number(value) : value
-  if (Number.isNaN(numeric)) {
-    return '—'
-  }
 
-  return new Intl.NumberFormat('ru-RU', {
-    style: 'currency',
-    currency,
-    maximumFractionDigits: 2,
-  }).format(numeric)
-}
-
-function handlePriceSubmit(): void {
-  if (!selectedPlantId.value) {
-    showToast('Выберите растение для добавления цен', 'warning')
-    return
-  }
-
-  priceForm.post(`/plants/${selectedPlantId.value}/prices`, {
-    onSuccess: () => {
-      showToast('Ценовая версия сохранена', 'success')
-      resetPriceForm()
-    },
-    onError: () => showToast('Не удалось сохранить ценовую версию', 'error'),
-  })
-}
-
-function resetPriceForm(): void {
-  priceForm.reset()
-  priceForm.currency = 'RUB'
-  priceForm.clearErrors()
-}
 
 watch(selectedPlantId, () => {
   priceForm.clearErrors()

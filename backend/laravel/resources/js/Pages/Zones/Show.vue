@@ -170,6 +170,7 @@ interface PageProps {
       role?: string
     }
   }
+  [key: string]: any
 }
 
 const page = usePage<PageProps>()
@@ -275,8 +276,8 @@ const zoneId = computed(() => {
   if (pathMatch && pathMatch[1]) {
     return parseInt(pathMatch[1])
   }
-  
-  return null
+
+  return undefined
 })
 
 const zone = computed<Zone>(() => {
@@ -740,7 +741,9 @@ onMounted(async () => {
       // Проверяем новые и старые статусы для обратной совместимости
       const finalStatuses = ['DONE', 'FAILED', 'TIMEOUT', 'SEND_FAILED', 'completed', 'failed']
       if (finalStatuses.includes(commandEvent.status)) {
-        reloadZoneAfterCommand(zoneId.value, ['zone', 'cycles'])
+        if (zoneId.value) {
+          reloadZoneAfterCommand(zoneId.value, ['zone', 'cycles'])
+        }
       }
     })
 
@@ -938,7 +941,9 @@ async function onActionSubmit({ actionType, params }: { actionType: CommandType;
     const actionName = actionNames[actionType] || 'Действие'
     showToast(`${actionName} запущено успешно`, 'success', TOAST_TIMEOUT.NORMAL)
     // Обновляем зону и cycles через Inertia partial reload
-    reloadZoneAfterCommand(zoneId.value, ['zone', 'cycles'])
+    if (zoneId.value) {
+      reloadZoneAfterCommand(zoneId.value, ['zone', 'cycles'])
+    }
   } catch (err) {
     logger.error(`Failed to execute ${actionType}:`, err)
     let errorMessage = ERROR_MESSAGES.UNKNOWN
@@ -952,7 +957,9 @@ async function onActionSubmit({ actionType, params }: { actionType: CommandType;
 
 async function onGrowthCycleWizardSubmit({ zoneId, recipeId, startedAt, expectedHarvestAt }: { zoneId: number; recipeId: number; startedAt: string; expectedHarvestAt?: string }): Promise<void> {
   // Новый wizard уже создал цикл через API, нужно только обновить данные
-  reloadZoneAfterCommand(zoneId, ['zone', 'cycles', 'active_grow_cycle'])
+  if (zoneId) {
+    reloadZoneAfterCommand(zoneId, ['zone', 'cycles', 'active_grow_cycle'])
+  }
 }
 
 function openNodeConfig(nodeId: number, node: any): void {

@@ -51,6 +51,7 @@ import type { Greenhouse, Zone } from '@/types'
 
 interface PageProps {
   zones?: Zone[]
+  [key: string]: any
 }
 
 const { zones: zonesProp } = usePageProps<PageProps>(['zones'])

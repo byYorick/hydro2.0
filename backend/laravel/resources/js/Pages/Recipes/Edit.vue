@@ -6,13 +6,13 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
             <label for="recipe-name" class="block text-xs text-[color:var(--text-muted)] mb-1">Название</label>
-            <input id="recipe-name" name="name" v-model="form.name" data-testid="recipe-name-input" class="input-field" :class="form.errors.name ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''" />
-            <div v-if="form.errors.name" class="text-xs text-[color:var(--badge-danger-text)] mt-1">{{ form.errors.name }}</div>
+            <input id="recipe-name" name="name" v-model="form.name" data-testid="recipe-name-input" class="input-field" :class="(form.errors as any).name ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''" />
+            <div v-if="(form.errors as any).name" class="text-xs text-[color:var(--badge-danger-text)] mt-1">{{ (form.errors as any).name }}</div>
           </div>
           <div>
             <label for="recipe-description" class="block text-xs text-[color:var(--text-muted)] mb-1">Описание</label>
-            <input id="recipe-description" name="description" v-model="form.description" data-testid="recipe-description-input" class="input-field" :class="form.errors.description ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''" />
-            <div v-if="form.errors.description" class="text-xs text-[color:var(--badge-danger-text)] mt-1">{{ form.errors.description }}</div>
+            <input id="recipe-description" name="description" v-model="form.description" data-testid="recipe-description-input" class="input-field" :class="(form.errors as any).description ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''" />
+            <div v-if="(form.errors as any).description" class="text-xs text-[color:var(--badge-danger-text)] mt-1">{{ (form.errors as any).description }}</div>
           </div>
           <div>
             <label for="recipe-plant" class="block text-xs text-[color:var(--text-muted)] mb-1">Культура</label>
@@ -22,14 +22,14 @@
               v-model.number="form.plant_id"
               class="input-field"
               :disabled="plantsLoading"
-              :class="form.errors.plant_id ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''"
+              :class="(form.errors as any).plant_id ? 'border-[color:var(--accent-red)] bg-[color:var(--badge-danger-bg)]' : ''"
             >
               <option :value="null" disabled>Выберите культуру</option>
               <option v-for="plant in plants" :key="plant.id" :value="plant.id">
                 {{ plant.name }}
               </option>
             </select>
-            <div v-if="form.errors.plant_id" class="text-xs text-[color:var(--badge-danger-text)] mt-1">{{ form.errors.plant_id }}</div>
+            <div v-if="(form.errors as any).plant_id" class="text-xs text-[color:var(--badge-danger-text)] mt-1">{{ (form.errors as any).plant_id }}</div>
             <div v-else-if="!plantsLoading && plants.length === 0" class="text-xs text-[color:var(--text-dim)] mt-1">
               Нет доступных культур — добавьте культуру в справочнике.
             </div>
@@ -142,6 +142,7 @@ interface RecipeFormData {
 
 interface PageProps {
   recipe?: Recipe
+  [key: string]: any
 }
 
 const page = usePage<PageProps>()

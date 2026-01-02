@@ -19,26 +19,26 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <ServiceStatusCard
             name="Core API"
-            :status="coreStatus"
+            :status="coreStatus ?? 'unknown'"
             icon="⚙️"
             description="Основной API сервис"
           />
           <ServiceStatusCard
             name="Database"
-            :status="dbStatus"
+            :status="dbStatus ?? 'unknown'"
             icon="💾"
             description="PostgreSQL база данных"
           />
           <ServiceStatusCard
             name="WebSocket"
-            :status="wsStatus"
+            :status="wsStatus ?? 'unknown'"
             icon="🔌"
             description="WebSocket соединение"
             status-type="ws"
           />
           <ServiceStatusCard
             name="MQTT Broker"
-            :status="mqttStatus"
+            :status="mqttStatus ?? 'unknown'"
             icon="📡"
             description="MQTT брокер"
             status-type="mqtt"
@@ -185,12 +185,13 @@ const {
 const historyLoggerEndpoint = 'http://history-logger:9300/health'
 const automationEngineEndpoint = 'http://automation-engine:9401/metrics'
 
+
 // Вычисляем состояние цепочки
 const isChainHealthy = computed(() => {
   const criticalStatuses = ['fail', 'offline', 'disconnected']
-  return !criticalStatuses.includes(dbStatus.value) &&
-         !criticalStatuses.includes(mqttStatus.value) &&
-         !criticalStatuses.includes(wsStatus.value)
+  return !criticalStatuses.includes(dbStatus.value ?? 'unknown') &&
+         !criticalStatuses.includes(mqttStatus.value ?? 'unknown') &&
+         !criticalStatuses.includes(wsStatus.value ?? 'unknown')
 })
 
 const chainStatus = computed(() => {
@@ -199,13 +200,13 @@ const chainStatus = computed(() => {
   }
   
   const issues: string[] = []
-  if (['fail', 'offline', 'disconnected'].includes(dbStatus.value)) {
+  if (['fail', 'offline', 'disconnected'].includes(dbStatus.value ?? 'unknown')) {
     issues.push('БД недоступна')
   }
-  if (['fail', 'offline', 'disconnected'].includes(mqttStatus.value)) {
+  if (['fail', 'offline', 'disconnected'].includes(mqttStatus.value ?? 'unknown')) {
     issues.push('MQTT недоступен')
   }
-  if (['fail', 'offline', 'disconnected'].includes(wsStatus.value)) {
+  if (['fail', 'offline', 'disconnected'].includes(wsStatus.value ?? 'unknown')) {
     issues.push('WebSocket недоступен')
   }
   
@@ -220,13 +221,13 @@ function getChainStatusClass(component: 'db' | 'mqtt' | 'ws' | 'ui'): string {
   let status: string
   switch (component) {
     case 'db':
-      status = dbStatus.value
+      status = dbStatus.value ?? 'unknown'
       break
     case 'mqtt':
-      status = mqttStatus.value
+      status = mqttStatus.value ?? 'unknown'
       break
     case 'ws':
-      status = wsStatus.value
+      status = wsStatus.value ?? 'unknown'
       break
     case 'ui':
       status = 'success' // UI всегда доступен, если страница загрузилась

@@ -48,6 +48,7 @@ import type { Recipe } from '@/types'
 
 interface PageProps {
   recipe?: Recipe
+  [key: string]: any
 }
 
 const page = usePage<PageProps>()

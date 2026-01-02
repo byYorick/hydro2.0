@@ -94,11 +94,12 @@ interface Props {
   greenhouses: Greenhouse[]
 }
 
-const props = defineProps<Props>()
+// Props are used implicitly by Vue template
+defineProps<Props>()
 
 const { isOpen: showCreateModal, open: openCreateModal, close: closeCreateModal } = useSimpleModal()
 
-function onGreenhouseCreated(greenhouse: Greenhouse): void {
+function onGreenhouseCreated(_greenhouse: Greenhouse): void {
   // Обновляем страницу для отображения новой теплицы
   router.reload({ only: ['greenhouses'] })
 }

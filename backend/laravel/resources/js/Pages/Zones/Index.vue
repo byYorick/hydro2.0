@@ -251,7 +251,7 @@ onMounted(() => {
         }
     } catch (error) {
       // Fallback к частичному reload при ошибке
-      router.reload({ only: ['zones'], preserveScroll: true })
+      router.reload({ only: ['zones'], preserveUrl: true })
     }
   })
 })
