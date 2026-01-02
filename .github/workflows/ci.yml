@@ -177,13 +177,14 @@ jobs:
           trap cleanup EXIT INT TERM
           
           # Start background processes
-          php artisan migrate --force &
+          php artisan migrate:fresh --force &
           MIGRATE_PID=$!
           php artisan serve --host=127.0.0.1 --port=8000 --env=testing &
           SERVE_PID=$!
           
           # Wait for migration to complete
           wait $MIGRATE_PID || true
+          php artisan db:seed --class=AdminUserSeeder --force
           
           # Wait for server to be ready with health check
           echo "Waiting for server to start..."

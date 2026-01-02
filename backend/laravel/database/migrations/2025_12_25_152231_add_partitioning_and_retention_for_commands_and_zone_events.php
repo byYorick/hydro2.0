@@ -181,12 +181,26 @@ return new class extends Migration
                 ");
 
                 if (! $isCommandsHypertable || ! $isCommandsHypertable->exists) {
-                    // Преобразуем в hypertable для TimescaleDB
                     try {
-                        DB::statement("SELECT create_hypertable('commands', 'created_at', chunk_time_interval => INTERVAL '1 month')");
-                        \Log::info('Converted commands to TimescaleDB hypertable');
+                        $isCommandsPartitioned = DB::selectOne("
+                            SELECT EXISTS (
+                                SELECT 1 FROM pg_partitioned_table
+                                WHERE partrelid = 'commands'::regclass
+                            ) as exists
+                        ");
                     } catch (\Exception $e) {
-                        \Log::warning('Failed to convert commands to hypertable: '.$e->getMessage());
+                        $isCommandsPartitioned = null;
+                    }
+
+                    if (! $isCommandsPartitioned || ! $isCommandsPartitioned->exists) {
+                        try {
+                            DB::statement("SELECT create_hypertable('commands', 'created_at', chunk_time_interval => INTERVAL '1 month')");
+                            \Log::info('Converted commands to TimescaleDB hypertable');
+                        } catch (\Exception $e) {
+                            \Log::warning('Failed to convert commands to hypertable: '.$e->getMessage());
+                        }
+                    } else {
+                        \Log::info('Skipped converting commands to hypertable (table is partitioned)');
                     }
                 }
 
@@ -199,10 +213,25 @@ return new class extends Migration
 
                 if (! $isEventsHypertable || ! $isEventsHypertable->exists) {
                     try {
-                        DB::statement("SELECT create_hypertable('zone_events', 'created_at', chunk_time_interval => INTERVAL '1 month')");
-                        \Log::info('Converted zone_events to TimescaleDB hypertable');
+                        $isEventsPartitioned = DB::selectOne("
+                            SELECT EXISTS (
+                                SELECT 1 FROM pg_partitioned_table
+                                WHERE partrelid = 'zone_events'::regclass
+                            ) as exists
+                        ");
                     } catch (\Exception $e) {
-                        \Log::warning('Failed to convert zone_events to hypertable: '.$e->getMessage());
+                        $isEventsPartitioned = null;
+                    }
+
+                    if (! $isEventsPartitioned || ! $isEventsPartitioned->exists) {
+                        try {
+                            DB::statement("SELECT create_hypertable('zone_events', 'created_at', chunk_time_interval => INTERVAL '1 month')");
+                            \Log::info('Converted zone_events to TimescaleDB hypertable');
+                        } catch (\Exception $e) {
+                            \Log::warning('Failed to convert zone_events to hypertable: '.$e->getMessage());
+                        }
+                    } else {
+                        \Log::info('Skipped converting zone_events to hypertable (table is partitioned)');
                     }
                 }
 

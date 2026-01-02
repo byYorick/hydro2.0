@@ -35,15 +35,38 @@ trait RefreshDatabase
             return;
         }
 
-        if (!$exists || !$exists->exists) {
+        if (! $exists || ! $exists->exists) {
             return;
         }
+
+        try {
+            $schemaColumn = DB::selectOne("
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'timescaledb_information'
+                  AND table_name = 'hypertables'
+                  AND column_name IN ('schema_name', 'hypertable_schema')
+                ORDER BY CASE column_name
+                    WHEN 'hypertable_schema' THEN 1
+                    ELSE 2
+                END
+                LIMIT 1
+            ");
+        } catch (\Throwable $e) {
+            return;
+        }
+
+        if (! $schemaColumn || ! $schemaColumn->column_name) {
+            return;
+        }
+
+        $column = $schemaColumn->column_name;
 
         try {
             $hypertables = DB::select("
                 SELECT hypertable_name
                 FROM timescaledb_information.hypertables
-                WHERE schema_name = 'public'
+                WHERE {$column} = 'public'
             ");
         } catch (\Throwable $e) {
             return;
@@ -52,7 +75,7 @@ trait RefreshDatabase
         foreach ($hypertables as $hypertable) {
             $name = $hypertable->hypertable_name ?? null;
 
-            if (!$name) {
+            if (! $name) {
                 continue;
             }
 
