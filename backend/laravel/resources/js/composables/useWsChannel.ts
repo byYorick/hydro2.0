@@ -9,7 +9,6 @@
  *   onUnmounted(() => unsubscribe())
  */
 import { onUnmounted } from 'vue'
-import { logger } from '@/utils/logger'
 import { useWebSocket } from './useWebSocket'
 import type { ToastHandler } from './useApi'
 
@@ -28,8 +27,6 @@ type GlobalEventHandler = (event: {
   zoneId?: number
   occurredAt: string
 }) => void
-
-type ChannelKind = 'zoneCommands' | 'globalEvents'
 
 type SnapshotHandler = (snapshot: {
   snapshot_id: string
@@ -73,7 +70,7 @@ export function useZoneCommandsChannel(
   options: UseWsChannelOptions = {}
 ): () => void {
   const { showToast, componentTag, onSnapshot } = options
-  const { subscribeToZoneCommands, unsubscribeAll } = useWebSocket(showToast, componentTag)
+  const { subscribeToZoneCommands } = useWebSocket(showToast, componentTag)
   
   // Подписываемся на канал команд зоны
   const unsubscribe = subscribeToZoneCommands(zoneId, handler, onSnapshot)
@@ -109,7 +106,7 @@ export function useGlobalEventsChannel(
   options: UseWsChannelOptions = {}
 ): () => void {
   const { showToast, componentTag } = options
-  const { subscribeToGlobalEvents, unsubscribeAll } = useWebSocket(showToast, componentTag)
+  const { subscribeToGlobalEvents } = useWebSocket(showToast, componentTag)
   
   // Подписываемся на глобальные события
   const unsubscribe = subscribeToGlobalEvents(handler)
@@ -146,4 +143,3 @@ export const useWsChannel = {
     return subscriptions
   },
 }
-

@@ -63,21 +63,21 @@
     <!-- Легенда -->
     <div class="flex items-center gap-4 mb-2 text-xs">
       <div
-        v-for="series in seriesConfig"
-        :key="series.name"
+        v-for="seriesItem in seriesConfig"
+        :key="seriesItem.name"
         class="flex items-center gap-2"
       >
         <div
           class="w-3 h-0.5 rounded"
-          :style="{ backgroundColor: series.color }"
+          :style="{ backgroundColor: seriesItem.color }"
         ></div>
-        <span class="text-[color:var(--text-muted)]">{{ series.label }}</span>
+        <span class="text-[color:var(--text-muted)]">{{ seriesItem.label }}</span>
         <span
-          v-if="series.currentValue !== null && series.currentValue !== undefined"
+          v-if="seriesItem.currentValue !== null && seriesItem.currentValue !== undefined"
           class="font-medium"
-          :style="{ color: series.color }"
+          :style="{ color: seriesItem.color }"
         >
-          {{ formatValue(series.currentValue, series.name) }}
+          {{ formatValue(seriesItem.currentValue, seriesItem.name) }}
         </span>
       </div>
     </div>

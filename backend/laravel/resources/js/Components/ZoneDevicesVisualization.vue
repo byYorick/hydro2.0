@@ -302,7 +302,7 @@ const props = withDefaults(defineProps<Props>(), {
   canManage: false
 })
 
-const emit = defineEmits<{
+defineEmits<{
   attach: []
   configure: [device: Device]
 }>()
@@ -374,20 +374,6 @@ function getDeviceStatus(device: Device): string {
   if (device.status === 'offline') return 'OFFLINE'
   if (device.status === 'degraded') return 'WARNING'
   return 'NEUTRAL'
-}
-
-// @ts-ignore - не используется сейчас, но может понадобиться
-function getStatusDotClass(status: string | undefined): string {
-  switch (status) {
-    case 'online':
-      return 'bg-[color:var(--accent-green)]'
-    case 'offline':
-      return 'bg-[color:var(--accent-red)]'
-    case 'degraded':
-      return 'bg-[color:var(--accent-amber)]'
-    default:
-      return 'bg-[color:var(--text-dim)]'
-  }
 }
 
 function getDevicePosition(index: number, total: number): Record<string, string> {

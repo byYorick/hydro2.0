@@ -123,7 +123,6 @@ import Pagination from '@/Components/Pagination.vue'
 import { useSimpleModal } from '@/composables/useModal'
 import type { Recipe } from '@/types'
 
-const headers = ['Название', 'Описание', 'Фаз', 'Действия']
 const page = usePage<{ recipes?: Recipe[] }>()
 const all = computed(() => (page.props.recipes || []) as Recipe[])
 const query = ref<string>('')
@@ -132,7 +131,7 @@ const perPage = ref<number>(25)
 
 const { isOpen: showRecipeWizard, open: openRecipeWizard, close: closeRecipeWizard } = useSimpleModal()
 
-function onRecipeCreated(recipe: Recipe): void {
+function onRecipeCreated(_recipe: Recipe): void {
   // Обновляем страницу для отображения нового рецепта
   router.reload({ only: ['recipes'] })
 }
@@ -150,18 +149,29 @@ const filtered = computed(() => {
   })
 })
 
-// Пагинированные рецепты
-const paginatedRecipes = computed(() => {
-  const total = filtered.value.length
-  if (total === 0) return []
-  
-  // Защита от некорректных значений
+function clampCurrentPage(total: number): number {
   const maxPage = Math.ceil(total / perPage.value) || 1
   const validPage = Math.min(currentPage.value, maxPage)
   if (validPage !== currentPage.value) {
     currentPage.value = validPage
   }
+  return validPage
+}
+
+watch([filtered, perPage], () => {
+  if (filtered.value.length > 0) {
+    clampCurrentPage(filtered.value.length)
+  } else {
+    currentPage.value = 1
+  }
+})
+
+// Пагинированные рецепты
+const paginatedRecipes = computed(() => {
+  const total = filtered.value.length
+  if (total === 0) return []
   
+  const validPage = clampCurrentPage(total)
   const start = (validPage - 1) * perPage.value
   const end = start + perPage.value
   return filtered.value.slice(start, end)

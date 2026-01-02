@@ -199,34 +199,51 @@ export function useWizardApi() {
 
     // 1. Создать теплицу, если нужно
     if (!greenhouseId && wizardData.greenhouse) {
+      const greenhouseName = wizardData.greenhouse.name?.trim()
+      if (!greenhouseName) {
+        throw new Error('Название теплицы обязательно')
+      }
       const greenhouse = await createGreenhouse({
-        name: wizardData.greenhouse.name!,
+        name: greenhouseName,
       })
       greenhouseId = greenhouse.id
     }
 
     // 2. Создать зону, если нужно
     if (!zoneId && wizardData.zone) {
+      const zoneName = wizardData.zone.name?.trim()
+      const resolvedGreenhouseId = greenhouseId ?? wizardData.zone.greenhouse_id
+      if (!zoneName || !resolvedGreenhouseId) {
+        throw new Error('Название зоны и теплица обязательны')
+      }
       const zone = await createZone({
-        name: wizardData.zone.name!,
-        greenhouse_id: greenhouseId || wizardData.zone.greenhouse_id!,
+        name: zoneName,
+        greenhouse_id: resolvedGreenhouseId,
       })
       zoneId = zone.id
     }
 
     // 3. Создать растение, если нужно
     if (!plantId && wizardData.plant) {
+      const plantName = wizardData.plant.name?.trim()
+      if (!plantName) {
+        throw new Error('Название растения обязательно')
+      }
       const plant = await createPlant({
-        name: wizardData.plant.name!,
+        name: plantName,
       })
       plantId = plant.id
     }
 
     // 4. Создать рецепт, если нужно
     if (!recipeId && wizardData.recipe) {
+      const recipeName = wizardData.recipe.name?.trim()
+      if (!recipeName || !plantId) {
+        throw new Error('Рецепт и растение обязательны')
+      }
       const recipe = await createRecipe({
-        name: wizardData.recipe.name!,
-        plant_id: plantId!,
+        name: recipeName,
+        plant_id: plantId,
         phases: wizardData.recipe.phases || [],
       })
       recipeId = recipe.id
@@ -240,7 +257,7 @@ export function useWizardApi() {
     const cycle = await startCycle({
       zone_id: zoneId,
       recipe_id: recipeId,
-      plant_id: plantId!,
+      plant_id: plantId,
       planting_at: wizardData.plantingAt,
       batch_label: wizardData.batchLabel,
     })

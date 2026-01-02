@@ -460,7 +460,8 @@ const zonesByCrop = computed(() => {
       })
     }
     
-    const group = grouped.get(cropName)!
+    const group = grouped.get(cropName)
+    if (!group) return
     group.zones.push(zone)
     
     // Определяем общий статус (если хотя бы одна зона в ALARM, то ALARM)

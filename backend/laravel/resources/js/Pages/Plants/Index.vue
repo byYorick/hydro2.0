@@ -366,17 +366,28 @@ const deleteModal = ref<{ open: boolean; plant: PlantSummary | null }>({ open: f
 const currentPage = ref<number>(1)
 const perPage = ref<number>(25)
 
-const paginatedPlants = computed(() => {
-  const total = props.plants.length
-  if (total === 0) return []
-  
-  // Защита от некорректных значений
+function clampCurrentPage(total: number): number {
   const maxPage = Math.ceil(total / perPage.value) || 1
   const validPage = Math.min(currentPage.value, maxPage)
   if (validPage !== currentPage.value) {
     currentPage.value = validPage
   }
+  return validPage
+}
+
+watch([() => props.plants.length, perPage], () => {
+  if (props.plants.length > 0) {
+    clampCurrentPage(props.plants.length)
+  } else {
+    currentPage.value = 1
+  }
+})
+
+const paginatedPlants = computed(() => {
+  const total = props.plants.length
+  if (total === 0) return []
   
+  const validPage = clampCurrentPage(total)
   const start = (validPage - 1) * perPage.value
   const end = start + perPage.value
   return props.plants.slice(start, end)
@@ -484,7 +495,7 @@ function handleSubmit(): void {
   })
 }
 
-function onPlantCreated(plant: any): void {
+function onPlantCreated(_plant: any): void {
   showToast('Растение успешно создано', 'success')
   // Страница уже обновится через router.reload в модальном окне
 }

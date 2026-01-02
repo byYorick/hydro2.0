@@ -57,6 +57,23 @@ module.exports = {
     'prefer-const': 'warn',
     'no-var': 'error',
   },
+  overrides: [
+    {
+      files: [
+        'resources/js/**/__tests__/**/*.{js,ts,tsx,vue}',
+        'resources/js/**/*.{spec,test}.{js,ts,tsx}',
+        'tests/**/*.ts',
+      ],
+      rules: {
+        '@typescript-eslint/no-explicit-any': 'off',
+        '@typescript-eslint/no-non-null-assertion': 'off',
+        '@typescript-eslint/no-unused-vars': 'off',
+        'no-console': 'off',
+        'vue/one-component-per-file': 'off',
+        'vue/require-explicit-emits': 'off',
+      },
+    },
+  ],
   ignorePatterns: [
     'dist',
     'node_modules',
@@ -66,4 +83,3 @@ module.exports = {
     'coverage',
   ],
 };
-

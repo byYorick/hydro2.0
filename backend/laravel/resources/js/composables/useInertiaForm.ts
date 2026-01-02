@@ -2,7 +2,7 @@
  * Composable для унификации работы с Inertia формами
  * Предоставляет стандартные callbacks для onSuccess, onError, onFinish
  */
-import { useForm, type UseFormReturn } from '@inertiajs/vue3'
+import { useForm } from '@inertiajs/vue3'
 import { router } from '@inertiajs/vue3'
 import { useToast } from './useToast'
 import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '@/constants/messages'
@@ -292,4 +292,3 @@ export function useInertiaForm<T extends Record<string, unknown>>(
     handleFinish,
   }
 }
-

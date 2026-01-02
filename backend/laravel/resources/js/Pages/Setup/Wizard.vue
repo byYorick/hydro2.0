@@ -658,7 +658,10 @@ async function loadAvailableZones(greenhouseId?: number) {
   
   loading.zones = true
   try {
-    const ghId = greenhouseId || createdGreenhouse.value!.id
+  const ghId = greenhouseId ?? createdGreenhouse.value?.id
+  if (!ghId) {
+    return
+  }
     const response = await api.get<{ data?: Zone[] } | Zone[]>(
       '/zones',
       { params: { greenhouse_id: ghId } }
@@ -925,7 +928,7 @@ async function attachNodesToZone(): Promise<void> {
   try {
     const promises = selectedNodeIds.value.map(nodeId =>
       api.patch(`/nodes/${nodeId}`, {
-        zone_id: createdZone.value!.id
+        zone_id: createdZone.value.id
       })
     )
     

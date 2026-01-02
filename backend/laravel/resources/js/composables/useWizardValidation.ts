@@ -8,7 +8,6 @@
  * - Валидация выбора/создания рецепта
  * - Валидация фаз рецепта
  */
-import { computed, type Ref } from 'vue'
 import type { WizardState } from './useWizardState'
 
 export interface GreenhouseData {
@@ -223,4 +222,3 @@ export function useWizardValidation(wizardState: WizardState<GrowCycleWizardData
     validateAll,
   }
 }
-

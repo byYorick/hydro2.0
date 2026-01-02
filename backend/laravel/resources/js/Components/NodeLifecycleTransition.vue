@@ -78,7 +78,7 @@ import type { NodeLifecycleState } from '@/types/Device'
 
 // Простая обертка для toast (если useToast недоступен)
 // @ts-ignore
-function showToast(message: string, variant: any = 'info', duration?: number, options?: any): number {
+function showToast(message: string, variant: any = 'info', _duration?: number, _options?: any): number {
   logger.debug(`[Toast ${variant}]:`, message)
   return 0
 }

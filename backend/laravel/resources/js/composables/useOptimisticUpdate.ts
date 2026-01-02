@@ -3,7 +3,7 @@
  * Обновляет интерфейс сразу при действии пользователя, до получения ответа от сервера
  */
 
-import { ref, computed, type Ref, type ComputedRef } from 'vue'
+import { ref, type Ref } from 'vue'
 import { logger } from '@/utils/logger'
 
 interface OptimisticUpdateOptions<T> {
@@ -317,4 +317,3 @@ export function createOptimisticCreate<T extends { id?: number | string }>(
     },
   }
 }
-

@@ -61,7 +61,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Link, usePage } from '@inertiajs/vue3'
+import { Link } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
@@ -73,7 +73,6 @@ interface PageProps {
   [key: string]: any
 }
 
-const page = usePage<PageProps>()
 const { recipe: recipeProp } = usePageProps<PageProps>(['recipe'])
 const recipe = computed(() => (recipeProp.value || {}) as Recipe)
 

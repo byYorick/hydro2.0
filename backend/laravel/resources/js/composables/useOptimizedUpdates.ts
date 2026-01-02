@@ -1,5 +1,4 @@
 import { ref, watch, computed, type Ref } from 'vue'
-import { logger } from '@/utils/logger'
 import { DEBOUNCE_DELAY } from '@/constants/timeouts'
 
 /**
@@ -215,7 +214,10 @@ export function useTelemetryBatch(
     if (!updates.has(zoneId)) {
       updates.set(zoneId, new Map())
     }
-    updates.get(zoneId)!.set(metric, value)
+    const zoneUpdates = updates.get(zoneId)
+    if (zoneUpdates) {
+      zoneUpdates.set(metric, value)
+    }
     
     if (timeoutId) {
       clearTimeout(timeoutId)
@@ -244,4 +246,3 @@ export function useTelemetryBatch(
     flush,
   }
 }
-

@@ -376,18 +376,29 @@ const filteredZones = computed(() => {
   })
 })
 
-// Пагинированные зоны
-const paginatedZones = computed(() => {
-  const total = filteredZones.value.length
-  if (total === 0) return []
-  
-  // Защита от некорректных значений
+const clampCurrentPage = (total: number): number => {
   const maxPage = Math.ceil(total / perPage.value) || 1
   const validPage = Math.min(currentPage.value, maxPage)
   if (validPage !== currentPage.value) {
     currentPage.value = validPage
   }
+  return validPage
+}
+
+watch([filteredZones, perPage], () => {
+  if (filteredZones.value.length > 0) {
+    clampCurrentPage(filteredZones.value.length)
+  } else {
+    currentPage.value = 1
+  }
+})
+
+// Пагинированные зоны
+const paginatedZones = computed(() => {
+  const total = filteredZones.value.length
+  if (total === 0) return []
   
+  const validPage = clampCurrentPage(total)
   const start = (validPage - 1) * perPage.value
   const end = start + perPage.value
   return filteredZones.value.slice(start, end)

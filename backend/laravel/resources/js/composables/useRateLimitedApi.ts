@@ -17,7 +17,6 @@ export function useRateLimitedApi(showToast?: ToastHandler) {
   const { api } = useApi(showToast || null)
   
   const isProcessing: Ref<boolean> = ref(false)
-  const requestQueue: Ref<Array<() => Promise<any>>> = ref([])
 
   /**
    * Sleep утилита
@@ -203,4 +202,3 @@ export function useRateLimitedApi(showToast?: ToastHandler) {
     rateLimitedDelete,
   }
 }
-

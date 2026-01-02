@@ -86,8 +86,9 @@ function safeVisit(url: string, options: { preserveUrl?: boolean } = {}): void {
   const key = targetUrl
   
   // Очищаем предыдущий таймер для этого URL
-  if (visitTimers.has(key)) {
-    clearTimeout(visitTimers.get(key)!)
+  const existingTimer = visitTimers.get(key)
+  if (existingTimer) {
+    clearTimeout(existingTimer)
   }
   
   // Устанавливаем новый таймер с debounce

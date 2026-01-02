@@ -277,7 +277,7 @@
 
 <script setup>
 import { computed, reactive, ref, watch, onMounted } from 'vue'
-import { usePage, router } from '@inertiajs/vue3'
+import { usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
@@ -329,17 +329,28 @@ const filteredUsers = computed(() => {
   })
 })
 
-const paginatedUsers = computed(() => {
-  const total = filteredUsers.value.length
-  if (total === 0) return []
-  
-  // Защита от некорректных значений
+const clampCurrentPage = (total) => {
   const maxPage = Math.ceil(total / perPage.value) || 1
   const validPage = Math.min(currentPage.value, maxPage)
   if (validPage !== currentPage.value) {
     currentPage.value = validPage
   }
+  return validPage
+}
+
+watch([filteredUsers, perPage], () => {
+  if (filteredUsers.value.length > 0) {
+    clampCurrentPage(filteredUsers.value.length)
+  } else {
+    currentPage.value = 1
+  }
+})
+
+const paginatedUsers = computed(() => {
+  const total = filteredUsers.value.length
+  if (total === 0) return []
   
+  const validPage = clampCurrentPage(total)
   const start = (validPage - 1) * perPage.value
   const end = start + perPage.value
   return filteredUsers.value.slice(start, end)

@@ -633,11 +633,6 @@ const { theme } = useTheme()
 
 const zonesStatusSummary = computed(() => props.dashboard.zonesByStatus || {})
 const nodesStatusSummary = computed(() => props.dashboard.nodesByStatus || {})
-// @ts-ignore hasAlerts - not used
-const hasAlerts = computed(() => {
-  const alerts = props.dashboard.latestAlerts
-  return alerts && Array.isArray(alerts) && alerts.length > 0
-})
 const hasGreenhouses = computed(() => {
   const gh = props.dashboard.greenhouses
   return gh && Array.isArray(gh) && gh.length > 0
@@ -959,8 +954,7 @@ onMounted(async () => {
   
   // Подписаться на глобальные события с оптимизацией
   const { useBatchUpdates } = await import('@/composables/useOptimizedUpdates')
-  // @ts-ignore flushEvents - not used
-  const { add: addEvent, flush: flushEvents } = useBatchUpdates<any>(
+  const { add: addEvent } = useBatchUpdates<any>(
     (eventBatch) => {
       // Применяем события пакетом
       eventBatch.forEach(event => {

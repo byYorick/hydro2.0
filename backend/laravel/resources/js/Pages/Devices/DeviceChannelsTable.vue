@@ -84,7 +84,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import Button from '@/Components/Button.vue'
 import Pagination from '@/Components/Pagination.vue'
 
@@ -94,8 +94,27 @@ const props = defineProps({
   testingChannels: { type: Set, default: () => new Set() }, // Множество каналов, которые сейчас тестируются
 })
 
+defineEmits(['test'])
+
 const currentPage = ref(1)
 const perPage = ref(10)
+
+function clampCurrentPage(total) {
+  const maxPage = Math.ceil(total / perPage.value) || 1
+  const validPage = Math.min(currentPage.value, maxPage)
+  if (validPage !== currentPage.value) {
+    currentPage.value = validPage
+  }
+  return validPage
+}
+
+watch([() => props.channels.length, perPage], () => {
+  if (props.channels.length > 0) {
+    clampCurrentPage(props.channels.length)
+  } else {
+    currentPage.value = 1
+  }
+})
 
 const paginatedChannels = computed(() => {
   // Защита от undefined/null
@@ -106,13 +125,7 @@ const paginatedChannels = computed(() => {
   const total = props.channels.length
   if (total === 0) return []
   
-  // Защита от некорректных значений
-  const maxPage = Math.ceil(total / perPage.value) || 1
-  const validPage = Math.min(currentPage.value, maxPage)
-  if (validPage !== currentPage.value) {
-    currentPage.value = validPage
-  }
-  
+  const validPage = clampCurrentPage(total)
   const start = (validPage - 1) * perPage.value
   const end = start + perPage.value
   return props.channels.slice(start, end)

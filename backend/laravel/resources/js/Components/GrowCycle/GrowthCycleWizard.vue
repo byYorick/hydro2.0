@@ -370,10 +370,10 @@
           </div>
           <ul class="text-xs text-[color:var(--badge-danger-text)] list-disc list-inside">
             <li
-              v-for="error in validationErrors"
-              :key="error"
+              v-for="validationError in validationErrors"
+              :key="validationError"
             >
-              {{ error }}
+              {{ validationError }}
             </li>
           </ul>
         </div>
@@ -663,7 +663,7 @@ function validateStep(step: number): boolean {
         return false
       }
       break
-    case 3:
+    case 3: {
       if (!form.value.startedAt) {
         validationErrors.value.push('Необходимо указать дату начала')
         return false
@@ -681,6 +681,7 @@ function validateStep(step: number): boolean {
         }
       }
       break
+    }
   }
 
   return validationErrors.value.length === 0

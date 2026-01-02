@@ -3,7 +3,7 @@
  */
 import { ref, type Ref } from 'vue'
 import { logger } from '@/utils/logger'
-import { ERROR_MESSAGES, getErrorMessageByStatus } from '@/constants/messages'
+import { ERROR_MESSAGES } from '@/constants/messages'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import type { ToastHandler } from './useApi'
 
@@ -255,4 +255,3 @@ export function useErrorHandler(showToast?: ToastHandler) {
     errorContext: errorContext as Readonly<Ref<ErrorContext | null>>,
   }
 }
-

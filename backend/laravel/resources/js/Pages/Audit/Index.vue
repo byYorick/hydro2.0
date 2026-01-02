@@ -241,17 +241,28 @@ const filtered = computed(() => {
   })
 })
 
-const paginatedLogs = computed(() => {
-  const total = filtered.value.length
-  if (total === 0) return []
-  
-  // Защита от некорректных значений
+function clampCurrentPage(total: number): number {
   const maxPage = Math.ceil(total / perPage.value) || 1
   const validPage = Math.min(currentPage.value, maxPage)
   if (validPage !== currentPage.value) {
     currentPage.value = validPage
   }
+  return validPage
+}
+
+watch([filtered, perPage], () => {
+  if (filtered.value.length > 0) {
+    clampCurrentPage(filtered.value.length)
+  } else {
+    currentPage.value = 1
+  }
+})
+
+const paginatedLogs = computed(() => {
+  const total = filtered.value.length
+  if (total === 0) return []
   
+  const validPage = clampCurrentPage(total)
   const start = (validPage - 1) * perPage.value
   const end = start + perPage.value
   return filtered.value.slice(start, end)

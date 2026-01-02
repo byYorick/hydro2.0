@@ -6,7 +6,7 @@ import { useApi, type ToastHandler } from './useApi'
 import { logger } from '@/utils/logger'
 import { extractData } from '@/utils/apiHelpers'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
-import { getReconnectAttempts, getLastError, getConnectionState, initEcho, onWsStateChange } from '@/utils/echoClient'
+import { getReconnectAttempts, getLastError, getConnectionState, onWsStateChange } from '@/utils/echoClient'
 
 const HEALTH_CHECK_INTERVAL = 30000
 const WS_CHECK_INTERVAL = 10000

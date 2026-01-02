@@ -294,18 +294,6 @@ const title = computed<string>(() => {
   return titles[props.actionType] || 'Действие'
 })
 
-// @ts-ignore - не используется сейчас, но может понадобиться
-const description = computed<string>(() => {
-  const descriptions: Record<ActionType, string> = {
-    'FORCE_IRRIGATION': 'Укажите длительность полива в секундах',
-    'FORCE_PH_CONTROL': 'Укажите целевое значение pH',
-    'FORCE_EC_CONTROL': 'Укажите целевое значение EC',
-    'FORCE_CLIMATE': 'Укажите целевые параметры температуры и влажности',
-    'FORCE_LIGHTING': 'Укажите параметры освещения'
-  }
-  return descriptions[props.actionType] || 'Выполнить действие'
-})
-
 // Сброс формы при открытии модального окна
 watch(() => props.show, (newVal: boolean) => {
   if (newVal) {

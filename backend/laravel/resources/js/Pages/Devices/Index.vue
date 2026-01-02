@@ -418,16 +418,23 @@ const paginatedData = computed(() => {
   const total = filtered.value.length
   if (total === 0) return []
   
-  // Защита от некорректных значений
   const maxPage = Math.ceil(total / perPage.value) || 1
   const validPage = Math.min(currentPage.value, maxPage)
-  if (validPage !== currentPage.value) {
-    currentPage.value = validPage
-  }
-  
   const start = (validPage - 1) * perPage.value
   const end = start + perPage.value
   return filtered.value.slice(start, end)
+})
+
+watch([filtered, perPage], () => {
+  const total = filtered.value.length
+  if (total === 0) {
+    currentPage.value = 1
+    return
+  }
+  const maxPage = Math.ceil(total / perPage.value) || 1
+  if (currentPage.value > maxPage) {
+    currentPage.value = maxPage
+  }
 })
 
 const columns = [

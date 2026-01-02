@@ -225,9 +225,11 @@ export function useCommands(showToast?: ToastHandler) {
       
       // Обновляем статус в pendingCommands
       if (pendingCommands.value.has(commandId)) {
-        const command = pendingCommands.value.get(commandId)!
-        command.status = normalizeStatus(status.status || 'unknown')
-        pendingCommands.value.set(commandId, command)
+        const command = pendingCommands.value.get(commandId)
+        if (command) {
+          command.status = normalizeStatus(status.status || 'unknown')
+          pendingCommands.value.set(commandId, command)
+        }
       }
       
       return {
@@ -254,7 +256,10 @@ export function useCommands(showToast?: ToastHandler) {
   ): void {
     const normalizedStatus = normalizeStatus(status)
     if (pendingCommands.value.has(commandId)) {
-      const command = pendingCommands.value.get(commandId)!
+      const command = pendingCommands.value.get(commandId)
+      if (!command) {
+        return
+      }
       command.status = normalizedStatus
       if (message) {
         command.message = message
@@ -310,8 +315,9 @@ export function useCommands(showToast?: ToastHandler) {
   function reloadZoneAfterCommand(zoneId: number, only: string[] = ['zone', 'cycles'], preserveUrl: boolean = true): void {
     const key = `${zoneId}:${only.join(',')}`
     
-    if (reloadTimers.has(key)) {
-      clearTimeout(reloadTimers.get(key)!)
+    const existingTimer = reloadTimers.get(key)
+    if (existingTimer) {
+      clearTimeout(existingTimer)
     }
     
     reloadTimers.set(key, setTimeout(async () => {
@@ -359,8 +365,8 @@ export function useCommands(showToast?: ToastHandler) {
       
       // Обновляем только если команда еще не завершена или статус изменился
       if (pendingCommands.value.has(commandId)) {
-        const existing = pendingCommands.value.get(commandId)!
-        if (existing.status !== status) {
+        const existing = pendingCommands.value.get(commandId)
+        if (existing && existing.status !== status) {
           pendingCommands.value.set(commandId, {
             ...existing,
             status,

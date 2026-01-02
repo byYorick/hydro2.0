@@ -43,7 +43,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import Pagination from './Pagination.vue'
 
 const props = defineProps({
@@ -54,17 +54,28 @@ const props = defineProps({
 const currentPage = ref<number>(1)
 const perPage = ref<number>(25)
 
-const paginatedRows = computed(() => {
-  const total = props.rows.length
-  if (total === 0) return []
-  
-  // Защита от некорректных значений
+function clampCurrentPage(total: number): number {
   const maxPage = Math.ceil(total / perPage.value) || 1
   const validPage = Math.min(currentPage.value, maxPage)
   if (validPage !== currentPage.value) {
     currentPage.value = validPage
   }
+  return validPage
+}
+
+watch([() => props.rows.length, perPage], () => {
+  if (props.rows.length > 0) {
+    clampCurrentPage(props.rows.length)
+  } else {
+    currentPage.value = 1
+  }
+})
+
+const paginatedRows = computed(() => {
+  const total = props.rows.length
+  if (total === 0) return []
   
+  const validPage = clampCurrentPage(total)
   const start = (validPage - 1) * perPage.value
   const end = start + perPage.value
   return props.rows.slice(start, end)

@@ -14,10 +14,10 @@
           </p>
           
           <div
-            v-if="correlation_id"
+            v-if="correlationId"
             class="text-xs text-[color:var(--text-dim)] mb-4"
           >
-            ID запроса: {{ correlation_id }}
+            ID запроса: {{ correlationId }}
           </div>
           
           <div
@@ -105,8 +105,15 @@ interface Props {
   line?: number
 }
 
-// Props are used implicitly by Vue template
-defineProps<Props>()
+const {
+  status,
+  message,
+  errors,
+  correlation_id: correlationId,
+  exception,
+  file,
+  line,
+} = defineProps<Props>()
 
 const isDev = computed(() => import.meta.env.DEV)
 

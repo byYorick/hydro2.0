@@ -61,6 +61,7 @@
         <div>Зафиксировать сбор урожая и завершить цикл?</div>
         <div>
           <label class="text-xs text-[color:var(--text-dim)]">Метка партии (опционально)</label>
+          <!-- eslint-disable-next-line vue/no-mutating-props -->
           <input
             v-model="harvestModal.batchLabel"
             class="input-field mt-1 w-full"
@@ -84,6 +85,7 @@
         <div>Остановить цикл? Это действие нельзя отменить.</div>
         <div>
           <label class="text-xs text-[color:var(--text-dim)]">Причина (опционально)</label>
+          <!-- eslint-disable-next-line vue/no-mutating-props -->
           <textarea
             v-model="abortModal.notes"
             class="input-field mt-1 w-full h-20 resize-none"
@@ -107,6 +109,7 @@
         <div>Введите ID ревизии рецепта и выберите режим применения.</div>
         <div>
           <label class="text-xs text-[color:var(--text-dim)]">ID ревизии рецепта</label>
+          <!-- eslint-disable-next-line vue/no-mutating-props -->
           <input
             v-model="changeRecipeModal.recipeRevisionId"
             class="input-field mt-1 w-full"
@@ -114,6 +117,7 @@
           />
         </div>
         <div class="flex flex-wrap gap-2">
+          <!-- eslint-disable-next-line vue/no-mutating-props -->
           <button
             type="button"
             class="btn btn-outline h-9 px-3 text-xs"
@@ -122,6 +126,7 @@
           >
             Применить сейчас
           </button>
+          <!-- eslint-disable-next-line vue/no-mutating-props -->
           <button
             type="button"
             class="btn btn-outline h-9 px-3 text-xs"

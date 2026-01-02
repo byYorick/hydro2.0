@@ -215,7 +215,7 @@ const props = withDefaults(defineProps<Props>(), {
   show: false
 })
 
-const emit = defineEmits<{
+defineEmits<{
   close: []
 }>()
 
@@ -236,33 +236,6 @@ const {
 
 const historyLoggerEndpoint = 'http://history-logger:9300/health'
 const automationEngineEndpoint = 'http://automation-engine:9401/metrics'
-
-// Вычисляем состояние цепочки
-// Цепочка считается здоровой, если нет критических проблем (fail/offline/disconnected)
-// unknown и degraded считаются допустимыми состояниями (еще инициализируются)
-// @ts-ignore - не используется сейчас, но может понадобиться
-const isChainHealthy = computed(() => {
-  // Критические проблемы блокируют работу системы
-  const hasCriticalIssues = 
-    dbStatus.value === 'fail' ||
-    mqttStatus.value === 'offline' ||
-    wsStatus.value === 'disconnected' ||
-    historyLoggerStatus.value === 'fail' ||
-    automationEngineStatus.value === 'fail'
-  
-  // Предупреждения - система работает, но может работать неоптимально
-  // @ts-ignore - не используется сейчас, но может понадобиться
-  const hasWarnings = 
-    dbStatus.value === 'unknown' ||
-    mqttStatus.value === 'degraded' ||
-    mqttStatus.value === 'unknown' ||
-    wsStatus.value === 'unknown' ||
-    historyLoggerStatus.value === 'unknown' ||
-    automationEngineStatus.value === 'unknown'
-  
-  // Цепочка здорова, если нет критических проблем
-  return !hasCriticalIssues
-})
 
 // Вычисляем список проблемных компонентов для детального отображения
 const chainIssues = computed(() => {

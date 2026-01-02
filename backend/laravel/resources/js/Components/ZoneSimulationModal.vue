@@ -222,7 +222,7 @@ const props = withDefaults(defineProps<Props>(), {
   defaultRecipeId: null,
 })
 
-const emit = defineEmits<{
+defineEmits<{
   close: []
 }>()
 

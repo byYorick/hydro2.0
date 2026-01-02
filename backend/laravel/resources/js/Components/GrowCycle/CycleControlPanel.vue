@@ -275,7 +275,7 @@ const props = withDefaults(defineProps<Props>(), {
   loading: false,
 })
 
-const emit = defineEmits<{
+defineEmits<{
   pause: []
   resume: []
   harvest: []

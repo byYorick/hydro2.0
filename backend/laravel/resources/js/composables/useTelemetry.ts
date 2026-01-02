@@ -2,7 +2,7 @@
  * Composable для работы с телеметрией с кешированием и rate limiting
  */
 import { ref, computed, onMounted, onUnmounted, type Ref, type ComputedRef } from 'vue'
-import { useApi, type ToastHandler } from './useApi'
+import type { ToastHandler } from './useApi'
 import { useRateLimitedApi } from './useRateLimitedApi'
 import { useErrorHandler } from './useErrorHandler'
 import { logger } from '@/utils/logger'
@@ -124,7 +124,6 @@ function cleanupCache(): void {
  * Composable для работы с телеметрией
  */
 export function useTelemetry(showToast?: ToastHandler) {
-  const { api } = useApi(showToast || null)
   const { rateLimitedGet } = useRateLimitedApi(showToast || null)
   const { handleError } = useErrorHandler(showToast)
   const loading: Ref<boolean> = ref(false)
@@ -141,8 +140,8 @@ export function useTelemetry(showToast?: ToastHandler) {
     
     // Проверяем кеш
     if (!forceRefresh && telemetryCache.has(cacheKey)) {
-      const cached = telemetryCache.get(cacheKey)!
-      if (Date.now() - cached.timestamp < CACHE_TTL) {
+      const cached = telemetryCache.get(cacheKey)
+      if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
         return cached.data as ZoneTelemetry
       }
     }
@@ -201,8 +200,8 @@ export function useTelemetry(showToast?: ToastHandler) {
     
     // Проверяем кеш
     if (!forceRefresh && telemetryCache.has(cacheKey)) {
-      const cached = telemetryCache.get(cacheKey)!
-      if (Date.now() - cached.timestamp < HISTORY_CACHE_TTL) {
+      const cached = telemetryCache.get(cacheKey)
+      if (cached && Date.now() - cached.timestamp < HISTORY_CACHE_TTL) {
         return cached.data as TelemetrySample[]
       }
     }
@@ -271,8 +270,8 @@ export function useTelemetry(showToast?: ToastHandler) {
     
     // Проверяем кеш
     if (!forceRefresh && telemetryCache.has(cacheKey)) {
-      const cached = telemetryCache.get(cacheKey)!
-      if (Date.now() - cached.timestamp < HISTORY_CACHE_TTL) {
+      const cached = telemetryCache.get(cacheKey)
+      if (cached && Date.now() - cached.timestamp < HISTORY_CACHE_TTL) {
         return cached.data as TelemetrySample[]
       }
     }
@@ -426,4 +425,3 @@ export function clearTelemetryCache(): void {
     logger.warn('[Telemetry] Failed to clear sessionStorage:', err)
   }
 }
-

@@ -7,8 +7,8 @@ import { readBooleanEnv } from '@/utils/env'
 import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { registerSubscription, unregisterSubscription } from '@/ws/invariants'
 // Импортируем типы для reconciliation
-import type { ZoneSnapshot, SnapshotHandler, SnapshotResponse } from '@/types/reconciliation'
-import { isValidSnapshot, isValidReconciliationData } from '@/types/reconciliation'
+import type { ZoneSnapshot, SnapshotHandler } from '@/types/reconciliation'
+import { isValidSnapshot } from '@/types/reconciliation'
 
 type ZoneCommandHandler = (event: {
   commandId: number | string
@@ -417,9 +417,11 @@ function ensureChannelControl(
           handlers: new Set(),
         })
       }
-      const registry = globalChannelRegistry.get(channelName)!
-      registry.channelControl = control
-      registry.isAuthorized = true
+      const registry = globalChannelRegistry.get(channelName)
+      if (registry) {
+        registry.channelControl = control
+        registry.isAuthorized = true
+      }
       
       logger.debug('[useWebSocket] Created global channel (first auth request)', {
         channel: channelName,
@@ -438,57 +440,6 @@ function ensureChannelControl(
   }
 
   return control
-}
-
-// Self-check режим (DEV only): проверка инвариантов подписок
-function checkSubscriptionInvariants(channelName: string, subscriptionId: string, instanceId: number): void {
-  const isDev = (import.meta as any).env?.DEV === true || 
-                (import.meta as any).env?.MODE === 'development'
-  
-  if (!isDev) {
-    return // Self-check только в dev режиме
-  }
-  
-  // Проверка 1: нет дублей подписок на один канал с одним handler
-  const existingSub = activeSubscriptions.get(subscriptionId)
-  if (existingSub) {
-    logger.warn('[useWebSocket] INVARIANT VIOLATION: Duplicate subscription ID', {
-      subscriptionId,
-      channel: channelName,
-      existingChannel: existingSub.channelName,
-      componentTag: existingSub.componentTag,
-    })
-  }
-  
-  // Проверка 2: нет дублей handler'ов на один канал
-  const channelSet = channelSubscribers.get(channelName)
-  if (channelSet) {
-    channelSet.forEach(existingId => {
-      const existing = activeSubscriptions.get(existingId)
-      if (existing && existing.instanceId === instanceId && existing.channelName === channelName) {
-        // Это может быть нормально, если компонент подписывается несколько раз
-        // Но логируем для диагностики
-        logger.debug('[useWebSocket] Multiple subscriptions from same instance', {
-          channel: channelName,
-          instanceId,
-          subscriptionIds: Array.from(channelSet),
-        })
-      }
-    })
-  }
-  
-  // Проверка 3: счетчик подписок на канал
-  const channelCount = channelSubscribers.get(channelName)?.size || 0
-  const control = channelControls.get(channelName)
-  const hasActiveChannel = control?.echoChannel !== null
-  
-  logger.debug('[useWebSocket] Subscription invariant check', {
-    channel: channelName,
-    subscriptionId,
-    channelSubscriptions: channelCount,
-    hasActiveChannel,
-    instanceId,
-  })
 }
 
 function addSubscription(_control: ChannelControl, subscription: ActiveSubscription): void {
@@ -1288,7 +1239,10 @@ export function useWebSocket(showToast?: ToastHandler, componentTag?: string) {
         isAuthorized: true,
         handlers: new Set(),
       })
-      registry = globalChannelRegistry.get(GLOBAL_EVENTS_CHANNEL)!
+      registry = globalChannelRegistry.get(GLOBAL_EVENTS_CHANNEL)
+      if (!registry) {
+        return () => undefined
+      }
     }
     registry.handlers.add(handler)
     registry.subscriptionRefCount += 1

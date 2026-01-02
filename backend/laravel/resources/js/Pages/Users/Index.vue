@@ -268,7 +268,7 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch, onMounted } from 'vue'
-import { usePage, router } from '@inertiajs/vue3'
+import { usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Card from '@/Components/Card.vue'
 import Button from '@/Components/Button.vue'
@@ -281,7 +281,6 @@ import { TOAST_TIMEOUT } from '@/constants/timeouts'
 import { useApi } from '@/composables/useApi'
 import { useToast } from '@/composables/useToast'
 import { useSimpleModal } from '@/composables/useModal'
-import { ERROR_MESSAGES } from '@/constants/messages'
 
 const page = usePage()
 const currentUser = computed(() => page.props.auth?.user)
@@ -335,18 +334,29 @@ const filteredUsers = computed(() => {
   })
 })
 
-// Пагинированные пользователи
-const paginatedUsers = computed(() => {
-  // Защита от некорректных значений
-  const total = filteredUsers.value.length
-  if (total === 0) return []
-  
+const clampCurrentPage = (total: number): number => {
   const maxPage = Math.ceil(total / perPage.value) || 1
   const validPage = Math.min(currentPage.value, maxPage)
   if (validPage !== currentPage.value) {
     currentPage.value = validPage
   }
+  return validPage
+}
+
+watch([filteredUsers, perPage], () => {
+  if (filteredUsers.value.length > 0) {
+    clampCurrentPage(filteredUsers.value.length)
+  } else {
+    currentPage.value = 1
+  }
+})
+
+// Пагинированные пользователи
+const paginatedUsers = computed(() => {
+  const total = filteredUsers.value.length
+  if (total === 0) return []
   
+  const validPage = clampCurrentPage(total)
   const start = (validPage - 1) * perPage.value
   const end = start + perPage.value
   return filteredUsers.value.slice(start, end)

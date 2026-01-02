@@ -960,7 +960,7 @@ async function onActionSubmit({ actionType, params }: { actionType: CommandType;
   }
 }
 
-async function onGrowthCycleWizardSubmit({ zoneId, recipeId, startedAt, expectedHarvestAt }: { zoneId: number; recipeId: number; startedAt: string; expectedHarvestAt?: string }): Promise<void> {
+async function onGrowthCycleWizardSubmit({ zoneId, recipeId: _recipeId, startedAt: _startedAt, expectedHarvestAt: _expectedHarvestAt }: { zoneId: number; recipeId: number; startedAt: string; expectedHarvestAt?: string }): Promise<void> {
   // Новый wizard уже создал цикл через API, нужно только обновить данные
   if (zoneId) {
     reloadZoneAfterCommand(zoneId, ['zone', 'cycles', 'active_grow_cycle'])
@@ -973,7 +973,7 @@ function openNodeConfig(nodeId: number, node: any): void {
   modals.open('nodeConfig')
 }
 
-async function onNodesAttached(nodeIds: number[]): Promise<void> {
+async function onNodesAttached(_nodeIds: number[]): Promise<void> {
   if (!zoneId.value) return
   
   try {
